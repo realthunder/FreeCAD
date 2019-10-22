@@ -507,13 +507,13 @@ void View3DInventorViewer::init()
     pcGroupOnTop->addChild(pcOnTopMaterial);
 
     auto selRoot = new SoFCSelectionRoot;
-    selRoot->selectionStyle = SoFCSelectionRoot::PASSTHROUGH;
+    selRoot->selectionStyle = SoFCSelectionRoot::PASSTHROUGH_WIN;
     pcGroupOnTopSel = selRoot;
     pcGroupOnTopSel->setName("GroupOnTopSel");
     pcGroupOnTopSel->ref();
     pcGroupOnTop->addChild(pcGroupOnTopSel);
     selRoot = new SoFCSelectionRoot;
-    selRoot->selectionStyle = SoFCSelectionRoot::PASSTHROUGH;
+    selRoot->selectionStyle = SoFCSelectionRoot::PASSTHROUGH_WIN;
     pcGroupOnTopPreSel = selRoot;
     pcGroupOnTopPreSel->setName("GroupOnTopPreSel");
     pcGroupOnTopPreSel->ref();
