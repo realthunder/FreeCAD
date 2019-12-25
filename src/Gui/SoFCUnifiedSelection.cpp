@@ -1289,7 +1289,7 @@ bool SoFCSelectionRoot::_renderPrivate(SoGLRenderAction * action, bool inPath) {
     if((style==SoFCSelectionRoot::BOX || ViewParams::instance()->getShowSelectionBoundingBox())
        && ctx && !ctx->hideAll && (ctx->selAll || ctx->hlAll)) 
     {
-        if(style==SoFCSelectionRoot::PASSTHROUGH)
+        if(style==SoFCSelectionRoot::PASSTHROUGH_WIN)
             style = SoFCSelectionRoot::BOX;
         else {
             renderBBox(action,this,ctx->hlAll?ctx->hlColor:ctx->selColor);

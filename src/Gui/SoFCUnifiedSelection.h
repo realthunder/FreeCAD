@@ -318,7 +318,7 @@ public:
     }
 
     enum SelectStyles {
-        FULL, BOX, PASSTHROUGH
+        FULL, BOX, PASSTHROUGH_WIN
     };
     SoSFEnum selectionStyle;
 
