@@ -419,7 +419,7 @@ public:
             //all buttons released
             if (long_click){
                 //emulate RMB-click
-                ns.openPopupMenu(ev.inventor_event->getPosition());
+                ns.onSetRotationCenter(ev.inventor_event->getPosition());
                 return transit<NS::IdleState>();
             } else {
                 //refire all events && return to idle state
