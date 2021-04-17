@@ -78,10 +78,11 @@ App::DocumentObject *Datum::getSubObject(const char *subname,
 
     Base::PyGILStateLocker lock;
     PY_TRY {
-        TopoShape ts(getShape().Located(TopLoc_Location()));
+        TopoShape ts(getID());
+        ts.setShape(getShape().Located(TopLoc_Location()));
         if(pmat && !ts.isNull()) 
             ts.transformShape(*pmat,false,true);
-        *pyObj =  Py::new_reference_to(shape2pyshape(ts.getShape()));
+        *pyObj =  Py::new_reference_to(shape2pyshape(ts));
         return const_cast<Datum*>(this);
     } PY_CATCH_OCC
 }

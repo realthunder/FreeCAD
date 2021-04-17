@@ -42,6 +42,7 @@ public:
     /// recalculate the Feature
 protected:
     BRepAlgoAPI_BooleanOperation* makeOperation(const TopoDS_Shape&, const TopoDS_Shape&) const;
+    virtual const char *opCode() const;
     //@}
 };
 
@@ -53,7 +54,9 @@ public:
     MultiCommon();
 
     App::PropertyLinkList Shapes;
+#ifndef FC_NO_ELEMENT_MAP
     PropertyShapeHistory History;
+#endif
     App::PropertyBool Refine;
 
     /** @name methods override feature */

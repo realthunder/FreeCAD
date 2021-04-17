@@ -49,6 +49,8 @@
 #include "TopoShapeShellPy.h"
 #include "TopoShapeShellPy.cpp"
 #include "TopoShapeSolidPy.h"
+#include "TopoShapeOpCode.h"
+#include "PartPyCXX.h"
 
 using namespace Part;
 
@@ -88,13 +90,18 @@ int TopoShapeShellPy::PyInit(PyObject* args, PyObject* /*kwd*/)
     if (!PyArg_ParseTuple(args, "O", &obj))
         return -1;
 
+#ifndef FC_NO_ELEMENT_MAP
+    PY_TRY {
+        getTopoShapePtr()->makEShape(TOPOP_SHELL,getPyShapes(obj));
+    } _PY_CATCH_OCC(return(-1))
+#else
     BRep_Builder builder;
     TopoDS_Shape shape;
     TopoDS_Shell shell;
     //BRepOffsetAPI_Sewing mkShell;
     builder.MakeShell(shell);
-
-    try {
+    
+    PY_TRY {
         Py::Sequence list(obj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapeFacePy::Type))) {
@@ -117,13 +124,10 @@ int TopoShapeShellPy::PyInit(PyObject* args, PyObject* /*kwd*/)
 
         if (shape.ShapeType() != TopAbs_SHELL)
             Standard_Failure::Raise("Shape is not a shell");
-    }
-    catch (Standard_Failure& e) {
-        PyErr_SetString(PartExceptionOCCError, e.GetMessageString());
-        return -1;
-    }
+    } _PY_CATCH_OCC(return(-1))
 
     getTopoShapePtr()->setShape(shape);
+#endif
     return 0;
 }
 
@@ -135,13 +139,16 @@ PyObject*  TopoShapeShellPy::add(PyObject *args)
 
     BRep_Builder builder;
     TopoDS_Shape shell = getTopoShapePtr()->getShape();
-
-    try {
-        const TopoDS_Shape& sh = static_cast<TopoShapeFacePy*>(obj)->
-            getTopoShapePtr()->getShape();
+    
+    PY_TRY {
+        const TopoShape& shape = *static_cast<TopoShapeFacePy*>(obj)->getTopoShapePtr();
+        const auto &sh = shape.getShape();
         if (!sh.IsNull()) {
             builder.Add(shell, sh);
             BRepCheck_Analyzer check(shell);
+#ifndef FC_NO_ELEMENT_MAP
+            getTopoShapePtr()->mapSubElement(shape);
+#endif
             if (!check.IsValid()) {
                 ShapeUpgrade_ShellSewing sewShell;
                 getTopoShapePtr()->setShape(sewShell.ApplySewing(shell));
@@ -150,13 +157,9 @@ PyObject*  TopoShapeShellPy::add(PyObject *args)
         else {
             Standard_Failure::Raise("cannot add empty shape");
         }
-    }
-    catch (Standard_Failure& e) {
-        PyErr_SetString(PartExceptionOCCError, e.GetMessageString());
-        return 0;
-    }
+    } PY_CATCH_OCC
 
-    getTopoShapePtr()->setShape(shell);
+    getTopoShapePtr()->setShape(shell,false);
 
     Py_Return;
 }
@@ -173,7 +176,14 @@ PyObject*  TopoShapeShellPy::getFreeEdges(PyObject *args)
     as.CheckOrientedShells(getTopoShapePtr()->getShape(), Standard_True, Standard_True);
 #endif
     TopoDS_Compound comp = as.FreeEdges();
+#ifndef FC_NO_ELEMENT_MAP
+    TopoShape res;
+    res.setShape(comp);
+    res.mapSubElement(*getTopoShapePtr());
+    return Py::new_reference_to(shape2pyshape(res));
+#else
     return new TopoShapeCompoundPy(new TopoShape(comp));
+#endif
 }
 
 PyObject*  TopoShapeShellPy::getBadEdges(PyObject *args)
@@ -188,7 +198,14 @@ PyObject*  TopoShapeShellPy::getBadEdges(PyObject *args)
     as.CheckOrientedShells(getTopoShapePtr()->getShape(), Standard_True, Standard_True);
 #endif
     TopoDS_Compound comp = as.BadEdges();
+#ifndef FC_NO_ELEMENT_MAP
+    TopoShape res;
+    res.setShape(comp);
+    res.mapSubElement(*getTopoShapePtr());
+    return Py::new_reference_to(shape2pyshape(res));
+#else
     return new TopoShapeCompoundPy(new TopoShape(comp));
+#endif
 }
 
 PyObject* TopoShapeShellPy::makeHalfSpace(PyObject *args)
@@ -197,15 +214,11 @@ PyObject* TopoShapeShellPy::makeHalfSpace(PyObject *args)
     if (!PyArg_ParseTuple(args, "O!",&(Base::VectorPy::Type),&pPnt))
         return 0;
 
-    try {
+    PY_TRY {
         Base::Vector3d pt = Py::Vector(pPnt,false).toVector();
         BRepPrimAPI_MakeHalfSpace mkHS(TopoDS::Shell(this->getTopoShapePtr()->getShape()), gp_Pnt(pt.x,pt.y,pt.z));
         return new TopoShapeSolidPy(new TopoShape(mkHS.Solid()));
-    }
-    catch (Standard_Failure& e) {
-        PyErr_SetString(PartExceptionOCCError, e.GetMessageString());
-        return 0;
-    }
+    } PY_CATCH_OCC
 }
 
 Py::Object TopoShapeShellPy::getMass(void) const

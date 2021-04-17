@@ -870,6 +870,10 @@ bool TopoShape::canMapElement(const TopoShape &other) const {
 }
 
 void TopoShape::mapSubElement(const std::vector<TopoShape> &shapes, const char *op) {
+#ifdef FC_NO_ELEMENT_MAP
+    return;
+#endif
+
     if (shapes.empty())
         return;
 
@@ -957,6 +961,10 @@ void TopoShape::copyElementMap(const TopoShape &s, const char *op)
 }
 
 void TopoShape::mapSubElement(const TopoShape &other, const char *op, bool forceHasher) {
+#ifdef FC_NO_ELEMENT_MAP
+    return;
+#endif
+
     if(!canMapElement(other))
         return;
 

@@ -50,10 +50,16 @@ void Part::FaceMaker::addWire(const TopoDS_Wire& w)
 
 void Part::FaceMaker::addShape(const TopoDS_Shape& sh)
 {
-    addTopoShape(sh);
+    _addTopoShape(sh);
 }
 
-void Part::FaceMaker::addTopoShape(const TopoShape& shape) {
+void Part::FaceMaker::addTopoShape(const TopoShape &sh)
+{
+    _addTopoShape(sh);
+    hasTopoShape = true;
+}
+
+void Part::FaceMaker::_addTopoShape(const TopoShape& shape) {
     const TopoDS_Shape &sh = shape.getShape();
     if(sh.IsNull())
         throw Base::ValueError("Input shape is null.");
@@ -177,7 +183,7 @@ struct ElementName {
 
 void Part::FaceMaker::postBuild() {
     this->myTopoShape.setShape(this->myShape);
-    if (!this->MyOp) {
+    if (!this->hasTopoShape) {
         this->myTopoShape.initCache(true);
         this->Done();
     }

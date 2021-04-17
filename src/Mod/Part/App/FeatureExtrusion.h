@@ -26,6 +26,7 @@
 
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
+#include <App/StringHasher.h>
 #include "PartFeature.h"
 #include "FaceMakerCheese.h"
 #include <TopoDS_Face.hxx>
@@ -51,8 +52,10 @@ public:
     App::PropertyBool Symmetric;
     App::PropertyAngle TaperAngle;
     App::PropertyAngle TaperAngleRev;
+    App::PropertyAngle InnerTaperAngle;
+    App::PropertyAngle InnerTaperAngleRev;
     App::PropertyString FaceMakerClass;
-
+    App::PropertyBool UsePipeForDraft;
 
     /**
      * @brief The ExtrusionParameters struct is supposed to be filled with final
@@ -64,10 +67,24 @@ public:
         double lengthFwd;
         double lengthRev;
         bool solid;
+        bool innertaper;
+        bool usepipe;
         double taperAngleFwd; //in radians
         double taperAngleRev;
+        double innerTaperAngleFwd; //in radians
+        double innerTaperAngleRev;
         std::string faceMakerClass;
-        ExtrusionParameters(): lengthFwd(0), lengthRev(0), solid(false), taperAngleFwd(0), taperAngleRev(0) {}// constructor to keep garbage out
+        ExtrusionParameters()
+            : lengthFwd(0)
+            , lengthRev(0)
+            , solid(false)
+            , innertaper(false)
+            , usepipe(false)
+            , taperAngleFwd(0)
+            , taperAngleRev(0)
+            , innerTaperAngleFwd(0)
+            , innerTaperAngleRev(0)
+        {}// constructor to keep garbage out
     };
 
     /** @name methods override feature */
@@ -87,7 +104,7 @@ public:
      * @param params: extrusion parameters
      * @return result of extrusion
      */
-    static TopoShape extrudeShape(const TopoShape& source, const ExtrusionParameters& params);
+    static void extrudeShape(TopoShape &result, const TopoShape &source, const ExtrusionParameters& params);
 
     /**
      * @brief fetchAxisLink: read AxisLink to obtain the direction and
@@ -119,10 +136,8 @@ public: //mode enumerations
         dmNormal
     };
     static const char* eDirModeStrings[];
-
-protected:
-    static void makeDraft(const ExtrusionParameters& params, const TopoDS_Shape&, std::list<TopoDS_Shape>&);
-
+    static void makeDraft(const ExtrusionParameters& params, const TopoShape&, 
+            std::vector<TopoShape>&, App::StringHasherRef hasher);
 
 protected:
     virtual void setupObject() override;
