@@ -61,6 +61,7 @@ public:
     virtual ~Feature();
 
     PropertyPartShape Shape;
+    App::PropertyLinkSubHidden ColoredElements;
 
     /** @name methods override feature */
     //@{
