@@ -991,14 +991,67 @@ FilletBase::FilletBase()
 {
     ADD_PROPERTY(Base,(0));
     ADD_PROPERTY(Edges,(0,0,0));
+    ADD_PROPERTY_TYPE(EdgeLinks,(0), 0, 
+            (App::PropertyType)(App::Prop_ReadOnly|App::Prop_Hidden),0);
     Edges.setSize(0);
 }
 
 short FilletBase::mustExecute() const
 {
-    if (Base.isTouched() || Edges.isTouched())
+    if (Base.isTouched() || Edges.isTouched() || EdgeLinks.isTouched())
         return 1;
     return 0;
+}
+
+void FilletBase::onChanged(const App::Property *prop) {
+    if(getDocument() && !getDocument()->testStatus(App::Document::Restoring)) {
+        if(prop == &Edges || prop == &Base) {
+            if(!prop->testStatus(App::Property::User3))
+                syncEdgeLink();
+        }
+    }
+    Feature::onChanged(prop);
+}
+
+void FilletBase::onDocumentRestored() {
+    if(EdgeLinks.getSubValues().empty())
+        syncEdgeLink();
+    Feature::onDocumentRestored();
+}
+
+void FilletBase::syncEdgeLink() {
+    if(!Base.getValue() || !Edges.getSize()) {
+        EdgeLinks.setValue(0);
+        return;
+    }
+    std::vector<std::string> subs;
+    std::string sub("Edge");
+    for(auto &info : Edges.getValues()) 
+        subs.emplace_back(sub+std::to_string(info.edgeid));
+    EdgeLinks.setValue(Base.getValue(),subs);
+}
+
+void FilletBase::onUpdateElementReference(const App::Property *prop) {
+    if(prop!=&EdgeLinks || !getNameInDocument())
+        return;
+    auto values = Edges.getValues();
+    const auto &subs = EdgeLinks.getSubValues();
+    for(size_t i=0;i<values.size();++i) {
+        if(i>=subs.size()) {
+            FC_WARN("fillet edge count mismatch in object " << getFullName());
+            break;
+        }
+        int idx = 0;
+        sscanf(subs[i].c_str(),"Edge%d",&idx);
+        if(idx) 
+            values[i].edgeid = idx;
+        else
+            FC_WARN("invalid fillet edge link '" << subs[i] << "' in object " 
+                    << getFullName());
+    }
+    Edges.setStatus(App::Property::User3,true);
+    Edges.setValues(values);
+    Edges.setStatus(App::Property::User3,false);
 }
 
 // ---------------------------------------------------------
@@ -1036,11 +1089,11 @@ template class PartExport FeaturePythonT<Part::Feature>;
 #include <gce_MakeDir.hxx>
 */
 std::vector<Part::cutFaces> Part::findAllFacesCutBy(
-        const TopoDS_Shape& shape, const TopoDS_Shape& face, const gp_Dir& dir)
+        const TopoShape& shape, const TopoShape& face, const gp_Dir& dir)
 {
     // Find the centre of gravity of the face
     GProp_GProps props;
-    BRepGProp::SurfaceProperties(face,props);
+    BRepGProp::SurfaceProperties(face.getShape(),props);
     gp_Pnt cog = props.CentreOfMass();
 
     // create a line through the centre of gravity
@@ -1051,7 +1104,7 @@ std::vector<Part::cutFaces> Part::findAllFacesCutBy(
     BRepIntCurveSurface_Inter mkSection;
     // TODO: Less precision than Confusion() should be OK?
 
-    for (mkSection.Init(shape, line, Precision::Confusion()); mkSection.More(); mkSection.Next()) {
+    for (mkSection.Init(shape.getShape(), line, Precision::Confusion()); mkSection.More(); mkSection.Next()) {
         gp_Pnt iPnt = mkSection.Pnt();
         double dsq = cog.SquareDistance(iPnt);
 
@@ -1068,6 +1121,7 @@ std::vector<Part::cutFaces> Part::findAllFacesCutBy(
 
         cutFaces newF;
         newF.face = mkSection.Face();
+        newF.face.mapSubElement(shape);
         newF.distsq = dsq;
         result.push_back(newF);
     }

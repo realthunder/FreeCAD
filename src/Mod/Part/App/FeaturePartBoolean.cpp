@@ -32,7 +32,9 @@
 #include "FeaturePartBoolean.h"
 #include "modelRefine.h"
 #include <App/Application.h>
+#include <App/Document.h>
 #include <Base/Parameter.h>
+#include "TopoShapeOpCode.h"
 
 
 using namespace Part;
@@ -44,9 +46,11 @@ Boolean::Boolean(void)
 {
     ADD_PROPERTY(Base,(0));
     ADD_PROPERTY(Tool,(0));
+#ifndef FC_NO_ELEMENT_MAP
     ADD_PROPERTY_TYPE(History,(ShapeHistory()), "Boolean", (App::PropertyType)
         (App::Prop_Output|App::Prop_Transient|App::Prop_Hidden), "Shape history");
     History.setSize(0);
+#endif
 
     ADD_PROPERTY_TYPE(Refine,(0),"Boolean",(App::PropertyType)(App::Prop_None),"Refine shape (clean up redundant edges) after this boolean operation");
 
@@ -67,23 +71,25 @@ short Boolean::mustExecute() const
     return 0;
 }
 
+const char *Boolean::opCode() const {
+    return TOPOP_BOOLEAN;
+}
+
 App::DocumentObjectExecReturn *Boolean::execute(void)
 {
     try {
 #if defined(__GNUC__) && defined (FC_OS_LINUX)
         Base::SignalException se;
 #endif
-        auto base = Base.getValue();
-        auto tool = Tool.getValue();
-
-        if (!base || !tool)
-            return new App::DocumentObjectExecReturn("Linked object is not a Part object");
-
+        std::vector<TopoShape> shapes;
+        shapes.reserve(2);
         // Now, let's get the TopoDS_Shape
-        TopoDS_Shape BaseShape = Feature::getShape(base);
+        shapes.push_back(Feature::getTopoShape(Base.getValue()));
+        auto BaseShape = shapes[0].getShape();
         if (BaseShape.IsNull())
             throw NullShapeException("Base shape is null");
-        TopoDS_Shape ToolShape = Feature::getShape(tool);
+        shapes.push_back(Feature::getTopoShape(Tool.getValue()));
+        auto ToolShape = shapes[1].getShape();
         if (ToolShape.IsNull())
             throw NullShapeException("Tool shape is null");
 
@@ -92,10 +98,10 @@ App::DocumentObjectExecReturn *Boolean::execute(void)
             std::stringstream error;
             error << "Boolean operation failed";
             if (BaseShape.ShapeType() != TopAbs_SOLID) {
-                error << std::endl << base->Label.getValue() << " is not a solid";
+                error << std::endl << Base.getValue()->Label.getValue() << " is not a solid";
             }
             if (ToolShape.ShapeType() != TopAbs_SOLID) {
-                error << std::endl << tool->Label.getValue() << " is not a solid";
+                error << std::endl << Tool.getValue()->Label.getValue() << " is not a solid";
             }
             return new App::DocumentObjectExecReturn(error.str());
         }
@@ -113,6 +119,7 @@ App::DocumentObjectExecReturn *Boolean::execute(void)
             }
         }
 
+#ifdef FC_NO_ELEMENT_MAP
         std::vector<ShapeHistory> history;
         history.emplace_back(*mkBool.get(), TopAbs_FACE, resShape, BaseShape);
         history.emplace_back(*mkBool.get(), TopAbs_FACE, resShape, ToolShape);
@@ -133,7 +140,14 @@ App::DocumentObjectExecReturn *Boolean::execute(void)
 
         this->Shape.setValue(resShape);
         this->History.setValues(history);
-        return App::DocumentObject::StdReturn;
+#else
+        TopoShape res(0,getDocument()->getStringHasher());
+        res.makEShape(*mkBool,shapes,opCode());
+        if (this->Refine.getValue()) 
+            res = res.makERefine();
+        this->Shape.setValue(res);
+#endif
+        return Part::Feature::execute();
     }
     catch (...) {
         return new App::DocumentObjectExecReturn("A fatal error occurred when running boolean operation");

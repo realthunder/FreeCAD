@@ -103,6 +103,7 @@ protected:
     std::vector<TopoDS_Shape> myShapesToReturn;
     std::vector<TopoDS_Shape> myInputFaces;
     TopoShape myTopoShape;
+    bool hasTopoShape = false;
 
     /**
      * @brief Build_Essence: build routine that can assume there is no nesting.
@@ -115,6 +116,8 @@ protected:
      */
     virtual void Build_Essence() = 0;
     void postBuild();
+
+    void _addTopoShape(const TopoShape &s);
 
     static void throwNotImplemented();
 };

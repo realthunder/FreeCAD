@@ -25,6 +25,7 @@
 #endif
 
 
+#include <App/Document.h>
 #include "FeatureOffset.h"
 
 
@@ -86,11 +87,19 @@ App::DocumentObjectExecReturn *Offset::execute(void)
     short mode = (short)Mode.getValue();
     short join = (short)Join.getValue();
     bool fill = Fill.getValue();
+#ifdef FC_NO_ELEMENT_MAP
     const TopoShape& shape = Feature::getShape(source);
     if (fabs(offset) > 2*tol)
         this->Shape.setValue(shape.makeOffsetShape(offset, tol, inter, self, mode, join, fill));
     else
         this->Shape.setValue(shape);
+#else
+    auto shape = Feature::getTopoShape(source);
+    if(shape.isNull())
+        return new App::DocumentObjectExecReturn("Invalid source link");
+    this->Shape.setValue(TopoShape(0,getDocument()->getStringHasher()).makEOffset(
+                shape,offset,tol,inter,self,mode,join,fill));
+#endif
     return App::DocumentObject::StdReturn;
 }
 
@@ -131,7 +140,7 @@ short Offset2D::mustExecute() const
 App::DocumentObjectExecReturn *Offset2D::execute(void)
 {
     App::DocumentObject* source = Source.getValue();
-    if (!(source && source->getTypeId().isDerivedFrom(Part::Feature::getClassTypeId())))
+    if (!source)
         return new App::DocumentObjectExecReturn("No source shape linked.");
     double offset = Value.getValue();
     short mode = (short)Mode.getValue();
@@ -140,7 +149,15 @@ App::DocumentObjectExecReturn *Offset2D::execute(void)
     bool inter = Intersection.getValue();
     if (mode == 2)
         return new App::DocumentObjectExecReturn("Mode 'Recto-Verso' is not supported for 2D offset.");
-    const TopoShape& shape = static_cast<Part::Feature*>(source)->Shape.getShape();
+#ifdef FC_NO_ELEMENT_MAP
+    const TopoShape& shape = Feature::getShape(source);
     this->Shape.setValue(shape.makeOffset2D(offset, join, fill, mode == 0, inter));
-    return App::DocumentObject::StdReturn;
+#else
+    auto shape = Feature::getTopoShape(source);
+    if(shape.isNull())
+        return new App::DocumentObjectExecReturn("Invalid source link");
+    this->Shape.setValue(TopoShape(0,getDocument()->getStringHasher()).makEOffset2D(
+                shape,offset,join,fill,mode==0,inter));
+#endif
+    return Part::Feature::execute();
 }

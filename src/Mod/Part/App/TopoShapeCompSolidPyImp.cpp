@@ -31,11 +31,14 @@
 
 #include "OCCError.h"
 #include "TopoShape.h"
+#include "TopoShapeOpCode.h"
+#include "PartPyCXX.h"
 
 // inclusion of the generated files (generated out of TopoShapeCompSolidPy.xml)
 #include "TopoShapeSolidPy.h"
 #include "TopoShapeCompSolidPy.h"
 #include "TopoShapeCompSolidPy.cpp"
+#include "TopoShapeOpCode.h"
 
 using namespace Part;
 
@@ -66,6 +69,11 @@ int TopoShapeCompSolidPy::PyInit(PyObject* args, PyObject* /*kwd*/)
     if (!PyArg_ParseTuple(args, "O", &pcObj))
         return -1;
 
+#ifndef FC_NO_ELEMENT_MAP
+    PY_TRY {
+        getTopoShapePtr()->makEShape(TOPOP_COMPSOLID,getPyShapes(pcObj));
+    } _PY_CATCH_OCC(return(-1))
+#else
     BRep_Builder builder;
     TopoDS_CompSolid Comp;
     builder.MakeCompSolid(Comp);
@@ -88,6 +96,7 @@ int TopoShapeCompSolidPy::PyInit(PyObject* args, PyObject* /*kwd*/)
     }
 
     getTopoShapePtr()->setShape(Comp);
+#endif
     return 0;
 }
 
@@ -99,24 +108,27 @@ PyObject*  TopoShapeCompSolidPy::add(PyObject *args)
 
     BRep_Builder builder;
     TopoDS_Shape comp = getTopoShapePtr()->getShape();
+    auto shapes = getPyShapes(obj);
+    
+    PY_TRY {
+        for(auto &s : shapes) {
+            if(!s.isNull())
+                builder.Add(comp,s.getShape());
+            else
+                Standard_Failure::Raise("Cannot empty shape to compound solid");
+        }
 
-    try {
-        const TopoDS_Shape& sh = static_cast<TopoShapePy*>(obj)->
-            getTopoShapePtr()->getShape();
-        if (!sh.IsNull())
-            builder.Add(comp, sh);
-        else
-            Standard_Failure::Raise("Cannot empty shape to compound solid");
-    }
-    catch (Standard_Failure& e) {
-
-        PyErr_SetString(PartExceptionOCCError, e.GetMessageString());
-        return 0;
-    }
-
-    getTopoShapePtr()->setShape(comp);
-
-    Py_Return;
+#ifndef FC_NO_ELEMENT_MAP
+        auto &self = *getTopoShapePtr();
+        shapes.push_back(self);
+        TopoShape tmp(self.Tag,self.Hasher,comp);
+        tmp.mapSubElement(shapes);
+        self = tmp;
+#else
+        getTopoShapePtr()->setShape(comp);
+#endif
+        Py_Return;
+    }PY_CATCH_OCC
 }
 
 PyObject *TopoShapeCompSolidPy::getCustomAttributes(const char* /*attr*/) const
