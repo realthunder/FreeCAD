@@ -90,6 +90,8 @@ PROPERTY_SOURCE(Part::Feature, App::GeoFeature)
 Feature::Feature(void)
 {
     ADD_PROPERTY(Shape, (TopoDS_Shape()));
+    ADD_PROPERTY_TYPE(ColoredElements, (0), "",
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly|App::Prop_Output),"");
 }
 
 Feature::~Feature()

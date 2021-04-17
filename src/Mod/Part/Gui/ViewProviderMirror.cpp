@@ -683,6 +683,11 @@ PROPERTY_SOURCE(PartGui::ViewProviderRefine, PartGui::ViewProviderPart)
 ViewProviderRefine::ViewProviderRefine()
 {
     sPixmap = "Part_Refine_Shape";
+    ForceMapColors.setValue(true);
+    MapFaceColor.setValue(true);
+    MapLineColor.setValue(true);
+    MapPointColor.setValue(true);
+    MapTransparency.setValue(true);
 }
 
 ViewProviderRefine::~ViewProviderRefine()
@@ -697,6 +702,12 @@ ViewProviderReverse::ViewProviderReverse()
 {
     //TODO: Need a specific icon here!
     //sPixmap = "Part_Reverse_Shape";
+
+    ForceMapColors.setValue(true);
+    MapFaceColor.setValue(true);
+    MapLineColor.setValue(true);
+    MapPointColor.setValue(true);
+    MapTransparency.setValue(true);
 }
 
 ViewProviderReverse::~ViewProviderReverse()

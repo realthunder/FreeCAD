@@ -61,10 +61,12 @@ namespace PartGui {
 class SoBrepFaceSet;
 class SoBrepEdgeSet;
 class SoBrepPointSet;
+class SoFCCoordinate3;
 
 class PartGuiExport ViewProviderPartExt : public Gui::ViewProviderGeometryObject
 {
     PROPERTY_HEADER_WITH_OVERRIDE(PartGui::ViewProviderPartExt);
+    typedef Gui::ViewProviderGeometryObject inherited;
 
 public:
     /// constructor
@@ -91,6 +93,13 @@ public:
     // Faces (Gui::ViewProviderGeometryObject::ShapeColor and Gui::ViewProviderGeometryObject::ShapeMaterial apply)
     App::PropertyColorList DiffuseColor;
 
+    App::PropertyColorList MappedColors;    
+    App::PropertyBool MapFaceColor;    
+    App::PropertyBool MapLineColor;    
+    App::PropertyBool MapPointColor;    
+    App::PropertyBool MapTransparency;    
+    App::PropertyBool ForceMapColors;
+
     virtual void attach(App::DocumentObject *) override;
     virtual void setDisplayMode(const char* ModeName) override;
     /// returns a list of all possible modes
@@ -102,6 +111,8 @@ public:
 
     virtual void updateData(const App::Property*) override;
 
+    virtual PyObject *getPyObject() override;
+
     /** @name Selection handling
      * This group of methods do the selection handling.
      * Here you can define how the selection for your ViewProfider
@@ -110,9 +121,12 @@ public:
     //@{
     /// indicates if the ViewProvider use the new Selection model
     virtual bool useNewSelectionModel(void) const override {return true;}
-    /// return a hit element to the selection path or 0
-    virtual std::string getElement(const SoDetail*) const override;
+    virtual bool getElementPicked(const SoPickedPoint *, std::string &subname) const override;
     virtual SoDetail* getDetail(const char*) const override;
+    virtual bool getDetailPath(const char *subname,
+                               SoFullPath *pPath,
+                               bool append,
+                               SoDetail *&det) const override;
     virtual std::vector<Base::Vector3d> getModelPoints(const SoPickedPoint *) const override;
     /// return the highlight lines for a given element or the whole shape
     virtual std::vector<Base::Vector3d> getSelectionShape(const char* Element) const override;
@@ -129,11 +143,13 @@ public:
     void unsetHighlightedEdges();
     void setHighlightedPoints(const std::vector<App::Color>& colors);
     void unsetHighlightedPoints();
+
     //@}
 
     /** @name Color management methods 
      */
     //@{
+    virtual void setElementColors(const std::map<std::string,App::Color> &colors) override;
     virtual std::map<std::string,App::Color> getElementColors(const char *element=0) const override;
     //@}
 
@@ -144,9 +160,25 @@ public:
 
     virtual bool allowOverride(const App::DocumentObject &) const override;
 
+    virtual void updateColors(App::Document *sourceDoc=0, bool forceColorMap=false) override;
+
+    static std::vector<App::Color> getShapeColors(const Part::TopoShape &shape, App::Color &defColor,
+            App::Document *sourceDoc=0, bool linkOnly=false);
+
     /** @name Edit methods */
     //@{
     void setupContextMenu(QMenu*, QObject*, const char*) override;
+    virtual void setEditViewer(Gui::View3DInventorViewer*, int ModNum) override;
+
+    virtual void setShapePropertyName(const char *propName);
+    const char *getShapePropertyName() const;
+
+    Part::TopoShape getShape() const;
+    virtual void updateVisual();
+
+    virtual void reattach(App::DocumentObject *) override;
+    virtual void beforeDelete() override;
+    virtual void finishRestoring() override;
 
 protected:
     bool setEdit(int ModNum) override;
@@ -157,9 +189,10 @@ protected:
     /// get called by the container whenever a property has been changed
     virtual void onChanged(const App::Property* prop) override;
     bool loadParameter();
-    void updateVisual();
     void getNormals(const TopoDS_Face&  theFace, const Handle(Poly_Triangulation)& aPolyTri,
                     TColgp_Array1OfDir& theNormals);
+
+    virtual bool hasBaseFeature() const;
 
     // nodes for the data representation
     SoMaterialBinding * pcFaceBind;
@@ -172,6 +205,7 @@ protected:
     SoShapeHints      * pShapeHints;
 
     SoCoordinate3     * coords;
+    SoCoordinate3     * pcoords;
     SoBrepFaceSet     * faceset;
     SoNormal          * norm;
     SoNormalBinding   * normb;
@@ -180,6 +214,11 @@ protected:
 
     bool VisualTouched;
     bool NormalsFromUV;
+    bool UpdatingColor;
+
+    std::string shapePropName;
+
+    friend class SoFCCoordinate3;
 
 private:
     // settings stuff
@@ -189,6 +228,8 @@ private:
     static App::PropertyQuantityConstraint::Constraints angDeflectionRange;
     static const char* LightingEnums[];
     static const char* DrawStyleEnums[];
+
+    TopoDS_Shape cachedShape;
 };
 
 }
