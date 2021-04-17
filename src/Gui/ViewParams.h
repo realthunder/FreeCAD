@@ -60,6 +60,8 @@ public:
     FC_VIEW_PARAM(CoinCycleCheck,bool,Bool,true) \
     FC_VIEW_PARAM(EnablePropertyViewForInactiveDocument,bool,Bool,true) \
     FC_VIEW_PARAM(ShowSelectionBoundingBox,bool,Bool,false) \
+    FC_VIEW_PARAM(ColorOnTop, bool, Bool, true) \
+    FC_VIEW_PARAM(ColorRecompute, bool, Bool, true) \
 
 #undef FC_VIEW_PARAM
 #define FC_VIEW_PARAM(_name,_ctype,_type,_def) \
