@@ -18,6 +18,8 @@ include_directories(
 )
 link_directories(${OCC_LIBRARY_DIR})
 
+generate_from_xml(ViewProviderPartExtPy)
+
 set(PartGui_LIBS
     Part
     FreeCADGui
@@ -63,7 +65,7 @@ set(PartGui_UIC_SRCS
     DlgSettingsGeneral.ui
     DlgSettingsObjectColor.ui
     DlgProjectionOnSurface.ui
-    TaskFaceColors.ui
+    # TaskFaceColors.ui
     TaskShapeBuilder.ui
     TaskLoft.ui
     TaskOffset.ui
@@ -207,9 +209,9 @@ SET(PartGui_SRCS
     ViewProviderPrimitive.h
     Workbench.cpp
     Workbench.h
-    TaskFaceColors.cpp
-    TaskFaceColors.h
-    TaskFaceColors.ui
+    # TaskFaceColors.cpp
+    # TaskFaceColors.h
+    # TaskFaceColors.ui
     TaskShapeBuilder.cpp
     TaskShapeBuilder.h
     TaskShapeBuilder.ui
@@ -230,6 +232,10 @@ SET(PartGui_SRCS
     TaskCheckGeometry.h
     TaskAttacher.h 
     TaskAttacher.cpp 
+    ViewProviderPartExtPy.xml
+    ViewProviderPartExtPyImp.cpp
+    PartParams.h 
+    PartParams.cpp 
 )
 
 if(FREECAD_USE_PCH)
