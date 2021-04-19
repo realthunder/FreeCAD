@@ -292,6 +292,18 @@ void Property::setStatus(Status pos, bool on) {
     bits.set(pos,on);
     setStatusValue(bits.to_ulong());
 }
+bool Property::isSameContent(const Property &other) const {
+    if(other.getTypeId() != getTypeId() || getMemSize() != other.getMemSize())
+        return false;
+
+    FC_STATIC Base::StringWriter writer,writer2;
+    writer.clear();
+    Save(writer);
+    writer2.clear();
+    other.Save(writer2);
+    return writer.getString() == writer2.getString();
+}
+
 //**************************************************************************
 //**************************************************************************
 // PropertyListsBase

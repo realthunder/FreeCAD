@@ -31,6 +31,9 @@
 #include <boost/any.hpp>
 #include <string>
 #include <bitset>
+// WARNING! define this to static thread_local if FreeCAD ever decides to use
+// multi-threading recomputation.
+#define FC_STATIC static
 
 namespace Py {
 class Object;
@@ -235,6 +238,9 @@ public:
     virtual void hasSetChildValue(Property &) {}
     /// Called before a child property changing value
     virtual void aboutToSetChildValue(Property &) {}
+
+    /// Compare property by comparing their XML content
+    bool isSameContent(const Property &other) const;
 
     virtual void beforeSave() const {}
 
