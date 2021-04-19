@@ -182,6 +182,9 @@ public:
     GeomCurve();
     virtual ~GeomCurve();
 
+    static bool isLinear(const Handle(Geom_Curve) &c);
+    bool isLinear() const;
+
     TopoDS_Shape toShape() const;
     /*!
      * \brief toBSpline Converts the curve to a B-spline
@@ -213,6 +216,8 @@ public:
                    double tol = Precision::Confusion()) const;
 
     void reverse(void);
+    GeomLine *toLine(bool clone=true) const;
+    GeomLineSegment *toLineSegment(bool clone=true) const;
 
 protected:
     static bool intersect(const Handle(Geom_Curve) c, const Handle(Geom_Curve) c2,
@@ -806,6 +811,8 @@ private:
     Handle(Geom_OffsetCurve) myCurve;
 };
 
+class GeomPlane;
+
 class PartExport GeomSurface : public Geometry
 {
     TYPESYSTEM_HEADER();
@@ -820,10 +827,15 @@ public:
     GeomSurface();
     virtual ~GeomSurface();
 
+    static bool isPlanar(const Handle(Geom_Surface) &s, gp_Pln *pln=nullptr, double tol=1e-7);
+    bool isPlanar(gp_Pln *pln=nullptr, double tol=1e-7) const;
+
     TopoDS_Shape toShape() const;
     bool tangentU(double u, double v, gp_Dir& dirU) const;
     bool tangentV(double u, double v, gp_Dir& dirV) const;
     bool normal(double u, double v, gp_Dir& dir) const;
+
+    GeomPlane *toPlane(bool clone=true, double tol=1e-7) const;
 
     /** @name Curvature information */
     //@{
