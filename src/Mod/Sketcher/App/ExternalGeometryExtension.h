@@ -24,6 +24,7 @@
 #define SKETCHER_EXTERNALGEOMETRYEXTENSION_H
 
 #include <Mod/Part/App/Geometry.h>
+#include <Mod/Part/App/GeometryMigrationExtension.h>
 #include <array>
 #include <bitset>
 
@@ -37,6 +38,8 @@ public:
     // START_CREDIT_BLOCK: Credit under LGPL for this block to Zheng, Lei (realthunder) <realthunder.dev@gmail.com>
     virtual bool testFlag(int flag) const = 0;
     virtual void setFlag(int flag, bool v=true) = 0;
+    virtual unsigned long getFlags() const = 0;
+    virtual void setFlags(unsigned long flags) = 0;
     // END_CREDIT_BLOCK: Credit under LGPL for this block to Zheng, Lei (realthunder) <realthunder.dev@gmail.com>
 
     virtual bool isClear() const = 0;
@@ -44,6 +47,9 @@ public:
 
     virtual const std::string& getRef() const = 0;
     virtual void setRef(const std::string & ref) = 0;
+
+    virtual int getRefIndex() const = 0;
+    virtual void setRefIndex(int index) = 0;
 };
 
 class SketcherExport ExternalGeometryExtension : public Part::GeometryPersistenceExtension, private ISketchExternalGeometryExtension
@@ -74,6 +80,8 @@ public:
     // START_CREDIT_BLOCK: Credit under LGPL for this block to Zheng, Lei (realthunder) <realthunder.dev@gmail.com>
     virtual bool testFlag(int flag) const override { return Flags.test((size_t)(flag)); }
     virtual void setFlag(int flag, bool v=true) override { Flags.set((size_t)(flag),v); }
+    virtual unsigned long getFlags() const override { return Flags.to_ulong(); }
+    virtual void setFlags(unsigned long flags) override { Flags = flags; }
     // END_CREDIT_BLOCK: Credit under LGPL for this block to Zheng, Lei (realthunder) <realthunder.dev@gmail.com>
 
     virtual bool isClear() const override {return Flags.none();}
@@ -81,6 +89,9 @@ public:
 
     virtual const std::string& getRef() const override {return Ref;}
     virtual void setRef(const std::string & ref) override {Ref = ref;}
+
+    virtual int getRefIndex() const override {return RefIndex;}
+    virtual void setRefIndex(int index) override {RefIndex = index;}
 
     static bool getFlagsFromName(std::string str, ExternalGeometryExtension::Flag &flag);
 
@@ -96,6 +107,7 @@ private:
     using FlagType = std::bitset<32>;
     // START_CREDIT_BLOCK: Credit under LGPL for this block to Zheng, Lei (realthunder) <realthunder.dev@gmail.com>
     std::string Ref;
+    int RefIndex = -1;
     FlagType Flags;
     // END_CREDIT_BLOCK: Credit under LGPL for this block to Zheng, Lei (realthunder) <realthunder.dev@gmail.com>
 

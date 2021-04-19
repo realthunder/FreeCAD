@@ -305,9 +305,7 @@ void Geometry::Restore(Base::XMLReader &reader)
 
         auto ext = std::static_pointer_cast<GeometryMigrationExtension>(this->getExtension(GeometryMigrationExtension::getClassTypeId()).lock());
 
-        ext->setMigrationType(GeometryMigrationExtension::Construction);
         ext->setConstruction(construction);
-
     }
 
 }
