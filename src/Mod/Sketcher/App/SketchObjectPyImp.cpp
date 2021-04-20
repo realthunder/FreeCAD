@@ -38,6 +38,7 @@
 #include <Base/QuantityPy.h>
 #include <App/Document.h>
 #include <App/OriginFeature.h>
+#include <App/DocumentObserver.h>
 #include <CXX/Objects.hxx>
 
 // inclusion of the generated files (generated out of SketchObjectSFPy.xml)
@@ -198,18 +199,31 @@ PyObject* SketchObjectPy::addGeometry(PyObject *args)
     throw Py::TypeError(error);
 }
 
+#define GET_GEOID(_fmt,...) \
+    int GeoId;\
+    const char *name=0;\
+    if (PyArg_ParseTuple(args, "s" _fmt, &name, ## __VA_ARGS__)) {\
+        if(!getSketchObjectPtr()->geoIdFromShapeType(name,GeoId))\
+            RET_ERR(ValueError, "Invalid geometry name");\
+    }else{\
+        PyErr_Clear();\
+        if (!PyArg_ParseTuple(args, "i" _fmt, &GeoId, ## __VA_ARGS__))\
+            return 0;\
+    }
+
+#define RET_ERR(_err,msg) do{\
+    if (name) \
+        PyErr_Format(PyExc_##_err, msg ": %s", name);\
+    else\
+        PyErr_Format(PyExc_##_err, msg ": %d", GeoId);\
+    return 0;\
+}while(0)
+
 PyObject* SketchObjectPy::delGeometry(PyObject *args)
 {
-    int Index;
-    if (!PyArg_ParseTuple(args, "i", &Index))
-        return 0;
-
-    if (this->getSketchObjectPtr()->delGeometry(Index)) {
-        std::stringstream str;
-        str << "Not able to delete a geometry with the given index: " << Index;
-        PyErr_SetString(PyExc_ValueError, str.str().c_str());
-        return 0;
-    }
+    GET_GEOID("");
+    if (this->getSketchObjectPtr()->delGeometry(GeoId))
+        RET_ERR(RuntimeError,"Failed to delete geometry");
 
     Py_Return;
 }
@@ -282,53 +296,35 @@ PyObject* SketchObjectPy::deleteAllConstraints(PyObject *args)
     Py_Return;
 }
 
-
 PyObject* SketchObjectPy::toggleConstruction(PyObject *args)
 {
-    int Index;
-    if (!PyArg_ParseTuple(args, "i", &Index))
-        return 0;
-
-    if (this->getSketchObjectPtr()->toggleConstruction(Index)) {
-        std::stringstream str;
-        str << "Not able to toggle a geometry with the given index: " << Index;
-        PyErr_SetString(PyExc_ValueError, str.str().c_str());
-        return 0;
-    }
+    GET_GEOID("");
+    if (this->getSketchObjectPtr()->toggleConstruction(GeoId))
+        RET_ERR(RuntimeError, "Failed to toggle construction of geometry");
 
     Py_Return;
 }
 
 PyObject* SketchObjectPy::setConstruction(PyObject *args)
 {
-    int Index;
     PyObject *Mode;
-    if (!PyArg_ParseTuple(args, "iO!", &Index, &PyBool_Type, &Mode))
-        return 0;
-
-    if (this->getSketchObjectPtr()->setConstruction(Index, PyObject_IsTrue(Mode) ? true : false)) {
-        std::stringstream str;
-        str << "Not able to set construction mode of a geometry with the given index: " << Index;
-        PyErr_SetString(PyExc_ValueError, str.str().c_str());
-        return 0;
-    }
+    GET_GEOID("O!",&PyBool_Type,&Mode);
+    if (this->getSketchObjectPtr()->setConstruction(GeoId, PyObject_IsTrue(Mode) ? true : false)) 
+        RET_ERR(RuntimeError,"Failed to set construction of geometry");
 
     Py_Return;
 }
 
 PyObject* SketchObjectPy::getConstruction(PyObject *args)
 {
-    int Index;
-    if (!PyArg_ParseTuple(args, "i", &Index))
-        return 0;
-
-    auto gf = this->getSketchObjectPtr()->getGeometryFacade(Index);
+    GET_GEOID("");
+    auto gf = this->getSketchObjectPtr()->getGeometryFacade(GeoId);
 
     if(gf)
         return Py::new_reference_to(Py::Boolean(gf->getConstruction()));
 
     std::stringstream str;
-    str << "Not able to retrieve construction mode of a geometry with the given index: " << Index;
+    str << "Not able to retrieve construction mode of a geometry with the given index: " << GeoId;
     PyErr_SetString(PyExc_ValueError, str.str().c_str());
     return 0;
 
@@ -520,10 +516,22 @@ PyObject* SketchObjectPy::carbonCopy(PyObject *args)
 
 PyObject* SketchObjectPy::addExternal(PyObject *args)
 {
-    char *ObjectName;
-    char *SubName;
-    if (!PyArg_ParseTuple(args, "ss:Give an object and subelement name", &ObjectName,&SubName))
-        return 0;
+    const char *ObjectName;
+    const char *SubName;
+    PyObject *defining = Py_False;
+    PyObject *pyobj;
+    App::SubObjectT ref;
+
+    if (PyArg_ParseTuple(args, "O|O", &pyobj, &defining)) {
+        ref.setPyObject(pyobj);
+        ObjectName = ref.getObjectName().c_str();
+        SubName = ref.getSubName().c_str();
+    } else {
+        PyErr_Clear();
+        if (!PyArg_ParseTuple(args, "ss|O!:Give an object and subelement name", 
+                    &ObjectName,&SubName,&PyBool_Type,&defining))
+            return 0;
+    }
 
     // get the target object for the external link
     Sketcher::SketchObject* skObj = this->getSketchObjectPtr();
@@ -543,7 +551,7 @@ PyObject* SketchObjectPy::addExternal(PyObject *args)
     }
 
     // add the external
-    if (skObj->addExternal(Obj,SubName) < 0) {
+    if (skObj->addExternal(Obj,SubName,PyObject_IsTrue(defining)) < 0) {
         std::stringstream str;
         str << "Not able to add external shape element";
         PyErr_SetString(PyExc_ValueError, str.str().c_str());
@@ -555,16 +563,84 @@ PyObject* SketchObjectPy::addExternal(PyObject *args)
 
 PyObject* SketchObjectPy::delExternal(PyObject *args)
 {
-    int Index;
-    if (!PyArg_ParseTuple(args, "i", &Index))
-        return 0;
+    GET_GEOID("");
+    if (this->getSketchObjectPtr()->delExternal(GeoId))
+        RET_ERR(ValueError, "Not able to delete an external geometry");
 
-    if (this->getSketchObjectPtr()->delExternal(Index)) {
+    Py_Return;
+}
+
+PyObject* SketchObjectPy::attachExternal(PyObject *args)
+{
+    std::vector<int> geoIds;
+    const char *ObjectName;
+    const char *SubName;
+    PyObject *pyobj;
+    PyObject *pyref;
+    App::SubObjectT ref;
+
+    if (PyArg_ParseTuple(args, "OO", &pyobj, &pyref)) {
+        ref.setPyObject(pyref);
+        ObjectName = ref.getObjectName().c_str();
+        SubName = ref.getSubName().c_str();
+    } else {
+        PyErr_Clear();
+        if (!PyArg_ParseTuple(args, "Oss", &pyobj, &ObjectName, &SubName))
+            return 0;
+    }
+
+    std::vector<Py::Object> pyargs;
+    Py::Object arg(pyobj);
+    if(arg.isNumeric() || arg.isString())
+        pyargs.push_back(arg);
+    else if(arg.isSequence()) {
+        Py::Sequence seq(arg);
+        for(int i=0;i<seq.size();++i)
+            pyargs.emplace_back(seq[i].ptr());
+    }else{
+        PyErr_SetString(PyExc_ValueError, 
+                "Expect the first argument to be either integer or string or list of integer or string");
+        return 0;
+    }
+    for(auto arg : pyargs) {
+        if(arg.isNumeric())
+            geoIds.push_back(Py::Int(arg));
+        else if(arg.isString()) {
+            int GeoId;
+            std::string _name = arg.as_string();
+            const char *name = _name.c_str();
+            if(!getSketchObjectPtr()->geoIdFromShapeType(name,GeoId))
+                RET_ERR(ValueError, "Invalid geometry");
+            geoIds.push_back(GeoId);
+        } else {
+            PyErr_SetString(PyExc_ValueError, 
+                    "Expect only integer or string inside the first sequence");
+            return 0;
+        }
+    }
+
+    // get the target object for the external link
+    Sketcher::SketchObject* skObj = this->getSketchObjectPtr();
+    App::DocumentObject * Obj = skObj->getDocument()->getObject(ObjectName);
+    if (!Obj) {
         std::stringstream str;
-        str << "Not able to delete an external geometry with the given index: " << Index;
+        str << ObjectName << " does not exist in the document";
         PyErr_SetString(PyExc_ValueError, str.str().c_str());
         return 0;
     }
+    // check if this type of external geometry is allowed
+    if (!skObj->isExternalAllowed(Obj->getDocument(), Obj)) {
+        PyErr_SetString(PyExc_ValueError, "Invalid external geometry element");
+        return 0;
+    }
+
+    PY_TRY {
+        // add the external
+        if (skObj->attachExternal(geoIds,Obj,SubName) < 0) {
+            PyErr_SetString(PyExc_RuntimeError, "Failed to attach external geometry element");
+            return 0;
+        }
+    } PY_CATCH;
 
     Py_Return;
 }
@@ -1791,6 +1867,15 @@ PyObject* SketchObjectPy::getGeometryWithDependentParameters(PyObject *args)
     return Py::new_reference_to(list);
 }
 
+PyObject *SketchObjectPy::getGeometry(PyObject *args) {
+    GET_GEOID("");
+    auto geo = getSketchObjectPtr()->getGeometry(GeoId);
+    if(!geo)
+        RET_ERR(RuntimeError,"Failed to obtain geometry");
+    std::unique_ptr<Part::Geometry> g(geo->clone());
+    return g->getPyObject();
+}
+
 Py::List SketchObjectPy::getOpenVertices(void) const
 {
     std::vector<Base::Vector3d> points = this->getSketchObjectPtr()->getOpenVertices();
@@ -1861,41 +1946,54 @@ void SketchObjectPy::setGeometryFacadeList(Py::List value)
 
 PyObject* SketchObjectPy::getGeometryId(PyObject *args)
 {
-    int Index;
-    if (!PyArg_ParseTuple(args, "i", &Index))
-        return 0;
-
+    GET_GEOID("");
     long Id;
 
-    if (this->getSketchObjectPtr()->getGeometryId(Index, Id)) {
-        std::stringstream str;
-        str << "Not able to get geometry Id of a geometry with the given index: " << Index;
-        PyErr_SetString(PyExc_ValueError, str.str().c_str());
-        Py_Return;
-    }
+    if (this->getSketchObjectPtr()->getGeometryId(GeoId, Id))
+        RET_ERR(ValueError, "Not able to get geometry Id of a geometry");
 
     return  Py::new_reference_to(Py::Long(Id));
 }
 
 PyObject* SketchObjectPy::setGeometryId(PyObject *args)
 {
-    int Index;
     long Id;
-    if (!PyArg_ParseTuple(args, "il", &Index, &Id))
-        return 0;
+    GET_GEOID("l", &Id);
 
-    if (this->getSketchObjectPtr()->setGeometryId(Index, Id)) {
-        std::stringstream str;
-        str << "Not able to set geometry Id of a geometry with the given index: " << Index;
-        PyErr_SetString(PyExc_ValueError, str.str().c_str());
-        return 0;
-    }
+    if (this->getSketchObjectPtr()->setGeometryId(GeoId, Id))
+        RET_ERR(ValueError, "Not able to set geometry Id of a geometry");
 
     Py_Return;
 }
 
+PyObject* SketchObjectPy::swapGeometryIds(PyObject *args)
+{
+    int GeoId1=0, GeoId2=0;
+    const char *name1=0, *name2=0;
+    if (PyArg_ParseTuple(args, "ss", &name1, &name2)) {
+        if(!getSketchObjectPtr()->geoIdFromShapeType(name1, GeoId1)) {
+            PyErr_Format(PyExc_ValueError, "Invalid geometry name: %s", name1);
+            return 0;
+        }
+        if (!getSketchObjectPtr()->geoIdFromShapeType(name2, GeoId2)) {
+            PyErr_Format(PyExc_ValueError, "Invalid geometry name: %s", name2);
+            return 0;
+        }
+    } else {
+        PyErr_Clear();
+        if (!PyArg_ParseTuple(args, "ii", &GeoId1, &GeoId2))
+            return 0;
+    }
 
-
+    if (this->getSketchObjectPtr()->swapGeometryIds(GeoId1, GeoId2)) {
+        if (name1)
+            PyErr_Format(PyExc_RuntimeError, "Failed to swap Id for geometry: %s, %s", name1, name2);
+        else
+            PyErr_Format(PyExc_RuntimeError, "Failed to swap Id for geometry: %d, %d", GeoId1, GeoId2);
+        return 0;
+    }
+    Py_Return;
+}
 
 PyObject *SketchObjectPy::getCustomAttributes(const char* /*attr*/) const
 {
