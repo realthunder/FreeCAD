@@ -369,14 +369,11 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
         if(owner && owner->getDocument()->testStatus(App::Document::PartialDoc))
             _Shape.Restore(reader);
         else if(_Ver.empty()) {
-#if 0
             // empty string marks the need for recompute after import
             if(owner)
                 owner->getDocument()->addRecomputeObject(owner);
-#endif
         }else{
             _Shape.Restore(reader);
-#if 0
             if (owner ? owner->checkElementMapVersion(this, _Ver.c_str())
                       : _Shape.checkElementMapVersion(_Ver.c_str())) {
                 auto ver = owner?owner->getElementMapVersion(this):_Shape.getElementMapVersion();
@@ -394,10 +391,8 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
                     owner->getDocument()->addRecomputeObject(owner);
                 }
             }
-#endif
         }
     } else if(owner && !owner->getDocument()->testStatus(App::Document::PartialDoc)) {
-#if 0
         static int buildElementMap = -1;
         if(buildElementMap<0)
             buildElementMap = PartParams::AutoElementMap() ? 1 : 0;
@@ -405,7 +400,6 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
             FC_WARN("Pending recompute for generating element map: " << owner->getFullName());
             owner->getDocument()->addRecomputeObject(owner);
         }
-#endif
     }
 
     aboutToSetValue();
