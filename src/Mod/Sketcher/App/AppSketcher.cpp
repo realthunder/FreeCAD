@@ -86,6 +86,7 @@ PyMOD_INIT_FUNC(Sketcher)
     Sketcher::ExternalGeometryFacade	::init();
     Sketcher::SketchObjectSF        	::init();
     Sketcher::SketchObject          	::init();
+    Sketcher::SketchExport              ::init();
     Sketcher::SketchObjectPython    	::init();
     Sketcher::Sketch                	::init();
     Sketcher::Constraint            	::init();

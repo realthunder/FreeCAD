@@ -56,8 +56,11 @@
 #include "CommandConstraints.h"
 
 using namespace std;
+using namespace Gui;
 using namespace SketcherGui;
 using namespace Sketcher;
+
+FC_LOG_LEVEL_INIT("Sketch", true, true)
 
 bool isSketcherAcceleratorActive(Gui::Document *doc, bool actsOnSelection)
 {
@@ -2153,6 +2156,173 @@ bool CmdSketcherDeleteAllConstraints::isActive(void)
     return isSketcherAcceleratorActive(getActiveGuiDocument(), false);
 }
 
+// Export geometry
+DEF_STD_CMD_A(CmdSketcherExportGeometry);
+
+CmdSketcherExportGeometry::CmdSketcherExportGeometry()
+:Command("Sketcher_ExportGeometry")
+{
+    sAppModule      = "Sketcher";
+    sGroup          = QT_TR_NOOP("Sketcher");
+    sMenuText       = QT_TR_NOOP("Export Single Geometry");
+    sToolTipText    = QT_TR_NOOP("Export selected geometries as separate child objects");
+    sWhatsThis      = "Sketcher_ExportGeometry";
+    sStatusTip      = sToolTipText;
+    sPixmap         = "Sketcher_SketchExport";
+    sAccel          = "";
+    eType           = ForEdit;
+}
+
+static void exportSketch(Gui::Command &cmd, bool compound)
+{
+    Sketcher::SketchObject *sketchObj = nullptr;
+    Sketcher::SketchExport *exportObj = nullptr;
+    App::SubObjectT exportT;
+    App::SubObjectT sketchT;
+
+    auto editDoc = Gui::Application::Instance->editDocument();
+    if (editDoc) {
+        sketchT = editDoc->getInEditT();
+        sketchObj = Base::freecad_dynamic_cast<Sketcher::SketchObject>(sketchT.getSubObject());
+    }
+
+    std::vector<std::string> elements;
+    for (auto &sel : Gui::Selection().getSelectionT("", 0)) {
+        auto sobj = sel.getSubObject();
+        if (!sobj)
+            continue;
+        sobj = sobj->getLinkedObject(true);
+        auto sketch = Base::freecad_dynamic_cast<Sketcher::SketchObject>(sobj);
+        if (sketch) {
+            if (!sketchObj) {
+                sketchObj = sketch;
+                sketchT = sel;
+            } else if (sketchObj != sketch) {
+                FC_WARN("Ignore non-editing sketch " << sel.getSubObjectFullName());
+                continue;
+            }
+            auto element = sel.getElementName();
+            if (element && element[0])
+                elements.emplace_back(element);
+            continue;
+        }
+
+        auto exp = Base::freecad_dynamic_cast<Sketcher::SketchExport>(sobj);
+        if (exp != exportObj) {
+            if (!exportObj) {
+                exportObj = exp;
+                exportT = sel;
+            } else if (exp != exportObj) {
+                FC_WARN("Ignore invalid selection " << sel.getSubObjectFullName());
+                continue;
+            }
+        }
+    }
+    if (elements.empty()) {
+        QMessageBox::warning(Gui::getMainWindow(),
+                             QObject::tr("Wrong selection"),
+                             QObject::tr("Select any geometry element(s) from the sketch to export.\n"
+                                         "You can select an existing export to modify."));
+        return;
+    }
+
+    if (exportObj) {
+        if (exportObj->BaseRefs.getValue() != sketchObj) {
+            exportObj = nullptr;
+            FC_WARN("Ignore invalid selection " << exportT.getSubObjectFullName());
+        } else
+            compound = true;
+    }
+
+    auto grp = App::GeoFeatureGroupExtension::getGroupOfObject(sketchObj);
+
+    App::AutoTransaction committer("Sketch export");
+    try {
+        Gui::Selection().selStackPush();
+        Gui::Selection().clearSelection();
+
+        auto createExport = [&](const std::string &FeatName) {
+            cmdAppDocument(sketchObj, std::ostringstream()
+                    << "addObject('Sketcher::SketchExport','" << FeatName << "')");
+            auto exportObj = Base::freecad_dynamic_cast<Sketcher::SketchExport>(
+                    sketchObj->getDocument()->getObject(FeatName.c_str()));
+            if(exportObj) {
+                cmdAppObjectArgs(sketchObj, "Exports = {-1:%s}", cmd.getObjectCmd(exportObj));
+                cmdAppObjectArgs(exportObj, "Visibility = False");
+                if(grp)
+                    cmdAppObjectArgs(grp,"addObject(%s)", cmd.getObjectCmd(exportObj));
+            }
+            return exportObj;
+        };
+        if(compound) {
+            if(!exportObj) {
+                std::string FeatName = cmd.getUniqueObjectName("SketchExport", sketchObj);
+                exportObj = createExport(FeatName);
+            }
+            std::ostringstream ss;
+            for(const auto &sub : elements)
+                ss << "u'" << sub << "',";
+            cmdAppObjectArgs(exportObj, "BaseRefs = (%s, [%s])", cmd.getObjectCmd(sketchObj), ss.str());
+            sketchT.setSubName(sketchT.getSubNameNoElement() + exportObj->getNameInDocument() + ".");
+            Selection().addSelection(sketchT);
+        }else{
+            for(const auto &sub : elements) {
+                auto shape = Part::Feature::getShape(sketchObj,sub.c_str(),true);
+                if(shape.IsNull()) continue;
+                std::string FeatName = cmd.getUniqueObjectName("SketchExport", sketchObj);
+                exportObj = createExport(FeatName);
+                cmdAppObjectArgs(exportObj, "BaseRefs = (%s, u'%s')", cmd.getObjectCmd(sketchObj), sub);
+                auto sel = sketchT;
+                sel.setSubName(sketchT.getSubNameNoElement() + exportObj->getNameInDocument() + ".");
+                Selection().addSelection(sketchT);
+            }
+        }
+        Application::Instance->commandManager().runCommandByName("Std_TreeSelection");
+        Selection().selStackGoBack();
+    }catch (const Base::Exception& e) {
+        committer.close(true);
+        e.ReportException();
+    }
+}
+
+void CmdSketcherExportGeometry::activated(int iMsg) {
+    Q_UNUSED(iMsg);
+    exportSketch(*this,false);
+}
+
+bool CmdSketcherExportGeometry::isActive(void)
+{
+    return isSketcherAcceleratorActive( getActiveGuiDocument(), false );
+}
+
+// Export geometry compound
+DEF_STD_CMD_A(CmdSketcherExportCompound);
+
+CmdSketcherExportCompound::CmdSketcherExportCompound()
+:Command("Sketcher_ExportCompound")
+{
+    sAppModule      = "Sketcher";
+    sGroup          = QT_TR_NOOP("Sketcher");
+    sMenuText       = QT_TR_NOOP("Export Multiple Geometries");
+    sToolTipText    = QT_TR_NOOP("Export selected geometries as one single child objects");
+    sWhatsThis      = "Sketcher_ExportCompound";
+    sStatusTip      = sToolTipText;
+    sPixmap         = "Sketcher_SketchExportCompound";
+    sAccel          = "";
+    eType           = ForEdit;
+}
+
+void CmdSketcherExportCompound::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    exportSketch(*this,true);
+}
+
+bool CmdSketcherExportCompound::isActive(void)
+{
+    return isSketcherAcceleratorActive( getActiveGuiDocument(), false );
+}
+
 // Swap geometry IDs
 DEF_STD_CMD_A(CmdSketcherSwapGeometryID);
 
@@ -2245,5 +2415,7 @@ void CreateSketcherCommandsConstraintAccel(void)
     rcCmdMgr.addCommand(new CmdSketcherRectangularArray());
     rcCmdMgr.addCommand(new CmdSketcherDeleteAllGeometry());
     rcCmdMgr.addCommand(new CmdSketcherDeleteAllConstraints());
+    rcCmdMgr.addCommand(new CmdSketcherExportGeometry());
+    rcCmdMgr.addCommand(new CmdSketcherExportCompound());
     rcCmdMgr.addCommand(new CmdSketcherSwapGeometryID());
 }

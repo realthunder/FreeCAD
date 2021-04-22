@@ -280,6 +280,8 @@ public:
     boost::signals2::signal<void (QString msg)> signalSolved;
     /// signals if the elements list has changed
     boost::signals2::signal<void ()> signalElementsChanged;
+        
+    virtual std::vector<App::DocumentObject*> claimChildren(void) const;
     void selectElement(const char *element, bool preselect=false) const;
 
     virtual bool getElementPicked(const SoPickedPoint *pp, std::string &subname) const;
@@ -502,6 +504,20 @@ protected:
     bool isShownVirtualSpace; // indicates whether the present virtual space view is the Real Space or the Virtual Space (virtual space 1 or 2)
 
     ShortcutListener* listener;
+};
+
+// ---------------------------------------------------------
+
+class SketcherGuiExport ViewProviderSketchExport: public PartGui::ViewProvider2DObject
+{
+    PROPERTY_HEADER(SketcherGui::ViewProviderSketchSketch);
+
+public:
+    typedef PartGui::ViewProvider2DObject inherited;
+
+    ViewProviderSketchExport();
+    virtual bool doubleClicked(void);
+    virtual void updateData(const App::Property *prop);
 };
 
 } // namespace PartGui

@@ -401,6 +401,7 @@ public:
     virtual unsigned int getMemSize(void) const override;
     virtual void Save(Base::Writer &/*writer*/) const override;
     virtual void Restore(Base::XMLReader &/*reader*/) override;
+    virtual void handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop) override;
 
     /// returns the number of construction lines (to be used as axes)
     virtual int getAxisCount(void) const override;
@@ -766,6 +767,34 @@ inline int SketchObject::moveTemporaryPoint(int geoId, PointPos pos, Base::Vecto
 
 typedef App::FeaturePythonT<SketchObject> SketchObjectPython;
 
+// ---------------------------------------------------------
+
+class SketcherExport SketchExport: public Part::Part2DObject {
+    PROPERTY_HEADER(Sketcher::SketchObject);
+
+public:
+    SketchExport();
+    ~SketchExport();
+
+    App::PropertyStringList Refs;
+    App::PropertyLink Base;
+    App::PropertyLinkSub BaseRefs;
+    App::PropertyBool SyncPlacement;
+
+    App::DocumentObjectExecReturn *execute(void);
+    virtual void onChanged(const App::Property* /*prop*/);
+    const char* getViewProviderName(void) const {
+        return "SketcherGui::ViewProviderSketchExport";
+    }
+
+    bool update();
+
+    App::DocumentObject *getBase() const;
+    std::set<std::string> getRefs() const;
+
+    virtual void handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop);
+    virtual void onDocumentRestored();
+};
 } //namespace Sketcher
 
 

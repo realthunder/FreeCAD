@@ -129,6 +129,8 @@ SketchObject::SketchObject()
     ADD_PROPERTY_TYPE(Constraints,     (0)  ,"Sketch",(App::PropertyType)(App::Prop_None),"Sketch constraints");
     ADD_PROPERTY_TYPE(ExternalGeometry,(0,0),"Sketch",
             (App::PropertyType)(App::Prop_None|App::Prop_ReadOnly),"Sketch external geometry references");
+    ADD_PROPERTY_TYPE(Exports,         (0)  ,"Sketch",
+            (App::PropertyType)(App::Prop_Hidden),"Sketch export geometry");
     ADD_PROPERTY_TYPE(ExternalGeo,    (0)  ,"Sketch",
             (App::PropertyType)(App::Prop_Hidden),"Sketch external geometry");
     ADD_PROPERTY_TYPE(FullyConstrained, (false),"Sketch",(App::PropertyType)(App::Prop_Output|App::Prop_ReadOnly |App::Prop_Hidden),"Sketch is fully constrained");
@@ -7975,6 +7977,15 @@ void SketchObject::Restore(XMLReader &reader)
     Part::Part2DObject::Restore(reader);
 }
 
+void SketchObject::handleChangedPropertyType(Base::XMLReader &reader,
+        const char *TypeName, App::Property *prop)
+{
+    if (prop == &Exports) {
+        if(strcmp(TypeName, "App::PropertyLinkList") == 0)
+            Exports.Restore(reader);
+    }
+}
+
 static inline bool checkMigration(Part::PropertyGeometryList &prop)
 {
     for (auto g : prop.getValues()) {
@@ -8424,6 +8435,34 @@ void SketchObject::onDocumentRestored()
     restoreFinished();
     Part::Part2DObject::onDocumentRestored();
 
+    if (getDocument()->testStatus(App::Document::Importing)) {
+        App::GeoFeatureGroupExtension *grp = nullptr;
+        auto grpObj = App::GeoFeatureGroupExtension::getGroupOfObject(this);
+        if (grpObj)
+            grp = grpObj->getExtensionByType<App::GeoFeatureGroupExtension>(true);
+        
+        auto exports = Exports.getValues();
+        bool touched = false;
+        for (auto &obj : exports) {
+            auto exp = Base::freecad_dynamic_cast<SketchExport>(obj);
+            if (!exp || exp->BaseRefs.getValue() == this)
+                continue;
+            auto newexp = Base::freecad_dynamic_cast<SketchExport>(
+                    getDocument()->addObject("Sketcher::SketchExport", "Export"));
+            if (grp)
+                grp->addObject(newexp);
+            if (exp->Label.getStrValue() != exp->getNameInDocument())
+                newexp->Label.setValue(exp->Label.getValue());
+            else
+                newexp->Label.setValue(newexp->getNameInDocument());
+            newexp->BaseRefs.setValue(this, exp->BaseRefs.getSubValues(false));
+            newexp->Visibility.setValue(exp->Visibility.getValue());
+            obj = newexp;
+            touched = true;
+        }
+        if (touched)
+            Exports.setValues(exports);
+    }
 }
 
 void SketchObject::restoreFinished()
@@ -9363,3 +9402,141 @@ template<> PyObject* Sketcher::SketchObjectPython::getPyObject(void) {
 // explicit template instantiation
 template class SketcherExport FeaturePythonT<Sketcher::SketchObject>;
 }
+
+// ---------------------------------------------------------
+
+PROPERTY_SOURCE(Sketcher::SketchExport, Part::Part2DObject)
+
+SketchExport::SketchExport() {
+    ADD_PROPERTY_TYPE(Base,(0),"",
+            (App::PropertyType)(App::Prop_Hidden|App::Prop_ReadOnly),
+            "(Deprecated) Base sketch object name");
+
+    ADD_PROPERTY_TYPE(Refs,(),"",App::Prop_Hidden,
+            "(Deprecated) Sketch geometry references");
+
+    ADD_PROPERTY_TYPE(BaseRefs,(0),"",App::Prop_None,"Base sketch references");
+
+    ADD_PROPERTY_TYPE(SyncPlacement,(true),"",
+            App::Prop_None,"Synchronize placement with parent sketch if not attached");
+}
+
+SketchExport::~SketchExport()
+{}
+
+App::DocumentObject *SketchExport::getBase() const {
+    return BaseRefs.getValue();
+}
+
+void SketchExport::onDocumentRestored()
+{
+    if (!BaseRefs.getValue() && Base.getValue())
+        BaseRefs.setValue(Base.getValue(), Refs.getValues());
+    Part::Part2DObject::onDocumentRestored();
+}
+
+App::DocumentObjectExecReturn *SketchExport::execute(void) {
+    try {
+        App::DocumentObjectExecReturn* rtn = Part2DObject::execute();//to positionBySupport
+        if(rtn!=App::DocumentObject::StdReturn)
+            //error
+            return rtn;
+    }
+    catch (const Base::Exception& e) {
+        return new App::DocumentObjectExecReturn(e.what());
+    }
+
+    auto base = dynamic_cast<SketchObject*>(getBase());
+    if(!base)
+        return new App::DocumentObjectExecReturn("Missing parent sketch");
+    if(update() && SyncPlacement.getValue() && !positionBySupport())
+        Placement.setValue(base->Placement.getValue());
+    return App::DocumentObject::StdReturn;
+}
+
+void SketchExport::onChanged(const App::Property* prop) {
+    auto doc = getDocument();
+    if(prop == &BaseRefs) {
+        if(!isRestoring() && doc && !doc->isPerformingTransaction())
+            update();
+        Base.setValue(BaseRefs.getValue());
+        Refs.setValue(BaseRefs.getSubValues(true));
+    } else if(prop == &Shape) {
+        // bypass Part::Feature logic, 'cause we don't want to transform the
+        // shape and mess up the element map.
+        DocumentObject::onChanged(prop);
+        return;
+    }
+    Part2DObject::onChanged(prop);
+}
+
+std::set<std::string> SketchExport::getRefs() const {
+    std::set<std::string> refSet;
+    const auto &refs = BaseRefs.getSubValues();
+    refSet.insert(refs.begin(),refs.end());
+    if(refSet.size()>1)
+        refSet.erase("");
+    return refSet;
+}
+
+bool SketchExport::update() {
+    auto base = getBase();
+    if(!base)
+        return false;
+    std::vector<Part::TopoShape> points;
+    std::vector<Part::TopoShape> shapes;
+    for(const auto &ref : getRefs()) {
+        // Obtain the shape without feature's placement transformation, because
+        // we may have our own support.
+        auto shape = Part::Feature::getTopoShape(base,ref.c_str(),true,0,0,false,false);
+        if(shape.isNull()) {
+            FC_ERR("Invalid element reference: " << ref);
+            throw Base::RuntimeError("Invalid element reference");
+        }
+        if(!shape.hasSubShape(TopAbs_EDGE))
+            points.push_back(shape.makECopy(TOPOP_SKETCH_EXPORT));
+        else
+            shapes.push_back(shape.makECopy());
+    }
+    Part::TopoShape res;
+    if(shapes.size()) {
+        res.makEWires(shapes,TOPOP_SKETCH_EXPORT);
+        shapes.clear();
+        if(points.size()) {
+            // Check if the vertex is already included in the wires
+            for(auto &point : points) {
+                auto name = point.getMappedName(
+                        Data::IndexedName::fromConst("Vertex", 1));
+                if(name && res.getIndexedName(name))
+                    continue;
+                shapes.push_back(point);
+            }
+            if(shapes.size()) {
+                shapes.push_back(res);
+                res.makECompound(shapes);
+            }
+        }
+    }else if(points.empty())
+        return false;
+    else
+        res.makECompound(points,0,false);
+    Shape.setValue(res);
+    return true;
+}
+
+void SketchExport::handleChangedPropertyType(Base::XMLReader &reader,
+        const char *TypeName, App::Property *prop)
+{
+    if (prop == &Base && strcmp(TypeName, "App::PropertyString") == 0) {
+        App::PropertyString p;
+        p.Restore(reader);
+        auto obj = getDocument()->getObject(p.getValue());
+        if(!obj) {
+            FC_ERR("Cannot find parent sketch '" << p.getValue() << "' of " << getFullName());
+            return;
+        }
+        Base.setValue(obj);
+    }
+}
+
+

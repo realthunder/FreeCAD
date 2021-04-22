@@ -6456,6 +6456,7 @@ bool ViewProviderSketch::setEdit(int ModNum)
                         "  tv.show([ref[0] for ref in ActiveSketch.Support if not ref[0].isDerivedFrom(\"PartDesign::Plane\")])\n"
                         "if ActiveSketch.ViewObject.ShowLinks:\n"
                         "  tv.show([ref[0] for ref in ActiveSketch.ExternalGeometry])\n"
+                        "tv.hide(ActiveSketch.Exports)\n"
                         "tv.hide(ActiveSketch)\n"
                         "del(tv)\n"
                         ).arg(QString::fromLatin1(getDocument()->getDocument()->getName()),
@@ -7429,6 +7430,10 @@ void ViewProviderSketch::showRestoreInformationLayer() {
     draw(false,false);
 }
 
+std::vector<App::DocumentObject*> ViewProviderSketch::claimChildren(void) const {
+    return getSketchObject()->Exports.getValues();
+}
+
 QIcon ViewProviderSketch::mergeColorfulOverlayIcons (const QIcon & orig) const
 {
     QIcon mergedicon = orig;
@@ -7472,5 +7477,136 @@ void ViewProviderSketch::selectElement(const char *element, bool preselect) cons
 const App::SubObjectT &ViewProviderSketch::getEditingContext() const
 {
     return editObjT;
+}
+
+// ---------------------------------------------------------
+
+PROPERTY_SOURCE(SketcherGui::ViewProviderSketchExport, PartGui::ViewProvider2DObject)
+
+ViewProviderSketchExport::ViewProviderSketchExport() {
+    sPixmap = "Sketcher_SketchExport";
+}
+
+bool ViewProviderSketchExport::doubleClicked(void) {
+    auto obj = dynamic_cast<SketchExport*>(getObject());
+    if(!obj) return false;
+    auto base = dynamic_cast<SketchObject*>(obj->getBase());
+    if(!base) return false;
+    auto vp = dynamic_cast<ViewProviderSketch*>(Gui::Application::Instance->getViewProvider(base));
+    if(!vp) return false;
+
+    // Now comes the tricky part to detect where we are clicked, and activate
+    // edit-in-place in case we are being linked to some other place. In normal
+    // cases, Gui::Document can auto detect that, but here we need to forward
+    // the editing to parent sketch. Our goal is to select the base sketch in
+    // the correct position within the object hierarchy to help Gui::Document
+    // deduct the correct editing placement
+    //
+    // First, obtain the raw selection
+    auto sels = Gui::Selection().getSelection(0,0);
+    bool transform = false;
+    Base::Matrix4D mat;
+    if(sels.size()==1 && sels[0].pObject) {
+        // First, check if we are being selected. If so obtain the accumulated transformation
+        auto &sel = sels[0];
+        auto sobj = sel.pObject->getSubObject(sel.SubName,0,&mat);
+        if(sobj && sobj->getLinkedObject(true)==obj) {
+            auto linked = sel.pObject->getLinkedObject(true);
+            if(linked == obj) 
+                transform = true;
+            else if(linked == base) {
+                // if the top level object is the sketch or linked to the sketch,
+                // simply select it.
+                Gui::Selection().clearCompleteSelection();
+                Gui::Selection().addSelection2(sel.DocName,sel.FeatName,"");
+                transform = true;
+            } else {
+                std::string selSubname;
+                App::DocumentObject *group = 0;
+                App::DocumentObject *feat = sel.pObject;
+                if(feat->getLinkedObject(true)->hasExtension(
+                            App::GeoFeatureGroupExtension::getExtensionClassTypeId()))
+                    group = feat;
+                const char *subname = sel.SubName;
+                // Walk down the object hierarchy in SubName to find the sketch
+                for(const char *dot=strchr(subname,'.');dot;subname=dot+1,dot=strchr(subname,'.')) {
+                    std::string name(subname,dot-subname+1);
+                    auto sobj = feat->getSubObject(name.c_str());
+                    if(!sobj) break;
+                    auto linked = sobj->getLinkedObject(true);
+                    if(linked == base) {
+                        // found the base sketch, shorten the subname
+                        selSubname = std::string(sel.SubName,subname);
+                        transform = true;
+                        break;
+                    }
+                    if(linked == obj) {
+                        // found ourself, but no parent sketch in the path
+                        if(group) {
+                            // if we found a geo group in the path, try to see if
+                            // the group contains the parent sketch
+                            name = base->getNameInDocument();
+                            name += '.';
+                            transform = group->getSubObject(name.c_str()) == base;
+                        }
+                        break;
+                    }else if(linked->hasExtension(App::GeoFeatureGroupExtension::getExtensionClassTypeId())) {
+                        // remember last geo group in the path
+                        group = sobj;
+                        selSubname = std::string(sel.SubName,dot+1);
+                    }
+                    feat = sobj;
+                }
+
+                if(transform) {
+                    Gui::Selection().clearCompleteSelection();
+                    selSubname += base->getNameInDocument();
+                    selSubname += '.';
+                    Gui::Selection().addSelection2(sel.DocName,sel.FeatName,selSubname.c_str());
+                }
+            }
+        }
+    }
+    // Now forward the editing request
+    if(!vp->doubleClicked()) return false;
+
+    if(transform) {
+        auto doc = Gui::Application::Instance->editDocument();
+        if(doc) {
+            doc->setEditingTransform(mat);
+            auto cmd = Gui::Application::Instance->commandManager().getCommandByName("Sketcher_ViewSketch");
+            if (cmd) cmd->invoke(0);
+        }
+    }
+
+    // Select our references in the parent sketch
+    for(auto &ref : obj->getRefs())
+        vp->selectElement(ref.c_str());
+
+    // Finally, select ourself
+    std::string name(obj->getNameInDocument());
+    name += '.';
+    vp->selectElement(name.c_str());
+    return true;
+}
+
+void ViewProviderSketchExport::updateData(const App::Property *prop)
+{
+    auto exp = Base::freecad_dynamic_cast<Sketcher::SketchExport>(getObject());
+    if (exp && !exp->isRestoring()
+            && getDocument()
+            && !getDocument()->isPerformingTransaction())
+    {
+        if (prop == &exp->Base) {
+            auto vp = Base::freecad_dynamic_cast<ViewProviderSketch>(
+                    Gui::Application::Instance->getViewProvider(exp->Base.getValue()));
+            if (vp) {
+                LineColor.setValue(vp->LineColor.getValue());
+                PointColor.setValue(vp->PointColor.getValue());
+                PointSize.setValue(vp->PointSize.getValue());
+            }
+        }
+    }
+    ViewProvider2DObject::updateData(prop);
 }
 
