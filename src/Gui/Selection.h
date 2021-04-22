@@ -46,6 +46,7 @@ namespace App
 {
   class DocumentObject;
   class Document;
+  class SubObjectT;
 }
 
 namespace Gui
@@ -372,6 +373,12 @@ public:
     {
         return addSelection(pDocName,pObjectName,pSubName,x,y,z,pickedList,false);
     }
+    bool addSelection(const App::SubObjectT &objT, bool clearPreselect=true)
+    {
+        return addSelection(objT.getDocumentName().c_str(),
+                            objT.getObjectName().c_str(),
+                            objT.getSubName().c_str(),0,0,0,nullptr,clearPreselect);
+    }
 
     /// Add to selection
     bool addSelection(const SelectionObject&, bool clearPreSelect=true);
@@ -382,6 +389,13 @@ public:
     /// Remove from selection (for internal use)
     void rmvSelection(const char* pDocName, const char* pObjectName=0, const char* pSubName=0,
             const std::vector<SelObj> *pickedList = 0);
+    /// Remove from selection
+    void rmvSelection(const App::SubObjectT &objT)
+    {
+        return rmvSelection(objT.getDocumentName().c_str(),
+                            objT.getObjectName().c_str(),
+                            objT.getSubName().c_str());
+    }
     /// Set the selection for a document
     void setSelection(const char* pDocName, const std::vector<App::DocumentObject*>&);
     /// Clear the selection of document \a pDocName. If the document name is not given the selection of the active document is cleared.
@@ -492,6 +506,18 @@ public:
      * @return The returned vector reflects the sequence of selection.
      */
     std::vector<SelObj> getSelection(const char* pDocName=0, int resolve=1, bool single=false) const;
+
+    /** Returns a vector of selection objects that are safer to access
+     *
+     * Unlike getSelection() whose returned vector is invalidated when the
+     * selection is changed. The returned objects is not affected by current
+     * selection state, and are even safe to access when the objects are
+     * deleted.
+     *
+     * @sa getSelection()
+     */
+    std::vector<App::SubObjectT> getSelectionT(const char* pDocName=0, int resolve=1, bool single=false) const;
+
     /** Returns a vector of selection objects
      *
      * @param pDocName: document name. If no document name is given the objects

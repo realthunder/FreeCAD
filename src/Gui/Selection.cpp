@@ -51,6 +51,7 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectPy.h>
 #include <App/GeoFeature.h>
+#include <App/DocumentObserver.h>
 #include <Gui/SelectionObjectPy.h>
 #include "MainWindow.h"
 #include "Tree.h"
@@ -372,6 +373,17 @@ bool SelectionSingleton::hasPreselection() const {
 std::vector<SelectionSingleton::SelObj> SelectionSingleton::getCompleteSelection(int resolve) const
 {
     return getSelection("*",resolve);
+}
+
+std::vector<App::SubObjectT> SelectionSingleton::getSelectionT(
+        const char* pDocName, int resolve, bool single) const
+{
+    auto sels = getSelection(pDocName,resolve,single);
+    std::vector<App::SubObjectT> res;
+    res.reserve(sels.size());
+    for(auto &sel : sels)
+        res.emplace_back(sel.pObject,sel.SubName);
+    return res;
 }
 
 std::vector<SelectionSingleton::SelObj> SelectionSingleton::getSelection(const char* pDocName, 
