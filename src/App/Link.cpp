@@ -696,12 +696,12 @@ bool LinkBaseExtension::extensionGetSubObject(DocumentObject *&ret, const char *
 void LinkBaseExtension::checkGeoElementMap(const App::DocumentObject *obj,
         const App::DocumentObject *linked, PyObject **pyObj, const char *postfix) const
 {
-    if(!pyObj || !*pyObj || (!postfix && obj->getDocument()==linked->getDocument()) ||
-       !PyObject_TypeCheck(*pyObj, &Data::ComplexGeoDataPy::Type))
+    if(!pyObj || !*pyObj || !PyObject_TypeCheck(*pyObj, &Data::ComplexGeoDataPy::Type))
         return;
 
-    // auto geoData = static_cast<Data::ComplexGeoDataPy*>(*pyObj)->getComplexGeoDataPtr();
-    // geoData->reTagElementMap(obj->getID(),obj->getDocument()->Hasher,postfix);
+    (void)linked;
+    auto geoData = static_cast<Data::ComplexGeoDataPy*>(*pyObj)->getComplexGeoDataPtr();
+    geoData->reTagElementMap(obj->getID(),obj->getDocument()->getStringHasher(),postfix);
 }
 
 void LinkBaseExtension::onExtendedUnsetupObject() {
