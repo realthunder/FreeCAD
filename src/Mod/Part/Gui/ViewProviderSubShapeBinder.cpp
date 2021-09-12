@@ -380,7 +380,7 @@ void ViewProviderSubShapeBinder::updatePlacement(bool transaction) {
         return;
     }
 
-    App::AutoTransaction commiter("Sync binder");
+    App::AutoTransaction committer("Sync binder");
     try{
         if(relative)
             self->Context.setValue(parent,parentSub.c_str());
