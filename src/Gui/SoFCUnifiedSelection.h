@@ -683,7 +683,7 @@ public:
     }
 
     SoFCSelectionContextExPtr getRetrievedContext(SoFCDetail::Type *type=nullptr) const;
-    void setRetrivedContext(const SoFCSelectionContextExPtr &ctx = SoFCSelectionContextExPtr(),
+    void setRetrievedContext(const SoFCSelectionContextExPtr &ctx = SoFCSelectionContextExPtr(),
                             SoFCDetail::Type type = SoFCDetail::Face);
 
     static void initClass();

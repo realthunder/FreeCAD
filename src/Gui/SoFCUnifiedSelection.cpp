@@ -1764,7 +1764,7 @@ SoSelectionElementAction::getRetrievedContext(SoFCDetail::Type *type) const
     return _selctx;
 }
 
-void SoSelectionElementAction::setRetrivedContext(const SoFCSelectionContextExPtr &ctx,
+void SoSelectionElementAction::setRetrievedContext(const SoFCSelectionContextExPtr &ctx,
                                                   SoFCDetail::Type type)
 {
     _selctx = ctx;
@@ -2008,7 +2008,7 @@ SoFCSelectionRoot::NodeKey::getSecondaryContext(Stack &stack, SoNode *node)
     auto len = stack.size();
     if (convert(stack)) {
         SoFCSelectionRoot::setActionStack(&selaction, &stack);
-        selaction.setRetrivedContext();
+        selaction.setRetrievedContext();
         selaction.apply(node);
         ctx = selaction.getRetrievedContext();
     }
@@ -3055,7 +3055,7 @@ bool SoFCSelectionRoot::handleSelectionAction(SoAction *action,
     case SoSelectionElementAction::Retrieve: {
         auto ctx = getSecondaryActionContext<SoFCSelectionContextEx>(
                 action, node, selaction->getType() == SoSelectionElementAction::RetrieveAll);
-        selaction->setRetrivedContext(ctx, detailType);
+        selaction->setRetrievedContext(ctx, detailType);
         break;
     }
     case SoSelectionElementAction::All: {
