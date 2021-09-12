@@ -616,7 +616,7 @@ class StringSyntaxSelector(Selector):
 
     :return: objects that match the specified selector
 
-    ***Modfiers*** are ``('|','+','-','<','>','%')``
+    ***Modifiers*** are ``('|','+','-','<','>','%')``
 
         :\|:
             parallel to ( same as :py:class:`ParallelDirSelector` ). Can return multiple objects.

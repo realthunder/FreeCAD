@@ -402,7 +402,7 @@ std::istream &Base::XMLReader::beginCharStream(bool base64) {
         read();
     } else if (ReadType == StartEndElement) {
         // If we are current at a self closing element, just leave the offset
-        // as negative and do not read any characeters. This will result in an
+        // as negative and do not read any characters. This will result in an
         // empty input stream for the caller.
         CharacterOffset = -1;
     } else

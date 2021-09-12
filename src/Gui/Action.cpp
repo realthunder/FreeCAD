@@ -248,7 +248,7 @@ QString Action::createToolTip(QString _tooltip,
         return _tooltip;
 
     // The follow code tries to make a more useful tooltip by inserting at the
-    // begining of the tooltip the action title in bold followed by the
+    // beginning of the tooltip the action title in bold followed by the
     // shortcut.
     //
     // The long winding code is to deal with the fact that Qt will auto wrap

@@ -750,12 +750,12 @@ QString DlgExpressionInput::colorPriority(QRgb userColor, QRgb fcDefaultColor,
 {
 
     QColor color = QColor::fromRgba(fcDefaultColor);
-    //When a user choses specific colors, respect those unless explicitely requested by the style sheet
+    //When a user choses specific colors, respect those unless explicitly requested by the style sheet
     if (userColor != fcDefaultColor && !this->ignoreOutputWindowColors()) {
         color = QColor::fromRgba(userColor);
     }
     //When a style sheet is used without explicit support, override with readable colors
-    //Otherwhise return nothing and let the style sheet author do its job.
+    //Otherwise return nothing and let the style sheet author do its job.
     else if (hasStyleSheet) {
         color = hasSsColor ? styleSheetColor : QColor::fromRgba(isDarkStyle ? 
             darkOverrideColor : lightOverrideColor);

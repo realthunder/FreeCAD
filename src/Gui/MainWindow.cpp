@@ -793,7 +793,7 @@ void populateMenu(QMenu *menu, MenuType type, bool popup)
         menu->addMenu(lockMenu);
 }
 
-} // annonymous namespace
+} // anonymous namespace
 
 QMenu* MainWindow::createPopupMenu ()
 {

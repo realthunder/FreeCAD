@@ -220,7 +220,7 @@ def onRestore(active, migrating=False):
         curlines = tbs.get(area, [])
         restore = []
 
-        # retrive the stored toolbars and break it into lines
+        # retrieve the stored toolbars and break it into lines
         for n in group.GetString(name).split(","):
             if n == 'Break':
                 if lines and lines[-1]:

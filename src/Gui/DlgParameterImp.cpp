@@ -594,10 +594,10 @@ void DlgParameterImp::on_btnReset_clicked()
 {
     QString msg;
     if (curParamManager == &App::GetApplication().GetUserParameter())
-        msg = tr("The application will restart after reseting the configuration.\n\n"
+        msg = tr("The application will restart after resetting the configuration.\n\n"
                  "Do you want to make a backup?");
     else
-        msg = tr("Do you want to make a backup before reseting the configuration?\n");
+        msg = tr("Do you want to make a backup before resetting the configuration?\n");
     auto res = QMessageBox::question(this, tr("Reset"), msg,
                 QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
     if (res == QMessageBox::Cancel)
