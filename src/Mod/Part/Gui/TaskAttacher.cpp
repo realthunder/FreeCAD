@@ -423,7 +423,7 @@ bool TaskAttacher::updatePreview()
     if (errMessage.length()>0){
         ui->message->setText(tr("Attachment mode failed: %1").arg(errMessage));
         ui->message->setStyleSheet(QString::fromLatin1(Gui::getMainWindow()->isDarkModeActive() ? 
-            "QLabel{color: lightred;}" : "QLabel{color: red;}"));
+            "QLabel{color: indianred;}" : "QLabel{color: red;}"));
     } else {
         if (!attached){
             ui->message->setText(tr("Not attached"));
