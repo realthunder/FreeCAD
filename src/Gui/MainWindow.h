@@ -202,6 +202,17 @@ public:
 
     void initDockWindows(bool show);
 
+    /**
+     * Updates internal state variables for tracking visual qualities/states of main window.
+     *  Currently only used for detecting if a dark-mode type UI is active.
+     */
+    void updateVisualQualities();
+
+    /**
+    * If a dark mode style is active.
+    */
+    bool isDarkModeActive() const;
+
 public Q_SLOTS:
     /**
      * Updates the standard actions of a text editor such as Cut, Copy, Paste, Undo and Redo.

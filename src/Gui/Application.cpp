@@ -2684,6 +2684,8 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
         if (mdi->style())
             mdi->style()->unpolish(qApp);
     }
+
+    mw->updateVisualQualities();
 }
 
 void Application::checkForPreviousCrashes()

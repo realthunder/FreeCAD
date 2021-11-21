@@ -202,6 +202,7 @@ struct MainWindowP
     bool _restoring = false;
     bool _closingAll = false;
     QTime _showNormal;
+    bool isDarkMode = false;
 
     void restoreWindowState(const QByteArray &);
 };
@@ -286,7 +287,6 @@ protected:
     }
 };
 #endif
-
 } // namespace Gui
 
 
@@ -645,6 +645,18 @@ void MainWindow::initDockWindows(bool show)
                 return widget;
             });
     }
+}
+
+void MainWindow::updateVisualQualities() {
+    // Detect if a dark-type theme is active. Used for improving legibility of hard-coded colors.
+    // General method is to compare the value (relative brightness) of the default text color 
+    // against the background color. If the text is lighter, it can be assumed a dark mode is active.
+    const QPalette& pl = this->palette();
+    d->isDarkMode = (pl.color(QPalette::WindowText).value() > pl.color(QPalette::Background).value()) ? true : false;
+}
+
+bool MainWindow::isDarkModeActive() const {
+    return d->isDarkMode;
 }
 
 MainWindow* MainWindow::getInstance()
