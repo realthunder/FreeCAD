@@ -1,0 +1,30 @@
+name: Publish Snap
+
+on:
+  push:
+    tags:
+      - "*" # build for any new tag (on all branches)
+    
+jobs:
+  publish_amd64:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+    - name: install snapcraft
+      run: |
+        sudo snap install snapcraft --classic
+        echo "$STORE_LOGIN" | snapcraft login --with -
+      env:
+        STORE_LOGIN: ${{ secrets.STORE_LOGIN }}
+    # build in destructive mode because building in LXD is way too slow 
+    # due to the kde-neon SDK snap being mounted via fuse
+    - name: build snap 
+      run: sudo snapcraft --destructive-mode
+    - name: upload snap
+      run: |
+        if ${{ endsWith(github.ref, 'edge') }}; then
+          release_to="edge"
+        else
+          release_to="stable"
+        fi
+        sudo snapcraft upload --release=${release_to} freecad-realthunder*.snap
