@@ -13,7 +13,7 @@ jobs:
     - name: install snapcraft
       run: |
         sudo snap install snapcraft --classic
-        # echo "$STORE_LOGIN" | snapcraft login --with -
+        echo "$STORE_LOGIN" | snapcraft login --with -
       env:
         STORE_LOGIN: ${{ secrets.STORE_LOGIN }}
     # build in destructive mode because building in LXD is way too slow 
