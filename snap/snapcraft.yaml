@@ -39,6 +39,10 @@ layout:
     bind: $SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/openmpi
   /usr/bin/orted:
     symlink: $SNAP/usr/bin/orted
+  /usr/share/pmix:
+    symlink: $SNAP/usr/share/pmix
+  /usr/lib/$SNAPCRAFT_ARCH_TRIPLET/pmix:
+    symlink: $SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/pmix
   /etc/matplotlibrc:
     bind-file: $SNAP/etc/matplotlibrc
   /usr/share/matplotlib:
