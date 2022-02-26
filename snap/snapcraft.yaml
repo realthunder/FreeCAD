@@ -64,6 +64,7 @@ environment:
   PIP_USER: 1
   PYTHONPATH: &pypath $PYTHONUSERBASE/lib/python3.8/site-packages:$SNAP/lib/python3.8/site-packages:$SNAP/usr/lib/python3/dist-packages
   SNAP_PYTHONPATH: *pypath
+  QT_QPA_PLATFORM: xcb # Coin3D cannot run on Wayland
 
 apps:
   freecad-realthunder:
