@@ -93,8 +93,6 @@ package-repositories:
     ppa: elmer-csc-ubuntu/elmer-csc-ppa
   - type: apt
     ppa: openscad/releases
-  - type: apt
-    ppa: freecad-maintainers/occt-releases
 
 parts:
   stub-chown:
@@ -154,6 +152,10 @@ parts:
       - -DFREECAD_USE_PYBIND11=ON
       - -DFREECAD_FORCE_USE_QT_FILEDIALOG=ON
       - -DBUILD_FLAT_MESH=ON
+    build-snaps:
+      - freecad-deps-core20
+    stage-snaps:
+      - freecad-deps-core20
     build-packages:
       - g++
       - git
@@ -172,18 +174,11 @@ parts:
       - libzipios++-dev
       - swig
       - python3-dev
-      - libocct-data-exchange-dev
-      - libocct-draw-dev
-      - libocct-foundation-dev
-      - libocct-modeling-algorithms-dev
-      - libocct-modeling-data-dev
-      - libocct-ocaf-dev
-      - libocct-visualization-dev
-      - occt-draw
       - libvtk7-dev
       - libpyside2-dev
       - libshiboken2-dev
       - pybind11-dev
+      - libfreeimage-dev
     stage-packages:
       - libaec0
       - libboost-filesystem1.71.0
@@ -229,12 +224,6 @@ parts:
       - graphviz
       - calculix-ccx # FEM
       - libfreeimage3
-      - libocct-data-exchange-7.5
-      - libocct-foundation-7.5
-      - libocct-modeling-algorithms-7.5
-      - libocct-modeling-data-7.5
-      - libocct-ocaf-7.5
-      - libocct-visualization-7.5
       - libtbb2
       - libvtk7.1p
       - elmerfem-csc # FEM
@@ -268,17 +257,6 @@ parts:
     organize:
       "*": usr/Mod/Assembly3/
 
-  gmsh: # FEM
-    plugin: cmake
-    source: https://gitlab.onelab.info/gmsh/gmsh.git
-    source-tag: gmsh_4_9_3
-    cmake-parameters:
-      - -DCMAKE_INSTALL_PREFIX=/usr
-      - -DCMAKE_BUILD_TYPE=Release
-      - -DENABLE_BUILD_DYNAMIC=1
-      - -DENABLE_MED=0
-      - -DENABLE_FLTK=0
-
   pip:
     plugin: python
     python-packages:
@@ -289,7 +267,7 @@ parts:
       - -pyvenv.cfg
 
   cleanup:
-    after: [stub-chown, freecad, pip, gmsh, assembly3, snap-setup-mod, coin3d, pivy, branding]
+    after: [stub-chown, freecad, pip, assembly3, snap-setup-mod, coin3d, pivy, branding]
     plugin: nil
     build-snaps: [kde-frameworks-5-qt-5-15-3-core20]
     override-prime: |
