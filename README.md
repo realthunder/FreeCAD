@@ -6,6 +6,10 @@ with my [Assembly3](https://github.com/realthunder/FreeCAD_assembly3)
 workbench. The feature has since been merged to official FreeCAD, but the
 branch stayed and become a forefront of what future FreeCAD might become.
 
+It's function now is to continuously improve and test the [Topological naming
+problem](https://wiki.freecad.org/Topological_naming_problem) and it's [fix](https://github.com/realthunder/FreeCAD_assembly3/wiki/Topological-Naming).  
+Which I eventually plan to merge back in to the FreeCAD main branch.
+
 You can help test new features by trying one of the pre-built images
 released [here](https://github.com/realthunder/FreeCAD_assembly3/releases).
 There is also more frequent release in
