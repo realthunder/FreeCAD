@@ -229,6 +229,7 @@ parts:
       - libvtk7.1p
       - elmerfem-csc # FEM
       - openscad  # OpenSCAD
+      - povray
     override-build: |
       kde_sdk_dir="/snap/kde-frameworks-5-91-qt-5-15-3-core20-sdk/current"
       mkdir -p /etc/xdg/qtchooser
