@@ -51,6 +51,8 @@ layout:
     symlink: $SNAP/kf5/usr/share/qt5
   /usr/bin/dot:
     symlink: $SNAP/usr/bin/dot
+  /etc/povray:
+    symlink: $SNAP/etc/povray
 
 environment:
   LD_LIBRARY_PATH: $SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/blas:$SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/lapack # numpy
