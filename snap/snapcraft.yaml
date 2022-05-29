@@ -27,6 +27,7 @@ grade: devel
 confinement: strict
 compression: lzo
 license: LGPL-2.0-or-later
+assumes: [snapd2.55] # for cups interface
 
 layout:
   /usr/share/libdrm/amdgpu.ids:
@@ -53,6 +54,15 @@ layout:
     symlink: $SNAP/usr/bin/dot
   /etc/povray:
     symlink: $SNAP/etc/povray
+    
+# this is not used or needed for anything other than to trigger automatic
+# installation of the cups snap via "default-provider: cups"
+plugs:
+  foo-install-cups:
+    interface: content
+    content: foo
+    default-provider: cups
+    target: $SNAP_DATA/foo
 
 environment:
   LD_LIBRARY_PATH: $SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/blas:$SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/lapack # numpy
@@ -84,6 +94,7 @@ apps:
       - network      
       - browser-support
       - unity7
+      - cups
   cmd:
     command: usr/bin/FreeCADCmd
     extensions: [kde-neon]
