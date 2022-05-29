@@ -211,6 +211,7 @@ parts:
       - libmed11
       - libopenexr24
       - libopenmpi3
+      - libpsm-infinipath1
       - libpython3.8
       - libpython3.8-minimal
       - libpython3.8-stdlib
