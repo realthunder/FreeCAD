@@ -52,8 +52,8 @@ layout:
     symlink: $SNAP/kf5/usr/share/qt5
   /usr/bin/dot:
     symlink: $SNAP/usr/bin/dot
-  /etc/povray:
-    symlink: $SNAP/etc/povray
+  /usr/share/povray-3.7: # Raytracing
+    symlink: $SNAP/usr/share/povray-3.7
     
 # this is not used or needed for anything other than to trigger automatic
 # installation of the cups snap via "default-provider: cups"
@@ -79,6 +79,7 @@ environment:
   PYTHONPATH: &pypath $PYTHONUSERBASE/lib/python3.8/site-packages:$SNAP/lib/python3.8/site-packages:$SNAP/usr/lib/python3/dist-packages
   SNAP_PYTHONPATH: *pypath
   QT_QPA_PLATFORM: xcb # Coin3D cannot run on Wayland
+  POVINI: $SNAP/etc/povray/3.7/povray.ini # Raytracing
 
 apps:
   freecad-realthunder:
@@ -243,7 +244,8 @@ parts:
       - libvtk7.1p
       - elmerfem-csc # FEM
       - openscad  # OpenSCAD
-      - povray
+      - povray # Raytracing
+      - povray-includes # Raytracing
     override-build: |
       kde_sdk_dir="/snap/kde-frameworks-5-91-qt-5-15-3-core20-sdk/current"
       mkdir -p /etc/xdg/qtchooser
