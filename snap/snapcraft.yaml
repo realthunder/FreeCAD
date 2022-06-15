@@ -50,8 +50,10 @@ layout:
     symlink: $SNAP/usr/share/matplotlib
   /usr/share/qt5:
     symlink: $SNAP/kf5/usr/share/qt5
-  /usr/bin/dot:
+  /usr/bin/dot: # Graphviz for dependency graph
     symlink: $SNAP/usr/bin/dot
+  /usr/bin/unflatten: # Graphviz for dependency graph
+    symlink: $SNAP/usr/bin/unflatten
   /usr/share/povray-3.7: # Raytracing
     symlink: $SNAP/usr/share/povray-3.7
     
