@@ -15,5 +15,12 @@ def configure_mod_raytracing():
   if not param.GetString("PovrayExecutable", ""):
     param.SetString("PovrayExecutable", "/snap/freecad/current/usr/bin/povray")
 
+def configure_mod_mesh():
+  import FreeCAD
+  param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Mesh/Meshing")
+  if not param.GetString("gmshExe", ""):
+    param.SetString("gmshExe", "/snap/freecad/current/usr/bin/gmsh")
+
 add_snap_pythonpath()
 configure_mod_raytracing()
+configure_mod_mesh()
