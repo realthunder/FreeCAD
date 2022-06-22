@@ -21,6 +21,13 @@ def configure_mod_mesh():
   if not param.GetString("gmshExe", ""):
     param.SetString("gmshExe", "/snap/freecad/current/usr/bin/gmsh")
 
+def fix_theme():
+  import FreeCAD
+  param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Bitmaps/Theme")
+  if param.GetBool("ThemeSearchPaths", False)  != param.GetBool("ThemeSearchPaths", True):
+    param.SetBool("ThemeSearchPaths", False)
+
 add_snap_pythonpath()
 configure_mod_raytracing()
 configure_mod_mesh()
+fix_theme()
