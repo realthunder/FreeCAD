@@ -294,14 +294,25 @@ parts:
     organize:
       "*": usr/Mod/Assembly3/
 
-  pip:
+  python-packages:
     plugin: python
+    build-packages:
+      - libsuitesparse-dev
+    stage-packages:
+      - python3-distutils # pip
+      - libamd2 # scikit-sparse
+      - libcamd2 # scikit-sparse
+      - libccolamd2 # scikit-sparse
+      - libcholmod3 # scikit-sparse
+      - libcolamd2 # scikit-sparse
+      - libsuitesparseconfig5 # scikit-sparse
     python-packages:
       - pip
-    stage-packages:
-      - python3-distutils
+      - scikit-sparse
     stage:
       - -pyvenv.cfg
+      - -lib/python3.8/site-packages/scipy*
+      - -lib/python3.8/site-packages/numpy*
 
   graphviz:
     plugin: nil
@@ -316,7 +327,7 @@ parts:
         ${SNAPCRAFT_PART_INSTALL}/usr/lib/${SNAPCRAFT_ARCH_TRIPLET}/graphviz/
 
   cleanup:
-    after: [stub-chown, freecad, pip, assembly3, snap-setup-mod, graphviz, coin3d, pivy, branding, snapcraft-preload]
+    after: [stub-chown, freecad, python-packages, assembly3, snap-setup-mod, graphviz, coin3d, pivy, branding, snapcraft-preload]
     plugin: nil
     build-snaps: [kde-frameworks-5-91-qt-5-15-3-core20]
     override-prime: |
