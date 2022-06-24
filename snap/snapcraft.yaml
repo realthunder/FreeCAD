@@ -75,6 +75,7 @@ environment:
   GIT_CONFIG_NOSYSTEM: 1
   ELMER_HOME: $SNAP/usr
   QTWEBENGINE_DISABLE_SANDBOX: 1
+  QTWEBENGINE_CHROMIUM_FLAGS: --disable-dev-shm-usage # make it play nice with snapcraft-preload
   PYTHONPYCACHEPREFIX: $SNAP_USER_COMMON/.pycache
   PYTHONUSERBASE: $SNAP_USER_COMMON/.local
   PIP_USER: 1
@@ -85,7 +86,7 @@ environment:
 
 apps:
   freecad-realthunder:
-    command: usr/bin/FreeCADLink
+    command: bin/snapcraft-preload $SNAP/usr/bin/FreeCADLink
     extensions: [kde-neon]
     common-id: org.freecadweb.FreeCAD.desktop
     desktop: freecad_link.desktop
@@ -99,7 +100,7 @@ apps:
       - unity7
       - cups
   cmd:
-    command: usr/bin/FreeCADCmd
+    command: bin/snapcraft-preload $SNAP/usr/bin/FreeCADCmd
     extensions: [kde-neon]
     plugs: *plugs
   pip:
@@ -124,6 +125,20 @@ parts:
     source: snap/local/snap-setup-mod
     organize:
       "*": usr/Mod/SnapSetup/
+
+  snapcraft-preload:
+    source: https://github.com/sergiusens/snapcraft-preload.git
+    plugin: cmake
+    build-packages:
+      - on amd64:
+        - gcc-multilib
+        - g++-multilib
+    cmake-parameters:
+      - -DCMAKE_INSTALL_PREFIX=/ 
+      - -DLIBPATH=/lib
+    stage-packages:
+      - on amd64:
+        - lib32stdc++6
 
   coin3d:
     plugin: cmake
@@ -300,7 +315,7 @@ parts:
         ${SNAPCRAFT_PART_INSTALL}/usr/lib/${SNAPCRAFT_ARCH_TRIPLET}/graphviz/
 
   cleanup:
-    after: [stub-chown, freecad, pip, assembly3, snap-setup-mod, graphviz, coin3d, pivy, branding]
+    after: [stub-chown, freecad, pip, assembly3, snap-setup-mod, graphviz, coin3d, pivy, branding, snapcraft-preload]
     plugin: nil
     build-snaps: [kde-frameworks-5-91-qt-5-15-3-core20]
     override-prime: |
