@@ -240,7 +240,8 @@ parts:
       - libzipios++0v5
       - python3-tk # FEM
       - python3-yaml # FEM
-      - python3-numba #FEM (fcFEM)
+      - python3-numba # FEM (fcFEM)
+      - python3-scipy # FEM
       - python3-numpy
       - python3-matplotlib
       - python3-six
