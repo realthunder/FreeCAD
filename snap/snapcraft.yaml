@@ -27,7 +27,7 @@ grade: devel
 confinement: strict
 compression: lzo
 license: LGPL-2.0-or-later
-assumes: [snapd2.55] # for cups interface
+assumes: [snapd2.55.3] # for cups interface & private shared memory
 
 layout:
   /usr/share/libdrm/amdgpu.ids:
@@ -57,14 +57,17 @@ layout:
   /usr/share/povray-3.7: # Raytracing
     symlink: $SNAP/usr/share/povray-3.7
     
-# this is not used or needed for anything other than to trigger automatic
-# installation of the cups snap via "default-provider: cups"
 plugs:
+  # this is not used or needed for anything other than to trigger automatic
+  # installation of the cups snap via "default-provider: cups"
   foo-install-cups:
     interface: content
     content: foo
     default-provider: cups
     target: $SNAP_DATA/foo
+  # Necessary to enable semaphores for numba, OpenMP etc.
+  shared-memory:
+    private: true
 
 environment:
   LD_LIBRARY_PATH: $SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/blas:$SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/lapack # numpy
@@ -75,7 +78,6 @@ environment:
   GIT_CONFIG_NOSYSTEM: 1
   ELMER_HOME: $SNAP/usr
   QTWEBENGINE_DISABLE_SANDBOX: 1
-  QTWEBENGINE_CHROMIUM_FLAGS: --disable-dev-shm-usage # make it play nice with snapcraft-preload
   PYTHONPYCACHEPREFIX: $SNAP_USER_COMMON/.pycache
   PYTHONUSERBASE: $SNAP_USER_COMMON/.local
   PIP_USER: 1
@@ -86,7 +88,7 @@ environment:
 
 apps:
   freecad-realthunder:
-    command: bin/snapcraft-preload $SNAP/usr/bin/FreeCADLink
+    command: usr/bin/FreeCADLink
     extensions: [kde-neon]
     common-id: org.freecadweb.FreeCAD.desktop
     desktop: freecad_link.desktop
@@ -99,8 +101,9 @@ apps:
       - browser-support
       - unity7
       - cups
+      - shared-memory
   cmd:
-    command: bin/snapcraft-preload $SNAP/usr/bin/FreeCADCmd
+    command: usr/bin/FreeCADCmd
     extensions: [kde-neon]
     plugs: *plugs
   pip:
@@ -125,20 +128,6 @@ parts:
     source: snap/local/snap-setup-mod
     organize:
       "*": usr/Mod/SnapSetup/
-
-  snapcraft-preload:
-    source: https://github.com/sergiusens/snapcraft-preload.git
-    plugin: cmake
-    build-packages:
-      - on amd64:
-        - gcc-multilib
-        - g++-multilib
-    cmake-parameters:
-      - -DCMAKE_INSTALL_PREFIX=/ 
-      - -DLIBPATH=/lib
-    stage-packages:
-      - on amd64:
-        - lib32stdc++6
 
   coin3d:
     plugin: cmake
@@ -327,7 +316,7 @@ parts:
         ${SNAPCRAFT_PART_INSTALL}/usr/lib/${SNAPCRAFT_ARCH_TRIPLET}/graphviz/
 
   cleanup:
-    after: [stub-chown, freecad, python-packages, assembly3, snap-setup-mod, graphviz, coin3d, pivy, branding, snapcraft-preload]
+    after: [stub-chown, freecad, python-packages, assembly3, snap-setup-mod, graphviz, coin3d, pivy, branding]
     plugin: nil
     build-snaps: [kde-frameworks-5-91-qt-5-15-3-core20]
     override-prime: |
