@@ -415,7 +415,7 @@ Clipping::Clipping(Gui::View3DInventor* view, QWidget* parent)
         spinbox->setParamGrpPath("View/Clipping");
         spinbox->setEntryName(name);
         if (!subentry) {
-            // Sub entires (decimals, single step) are now exposed as dedicated
+            // Sub entries (decimals, single step) are now exposed as dedicated
             // spinbox. So remove them from context menu.
             spinbox->setSubEntries(spinbox, {});
         }

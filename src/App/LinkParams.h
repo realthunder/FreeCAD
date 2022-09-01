@@ -123,7 +123,7 @@ public:
     /// Accessor for parameter ShowElement
     ///
     /// Default value of the "ShowElement" property in an App::Link object,
-    /// which specifies whether to show the link array element as invididual
+    /// which specifies whether to show the link array element as individual
     /// object in the tree view.
     static const bool & getShowElement();
     static const bool & defaultShowElement();

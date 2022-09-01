@@ -107,7 +107,7 @@ The callback signature is expected to be
 where cmd is the given command name, and idx is only meanful for a group command,
 where it gives the index of invoked the sub command
 
-If the callable returns False, then the commnd invocation is aborted
+If the callable returns False, then the command invocation is aborted
         </UserDocu>
       </Documentation>
     </Methode>

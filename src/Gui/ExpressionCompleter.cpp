@@ -366,7 +366,7 @@ public:
                     // We add a special '.' property here so that the
                     // 'MatchContains' can work with local property reference.
                     // It won't work otherwise, because the local property
-                    // reference starts with '.', which equivalant to
+                    // reference starts with '.', which equivalent to
                     // 'MatchStarts'.
                     res.first = ".";
                     res.second = &_FakeProp;

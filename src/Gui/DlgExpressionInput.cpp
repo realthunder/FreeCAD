@@ -748,7 +748,7 @@ void DlgExpressionInput::setupColors()
     wrapStylesheet(this->warningColorStyle);
     wrapStylesheet(this->errorColorStyle);
 
-    //Sets the intial styles on launch and without bound data
+    //Sets the initial styles on launch and without bound data
     this->ui->msg->setStyleSheet(this->textColorStyle);
     this->ui->expression->setStyleSheet(this->textColorStyle);
 }

@@ -1534,7 +1534,7 @@ void MainWindow::closeEvent (QCloseEvent * e)
         /*emit*/ mainWindowClosed();
         d->activityTimer->stop();
         saveWindowSettings();
-        d->_restoring = true; // prevent futher triggering of saving window setting
+        d->_restoring = true; // prevent further triggering of saving window setting
         delete d->assistant;
         d->assistant = 0;
 

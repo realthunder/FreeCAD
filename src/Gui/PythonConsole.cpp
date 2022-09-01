@@ -836,7 +836,7 @@ void PythonConsole::runSource(const QString& line)
     // Interpreter::runSource (i.e. code.compile()) seems unable to handle more
     // than one statement at a time. It can deal with partial statement, but
     // not multiple ones, although a statement can be a composite one
-    // containing arbitary number of recrursed sub-statements. Therefore, we
+    // containing arbitrary number of recursed sub-statements. Therefore, we
     // look for lines without any indentation as a mean to segment the input
     // into multiple top-level statements, and make sure to insert an empty
     // line to terminate each statement (as demanded by the interpreter, or so

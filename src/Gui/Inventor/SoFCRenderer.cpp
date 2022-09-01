@@ -237,7 +237,7 @@ public:
   SbFCVector<std::size_t> selstriangleontop;
   SbFCVector<std::size_t> selsontop; // include only non-explicitly selected lines and points
   SbFCVector<std::size_t> selslineontop; // include only explicitly selected lines
-  SbFCVector<std::size_t> selspointontop; // include only explictly selected points
+  SbFCVector<std::size_t> selspointontop; // include only explicitly selected points
   SbFCVector<std::size_t> highlightlinesontop; // include pre-selected lines and points
   bool updateselection;
 

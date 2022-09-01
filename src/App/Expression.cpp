@@ -2795,8 +2795,8 @@ const std::vector<FunctionExpression::FunctionInfo> &FunctionExpression::getFunc
 {
     static std::vector<FunctionInfo> functions = {
         {ACOS, "acos", "Inverse cosine of a value"},
-        {ASIN, "asin", "Iverse sine of a value"},
-        {ATAN, "atan", "Iverse tangent of a value"},
+        {ASIN, "asin", "Inverse sine of a value"},
+        {ATAN, "atan", "Inverse tangent of a value"},
         {ABS, "abs", "Absolute value of a number"},
         {EXP, "exp", "Euler's number raised to a power"},
         {LOG, "log", "The natural (base e) logarithm of a number"},

@@ -1207,7 +1207,7 @@ bool SoFCCSysDragger::getMovement(Base::Placement &freshPlacement, bool clear)
   // to have only one dragger field changing
   assert(numberOfFieldChanged == 1);
 
-  //helper lamdas.
+  //helper lambdas.
   auto getVectorX = [&pMatrix]() {return Base::Vector3d(pMatrix[0], pMatrix[4], pMatrix[8]);};
   auto getVectorY = [&pMatrix]() {return Base::Vector3d(pMatrix[1], pMatrix[5], pMatrix[9]);};
   auto getVectorZ = [&pMatrix]() {return Base::Vector3d(pMatrix[2], pMatrix[6], pMatrix[10]);};

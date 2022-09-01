@@ -108,7 +108,7 @@ public:
     //@{
     /// Accessor for parameter NoSystemBackground
     ///
-    /// Enable in place expressiong editing
+    /// Enable in place expression editing
     static const bool & getNoSystemBackground();
     static const bool & defaultNoSystemBackground();
     static void removeNoSystemBackground();

@@ -2526,7 +2526,7 @@ void ObjectIdentifier::resolveAmbiguity(ResolveResults &result) {
 
     std::string s = result.subObjectName;
     // We will support leading and (any consecutive) dots in the subname path.
-    // So no need to remove it. In fact, we delibrately add a leading dot (by
+    // So no need to remove it. In fact, we deliberately add a leading dot (by
     // ExpressionCompleter) to disambiguate element name from label reference
     // in subname path.
     //

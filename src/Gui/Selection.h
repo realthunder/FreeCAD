@@ -940,7 +940,7 @@ public:
 
 /** Helper class to pause selection notification
  *
- * The notification will get accumulated up to a limit controled by parameter
+ * The notification will get accumulated up to a limit controlled by parameter
  * Preferences/View/MaxSelectionNotification. Those that exceeds the limit will
  * be replaced by a single notification of type SelectionChanges::SetSelection
  * per document.

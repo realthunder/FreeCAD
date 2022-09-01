@@ -59,7 +59,7 @@ static bool getOptions(PyObject *tuple, ViewProviderSavedView::CaptureOptions &o
             if (!PyArg_ParseTuple(tuple, "O", &args))
                 return false;
             if (!PySequence_Check(args)) {
-                PyErr_SetString(PyExc_TypeError, "Expectes argument of a string or sequence of string");
+                PyErr_SetString(PyExc_TypeError, "Expects argument of a string or sequence of string");
                 return false;
             }
             Py::Sequence seq(args);

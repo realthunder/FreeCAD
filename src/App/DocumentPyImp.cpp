@@ -292,7 +292,7 @@ PyObject*  DocumentPy::removeObjects(PyObject *args)
     if (!PyArg_ParseTuple(args, "O",&pyNames))     // convert args: Python->C
         return nullptr;                             // NULL triggers exception
 
-    const char *errmsg = "Expect first argument to be either a sequnce of object names";
+    const char *errmsg = "Expect first argument to be either a sequence of object names";
     if (!PySequence_Check(pyNames)) {
         PyErr_SetString(PyExc_TypeError, errmsg);
         return nullptr;

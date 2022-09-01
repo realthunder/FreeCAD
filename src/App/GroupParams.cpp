@@ -243,7 +243,7 @@ void GroupParams::removeCreateOrigin() {
 const char *GroupParams::docGeoGroupAllowCrossLink() {
     return QT_TRANSLATE_NOOP("GroupParams",
 "Allow objects to be contained in more than one GeoFeatureGroup (e.g. App::Part).\n"
-"If diabled, adding an object to one group will auto remove it from other groups.\n"
+"If disabled, adding an object to one group will auto remove it from other groups.\n"
 "WARNING! Disabling this option may produce an invalid group after changing its children.");
 }
 

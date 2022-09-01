@@ -316,7 +316,7 @@ private:
 };
 
 /**
- * The PropertyLinkT class is a helper class to create Python statements for proprty links.
+ * The PropertyLinkT class is a helper class to create Python statements for proprtey links.
  */
 class AppExport PropertyLinkT
 {

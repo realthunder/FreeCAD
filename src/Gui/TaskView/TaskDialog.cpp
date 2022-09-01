@@ -87,7 +87,7 @@ bool TaskDialog::tryClose()
     // edit.
     //
     // What's worse, abort is not like undo. It can't be redo. The object or
-    // some already performed operation is truely lost. If the user really
+    // some already performed operation is truly lost. If the user really
     // meant for rejecting, he can always manually undo.
     Gui::Control().closeDialog();
     return true;

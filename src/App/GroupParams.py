@@ -56,7 +56,7 @@ Params = [
     ParamBool('GeoGroupAllowCrossLink', False,
         title = 'Allow cross coordinate links in GeoFeatureGroup (App::Part)',
         doc = "Allow objects to be contained in more than one GeoFeatureGroup (e.g. App::Part).\n"
-              "If diabled, adding an object to one group will auto remove it from other groups.\n"
+              "If disabled, adding an object to one group will auto remove it from other groups.\n"
               "WARNING! Disabling this option may produce an invalid group after changing its children."),
     ParamBool('CreateGroupInGroup', True,
         title = 'Create new group inside current selected group',

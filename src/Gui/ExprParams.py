@@ -44,7 +44,7 @@ Params = [
     ParamBool('CompleterUnfiltered', False,
         doc="Expression completer unfiltered completion mode"),
     ParamBool('NoSystemBackground', False, title="In place editing",
-        doc="Enable in place expressiong editing"),
+        doc="Enable in place expression editing"),
     ParamString('EditorTrigger', "=", title="Editor trigger shortcut", proxy=ParamShortcutEdit(),
         doc="Expression editor trigger character"),
     ParamBool('AutoHideEditorIcon', True, title="Auto hide editor icon",

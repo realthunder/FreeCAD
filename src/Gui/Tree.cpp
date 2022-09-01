@@ -3237,8 +3237,8 @@ void TreeWidget::onStartEditing()
 
             // Not all editing action in object context menu will result in a
             // persistent editing task panel (which will trigger signalInEdit,
-            // and in trun change item background). So we use nextEditingItem
-            // to temperary hold the next potential editing item to not reset
+            // and in turn change item background). So we use nextEditingItem
+            // to temporary hold the next potential editing item to not reset
             // the current editin item prematrually.
             pimpl->nextEditingItem = objitem;
             App::DocumentObject *topParent = 0;

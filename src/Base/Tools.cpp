@@ -122,9 +122,9 @@ std::string Base::Tools::getIdentifier(const std::string& name)
 
     auto CleanName = QString::fromUtf8(name.c_str()).toUcs4();
 
-    // We'll replace all non Xid-Continue characeter as _. Special handling for
+    // We'll replace all non Xid-Continue character as _. Special handling for
     // the first character. If it is non Xid-Start but a valid Xid-Continue,
-    // insert an underscore as the new starting characeter.
+    // insert an underscore as the new starting character.
     if (CleanName[0] != '_' && _PyUnicode_IsXidContinue(CleanName[0])
                             && !_PyUnicode_IsXidStart(CleanName[0]))
         CleanName.push_front('_');

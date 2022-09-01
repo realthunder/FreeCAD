@@ -262,7 +262,7 @@ void ExprParams::removeCompleterUnfiltered() {
 // Auto generated code (Tools/params_utils.py:284)
 const char *ExprParams::docNoSystemBackground() {
     return QT_TRANSLATE_NOOP("ExprParams",
-"Enable in place expressiong editing");
+"Enable in place expression editing");
 }
 
 // Auto generated code (Tools/params_utils.py:290)

@@ -126,7 +126,7 @@ public:
     /// Accessor for parameter GeoGroupAllowCrossLink
     ///
     /// Allow objects to be contained in more than one GeoFeatureGroup (e.g. App::Part).
-    /// If diabled, adding an object to one group will auto remove it from other groups.
+    /// If disabled, adding an object to one group will auto remove it from other groups.
     /// WARNING! Disabling this option may produce an invalid group after changing its children.
     static const bool & getGeoGroupAllowCrossLink();
     static const bool & defaultGeoGroupAllowCrossLink();

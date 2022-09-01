@@ -44,7 +44,7 @@ Params = [
     ParamBool('ShowElement', True,
         title = 'Show array element in Link array',
         doc = 'Default value of the "ShowElement" property in an App::Link object,\n'
-              'which specifies whether to show the link array element as invididual\n'
+              'which specifies whether to show the link array element as individual\n'
               'object in the tree view.'),
 ]
 

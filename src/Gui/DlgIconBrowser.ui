@@ -125,7 +125,7 @@ can manually copy the content and append to your existing icon set configuration
 
 Note, tree view, toolbar, and workbench tab bar support non-square icons. The
 size can be specified by adding an extra field as follow. Only SVG icon requires
-explicit setting of dimention.
+explicit setting of dimension.
 
 TreeItemInvisible, iconset:MyIcons/TreeItemInvisible.svg, 128x64</string>
       </property>

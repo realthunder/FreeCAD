@@ -189,7 +189,7 @@ Args:
 Returns:
   A tuple of the top level object and a subname path. The top level object will be this
   object, unless flatten is enabled and this object belongs to the same geo feature group
-  of the next sub-object, in which case the last consequtive sub-object in the same group
+  of the next sub-object, in which case the last consecutive sub-object in the same group
   will be returned.
                 </UserDocu>
             </Documentation>
