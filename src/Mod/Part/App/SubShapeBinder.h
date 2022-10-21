@@ -82,7 +82,7 @@ public:
     App::PropertyBool TightBound;
 
     enum BindModeEnum {
-        Syncrhonized = 0,
+        Synchronized = 0,
         Frozen = 1,
         Detached = 2,
         Float = 3,

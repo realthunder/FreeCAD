@@ -30,7 +30,7 @@
 
 namespace PartGui {
 
-/// Provides a fast data struture for ray picking of bounding box
+/// Provides a fast data structure for ray picking of bounding box
 class PartGuiExport BoundBoxRayPick {
 public:
     BoundBoxRayPick();

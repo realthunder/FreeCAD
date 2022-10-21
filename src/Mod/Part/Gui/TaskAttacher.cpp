@@ -1340,7 +1340,7 @@ TaskDlgAttacher::TaskDlgAttacher(Gui::ViewProviderDocumentObject *ViewProvider,
     setDocumentName(ViewProvider->getDocument()->getDocument()->getName());
 
     if(createBox) {
-        parameter  = new TaskAttacher(ViewProvider, nullptr, picture, title.isEmpty() ? tr("Attachement") : title);
+        parameter  = new TaskAttacher(ViewProvider, nullptr, picture, title.isEmpty() ? tr("Attachment") : title);
         Content.push_back(parameter);
         if (parameter->getPartner())
             Content.push_back(parameter->getPartner());

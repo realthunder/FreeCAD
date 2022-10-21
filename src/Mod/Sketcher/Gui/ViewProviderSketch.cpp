@@ -5030,7 +5030,7 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
             Base::Vector3d startp  = spline->getStartPoint();
             Base::Vector3d endp    = spline->getEndPoint();
 
-            // Because BSpline can be arbitary complex in curvature, using a
+            // Because BSpline can be arbitrary complex in curvature, using a
             // constant segment limit won't give satisfying result in many
             // cases. We opt to use the same way PartGui::ViewProviderPartExt
             // to discretize the edge.

@@ -529,7 +529,7 @@ def drill_translate(outstring, cmd, params):
     strF_Feedrate = ' F' + format(float(drill_feedrate.getValueAs(UNIT_SPEED_FORMAT)), '.2f') + "\n"
     print (strF_Feedrate)
 
-    # preliminary mouvement(s)
+    # preliminary movement(s)
     if CURRENT_Z < RETRACT_Z:
       trBuff += linenumber() + strG0_RETRACT_Z
     trBuff += linenumber() + 'G0 X' + format(float(drill_X.getValueAs(UNIT_FORMAT)), strFormat) + ' Y' + format(float(drill_Y.getValueAs(UNIT_FORMAT)), strFormat) + "\n"

@@ -1722,7 +1722,7 @@ public:
                                 pt = v.pt();
                                 // The edges in the stack are the ones to slice
                                 // the wire in half. We construct a new wire
-                                // that includes the original begining edge in
+                                // that includes the original beginning edge in
                                 // the loop above. And this loop contains the
                                 // other half. Note that the slicing edges
                                 // should run in the oppsite direction, hence reversed

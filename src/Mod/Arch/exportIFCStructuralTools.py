@@ -252,7 +252,7 @@ def createStructuralMember(ifcfile, ifcbin, obj):
         prodDefShape = ifcfile.createIfcProductDefinitionShape(None, None, (topologyRep,))
         # sets surface thickness
         # ATM limitations
-        # - for verical slabs (walls) or inclined slabs (ramps) the thickness is taken from the Height property
+        # - for vertical slabs (walls) or inclined slabs (ramps) the thickness is taken from the Height property
         thickness = float(obj.Height)*scaling
         # creates structural member
         structuralMember = ifcfile.createIfcStructuralSurfaceMember(

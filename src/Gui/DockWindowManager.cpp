@@ -103,8 +103,8 @@ public:
             return false;
         auto widget = qobject_cast<QDockWidget*>(o);
         if (!widget || !widget->isFloating()) {
-            if (overriden) {
-                overriden = false;
+            if (overridden) {
+                overridden = false;
                 QApplication::restoreOverrideCursor();
             }
             return false;
@@ -129,21 +129,21 @@ public:
             cursor = Qt::SizeVerCursor;
         else if (left || right)
             cursor = Qt::SizeHorCursor;
-        else if (overriden) {
-            overriden = false;
+        else if (overridden) {
+            overridden = false;
             QApplication::restoreOverrideCursor();
             return false;
         }
-        if (overriden)
+        if (overridden)
             QApplication::changeOverrideCursor(cursor);
         else {
-            overriden = true;
+            overridden = true;
             QApplication::setOverrideCursor(cursor);
         }
         return false;
     }
 
-    bool overriden = false;
+    bool overridden = false;
 };
 
 struct DockWindowManagerP

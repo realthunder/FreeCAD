@@ -117,7 +117,7 @@ void AttachExtension::initBase(bool force)
     auto obj = getExtendedObject();
 
     // Temporary holding the properties so that we only handle onChanged() event
-    // when all relavant properties are ready.
+    // when all relevant properties are ready.
     Properties props;
 
     if (getProp<App::PropertyString>(force, props.attacherType, obj, "BaseAttacherType", 

@@ -51,7 +51,7 @@ Feature::Feature()
 {
     ADD_PROPERTY_TYPE(Path,(Path::Toolpath()),"Base",App::Prop_None,"The path data of this feature");
     ADD_PROPERTY_TYPE(BuildShape,(false),"Base",App::Prop_None,"Whether to build shape from tool path");
-    ADD_PROPERTY_TYPE(CommandFilter,(),"Base",App::Prop_None,"Exclude pathes from a list of commands when building shape");
+    ADD_PROPERTY_TYPE(CommandFilter,(),"Base",App::Prop_None,"Exclude paths from a list of commands when building shape");
 }
 
 Feature::~Feature()

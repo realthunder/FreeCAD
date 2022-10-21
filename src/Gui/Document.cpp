@@ -389,7 +389,7 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
     static bool _Busy;
     if (_Busy) {
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
-            FC_WARN("Ignore recusrive call to Document::setEdit()");
+            FC_WARN("Ignore recursive call to Document::setEdit()");
         return false;
     }
     Base::StateLocker lock(_Busy);

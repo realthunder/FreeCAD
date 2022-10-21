@@ -348,7 +348,7 @@ void execMidpoints(Gui::Command* cmd)
         return;
     }
 
-    Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Add Midpont Vertices"));
+    Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Add Midpoint Vertices"));
 
     const std::vector<TechDraw::BaseGeom*> edges = dvp->getEdgeGeometry();
     double scale = dvp->getScale();

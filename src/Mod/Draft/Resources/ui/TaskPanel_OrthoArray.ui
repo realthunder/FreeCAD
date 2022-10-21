@@ -161,7 +161,7 @@ A Link array is more efficient when creating multiple copies, but it cannot be f
           <property name="toolTip">
            <string>Enable this option to build compound shape if 'Fuse' is disabled.
 It is recommended to disable this option if you are using the array
-for assembly purpose and not for futher modeling, to make the
+for assembly purpose and not for further modeling, to make the
 recomputation faster with complex shapes.</string>
           </property>
           <property name="text">

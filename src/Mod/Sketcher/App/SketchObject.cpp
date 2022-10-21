@@ -7289,7 +7289,7 @@ Part::Geometry* projectEdgeToLine(const TopoDS_Edge &edge,
         shape.move(trsf);
     }
 
-    // Make a copy to work around OCC cicular edge transformation bug
+    // Make a copy to work around OCC circular edge transformation bug
     shape = shape.makECopy();
 
     // Explicitly make the mesh, or else getBoundBox() will be very loosely
@@ -7412,7 +7412,7 @@ void adjustParameterRange(const TopoDS_Edge &edge,
     pf.Transform(mov);
     pl.Transform(mov);
 
-    // Obtain the cooresponding parameters for those points in the projected curve
+    // Obtain the corresponding parameters for those points in the projected curve
     double f2 = GeomAPI_ProjectPointOnCurve(pf, curve).LowerDistanceParameter();
     double l2 = GeomAPI_ProjectPointOnCurve(pl, curve).LowerDistanceParameter();
     double m2 = GeomAPI_ProjectPointOnCurve(pm, curve).LowerDistanceParameter();
@@ -9813,7 +9813,7 @@ bool SketchObject::AutoLockTangencyAndPerpty(Constraint *cstr, bool bForce, bool
                 if(fabs(angleErr) > M_PI/2 )
                     angleDesire += M_PI;
 
-                cstr->setValue(angleDesire + angleOffset); //external tangency. The angle stored is offset by Pi/2 so that a value of 0.0 is invalid and threated as "undecided".
+                cstr->setValue(angleDesire + angleOffset); //external tangency. The angle stored is offset by Pi/2 so that a value of 0.0 is invalid and treated as "undecided".
             }
         }
     } catch (Base::Exception& e){

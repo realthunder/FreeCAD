@@ -14,7 +14,7 @@ DistInst  = DistName + "_installer.msi"
 DistDir  = "../../DistTemp/"
 
 #====================================================================
-# copy intaller file
+# copy installer file
 
 FileTools.cpfile("../../Install/FreeCAD.msi",DistDir+DistInst)
 

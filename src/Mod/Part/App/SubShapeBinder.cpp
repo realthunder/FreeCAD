@@ -105,11 +105,11 @@ SubShapeBinder::SubShapeBinder()
     ADD_PROPERTY_TYPE(OffsetIntersection, (false), "Offsetting", App::Prop_None, "False = offset child wires independently.");
     ADD_PROPERTY_TYPE(ClaimChildren, (false), "Base",App::Prop_Output,"Claim linked object as children");
     ADD_PROPERTY_TYPE(Relative, (true), "Base",App::Prop_None,"Enable relative sub-object binding");
-    ADD_PROPERTY_TYPE(BindMode, ((long)BindModeEnum::Syncrhonized), "Base", App::Prop_None, 
+    ADD_PROPERTY_TYPE(BindMode, ((long)BindModeEnum::Synchronized), "Base", App::Prop_None, 
             "Synchronized: auto update binder shape on changed of bound object.\n"
             "Frozen: disable auto update, but can be updated manually using context menu.\n"
             "Detached: copy the shape of bound object and then remove the binding immediately.\n"
-            "Float: same as 'Syncrhonized' but with independent placement to the bound object.\n"
+            "Float: same as 'Synchronized' but with independent placement to the bound object.\n"
             "FloatFirst: same as 'Float' but with independent placement to the first bound object.\n"
             "            The rest bound objects (if any) will maintain the same relative placement\n"
             "            to the first bound object.");
@@ -888,7 +888,7 @@ static const char _GroupPrefix[] = "Configuration (";
 bool SubShapeBinder::needUpdate() const
 {
     switch(BindMode.getValue()) {
-    case BindModeEnum::Syncrhonized:
+    case BindModeEnum::Synchronized:
     case BindModeEnum::Float:
     case BindModeEnum::FloatFirst:
         return true;
@@ -1148,7 +1148,7 @@ void SubShapeBinder::checkPropertyStatus() {
     // loading time as well. But there maybe complication arise when doing
     // TopoShape version upgrade. So we DO NOT set trasient at the moment.
     //
-    // Shape.setStatus(App::Property::Transient, !PartialLoad.getValue() && BindMode.getValue()==BindModeEnum::Syncrhonized);
+    // Shape.setStatus(App::Property::Transient, !PartialLoad.getValue() && BindMode.getValue()==BindModeEnum::Synchronized);
 }
 
 void SubShapeBinder::setLinks(std::map<App::DocumentObject *,
