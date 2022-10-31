@@ -1754,7 +1754,7 @@ void MainWindow::loadWindowSettings()
     config.endGroup();
 
     std::string geometry = d->hGrp->GetASCII("Geometry");
-    std::istringstream iss;
+    std::istringstream iss(geometry);
     int x,y,w,h;
     if (iss >> x >> y >> w >> h) {
         pos = QPoint(x,y);
