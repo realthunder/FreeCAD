@@ -151,7 +151,7 @@ void TaskFemConstraint::setSelection(QListWidgetItem* item) {
     ItemName.erase(0, pos + delimiter.length());
     // clear existing selection
     Gui::Selection().clearSelection();
-    // highligh the selected item
+    // highlight the selected item
     Gui::Selection().addSelection(docName.c_str(), objName.c_str(), ItemName.c_str(), 0, 0, 0);
 }
 
@@ -208,7 +208,7 @@ const QString TaskFemConstraint::makeRefText(const App::DocumentObject* obj, con
 
 void TaskFemConstraint::createDeleteAction(QListWidget* parentList)
 {
-    // creates a context menu, a shortcutt for it and connects it to e slot function
+    // creates a context menu, a shortcut for it and connects it to e slot function
 
     deleteAction = new QAction(tr("Delete"), this);
     deleteAction->setShortcut(QKeySequence::Delete);

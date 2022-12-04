@@ -696,7 +696,7 @@ public:
         }
 
         // Make sure coincident vertices are actually the same TopoDS_Vertex,
-        // which is crutial for the OCC internal shape hierarchy structure. We
+        // which is crucial for the OCC internal shape hierarchy structure. We
         // achieve this by making a temp wire and let OCC do the hard work of
         // replacing the vertex.
         auto connectEdge = [&](TopoDS_Edge &e,

@@ -46,16 +46,16 @@ in Part workbench, and equivalent features in PartDesign.</string>
         <item>
          <widget class="Gui::PrefCheckBox" name="checkBoxAuxGroup">
           <property name="toolTip">
-           <string>Disable this option to not enforce unique lable in auxillary groups.
+           <string>Disable this option to not enforce unique label in auxiliary groups.
 So instead of having 'Datums001' etc., all datum group can be
 labeled as 'Datums'.
 
-Note that this option does not apply to user created auxillary
+Note that this option does not apply to user created auxiliary
 groups, neither does the option affects any user defined label of
-existing auxillary groups.</string>
+existing auxiliary groups.</string>
           </property>
           <property name="text">
-           <string>Use unique label for auxillary groups in Body</string>
+           <string>Use unique label for auxiliary groups in Body</string>
           </property>
           <property name="prefEntry" stdset="0">
            <cstring>AuxGroupUniqueLabel</cstring>
@@ -68,7 +68,7 @@ existing auxillary groups.</string>
         <item>
          <widget class="QPushButton" name="btnAuxGroup">
           <property name="toolTip">
-           <string>Apply the 'fixed name' option to existing auxillary groups.
+           <string>Apply the 'fixed name' option to existing auxiliary groups.
 it only applies to auto created group with their original labels.</string>
           </property>
           <property name="text">

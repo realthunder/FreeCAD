@@ -4692,7 +4692,7 @@ TopoShape &TopoShape::makEFillet(const TopoShape &shape,
         }
         std::stable_sort(edgeSegments.begin(), edgeSegments.end());
         if (edgeSegments.front().param == 0.0 && edgeSegments.front().radius == 0.0) {
-            // If the first entry has both radius and paramemter be zero, treat
+            // If the first entry has both radius and parameter be zero, treat
             // it as suppressing the current edge for fillet
             continue;
         }

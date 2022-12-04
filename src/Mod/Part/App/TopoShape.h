@@ -325,7 +325,7 @@ public:
     /** Transform shape
      * 
      * @param mat: transformation matrix
-     * @param copy: whether to copy the shape before trasnformation
+     * @param copy: whether to copy the shape before transformation
      * @param checkScale: whether to check for non-uniform scaling. If not and
      * there is non-uniform scaling, exception will be raised. If non-uniform
      * scaling is detected, it will call makEGTransform() to do the
@@ -677,7 +677,7 @@ public:
     struct BRepFillingParams;
 
     /** Provides information about the continuity of a curve.
-     *  Cooresponds to OCCT type GeomAbs_Shape
+     *  Corresponds to OCCT type GeomAbs_Shape
      */
     enum class Continuity {
         /// Only geometric continuity
@@ -711,7 +711,7 @@ public:
 
     /** Make a non-planar filled face with boundary and/or constraint edge/wire 
      *
-     * @param shapes: input shapes of any type. The funciton will automatically
+     * @param shapes: input shapes of any type. The function will automatically
      *                discover connected and closed edges to be used as the
      *                boundary of the the new face. Any other vertex, edge,
      *                and/or face will be used as constraints to fine tune the
@@ -1687,7 +1687,7 @@ public:
      * @param intersection: if true, then offset all non-compound shape
      *                      together to deal with possible intersection after
      *                      expanding the shape.  If false, then offset each
-     *                      shape separatly.
+     *                      shape separately.
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
      *
@@ -1707,7 +1707,7 @@ public:
      * @param intersection: if true, then offset all non-compound shape
      *                      together to deal with possible intersection after
      *                      expanding the shape.  If false, then offset each
-     *                      shape separatly.
+     *                      shape separately.
      * @param op: optional string to be encoded into topo naming for indicating
      *            the operation
      *
