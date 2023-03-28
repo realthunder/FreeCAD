@@ -1073,9 +1073,13 @@ int SelectionSingleton::setPreselect(const char* pDocName, const char* pObjectNa
     hy = y;
     hz = z;
 
+    App::SubObjectT sobjT(pDocName, pObjectName, pSubName);
+    if (signal == 2 && !SelectionNoTopParentCheck::enabled())
+        checkTopParent(sobjT);
+
     // set up the change object
     SelectionChanges Chng(SelectionChanges::SetPreselect,
-            DocName,FeatName,SubName,std::string(),x,y,z,signal);
+                          sobjT, x, y, z, signal);
 
     CurrentPreselection = Chng;
 
@@ -1089,7 +1093,7 @@ int SelectionSingleton::setPreselect(const char* pDocName, const char* pObjectNa
     if (msg)
         format(0,0,0,x,y,z,true);
 
-    FC_TRACE("preselect "<<DocName<<'#'<<FeatName<<'.'<<SubName);
+    FC_TRACE("preselect " << sobjT.getSubObjectFullName());
     notify(Chng);
 
     // It is possible the preselect is removed during notification
@@ -1991,6 +1995,18 @@ bool SelectionSingleton::isSelected(App::DocumentObject* pObject, const char* pS
 
 void SelectionSingleton::checkTopParent(App::DocumentObject *&obj, std::string &subname) {
     TreeWidget::checkTopParent(obj,subname);
+}
+
+bool SelectionSingleton::checkTopParent(App::SubObjectT &sobjT) {
+    auto obj = sobjT.getObject();
+    auto subname = sobjT.getSubName();
+    auto parent = obj;
+    TreeWidget::checkTopParent(parent,subname);
+    if (parent != obj) {
+        sobjT = App::SubObjectT(parent, subname.c_str());
+        return true;
+    }
+    return false;
 }
 
 int SelectionSingleton::checkSelection(const char *pDocName, const char *pObjectName,

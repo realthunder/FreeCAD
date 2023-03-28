@@ -878,18 +878,10 @@ PyObject *DocumentObjectPy::getElementMapVersion(PyObject *args) {
 
 PyObject *DocumentObjectPy::getCustomAttributes(const char* attr) const
 {
-    // Dynamic property is now directly supported in PropertyContainer. So we
-    // can comment out here and let PropertyContainerPy handle it.
-#if 1
-    (void)attr;
-#else
-    // search for dynamic property
-    Property* prop = getDocumentObjectPtr()->getDynamicPropertyByName(attr);
-    if (prop)
-        return prop->getPyObject();
-    else
-#endif
-        return 0;
+    if (boost::equals(attr, "Parents")) {
+        return const_cast<DocumentObjectPy*>(this)->getParents(Py::Tuple().ptr());
+    }
+    return nullptr;
 }
 
 int DocumentObjectPy::setCustomAttributes(const char* attr, PyObject *obj)
@@ -1017,11 +1009,21 @@ PyObject *DocumentObjectPy::resolveSubElement(PyObject *args)
     Py_Return;
 }
 
-Py::List DocumentObjectPy::getParents() const {
-    Py::List ret;
-    for(auto &v : getDocumentObjectPtr()->getParents())
-        ret.append(Py::TupleN(Py::Object(v.first->getPyObject(),true),Py::String(v.second)));
-    return ret;
+PyObject * DocumentObjectPy::getParents(PyObject *args) {
+    PyObject *pyQueryParent = nullptr;
+    if (!PyArg_ParseTuple(args, "|O!", &DocumentObjectPy::Type, &pyQueryParent))
+        return nullptr;
+
+    DocumentObject *query_parent = nullptr;
+    if (pyQueryParent)
+        query_parent = static_cast<DocumentObjectPy*>(pyQueryParent)->getDocumentObjectPtr();
+
+    try {
+        Py::List ret;
+        for(auto &v : getDocumentObjectPtr()->getParents(query_parent))
+            ret.append(Py::TupleN(Py::Object(v.first->getPyObject(),true),Py::String(v.second)));
+        return Py::new_reference_to(ret);
+    } PY_CATCH
 }
 
 PyObject *DocumentObjectPy::adjustRelativeLinks(PyObject *args) {

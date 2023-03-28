@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:433)
+// Auto generated code (Gui/ViewParams.py:435)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:72)
@@ -1809,6 +1809,26 @@ public:
 
     // Auto generated code (Tools/params_utils.py:122)
     //@{
+    /// Accessor for parameter RenderHighlightPolygonOffsetFactor
+    static const double & getRenderHighlightPolygonOffsetFactor();
+    static const double & defaultRenderHighlightPolygonOffsetFactor();
+    static void removeRenderHighlightPolygonOffsetFactor();
+    static void setRenderHighlightPolygonOffsetFactor(const double &v);
+    static const char *docRenderHighlightPolygonOffsetFactor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:122)
+    //@{
+    /// Accessor for parameter RenderHighlightPolygonOffsetUnits
+    static const double & getRenderHighlightPolygonOffsetUnits();
+    static const double & defaultRenderHighlightPolygonOffsetUnits();
+    static void removeRenderHighlightPolygonOffsetUnits();
+    static void setRenderHighlightPolygonOffsetUnits(const double &v);
+    static const char *docRenderHighlightPolygonOffsetUnits();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:122)
+    //@{
     /// Accessor for parameter ForceSolidSingleSideLighting
     ///
     /// Force single side lighting on solid. This can help visualizing invalid
@@ -1943,7 +1963,7 @@ public:
     static const char *docToolTipDisable();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:439)
+    // Auto generated code (Gui/ViewParams.py:441)
     static const std::vector<QString> AnimationCurveTypes;
 //[[[end]]]
 
@@ -1969,7 +1989,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:447)
+// Auto generated code (Gui/ViewParams.py:449)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

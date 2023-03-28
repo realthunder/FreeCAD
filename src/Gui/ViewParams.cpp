@@ -206,6 +206,8 @@ public:
     long RenderCacheMergeCountMax;
     long RenderCacheMergeDepthMax;
     long RenderCacheMergeDepthMin;
+    double RenderHighlightPolygonOffsetFactor;
+    double RenderHighlightPolygonOffsetUnits;
     bool ForceSolidSingleSideLighting;
     long DefaultFontSize;
     bool EnableTaskPanelKeyTranslate;
@@ -524,6 +526,10 @@ public:
         funcs["RenderCacheMergeDepthMax"] = &ViewParamsP::updateRenderCacheMergeDepthMax;
         RenderCacheMergeDepthMin = handle->GetInt("RenderCacheMergeDepthMin", 1);
         funcs["RenderCacheMergeDepthMin"] = &ViewParamsP::updateRenderCacheMergeDepthMin;
+        RenderHighlightPolygonOffsetFactor = handle->GetFloat("RenderHighlightPolygonOffsetFactor", 1);
+        funcs["RenderHighlightPolygonOffsetFactor"] = &ViewParamsP::updateRenderHighlightPolygonOffsetFactor;
+        RenderHighlightPolygonOffsetUnits = handle->GetFloat("RenderHighlightPolygonOffsetUnits", 1);
+        funcs["RenderHighlightPolygonOffsetUnits"] = &ViewParamsP::updateRenderHighlightPolygonOffsetUnits;
         ForceSolidSingleSideLighting = handle->GetBool("ForceSolidSingleSideLighting", true);
         funcs["ForceSolidSingleSideLighting"] = &ViewParamsP::updateForceSolidSingleSideLighting;
         DefaultFontSize = handle->GetInt("DefaultFontSize", 0);
@@ -1185,6 +1191,14 @@ public:
     // Auto generated code (Tools/params_utils.py:238)
     static void updateRenderCacheMergeDepthMin(ViewParamsP *self) {
         self->RenderCacheMergeDepthMin = self->handle->GetInt("RenderCacheMergeDepthMin", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:238)
+    static void updateRenderHighlightPolygonOffsetFactor(ViewParamsP *self) {
+        self->RenderHighlightPolygonOffsetFactor = self->handle->GetFloat("RenderHighlightPolygonOffsetFactor", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:238)
+    static void updateRenderHighlightPolygonOffsetUnits(ViewParamsP *self) {
+        self->RenderHighlightPolygonOffsetUnits = self->handle->GetFloat("RenderHighlightPolygonOffsetUnits", 1);
     }
     // Auto generated code (Tools/params_utils.py:244)
     static void updateForceSolidSingleSideLighting(ViewParamsP *self) {
@@ -5440,6 +5454,60 @@ void ViewParams::removeRenderCacheMergeDepthMin() {
 }
 
 // Auto generated code (Tools/params_utils.py:288)
+const char *ViewParams::docRenderHighlightPolygonOffsetFactor() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:294)
+const double & ViewParams::getRenderHighlightPolygonOffsetFactor() {
+    return instance()->RenderHighlightPolygonOffsetFactor;
+}
+
+// Auto generated code (Tools/params_utils.py:300)
+const double & ViewParams::defaultRenderHighlightPolygonOffsetFactor() {
+    const static double def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:307)
+void ViewParams::setRenderHighlightPolygonOffsetFactor(const double &v) {
+    instance()->handle->SetFloat("RenderHighlightPolygonOffsetFactor",v);
+    instance()->RenderHighlightPolygonOffsetFactor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:314)
+void ViewParams::removeRenderHighlightPolygonOffsetFactor() {
+    instance()->handle->RemoveFloat("RenderHighlightPolygonOffsetFactor");
+}
+
+// Auto generated code (Tools/params_utils.py:288)
+const char *ViewParams::docRenderHighlightPolygonOffsetUnits() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:294)
+const double & ViewParams::getRenderHighlightPolygonOffsetUnits() {
+    return instance()->RenderHighlightPolygonOffsetUnits;
+}
+
+// Auto generated code (Tools/params_utils.py:300)
+const double & ViewParams::defaultRenderHighlightPolygonOffsetUnits() {
+    const static double def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:307)
+void ViewParams::setRenderHighlightPolygonOffsetUnits(const double &v) {
+    instance()->handle->SetFloat("RenderHighlightPolygonOffsetUnits",v);
+    instance()->RenderHighlightPolygonOffsetUnits = v;
+}
+
+// Auto generated code (Tools/params_utils.py:314)
+void ViewParams::removeRenderHighlightPolygonOffsetUnits() {
+    instance()->handle->RemoveFloat("RenderHighlightPolygonOffsetUnits");
+}
+
+// Auto generated code (Tools/params_utils.py:288)
 const char *ViewParams::docForceSolidSingleSideLighting() {
     return QT_TRANSLATE_NOOP("ViewParams",
 "Force single side lighting on solid. This can help visualizing invalid\n"
@@ -5771,7 +5839,7 @@ void ViewParams::removeToolTipDisable() {
     instance()->handle->RemoveBool("ToolTipDisable");
 }
 
-// Auto generated code (Gui/ViewParams.py:463)
+// Auto generated code (Gui/ViewParams.py:465)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -5816,7 +5884,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:471)
+// Auto generated code (Gui/ViewParams.py:473)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -5830,7 +5898,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:481)
+// Auto generated code (Gui/ViewParams.py:483)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -5844,13 +5912,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:491)
+// Auto generated code (Gui/ViewParams.py:493)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:498)
+// Auto generated code (Gui/ViewParams.py:500)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -5858,7 +5926,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:507)
+// Auto generated code (Gui/ViewParams.py:509)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -5870,7 +5938,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:520)
+// Auto generated code (Gui/ViewParams.py:522)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)

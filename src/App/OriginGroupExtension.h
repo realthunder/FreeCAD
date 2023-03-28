@@ -72,6 +72,7 @@ public:
 
     virtual void extensionOnChanged(const Property* p) override;
 
+    virtual bool extensionGetSubObjects(std::vector<std::string> &ret, int reason) const override;
 protected:
     /// Checks integrity of the Origin
     virtual App::DocumentObjectExecReturn *extensionExecute () override;

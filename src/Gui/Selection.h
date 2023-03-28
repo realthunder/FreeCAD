@@ -745,8 +745,10 @@ public:
 
     void flushNotifications();
 
-    // Check if obj can be considered as a top level object
+    /// Check if obj can be considered as a top level object
     static void checkTopParent(App::DocumentObject *&obj, std::string &subname);
+    /// return trun if there are parent of the given object
+    static bool checkTopParent(App::SubObjectT &sobjT);
 
     static SelectionSingleton& instance(void);
     static void destruct (void);

@@ -436,8 +436,14 @@ public:
                                                   int reason=GS_DEFAULT,
                                                   bool checkVisibility=true) const;
 
-    ///Obtain top parents and subnames of this object using its InList
-    std::vector<std::pair<App::DocumentObject*,std::string> > getParents(int depth=0) const;
+    /** Obtain top parents and subnames of this object using its InList
+     * @param queryParent: optional parent to search for, if not given, then
+     *                      return all top parents. If given, then return only
+     *                      object path from the given parent.
+     * @param depth: the current depth to prevent infinite recursion.
+     * @return Return a vector of pair of parent and sub object path
+     */
+    std::vector<std::pair<App::DocumentObject*,std::string> > getParents(App::DocumentObject *queryParent=nullptr, int depth=0) const;
 
     /** Return the linked object with optional transformation
      *

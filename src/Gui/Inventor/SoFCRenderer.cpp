@@ -545,10 +545,19 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
   }
 
   if (first || this->material.depthtest != depthtest) {
-    if (depthtest)
+    if (depthtest) {
       glEnable(GL_DEPTH_TEST);
-    else
+      setDepthFunc(depthfunc);
+      this->material.depthfunc = depthfunc;
+    }
+    else if (depthwrite) {
+      glEnable(GL_DEPTH_TEST);
+      setDepthFunc(SoDepthBuffer::ALWAYS);
+      this->material.depthfunc = depthfunc;
+    }
+    else {
       glDisable(GL_DEPTH_TEST);
+    }
     FC_GLERROR_CHECK;
     this->material.depthtest = depthtest;
   }

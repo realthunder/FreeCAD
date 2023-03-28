@@ -92,6 +92,17 @@ bool OriginGroupExtension::extensionGetSubObject(DocumentObject *&ret, const cha
     return GeoFeatureGroupExtension::extensionGetSubObject(ret,subname,pyObj,mat,transform,depth);
 }
 
+
+bool OriginGroupExtension::extensionGetSubObjects(std::vector<std::string> &ret, int reason) const {
+    if (!GeoFeatureGroupExtension::extensionGetSubObjects(ret, reason))
+        return false;
+
+    if (reason == DocumentObject::GS_SELECT && Origin.getValue())
+        ret.emplace(ret.begin(), std::string(Origin.getValue()->getNameInDocument()) + ".");
+    return true;
+}
+
+
 App::DocumentObject *OriginGroupExtension::getGroupOfObject (const DocumentObject* obj) {
 
     if(!obj)

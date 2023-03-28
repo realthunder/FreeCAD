@@ -1788,9 +1788,9 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
       if (detail) {
         if (pctx || fctx || lctx) {
           // If there is detail context, make sure it matches to the node
-          if ((!pctx || pctx != ventry.cache->getNode())
-              && (!lctx || lctx != ventry.cache->getNode())
-              && (!fctx || fctx != ventry.cache->getNode()))
+          if ((!pctx || (child.first.type == Material::Point && pctx != ventry.cache->getNode()))
+              && (!lctx || (child.first.type == Material::Line && lctx != ventry.cache->getNode()))
+              && (!fctx || (child.first.type == Material::Triangle && fctx != ventry.cache->getNode())))
             continue;
         }
         if (ventry.mergecount)
@@ -1799,11 +1799,33 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
         continue;
 
       if (!wholeontop && detail && !elementselectable)
-          continue;
+        continue;
 
       Material material = child.first;
       material.order = order;
       material.depthfunc = SoDepthBuffer::LEQUAL;
+
+      if (order > 0) {
+        float scale = 1.f;
+        if (material.type == Material::Line) {
+          scale = 2.f;
+          material.polygonoffsetstyle = SoPolygonOffsetElement::LINES;
+        }
+        else if (material.type == Material::Triangle) {
+          material.polygonoffsetstyle = SoPolygonOffsetElement::POINTS;
+          scale = 1.5f;
+        }
+        else
+          material.polygonoffsetstyle = SoPolygonOffsetElement::FILLED;
+        material.polygonoffsetfactor = -ViewParams::getRenderHighlightPolygonOffsetFactor();
+        material.polygonoffsetunits = -ViewParams::getRenderHighlightPolygonOffsetUnits();
+        if (preselect) {
+          material.polygonoffsetfactor -= ViewParams::getRenderHighlightPolygonOffsetFactor();
+          material.polygonoffsetunits -= ViewParams::getRenderHighlightPolygonOffsetUnits();
+        }
+        material.polygonoffsetfactor *= scale;
+        material.polygonoffsetunits *= scale;
+      }
 
       if (color && (material.selectstyle == Material::Box
                     || (material.selectstyle == Material::BoxFull && !detail)

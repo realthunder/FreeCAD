@@ -307,26 +307,35 @@ void DlgPropertyLink::setInitObjects(std::vector<App::DocumentObjectT> &&objs)
 }
 
 static std::pair<App::DocumentObject *, const char *> resolveContext(
-        const App::SubObjectT &ctx, std::string &subname, const App::SubObjectT &sobjT)
+        const App::SubObjectT &ctx, std::string &subname, const App::SubObjectT &_sobjT)
 {
+    auto sobjT = _sobjT;
     auto obj = ctx.getObject();
-    if (!obj) {
-        subname = sobjT.getSubName();
-        return {sobjT.getObject(), subname.c_str()};
-    }
-    subname = ctx.getSubNameNoElement();
-    subname += sobjT.getObjectName();
-    subname += ".";
-    auto sobj = sobjT.getObject();
-    if (!sobj)
-        return {nullptr, nullptr};
-    if(obj->getSubObject(subname.c_str()) == sobj) {
-        subname += sobjT.getSubName();
-        return {obj, subname.c_str()};
+    if (obj) {
+        auto sobj = sobjT.getObject();
+        if (!sobj)
+            return {nullptr, nullptr};
+
+        auto inList = sobj->getInListEx(true);
+        auto ctxObjs = ctx.getSubObjectList();
+        // Try to find a (grand)parent object of sobjT from the bottom up the ctx
+        // (i.e. current context) object path.
+        for (int i = static_cast<int>(ctxObjs.size()-1); i>=0 ;--i) {
+            if (!inList.count(ctxObjs[i]))
+                continue;
+            auto parents = sobj->getParents(ctxObjs[i]);
+            if (parents.empty())
+                continue;
+
+            sobjT = App::SubObjectT(ctxObjs.begin(), ctxObjs.begin()+i+1, parents.front().second.c_str());
+            sobjT.setSubName(sobjT.getSubName() + _sobjT.getObjectName() + "." + _sobjT.getSubName());
+            break;
+        }
     }
 
+    sobjT.normalize();
     subname = sobjT.getSubName();
-    return {sobj, subname.c_str()};
+    return {sobjT.getObject(), subname.c_str()};
 }
 
 void DlgPropertyLink::init(const App::DocumentObjectT &prop, bool tryFilter)

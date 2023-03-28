@@ -405,6 +405,8 @@ Params = [
         "Maximum hierarchy depth that the cache merge can happen. Less than 0 means no limit."),
     ParamInt('RenderCacheMergeDepthMin',  1,
         "Minimum hierarchy depth that the cache merge can happen."),
+    ParamFloat('RenderHighlightPolygonOffsetFactor', 1),
+    ParamFloat('RenderHighlightPolygonOffsetUnits', 1),
     ParamBool('ForceSolidSingleSideLighting',  True, on_change=True, title='Force single side lighting on solid',
         doc="Force single side lighting on solid. This can help visualizing invalid\n"
         "solid shapes with flipped normals."),

@@ -248,6 +248,11 @@ bool Origin::OriginExtension::extensionGetSubObject(DocumentObject *&ret, const 
     }
 }
 
+const App::PropertyLinkList& Origin::OriginExtension::getExportGroupProperty(int reason) const
+{
+    return obj && reason == GS_SELECT ? obj->OriginFeatures : _ExportChildren;
+}
+
 bool Origin::canSaveExtension(Extension *ext) const
 {
     if (ext)

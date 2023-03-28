@@ -1069,7 +1069,7 @@ DocumentObject::expandSubObjectNames(const char *subname, int reason, bool check
 }
 
 std::vector<std::pair<App::DocumentObject *,std::string> >
-DocumentObject::getParents(int depth) const {
+DocumentObject::getParents(App::DocumentObject *queryParent, int depth) const {
     std::vector<std::pair<App::DocumentObject *,std::string> > ret;
     if(!getNameInDocument() || !GetApplication().checkLinkDepth(depth))
         return ret;
@@ -1086,15 +1086,26 @@ DocumentObject::getParents(int depth) const {
         if (subname.empty())
             continue;
 
+        if (parent == queryParent) {
+            ret.emplace_back(parent, subname);
+            break;
+        }
+
         auto links = GetApplication().getLinksTo(parent,
                 App::GetLinkRecursive | App::GetLinkArrayElement);
         links.insert(parent);
         for(auto parent : links) {
-            auto parents = parent->getParents(depth+1);
-            if(parents.empty()) 
+            if (parent == queryParent) {
+                ret.emplace_back(parent, subname);
+                break;
+            }
+            auto parents = parent->getParents(queryParent, depth+1);
+            if(parents.empty() && !queryParent)  {
                 parents.emplace_back(parent,std::string());
-            for(auto &v : parents)
+            }
+            for(auto &v : parents) {
                 ret.emplace_back(v.first,v.second+subname);
+            }
         }
     }
     return ret;

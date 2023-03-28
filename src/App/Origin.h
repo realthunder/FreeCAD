@@ -145,6 +145,7 @@ private:
         Origin* obj;
     public:
         OriginExtension(Origin* obj);
+        const App::PropertyLinkList &getExportGroupProperty(int reason) const;
         void initExtension(ExtensionContainer* obj);
         bool extensionGetSubObject(DocumentObject *&ret, const char *subname,
                 PyObject **, Base::Matrix4D *, bool, int) const;

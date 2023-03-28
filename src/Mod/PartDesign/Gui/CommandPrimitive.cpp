@@ -33,7 +33,7 @@
 #include <boost_bind_bind.hpp>
 
 #include <App/Document.h>
-#include <Gui/Command.h>
+#include <Gui/CommandT.h>
 #include <Gui/Action.h>
 #include <Gui/Control.h>
 #include <Gui/MainWindow.h>
@@ -140,13 +140,13 @@ void CmdPrimtiveCompAdditive::activated(int iMsg)
 
     auto FeatName( getUniqueObjectName(shapeType, pcActiveBody) );
 
-    FCMD_OBJ_DOC_CMD(pcActiveBody,"addObject('PartDesign::Additive"<<shapeType<<"','"<<FeatName<<"')");
+    Gui::cmdAppObject(pcActiveBody, std::ostringstream()
+                << "newObjectAt('PartDesign::Additive" << shapeType << "','" << FeatName << "')");
 
     auto* prm = static_cast<PartDesign::FeaturePrimitive*>(
             pcActiveBody->getDocument()->getObject(FeatName.c_str()));
 
     if(!prm) return;
-    FCMD_OBJ_CMD(pcActiveBody,"addObject("<<getObjectCmd(prm)<<")");
     Gui::Command::updateActive();
 
     auto base = prm->BaseFeature.getValue();
@@ -312,7 +312,7 @@ void CmdPrimtiveCompSubtractive::activated(int iMsg)
     auto FeatName( getUniqueObjectName(shapeType, pcActiveBody) );
 
     Gui::Command::openCommand( (std::string("Make subtractive ") + shapeType).c_str() );
-    FCMD_OBJ_CMD(pcActiveBody,"newObject('PartDesign::Subtractive"<<shapeType<<"','"<<FeatName<<"')");
+    FCMD_OBJ_CMD(pcActiveBody,"newObjectAt('PartDesign::Subtractive"<<shapeType<<"','"<<FeatName<<"')");
     Gui::Command::updateActive();
 
     auto Feat = pcActiveBody->getDocument()->getObject(FeatName.c_str());
