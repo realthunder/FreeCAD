@@ -271,7 +271,7 @@ public:
 
     bool operator<(const StringIDRef & p) const {
         if (!_sid)
-            return true;
+            return !p._sid;
         if (!p._sid)
             return false;
         int res = _sid->compare(*p._sid);

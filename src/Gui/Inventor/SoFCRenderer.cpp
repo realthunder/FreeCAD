@@ -251,7 +251,8 @@ public:
 
   SbFCMap<int, const VertexCacheMap *> selections;
   SbFCMap<int, const VertexCacheMap *> selectionsontop;
-  SbFCVector<DrawEntryIndex> transpselectionsontop;
+  SbFCVector<DrawEntryIndex> transpselectionsontop; // whole on top
+  SbFCVector<DrawEntryIndex> transpselectionsfaceontop; // face selection on top
   SbFCVector<std::size_t> selstriangleontop;
   SbFCVector<std::size_t> selsontop; // include only non-explicitly selected lines and points
   SbFCVector<std::size_t> selslineontop; // include only explicitly selected lines
@@ -547,15 +548,7 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
   if (first || this->material.depthtest != depthtest) {
     if (depthtest) {
       glEnable(GL_DEPTH_TEST);
-      setDepthFunc(depthfunc);
-      this->material.depthfunc = depthfunc;
-    }
-    else if (depthwrite) {
-      glEnable(GL_DEPTH_TEST);
-      setDepthFunc(SoDepthBuffer::ALWAYS);
-      this->material.depthfunc = depthfunc;
-    }
-    else {
+    } else {
       glDisable(GL_DEPTH_TEST);
     }
     FC_GLERROR_CHECK;
@@ -777,6 +770,7 @@ SoFCRenderer::clear()
   PRIVATE(this)->preseloutline.clear();
   PRIVATE(this)->selectionsontop.clear();
   PRIVATE(this)->transpselectionsontop.clear();
+  PRIVATE(this)->transpselectionsfaceontop.clear();
   PRIVATE(this)->selstriangleontop.clear();
   PRIVATE(this)->selslineontop.clear();
   PRIVATE(this)->selspointontop.clear();
@@ -1049,6 +1043,7 @@ SoFCRendererP::updateSelection()
   this->transpselections.clear();
   this->seloutline.clear();
   this->transpselectionsontop.clear();
+  this->transpselectionsfaceontop.clear();
   this->selstriangleontop.clear();
   this->selslineontop.clear();
   this->selspointontop.clear();
@@ -1104,9 +1099,11 @@ SoFCRendererP::updateSelection()
         --idx;
         switch (material.type) {
           case Material::Triangle:
-            if (ventry.partidx >= 0)
-                this->seloutline.emplace_back(idx);
-            this->transpselectionsontop.emplace_back(idx);
+            if (ventry.partidx >= 0) {
+              this->seloutline.emplace_back(idx);
+              this->transpselectionsfaceontop.emplace_back(idx);
+            } else
+              this->transpselectionsontop.emplace_back(idx);
             if (!(sel.first & SoFCRenderer::SelIdSelected) || material.partialhighlight)
               this->selstriangleontop.emplace_back(idx);
             break;
@@ -2331,6 +2328,11 @@ SoFCRenderer::render(SoGLRenderAction * action)
 
   glDisable(GL_BLEND);
   FC_GLERROR_CHECK;
+
+  PRIVATE(this)->renderTransparency(action,
+                                    PRIVATE(this)->slentries,
+                                    PRIVATE(this)->transpselectionsfaceontop,
+                                    false);
 
   if (!PRIVATE(this)->hlwholeontop) {
     PRIVATE(this)->renderOpaque(action,

@@ -280,7 +280,7 @@ public:
         funcs["ShowPreSelectedFaceOutline"] = &ViewParamsP::updateShowPreSelectedFaceOutline;
         ShowSelectedFaceOutline = handle->GetBool("ShowSelectedFaceOutline", true);
         funcs["ShowSelectedFaceOutline"] = &ViewParamsP::updateShowSelectedFaceOutline;
-        OutlineThicken = handle->GetFloat("OutlineThicken", 2);
+        OutlineThicken = handle->GetFloat("OutlineThicken", 4);
         funcs["OutlineThicken"] = &ViewParamsP::updateOutlineThicken;
         NoSelFaceHighlightWithOutline = handle->GetBool("NoSelFaceHighlightWithOutline", false);
         funcs["NoSelFaceHighlightWithOutline"] = &ViewParamsP::updateNoSelFaceHighlightWithOutline;
@@ -690,7 +690,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:238)
     static void updateOutlineThicken(ViewParamsP *self) {
-        self->OutlineThicken = self->handle->GetFloat("OutlineThicken", 2);
+        self->OutlineThicken = self->handle->GetFloat("OutlineThicken", 4);
     }
     // Auto generated code (Tools/params_utils.py:238)
     static void updateNoSelFaceHighlightWithOutline(ViewParamsP *self) {
@@ -2023,7 +2023,7 @@ const double & ViewParams::getOutlineThicken() {
 
 // Auto generated code (Tools/params_utils.py:300)
 const double & ViewParams::defaultOutlineThicken() {
-    const static double def = 2;
+    const static double def = 4;
     return def;
 }
 

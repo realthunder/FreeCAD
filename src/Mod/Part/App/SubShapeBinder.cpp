@@ -114,8 +114,8 @@ SubShapeBinder::SubShapeBinder()
             "            The rest bound objects (if any) will maintain the same relative placement\n"
             "            to the first bound object.");
     ADD_PROPERTY_TYPE(PartialLoad, (false), "Base", App::Prop_None,
-            "Enable partial loading, which disables auto loading of external document for"
-            "external bound object.");
+            "Enable partial loading, which disables auto loading of external document\n"
+            "of the external bound object.");
     PartialLoad.setStatus(App::Property::PartialTrigger,true);
     static const char *BindModeEnum[] = {"Synchronized", "Frozen", "Detached", "Float", "FloatFirst", 0};
     BindMode.setEnums(BindModeEnum);

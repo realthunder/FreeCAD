@@ -39,11 +39,6 @@ public:
     virtual ~ViewProviderBase();
 
     virtual bool doubleClicked(void);
-    virtual void setupContextMenu(QMenu* menu, QObject* receiver, const char* member);
-
-protected:
-    virtual bool setEdit(int ModNum);
-    virtual void unsetEdit(int ModNum);
 };
 
 } // namespace PartDesignGui

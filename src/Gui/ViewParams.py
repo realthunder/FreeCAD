@@ -158,7 +158,7 @@ Params = [
     ParamBool('ShowPreSelectedFaceOnTop', True, "Show pre-selected face always on top"),
     ParamBool('ShowPreSelectedFaceOutline', True, "Show pre-selected face outline"),
     ParamBool('ShowSelectedFaceOutline', True, "Show selected face outline"),
-    ParamFloat('OutlineThicken', 2,
+    ParamFloat('OutlineThicken', 4,
        title='Outline width multiplier',
        doc="Muplication factor to increase outline width of the selected face."),
     ParamBool('NoSelFaceHighlightWithOutline', False,

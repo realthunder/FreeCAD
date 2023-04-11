@@ -208,7 +208,9 @@ void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) con
                         }
                     }
                     if (addMoveFeatureInTree) {
-                        *item   << "PartDesign_MoveFeatureInTree";
+                        // PartDesign_MoveFeatureInTree is deprecated. Just use mouse drag
+                        //
+                        // *item   << "PartDesign_MoveFeatureInTree";
                     }
                 }
             }
