@@ -2567,7 +2567,10 @@ private:
                         history.obj, tmp.c_str(), elementName)
                     && elementName.second.size())
             {
-                ret.setItem(1,Py::String(elementName.first));
+                if (elementName.first.empty())
+                    ret.setItem(1,Py::String(elementName.second));
+                else
+                    ret.setItem(1,Py::String(elementName.first));
             } else
                 ret.setItem(1,Py::String(history.element.toString(tmp)));
 
@@ -2580,7 +2583,10 @@ private:
                             history.obj, tmp.c_str(), elementName, true)
                         && elementName.second.size())
                 {
-                    intermediates.append(Py::String(elementName.first));
+                    if (elementName.first.empty())
+                        intermediates.append(Py::String(elementName.second));
+                    else
+                        intermediates.append(Py::String(elementName.first));
                 } else
                     intermediates.append(Py::String(h.toString(tmp)));
             }

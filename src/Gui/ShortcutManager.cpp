@@ -28,6 +28,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <App/Document.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include "ShortcutManager.h"
@@ -191,6 +192,12 @@ void ShortcutManager::setShortcut(const char *cmdName, const char *accel)
 
 bool ShortcutManager::checkShortcut(QObject *o, const QKeySequence &key)
 {
+    if (App::Document::isAnyRecomputing() || App::Document::isAnyRestoring()) {
+        pendingActions.clear();
+        lastFocus = nullptr;
+        return true;
+    }
+
     auto focus = QApplication::focusWidget();
     if (!focus)
         return false;
@@ -203,7 +210,7 @@ bool ShortcutManager::checkShortcut(QObject *o, const QKeySequence &key)
     if (iter == index.end())
         return false;
 
-    // disable and enqueue the action in order to try other alternativeslll
+    // disable and enqueue the action in order to try other alternatives
     action->setEnabled(false);
     pendingActions.emplace_back(action, key.count(), 0);
 

@@ -9372,8 +9372,15 @@ void SketchObject::onChanged(const App::Property* prop)
 }
 
 void SketchObject::onUpdateElementReference(const App::Property *prop) {
-    if(prop == &ExternalGeometry)
+    if(prop == &ExternalGeometry) {
         updateGeoRef = true;
+        // Must call updateGeometryRefs() now to avoid the case of recursive
+        // property change (e.g. temporary object removal in SubShapeBinder)
+        // afterwards causing assertion failure, although this may mean extra
+        // call of updateGeometryRefs() later in onChange().
+        updateGeometryRefs();
+        signalElementsChanged();
+    }
 }
 
 void SketchObject::updateGeometryRefs() {

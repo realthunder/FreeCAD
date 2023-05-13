@@ -36,6 +36,17 @@ base64: indicate if the input 'txt' is base64 encoded binary data
                 <UserDocu>Check if two hasher are the same</UserDocu>
             </Documentation>
         </Methode>
+        <Methode Name="checkStorageSizes" Const="true">
+            <Documentation>
+                <UserDocu>
+Return the storage sizes as a tuple of the following entires
+0: total size of all currently stored strings
+1: total size of referenced strings
+2: sizes of all shared strings (i.e. not counting the duplicates)
+3: sizes of referenced shared strings
+                </UserDocu>
+            </Documentation>
+        </Methode>
         <Attribute Name="Count" ReadOnly="true">
             <Documentation>
                 <UserDocu>Return count of used hashes</UserDocu>

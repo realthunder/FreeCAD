@@ -284,7 +284,7 @@ public:
         funcs["OutlineThicken"] = &ViewParamsP::updateOutlineThicken;
         NoSelFaceHighlightWithOutline = handle->GetBool("NoSelFaceHighlightWithOutline", false);
         funcs["NoSelFaceHighlightWithOutline"] = &ViewParamsP::updateNoSelFaceHighlightWithOutline;
-        NoPreSelFaceHighlightWithOutline = handle->GetBool("NoPreSelFaceHighlightWithOutline", false);
+        NoPreSelFaceHighlightWithOutline = handle->GetBool("NoPreSelFaceHighlightWithOutline", true);
         funcs["NoPreSelFaceHighlightWithOutline"] = &ViewParamsP::updateNoPreSelFaceHighlightWithOutline;
         AutoTransparentPick = handle->GetBool("AutoTransparentPick", false);
         funcs["AutoTransparentPick"] = &ViewParamsP::updateAutoTransparentPick;
@@ -698,7 +698,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:238)
     static void updateNoPreSelFaceHighlightWithOutline(ViewParamsP *self) {
-        self->NoPreSelFaceHighlightWithOutline = self->handle->GetBool("NoPreSelFaceHighlightWithOutline", false);
+        self->NoPreSelFaceHighlightWithOutline = self->handle->GetBool("NoPreSelFaceHighlightWithOutline", true);
     }
     // Auto generated code (Tools/params_utils.py:238)
     static void updateAutoTransparentPick(ViewParamsP *self) {
@@ -2079,7 +2079,7 @@ const bool & ViewParams::getNoPreSelFaceHighlightWithOutline() {
 
 // Auto generated code (Tools/params_utils.py:300)
 const bool & ViewParams::defaultNoPreSelFaceHighlightWithOutline() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 

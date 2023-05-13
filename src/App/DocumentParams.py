@@ -64,6 +64,9 @@ Params = [
     ParamBool('DuplicateLabels', False),
     ParamBool('TransactionOnRecompute', False),
     ParamBool('RelativeStringID', True),
+    ParamBool('HashIndexedName', False,
+        doc='Enable special encoding of indexes name in toponaming. Disabled by\n'
+            'default for backward compatibility'),
     ParamBool('EnableMaterialEdit', True),
 ]
 

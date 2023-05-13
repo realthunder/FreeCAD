@@ -1447,7 +1447,7 @@ static App::Color getElementColor(App::Color color,
         //
         // However, if there are intermediate modeling steps, things get a bit
         // tricky. getElementHistory() returns intermediate element names in
-        // 'history', but the last entry of 'history' actually contains the real
+        // 'history', but the last entry of 'history' may actually contain the real
         // mapped element name of the 'current' modeling step. That's why we are
         // calling getElementHistory() for previous modeling step now, before
         // retrieving the element for the current step using getElementName(),
@@ -1458,8 +1458,10 @@ static App::Color getElementColor(App::Color color,
         std::swap(history, prevHistory);
         prevHistory.clear();
         tag = shape.getElementHistory(mapped,&original,&prevHistory);
-        Data::IndexedName element = shape.getIndexedName(history.empty()?mapped:history.back());
-        auto idx = Part::TopoShape::shapeTypeAndIndex(element);
+        Data::IndexedName indexedName = shape.getIndexedName(mapped);
+        if (!indexedName && !history.empty())
+           indexedName = shape.getIndexedName(history.back());
+        auto idx = Part::TopoShape::shapeTypeAndIndex(indexedName);
         if(idx.second>0 && idx.second<=(int)shape.countSubShapes(idx.first)) {
             if(idx.first==type) {
                 if(prop->getSize()==1) {

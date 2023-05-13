@@ -1103,7 +1103,10 @@ void TopoShape::copyElementMap(const TopoShape &s, const char *op)
         child.offset = 0;
         child.count = count;
         child.elementMap = s.elementMap();
-        if (this->Tag != s.Tag)
+        // If there is op code supplied, we must include child tag even if it's
+        // the same as the tag of this shape, because otherwise we won't be able
+        // to strip the op code to get back to the original name in history tracing.
+        if (this->Tag != s.Tag || (op && op[0]))
             child.tag = s.Tag;
         else
             child.tag = 0;

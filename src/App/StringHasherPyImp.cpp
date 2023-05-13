@@ -95,6 +95,23 @@ PyObject* StringHasherPy::getID(PyObject *args)
     }PY_CATCH;
 }
 
+PyObject *StringHasherPy::checkStorageSizes(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    try {
+        auto sizes = getStringHasherPtr()->getStorageSize();
+        Py::Tuple tuple(4);
+        tuple.setItem(0,Py::Int(sizes.total_size));
+        tuple.setItem(1,Py::Int(sizes.referenced_size));
+        tuple.setItem(2,Py::Int(sizes.total_shared_size));
+        tuple.setItem(3,Py::Int(sizes.shared_size));
+        return Py::new_reference_to(tuple);
+    } PY_CATCH
+}
+
+
 Py::Int StringHasherPy::getCount(void) const {
     return Py::Int((long)getStringHasherPtr()->count());
 }

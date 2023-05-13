@@ -238,8 +238,7 @@ class DraftLink(DraftObject):
                     vis = getattr(obj, 'VisibilityList', [])
                     if len(vis) > i and not vis[i]:
                         continue
-
-                    base.append(shape.transformed(pla.toMatrix()))
+                    base.append(shape.transformed(pla.toMatrix(), op=f':I{i}'))
 
                 if getattr(obj, 'Fuse', False) and len(base) > 1:
                     obj.Shape = base[0].multiFuse(base[1:]).removeSplitter()

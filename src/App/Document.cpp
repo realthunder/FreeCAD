@@ -3720,142 +3720,6 @@ void Document::renameObjectIdentifiers(const std::map<App::ObjectIdentifier, App
             (*it)->renameObjectIdentifiers(extendedPaths);
 }
 
-#ifdef USE_OLD_DAG
-int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool force)
-{
-    if (testStatus(Document::Recomputing)) {
-        // this is clearly a bug in the calling instance
-        throw Base::RuntimeError("Nested recomputes of a document are not allowed");
-    }
-
-    int objectCount = 0;
-
-    // The 'SkipRecompute' flag can be (tmp.) set to avoid too many
-    // time expensive recomputes
-    if(!force && testStatus(Document::SkipRecompute))
-        return 0;
-
-    Base::ObjectStatusLocker<Document::Status, Document> exe(Document::Recomputing, this);
-
-    // delete recompute log
-    d->clearRecomputeLog();
-
-    // updates the dependency graph
-    _rebuildDependencyList(objs);
-
-    std::list<Vertex> make_order;
-    DependencyList::out_edge_iterator j, jend;
-
-    try {
-        // this sort gives the execute
-        boost::topological_sort(d->DepList, std::front_inserter(make_order));
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Document::recompute: " << e.what() << std::endl;
-        return -1;
-    }
-
-    // caching vertex to DocObject
-    for (std::map<DocumentObject*,Vertex>::const_iterator It1= d->VertexObjectList.begin();It1 != d->VertexObjectList.end(); ++It1)
-        d->vertexMap[It1->second] = It1->first;
-
-#ifdef FC_LOGFEATUREUPDATE
-    std::clog << "make ordering: " << std::endl;
-#endif
-
-    std::set<DocumentObject*> recomputeList;
-
-    for (std::list<Vertex>::reverse_iterator i = make_order.rbegin();i != make_order.rend(); ++i) {
-        DocumentObject* Cur = d->vertexMap[*i];
-        // Because of PropertyXLink, we should account for external objects
-        // TODO: make sure it is safe to rely on getNameInDocument() to check if
-        // object is in the document. If it crashes, then we should fix the code
-        // to properly nullify getNameInDocument(), rather than revert back to
-        // the inefficient isIn()
-        // if (!Cur || !isIn(Cur)) continue;
-        if (!Cur || !Cur->getNameInDocument()) continue;
-#ifdef FC_LOGFEATUREUPDATE
-        std::clog << Cur->getNameInDocument() << " dep on:" ;
-#endif
-        bool NeedUpdate = false;
-
-        // ask the object if it should be recomputed
-        if (Cur->mustExecute() == 1 || Cur->ExpressionEngine.depsAreTouched()) {
-#ifdef FC_LOGFEATUREUPDATE
-            std::clog << "[touched]";
-#endif
-            NeedUpdate = true;
-        }
-        else {// if (Cur->mustExecute() == -1)
-            // update if one of the dependencies is touched
-            for (boost::tie(j, jend) = out_edges(*i, d->DepList); j != jend; ++j) {
-                DocumentObject* Test = d->vertexMap[target(*j, d->DepList)];
-
-                if (!Test) continue;
-#ifdef FC_LOGFEATUREUPDATE
-                std::clog << " " << Test->getNameInDocument();
-#endif
-                if (Test->isTouched()) {
-                    NeedUpdate = true;
-#ifdef FC_LOGFEATUREUPDATE
-                    std::clog << "[touched]";
-#endif
-                }
-            }
-        }
-        // if one touched recompute
-        if (NeedUpdate) {
-            Cur->touch();
-#ifdef FC_LOGFEATUREUPDATE
-            std::clog << " => Recompute feature";
-#endif
-            recomputeList.insert(Cur);
-        }
-#ifdef FC_LOGFEATUREUPDATE
-        std::clog << std::endl;
-#endif
-    }
-
-#ifdef FC_LOGFEATUREUPDATE
-    std::clog << "Have to recompute the following document objects" << std::endl;
-    for (std::set<DocumentObject*>::const_iterator it = recomputeList.begin(); it != recomputeList.end(); ++it) {
-        std::clog << "  " << (*it)->getNameInDocument() << std::endl;
-    }
-#endif
-
-    for (std::list<Vertex>::reverse_iterator i = make_order.rbegin();i != make_order.rend(); ++i) {
-        DocumentObject* Cur = d->vertexMap[*i];
-        if (!Cur || !isIn(Cur)) continue;
-
-        if (recomputeList.find(Cur) != recomputeList.end() ||
-                Cur->ExpressionEngine.depsAreTouched()) {
-            if ( _recomputeFeature(Cur)) {
-                // if something happened break execution of recompute
-                d->vertexMap.clear();
-                return -1;
-            }
-            signalRecomputedObject(*Cur);
-            GetApplication().signalRecomputedObject(*this, *Feat);
-            ++objectCount;
-        }
-    }
-
-    // reset all touched
-    for (std::map<Vertex,DocumentObject*>::iterator it = d->vertexMap.begin(); it != d->vertexMap.end(); ++it) {
-        // TODO: check the TODO comments above for details
-        // if ((it->second) && isIn(it->second))
-        if ((it->second) && it->second->getNameInDocument())
-            it->second->purgeTouched();
-    }
-    d->vertexMap.clear();
-
-    signalRecomputed(*this);
-
-    return objectCount;
-}
-
-#else //ifdef USE_OLD_DAG
-
 namespace {
 int _Recomputing;
 class RecomputeCounter {
@@ -3873,7 +3737,7 @@ public:
 
 bool Document::isAnyRecomputing()
 {
-    return _Recomputing == 0;
+    return _Recomputing != 0;
 }
 
 int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool force, bool *hasError, int options)
@@ -3947,6 +3811,7 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
 
     FC_TIME_INIT(t2);
 
+    bool aborted = false;
     try {
         // maximum two passes to allow some form of dependency inversion
         for(int passes=0; passes<2 && idx<topoSortedObjects.size(); ++passes) {
@@ -4020,7 +3885,11 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
                 }
             }
         }
-    }catch(Base::Exception &e) {
+    }
+    catch(Base::AbortException &e){
+        aborted = true;
+    }
+    catch(Base::Exception &e) {
         e.ReportException();
     }
 
@@ -4032,6 +3901,9 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
         obj->setStatus(ObjectStatus::PendingRecompute,false);
         obj->setStatus(ObjectStatus::Recompute2,false);
     }
+
+    if (aborted)
+        throw Base::AbortException();
 
     signalRecomputed(*this,topoSortedObjects);
 
@@ -4064,8 +3936,6 @@ void Document::clearPendingRemove()
         }
     }
 }
-
-#endif // USE_OLD_DAG
 
 /*!
   Does almost the same as topologicalSort() until no object with an input degree of zero
@@ -4289,10 +4159,9 @@ int Document::_recomputeFeature(DocumentObject* Feat)
         }
     }
     catch(Base::AbortException &e){
-        e.ReportException();
         FC_LOG("Failed to recompute " << Feat->getFullName() << ": " << e.what());
         d->addRecomputeLog("User abort",Feat);
-        return -1;
+        throw;
     }
     catch (const Base::MemoryException& e) {
         FC_ERR("Memory exception in " << Feat->getFullName() << " thrown: " << e.what());

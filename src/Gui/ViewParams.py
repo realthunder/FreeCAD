@@ -164,7 +164,7 @@ Params = [
     ParamBool('NoSelFaceHighlightWithOutline', False,
         title='No face selection highlight with outline',
         doc='Do not highlight selected face if outline is enabled'),
-    ParamBool('NoPreSelFaceHighlightWithOutline', False,
+    ParamBool('NoPreSelFaceHighlightWithOutline', True,
         title='No face pre-selection highlight with outline',
         doc='Do not highlight pre-selected face if outline is enabled'),
     ParamBool('AutoTransparentPick', False, "Make pre-selected object transparent for picking hidden lines"),

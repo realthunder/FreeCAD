@@ -204,6 +204,28 @@ void StringHasher::compact()
     }
 }
 
+StringHasher::StorageSizes StringHasher::getStorageSize() const
+{
+    StorageSizes sizes;
+    std::unordered_set<const char *> dataset;
+    for (const auto & v : _hashes->right) {
+        const StringID &sid = *v.second;
+        size_t size = sid._data.size() + sid._postfix.size();
+        size_t shared_size = 0;
+        if (dataset.insert(sid._data.constData()).second)
+            shared_size += sid._data.size();
+        if (dataset.insert(sid._postfix.constData()).second)
+            shared_size += sid._postfix.size();
+        if (sid.isPersistent() || sid.getRefCount() > 1) {
+            sizes.referenced_size += size;
+            sizes.shared_size += shared_size;
+        }
+        sizes.total_size += size;
+        sizes.total_shared_size += shared_size;
+    }
+    return sizes;
+}
+
 bool StringHasher::getSaveAll() const {
     return _hashes->SaveAll;
 }
@@ -262,8 +284,11 @@ StringIDRef StringHasher::getID(const Data::MappedName &name,
     d._postfix = name.postfixBytes();
 
     Data::IndexedName indexed;
-    if (!d._postfix.size())
+    if (DocumentParams::getHashIndexedName() && d._postfix.size()) {
+        // Only check for IndexedName if there is postfix, because of the way
+        // we restore the StringID. See StringHasher::saveStream/restoreStreamNew()
         indexed = Data::IndexedName(name.dataBytes());
+    }
     if (indexed)
         d._data = QByteArray::fromRawData(indexed.getType(), strlen(indexed.getType()));
     else
@@ -328,18 +353,27 @@ StringIDRef StringHasher::getID(const Data::MappedName &name,
     }
 
     if (id._postfix.size() && !indexed) {
+        // Only check for existing StringID in _data if there is postfix,
+        // because of the way we restore the StringID. See
+        // StringHasher::saveStream/restoreStreamNew()
         StringID::IndexID res = StringID::fromString(id._data);
         if (res.id > 0) {
-            int offset = id.isPostfixEncoded() ? 1 : 0;
-            for (int i=offset; i<id._sids.size();++i) {
-                if (id._sids[i].value() == res.id) {
-                    if (i!=offset)
-                        std::swap(id._sids[offset], id._sids[i]);
-                    if (res.index != 0)
-                        id._flags.set(StringID::PrefixIDIndex);
-                    else
-                        id._flags.set(StringID::PrefixID);
-                    break;
+            if (DocumentParams::getHashIndexedName() || res.index == 0) {
+                if (res.index != 0) {
+                    indexed.setIndex(res.index);
+                    id._data.resize(id._data.lastIndexOf(':')+1);
+                }
+                int offset = id.isPostfixEncoded() ? 1 : 0;
+                for (int i=offset; i<id._sids.size();++i) {
+                    if (id._sids[i].value() == res.id) {
+                        if (i!=offset)
+                            std::swap(id._sids[offset], id._sids[i]);
+                        if (res.index != 0)
+                            id._flags.set(StringID::PrefixIDIndex);
+                        else
+                            id._flags.set(StringID::PrefixID);
+                        break;
+                    }
                 }
             }
         }
@@ -489,9 +523,7 @@ void StringHasher::saveStream(std::ostream &s) const {
         // guarantees to be a single line without space. So it is safe to
         // store in raw stream.
         if (d.isPostfixed()) {
-            if (d.isPrefixIDIndex())
-                s << ' ' << prefixid.index;
-            else if (!d.isIndexed() && !d.isPrefixID())
+            if (!d.isPrefixIDIndex() && !d.isIndexed() && !d.isPrefixID())
                 s << ' ' << d._data.constData();
 
             if (!d.isPostfixEncoded())
@@ -605,12 +637,9 @@ void StringHasher::restoreStreamNew(std::istream &s, std::size_t count) {
             else if (d.isPrefixID() || d.isPrefixIDIndex()) {
                 if (d._sids.size() <= offset)
                     FC_THROWM(Base::RuntimeError, "Missing string prefix id");
-                int index = 0;
-                if (d.isPrefixIDIndex()) {
-                    if (!(s >> index))
-                        FC_THROWM(Base::RuntimeError, "Missing string prefix index");
-                }
-                d._data = d._sids[offset]._sid->toString(index).c_str();
+                d._data = d._sids[offset]._sid->toString(0).c_str();
+                if (d.isPrefixIDIndex())
+                    d._data += ":";
             } else {
                 s >> content;
                 d._data = content.c_str();
