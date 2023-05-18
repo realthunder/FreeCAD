@@ -27,6 +27,9 @@
 # include <cstdlib>
 #endif
 
+#include <cctype>
+#include <random>
+
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/classification.hpp>
