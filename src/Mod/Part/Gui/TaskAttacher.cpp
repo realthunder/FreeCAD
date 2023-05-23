@@ -617,8 +617,8 @@ void TaskAttacher::onSelectionChanged(const Gui::SelectionChanges& msg)
             }
 
             if (autoNext) {
-                if (iActiveRef == -1){
-                    //nothing to do
+                if (iActiveRef == 0){
+                    autoNext = false;
                 } else if (iActiveRef == 4 || this->lastSuggestResult.nextRefTypeHint.size() == 0){
                     iActiveRef = -1;
                 } else {
