@@ -17,6 +17,8 @@ PoissonRatio = 0.22
 YoungsModulus = 72000 MPa
 
 [Thermal]
+SpecificHeat = 840 J/kg/K
+ThermalConductivity = 0.96 W/m/K
 ThermalExpansionCoefficient = 0.000009 m/m/K
 
 [Cost]
