@@ -266,6 +266,7 @@ void NavigationStyle::initialize()
                               NavigationStyle::RotationCenterMode::BoundingBoxCenter);
     }
 
+    this->hasDragged = false;
     this->hasPanned = false;
 }
 
@@ -911,6 +912,8 @@ void NavigationStyle::spin(const SbVec2f & pointerpos)
     // when the user quickly trigger (as in "click-drag-release") a spin
     // animation.
     if (this->spinsamplecounter > 3) this->spinsamplecounter = 3;
+
+    hasDragged = true;
 }
 
 /*!
@@ -945,6 +948,7 @@ void NavigationStyle::spin_simplified(SoCamera* cam, SbVec2f curpos, SbVec2f pre
     r.invert();
     this->reorientCamera(cam, r);
 
+    hasDragged = true;
 }
 
 SbBool NavigationStyle::doSpin()
@@ -1365,6 +1369,11 @@ void NavigationStyle::setViewingMode(const ViewerMode newmode)
         return;
     }
 
+    if (newmode != NavigationStyle::IDLE) {
+        hasPanned = false;
+        hasDragged = false;
+    }
+
     switch (newmode) {
     case DRAGGING:
         // Set up initial projection point for the projector object when
@@ -1385,7 +1394,6 @@ void NavigationStyle::setViewingMode(const ViewerMode newmode)
     case PANNING:
         animator->stop();
         pan(viewer->getSoRenderManager()->getCamera());
-        hasPanned = false;
         this->interactiveCountInc();
         break;
 
@@ -1407,12 +1415,8 @@ void NavigationStyle::setViewingMode(const ViewerMode newmode)
     case SPINNING:
     case DRAGGING:
         viewer->showRotationCenter(false);
-        this->interactiveCountDec();
-        break;
+        [[fallthrough]];
     case PANNING:
-        hasPanned = false;
-        this->interactiveCountDec();
-        break;
     case ZOOMING:
     case BOXZOOM:
         this->interactiveCountDec();
