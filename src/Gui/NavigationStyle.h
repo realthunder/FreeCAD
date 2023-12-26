@@ -261,6 +261,7 @@ protected:
     SbBool invertZoom;
     SbBool zoomAtCursor;
     float zoomStep;
+    SbBool hasPanned;
 
     /** @name Mouse model */
     //@{
