@@ -807,8 +807,8 @@ void TaskSketcherElements::slotElementsChanged()
     Sketcher::SketchObject* sketch = sketchView->getSketchObject();
     const std::vector<Part::Geometry*>& vals = sketch->Geometry.getValues();
 
-    int currentRow = 0;
-    auto currentIndex = ui->elementsWidget->indexAt(QPoint(0,0));
+    int currentRow = -1;
+    auto currentIndex = ui->elementsWidget->currentIndex();
     if (currentIndex.isValid())
         currentRow = currentIndex.row();
 
@@ -837,8 +837,13 @@ void TaskSketcherElements::slotElementsChanged()
 
     ui->elementsWidget->blockSignals(false);
 
-    ui->elementsWidget->setCurrentIndex(
-            ui->elementsWidget->model()->index(currentRow, 0, ui->elementsWidget->rootIndex()));
+    if (currentRow >= ui->elementsWidget->topLevelItemCount())
+        currentRow = ui->elementsWidget->topLevelItemCount()-1;
+    if (currentRow >= 0) {
+        if (auto item = ui->elementsWidget->topLevelItem(currentRow)) {
+            ui->elementsWidget->setCurrentItem(item);
+        }
+    }
 }
 
 
