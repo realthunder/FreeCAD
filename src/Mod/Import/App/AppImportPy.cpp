@@ -64,6 +64,7 @@
 #include <Mod/Part/App/ProgressIndicator.h>
 #include <Mod/Part/App/TopoShapePy.h>
 #include <Mod/Part/App/encodeFilename.h>
+#include <Mod/Part/App/OCCError.h>
 
 #include "ImportOCAF2.h"
 #include "ExportOCAF2.h"
@@ -171,6 +172,7 @@ private:
                     Part::ImportStepParts(pcDoc, Utf8Name.c_str());
                     pcDoc->recompute();
                 }
+                _PY_CATCH_OCC(return Py::None());
             }
             else if (file.hasExtension({"igs", "iges"})) {
                 try {
@@ -184,6 +186,7 @@ private:
                     Part::ImportIgesParts(pcDoc, Utf8Name.c_str());
                     pcDoc->recompute();
                 }
+                _PY_CATCH_OCC(return Py::None());
             }
             else if (file.hasExtension({"glb", "gltf"})) {
                 Import::ReaderGltf reader(file);
@@ -230,13 +233,7 @@ private:
                 return list;  // NOLINT
             }
         }
-        catch (Standard_Failure& e) {
-            throw Py::Exception(Base::PyExc_FC_GeneralError, e.GetMessageString());
-        }
-        catch (const Base::Exception& e) {
-            e.setPyException();
-            throw Py::Exception();
-        }
+        _PY_CATCH_OCC(return Py::None());
 
         return Py::None();
     }
@@ -359,13 +356,7 @@ private:
 
             hApp->Close(hDoc);
         }
-        catch (Standard_Failure& e) {
-            throw Py::Exception(Base::PyExc_FC_GeneralError, e.GetMessageString());
-        }
-        catch (const Base::Exception& e) {
-            e.setPyException();
-            throw Py::Exception();
-        }
+        _PY_CATCH_OCC(return Py::None());
 
         return Py::None();
     }
@@ -421,15 +412,11 @@ private:
             dxf_file.setOptionSource(defaultOptions);
             dxf_file.setOptions();
             dxf_file.DoRead(IgnoreErrors);
+
             if (doRecompute)
                 pcDoc->recompute();
         }
-        catch (const Standard_Failure& e) {
-            throw Py::RuntimeError(e.GetMessageString());
-        }
-        catch (const Base::Exception& e) {
-            throw Py::RuntimeError(e.what());
-        }
+        _PY_CATCH_OCC(return Py::None());
         return Py::None();
     }
 
@@ -492,9 +479,7 @@ private:
                 writer.endRun();
                 return Py::None();
             }
-            catch (const Base::Exception& e) {
-                throw Py::RuntimeError(e.what());
-            }
+            _PY_CATCH_OCC(return Py::None());
         }
 
         PyErr_Clear();
@@ -537,9 +522,7 @@ private:
                 writer.endRun();
                 return Py::None();
             }
-            catch (const Base::Exception& e) {
-                throw Py::RuntimeError(e.what());
-            }
+            _PY_CATCH_OCC(return Py::None())
         }
 
         throw Py::TypeError("expected ([Shape],path");
@@ -608,9 +591,7 @@ private:
                 writer.endRun();
                 return Py::None();
             }
-            catch (const Base::Exception& e) {
-                throw Py::RuntimeError(e.what());
-            }
+            _PY_CATCH_OCC(return Py::None());
         }
 
         PyErr_Clear();
@@ -658,9 +639,7 @@ private:
                 writer.endRun();
                 return Py::None();
             }
-            catch (const Base::Exception& e) {
-                throw Py::RuntimeError(e.what());
-            }
+            _PY_CATCH_OCC(return Py::None());
         }
 
         throw Py::TypeError("expected ([DocObject],path");
