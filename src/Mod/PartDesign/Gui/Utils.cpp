@@ -1475,18 +1475,20 @@ void beforeEdit(App::DocumentObject *obj)
     _MonitorInstance->beforeEdit(obj);
 }
 
-static QCheckBox *hookPropertyBool(App::DocumentObject *obj,
-                                   const char *propName,
-                                   QWidget *widget,
-                                   const char *label,
-                                   QTimer *timer)
+QCheckBox *hookPropertyBool(App::DocumentObject *obj,
+                            const char *propName,
+                            QWidget *widget,
+                            const char *label)
 {
     App::DocumentObjectT objT(obj, propName);
     auto propBool = Base::freecad_dynamic_cast<App::PropertyBool>(objT.getProperty());
     if (!propBool)
         return nullptr;
 
-    auto checkbox = new QCheckBox(widget);
+    initMonitor();
+    auto checkbox = qobject_cast<QCheckBox*>(widget);
+    if (!checkbox)
+        checkbox = new QCheckBox(widget);
     checkbox->setText(QObject::tr(label));
     checkbox->setToolTip(QApplication::translate("PartDesign",
                         propBool->getDocumentation()));
@@ -1503,12 +1505,12 @@ static QCheckBox *hookPropertyBool(App::DocumentObject *obj,
         });
 
     // Auto disconnect boost signals when the following QObject signal gets
-    // disconnected when the QObject is destroied.
+    // disconnected when the QObject is destroyed.
     std::shared_ptr<boost::signals2::scoped_connection> pconn(
             new boost::signals2::scoped_connection(conn));
 
     Base::connect(static_cast<QAbstractButton*>(checkbox), &QAbstractButton::toggled,
-        [timer, objT, pconn](bool checked) {
+        [objT, pconn](bool checked) {
             auto propBool = Base::freecad_dynamic_cast<App::PropertyBool>(objT.getProperty());
             if (!propBool)
                 return;
@@ -1519,7 +1521,7 @@ static QCheckBox *hookPropertyBool(App::DocumentObject *obj,
             }
             Base::ObjectStatusLocker<App::Property::Status, App::Property> guard(App::Property::User3, propBool);
             propBool->setValue(checked);
-            timer->start(PartGui::PartParams::getEditRecomputeWait());
+            _MonitorInstance->editTimer.start(PartGui::PartParams::getEditRecomputeWait());
         });
     return checkbox;
 }
@@ -1555,7 +1557,7 @@ QGridLayout *Monitor::addCheckBox(Gui::ViewProviderDocumentObject *vp, QWidget *
     grid->addWidget(checkbox, 1, 0);
 
     if (vp) {
-        checkbox = hookPropertyBool(vp->getObject(), "Refine", widget, "Refine shape", &editTimer);
+        checkbox = hookPropertyBool(vp->getObject(), "Refine", widget, "Refine shape");
         if (checkbox) {
             grid->addWidget(checkbox, 1, 1);
         }

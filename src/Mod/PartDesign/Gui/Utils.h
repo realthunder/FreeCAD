@@ -30,6 +30,7 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QByteArray;
 class QGridLayout;
+class QCheckBox;
 
 /** \file PartDesign/Gui/Utils.h
  *  This file contains some utility function used over PartDesignGui module
@@ -154,6 +155,11 @@ void relinkToOrigin(App::DocumentObject* feature, PartDesign::Body* body);
 PartDesign::Body *queryCommandOverride();
 
 void initMonitor();
+
+QCheckBox *hookPropertyBool(App::DocumentObject *obj,
+                                   const char *propName,
+                                   QWidget *widget,
+                                   const char *label);
 
 class MonitorProxy: public QObject
 {

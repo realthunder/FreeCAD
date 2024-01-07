@@ -91,7 +91,8 @@ ProfileBased::ProfileBased()
     InnerFitJoin.setEnums(Part::Offset::JoinEnums);
 
     ADD_PROPERTY_TYPE(Linearize,(false), "SketchBased", App::Prop_None,
-            "Linearize the resut shape by simplify linear edge and planar face into line and plane");
+            "Linearize the resulting shape by simplifying linear edge\n"
+            "and planar face into line and plane.");
 
     ADD_PROPERTY_TYPE(_ProfileBasedVersion,(0),"Part Design",(App::PropertyType)(App::Prop_Hidden), 0);
 }

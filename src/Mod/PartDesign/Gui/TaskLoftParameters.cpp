@@ -81,6 +81,9 @@ TaskLoftParameters::TaskLoftParameters(ViewProviderLoft *LoftView, bool /*newObj
     proxy->layout()->addWidget(sectionWidget);
 
     this->initUI(proxy);
+    if (vp && vp->getObject()) {
+        hookPropertyBool(vp->getObject(), "Linearize", ui->checkBoxLinearize, "Linearize");
+    }
     this->groupLayout()->addWidget(proxy);
     refresh();
 

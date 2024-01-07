@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>262</width>
-    <height>254</height>
+    <height>91</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -15,29 +15,32 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_3">
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
-     <item>
+    <layout class="QGridLayout" name="gridLayout">
+     <item row="0" column="0">
       <widget class="QCheckBox" name="checkBoxClosed">
        <property name="text">
         <string>Closed</string>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="0" column="1">
       <widget class="QCheckBox" name="checkBoxRuled">
        <property name="text">
         <string>Ruled surface</string>
        </property>
       </widget>
      </item>
+     <item row="1" column="0">
+      <widget class="QCheckBox" name="checkBoxSplitProfile">
+       <property name="text">
+        <string>Split profile</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QCheckBox" name="checkBoxLinearize"/>
+     </item>
     </layout>
-   </item>
-   <item>
-    <widget class="QCheckBox" name="checkBoxSplitProfile">
-     <property name="text">
-      <string>Split profile</string>
-     </property>
-    </widget>
    </item>
    <item>
     <spacer name="verticalSpacer">

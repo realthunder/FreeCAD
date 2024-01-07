@@ -63,6 +63,9 @@ TaskExtrudeParameters::TaskExtrudeParameters(ViewProviderSketchBased *SketchBase
     ui->directionCB->installEventFilter(this);
 
     this->initUI(proxy);
+    if (vp && vp->getObject()) {
+        hookPropertyBool(vp->getObject(), "Linearize", ui->checkBoxLinearize, "Linearize");
+    }
 
     Gui::ButtonGroup* group = new Gui::ButtonGroup(this);
     group->addButton(ui->checkBoxMidplane);
