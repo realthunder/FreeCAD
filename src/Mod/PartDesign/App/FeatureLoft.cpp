@@ -163,7 +163,6 @@ App::DocumentObjectExecReturn *Loft::execute(void)
                     wire.move(invObjLoc);
                 shapes.push_back(TopoShape(0, hasher).makELoft(
                             wires, true, Ruled.getValue(), Closed.getValue()));
-                shapes.back().makESolid(shapes.back());
             }
         } else {
             //build all shells
@@ -215,18 +214,18 @@ App::DocumentObjectExecReturn *Loft::execute(void)
             if(!result.countSubShapes(TopAbs_SHELL))
                 return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Loft: Failed to create shell"));
             shapes = result.getSubTopoShapes(TopAbs_SHELL);
+        }
 
-            for (auto &s : shapes) {
-                //build the solid
-                s = s.makESolid();
-                BRepClass3d_SolidClassifier SC(s.getShape());
-                SC.PerformInfinitePoint(Precision::Confusion());
-                if ( SC.State() == TopAbs_IN)
-                    s.setShape(s.getShape().Reversed(),false);
-                if (Linearize.getValue())
-                    s.linearize(true, false);
-                this->fixShape(s);
-            }
+        for (auto &s : shapes) {
+            //build the solid
+            s = s.makESolid();
+            BRepClass3d_SolidClassifier SC(s.getShape());
+            SC.PerformInfinitePoint(Precision::Confusion());
+            if ( SC.State() == TopAbs_IN)
+                s.setShape(s.getShape().Reversed(),false);
+            if (Linearize.getValue())
+                s.linearize(true, false);
+            this->fixShape(s);
         }
 
         AddSubShape.setValue(result.makECompound(shapes, nullptr, false));
