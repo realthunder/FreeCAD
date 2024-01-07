@@ -4946,8 +4946,8 @@ GeomBSplineSurface::GeomBSplineSurface(const Adaptor3d_Surface &surface)
     double u1, u2, v1, v2;
     mySurface->Bounds(u1, u2, v1, v2);
     if (u1 != surface.FirstUParameter()
-        || u2 != surface.FirstVParameter()
-        || v1 != surface.LastUParameter()
+        || v1 != surface.FirstVParameter()
+        || u2 != surface.LastUParameter()
         || v2 != surface.LastVParameter())
     {
         Trim(surface.FirstUParameter(), surface.LastUParameter(),
@@ -4967,10 +4967,11 @@ void GeomBSplineSurface::Trim(double u1, double u2, double v1, double v2)
         if(mySurface->IsVPeriodic() && v2 < v1) {
             v2 = v1 + 1.0;
         }
-        mySurface = GeomConvert::SplitBSplineSurface (mySurface, u1, u2, v1, v2);
+        mySurface = GeomConvert::SplitBSplineSurface (
+                mySurface, u1, u2, v1, v2, Precision::Confusion());
     }
     catch (Standard_Failure& e) {
-        THROWM(Base::CADKernelError,e.GetMessageString())
+        FC_THROWM(Base::CADKernelError, "Failed to split BSpline surface: " << e.GetMessageString());
     }
 }
 
