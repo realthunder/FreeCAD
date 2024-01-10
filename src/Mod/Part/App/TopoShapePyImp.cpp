@@ -128,7 +128,12 @@ static Py_hash_t _TopoShapeHash(PyObject *self) {
         PyErr_SetString(PyExc_ReferenceError, "This object is already deleted most likely through closing a document. This reference is no longer valid!");
         return 0;
     }
+
+#if OCC_VERSION_HEX >= 0x070800
+    return std::hash<TopoDS_Shape>{}(static_cast<TopoShapePy*>(self)->getTopoShapePtr()->getShape());
+#else
     return static_cast<TopoShapePy*>(self)->getTopoShapePtr()->getShape().HashCode(INT_MAX);
+#endif
 }
 
 struct TopoShapePyInit {
@@ -160,7 +165,7 @@ int TopoShapePy::PyInit(PyObject* args, PyObject *keywds)
     PyObject *pyHasher = 0;
     const char *op = 0;
     PyObject *pcObj=0;
-    if (!PyArg_ParseTupleAndKeywords(args, keywds, "|OsiO!", 
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "|OsiO!",
                 kwlist,&pcObj,&op,&tag,&App::StringHasherPy::Type,&pyHasher))
         return -1;
     auto &self = *getTopoShapePtr();
@@ -173,8 +178,8 @@ int TopoShapePy::PyInit(PyObject* args, PyObject *keywds)
             auto s = shapes.front();
             if(self.Tag) {
                 if((s.Tag && self.Tag!=s.Tag)
-                        || (self.Hasher 
-                            && s.getElementMapSize() 
+                        || (self.Hasher
+                            && s.getElementMapSize()
                             && self.Hasher!=s.Hasher))
                 {
                     s.reTagElementMap(self.Tag,self.Hasher);
@@ -1296,7 +1301,11 @@ PyObject*  TopoShapePy::ancestorsOfType(PyObject *args)
         std::vector<TopoShape> shapes;
         for (; it.More(); it.Next()) {
             // make sure to avoid duplicates
+#if OCC_VERSION_HEX >= 0x070800
+            const size_t code = std::hash<TopoDS_Shape>{}(static_cast<TopoDS_Shape>(it.Value()));
+#else
             Standard_Integer code = it.Value().HashCode(INT_MAX);
+#endif
             if (hashes.find(code) == hashes.end()) {
                 shapes.emplace_back(it.Value());
                 hashes.insert(code);
@@ -1673,7 +1682,7 @@ PyObject* TopoShapePy::makeThickness(PyObject *args)
     try {
 #ifndef FC_NO_ELEMENT_MAP
         return Py::new_reference_to(shape2pyshape(getTopoShapePtr()->makEThickSolid(
-                        getPyShapes(obj),offset,tolerance, PyObject_IsTrue(inter) ? true : false, 
+                        getPyShapes(obj),offset,tolerance, PyObject_IsTrue(inter) ? true : false,
                         PyObject_IsTrue(self_inter) ? true : false, offsetMode, static_cast<TopoShape::JoinType>(join))));
 #else
         TopTools_ListOfShape facesToRemove;
@@ -1956,7 +1965,11 @@ PyObject* TopoShapePy::hashCode(PyObject *args)
     if (!PyArg_ParseTuple(args, "|i",&upper))
         return nullptr;
 
+#if OCC_VERSION_HEX >= 0x070800
+    int hc = std::hash<TopoDS_Shape>{}(getTopoShapePtr()->getShape());
+#else
     int hc = getTopoShapePtr()->getShape().HashCode(upper);
+#endif
     return Py_BuildValue("i", hc);
 }
 

@@ -2147,7 +2147,7 @@ void GenericShapeMapper::init(const TopoShape &src, const TopoDS_Shape &dst)
         if (src.findShape(dstFace))
             continue;
 
-        std::unordered_map<TopoDS_Shape, int> map;
+        std::unordered_map<TopoDS_Shape, int, ShapeHasher> map;
         bool found = false;
 
         // Try to find a face in the src that shares at least two edges (or one
@@ -5767,7 +5767,7 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
 }
 
 static std::size_t
-TopoShape_RefCountShapes(std::unordered_set<TopoDS_Shape> &shapeSet,
+TopoShape_RefCountShapes(std::unordered_set<TopoDS_Shape, ShapeHasher, ShapeHasher> &shapeSet,
                          const TopoDS_Shape& aShape)
 {
     std::size_t size = sizeof(Base::Placement); // rough estimate of location size
@@ -5793,7 +5793,7 @@ std::size_t TopoShape::Cache::getMemSize()
     if (this->memsize || this->shape.IsNull())
         return this->memsize;
 
-    std::unordered_set<TopoDS_Shape> shapeSet;
+    std::unordered_set<TopoDS_Shape, ShapeHasher, ShapeHasher> shapeSet;
     this->memsize = TopoShape_RefCountShapes(shapeSet, this->shape);
 
     for (const auto & shape : shapeSet) {

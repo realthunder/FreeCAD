@@ -45,6 +45,7 @@
 #include <Base/Tools.h>
 #include <Mod/Part/PartGlobal.h>
 
+#include <Standard_Version.hxx>
 
 class BRepBuilderAPI_MakeShape;
 class BRepTools_History;
@@ -2559,7 +2560,6 @@ private:
         Standard_Boolean operator == (const TopoDS_Shape& other) const { return _Shape == other; }
         Standard_Boolean IsNotEqual (const TopoDS_Shape& other) const { return _Shape.IsNotEqual(other); }
         Standard_Boolean operator != (const TopoDS_Shape& other) const { return _Shape != other; }
-        Standard_Integer HashCode (const Standard_Integer Upper) const { return _Shape.HashCode(Upper); }
         TopoDS_Shape EmptyCopied() const { return _Shape.EmptyCopied(); }
 
         // Flag setters, probably not going to affect element map or cache. Pass
@@ -2650,16 +2650,11 @@ struct hash<Part::TopoShape> {
     typedef Part::TopoShape argument_type;
     typedef std::size_t result_type;
     inline result_type operator()(argument_type const& s) const {
+#if OCC_VERSION_HEX >= 0x070800
+        return std::hash<TopoDS_Shape> {}(s.getShape());
+#else
         return s.getShape().HashCode(INT_MAX);
-    }
-};
-
-template<> 
-struct hash<TopoDS_Shape> {
-    typedef TopoDS_Shape argument_type;
-    typedef std::size_t result_type;
-    inline result_type operator()(argument_type const& s) const {
-        return s.HashCode(INT_MAX);
+#endif
     }
 };
 
@@ -2671,10 +2666,18 @@ namespace Part {
 /// Shape hasher that ignore orientation
 struct ShapeHasher {
     inline size_t operator()(const TopoShape &s) const {
+#if OCC_VERSION_HEX >= 0x070800
+        return std::hash<TopoDS_Shape> {}(s.getShape());
+#else
         return s.getShape().HashCode(INT_MAX);
+#endif
     }
     inline size_t operator()(const TopoDS_Shape &s) const {
+#if OCC_VERSION_HEX >= 0x070800
+        return std::hash<TopoDS_Shape> {}(s);
+#else
         return s.HashCode(INT_MAX);
+#endif
     }
     inline bool operator()(const TopoShape &a, const TopoShape &b) const {
         return a.getShape().IsSame(b.getShape());
@@ -2683,14 +2686,28 @@ struct ShapeHasher {
         return a.IsSame(b);
     }
     inline size_t operator()(const std::pair<TopoShape, TopoShape> &s) const {
+#if OCC_VERSION_HEX >= 0x070800
+        std::hash<TopoDS_Shape> hasher;
+        size_t res = hasher(s.first.getShape());
+        Base::hash_combine(res, hasher(s.second.getShape()));
+        return res;
+#else
         size_t res = s.first.getShape().HashCode(INT_MAX);
         Base::hash_combine(res, s.second.getShape().HashCode(INT_MAX));
         return res;
+#endif
     }
     inline size_t operator()(const std::pair<TopoDS_Shape, TopoDS_Shape> &s) const {
+#if OCC_VERSION_HEX >= 0x070800
+        std::hash<TopoDS_Shape> hasher;
+        size_t res = hasher(s.first);
+        Base::hash_combine(res, hasher(s.second));
+        return res;
+#else
         size_t res = s.first.HashCode(INT_MAX);
         Base::hash_combine(res, s.second.HashCode(INT_MAX));
         return res;
+#endif
     }
     inline bool operator()(const std::pair<TopoShape, TopoShape> &a,
                            const std::pair<TopoShape, TopoShape> &b) const {
