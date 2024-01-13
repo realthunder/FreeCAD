@@ -70,6 +70,8 @@ ViewProviderImagePlane::ViewProviderImagePlane()
     shapeHints->vertexOrdering = SoShapeHints::COUNTERCLOCKWISE;
     shapeHints->ref();
 
+    SelectionStyle.setValue(1); // bounding box
+
     sPixmap = "image-plane";
 }
 
