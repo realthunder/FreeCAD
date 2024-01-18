@@ -40,6 +40,7 @@ public:
     App::PropertyBool Ruled;
     App::PropertyBool Closed;
     App::PropertyBool SplitProfile;    
+    App::PropertyIntegerConstraint MaxDegree;
 
     /** @name methods override feature */
     //@{

@@ -30,6 +30,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <Base/ExceptionSafeCall.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/CommandT.h>
@@ -66,14 +67,18 @@ TaskLoftParameters::TaskLoftParameters(ViewProviderLoft *LoftView, bool /*newObj
                     "Property", pcLoft->Closed.getDocumentation()));
         ui->checkBoxSplitProfile->setToolTip(QApplication::translate(
                     "Property", pcLoft->SplitProfile.getDocumentation()));
+        ui->spinBoxMaxDegree->setToolTip(QApplication::translate(
+                    "Property", pcLoft->MaxDegree.getDocumentation()));
     }
 
-    connect(ui->checkBoxRuled, &QCheckBox::toggled,
+    Base::connect(ui->checkBoxRuled, &QCheckBox::toggled,
             this, &TaskLoftParameters::onRuled);
-    connect(ui->checkBoxClosed, &QCheckBox::toggled,
+    Base::connect(ui->checkBoxClosed, &QCheckBox::toggled,
             this, &TaskLoftParameters::onClosed);
-    connect(ui->checkBoxSplitProfile, &QCheckBox::toggled,
+    Base::connect(ui->checkBoxSplitProfile, &QCheckBox::toggled,
             this, &TaskLoftParameters::onSplitProfile);
+    Base::connect(ui->spinBoxMaxDegree, qOverload<int>(&Gui::PrefSpinBox::valueChanged),
+        this, &TaskLoftParameters::onMaxDegree);
 
 
     PartDesign::Loft* loft = static_cast<PartDesign::Loft*>(vp->getObject());
@@ -118,9 +123,22 @@ void TaskLoftParameters::refresh()
     ui->checkBoxRuled->setChecked(loft->Ruled.getValue());
     ui->checkBoxClosed->setChecked(loft->Closed.getValue());
     ui->checkBoxSplitProfile->setChecked(loft->SplitProfile.getValue());
+    ui->spinBoxMaxDegree->setValue(loft->MaxDegree.getValue());
 
     for (QWidget* child : proxy->findChildren<QWidget*>())
         child->blockSignals(false);
+}
+
+void TaskLoftParameters::onMaxDegree(int val) {
+    if (!vp)
+        return;
+    try {
+        setupTransaction();
+        static_cast<PartDesign::Loft*>(vp->getObject())->MaxDegree.setValue(val);
+        recomputeFeature();
+    } catch (Base::Exception &e) {
+        e.ReportException();
+    }
 }
 
 void TaskLoftParameters::onClosed(bool val) {
@@ -175,25 +193,6 @@ TaskDlgLoftParameters::TaskDlgLoftParameters(ViewProviderLoft *LoftView,bool new
 }
 
 TaskDlgLoftParameters::~TaskDlgLoftParameters() = default;
-
-bool TaskDlgLoftParameters::accept()
-{
-    PartDesign::Loft* pcLoft = static_cast<PartDesign::Loft*>(getLoftView()->getObject());
-    try {
-        parameter->setupTransaction();
-        Gui::cmdGuiDocument(pcLoft, "resetEdit()");
-        Gui::cmdAppDocument(pcLoft, "recompute()");
-        if (!vp->getObject()->isValid())
-            throw Base::RuntimeError(vp->getObject()->getStatusString());
-        Gui::Command::commitCommand();
-    }
-    catch (const Base::Exception& e) {
-        QMessageBox::warning(parameter, tr("Input error"), QString::fromUtf8(e.what()));
-        return false;
-    }
-
-    return true;
-}
 
 //==== calls from the TaskView ===============================================================
 

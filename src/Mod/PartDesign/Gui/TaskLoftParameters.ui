@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>262</width>
-    <height>91</height>
+    <width>258</width>
+    <height>110</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -23,10 +23,23 @@
        </property>
       </widget>
      </item>
-     <item row="0" column="1">
-      <widget class="QCheckBox" name="checkBoxRuled">
+     <item row="1" column="1">
+      <widget class="QCheckBox" name="checkBoxLinearize"/>
+     </item>
+     <item row="2" column="1">
+      <widget class="Gui::PrefSpinBox" name="spinBoxMaxDegree">
+       <property name="minimum">
+        <number>2</number>
+       </property>
+       <property name="value">
+        <number>5</number>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="label">
        <property name="text">
-        <string>Ruled surface</string>
+        <string>Max degree</string>
        </property>
       </widget>
      </item>
@@ -37,8 +50,12 @@
        </property>
       </widget>
      </item>
-     <item row="1" column="1">
-      <widget class="QCheckBox" name="checkBoxLinearize"/>
+     <item row="0" column="1">
+      <widget class="QCheckBox" name="checkBoxRuled">
+       <property name="text">
+        <string>Ruled surface</string>
+       </property>
+      </widget>
      </item>
     </layout>
    </item>
@@ -57,6 +74,13 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>Gui::PrefSpinBox</class>
+   <extends>QSpinBox</extends>
+   <header>Gui/PrefWidgets.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

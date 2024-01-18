@@ -56,6 +56,7 @@ private Q_SLOTS:
     void onClosed(bool);
     void onRuled(bool);
     void onSplitProfile(bool);
+    void onMaxDegree(int);
     void updateUI();
 
 protected:
@@ -79,9 +80,6 @@ public:
 
     ViewProviderLoft* getLoftView() const
     { return static_cast<ViewProviderLoft*>(vp); }
-
-    /// is called by the framework if the dialog is accepted (Ok)
-    bool accept() override;
 
 protected:
     TaskLoftParameters  *parameter;

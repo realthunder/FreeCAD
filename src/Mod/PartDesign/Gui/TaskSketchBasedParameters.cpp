@@ -1255,6 +1255,9 @@ TaskDlgSketchBasedParameters::~TaskDlgSketchBasedParameters() = default;
 
 
 bool TaskDlgSketchBasedParameters::accept() {
+    if (!vp)
+        return true;
+
     App::DocumentObject* feature = vp->getObject();
 
     // Make sure the feature is what we are expecting

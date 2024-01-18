@@ -31,6 +31,7 @@
 # include <BRepBuilderAPI_Sewing.hxx>
 # include <BRepClass3d_SolidClassifier.hxx>
 # include <BRepOffsetAPI_ThruSections.hxx>
+# include <Geom_BSplineSurface.hxx>
 # include <TopoDS.hxx>
 # include <Precision.hxx>
 #endif
@@ -41,6 +42,7 @@
 #include <App/DocumentObserver.h>
 #include <Base/Exception.h>
 #include <Base/Reader.h>
+#include <Mod/Part/App/PartParams.h>
 #include <Mod/Part/App/TopoShapeOpCode.h>
 
 #include "FeatureLoft.h"
@@ -59,6 +61,17 @@ Loft::Loft()
     ADD_PROPERTY_TYPE(SplitProfile,(false),"Loft",App::Prop_None,
             "In case of profile with multiple faces, split profile\n"
             "and build each shell independently before fusing.");
+
+    static App::PropertyIntegerConstraint::Constraints Degrees = {2,Geom_BSplineSurface::MaxDegree(),1};
+    int degree = Part::PartParams::getLoftMaxDegree();
+    if (degree < Degrees.LowerBound) {
+        degree = Degrees.LowerBound;
+    }
+    else if (degree > Degrees.UpperBound) {
+        degree = Degrees.UpperBound;
+    }
+    ADD_PROPERTY_TYPE(MaxDegree,(degree),"Loft",App::Prop_None,"Maximum Degree");
+    MaxDegree.setConstraints(&Degrees);
 }
 
 short Loft::mustExecute() const
@@ -162,7 +175,7 @@ App::DocumentObjectExecReturn *Loft::execute(void)
                 for(auto& wire : wires)
                     wire.move(invObjLoc);
                 shapes.push_back(TopoShape(0, hasher).makELoft(
-                            wires, true, Ruled.getValue(), Closed.getValue()));
+                            wires, true, Ruled.getValue(), Closed.getValue(), MaxDegree.getValue()));
             }
         } else {
             //build all shells
@@ -171,7 +184,7 @@ App::DocumentObjectExecReturn *Loft::execute(void)
                 for(auto& wire : wires)
                     wire.move(invObjLoc);
                 shells.push_back(TopoShape(0, hasher).makELoft(
-                            wires, false, Ruled.getValue(), Closed.getValue()));
+                            wires, false, Ruled.getValue(), Closed.getValue(), MaxDegree.getValue()));
             }
 
             //build the top and bottom face, sew the shell and build the final solid
