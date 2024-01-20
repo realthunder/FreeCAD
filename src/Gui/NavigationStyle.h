@@ -263,6 +263,7 @@ protected:
     float zoomStep;
     SbBool hasDragged;
     SbBool hasPanned;
+    SbBool hasZoomed;
 
     /** @name Mouse model */
     //@{
@@ -359,7 +360,6 @@ protected:
 
 private:
     SbBool lockButton1{false};
-    SbBool lockButton2{false};
 };
 
 class GuiExport BlenderNavigationStyle : public UserNavigationStyle {
@@ -377,7 +377,6 @@ protected:
 
 private:
     SbBool lockButton1{false};
-    SbBool lockButton2{false};
 };
 
 class GuiExport MayaGestureNavigationStyle : public UserNavigationStyle {

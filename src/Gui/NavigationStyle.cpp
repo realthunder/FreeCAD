@@ -268,6 +268,7 @@ void NavigationStyle::initialize()
 
     this->hasDragged = false;
     this->hasPanned = false;
+    this->hasZoomed = false;
 }
 
 void NavigationStyle::finalize()
@@ -599,7 +600,10 @@ void NavigationStyle::panCamera(SoCamera * cam, float aspectratio, const SbPlane
     // Reposition camera according to the vector difference between the
     // projected points.
     cam->position = cam->position.getValue() - (current_planept - old_planept);
-    hasPanned = true;
+
+    if (this->currentmode != NavigationStyle::IDLE) {
+        hasPanned = true;
+    }
 }
 
 void NavigationStyle::pan(SoCamera* camera)
@@ -707,6 +711,10 @@ void NavigationStyle::zoom(SoCamera * cam, float diffvalue)
             cam->position = newpos;
             cam->focalDistance = newfocaldist;
         }
+    }
+
+    if (this->currentmode != NavigationStyle::IDLE) {
+        hasZoomed = true;
     }
 }
 
@@ -913,7 +921,9 @@ void NavigationStyle::spin(const SbVec2f & pointerpos)
     // animation.
     if (this->spinsamplecounter > 3) this->spinsamplecounter = 3;
 
-    hasDragged = true;
+    if (this->currentmode != NavigationStyle::IDLE) {
+        hasDragged = true;
+    }
 }
 
 /*!
@@ -1369,9 +1379,10 @@ void NavigationStyle::setViewingMode(const ViewerMode newmode)
         return;
     }
 
-    if (newmode != NavigationStyle::IDLE) {
+    if (newmode == NavigationStyle::IDLE) {
         hasPanned = false;
         hasDragged = false;
+        hasZoomed = false;
     }
 
     switch (newmode) {
