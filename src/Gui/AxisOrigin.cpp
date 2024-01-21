@@ -33,6 +33,7 @@
 # include <Inventor/nodes/SoIndexedLineSet.h>
 # include <Inventor/nodes/SoIndexedPointSet.h>
 # include <Inventor/nodes/SoDrawStyle.h>
+# include <Inventor/nodes/SoLightModel.h>
 # include <Inventor/SoFullPath.h>
 #endif
 
@@ -52,6 +53,10 @@ SoGroup *AxisOrigin::getNode() {
         return node;
 
     node.reset(new SoGroup);
+    auto lightModel = new SoLightModel();
+    lightModel->model = SoLightModel::BASE_COLOR;
+    node->addChild(lightModel);
+
     auto pMat = new SoMaterial();
 
     const SbVec3f verts[13] =
