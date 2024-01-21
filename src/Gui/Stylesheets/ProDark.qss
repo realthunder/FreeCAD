@@ -2336,7 +2336,7 @@ QTableView {
 }
 
 SpreadsheetGui--SheetTableView {
-    qproperty-foregroundColor: #e0e0e0;
+    qproperty-foregroundColor: #505050;
     qproperty-aliasForegroundColor: #202020;
 }
 
