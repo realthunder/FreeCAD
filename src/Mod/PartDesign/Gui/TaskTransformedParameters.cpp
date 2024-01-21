@@ -275,7 +275,7 @@ void TaskTransformedParameters::setupBaseUI() {
             tr("Check this option to perform boolean operation on pattern in\n"
                "parallel. Note that this may fail if the pattern shape contains\n"
                "overlap. Uncheck this option to perform operation in sequence."));
-    checkBoxParallel->setChecked(getObject()->SubTransform.getValue());
+    checkBoxParallel->setChecked(getObject()->ParallelTransform.getValue());
 
     checkBoxNewSolid = new QCheckBox(this);
     checkBoxNewSolid->setText(tr("New shape"));
