@@ -62,7 +62,7 @@ public:
     void validateCursor();
 
     static QMap<QString, CallTip> extractTips(Py::Object pyObj, bool *isValid=nullptr);
-    static void extractTipsFromObject(Py::Object&, Py::List&, QMap<QString, CallTip>&);
+    static void extractTipsFromObject(Py::Object&, const std::vector<std::string> &, QMap<QString, CallTip>&);
     static void extractTipsFromProperties(Py::Object&, QMap<QString, CallTip>&);
 
     static QIcon iconOfType(CallTip::Type type, bool isValid=true);

@@ -263,7 +263,9 @@ QMap<QString, CallTip> CallTipsList::extractTips(Py::Object obj, bool *isValid) 
         Py::Object inst = obj; // the object instance
         PyObject* typeobj = Base::getTypeAsObject(&Base::PyObjectBase::Type);
         PyObject* typedoc = Base::getTypeAsObject(&App::DocumentObjectPy::Type);
+#ifdef FC_TIPS_FROM_TYPE
         PyObject* basetype = Base::getTypeAsObject(&PyBaseObject_Type);
+#endif
 
         if (PyObject_IsSubclass(type.ptr(), typedoc) == 1) {
             // From the template Python object we don't query its type object because there we keep
@@ -278,6 +280,7 @@ QMap<QString, CallTip> CallTipsList::extractTips(Py::Object obj, bool *isValid) 
         else if (PyObject_IsSubclass(type.ptr(), typeobj) == 1) {
             obj = type;
         }
+#ifdef FC_TIPS_FROM_TYPE
         else if (PyObject_IsInstance(obj.ptr(), basetype) == 1) {
             // New style class which can be a module, type, list, tuple, int, float, ...
             // Make sure it's not a type object
@@ -294,6 +297,7 @@ QMap<QString, CallTip> CallTipsList::extractTips(Py::Object obj, bool *isValid) 
                 }
             }
         }
+#endif
 
         // If we have an instance of PyObjectBase then determine whether it's valid or not
         if (PyObject_IsInstance(inst.ptr(), typeobj) == 1) {
@@ -306,8 +310,6 @@ QMap<QString, CallTip> CallTipsList::extractTips(Py::Object obj, bool *isValid) 
             PyErr_Clear();
         }
 
-        Py::List list(obj.dir());
-
         // If we derive from PropertyContainerPy we can search for the properties in the
         // C++ twin class.
         PyObject* proptypeobj = Base::getTypeAsObject(&App::PropertyContainerPy::Type);
@@ -316,6 +318,8 @@ QMap<QString, CallTip> CallTipsList::extractTips(Py::Object obj, bool *isValid) 
             // its type object
             extractTipsFromProperties(inst, tips);
         }
+
+        std::vector<std::string> list;
 
         // If we derive from App::DocumentPy we have direct access to the objects by their internal
         // names. So, we add these names to the list, too.
@@ -326,9 +330,9 @@ QMap<QString, CallTip> CallTipsList::extractTips(Py::Object obj, bool *isValid) 
             // Make sure that the C++ object is alive
             if (document) {
                 std::vector<App::DocumentObject*> objects = document->getObjects();
-                Py::List list;
+                list.clear();
                 for (const auto & object : objects)
-                    list.append(Py::String(object->getNameInDocument()));
+                    list.push_back(object->getNameInDocument());
                 extractTipsFromObject(inst, list, tips);
             }
         }
@@ -343,12 +347,19 @@ QMap<QString, CallTip> CallTipsList::extractTips(Py::Object obj, bool *isValid) 
                 // Make sure that the C++ object is alive
                 if (document) {
                     std::vector<App::DocumentObject*> objects = document->getObjects();
-                    Py::List list;
+                    list.clear();
                     for (const auto & object : objects)
-                        list.append(Py::String(object->getNameInDocument()));
+                        list.push_back(object->getNameInDocument());
                     extractTipsFromObject(inst, list, tips);
                 }
             }
+        }
+
+        list.clear();
+        Py::List attrList = obj.dir();
+        for (Py::List::iterator it = attrList.begin(); it != attrList.end(); ++it) {
+            Py::String attrname(*it);
+            list.push_back(attrname.as_string());
         }
 
         // These are the attributes from the type object
@@ -362,13 +373,10 @@ QMap<QString, CallTip> CallTipsList::extractTips(Py::Object obj, bool *isValid) 
     return tips;
 }
 
-void CallTipsList::extractTipsFromObject(Py::Object& obj, Py::List& list, QMap<QString, CallTip>& tips)
+void CallTipsList::extractTipsFromObject(Py::Object& obj, const std::vector<std::string> &list, QMap<QString, CallTip>& tips)
 {
-    for (Py::List::iterator it = list.begin(); it != list.end(); ++it) {
+    for (const std::string &name : list) {
         try {
-            Py::String attrname(*it);
-            std::string name = attrname.as_string();
-
             // If 'name' is an invalid attribute then PyCXX raises an exception
             // for Py2 but silently accepts it for Py3.
             //
