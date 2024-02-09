@@ -595,7 +595,7 @@ PyObject* ViewProviderPy::getDetailPath(PyObject* args)
     if(!pPath)
         throw Base::TypeError("'path' must be a coin.SoPath");
     SoDetail *det = nullptr;
-    if(!getViewProviderPtr()->getDetailPath(sub,static_cast<SoFullPath*>(pPath),append,det)) {
+    if(!getViewProviderPtr()->getDetailPath(sub,static_cast<SoFullPath*>(pPath),Base::asBoolean(append),det)) {
         delete det;
         Py_Return;
     }
