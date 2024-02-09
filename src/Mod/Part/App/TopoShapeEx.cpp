@@ -430,8 +430,9 @@ public:
 
                 res._SubLocation = parent._SubLocation * parent._Cache->subLocation;
                 res._ParentCache = parent._ParentCache;
-            } else
+            } else if (res.canMapElement(parent)) {
                 res._ParentCache = owner->shared_from_this();
+            }
             return res;
         }
 
