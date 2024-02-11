@@ -698,7 +698,6 @@ bool CallTipsList::eventFilter(QObject * watched, QEvent * event)
             }
             else if (this->compKeys.indexOf(ke->key()) > -1) {
                 Q_EMIT itemActivated(currentItem());
-                return false;
             }
             else if (ke->key() == Qt::Key_Shift || ke->key() == Qt::Key_Control ||
                      ke->key() == Qt::Key_Meta || ke->key() == Qt::Key_Alt ||
