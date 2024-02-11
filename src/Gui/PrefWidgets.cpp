@@ -259,16 +259,16 @@ QVariant PrefWidget::getSubEntryValue(const QByteArray &entryName,
   else
     n = name;
   switch(type) {
-    case EntryBool:
+    case EntryType::Bool:
       v = _handle->GetBool(n, defvalue.toBool());
       break;
-    case EntryInt:
+    case EntryType::Int:
       v = (int)_handle->GetInt(n, defvalue.toInt());
       break;
-    case EntryDouble:
+    case EntryType::Double:
       v = _handle->GetFloat(n, defvalue.toReal());
       break;
-    case EntryString:
+    case EntryType::String:
       v = QString::fromUtf8(_handle->GetASCII(
             n, defvalue.toString().toUtf8().constData()).c_str());
       break;
@@ -302,50 +302,59 @@ void PrefWidget::setSubEntries(QObject *base, const QVector<SubEntry> &entries)
   restoreSubEntries();
 }
 
-void PrefWidget::setupSubEntries(QObject *base, int flags)
+void PrefWidget::setupSubEntries(QObject *base, EntryFlags flags)
 {
     QVector<SubEntry> entries;
 
-    if (flags & EntryDecimals) {
+    if (flags & EntryFlag::Decimals) {
       SubEntry info;
       info.name = "decimals";
       info.defvalue = base->property(info.name);
       if (info.defvalue.isValid()) {
         info.displayName = QObject::tr("Decimals");
-        info.type = PrefWidget::EntryInt;
+        info.type = EntryType::Int;
         entries.push_back(info);
       }
     }
 
-    if (flags & EntryMinimum) {
+    if (flags & EntryFlag::Minimum) {
       SubEntry info;
       info.name = "minimum";
       info.defvalue = base->property(info.name);
       if (info.defvalue.isValid()) {
         info.displayName = QObject::tr("Minimum");
-        info.type = PrefWidget::EntryDouble;
+        if (flags & EntryFlag::Int)
+          info.type = EntryType::Int;
+        else
+          info.type = EntryType::Double;
         entries.push_back(info);
       }
     }
 
-    if (flags & EntryMaximum) {
+    if (flags & EntryFlag::Maximum) {
       SubEntry info;
       info.name = "maximum";
       info.defvalue = base->property(info.name);
       if (info.defvalue.isValid()) {
         info.displayName = QObject::tr("Maximum");
-        info.type = PrefWidget::EntryDouble;
+        if (flags & EntryFlag::Int)
+          info.type = EntryType::Int;
+        else
+          info.type = EntryType::Double;
         entries.push_back(info);
       }
     }
 
-    if (flags & EntryStep) {
+    if (flags & EntryFlag::Step) {
       SubEntry info;
       info.name = "singleStep";
       info.defvalue = base->property(info.name);
       if (info.defvalue.isValid()) {
         info.displayName = QObject::tr("Single step");
-        info.type = PrefWidget::EntryDouble;
+        if (flags & EntryFlag::Int)
+          info.type = EntryType::Int;
+        else
+          info.type = EntryType::Double;
         entries.push_back(info);
       }
     }
@@ -366,7 +375,7 @@ void PrefWidget::buildContextMenu(QMenu *menu)
     QWidget *widget = nullptr;
     QHBoxLayout *layout = nullptr;
     QByteArray name = entry.name;
-    if (entry.type != EntryBool) {
+    if (entry.type != EntryType::Bool) {
         widget = new QWidget(menu);
         layout = new QHBoxLayout(widget);
         auto label = new QLabel(widget);
@@ -375,7 +384,7 @@ void PrefWidget::buildContextMenu(QMenu *menu)
         layout->addWidget(label);
     }
     switch(entry.type) {
-      case EntryBool: {
+      case EntryType::Bool: {
         auto checkbox = new QCheckBox(menu);
         widget = checkbox;
         checkbox->setChecked(m_Base->property(entry.name).toBool());
@@ -388,7 +397,7 @@ void PrefWidget::buildContextMenu(QMenu *menu)
           });
         break;
       }
-      case EntryInt: {
+      case EntryType::Int: {
         auto spinbox = new QSpinBox(widget);
         spinbox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         layout->addWidget(spinbox);
@@ -402,7 +411,7 @@ void PrefWidget::buildContextMenu(QMenu *menu)
           });
         break;
       }
-      case EntryDouble: {
+      case EntryType::Double: {
         auto spinbox = new QDoubleSpinBox(widget);
         spinbox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         layout->addWidget(spinbox);
@@ -418,7 +427,7 @@ void PrefWidget::buildContextMenu(QMenu *menu)
           });
         break;
       }
-      case EntryString: {
+      case EntryType::String: {
         auto lineedit = new QLineEdit(widget);
         lineedit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         layout->addWidget(lineedit);
@@ -454,16 +463,16 @@ bool PrefWidget::restoreSubEntry(const SubEntry &entry, const char *change)
     return false;
   QVariant v;
   switch(entry.type) {
-  case EntryBool:
+  case EntryType::Bool:
     v = getEntryParameter()->GetBool(name, entry.defvalue.toBool());
     break;
-  case EntryInt:
+  case EntryType::Int:
     v = (int)getEntryParameter()->GetInt(name, entry.defvalue.toInt());
     break;
-  case EntryDouble:
+  case EntryType::Double:
     v = getEntryParameter()->GetFloat(name, entry.defvalue.toReal());
     break;
-  case EntryString:
+  case EntryType::String:
     v = QString::fromUtf8(getEntryParameter()->GetASCII(
           name, entry.defvalue.toString().toUtf8().constData()).c_str());
     break;
@@ -644,7 +653,7 @@ void PrefSpinBox::setEntryName( const QByteArray& name )
 {
   PrefWidget::setEntryName(name);
   if (subEntries().isEmpty())
-    setupSubEntries(this);
+    setupSubEntries(this, EntryFlag::Int|EntryFlag::Step);
 }
 
 void PrefSpinBox::contextMenuEvent(QContextMenuEvent *event)

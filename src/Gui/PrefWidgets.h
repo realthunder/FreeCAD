@@ -36,6 +36,7 @@
 #include <QRadioButton>
 #include <QTextEdit>
 
+#include <Base/Bitmask.h>
 #include <Base/Parameter.h>
 
 #include "Widgets.h"
@@ -88,11 +89,11 @@ public:
   void onSave();
   void onRestore();
 
-  enum EntryType {
-      EntryBool,
-      EntryInt,
-      EntryDouble,
-      EntryString,
+  enum class EntryType {
+      Bool,
+      Int,
+      Double,
+      String,
   };
   struct SubEntry {
       QByteArray name;
@@ -102,14 +103,17 @@ public:
   };
   void setSubEntries(QObject *base, const QVector<SubEntry> &entires);
 
-  enum EntryFlag {
-    EntryDecimals = 1,
-    EntryMinimum = 2,
-    EntryMaximum = 4,
-    EntryStep = 8,
-    EntryAll = EntryDecimals|EntryMinimum|EntryMaximum|EntryStep,
+  enum class EntryFlag {
+    Decimals = 1,
+    Minimum = 2,
+    Maximum = 4,
+    Step = 8,
+    Int = 16,
+    All = Decimals|Minimum|Maximum|Step,
+    Default = Decimals|Step,
   };
-  void setupSubEntries(QObject *base, int entires = EntryDecimals|EntryStep);
+  using EntryFlags = Base::Flags<EntryFlag>;
+  void setupSubEntries(QObject *base, EntryFlags flags = EntryFlag::Default);
 
   typedef std::function<bool(const QByteArray &, QVariant &)>  SubEntryValidate;
   void setSubEntryValidate(const SubEntryValidate &);
@@ -665,5 +669,7 @@ private:
 };
 
 } // namespace Gui
+
+ENABLE_BITMASK_OPERATORS(Gui::PrefWidget::EntryFlag)
 
 #endif // GUI_PREFWIDGETS_H

@@ -151,7 +151,7 @@ bool PropertyItem::updateDecimals()
 {
     int d = PrefWidget::getSubEntryValue(_entryName,
                                          "decimals",
-                                         PrefWidget::EntryInt,
+                                         PrefWidget::EntryType::Int,
                                          this->precision).toInt();
     if (d < Base::UnitsApi::getDecimals())
         d = Base::UnitsApi::getDecimals();
