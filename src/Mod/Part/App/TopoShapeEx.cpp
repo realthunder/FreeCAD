@@ -77,6 +77,7 @@
 # include <BRepOffsetAPI_ThruSections.hxx>
 # include <BRepPrimAPI_MakePrism.hxx>
 # include <BRepPrimAPI_MakeRevol.hxx>
+# include <BRepFeat.hxx>
 # include <BRepFeat_MakePrism.hxx>
 # include <BRepTools.hxx>
 # include <BRepTools_ReShape.hxx>
@@ -2186,6 +2187,14 @@ void GenericShapeMapper::init(const TopoShape &src, const TopoDS_Shape &dst)
     }
 }
 
+extern "C" {
+// backdoor to be called inside OCC for showing intermediate results
+void showTopoShape(const TopoDS_Shape &s, const char *name)
+{
+    Part::Feature::create(s, name);
+}
+}
+
 TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
                                      const TopoShape& profile,
                                      const TopoShape& supportFace,
@@ -2195,22 +2204,16 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
                                      Standard_Boolean checkLimits,
                                      const char *op)
 {
-    if(!op) op = Part::OpCodes::Prism;
-
-    BRepFeat_MakePrism PrismMaker;
-
     TopoShape _uptoface(__uptoface);
-    if (checkLimits && _uptoface.shapeType(true) == TopAbs_FACE
-                    && !BRep_Tool::NaturalRestriction(TopoDS::Face(_uptoface.getShape()))) {
-        // When using the face with BRepFeat_MakePrism::Perform(const TopoDS_Shape& Until)
-        // then the algorithm expects that the 'NaturalRestriction' flag is set in order
-        // to work as expected.
-        BRep_Builder builder;
-        _uptoface = _uptoface.makECopy();
-        builder.NaturalRestriction(TopoDS::Face(_uptoface.getShape()), Standard_True);
+    TopoShape uptoface(_uptoface);
+    if (uptoface.shapeType(true) != TopAbs_FACE) {
+        FC_THROWM(Base::CADKernelError,"Invalid face");
     }
 
-    TopoShape uptoface(_uptoface);
+    if(!op) {
+        op = Part::OpCodes::Prism;
+    }
+
     TopoShape base(_base);
 
     if (base.isNull()) {
@@ -2218,9 +2221,12 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
         base = profile;
     }
 
-    // Check whether the face has limits or not. Unlimited faces have no wire
-    // Note: Datum planes are always unlimited
-    if (checkLimits && uptoface.hasSubShape(TopAbs_WIRE)) {
+    BRepFeat_MakePrism PrismMaker;
+
+    if (checkLimits
+            && !BRep_Tool::NaturalRestriction(TopoDS::Face(uptoface.getShape()))
+            && uptoface.hasSubShape(TopAbs_WIRE))
+    {
         TopoDS_Face face = TopoDS::Face(uptoface.getShape());
         bool remove_limits = false;
         // Remove the limits of the upToFace so that the extrusion works even if profile is larger
@@ -2250,21 +2256,61 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
             }
         }
 
-        if (remove_limits) {
-            // Note: Using an unlimited face every time gives unnecessary failures for concave faces
-            TopLoc_Location loc = face.Location();
-            BRepAdaptor_Surface adapt(face, Standard_False);
-            // use the placement of the adapter, not of the upToFace
-            loc = TopLoc_Location(adapt.Trsf());
-            BRepBuilderAPI_MakeFace mkFace(adapt.Surface().Surface()
+        if (remove_limits)
+        {
+            Handle(Geom_Surface) s = BRep_Tool::Surface(TopoDS::Face(uptoface.getShape()));
+            Handle(Standard_Type) styp = s->DynamicType();
+            if (styp == STANDARD_TYPE(Geom_RectangularTrimmedSurface)) {
+                s = Handle(Geom_RectangularTrimmedSurface)::DownCast(s)->BasisSurface();
+                styp = s->DynamicType();
+            }
+            if (styp == STANDARD_TYPE(Geom_Plane) ||
+                styp == STANDARD_TYPE(Geom_CylindricalSurface) ||
+                styp == STANDARD_TYPE(Geom_ConicalSurface)) {
+                if (base.isNull())
+                    BRepFeat::FaceUntil(profile.getShape(), face);
+                else
+                    BRepFeat::FaceUntil(base.getShape(), face);
+                uptoface.setShape(face, false);
+
+                // OCC BRepFeat_MakePrism uses NatrualRestriction flag to
+                // decide whether to build its own until face to remove limit
+                // (which uses the above call to BrepFeat::FaceUntil()).
+                //
+                // However, there is a bug causing OCC to not produce any shape
+                // if the until face is not part of the base shape, which will
+                // be the case because removing limit implies creating a new
+                // face as mentioned above.
+                //
+                // Now, there is a patch (https://github.com/realthunder/OCCT/commit/80c3867388c2d52b82bc65729a05dd13887188fb)
+                // that partially fixes the problem if the input face has
+                // NatrualRestriction set to False. So we create a face without
+                // limit by ourself and manually change NatrualRestriction to
+                // False to force into the working code path.
+                //
+                // Same reasoning applies to branch below, except that
+                // BRepFeat::FaceUntil only handles plane, cylinder and conical
+                // surface. We handle other types below by creating face
+                // without bound by ourselves.
+                BRep_Builder builder;
+                builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), Standard_False);
+            }
+            else {
+                TopLoc_Location loc = face.Location();
+                BRepAdaptor_Surface adapt(face, Standard_False);
+                // use the placement of the adapter, not of the upToFace
+                loc = TopLoc_Location(adapt.Trsf());
+                BRepBuilderAPI_MakeFace mkFace(adapt.Surface().Surface()
 #if OCC_VERSION_HEX >= 0x060502
-                    , Precision::Confusion()
+                        , Precision::Confusion()
 #endif
-            );
-            if (!mkFace.IsDone()) 
-                remove_limits = false;
-            else
-                uptoface.setShape(located(mkFace.Shape(),loc), false);
+                );
+                if (mkFace.IsDone())  {
+                    uptoface.setShape(located(mkFace.Shape(),loc), false);
+                    BRep_Builder builder;
+                    builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), Standard_False);
+                }
+            }
         }
     }
 
@@ -2337,10 +2383,16 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
                 result.makEShape(PrismMaker, srcShapes, uptoface, op);
             }
             break;
-        } catch (Base::Exception &) {
-            if (!retry()) throw;
-        } catch (Standard_Failure &) {
-            if (!retry()) throw;
+        } catch (const Base::Exception &e) {
+            if (!retry()) {
+                throw;
+            }
+            FC_WARN("Retry extrusion on error: " << e.what());
+        } catch (const Standard_Failure &e) {
+            if (!retry()) {
+                throw;
+            }
+            FC_WARN("Retry extrusion on error: " << e.GetMessageString());
         }
     }
 
