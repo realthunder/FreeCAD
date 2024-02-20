@@ -367,7 +367,8 @@ SoFCRenderCache::_Material::init(SoState * state)
 
   this->materialbinding = SoMaterialBindingElement::get(state);
 
-  this->linepattern = SoLinePatternElement::get(state);
+  this->linepattern = (SoLinePatternElement::getScaleFactor(state) << 16)
+                      | SoLinePatternElement::get(state);
 
   this->linewidth = SoLineWidthElement::get(state);
   if (this->linewidth < 1.0f)
@@ -419,8 +420,10 @@ SoFCRenderCacheP::captureMaterial(SoState * state)
   if (_checkMaterial(state, m, Material::FLAG_MATERIAL_BINDING, this->materialbindingelement))
     m.materialbinding = SoMaterialBindingElement::get(state);
 
-  if (_checkMaterial(state, m, Material::FLAG_LINE_PATTERN, this->linepatternelement))
-    m.linepattern = (SoLinePatternElement::getScaleFactor(state) << 16) | SoLinePatternElement::get(state);
+  if (_checkMaterial(state, m, Material::FLAG_LINE_PATTERN, this->linepatternelement)) {
+    m.linepattern = (SoLinePatternElement::getScaleFactor(state) << 16)
+                    | SoLinePatternElement::get(state);
+  }
 
   if (_checkMaterial(state, m, Material::FLAG_LINE_WIDTH, this->linewidthelement)) {
     m.linewidth = SoLineWidthElement::get(state);

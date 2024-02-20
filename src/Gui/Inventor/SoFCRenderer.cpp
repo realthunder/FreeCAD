@@ -677,15 +677,22 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
     }
 
     if (first || this->material.linepattern != linepattern) {
-      if ((linepattern & 0xffff) == 0xffff)
+      GLint factor = linepattern >> 16;
+      GLushort pattern = linepattern & 0xffff;
+      if (pattern == 0xffff) {
         glDisable(GL_LINE_STIPPLE);
-      else {
+        factor = 1;
+      } else {
         glEnable(GL_LINE_STIPPLE);
-        glLineStipple((GLint) (linepattern >> 16), (GLshort) (linepattern & 0xffff));
+        if (factor > 256)
+          factor = 256;
+        else if (factor < 1)
+          factor = 1;
+        glLineStipple(factor, pattern);
       }
       FC_GLERROR_CHECK;
       this->material.linepattern = linepattern;
-      SoLinePatternElement::set(state, linepattern & 0xffff, linepattern>>16);
+      SoLinePatternElement::set(state, pattern, factor);
     }
     if (!first)
       return true;
@@ -2290,7 +2297,6 @@ SoFCRenderer::render(SoGLRenderAction * action)
                       && PRIVATE(this)->linesontop.size();
   int pass = RenderPassNormal;
 
-#if 0
   if (hassel || hasontop || PRIVATE(this)->hlwholeontop) {
     // If there is lines/points on top perform a depth write only rendering
     // pass for all the triangles on top, so that we can distinguish line style
@@ -2327,7 +2333,6 @@ SoFCRenderer::render(SoGLRenderAction * action)
 
     pass = RenderPassLinePattern;
   }
-#endif
 
   // Even if we are calling renderOpaque() below (because of lines and points
   // render), we shall still respect the transparency setting, e.g. we'll use
