@@ -145,6 +145,7 @@ public:
             if (geom->isDerivedFrom<Part::GeomTrimmedCurve>() || geom->is<Part::GeomCircle>()
                 || geom->is<Part::GeomEllipse>() || geom->is<Part::GeomBSplineCurve>()) {
                 try {
+                    Gui::Selection().clearSelection();
                     Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Trim edge"));
                     Gui::cmdAppObjectArgs(sketchgui->getObject(),
                                           "trim(%d,App.Vector(%f,%f,0))",
