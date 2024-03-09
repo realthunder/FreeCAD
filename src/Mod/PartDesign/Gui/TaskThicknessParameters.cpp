@@ -71,8 +71,16 @@ TaskThicknessParameters::TaskThicknessParameters(ViewProviderDressUp *DressUpVie
     ui->checkMakeOffset->setToolTip(QApplication::translate("PartDesign", pcThickness->MakeOffset.getDocumentation()));
 
     ui->checkMakeOffset->setChecked(i);
-    QMetaObject::connectSlotsByName(this);
 
+    int mode = pcThickness->Mode.getValue();
+    ui->modeComboBox->setCurrentIndex(mode);
+
+    int join = pcThickness->Join.getValue();
+    ui->joinComboBox->setCurrentIndex(join);
+
+    setup(ui->message, ui->treeWidgetReferences, ui->buttonRefAdd);
+
+    QMetaObject::connectSlotsByName(this);
     connect(ui->Value, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
         this, &TaskThicknessParameters::onValueChanged);
     connect(ui->checkReverse, &QCheckBox::toggled,
@@ -86,13 +94,6 @@ TaskThicknessParameters::TaskThicknessParameters(ViewProviderDressUp *DressUpVie
     connect(ui->checkIntersection, &QCheckBox::toggled,
         this, &TaskThicknessParameters::onIntersectionChanged);
 
-    int mode = pcThickness->Mode.getValue();
-    ui->modeComboBox->setCurrentIndex(mode);
-
-    int join = pcThickness->Join.getValue();
-    ui->joinComboBox->setCurrentIndex(join);
-
-    setup(ui->message, ui->treeWidgetReferences, ui->buttonRefAdd);
 }
 
 void TaskThicknessParameters::refresh()
