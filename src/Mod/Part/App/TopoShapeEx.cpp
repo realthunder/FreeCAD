@@ -2193,6 +2193,18 @@ void showTopoShape(const TopoDS_Shape &s, const char *name)
 {
     Part::Feature::create(s, name);
 }
+
+void showTopoShapes(const TopoDS_Shape &s, const char *name, const TopTools_ListOfShape &shapes)
+{
+    if (!s.IsNull())
+        Part::Feature::create(s, name);
+    std::string nn(name);
+    nn+="_list";
+    TopTools_ListIteratorOfListOfShape it(shapes);
+    for (; it.More(); it.Next()) {
+        Part::Feature::create(it.Value(), nn.c_str());
+    }
+}
 }
 
 TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
@@ -5589,6 +5601,9 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
             const TopoDS_Edge& edge = TopoDS::Edge (e.getShape());
             TopLoc_Location heloc; // this will be output
             Handle(Geom_Curve) c_geom = BRep_Tool::Curve(edge, heloc, u1, u2); //The geometric curve
+            if (c_geom.IsNull()) {
+                FC_THROWM(Base::CADKernelError, "Unknown curve in edge");
+            }
             Handle(Geom_BSplineCurve) bspline = Handle(Geom_BSplineCurve)::DownCast(c_geom); //Try to get BSpline curve
             if (!bspline.IsNull()) {
                 gp_Trsf transf = heloc.Transformation();
