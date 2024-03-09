@@ -603,17 +603,21 @@ void Part::Tools::applyTransformationOnNormals(const TopLoc_Location& loc, std::
     }
 }
 
-Handle (Poly_Triangulation) Part::Tools::triangulationOfFace(const TopoDS_Face& face)
+Handle (Poly_Triangulation) Part::Tools::triangulationOfFace(const TopoDS_Face& face,
+                                                             TopLoc_Location& loc,
+                                                             double deflection,
+                                                             double angleDeflectionRad)
 {
-    TopLoc_Location loc;
     Handle (Poly_Triangulation) mesh = BRep_Tool::Triangulation(face, loc);
     if (!mesh.IsNull())
         return mesh;
 
+    TopoDS_Face face_non_located = TopoDS::Face(face.Located(TopLoc_Location()));
+
     // If no triangulation exists then the shape is probably infinite
     double u1{}, u2{}, v1{}, v2{};
     try {
-        BRepAdaptor_Surface adapt(face);
+        BRepAdaptor_Surface adapt(face_non_located);
         u1 = adapt.FirstUParameter();
         u2 = adapt.LastUParameter();
         v1 = adapt.FirstVParameter();
@@ -640,7 +644,7 @@ Handle (Poly_Triangulation) Part::Tools::triangulationOfFace(const TopoDS_Face& 
     selectRange(u1, u2);
     selectRange(v1, v2);
 
-    Handle(Geom_Surface) surface = BRep_Tool::Surface(face);
+    Handle(Geom_Surface) surface = BRep_Tool::Surface(face_non_located);
     if ( surface.IsNull() ) {
         FC_THROWM(Base::CADKernelError, "Cannot create surface from face");
     }
@@ -648,11 +652,15 @@ Handle (Poly_Triangulation) Part::Tools::triangulationOfFace(const TopoDS_Face& 
     TopoDS_Shape shape = mkBuilder.Shape();
     shape.Location(loc);
 
-    BRepMesh_IncrementalMesh(shape, 0.005, false, 0.1, true);
+    BRepMesh_IncrementalMesh(shape,deflection,Standard_False,angleDeflectionRad,Standard_True);
     return BRep_Tool::Triangulation(TopoDS::Face(shape), loc);
 }
 
-Handle(Poly_Polygon3D) Part::Tools::polygonOfEdge(const TopoDS_Edge& edge, TopLoc_Location& loc)
+Handle(Poly_Polygon3D) Part::Tools::polygonOfEdge(const TopoDS_Edge& edge,
+                                                  TopLoc_Location& loc,
+                                                  double deflection,
+                                                  double angleDeflectionRad)
+
 {
     BRepAdaptor_Curve adapt(edge);
     double u = adapt.FirstParameter();
@@ -665,18 +673,17 @@ Handle(Poly_Polygon3D) Part::Tools::polygonOfEdge(const TopoDS_Edge& edge, TopLo
     u = std::max(-50.0, u);
     v = std::min( 50.0, v);
 
+    TopoDS_Edge edge_non_located = TopoDS::Edge(edge.Located(TopLoc_Location()));
+
     double uv;
-    Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, uv, uv);
+    Handle(Geom_Curve) curve = BRep_Tool::Curve(edge_non_located, uv, uv);
 
     BRepBuilderAPI_MakeEdge mkBuilder(curve, u, v);
     TopoDS_Shape shape = mkBuilder.Shape();
-    // why do we have to set the inverted location here?
-    TopLoc_Location inv = loc.Inverted();
-    shape.Location(inv);
+    shape.Location(loc);
 
-    BRepMesh_IncrementalMesh(shape, 0.005, false, 0.1, true);
-    TopLoc_Location tmp;
-    return BRep_Tool::Polygon3D(TopoDS::Edge(shape), tmp);
+    BRepMesh_IncrementalMesh(shape,deflection,Standard_False,angleDeflectionRad,Standard_True);
+    return BRep_Tool::Polygon3D(TopoDS::Edge(shape), loc);
 }
 
 // helper function to use in getNormal, here we pass the local properties

@@ -185,18 +185,28 @@ public:
      * \brief triangulationOfInfinite
      * Returns the triangulation of the face of the tessellated shape. In case the face has infinite lengths
      * the triangulation of a limited parameter range is computed.
-     * \param edge
-     * \param loc
+     * \param face: input face
+     * \param loc: return the location of the output mesh
+     * \param deflection: for use to mesh infinit shape
+     * \param angleDeflectionRad: for use to mesh infinit shape
      */
-    static Handle (Poly_Triangulation) triangulationOfFace(const TopoDS_Face& face);
+    static Handle(Poly_Triangulation) triangulationOfFace(const TopoDS_Face& face,
+                                                          TopLoc_Location &loc,
+                                                          double deflection = 0.005,
+                                                          double angleDeflectionRad = 0.1);
     /*!
      * \brief polygonOfEdge
      * Returns the polygon of the edge of the tessellated shape. In case the edge has infinite length
      * the polygon of a limited parameter range is computed.
-     * \param edge
-     * \param loc
+     * \param edge: input edge
+     * \param loc: return the location of the output mesh
+     * \param deflection: for use to mesh infinit shape
+     * \param angleDeflectionRad: for use to mesh infinit shape
      */
-    static Handle(Poly_Polygon3D) polygonOfEdge(const TopoDS_Edge& edge, TopLoc_Location& loc);
+    static Handle(Poly_Polygon3D) polygonOfEdge(const TopoDS_Edge& edge,
+                                                TopLoc_Location &loc,
+                                                double deflection = 0.005,
+                                                double angleDeflectionRad = 0.1);
     /*!
      * \brief getNormal
      * Returns the normal at the given parameters on the surface and the state of the calculation

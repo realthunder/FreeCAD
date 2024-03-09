@@ -1942,10 +1942,7 @@ void ViewProviderPartExt::updateVisual()
         TopExp::MapShapes(cShape, TopAbs_FACE, faceMap);
         for (int i=1; i <= faceMap.Extent(); i++) {
             TopoDS_Face face = TopoDS::Face(faceMap(i));
-            Handle (Poly_Triangulation) mesh = BRep_Tool::Triangulation(face, aLoc);
-            if (mesh.IsNull()) {
-                mesh = Part::Tools::triangulationOfFace(face);
-            }
+            Handle (Poly_Triangulation) mesh = Part::Tools::triangulationOfFace(face, aLoc, deflection, AngDeflectionRads);
             // Note: we must also count empty faces
             if (!mesh.IsNull()) {
                 numTriangles += mesh->NbTriangles();
@@ -1989,7 +1986,7 @@ void ViewProviderPartExt::updateVisual()
                 if (BRep_Tool::IsClosed(aEdge, it->second))
                     seamEdges.push_back(i-1);
             } else {
-                Handle(Poly_Polygon3D) aPoly = Part::Tools::polygonOfEdge(aEdge, aLoc);
+                Handle(Poly_Polygon3D) aPoly = Part::Tools::polygonOfEdge(aEdge, aLoc, deflection, AngDeflectionRads);
                 if (!aPoly.IsNull()) {
                     int nbNodesInEdge = aPoly->NbNodes();
                     numNodes += nbNodesInEdge;
@@ -2017,10 +2014,7 @@ void ViewProviderPartExt::updateVisual()
             TopLoc_Location aLoc;
             const TopoDS_Face &actFace = TopoDS::Face(faceMap(i));
             // get the mesh of the shape
-            Handle (Poly_Triangulation) mesh = BRep_Tool::Triangulation(actFace,aLoc);
-            if (mesh.IsNull()) {
-                mesh = Part::Tools::triangulationOfFace(actFace);
-            }
+            Handle (Poly_Triangulation) mesh = Part::Tools::triangulationOfFace(actFace, aLoc, deflection, AngDeflectionRads);
             if (mesh.IsNull()) {
                 parts[ii] = 0;
                 continue;
@@ -2182,7 +2176,7 @@ void ViewProviderPartExt::updateVisual()
 
             // handling of the free edge that are not associated to a face
             if (!faceEdges.count(aEdge)) {
-                Handle(Poly_Polygon3D) aPoly = Part::Tools::polygonOfEdge(aEdge, aLoc);
+                Handle(Poly_Polygon3D) aPoly = Part::Tools::polygonOfEdge(aEdge, aLoc, deflection, AngDeflectionRads);
                 if (!aPoly.IsNull()) {
                     if (!aLoc.IsIdentity()) {
                         identity = false;
