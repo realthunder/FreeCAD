@@ -85,7 +85,7 @@ _Observer = _ParamUnitsObserver()
 _logger = FreeCAD.Logger('PreselMacro')
 def _printTrace(verbose=False):
     global _logger
-    if not verbose or _logger.isEnabledFor(5):
+    if verbose or _logger.isEnabledFor(5):
         _logger.trace(traceback.format_exc())
 
 def _ftostr(v):
@@ -147,6 +147,13 @@ def _setupDecimals():
         pass
     _Decimals = _ParamDecimals
 
+def getattr_noexception(obj, attr, default):
+    try:
+        return getattr(obj, attr, default)
+    except Exception:
+        _printTrace()
+    return default
+
 def showPreselectInfo():
     import FreeCADGui
     sel = FreeCADGui.Selection.getPreselection()
@@ -201,9 +208,10 @@ def showPreselectInfo():
         _printTrace(True)
 
     txt += '\nPlacement: %s' % _pla_tostr(shape.Placement)
-    tol = getattr(shape, 'Tolerance', None)
+    tol = getattr_noexception(shape, 'Tolerance', None)
     if tol is not None:
         txt += '\nTolerance: %g' % tol
+    txt = _getGeoAttributes(txt, shape, ('Orientation',))
     if shape.ShapeType == 'Vertex':
         txt += '\nPoint: %s' % _vec_tostr(shape.Point)
         FreeCADGui.Selection.setPreselectionText(txt)
@@ -233,15 +241,14 @@ def showPreselectInfo():
     except Exception:
         _printTrace(True)
 
-    txt = _getGeoAttributes(txt, shape, ('Orientation',
-                                         ('Closed', 'isClosed'),
+    txt = _getGeoAttributes(txt, shape, (('Closed', 'isClosed'),
                                          ('FirstVertex', 'firstVertex'),
                                          ('LastVertex', 'lastVertex'),
                                         ))
     if not shape.isInfinite():
         txt = _getGeoAttributes(txt, shape, ('ParameterRange',))
 
-    geo = getattr(shape, 'Curve', None)
+    geo = getattr_noexception(shape, 'Curve', None)
     if geo:
         txt += '\nCurve type: %s' % geo.TypeId
         if point != FreeCAD.Vector():
@@ -260,7 +267,7 @@ def showPreselectInfo():
             except Exception:
                 _printTrace(True)
     else:
-        geo = getattr(shape, 'Surface', None)
+        geo = getattr_noexception(shape, 'Surface', None)
         if geo:
             txt += '\nSurface type: %s' % geo.TypeId
             if point != FreeCAD.Vector():
@@ -337,9 +344,9 @@ def showPreselectMeasure():
     if shape.ShapeType == 'Vertex':
         txt = 'Position: %s' % _vec_tostr(shape.Point)
     try:
-        geo = getattr(shape, 'Curve', None)
+        geo = getattr_noexception(shape, 'Curve', None)
         if not geo:
-            geo = getattr(shape, 'Surface', None)
+            geo = getattr_noexception(shape, 'Surface', None)
         txt = _getGeoAttributes(txt, geo, ('Radius',
                                            'MajorRadius',
                                            'MinorRadius',
