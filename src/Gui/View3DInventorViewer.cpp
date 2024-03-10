@@ -471,6 +471,8 @@ struct View3DInventorViewer::Private
                                  App::DocumentObject *prevObj = nullptr);
 
     void initHiddenLineConfig(bool activate=false);
+
+    static void onDragFinish(void *data, SoDragger *d);
 };
 
 /** \defgroup View3D 3D Viewer
@@ -1668,11 +1670,15 @@ void View3DInventorViewer::Private::activateShadow()
         // pcShadowGroup->renderCaching = SoSeparator::OFF;
         // pcShadowGroup->boundingBoxCaching = SoSeparator::OFF;
 
-        if(!pcShadowDirectionalLight)
+        if(!pcShadowDirectionalLight) {
             pcShadowDirectionalLight = new SoFCDirectionalLight;
+            pcShadowDirectionalLight->getDragger()->addFinishCallback(onDragFinish, this);
+        }
 
-        if(!pcShadowSpotLight)
+        if(!pcShadowSpotLight) {
             pcShadowSpotLight = new SoFCSpotLight;
+            pcShadowSpotLight->getDragger()->addFinishCallback(onDragFinish, this);
+        }
 
         auto shadowStyle = new SoShadowStyle;
         shadowStyle->style = SoShadowStyle::NO_SHADOWING;
@@ -1856,9 +1862,8 @@ void View3DInventorViewer::Private::activateShadow()
         // pcShadowGroup->visibilityNearRadius = _shadowParam<App::PropertyFloat>(view, "SpotLightRadiusNear", -1.0);
         // pcShadowGroup->visibilityRadius = _shadowParam<App::PropertyFloat>(view, "SpotLightRadius", -1.0);
     } else {
-        pcShadowDirectionalLight->direction = dir;
-
         light = pcShadowDirectionalLight;
+        pcShadowDirectionalLight->direction = dir;
         if(light->isOfType(SoShadowDirectionalLight::getClassTypeId())) {
             static const App::PropertyFloatConstraint::Constraints _dist_cstr(-1.0,DBL_MAX,10.0);
             static_cast<SoShadowDirectionalLight*>(light)->maxShadowDistance =
@@ -5493,6 +5498,30 @@ void View3DInventorViewer::toggleShadowLightManip(int toggle)
     _pimpl->toggleDragger(toggle);
 }
 
+void View3DInventorViewer::Private::onDragFinish(void *data, SoDragger *d)
+{
+    auto self = reinterpret_cast<Private*>(data);
+
+    App::AutoTransaction guard(QT_TRANSLATE_NOOP("View", "Change shadow light"));
+    SbVec3f dir;
+    if (self->pcShadowSpotLight && d == self->pcShadowSpotLight->getDragger()) {
+        SbVec3f pos = self->pcShadowSpotLight->location.getValue();
+        _shadowSetParam<App::PropertyVector>(self->view, "SpotLightPosition",
+                Base::Vector3d(pos[0], pos[1], pos[2]));
+        _shadowSetParam<App::PropertyAngle>(self->view, "SpotLightCutOffAngle",
+                self->pcShadowSpotLight->cutOffAngle.getValue() * 180.0 / M_PI);
+        dir = self->pcShadowSpotLight->direction.getValue();
+    }
+    else if (self->pcShadowDirectionalLight && d == self->pcShadowDirectionalLight->getDragger()) {
+        dir = self->pcShadowDirectionalLight->direction.getValue();
+    }
+    else {
+        return;
+    }
+    _shadowSetParam<App::PropertyVector>(self->view, "LightDirection",
+            Base::Vector3d(dir[0], dir[1], dir[2]));
+}
+
 bool View3DInventorViewer::Private::toggleDragger(int toggle)
 {
     App::Document *doc = owner->guiDocument?owner->guiDocument->getDocument():nullptr;
@@ -5505,26 +5534,6 @@ bool View3DInventorViewer::Private::toggleDragger(int toggle)
     if (showDragger.getValue() && toggle <= 0) {
         showDragger = FALSE;
         pcShadowPickStyle->style = SoPickStyle::SHAPE;
-
-        App::GetApplication().setActiveTransaction("Change shadow light");
-
-        SbVec3f dir;
-        if (dirlight)
-            dir = pcShadowDirectionalLight->direction.getValue();
-        else {
-            dir = pcShadowSpotLight->direction.getValue();
-
-            SbVec3f pos = pcShadowSpotLight->location.getValue();
-            _shadowSetParam<App::PropertyVector>(view, "SpotLightPosition",
-                    Base::Vector3d(pos[0], pos[1], pos[2]));
-
-            _shadowSetParam<App::PropertyAngle>(view, "SpotLightCutOffAngle",
-                    pcShadowSpotLight->cutOffAngle.getValue() * 180.0 / M_PI);
-        }
-        _shadowSetParam<App::PropertyVector>(view, "LightDirection",
-                Base::Vector3d(dir[0], dir[1], dir[2]));
-
-        App::GetApplication().closeActiveTransaction();
         return true;
 
     } else if (!showDragger.getValue() && toggle != 0) {
