@@ -8580,19 +8580,17 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 Handle(Geom_Curve) origCurve = curve.Curve().Curve();
                 gp_Pnt firstPoint, lastPoint;
 
-                bool done = false;
-
                 if (Part::GeomCurve::isLinear(origCurve)) {
-                    done = true;
                     geos.emplace_back(projectLine(curve, gPlane, invPlm));
+                    return;
                 }
-                else {
-                    // TopExp::First/LastVertex() may throw on infinite edge, so
-                    // we don't do it for linear edge, which does not require
-                    // end points for projection
-                    firstPoint = BRep_Tool::Pnt(TopExp::FirstVertex(edge));
-                    lastPoint = BRep_Tool::Pnt(TopExp::LastVertex(edge));
-                }
+
+                bool done = false;
+                // TopExp::First/LastVertex() may throw on infinite edge, so
+                // we don't do it for linear edge, which does not require
+                // end points for projection
+                firstPoint = BRep_Tool::Pnt(TopExp::FirstVertex(edge));
+                lastPoint = BRep_Tool::Pnt(TopExp::LastVertex(edge));
 
                 if (curve.GetType() == GeomAbs_Circle) {
                     done = true;
