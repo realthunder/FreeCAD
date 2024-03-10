@@ -99,6 +99,7 @@
 #include "SplitView3DInventor.h"
 #include "TaskView/TaskView.h"
 #include "TaskView/TaskDialogPython.h"
+#include "ToolBarManager.h"
 #include "TransactionObject.h"
 #include "TextDocumentEditorView.h"
 #include "UiLoader.h"
@@ -2371,9 +2372,8 @@ void postMainWindowSetup(MainWindow &mw)
 
     // set toolbar icon size
     ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("General");
-    int size = hGrp->GetInt("ToolbarIconSize", 0);
-    if (size >= 16) // must not be lower than this
-        mw.setIconSize(QSize(size,size));
+    int size = ToolBarManager::getInstance()->toolBarIconSize();
+    mw.setIconSize(QSize(size,size));
 
     // filter wheel events for combo boxes
     if (hGrp->GetBool("ComboBoxWheelEventFilter", false)) {
