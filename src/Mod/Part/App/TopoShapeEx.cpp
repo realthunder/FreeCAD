@@ -2981,17 +2981,13 @@ TopoShape &TopoShape::makEThickSolid(const TopoShape &shape,
     return makEShape(mkThick,shape,op);
 }
 
-TopoShape &TopoShape::makEWires(const std::vector<TopoShape> &shapes,
+TopoShape &TopoShape::makEWires(const TopoShape &shape,
                                 const char *op,
                                 double tol,
                                 bool shared,
                                 TopoShapeMap *output)
 {
-    if(shapes.empty())
-        HANDLE_NULL_SHAPE;
-    if(shapes.size() == 1)
-        return makEWires(shapes[0],op,tol,shared,output);
-    return makEWires(TopoShape(Tag).makECompound(shapes),op,tol,shared,output);
+    return makEWires({shape}, op , tol, shared, output);
 }
 
 struct EdgePoints {
@@ -3162,7 +3158,7 @@ TopoShape &TopoShape::makEOrderedWires(const std::vector<TopoShape> &shapes,
     return makECompound(wires,0,false);
 }
 
-TopoShape &TopoShape::makEWires(const TopoShape &shape,
+TopoShape &TopoShape::makEWires(const std::vector<TopoShape> &shapes,
                                 const char *op,
                                 double tol,
                                 bool shared,
@@ -3177,8 +3173,11 @@ TopoShape &TopoShape::makEWires(const TopoShape &shape,
         // resulting edges.
         Handle(TopTools_HSequenceOfShape) hEdges = new TopTools_HSequenceOfShape();
         Handle(TopTools_HSequenceOfShape) hWires = new TopTools_HSequenceOfShape();
-        for(TopExp_Explorer xp(shape.getShape(),TopAbs_EDGE);xp.More();xp.Next())
-            hEdges->Append(xp.Current());
+        for (const auto &shape : shapes) {
+            for (const auto &edge : shape.getSubShapes(TopAbs_EDGE)) {
+                hEdges->Append(edge);
+            }
+        }
         if(!hEdges->Length())
             HANDLE_NULL_SHAPE;
         ShapeAnalysis_FreeBounds::ConnectEdgesToWires(hEdges, tol, Standard_True, hWires);
@@ -3189,16 +3188,22 @@ TopoShape &TopoShape::makEWires(const TopoShape &shape,
         for (int i=1; i<=hWires->Length(); i++) {
             auto wire = hWires->Value(i);
             wires.push_back(TopoShape(Tag,Hasher,wire));
+            wires.back().mapSubElement(shapes, op);
         }
-        shape.mapSubElementsTo(wires,op);
         return makECompound(wires,"",false);
     }
 
     std::vector<TopoShape> wires;
     std::list<TopoShape> edge_list;
 
-    for(auto &e : shape.getSubTopoShapes(TopAbs_EDGE))
-        edge_list.emplace_back(e);
+    for (const auto &shape : shapes) {
+        for(const auto &e : shape.getSubTopoShapes(TopAbs_EDGE)) {
+            edge_list.emplace_back(e);
+        }
+    }
+
+    if (edge_list.empty())
+        HANDLE_NULL_SHAPE;
 
     std::vector<TopoShape> edges;
     edges.reserve(edge_list.size());
