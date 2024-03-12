@@ -863,8 +863,9 @@ CmdSketcherCreateFillet::CmdSketcherCreateFillet()
 void CmdSketcherCreateFillet::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),
-                    new DrawSketchHandlerFillet(DrawSketchHandlerFillet::SimpleFillet));
+    ActivateHandler(
+        getActiveGuiDocument(),
+        new DrawSketchHandlerFillet(ConstructionMethods::FilletConstructionMethod::Fillet));
 }
 
 bool CmdSketcherCreateFillet::isActive()
@@ -874,31 +875,31 @@ bool CmdSketcherCreateFillet::isActive()
 
 // ======================================================================================
 
-DEF_STD_CMD_A(CmdSketcherCreatePointFillet)
+DEF_STD_CMD_A(CmdSketcherCreateChamfer)
 
-CmdSketcherCreatePointFillet::CmdSketcherCreatePointFillet()
-    : Command("Sketcher_CreatePointFillet")
+CmdSketcherCreateChamfer::CmdSketcherCreateChamfer()
+    : Command("Sketcher_CreateChamfer")
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Create corner-preserving fillet");
-    sToolTipText = QT_TR_NOOP("Fillet that preserves intersection point and most constraints");
-    sWhatsThis = "Sketcher_CreatePointFillet";
+    sMenuText = QT_TR_NOOP("Create chamfer");
+    sToolTipText = QT_TR_NOOP("Create a chamfer between two lines or at a coincident point");
+    sWhatsThis = "Sketcher_CreateChamfer";
     sStatusTip = sToolTipText;
-    sPixmap = "Sketcher_CreatePointFillet";
-    sAccel = "G, F, P";
+    sPixmap = "Sketcher_CreateChamfer";
+    sAccel = "G, F, C";
     eType = ForEdit;
 }
 
-void CmdSketcherCreatePointFillet::activated(int iMsg)
+void CmdSketcherCreateChamfer::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     ActivateHandler(
         getActiveGuiDocument(),
-        new DrawSketchHandlerFillet(DrawSketchHandlerFillet::ConstraintPreservingFillet));
+        new DrawSketchHandlerFillet(ConstructionMethods::FilletConstructionMethod::Chamfer));
 }
 
-bool CmdSketcherCreatePointFillet::isActive()
+bool CmdSketcherCreateChamfer::isActive()
 {
     return isCommandActive(getActiveGuiDocument());
 }
@@ -906,24 +907,29 @@ bool CmdSketcherCreatePointFillet::isActive()
 class CmdSketcherCompCreateFillets: public Gui::GroupCommand
 {
 public:
-    CmdSketcherCompCreateFillets();
-    virtual const char* className() const {return "CmdSketcherCompCreateFillets";}
+    CmdSketcherCompCreateFillets()
+        : GroupCommand("Sketcher_CompCreateFillets")
+    {
+        sAppModule = "Sketcher";
+        sGroup = "Sketcher";
+        sMenuText = QT_TR_NOOP("Create fillet or chamfer");
+        sToolTipText = QT_TR_NOOP("Create a fillet or chamfer between two lines");
+        sWhatsThis = "Sketcher_CompCreateFillets";
+        sStatusTip = sToolTipText;
+        eType = ForEdit;
+
+        setCheckable(false);
+
+        addCommand("Sketcher_CreateFillet");
+        addCommand("Sketcher_CreateChamfer");
+    }
+
+    const char* className() const override
+    {
+        return "CmdSketcherCompCreateFillets";
+    }
 };
 
-CmdSketcherCompCreateFillets::CmdSketcherCompCreateFillets()
-  : GroupCommand("Sketcher_CompCreateFillets")
-{
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Fillets");
-    sToolTipText    = QT_TR_NOOP("Actions for creating fillets");
-    sWhatsThis      = "Sketcher_CompCreateFillets";
-    sStatusTip      = sToolTipText;
-    eType           = ForEdit;
-
-    addCommand(new CmdSketcherCreateFillet());
-    addCommand(new CmdSketcherCreatePointFillet());
-}
 
 // ======================================================================================
 
@@ -1823,9 +1829,11 @@ void CreateSketcherCommandsCreateGeo()
     rcCmdMgr.addCommand(new CmdSketcherCreateSlot());
     rcCmdMgr.addCommand(new CmdSketcherCreateArcSlot());
     rcCmdMgr.addCommand(new CmdSketcherCompSlot());
+    rcCmdMgr.addCommand(new CmdSketcherCreateFillet());
+    rcCmdMgr.addCommand(new CmdSketcherCreateChamfer());
     rcCmdMgr.addCommand(new CmdSketcherCompCreateFillets());
-    //rcCmdMgr.addCommand(new CmdSketcherCreateText());
-    //rcCmdMgr.addCommand(new CmdSketcherCreateDraftLine());
+    // rcCmdMgr.addCommand(new CmdSketcherCreateText());
+    // rcCmdMgr.addCommand(new CmdSketcherCreateDraftLine());
     rcCmdMgr.addCommand(new CmdSketcherTrimming());
     rcCmdMgr.addCommand(new CmdSketcherExtend());
     rcCmdMgr.addCommand(new CmdSketcherExternalCmds());
