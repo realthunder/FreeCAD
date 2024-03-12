@@ -49,10 +49,12 @@
 #include <gp_Trsf.hxx>
 #endif
 
+#include <Base/Console.h>
 #include <App/Document.h>
 
 #include "FeatureGeomFillSurface.h"
 
+FC_LOG_LEVEL_INIT("Surface",true, true);
 
 using namespace Surface;
 
@@ -182,7 +184,7 @@ App::DocumentObjectExecReturn* GeomFillSurface::execute()
             break;
         }
     }
-    auto wires = result.makEWires(shapes).getSubTopoShapes(TopAbs_WIRE);
+    auto wires = Part::TopoShape(0, getDocument()->getStringHasher()).makEWires(shapes).getSubTopoShapes(TopAbs_WIRE);
     if (wires.size() != 1)
         return new App::DocumentObjectExecReturn("Expects the input edges forms exactly one wire");
 
@@ -198,9 +200,9 @@ App::DocumentObjectExecReturn* GeomFillSurface::execute()
         style = Part::TopoShape::FillingStyle_Strech;
     }
     try {
-        result.makEBSplineFace(wires, style, true);
+        result.makEBSplineFace(shapes, style, true);
         this->Shape.setValue(result);
-    } catch (Standard_ConstructionError&) {
+    } catch (const Standard_Failure &e) {
         if (wires[0].isClosed()) {
             try {
                 result.makEFace(wires);
@@ -209,7 +211,8 @@ App::DocumentObjectExecReturn* GeomFillSurface::execute()
             } catch (Standard_Failure &) {
             }
         }
-        return new App::DocumentObjectExecReturn("Curves are disjoint.");
+        FC_ERR("Failed to make bspline face: " << e.GetMessageString());
+        return new App::DocumentObjectExecReturn("Failed to make face.");
     }
     return App::DocumentObject::StdReturn;
 

@@ -5493,6 +5493,9 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
                                        bool keepBezier,
                                        const char *op)
 {
+    if (!op)
+        op = Part::OpCodes::BSplineFace;
+
     std::vector<TopoShape> edges;
     for (auto &s : input) {
         auto e = s.getSubTopoShapes(TopAbs_EDGE);
@@ -5500,7 +5503,7 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
     }
 
     if (edges.size() == 1 && edges[0].isClosed()) {
-        auto edge = edges[0].getSubShape(TopAbs_EDGE, 1);
+        auto edge = edges[0].getShape();
         auto e = TopoDS::Edge(edge);
         auto v = TopExp::FirstVertex(e);
         Standard_Real first, last;
@@ -5578,12 +5581,10 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
         curves.reserve(4);
         for (const auto &e : edges) {
             const TopoDS_Edge& edge = TopoDS::Edge (e.getShape());
-            TopLoc_Location heloc; // this will be output
-            Handle(Geom_Curve) c_geom = BRep_Tool::Curve(edge, heloc, u1, u2);
+            Handle(Geom_Curve) c_geom = BRep_Tool::Curve(edge, u1, u2);
             Handle(Geom_BezierCurve) curve = Handle(Geom_BezierCurve)::DownCast(c_geom);
             if (!curve)
                 break;
-            curve->Transform(heloc.Transformation()); // apply original transformation to control points
             curves.push_back(curve);
         }
         if (curves.size() == edges.size()) {
@@ -5607,30 +5608,26 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
         curves.reserve(4);
         for (const auto & e : edges) {
             const TopoDS_Edge& edge = TopoDS::Edge (e.getShape());
-            TopLoc_Location heloc; // this will be output
-            Handle(Geom_Curve) c_geom = BRep_Tool::Curve(edge, heloc, u1, u2); //The geometric curve
+            Handle(Geom_Curve) c_geom = BRep_Tool::Curve(edge, u1, u2); //The geometric curve
             if (c_geom.IsNull()) {
                 FC_THROWM(Base::CADKernelError, "Unknown curve in edge");
             }
             Handle(Geom_BSplineCurve) bspline = Handle(Geom_BSplineCurve)::DownCast(c_geom); //Try to get BSpline curve
             if (!bspline.IsNull()) {
-                gp_Trsf transf = heloc.Transformation();
-                bspline->Transform(transf); // apply original transformation to control points
                 //Store Underlying Geometry
                 curves.push_back(bspline);
             }
             else {
-                // try to convert it into a B-spline
-                BRepBuilderAPI_NurbsConvert mkNurbs(edge);
+                // try to convert it into a B-spline.
+                // Note, must 'Copy' as OCC seem to modify the underlying
+                // geometry which will cause weird result for repeated
+                // recomputation.
+                BRepBuilderAPI_NurbsConvert mkNurbs(edge, /* Copy */Standard_True);
                 TopoDS_Edge nurbs = TopoDS::Edge(mkNurbs.Shape());
-                // avoid copying
-                TopLoc_Location heloc2; // this will be output
-                Handle(Geom_Curve) c_geom2 = BRep_Tool::Curve(nurbs, heloc2, u1, u2); //The geometric curve
+                Handle(Geom_Curve) c_geom2 = BRep_Tool::Curve(nurbs, u1, u2); //The geometric curve
                 Handle(Geom_BSplineCurve) bspline2 = Handle(Geom_BSplineCurve)::DownCast(c_geom2); //Try to get BSpline curve
 
                 if (!bspline2.IsNull()) {
-                    gp_Trsf transf = heloc2.Transformation();
-                    bspline2->Transform(transf); // apply original transformation to control points
                     //Store Underlying Geometry
                     curves.push_back(bspline2);
                 }
@@ -5640,8 +5637,6 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
                     Handle(Geom_BSplineCurve) spline = scc.ConvertToBSpline(c_geom, u1, u2, Precision::Confusion());
                     if (spline.IsNull())
                         Standard_Failure::Raise("A curve was not a B-spline and could not be converted into one.");
-                    gp_Trsf transf = heloc2.Transformation();
-                    spline->Transform(transf); // apply original transformation to control points
                     curves.push_back(spline);
                 }
             }
@@ -5669,7 +5664,7 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
 
     aFaceBuilder.Init(aSurface, u1, u2, v1, v2, Precision::Confusion());
 
-    TopoShape aFace(0, Hasher, aFaceBuilder.Face());
+    TopoShape aFace(Tag, Hasher, aFaceBuilder.Face());
 
     if (!aFaceBuilder.IsDone()) {
         FC_THROWM(Base::CADKernelError, "Face unable to be constructed");
@@ -5679,25 +5674,72 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
     }
 
     auto newEdges = aFace.getSubTopoShapes(TopAbs_EDGE);
-    if (newEdges.size() != edges.size())
-        FC_WARN("Face edge count mismatch");
-    else {
-        int i = 0;
-        for (auto &edge : newEdges)
-            edge.resetElementMap(edges[i++].elementMap());
-        aFace.mapSubElement(newEdges);
-    }
+    for (auto &edge : edges) {
+        double f, l;
+        Handle(Geom_Curve) curve = BRep_Tool::Curve(TopoDS::Edge(edge.getShape()), f, l);
+        if (curve.IsNull()) {
+            continue;
+        }
+        gp_Pnt mid = curve->Value((f+l)/2);
+        double minDist = DBL_MAX;
+        auto iter = newEdges.end();
+        for (auto it = newEdges.begin(); it != newEdges.end(); ++it) { 
+            double f1, l1;
+            Handle(Geom_Curve) c = BRep_Tool::Curve(TopoDS::Edge(it->getShape()), f1, l1);
+            if (c.IsNull())
+                continue;
+            // Use the mid point of the old edge to search for new edge.
+            gp_Pnt m = c->Value((f1+l1)/2);
+            double d = m.SquareDistance(mid);
+            if (d < minDist) {
+                minDist = d;
+                iter = it;
+            }
+        }
+        if (iter != newEdges.end()) {
+            TopoShape newEdge = *iter;
+            newEdges.erase(iter);
 
-    Data::ElementIDRefs sids;
-    Data::MappedName edgeName = aFace.getMappedName(
-            Data::IndexedName::fromConst("Edge",1), true, &sids);
-    aFace.setElementComboName(Data::IndexedName::fromConst("Face",1),
-                              {edgeName},
-                              Part::OpCodes::BSplineFace,
-                              op,
-                              &sids);
-    *this = aFace;
-    return *this;
+            auto isReversed = [](const TopoShape &a,
+                                 const TopoShape &b)
+            {
+                if (a.countSubShapes(TopAbs_VERTEX) != 2)
+                    return false;
+                auto pa1 = BRep_Tool::Pnt(TopoDS::Vertex(a.getSubShape(TopAbs_VERTEX,1)));
+                auto pb1 = BRep_Tool::Pnt(TopoDS::Vertex(b.getSubShape(TopAbs_VERTEX,1)));
+                auto pb2 = BRep_Tool::Pnt(TopoDS::Vertex(b.getSubShape(TopAbs_VERTEX,2)));
+                return pa1.SquareDistance(pb1) > pa1.SquareDistance(pb2);
+            };
+
+            auto setName = [](TopoShape &target,
+                              const TopoShape &source,
+                              const char *shapetype,
+                              int target_idx,
+                              int source_idx)
+            {
+                for(auto &v : source.getElementMappedNames(
+                            Data::IndexedName::fromConst(shapetype,source_idx)))
+                {
+                    auto &name = v.first;
+                    auto &sids = v.second;
+                    target.setElementName(Data::IndexedName::fromConst(shapetype, target_idx),name,&sids);
+                }
+            };
+
+            if (isReversed(newEdge, edge)) {
+                setName(newEdge, edge, "Edge", 1, 1);
+                setName(newEdge, edge, "Vertex", 1, 2);
+                setName(newEdge, edge, "Vertex", 2, 1);
+                edge.resetElementMap(newEdge.elementMap());
+            }
+            edge.setShape(newEdge.getShape(), false);
+        }
+    }
+    ShapeMapper mapper;
+    mapper.populate(/*generated*/true, edges[0], {aFace});
+    if (edges.size()>1)
+        mapper.populate(/*generated*/true, edges[1], {aFace});
+    return makESHAPE(aFace.getShape(), mapper, edges, op);
 }
 
 static std::size_t
