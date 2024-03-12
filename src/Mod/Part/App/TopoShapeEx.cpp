@@ -1499,7 +1499,10 @@ bool TopoShape::checkElementMapVersion(const char * ver) const
 TopoShape &TopoShape::makECompound(const std::vector<TopoShape> &shapes, const char *op, bool force)
 {
     if(!force && shapes.size()==1) {
+        auto savedHasher = Hasher;
         *this = shapes[0];
+        if (savedHasher)
+            Hasher = savedHasher;
         return *this;
     }
 
