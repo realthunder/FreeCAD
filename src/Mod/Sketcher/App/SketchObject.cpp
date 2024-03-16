@@ -10268,8 +10268,13 @@ void SketchObject::onChanged(const App::Property* prop)
                 }
             }
             ExternalGeometry.setValues(objs,subs);
-        } else
+        } else {
+            // Make sure to inform view provider first before emit signal for
+            // editting task
+            inherited::onChanged(prop);
             signalElementsChanged();
+            return;
+        }
     } else if( prop == &ExternalGeometry ) {
 
         if(doc && doc->isPerformingTransaction())
@@ -10279,7 +10284,12 @@ void SketchObject::onChanged(const App::Property* prop)
             // must wait till onDocumentRestored() when shadow references are
             // fully restored
             updateGeometryRefs();
+
+            // Make sure to inform view provider first before emit signal for
+            // editting task
+            inherited::onChanged(prop);
             signalElementsChanged();
+            return;
         }
     } else if (prop == &Placement) {
         if (ExternalGeometry.getSize() > 0)
@@ -10307,7 +10317,7 @@ void SketchObject::onChanged(const App::Property* prop)
         }
     }
 
-    Part::Part2DObject::onChanged(prop);
+    inherited::onChanged(prop);
 }
 
 void SketchObject::onUpdateElementReference(const App::Property *prop) {

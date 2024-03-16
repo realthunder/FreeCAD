@@ -1255,6 +1255,10 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                 case STATUS_SKETCH_DragCurve:
                     if (edit->DragCurve != -1) {
                         const Part::Geometry *geo = getSketchObject()->getGeometry(edit->DragCurve);
+                        if (!geo) {
+                            setSketchMode(STATUS_NONE);
+                            return false;
+                        }
                         if (geo->getTypeId() == Part::GeomLineSegment::getClassTypeId() ||
                             geo->getTypeId() == Part::GeomArcOfCircle::getClassTypeId() ||
                             geo->getTypeId() == Part::GeomCircle::getClassTypeId() ||
@@ -1265,7 +1269,6 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                             geo->getTypeId() == Part::GeomBSplineCurve::getClassTypeId()) {
                             getDocument()->openCommand(QT_TRANSLATE_NOOP("Command", "Drag Curve"));
 
-                            auto geo = getSketchObject()->getGeometry(edit->DragCurve);
                             auto gf = GeometryFacade::getFacade(geo);
 
                             Base::Vector3d vec(x-xInit,y-yInit,0);
@@ -1662,6 +1665,10 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::View3DInventor
                 setSketchMode(STATUS_SKETCH_DragCurve);
                 edit->DragCurve = edit->PreselectCurve;
                 const Part::Geometry *geo = getSketchObject()->getGeometry(edit->DragCurve);
+                if (!geo) {
+                    setSketchMode(STATUS_NONE);
+                    return false;
+                }
 
                 // BSpline Control points are edge draggable only if their radius is movable
                 // This is because dragging gives unwanted cosmetic results due to the scale ratio.
@@ -1777,6 +1784,10 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::View3DInventor
         case STATUS_SKETCH_DragCurve:
             if (edit->DragCurve != -1) {
                 auto geo = getSketchObject()->getGeometry(edit->DragCurve);
+                if (!geo) {
+                    setSketchMode(STATUS_NONE);
+                    return false;
+                }
                 auto gf = GeometryFacade::getFacade(geo);
 
                 Base::Vector3d vec(x-xInit,y-yInit,0);
@@ -3544,6 +3555,8 @@ void ViewProviderSketch::updateColor(void)
         }
         else if (GeoId <= Sketcher::GeoEnum::RefExt) {  // external Geometry
             auto geo = getSketchObject()->getGeometry(GeoId);
+            if (!geo)
+                continue;
             auto egf = ExternalGeometryFacade::getFacade(geo);
             if(egf->getRef().empty())
                 color[i] = CurveDetachedColor;
@@ -8369,8 +8382,8 @@ bool ViewProviderSketch::onDelete(const std::vector<std::string> &subList)
                 int GeoId;
                 Sketcher::PointPos PosId;
                 getSketchObject()->getGeoVertexIndex(VtId, GeoId, PosId);
-                if (getSketchObject()->getGeometry(GeoId)->getTypeId()
-                    == Part::GeomPoint::getClassTypeId()) {
+                auto geo = getSketchObject()->getGeometry(GeoId);
+                if (geo && geo->isDerivedFrom(Part::GeomPoint::getClassTypeId())) {
                     if(GeoId>=0)
                         delInternalGeometries.insert(GeoId);
                     else
