@@ -2987,7 +2987,7 @@ TopoShape &TopoShape::makEWires(const TopoShape &shape,
                                 bool shared,
                                 TopoShapeMap *output)
 {
-    return makEWires({shape}, op , tol, shared, output);
+    return makEWires(std::vector<TopoShape>{shape}, op , tol, shared, output);
 }
 
 struct EdgePoints {
