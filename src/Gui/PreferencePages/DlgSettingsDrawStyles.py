@@ -22,12 +22,14 @@
 '''Auto code generator for preference page of Display/Draw styles
 '''
 import sys
+import cog
 from os import sys, path
 
 # import Tools/params_utils.py
 sys.path.append(path.join(path.dirname(
     path.dirname(path.dirname(path.abspath(__file__)))), 'Tools'))
 import params_utils
+from params_utils import auto_comment
 
 sys.path.append(path.join(path.dirname(
     path.dirname(path.dirname(path.abspath(__file__)))), 'Gui'))
@@ -37,28 +39,13 @@ Title = 'Draw styles'
 NameSpace = 'Gui'
 ClassName = 'DlgSettingsDrawStyles'
 ClassDoc = 'Preference dialog for various draw styles related settings'
+UserInit = 'Active = true;'
+UserFini = 'Active = false;'
 
 _ViewParams = { param.name : param for param in ViewParams.Params }
 
-ParamGroup = (
-    ('General', [_ViewParams[name] for name in (
-        'DefaultDrawStyle',
-        'ForceSolidSingleSideLighting',
-    )]),
-
-    ('Selection', [_ViewParams[name] for name in (
-        'TransparencyOnTop',
-        'SelectionLineThicken',
-        'SelectionLineMaxWidth',
-        'SelectionPointScale',
-        'SelectionPointMaxSize',
-        'SelectionLinePattern',
-        'SelectionLinePatternScale',
-        'SelectionHiddenLineWidth',
-        'OutlineThicken',
-    )]),
-
-    ('Hidden Lines', [_ViewParams[name] for name in (
+HiddenLineParams = ('Hidden Lines', [_ViewParams[name] for name in (
+        'HiddenLineSync',
         'HiddenLineFaceColor',
         'HiddenLineColor',
         'HiddenLineBackground',
@@ -73,9 +60,13 @@ ParamGroup = (
         'HiddenLineTransparency',
         'HiddenLineWidth',
         'HiddenLinePointSize',
-    )]),
+    )],
 
-    ('Shadow', [_ViewParams[name] for name in (
+    'HiddenLine',
+)
+
+ShadowParams = ('Shadow', [_ViewParams[name] for name in (
+        'ShadowSync',
         'ShadowSpotLight',
         'ShadowLightColor',
         'ShadowLightIntensity',
@@ -99,11 +90,71 @@ ParamGroup = (
         'ShadowBoundBoxScale',
         'ShadowMaxDistance',
         'ShadowTransparentShadow',
-    )]),
+    )],
+
+    'Shadow'
 )
 
-def declare():
-    params_utils.preference_dialog_declare(sys.modules[__name__])
+ParamGroup = (
+    ('General', [_ViewParams[name] for name in (
+        'DefaultDrawStyle',
+        'ForceSolidSingleSideLighting',
+    )]),
 
-def define():
+    ('Selection', [_ViewParams[name] for name in (
+        'TransparencyOnTop',
+        'SelectionLineThicken',
+        'SelectionLineMaxWidth',
+        'SelectionPointScale',
+        'SelectionPointMaxSize',
+        'SelectionLinePattern',
+        'SelectionLinePatternScale',
+        'SelectionHiddenLineWidth',
+        'OutlineThicken',
+    )]),
+
+    HiddenLineParams[:2],
+    ShadowParams[:2],
+)
+
+def declare_begin():
+    params_utils.preference_dialog_declare_begin(sys.modules[__name__])
+
+def declare_end():
+    params_utils.preference_dialog_declare_end(sys.modules[__name__])
+
+def define_begin():
     params_utils.preference_dialog_define(sys.modules[__name__])
+    cog.out(f'''
+{auto_comment()}
+bool DlgSettingsDrawStyles::Active;
+''')
+
+def define_end():
+    cog.out(f'''
+{auto_comment()}
+void DlgSettingsDrawStyles::onParamChanged(const char *sReason)
+{{
+    if (!Active)
+        return;
+''')
+    for j, (params, prefix) in enumerate((HiddenLineParams[1:], ShadowParams[1:])):
+        cog.out(f'''
+    {'else ' if j else ''}if (ViewParams::get{prefix}Sync() != 0 && boost::starts_with(sReason, "{prefix}")) {{
+        bool passThrough = boost::equals(sReason+{len(prefix)}, "{prefix}Sync");
+''')
+        for i, param in enumerate(params[1:]):
+            param_name = param.name[len(prefix):]
+            cog.out(f'''
+        if (passThrough || boost::equals(sReason+{len(prefix)}, "{param_name}")) {{
+            setViewProperty<{param.PropertyType}>(ViewParams::get{prefix}Sync(),
+                                                  "{prefix}_{param_name}",
+                                                  ViewParams::get{param.name}());
+            if (!passThrough)
+                return;
+        }}''')
+        cog.out(f'''
+    }}''')
+    cog.out(f'''
+}}
+''')

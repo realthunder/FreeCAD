@@ -37,6 +37,7 @@ NameSpace = 'Gui'
 ClassName = 'ViewParams'
 ParamPath = 'User parameter:BaseApp/Preferences/View'
 ClassDoc = 'Convenient class to obtain view provider related parameters'
+UserOnChange = 'ViewParams::onViewParamChanged(sReason);'
 
 ParamHiddenLineOverrideFaceColor = ParamBool(
         'HiddenLineOverrideFaceColor', True,
@@ -75,6 +76,13 @@ PreSelectionToolTipCorners = (
     'Top Right',
     'Bottom Left',
     'Bottom Right',
+)
+
+DrawStyleSync = (
+    ("None", "No change to opened document"),
+    ("Apply to active view", "Auto apply changed setting to the current active view"),
+    ("Apply to active document", "Auto apply changed setting to all views of the current active document"),
+    ("Apply to all open documents", "Auto apply changed setting to all opened documents"),
 )
 
 AnimationCurveTypes = (
@@ -188,6 +196,9 @@ Params = [
     ParamFloat('TransparencyOnTop', 0.5,
        title='Transparency',
        doc="Transparency for the selected object when being shown on top."),
+    ParamInt('HiddenLineSync', 1,
+       "Specifies how to sync hidden line draw style settings to opened document",
+        proxy=ParamComboBox(items=[(item[0], item[1]) for item in DrawStyleSync])),
     ParamBool('HiddenLineSelectionOnTop', True,
        "Enable hidden line/point selection when SelectionOnTop is active."),
     ParamBool('PartialHighlightOnFullSelect', False,
@@ -275,11 +286,14 @@ Params = [
        "Hide face in hidden line draw style.",
        title='Hide face'),
     ParamInt('StatusMessageTimeout',  5000),
+    ParamInt('ShadowSync', 1,
+       "Specifies how to sync shadow draw style settings to opened document",
+        proxy=ParamComboBox(items=[(item[0], item[1]) for item in DrawStyleSync])),
     ParamBool('ShadowFlatLines',  True,
        "Draw object with 'Flat lines' style when shadow is enabled."),
     ParamInt('ShadowDisplayMode',  2,
        "Override view object display mode when shadow is enabled.",
-       title='Override display mode',
+       title='Override display mode', property_type='PropertyEnumeration',
        proxy=ParamComboBox(items=['Flat Lines', 'Shaded', 'As Is'])),
     ParamBool('ShadowSpotLight',  False,
        doc="Whether to use spot light or directional light.",
@@ -476,6 +490,8 @@ def declare_begin():
     cog.out(f'''
     {auto_comment()}
     static const std::vector<QString> AnimationCurveTypes;
+
+    static void onViewParamChanged(const char *sReason);
 ''')
 
 def declare_end():

@@ -25,13 +25,13 @@
 
 /*[[[cog
 import DlgSettingsDrawStyles
-DlgSettingsDrawStyles.declare()
+DlgSettingsDrawStyles.declare_begin()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:516)
+// Auto generated code (Tools/params_utils.py:519)
 #include <Gui/PropertyPage.h>
 #include <Gui/PrefWidgets.h>
-// Auto generated code (Tools/params_utils.py:523)
+// Auto generated code (Tools/params_utils.py:526)
 class QLabel;
 class QGroupBox;
 
@@ -68,13 +68,13 @@ protected:
 
 private:
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupGeneral = nullptr;
     QLabel *labelDefaultDrawStyle = nullptr;
     Gui::PrefComboBox *DefaultDrawStyle = nullptr;
     Gui::PrefCheckBox *ForceSolidSingleSideLighting = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupSelection = nullptr;
     QLabel *labelTransparencyOnTop = nullptr;
     Gui::PrefDoubleSpinBox *TransparencyOnTop = nullptr;
@@ -95,8 +95,10 @@ private:
     QLabel *labelOutlineThicken = nullptr;
     Gui::PrefDoubleSpinBox *OutlineThicken = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupHiddenLines = nullptr;
+    QLabel *labelHiddenLineSync = nullptr;
+    Gui::PrefComboBox *HiddenLineSync = nullptr;
     Gui::PrefCheckBox *HiddenLineOverrideFaceColor = nullptr;
     Gui::PrefColorButton *HiddenLineFaceColor = nullptr;
     Gui::PrefCheckBox *HiddenLineOverrideColor = nullptr;
@@ -119,8 +121,10 @@ private:
     QLabel *labelHiddenLinePointSize = nullptr;
     Gui::PrefDoubleSpinBox *HiddenLinePointSize = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:423)
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupShadow = nullptr;
+    QLabel *labelShadowSync = nullptr;
+    Gui::PrefComboBox *ShadowSync = nullptr;
     Gui::PrefCheckBox *ShadowSpotLight = nullptr;
     QLabel *labelShadowLightColor = nullptr;
     Gui::PrefColorButton *ShadowLightColor = nullptr;
@@ -161,7 +165,25 @@ private:
     QLabel *labelShadowMaxDistance = nullptr;
     Gui::PrefDoubleSpinBox *ShadowMaxDistance = nullptr;
     Gui::PrefCheckBox *ShadowTransparentShadow = nullptr;
-// Auto generated code (Tools/params_utils.py:570)
+//[[[end]]]
+
+    // -----------------------------------------------------------------------------------
+    // user code start
+public:
+    static void onParamChanged(const char *sReason);
+
+private:
+    static bool Active;
+
+    // user code end
+    // -----------------------------------------------------------------------------------
+
+/*[[[cog
+import DlgSettingsDrawStyles
+DlgSettingsDrawStyles.declare_end()
+]]]*/
+
+// Auto generated code (Tools/params_utils.py:573)
 };
 } // namespace Dialog
 } // namespace Gui

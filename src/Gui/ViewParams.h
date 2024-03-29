@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:471)
+// Auto generated code (Gui/ViewParams.py:485)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -449,6 +449,18 @@ public:
     static void removeTransparencyOnTop();
     static void setTransparencyOnTop(const double &v);
     static const char *docTransparencyOnTop();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter HiddenLineSync
+    ///
+    /// Specifies how to sync hidden line draw style settings to opened document
+    static const long & getHiddenLineSync();
+    static const long & defaultHiddenLineSync();
+    static void removeHiddenLineSync();
+    static void setHiddenLineSync(const long &v);
+    static const char *docHiddenLineSync();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -965,6 +977,18 @@ public:
     static void removeStatusMessageTimeout();
     static void setStatusMessageTimeout(const long &v);
     static const char *docStatusMessageTimeout();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShadowSync
+    ///
+    /// Specifies how to sync shadow draw style settings to opened document
+    static const long & getShadowSync();
+    static const long & defaultShadowSync();
+    static void removeShadowSync();
+    static void setShadowSync(const long &v);
+    static const char *docShadowSync();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -2024,8 +2048,10 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:477)
+    // Auto generated code (Gui/ViewParams.py:491)
     static const std::vector<QString> AnimationCurveTypes;
+
+    static void onViewParamChanged(const char *sReason);
 //[[[end]]]
 
     static bool highlightIndicesOnFullSelect() {
@@ -2050,7 +2076,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:485)
+// Auto generated code (Gui/ViewParams.py:501)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();
