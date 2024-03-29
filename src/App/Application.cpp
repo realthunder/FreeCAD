@@ -597,6 +597,11 @@ std::vector<App::Document*> Application::getDocuments() const
     return docs;
 }
 
+std::map<std::string, App::Document*> Application::getDocumentMap() const
+{
+    return DocMap;
+}
+
 std::string Application::getUniqueDocumentName(const char *Name, bool tempDoc) const
 {
     if (!Name || *Name == '\0')

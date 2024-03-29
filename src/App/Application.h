@@ -158,6 +158,7 @@ public:
     const char * getDocumentName(const App::Document* ) const;
     /// get a list of all documents in the application
     std::vector<App::Document*> getDocuments() const;
+    std::map<std::string, App::Document*> getDocumentMap() const;
     /// Set the active document
     void setActiveDocument(App::Document* pDoc);
     void setActiveDocument(const char *Name);
