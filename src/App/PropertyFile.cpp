@@ -140,7 +140,7 @@ void PropertyFileIncluded::setValue(const char* sFile, const char* sName)
         }
 
         // if a special name given, use this instead
-        if (sName) {
+        if (sName && sName[0] != '\0') {
             Base::FileInfo fi(pathTrans + "/" + sName);
             if (fi.exists()) {
                 // if a file with this name already exists search for a new one

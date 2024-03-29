@@ -81,6 +81,9 @@ public:
     ~PropertyFileIncluded() override;
 
     void setValue(const char* sFile, const char* sName=nullptr);
+    void setValue(const std::string &sFile) {
+        setValue(sFile.c_str());
+    }
     const char* getValue() const;
 
     const char* getEditorName() const override
