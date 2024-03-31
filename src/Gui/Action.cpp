@@ -2671,7 +2671,7 @@ private:
 // --------------------------------------------------------------------
 
 ToolbarMenuAction::ToolbarMenuAction ( Command* pcCmd, QObject * parent )
-  : Action(pcCmd, parent), _menu(0)
+  : Action(pcCmd, parent), _menu(nullptr)
   , _pimpl(new Private(this, "User parameter:BaseApp/Workbench/Global/Toolbar"))
 {
     _pimpl->hShortcut = WindowParameter::getDefaultParameter()->GetGroup("Shortcut");
@@ -2800,8 +2800,16 @@ void ToolbarMenuAction::update()
 
 void ToolbarMenuAction::popup(const QPoint &pt)
 {
+    _menu->setActiveAction(nullptr);
     PieMenu::exec(_menu, pt, command()->getName());
-    _menu->setActiveAction(0);
+
+    // WARNING! In some case, this ToolbarMenuAction instance may have been
+    // destroyed after returning from PieMenu::exec(). E.g. when the toolbar
+    // menu is a PartDesign context menu/command, and the action triggers
+    // switching to Sketcher workbench, causing all PartDesign context commands
+    // being destroyed. So, must not access any member here.
+    //
+    // _menu->setActiveAction(nullptr);
 }
 
 ////////////////////////////////////////////////////////////////////
