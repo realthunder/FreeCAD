@@ -453,8 +453,10 @@ void ShortcutManager::onTimer()
             if (it->key.shortcut != k) {
                 QKeyEvent keyPress(QEvent::KeyPress, s, Qt::ControlModifier, 0, 0, 0);
                 QApplication::sendEvent(lastFocus, &keyPress);
-                QKeyEvent keyRelease(QEvent::KeyRelease, s, Qt::ControlModifier, 0, 0, 0);
-                QApplication::sendEvent(lastFocus, &keyRelease);
+                if (lastFocus) {
+                    QKeyEvent keyRelease(QEvent::KeyRelease, s, Qt::ControlModifier, 0, 0, 0);
+                    QApplication::sendEvent(lastFocus, &keyRelease);
+                }
                 break;
             }
         }
