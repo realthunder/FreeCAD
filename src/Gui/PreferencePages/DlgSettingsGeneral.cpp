@@ -562,8 +562,7 @@ void applyToolTipIconSize(ParameterGrp *)
 
 void applyToolbarIconSize(const ParamKey *)
 {
-    int pixel = ToolBarManager::getInstance()->toolBarIconSize();
-    getMainWindow()->setIconSize(QSize(pixel,pixel));
+    ToolBarManager::getInstance()->setupToolBarIconSize();
     if (_Instance)
         _Instance->setupToolBarIconSize();
 }
