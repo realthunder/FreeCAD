@@ -40,6 +40,7 @@
 # include <QLabel>
 # include <QMdiSubWindow>
 # include <QMenu>
+# include <QMenuBar>
 # include <QMessageBox>
 # include <QMimeData>
 # include <QPainter>
@@ -823,7 +824,10 @@ void populateMenu(QMenu *menu, MenuType type, bool popup,
             relocate = relocate || (toolbar->isFloating()
                     && !rectMain.contains(toolbar->mapToGlobal(QPoint(0,0))));
 
-            if (parent == mw || parent == mw->statusBar()) {
+            if (parent == mw 
+                    || parent == mw->statusBar()
+                    || (parent && (parent->parentWidget() == mw->statusBar()
+                                   || parent->parentWidget() == mw->menuBar()))) {
                 // Some misbehaved code may force the toolbar to be visible
                 // while hiding its action, which causes the user to be unable
                 // to switch it off. We'll just include those actions anyway.
@@ -2552,7 +2556,7 @@ void MainWindow::childEvent(QChildEvent *e)
         // The parent maybe set in the object constructor, in which case we
         // can't really tell the exact type of the object (i.e. e->child()). So
         // there is no point using qobject_cast to check for QToolBar here.
-        ToolBarManager::checkToolbar();
+        ToolBarManager::checkToolBar();
     }
 
     QMainWindow::childEvent(e);
