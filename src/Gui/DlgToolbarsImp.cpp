@@ -100,8 +100,6 @@ DlgCustomToolbars::DlgCustomToolbars(DlgCustomToolbars::Type t, QWidget* parent)
                                                     ui->buttonDown,
                                                     ui->editShortcut);
 
-    onToolbarTreeWidgetCurrentItemChanged(nullptr, nullptr);
-
     // fills the combo box with all available workbenches
     QStringList workbenches = Application::Instance->workbenches();
     workbenches.sort();
@@ -355,6 +353,8 @@ void DlgCustomToolbars::importCustomToolbars(const QByteArray& name)
             }
         }
     }
+
+    onToolbarTreeWidgetCurrentItemChanged(ui->toolbarTreeWidget->currentItem(), nullptr);
 }
 
 void DlgCustomToolbars::exportCustomToolbars(const QByteArray& workbench, QTreeWidgetItem *item)
@@ -590,6 +590,7 @@ void DlgCustomToolbars::onNewButtonClicked()
         QString workbench = data.toString();
         exportCustomToolbars(workbench.toUtf8());
         addCustomToolbar(id, text);
+        onToolbarTreeWidgetCurrentItemChanged(ui->toolbarTreeWidget->currentItem(), nullptr);
     }
 }
 
