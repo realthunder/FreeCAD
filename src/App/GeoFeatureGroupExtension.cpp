@@ -352,6 +352,7 @@ void GeoFeatureGroupExtension::extensionOnChanged(const Property* p) {
         }
 
         // Skip handling in parent class GroupExtension
+        syncChildConnections();
         return;
     }
 

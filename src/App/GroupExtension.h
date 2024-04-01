@@ -183,6 +183,7 @@ public:
 
 protected:
     void initSetup();
+    void syncChildConnections();
 
 private:
     void removeObjectFromDocument(DocumentObject*);
