@@ -2219,6 +2219,10 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
                                      Standard_Boolean checkLimits,
                                      const char *op)
 {
+    if (profile.countSubShapes(TopAbs_WIRE) == 0) {
+        FC_THROWM(Base::CADKernelError, "Invalid profile");
+    }
+        
     TopoShape _uptoface(__uptoface);
     TopoShape uptoface(_uptoface);
     if (uptoface.shapeType(true) != TopAbs_FACE) {
@@ -2271,8 +2275,7 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
             }
         }
 
-        if (remove_limits)
-        {
+        if (remove_limits) {
             Handle(Geom_Surface) s = BRep_Tool::Surface(TopoDS::Face(uptoface.getShape()));
             Handle(Standard_Type) styp = s->DynamicType();
             if (styp == STANDARD_TYPE(Geom_RectangularTrimmedSurface)) {
@@ -2288,7 +2291,7 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
                     BRepFeat::FaceUntil(base.getShape(), face);
                 uptoface.setShape(face, false);
 
-                // OCC BRepFeat_MakePrism uses NatrualRestriction flag to
+                // OCC BRepFeat_MakePrism uses NaturalRestriction flag to
                 // decide whether to build its own until face to remove limit
                 // (which uses the above call to BrepFeat::FaceUntil()).
                 //
@@ -2299,8 +2302,8 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
                 //
                 // Now, there is a patch (https://github.com/realthunder/OCCT/commit/80c3867388c2d52b82bc65729a05dd13887188fb)
                 // that partially fixes the problem if the input face has
-                // NatrualRestriction set to False. So we create a face without
-                // limit by ourself and manually change NatrualRestriction to
+                // NaturalRestriction set to False. So we create a face without
+                // limit by ourself and manually change NaturalRestriction to
                 // False to force into the working code path.
                 //
                 // Same reasoning applies to branch below, except that
@@ -2357,45 +2360,44 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
     };
 
     std::vector<TopoShape> srcShapes;
-    TopoShape result;
+    if (!profile.isNull() && !base.findShape(profile.getShape()))
+        srcShapes.push_back(profile);
+    if (!supportFace.isNull() && !base.findShape(supportFace.getShape()))
+        srcShapes.push_back(supportFace);
+    srcShapes.push_back(base);
+
+    // DO NOT include uptoface for element mapping. Because OCCT
+    // BRepFeat_MakePrism will report all top extruded face being
+    // modified by the uptoface. If there are more than one face in
+    // the profile, this will cause uncessary duplicated element
+    // mapped name. And will also disrupte element history tracing
+    // back to the profile sketch.
+    //
+    // if (!uptoface.isNull() && !this->findShape(uptoface.getShape()))
+    //     srcShapes.push_back(uptoface);
+
+    std::vector<TopoShape> results;
     for (;;) {
+        results.clear();
+        if (!_base.isNull() && Mode == PrismMode::FuseWithBase) {
+            results.push_back(_base);
+        }
         try {
-            result = base;
-
-            // We do not rely on BRepFeat_MakePrism to perform fuse or cut for
-            // us because of its poor support of shape history.
-            auto mode = PrismMode::None;
-
             for (auto &face : profile.getSubTopoShapes(
                         profile.hasSubShape(TopAbs_FACE)?TopAbs_FACE:TopAbs_WIRE)) {
-                srcShapes.clear();
-                if (!profile.isNull() && !result.findShape(profile.getShape()))
-                    srcShapes.push_back(profile);
-                if (!supportFace.isNull() && !result.findShape(supportFace.getShape()))
-                    srcShapes.push_back(supportFace);
 
-                // DO NOT include uptoface for element mapping. Because OCCT
-                // BRepFeat_MakePrism will report all top extruded face being
-                // modified by the uptoface. If there are more than one face in
-                // the profile, this will cause uncessary duplicated element
-                // mapped name. And will also disrupte element history tracing
-                // back to the profile sketch.
-                //
-                // if (!uptoface.isNull() && !this->findShape(uptoface.getShape()))
-                //     srcShapes.push_back(uptoface);
-
-                srcShapes.push_back(result);
-
-                PrismMaker.Init(result.getShape(), face.getShape(),
-                        TopoDS::Face(supportFace.getShape()), direction, mode, Standard_False);
-                mode = PrismMode::FuseWithBase;
+                PrismMaker.Init(base.getShape(), face.getShape(),
+                        TopoDS::Face(supportFace.getShape()), direction,
+                        PrismMode::None, Standard_False);
 
                 PrismMaker.Perform(uptoface.getShape());
 
                 if (!PrismMaker.IsDone() || PrismMaker.Shape().IsNull())
                     FC_THROWM(Base::CADKernelError,"BRepFeat_MakePrism: extrusion failed");
 
+                TopoShape result(0, Hasher);
                 result.makEShape(PrismMaker, srcShapes, uptoface, op);
+                results.push_back(result);
             }
             break;
         } catch (const Base::Exception &e) {
@@ -2410,12 +2412,30 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
             FC_WARN("Retry extrusion on error: " << e.GetMessageString());
         }
     }
+    assert(!results.empty());
 
+    // We do not rely on BRepFeat_MakePrism to perform fuse or cut for
+    // us because of its poor support of shape history.
+    TopoShape result(0, Hasher);
     if (!_base.isNull() && Mode != PrismMode::None) {
-        if (Mode == PrismMode::FuseWithBase)
-            result.makEFuse({_base, result});
-        else
+        if (Mode == PrismMode::FuseWithBase) {
+            result.makEFuse(results);
+        }
+        else {
+            if (results.size() > 1) {
+                result.makEFuse(results);
+            }
+            else {
+                result = results[0];
+            }
             result.makECut({_base, result});
+        }
+    }
+    else if (results.size() > 1) {
+        result.makEFuse(results);
+    }
+    else  {
+        result = results[0];
     }
 
     *this = result;
