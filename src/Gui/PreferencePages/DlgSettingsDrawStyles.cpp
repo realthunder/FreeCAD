@@ -982,7 +982,7 @@ void DlgSettingsDrawStyles::retranslateUi()
     labelOutlineThicken->setToolTip(OutlineThicken->toolTip());
     groupHiddenLines->setTitle(QObject::tr("Hidden Lines"));
     HiddenLineSync->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docHiddenLineSync()));
-    labelHiddenLineSync->setText(QObject::tr("Specifies how to sync hidden line draw style settings to opened document"));
+    labelHiddenLineSync->setText(QObject::tr("Synchronize"));
     labelHiddenLineSync->setToolTip(HiddenLineSync->toolTip());
     // Auto generated code (Tools/params_utils.py:1143)
     HiddenLineSync->setItemText(0, QObject::tr("None"));
@@ -1030,7 +1030,7 @@ void DlgSettingsDrawStyles::retranslateUi()
     labelHiddenLinePointSize->setToolTip(HiddenLinePointSize->toolTip());
     groupShadow->setTitle(QObject::tr("Shadow"));
     ShadowSync->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowSync()));
-    labelShadowSync->setText(QObject::tr("Specifies how to sync shadow draw style settings to opened document"));
+    labelShadowSync->setText(QObject::tr("Synchronize"));
     labelShadowSync->setToolTip(ShadowSync->toolTip());
     // Auto generated code (Tools/params_utils.py:1143)
     ShadowSync->setItemText(0, QObject::tr("None"));
