@@ -21,7 +21,7 @@
 
 __title__ = "CompoundTools.CompoundFilter"
 __author__ = "DeepSOIC, Bernd Hahnebach"
-__url__ = "http://www.freecad.org"
+__url__ = "https://www.freecad.org"
 __doc__ = "Compound Filter: remove some children from a compound (features)."
 
 
@@ -226,10 +226,10 @@ class _ViewProviderCompoundFilter:
         self.ViewObject = vobj
         self.Object = vobj.Object
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self, state):
+    def loads(self, state):
         return None
 
     def claimChildren(self):

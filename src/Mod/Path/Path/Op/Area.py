@@ -38,7 +38,7 @@ __title__ = "Base class for PathArea based operations."
 __author__ = "sliptonic (Brad Collette)"
 __url__ = "https://www.freecad.org"
 __doc__ = "Base class and properties for Path.Area based operations."
-__contributors__ = "russ4262 (Russell Johnson)"
+__contributors__ = "russ4262 (Russell Johnson) davidgilkaufman (David Kaufman)"
 
 
 if False:
@@ -223,7 +223,7 @@ class ObjectOp(PathOp.ObjectOp):
         area.add(baseobject)
 
         areaParams = self.areaOpAreaParams(obj, isHole)
-        areaParams["SectionTolerance"] = 1e-07
+        areaParams["SectionTolerance"] = FreeCAD.Base.Precision.confusion() * 10 # basically 1e-06
 
         heights = [i for i in self.depthparams]
         Path.Log.debug("depths: {}".format(heights))
@@ -236,6 +236,47 @@ class ObjectOp(PathOp.ObjectOp):
             mode=0, project=self.areaOpUseProjection(obj), heights=heights
         )
         Path.Log.debug("sections = %s" % sections)
+
+        # Rest machining
+        self.sectionShapes = self.sectionShapes + [section.toTopoShape() for section in sections]
+        if hasattr(obj, "UseRestMachining") and obj.UseRestMachining:
+            # Loop through prior operations
+            clearedAreas = []
+            foundSelf = False
+            for op in self.job.Operations.Group:
+                if foundSelf:
+                    break
+                oplist = [op] + op.OutListRecursive
+                oplist = list(filter(lambda op: hasattr(op, "Active"), oplist))
+                for op in oplist:
+                    if op.Proxy == self:
+                        # Ignore self, and all later operations
+                        foundSelf = True
+                        break
+                    if hasattr(op, "RestMachiningRegions") and op.Active:
+                        if hasattr(op, "RestMachiningRegionsNeedRecompute") and op.RestMachiningRegionsNeedRecompute:
+                            Path.Log.warning(
+                                translate("PathAreaOp", "Previous operation %s is required for rest machining, but it has no stored rest machining metadata. Recomputing to generate this metadata...") % op.Label
+                            )
+                            op.recompute()
+
+                        tool = op.Proxy.tool if hasattr(op.Proxy, "tool") else op.ToolController.Proxy.getTool(op.ToolController)
+                        diameter = tool.Diameter.getValueAs("mm")
+                        def shapeToArea(shape):
+                            area = Path.Area()
+                            area.setPlane(PathUtils.makeWorkplane(shape))
+                            area.add(shape)
+                            return area
+                        opClearedAreas = [shapeToArea(pa).getClearedArea(diameter, diameter) for pa in op.RestMachiningRegions.SubShapes]
+                        clearedAreas.extend(opClearedAreas)
+            restSections = []
+            for section in sections:
+                z = section.getShape().BoundBox.ZMin
+                sectionClearedAreas = [a for a in clearedAreas if a.getShape().BoundBox.ZMax <= z]
+                restSection = section.getRestArea(sectionClearedAreas, self.tool.Diameter.getValueAs("mm"))
+                restSections.append(restSection)
+            sections = restSections
+
         shapelist = [sec.getShape() for sec in sections]
         Path.Log.debug("shapelist = %s" % shapelist)
 
@@ -265,7 +306,10 @@ class ObjectOp(PathOp.ObjectOp):
 
         (pp, end_vector) = Path.fromShapes(**pathParams)
         Path.Log.debug("pp: {}, end vector: {}".format(pp, end_vector))
-        self.endVector = end_vector
+
+        # Keep track of this segment's end only if it has movement (otherwise end_vector is 0,0,0 and the next segment will unnecessarily start there)
+        if pp.Size > 0:
+            self.endVector = end_vector
 
         simobj = None
         if getsim:
@@ -302,21 +346,25 @@ class ObjectOp(PathOp.ObjectOp):
                 # Note that emitting preambles between moves breaks some dressups and prevents path optimization on some controllers
                 pathParams["preamble"] = False
 
-                if self.endVector is None:
-                    verts = hWire.Wires[0].Vertexes
-                    idx = 0
-                    if obj.Direction == "CCW":
-                        idx = len(verts) - 1
-                    x = verts[idx].X
-                    y = verts[idx].Y
-                    # Zero start value adjustments for Path.fromShapes() bug
-                    if Path.Geom.isRoughly(x, 0.0):
-                        x = 0.00001
-                    if Path.Geom.isRoughly(y, 0.0):
-                        y = 0.00001
-                    pathParams["start"] = FreeCAD.Vector(x, y, verts[0].Z)
-                else:
-                    pathParams["start"] = self.endVector
+                # Always manually setting pathParams["start"] to the first or
+                # last vertex of the wire (depending on obj.Direction) ensures
+                # the edge is always milled in the correct direction. Using
+                # self.endVector would allow Path.fromShapes to reverse the
+                # direction if that would shorten the travel move and thus cause
+                # the edges being milled in seemingly random directions.
+
+                verts = hWire.Wires[0].Vertexes
+                idx = 0
+                if obj.Direction == "CCW":
+                    idx = len(verts) - 1
+                x = verts[idx].X
+                y = verts[idx].Y
+                # Zero start value adjustments for Path.fromShapes() bug
+                if Path.Geom.isRoughly(x, 0.0):
+                    x = 0.00001
+                if Path.Geom.isRoughly(y, 0.0):
+                    y = 0.00001
+                pathParams["start"] = FreeCAD.Vector(x, y, verts[0].Z)
 
                 obj.PathParams = str(
                     {key: value for key, value in pathParams.items() if key != "shapes"}
@@ -385,6 +433,7 @@ class ObjectOp(PathOp.ObjectOp):
             shapes = [j["shape"] for j in locations]
 
         sims = []
+        self.sectionShapes = []
         for shape, isHole, sub in shapes:
             profileEdgesIsOpen = False
 
@@ -432,6 +481,10 @@ class ObjectOp(PathOp.ObjectOp):
                     )
                 )
 
+        if hasattr(obj, "RestMachiningRegions"):
+            obj.RestMachiningRegions = Part.makeCompound(self.sectionShapes)
+        if hasattr(obj, "RestMachiningRegionsNeedRecompute"):
+            obj.RestMachiningRegionsNeedRecompute = False
         Path.Log.debug("obj.Name: " + str(obj.Name) + "\n\n")
         return sims
 

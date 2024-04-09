@@ -183,7 +183,7 @@ QList<App::SubObjectT> DlgPropertyLink::getLinksFromProperty(const App::Property
 
 QString DlgPropertyLink::formatObject(App::Document *ownerDoc, App::DocumentObject *obj, const char *sub)
 {
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         return QStringLiteral("?");
 
     const char *objName = obj->getNameInDocument();
@@ -249,7 +249,7 @@ void DlgPropertyLink::setItemLabel(QTreeWidgetItem *item, std::size_t idx) {
 QString DlgPropertyLink::formatLinks(App::Document *ownerDoc, QList<App::SubObjectT> links)
 {
     if(!ownerDoc || links.empty())
-        return QString();
+        return {};
 
     auto obj = links.front().getObject();
     if(!obj)
@@ -367,7 +367,7 @@ void DlgPropertyLink::init(const App::DocumentObjectT &prop, bool tryFilter)
 
     objProp  = prop;
     auto owner = objProp.getObject();
-    if(!owner || !owner->getNameInDocument())
+    if(!owner || !owner->isAttachedToDocument())
         return;
 
     ui->searchBox->setDocumentObject(owner);
@@ -740,7 +740,7 @@ QTreeWidgetItem *DlgPropertyLink::findItem(
     if(pfound)
         *pfound = false;
 
-    if(!obj || !obj->getNameInDocument() || !obj->getSubObject(subname))
+    if(!obj || !obj->isAttachedToDocument() || !obj->getSubObject(subname))
         return nullptr;
 
     std::vector<App::DocumentObject *> sobjs;
@@ -1177,7 +1177,7 @@ void DlgPropertyLink::itemSearch(const QString &text, bool select) {
 QTreeWidgetItem *DlgPropertyLink::createItem(
         App::DocumentObject *obj, QTreeWidgetItem *parent)
 {
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         return nullptr;
 
     if(inList.count(obj))

@@ -41,7 +41,7 @@
   <context>
     <name>Command</name>
     <message>
-      <location filename="../../VisualInspection.cpp" line="230"/>
+      <location filename="../../VisualInspection.cpp" line="237"/>
       <source>Visual Inspection</source>
       <translation>Inspeção Visual</translation>
     </message>
@@ -56,7 +56,7 @@
     <message>
       <location filename="../../VisualInspection.ui" line="23"/>
       <source>Actual</source>
-      <translation type="unfinished">Actual</translation>
+      <translation>Atual</translation>
     </message>
     <message>
       <location filename="../../VisualInspection.ui" line="39"/>
@@ -77,7 +77,7 @@
     <message>
       <location filename="../../VisualInspection.ui" line="97"/>
       <source>Search distance</source>
-      <translation type="unfinished">Search distance</translation>
+      <translation>Distância de busca</translation>
     </message>
     <message>
       <location filename="../../VisualInspection.ui" line="129"/>
@@ -94,38 +94,38 @@
   <context>
     <name>QObject</name>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="455"/>
+      <location filename="../../ViewProviderInspection.cpp" line="482"/>
       <source>Remove annotations</source>
       <translation>Remover anotações</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="456"/>
+      <location filename="../../ViewProviderInspection.cpp" line="483"/>
       <source>Do you want to remove all annotations?</source>
       <translation>Você deseja remover todas as anotações?</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="508"/>
+      <location filename="../../ViewProviderInspection.cpp" line="541"/>
       <source>Annotation</source>
       <translation>Anotação</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="511"/>
+      <location filename="../../ViewProviderInspection.cpp" line="544"/>
       <source>Leave info mode</source>
       <translation>Sair do modo de info</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="632"/>
+      <location filename="../../ViewProviderInspection.cpp" line="675"/>
       <source>Distance: &gt; %1</source>
       <translation>Distância: &gt; %1</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="635"/>
+      <location filename="../../ViewProviderInspection.cpp" line="679"/>
       <source>Distance: &lt; %1</source>
       <translation>Distância: &lt; %1</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="654"/>
-      <location filename="../../ViewProviderInspection.cpp" line="670"/>
+      <location filename="../../ViewProviderInspection.cpp" line="699"/>
+      <location filename="../../ViewProviderInspection.cpp" line="716"/>
       <source>Distance: %1</source>
       <translation>Distância: %1</translation>
     </message>

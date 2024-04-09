@@ -162,7 +162,7 @@ Part::Part2DObject* ProfileBased::getVerifiedSketch(bool silent) const {
         err = "No profile linked at all";
     }
     else {
-        if (!result->getTypeId().isDerivedFrom(Part::Part2DObject::getClassTypeId())) {
+        if (!result->isDerivedFrom<Part::Part2DObject>()) {
             err = "Linked object is not a Sketch or Part2DObject";
             result = nullptr;
         }
@@ -184,7 +184,7 @@ Part::Feature* ProfileBased::getVerifiedObject(bool silent) const {
         err = "No object linked";
     }
     else {
-        if (!result->getTypeId().isDerivedFrom(Part::Feature::getClassTypeId()))
+        if (!result->isDerivedFrom<Part::Feature>())
             err = "Linked object is not a Sketch, Part2DObject or Feature";
     }
 
@@ -361,12 +361,12 @@ TopoDS_Shape ProfileBased::getVerifiedFaceOld(bool silent) const {
         }
     }
     else {
-        if (result->getTypeId().isDerivedFrom(Part::Part2DObject::getClassTypeId())) {
+        if (result->isDerivedFrom<Part::Part2DObject>()) {
 
             auto wires = getProfileWiresOld();
             return Part::FaceMakerCheese::makeFace(wires);
         }
-        else if (result->getTypeId().isDerivedFrom(Part::Feature::getClassTypeId())) {
+        else if (result->isDerivedFrom<Part::Feature>()) {
             if (Profile.getSubValues().empty())
                 err = "Linked object has no subshape specified";
             else {
@@ -586,7 +586,7 @@ void ProfileBased::getUpToFaceFromLinkSub(TopoShape& upToFace,
     if (!ref)
         throw Base::ValueError("SketchBased: No face selected");
 
-    if (ref->getTypeId().isDerivedFrom(App::Plane::getClassTypeId())) {
+    if (ref->isDerivedFrom<App::Plane>()) {
         upToFace = makeShapeFromPlane(ref);
         return;
     }
@@ -604,6 +604,7 @@ void ProfileBased::getUpToFace(TopoShape& upToFace,
                               const std::string& method,
                               gp_Dir& dir)
 {
+
     if ((method == "UpToLast") || (method == "UpToFirst")) {
         std::vector<Part::cutFaces> cfaces = Part::findAllFacesCutBy(support, sketchshape, dir);
         if (cfaces.empty())
@@ -847,49 +848,49 @@ void ProfileBased::remapSupportShape(const TopoDS_Shape & newShape)
     shape.setShape(sh,false);
 
     std::vector<App::DocumentObject*> refs = this->getInList();
-    for (std::vector<App::DocumentObject*>::iterator it = refs.begin(); it != refs.end(); ++it) {
+    for (auto ref : refs) {
         std::vector<App::Property*> props;
-        (*it)->getPropertyList(props);
-        for (std::vector<App::Property*>::iterator jt = props.begin(); jt != props.end(); ++jt) {
-            if (!(*jt)->isDerivedFrom(App::PropertyLinkSub::getClassTypeId()))
+        ref->getPropertyList(props);
+        for (auto prop : props) {
+            if (!prop->isDerivedFrom(App::PropertyLinkSub::getClassTypeId()))
                 continue;
-            App::PropertyLinkSub* link = static_cast<App::PropertyLinkSub*>(*jt);
+            App::PropertyLinkSub* link = static_cast<App::PropertyLinkSub*>(prop);
             if (link->getValue() != this)
                 continue;
             std::vector<std::string> subValues = link->getSubValues();
             std::vector<std::string> newSubValues;
 
-            for (std::vector<std::string>::iterator it = subValues.begin(); it != subValues.end(); ++it) {
+            for (auto & subValue : subValues) {
                 std::string shapetype;
-                if (it->compare(0, 4, "Face") == 0) {
+                if (subValue.compare(0, 4, "Face") == 0) {
                     shapetype = "Face";
                 }
-                else if (it->compare(0, 4, "Edge") == 0) {
+                else if (subValue.compare(0, 4, "Edge") == 0) {
                     shapetype = "Edge";
                 }
-                else if (it->compare(0, 6, "Vertex") == 0) {
+                else if (subValue.compare(0, 6, "Vertex") == 0) {
                     shapetype = "Vertex";
                 }
                 else {
-                    newSubValues.push_back(*it);
+                    newSubValues.push_back(subValue);
                     continue;
                 }
 
                 bool success = false;
                 TopoDS_Shape element;
                 try {
-                    element = shape.getSubShape(it->c_str());
+                    element = shape.getSubShape(subValue.c_str());
                 }
                 catch (Standard_Failure&) {
                     // This shape doesn't even exist, so no chance to do some tests
-                    newSubValues.push_back(*it);
+                    newSubValues.push_back(subValue);
                     continue;
                 }
                 try {
                     // as very first test check if old face and new face are parallel planes
-                    TopoDS_Shape newElement = Part::TopoShape(newShape).getSubShape(it->c_str());
+                    TopoDS_Shape newElement = Part::TopoShape(newShape).getSubShape(subValue.c_str());
                     if (isParallelPlane(element, newElement)) {
-                        newSubValues.push_back(*it);
+                        newSubValues.push_back(subValue);
                         success = true;
                     }
                 }
@@ -922,7 +923,7 @@ void ProfileBased::remapSupportShape(const TopoDS_Shape & newShape)
 
                 // the new shape couldn't be found so keep the old sub-name
                 if (!success)
-                    newSubValues.push_back(*it);
+                    newSubValues.push_back(subValue);
             }
 
             if(newSubValues!=subValues)
@@ -1086,7 +1087,7 @@ void ProfileBased::getAxis(const App::DocumentObject * pcReferenceAxis, const st
     App::DocumentObject* profile = Profile.getValue();
     gp_Pln sketchplane;
 
-    if (subReferenceAxis.size() && profile->getTypeId().isDerivedFrom(Part::Part2DObject::getClassTypeId())) {
+    if (subReferenceAxis.size() && profile->isDerivedFrom<Part::Part2DObject>()) {
         Part::Part2DObject* sketch = getVerifiedSketch();
         Base::Placement SketchPlm = sketch->Placement.getValue();
         Base::Vector3d SketchVector = Base::Vector3d(0, 0, 1);
@@ -1134,7 +1135,7 @@ void ProfileBased::getAxis(const App::DocumentObject * pcReferenceAxis, const st
     }
 
     // get reference axis
-    if (pcReferenceAxis->getTypeId().isDerivedFrom(PartDesign::Line::getClassTypeId())) {
+    if (pcReferenceAxis->isDerivedFrom<PartDesign::Line>()) {
         const PartDesign::Line* line = static_cast<const PartDesign::Line*>(pcReferenceAxis);
         base = line->getBasePoint();
         dir = line->getDirection();
@@ -1143,7 +1144,7 @@ void ProfileBased::getAxis(const App::DocumentObject * pcReferenceAxis, const st
         return;
     }
 
-    if (pcReferenceAxis->getTypeId().isDerivedFrom(App::Line::getClassTypeId())) {
+    if (pcReferenceAxis->isDerivedFrom<App::Line>()) {
         const App::Line* line = static_cast<const App::Line*>(pcReferenceAxis);
         base = Base::Vector3d(0, 0, 0);
         line->Placement.getValue().multVec(Base::Vector3d(1, 0, 0), dir);

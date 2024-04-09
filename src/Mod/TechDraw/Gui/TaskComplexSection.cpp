@@ -74,7 +74,8 @@ TaskComplexSection::TaskComplexSection(TechDraw::DrawPage* page, TechDraw::DrawV
     m_applyDeferred(0),
     m_angle(0.0),
     m_directionIsSet(false),
-    m_modelIsDirty(false)
+    m_modelIsDirty(false),
+    m_scaleEdited(false)
 {
     m_sectionName = std::string();
     if (m_page) {
@@ -105,7 +106,8 @@ TaskComplexSection::TaskComplexSection(TechDraw::DrawComplexSection* complexSect
     m_applyDeferred(0),
     m_angle(0.0),
     m_directionIsSet(true),
-    m_modelIsDirty(false)
+    m_modelIsDirty(false),
+    m_scaleEdited(false)
 {
     m_sectionName = m_section->getNameInDocument();
     m_doc = m_section->getDocument();
@@ -169,9 +171,7 @@ void TaskComplexSection::setUiPrimary()
     //don't allow updates until a direction is picked
     ui->pbUpdateNow->setEnabled(false);
     ui->cbLiveUpdate->setEnabled(false);
-    QString msgLiteral =
-        QString::fromUtf8(QT_TRANSLATE_NOOP("TaskComplexSection", "No direction set"));
-    ui->lPendingUpdates->setText(msgLiteral);
+    ui->lPendingUpdates->setText(tr("No direction set"));
 }
 
 void TaskComplexSection::setUiEdit()
@@ -371,6 +371,7 @@ void TaskComplexSection::onIdentifierChanged()
 
 void TaskComplexSection::onScaleChanged()
 {
+    m_scaleEdited = true;
     checkAll(false);
     apply();
 }
@@ -559,23 +560,26 @@ void TaskComplexSection::createComplexSection()
     Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Create ComplexSection"));
     if (!m_section) {
         m_sectionName = m_page->getDocument()->getUniqueObjectName("ComplexSection");
-        std::string sectionType = "TechDraw::DrawComplexSection";
 
         Gui::cmdAppDocument(m_page, std::ostringstream() 
-                << "addObject('" << sectionType << "','" << m_sectionName << "')");
-
+                << "addObject('TechDraw::DrawComplexSection','" << m_sectionName << "')");
         App::DocumentObject* newObj = m_page->getDocument()->getObject(m_sectionName.c_str());
-        m_section = dynamic_cast<TechDraw::DrawComplexSection*>(newObj);
+        m_section = Base::freecad_dynamic_cast<TechDraw::DrawComplexSection>(newObj);
+
         if (!newObj || !m_section) {
             throw Base::RuntimeError("TaskComplexSection - new section object not found");
         }
         Gui::cmdAppObjectArgs(m_page, "addView(%s)", Gui::Command::getObjectCmd(m_section));
 
+        // section labels (Section A-A) are not unique, and are not the same as the object name (SectionView)
+        // we pluck the generated suffix from the object name and append it to "Section" to generate
+        // unique Labels
         QString qTemp = ui->leSymbol->text();
         std::string temp = Base::Tools::toStdString(qTemp);
-        Gui::cmdAppObjectArgs(m_section, "SectionSymbol = '%s'", temp.c_str());
-        std::string lblText = "Section " + temp + " - " + temp;
-        Gui::cmdAppObjectArgs(m_section, "Label = '%s'", lblText.c_str());
+        Gui::cmdAppObjectArgs(m_section, "SectionSymbol = '%s'", temp);
+        Gui::cmdAppObjectArgs(m_section, "Label = '%s'", makeSectionLabel(qTemp));
+        Gui::cmdAppObjectArgs(m_section, "translateLabel('DrawViewSection', 'Section', '%s')",
+                makeSectionLabel(qTemp));
 
         Gui::cmdAppObjectArgs(m_section, "Scale = %0.6f", ui->sbScale->value());
         int scaleType = ui->cmbScaleType->currentIndex();
@@ -634,10 +638,17 @@ void TaskComplexSection::updateComplexSection()
         QString qTemp = ui->leSymbol->text();
         std::string temp = Base::Tools::toStdString(qTemp);
         Gui::cmdAppObjectArgs(m_section, "SectionSymbol = '%s'", temp.c_str());
-        std::string lblText = "Section " + temp + " - " + temp;
-        Gui::cmdAppObjectArgs(m_section, "Label = '%s'", lblText);
+        Gui::cmdAppObjectArgs(m_section, "Label = '%s'", makeSectionLabel(qTemp));
+        Gui::cmdAppObjectArgs(m_section, "translateLabel('DrawViewSection', 'Section', '%s')",
+                makeSectionLabel(qTemp));
+        if (m_scaleEdited) {
+            // user has changed the scale
+            Gui::cmdAppObjectArgs(m_section, "Scale = %0.7f", ui->sbScale->value());
+        } else {
+            // scale is untouched, use value from base view
+            Gui::cmdAppObjectArgs(m_section, "Scale = %s.Scale", m_baseView->getFullName(true));
+        }
 
-        Gui::cmdAppObjectArgs(m_section, "Scale = %0.6f", ui->sbScale->value());
         int scaleType = ui->cmbScaleType->currentIndex();
         Gui::cmdAppObjectArgs(m_section, "ScaleType = %d", scaleType);
         int projectionStrategy = ui->cmbStrategy->currentIndex();
@@ -663,6 +674,15 @@ void TaskComplexSection::updateComplexSection()
         Gui::cmdAppObjectArgs(m_section, "Rotation = %.6f", rotation);
     }
     Gui::Command::commitCommand();
+}
+
+std::string TaskComplexSection::makeSectionLabel(QString symbol)
+{
+    const std::string objectName{QT_TR_NOOP("ComplexSection")};
+    std::string uniqueSuffix{m_sectionName.substr(objectName.length(), std::string::npos)};
+    std::string uniqueLabel = "Section" + uniqueSuffix;
+    std::string temp = Base::Tools::toStdString(symbol);
+    return ( uniqueLabel + " " + temp + " - " + temp );
 }
 
 void TaskComplexSection::failNoObject(void)

@@ -47,9 +47,7 @@ ViewProviderHelix::ViewProviderHelix()
     sPixmap = "PartDesign_AdditiveHelix.svg";
 }
 
-ViewProviderHelix::~ViewProviderHelix()
-{
-}
+ViewProviderHelix::~ViewProviderHelix() = default;
 
 void ViewProviderHelix::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {

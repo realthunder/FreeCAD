@@ -748,3 +748,8 @@ void QGISectionLine::setSymbolOffsets(const QPointF &p1, const QPointF &p2)
     makeSymbols();
     update();
 }
+
+void QGISectionLine::setLinePen(QPen isoPen)
+{
+    m_pen = isoPen;
+}

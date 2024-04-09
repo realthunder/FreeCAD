@@ -63,9 +63,9 @@ protected:
     void initAddSubType(Type t);
 
 private:
-    Type addSubType = Type::Additive;
-    bool pauseRecompute = false;
-    int pausedRevision = 0;
+    Type addSubType{Additive};
+    bool pauseRecompute{false};
+    int pausedRevision{0};
 };
 
 using FeatureAddSubPython = App::FeaturePythonT<FeatureAddSub>;

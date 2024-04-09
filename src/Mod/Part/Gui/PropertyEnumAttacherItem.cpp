@@ -40,9 +40,7 @@ using namespace PartGui;
 
 PROPERTYITEM_SOURCE(PartGui::PropertyEnumAttacherItem)
 
-PropertyEnumAttacherItem::PropertyEnumAttacherItem()
-{
-}
+PropertyEnumAttacherItem::PropertyEnumAttacherItem() = default;
 
 QWidget* PropertyEnumAttacherItem::createEditor(QWidget* parent, const QObject* receiver, const char* method) const
 {
@@ -81,11 +79,11 @@ void PropertyEnumAttacherItem::openTask()
         if (prop) {
             App::PropertyContainer* parent = prop->getContainer();
 
-            if (parent->getTypeId().isDerivedFrom(App::DocumentObject::getClassTypeId())) {
+            if (parent->isDerivedFrom<App::DocumentObject>()) {
                 App::DocumentObject* obj = static_cast<App::DocumentObject*>(parent);
                 Gui::ViewProvider* view = Gui::Application::Instance->getViewProvider(obj);
 
-                if (view->getTypeId().isDerivedFrom(Gui::ViewProviderDocumentObject::getClassTypeId())) {
+                if (view->isDerivedFrom<Gui::ViewProviderDocumentObject>()) {
                     task = new TaskDlgAttacher(static_cast<Gui::ViewProviderDocumentObject*>(view));
                 }
             }

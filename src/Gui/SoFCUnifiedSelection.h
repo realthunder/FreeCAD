@@ -444,12 +444,12 @@ protected:
     bool setupColorOverride(SoState *state, bool pushed);
     void resetColorOverride(SoState *) const;
 
-    class Stack : public std::vector<SoFCSelectionRoot*> {
+    class Stack : public std::vector<SoNode*> {
     public:
         void forcePush(intptr_t id) {
-            this->push_back(reinterpret_cast<SoFCSelectionRoot*>(id));
+            this->push_back(reinterpret_cast<SoNode*>(id));
         }
-        std::unordered_set<SoFCSelectionRoot*> nodeSet;
+        std::unordered_set<SoNode*> nodeSet;
         size_t offset = 0;
     };
 
@@ -635,9 +635,9 @@ private:
     static void callDoAction(SoAction *action,SoNode *node);
 
 private:
-    SbBool _highlight;
+    SbBool _highlight{false};
     SbColor _color;
-    const SoDetail* _det;
+    const SoDetail* _det{nullptr};
 };
 
 /**
@@ -698,7 +698,7 @@ private:
 private:
     Type _type;
     SbColor _color;
-    const SoDetail* _det;
+    const SoDetail* _det{nullptr};
     std::map<std::string,App::Color> _colors;
     SoFCSelectionContextExPtr _selctx;
     SoFCDetail::Type _seltype;
@@ -722,7 +722,7 @@ public:
     static void initClass();
 
 private:
-    SbBool overrideMode;
+    SbBool overrideMode{true};
     std::list<int> bindList;
     static void callDoAction(SoAction *action,SoNode *node);
 

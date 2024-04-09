@@ -4,7 +4,7 @@
   <context>
     <name>Cmd2LineCenterLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="646"/>
+      <location filename="../../CommandAnnotate.cpp" line="651"/>
       <source>Add Centerline between 2 Lines</source>
       <translation>Přidat osu mezi 2 přímky</translation>
     </message>
@@ -12,7 +12,7 @@
   <context>
     <name>Cmd2PointCenterLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="650"/>
+      <location filename="../../CommandAnnotate.cpp" line="655"/>
       <source>Add Centerline between 2 Points</source>
       <translation>Přidat osu mezi 2 body</translation>
     </message>
@@ -20,7 +20,7 @@
   <context>
     <name>CmdMidpoints</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="284"/>
+      <location filename="../../CommandAnnotate.cpp" line="286"/>
       <source>Add Midpoint Vertices</source>
       <translation>Přidat středy hran</translation>
     </message>
@@ -28,7 +28,7 @@
   <context>
     <name>CmdQuadrants</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="288"/>
+      <location filename="../../CommandAnnotate.cpp" line="290"/>
       <source>Add Quadrant Vertices</source>
       <translation>Přidat pravoúhlé vrcholy</translation>
     </message>
@@ -36,12 +36,12 @@
   <context>
     <name>CmdTechDraw2LineCenterLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="782"/>
+      <location filename="../../CommandAnnotate.cpp" line="787"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="783"/>
+      <location filename="../../CommandAnnotate.cpp" line="788"/>
       <source>Add Centerline between 2 Lines</source>
       <translation>Přidat osu mezi 2 přímky</translation>
     </message>
@@ -49,12 +49,12 @@
   <context>
     <name>CmdTechDraw2PointCenterLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="857"/>
+      <location filename="../../CommandAnnotate.cpp" line="862"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="858"/>
+      <location filename="../../CommandAnnotate.cpp" line="863"/>
       <source>Add Centerline between 2 Points</source>
       <translation>Přidat osu mezi 2 body</translation>
     </message>
@@ -62,12 +62,12 @@
   <context>
     <name>CmdTechDraw2PointCosmeticLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="970"/>
+      <location filename="../../CommandAnnotate.cpp" line="975"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="971"/>
+      <location filename="../../CommandAnnotate.cpp" line="976"/>
       <source>Add Cosmetic Line Through 2 Points</source>
       <translation>Přidat pomocnou čáru mezi dvěma body</translation>
     </message>
@@ -88,12 +88,12 @@
   <context>
     <name>CmdTechDrawActiveView</name>
     <message>
-      <location filename="../../Command.cpp" line="437"/>
+      <location filename="../../Command.cpp" line="449"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="438"/>
+      <location filename="../../Command.cpp" line="450"/>
       <source>Insert Active View (3D View)</source>
       <translation>Vložit aktivní pohled (3D zobrazení)</translation>
     </message>
@@ -114,12 +114,12 @@
   <context>
     <name>CmdTechDrawAnnotation</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="528"/>
+      <location filename="../../CommandAnnotate.cpp" line="530"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="529"/>
+      <location filename="../../CommandAnnotate.cpp" line="531"/>
       <source>Insert Annotation</source>
       <translation>Vložit poznámku</translation>
     </message>
@@ -127,48 +127,48 @@
   <context>
     <name>CmdTechDrawArchView</name>
     <message>
-      <location filename="../../Command.cpp" line="1400"/>
+      <location filename="../../Command.cpp" line="1417"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1401"/>
+      <location filename="../../Command.cpp" line="1418"/>
       <source>Insert Arch Workbench Object</source>
-      <translation>Vložit objekt pracovního prostředí Arch</translation>
+      <translation>Vložit objekt pracovního prostředí architektury</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1402"/>
+      <location filename="../../Command.cpp" line="1419"/>
       <source>Insert a View of a Section Plane from Arch Workbench</source>
-      <translation>Vložit pohled roviny řezu z pracovního prostředí Arch</translation>
+      <translation>Vloží pohled roviny řezu z pracovního prostředí architektury</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawBalloon</name>
     <message>
-      <location filename="../../Command.cpp" line="1035"/>
+      <location filename="../../Command.cpp" line="1042"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1036"/>
+      <location filename="../../Command.cpp" line="1043"/>
       <source>Insert Balloon Annotation</source>
-      <translation>Vloží balonový popisek</translation>
+      <translation>Vloží balonovou poznámku</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawCenterLineGroup</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="568"/>
+      <location filename="../../CommandAnnotate.cpp" line="573"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="569"/>
+      <location filename="../../CommandAnnotate.cpp" line="574"/>
       <source>Insert Center Line</source>
       <translation>Vložit středovou osu</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="642"/>
+      <location filename="../../CommandAnnotate.cpp" line="647"/>
       <source>Add Centerline to Faces</source>
       <translation>Přidat osu na plochu/y</translation>
     </message>
@@ -176,12 +176,12 @@
   <context>
     <name>CmdTechDrawClipGroup</name>
     <message>
-      <location filename="../../Command.cpp" line="1099"/>
+      <location filename="../../Command.cpp" line="1106"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1100"/>
+      <location filename="../../Command.cpp" line="1107"/>
       <source>Insert Clip Group</source>
       <translation>Vložit sepnutou skupinu pohledů</translation>
     </message>
@@ -189,12 +189,12 @@
   <context>
     <name>CmdTechDrawClipGroupAdd</name>
     <message>
-      <location filename="../../Command.cpp" line="1136"/>
+      <location filename="../../Command.cpp" line="1143"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1137"/>
+      <location filename="../../Command.cpp" line="1144"/>
       <source>Add View to Clip Group</source>
       <translation>Přidat pohled do sepnuté skupiny</translation>
     </message>
@@ -202,12 +202,12 @@
   <context>
     <name>CmdTechDrawClipGroupRemove</name>
     <message>
-      <location filename="../../Command.cpp" line="1220"/>
+      <location filename="../../Command.cpp" line="1227"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1221"/>
+      <location filename="../../Command.cpp" line="1228"/>
       <source>Remove View from Clip Group</source>
       <translation>Odebrat pohled ze sepnuté skupiny</translation>
     </message>
@@ -215,30 +215,30 @@
   <context>
     <name>CmdTechDrawComplexSection</name>
     <message>
-      <location filename="../../Command.cpp" line="621"/>
+      <location filename="../../Command.cpp" line="634"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="622"/>
+      <location filename="../../Command.cpp" line="635"/>
       <source>Insert Complex Section</source>
-      <translation type="unfinished">Insert Complex Section</translation>
+      <translation>Vložit komplexní sekci</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="623"/>
+      <location filename="../../Command.cpp" line="636"/>
       <source>Insert a Complex Section</source>
-      <translation type="unfinished">Insert a Complex Section</translation>
+      <translation>Vložit komplexní sekci</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawCosmeticEraser</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1126"/>
+      <location filename="../../CommandAnnotate.cpp" line="1280"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1127"/>
+      <location filename="../../CommandAnnotate.cpp" line="1281"/>
       <source>Remove Cosmetic Object</source>
       <translation>Odebrat pomocný objekt</translation>
     </message>
@@ -246,12 +246,12 @@
   <context>
     <name>CmdTechDrawCosmeticVertex</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="389"/>
+      <location filename="../../CommandAnnotate.cpp" line="391"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="390"/>
+      <location filename="../../CommandAnnotate.cpp" line="392"/>
       <source>Add Cosmetic Vertex</source>
       <translation>Přidat pomocný vrchol</translation>
     </message>
@@ -259,17 +259,17 @@
   <context>
     <name>CmdTechDrawCosmeticVertexGroup</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="204"/>
+      <location filename="../../CommandAnnotate.cpp" line="206"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="205"/>
+      <location filename="../../CommandAnnotate.cpp" line="207"/>
       <source>Insert Cosmetic Vertex</source>
       <translation>Vložit pomocný vrchol</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="280"/>
+      <location filename="../../CommandAnnotate.cpp" line="282"/>
       <source>Add Cosmetic Vertex</source>
       <translation>Přidat pomocný vrchol</translation>
     </message>
@@ -277,17 +277,17 @@
   <context>
     <name>CmdTechDrawDecorateLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1244"/>
+      <location filename="../../CommandAnnotate.cpp" line="1398"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1245"/>
+      <location filename="../../CommandAnnotate.cpp" line="1399"/>
       <source>Change Appearance of Lines</source>
       <translation>Změnit vzhled čar</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1246"/>
+      <location filename="../../CommandAnnotate.cpp" line="1400"/>
       <source>Change Appearance of selected Lines</source>
       <translation>Změnit vzhled vybraných čar</translation>
     </message>
@@ -295,12 +295,12 @@
   <context>
     <name>CmdTechDrawDetailView</name>
     <message>
-      <location filename="../../Command.cpp" line="748"/>
+      <location filename="../../Command.cpp" line="760"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="749"/>
+      <location filename="../../Command.cpp" line="761"/>
       <source>Insert Detail View</source>
       <translation>Vložit detail pohledu</translation>
     </message>
@@ -334,40 +334,40 @@
   <context>
     <name>CmdTechDrawDraftView</name>
     <message>
-      <location filename="../../Command.cpp" line="1344"/>
+      <location filename="../../Command.cpp" line="1353"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1345"/>
+      <location filename="../../Command.cpp" line="1354"/>
       <source>Insert Draft Workbench Object</source>
-      <translation>Vložit objekt pracovního prostředí Draft</translation>
+      <translation>Vložit objekt pracovního prostředí návrhu</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1346"/>
+      <location filename="../../Command.cpp" line="1355"/>
       <source>Insert a View of a Draft Workbench object</source>
-      <translation>Vložit zobrazení objektu z pracovního prostředí Draft</translation>
+      <translation>Vloží pohled na objekt z pracovního prostředí návrhu</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExportPageDXF</name>
     <message>
-      <location filename="../../Command.cpp" line="1567"/>
+      <location filename="../../Command.cpp" line="1593"/>
       <source>File</source>
       <translation>Soubor</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1568"/>
+      <location filename="../../Command.cpp" line="1594"/>
       <source>Export Page as DXF</source>
       <translation>Exportovat stránku do DXF</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1602"/>
+      <location filename="../../Command.cpp" line="1628"/>
       <source>Save DXF file</source>
-      <translation type="unfinished">Save DXF file</translation>
+      <translation>Uložit soubor DXF</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1603"/>
+      <location filename="../../Command.cpp" line="1629"/>
       <source>DXF (*.dxf)</source>
       <translation>DXF (*.dxf)</translation>
     </message>
@@ -375,12 +375,12 @@
   <context>
     <name>CmdTechDrawExportPageSVG</name>
     <message>
-      <location filename="../../Command.cpp" line="1526"/>
+      <location filename="../../Command.cpp" line="1552"/>
       <source>File</source>
       <translation>Soubor</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1527"/>
+      <location filename="../../Command.cpp" line="1553"/>
       <source>Export Page as SVG</source>
       <translation>Exportovat stránku do SVG</translation>
     </message>
@@ -388,17 +388,17 @@
   <context>
     <name>CmdTechDrawExtendShortenLineGroup</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1673"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1675"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1674"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1676"/>
       <source>Extend Line</source>
-      <translation type="unfinished">Extend Line</translation>
+      <translation>Rozšířit řádek</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1675"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1677"/>
       <source>Extend a cosmetic line or centerline at both ends:&lt;br&gt;- Specify the delta distance (optional)&lt;br&gt;- Select a single line&lt;br&gt;- Click this tool</source>
       <translation>Prodloužení kosmetické čáry nebo osy na obou koncích:&lt;br&gt;- Zadejte vzdálenost delta (volitelné)&lt;br&gt;- Vyberte jednu čáru&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
@@ -406,19 +406,19 @@
   <context>
     <name>CmdTechDrawExtensionAreaAnnotation</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1776"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1778"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1777"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1779"/>
       <source>Calculate the area of selected faces</source>
       <translation>Výpočet plochy vybraných ploch</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1778"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1780"/>
       <source>Select several faces&lt;br&gt;    - click this tool</source>
-      <translation type="unfinished">Select several faces&lt;br&gt;    - click this tool</translation>
+      <translation>Vyberte několik ploch&lt;br&gt;    - klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -436,7 +436,7 @@
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1081"/>
       <source>Evenly space horizontal dimensions:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select two or more horizontal dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</source>
-      <translation>Rovnoměrné rozmístění horizontálních rozměrů:&lt;br&gt;- Zadejte kaskádové rozmístění (volitelné)&lt;br&gt;- Vyberte dva nebo více horizontálních rozměrů&lt;br&gt;- První rozměr určuje polohu&lt;br&gt;- Klikněte na tento nástroj</translation>
+      <translation>Rovnoměrné rozmístění vodorovných rozměrů:&lt;br&gt;- Zadejte kaskádové rozmístění (volitelné)&lt;br&gt;- Vyberte dva nebo více vodorovných rozměrů&lt;br&gt;- První rozměr určuje polohu&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -456,7 +456,7 @@
       <location filename="../../CommandExtensionDims.cpp" line="903"/>
       <location filename="../../CommandExtensionDims.cpp" line="1157"/>
       <source>Evenly space horizontal dimensions:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select two or more horizontal dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</source>
-      <translation>Rovnoměrné rozmístění horizontálních rozměrů:&lt;br&gt;- Zadejte kaskádové rozmístění (volitelné)&lt;br&gt;- Vyberte dva nebo více horizontálních rozměrů&lt;br&gt;- První rozměr určuje polohu&lt;br&gt;- Klikněte na tento nástroj</translation>
+      <translation>Rovnoměrné rozmístění vodorovných rozměrů:&lt;br&gt;- Zadejte kaskádové rozmístění (volitelné)&lt;br&gt;- Vyberte dva nebo více vodorovných rozměrů&lt;br&gt;- První rozměr určuje polohu&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -470,13 +470,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="1044"/>
       <location filename="../../CommandExtensionDims.cpp" line="1174"/>
       <source>Cascade Oblique Dimensions</source>
-      <translation type="unfinished">Cascade Oblique Dimensions</translation>
+      <translation>Rozměry kaskádové krychle</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1045"/>
       <location filename="../../CommandExtensionDims.cpp" line="1175"/>
       <source>Evenly space oblique dimensions:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select two or more parallel oblique dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Evenly space oblique dimensions:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select two or more parallel oblique dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</translation>
+      <translation>Rovnoměrné rozmístění šikmých rozměrů:&lt;br&gt;- Zadejte kaskádové rozmístění (volitelné)&lt;br&gt;- Vyberte dva nebo více šikmých paralelních rozměrů&lt;br&gt;- První rozměr určuje polohu&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -490,13 +490,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="969"/>
       <location filename="../../CommandExtensionDims.cpp" line="1165"/>
       <source>Cascade Vertical Dimensions</source>
-      <translation type="unfinished">Cascade Vertical Dimensions</translation>
+      <translation>Svislé rozměry kaskády</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="970"/>
       <location filename="../../CommandExtensionDims.cpp" line="1166"/>
       <source>Evenly space vertical dimensions:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select two or more vertical dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Evenly space vertical dimensions:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select two or more vertical dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</translation>
+      <translation>Rovnoměrné rozmístění svislých rozměrů:&lt;br&gt;- Zadejte kaskádové rozmístění (volitelné)&lt;br&gt;- Vyberte dva nebo více svislých rozměrů&lt;br&gt;- První rozměr určuje polohu&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -509,68 +509,68 @@
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="2049"/>
       <source>Create Horizontal Chamfer Dimension</source>
-      <translation type="unfinished">Create Horizontal Chamfer Dimension</translation>
+      <translation>Vytvořit vodorovnou dimenzi Chamfer</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="2050"/>
       <source>Create a horizontal size and angle dimension for a chamfer:&lt;br&gt;- Select two vertexes&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create a horizontal size and angle dimension for a chamfer:&lt;br&gt;- Select two vertexes&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte vodorovnou velikost a úhlovou dimenzi pro komoru:&lt;br&gt;- Vyberte dva vrcholy&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionChangeLineAttributes</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="748"/>
+      <location filename="../../CommandExtensionPack.cpp" line="756"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="749"/>
+      <location filename="../../CommandExtensionPack.cpp" line="757"/>
       <source>Change Line Attributes</source>
-      <translation type="unfinished">Change Line Attributes</translation>
+      <translation>Změnit atributy řádku</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="750"/>
+      <location filename="../../CommandExtensionPack.cpp" line="758"/>
       <source>Change the attributes of cosmetic lines and centerlines:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select one or more lines&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Change the attributes of cosmetic lines and centerlines:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select one or more lines&lt;br&gt;- Click this tool</translation>
+      <translation>Změnit atributy kosmetických linek a střednic:&lt;br&gt;- Určete atributy řádků (volitelné)&lt;br&gt;- vyberte jeden nebo více řádků&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionCircleCenterLines</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="226"/>
+      <location filename="../../CommandExtensionPack.cpp" line="234"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="227"/>
-      <location filename="../../CommandExtensionPack.cpp" line="329"/>
+      <location filename="../../CommandExtensionPack.cpp" line="235"/>
+      <location filename="../../CommandExtensionPack.cpp" line="337"/>
       <source>Add Circle Centerlines</source>
-      <translation type="unfinished">Add Circle Centerlines</translation>
+      <translation>Přidat kružnice</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="228"/>
-      <location filename="../../CommandExtensionPack.cpp" line="330"/>
+      <location filename="../../CommandExtensionPack.cpp" line="236"/>
+      <location filename="../../CommandExtensionPack.cpp" line="338"/>
       <source>Add centerlines to circles and arcs:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select one or more circles or arcs&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add centerlines to circles and arcs:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select one or more circles or arcs&lt;br&gt;- Click this tool</translation>
+      <translation>Přidat osy do kruhů a oblouků:&lt;br&gt;- Určete atributy řádků (volitelné)&lt;br&gt;- Vyberte jeden nebo více kruhů nebo oblouků&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionCircleCenterLinesGroup</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="260"/>
+      <location filename="../../CommandExtensionPack.cpp" line="268"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="261"/>
+      <location filename="../../CommandExtensionPack.cpp" line="269"/>
       <source>Add Circle Centerlines</source>
-      <translation type="unfinished">Add Circle Centerlines</translation>
+      <translation>Přidat kružnice</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="262"/>
+      <location filename="../../CommandExtensionPack.cpp" line="270"/>
       <source>Add centerlines to circles and arcs:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select one or more circles or arcs&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add centerlines to circles and arcs:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select one or more circles or arcs&lt;br&gt;- Click this tool</translation>
+      <translation>Přidat osy do kruhů a oblouků:&lt;br&gt;- Určete atributy řádků (volitelné)&lt;br&gt;- Vyberte jeden nebo více kruhů nebo oblouků&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -583,12 +583,12 @@
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1427"/>
       <source>Create Horizontal Chain Dimensions</source>
-      <translation type="unfinished">Create Horizontal Chain Dimensions</translation>
+      <translation>Vytvořit rozměry vodorovného řetězce</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1428"/>
       <source>Create a sequence of aligned horizontal dimensions:&lt;br&gt;- Select three or more vertexes&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create a sequence of aligned horizontal dimensions:&lt;br&gt;- Select three or more vertexes&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte posloupnost zarovnaných horizontálních rozměrů:&lt;br&gt;- Vyberte tři nebo více vrcholů&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -601,12 +601,12 @@
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1788"/>
       <source>Create Horizontal Coordinate Dimensions</source>
-      <translation type="unfinished">Create Horizontal Coordinate Dimensions</translation>
+      <translation>Vytvořit rozměry vodorovné souřadnice</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1789"/>
       <source>Create multiple evenly spaced horizontal dimensions starting from the same baseline:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select three or more vertexes&lt;br&gt;- The selection order of the first two vertexes determines the position of the baseline&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create multiple evenly spaced horizontal dimensions starting from the same baseline:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select three or more vertexes&lt;br&gt;- The selection order of the first two vertexes determines the position of the baseline&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte více rovnoměrně odstupňovaných horizontálních rozměrů počínaje stejnou základní linií:&lt;br&gt;- Specifikujte mezeru mezi kaskádami (volitelné)&lt;br&gt;- Vyberte tři nebo více vrcholů&lt;br&gt;- Pořadí výběru prvních dvou vrcholů určuje polohu základní osy&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -620,13 +620,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="1234"/>
       <location filename="../../CommandExtensionDims.cpp" line="1501"/>
       <source>Create Horizontal Chain Dimensions</source>
-      <translation type="unfinished">Create Horizontal Chain Dimensions</translation>
+      <translation>Vytvořit rozměry vodorovného řetězce</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1235"/>
       <location filename="../../CommandExtensionDims.cpp" line="1502"/>
       <source>Create a sequence of aligned horizontal dimensions:&lt;br&gt;- Select three or more vertexes&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create a sequence of aligned horizontal dimensions:&lt;br&gt;- Select three or more vertexes&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte posloupnost zarovnaných horizontálních rozměrů:&lt;br&gt;- Vyberte tři nebo více vrcholů&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -640,13 +640,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="1947"/>
       <location filename="../../CommandExtensionDims.cpp" line="2116"/>
       <source>Create Horizontal Chamfer Dimension</source>
-      <translation type="unfinished">Create Horizontal Chamfer Dimension</translation>
+      <translation>Vytvořit vodorovnou dimenzi Chamfer</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1948"/>
       <location filename="../../CommandExtensionDims.cpp" line="2117"/>
       <source>Create a horizontal size and angle dimension for a chamfer:&lt;br&gt;- Select two vertexes&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create a horizontal size and angle dimension for a chamfer:&lt;br&gt;- Select two vertexes&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte vodorovnou velikost a úhlovou dimenzi pro komoru:&lt;br&gt;- Vyberte dva vrcholy&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -660,13 +660,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="1580"/>
       <location filename="../../CommandExtensionDims.cpp" line="1864"/>
       <source>Create Horizontal Coordinate Dimensions</source>
-      <translation type="unfinished">Create Horizontal Coordinate Dimensions</translation>
+      <translation>Vytvořit rozměry vodorovné souřadnice</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1581"/>
       <location filename="../../CommandExtensionDims.cpp" line="1865"/>
       <source>Create multiple evenly spaced horizontal dimensions starting from the same baseline:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select three or more vertexes&lt;br&gt;- The selection order of the first two vertexes determines the position of the baseline&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create multiple evenly spaced horizontal dimensions starting from the same baseline:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select three or more vertexes&lt;br&gt;- The selection order of the first two vertexes determines the position of the baseline&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte více rovnoměrně odstupňovaných horizontálních rozměrů počínaje stejnou základní linií:&lt;br&gt;- Specifikujte mezeru mezi kaskádami (volitelné)&lt;br&gt;- Vyberte tři nebo více vrcholů&lt;br&gt;- Pořadí výběru prvních dvou vrcholů určuje polohu základní osy&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -679,12 +679,12 @@
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="2149"/>
       <source>Create Arc Length Dimension</source>
-      <translation type="unfinished">Create Arc Length Dimension</translation>
+      <translation>Vytvořit rozměr délky oblouku</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="2150"/>
       <source>Create an arc length dimension:&lt;br&gt;- Select a single arc&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create an arc length dimension:&lt;br&gt;- Select a single arc&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořit rozměr délky oblouku:&lt;br&gt;- Vyberte jeden oblouk&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -698,13 +698,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="1393"/>
       <location filename="../../CommandExtensionDims.cpp" line="1515"/>
       <source>Create Oblique Chain Dimensions</source>
-      <translation type="unfinished">Create Oblique Chain Dimensions</translation>
+      <translation>Vytvořit dimenzi řetězového řetězce</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1394"/>
       <location filename="../../CommandExtensionDims.cpp" line="1516"/>
       <source>Create a sequence of aligned oblique dimensions:&lt;br&gt;- Select three or more vertexes&lt;br&gt;- The first two vertexes define the direction&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create a sequence of aligned oblique dimensions:&lt;br&gt;- Select three or more vertexes&lt;br&gt;- The first two vertexes define the direction&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte posloupnost zarovnaných rozměrů:&lt;br&gt;- Vyberte tři nebo více vrcholů&lt;br&gt;- První dva vrcholy definují směr&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -718,13 +718,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="1752"/>
       <location filename="../../CommandExtensionDims.cpp" line="1882"/>
       <source>Create Oblique Coordinate Dimensions</source>
-      <translation type="unfinished">Create Oblique Coordinate Dimensions</translation>
+      <translation>Vytvořit dimenzi souřadnic krychle</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1753"/>
       <location filename="../../CommandExtensionDims.cpp" line="1883"/>
       <source>Create multiple evenly spaced oblique dimensions starting from the same baseline:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select three or more vertexes&lt;br&gt;- The selection order of the first two vertexes determines the position of the baseline&lt;br&gt;- The first two vertexes also define the direction&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create multiple evenly spaced oblique dimensions starting from the same baseline:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select three or more vertexes&lt;br&gt;- The selection order of the first two vertexes determines the position of the baseline&lt;br&gt;- The first two vertexes also define the direction&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte více rovnoměrně rozložených rozměrů počínaje stejnou základní linií:&lt;br&gt;- Specifikujte mezeru mezi kaskádami (volitelné)&lt;br&gt;- Vyberte tři nebo více vrcholů&lt;br&gt;- Pořadí prvních dvou vrcholů určuje polohu základní linie&lt;br&gt;- První dva vrcholy také definují směr&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -738,13 +738,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="1301"/>
       <location filename="../../CommandExtensionDims.cpp" line="1508"/>
       <source>Create Vertical Chain Dimensions</source>
-      <translation type="unfinished">Create Vertical Chain Dimensions</translation>
+      <translation>Vytvořit vertikální dimenze</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1302"/>
       <location filename="../../CommandExtensionDims.cpp" line="1509"/>
       <source>Create a sequence of aligned vertical dimensions:&lt;br&gt;- Select three or more vertexes&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create a sequence of aligned vertical dimensions:&lt;br&gt;- Select three or more vertexes&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte posloupnost zarovnaných vertikálních rozměrů:&lt;br&gt;- Vyberte tři nebo více vrcholů&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -758,13 +758,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="2016"/>
       <location filename="../../CommandExtensionDims.cpp" line="2123"/>
       <source>Create Vertical Chamfer Dimension</source>
-      <translation type="unfinished">Create Vertical Chamfer Dimension</translation>
+      <translation>Vytvořit vertikální rozměr Chamfer</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="2017"/>
       <location filename="../../CommandExtensionDims.cpp" line="2124"/>
       <source>Create a vertical size and angle dimension for a chamfer:&lt;br&gt;- Select two vertexes&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create a vertical size and angle dimension for a chamfer:&lt;br&gt;- Select two vertexes&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte vertikální velikost a rozměry úhlu pro komoru:&lt;br&gt;- Vyberte dva vrcholy&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -778,13 +778,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="1653"/>
       <location filename="../../CommandExtensionDims.cpp" line="1873"/>
       <source>Create Vertical Coordinate Dimensions</source>
-      <translation type="unfinished">Create Vertical Coordinate Dimensions</translation>
+      <translation>Vytvořit rozměry vertikálních souřadnic</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="1654"/>
       <location filename="../../CommandExtensionDims.cpp" line="1874"/>
       <source>Create multiple evenly spaced vertical dimensions starting from the same baseline:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select three or more vertexes&lt;br&gt;- The selection order of the first two vertexes determines the position of the baseline&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Create multiple evenly spaced vertical dimensions starting from the same baseline:&lt;br&gt;- Specify the cascade spacing (optional)&lt;br&gt;- Select three or more vertexes&lt;br&gt;- The selection order of the first two vertexes determines the position of the baseline&lt;br&gt;- Click this tool</translation>
+      <translation>Vytvořte více rovnoměrně odstupňovaných vertikálních rozměrů počínaje stejnou základní linií:&lt;br&gt;- Specifikujte mezeru mezi kaskádami (volitelné)&lt;br&gt;- Vyberte tři nebo více vrcholů&lt;br&gt;- Pořadí prvních dvou vrcholů určuje pozici základní linie&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -797,12 +797,12 @@
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="2227"/>
       <source>Customize Format Label</source>
-      <translation type="unfinished">Customize Format Label</translation>
+      <translation>Přizpůsobit popisek formátu</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="2228"/>
       <source>Select a dimension or a balloon&lt;br&gt;    - click this tool&lt;br&gt;    - edit the Format field, using the keyboard and/or the special buttons</source>
-      <translation type="unfinished">Select a dimension or a balloon&lt;br&gt;    - click this tool&lt;br&gt;    - edit the Format field, using the keyboard and/or the special buttons</translation>
+      <translation>Vyberte rozměr nebo balón&lt;br&gt;    - klikněte na tento nástroj&lt;br&gt;    - upravte pole formátu pomocí klávesnice a/nebo speciálních tlačítek</translation>
     </message>
   </context>
   <context>
@@ -816,113 +816,113 @@
       <location filename="../../CommandExtensionDims.cpp" line="429"/>
       <location filename="../../CommandExtensionDims.cpp" line="536"/>
       <source>Decrease Decimal Places</source>
-      <translation type="unfinished">Decrease Decimal Places</translation>
+      <translation>Snížit desetinná místa</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="430"/>
       <location filename="../../CommandExtensionDims.cpp" line="537"/>
       <source>Decrease the number of decimal places of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Decrease the number of decimal places of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</translation>
+      <translation>Snížit počet desetinných míst textu dimenze:&lt;br&gt;- Vyberte jeden nebo více rozměrů&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionDrawCirclesGroup</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1063"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1065"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1064"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1066"/>
       <source>Add Cosmetic Circle</source>
-      <translation type="unfinished">Add Cosmetic Circle</translation>
+      <translation>Přidat Kosmetický kruh</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1065"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1067"/>
       <source>Add a cosmetic circle based on two vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select vertex 1 (center point)&lt;br&gt;- Select vertex 2 (radius)&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic circle based on two vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select vertex 1 (center point)&lt;br&gt;- Select vertex 2 (radius)&lt;br&gt;- Click this tool</translation>
+      <translation>Přidat kosmetický kruh na základě dvou vrcholů:&lt;br&gt;- Specifikujte atributy řádků (volitelné)&lt;br&gt;- vyberte vrchol 1 (středový bod)&lt;br&gt;- vyberte vrchol 2 (radius)&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionDrawCosmArc</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="901"/>
+      <location filename="../../CommandExtensionPack.cpp" line="904"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="902"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1150"/>
+      <location filename="../../CommandExtensionPack.cpp" line="905"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1152"/>
       <source>Add Cosmetic Arc</source>
-      <translation type="unfinished">Add Cosmetic Arc</translation>
+      <translation>Přidat kosmetický oblouk</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="903"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1152"/>
+      <location filename="../../CommandExtensionPack.cpp" line="906"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1154"/>
       <source>Add a cosmetic counter clockwise arc based on three vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select vertex 1 (center point)&lt;br&gt;- Select vertex 2 (radius and start angle)&lt;br&gt;- Select vertex 3 (end angle)&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic counter clockwise arc based on three vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select vertex 1 (center point)&lt;br&gt;- Select vertex 2 (radius and start angle)&lt;br&gt;- Select vertex 3 (end angle)&lt;br&gt;- Click this tool</translation>
+      <translation>Přidat kosmetický oblouk proti směru hodinových ručiček založený na třech vrcholech:&lt;br&gt;- Specifikujte atributy řádků (volitelné)&lt;br&gt;- vyberte vrchol 1 (středový bod)&lt;br&gt;- vyberte vrchol 2 (poloměr a počáteční úhel)&lt;br&gt;- Vyberte vrchol 3 (koncový úhel)&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionDrawCosmCircle</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="964"/>
+      <location filename="../../CommandExtensionPack.cpp" line="966"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="965"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1141"/>
+      <location filename="../../CommandExtensionPack.cpp" line="967"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1143"/>
       <source>Add Cosmetic Circle</source>
-      <translation type="unfinished">Add Cosmetic Circle</translation>
+      <translation>Přidat Kosmetický kruh</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="966"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1142"/>
+      <location filename="../../CommandExtensionPack.cpp" line="968"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1144"/>
       <source>Add a cosmetic circle based on two vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select vertex 1 (center point)&lt;br&gt;- Select vertex 2 (radius)&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic circle based on two vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select vertex 1 (center point)&lt;br&gt;- Select vertex 2 (radius)&lt;br&gt;- Click this tool</translation>
+      <translation>Přidat kosmetický kruh na základě dvou vrcholů:&lt;br&gt;- Specifikujte atributy řádků (volitelné)&lt;br&gt;- vyberte vrchol 1 (středový bod)&lt;br&gt;- vyberte vrchol 2 (radius)&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionDrawCosmCircle3Points</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1028"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1030"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1029"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1161"/>
-      <source>Add Cosmetic Circle 3 Points</source>
-      <translation type="unfinished">Add Cosmetic Circle 3 Points</translation>
-    </message>
-    <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1030"/>
-      <source>Add a cosmetic circle based on three vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select 3 vertexes&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic circle based on three vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select 3 vertexes&lt;br&gt;- Click this tool</translation>
-    </message>
-    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1031"/>
       <location filename="../../CommandExtensionPack.cpp" line="1163"/>
+      <source>Add Cosmetic Circle 3 Points</source>
+      <translation>Přidat kosmetický kruh o 3 body</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1032"/>
+      <source>Add a cosmetic circle based on three vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select 3 vertexes&lt;br&gt;- Click this tool</source>
+      <translation>Přidat kosmetický kruh na základě tří vrcholů:&lt;br&gt;- Specifikujte atributy řádků (volitelné)&lt;br&gt;- Vyberte 3 vrcholy&lt;br&gt;- klikněte na tento nástroj</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1165"/>
       <source>Add a cosmetic circle based on three vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select three vertexes&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic circle based on three vertexes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select three vertexes&lt;br&gt;- Click this tool</translation>
+      <translation>Přidat kosmetický kruh na základě tří vrcholů:&lt;br&gt;- Určete atributy řádků (volitelné)&lt;br&gt;- Vyberte tři vrcholy&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionExtendLine</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1603"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1605"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1604"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1742"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1606"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1744"/>
       <source>Extend Line</source>
-      <translation type="unfinished">Extend Line</translation>
+      <translation>Rozšířit řádek</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1605"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1743"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1607"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1745"/>
       <source>Extend a cosmetic line or centerline at both ends:&lt;br&gt;- Specify the delta distance (optional)&lt;br&gt;- Select a single line&lt;br&gt;- Click this tool</source>
       <translation>Prodloužení kosmetické čáry nebo osy na obou koncích:&lt;br&gt;- Zadejte vzdálenost delta (volitelné)&lt;br&gt;- Vyberte jednu čáru&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
@@ -930,21 +930,21 @@
   <context>
     <name>CmdTechDrawExtensionHoleCircle</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="152"/>
+      <location filename="../../CommandExtensionPack.cpp" line="160"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="153"/>
-      <location filename="../../CommandExtensionPack.cpp" line="338"/>
+      <location filename="../../CommandExtensionPack.cpp" line="161"/>
+      <location filename="../../CommandExtensionPack.cpp" line="346"/>
       <source>Add Bolt Circle Centerlines</source>
-      <translation type="unfinished">Add Bolt Circle Centerlines</translation>
+      <translation>Přidat kružnice s Boltem</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="154"/>
-      <location filename="../../CommandExtensionPack.cpp" line="339"/>
+      <location filename="../../CommandExtensionPack.cpp" line="162"/>
+      <location filename="../../CommandExtensionPack.cpp" line="347"/>
       <source>Add centerlines to a circular pattern of circles:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select three or more circles forming a circular pattern&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add centerlines to a circular pattern of circles:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select three or more circles forming a circular pattern&lt;br&gt;- Click this tool</translation>
+      <translation>Přidat středové čáry do kruhového vzorce kruhů:&lt;br&gt;- Určete atributy řádků (volitelné)&lt;br&gt;- Vyberte tři nebo více kruhů tvořících kruhový vzor&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -958,13 +958,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="396"/>
       <location filename="../../CommandExtensionDims.cpp" line="529"/>
       <source>Increase Decimal Places</source>
-      <translation type="unfinished">Increase Decimal Places</translation>
+      <translation>Zvýšit desetinná místa</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="397"/>
       <location filename="../../CommandExtensionDims.cpp" line="530"/>
       <source>Increase the number of decimal places of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Increase the number of decimal places of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</translation>
+      <translation>Zvyšte počet desetinných míst textu dimenze:&lt;br&gt;- Vyberte jeden nebo více rozměrů&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -977,12 +977,12 @@
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="462"/>
       <source>Increase Decimal Places</source>
-      <translation type="unfinished">Increase Decimal Places</translation>
+      <translation>Zvýšit desetinná místa</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="463"/>
       <source>Increase the number of decimal places of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Increase the number of decimal places of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</translation>
+      <translation>Zvyšte počet desetinných míst textu dimenze:&lt;br&gt;- Vyberte jeden nebo více rozměrů&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -996,13 +996,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="129"/>
       <location filename="../../CommandExtensionDims.cpp" line="327"/>
       <source>Insert &apos;⌀&apos; Prefix</source>
-      <translation type="unfinished">Insert &apos;⌀&apos; Prefix</translation>
+      <translation>Insert &apos;⌀&apos; Prefix</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="130"/>
       <location filename="../../CommandExtensionDims.cpp" line="328"/>
       <source>Insert a &apos;⌀&apos; symbol at the beginning of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Insert a &apos;⌀&apos; symbol at the beginning of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</translation>
+      <translation>Vložte symbol &apos;⌀&apos; na začátku textu kótu:&lt;br&gt;- Vyberte jeden nebo více rozměrů&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -1015,12 +1015,12 @@
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="253"/>
       <source>Insert &apos;⌀&apos; Prefix</source>
-      <translation type="unfinished">Insert &apos;⌀&apos; Prefix</translation>
+      <translation>Insert &apos;⌀&apos; Prefix</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="254"/>
       <source>Insert a &apos;⌀&apos; symbol at the beginning of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Insert a &apos;⌀&apos; symbol at the beginning of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</translation>
+      <translation>Vložte symbol &apos;⌀&apos; na začátku textu kótu:&lt;br&gt;- Vyberte jeden nebo více rozměrů&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -1034,89 +1034,89 @@
       <location filename="../../CommandExtensionDims.cpp" line="162"/>
       <location filename="../../CommandExtensionDims.cpp" line="334"/>
       <source>Insert &apos;□&apos; Prefix</source>
-      <translation type="unfinished">Insert &apos;□&apos; Prefix</translation>
+      <translation>Insert &apos;□&apos; Prefix</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="163"/>
       <location filename="../../CommandExtensionDims.cpp" line="335"/>
       <source>Insert a &apos;□&apos; symbol at the beginning of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Insert a &apos;□&apos; symbol at the beginning of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</translation>
+      <translation>Vložte symbol &apos;□&apos; na začátku textu kótu:&lt;br&gt;- Vyberte jeden nebo více rozměrů&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionLinePPGroup</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1300"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1302"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1301"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1303"/>
       <source>Add Cosmetic Parallel Line</source>
-      <translation type="unfinished">Add Cosmetic Parallel Line</translation>
+      <translation>Přidat osmetickou paralelní linku</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1302"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1304"/>
       <source>Add a cosmetic line parallel to another line through a vertex:&lt;br&gt;- Select a line&lt;br&gt;- Select a vertex&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic line parallel to another line through a vertex:&lt;br&gt;- Select a line&lt;br&gt;- Select a vertex&lt;br&gt;- Click this tool</translation>
+      <translation>Přidej kosmetickou čáru rovnoběžnou k jinému řádku pomocí vrcholu:&lt;br&gt;- Vyberte řádek&lt;br&gt;- Vyberte vrchol&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionLineParallel</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1231"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1233"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1232"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1370"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1234"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1372"/>
       <source>Add Cosmetic Parallel Line</source>
-      <translation type="unfinished">Add Cosmetic Parallel Line</translation>
+      <translation>Přidat osmetickou paralelní linku</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1233"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1372"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1235"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1374"/>
       <source>Add a cosmetic line parallel to another line through a vertex:&lt;br&gt;- Select a line&lt;br&gt;- Select a vertex&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic line parallel to another line through a vertex:&lt;br&gt;- Select a line&lt;br&gt;- Select a vertex&lt;br&gt;- Click this tool</translation>
+      <translation>Přidej kosmetickou čáru rovnoběžnou k jinému řádku pomocí vrcholu:&lt;br&gt;- Vyberte řádek&lt;br&gt;- Vyberte vrchol&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionLinePerpendicular</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1265"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1267"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1266"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1379"/>
-      <source>Add Cosmetic Perpendicular Line</source>
-      <translation type="unfinished">Add Cosmetic Perpendicular Line</translation>
-    </message>
-    <message>
       <location filename="../../CommandExtensionPack.cpp" line="1268"/>
       <location filename="../../CommandExtensionPack.cpp" line="1381"/>
+      <source>Add Cosmetic Perpendicular Line</source>
+      <translation>Přidat osmetickou kolmou čáru</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1270"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1383"/>
       <source>Add a cosmetic line perpendicular to another line through a vertex:&lt;br&gt;- Select a line&lt;br&gt;- Select a vertex&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic line perpendicular to another line through a vertex:&lt;br&gt;- Select a line&lt;br&gt;- Select a vertex&lt;br&gt;- Click this tool</translation>
+      <translation>Přidejte kosmetickou čáru kolmou k jiné čáře pomocí vrcholu:&lt;br&gt;- Vyberte čáru&lt;br&gt;- Vyberte vrchol&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionLockUnlockView</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1407"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1409"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1408"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1410"/>
       <source>Lock/Unlock View</source>
-      <translation type="unfinished">Lock/Unlock View</translation>
+      <translation>Zamknout / Odemknout zobrazení</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1409"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1411"/>
       <source>Lock or unlock the position of a view:&lt;br&gt;- Select a single view&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Lock or unlock the position of a view:&lt;br&gt;- Select a single view&lt;br&gt;- Click this tool</translation>
+      <translation>Zamknout nebo odemknout pozici zobrazení:&lt;br&gt;- Vyberte jedno zobrazení&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -1129,12 +1129,12 @@
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="753"/>
       <source>Position Horizontal Chain Dimensions</source>
-      <translation type="unfinished">Position Horizontal Chain Dimensions</translation>
+      <translation>Poloha vodorovného řetězce</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="754"/>
       <source>Align horizontal dimensions to create a chain dimension:&lt;br&gt;- Select two or more horizontal dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Align horizontal dimensions to create a chain dimension:&lt;br&gt;- Select two or more horizontal dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</translation>
+      <translation>Zarovnejte vodorovné rozměry a vytvořte dimenzi řetězce:&lt;br&gt;- Vyberte dva nebo více horizontálních rozměrů&lt;br&gt;- První rozměr definuje pozici&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -1148,13 +1148,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="589"/>
       <location filename="../../CommandExtensionDims.cpp" line="828"/>
       <source>Position Horizontal Chain Dimensions</source>
-      <translation type="unfinished">Position Horizontal Chain Dimensions</translation>
+      <translation>Poloha vodorovného řetězce</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="590"/>
       <location filename="../../CommandExtensionDims.cpp" line="829"/>
       <source>Align horizontal dimensions to create a chain dimension:&lt;br&gt;- Select two or more horizontal dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Align horizontal dimensions to create a chain dimension:&lt;br&gt;- Select two or more horizontal dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</translation>
+      <translation>Zarovnejte vodorovné rozměry a vytvořte dimenzi řetězce:&lt;br&gt;- Vyberte dva nebo více horizontálních rozměrů&lt;br&gt;- První rozměr definuje pozici&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -1168,13 +1168,13 @@
       <location filename="../../CommandExtensionDims.cpp" line="718"/>
       <location filename="../../CommandExtensionDims.cpp" line="844"/>
       <source>Position Oblique Chain Dimensions</source>
-      <translation type="unfinished">Position Oblique Chain Dimensions</translation>
+      <translation>Poloha šikmého řetězce</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="719"/>
       <location filename="../../CommandExtensionDims.cpp" line="845"/>
       <source>Align oblique dimensions to create a chain dimension:&lt;br&gt;- Select two or more parallel oblique dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Align oblique dimensions to create a chain dimension:&lt;br&gt;- Select two or more parallel oblique dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</translation>
+      <translation>Zarovnejte šikmé rozměry a vytvořte dimenzi řetězce:&lt;br&gt;- Vyberte dva nebo více paralelních zlomků&lt;br&gt;- První rozměr definuje pozici&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -1188,31 +1188,31 @@
       <location filename="../../CommandExtensionDims.cpp" line="651"/>
       <location filename="../../CommandExtensionDims.cpp" line="836"/>
       <source>Position Vertical Chain Dimensions</source>
-      <translation type="unfinished">Position Vertical Chain Dimensions</translation>
+      <translation>Poloha vertikálního řetězce</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="652"/>
       <location filename="../../CommandExtensionDims.cpp" line="837"/>
       <source>Align vertical dimensions to create a chain dimension:&lt;br&gt;- Select two or more vertical dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Align vertical dimensions to create a chain dimension:&lt;br&gt;- Select two or more vertical dimensions&lt;br&gt;- The first dimension defines the position&lt;br&gt;- Click this tool</translation>
+      <translation>Zarovnejte vertikální rozměry a vytvořte dimenzi řetězce:&lt;br&gt;- Vyberte dva nebo více vertikálních rozměrů&lt;br&gt;- První rozměr definuje pozici&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionPositionSectionView</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1451"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1453"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1452"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1454"/>
       <source>Position Section View</source>
-      <translation type="unfinished">Position Section View</translation>
+      <translation>Zobrazení sekce pozice</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1453"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1455"/>
       <source>Orthogonally align a section view with its source view:&lt;br&gt;- Select a single section view&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Orthogonally align a section view with its source view:&lt;br&gt;- Select a single section view&lt;br&gt;- Click this tool</translation>
+      <translation>Orthogonicky zarovnat zobrazení sekce se zdrojovým zobrazením:&lt;br&gt;- Vyberte jedno zobrazení sekce&lt;br&gt;- Klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
@@ -1225,128 +1225,128 @@
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="220"/>
       <source>Remove Prefix</source>
-      <translation type="unfinished">Remove Prefix</translation>
+      <translation>Odstranit předponu</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="221"/>
       <source>Remove prefix symbols at the beginning of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Remove prefix symbols at the beginning of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</translation>
+      <translation>Odstranit prefix symbolů na začátku textu kótu:&lt;br&gt;- Vyberte jeden nebo více rozměrů&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionSelectLineAttributes</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="713"/>
+      <location filename="../../CommandExtensionPack.cpp" line="721"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="714"/>
+      <location filename="../../CommandExtensionPack.cpp" line="722"/>
       <source>Select Line Attributes, Cascade Spacing and Delta Distance</source>
-      <translation type="unfinished">Select Line Attributes, Cascade Spacing and Delta Distance</translation>
+      <translation>Vyberte atributy řádků, mezery Cascade a vzdálenost delta</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="715"/>
+      <location filename="../../CommandExtensionPack.cpp" line="723"/>
       <source>Select the attributes for new cosmetic lines and centerlines, and specify the cascade spacing and delta distance:&lt;br&gt;- Click this tool&lt;br&gt;- Specify the attributes, spacing and distance in the dialog box&lt;br&gt;- Press OK</source>
-      <translation type="unfinished">Select the attributes for new cosmetic lines and centerlines, and specify the cascade spacing and delta distance:&lt;br&gt;- Click this tool&lt;br&gt;- Specify the attributes, spacing and distance in the dialog box&lt;br&gt;- Press OK</translation>
+      <translation>Vyberte atributy pro nové kosmetické linky a centerlinky, a specifikujte mezeru mezi kaskádami a vzdálenost delta:&lt;br&gt;- Klikněte na tento nástroj&lt;br&gt;- Specifikujte atributy, mezery a vzdálenost v dialogovém okně&lt;br&gt;- stiskněte tlačítko OK</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionShortenLine</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1638"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1640"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1639"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1750"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1641"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1752"/>
       <source>Shorten Line</source>
-      <translation type="unfinished">Shorten Line</translation>
+      <translation>Zkrácená čára</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1640"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1751"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1642"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1753"/>
       <source>Shorten a cosmetic line or centerline at both ends:&lt;br&gt;- Specify the delta distance (optional)&lt;br&gt;- Select a single line&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Shorten a cosmetic line or centerline at both ends:&lt;br&gt;- Specify the delta distance (optional)&lt;br&gt;- Select a single line&lt;br&gt;- Click this tool</translation>
+      <translation>Zkrátit kosmetickou čáru nebo osu na obou koncích:&lt;br&gt;- Určete vzdálenost delta (volitelná)&lt;br&gt;- vyberte jeden řádek&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionThreadBoltBottom</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="538"/>
+      <location filename="../../CommandExtensionPack.cpp" line="546"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="539"/>
-      <location filename="../../CommandExtensionPack.cpp" line="685"/>
+      <location filename="../../CommandExtensionPack.cpp" line="547"/>
+      <location filename="../../CommandExtensionPack.cpp" line="693"/>
       <source>Add Cosmetic Thread Bolt Bottom View</source>
-      <translation type="unfinished">Add Cosmetic Thread Bolt Bottom View</translation>
+      <translation>Přidat kosmetické vlákno do spodního zobrazení</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="541"/>
-      <location filename="../../CommandExtensionPack.cpp" line="687"/>
+      <location filename="../../CommandExtensionPack.cpp" line="549"/>
+      <location filename="../../CommandExtensionPack.cpp" line="695"/>
       <source>Add a cosmetic thread to the top or bottom view of bolts/screws/rods:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select one or more circles&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic thread to the top or bottom view of bolts/screws/rods:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select one or more circles&lt;br&gt;- Click this tool</translation>
+      <translation>Přidejte kosmetické vlákno do horního nebo dolního pohledu šrouby/prutů:&lt;br&gt;- specifikujte atributy řádků (volitelné)&lt;br&gt;- vyberte jeden nebo více kruhů&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionThreadBoltSide</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="434"/>
+      <location filename="../../CommandExtensionPack.cpp" line="442"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="435"/>
-      <location filename="../../CommandExtensionPack.cpp" line="675"/>
+      <location filename="../../CommandExtensionPack.cpp" line="443"/>
+      <location filename="../../CommandExtensionPack.cpp" line="683"/>
       <source>Add Cosmetic Thread Bolt Side View</source>
-      <translation type="unfinished">Add Cosmetic Thread Bolt Side View</translation>
+      <translation>Přidat kosmetické vlákno z Bolt Boční zobrazení</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="436"/>
-      <location filename="../../CommandExtensionPack.cpp" line="678"/>
+      <location filename="../../CommandExtensionPack.cpp" line="444"/>
+      <location filename="../../CommandExtensionPack.cpp" line="686"/>
       <source>Add a cosmetic thread to the side view of a bolt/screw/rod:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select two parallel lines&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic thread to the side view of a bolt/screw/rod:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select two parallel lines&lt;br&gt;- Click this tool</translation>
+      <translation>Přidejte kosmetické vlákno do bočního pohledu bolt/screw/rod:&lt;br&gt;- Specifikujte atributy řádků (volitelné)&lt;br&gt;- vyberte dvě rovnoběžné řádky&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionThreadHoleBottom</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="486"/>
+      <location filename="../../CommandExtensionPack.cpp" line="494"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="487"/>
-      <location filename="../../CommandExtensionPack.cpp" line="665"/>
+      <location filename="../../CommandExtensionPack.cpp" line="495"/>
+      <location filename="../../CommandExtensionPack.cpp" line="673"/>
       <source>Add Cosmetic Thread Hole Bottom View</source>
-      <translation type="unfinished">Add Cosmetic Thread Hole Bottom View</translation>
+      <translation>Přidat kosmetické vlákno dole díry</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="488"/>
-      <location filename="../../CommandExtensionPack.cpp" line="668"/>
+      <location filename="../../CommandExtensionPack.cpp" line="496"/>
+      <location filename="../../CommandExtensionPack.cpp" line="676"/>
       <source>Add a cosmetic thread to the top or bottom view of holes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select one or more circles&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add a cosmetic thread to the top or bottom view of holes:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select one or more circles&lt;br&gt;- Click this tool</translation>
+      <translation>Přidat kosmetické vlákno do horního nebo dolního pohledu díry:&lt;br&gt;- Specifikujte atributy řádků (volitelné)&lt;br&gt;- vyberte jeden nebo více kruhů&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawExtensionThreadHoleSide</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="382"/>
+      <location filename="../../CommandExtensionPack.cpp" line="390"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="383"/>
-      <location filename="../../CommandExtensionPack.cpp" line="656"/>
+      <location filename="../../CommandExtensionPack.cpp" line="391"/>
+      <location filename="../../CommandExtensionPack.cpp" line="664"/>
       <source>Add Cosmetic Thread Hole Side View</source>
       <translation type="unfinished">Add Cosmetic Thread Hole Side View</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="384"/>
-      <location filename="../../CommandExtensionPack.cpp" line="658"/>
+      <location filename="../../CommandExtensionPack.cpp" line="392"/>
+      <location filename="../../CommandExtensionPack.cpp" line="666"/>
       <source>Add a cosmetic thread to the side view of a hole:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select two parallel lines&lt;br&gt;- Click this tool</source>
       <translation type="unfinished">Add a cosmetic thread to the side view of a hole:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select two parallel lines&lt;br&gt;- Click this tool</translation>
     </message>
@@ -1354,17 +1354,17 @@
   <context>
     <name>CmdTechDrawExtensionThreadsGroup</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="573"/>
+      <location filename="../../CommandExtensionPack.cpp" line="581"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="574"/>
+      <location filename="../../CommandExtensionPack.cpp" line="582"/>
       <source>Add Cosmetic Thread Hole Side View</source>
       <translation type="unfinished">Add Cosmetic Thread Hole Side View</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="575"/>
+      <location filename="../../CommandExtensionPack.cpp" line="583"/>
       <source>Add a cosmetic thread to the side view of a hole:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select two parallel lines&lt;br&gt;- Click this tool</source>
       <translation type="unfinished">Add a cosmetic thread to the side view of a hole:&lt;br&gt;- Specify the line attributes (optional)&lt;br&gt;- Select two parallel lines&lt;br&gt;- Click this tool</translation>
     </message>
@@ -1372,19 +1372,19 @@
   <context>
     <name>CmdTechDrawExtensionVertexAtIntersection</name>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="808"/>
+      <location filename="../../CommandExtensionPack.cpp" line="816"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="809"/>
+      <location filename="../../CommandExtensionPack.cpp" line="817"/>
       <source>Add Cosmetic Intersection Vertex(es)</source>
       <translation type="unfinished">Add Cosmetic Intersection Vertex(es)</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="811"/>
-      <source>Add cosmetic vertex(es) at the intersection(s) of selected edges:&lt;br&gt;- Select two edges (lines, circles and/or arcs)&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Add cosmetic vertex(es) at the intersection(s) of selected edges:&lt;br&gt;- Select two edges (lines, circles and/or arcs)&lt;br&gt;- Click this tool</translation>
+      <location filename="../../CommandExtensionPack.cpp" line="819"/>
+      <source>Add cosmetic vertex(es) at the intersection(s) of selected edges:&lt;br&gt;- Select two edges&lt;br&gt;- Click this tool</source>
+      <translation type="unfinished">Add cosmetic vertex(es) at the intersection(s) of selected edges:&lt;br&gt;- Select two edges&lt;br&gt;- Click this tool</translation>
     </message>
   </context>
   <context>
@@ -1413,12 +1413,12 @@
   <context>
     <name>CmdTechDrawFaceCenterLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="671"/>
+      <location filename="../../CommandAnnotate.cpp" line="676"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="672"/>
+      <location filename="../../CommandAnnotate.cpp" line="677"/>
       <source>Add Centerline to Faces</source>
       <translation>Přidat osu na plochu/y</translation>
     </message>
@@ -1426,12 +1426,12 @@
   <context>
     <name>CmdTechDrawGeometricHatch</name>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="169"/>
+      <location filename="../../CommandDecorate.cpp" line="170"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="170"/>
+      <location filename="../../CommandDecorate.cpp" line="171"/>
       <source>Apply Geometric Hatch to Face</source>
       <translation>Použít geometrické šrafování na plochu</translation>
     </message>
@@ -1439,12 +1439,12 @@
   <context>
     <name>CmdTechDrawHatch</name>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="71"/>
+      <location filename="../../CommandDecorate.cpp" line="72"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="72"/>
+      <location filename="../../CommandDecorate.cpp" line="73"/>
       <source>Hatch a Face using Image File</source>
       <translation>Šrafovat plochu použitím obrazového souboru</translation>
     </message>
@@ -1478,28 +1478,28 @@
   <context>
     <name>CmdTechDrawImage</name>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="237"/>
+      <location filename="../../CommandDecorate.cpp" line="242"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="238"/>
+      <location filename="../../CommandDecorate.cpp" line="243"/>
       <source>Insert Bitmap Image</source>
       <translation>Vložit bitmapový obrázek</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="239"/>
-      <location filename="../../CommandDecorate.cpp" line="241"/>
+      <location filename="../../CommandDecorate.cpp" line="244"/>
+      <location filename="../../CommandDecorate.cpp" line="246"/>
       <source>Insert Bitmap from a file into a page</source>
       <translation>Vložit bitmapu ze souboru na stránku</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="256"/>
+      <location filename="../../CommandDecorate.cpp" line="261"/>
       <source>Select an Image File</source>
       <translation>Vyberte soubor obrázku</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="258"/>
+      <location filename="../../CommandDecorate.cpp" line="263"/>
       <source>Image files (*.jpg *.jpeg *.png *.bmp);;All files (*)</source>
       <translation type="unfinished">Image files (*.jpg *.jpeg *.png *.bmp);;All files (*)</translation>
     </message>
@@ -1520,12 +1520,12 @@
   <context>
     <name>CmdTechDrawLeaderLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="90"/>
+      <location filename="../../CommandAnnotate.cpp" line="92"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="91"/>
+      <location filename="../../CommandAnnotate.cpp" line="93"/>
       <source>Add Leaderline to View</source>
       <translation>Přidat odkazovou čáru do pohledu</translation>
     </message>
@@ -1559,12 +1559,12 @@
   <context>
     <name>CmdTechDrawMidpoints</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="450"/>
+      <location filename="../../CommandAnnotate.cpp" line="452"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="451"/>
+      <location filename="../../CommandAnnotate.cpp" line="453"/>
       <source>Add Midpoint Vertices</source>
       <translation>Přidat středy hran</translation>
     </message>
@@ -1585,35 +1585,35 @@
   <context>
     <name>CmdTechDrawPageTemplate</name>
     <message>
-      <location filename="../../Command.cpp" line="159"/>
+      <location filename="../../Command.cpp" line="164"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="160"/>
+      <location filename="../../Command.cpp" line="165"/>
       <source>Insert Page using Template</source>
       <translation>Vložit stránku pomocí šablony</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="173"/>
+      <location filename="../../Command.cpp" line="178"/>
       <source>Select a Template File</source>
       <translation>Vybrat šablonu</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="174"/>
-      <source>Template (*.svg *.dxf)</source>
-      <translation>Šablona (*.svg *.dxf)</translation>
+      <location filename="../../Command.cpp" line="179"/>
+      <source>Template (*.svg)</source>
+      <translation type="unfinished">Template (*.svg)</translation>
     </message>
   </context>
   <context>
     <name>CmdTechDrawPrintAll</name>
     <message>
-      <location filename="../../Command.cpp" line="272"/>
+      <location filename="../../Command.cpp" line="281"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="273"/>
+      <location filename="../../Command.cpp" line="282"/>
       <source>Print All Pages</source>
       <translation type="unfinished">Print All Pages</translation>
     </message>
@@ -1621,12 +1621,12 @@
   <context>
     <name>CmdTechDrawProjectShape</name>
     <message>
-      <location filename="../../Command.cpp" line="1630"/>
+      <location filename="../../Command.cpp" line="1656"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1631"/>
+      <location filename="../../Command.cpp" line="1657"/>
       <source>Project shape...</source>
       <translation>Projekce tvaru...</translation>
     </message>
@@ -1634,17 +1634,17 @@
   <context>
     <name>CmdTechDrawProjectionGroup</name>
     <message>
-      <location filename="../../Command.cpp" line="796"/>
+      <location filename="../../Command.cpp" line="804"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="797"/>
+      <location filename="../../Command.cpp" line="805"/>
       <source>Insert Projection Group</source>
       <translation>Vložit skupinu promítnutí</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="798"/>
+      <location filename="../../Command.cpp" line="806"/>
       <source>Insert multiple linked views of drawable object(s)</source>
       <translation>Vložit několik propojených pohledů zobrazitelného objektu/ů</translation>
     </message>
@@ -1652,12 +1652,12 @@
   <context>
     <name>CmdTechDrawQuadrants</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="489"/>
+      <location filename="../../CommandAnnotate.cpp" line="491"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="490"/>
+      <location filename="../../CommandAnnotate.cpp" line="492"/>
       <source>Add Quadrant Vertices</source>
       <translation>Přidat pravoúhlé vrcholy</translation>
     </message>
@@ -1678,12 +1678,12 @@
   <context>
     <name>CmdTechDrawRedrawPage</name>
     <message>
-      <location filename="../../Command.cpp" line="236"/>
+      <location filename="../../Command.cpp" line="245"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="237"/>
+      <location filename="../../Command.cpp" line="246"/>
       <source>Redraw Page</source>
       <translation>Překreslit stránku</translation>
     </message>
@@ -1691,12 +1691,12 @@
   <context>
     <name>CmdTechDrawRichTextAnnotation</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="152"/>
+      <location filename="../../CommandAnnotate.cpp" line="154"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="153"/>
+      <location filename="../../CommandAnnotate.cpp" line="155"/>
       <source>Insert Rich Text Annotation</source>
       <translation>Vložit poznámku řádkovým textem</translation>
     </message>
@@ -1704,22 +1704,22 @@
   <context>
     <name>CmdTechDrawSectionGroup</name>
     <message>
-      <location filename="../../Command.cpp" line="467"/>
+      <location filename="../../Command.cpp" line="479"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="468"/>
+      <location filename="../../Command.cpp" line="480"/>
       <source>Insert a simple or complex Section View</source>
       <translation type="unfinished">Insert a simple or complex Section View</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="533"/>
+      <location filename="../../Command.cpp" line="545"/>
       <source>Section View</source>
       <translation>Pohled řezu</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="537"/>
+      <location filename="../../Command.cpp" line="549"/>
       <source>Complex Section</source>
       <translation type="unfinished">Complex Section</translation>
     </message>
@@ -1727,12 +1727,12 @@
   <context>
     <name>CmdTechDrawSectionView</name>
     <message>
-      <location filename="../../Command.cpp" line="559"/>
+      <location filename="../../Command.cpp" line="571"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="560"/>
+      <location filename="../../Command.cpp" line="572"/>
       <source>Insert Section View</source>
       <translation>Vložit pohled řezu</translation>
     </message>
@@ -1740,12 +1740,12 @@
   <context>
     <name>CmdTechDrawShowAll</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1323"/>
+      <location filename="../../CommandAnnotate.cpp" line="1477"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1324"/>
+      <location filename="../../CommandAnnotate.cpp" line="1478"/>
       <source>Show/Hide Invisible Edges</source>
       <translation>Zobrazit/skrýt neviditelné hrany</translation>
     </message>
@@ -1753,17 +1753,17 @@
   <context>
     <name>CmdTechDrawSpreadsheetView</name>
     <message>
-      <location filename="../../Command.cpp" line="1464"/>
+      <location filename="../../Command.cpp" line="1488"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1465"/>
+      <location filename="../../Command.cpp" line="1489"/>
       <source>Insert Spreadsheet View</source>
       <translation>Vložit zobrazení tabulky</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1466"/>
+      <location filename="../../Command.cpp" line="1490"/>
       <source>Insert View to a spreadsheet</source>
       <translation>Vložit pohled do tabulky</translation>
     </message>
@@ -1856,17 +1856,17 @@
   <context>
     <name>CmdTechDrawSurfaceFinishSymbols</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1452"/>
+      <location filename="../../CommandAnnotate.cpp" line="1606"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1453"/>
+      <location filename="../../CommandAnnotate.cpp" line="1607"/>
       <source>Create a Surface Finish Symbol</source>
       <translation type="unfinished">Create a Surface Finish Symbol</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1454"/>
+      <location filename="../../CommandAnnotate.cpp" line="1608"/>
       <source>Select a view&lt;br&gt;    - click this button&lt;br&gt;    - select surface finish symbol attributes in opened panel</source>
       <translation type="unfinished">Select a view&lt;br&gt;    - click this button&lt;br&gt;    - select surface finish symbol attributes in opened panel</translation>
     </message>
@@ -1874,17 +1874,17 @@
   <context>
     <name>CmdTechDrawSymbol</name>
     <message>
-      <location filename="../../Command.cpp" line="1293"/>
+      <location filename="../../Command.cpp" line="1300"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1294"/>
+      <location filename="../../Command.cpp" line="1301"/>
       <source>Insert SVG Symbol</source>
       <translation>Vložit SVG Symbol</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1295"/>
+      <location filename="../../Command.cpp" line="1302"/>
       <source>Insert symbol from an SVG file</source>
       <translation>Vložit symbol z SVG souboru</translation>
     </message>
@@ -1892,13 +1892,13 @@
   <context>
     <name>CmdTechDrawToggleFrame</name>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="288"/>
+      <location filename="../../CommandDecorate.cpp" line="295"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="289"/>
-      <location filename="../../CommandDecorate.cpp" line="290"/>
+      <location filename="../../CommandDecorate.cpp" line="296"/>
+      <location filename="../../CommandDecorate.cpp" line="297"/>
       <source>Turn View Frames On/Off</source>
       <translation>Zapnout nebo vypnout zobrazení rámců</translation>
     </message>
@@ -1932,17 +1932,17 @@
   <context>
     <name>CmdTechDrawView</name>
     <message>
-      <location filename="../../Command.cpp" line="297"/>
+      <location filename="../../Command.cpp" line="306"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="298"/>
+      <location filename="../../Command.cpp" line="307"/>
       <source>Insert View</source>
       <translation>Vložit zobrazení</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="299"/>
+      <location filename="../../Command.cpp" line="308"/>
       <source>Insert a View</source>
       <translation>Vložit pohled</translation>
     </message>
@@ -1950,12 +1950,12 @@
   <context>
     <name>CmdTechDrawWeldSymbol</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1388"/>
+      <location filename="../../CommandAnnotate.cpp" line="1542"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1389"/>
+      <location filename="../../CommandAnnotate.cpp" line="1543"/>
       <source>Add Welding Information to Leaderline</source>
       <translation>Přidat svarovou informaci na odkazovou čáru</translation>
     </message>
@@ -1964,139 +1964,145 @@
     <name>Command</name>
     <message>
       <location filename="../../Command.cpp" line="116"/>
-      <location filename="../../Command.cpp" line="187"/>
+      <location filename="../../Command.cpp" line="192"/>
       <source>Drawing create page</source>
       <translation>Vytvořit stránku</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="383"/>
+      <location filename="../../Command.cpp" line="393"/>
       <source>Create view</source>
       <translation>Vytvořit pohled</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="881"/>
+      <location filename="../../Command.cpp" line="888"/>
       <source>Create Projection Group</source>
       <translation>Vytvořit skupinu promítání</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1117"/>
+      <location filename="../../Command.cpp" line="1124"/>
       <source>Create Clip</source>
       <translation>Vytvořit výřez</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1189"/>
+      <location filename="../../Command.cpp" line="1196"/>
       <source>ClipGroupAdd</source>
       <translation>Přidat do skupiny výřezu</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1260"/>
+      <location filename="../../Command.cpp" line="1267"/>
       <source>ClipGroupRemove</source>
       <translation>Odebrat ze skupiny výřezu</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1319"/>
+      <location filename="../../Command.cpp" line="1326"/>
       <source>Create Symbol</source>
       <translation>Vytvořit symbol</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1375"/>
+      <location filename="../../Command.cpp" line="1390"/>
       <source>Create DraftView</source>
-      <translation>Vytvořit Draft pohled</translation>
+      <translation>Vytvořit pohled návrhu</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1442"/>
+      <location filename="../../Command.cpp" line="1464"/>
       <source>Create ArchView</source>
       <translation>Vytvořit Arch pohled</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1490"/>
+      <location filename="../../Command.cpp" line="1514"/>
       <source>Create spreadsheet view</source>
       <translation>Vytvořit pohled tabulky</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1610"/>
-      <location filename="../../MDIViewPage.cpp" line="716"/>
+      <location filename="../../PagePrinter.cpp" line="373"/>
+      <location filename="../../Command.cpp" line="1636"/>
       <source>Save page to dxf</source>
       <translation>Uložit stránku do dxf</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="338"/>
+      <location filename="../../CommandAnnotate.cpp" line="340"/>
       <source>Add Midpoint Vertices</source>
       <translation>Přidat středy hran</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="364"/>
+      <location filename="../../CommandAnnotate.cpp" line="366"/>
       <source>Add Quadrant Vertices</source>
       <translation>Přidat pravoúhlé vrcholy</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="546"/>
+      <location filename="../../CommandAnnotate.cpp" line="548"/>
       <source>Create Annotation</source>
       <translation>Vytvořit poznámku</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="1305"/>
-      <location filename="../../CommandCreateDims.cpp" line="1385"/>
+      <location filename="../../CommandCreateDims.cpp" line="1388"/>
       <source>Create Dimension</source>
       <translation>Vytvořit kótu</translation>
     </message>
     <message>
-      <location filename="../../TaskHatch.cpp" line="203"/>
+      <location filename="../../TaskHatch.cpp" line="208"/>
       <source>Create Hatch</source>
       <translation>Vytvoří šrafování</translation>
     </message>
     <message>
-      <location filename="../../TaskHatch.cpp" line="237"/>
+      <location filename="../../TaskHatch.cpp" line="244"/>
       <source>Update Hatch</source>
       <translation type="unfinished">Update Hatch</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="118"/>
+      <location filename="../../CommandDecorate.cpp" line="119"/>
       <source>Remove old Hatch</source>
       <translation type="unfinished">Remove old Hatch</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="197"/>
+      <location filename="../../CommandDecorate.cpp" line="200"/>
       <source>Create GeomHatch</source>
       <translation>Vytvořit geometrické šrafy</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="265"/>
+      <location filename="../../CommandDecorate.cpp" line="270"/>
       <source>Create Image</source>
       <translation>Vytvořit obrázek</translation>
     </message>
     <message>
-      <location filename="../../QGIViewBalloon.cpp" line="478"/>
+      <location filename="../../QGIViewBalloon.cpp" line="488"/>
       <source>Drag Balloon</source>
       <translation>Táhnout balon</translation>
     </message>
     <message>
-      <location filename="../../QGIViewDimension.cpp" line="688"/>
+      <location filename="../../QGIViewDimension.cpp" line="694"/>
       <source>Drag Dimension</source>
       <translation>Táhnout kótu</translation>
     </message>
     <message>
-      <location filename="../../QGSPage.cpp" line="528"/>
+      <location filename="../../QGSPage.cpp" line="527"/>
       <source>Create Balloon</source>
       <translation>Vytvořit balon</translation>
     </message>
     <message>
-      <location filename="../../TaskActiveView.cpp" line="235"/>
+      <location filename="../../TaskActiveView.cpp" line="242"/>
       <source>Create ActiveView</source>
       <translation>Vytvořit aktivní pohled</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.cpp" line="332"/>
+      <location filename="../../TaskCenterLine.cpp" line="406"/>
       <source>Create CenterLine</source>
       <translation>Vytvořit osu</translation>
     </message>
     <message>
-      <location filename="../../TaskCosmeticLine.cpp" line="168"/>
+      <location filename="../../TaskCosmeticLine.cpp" line="187"/>
+      <location filename="../../TaskCosmeticCircle.cpp" line="168"/>
       <source>Create Cosmetic Line</source>
       <translation>Vytvořit pomocnou čáru</translation>
     </message>
     <message>
-      <location filename="../../TaskCosmeticLine.cpp" line="237"/>
+      <location filename="../../TaskCosmeticCircle.cpp" line="230"/>
+      <source>Update CosmeticCircle</source>
+      <translation type="unfinished">Update CosmeticCircle</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticLine.cpp" line="241"/>
       <source>Update CosmeticLine</source>
       <translation>Aktualizovat pomocnou čáru</translation>
     </message>
@@ -2106,60 +2112,65 @@
       <translation>Vytvořit detail pohledu</translation>
     </message>
     <message>
-      <location filename="../../TaskDetail.cpp" line="472"/>
+      <location filename="../../TaskDetail.cpp" line="477"/>
       <source>Update Detail</source>
       <translation>Aktualizovat detail</translation>
     </message>
     <message>
-      <location filename="../../TaskLeaderLine.cpp" line="343"/>
+      <location filename="../../TaskLeaderLine.cpp" line="344"/>
       <source>Create Leader</source>
       <translation>Vytvořit odkaz</translation>
     </message>
     <message>
-      <location filename="../../TaskLeaderLine.cpp" line="398"/>
+      <location filename="../../TaskLeaderLine.cpp" line="402"/>
       <source>Edit Leader</source>
       <translation>Upravit odkaz</translation>
     </message>
     <message>
-      <location filename="../../TaskRichAnno.cpp" line="288"/>
+      <location filename="../../TaskRichAnno.cpp" line="290"/>
       <source>Create Anno</source>
       <translation>Vytvořit popisek</translation>
     </message>
     <message>
-      <location filename="../../TaskRichAnno.cpp" line="347"/>
+      <location filename="../../TaskRichAnno.cpp" line="352"/>
       <source>Edit Anno</source>
       <translation>Upravit popisek</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.cpp" line="501"/>
+      <location filename="../../TaskSectionView.cpp" line="504"/>
       <source>Create SectionView</source>
       <translation>Vytvořit řez</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.cpp" line="559"/>
+      <location filename="../../TaskComplexSection.cpp" line="560"/>
       <source>Create ComplexSection</source>
       <translation type="unfinished">Create ComplexSection</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.cpp" line="642"/>
-      <location filename="../../TaskSectionView.cpp" line="561"/>
+      <location filename="../../TaskComplexSection.cpp" line="661"/>
+      <location filename="../../TaskSectionView.cpp" line="594"/>
       <source>Edit SectionView</source>
       <translation type="unfinished">Edit SectionView</translation>
     </message>
     <message>
-      <location filename="../../TaskWeldingSymbol.cpp" line="601"/>
+      <location filename="../../TaskWeldingSymbol.cpp" line="607"/>
       <source>Create WeldSymbol</source>
       <translation>Vytvořit symbol svaru</translation>
     </message>
     <message>
-      <location filename="../../TaskWeldingSymbol.cpp" line="609"/>
+      <location filename="../../TaskWeldingSymbol.cpp" line="615"/>
       <source>Edit WeldSymbol</source>
       <translation>Upravit symbol svaru</translation>
     </message>
     <message>
-      <location filename="../../TaskCosVertex.cpp" line="135"/>
+      <location filename="../../TaskCosVertex.cpp" line="137"/>
       <source>Add Cosmetic Vertex</source>
       <translation>Přidat pomocný vrchol</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="105"/>
+      <source>TechDraw Insert Prefix</source>
+      <translation type="unfinished">TechDraw Insert Prefix</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="109"/>
@@ -2167,9 +2178,14 @@
       <translation type="unfinished">Insert Prefix</translation>
     </message>
     <message>
+      <location filename="../../CommandExtensionDims.cpp" line="191"/>
+      <source>TechDraw Remove Prefix</source>
+      <translation type="unfinished">TechDraw Remove Prefix</translation>
+    </message>
+    <message>
       <location filename="../../CommandExtensionDims.cpp" line="195"/>
       <source>Remove Prefix</source>
-      <translation type="unfinished">Remove Prefix</translation>
+      <translation>Odstranit předponu</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="367"/>
@@ -2252,94 +2268,179 @@
       <translation type="unfinished">Create Arc Length Dim</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="117"/>
+      <location filename="../../CommandExtensionPack.cpp" line="105"/>
+      <source>TechDraw Hole Circle</source>
+      <translation type="unfinished">TechDraw Hole Circle</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="125"/>
       <source>Bolt Circle Centerlines</source>
       <translation type="unfinished">Bolt Circle Centerlines</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="188"/>
+      <location filename="../../CommandExtensionPack.cpp" line="194"/>
+      <source>TechDraw Circle Centerlines</source>
+      <translation type="unfinished">TechDraw Circle Centerlines</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="196"/>
       <source>Circle Centerlines</source>
       <translation type="unfinished">Circle Centerlines</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="365"/>
+      <location filename="../../CommandExtensionPack.cpp" line="371"/>
+      <source>TechDraw Thread Hole Side</source>
+      <translation type="unfinished">TechDraw Thread Hole Side</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="373"/>
       <source>Cosmetic Thread Hole Side</source>
       <translation type="unfinished">Cosmetic Thread Hole Side</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="417"/>
+      <location filename="../../CommandExtensionPack.cpp" line="423"/>
+      <source>TechDraw Thread Bolt Side</source>
+      <translation type="unfinished">TechDraw Thread Bolt Side</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="425"/>
       <source>Cosmetic Thread Bolt Side</source>
       <translation type="unfinished">Cosmetic Thread Bolt Side</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="469"/>
+      <location filename="../../CommandExtensionPack.cpp" line="475"/>
+      <source>TechDraw Thread Hole Bottom</source>
+      <translation type="unfinished">TechDraw Thread Hole Bottom</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="477"/>
       <source>Cosmetic Thread Hole Bottom</source>
       <translation type="unfinished">Cosmetic Thread Hole Bottom</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="521"/>
+      <location filename="../../CommandExtensionPack.cpp" line="527"/>
+      <source>TechDraw Thread Bolt Bottom</source>
+      <translation>TechDraw vlákno dole</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="529"/>
       <source>Cosmetic Thread Bolt Bottom</source>
-      <translation type="unfinished">Cosmetic Thread Bolt Bottom</translation>
+      <translation>Kosmetické vlákno dole</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="767"/>
+      <location filename="../../CommandExtensionPack.cpp" line="773"/>
+      <source>TechDraw Change Line Attributes</source>
+      <translation>TechDraw změněné atributy řádku</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="775"/>
       <source>Change Line Attributes</source>
-      <translation type="unfinished">Change Line Attributes</translation>
+      <translation>Změnit atributy řádku</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="827"/>
+      <location filename="../../CommandExtensionPack.cpp" line="833"/>
+      <source>TechDraw Cosmetic Intersection Vertex(es)</source>
+      <translation>TechDraw Kosmetický Intersection Vertex(y)</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="835"/>
       <source>Cosmetic Intersection Vertex(es)</source>
-      <translation type="unfinished">Cosmetic Intersection Vertex(es)</translation>
+      <translation>Vertex(y) kosmetického intersekce</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="874"/>
+      <location filename="../../CommandExtensionPack.cpp" line="876"/>
+      <source>TechDraw Cosmetic Arc</source>
+      <translation>TechDraw kosmetický oblouk</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="878"/>
       <source>Cosmetic Arc</source>
-      <translation type="unfinished">Cosmetic Arc</translation>
+      <translation>Kosmetický oblouk</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="939"/>
+      <location filename="../../CommandExtensionPack.cpp" line="940"/>
+      <source>TechDraw Cosmetic Circle</source>
+      <translation>TechDraw Kosmetický kruh</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="942"/>
       <source>Cosmetic Circle</source>
-      <translation type="unfinished">Cosmetic Circle</translation>
+      <translation>Kosmetický kruh</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionPack.cpp" line="1001"/>
+      <source>TechDraw Cosmetic Circle 3 Points</source>
+      <translation>TechDraw Kosmetický kruh 3 body</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1003"/>
       <source>Cosmetic Circle 3 Points</source>
-      <translation type="unfinished">Cosmetic Circle 3 Points</translation>
+      <translation>Kosmetický kruh 3 body</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionPack.cpp" line="1189"/>
+      <source>TechDraw Cosmetic Line Parallel/Perpendicular</source>
+      <translation>TechDraw paralelní/kolmá kosmetická čára</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1191"/>
       <source>Cosmetic Line Parallel/Perpendicular</source>
-      <translation type="unfinished">Cosmetic Line Parallel/Perpendicular</translation>
+      <translation>Souběžná osmetická čára</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionPack.cpp" line="1425"/>
+      <source>TechDraw Lock/Unlock View</source>
+      <translation>TechDraw zamknutí/odemknutí zobrazení</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1427"/>
       <source>Lock/Unlock View</source>
-      <translation type="unfinished">Lock/Unlock View</translation>
+      <translation>Zamknout / Odemknout zobrazení</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionPack.cpp" line="1529"/>
-      <source>Extend/Shorten Line</source>
-      <translation type="unfinished">Extend/Shorten Line</translation>
+      <source>TechDraw Extend/Shorten Line</source>
+      <translation>TechDraw rozšíření/zkrácený řádek</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1854"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1531"/>
+      <source>Extend/Shorten Line</source>
+      <translation>Rozšíření/Zkrácená čára</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1793"/>
+      <source>TechDraw calculate selected area</source>
+      <translation>TechDraw vypočítejte vybranou oblast</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1834"/>
       <source>Calculate Face Area</source>
-      <translation type="unfinished">Calculate Face Area</translation>
+      <translation>Vypočítat plochu tváře</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1923"/>
+      <source>TechDraw calculate selected arc length</source>
+      <translation type="unfinished">TechDraw calculate selected arc length</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1961"/>
+      <source>Calculate Edge Length</source>
+      <translation type="unfinished">Calculate Edge Length</translation>
     </message>
     <message>
       <location filename="../../TaskCustomizeFormat.cpp" line="191"/>
       <source>Customize Format</source>
-      <translation type="unfinished">Customize Format</translation>
+      <translation>Přizpůsobit formát</translation>
     </message>
     <message>
       <location filename="../../TaskSurfaceFinishSymbols.cpp" line="321"/>
       <source>Surface Finish Symbols</source>
-      <translation type="unfinished">Surface Finish Symbols</translation>
+      <translation>Symboly pro povrchovou konečnou úpravu</translation>
     </message>
     <message>
       <location filename="../../TaskDimRepair.cpp" line="239"/>
       <source>Repair Dimension</source>
-      <translation type="unfinished">Repair Dimension</translation>
+      <translation>Rozměr opravy</translation>
     </message>
   </context>
   <context>
@@ -2347,22 +2448,22 @@
     <message>
       <location filename="../../Widgets/CompassWidget.cpp" line="158"/>
       <source>View Direction as Angle</source>
-      <translation type="unfinished">View Direction as Angle</translation>
+      <translation>Zobrazit směr jako úhel</translation>
     </message>
     <message>
       <location filename="../../Widgets/CompassWidget.cpp" line="160"/>
       <source>The view direction angle relative to +X in the BaseView.</source>
-      <translation type="unfinished">The view direction angle relative to +X in the BaseView.</translation>
+      <translation>Úhel směru pohledu vzhledem k +X v BaseView.</translation>
     </message>
     <message>
       <location filename="../../Widgets/CompassWidget.cpp" line="162"/>
       <source>Advance the view direction in clockwise direction.</source>
-      <translation type="unfinished">Advance the view direction in clockwise direction.</translation>
+      <translation>Posunout směr pohledu ve směru hodinových ručiček.</translation>
     </message>
     <message>
       <location filename="../../Widgets/CompassWidget.cpp" line="164"/>
       <source>Advance the view direction in anti-clockwise direction.</source>
-      <translation type="unfinished">Advance the view direction in anti-clockwise direction.</translation>
+      <translation>Posunout směr pohledu proti směru hodinových ručiček.</translation>
     </message>
   </context>
   <context>
@@ -2603,68 +2704,67 @@
   <context>
     <name>QObject</name>
     <message>
-      <location filename="../../Command.cpp" line="375"/>
-      <location filename="../../Command.cpp" line="601"/>
-      <location filename="../../Command.cpp" line="718"/>
-      <location filename="../../Command.cpp" line="725"/>
-      <location filename="../../Command.cpp" line="730"/>
-      <location filename="../../Command.cpp" line="767"/>
-      <location filename="../../Command.cpp" line="873"/>
-      <location filename="../../Command.cpp" line="1149"/>
-      <location filename="../../Command.cpp" line="1166"/>
-      <location filename="../../Command.cpp" line="1171"/>
-      <location filename="../../Command.cpp" line="1180"/>
-      <location filename="../../Command.cpp" line="1233"/>
-      <location filename="../../Command.cpp" line="1252"/>
-      <location filename="../../Command.cpp" line="1365"/>
-      <location filename="../../Command.cpp" line="1429"/>
-      <location filename="../../Command.cpp" line="1435"/>
-      <location filename="../../Command.cpp" line="1478"/>
-      <location filename="../../CommandAnnotate.cpp" line="316"/>
-      <location filename="../../CommandAnnotate.cpp" line="415"/>
-      <location filename="../../CommandAnnotate.cpp" line="1152"/>
-      <location filename="../../CommandAnnotate.cpp" line="1160"/>
-      <location filename="../../CommandAnnotate.cpp" line="1207"/>
-      <location filename="../../CommandAnnotate.cpp" line="1349"/>
-      <location filename="../../CommandAnnotate.cpp" line="1356"/>
-      <location filename="../../CommandAnnotate.cpp" line="1420"/>
+      <location filename="../../CommandAnnotate.cpp" line="318"/>
+      <location filename="../../CommandAnnotate.cpp" line="417"/>
+      <location filename="../../CommandAnnotate.cpp" line="1306"/>
+      <location filename="../../CommandAnnotate.cpp" line="1314"/>
+      <location filename="../../CommandAnnotate.cpp" line="1361"/>
+      <location filename="../../CommandAnnotate.cpp" line="1503"/>
+      <location filename="../../CommandAnnotate.cpp" line="1510"/>
+      <location filename="../../CommandAnnotate.cpp" line="1574"/>
       <location filename="../../CommandCreateDims.cpp" line="1277"/>
       <location filename="../../CommandCreateDims.cpp" line="1286"/>
+      <location filename="../../Command.cpp" line="379"/>
+      <location filename="../../Command.cpp" line="608"/>
+      <location filename="../../Command.cpp" line="725"/>
+      <location filename="../../Command.cpp" line="732"/>
+      <location filename="../../Command.cpp" line="737"/>
+      <location filename="../../Command.cpp" line="775"/>
+      <location filename="../../Command.cpp" line="874"/>
+      <location filename="../../Command.cpp" line="1156"/>
+      <location filename="../../Command.cpp" line="1173"/>
+      <location filename="../../Command.cpp" line="1178"/>
+      <location filename="../../Command.cpp" line="1187"/>
+      <location filename="../../Command.cpp" line="1240"/>
+      <location filename="../../Command.cpp" line="1259"/>
+      <location filename="../../Command.cpp" line="1369"/>
+      <location filename="../../Command.cpp" line="1445"/>
+      <location filename="../../Command.cpp" line="1451"/>
+      <location filename="../../Command.cpp" line="1502"/>
       <source>Wrong selection</source>
       <translation>Neplatný výběr</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="376"/>
-      <location filename="../../Command.cpp" line="874"/>
+      <location filename="../../Command.cpp" line="380"/>
+      <location filename="../../Command.cpp" line="875"/>
       <source>No Shapes, Groups or Links in this selection</source>
       <translation>Žádné Tvary, Skupiny ani Odkazy v tomto výběru</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="602"/>
-      <location filename="../../Command.cpp" line="768"/>
+      <location filename="../../Command.cpp" line="609"/>
+      <location filename="../../Command.cpp" line="776"/>
       <source>Select at least 1 DrawViewPart object as Base.</source>
       <translation>Vyberte alespoň 1 objekt zobrazení části jako základnu.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="719"/>
-      <source>I do not know what base view to use.</source>
-      <translation type="unfinished">I do not know what base view to use.</translation>
-    </message>
-    <message>
       <location filename="../../Command.cpp" line="726"/>
+      <source>I do not know what base view to use.</source>
+      <translation>Nevím, jaký základní pohled se má použít.</translation>
+    </message>
+    <message>
+      <location filename="../../Command.cpp" line="733"/>
       <source>No Base View, Shapes, Groups or Links in this selection</source>
-      <translation type="unfinished">No Base View, Shapes, Groups or Links in this selection</translation>
+      <translation>Žádné základní zobrazení, tvary, skupiny nebo odkazy v tomto výběru</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="731"/>
+      <location filename="../../Command.cpp" line="738"/>
       <source>No profile object found in selection</source>
-      <translation type="unfinished">No profile object found in selection</translation>
+      <translation>Ve výběru nebyl nalezen žádný objekt profilu</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="951"/>
-      <location filename="../../Command.cpp" line="958"/>
-      <location filename="../../Command.cpp" line="966"/>
-      <location filename="../../Command.cpp" line="978"/>
+      <location filename="../../CommandDecorate.cpp" line="369"/>
+      <location filename="../../CommandDecorate.cpp" line="376"/>
+      <location filename="../../CommandDecorate.cpp" line="383"/>
       <location filename="../../CommandCreateDims.cpp" line="166"/>
       <location filename="../../CommandCreateDims.cpp" line="292"/>
       <location filename="../../CommandCreateDims.cpp" line="418"/>
@@ -2673,36 +2773,37 @@
       <location filename="../../CommandCreateDims.cpp" line="713"/>
       <location filename="../../CommandCreateDims.cpp" line="809"/>
       <location filename="../../CommandCreateDims.cpp" line="1084"/>
-      <location filename="../../CommandCreateDims.cpp" line="1437"/>
-      <location filename="../../CommandCreateDims.cpp" line="1445"/>
-      <location filename="../../CommandCreateDims.cpp" line="1454"/>
-      <location filename="../../CommandDecorate.cpp" line="344"/>
-      <location filename="../../CommandDecorate.cpp" line="351"/>
-      <location filename="../../CommandDecorate.cpp" line="358"/>
+      <location filename="../../CommandCreateDims.cpp" line="1443"/>
+      <location filename="../../CommandCreateDims.cpp" line="1451"/>
+      <location filename="../../CommandCreateDims.cpp" line="1460"/>
+      <location filename="../../Command.cpp" line="958"/>
+      <location filename="../../Command.cpp" line="965"/>
+      <location filename="../../Command.cpp" line="973"/>
+      <location filename="../../Command.cpp" line="985"/>
       <location filename="../../CommandExtensionPack.cpp" line="1808"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1937"/>
       <source>Incorrect selection</source>
       <translation>Nesprávný výběr</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="952"/>
-      <location filename="../../CommandCreateDims.cpp" line="1438"/>
+      <location filename="../../CommandCreateDims.cpp" line="1444"/>
+      <location filename="../../Command.cpp" line="959"/>
       <source>Select an object first</source>
       <translation>Nejprve vyberte objekt</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="959"/>
-      <location filename="../../CommandCreateDims.cpp" line="1446"/>
+      <location filename="../../CommandCreateDims.cpp" line="1452"/>
+      <location filename="../../Command.cpp" line="966"/>
       <source>Too many objects selected</source>
       <translation>Příliš mnoho vybraných objektů</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="967"/>
-      <location filename="../../CommandCreateDims.cpp" line="1455"/>
+      <location filename="../../CommandCreateDims.cpp" line="1461"/>
+      <location filename="../../Command.cpp" line="974"/>
       <source>Create a page first.</source>
       <translation>Vytvořte nejprve stránku.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="979"/>
       <location filename="../../CommandCreateDims.cpp" line="167"/>
       <location filename="../../CommandCreateDims.cpp" line="293"/>
       <location filename="../../CommandCreateDims.cpp" line="419"/>
@@ -2711,91 +2812,92 @@
       <location filename="../../CommandCreateDims.cpp" line="714"/>
       <location filename="../../CommandCreateDims.cpp" line="810"/>
       <location filename="../../CommandCreateDims.cpp" line="1085"/>
+      <location filename="../../Command.cpp" line="986"/>
       <source>No View of a Part in selection.</source>
       <translation>Ve výběru není zobrazení součásti.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1150"/>
+      <location filename="../../Command.cpp" line="1157"/>
       <source>Select one Clip group and one View.</source>
       <translation>Vyberte jednu Sepnutou skupinu a jeden Pohled.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1167"/>
+      <location filename="../../Command.cpp" line="1174"/>
       <source>Select exactly one View to add to group.</source>
       <translation>Vyberte právě jedno zobrazení pro přidání do skupiny.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1172"/>
+      <location filename="../../Command.cpp" line="1179"/>
       <source>Select exactly one Clip group.</source>
       <translation>Vyberte právě jedno zobrazení sepnuté skupiny.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1181"/>
+      <location filename="../../Command.cpp" line="1188"/>
       <source>Clip and View must be from same Page.</source>
       <translation>Sepnutí a Zobrazení musí být na společné stránce.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1234"/>
+      <location filename="../../Command.cpp" line="1241"/>
       <source>Select exactly one View to remove from Group.</source>
       <translation>Vyberte právě jedno zobrazení pro odstranění ze skupiny.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1253"/>
+      <location filename="../../Command.cpp" line="1260"/>
       <source>View does not belong to a Clip</source>
       <translation>Zobrazení není součástí Sepnutí</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1312"/>
+      <location filename="../../Command.cpp" line="1319"/>
       <source>Choose an SVG file to open</source>
       <translation>Zvolte soubor SVG pro otevření</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1314"/>
+      <location filename="../../Command.cpp" line="1321"/>
       <source>Scalable Vector Graphic</source>
       <translation>Škálovatelná vektorová grafika</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1314"/>
+      <location filename="../../Command.cpp" line="1321"/>
       <source>All Files</source>
       <translation>Všechny soubory</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1366"/>
+      <location filename="../../Command.cpp" line="1370"/>
       <source>Select at least one object.</source>
       <translation>Vyberte alespoň jeden objekt.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1430"/>
+      <location filename="../../Command.cpp" line="1446"/>
       <source>Please select only 1 Arch Section.</source>
       <translation>Prosím, vyberte pouze 1 sekci z prostředí Arch.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1436"/>
+      <location filename="../../Command.cpp" line="1452"/>
       <source>No Arch Sections in selection.</source>
       <translation>Žádná sekce z prostředí Arch ve výběru.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1479"/>
+      <location filename="../../Command.cpp" line="1503"/>
       <source>Select exactly one Spreadsheet object.</source>
       <translation>Vyberte právě jeden objekt Tabulky.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1551"/>
+      <location filename="../../Command.cpp" line="1577"/>
       <source>No Drawing View</source>
       <translation>Žádné zobrazení výkresu</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1552"/>
+      <location filename="../../Command.cpp" line="1578"/>
       <source>Open Drawing View before attempting export to SVG.</source>
       <translation>Otevřete zobrazení výkresu před exportem do SVG.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1587"/>
+      <location filename="../../Command.cpp" line="1613"/>
       <source>Can not export selection</source>
       <translation>Nelze exportovat výběr</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1588"/>
+      <location filename="../../Command.cpp" line="1614"/>
       <source>Page contains DrawViewArch which will not be exported. Continue?</source>
       <translation>Stránka obsahuje pohled kresby z prostředí Arch, který nebude exportován. Pokračovat?</translation>
     </message>
@@ -2822,6 +2924,8 @@
       <translation>Vybraná hrana je BSplajn. Poloměr bude přibližný. Pokračovat?</translation>
     </message>
     <message>
+      <location filename="../../CommandDecorate.cpp" line="390"/>
+      <location filename="../../CommandDecorate.cpp" line="396"/>
       <location filename="../../CommandCreateDims.cpp" line="187"/>
       <location filename="../../CommandCreateDims.cpp" line="202"/>
       <location filename="../../CommandCreateDims.cpp" line="313"/>
@@ -2841,45 +2945,43 @@
       <location filename="../../CommandCreateDims.cpp" line="1112"/>
       <location filename="../../CommandCreateDims.cpp" line="1126"/>
       <location filename="../../CommandCreateDims.cpp" line="1218"/>
-      <location filename="../../CommandDecorate.cpp" line="365"/>
-      <location filename="../../CommandDecorate.cpp" line="371"/>
-      <location filename="../../TaskDimension.cpp" line="400"/>
       <location filename="../../TaskDimRepair.cpp" line="126"/>
       <location filename="../../TaskDimRepair.cpp" line="138"/>
       <location filename="../../TaskDimRepair.cpp" line="149"/>
+      <location filename="../../TaskDimension.cpp" line="417"/>
       <source>Incorrect Selection</source>
       <translation>Nesprávný výběr</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="188"/>
       <source>Can not make 2d radius dimension from selection</source>
-      <translation type="unfinished">Can not make 2d radius dimension from selection</translation>
+      <translation>Nelze vytvořit 2d poloměr z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="203"/>
       <source>Can not make 3d radius dimension from selection</source>
-      <translation type="unfinished">Can not make 3d radius dimension from selection</translation>
+      <translation>Nelze vytvořit dimenzi 3d poloměru z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="234"/>
       <location filename="../../CommandCreateDims.cpp" line="360"/>
       <source>BSpline Curve Error</source>
-      <translation type="unfinished">BSpline Curve Error</translation>
+      <translation>Chyba BSpline křivky</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="235"/>
       <source>Selected edge is a BSpline and a radius can not be calculated.</source>
-      <translation type="unfinished">Selected edge is a BSpline and a radius can not be calculated.</translation>
+      <translation>Vybraný okraj je BSplajn a poloměr nelze spočítat.</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="314"/>
       <source>Can not make 2d diameter dimension from selection</source>
-      <translation type="unfinished">Can not make 2d diameter dimension from selection</translation>
+      <translation>Z výběru nelze udělat dimenzi průměru 2d</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="329"/>
       <source>Can not make 3d diameter dimension from selection</source>
-      <translation type="unfinished">Can not make 3d diameter dimension from selection</translation>
+      <translation>Nelze vytvořit rozměr průměru 3d z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="339"/>
@@ -2894,64 +2996,64 @@
     <message>
       <location filename="../../CommandCreateDims.cpp" line="361"/>
       <source>Selected edge is a BSpline and a diameter can not be calculated.</source>
-      <translation type="unfinished">Selected edge is a BSpline and a diameter can not be calculated.</translation>
+      <translation>Vybraný okraj je BSplajn a průměr nelze spočítat.</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="441"/>
       <source>Can not make 2d linear dimension from selection</source>
-      <translation type="unfinished">Can not make 2d linear dimension from selection</translation>
+      <translation>Nelze vytvořit 2d lineární dimenzi z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="457"/>
       <source>Can not make 3d linear dimension from selection</source>
-      <translation type="unfinished">Can not make 3d linear dimension from selection</translation>
+      <translation>Nelze vytvořit lineární dimenzi 3d z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="539"/>
       <source>Can not make 2d horizontal dimension from selection</source>
-      <translation type="unfinished">Can not make 2d horizontal dimension from selection</translation>
+      <translation>Nelze vytvořit 2d vodorovnou dimenzi z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="555"/>
       <source>Can not make 3d horizontal dimension from selection</source>
-      <translation type="unfinished">Can not make 3d horizontal dimension from selection</translation>
+      <translation>Nelze vytvořit 3d vodorovnou dimenzi z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="638"/>
       <source>Can not make 2d vertical dimension from selection</source>
-      <translation type="unfinished">Can not make 2d vertical dimension from selection</translation>
+      <translation>Nelze vytvořit 2d vertikální dimenzi z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="653"/>
       <source>Can not make 3d vertical dimension from selection</source>
-      <translation type="unfinished">Can not make 3d vertical dimension from selection</translation>
+      <translation>Nelze vytvořit 3d vertikální dimenzi z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="734"/>
       <location filename="../../CommandCreateDims.cpp" line="830"/>
       <source>Can not make 2d angle dimension from selection</source>
-      <translation type="unfinished">Can not make 2d angle dimension from selection</translation>
+      <translation>Nelze vytvořit 2d úhlovou dimenzi z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="749"/>
       <location filename="../../CommandCreateDims.cpp" line="845"/>
       <source>Can not make 3d angle dimension from selection</source>
-      <translation type="unfinished">Can not make 3d angle dimension from selection</translation>
+      <translation>Nelze vytvořit úhlovou kótu 3d z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="1113"/>
       <source>Can not make 2d extent dimension from selection</source>
-      <translation type="unfinished">Can not make 2d extent dimension from selection</translation>
+      <translation>Nelze vytvořit 2d rozsah z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="1127"/>
       <source>Can not make 3d extent dimension from selection</source>
-      <translation type="unfinished">Can not make 3d extent dimension from selection</translation>
+      <translation>Nelze vytvořit dimenzi v rozsahu 3d z výběru</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="1219"/>
       <source>There is no Dimension in your selection</source>
-      <translation type="unfinished">There is no Dimension in your selection</translation>
+      <translation>Ve výběru není žádná dimenze</translation>
     </message>
     <message>
       <location filename="../../CommandCreateDims.cpp" line="913"/>
@@ -2974,24 +3076,22 @@
       <translation>Vyberte 2 bodové objekty a 1 pohled. (2)</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="479"/>
-      <location filename="../../Command.cpp" line="572"/>
-      <location filename="../../Command.cpp" line="634"/>
-      <location filename="../../CommandAnnotate.cpp" line="104"/>
-      <location filename="../../CommandAnnotate.cpp" line="165"/>
-      <location filename="../../CommandAnnotate.cpp" line="217"/>
-      <location filename="../../CommandAnnotate.cpp" line="402"/>
-      <location filename="../../CommandAnnotate.cpp" line="463"/>
-      <location filename="../../CommandAnnotate.cpp" line="502"/>
-      <location filename="../../CommandAnnotate.cpp" line="581"/>
-      <location filename="../../CommandAnnotate.cpp" line="685"/>
-      <location filename="../../CommandAnnotate.cpp" line="796"/>
-      <location filename="../../CommandAnnotate.cpp" line="871"/>
-      <location filename="../../CommandAnnotate.cpp" line="984"/>
-      <location filename="../../CommandAnnotate.cpp" line="1139"/>
-      <location filename="../../CommandAnnotate.cpp" line="1258"/>
-      <location filename="../../CommandAnnotate.cpp" line="1336"/>
-      <location filename="../../CommandAnnotate.cpp" line="1402"/>
+      <location filename="../../CommandAnnotate.cpp" line="106"/>
+      <location filename="../../CommandAnnotate.cpp" line="167"/>
+      <location filename="../../CommandAnnotate.cpp" line="219"/>
+      <location filename="../../CommandAnnotate.cpp" line="404"/>
+      <location filename="../../CommandAnnotate.cpp" line="465"/>
+      <location filename="../../CommandAnnotate.cpp" line="504"/>
+      <location filename="../../CommandAnnotate.cpp" line="586"/>
+      <location filename="../../CommandAnnotate.cpp" line="690"/>
+      <location filename="../../CommandAnnotate.cpp" line="801"/>
+      <location filename="../../CommandAnnotate.cpp" line="876"/>
+      <location filename="../../CommandAnnotate.cpp" line="989"/>
+      <location filename="../../CommandAnnotate.cpp" line="1140"/>
+      <location filename="../../CommandAnnotate.cpp" line="1293"/>
+      <location filename="../../CommandAnnotate.cpp" line="1412"/>
+      <location filename="../../CommandAnnotate.cpp" line="1490"/>
+      <location filename="../../CommandAnnotate.cpp" line="1556"/>
       <location filename="../../CommandCreateDims.cpp" line="146"/>
       <location filename="../../CommandCreateDims.cpp" line="272"/>
       <location filename="../../CommandCreateDims.cpp" line="398"/>
@@ -3002,6 +3102,11 @@
       <location filename="../../CommandCreateDims.cpp" line="966"/>
       <location filename="../../CommandCreateDims.cpp" line="1064"/>
       <location filename="../../CommandCreateDims.cpp" line="1177"/>
+      <location filename="../../CommandStack.cpp" line="75"/>
+      <location filename="../../CommandStack.cpp" line="191"/>
+      <location filename="../../CommandStack.cpp" line="251"/>
+      <location filename="../../CommandStack.cpp" line="311"/>
+      <location filename="../../CommandStack.cpp" line="371"/>
       <location filename="../../CommandExtensionDims.cpp" line="266"/>
       <location filename="../../CommandExtensionDims.cpp" line="475"/>
       <location filename="../../CommandExtensionDims.cpp" line="767"/>
@@ -3009,38 +3114,34 @@
       <location filename="../../CommandExtensionDims.cpp" line="1440"/>
       <location filename="../../CommandExtensionDims.cpp" line="1803"/>
       <location filename="../../CommandExtensionDims.cpp" line="2062"/>
-      <location filename="../../CommandExtensionPack.cpp" line="274"/>
-      <location filename="../../CommandExtensionPack.cpp" line="588"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1079"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1315"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1688"/>
-      <location filename="../../CommandStack.cpp" line="75"/>
-      <location filename="../../CommandStack.cpp" line="191"/>
-      <location filename="../../CommandStack.cpp" line="251"/>
-      <location filename="../../CommandStack.cpp" line="311"/>
-      <location filename="../../CommandStack.cpp" line="371"/>
+      <location filename="../../Command.cpp" line="491"/>
+      <location filename="../../Command.cpp" line="584"/>
+      <location filename="../../Command.cpp" line="647"/>
+      <location filename="../../CommandExtensionPack.cpp" line="282"/>
+      <location filename="../../CommandExtensionPack.cpp" line="596"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1081"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1317"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1690"/>
       <source>Task In Progress</source>
       <translation>Probíhá úkol</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="480"/>
-      <location filename="../../Command.cpp" line="573"/>
-      <location filename="../../Command.cpp" line="635"/>
-      <location filename="../../CommandAnnotate.cpp" line="105"/>
-      <location filename="../../CommandAnnotate.cpp" line="166"/>
-      <location filename="../../CommandAnnotate.cpp" line="218"/>
-      <location filename="../../CommandAnnotate.cpp" line="403"/>
-      <location filename="../../CommandAnnotate.cpp" line="464"/>
-      <location filename="../../CommandAnnotate.cpp" line="503"/>
-      <location filename="../../CommandAnnotate.cpp" line="582"/>
-      <location filename="../../CommandAnnotate.cpp" line="686"/>
-      <location filename="../../CommandAnnotate.cpp" line="797"/>
-      <location filename="../../CommandAnnotate.cpp" line="872"/>
-      <location filename="../../CommandAnnotate.cpp" line="985"/>
-      <location filename="../../CommandAnnotate.cpp" line="1140"/>
-      <location filename="../../CommandAnnotate.cpp" line="1259"/>
-      <location filename="../../CommandAnnotate.cpp" line="1337"/>
-      <location filename="../../CommandAnnotate.cpp" line="1403"/>
+      <location filename="../../CommandAnnotate.cpp" line="107"/>
+      <location filename="../../CommandAnnotate.cpp" line="168"/>
+      <location filename="../../CommandAnnotate.cpp" line="220"/>
+      <location filename="../../CommandAnnotate.cpp" line="405"/>
+      <location filename="../../CommandAnnotate.cpp" line="466"/>
+      <location filename="../../CommandAnnotate.cpp" line="505"/>
+      <location filename="../../CommandAnnotate.cpp" line="587"/>
+      <location filename="../../CommandAnnotate.cpp" line="691"/>
+      <location filename="../../CommandAnnotate.cpp" line="802"/>
+      <location filename="../../CommandAnnotate.cpp" line="877"/>
+      <location filename="../../CommandAnnotate.cpp" line="990"/>
+      <location filename="../../CommandAnnotate.cpp" line="1141"/>
+      <location filename="../../CommandAnnotate.cpp" line="1294"/>
+      <location filename="../../CommandAnnotate.cpp" line="1413"/>
+      <location filename="../../CommandAnnotate.cpp" line="1491"/>
+      <location filename="../../CommandAnnotate.cpp" line="1557"/>
       <location filename="../../CommandCreateDims.cpp" line="147"/>
       <location filename="../../CommandCreateDims.cpp" line="273"/>
       <location filename="../../CommandCreateDims.cpp" line="399"/>
@@ -3051,6 +3152,11 @@
       <location filename="../../CommandCreateDims.cpp" line="967"/>
       <location filename="../../CommandCreateDims.cpp" line="1065"/>
       <location filename="../../CommandCreateDims.cpp" line="1178"/>
+      <location filename="../../CommandStack.cpp" line="76"/>
+      <location filename="../../CommandStack.cpp" line="192"/>
+      <location filename="../../CommandStack.cpp" line="252"/>
+      <location filename="../../CommandStack.cpp" line="312"/>
+      <location filename="../../CommandStack.cpp" line="372"/>
       <location filename="../../CommandExtensionDims.cpp" line="267"/>
       <location filename="../../CommandExtensionDims.cpp" line="476"/>
       <location filename="../../CommandExtensionDims.cpp" line="768"/>
@@ -3058,277 +3164,295 @@
       <location filename="../../CommandExtensionDims.cpp" line="1441"/>
       <location filename="../../CommandExtensionDims.cpp" line="1804"/>
       <location filename="../../CommandExtensionDims.cpp" line="2063"/>
-      <location filename="../../CommandExtensionPack.cpp" line="275"/>
-      <location filename="../../CommandExtensionPack.cpp" line="589"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1080"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1316"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1689"/>
-      <location filename="../../CommandStack.cpp" line="76"/>
-      <location filename="../../CommandStack.cpp" line="192"/>
-      <location filename="../../CommandStack.cpp" line="252"/>
-      <location filename="../../CommandStack.cpp" line="312"/>
-      <location filename="../../CommandStack.cpp" line="372"/>
+      <location filename="../../Command.cpp" line="492"/>
+      <location filename="../../Command.cpp" line="585"/>
+      <location filename="../../Command.cpp" line="648"/>
+      <location filename="../../CommandExtensionPack.cpp" line="283"/>
+      <location filename="../../CommandExtensionPack.cpp" line="597"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1082"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1318"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1691"/>
       <source>Close active task dialog and try again.</source>
       <translation>Zavřete aktivní dialog úkolů a zkuste to znovu.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="119"/>
-      <location filename="../../CommandAnnotate.cpp" line="124"/>
-      <location filename="../../CommandAnnotate.cpp" line="712"/>
-      <location filename="../../CommandAnnotate.cpp" line="718"/>
-      <location filename="../../CommandAnnotate.cpp" line="745"/>
-      <location filename="../../CommandAnnotate.cpp" line="755"/>
-      <location filename="../../CommandAnnotate.cpp" line="761"/>
-      <location filename="../../CommandAnnotate.cpp" line="832"/>
-      <location filename="../../CommandAnnotate.cpp" line="841"/>
-      <location filename="../../CommandAnnotate.cpp" line="898"/>
-      <location filename="../../CommandAnnotate.cpp" line="905"/>
-      <location filename="../../CommandAnnotate.cpp" line="932"/>
-      <location filename="../../CommandAnnotate.cpp" line="944"/>
-      <location filename="../../CommandAnnotate.cpp" line="954"/>
-      <location filename="../../CommandAnnotate.cpp" line="1014"/>
-      <location filename="../../CommandAnnotate.cpp" line="1037"/>
-      <location filename="../../CommandAnnotate.cpp" line="1045"/>
-      <location filename="../../CommandAnnotate.cpp" line="1065"/>
-      <location filename="../../CommandAnnotate.cpp" line="1102"/>
-      <location filename="../../CommandAnnotate.cpp" line="1271"/>
-      <location filename="../../CommandAnnotate.cpp" line="1278"/>
-      <location filename="../../CommandAnnotate.cpp" line="1532"/>
-      <location filename="../../CommandAnnotate.cpp" line="1545"/>
+      <location filename="../../CommandAnnotate.cpp" line="121"/>
+      <location filename="../../CommandAnnotate.cpp" line="126"/>
+      <location filename="../../CommandAnnotate.cpp" line="717"/>
+      <location filename="../../CommandAnnotate.cpp" line="723"/>
+      <location filename="../../CommandAnnotate.cpp" line="750"/>
+      <location filename="../../CommandAnnotate.cpp" line="760"/>
+      <location filename="../../CommandAnnotate.cpp" line="766"/>
+      <location filename="../../CommandAnnotate.cpp" line="837"/>
+      <location filename="../../CommandAnnotate.cpp" line="846"/>
+      <location filename="../../CommandAnnotate.cpp" line="903"/>
+      <location filename="../../CommandAnnotate.cpp" line="910"/>
+      <location filename="../../CommandAnnotate.cpp" line="937"/>
+      <location filename="../../CommandAnnotate.cpp" line="949"/>
+      <location filename="../../CommandAnnotate.cpp" line="959"/>
+      <location filename="../../CommandAnnotate.cpp" line="1019"/>
+      <location filename="../../CommandAnnotate.cpp" line="1042"/>
+      <location filename="../../CommandAnnotate.cpp" line="1050"/>
+      <location filename="../../CommandAnnotate.cpp" line="1070"/>
+      <location filename="../../CommandAnnotate.cpp" line="1106"/>
+      <location filename="../../CommandAnnotate.cpp" line="1170"/>
+      <location filename="../../CommandAnnotate.cpp" line="1193"/>
+      <location filename="../../CommandAnnotate.cpp" line="1215"/>
+      <location filename="../../CommandAnnotate.cpp" line="1251"/>
+      <location filename="../../CommandAnnotate.cpp" line="1425"/>
+      <location filename="../../CommandAnnotate.cpp" line="1432"/>
+      <location filename="../../CommandAnnotate.cpp" line="1687"/>
+      <location filename="../../CommandAnnotate.cpp" line="1700"/>
       <source>Wrong Selection</source>
       <translation>Chybný výběr</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="120"/>
+      <location filename="../../CommandAnnotate.cpp" line="122"/>
       <source>Can not attach leader.  No base View selected.</source>
       <translation>Nelze připojit vedoucí objekt. Není vybrán základní pohled.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="125"/>
-      <location filename="../../CommandAnnotate.cpp" line="719"/>
-      <location filename="../../CommandAnnotate.cpp" line="899"/>
-      <location filename="../../CommandAnnotate.cpp" line="1038"/>
+      <location filename="../../CommandAnnotate.cpp" line="127"/>
+      <location filename="../../CommandAnnotate.cpp" line="724"/>
+      <location filename="../../CommandAnnotate.cpp" line="904"/>
+      <location filename="../../CommandAnnotate.cpp" line="1043"/>
       <source>You must select a base View for the line.</source>
       <translation>Pro čáru je nutno vybrat základní pohled.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="317"/>
-      <location filename="../../CommandAnnotate.cpp" line="416"/>
+      <location filename="../../CommandAnnotate.cpp" line="319"/>
+      <location filename="../../CommandAnnotate.cpp" line="418"/>
       <source>No DrawViewPart objects in this selection</source>
       <translation>Ve výběru nejsou objekty DrawViewPart</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="713"/>
-      <location filename="../../CommandAnnotate.cpp" line="906"/>
+      <location filename="../../CommandAnnotate.cpp" line="718"/>
+      <location filename="../../CommandAnnotate.cpp" line="911"/>
       <source>No base View in Selection.</source>
       <translation>Ve výběru není základní pohled.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="746"/>
+      <location filename="../../CommandAnnotate.cpp" line="751"/>
       <source>You must select Faces or an existing CenterLine.</source>
       <translation>Musíte vybrat plochy nebo existující osu.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="756"/>
+      <location filename="../../CommandAnnotate.cpp" line="761"/>
       <source>No CenterLine in selection.</source>
       <translation>Žádná osa ve výběru.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="762"/>
-      <location filename="../../CommandAnnotate.cpp" line="833"/>
-      <location filename="../../CommandAnnotate.cpp" line="945"/>
+      <location filename="../../CommandAnnotate.cpp" line="767"/>
+      <location filename="../../CommandAnnotate.cpp" line="838"/>
+      <location filename="../../CommandAnnotate.cpp" line="950"/>
       <source>Selection is not a CenterLine.</source>
       <translation>Výběr není osa.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="842"/>
+      <location filename="../../CommandAnnotate.cpp" line="847"/>
       <source>Selection not understood.</source>
       <translation>Výběru nelze rozumět.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="933"/>
+      <location filename="../../CommandAnnotate.cpp" line="938"/>
       <source>You must select 2 Vertexes or an existing CenterLine.</source>
       <translation>Musíte vybrat 2 vrcholy nebo existující osu.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="955"/>
+      <location filename="../../CommandAnnotate.cpp" line="960"/>
       <source>Need 2 Vertices or 1 CenterLine.</source>
       <translation>Potřebuje 2 vrcholy nebo 1 osu.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1015"/>
+      <location filename="../../CommandAnnotate.cpp" line="1020"/>
+      <location filename="../../CommandAnnotate.cpp" line="1171"/>
       <source>Selection is empty.</source>
       <translation>Výběr je prázdný.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1046"/>
+      <location filename="../../CommandAnnotate.cpp" line="1051"/>
       <source>Not enough points in selection.</source>
       <translation>Nedostatek bodů ve výběru.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1066"/>
+      <location filename="../../CommandAnnotate.cpp" line="1071"/>
       <source>Selection is not a Cosmetic Line.</source>
       <translation>Výběr není pomocná čára.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1103"/>
+      <location filename="../../CommandAnnotate.cpp" line="1107"/>
       <source>You must select 2 Vertexes.</source>
       <translation>Musíte vybrat 2 vrcholy.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1153"/>
-      <location filename="../../CommandAnnotate.cpp" line="1350"/>
+      <location filename="../../CommandAnnotate.cpp" line="1194"/>
+      <source>You must select a base View for the circle.</source>
+      <translation type="unfinished">You must select a base View for the circle.</translation>
+    </message>
+    <message>
+      <location filename="../../CommandAnnotate.cpp" line="1252"/>
+      <source>Please select a center for the circle.</source>
+      <translation type="unfinished">Please select a center for the circle.</translation>
+    </message>
+    <message>
+      <location filename="../../CommandAnnotate.cpp" line="1307"/>
+      <location filename="../../CommandAnnotate.cpp" line="1504"/>
       <source>Nothing selected</source>
       <translation>Není nic vybráno</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1161"/>
+      <location filename="../../CommandAnnotate.cpp" line="1315"/>
       <source>At least 1 object in selection is not a part view</source>
       <translation>Minimálně 1 objekt ve výběru není součástí zobrazení dílu</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1208"/>
+      <location filename="../../CommandAnnotate.cpp" line="1362"/>
       <source>Unknown object type in selection</source>
       <translation>Ve výběru je neznámý typ objektu</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1279"/>
+      <location filename="../../CommandAnnotate.cpp" line="1433"/>
       <source>No View in Selection.</source>
       <translation>Ve výběru není žádný pohled.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1272"/>
+      <location filename="../../CommandAnnotate.cpp" line="1426"/>
       <source>You must select a View and/or lines.</source>
       <translation>Musíte vybrat pohled a/nebo čáry.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1357"/>
+      <location filename="../../CommandAnnotate.cpp" line="1216"/>
+      <source>Selection is not a Cosmetic Circle or a Cosmetic Arc of Circle.</source>
+      <translation type="unfinished">Selection is not a Cosmetic Circle or a Cosmetic Arc of Circle.</translation>
+    </message>
+    <message>
+      <location filename="../../CommandAnnotate.cpp" line="1511"/>
       <source>No Part Views in this selection</source>
       <translation>Žádné pohledy součásti ve výběru</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1421"/>
+      <location filename="../../CommandAnnotate.cpp" line="1575"/>
       <source>Select exactly one Leader line or one Weld symbol.</source>
       <translation>Vybrat přesně jednu odkazovou čáru, nebo jeden symbol svaru.</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1468"/>
-      <location filename="../../CommandAnnotate.cpp" line="1474"/>
+      <location filename="../../CommandAnnotate.cpp" line="1622"/>
+      <location filename="../../CommandAnnotate.cpp" line="1628"/>
       <source>SurfaceFinishSymbols</source>
-      <translation type="unfinished">SurfaceFinishSymbols</translation>
+      <translation>SurfaceFinishSymboly</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1533"/>
+      <location filename="../../CommandAnnotate.cpp" line="1688"/>
       <source>No Part View in Selection</source>
-      <translation type="unfinished">No Part View in Selection</translation>
+      <translation>Ve výběru není zobrazena žádná část</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1546"/>
+      <location filename="../../CommandAnnotate.cpp" line="1701"/>
       <source>No %1 in Selection</source>
-      <translation type="unfinished">No %1 in Selection</translation>
+      <translation>Žádný %1 ve výběru</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="106"/>
+      <location filename="../../CommandDecorate.cpp" line="107"/>
       <source>Replace Hatch?</source>
       <translation>Nahradit šrafování?</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="107"/>
+      <location filename="../../CommandDecorate.cpp" line="108"/>
       <source>Some Faces in selection are already hatched.  Replace?</source>
       <translation>Některé plochy ve výběru jsou již šrafované. Nahradit?</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="310"/>
+      <location filename="../../CommandDecorate.cpp" line="317"/>
       <source>No TechDraw Page</source>
       <translation>Žádná stránka TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="311"/>
+      <location filename="../../CommandDecorate.cpp" line="318"/>
       <source>Need a TechDraw Page for this command</source>
       <translation>Pro tento příkaz je potřeba TechDraw stránka</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="345"/>
+      <location filename="../../CommandDecorate.cpp" line="370"/>
       <source>Select a Face first</source>
       <translation>Nejprve vyberte plochu</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="352"/>
+      <location filename="../../CommandDecorate.cpp" line="377"/>
       <source>No TechDraw object in selection</source>
       <translation>Ve výběru není objekt z TechDraw</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="359"/>
+      <location filename="../../CommandDecorate.cpp" line="384"/>
       <source>Create a page to insert.</source>
       <translation>Vytvoření stránky pro vložení.</translation>
     </message>
     <message>
-      <location filename="../../CommandDecorate.cpp" line="366"/>
-      <location filename="../../CommandDecorate.cpp" line="372"/>
+      <location filename="../../CommandDecorate.cpp" line="391"/>
+      <location filename="../../CommandDecorate.cpp" line="397"/>
       <source>No Faces to hatch in this selection</source>
       <translation>V tomto výběru nejsou plochy pro šrafování</translation>
     </message>
     <message>
-      <location filename="../../DrawGuiUtil.cpp" line="109"/>
-      <location filename="../../DrawGuiUtil.cpp" line="142"/>
+      <location filename="../../DrawGuiUtil.cpp" line="187"/>
+      <location filename="../../DrawGuiUtil.cpp" line="220"/>
       <source>No page found</source>
       <translation>Stránka nebyla nalezena</translation>
     </message>
     <message>
-      <location filename="../../DrawGuiUtil.cpp" line="110"/>
+      <location filename="../../DrawGuiUtil.cpp" line="188"/>
       <source>No Drawing Pages available.</source>
-      <translation type="unfinished">No Drawing Pages available.</translation>
+      <translation>Žádné stránky výkresu nejsou k dispozici.</translation>
     </message>
     <message>
-      <location filename="../../DrawGuiUtil.cpp" line="143"/>
+      <location filename="../../DrawGuiUtil.cpp" line="221"/>
       <source>No Drawing Pages in document.</source>
       <translation>V dokumentu nejsou žádné stránky s výkresy.</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="272"/>
+      <location filename="../../MDIViewPage.cpp" line="310"/>
       <source>PDF (*.pdf)</source>
       <translation>PDF (*.pdf)</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="273"/>
-      <location filename="../../MDIViewPage.cpp" line="675"/>
+      <location filename="../../MDIViewPage.cpp" line="311"/>
+      <location filename="../../MDIViewPage.cpp" line="496"/>
       <source>All Files (*.*)</source>
       <translation>Všechny soubory (*.*)</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="275"/>
+      <location filename="../../MDIViewPage.cpp" line="313"/>
       <source>Export Page As PDF</source>
       <translation>Exportovat stránku do PDF</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="566"/>
+      <location filename="../../PagePrinter.cpp" line="286"/>
       <source>Document Name: </source>
       <translation type="unfinished">Document Name: </translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="674"/>
+      <location filename="../../MDIViewPage.cpp" line="495"/>
       <source>SVG (*.svg)</source>
       <translation>SVG (*.svg)</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="677"/>
+      <location filename="../../MDIViewPage.cpp" line="498"/>
       <source>Export page as SVG</source>
       <translation>Exportovat stránku do SVG</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderPage.cpp" line="211"/>
-      <location filename="../../ViewProviderProjGroup.cpp" line="161"/>
+      <location filename="../../ViewProviderPage.cpp" line="213"/>
       <location filename="../../ViewProviderTemplate.cpp" line="201"/>
+      <location filename="../../ViewProviderProjGroup.cpp" line="161"/>
       <source>Are you sure you want to continue?</source>
       <translation>Opravdu si přejete pokračovat?</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderPage.cpp" line="232"/>
+      <location filename="../../ViewProviderPage.cpp" line="234"/>
       <source>Show drawing</source>
       <translation>Zobrazit výkres</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderPage.cpp" line="234"/>
+      <location filename="../../ViewProviderPage.cpp" line="236"/>
       <source>Toggle KeepUpdated</source>
       <translation>Přepnout průběžné aktualizace</translation>
     </message>
@@ -3350,17 +3474,17 @@
     <message>
       <location filename="../../TaskRichAnno.cpp" line="140"/>
       <source>Rich text creator</source>
-      <translation>Rozšířený editor textu</translation>
+      <translation>Editor rozsáhlého textu</translation>
     </message>
     <message>
-      <location filename="../../QGIRichAnno.cpp" line="310"/>
       <location filename="../../TaskRichAnno.cpp" line="102"/>
       <location filename="../../TaskRichAnno.cpp" line="240"/>
+      <location filename="../../QGIRichAnno.cpp" line="344"/>
       <source>Rich text editor</source>
-      <translation>Rozšířený editor textu</translation>
+      <translation>Editor rozsáhlého textu</translation>
     </message>
     <message>
-      <location filename="../../TaskCosVertex.cpp" line="108"/>
+      <location filename="../../TaskCosVertex.cpp" line="109"/>
       <source>New Cosmetic Vertex</source>
       <translation>Nový kosmetický vrchol</translation>
     </message>
@@ -3395,27 +3519,27 @@
       <translation type="unfinished">Can not find a 3D viewer</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.cpp" line="168"/>
+      <location filename="../../TaskCenterLine.cpp" line="169"/>
       <source>Create Center Line</source>
       <translation>Vytvořit osu</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.cpp" line="201"/>
+      <location filename="../../TaskCenterLine.cpp" line="212"/>
       <source>Edit Center Line</source>
       <translation>Upravit osu</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.cpp" line="125"/>
+      <location filename="../../TaskSectionView.cpp" line="127"/>
       <source>Create Section View</source>
       <translation>Vytvořit Pohled Řezu</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.cpp" line="155"/>
+      <location filename="../../TaskSectionView.cpp" line="157"/>
       <source>Edit Section View</source>
       <translation>Upravit Pohled Řezu</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.cpp" line="136"/>
+      <location filename="../../TaskComplexSection.cpp" line="138"/>
       <source>New Complex Section</source>
       <translation type="unfinished">New Complex Section</translation>
     </message>
@@ -3426,19 +3550,19 @@
     </message>
     <message>
       <location filename="../../TaskComplexSection.cpp" line="217"/>
-      <location filename="../../TaskSectionView.cpp" line="226"/>
+      <location filename="../../TaskSectionView.cpp" line="228"/>
       <source>Current View Direction</source>
       <translation type="unfinished">Current View Direction</translation>
     </message>
     <message>
       <location filename="../../TaskComplexSection.cpp" line="218"/>
-      <location filename="../../TaskSectionView.cpp" line="227"/>
+      <location filename="../../TaskSectionView.cpp" line="229"/>
       <source>The view direction in BaseView coordinates</source>
       <translation type="unfinished">The view direction in BaseView coordinates</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.cpp" line="690"/>
-      <location filename="../../TaskSectionView.cpp" line="608"/>
+      <location filename="../../TaskComplexSection.cpp" line="733"/>
+      <location filename="../../TaskSectionView.cpp" line="665"/>
       <source>Operation Failed</source>
       <translation>Operace se nezdařila</translation>
     </message>
@@ -3453,32 +3577,38 @@
       <translation>Upravit symbol svařování</translation>
     </message>
     <message>
-      <location filename="../../TaskCosmeticLine.cpp" line="112"/>
+      <location filename="../../TaskCosmeticLine.cpp" line="113"/>
       <source>Create Cosmetic Line</source>
       <translation>Vytvořit pomocnou čáru</translation>
     </message>
     <message>
-      <location filename="../../TaskCosmeticLine.cpp" line="147"/>
+      <location filename="../../TaskCosmeticLine.cpp" line="165"/>
       <source>Edit Cosmetic Line</source>
       <translation>Upravit pomocnou čáru</translation>
     </message>
     <message>
       <location filename="../../TaskDetail.cpp" line="99"/>
       <source>New Detail View</source>
-      <translation>Nové detailní zobrazení</translation>
+      <translation>Nový detail pohledu</translation>
     </message>
     <message>
       <location filename="../../TaskDetail.cpp" line="179"/>
       <source>Edit Detail View</source>
-      <translation>Upravit detailní zobrazení</translation>
+      <translation>Upravit detail pohledu</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderBalloon.cpp" line="85"/>
-      <location filename="../../ViewProviderDimension.cpp" line="120"/>
+      <location filename="../../ViewProviderDimension.cpp" line="123"/>
+      <location filename="../../ViewProviderBalloon.cpp" line="88"/>
       <source>Edit %1</source>
       <translation>Upravit %1</translation>
     </message>
     <message>
+      <location filename="../../CommandExtensionDims.cpp" line="363"/>
+      <source>TechDraw Increase/Decrease Decimal</source>
+      <translation type="unfinished">TechDraw Increase/Decrease Decimal</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="558"/>
       <location filename="../../CommandExtensionDims.cpp" line="567"/>
       <source>TechDraw PosHorizChainDimension</source>
       <translation type="unfinished">TechDraw PosHorizChainDimension</translation>
@@ -3490,6 +3620,7 @@
       <translation type="unfinished">No horizontal dimensions selected</translation>
     </message>
     <message>
+      <location filename="../../CommandExtensionDims.cpp" line="619"/>
       <location filename="../../CommandExtensionDims.cpp" line="628"/>
       <source>TechDraw PosVertChainDimension</source>
       <translation type="unfinished">TechDraw PosVertChainDimension</translation>
@@ -3501,6 +3632,7 @@
       <translation type="unfinished">No vertical dimensions selected</translation>
     </message>
     <message>
+      <location filename="../../CommandExtensionDims.cpp" line="681"/>
       <location filename="../../CommandExtensionDims.cpp" line="690"/>
       <source>TechDraw PosObliqueChainDimension</source>
       <translation type="unfinished">TechDraw PosObliqueChainDimension</translation>
@@ -3512,52 +3644,105 @@
       <translation type="unfinished">No oblique dimensions selected</translation>
     </message>
     <message>
+      <location filename="../../CommandExtensionDims.cpp" line="867"/>
       <location filename="../../CommandExtensionDims.cpp" line="876"/>
       <source>TechDraw CascadeHorizDimension</source>
       <translation type="unfinished">TechDraw CascadeHorizDimension</translation>
     </message>
     <message>
+      <location filename="../../CommandExtensionDims.cpp" line="933"/>
       <location filename="../../CommandExtensionDims.cpp" line="942"/>
       <source>TechDraw CascadeVertDimension</source>
       <translation type="unfinished">TechDraw CascadeVertDimension</translation>
     </message>
     <message>
+      <location filename="../../CommandExtensionDims.cpp" line="1000"/>
       <location filename="../../CommandExtensionDims.cpp" line="1009"/>
       <source>TechDraw CascadeObliqueDimension</source>
       <translation type="unfinished">TechDraw CascadeObliqueDimension</translation>
     </message>
     <message>
+      <location filename="../../CommandExtensionDims.cpp" line="1199"/>
+      <source>TechDraw Create Horizontal Chain Dimension</source>
+      <translation type="unfinished">TechDraw Create Horizontal Chain Dimension</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="1265"/>
+      <source>TechDraw Create Vertical Chain Dimension</source>
+      <translation type="unfinished">TechDraw Create Vertical Chain Dimension</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="1331"/>
+      <source>TechDraw Create Oblique Chain Dimension</source>
+      <translation type="unfinished">TechDraw Create Oblique Chain Dimension</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="1539"/>
+      <source>TechDraw Create Horizontal Coord Dimension</source>
+      <translation type="unfinished">TechDraw Create Horizontal Coord Dimension</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="1612"/>
+      <source>TechDraw Create Vertical Coord Dimension</source>
+      <translation type="unfinished">TechDraw Create Vertical Coord Dimension</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="1685"/>
+      <source>TechDraw Create Oblique Coord Dimension</source>
+      <translation type="unfinished">TechDraw Create Oblique Coord Dimension</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="1908"/>
+      <source>TechDraw Create Horizontal Chamfer Dimension</source>
+      <translation type="unfinished">TechDraw Create Horizontal Chamfer Dimension</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="1977"/>
+      <source>TechDraw Create Vertical Chamfer Dimension</source>
+      <translation type="unfinished">TechDraw Create Vertical Chamfer Dimension</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="2163"/>
+      <source>TechDraw Create Arc Length Dimension</source>
+      <translation type="unfinished">TechDraw Create Arc Length Dimension</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionDims.cpp" line="2240"/>
+      <source>TechDraw Customize Format</source>
+      <translation type="unfinished">TechDraw Customize Format</translation>
+    </message>
+    <message>
       <location filename="../../CommandExtensionDims.cpp" line="2304"/>
       <source>No subelements selected</source>
-      <translation type="unfinished">No subelements selected</translation>
+      <translation>Nejsou vybrány žádné dílčí položky</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1468"/>
+      <location filename="../../CommandAnnotate.cpp" line="1622"/>
       <location filename="../../CommandExtensionDims.cpp" line="2268"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1469"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1957"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1471"/>
+      <location filename="../../CommandExtensionPack.cpp" line="2079"/>
       <source>Selection is empty</source>
-      <translation type="unfinished">Selection is empty</translation>
+      <translation>Výběr je prázdný</translation>
     </message>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="1474"/>
+      <location filename="../../CommandAnnotate.cpp" line="1628"/>
       <location filename="../../CommandExtensionDims.cpp" line="2284"/>
-      <location filename="../../CommandExtensionPack.cpp" line="1964"/>
+      <location filename="../../CommandExtensionPack.cpp" line="2086"/>
       <source>No object selected</source>
       <translation type="unfinished">No object selected</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="113"/>
+      <location filename="../../CommandExtensionPack.cpp" line="121"/>
       <source>TechDraw Hole Circle</source>
       <translation type="unfinished">TechDraw Hole Circle</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="114"/>
+      <location filename="../../CommandExtensionPack.cpp" line="122"/>
       <source>Fewer than three circles selected</source>
       <translation type="unfinished">Fewer than three circles selected</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="1468"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1470"/>
       <source>TechDraw Position Section View</source>
       <translation type="unfinished">TechDraw Position Section View</translation>
     </message>
@@ -3567,35 +3752,40 @@
       <translation type="unfinished">No faces in selection.</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="2045"/>
+      <location filename="../../CommandExtensionPack.cpp" line="1938"/>
+      <source>No edges in selection.</source>
+      <translation type="unfinished">No edges in selection.</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="2162"/>
       <source>TechDraw Thread Hole Side</source>
       <translation type="unfinished">TechDraw Thread Hole Side</translation>
     </message>
     <message>
-      <location filename="../../CommandExtensionPack.cpp" line="2046"/>
+      <location filename="../../CommandExtensionPack.cpp" line="2163"/>
       <source>Please select two straight lines</source>
       <translation type="unfinished">Please select two straight lines</translation>
     </message>
     <message>
-      <location filename="../../TaskDimension.cpp" line="401"/>
+      <location filename="../../TaskDimension.cpp" line="418"/>
       <source>Select 2 Vertexes or 1 Edge</source>
       <translation type="unfinished">Select 2 Vertexes or 1 Edge</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotationImp.cpp" line="147"/>
+      <location filename="../../DlgPrefsTechDrawAnnotationImp.cpp" line="187"/>
       <source>Please select a Line Group</source>
       <translation type="unfinished">Please select a Line Group</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotationImp.cpp" line="158"/>
+      <location filename="../../DlgPrefsTechDrawAnnotationImp.cpp" line="198"/>
       <source>%1 defines these line widths:
  thin: %2
  graphic: %3
- thick: %4</source>
+thick: %4</source>
       <translation type="unfinished">%1 defines these line widths:
  thin: %2
  graphic: %3
- thick: %4</translation>
+thick: %4</translation>
     </message>
     <message>
       <location filename="../../TaskHatch.cpp" line="97"/>
@@ -3655,12 +3845,12 @@
     <message>
       <location filename="../../TaskDimRepair.cpp" line="139"/>
       <source>Can not make a dimension from selection</source>
-      <translation type="unfinished">Can not make a dimension from selection</translation>
+      <translation>Nelze vytvořit rozměr z výběru</translation>
     </message>
     <message>
       <location filename="../../TaskDimRepair.cpp" line="150"/>
       <source>Can not make dimension from selection</source>
-      <translation type="unfinished">Can not make dimension from selection</translation>
+      <translation>Nelze vytvořit rozměr z výběru</translation>
     </message>
     <message>
       <location filename="../../AppTechDrawGui.cpp" line="171"/>
@@ -3673,6 +3863,16 @@
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.cpp" line="112"/>
+      <source>Create Cosmetic Circle</source>
+      <translation type="unfinished">Create Cosmetic Circle</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.cpp" line="146"/>
+      <source>Edit Cosmetic Circle</source>
+      <translation type="unfinished">Edit Cosmetic Circle</translation>
+    </message>
   </context>
   <context>
     <name>Std_Delete</name>
@@ -3680,50 +3880,51 @@
       <location filename="../../ViewProviderLeader.cpp" line="223"/>
       <source>You cannot delete this leader line because
 it has a weld symbol that would become broken.</source>
-      <translation>Nemůžete smazat tento odkaz, protože obsahuje symbol svaru, který by se rozbil.</translation>
+      <translation>Nemůžete smazat tuto odkazovou čáru, 
+protože obsahuje symbol svaru, který by se rozbil.</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderLeader.cpp" line="226"/>
-      <location filename="../../ViewProviderPage.cpp" line="214"/>
-      <location filename="../../ViewProviderProjGroup.cpp" line="148"/>
-      <location filename="../../ViewProviderProjGroup.cpp" line="164"/>
+      <location filename="../../ViewProviderViewPart.cpp" line="350"/>
+      <source>You cannot delete this view because it has one or more dependent views that would become broken.</source>
+      <translation>Nemůžete smazat tento názor, protože má jeden nebo více závislých názorů, které by byly porušeny.</translation>
+    </message>
+    <message>
+      <location filename="../../ViewProviderViewPart.cpp" line="353"/>
       <location filename="../../ViewProviderProjGroupItem.cpp" line="148"/>
       <location filename="../../ViewProviderProjGroupItem.cpp" line="157"/>
       <location filename="../../ViewProviderProjGroupItem.cpp" line="165"/>
       <location filename="../../ViewProviderProjGroupItem.cpp" line="173"/>
-      <location filename="../../ViewProviderTemplate.cpp" line="205"/>
-      <location filename="../../ViewProviderViewPart.cpp" line="317"/>
-      <location filename="../../ViewProviderViewPart.cpp" line="325"/>
-      <location filename="../../ViewProviderViewPart.cpp" line="333"/>
+      <location filename="../../ViewProviderLeader.cpp" line="226"/>
       <location filename="../../ViewProviderWeld.cpp" line="145"/>
+      <location filename="../../ViewProviderPage.cpp" line="216"/>
+      <location filename="../../ViewProviderTemplate.cpp" line="205"/>
+      <location filename="../../ViewProviderProjGroup.cpp" line="148"/>
+      <location filename="../../ViewProviderProjGroup.cpp" line="164"/>
       <source>Object dependencies</source>
       <translation>Závislosti objektu</translation>
     </message>
     <message>
       <location filename="../../ViewProviderProjGroupItem.cpp" line="145"/>
       <source>You cannot delete the anchor view of a projection group.</source>
-      <translation type="unfinished">You cannot delete the anchor view of a projection group.</translation>
+      <translation>Nelze odstranit zobrazení kotevního úchytu skupiny projekcí.</translation>
     </message>
     <message>
       <location filename="../../ViewProviderProjGroupItem.cpp" line="154"/>
-      <location filename="../../ViewProviderViewPart.cpp" line="314"/>
       <source>You cannot delete this view because it has a section view that would become broken.</source>
       <translation>Nemůžete odstranit tento pohled, protože obsahuje pohled řezu, který by se rozbil.</translation>
     </message>
     <message>
       <location filename="../../ViewProviderProjGroupItem.cpp" line="162"/>
-      <location filename="../../ViewProviderViewPart.cpp" line="322"/>
       <source>You cannot delete this view because it has a detail view that would become broken.</source>
-      <translation>Nemůžete odstranit tento pohled, protože obsahuje detailní pohled, který by se rozbil.</translation>
+      <translation>Nemůžete odstranit tento pohled, protože obsahuje detail pohledu, který by se rozbil.</translation>
     </message>
     <message>
       <location filename="../../ViewProviderProjGroupItem.cpp" line="170"/>
-      <location filename="../../ViewProviderViewPart.cpp" line="330"/>
       <source>You cannot delete this view because it has a leader line that would become broken.</source>
       <translation>Nemůžete odstranit tento pohled, protože obsahuje odkazovou čáru, která by se rozbila.</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderPage.cpp" line="205"/>
+      <location filename="../../ViewProviderPage.cpp" line="207"/>
       <source>The page is not empty, therefore the
 following referencing objects might be lost:</source>
       <translation>Stránka není prázdná, následující referenční objekty budou možná ztraceny:</translation>
@@ -3733,7 +3934,7 @@ following referencing objects might be lost:</source>
       <source>The group cannot be deleted because its items have the following
 section or detail views, or leader lines that would get broken:</source>
       <translation>Skupinu nelze odstranit, protože její položky mají následující
-sekce nebo detailní zobrazení, nebo vedoucí řádky, které by byly rozbity:</translation>
+sekce, detaily pohledu nebo odkazové čáry, které by se rozbili:</translation>
     </message>
     <message>
       <location filename="../../ViewProviderProjGroup.cpp" line="156"/>
@@ -3751,8 +3952,8 @@ mohou být ztraceny tyto odkazující objekty:</translation>
       <location filename="../../ViewProviderWeld.cpp" line="142"/>
       <source>You cannot delete this weld symbol because
 it has a tile weld that would become broken.</source>
-      <translation type="unfinished">You cannot delete this weld symbol because
-it has a tile weld that would become broken.</translation>
+      <translation>Tento svar nemůžeš odstranit, protože
+má dlaždiční svar, který by se rozbit.</translation>
     </message>
   </context>
   <context>
@@ -3765,47 +3966,47 @@ it has a tile weld that would become broken.</translation>
     <message>
       <location filename="../../TaskActiveView.ui" line="44"/>
       <source>If Crop Image is checked, crop captured image to this width.</source>
-      <translation type="unfinished">If Crop Image is checked, crop captured image to this width.</translation>
+      <translation>Je-li zaškrtnut Oříznutí obrázku, ořízněte zachycený obrázek na tuto šířku.</translation>
     </message>
     <message>
       <location filename="../../TaskActiveView.ui" line="72"/>
       <source>Select a color for solid background</source>
-      <translation type="unfinished">Select a color for solid background</translation>
+      <translation>Vyberte barvu pro pevné pozadí</translation>
     </message>
     <message>
       <location filename="../../TaskActiveView.ui" line="92"/>
       <source>Crop To Height</source>
-      <translation type="unfinished">Crop To Height</translation>
+      <translation>Oříznout do výšky</translation>
     </message>
     <message>
       <location filename="../../TaskActiveView.ui" line="99"/>
       <source>Use 3d Background</source>
-      <translation type="unfinished">Use 3d Background</translation>
+      <translation>Použít 3d pozadí</translation>
     </message>
     <message>
       <location filename="../../TaskActiveView.ui" line="115"/>
       <source>If Crop Image is checked, crop captured image to this height.</source>
-      <translation type="unfinished">If Crop Image is checked, crop captured image to this height.</translation>
+      <translation>Je-li zaškrtnutý obrázek oříznut, ořízněte zachycený obrázek do této výšky.</translation>
     </message>
     <message>
       <location filename="../../TaskActiveView.ui" line="137"/>
       <source>Solid Background</source>
-      <translation type="unfinished">Solid Background</translation>
+      <translation>Plné pozadí</translation>
     </message>
     <message>
       <location filename="../../TaskActiveView.ui" line="147"/>
       <source>No Background</source>
-      <translation type="unfinished">No Background</translation>
+      <translation>Žádné pozadí</translation>
     </message>
     <message>
       <location filename="../../TaskActiveView.ui" line="160"/>
       <source>Crop To Width</source>
-      <translation type="unfinished">Crop To Width</translation>
+      <translation>Oříznout na šířku</translation>
     </message>
     <message>
       <location filename="../../TaskActiveView.ui" line="167"/>
       <source>Crop Image</source>
-      <translation type="unfinished">Crop Image</translation>
+      <translation>Oříznout obrázek</translation>
     </message>
     <message>
       <location filename="../../TaskActiveView.ui" line="134"/>
@@ -3814,49 +4015,41 @@ it has a tile weld that would become broken.</translation>
     </message>
   </context>
   <context>
-    <name>TaskComplexSection</name>
-    <message>
-      <location filename="../../TaskComplexSection.cpp" line="173"/>
-      <source>No direction set</source>
-      <translation type="unfinished">No direction set</translation>
-    </message>
-  </context>
-  <context>
     <name>TaskMoveView</name>
     <message>
       <location filename="../../TaskMoveView.ui" line="14"/>
       <source>Move View</source>
-      <translation type="unfinished">Move View</translation>
+      <translation>Přesunout zobrazení</translation>
     </message>
     <message>
       <location filename="../../TaskMoveView.ui" line="22"/>
       <source>View to move</source>
-      <translation type="unfinished">View to move</translation>
+      <translation>Zobrazit k přesunutí</translation>
     </message>
     <message>
       <location filename="../../TaskMoveView.ui" line="43"/>
       <source>From Page</source>
-      <translation type="unfinished">From Page</translation>
+      <translation>Z stránky</translation>
     </message>
     <message>
       <location filename="../../TaskMoveView.ui" line="64"/>
       <source>To Page</source>
-      <translation type="unfinished">To Page</translation>
+      <translation>Na stránku</translation>
     </message>
   </context>
   <context>
     <name>TaskPojGroup</name>
     <message>
-      <location filename="../../TaskComplexSection.cpp" line="487"/>
-      <location filename="../../TaskSectionView.cpp" line="428"/>
+      <location filename="../../TaskComplexSection.cpp" line="488"/>
+      <location filename="../../TaskSectionView.cpp" line="432"/>
       <source> updates pending</source>
-      <translation type="unfinished"> updates pending</translation>
+      <translation> čeká na aktualizace</translation>
     </message>
   </context>
   <context>
     <name>TaskSectionView</name>
     <message>
-      <location filename="../../TaskSectionView.cpp" line="148"/>
+      <location filename="../../TaskSectionView.cpp" line="150"/>
       <source>No direction set</source>
       <translation type="unfinished">No direction set</translation>
     </message>
@@ -3872,15 +4065,15 @@ it has a tile weld that would become broken.</translation>
       <location filename="../../TaskWeldingSymbol.ui" line="42"/>
       <source>Text above arrow side symbol
 Angle, surface finish, root</source>
-      <translation type="unfinished">Text above arrow side symbol
-Angle, surface finish, root</translation>
+      <translation>Text nad šipkou symbol
+Úhl, povrchová úprava, kořen</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="50"/>
       <source>Text before arrow side symbol
 Preparation depth, (weld size)</source>
-      <translation type="unfinished">Text before arrow side symbol
-Preparation depth, (weld size)</translation>
+      <translation>Text před šipkou symbolu
+Hloubka přípravy (velikost svaru)</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="76"/>
@@ -3897,15 +4090,15 @@ Preparation depth, (weld size)</translation>
       <location filename="../../TaskWeldingSymbol.ui" line="92"/>
       <source>Text after arrow side symbol
 Number of welds × length, (gap)</source>
-      <translation type="unfinished">Text after arrow side symbol
-Number of welds × length, (gap)</translation>
+      <translation>Text za šipkou
+Počet svarů × délka, (mezera)</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="121"/>
       <source>Text before other side symbol
 Preparation depth, (weld size)</source>
-      <translation type="unfinished">Text before other side symbol
-Preparation depth, (weld size)</translation>
+      <translation>Text před jiným bočním symbolem
+Hloubka přípravy (velikost svaru)</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="129"/>
@@ -3916,8 +4109,8 @@ Preparation depth, (weld size)</translation>
       <location filename="../../TaskWeldingSymbol.ui" line="139"/>
       <source>Text after other side symbol
 Number of welds × length, (gap)</source>
-      <translation type="unfinished">Text after other side symbol
-Number of welds × length, (gap)</translation>
+      <translation>Text za jiným bočním symbolem
+Počet svarů × délka, (mezera)</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="171"/>
@@ -3933,8 +4126,8 @@ Number of welds × length, (gap)</translation>
       <location filename="../../TaskWeldingSymbol.ui" line="181"/>
       <source>Text below arrow side symbol
 Angle, surface finish, root</source>
-      <translation type="unfinished">Text below arrow side symbol
-Angle, surface finish, root</translation>
+      <translation>Text pod šipkou boční symbol
+Úhl, povrchová úprava, kořen</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="213"/>
@@ -3944,7 +4137,7 @@ Angle, surface finish, root</translation>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="216"/>
       <source>Flip Sides</source>
-      <translation type="unfinished">Flip Sides</translation>
+      <translation>Flip Sides</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="238"/>
@@ -3963,7 +4156,7 @@ v místě zlomu odkazové čáry</translation>
       <source>Adds the &apos;All Around&apos; symbol (circle)
 at the kink in the leader line</source>
       <translation>Přidá symbol &apos;Obvodový svar&apos; (kruh)
-na odkazovou čáru</translation>
+v místě zlomu odkazové čáry</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="253"/>
@@ -3973,12 +4166,12 @@ na odkazovou čáru</translation>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="260"/>
       <source>Offsets the lower symbol to indicate alternating welds</source>
-      <translation type="unfinished">Offsets the lower symbol to indicate alternating welds</translation>
+      <translation>Vyváží spodní symbol pro označení střídavých svarů</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="263"/>
       <source>Alternating</source>
-      <translation type="unfinished">Alternating</translation>
+      <translation>Alternativní</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="274"/>
@@ -3999,8 +4192,8 @@ na odkazovou čáru</translation>
       <location filename="../../TaskWeldingSymbol.ui" line="301"/>
       <source>Directory path for welding symbols.
 This directory will be used for the symbol selection.</source>
-      <translation type="unfinished">Directory path for welding symbols.
-This directory will be used for the symbol selection.</translation>
+      <translation>Adresářová cesta pro sváření symbolů.
+Tento adresář bude použit pro výběr symbolů.</translation>
     </message>
     <message>
       <location filename="../../TaskWeldingSymbol.ui" line="308"/>
@@ -4013,17 +4206,17 @@ This directory will be used for the symbol selection.</translation>
     <message>
       <location filename="../../DlgPageChooser.ui" line="17"/>
       <source>Page Chooser</source>
-      <translation type="unfinished">Page Chooser</translation>
+      <translation>Výběr stránky</translation>
     </message>
     <message>
       <location filename="../../DlgPageChooser.ui" line="29"/>
       <source>FreeCAD could not determine which Page to use.  Please select a Page.</source>
-      <translation type="unfinished">FreeCAD could not determine which Page to use.  Please select a Page.</translation>
+      <translation>FreeCAD nemohl určit, která stránka má být použita. Vyberte stránku.</translation>
     </message>
     <message>
       <location filename="../../DlgPageChooser.ui" line="39"/>
       <source>Select a Page that should be used</source>
-      <translation type="unfinished">Select a Page that should be used</translation>
+      <translation>Vyberte stránku, která by měla být použita</translation>
     </message>
   </context>
   <context>
@@ -4035,7 +4228,7 @@ This directory will be used for the symbol selection.</translation>
       <translation>Pokročilé</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="464"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="450"/>
       <source>If checked, TechDraw will attempt to build faces using the
 line segments returned by the hidden line removal algorithm.
 Faces must be detected in order to use hatching, but there
@@ -4044,143 +4237,111 @@ can be a performance penalty in complex models.</source>
 Plochy musí být detekovány za účelem použití šrafování, ale může dojít ke snížení výkonu u složitých modelů.</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="470"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="456"/>
       <source>Detect Faces</source>
       <translation>Detekovat plochy</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="371"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="368"/>
       <source>Highlights border of section cut in section views</source>
-      <translation type="unfinished">Highlights border of section cut in section views</translation>
+      <translation>Zvýrazní okraj řezu v pohledu na sekci</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="374"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="371"/>
       <source>Show Section Edges</source>
       <translation>Zobrazit hrany řezu</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="442"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="85"/>
       <source>Dump intermediate results during Section view processing</source>
-      <translation type="unfinished">Dump intermediate results during Section view processing</translation>
+      <translation>Vypsat průběžné výsledky během zpracování sekcí</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="445"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="88"/>
       <source>Debug Section</source>
       <translation>Sekce ladění</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="289"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="340"/>
       <source>Dump intermediate results during Detail view processing</source>
-      <translation type="unfinished">Dump intermediate results during Detail view processing</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="292"/>
-      <source>Debug Detail</source>
-      <translation type="unfinished">Debug Detail</translation>
+      <translation>Vypsat průběžné výsledky při zpracování detailu pohledu</translation>
     </message>
     <message>
       <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="343"/>
+      <source>Debug Detail</source>
+      <translation>Detail ladění</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="167"/>
       <source>Include edges with unexpected geometry (zero length etc.) in results</source>
       <translation>Zahrnout hrany s neočekávanou geometrií (nulová délka atd.) do výsledků</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="346"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="170"/>
       <source>Allow Crazy Edges</source>
-      <translation type="unfinished">Allow Crazy Edges</translation>
+      <translation>Povolit ostré hrany</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="99"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="63"/>
       <source>Perform a fuse operation on input shape(s) before Section view processing</source>
-      <translation type="unfinished">Perform a fuse operation on input shape(s) before Section view processing</translation>
+      <translation>Provést sloučení vstupního tvaru(y) před zpracováním sekce</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="102"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="66"/>
       <source>Fuse Before Section</source>
       <translation>Před řezem sloučit</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="492"/>
-      <source>Include 2D Objects in projection</source>
-      <translation>Zahrnout 2D objekty do promítání</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="495"/>
-      <source>Show Loose 2D Geom</source>
-      <translation>Ukázat ztracenou 2D geometrii</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="523"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="154"/>
       <source>Edge Fuzz</source>
       <translation>Neostrá hrana</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="254"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="119"/>
       <source>Size of selection area around edges
 Each unit is approx. 0.1 mm wide</source>
       <translation>Velikost oblasti výběru kolem hran.
 Každá část je přibližně 0,1 mm široká</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="323"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="224"/>
       <source>Mark Fuzz</source>
-      <translation type="unfinished">Mark Fuzz</translation>
+      <translation>Označit Fuzz</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="155"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="262"/>
       <source>Selection area around center marks
 Each unit is approx. 0.1 mm wide</source>
       <translation>Oblast výběru kolem středových značek
 Každá část je přibližně 0,1 mm široká</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="115"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="422"/>
       <source>If checked, system will attempt to automatically correct dimension references when the model changes.</source>
-      <translation type="unfinished">If checked, system will attempt to automatically correct dimension references when the model changes.</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="121"/>
-      <source>Auto Correct Dimension Refs</source>
-      <translation type="unfinished">Auto Correct Dimension Refs</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="310"/>
-      <source>Line End Cap Shape</source>
-      <translation>Tvar konce čáry</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="407"/>
-      <source>Shape of line end caps.
-Only change unless you know what you are doing!</source>
-      <translation>Tvar konce čáry.
-Změňte pouze, pokud víte co děláte!</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="418"/>
-      <source>Round</source>
-      <translation>Kruh</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="423"/>
-      <source>Square</source>
-      <translation>Čtverec</translation>
+      <translation>Je-li zaškrtnuto, systém se pokusí při změně modelu automaticky opravit reference dimenze.</translation>
     </message>
     <message>
       <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="428"/>
-      <source>Flat</source>
-      <translation>Rovné</translation>
+      <source>Auto Correct Dimension Refs</source>
+      <translation>Automaticky opravit správné rozměry</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="533"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="406"/>
       <source>Use New Face Finder Algorithm</source>
-      <translation type="unfinished">Use New Face Finder Algorithm</translation>
+      <translation>Použít nový algoritmus Finder</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="213"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="491"/>
+      <source>The number of times FreeCAD should try to remove overlapping edges returned by the Hidden Line Removal algorithm. A value of 0 indicates no scrubbing, 1 indicates a single pass and 2 indicates a second pass should be performed. Values above 2 are generally not productive. Each pass adds to the time required to produce the drawing.</source>
+      <translation>Čas, kolikrát by se FreeCAD měl pokusit odstranit překrývající se hrany vrácené algoritmem odstranění skryté linky. Hodnota 0 znamená, že nedochází k praní, 1 označuje jediný průchod a 2 označuje druhý průchod. Hodnoty vyšší než 2 nejsou obecně produktivní. Každá hodnota se přidává k času potřebnému k vytvoření výkresu.</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="285"/>
       <source>Max SVG Hatch Tiles</source>
       <translation>Max. SVG šrafování dlaždic</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="52"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="298"/>
       <source>Limit of 64x64 pixel SVG tiles used to hatch a single face.
 For large scalings you might get an error about to many SVG tiles.
 Then you need to increase the tile limit.</source>
@@ -4189,44 +4350,39 @@ U velkých měřítek se může objevit chyba týkající se příliš velkého 
 Pak je třeba limit dlaždic zvýšit.</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="330"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="484"/>
       <source>Max PAT Hatch Segments</source>
-      <translation type="unfinished">Max PAT Hatch Segments</translation>
+      <translation>Max segmentů průniku PAT</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="184"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="189"/>
       <source>Maximum hatch line segments to use
 when hatching a face with a PAT pattern</source>
-      <translation type="unfinished">Maximum hatch line segments to use
-when hatching a face with a PAT pattern</translation>
+      <translation>Maximální segmenty šrafování k použití
+při vylíhnutí plochy s modelem PAT</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="220"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="387"/>
       <source>Issue progress messages while building View geometry</source>
-      <translation type="unfinished">Issue progress messages while building View geometry</translation>
+      <translation>Zpráva o pokroku při vytváření geometrie pohledu</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="223"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="390"/>
       <source>Report Progress</source>
-      <translation type="unfinished">Report Progress</translation>
+      <translation>Nahlásit průběh</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="530"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="403"/>
       <source>If checked, FreeCAD will use the new face finder algorithm.  If not checked, FreeCAD will use the original face finder.</source>
-      <translation type="unfinished">If checked, FreeCAD will use the new face finder algorithm.  If not checked, FreeCAD will use the original face finder.</translation>
+      <translation>Je-li zaškrtnuto, FreeCAD použije nový algoritmus hledače obličeje. Pokud není zaškrtnuto, FreeCAD použije původní hledač obličeje.</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="567"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="477"/>
       <source>Overlap Edges Scrub Passes</source>
-      <translation type="unfinished">Overlap Edges Scrub Passes</translation>
+      <translation>Hrany překrývající se hrany projdou</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="574"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The number of times FreeCAD should try to remove overlapping edges returned by the Hidden Line Removal algorithm.  A value of 0 indicates no scrubbing, 1 indicates a single pass and 2 indicates a second pass should be performed.  Values above 2 are generally not productive.   Each pass adds to the time required to produce the drawing.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The number of times FreeCAD should try to remove overlapping edges returned by the Hidden Line Removal algorithm.  A value of 0 indicates no scrubbing, 1 indicates a single pass and 2 indicates a second pass should be performed.  Values above 2 are generally not productive.   Each pass adds to the time required to produce the drawing.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="607"/>
+      <location filename="../../DlgPrefsTechDrawAdvanced.ui" line="524"/>
       <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Note:&lt;/span&gt; Items in &lt;span style=&quot; font-style:italic;&quot;&gt;italics&lt;/span&gt; are default values for new objects. They have no effect on existing objects.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
       <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Note:&lt;/span&gt; Items in &lt;span style=&quot; font-style:italic;&quot;&gt;italics&lt;/span&gt; are default values for new objects. They have no effect on existing objects.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
@@ -4237,283 +4393,278 @@ when hatching a face with a PAT pattern</translation>
       <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="20"/>
       <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="32"/>
       <source>Annotation</source>
-      <translation>Vysvětlivka</translation>
+      <translation>Poznámka</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="296"/>
-      <source>Section Line Standard</source>
-      <translation type="unfinished">Section Line Standard</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="315"/>
-      <source>Standard to be used to draw section lines</source>
-      <translation type="unfinished">Standard to be used to draw section lines</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="328"/>
-      <source>ANSI</source>
-      <translation>ANSI</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="333"/>
-      <source>ISO</source>
-      <translation>ISO</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="770"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="566"/>
       <source>Section Line Style</source>
       <translation>Styl čáry řezu</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="221"/>
-      <source>Style for section lines</source>
-      <translation>Styl pro čáry řezu</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="234"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="412"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="665"/>
-      <source>NeverShow</source>
-      <translation>Nezobrazovat</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="243"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="421"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="674"/>
-      <source>Continuous</source>
-      <translation type="unfinished">Continuous</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="252"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="430"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="683"/>
-      <source>Dash</source>
-      <translation>Čárka</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="261"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="439"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="692"/>
-      <source>Dot</source>
-      <translation>Tečka</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="270"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="448"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="701"/>
-      <source>DashDot</source>
-      <translation>Čárka tečka</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="279"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="457"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="710"/>
-      <source>DashDotDot</source>
-      <translation>Čárka tečka tečka</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="727"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="136"/>
       <source>Section Cut Surface</source>
       <translation type="unfinished">Section Cut Surface</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="795"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="462"/>
       <source>Default appearance of cut surface in section view</source>
       <translation type="unfinished">Default appearance of cut surface in section view</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="808"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="475"/>
       <source>Hide</source>
       <translation>Skrýt</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="813"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="480"/>
       <source>Solid Color</source>
       <translation>Jednolitá Barva</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="818"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="485"/>
       <source>SVG Hatch</source>
       <translation>SVG šrafy</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="823"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="490"/>
       <source>PAT Hatch</source>
       <translation type="unfinished">PAT Hatch</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="836"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="523"/>
+      <source>This checkbox controls whether or not to display a highlight around the detail area in the detail&apos;s source view.</source>
+      <translation type="unfinished">This checkbox controls whether or not to display a highlight around the detail area in the detail&apos;s source view.</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="526"/>
+      <source>Detail Source Show Highlight</source>
+      <translation type="unfinished">Detail Source Show Highlight</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="553"/>
+      <source>Lines</source>
+      <translation>Čáry</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="715"/>
+      <source>Standard to be used to draw non-continuous lines.</source>
+      <translation type="unfinished">Standard to be used to draw non-continuous lines.</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="742"/>
       <source>Line group used to set line widths</source>
       <translation type="unfinished">Line group used to set line widths</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="839"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="745"/>
       <source>Line Width Group</source>
       <translation type="unfinished">Line Width Group</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="45"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="421"/>
       <source>Detail View Outline Shape</source>
       <translation type="unfinished">Detail View Outline Shape</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="166"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="170"/>
       <source>Outline shape for detail views</source>
       <translation type="unfinished">Outline shape for detail views</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="176"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="180"/>
       <source>Circle</source>
       <translation>Kruh</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="185"/>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="610"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="189"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="268"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="856"/>
       <source>Square</source>
       <translation>Čtverec</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="346"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="603"/>
       <source>Line style of detail highlight on base view</source>
       <translation type="unfinished">Line style of detail highlight on base view</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="349"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="606"/>
       <source>Detail Highlight Style</source>
       <translation type="unfinished">Detail Highlight Style</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="782"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="646"/>
       <source>Center Line Style</source>
       <translation>Styl osy</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="652"/>
-      <source>Type for centerlines</source>
-      <translation type="unfinished">Type for centerlines</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="202"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="409"/>
       <source>Balloon Shape</source>
       <translation>Tvar Balonu</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="555"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="213"/>
       <source>Shape of balloon annotations</source>
-      <translation type="unfinished">Shape of balloon annotations</translation>
+      <translation>Tvar balonových poznámek</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="565"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="223"/>
       <source>Circular</source>
       <translation>Kruhový</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="574"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="232"/>
       <source>None</source>
       <translation>Žádný</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="583"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="241"/>
       <source>Triangle</source>
       <translation>Trojúhelník</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="592"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="250"/>
       <source>Inspection</source>
       <translation>Prohlížení</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="601"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="259"/>
       <source>Hexagon</source>
       <translation>Šestiúhelník</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="619"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="277"/>
       <source>Rectangle</source>
       <translation>Obdélník</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="628"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="286"/>
       <source>Line</source>
       <translation>Čára</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="505"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="378"/>
       <source>Balloon Leader End</source>
       <translation type="unfinished">Balloon Leader End</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="141"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="385"/>
+      <source>This checkbox controls whether or not to display the outline around a detail view.</source>
+      <translation type="unfinished">This checkbox controls whether or not to display the outline around a detail view.</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="388"/>
+      <source>Detail View Show Matting</source>
+      <translation type="unfinished">Detail View Show Matting</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="510"/>
       <source>Style for balloon leader line ends</source>
       <translation type="unfinished">Style for balloon leader line ends</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="361"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="148"/>
       <source>Length of horizontal portion of Balloon leader</source>
       <translation type="unfinished">Length of horizontal portion of Balloon leader</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="364"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="151"/>
       <source>Ballon Leader Kink Length</source>
       <translation type="unfinished">Ballon Leader Kink Length</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="481"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="310"/>
       <source>Length of balloon leader line kink</source>
       <translation type="unfinished">Length of balloon leader line kink</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="524"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="341"/>
       <source>Restrict Filled Triangle line end to vertical or horizontal directions</source>
       <translation type="unfinished">Restrict Filled Triangle line end to vertical or horizontal directions</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="527"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="344"/>
       <source>Balloon Orthogonal Triangle</source>
       <translation type="unfinished">Balloon Orthogonal Triangle</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="746"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="52"/>
       <source>Forces last leader line segment to be horizontal</source>
       <translation type="unfinished">Forces last leader line segment to be horizontal</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="749"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="55"/>
       <source>Leader Line Auto Horizontal</source>
       <translation type="unfinished">Leader Line Auto Horizontal</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="82"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="88"/>
       <source>Show arc center marks in views</source>
       <translation type="unfinished">Show arc center marks in views</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="85"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="91"/>
       <source>Show Center Marks</source>
       <translation>Zobrazit středové značky</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="113"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="440"/>
       <source>Show arc centers in printed output</source>
       <translation type="unfinished">Show arc centers in printed output</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="116"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="443"/>
       <source>Print Center Marks</source>
       <translation>Tisknout středové značky</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="851"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="112"/>
       <source>Show or hide marks at direction changes on ComplexSection lines.</source>
       <translation type="unfinished">Show or hide marks at direction changes on ComplexSection lines.</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="854"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="115"/>
       <source>Complex Section Line Marks</source>
       <translation type="unfinished">Complex Section Line Marks</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="881"/>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="752"/>
+      <source>Hidden Line Style</source>
+      <translation type="unfinished">Hidden Line Style</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="777"/>
+      <source>Line Standard</source>
+      <translation type="unfinished">Line Standard</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="814"/>
+      <source>Line End Cap Shape</source>
+      <translation type="unfinished">Line End Cap Shape</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="838"/>
+      <source>Shape of line end caps.  The default (round) should almost
+always be the right choice.   Flat or square caps are useful 
+if you are planning to use a drawing as a 1:1 cutting guide.
+</source>
+      <translation type="unfinished">Shape of line end caps.  The default (round) should almost
+always be the right choice.   Flat or square caps are useful 
+if you are planning to use a drawing as a 1:1 cutting guide.
+</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="851"/>
+      <source>Round</source>
+      <translation type="unfinished">Round</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="861"/>
+      <source>Flat</source>
+      <translation>Rovné</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawAnnotation.ui" line="880"/>
       <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Note:&lt;/span&gt; Items in &lt;span style=&quot; font-style:italic;&quot;&gt;italics&lt;/span&gt; are default values for new objects. They have no effect on existing objects.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
       <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Note:&lt;/span&gt; Items in &lt;span style=&quot; font-style:italic;&quot;&gt;italics&lt;/span&gt; are default values for new objects. They have no effect on existing objects.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
@@ -4527,197 +4678,206 @@ when hatching a face with a PAT pattern</translation>
       <translation>Barvy</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="606"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="618"/>
       <source>Normal</source>
       <translation>Normála</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="494"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="510"/>
       <source>Normal line color</source>
       <translation>Normální barva čáry</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="420"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="606"/>
       <source>Hidden Line</source>
       <translation>Skrytá čára</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="68"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="530"/>
       <source>Hidden line color</source>
       <translation>Barva skryté čáry</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="142"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="250"/>
       <source>Preselected</source>
       <translation>Předvolená</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="395"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="186"/>
       <source>Preselection color</source>
       <translation>Předvolená barva</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="268"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="172"/>
       <source>Section Face</source>
       <translation>Řez plochy</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="514"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="625"/>
       <source>Section face color</source>
       <translation>Barva řezu plochy</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="173"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="107"/>
       <source>Selected</source>
       <translation>Vybrané</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="447"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="443"/>
       <source>Selected item color</source>
       <translation type="unfinished">Selected item color</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="275"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="420"/>
       <source>Section Line</source>
       <translation type="unfinished">Section Line</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="355"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="349"/>
       <source>Section line color</source>
       <translation type="unfinished">Section line color</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="130"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="218"/>
       <source>Background</source>
       <translation>Pozadí</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="243"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="114"/>
       <source>Background color around pages</source>
       <translation>Barva pozadí kolem stránek</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="348"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="406"/>
       <source>Hatch</source>
       <translation>Šrafovat</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="196"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="329"/>
       <source>Hatch image color</source>
       <translation type="unfinished">Hatch image color</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="613"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="567"/>
       <source>Dimension</source>
       <translation>Rozměr</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="105"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="282"/>
       <source>Color of dimension lines and text.</source>
       <translation type="unfinished">Color of dimension lines and text.</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="324"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="60"/>
       <source>Geometric Hatch</source>
       <translation type="unfinished">Geometric Hatch</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="581"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="369"/>
       <source>Geometric hatch pattern color</source>
       <translation type="unfinished">Geometric hatch pattern color</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="282"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="179"/>
       <source>Centerline</source>
       <translation>Osa</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="55"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="269"/>
       <source>Monochrome text color</source>
       <translation type="unfinished">Monochrome text color</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="180"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Check this to use light text and lines on dark backgrounds.  Set Page Color to a dark color. Transparent or light color faces are recommended with this option.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Check this to use light text and lines on dark backgrounds.  Set Page Color to a dark color. Transparent or light color faces are recommended with this option.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="183"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="430"/>
       <source>Light on dark</source>
       <translation type="unfinished">Light on dark</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="236"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="413"/>
       <source>Page Color</source>
       <translation type="unfinished">Page Color</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="427"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="302"/>
       <source>Use a light color for dark text and dark color for light text.</source>
       <translation type="unfinished">Use a light color for dark text and dark color for light text.</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="467"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="147"/>
       <source>Centerline color</source>
       <translation>Barva osy</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="487"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="206"/>
       <source>Vertex</source>
       <translation>Vrchol</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="534"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="574"/>
       <source>Color of vertices in views</source>
       <translation type="unfinished">Color of vertices in views</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="161"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="394"/>
       <source>Detail Highlight</source>
       <translation type="unfinished">Detail Highlight</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="336"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="262"/>
       <source>Leaderline</source>
-      <translation type="unfinished">Leaderline</translation>
+      <translation>Odkazová čára</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="216"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="463"/>
       <source>Default color for leader lines</source>
-      <translation type="unfinished">Default color for leader lines</translation>
+      <translation>Výchozí barva pro odkazové čáry</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="149"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="594"/>
       <source>Grid Color</source>
       <translation type="unfinished">Grid Color</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="565"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="427"/>
+      <source>Check this to use light text and lines on dark backgrounds. Set Page Color to a dark color. Transparent or light color faces are recommended with this option.</source>
+      <translation type="unfinished">Check this to use light text and lines on dark backgrounds. Set Page Color to a dark color. Transparent or light color faces are recommended with this option.</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="494"/>
       <source>Object faces will be transparent</source>
       <translation type="unfinished">Object faces will be transparent</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="568"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="497"/>
       <source>Transparent Faces</source>
       <translation>Průhledný povrch</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="375"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="225"/>
       <source>Face color (if not transparent)</source>
       <translation>Barva povrchu (pokud není průhledná)</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="620"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If checked FreeCAD will use a single colour for all text and lines.  If unchecked FreeCAD will attempt to use lighter versions of preferred colours.&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If checked FreeCAD will use a single colour for all text and lines.  If unchecked FreeCAD will attempt to use lighter versions of preferred colours.&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="84"/>
+      <source>If checked FreeCAD will use a single color for all text and lines. 
+
+</source>
+      <translation type="unfinished">If checked FreeCAD will use a single color for all text and lines. 
+
+</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="623"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="89"/>
       <source>Monochrome</source>
       <translation type="unfinished">Monochrome</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawColors.ui" line="654"/>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="645"/>
+      <source>Template Underline</source>
+      <translation type="unfinished">Template Underline</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawColors.ui" line="680"/>
       <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Note:&lt;/span&gt; Items in &lt;span style=&quot; font-style:italic;&quot;&gt;italics&lt;/span&gt; are default values for new objects. They have no effect on existing objects.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
       <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Note:&lt;/span&gt; Items in &lt;span style=&quot; font-style:italic;&quot;&gt;italics&lt;/span&gt; are default values for new objects. They have no effect on existing objects.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
@@ -4771,29 +4931,14 @@ when hatching a face with a PAT pattern</translation>
       <translation type="unfinished">Use Global Decimals</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="527"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controls the size of gap between dimension point and start of extension line for ISO dimensions. Value * linewidth is the gap.  Normally, no gap is used.  If using a gap, the recommended value 8.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controls the size of gap between dimension point and start of extension line for ISO dimensions. Value * linewidth is the gap.  Normally, no gap is used.  If using a gap, the recommended value 8.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="546"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controls the size of gap between dimension point and start of extension line for ASME dimensions. Value * linewidth is the gap.  Normally, no gap is used.  If a gap is used, the recommended value is 6.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controls the size of gap between dimension point and start of extension line for ASME dimensions. Value * linewidth is the gap.  Normally, no gap is used.  If a gap is used, the recommended value is 6.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="570"/>
+      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="573"/>
       <source>Controls the size of spacing between dimension line and dimension text for ISO dimensions.</source>
       <translation type="unfinished">Controls the size of spacing between dimension line and dimension text for ISO dimensions.</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="573"/>
+      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="576"/>
       <source>Line Spacing - ISO</source>
       <translation type="unfinished">Line Spacing - ISO</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="580"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controls the size of spacing between dimension line and dimension text. Value * linewidth is the line spacing.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controls the size of spacing between dimension line and dimension text. Value * linewidth is the line spacing.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
       <location filename="../../DlgPrefsTechDrawDimensions.ui" line="199"/>
@@ -4829,11 +4974,6 @@ when hatching a face with a PAT pattern</translation>
       <location filename="../../DlgPrefsTechDrawDimensions.ui" line="489"/>
       <source>Extension Gap Factor - ISO</source>
       <translation type="unfinished">Extension Gap Factor - ISO</translation>
-    </message>
-    <message>
-      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="496"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Leave blank for automatic dimension format.  Use %f, %g or %w specifiers to override.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Leave blank for automatic dimension format.  Use %f, %g or %w specifiers to override.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
       <location filename="../../DlgPrefsTechDrawDimensions.ui" line="180"/>
@@ -4888,6 +5028,11 @@ Multiplier of &apos;Font Size&apos;</translation>
       <translation>Velikost šipek</translation>
     </message>
     <message>
+      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="496"/>
+      <source>Leave blank for automatic dimension format. Use %f, %g or %w specifiers to override.</source>
+      <translation type="unfinished">Leave blank for automatic dimension format. Use %f, %g or %w specifiers to override.</translation>
+    </message>
+    <message>
       <location filename="../../DlgPrefsTechDrawDimensions.ui" line="517"/>
       <source>Controls the size of gap between dimension point and start of extension line for ASME dimensions.</source>
       <translation type="unfinished">Controls the size of gap between dimension point and start of extension line for ASME dimensions.</translation>
@@ -4898,7 +5043,30 @@ Multiplier of &apos;Font Size&apos;</translation>
       <translation type="unfinished">Extension Gap Factor - ASME</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="610"/>
+      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="527"/>
+      <source>Controls the size of gap between dimension point and start of extension line for ISO dimensions. 
+Value * linewidth is the gap. 
+Normally, no gap is used. If using a gap, the recommended value 8.</source>
+      <translation type="unfinished">Controls the size of gap between dimension point and start of extension line for ISO dimensions. 
+Value * linewidth is the gap. 
+Normally, no gap is used. If using a gap, the recommended value 8.</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="548"/>
+      <source>Controls the size of gap between dimension point and start of extension line for ASME dimensions. Value * linewidth is the gap. 
+Normally, no gap is used. If a gap is used, the recommended value is 6.</source>
+      <translation type="unfinished">Controls the size of gap between dimension point and start of extension line for ASME dimensions. Value * linewidth is the gap. 
+Normally, no gap is used. If a gap is used, the recommended value is 6.</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="583"/>
+      <source>Controls the size of spacing between dimension line and dimension text.
+ Value * linewidth is the line spacing.</source>
+      <translation type="unfinished">Controls the size of spacing between dimension line and dimension text.
+ Value * linewidth is the line spacing.</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawDimensions.ui" line="614"/>
       <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Note:&lt;/span&gt; Items in &lt;span style=&quot; font-style:italic;&quot;&gt;italics&lt;/span&gt; are default values for new objects. They have no effect on existing objects.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
       <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Note:&lt;/span&gt; Items in &lt;span style=&quot; font-style:italic;&quot;&gt;italics&lt;/span&gt; are default values for new objects. They have no effect on existing objects.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
@@ -4999,7 +5167,7 @@ for ProjectionGroups</translation>
       <translation type="unfinished">Conventions</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="366"/>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="379"/>
       <source>Projection Group Angle</source>
       <translation type="unfinished">Projection Group Angle</translation>
     </message>
@@ -5024,24 +5192,24 @@ for ProjectionGroups</translation>
       <translation>Stránka</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="426"/>
-      <source>Hidden Line Style</source>
-      <translation type="unfinished">Hidden Line Style</translation>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="438"/>
+      <source>Standard to be used to draw section lines.  This affects the position of arrows and symbol.</source>
+      <translation type="unfinished">Standard to be used to draw section lines.  This affects the position of arrows and symbol.</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="445"/>
-      <source>Style for hidden lines</source>
-      <translation type="unfinished">Style for hidden lines</translation>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="451"/>
+      <source>ANSI</source>
+      <translation type="unfinished">ANSI</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="455"/>
-      <source>Continuous</source>
-      <translation type="unfinished">Continuous</translation>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="456"/>
+      <source>ISO</source>
+      <translation type="unfinished">ISO</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="464"/>
-      <source>Dashed</source>
-      <translation>Čárkovaný</translation>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="469"/>
+      <source>Section Line Convention</source>
+      <translation type="unfinished">Section Line Convention</translation>
     </message>
     <message>
       <location filename="../../DlgPrefsTechDrawGeneral.ui" line="493"/>
@@ -5129,17 +5297,17 @@ for ProjectionGroups</translation>
       <translation>Mřížka</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="805"/>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="818"/>
       <source>Set ShowGrid property to true on new Pages.</source>
       <translation type="unfinished">Set ShowGrid property to true on new Pages.</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="808"/>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="821"/>
       <source>Show Grid</source>
       <translation type="unfinished">Show Grid</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="829"/>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="842"/>
       <source>Grid Spacing</source>
       <translation type="unfinished">Grid Spacing</translation>
     </message>
@@ -5149,7 +5317,22 @@ for ProjectionGroups</translation>
       <translation type="unfinished">Distance between Page grid lines.</translation>
     </message>
     <message>
-      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="879"/>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="891"/>
+      <source>Selection</source>
+      <translation>Výběr</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="905"/>
+      <source>If enabled, clicking without Ctrl does not clear existing vertex/edge/face selection</source>
+      <translation type="unfinished">If enabled, clicking without Ctrl does not clear existing vertex/edge/face selection</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="908"/>
+      <source>Enable Multiselection Mode</source>
+      <translation type="unfinished">Enable Multiselection Mode</translation>
+    </message>
+    <message>
+      <location filename="../../DlgPrefsTechDrawGeneral.ui" line="935"/>
       <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Note:&lt;/span&gt; Items in &lt;span style=&quot; font-style:italic;&quot;&gt;italics&lt;/span&gt; are default values for new objects. They have no effect on existing objects.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
       <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Note:&lt;/span&gt; Items in &lt;span style=&quot; font-style:italic;&quot;&gt;italics&lt;/span&gt; are default values for new objects. They have no effect on existing objects.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
@@ -5164,7 +5347,7 @@ for ProjectionGroups</translation>
     <message>
       <location filename="../../DlgPrefsTechDrawHLR.ui" line="47"/>
       <source>Hidden Line Removal</source>
-      <translation type="unfinished">Hidden Line Removal</translation>
+      <translation>Odstranění skryté čáry</translation>
     </message>
     <message>
       <location filename="../../DlgPrefsTechDrawHLR.ui" line="66"/>
@@ -5375,81 +5558,91 @@ Fast, but result is a collection of short straight lines.</translation>
   <context>
     <name>TechDrawGui::MDIViewPage</name>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="94"/>
+      <location filename="../../MDIViewPage.cpp" line="93"/>
       <source>Toggle &amp;Keep Updated</source>
       <translation>Přepnout průběžné aktualizace</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="97"/>
+      <location filename="../../MDIViewPage.cpp" line="96"/>
       <source>Toggle &amp;Frames</source>
       <translation>Přepnout rámce</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="100"/>
+      <location filename="../../MDIViewPage.cpp" line="99"/>
       <source>&amp;Export SVG</source>
       <translation>&amp;Exportovat SVG</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="103"/>
+      <location filename="../../MDIViewPage.cpp" line="102"/>
       <source>Export DXF</source>
       <translation>Exportovat DXF</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="106"/>
+      <location filename="../../MDIViewPage.cpp" line="105"/>
       <source>Export PDF</source>
       <translation>Export PDF</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="109"/>
+      <location filename="../../MDIViewPage.cpp" line="108"/>
       <source>Print All Pages</source>
       <translation type="unfinished">Print All Pages</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="381"/>
+      <location filename="../../MDIViewPage.cpp" line="404"/>
       <source>Different orientation</source>
       <translation>Jiná orientace</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="382"/>
+      <location filename="../../MDIViewPage.cpp" line="405"/>
       <source>The printer uses a different orientation  than the drawing.
 Do you want to continue?</source>
       <translation>Tiskárna používá jinou orientaci než výkres.
 Chcete pokračovat?</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="391"/>
+      <location filename="../../MDIViewPage.cpp" line="414"/>
       <source>Different paper size</source>
       <translation>Jiný formát papíru</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="392"/>
+      <location filename="../../MDIViewPage.cpp" line="415"/>
       <source>The printer uses a different paper size than the drawing.
 Do you want to continue?</source>
       <translation>Tiskárna používá jiný formát papíru než výkres.
 Chcete pokračovat?</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="405"/>
+      <location filename="../../MDIViewPage.cpp" line="429"/>
       <source>Opening file failed</source>
       <translation>Otevření souboru selhalo</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="406"/>
+      <location filename="../../MDIViewPage.cpp" line="430"/>
       <source>Can not open file %1 for writing.</source>
       <translation>Soubor %1 nelze otevřít pro zápis.</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="701"/>
+      <location filename="../../MDIViewPage.cpp" line="519"/>
       <source>Save DXF file</source>
-      <translation type="unfinished">Save DXF file</translation>
+      <translation>Uložit soubor DXF</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="702"/>
+      <location filename="../../MDIViewPage.cpp" line="520"/>
       <source>DXF (*.dxf)</source>
       <translation>DXF (*.dxf)</translation>
     </message>
     <message>
-      <location filename="../../MDIViewPage.cpp" line="1210"/>
+      <location filename="../../MDIViewPage.cpp" line="540"/>
+      <source>Save PDF file</source>
+      <translation type="unfinished">Save PDF file</translation>
+    </message>
+    <message>
+      <location filename="../../MDIViewPage.cpp" line="541"/>
+      <source>PDF (*.pdf)</source>
+      <translation>PDF (*.pdf)</translation>
+    </message>
+    <message>
+      <location filename="../../MDIViewPage.cpp" line="1035"/>
       <source>Selected:</source>
       <translation>Vybráno:</translation>
     </message>
@@ -5622,7 +5815,7 @@ Chcete pokračovat?</translation>
     <message>
       <location filename="../../TaskBalloon.ui" line="305"/>
       <source>Leader line width</source>
-      <translation>Šířka vodící čáry</translation>
+      <translation>Šířka odkazové čáry</translation>
     </message>
     <message>
       <location filename="../../TaskBalloon.ui" line="324"/>
@@ -5694,89 +5887,64 @@ Chcete pokračovat?</translation>
       <translation>Zarovnané</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="145"/>
+      <location filename="../../TaskCenterLine.ui" line="208"/>
       <source>Shift Horizontal</source>
       <translation type="unfinished">Shift Horizontal</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="158"/>
+      <location filename="../../TaskCenterLine.ui" line="240"/>
       <source>Move line -Left or +Right</source>
       <translation type="unfinished">Move line -Left or +Right</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="171"/>
+      <location filename="../../TaskCenterLine.ui" line="253"/>
       <source>Shift Vertical</source>
       <translation>Posunout svisle</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="184"/>
+      <location filename="../../TaskCenterLine.ui" line="221"/>
       <source>Move line +Up or -Down</source>
       <translation type="unfinished">Move line +Up or -Down</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="197"/>
+      <location filename="../../TaskCenterLine.ui" line="260"/>
       <source>Rotate</source>
       <translation>Otočit</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="210"/>
+      <location filename="../../TaskCenterLine.ui" line="273"/>
       <source>Rotate line +CCW or -CW</source>
       <translation type="unfinished">Rotate line +CCW or -CW</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="237"/>
+      <location filename="../../TaskCenterLine.ui" line="289"/>
       <source>Extend By</source>
       <translation>Rozšířit o</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="250"/>
+      <location filename="../../TaskCenterLine.ui" line="302"/>
       <source>Make the line a little longer.</source>
       <translation>Mírně prodloužit čáru.</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="256"/>
+      <location filename="../../TaskCenterLine.ui" line="308"/>
       <source>mm</source>
       <translation>mm</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="266"/>
+      <location filename="../../TaskCenterLine.ui" line="145"/>
       <source>Color</source>
       <translation>Barva</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="284"/>
+      <location filename="../../TaskCenterLine.ui" line="176"/>
       <source>Weight</source>
       <translation>Tloušťka</translation>
     </message>
     <message>
-      <location filename="../../TaskCenterLine.ui" line="304"/>
+      <location filename="../../TaskCenterLine.ui" line="183"/>
       <source>Style</source>
       <translation>Styl</translation>
-    </message>
-    <message>
-      <location filename="../../TaskCenterLine.ui" line="315"/>
-      <source>Continuous</source>
-      <translation type="unfinished">Continuous</translation>
-    </message>
-    <message>
-      <location filename="../../TaskCenterLine.ui" line="324"/>
-      <source>Dash</source>
-      <translation>Čárka</translation>
-    </message>
-    <message>
-      <location filename="../../TaskCenterLine.ui" line="333"/>
-      <source>Dot</source>
-      <translation>Tečka</translation>
-    </message>
-    <message>
-      <location filename="../../TaskCenterLine.ui" line="342"/>
-      <source>DashDot</source>
-      <translation>Čárka tečka</translation>
-    </message>
-    <message>
-      <location filename="../../TaskCenterLine.ui" line="351"/>
-      <source>DashDotDot</source>
-      <translation>Čárka tečka tečka</translation>
     </message>
   </context>
   <context>
@@ -5843,93 +6011,104 @@ Chcete pokračovat?</translation>
       <translation>Typ měřítka</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="154"/>
+      <location filename="../../TaskComplexSection.ui" line="160"/>
       <source>Projection Strategy</source>
       <translation type="unfinished">Projection Strategy</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="179"/>
-      <location filename="../../TaskComplexSection.ui" line="186"/>
+      <location filename="../../TaskComplexSection.ui" line="185"/>
+      <location filename="../../TaskComplexSection.ui" line="192"/>
       <source>Offset</source>
       <translation>Odstup</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="191"/>
+      <location filename="../../TaskComplexSection.ui" line="197"/>
       <source>Aligned</source>
       <translation>Zarovnané</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="196"/>
+      <location filename="../../TaskComplexSection.ui" line="202"/>
       <source>NoParallel</source>
       <translation type="unfinished">NoParallel</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="204"/>
+      <location filename="../../TaskComplexSection.ui" line="210"/>
       <source>Identifier</source>
       <translation>Identifikátor</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="217"/>
+      <location filename="../../TaskComplexSection.ui" line="223"/>
       <source>Identifier for this section</source>
       <translation>Označení tohoto řezu</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="224"/>
+      <location filename="../../TaskComplexSection.ui" line="230"/>
       <source>BaseView</source>
       <translation>Základní pohled</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="249"/>
+      <location filename="../../TaskComplexSection.ui" line="255"/>
       <source>Set View Direction</source>
       <translation type="unfinished">Set View Direction</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="266"/>
+      <location filename="../../TaskComplexSection.ui" line="272"/>
       <source>Preset view direction looking up.</source>
       <translation type="unfinished">Preset view direction looking up.</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="296"/>
+      <location filename="../../TaskComplexSection.ui" line="302"/>
       <source>Preset view direction looking down.</source>
       <translation type="unfinished">Preset view direction looking down.</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="323"/>
+      <location filename="../../TaskComplexSection.ui" line="329"/>
       <source>Preset view direction looking left.</source>
       <translation type="unfinished">Preset view direction looking left.</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="350"/>
+      <location filename="../../TaskComplexSection.ui" line="356"/>
       <source>Preset view direction looking right.</source>
       <translation type="unfinished">Preset view direction looking right.</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="379"/>
+      <location filename="../../TaskComplexSection.ui" line="385"/>
       <source>Preview</source>
       <translation>Náhled</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="387"/>
+      <location filename="../../TaskComplexSection.ui" line="393"/>
       <source>Check to update display after every property change.</source>
       <translation type="unfinished">Check to update display after every property change.</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="390"/>
+      <location filename="../../TaskComplexSection.ui" line="396"/>
       <source>Live Update</source>
       <translation type="unfinished">Live Update</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="397"/>
+      <location filename="../../TaskComplexSection.ui" line="403"/>
       <source>Rebuild display now. May be slow for complex models.</source>
       <translation type="unfinished">Rebuild display now. May be slow for complex models.</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.ui" line="400"/>
+      <location filename="../../TaskComplexSection.ui" line="406"/>
       <source>Update Now</source>
       <translation type="unfinished">Update Now</translation>
     </message>
     <message>
-      <location filename="../../TaskComplexSection.cpp" line="689"/>
+      <location filename="../../TaskComplexSection.cpp" line="174"/>
+      <source>No direction set</source>
+      <translation type="unfinished">No direction set</translation>
+    </message>
+    <message>
+      <location filename="../../TaskComplexSection.cpp" line="562"/>
+      <location filename="../../TaskComplexSection.cpp" line="721"/>
+      <source>ComplexSection</source>
+      <translation type="unfinished">ComplexSection</translation>
+    </message>
+    <message>
+      <location filename="../../TaskComplexSection.cpp" line="732"/>
       <source>Can not continue. Object * %1 or %2 not found.</source>
       <translation type="unfinished">Can not continue. Object * %1 or %2 not found.</translation>
     </message>
@@ -5948,19 +6127,19 @@ Chcete pokračovat?</translation>
     </message>
     <message>
       <location filename="../../TaskCosVertex.ui" line="66"/>
-      <location filename="../../TaskCosVertex.cpp" line="114"/>
+      <location filename="../../TaskCosVertex.cpp" line="115"/>
       <source>Point Picker</source>
       <translation>Výběr bodu</translation>
     </message>
     <message>
       <location filename="../../TaskCosVertex.ui" line="95"/>
       <source>Position from the view center</source>
-      <translation type="unfinished">Position from the view center</translation>
+      <translation>Pozice ze středu pohledu</translation>
     </message>
     <message>
       <location filename="../../TaskCosVertex.ui" line="98"/>
       <source>Position</source>
-      <translation type="unfinished">Position</translation>
+      <translation>Poloha</translation>
     </message>
     <message>
       <location filename="../../TaskCosVertex.ui" line="106"/>
@@ -5973,28 +6152,28 @@ Chcete pokračovat?</translation>
       <translation>Y</translation>
     </message>
     <message>
-      <location filename="../../TaskCosVertex.cpp" line="158"/>
-      <location filename="../../TaskCosVertex.cpp" line="244"/>
+      <location filename="../../TaskCosVertex.cpp" line="160"/>
+      <location filename="../../TaskCosVertex.cpp" line="258"/>
       <source>Pick Points</source>
       <translation>Vybrat body</translation>
     </message>
     <message>
-      <location filename="../../TaskCosVertex.cpp" line="172"/>
+      <location filename="../../TaskCosVertex.cpp" line="174"/>
       <source>Pick a point for cosmetic vertex</source>
       <translation>Vyberte bod pro kosmetický vrchol</translation>
     </message>
     <message>
-      <location filename="../../TaskCosVertex.cpp" line="175"/>
+      <location filename="../../TaskCosVertex.cpp" line="177"/>
       <source>Escape picking</source>
       <translation type="unfinished">Escape picking</translation>
     </message>
     <message>
-      <location filename="../../TaskCosVertex.cpp" line="200"/>
+      <location filename="../../TaskCosVertex.cpp" line="202"/>
       <source>Left click to set a point</source>
       <translation>Kliknutím levým tlačítkem nastavíte bod</translation>
     </message>
     <message>
-      <location filename="../../TaskCosVertex.cpp" line="272"/>
+      <location filename="../../TaskCosVertex.cpp" line="286"/>
       <source>In progress edit abandoned. Start over.</source>
       <translation>Ukončeno ve fázi úprav. Začněte znovu.</translation>
     </message>
@@ -6112,7 +6291,7 @@ Chcete pokračovat?</translation>
     <message>
       <location filename="../../TaskCustomizeFormat.ui" line="156"/>
       <source>Position</source>
-      <translation type="unfinished">Position</translation>
+      <translation>Poloha</translation>
     </message>
     <message>
       <location filename="../../TaskCustomizeFormat.ui" line="166"/>
@@ -6357,7 +6536,7 @@ Chcete pokračovat?</translation>
     <message>
       <location filename="../../TaskCustomizeFormat.cpp" line="81"/>
       <source>Customize Format</source>
-      <translation type="unfinished">Customize Format</translation>
+      <translation>Přizpůsobit formát</translation>
     </message>
   </context>
   <context>
@@ -6375,12 +6554,12 @@ Chcete pokračovat?</translation>
     <message>
       <location filename="../../TaskDetail.ui" line="49"/>
       <source>Detail View</source>
-      <translation type="unfinished">Detail View</translation>
+      <translation>Detail pohledu</translation>
     </message>
     <message>
       <location filename="../../TaskDetail.ui" line="80"/>
       <source>Click to drag detail highlight to new position</source>
-      <translation type="unfinished">Click to drag detail highlight to new position</translation>
+      <translation>Kliknutím přetáhnete zvýraznění detailu na novou polohu</translation>
     </message>
     <message>
       <location filename="../../TaskDetail.ui" line="83"/>
@@ -6396,7 +6575,7 @@ Chcete pokračovat?</translation>
     <message>
       <location filename="../../TaskDetail.ui" line="134"/>
       <source>x position of detail highlight within view</source>
-      <translation type="unfinished">x position of detail highlight within view</translation>
+      <translation>poloha x detailního zvýraznění v pohledu</translation>
     </message>
     <message>
       <location filename="../../TaskDetail.ui" line="153"/>
@@ -6406,7 +6585,7 @@ Chcete pokračovat?</translation>
     <message>
       <location filename="../../TaskDetail.ui" line="160"/>
       <source>y position of detail highlight within view</source>
-      <translation type="unfinished">y position of detail highlight within view</translation>
+      <translation>poloha y detailního zvýraznění v pohledu</translation>
     </message>
     <message>
       <location filename="../../TaskDetail.ui" line="176"/>
@@ -6416,7 +6595,7 @@ Chcete pokračovat?</translation>
     <message>
       <location filename="../../TaskDetail.ui" line="183"/>
       <source>size of detail view</source>
-      <translation>velikost náhledu detailu</translation>
+      <translation>velikost detailu pohledu</translation>
     </message>
     <message>
       <location filename="../../TaskDetail.ui" line="202"/>
@@ -6430,7 +6609,7 @@ Automatic: if the detail view is larger than the page,
                    it will be scaled down to fit into the page
 Custom: custom scale factor is used</source>
       <translation>Stránka: měřítka stránky při volbě
-Automaticky: pokud je zobrazení detailu větší než stránka,
+Automaticky: pokud je detail pohledu větší než stránka,
                    bude zmenšen, aby se vešel na stránku
 Vlastní: je použito vlastní měřítko uživatele</translation>
     </message>
@@ -6457,7 +6636,7 @@ Vlastní: je použito vlastní měřítko uživatele</translation>
     <message>
       <location filename="../../TaskDetail.ui" line="244"/>
       <source>scale factor for detail view</source>
-      <translation>měřítko náhledu detailu</translation>
+      <translation>měřítko detailu pohledu</translation>
     </message>
     <message>
       <location filename="../../TaskDetail.ui" line="266"/>
@@ -6560,7 +6739,7 @@ be used instead of the dimension value</translation>
     <message>
       <location filename="../../TaskDimension.ui" line="141"/>
       <source>Arbitrary Text</source>
-      <translation type="unfinished">Arbitrary Text</translation>
+      <translation>Libovolný text</translation>
     </message>
     <message>
       <location filename="../../TaskDimension.ui" line="148"/>
@@ -6570,7 +6749,7 @@ be used instead of the dimension value</translation>
     <message>
       <location filename="../../TaskDimension.ui" line="155"/>
       <source>Specifies the overtolerance format in printf() style, or arbitrary text</source>
-      <translation type="unfinished">Specifies the overtolerance format in printf() style, or arbitrary text</translation>
+      <translation>Určuje formát vysoké tolerance ve stylu printf() nebo libovolném textu</translation>
     </message>
     <message>
       <location filename="../../TaskDimension.ui" line="162"/>
@@ -6580,7 +6759,7 @@ be used instead of the dimension value</translation>
     <message>
       <location filename="../../TaskDimension.ui" line="169"/>
       <source>Specifies the undertolerance format in printf() style, or arbitrary text</source>
-      <translation type="unfinished">Specifies the undertolerance format in printf() style, or arbitrary text</translation>
+      <translation>Určuje formát nízké tolerance ve stylu printf() nebo libovolném textu</translation>
     </message>
     <message>
       <location filename="../../TaskDimension.ui" line="176"/>
@@ -6590,7 +6769,7 @@ be used instead of the dimension value</translation>
     <message>
       <location filename="../../TaskDimension.ui" line="179"/>
       <source>Arbitrary Tolerance Text</source>
-      <translation type="unfinished">Arbitrary Tolerance Text</translation>
+      <translation>Libovolná tolerance textu</translation>
     </message>
     <message>
       <location filename="../../TaskDimension.ui" line="191"/>
@@ -6723,7 +6902,7 @@ be used instead of the dimension value</translation>
   <context>
     <name>TechDrawGui::TaskDlgLineDecor</name>
     <message>
-      <location filename="../../TaskLineDecor.cpp" line="442"/>
+      <location filename="../../TaskLineDecor.cpp" line="468"/>
       <source>Restore Invisible Lines</source>
       <translation>Obnovit neviditelné čáry</translation>
     </message>
@@ -6902,7 +7081,7 @@ You can pick further points to get line segments.</translation>
     </message>
     <message>
       <location filename="../../TaskLeaderLine.ui" line="118"/>
-      <location filename="../../TaskLeaderLine.cpp" line="467"/>
+      <location filename="../../TaskLeaderLine.cpp" line="471"/>
       <source>Pick Points</source>
       <translation>Vybrat body</translation>
     </message>
@@ -6983,51 +7162,51 @@ You can pick further points to get line segments.</translation>
     </message>
     <message>
       <location filename="../../TaskLeaderLine.cpp" line="273"/>
-      <location filename="../../TaskLeaderLine.cpp" line="632"/>
-      <location filename="../../TaskLeaderLine.cpp" line="684"/>
-      <location filename="../../TaskLeaderLine.cpp" line="701"/>
+      <location filename="../../TaskLeaderLine.cpp" line="636"/>
+      <location filename="../../TaskLeaderLine.cpp" line="688"/>
+      <location filename="../../TaskLeaderLine.cpp" line="705"/>
       <source>Edit points</source>
       <translation type="unfinished">Edit points</translation>
     </message>
     <message>
-      <location filename="../../TaskLeaderLine.cpp" line="479"/>
+      <location filename="../../TaskLeaderLine.cpp" line="483"/>
       <source>Edit Points</source>
       <translation type="unfinished">Edit Points</translation>
     </message>
     <message>
-      <location filename="../../TaskLeaderLine.cpp" line="496"/>
-      <location filename="../../TaskLeaderLine.cpp" line="539"/>
+      <location filename="../../TaskLeaderLine.cpp" line="500"/>
+      <location filename="../../TaskLeaderLine.cpp" line="543"/>
       <source>Pick a starting point for leader line</source>
       <translation>Vyberte počáteční bod pro odkazovou čáru</translation>
     </message>
     <message>
-      <location filename="../../TaskLeaderLine.cpp" line="499"/>
+      <location filename="../../TaskLeaderLine.cpp" line="503"/>
       <source>Save Points</source>
       <translation type="unfinished">Save Points</translation>
     </message>
     <message>
-      <location filename="../../TaskLeaderLine.cpp" line="522"/>
+      <location filename="../../TaskLeaderLine.cpp" line="526"/>
       <source>Click and drag markers to adjust leader line</source>
       <translation>Kliknutím a přetažením značek upravíte odkazovou čáru</translation>
     </message>
     <message>
-      <location filename="../../TaskLeaderLine.cpp" line="525"/>
-      <location filename="../../TaskLeaderLine.cpp" line="542"/>
+      <location filename="../../TaskLeaderLine.cpp" line="529"/>
+      <location filename="../../TaskLeaderLine.cpp" line="546"/>
       <source>Save changes</source>
       <translation>Uložit změny</translation>
     </message>
     <message>
-      <location filename="../../TaskLeaderLine.cpp" line="570"/>
+      <location filename="../../TaskLeaderLine.cpp" line="574"/>
       <source>Left click to set a point</source>
       <translation>Kliknutím levým tlačítkem nastavíte bod</translation>
     </message>
     <message>
-      <location filename="../../TaskLeaderLine.cpp" line="596"/>
+      <location filename="../../TaskLeaderLine.cpp" line="600"/>
       <source>Press OK or Cancel to continue</source>
       <translation>Pro pokračování stiskněte OK nebo Zrušit</translation>
     </message>
     <message>
-      <location filename="../../TaskLeaderLine.cpp" line="696"/>
+      <location filename="../../TaskLeaderLine.cpp" line="700"/>
       <source>In progress edit abandoned. Start over.</source>
       <translation>Ukončeno ve fázi úprav. Začněte znovu.</translation>
     </message>
@@ -7040,72 +7219,52 @@ You can pick further points to get line segments.</translation>
       <translation>Styl čáry</translation>
     </message>
     <message>
-      <location filename="../../TaskLineDecor.ui" line="34"/>
+      <location filename="../../TaskLineDecor.ui" line="92"/>
       <source>View</source>
       <translation>Pohled</translation>
     </message>
     <message>
-      <location filename="../../TaskLineDecor.ui" line="57"/>
+      <location filename="../../TaskLineDecor.ui" line="52"/>
       <source>Lines</source>
       <translation>Čáry</translation>
     </message>
     <message>
-      <location filename="../../TaskLineDecor.ui" line="78"/>
+      <location filename="../../TaskLineDecor.ui" line="115"/>
       <source>Style</source>
       <translation>Styl</translation>
     </message>
     <message>
-      <location filename="../../TaskLineDecor.ui" line="105"/>
-      <source>Continuous</source>
-      <translation type="unfinished">Continuous</translation>
-    </message>
-    <message>
-      <location filename="../../TaskLineDecor.ui" line="110"/>
-      <source>Dash</source>
-      <translation>Čárka</translation>
-    </message>
-    <message>
-      <location filename="../../TaskLineDecor.ui" line="115"/>
-      <source>Dot</source>
-      <translation>Tečka</translation>
-    </message>
-    <message>
-      <location filename="../../TaskLineDecor.ui" line="120"/>
-      <source>DashDot</source>
-      <translation>Čárka tečka</translation>
-    </message>
-    <message>
-      <location filename="../../TaskLineDecor.ui" line="125"/>
-      <source>DashDotDot</source>
-      <translation>Čárka tečka tečka</translation>
-    </message>
-    <message>
-      <location filename="../../TaskLineDecor.ui" line="133"/>
+      <location filename="../../TaskLineDecor.ui" line="85"/>
       <source>Color</source>
       <translation>Barva</translation>
     </message>
     <message>
-      <location filename="../../TaskLineDecor.ui" line="151"/>
+      <location filename="../../TaskLineDecor.ui" line="45"/>
       <source>Weight</source>
       <translation>Tloušťka</translation>
     </message>
     <message>
-      <location filename="../../TaskLineDecor.ui" line="158"/>
+      <location filename="../../TaskLineDecor.ui" line="99"/>
+      <source>The use of the Qt line style is being phased out.  Please use a standard line style instead.</source>
+      <translation type="unfinished">The use of the Qt line style is being phased out.  Please use a standard line style instead.</translation>
+    </message>
+    <message>
+      <location filename="../../TaskLineDecor.ui" line="145"/>
       <source>Thickness of pattern lines.</source>
       <translation type="unfinished">Thickness of pattern lines.</translation>
     </message>
     <message>
-      <location filename="../../TaskLineDecor.ui" line="171"/>
+      <location filename="../../TaskLineDecor.ui" line="158"/>
       <source>Visible</source>
       <translation>Viditelný</translation>
     </message>
     <message>
-      <location filename="../../TaskLineDecor.ui" line="191"/>
+      <location filename="../../TaskLineDecor.ui" line="72"/>
       <source>False</source>
       <translation>Nepravda</translation>
     </message>
     <message>
-      <location filename="../../TaskLineDecor.ui" line="196"/>
+      <location filename="../../TaskLineDecor.ui" line="77"/>
       <source>True</source>
       <translation>Pravda</translation>
     </message>
@@ -7465,7 +7624,7 @@ using the given X/Y Spacing</translation>
     <message>
       <location filename="../../TaskRichAnno.ui" line="26"/>
       <source>Rich Text Annotation Block</source>
-      <translation>Blok rozšířené textové poznámky</translation>
+      <translation>Blok rozsáhlé textové poznámky</translation>
     </message>
     <message>
       <location filename="../../TaskRichAnno.ui" line="53"/>
@@ -7485,7 +7644,7 @@ using the given X/Y Spacing</translation>
     <message>
       <location filename="../../TaskRichAnno.ui" line="102"/>
       <source>Start Rich Text Editor</source>
-      <translation>Otevřít rozšířený textový editor</translation>
+      <translation>Otevřít editor rozsáhlého textu</translation>
     </message>
     <message>
       <location filename="../../TaskRichAnno.ui" line="121"/>
@@ -7555,7 +7714,12 @@ using the given X/Y Spacing</translation>
     <message>
       <location filename="../../TaskRichAnno.cpp" line="181"/>
       <source>Input the annotation text directly or start the rich text editor</source>
-      <translation type="unfinished">Input the annotation text directly or start the rich text editor</translation>
+      <translation>Vložte text poznámky přímo nebo spusťte editor rozsáhlého textu</translation>
+    </message>
+    <message>
+      <location filename="../../TaskRichAnno.cpp" line="283"/>
+      <source>RichTextAnnotation</source>
+      <translation>RozsáhláTextováPoznámka</translation>
     </message>
   </context>
   <context>
@@ -7611,92 +7775,92 @@ using the given X/Y Spacing</translation>
       <translation>Změna velikosti</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="141"/>
+      <location filename="../../TaskSectionView.ui" line="123"/>
       <source>Scale factor for the section view</source>
       <translation type="unfinished">Scale factor for the section view</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="171"/>
+      <location filename="../../TaskSectionView.ui" line="150"/>
       <source>Set View Direction</source>
       <translation type="unfinished">Set View Direction</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="188"/>
+      <location filename="../../TaskSectionView.ui" line="167"/>
       <source>Preset view direction looking up.</source>
       <translation type="unfinished">Preset view direction looking up.</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="224"/>
+      <location filename="../../TaskSectionView.ui" line="203"/>
       <source>Preset view direction looking down.</source>
       <translation type="unfinished">Preset view direction looking down.</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="254"/>
+      <location filename="../../TaskSectionView.ui" line="233"/>
       <source>Preset view direction looking left.</source>
       <translation type="unfinished">Preset view direction looking left.</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="284"/>
+      <location filename="../../TaskSectionView.ui" line="263"/>
       <source>Preset view direction looking right.</source>
       <translation type="unfinished">Preset view direction looking right.</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="468"/>
+      <location filename="../../TaskSectionView.ui" line="447"/>
       <source>Preview</source>
       <translation>Náhled</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="476"/>
+      <location filename="../../TaskSectionView.ui" line="455"/>
       <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Rebuild display now.  May be slow for complex models.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
       <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Rebuild display now.  May be slow for complex models.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="479"/>
+      <location filename="../../TaskSectionView.ui" line="458"/>
       <source>Update Now</source>
       <translation type="unfinished">Update Now</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="486"/>
+      <location filename="../../TaskSectionView.ui" line="465"/>
       <source>Check to update display after every property change.</source>
       <translation type="unfinished">Check to update display after every property change.</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="489"/>
+      <location filename="../../TaskSectionView.ui" line="468"/>
       <source>Live Update</source>
       <translation type="unfinished">Live Update</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="316"/>
+      <location filename="../../TaskSectionView.ui" line="295"/>
       <source>Position from the 3D origin of the object in the view</source>
-      <translation type="unfinished">Position from the 3D origin of the object in the view</translation>
+      <translation>Poloha z počátku 3D objektu v pohledu</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="319"/>
+      <location filename="../../TaskSectionView.ui" line="298"/>
       <source>Section Plane Location</source>
       <translation>Umístění roviny řezu</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="339"/>
+      <location filename="../../TaskSectionView.ui" line="318"/>
       <source>X</source>
       <translation>X</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="393"/>
+      <location filename="../../TaskSectionView.ui" line="372"/>
       <source>Y</source>
       <translation>Y</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.ui" line="434"/>
+      <location filename="../../TaskSectionView.ui" line="413"/>
       <source>Z</source>
       <translation>Z</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.cpp" line="440"/>
+      <location filename="../../TaskSectionView.cpp" line="444"/>
       <source>Nothing to apply. No section direction picked yet</source>
       <translation type="unfinished">Nothing to apply. No section direction picked yet</translation>
     </message>
     <message>
-      <location filename="../../TaskSectionView.cpp" line="607"/>
+      <location filename="../../TaskSectionView.cpp" line="664"/>
       <source>Can not continue. Object * %1 or %2 not found.</source>
       <translation type="unfinished">Can not continue. Object * %1 or %2 not found.</translation>
     </message>
@@ -7714,107 +7878,82 @@ using the given X/Y Spacing</translation>
       <translation>Styl čáry:</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="41"/>
-      <source>Set line style to solid</source>
-      <translation type="unfinished">Set line style to solid</translation>
-    </message>
-    <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="44"/>
-      <source>Solid</source>
-      <translation>Těleso</translation>
-    </message>
-    <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="57"/>
-      <source>Dashed</source>
-      <translation>Čárkovaný</translation>
-    </message>
-    <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="70"/>
-      <source>Dotted</source>
-      <translation>Tečkovaný</translation>
-    </message>
-    <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="83"/>
-      <source>Dashdot</source>
-      <translation>Čerchovaný</translation>
-    </message>
-    <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="103"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="48"/>
       <source>Line width:</source>
       <translation>Tloušťka čáry:</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="110"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="55"/>
       <source>Thin 0,18</source>
       <translation type="unfinished">Thin 0,18</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="123"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="68"/>
       <source>Middle 0,35</source>
       <translation type="unfinished">Middle 0,35</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="139"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="84"/>
       <source>Thick 0,70</source>
       <translation type="unfinished">Thick 0,70</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="156"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="101"/>
       <source>Line color:</source>
       <translation>Barva čáry:</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="163"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="108"/>
       <source>Black</source>
       <translation>Černá</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="179"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="124"/>
       <source>Blue</source>
       <translation>Modrá</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="192"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="137"/>
       <source>Grey</source>
       <translation type="unfinished">Grey</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="205"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="150"/>
       <source>Magenta</source>
       <translation>Fialová</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="218"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="163"/>
       <source>Red</source>
       <translation>Červená</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="231"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="176"/>
       <source>Cyan</source>
       <translation>Azurová</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="244"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="189"/>
       <source>Green</source>
       <translation>Zelená</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="257"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="202"/>
       <source>Yellow</source>
       <translation>Žlutá</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="283"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="228"/>
       <source>Cascade spacing</source>
       <translation type="unfinished">Cascade spacing</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.ui" line="297"/>
+      <location filename="../../TaskSelectLineAttributes.ui" line="242"/>
       <source>Delta distance</source>
       <translation type="unfinished">Delta distance</translation>
     </message>
     <message>
-      <location filename="../../TaskSelectLineAttributes.cpp" line="181"/>
+      <location filename="../../TaskSelectLineAttributes.cpp" line="184"/>
       <source>Select line attributes</source>
       <translation type="unfinished">Select line attributes</translation>
     </message>
@@ -7825,37 +7964,52 @@ using the given X/Y Spacing</translation>
       <location filename="../../TaskSurfaceFinishSymbols.ui" line="26"/>
       <location filename="../../TaskSurfaceFinishSymbols.cpp" line="182"/>
       <source>Surface Finish Symbols</source>
-      <translation type="unfinished">Surface Finish Symbols</translation>
+      <translation>Symboly pro povrchovou konečnou úpravu</translation>
     </message>
     <message>
       <location filename="../../TaskSurfaceFinishSymbols.ui" line="34"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Material removal prohibited, whole part&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Material removal prohibited, whole part&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+      <source>Material removal prohibited, whole part</source>
+      <translation type="unfinished">Material removal prohibited, whole part</translation>
     </message>
     <message>
       <location filename="../../TaskSurfaceFinishSymbols.ui" line="44"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Any method allowed, whole part&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Any method allowed, whole part&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+      <source>Any method allowed, whole part</source>
+      <translation type="unfinished">Any method allowed, whole part</translation>
     </message>
     <message>
       <location filename="../../TaskSurfaceFinishSymbols.ui" line="54"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Material removal required, whole part&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Material removal required, whole part&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+      <source>Material removal required, whole part</source>
+      <translation type="unfinished">Material removal required, whole part</translation>
     </message>
     <message>
       <location filename="../../TaskSurfaceFinishSymbols.ui" line="64"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Material removal required&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Material removal required&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+      <source>Material removal required</source>
+      <translation type="unfinished">Material removal required</translation>
     </message>
     <message>
       <location filename="../../TaskSurfaceFinishSymbols.ui" line="74"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Material removal prohibited&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Material removal prohibited&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+      <source>Material removal prohibited</source>
+      <translation type="unfinished">Material removal prohibited</translation>
     </message>
     <message>
       <location filename="../../TaskSurfaceFinishSymbols.ui" line="84"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Any method allowed&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Any method allowed&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+      <source>Any method allowed</source>
+      <translation type="unfinished">Any method allowed</translation>
+    </message>
+    <message>
+      <location filename="../../TaskSurfaceFinishSymbols.ui" line="105"/>
+      <source>Rotation angle</source>
+      <translation type="unfinished">Rotation angle</translation>
+    </message>
+    <message>
+      <location filename="../../TaskSurfaceFinishSymbols.ui" line="115"/>
+      <source>Use ISO standard</source>
+      <translation type="unfinished">Use ISO standard</translation>
+    </message>
+    <message>
+      <location filename="../../TaskSurfaceFinishSymbols.ui" line="128"/>
+      <source>Use ASME standard</source>
+      <translation type="unfinished">Use ASME standard</translation>
     </message>
     <message>
       <location filename="../../TaskSurfaceFinishSymbols.ui" line="98"/>
@@ -7863,24 +8017,9 @@ using the given X/Y Spacing</translation>
       <translation type="unfinished">Symbol angle:</translation>
     </message>
     <message>
-      <location filename="../../TaskSurfaceFinishSymbols.ui" line="105"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Rotation angle&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Rotation angle&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-      <location filename="../../TaskSurfaceFinishSymbols.ui" line="115"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use ISO standard&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use ISO standard&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
       <location filename="../../TaskSurfaceFinishSymbols.ui" line="118"/>
       <source>ISO</source>
-      <translation>ISO</translation>
-    </message>
-    <message>
-      <location filename="../../TaskSurfaceFinishSymbols.ui" line="128"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use ASME standard&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation type="unfinished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use ASME standard&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+      <translation type="unfinished">ISO</translation>
     </message>
     <message>
       <location filename="../../TaskSurfaceFinishSymbols.ui" line="131"/>
@@ -7985,6 +8124,11 @@ using the given X/Y Spacing</translation>
       <source>other</source>
       <translation>ostatní</translation>
     </message>
+    <message>
+      <location filename="../../TaskWeldingSymbol.cpp" line="460"/>
+      <source>SectionView</source>
+      <translation type="unfinished">SectionView</translation>
+    </message>
   </context>
   <context>
     <name>TechDrawGui::dlgTemplateField</name>
@@ -8012,7 +8156,7 @@ using the given X/Y Spacing</translation>
   <context>
     <name>TechDraw_2LineCenterLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="647"/>
+      <location filename="../../CommandAnnotate.cpp" line="652"/>
       <source>Adds a Centerline between 2 Lines</source>
       <translation>Přidat osu mezi dvě čáry</translation>
     </message>
@@ -8020,7 +8164,7 @@ using the given X/Y Spacing</translation>
   <context>
     <name>TechDraw_2PointCenterLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="651"/>
+      <location filename="../../CommandAnnotate.cpp" line="656"/>
       <source>Adds a Centerline between 2 Points</source>
       <translation>Přidat osu mezi dva body</translation>
     </message>
@@ -8028,7 +8172,7 @@ using the given X/Y Spacing</translation>
   <context>
     <name>TechDraw_ComplexSection</name>
     <message>
-      <location filename="../../Command.cpp" line="539"/>
+      <location filename="../../Command.cpp" line="551"/>
       <source>Insert complex Section View</source>
       <translation type="unfinished">Insert complex Section View</translation>
     </message>
@@ -8036,7 +8180,7 @@ using the given X/Y Spacing</translation>
   <context>
     <name>TechDraw_CosmeticVertex</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="281"/>
+      <location filename="../../CommandAnnotate.cpp" line="283"/>
       <source>Inserts a Cosmetic Vertex into a View</source>
       <translation type="unfinished">Inserts a Cosmetic Vertex into a View</translation>
     </message>
@@ -8046,18 +8190,18 @@ using the given X/Y Spacing</translation>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="341"/>
       <source>Remove Prefix</source>
-      <translation type="unfinished">Remove Prefix</translation>
+      <translation>Odstranit předponu</translation>
     </message>
     <message>
       <location filename="../../CommandExtensionDims.cpp" line="342"/>
       <source>Remove prefix symbols at the beginning of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</source>
-      <translation type="unfinished">Remove prefix symbols at the beginning of the dimension text:&lt;br&gt;- Select one or more dimensions&lt;br&gt;- Click this tool</translation>
+      <translation>Odstranit prefix symbolů na začátku textu kótu:&lt;br&gt;- Vyberte jeden nebo více rozměrů&lt;br&gt;- klikněte na tento nástroj</translation>
     </message>
   </context>
   <context>
     <name>TechDraw_FaceCenterLine</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="643"/>
+      <location filename="../../CommandAnnotate.cpp" line="648"/>
       <source>Adds a Centerline to Faces</source>
       <translation type="unfinished">Adds a Centerline to Faces</translation>
     </message>
@@ -8073,7 +8217,7 @@ using the given X/Y Spacing</translation>
   <context>
     <name>TechDraw_Midpoints</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="285"/>
+      <location filename="../../CommandAnnotate.cpp" line="287"/>
       <source>Inserts Cosmetic Vertices at Midpoint of selected Edges</source>
       <translation type="unfinished">Inserts Cosmetic Vertices at Midpoint of selected Edges</translation>
     </message>
@@ -8081,7 +8225,7 @@ using the given X/Y Spacing</translation>
   <context>
     <name>TechDraw_Quadrants</name>
     <message>
-      <location filename="../../CommandAnnotate.cpp" line="289"/>
+      <location filename="../../CommandAnnotate.cpp" line="291"/>
       <source>Inserts Cosmetic Vertices at Quadrant Points of selected Circles</source>
       <translation type="unfinished">Inserts Cosmetic Vertices at Quadrant Points of selected Circles</translation>
     </message>
@@ -8089,7 +8233,7 @@ using the given X/Y Spacing</translation>
   <context>
     <name>TechDraw_SectionView</name>
     <message>
-      <location filename="../../Command.cpp" line="534"/>
+      <location filename="../../Command.cpp" line="546"/>
       <source>Insert simple Section View</source>
       <translation type="unfinished">Insert simple Section View</translation>
     </message>
@@ -8148,7 +8292,7 @@ using the given X/Y Spacing</translation>
     </message>
     <message>
       <location filename="../../Workbench.cpp" line="40"/>
-      <location filename="../../Workbench.cpp" line="60"/>
+      <location filename="../../Workbench.cpp" line="61"/>
       <source>Extensions: Centerlines/Threading</source>
       <translation type="unfinished">Extensions: Centerlines/Threading</translation>
     </message>
@@ -8164,81 +8308,86 @@ using the given X/Y Spacing</translation>
     </message>
     <message>
       <location filename="../../Workbench.cpp" line="43"/>
+      <source>Stacking</source>
+      <translation type="unfinished">Stacking</translation>
+    </message>
+    <message>
+      <location filename="../../Workbench.cpp" line="44"/>
       <source>Add Lines</source>
       <translation>Vložit linie</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="44"/>
+      <location filename="../../Workbench.cpp" line="45"/>
       <source>Add Vertices</source>
       <translation>Přidat vrcholy</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="45"/>
+      <location filename="../../Workbench.cpp" line="46"/>
       <source>TechDraw</source>
       <translation>TechDraw</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="48"/>
+      <location filename="../../Workbench.cpp" line="49"/>
       <source>TechDraw Attributes</source>
       <translation type="unfinished">TechDraw Attributes</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="49"/>
+      <location filename="../../Workbench.cpp" line="50"/>
       <source>TechDraw Centerlines</source>
       <translation type="unfinished">TechDraw Centerlines</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="53"/>
+      <location filename="../../Workbench.cpp" line="54"/>
       <source>TechDraw Extend Dimensions</source>
       <translation type="unfinished">TechDraw Extend Dimensions</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="55"/>
+      <location filename="../../Workbench.cpp" line="56"/>
       <source>TechDraw Pages</source>
       <translation>TechDraw stránky</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="56"/>
+      <location filename="../../Workbench.cpp" line="57"/>
       <source>TechDraw Stacking</source>
       <translation type="unfinished">TechDraw Stacking</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="58"/>
+      <location filename="../../Workbench.cpp" line="59"/>
       <source>TechDraw Views</source>
       <translation type="unfinished">TechDraw Views</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="50"/>
+      <location filename="../../Workbench.cpp" line="51"/>
       <source>TechDraw Clips</source>
       <translation type="unfinished">TechDraw Clips</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="52"/>
+      <location filename="../../Workbench.cpp" line="53"/>
       <source>TechDraw Dimensions</source>
       <translation type="unfinished">TechDraw Dimensions</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="57"/>
+      <location filename="../../Workbench.cpp" line="58"/>
       <source>TechDraw Tool Attributes</source>
       <translation type="unfinished">TechDraw Tool Attributes</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="54"/>
+      <location filename="../../Workbench.cpp" line="55"/>
       <source>TechDraw File Access</source>
       <translation type="unfinished">TechDraw File Access</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="51"/>
+      <location filename="../../Workbench.cpp" line="52"/>
       <source>TechDraw Decoration</source>
       <translation type="unfinished">TechDraw Decoration</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="47"/>
+      <location filename="../../Workbench.cpp" line="48"/>
       <source>TechDraw Annotation</source>
-      <translation type="unfinished">TechDraw Annotation</translation>
+      <translation>TechDraw poznámka</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="59"/>
+      <location filename="../../Workbench.cpp" line="60"/>
       <source>Views</source>
       <translation type="unfinished">Views</translation>
     </message>
@@ -8248,7 +8397,7 @@ using the given X/Y Spacing</translation>
     <message>
       <location filename="../../../TechDrawTools/CommandMoveView.py" line="47"/>
       <source>Move View</source>
-      <translation type="unfinished">Move View</translation>
+      <translation>Přesunout zobrazení</translation>
     </message>
     <message>
       <location filename="../../../TechDrawTools/CommandMoveView.py" line="50"/>
@@ -8441,12 +8590,12 @@ using the given X/Y Spacing</translation>
   <context>
     <name>TechDraw_AxoLengthDimension</name>
     <message>
-      <location filename="../../../TechDrawTools/CommandAxoLengthDimension.py" line="50"/>
+      <location filename="../../../TechDrawTools/CommandAxoLengthDimension.py" line="54"/>
       <source>Axonometric length dimension</source>
       <translation type="unfinished">Axonometric length dimension</translation>
     </message>
     <message>
-      <location filename="../../../TechDrawTools/CommandAxoLengthDimension.py" line="57"/>
+      <location filename="../../../TechDrawTools/CommandAxoLengthDimension.py" line="61"/>
       <source>Create an axonometric length dimension&lt;br&gt;
                 - select first edge to define direction and length of the dimension line&lt;br&gt;
                 - select second edge to define the direction of the extension lines&lt;br&gt;
@@ -8462,22 +8611,32 @@ using the given X/Y Spacing</translation>
   <context>
     <name>TechDraw_HoleShaftFit</name>
     <message>
-      <location filename="../../../TechDrawTools/CommandHoleShaftFit.py" line="43"/>
+      <location filename="../../../TechDrawTools/CommandHoleShaftFit.py" line="48"/>
       <source>Add hole or shaft fit</source>
-      <translation>Přidat uložení otvoru nebo hřídele</translation>
+      <translation>Přidat díru nebo uložení hřídele</translation>
     </message>
     <message>
-      <location filename="../../../TechDrawTools/CommandHoleShaftFit.py" line="50"/>
+      <location filename="../../../TechDrawTools/CommandHoleShaftFit.py" line="56"/>
       <source>Add a hole or shaft fit to a dimension&lt;br&gt;
                 - select one length dimension or diameter dimension&lt;br&gt;
-                - click the tool button, a panel openes&lt;br&gt;
+                - click the tool button, a panel opens&lt;br&gt;
                 - select shaft fit / hole fit&lt;br&gt;
                 - select the desired ISO 286 fit field using the combo box</source>
-      <translation type="unfinished">Add a hole or shaft fit to a dimension&lt;br&gt;
-                - select one length dimension or diameter dimension&lt;br&gt;
-                - click the tool button, a panel openes&lt;br&gt;
-                - select shaft fit / hole fit&lt;br&gt;
-                - select the desired ISO 286 fit field using the combo box</translation>
+      <translation>Přidat díru nebo uložení hřídele do rozměru&lt;br&gt;
+                - vyberte jeden rozměr délky nebo rozměr průměru&lt;br&gt;
+                - klikněte na tlačítko nástroje, otevře se panel&lt;br&gt;
+                - vyberte požadovanou položku pro umístění hřídele / díry&lt;br&gt;
+                - vyberte požadované pole ISO 286 pomocí kompaktního boxu</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/CommandHoleShaftFit.py" line="71"/>
+      <source>Add a hole or shaft fit to a dimension</source>
+      <translation type="unfinished">Add a hole or shaft fit to a dimension</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/CommandHoleShaftFit.py" line="75"/>
+      <source>Please select one length dimension or diameter dimension and retry</source>
+      <translation type="unfinished">Please select one length dimension or diameter dimension and retry</translation>
     </message>
     <message>
       <location filename="../../../TechDrawTools/TaskHoleShaftFit.py" line="42"/>
@@ -8505,12 +8664,12 @@ using the given X/Y Spacing</translation>
     <message>
       <location filename="../../../App/ArrowPropEnum.cpp" line="32"/>
       <source>Filled Arrow</source>
-      <translation type="unfinished">Filled Arrow</translation>
+      <translation>Vyplněná šipka</translation>
     </message>
     <message>
       <location filename="../../../App/ArrowPropEnum.cpp" line="33"/>
       <source>Open Arrow</source>
-      <translation type="unfinished">Open Arrow</translation>
+      <translation>Otevřená šipka</translation>
     </message>
     <message>
       <location filename="../../../App/ArrowPropEnum.cpp" line="34"/>
@@ -8525,17 +8684,17 @@ using the given X/Y Spacing</translation>
     <message>
       <location filename="../../../App/ArrowPropEnum.cpp" line="36"/>
       <source>Open Circle</source>
-      <translation type="unfinished">Open Circle</translation>
+      <translation>Otevřený kruh</translation>
     </message>
     <message>
       <location filename="../../../App/ArrowPropEnum.cpp" line="37"/>
       <source>Fork</source>
-      <translation type="unfinished">Fork</translation>
+      <translation>Vidlička</translation>
     </message>
     <message>
       <location filename="../../../App/ArrowPropEnum.cpp" line="38"/>
       <source>Filled Triangle</source>
-      <translation type="unfinished">Filled Triangle</translation>
+      <translation>Vyplněný trojúhelník</translation>
     </message>
     <message>
       <location filename="../../../App/ArrowPropEnum.cpp" line="39"/>
@@ -8594,6 +8753,628 @@ using the given X/Y Spacing</translation>
       <location filename="../../../App/DrawProjGroupItem.cpp" line="53"/>
       <source>FrontBottomRight</source>
       <translation type="unfinished">FrontBottomRight</translation>
+    </message>
+  </context>
+  <context>
+    <name>TaskBalloon</name>
+    <message>
+      <location filename="../../ViewProviderBalloon.cpp" line="183"/>
+      <source>You cannot delete this balloon now because
+there is an open task dialog.</source>
+      <translation>Tento balon nyní nelze odstranit, protože
+je zde otevřený dialog.</translation>
+    </message>
+    <message>
+      <location filename="../../ViewProviderBalloon.cpp" line="186"/>
+      <source>Can Not Delete</source>
+      <translation>Nelze odstranit</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawPage</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="55"/>
+      <source>Page</source>
+      <translation>Stránka</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawSVGTemplate</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="56"/>
+      <source>Template</source>
+      <translation>Šablona</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawView</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="57"/>
+      <source>View</source>
+      <translation>Pohled</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewPart</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="58"/>
+      <source>View</source>
+      <translation>Pohled</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewSection</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="59"/>
+      <source>Section</source>
+      <translation>Výběr</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawComplexSection</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="60"/>
+      <source>Section</source>
+      <translation>Výběr</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewDetail</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="61"/>
+      <source>Detail</source>
+      <translation type="unfinished">Detail</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawActiveView</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="62"/>
+      <source>ActiveView</source>
+      <translation type="unfinished">ActiveView</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewAnnotation</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="63"/>
+      <source>Annotation</source>
+      <translation>Poznámka</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewImage</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="64"/>
+      <source>Image</source>
+      <translation>Obrázek</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewSymbol</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="65"/>
+      <source>Symbol</source>
+      <translation>Symbol</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewArch</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="66"/>
+      <source>Arch</source>
+      <translation>Oblouk</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewDraft</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="67"/>
+      <source>Draft</source>
+      <translation>Zkosení</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawLeaderLine</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="68"/>
+      <source>LeaderLine</source>
+      <translation>Odkazová čára</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewBalloon</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="69"/>
+      <source>Balloon</source>
+      <translation>Pozice</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewDimension</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="70"/>
+      <source>Dimension</source>
+      <translation>Rozměr</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawViewDimExtent</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="71"/>
+      <source>Extent</source>
+      <translation>Rozsah</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawHatch</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="72"/>
+      <source>Hatch</source>
+      <translation>Šrafovat</translation>
+    </message>
+  </context>
+  <context>
+    <name>DrawGeomHatch</name>
+    <message>
+      <location filename="../../../App/DrawView.cpp" line="73"/>
+      <source>GeomHatch</source>
+      <translation>GeomHatch</translation>
+    </message>
+  </context>
+  <context>
+    <name>TechDrawGui::TaskCosmeticCircle</name>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="26"/>
+      <source>Cosmetic Circle</source>
+      <translation>Kosmetický kruh</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="34"/>
+      <source>View</source>
+      <translation>Pohled</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="61"/>
+      <source>Treat the center point as a 2d point within the parent View.  Z coordinate is ignored.</source>
+      <translation type="unfinished">Treat the center point as a 2d point within the parent View.  Z coordinate is ignored.</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="64"/>
+      <source>2d Point</source>
+      <translation>2d Bod</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="77"/>
+      <source>Treat the center point as a 3d point and project it onto the parent View.</source>
+      <translation type="unfinished">Treat the center point as a 3d point and project it onto the parent View.</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="80"/>
+      <source>3d Point</source>
+      <translation>3d Bod</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="90"/>
+      <source>Circle Center</source>
+      <translation type="unfinished">Circle Center</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="101"/>
+      <source>X:</source>
+      <translation>X:</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="118"/>
+      <source>Y:</source>
+      <translation>Y:</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="135"/>
+      <source>Z:</source>
+      <translation>Z:</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="156"/>
+      <source>Radius:</source>
+      <translation>Poloměr:</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="180"/>
+      <source>Start Angle:</source>
+      <translation type="unfinished">Start Angle:</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="187"/>
+      <source>End angle (conventional) of arc in degrees.</source>
+      <translation type="unfinished">End angle (conventional) of arc in degrees.</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="200"/>
+      <source>End Angle:</source>
+      <translation type="unfinished">End Angle:</translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="207"/>
+      <source>Start angle (conventional) of arc in degrees. </source>
+      <translation type="unfinished">Start angle (conventional) of arc in degrees. </translation>
+    </message>
+    <message>
+      <location filename="../../TaskCosmeticCircle.ui" line="220"/>
+      <source>Arc of Circle</source>
+      <translation type="unfinished">Arc of Circle</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdTechDrawCosmeticCircle</name>
+    <message>
+      <location filename="../../CommandAnnotate.cpp" line="1126"/>
+      <source>TechDraw</source>
+      <translation>TechDraw</translation>
+    </message>
+    <message>
+      <location filename="../../CommandAnnotate.cpp" line="1127"/>
+      <source>Add Cosmetic Circle</source>
+      <translation>Přidat Kosmetický kruh</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdTechDrawExtensionArcLengthAnnotation</name>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1907"/>
+      <source>TechDraw</source>
+      <translation>TechDraw</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1908"/>
+      <source>Calculate the arc length of selected edges</source>
+      <translation type="unfinished">Calculate the arc length of selected edges</translation>
+    </message>
+    <message>
+      <location filename="../../CommandExtensionPack.cpp" line="1909"/>
+      <source>Select several edges&lt;br&gt;    - click this tool</source>
+      <translation type="unfinished">Select several edges&lt;br&gt;    - click this tool</translation>
+    </message>
+  </context>
+  <context>
+    <name>TechDrawGui::TaskAddOffsetVertex</name>
+    <message>
+      <location filename="../../TaskAddOffsetVertex.ui" line="14"/>
+      <source>Cosmetic Vertex</source>
+      <translation>Kosmetický vrchol</translation>
+    </message>
+    <message>
+      <location filename="../../TaskAddOffsetVertex.ui" line="31"/>
+      <source>Position from the view center</source>
+      <translation>Pozice ze středu pohledu</translation>
+    </message>
+    <message>
+      <location filename="../../TaskAddOffsetVertex.ui" line="34"/>
+      <source>Position</source>
+      <translation type="unfinished">Position</translation>
+    </message>
+    <message>
+      <location filename="../../TaskAddOffsetVertex.ui" line="48"/>
+      <source>X-Offset</source>
+      <translation type="unfinished">X-Offset</translation>
+    </message>
+    <message>
+      <location filename="../../TaskAddOffsetVertex.ui" line="55"/>
+      <source>Y-Offset</source>
+      <translation type="unfinished">Y-Offset</translation>
+    </message>
+    <message>
+      <location filename="../../TaskAddOffsetVertex.ui" line="72"/>
+      <source>Enter X offset value</source>
+      <translation type="unfinished">Enter X offset value</translation>
+    </message>
+  </context>
+  <context>
+    <name>TechDraw_AddOffsetVertex</name>
+    <message>
+      <location filename="../../../TechDrawTools/CommandVertexCreations.py" line="77"/>
+      <source>Add an offset vertex</source>
+      <translation type="unfinished">Add an offset vertex</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/CommandVertexCreations.py" line="83"/>
+      <source>Create an offset vertex&lt;br&gt;
+                - select one vertex&lt;br&gt;
+                - start the tool&lt;br&gt;
+                - enter offset values in panel</source>
+      <translation type="unfinished">Create an offset vertex&lt;br&gt;
+                - select one vertex&lt;br&gt;
+                - start the tool&lt;br&gt;
+                - enter offset values in panel</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TaskAddOffsetVertex.py" line="44"/>
+      <source>Add offset vertex</source>
+      <translation type="unfinished">Add offset vertex</translation>
+    </message>
+  </context>
+  <context>
+    <name>TechDraw_FillTemplateFields</name>
+    <message>
+      <location filename="../../../TechDrawTools/CommandFillTemplateFields.py" line="50"/>
+      <source>Update template fields</source>
+      <translation type="unfinished">Update template fields</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/CommandFillTemplateFields.py" line="54"/>
+      <source>Use document info to populate the template fields</source>
+      <translation type="unfinished">Use document info to populate the template fields</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TaskFillTemplateFields.py" line="135"/>
+      <source>Fill Template Fields in </source>
+      <translation type="unfinished">Fill Template Fields in </translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TaskFillTemplateFields.py" line="142"/>
+      <source>Update</source>
+      <translation>Aktualizovat</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TaskFillTemplateFields.py" line="351"/>
+      <source>Update All</source>
+      <translation type="unfinished">Update All</translation>
+    </message>
+  </context>
+  <context>
+    <name>Techdraw_FillTemplateFields</name>
+    <message>
+      <location filename="../../../TechDrawTools/TaskFillTemplateFields.py" line="81"/>
+      <source> file does not contain the correct field names therefore exiting</source>
+      <translation type="unfinished"> file does not contain the correct field names therefore exiting</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TaskFillTemplateFields.py" line="87"/>
+      <source> file has not been found therefore exiting</source>
+      <translation type="unfinished"> file has not been found therefore exiting</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TaskFillTemplateFields.py" line="108"/>
+      <source>View or Projection Group missing</source>
+      <translation type="unfinished">View or Projection Group missing</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TaskFillTemplateFields.py" line="381"/>
+      <source>Corresponding template fields missing</source>
+      <translation type="unfinished">Corresponding template fields missing</translation>
+    </message>
+  </context>
+  <context>
+    <name>TechDraw_Utils</name>
+    <message>
+      <location filename="../../../TechDrawTools/TDToolsUtil.py" line="77"/>
+      <source>No vertex selected</source>
+      <translation type="unfinished">No vertex selected</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TDToolsUtil.py" line="89"/>
+      <location filename="../../../TechDrawTools/TDToolsUtil.py" line="119"/>
+      <source>Select at least </source>
+      <translation type="unfinished">Select at least </translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TDToolsUtil.py" line="90"/>
+      <source> vertexes</source>
+      <translation type="unfinished"> vertexes</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TDToolsUtil.py" line="107"/>
+      <source>No edge selected</source>
+      <translation>Není vybraná hrana</translation>
+    </message>
+    <message>
+      <location filename="../../../TechDrawTools/TDToolsUtil.py" line="120"/>
+      <source> edges</source>
+      <translation type="unfinished"> edges</translation>
+    </message>
+  </context>
+  <context>
+    <name>ISOLineTypeEnum</name>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="34"/>
+      <source>NoLine</source>
+      <translation>Bez čáry</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="35"/>
+      <source>Continuous</source>
+      <translation type="unfinished">Continuous</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="36"/>
+      <source>Dashed</source>
+      <translation>Čárkovaný</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="37"/>
+      <source>DashedSpaced</source>
+      <translation type="unfinished">DashedSpaced</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="38"/>
+      <source>LongDashedDotted</source>
+      <translation type="unfinished">LongDashedDotted</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="39"/>
+      <source>LongDashedDoubleDotted</source>
+      <translation type="unfinished">LongDashedDoubleDotted</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="40"/>
+      <source>LongDashedTripleDotted</source>
+      <translation type="unfinished">LongDashedTripleDotted</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="41"/>
+      <source>Dotted</source>
+      <translation>Tečkovaný</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="42"/>
+      <source>LongDashShortDash</source>
+      <translation type="unfinished">LongDashShortDash</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="43"/>
+      <source>LongDashDoubleShortDash</source>
+      <translation type="unfinished">LongDashDoubleShortDash</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="44"/>
+      <source>DashedDotted</source>
+      <translation type="unfinished">DashedDotted</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="45"/>
+      <source>DoubleDashedDotted</source>
+      <translation type="unfinished">DoubleDashedDotted</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="46"/>
+      <source>DashedDoubleDotted</source>
+      <translation type="unfinished">DashedDoubleDotted</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="47"/>
+      <source>DoubleDashedDoubleDotted</source>
+      <translation type="unfinished">DoubleDashedDoubleDotted</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="48"/>
+      <source>DashedTripleDotted</source>
+      <translation type="unfinished">DashedTripleDotted</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="49"/>
+      <source>DoubleDashedTripleDotted</source>
+      <translation type="unfinished">DoubleDashedTripleDotted</translation>
+    </message>
+  </context>
+  <context>
+    <name>ANSILineTypeEnum</name>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="55"/>
+      <source>NoLine</source>
+      <translation>Bez čáry</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="56"/>
+      <source>Continuous</source>
+      <translation type="unfinished">Continuous</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="57"/>
+      <source>Dashed</source>
+      <translation>Čárkovaný</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="58"/>
+      <source>LongDashDashed</source>
+      <translation type="unfinished">LongDashDashed</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="59"/>
+      <source>LongDashDoubleDashed</source>
+      <translation type="unfinished">LongDashDoubleDashed</translation>
+    </message>
+  </context>
+  <context>
+    <name>ASMELineTypeEnum</name>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="65"/>
+      <source>NoLine</source>
+      <translation>Bez čáry</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="66"/>
+      <source>Visible</source>
+      <translation>Viditelný</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="67"/>
+      <source>Hidden</source>
+      <translation>Skryté</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="68"/>
+      <source>Section</source>
+      <translation>Výběr</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="69"/>
+      <source>Center</source>
+      <translation>Na střed</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="70"/>
+      <source>Symmetry</source>
+      <translation>Symetrie</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="71"/>
+      <source>Dimension</source>
+      <translation>Rozměr</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="72"/>
+      <source>Extension</source>
+      <translation>Rozšíření</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="73"/>
+      <source>Leader</source>
+      <translation type="unfinished">Leader</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="74"/>
+      <source>CuttingPlane</source>
+      <translation type="unfinished">CuttingPlane</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="75"/>
+      <source>ViewingPlane</source>
+      <translation type="unfinished">ViewingPlane</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="76"/>
+      <source>OtherPlane</source>
+      <translation type="unfinished">OtherPlane</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="77"/>
+      <source>Break1</source>
+      <translation type="unfinished">Break1</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="78"/>
+      <source>Break2</source>
+      <translation type="unfinished">Break2</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="79"/>
+      <source>Phantom</source>
+      <translation type="unfinished">Phantom</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="80"/>
+      <source>Stitch1</source>
+      <translation type="unfinished">Stitch1</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="81"/>
+      <source>Stitch2</source>
+      <translation type="unfinished">Stitch2</translation>
+    </message>
+    <message>
+      <location filename="../../../App/LineNameEnum.cpp" line="82"/>
+      <source>Chain</source>
+      <translation>Řetěz</translation>
     </message>
   </context>
 </TS>

@@ -23,13 +23,20 @@
 #ifndef APP_DOCUMENTP_H
 #define APP_DOCUMENTP_H
 
+#ifdef _MSC_VER
+#pragma warning( disable : 4834 )
+#endif
+
 #include <App/DocumentObject.h>
 #include <App/DocumentObserver.h>
+#include <App/StringHasher.h>
 #include <CXX/Objects.hxx>
+#include <boost/bimap.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/bimap.hpp>
 #include <unordered_map>
 #include <unordered_set>
+
 
 // using VertexProperty = boost::property<boost::vertex_root_t, DocumentObject* >;
 using DependencyList = boost::adjacency_list <
@@ -48,6 +55,7 @@ using Node =  std::vector <size_t>;
 using Path =  std::vector <size_t>;
 
 namespace App {
+using HasherMap = boost::bimap<StringHasherRef, int>;
 class Transaction;
 
 using HasherMap = boost::bimap<StringHasherRef,int>;

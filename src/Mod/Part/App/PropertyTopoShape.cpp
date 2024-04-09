@@ -62,7 +62,7 @@
 #include "PropertyTopoShape.h"
 #include "TopoShapePy.h"
 
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 FC_LOG_LEVEL_INIT("PropShape",true,true);
 
@@ -70,13 +70,9 @@ using namespace Part;
 
 TYPESYSTEM_SOURCE(Part::PropertyPartShape , App::PropertyComplexGeoData)
 
-PropertyPartShape::PropertyPartShape()
-{
-}
+PropertyPartShape::PropertyPartShape() = default;
 
-PropertyPartShape::~PropertyPartShape()
-{
-}
+PropertyPartShape::~PropertyPartShape() = default;
 
 void PropertyPartShape::validateShape(App::DocumentObject *obj)
 {
@@ -138,7 +134,7 @@ void PropertyPartShape::setValue(const TopoDS_Shape& sh, bool resetElementMap)
     _Ver.clear();
 }
 
-const TopoDS_Shape& PropertyPartShape::getValue(void)const
+const TopoDS_Shape& PropertyPartShape::getValue() const
 {
     return _Shape.getShape();
 }
@@ -205,7 +201,7 @@ void PropertyPartShape::transformGeometry(const Base::Matrix4D &rclTrf)
     hasSetValue();
 }
 
-PyObject *PropertyPartShape::getPyObject(void)
+PyObject *PropertyPartShape::getPyObject()
 {
     Base::PyObjectBase* prop = static_cast<Base::PyObjectBase*>(getShape().getPyObject());
     if (prop)
@@ -239,7 +235,7 @@ void PropertyPartShape::setPyObject(PyObject *value)
     }
 }
 
-App::Property *PropertyPartShape::Copy(void) const
+App::Property *PropertyPartShape::Copy() const
 {
     PropertyPartShape *prop = new PropertyPartShape();
 
@@ -261,7 +257,7 @@ void PropertyPartShape::Paste(const App::Property &from)
     }
 }
 
-unsigned int PropertyPartShape::getMemSize (void) const
+unsigned int PropertyPartShape::getMemSize () const
 {
     return _Shape.getMemSize();
 }
@@ -326,11 +322,11 @@ void PropertyPartShape::Save (Base::Writer &writer) const
             << "\"/>\n";
     } else if(binary) {
         writer.Stream() << " binary=\"1\">\n";
-        _Shape.exportBinary(writer.beginCharStream(true));
+        _Shape.exportBinary(writer.beginBase64Stream());
         writer.endCharStream() <<  writer.ind() << "</Part>\n";
     } else {
         writer.Stream() << " brep=\"1\">\n";
-        _Shape.exportBrep(writer.beginCharStream(false)<<'\n');
+        _Shape.exportBrep(writer.beginCharStream()<<'\n');
         writer.endCharStream() << '\n' << writer.ind() << "</Part>\n";
     }
 
@@ -378,9 +374,9 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
             reader.addFile(file.c_str(),this);
         }
     } else if(reader.getAttributeAsInteger("binary","")) {
-        shape.importBinary(reader.beginCharStream(true));
+        shape.importBinary(reader.beginBase64Stream());
     } else if(reader.getAttributeAsInteger("brep","")) {
-        shape.importBrep(reader.beginCharStream(false));
+        shape.importBrep(reader.beginCharStream());
     }
 
     reader.readEndElement("Part");
@@ -724,13 +720,9 @@ void ShapeHistory::join(const ShapeHistory& newH)
 
 TYPESYSTEM_SOURCE(Part::PropertyShapeHistory , App::PropertyLists)
 
-PropertyShapeHistory::PropertyShapeHistory()
-{
-}
+PropertyShapeHistory::PropertyShapeHistory() = default;
 
-PropertyShapeHistory::~PropertyShapeHistory()
-{
-}
+PropertyShapeHistory::~PropertyShapeHistory() = default;
 
 void PropertyShapeHistory::setValue(const ShapeHistory& sh)
 {
@@ -747,7 +739,7 @@ void PropertyShapeHistory::setValues(const std::vector<ShapeHistory>& values)
     hasSetValue();
 }
 
-PyObject *PropertyShapeHistory::getPyObject(void)
+PyObject *PropertyShapeHistory::getPyObject()
 {
     return Py::new_reference_to(Py::None());
 }
@@ -772,7 +764,7 @@ void PropertyShapeHistory::RestoreDocFile(Base::Reader &)
 {
 }
 
-App::Property *PropertyShapeHistory::Copy(void) const
+App::Property *PropertyShapeHistory::Copy() const
 {
     PropertyShapeHistory *p= new PropertyShapeHistory();
     p->_lValueList = _lValueList;
@@ -790,20 +782,16 @@ void PropertyShapeHistory::Paste(const Property &from)
 
 TYPESYSTEM_SOURCE(Part::PropertyFilletEdges , App::PropertyLists)
 
-PropertyFilletEdges::PropertyFilletEdges()
-{
-}
+PropertyFilletEdges::PropertyFilletEdges() = default;
 
-PropertyFilletEdges::~PropertyFilletEdges()
-{
-}
+PropertyFilletEdges::~PropertyFilletEdges() = default;
 
 void PropertyFilletEdges::setValue(int id, double r1, double r2)
 {
     setValue(FilletElement(id,r1,r2));
 }
 
-PyObject *PropertyFilletEdges::getPyObject(void)
+PyObject *PropertyFilletEdges::getPyObject()
 {
     Py::List list(getSize());
     std::vector<FilletElement>::const_iterator it;
@@ -846,7 +834,7 @@ bool PropertyFilletEdges::saveXML(Base::Writer &writer) const {
 void PropertyFilletEdges::restoreXML(Base::XMLReader &reader)
 {
     unsigned count = reader.getAttributeAsUnsigned("count");
-    auto &s = reader.beginCharStream(false);
+    auto &s = reader.beginCharStream();
     std::vector<FilletElement> values(count);
     for(auto &v : values) 
         s >> v.edgeid >> v.radius1 >> v.radius2;
@@ -856,21 +844,21 @@ void PropertyFilletEdges::restoreXML(Base::XMLReader &reader)
 
 void PropertyFilletEdges::saveStream(Base::OutputStream &str) const
 {
-    for (std::vector<FilletElement>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
-        str << it->edgeid << it->radius1 << it->radius2;
+    for (const auto & it : _lValueList) {
+        str << it.edgeid << it.radius1 << it.radius2;
     }
 }
 
 void PropertyFilletEdges::restoreStream(Base::InputStream &str, unsigned uCt)
 {
     std::vector<FilletElement> values(uCt);
-    for (std::vector<FilletElement>::iterator it = values.begin(); it != values.end(); ++it) {
-        str >> it->edgeid >> it->radius1 >> it->radius2;
+    for (auto & it : values) {
+        str >> it.edgeid >> it.radius1 >> it.radius2;
     }
     setValue(std::move(values));
 }
 
-App::Property *PropertyFilletEdges::Copy(void) const
+App::Property *PropertyFilletEdges::Copy() const
 {
     PropertyFilletEdges *p= new PropertyFilletEdges();
     p->_lValueList = _lValueList;
@@ -939,7 +927,7 @@ PropertyShapeCache *PropertyShapeCache::get(const App::DocumentObject *obj, bool
         FC_ERR("Failed to add shape cache for " << obj->getFullName());
     else
         prop->connChanged = const_cast<App::DocumentObject*>(obj)->signalEarlyChanged.connect(
-                boost::bind(&PropertyShapeCache::slotChanged,prop,bp::_1,bp::_2));
+                std::bind(&PropertyShapeCache::slotChanged,prop,sp::_1,sp::_2));
     return prop;
 }
 

@@ -153,12 +153,12 @@ void TaskScaledParameters::onUpdateView(bool on)
     }
 }
 
-double TaskScaledParameters::getFactor(void) const
+double TaskScaledParameters::getFactor() const
 {
     return ui->spinFactor->value().getValue();
 }
 
-unsigned TaskScaledParameters::getOccurrences(void) const
+unsigned TaskScaledParameters::getOccurrences() const
 {
     return ui->spinOccurrences->value();
 }

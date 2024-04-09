@@ -66,9 +66,7 @@ ExtrusionHelper::Parameters::Parameters()
 {
 }
 
-ExtrusionHelper::ExtrusionHelper()
-{
-}
+ExtrusionHelper::ExtrusionHelper() = default;
 
 static TopoShape makeDraftUsingPipe(const std::vector<TopoShape> &_wires,
                                     App::StringHasherRef hasher)

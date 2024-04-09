@@ -58,6 +58,8 @@
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/DocumentObserver.h>
 #include <App/AutoTransaction.h>
+#include <App/Part.h>
+#include <App/Link.h>
 #include <App/MeasureDistance.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -83,7 +85,7 @@
 #include "MouseSelection.h"
 #include "NavigationStyle.h"
 #include "OverlayParams.h"
-#include "OverlayWidgets.h"
+#include "OverlayManager.h"
 #include "PieMenu.h"
 #include "SceneInspector.h"
 #include "Selection.h"
@@ -108,7 +110,7 @@
 
 using namespace Gui;
 using Gui::Dialog::DlgSettingsImageImp;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -278,7 +280,7 @@ class StdCmdFreezeViews : public Gui::Command
 {
 public:
     StdCmdFreezeViews();
-    virtual ~StdCmdFreezeViews(){}
+    ~StdCmdFreezeViews() override = default;
     const char* className() const override
     { return "StdCmdFreezeViews"; }
 
@@ -296,24 +298,17 @@ private:
     void onRestoreViews();
 
 private:
-    const int maxViews;
-    int savedViews;
-    int offset;
-    QAction* saveView;
-    QAction* freezeView;
-    QAction* clearView;
-    QAction* separator;
+    const int maxViews{50};
+    int savedViews{0};
+    int offset{0};
+    QAction* saveView{nullptr};
+    QAction* freezeView{nullptr};
+    QAction* clearView{nullptr};
+    QAction* separator{nullptr};
 };
 
 StdCmdFreezeViews::StdCmdFreezeViews()
   : Command("Std_FreezeViews")
-  , maxViews(50)
-  , savedViews(0)
-  , offset(0)
-  , saveView(0)
-  , freezeView(0)
-  , clearView(0)
-  , separator(0)
 {
     sGroup        = "Standard-View";
     sMenuText     = QT_TR_NOOP("Freeze display");
@@ -326,7 +321,7 @@ StdCmdFreezeViews::StdCmdFreezeViews()
 
 Action * StdCmdFreezeViews::createAction()
 {
-    ActionGroup* pcAction = new ActionGroup(this, getMainWindow());
+    auto pcAction = new ActionGroup(this, getMainWindow());
     pcAction->setDropDownMenu(true);
     applyCommandData(this->className(), pcAction);
 
@@ -367,7 +362,7 @@ QString StdCmdFreezeViews::getShortcut() const
 
 void StdCmdFreezeViews::activated(int iMsg)
 {
-    ActionGroup* pcAction = qobject_cast<ActionGroup*>(_pcAction);
+    auto pcAction = qobject_cast<ActionGroup*>(_pcAction);
 
     if (iMsg == 0) {
         onSaveViews();
@@ -377,7 +372,7 @@ void StdCmdFreezeViews::activated(int iMsg)
     }
     else if (iMsg == 3) {
         // Create a new view
-        const char* ppReturn=0;
+        const char* ppReturn=nullptr;
         getGuiApplication()->sendMsgToActiveView("GetCamera",&ppReturn);
 
         QList<QAction*> acts = pcAction->actions();
@@ -775,10 +770,11 @@ StdCmdDrawStyle::StdCmdDrawStyle()
     bCanLog       = false;
 
     int i = 0;
-    while(const char *title = drawStyleNameFromIndex(i++))
+    while(const char *title = drawStyleNameFromIndex(i++)) {
         addCommand(new StdCmdDrawStyleBase(i, title, drawStyleDocumentation(i-1)));
+    }
 
-    this->getGuiApplication()->signalActivateView.connect(boost::bind(&StdCmdDrawStyle::updateIcon, this, bp::_1));
+    this->getGuiApplication()->signalActivateView.connect(std::bind(&StdCmdDrawStyle::updateIcon, this, sp::_1));
     this->getGuiApplication()->signalViewModeChanged.connect(
         [this](const MDIView *view) {
             if (view == Application::Instance->activeView())
@@ -790,20 +786,18 @@ void StdCmdDrawStyle::updateIcon(const MDIView *view)
 {
     if (!_pcAction)
         return;
-    const Gui::View3DInventor *view3d = dynamic_cast<const Gui::View3DInventor *>(view);
-    if (!view3d)
-        return;
-    Gui::View3DInventorViewer *viewer = view3d->getViewer();
-    if (!viewer)
-        return;
-    std::string mode(viewer->getOverrideMode());
-    Gui::ActionGroup *actionGroup = dynamic_cast<Gui::ActionGroup *>(_pcAction);
-    if (!actionGroup)
-        return;
-    int index = drawStyleIndexFromName(mode.c_str());;
-    if (index >= 0) {
-        _pcAction->setProperty("defaultAction", QVariant(index));
-        setup(_pcAction);
+    if (auto view3d = Base::freecad_dynamic_cast<const Gui::View3DInventor>(view)) {
+        Gui::View3DInventorViewer *viewer = view3d->getViewer();
+        if (!viewer)
+            return;
+        std::string mode(viewer->getOverrideMode());
+        if (dynamic_cast<Gui::ActionGroup *>(_pcAction)) {
+            int index = drawStyleIndexFromName(mode.c_str());;
+            if (index >= 0) {
+                _pcAction->setProperty("defaultAction", QVariant(index));
+                setup(_pcAction);
+            }
+        }
     }
 }
 
@@ -822,7 +816,7 @@ StdCmdToggleVisibility::StdCmdToggleVisibility()
     sWhatsThis    = "Std_ToggleVisibility";
     sPixmap       = "Std_ToggleVisibility";
     sAccel        = "Space";
-    eType         = Alter3DView;
+    eType         = Alter3DView | ViewTransaction;
 }
 
 
@@ -950,6 +944,102 @@ bool StdCmdToggleShowOnTop::isActive()
 }
 
 //===========================================================================
+// Std_ToggleTransparency
+//===========================================================================
+DEF_STD_CMD_A(StdCmdToggleTransparency)
+
+StdCmdToggleTransparency::StdCmdToggleTransparency()
+    : Command("Std_ToggleTransparency")
+{
+    sGroup = "Standard-View";
+    sMenuText = QT_TR_NOOP("Toggle transparency");
+    static std::string toolTip = std::string("<p>")
+        + QT_TR_NOOP("Toggles transparency of the selected objects. You can also fine tune transparency "
+            "value in the Appearance taskbox (right click an object in the tree, Appearance).")
+        + "</p>";
+    sToolTipText = toolTip.c_str();
+    sStatusTip = sToolTipText;
+    sWhatsThis = "Std_ToggleTransparency";
+    sPixmap = "Std_ToggleTransparency";
+    sAccel = "V,T";
+    eType = Alter3DView | ViewTransaction;
+}
+
+void StdCmdToggleTransparency::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    getActiveGuiDocument()->openCommand(QT_TRANSLATE_NOOP("Command", "Toggle transparency"));
+
+    std::vector<Gui::SelectionSingleton::SelObj> sels = Gui::Selection().getCompleteSelection();
+
+    std::vector<Gui::ViewProvider*> viewsToToggle = {};
+
+    for (Gui::SelectionSingleton::SelObj& sel : sels) {
+        App::DocumentObject* obj = sel.pObject;
+        if (!obj)
+            continue;
+
+        if (!dynamic_cast<App::Part*>(obj) && !dynamic_cast<App::LinkGroup*>(obj)) {
+            Gui::ViewProvider* view = Application::Instance->getDocument(sel.pDoc)->getViewProvider(obj);
+            App::Property* prop = view->getPropertyByName("Transparency");
+            if (prop && prop->getTypeId().isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
+                viewsToToggle.push_back(view);
+            }
+        }
+        else {
+            std::function<void(App::DocumentObject*, std::vector<Gui::ViewProvider*>&)> addSubObjects =
+                [&addSubObjects](App::DocumentObject* obj, std::vector<Gui::ViewProvider*>& viewsToToggle) {
+                if (!dynamic_cast<App::Part*>(obj) && !dynamic_cast<App::LinkGroup*>(obj)) {
+                    App::Document* doc = obj->getDocument();
+                    Gui::ViewProvider* view = Application::Instance->getDocument(doc)->getViewProvider(obj);
+                    App::Property* prop = view->getPropertyByName("Transparency");
+                    if (prop && prop->getTypeId().isDerivedFrom(App::PropertyInteger::getClassTypeId())
+                        && std::find(viewsToToggle.begin(), viewsToToggle.end(), view) == viewsToToggle.end()) {
+                        viewsToToggle.push_back(view);
+                    }
+                }
+                else {
+                    for (App::DocumentObject* subobj : obj->getOutList()) {
+                        addSubObjects(subobj, viewsToToggle);
+                    }
+                }
+            };
+
+            addSubObjects(obj, viewsToToggle);
+        }
+    }
+
+    bool oneTransparent = false;
+    for (auto* view : viewsToToggle) {
+        App::Property* prop = view->getPropertyByName("Transparency");
+        if (prop && prop->getTypeId().isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
+            auto* transparencyProp = dynamic_cast<App::PropertyInteger*>(prop);
+            int transparency = transparencyProp->getValue();
+            if (transparency != 0) {
+                oneTransparent = true;
+            }
+        }
+    }
+
+    int transparency = oneTransparent ? 0 : 70;
+
+    for (auto* view : viewsToToggle) {
+        App::Property* prop = view->getPropertyByName("Transparency");
+        if (prop && prop->getTypeId().isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
+            auto* transparencyProp = dynamic_cast<App::PropertyInteger*>(prop);
+            transparencyProp->setValue(transparency);
+        }
+    }
+
+    getActiveGuiDocument()->commitCommand();
+}
+
+bool StdCmdToggleTransparency::isActive()
+{
+    return (Gui::Selection().size() != 0);
+}
+
+//===========================================================================
 // Std_ToggleSelectability
 //===========================================================================
 DEF_STD_CMD_A(StdCmdToggleSelectability)
@@ -963,7 +1053,7 @@ StdCmdToggleSelectability::StdCmdToggleSelectability()
     sStatusTip    = QT_TR_NOOP("Toggles the property of the objects to get selected in the 3D-View");
     sWhatsThis    = "Std_ToggleSelectability";
     sPixmap       = "view-unselectable";
-    eType         = Alter3DView;
+    eType         = Alter3DView | ViewTransaction;
 }
 
 void StdCmdToggleSelectability::activated(int iMsg)
@@ -1513,6 +1603,7 @@ void StdCmdViewTop::activated(int iMsg)
     Q_UNUSED(iMsg);
     doCommand(Command::Gui,"Gui.activeDocument().activeView().viewTop()");
 }
+
 
 //===========================================================================
 // Std_ViewIsometric
@@ -2963,7 +3054,7 @@ public:
             return;
         }
 
-        currentSelectionHandler = std::unique_ptr<SelectionCallbackHandler>(new SelectionCallbackHandler());
+        currentSelectionHandler = std::make_unique<SelectionCallbackHandler>();
         if (viewer)
         {
             currentSelectionHandler->userData = ud;
@@ -3120,8 +3211,7 @@ static void selectionCallback(void * ud, SoEventCallback * cb)
 {
     const SoEvent* ev = cb->getEvent();
     cb->setHandled();
-    Gui::View3DInventorViewer* view  = reinterpret_cast<Gui::View3DInventorViewer*>(cb->getUserData());
-
+    auto view  = reinterpret_cast<Gui::View3DInventorViewer*>(cb->getUserData());
     bool unselect = false;
     bool backFaceCull = true;
     bool singleSelect = true;
@@ -3414,10 +3504,10 @@ bool StdCmdTreeSelectAllInstances::isActive()
     if (!Selection().getSingleSelection(sel))
         return false;
     auto obj = sel.getObject();
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         return false;
     return dynamic_cast<ViewProviderDocumentObject*>(
-            Application::Instance->getViewProvider(obj))!=0;
+            Application::Instance->getViewProvider(obj)) != nullptr;
 }
 
 void StdCmdTreeSelectAllInstances::activated(int iMsg)
@@ -3427,7 +3517,7 @@ void StdCmdTreeSelectAllInstances::activated(int iMsg)
     if (!Selection().getSingleSelection(sel))
         return;
     auto obj = sel.getObject();
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         return;
     auto vpd = dynamic_cast<ViewProviderDocumentObject*>(
             Application::Instance->getViewProvider(obj));
@@ -3729,10 +3819,14 @@ StdCmdSelBack::StdCmdSelBack()
   :Command("Std_SelBack")
 {
   sGroup        = "View";
-  sMenuText     = QT_TR_NOOP("&Back");
-  sToolTipText  = QT_TR_NOOP("Go back to previous selection");
+  sMenuText     = QT_TR_NOOP("Selection back");
+  static std::string toolTip = std::string("<p>")
+      + QT_TR_NOOP("Restore the previous Tree view selection. "
+      "Only works if Tree RecordSelection mode is switched on.")
+      + "</p>";
+  sToolTipText = toolTip.c_str();
   sWhatsThis    = "Std_SelBack";
-  sStatusTip    = QT_TR_NOOP("Go back to previous selection");
+  sStatusTip    = sToolTipText;
   sPixmap       = "sel-back";
   sAccel        = "S, B";
   eType         = AlterSelection;
@@ -3769,10 +3863,14 @@ StdCmdSelForward::StdCmdSelForward()
   :Command("Std_SelForward")
 {
   sGroup        = "View";
-  sMenuText     = QT_TR_NOOP("&Forward");
-  sToolTipText  = QT_TR_NOOP("Repeat the backed selection");
+  sMenuText     = QT_TR_NOOP("Selection forward");
+  static std::string toolTip = std::string("<p>")
+      + QT_TR_NOOP("Restore the next Tree view selection. "
+      "Only works if Tree RecordSelection mode is switched on.")
+      + "</p>";
+  sToolTipText = toolTip.c_str();
   sWhatsThis    = "Std_SelForward";
-  sStatusTip    = QT_TR_NOOP("Repeat the backed selection");
+  sStatusTip    = sToolTipText;
   sPixmap       = "sel-forward";
   sAccel        = "S, F";
   eType         = AlterSelection;
@@ -4180,7 +4278,11 @@ public:
         addCommand(new StdTreeHideSelection());
         addCommand(new StdTreeToggleShowHidden());
     };
-    virtual const char* className() const {return "StdCmdTreeViewActions";}
+
+    const char* className() const override
+    {
+        return "StdCmdTreeViewActions";
+    }
 };
 
 
@@ -4503,7 +4605,7 @@ StdCmdDockOverlayAll::StdCmdDockOverlayAll()
 void StdCmdDockOverlayAll::activated(int iMsg)
 {
     Q_UNUSED(iMsg); 
-    OverlayManager::instance()->setOverlayMode(OverlayManager::ToggleAll);
+    OverlayManager::instance()->setOverlayMode(OverlayManager::OverlayMode::ToggleAll);
 }
 
 //===========================================================================
@@ -4528,7 +4630,7 @@ StdCmdDockOverlayTransparentAll::StdCmdDockOverlayTransparentAll()
 void StdCmdDockOverlayTransparentAll::activated(int iMsg)
 {
     Q_UNUSED(iMsg); 
-    OverlayManager::instance()->setOverlayMode(OverlayManager::ToggleTransparentAll);
+    OverlayManager::instance()->setOverlayMode(OverlayManager::OverlayMode::ToggleTransparentAll);
 }
 
 //===========================================================================
@@ -4552,7 +4654,7 @@ StdCmdDockOverlayToggle::StdCmdDockOverlayToggle()
 void StdCmdDockOverlayToggle::activated(int iMsg)
 {
     Q_UNUSED(iMsg); 
-    OverlayManager::instance()->setOverlayMode(OverlayManager::ToggleActive);
+    OverlayManager::instance()->setOverlayMode(OverlayManager::OverlayMode::ToggleActive);
 }
 
 //===========================================================================
@@ -4577,7 +4679,7 @@ StdCmdDockOverlayToggleTransparent::StdCmdDockOverlayToggleTransparent()
 void StdCmdDockOverlayToggleTransparent::activated(int iMsg)
 {
     Q_UNUSED(iMsg); 
-    OverlayManager::instance()->setOverlayMode(OverlayManager::ToggleTransparent);
+    OverlayManager::instance()->setOverlayMode(OverlayManager::OverlayMode::ToggleTransparent);
 }
 
 //===========================================================================
@@ -4602,7 +4704,7 @@ StdCmdDockOverlayToggleLeft::StdCmdDockOverlayToggleLeft()
 void StdCmdDockOverlayToggleLeft::activated(int iMsg)
 {
     Q_UNUSED(iMsg); 
-    OverlayManager::instance()->setOverlayMode(OverlayManager::ToggleLeft);
+    OverlayManager::instance()->setOverlayMode(OverlayManager::OverlayMode::ToggleLeft);
 }
 
 //===========================================================================
@@ -4627,7 +4729,7 @@ StdCmdDockOverlayToggleRight::StdCmdDockOverlayToggleRight()
 void StdCmdDockOverlayToggleRight::activated(int iMsg)
 {
     Q_UNUSED(iMsg); 
-    OverlayManager::instance()->setOverlayMode(OverlayManager::ToggleRight);
+    OverlayManager::instance()->setOverlayMode(OverlayManager::OverlayMode::ToggleRight);
 }
 
 //===========================================================================
@@ -4652,7 +4754,7 @@ StdCmdDockOverlayToggleTop::StdCmdDockOverlayToggleTop()
 void StdCmdDockOverlayToggleTop::activated(int iMsg)
 {
     Q_UNUSED(iMsg); 
-    OverlayManager::instance()->setOverlayMode(OverlayManager::ToggleTop);
+    OverlayManager::instance()->setOverlayMode(OverlayManager::OverlayMode::ToggleTop);
 }
 
 //===========================================================================
@@ -4677,7 +4779,7 @@ StdCmdDockOverlayToggleBottom::StdCmdDockOverlayToggleBottom()
 void StdCmdDockOverlayToggleBottom::activated(int iMsg)
 {
     Q_UNUSED(iMsg); 
-    OverlayManager::instance()->setOverlayMode(OverlayManager::ToggleBottom);
+    OverlayManager::instance()->setOverlayMode(OverlayManager::OverlayMode::ToggleBottom);
 }
 
 //===========================================================================
@@ -4918,6 +5020,7 @@ namespace Gui {
 
 void CreateViewStdCommands()
 {
+    // NOLINTBEGIN
     CommandManager &rcCmdMgr = Application::Instance->commandManager();
 
     // views
@@ -4951,6 +5054,7 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdToggleVisibility());
     rcCmdMgr.addCommand(new StdCmdToggleGroupVisibility());
     rcCmdMgr.addCommand(new StdCmdToggleShowOnTop());
+    rcCmdMgr.addCommand(new StdCmdToggleTransparency());
     rcCmdMgr.addCommand(new StdCmdToggleSelectability());
     rcCmdMgr.addCommand(new StdCmdShowSelection());
     rcCmdMgr.addCommand(new StdCmdHideSelection());
@@ -5004,6 +5108,7 @@ void CreateViewStdCommands()
         hGrp->SetASCII("GestureRollFwdCommand","Std_SelForward");
     if(hGrp->GetASCII("GestureRollBackCommand").empty())
         hGrp->SetASCII("GestureRollBackCommand","Std_SelBack");
+    // NOLINTEND
 }
 
 } // namespace Gui

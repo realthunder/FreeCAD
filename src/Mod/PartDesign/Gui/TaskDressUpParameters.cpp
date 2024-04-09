@@ -84,8 +84,8 @@ TaskDressUpParameters::TaskDressUpParameters(ViewProviderDressUp *DressUpView, b
     if(!onTopEnabled)
         Gui::ViewParams::setShowSelectionOnTop(true);
 
-    connUndo = App::GetApplication().signalUndo.connect(boost::bind(&TaskDressUpParameters::refresh, this));
-    connRedo = App::GetApplication().signalRedo.connect(boost::bind(&TaskDressUpParameters::refresh, this));
+    connUndo = App::GetApplication().signalUndo.connect(std::bind(&TaskDressUpParameters::refresh, this));
+    connRedo = App::GetApplication().signalRedo.connect(std::bind(&TaskDressUpParameters::refresh, this));
 
     connDelete = Gui::Application::Instance->signalDeletedObject.connect(
         [this](const Gui::ViewProvider &Obj) {
@@ -352,7 +352,7 @@ void TaskDressUpParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
                 showMessage("Ambiguous selection");
                 return;
             }
-            element = hist.element.toPrefixedString(tmp);
+            element = hist.element.appendToBufferWithPrefix(tmp);
         }
         if(element) {
             std::vector<App::SubObjectT> sels;
@@ -680,7 +680,7 @@ bool TaskDressUpParameters::getItemElement(QTreeWidgetItem *item, std::string &s
     if (auto parent = item->parent())
         item = parent;
     QByteArray _ref = getGeometryItemReference(item);
-    const char *ref = Data::ComplexGeoData::isMappedElement(_ref.constData());
+    const char *ref = Data::isMappedElement(_ref.constData());
     if (!ref) {
         subname += getGeometryItemText(item).constData();
         return true;
@@ -696,7 +696,7 @@ bool TaskDressUpParameters::getItemElement(QTreeWidgetItem *item, std::string &s
         shape.traceElement(name,
             [&] (const Data::MappedName &n, int, long, long) {
                 tmp.clear();
-                n.toString(tmp);
+                n.appendToBuffer(tmp);
                 if (tmp == ref) {
                     found = true;
                     return true;
@@ -716,7 +716,7 @@ bool TaskDressUpParameters::getItemElement(QTreeWidgetItem *item, std::string &s
         return false;
     editDoc->getInEdit(&editVp,&subname);
     subname += PartDesign::FeatureAddSub::addsubElementPrefix();
-    indexed.toString(subname);
+    indexed.appendToStringBuffer(subname);
     return true;
 }
 
@@ -839,10 +839,7 @@ TaskDlgDressUpParameters::TaskDlgDressUpParameters(ViewProviderDressUp *DressUpV
     assert(DressUpView);
 }
 
-TaskDlgDressUpParameters::~TaskDlgDressUpParameters()
-{
-
-}
+TaskDlgDressUpParameters::~TaskDlgDressUpParameters() = default;
 
 //==== calls from the TaskView ===============================================================
 
@@ -852,8 +849,8 @@ bool TaskDlgDressUpParameters::accept()
     std::stringstream str;
     str << Gui::Command::getObjectCmd(vp->getObject()) << ".Base = ("
         << Gui::Command::getObjectCmd(parameter->getBase()) << ",[";
-    for (std::vector<std::string>::const_iterator it = refs.begin(); it != refs.end(); ++it)
-        str << "\"" << *it << "\",";
+    for (const auto & ref : refs)
+        str << "\"" << ref << "\",";
     str << "])";
     Gui::Command::runCommand(Gui::Command::Doc,str.str().c_str());
     return TaskDlgFeatureParameters::accept();

@@ -122,12 +122,11 @@ void TaskMultiTransformParameters::updateUI()
     // Fill data into dialog elements
     ui->listTransformFeatures->setEnabled(true);
     ui->listTransformFeatures->clear();
-    for (std::vector<App::DocumentObject*>::const_iterator i = transformFeatures.begin(); i != transformFeatures.end(); i++)
-    {
-        if (*i) {
-            auto vp = Application::Instance->getViewProvider(*i);
+    for (auto it : transformFeatures) {
+        if (it) {
+            auto vp = Application::Instance->getViewProvider(it);
             new QListWidgetItem(vp?vp->getIcon():QIcon(),
-                                QString::fromUtf8((*i)->Label.getValue()),
+                                QString::fromUtf8((it)->Label.getValue()),
                                 ui->listTransformFeatures);
         }
     }
@@ -195,13 +194,13 @@ void TaskMultiTransformParameters::onTransformEdit()
     std::vector<App::DocumentObject*> transformFeatures = pcMultiTransform->Transformations.getValues();
 
     subFeature = static_cast<PartDesign::Transformed*>(transformFeatures[row]);
-    if (transformFeatures[row]->getTypeId() == PartDesign::Mirrored::getClassTypeId())
+    if (transformFeatures[row]->is<PartDesign::Mirrored>())
         subTask = new TaskMirroredParameters(this, ui->verticalLayout);
-    else if (transformFeatures[row]->getTypeId() == PartDesign::LinearPattern::getClassTypeId())
+    else if (transformFeatures[row]->is<PartDesign::LinearPattern>())
         subTask = new TaskLinearPatternParameters(this, ui->verticalLayout);
-    else if (transformFeatures[row]->getTypeId() == PartDesign::PolarPattern::getClassTypeId())
+    else if (transformFeatures[row]->is<PartDesign::PolarPattern>())
         subTask = new TaskPolarPatternParameters(this, ui->verticalLayout);
-    else if (transformFeatures[row]->getTypeId() == PartDesign::Scaled::getClassTypeId())
+    else if (transformFeatures[row]->is<PartDesign::Scaled>())
         subTask = new TaskScaledParameters(this, ui->verticalLayout);
     else
         return; // TODO: Show an error?
@@ -240,10 +239,9 @@ void TaskMultiTransformParameters::onTransformAddMirrored()
     if (sketch)
         FCMD_OBJ_CMD(Feat, "MirrorPlane = ("<<Gui::Command::getObjectCmd(sketch)<<",['V_Axis'])");
     else {
-        FCMD_OBJ_CMD(Feat, "MirrorPlane = ("
-                << Gui::Command::getObjectCmd(pcActiveBody->getOrigin()->getXY()) << ",[''])");
+        App::Origin* orig = pcActiveBody->getOrigin();
+        FCMD_OBJ_CMD(Feat, "MirrorPlane = ("<<Gui::Command::getObjectCmd(orig->getXY())<<",[''])");
     }
-
     finishAdd(newFeatName);
 }
 
@@ -495,10 +493,10 @@ bool TaskDlgMultiTransformParameters::accept()
     std::vector<App::DocumentObject*> transformFeatures = mtParameter->getTransformFeatures();
     std::stringstream str;
     str << Gui::Command::getObjectCmd(vp->getObject()) << ".Transformations = [";
-    for (std::vector<App::DocumentObject*>::const_iterator it = transformFeatures.begin(); it != transformFeatures.end(); it++)
-    {
-        if (*it)
-            str << Gui::Command::getObjectCmd(*it) << ",";
+    for (auto it : transformFeatures) {
+        if (it) {
+            str << Gui::Command::getObjectCmd(it) << ",";
+        }
     }
     str << "]";
     Gui::Command::runCommand(Gui::Command::Doc,str.str().c_str());

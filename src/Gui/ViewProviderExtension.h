@@ -82,7 +82,7 @@ public:
         { return false; }
     virtual std::string extensionDropObjectEx(App::DocumentObject *obj, App::DocumentObject *,
             const char *, const std::vector<std::string> &)
-        { extensionDropObject(obj); return std::string(); }
+        { extensionDropObject(obj); return {}; }
 
     virtual int extensionReplaceObject(App::DocumentObject* /*oldValue*/, App::DocumentObject* /*newValue*/)
         { return -1; }

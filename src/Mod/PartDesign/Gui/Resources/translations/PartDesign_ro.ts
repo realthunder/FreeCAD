@@ -129,17 +129,17 @@ astfel încât intersecția de sine să fie evitată.</translation>
   <context>
     <name>CmdPartDesignAdditiveHelix</name>
     <message>
-      <location filename="../../Command.cpp" line="1430"/>
+      <location filename="../../Command.cpp" line="1431"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1431"/>
+      <location filename="../../Command.cpp" line="1432"/>
       <source>Additive helix</source>
       <translation>Pană aditivă</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1432"/>
+      <location filename="../../Command.cpp" line="1433"/>
       <source>Sweep a selected sketch along a helix</source>
       <translation>Glisați o schiță selectată de-a lungul unui helix</translation>
     </message>
@@ -147,17 +147,17 @@ astfel încât intersecția de sine să fie evitată.</translation>
   <context>
     <name>CmdPartDesignAdditiveLoft</name>
     <message>
-      <location filename="../../Command.cpp" line="1329"/>
+      <location filename="../../Command.cpp" line="1330"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1330"/>
+      <location filename="../../Command.cpp" line="1331"/>
       <source>Additive loft</source>
       <translation>Spațiu suplimentar</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1331"/>
+      <location filename="../../Command.cpp" line="1332"/>
       <source>Loft a selected profile through other profile sections</source>
       <translation>Neteziți un profil selectat prin alte secţiuni de profil</translation>
     </message>
@@ -165,17 +165,17 @@ astfel încât intersecția de sine să fie evitată.</translation>
   <context>
     <name>CmdPartDesignAdditivePipe</name>
     <message>
-      <location filename="../../Command.cpp" line="1227"/>
+      <location filename="../../Command.cpp" line="1228"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1228"/>
+      <location filename="../../Command.cpp" line="1229"/>
       <source>Additive pipe</source>
       <translation>Țeavă suplimentară</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1229"/>
+      <location filename="../../Command.cpp" line="1230"/>
       <source>Sweep a selected sketch along a path or to other profiles</source>
       <translation>Baleiați o schiță selectată de-a lungul unui traseu sau al altor profiluriluri</translation>
     </message>
@@ -201,17 +201,17 @@ astfel încât intersecția de sine să fie evitată.</translation>
   <context>
     <name>CmdPartDesignBoolean</name>
     <message>
-      <location filename="../../Command.cpp" line="2343"/>
+      <location filename="../../Command.cpp" line="2344"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2344"/>
+      <location filename="../../Command.cpp" line="2345"/>
       <source>Boolean operation</source>
       <translation>Operație booleană</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2345"/>
+      <location filename="../../Command.cpp" line="2346"/>
       <source>Boolean operation with two or more bodies</source>
       <translation>Operaţiune booleană cu două sau mai multe corpuri</translation>
     </message>
@@ -219,18 +219,18 @@ astfel încât intersecția de sine să fie evitată.</translation>
   <context>
     <name>CmdPartDesignCS</name>
     <message>
-      <location filename="../../Command.cpp" line="246"/>
+      <location filename="../../Command.cpp" line="247"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="247"/>
+      <location filename="../../Command.cpp" line="248"/>
       <source>Create a local coordinate system</source>
       <translation>Create a local coordinate system
 Creati noi coordonate in sistemul local</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="248"/>
+      <location filename="../../Command.cpp" line="249"/>
       <source>Create a new local coordinate system</source>
       <translation>Create a local coordinate system
 Creati noi coordonate in sistemul local</translation>
@@ -239,17 +239,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignChamfer</name>
     <message>
-      <location filename="../../Command.cpp" line="1724"/>
+      <location filename="../../Command.cpp" line="1725"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1725"/>
+      <location filename="../../Command.cpp" line="1726"/>
       <source>Chamfer</source>
       <translation>Teşitură</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1726"/>
+      <location filename="../../Command.cpp" line="1727"/>
       <source>Chamfer the selected edges of a shape</source>
       <translation>Definiţi teşirea muchiilor selectate ale formei</translation>
     </message>
@@ -257,17 +257,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignClone</name>
     <message>
-      <location filename="../../Command.cpp" line="428"/>
+      <location filename="../../Command.cpp" line="429"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="429"/>
+      <location filename="../../Command.cpp" line="430"/>
       <source>Create a clone</source>
       <translation>Creaţi o clona</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="430"/>
+      <location filename="../../Command.cpp" line="431"/>
       <source>Create a new clone</source>
       <translation>Creaţi o clona noua</translation>
     </message>
@@ -275,17 +275,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignDraft</name>
     <message>
-      <location filename="../../Command.cpp" line="1753"/>
+      <location filename="../../Command.cpp" line="1754"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1754"/>
+      <location filename="../../Command.cpp" line="1755"/>
       <source>Draft</source>
       <translation>Pescaj</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1755"/>
+      <location filename="../../Command.cpp" line="1756"/>
       <source>Make a draft on a face</source>
       <translation>Creaza o ciorna pe o fata</translation>
     </message>
@@ -311,17 +311,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignFillet</name>
     <message>
-      <location filename="../../Command.cpp" line="1696"/>
+      <location filename="../../Command.cpp" line="1697"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1697"/>
+      <location filename="../../Command.cpp" line="1698"/>
       <source>Fillet</source>
       <translation>Rotunjire</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1698"/>
+      <location filename="../../Command.cpp" line="1699"/>
       <source>Make a fillet on an edge, face or body</source>
       <translation>Creeaza o rotunjire pe o muchie, fata sau corp</translation>
     </message>
@@ -329,17 +329,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignGroove</name>
     <message>
-      <location filename="../../Command.cpp" line="1160"/>
+      <location filename="../../Command.cpp" line="1161"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1161"/>
+      <location filename="../../Command.cpp" line="1162"/>
       <source>Groove</source>
       <translation>Canelură</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1162"/>
+      <location filename="../../Command.cpp" line="1163"/>
       <source>Groove a selected sketch</source>
       <translation>Creează o canelură pentru schiţa selectată</translation>
     </message>
@@ -347,17 +347,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignHole</name>
     <message>
-      <location filename="../../Command.cpp" line="1054"/>
+      <location filename="../../Command.cpp" line="1055"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1055"/>
+      <location filename="../../Command.cpp" line="1056"/>
       <source>Hole</source>
       <translation>Gaura</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1056"/>
+      <location filename="../../Command.cpp" line="1057"/>
       <source>Create a hole with the selected sketch</source>
       <translation>Crează o gaură cu schita selectată</translation>
     </message>
@@ -365,17 +365,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignLine</name>
     <message>
-      <location filename="../../Command.cpp" line="190"/>
+      <location filename="../../Command.cpp" line="191"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="191"/>
+      <location filename="../../Command.cpp" line="192"/>
       <source>Create a datum line</source>
       <translation>Creaţi o linie de referință</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="192"/>
+      <location filename="../../Command.cpp" line="193"/>
       <source>Create a new datum line</source>
       <translation>Creaţi o nouă linie de referință</translation>
     </message>
@@ -383,17 +383,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignLinearPattern</name>
     <message>
-      <location filename="../../Command.cpp" line="2041"/>
+      <location filename="../../Command.cpp" line="2042"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2042"/>
+      <location filename="../../Command.cpp" line="2043"/>
       <source>LinearPattern</source>
       <translation>PatternLiniar</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2043"/>
+      <location filename="../../Command.cpp" line="2044"/>
       <source>Create a linear pattern feature</source>
       <translation>Creaţi o funcție de repetiție lineară</translation>
     </message>
@@ -419,17 +419,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignMirrored</name>
     <message>
-      <location filename="../../Command.cpp" line="1979"/>
+      <location filename="../../Command.cpp" line="1980"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1980"/>
+      <location filename="../../Command.cpp" line="1981"/>
       <source>Mirrored</source>
       <translation>In oglinda</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1981"/>
+      <location filename="../../Command.cpp" line="1982"/>
       <source>Create a mirrored feature</source>
       <translation>Creaţi o caracteristică în simetrie</translation>
     </message>
@@ -491,17 +491,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignMultiTransform</name>
     <message>
-      <location filename="../../Command.cpp" line="2219"/>
+      <location filename="../../Command.cpp" line="2220"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2220"/>
+      <location filename="../../Command.cpp" line="2221"/>
       <source>Create MultiTransform</source>
       <translation>Crea MultiTransform</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2221"/>
+      <location filename="../../Command.cpp" line="2222"/>
       <source>Create a multitransform feature</source>
       <translation>Creaza o funcție de transformare multipla</translation>
     </message>
@@ -509,17 +509,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignNewSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="502"/>
+      <location filename="../../Command.cpp" line="503"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="503"/>
+      <location filename="../../Command.cpp" line="504"/>
       <source>Create sketch</source>
       <translation>Creaza schita</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="504"/>
+      <location filename="../../Command.cpp" line="505"/>
       <source>Create a new sketch</source>
       <translation>Creați o nouă schiță</translation>
     </message>
@@ -527,17 +527,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignPad</name>
     <message>
-      <location filename="../../Command.cpp" line="990"/>
+      <location filename="../../Command.cpp" line="991"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="991"/>
+      <location filename="../../Command.cpp" line="992"/>
       <source>Pad</source>
       <translation>Pad</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="992"/>
+      <location filename="../../Command.cpp" line="993"/>
       <source>Pad a selected sketch</source>
       <translation>Formeaza o schita</translation>
     </message>
@@ -545,17 +545,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignPlane</name>
     <message>
-      <location filename="../../Command.cpp" line="162"/>
+      <location filename="../../Command.cpp" line="163"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="163"/>
+      <location filename="../../Command.cpp" line="164"/>
       <source>Create a datum plane</source>
       <translation>Creaţi un plan de referință</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="164"/>
+      <location filename="../../Command.cpp" line="165"/>
       <source>Create a new datum plane</source>
       <translation>Creați un plan de referință</translation>
     </message>
@@ -563,17 +563,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignPocket</name>
     <message>
-      <location filename="../../Command.cpp" line="1022"/>
+      <location filename="../../Command.cpp" line="1023"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1023"/>
+      <location filename="../../Command.cpp" line="1024"/>
       <source>Pocket</source>
       <translation>Buzunar</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1024"/>
+      <location filename="../../Command.cpp" line="1025"/>
       <source>Create a pocket with the selected sketch</source>
       <translation>Crează un buzunar cu schița selectată</translation>
     </message>
@@ -581,17 +581,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignPoint</name>
     <message>
-      <location filename="../../Command.cpp" line="218"/>
+      <location filename="../../Command.cpp" line="219"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="219"/>
+      <location filename="../../Command.cpp" line="220"/>
       <source>Create a datum point</source>
       <translation>Creați un punct de referință</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="220"/>
+      <location filename="../../Command.cpp" line="221"/>
       <source>Create a new datum point</source>
       <translation>Creaţi un nou punct de referință</translation>
     </message>
@@ -599,17 +599,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignPolarPattern</name>
     <message>
-      <location filename="../../Command.cpp" line="2105"/>
+      <location filename="../../Command.cpp" line="2106"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2106"/>
+      <location filename="../../Command.cpp" line="2107"/>
       <source>PolarPattern</source>
       <translation>PolarPattern</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2107"/>
+      <location filename="../../Command.cpp" line="2108"/>
       <source>Create a polar pattern feature</source>
       <translation>Creează un funcție cu repetiție circulară</translation>
     </message>
@@ -617,17 +617,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignRevolution</name>
     <message>
-      <location filename="../../Command.cpp" line="1101"/>
+      <location filename="../../Command.cpp" line="1102"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1102"/>
+      <location filename="../../Command.cpp" line="1103"/>
       <source>Revolution</source>
       <translation>Revoluţie</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1103"/>
+      <location filename="../../Command.cpp" line="1104"/>
       <source>Revolve a selected sketch</source>
       <translation>Rotiţi o schiţă selectată</translation>
     </message>
@@ -635,17 +635,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignScaled</name>
     <message>
-      <location filename="../../Command.cpp" line="2170"/>
+      <location filename="../../Command.cpp" line="2171"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2171"/>
+      <location filename="../../Command.cpp" line="2172"/>
       <source>Scaled</source>
       <translation>Scalat</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2172"/>
+      <location filename="../../Command.cpp" line="2173"/>
       <source>Create a scaled feature</source>
       <translation>Creaţi o caracteristică scalară</translation>
     </message>
@@ -653,17 +653,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignShapeBinder</name>
     <message>
-      <location filename="../../Command.cpp" line="278"/>
+      <location filename="../../Command.cpp" line="279"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="279"/>
+      <location filename="../../Command.cpp" line="280"/>
       <source>Create a shape binder</source>
       <translation>Creați o formă de legătură</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="280"/>
+      <location filename="../../Command.cpp" line="281"/>
       <source>Create a new shape binder</source>
       <translation>Creați o nouă formă de legătură</translation>
     </message>
@@ -671,13 +671,13 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignSubShapeBinder</name>
     <message>
-      <location filename="../../Command.cpp" line="344"/>
+      <location filename="../../Command.cpp" line="345"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="345"/>
       <location filename="../../Command.cpp" line="346"/>
+      <location filename="../../Command.cpp" line="347"/>
       <source>Create a sub-object(s) shape binder</source>
       <translation>Creaţi un sub-obiect(e) în formă de legătură</translation>
     </message>
@@ -685,17 +685,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignSubtractiveHelix</name>
     <message>
-      <location filename="../../Command.cpp" line="1507"/>
+      <location filename="../../Command.cpp" line="1508"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1508"/>
+      <location filename="../../Command.cpp" line="1509"/>
       <source>Subtractive helix</source>
       <translation>Cutie substractivă</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1509"/>
+      <location filename="../../Command.cpp" line="1510"/>
       <source>Sweep a selected sketch along a helix and remove it from the body</source>
       <translation>Baleiați o schiță selecționată de-a lungul unei traiectorii sau prin alte profile și extrageți-o din corp</translation>
     </message>
@@ -703,17 +703,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignSubtractiveLoft</name>
     <message>
-      <location filename="../../Command.cpp" line="1380"/>
+      <location filename="../../Command.cpp" line="1381"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1381"/>
+      <location filename="../../Command.cpp" line="1382"/>
       <source>Subtractive loft</source>
       <translation>Netezire substractivă</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1382"/>
+      <location filename="../../Command.cpp" line="1383"/>
       <source>Loft a selected profile through other profile sections and remove it from the body</source>
       <translation>Neteziți un profil selecționat prin alte secțiuni de profil și extrageți corpul</translation>
     </message>
@@ -721,17 +721,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignSubtractivePipe</name>
     <message>
-      <location filename="../../Command.cpp" line="1278"/>
+      <location filename="../../Command.cpp" line="1279"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1279"/>
+      <location filename="../../Command.cpp" line="1280"/>
       <source>Subtractive pipe</source>
       <translation>Extragere de material prin baleiere</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1280"/>
+      <location filename="../../Command.cpp" line="1281"/>
       <source>Sweep a selected sketch along a path or to other profiles and remove it from the body</source>
       <translation>Baleiați o schiță selecționată de-a lungul unei traiectorii sau prin alte profile și extrageți-o din corp</translation>
     </message>
@@ -739,17 +739,17 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>CmdPartDesignThickness</name>
     <message>
-      <location filename="../../Command.cpp" line="1821"/>
+      <location filename="../../Command.cpp" line="1822"/>
       <source>PartDesign</source>
       <translation>Design Componente</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1822"/>
+      <location filename="../../Command.cpp" line="1823"/>
       <source>Thickness</source>
       <translation>Grosime</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1823"/>
+      <location filename="../../Command.cpp" line="1824"/>
       <source>Make a thick solid</source>
       <translation>Generați o grosime</translation>
     </message>
@@ -865,28 +865,28 @@ Creati noi coordonate in sistemul local</translation>
   <context>
     <name>Command</name>
     <message>
-      <location filename="../../Command.cpp" line="299"/>
+      <location filename="../../Command.cpp" line="300"/>
       <source>Edit ShapeBinder</source>
       <translation>Editaţi forma de conexiune</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="308"/>
+      <location filename="../../Command.cpp" line="309"/>
       <source>Create ShapeBinder</source>
       <translation>Editaţi forma de conexiune</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="391"/>
+      <location filename="../../Command.cpp" line="392"/>
       <source>Create SubShapeBinder</source>
       <translation>Create SubShapeBinder</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="446"/>
+      <location filename="../../Command.cpp" line="447"/>
       <source>Create Clone</source>
       <translation>Creare clonă</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="890"/>
       <location filename="../../SketchWorkflow.cpp" line="297"/>
+      <location filename="../../Command.cpp" line="891"/>
       <source>Make copy</source>
       <translation>Fă o copie</translation>
     </message>
@@ -901,18 +901,18 @@ Creati noi coordonate in sistemul local</translation>
       <translation>Creează o schiță nouă</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2269"/>
+      <location filename="../../Command.cpp" line="2270"/>
       <source>Convert to MultiTransform feature</source>
       <translation>Convertește la funcția de transformă multiplă</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="2361"/>
+      <location filename="../../Command.cpp" line="2362"/>
       <source>Create Boolean</source>
       <translation>Create Boolean</translation>
     </message>
     <message>
+      <location filename="../../DlgActiveBody.cpp" line="102"/>
       <location filename="../../CommandBody.cpp" line="189"/>
-      <location filename="../../DlgActiveBody.cpp" line="104"/>
       <source>Add a Body</source>
       <translation>Adaugă un corp</translation>
     </message>
@@ -942,22 +942,22 @@ Creati noi coordonate in sistemul local</translation>
       <translation>Mută un obiect în interiorul arborelui</translation>
     </message>
     <message>
-      <location filename="../../TaskMultiTransformParameters.cpp" line="295"/>
+      <location filename="../../TaskMultiTransformParameters.cpp" line="294"/>
       <source>Mirrored</source>
       <translation>In oglinda</translation>
     </message>
     <message>
-      <location filename="../../TaskMultiTransformParameters.cpp" line="323"/>
+      <location filename="../../TaskMultiTransformParameters.cpp" line="325"/>
       <source>Make LinearPattern</source>
       <translation>Fă LinearPattern</translation>
     </message>
     <message>
-      <location filename="../../TaskMultiTransformParameters.cpp" line="361"/>
+      <location filename="../../TaskMultiTransformParameters.cpp" line="363"/>
       <source>PolarPattern</source>
       <translation>PolarPattern</translation>
     </message>
     <message>
-      <location filename="../../TaskMultiTransformParameters.cpp" line="389"/>
+      <location filename="../../TaskMultiTransformParameters.cpp" line="391"/>
       <source>Scaled</source>
       <translation>Scalat</translation>
     </message>
@@ -1415,11 +1415,6 @@ Dacă zero, este egală cu Radius2</translation>
   <context>
     <name>PartDesignGui::TaskBooleanParameters</name>
     <message>
-      <location filename="../../TaskBooleanParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
-    <message>
       <location filename="../../TaskBooleanParameters.ui" line="22"/>
       <source>Add body</source>
       <translation>Adauga corp</translation>
@@ -1503,11 +1498,6 @@ Dacă zero, este egală cu Radius2</translation>
   <context>
     <name>PartDesignGui::TaskChamferParameters</name>
     <message>
-      <location filename="../../TaskChamferParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
-    <message>
       <location filename="../../TaskChamferParameters.ui" line="20"/>
       <source>Click button to enter selection mode,
 click again to end selection</source>
@@ -1572,7 +1562,7 @@ faceți clic din nou pentru a încheia selecția</translation>
       <translation>Unghi</translation>
     </message>
     <message>
-      <location filename="../../TaskChamferParameters.cpp" line="324"/>
+      <location filename="../../TaskChamferParameters.cpp" line="323"/>
       <source>Empty chamfer created !
 </source>
       <translation>Camferul gol a fost creat!
@@ -1582,17 +1572,17 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>PartDesignGui::TaskDlgBooleanParameters</name>
     <message>
-      <location filename="../../TaskBooleanParameters.cpp" line="352"/>
+      <location filename="../../TaskBooleanParameters.cpp" line="347"/>
       <source>Empty body list</source>
       <translation>Lista cu corpurile vide</translation>
     </message>
     <message>
-      <location filename="../../TaskBooleanParameters.cpp" line="353"/>
+      <location filename="../../TaskBooleanParameters.cpp" line="348"/>
       <source>The body list cannot be empty</source>
       <translation>Lista corpurilor nu poate fi goală</translation>
     </message>
     <message>
-      <location filename="../../TaskBooleanParameters.cpp" line="364"/>
+      <location filename="../../TaskBooleanParameters.cpp" line="360"/>
       <source>Boolean: Accept: Input error</source>
       <translation>Boolean: Accepta: eroare de intrare</translation>
     </message>
@@ -1600,12 +1590,12 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>PartDesignGui::TaskDlgDatumParameters</name>
     <message>
-      <location filename="../../TaskDatumParameters.cpp" line="104"/>
+      <location filename="../../TaskDatumParameters.cpp" line="101"/>
       <source>Incompatible reference set</source>
       <translation>Combinație de referinţe incompatibile</translation>
     </message>
     <message>
-      <location filename="../../TaskDatumParameters.cpp" line="105"/>
+      <location filename="../../TaskDatumParameters.cpp" line="102"/>
       <source>There is no attachment mode that fits the current set of references. If you choose to continue, the feature will remain where it is now, and will not be moved as the references change. Continue?</source>
       <translation>Nu există niciun mod de atașare care să corespundă combinației curente de referințe. Dacă veți continua, funcția va rămâne acolo unde este și nu se va mișca dacă se schimbă referințele. Continuați?</translation>
     </message>
@@ -1613,7 +1603,7 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>PartDesignGui::TaskDlgFeatureParameters</name>
     <message>
-      <location filename="../../TaskFeatureParameters.cpp" line="133"/>
+      <location filename="../../TaskFeatureParameters.cpp" line="130"/>
       <source>Input error</source>
       <translation>Eroare de intrare</translation>
     </message>
@@ -1621,18 +1611,13 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>PartDesignGui::TaskDlgShapeBinder</name>
     <message>
-      <location filename="../../TaskShapeBinder.cpp" line="413"/>
+      <location filename="../../TaskShapeBinder.cpp" line="408"/>
       <source>Input error</source>
       <translation>Eroare de intrare</translation>
     </message>
   </context>
   <context>
     <name>PartDesignGui::TaskDraftParameters</name>
-    <message>
-      <location filename="../../TaskDraftParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskDraftParameters.ui" line="20"/>
       <source>Click button to enter selection mode,
@@ -1673,7 +1658,7 @@ faceți clic din nou pentru a încheia selecția</translation>
       <translation>Inversa directiei de tragere</translation>
     </message>
     <message>
-      <location filename="../../TaskDraftParameters.cpp" line="282"/>
+      <location filename="../../TaskDraftParameters.cpp" line="281"/>
       <source>Empty draft created !
 </source>
       <translation>Gol ciornă creată!
@@ -1711,50 +1696,45 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>PartDesignGui::TaskExtrudeParameters</name>
     <message>
-      <location filename="../../TaskExtrudeParameters.cpp" line="899"/>
+      <location filename="../../TaskExtrudeParameters.cpp" line="897"/>
       <source>No face selected</source>
       <translation>Nici o faţă selectată</translation>
     </message>
     <message>
-      <location filename="../../TaskExtrudeParameters.cpp" line="155"/>
-      <location filename="../../TaskExtrudeParameters.cpp" line="737"/>
+      <location filename="../../TaskExtrudeParameters.cpp" line="153"/>
+      <location filename="../../TaskExtrudeParameters.cpp" line="735"/>
       <source>Face</source>
       <translation>Faţă</translation>
     </message>
     <message>
-      <location filename="../../TaskExtrudeParameters.cpp" line="359"/>
+      <location filename="../../TaskExtrudeParameters.cpp" line="357"/>
       <source>Sketch normal</source>
       <translation>Schiță normală</translation>
     </message>
     <message>
-      <location filename="../../TaskExtrudeParameters.cpp" line="361"/>
+      <location filename="../../TaskExtrudeParameters.cpp" line="359"/>
       <source>Face normal</source>
       <translation>Faţă normală</translation>
     </message>
     <message>
-      <location filename="../../TaskExtrudeParameters.cpp" line="364"/>
+      <location filename="../../TaskExtrudeParameters.cpp" line="362"/>
       <source>Select reference...</source>
       <translation type="unfinished">Select reference...</translation>
     </message>
     <message>
+      <location filename="../../TaskExtrudeParameters.cpp" line="366"/>
       <location filename="../../TaskExtrudeParameters.cpp" line="368"/>
-      <location filename="../../TaskExtrudeParameters.cpp" line="370"/>
       <source>Custom direction</source>
       <translation>Direcție personalizată</translation>
     </message>
     <message>
-      <location filename="../../TaskExtrudeParameters.cpp" line="894"/>
+      <location filename="../../TaskExtrudeParameters.cpp" line="892"/>
       <source>Click on a face in the model</source>
       <translation>Faceți clic pe o față din model</translation>
     </message>
   </context>
   <context>
     <name>PartDesignGui::TaskFeaturePick</name>
-    <message>
-      <location filename="../../TaskFeaturePick.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskFeaturePick.ui" line="23"/>
       <source>Allow used features</source>
@@ -1844,11 +1824,6 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>PartDesignGui::TaskFilletParameters</name>
     <message>
-      <location filename="../../TaskFilletParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
-    <message>
       <location filename="../../TaskFilletParameters.ui" line="20"/>
       <source>Click button to enter selection mode,
 click again to end selection</source>
@@ -1878,20 +1853,13 @@ faceți clic din nou pentru a încheia selecția</translation>
       <translation>Folosește toate marginile</translation>
     </message>
     <message>
-      <location filename="../../TaskFilletParameters.cpp" line="194"/>
-      <source>Empty fillet created !
-</source>
-      <translation>Fisier gol creat!
-</translation>
+      <location filename="../../TaskFilletParameters.cpp" line="190"/>
+      <source>Empty fillet created!</source>
+      <translation type="unfinished">Empty fillet created!</translation>
     </message>
   </context>
   <context>
     <name>PartDesignGui::TaskHelixParameters</name>
-    <message>
-      <location filename="../../TaskHelixParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskHelixParameters.ui" line="22"/>
       <source>Status:</source>
@@ -2101,11 +2069,6 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>PartDesignGui::TaskLinearPatternParameters</name>
     <message>
-      <location filename="../../TaskLinearPatternParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
-    <message>
       <location filename="../../TaskLinearPatternParameters.ui" line="22"/>
       <source>Add feature</source>
       <translation>Adauga o caracteristica</translation>
@@ -2132,21 +2095,37 @@ faceți clic din nou pentru a încheia selecția</translation>
     </message>
     <message>
       <location filename="../../TaskLinearPatternParameters.ui" line="77"/>
+      <source>Mode</source>
+      <translation>Mod</translation>
+    </message>
+    <message>
+      <location filename="../../TaskLinearPatternParameters.ui" line="85"/>
+      <source>Overall Length</source>
+      <translation>Lungimea globală</translation>
+    </message>
+    <message>
+      <location filename="../../TaskLinearPatternParameters.ui" line="90"/>
+      <location filename="../../TaskLinearPatternParameters.ui" line="153"/>
+      <source>Offset</source>
+      <translation>Compensare</translation>
+    </message>
+    <message>
+      <location filename="../../TaskLinearPatternParameters.ui" line="115"/>
       <source>Length</source>
       <translation>Lungime</translation>
     </message>
     <message>
-      <location filename="../../TaskLinearPatternParameters.ui" line="101"/>
+      <location filename="../../TaskLinearPatternParameters.ui" line="178"/>
       <source>Occurrences</source>
       <translation>Aparitii</translation>
     </message>
     <message>
-      <location filename="../../TaskLinearPatternParameters.ui" line="115"/>
+      <location filename="../../TaskLinearPatternParameters.ui" line="192"/>
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../../TaskLinearPatternParameters.ui" line="124"/>
+      <location filename="../../TaskLinearPatternParameters.ui" line="201"/>
       <source>Update view</source>
       <translation>Actualizeaza vizualizarea</translation>
     </message>
@@ -2156,18 +2135,13 @@ faceți clic din nou pentru a încheia selecția</translation>
       <translation>Elimină</translation>
     </message>
     <message>
-      <location filename="../../TaskLinearPatternParameters.cpp" line="336"/>
+      <location filename="../../TaskLinearPatternParameters.cpp" line="382"/>
       <source>Error</source>
       <translation>Eroare</translation>
     </message>
   </context>
   <context>
     <name>PartDesignGui::TaskLoftParameters</name>
-    <message>
-      <location filename="../../TaskLoftParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskLoftParameters.ui" line="20"/>
       <source>Ruled surface</source>
@@ -2222,11 +2196,6 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>PartDesignGui::TaskMirroredParameters</name>
     <message>
-      <location filename="../../TaskMirroredParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
-    <message>
       <location filename="../../TaskMirroredParameters.ui" line="22"/>
       <source>Add feature</source>
       <translation>Adauga o caracteristica</translation>
@@ -2262,18 +2231,13 @@ faceți clic din nou pentru a încheia selecția</translation>
       <translation>Elimină</translation>
     </message>
     <message>
-      <location filename="../../TaskMirroredParameters.cpp" line="245"/>
+      <location filename="../../TaskMirroredParameters.cpp" line="244"/>
       <source>Error</source>
       <translation>Eroare</translation>
     </message>
   </context>
   <context>
     <name>PartDesignGui::TaskMultiTransformParameters</name>
-    <message>
-      <location filename="../../TaskMultiTransformParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskMultiTransformParameters.ui" line="22"/>
       <source>Add feature</source>
@@ -2368,38 +2332,33 @@ faceți clic din nou pentru a încheia selecția</translation>
       <translation>Inversează direcția tastaturii</translation>
     </message>
     <message>
-      <location filename="../../TaskPadParameters.cpp" line="72"/>
+      <location filename="../../TaskPadParameters.cpp" line="70"/>
       <source>Dimension</source>
       <translation>Dimensiune</translation>
     </message>
     <message>
-      <location filename="../../TaskPadParameters.cpp" line="73"/>
+      <location filename="../../TaskPadParameters.cpp" line="71"/>
       <source>To last</source>
       <translation>Spre ultimul</translation>
     </message>
     <message>
-      <location filename="../../TaskPadParameters.cpp" line="74"/>
+      <location filename="../../TaskPadParameters.cpp" line="72"/>
       <source>To first</source>
       <translation>Spre primul</translation>
     </message>
     <message>
-      <location filename="../../TaskPadParameters.cpp" line="75"/>
+      <location filename="../../TaskPadParameters.cpp" line="73"/>
       <source>Up to face</source>
       <translation>Până la față</translation>
     </message>
     <message>
-      <location filename="../../TaskPadParameters.cpp" line="76"/>
+      <location filename="../../TaskPadParameters.cpp" line="74"/>
       <source>Two dimensions</source>
       <translation>Două dimensiuni</translation>
     </message>
   </context>
   <context>
     <name>PartDesignGui::TaskPadPocketParameters</name>
-    <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskPadPocketParameters.ui" line="22"/>
       <source>Type</source>
@@ -2416,150 +2375,145 @@ faceți clic din nou pentru a încheia selecția</translation>
       <translation>Lungime</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="58"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="75"/>
       <source>Offset to face</source>
       <translation>Compensare pe față</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="77"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="141"/>
       <source>Direction</source>
       <translation>Direcţia</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="85"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="149"/>
       <source>Direction/edge:</source>
       <translation>Direcție/margine:</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="92"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="156"/>
       <source>Set a direction or select an edge
 from the model as reference</source>
       <translation>Setați o direcție sau selectați o margine
 din model ca referință</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="97"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="161"/>
       <source>Sketch normal</source>
       <translation>Schiță normală</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="102"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="166"/>
       <source>Select reference...</source>
-      <translation type="unfinished">Select reference...</translation>
+      <translation>Selectați o referință...</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="107"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="171"/>
       <source>Custom direction</source>
       <translation>Direcție personalizată</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="117"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="181"/>
       <source>Show direction</source>
       <translation>Arată direcția</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="127"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="191"/>
       <source>Use custom vector for pad direction, otherwise
 the sketch plane's normal vector will be used</source>
       <translation>Utilizaţi vector personalizat pentru direcţia tastaturii, altfel
 vectorul normal al planului va fi folosit</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="140"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="204"/>
       <source>x</source>
       <translation>x</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="147"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="211"/>
       <source>x-component of direction vector</source>
       <translation>componenta x a vectorului de direcție</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="169"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="233"/>
       <source>y</source>
       <translation>y</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="176"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="240"/>
       <source>y-component of direction vector</source>
       <translation>componentă y a vectorului de direcție</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="198"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="262"/>
       <source>z</source>
       <translation>z</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="205"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="269"/>
       <source>z-component of direction vector</source>
       <translation>componenta z a vectorului de direcție</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="236"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="300"/>
       <source>If unchecked, the length will be
 measured along the specified direction</source>
       <translation>Dacă nu bifați, lungimea va fi
 măsurată de-a lungul direcției specificate</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="240"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="304"/>
       <source>Length along sketch normal</source>
       <translation>Lungimea normală de-a lungul schiței</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="253"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="124"/>
       <source>Applies length symmetrically to sketch plane</source>
       <translation>Aplică lungimea simetric planului schiţei</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="256"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="127"/>
       <source>Symmetric to plane</source>
       <translation>Simetric față de plan</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="263"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="134"/>
       <source>Reversed</source>
       <translation>Inversat</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="272"/>
-      <location filename="../../TaskPadPocketParameters.ui" line="317"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="316"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="340"/>
       <source>Angle to taper the extrusion</source>
       <translation>Unghiul pentru a lipi extruda</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="275"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="319"/>
       <source>Taper angle</source>
       <translation>Unghiul de căptușeală</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="296"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="58"/>
       <source>2nd length</source>
       <translation>A doua lungime</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="320"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="343"/>
       <source>2nd taper angle</source>
       <translation>Al doilea unghi de tapet</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="347"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="102"/>
       <source>Select face</source>
       <translation>Selectați fața</translation>
     </message>
     <message>
-      <location filename="../../TaskPadPocketParameters.ui" line="373"/>
+      <location filename="../../TaskPadPocketParameters.ui" line="369"/>
       <source>Update view</source>
       <translation>Actualizeaza vizualizarea</translation>
     </message>
   </context>
   <context>
     <name>PartDesignGui::TaskPipeOrientation</name>
-    <message>
-      <location filename="../../TaskPipeOrientation.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskPipeOrientation.ui" line="22"/>
       <source>Orientation mode</source>
@@ -2649,11 +2603,6 @@ măsurată de-a lungul direcției specificate</translation>
   <context>
     <name>PartDesignGui::TaskPipeParameters</name>
     <message>
-      <location filename="../../TaskPipeParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
-    <message>
       <location filename="../../TaskPipeParameters.ui" line="20"/>
       <source>Profile</source>
       <translation>Profil</translation>
@@ -2700,34 +2649,29 @@ măsurată de-a lungul direcției specificate</translation>
       <translation>Eliminați muchia</translation>
     </message>
     <message>
-      <location filename="../../TaskPipeParameters.cpp" line="69"/>
+      <location filename="../../TaskPipeParameters.cpp" line="68"/>
       <source>Pipe parameters</source>
       <translation>Parametrii ţevii</translation>
     </message>
     <message>
-      <location filename="../../TaskPipeParameters.cpp" line="85"/>
+      <location filename="../../TaskPipeParameters.cpp" line="84"/>
       <source>Remove</source>
       <translation>Elimină</translation>
     </message>
     <message>
-      <location filename="../../TaskPipeParameters.cpp" line="423"/>
+      <location filename="../../TaskPipeParameters.cpp" line="422"/>
       <location filename="../../TaskPipeParameters.cpp" line="521"/>
       <source>Input error</source>
       <translation>Eroare de intrare</translation>
     </message>
     <message>
-      <location filename="../../TaskPipeParameters.cpp" line="423"/>
+      <location filename="../../TaskPipeParameters.cpp" line="422"/>
       <source>No active body</source>
       <translation>Nici un corp activ</translation>
     </message>
   </context>
   <context>
     <name>PartDesignGui::TaskPipeScaling</name>
-    <message>
-      <location filename="../../TaskPipeScaling.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskPipeScaling.ui" line="22"/>
       <source>Transform mode</source>
@@ -2787,38 +2731,33 @@ măsurată de-a lungul direcției specificate</translation>
       <translation>Inversează direcția buzunarului</translation>
     </message>
     <message>
-      <location filename="../../TaskPocketParameters.cpp" line="73"/>
+      <location filename="../../TaskPocketParameters.cpp" line="71"/>
       <source>Dimension</source>
       <translation>Dimensiune</translation>
     </message>
     <message>
-      <location filename="../../TaskPocketParameters.cpp" line="74"/>
+      <location filename="../../TaskPocketParameters.cpp" line="72"/>
       <source>Through all</source>
       <translation>Prin toate</translation>
     </message>
     <message>
-      <location filename="../../TaskPocketParameters.cpp" line="75"/>
+      <location filename="../../TaskPocketParameters.cpp" line="73"/>
       <source>To first</source>
       <translation>Spre primul</translation>
     </message>
     <message>
-      <location filename="../../TaskPocketParameters.cpp" line="76"/>
+      <location filename="../../TaskPocketParameters.cpp" line="74"/>
       <source>Up to face</source>
       <translation>Până la față</translation>
     </message>
     <message>
-      <location filename="../../TaskPocketParameters.cpp" line="77"/>
+      <location filename="../../TaskPocketParameters.cpp" line="75"/>
       <source>Two dimensions</source>
       <translation>Două dimensiuni</translation>
     </message>
   </context>
   <context>
     <name>PartDesignGui::TaskPolarPatternParameters</name>
-    <message>
-      <location filename="../../TaskPolarPatternParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskPolarPatternParameters.ui" line="22"/>
       <source>Add feature</source>
@@ -2846,21 +2785,41 @@ măsurată de-a lungul direcției specificate</translation>
     </message>
     <message>
       <location filename="../../TaskPolarPatternParameters.ui" line="77"/>
+      <source>Mode</source>
+      <translation>Mod</translation>
+    </message>
+    <message>
+      <location filename="../../TaskPolarPatternParameters.ui" line="85"/>
+      <source>Overall Angle</source>
+      <translation>Unghiul general</translation>
+    </message>
+    <message>
+      <location filename="../../TaskPolarPatternParameters.ui" line="90"/>
+      <source>Offset Angle</source>
+      <translation>Unghiul Offset</translation>
+    </message>
+    <message>
+      <location filename="../../TaskPolarPatternParameters.ui" line="115"/>
       <source>Angle</source>
       <translation>Unghi</translation>
     </message>
     <message>
-      <location filename="../../TaskPolarPatternParameters.ui" line="107"/>
+      <location filename="../../TaskPolarPatternParameters.ui" line="159"/>
+      <source>Offset</source>
+      <translation>Compensare</translation>
+    </message>
+    <message>
+      <location filename="../../TaskPolarPatternParameters.ui" line="190"/>
       <source>Occurrences</source>
       <translation>Aparitii</translation>
     </message>
     <message>
-      <location filename="../../TaskPolarPatternParameters.ui" line="121"/>
+      <location filename="../../TaskPolarPatternParameters.ui" line="204"/>
       <source>OK</source>
       <translation>OK</translation>
     </message>
     <message>
-      <location filename="../../TaskPolarPatternParameters.ui" line="130"/>
+      <location filename="../../TaskPolarPatternParameters.ui" line="213"/>
       <source>Update view</source>
       <translation>Actualizeaza vizualizarea</translation>
     </message>
@@ -2870,7 +2829,7 @@ măsurată de-a lungul direcției specificate</translation>
       <translation>Elimină</translation>
     </message>
     <message>
-      <location filename="../../TaskPolarPatternParameters.cpp" line="335"/>
+      <location filename="../../TaskPolarPatternParameters.cpp" line="377"/>
       <source>Error</source>
       <translation>Eroare</translation>
     </message>
@@ -2886,66 +2845,84 @@ măsurată de-a lungul direcției specificate</translation>
   <context>
     <name>PartDesignGui::TaskRevolutionParameters</name>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
+      <location filename="../../TaskRevolutionParameters.ui" line="22"/>
+      <source>Type</source>
+      <translation>Tip</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="22"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="30"/>
+      <location filename="../../TaskRevolutionParameters.cpp" line="172"/>
+      <source>Dimension</source>
+      <translation>Dimensiune</translation>
+    </message>
+    <message>
+      <location filename="../../TaskRevolutionParameters.ui" line="42"/>
       <source>Axis:</source>
       <translation>Axa:</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="30"/>
-      <location filename="../../TaskRevolutionParameters.cpp" line="137"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="50"/>
+      <location filename="../../TaskRevolutionParameters.cpp" line="216"/>
       <source>Base X axis</source>
       <translation>Axa X</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="35"/>
-      <location filename="../../TaskRevolutionParameters.cpp" line="138"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="55"/>
+      <location filename="../../TaskRevolutionParameters.cpp" line="217"/>
       <source>Base Y axis</source>
       <translation>Axa Y</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="40"/>
-      <location filename="../../TaskRevolutionParameters.cpp" line="139"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="60"/>
+      <location filename="../../TaskRevolutionParameters.cpp" line="218"/>
       <source>Base Z axis</source>
       <translation>Axa Z</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="45"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="65"/>
       <source>Horizontal sketch axis</source>
       <translation>Axa orizontală a schiţei</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="50"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="70"/>
       <source>Vertical sketch axis</source>
       <translation>Axa verticală a schiţei</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="55"/>
-      <location filename="../../TaskRevolutionParameters.cpp" line="146"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="75"/>
+      <location filename="../../TaskRevolutionParameters.cpp" line="225"/>
       <source>Select reference...</source>
-      <translation type="unfinished">Select reference...</translation>
+      <translation>Selectați o referință...</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="67"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="87"/>
       <source>Angle:</source>
       <translation>Unghiul:</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="101"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="121"/>
       <source>Symmetric to plane</source>
       <translation>Simetric față de plan</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="108"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="128"/>
       <source>Reversed</source>
       <translation>Inversat</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.ui" line="122"/>
+      <location filename="../../TaskRevolutionParameters.ui" line="137"/>
+      <source>2nd angle</source>
+      <translation type="unfinished">2nd angle</translation>
+    </message>
+    <message>
+      <location filename="../../TaskRevolutionParameters.ui" line="170"/>
+      <location filename="../../TaskRevolutionParameters.cpp" line="136"/>
+      <location filename="../../TaskRevolutionParameters.cpp" line="440"/>
+      <source>Face</source>
+      <translation>Faţă</translation>
+    </message>
+    <message>
+      <location filename="../../TaskRevolutionParameters.ui" line="192"/>
       <source>Update view</source>
       <translation>Actualizeaza vizualizarea</translation>
     </message>
@@ -2954,14 +2931,39 @@ măsurată de-a lungul direcției specificate</translation>
       <source>Revolution parameters</source>
       <translation>Parametrii de revoluţie</translation>
     </message>
+    <message>
+      <location filename="../../TaskRevolutionParameters.cpp" line="174"/>
+      <source>To last</source>
+      <translation>Spre ultimul</translation>
+    </message>
+    <message>
+      <location filename="../../TaskRevolutionParameters.cpp" line="177"/>
+      <source>Through all</source>
+      <translation>Prin toate</translation>
+    </message>
+    <message>
+      <location filename="../../TaskRevolutionParameters.cpp" line="179"/>
+      <source>To first</source>
+      <translation>Spre primul</translation>
+    </message>
+    <message>
+      <location filename="../../TaskRevolutionParameters.cpp" line="180"/>
+      <source>Up to face</source>
+      <translation>Până la față</translation>
+    </message>
+    <message>
+      <location filename="../../TaskRevolutionParameters.cpp" line="181"/>
+      <source>Two dimensions</source>
+      <translation>Două dimensiuni</translation>
+    </message>
+    <message>
+      <location filename="../../TaskRevolutionParameters.cpp" line="426"/>
+      <source>No face selected</source>
+      <translation>Nici o faţă selectată</translation>
+    </message>
   </context>
   <context>
     <name>PartDesignGui::TaskScaledParameters</name>
-    <message>
-      <location filename="../../TaskScaledParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskScaledParameters.ui" line="22"/>
       <source>Add feature</source>
@@ -3001,11 +3003,6 @@ măsurată de-a lungul direcției specificate</translation>
   <context>
     <name>PartDesignGui::TaskShapeBinder</name>
     <message>
-      <location filename="../../TaskShapeBinder.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
-    <message>
       <location filename="../../TaskShapeBinder.ui" line="22"/>
       <source>Object</source>
       <translation>Obiect</translation>
@@ -3026,7 +3023,7 @@ măsurată de-a lungul direcției specificate</translation>
       <translation>Parametrii formei de referință</translation>
     </message>
     <message>
-      <location filename="../../TaskShapeBinder.cpp" line="132"/>
+      <location filename="../../TaskShapeBinder.cpp" line="130"/>
       <source>Remove</source>
       <translation>Elimină</translation>
     </message>
@@ -3041,11 +3038,6 @@ măsurată de-a lungul direcției specificate</translation>
   </context>
   <context>
     <name>PartDesignGui::TaskThicknessParameters</name>
-    <message>
-      <location filename="../../TaskThicknessParameters.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
     <message>
       <location filename="../../TaskThicknessParameters.ui" line="20"/>
       <source>Click button to enter selection mode,
@@ -3129,59 +3121,59 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>PartDesignGui::TaskTransformedParameters</name>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="250"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="244"/>
       <source>Normal sketch axis</source>
       <translation type="unfinished">Normal sketch axis</translation>
     </message>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="251"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="245"/>
       <source>Vertical sketch axis</source>
       <translation>Axa verticală a schiţei</translation>
     </message>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="252"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="246"/>
       <source>Horizontal sketch axis</source>
       <translation>Axa orizontală a schiţei</translation>
     </message>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="254"/>
-      <location filename="../../TaskTransformedParameters.cpp" line="290"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="248"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="284"/>
       <source>Construction line %1</source>
       <translation>%1 linie de construcție</translation>
     </message>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="268"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="262"/>
       <source>Base X axis</source>
       <translation>Axa X</translation>
     </message>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="269"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="263"/>
       <source>Base Y axis</source>
       <translation>Axa Y</translation>
     </message>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="270"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="264"/>
       <source>Base Z axis</source>
       <translation>Axa Z</translation>
     </message>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="277"/>
-      <location filename="../../TaskTransformedParameters.cpp" line="313"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="271"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="307"/>
       <source>Select reference...</source>
-      <translation type="unfinished">Select reference...</translation>
+      <translation>Selectați o referință...</translation>
     </message>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="304"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="298"/>
       <source>Base XY plane</source>
       <translation>Plan XY</translation>
     </message>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="305"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="299"/>
       <source>Base YZ plane</source>
       <translation>Plan YZ</translation>
     </message>
     <message>
-      <location filename="../../TaskTransformedParameters.cpp" line="306"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="300"/>
       <source>Base XZ plane</source>
       <translation>Plan XZ</translation>
     </message>
@@ -3189,7 +3181,7 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>PartDesignGui::ViewProviderBody</name>
     <message>
-      <location filename="../../ViewProviderBody.cpp" line="133"/>
+      <location filename="../../ViewProviderBody.cpp" line="135"/>
       <source>Toggle active body</source>
       <translation>Activează/dezactivează corpurile</translation>
     </message>
@@ -3419,177 +3411,177 @@ faceți clic din nou pentru a încheia selecția</translation>
   <context>
     <name>QObject</name>
     <message>
-      <location filename="../../Command.cpp" line="139"/>
+      <location filename="../../Command.cpp" line="140"/>
       <source>Invalid selection</source>
       <translation>Selectie invalida</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="139"/>
+      <location filename="../../Command.cpp" line="140"/>
       <source>There are no attachment modes that fit selected objects. Select something else.</source>
       <translation>Nu există nici un mod de fixare care să convină obiectelor selcționate. Selectaţi altceva.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="145"/>
-      <location filename="../../Command.cpp" line="148"/>
-      <location filename="../../Command.cpp" line="150"/>
+      <location filename="../../Command.cpp" line="146"/>
+      <location filename="../../Command.cpp" line="149"/>
+      <location filename="../../Command.cpp" line="151"/>
       <source>Error</source>
       <translation>Eroare</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="145"/>
+      <location filename="../../Command.cpp" line="146"/>
       <source>There is no active body. Please make a body active before inserting a datum entity.</source>
       <translation>Nu există niciun corp activ. Vă rugăm să activați un corp înainte de a insera o referință.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="409"/>
+      <location filename="../../Command.cpp" line="410"/>
       <source>Sub-Shape Binder</source>
       <translation>Sub-Shape Binder</translation>
     </message>
     <message>
-      <location filename="../../SketchWorkflow.cpp" line="651"/>
+      <location filename="../../SketchWorkflow.cpp" line="650"/>
       <source>Several sub-elements selected</source>
       <translation>Mai multe sub-elemente selectate</translation>
     </message>
     <message>
-      <location filename="../../SketchWorkflow.cpp" line="652"/>
+      <location filename="../../SketchWorkflow.cpp" line="651"/>
       <source>You have to select a single face as support for a sketch!</source>
       <translation>Aţi selectat o singură faţă ca şi suport pentru schiţă!</translation>
     </message>
     <message>
-      <location filename="../../SketchWorkflow.cpp" line="655"/>
+      <location filename="../../SketchWorkflow.cpp" line="654"/>
       <source>No support face selected</source>
       <translation>Nici o faţă suport selectată</translation>
     </message>
     <message>
-      <location filename="../../SketchWorkflow.cpp" line="656"/>
+      <location filename="../../SketchWorkflow.cpp" line="655"/>
       <source>You have to select a face as support for a sketch!</source>
       <translation>Trebuie să selectaţi o faţă suport pentru schiţă!</translation>
     </message>
     <message>
-      <location filename="../../SketchWorkflow.cpp" line="659"/>
+      <location filename="../../SketchWorkflow.cpp" line="658"/>
       <source>No planar support</source>
       <translation>Nici un plan suport</translation>
     </message>
     <message>
-      <location filename="../../SketchWorkflow.cpp" line="660"/>
+      <location filename="../../SketchWorkflow.cpp" line="659"/>
       <source>You need a planar face as support for a sketch!</source>
       <translation>Schiţa necesită o faţă plană ca şi suport!</translation>
     </message>
     <message>
-      <location filename="../../SketchWorkflow.cpp" line="663"/>
+      <location filename="../../SketchWorkflow.cpp" line="662"/>
       <source>No valid planes in this document</source>
       <translation>Nu sunt plane valabile în acest document</translation>
     </message>
     <message>
-      <location filename="../../SketchWorkflow.cpp" line="664"/>
+      <location filename="../../SketchWorkflow.cpp" line="663"/>
       <source>Please create a plane first or select a face to sketch on</source>
       <translation>Vă rugăm să creaţi mai întâi un plan, sau selectează o faţă pe care se aplică schiţa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="911"/>
-      <location filename="../../Command.cpp" line="1930"/>
-      <location filename="../../SketchWorkflow.cpp" line="591"/>
-      <location filename="../../ViewProvider.cpp" line="98"/>
-      <location filename="../../ViewProviderBoolean.cpp" line="80"/>
+      <location filename="../../ViewProviderHole.cpp" line="77"/>
       <location filename="../../ViewProviderDatum.cpp" line="246"/>
-      <location filename="../../ViewProviderHole.cpp" line="79"/>
-      <location filename="../../ViewProviderPrimitive.cpp" line="73"/>
-      <location filename="../../ViewProviderShapeBinder.cpp" line="98"/>
+      <location filename="../../ViewProviderPrimitive.cpp" line="68"/>
+      <location filename="../../SketchWorkflow.cpp" line="591"/>
+      <location filename="../../ViewProvider.cpp" line="95"/>
+      <location filename="../../ViewProviderBoolean.cpp" line="78"/>
+      <location filename="../../ViewProviderShapeBinder.cpp" line="95"/>
+      <location filename="../../Command.cpp" line="912"/>
+      <location filename="../../Command.cpp" line="1931"/>
       <source>A dialog is already open in the task panel</source>
       <translation>O fereastră de dialog este deja deschisă în fereastra de sarcini</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="912"/>
-      <location filename="../../Command.cpp" line="1931"/>
-      <location filename="../../SketchWorkflow.cpp" line="592"/>
-      <location filename="../../ViewProvider.cpp" line="99"/>
-      <location filename="../../ViewProviderBoolean.cpp" line="81"/>
+      <location filename="../../ViewProviderHole.cpp" line="78"/>
       <location filename="../../ViewProviderDatum.cpp" line="247"/>
-      <location filename="../../ViewProviderHole.cpp" line="80"/>
-      <location filename="../../ViewProviderPrimitive.cpp" line="74"/>
-      <location filename="../../ViewProviderShapeBinder.cpp" line="99"/>
+      <location filename="../../ViewProviderPrimitive.cpp" line="69"/>
+      <location filename="../../SketchWorkflow.cpp" line="592"/>
+      <location filename="../../ViewProvider.cpp" line="96"/>
+      <location filename="../../ViewProviderBoolean.cpp" line="79"/>
+      <location filename="../../ViewProviderShapeBinder.cpp" line="96"/>
+      <location filename="../../Command.cpp" line="913"/>
+      <location filename="../../Command.cpp" line="1932"/>
       <source>Do you want to close this dialog?</source>
       <translation>Doriţi să închideţi această fereastră de dialog?</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="791"/>
+      <location filename="../../Command.cpp" line="792"/>
       <source>Cannot use this command as there is no solid to subtract from.</source>
       <translation>Nu se poate folosi această comandă deoarece nu există nici un solid din care să se scade.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="792"/>
+      <location filename="../../Command.cpp" line="793"/>
       <source>Ensure that the body contains a feature before attempting a subtractive command.</source>
       <translation>Asigurați-vă că corpul conține o caracteristică înainte de a încerca o comandă substractivă.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="813"/>
+      <location filename="../../Command.cpp" line="814"/>
       <source>Cannot use selected object. Selected object must belong to the active body</source>
       <translation>Nu se poate utiliza obiectul selectat. Obiectul selectat trebuie să aparțină corpului activ</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="814"/>
+      <location filename="../../Command.cpp" line="815"/>
       <source>Consider using a ShapeBinder or a BaseFeature to reference external geometry in a body.</source>
       <translation>Luați în considerare utilizarea unui ShapeBinder sau a unei caracteristici de bază pentru a face referire la geometria externă a unui corp.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="836"/>
+      <location filename="../../Command.cpp" line="837"/>
       <source>No sketch to work on</source>
       <translation>Nici o schiţă pentru a lucra la ea</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="837"/>
+      <location filename="../../Command.cpp" line="838"/>
       <source>No sketch is available in the document</source>
       <translation>Nicio Schița nu este disponibilă în document</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1579"/>
-      <location filename="../../Command.cpp" line="1605"/>
+      <location filename="../../Command.cpp" line="1580"/>
+      <location filename="../../Command.cpp" line="1606"/>
       <source>Wrong selection</source>
       <translation>Selecție greșită</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1580"/>
+      <location filename="../../Command.cpp" line="1581"/>
       <source>Select an edge, face, or body from a single body.</source>
       <translation>Selectaţi o margine, o faţă sau un corp de pe un singur corp.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1584"/>
-      <location filename="../../Command.cpp" line="1957"/>
+      <location filename="../../Command.cpp" line="1585"/>
+      <location filename="../../Command.cpp" line="1958"/>
       <source>Selection is not in Active Body</source>
       <translation>Selecţia nu este în Corpul Activ</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1585"/>
+      <location filename="../../Command.cpp" line="1586"/>
       <source>Select an edge, face, or body from an active body.</source>
       <translation>Selectaţi o margine, o faţă sau un corp de la un corp activ.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1595"/>
+      <location filename="../../Command.cpp" line="1596"/>
       <source>Wrong object type</source>
       <translation>Tip de obiect greşit</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1596"/>
+      <location filename="../../Command.cpp" line="1597"/>
       <source>%1 works only on parts.</source>
       <translation>%1 funcţionează doar pe piese.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1606"/>
+      <location filename="../../Command.cpp" line="1607"/>
       <source>Shape of the selected Part is empty</source>
       <translation>Forma de piesă selectată este goală</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1948"/>
+      <location filename="../../Command.cpp" line="1949"/>
       <source>No valid features in this document</source>
       <translation>Nici  o caracteristica valida in acest document</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1949"/>
+      <location filename="../../Command.cpp" line="1950"/>
       <source>Please create a feature first.</source>
       <translation>Mai întâi selectați un fișier.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1958"/>
+      <location filename="../../Command.cpp" line="1959"/>
       <source>Please select only one feature in an active body.</source>
       <translation>Vă rugăm să selectaţi un singur fisier într-un corp activ.</translation>
     </message>
@@ -3771,19 +3763,19 @@ This may lead to unexpected results.</source>
       <translation>Nu este posibil să se creeze o funcție substractivă fără prezența unei funcții de bază</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.cpp" line="123"/>
-      <location filename="../../TaskTransformedParameters.cpp" line="287"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="281"/>
+      <location filename="../../TaskRevolutionParameters.cpp" line="202"/>
       <source>Vertical sketch axis</source>
       <translation>Axa verticală a schiţei</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.cpp" line="124"/>
-      <location filename="../../TaskTransformedParameters.cpp" line="288"/>
+      <location filename="../../TaskTransformedParameters.cpp" line="282"/>
+      <location filename="../../TaskRevolutionParameters.cpp" line="203"/>
       <source>Horizontal sketch axis</source>
       <translation>Axa orizontală a schiţei</translation>
     </message>
     <message>
-      <location filename="../../TaskRevolutionParameters.cpp" line="126"/>
+      <location filename="../../TaskRevolutionParameters.cpp" line="205"/>
       <source>Construction line %1</source>
       <translation>%1 linie de construcție</translation>
     </message>
@@ -3793,57 +3785,57 @@ This may lead to unexpected results.</source>
       <translation>Faţă</translation>
     </message>
     <message>
-      <location filename="../../Utils.cpp" line="122"/>
+      <location filename="../../Utils.cpp" line="138"/>
       <source>In order to use PartDesign you need an active Body object in the document. Please make one active (double click) or create one.
 
 If you have a legacy document with PartDesign objects without Body, use the migrate function in PartDesign to put them into a Body.</source>
       <translation>Pentru a utiliza PartDesign aveți nevoie de un obiect Body activ în document. Vă rugăm să activați unul (dublu clic) sau să creați unul.</translation>
     </message>
     <message>
-      <location filename="../../Utils.cpp" line="170"/>
+      <location filename="../../Utils.cpp" line="186"/>
       <source>Active Body Required</source>
       <translation>Corp activ necesar</translation>
     </message>
     <message>
-      <location filename="../../Utils.cpp" line="171"/>
+      <location filename="../../Utils.cpp" line="187"/>
       <source>To create a new PartDesign object, there must be an active Body object in the document. Please make one active (double click) or create a new Body.</source>
       <translation>Pentru a crea un nou obiect PartDesign, trebuie să existe un corp activ în document. Activați unul (faceți dublu clic) sau creați un nou corp.</translation>
     </message>
     <message>
-      <location filename="../../Utils.cpp" line="206"/>
+      <location filename="../../Utils.cpp" line="222"/>
       <source>Feature is not in a body</source>
       <translation>Funcția nu face parte dintr-un corp</translation>
     </message>
     <message>
-      <location filename="../../Utils.cpp" line="207"/>
+      <location filename="../../Utils.cpp" line="223"/>
       <source>In order to use this feature it needs to belong to a body object in the document.</source>
       <translation>Pentru a utiliza această caracteristică, ea trebuie să aparțină unui corp din document.</translation>
     </message>
     <message>
-      <location filename="../../Utils.cpp" line="239"/>
+      <location filename="../../Utils.cpp" line="255"/>
       <source>Feature is not in a part</source>
       <translation>Caracteristica nu este de la o piesă/Part</translation>
     </message>
     <message>
-      <location filename="../../Utils.cpp" line="240"/>
+      <location filename="../../Utils.cpp" line="256"/>
       <source>In order to use this feature it needs to belong to a part object in the document.</source>
       <translation>Pentru a utiliza această funcție, ea trebuie să aparțină unei piese din document.</translation>
     </message>
     <message>
-      <location filename="../../ViewProvider.cpp" line="65"/>
       <location filename="../../ViewProviderDressUp.cpp" line="50"/>
-      <location filename="../../ViewProviderShapeBinder.cpp" line="204"/>
       <location filename="../../ViewProviderTransformed.cpp" line="76"/>
+      <location filename="../../ViewProvider.cpp" line="62"/>
+      <location filename="../../ViewProviderShapeBinder.cpp" line="201"/>
       <source>Edit %1</source>
       <translation>Editare %1</translation>
     </message>
     <message>
-      <location filename="../../ViewProvider.cpp" line="78"/>
+      <location filename="../../ViewProvider.cpp" line="75"/>
       <source>Set colors...</source>
       <translation>Seteaza culorile...</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderBoolean.cpp" line="64"/>
+      <location filename="../../ViewProviderBoolean.cpp" line="62"/>
       <source>Edit boolean</source>
       <translation>Editare boolean</translation>
     </message>
@@ -3887,57 +3879,57 @@ This feature is broken and can't be edited.</source>
       <translation>%1 este fără o funcție de bază. Această caracteristică este deteriorată și nu poate fi editată.</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderGroove.cpp" line="48"/>
+      <location filename="../../ViewProviderGroove.cpp" line="46"/>
       <source>Edit groove</source>
       <translation>Editează canelura</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderHole.cpp" line="63"/>
+      <location filename="../../ViewProviderHole.cpp" line="61"/>
       <source>Edit hole</source>
       <translation>Editare gaura</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderLoft.cpp" line="70"/>
+      <location filename="../../ViewProviderLoft.cpp" line="66"/>
       <source>Edit loft</source>
       <translation>Modificați spațiul /loft</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderPad.cpp" line="48"/>
+      <location filename="../../ViewProviderPad.cpp" line="46"/>
       <source>Edit pad</source>
       <translation>Pad de editare</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderPipe.cpp" line="78"/>
+      <location filename="../../ViewProviderPipe.cpp" line="74"/>
       <source>Edit pipe</source>
       <translation>Editare ţeavă</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderPocket.cpp" line="50"/>
+      <location filename="../../ViewProviderPocket.cpp" line="48"/>
       <source>Edit pocket</source>
       <translation>Editare de buzunar</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderPrimitive.cpp" line="59"/>
+      <location filename="../../ViewProviderPrimitive.cpp" line="54"/>
       <source>Edit primitive</source>
       <translation>Editare primitivă</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderRevolution.cpp" line="48"/>
+      <location filename="../../ViewProviderRevolution.cpp" line="46"/>
       <source>Edit revolution</source>
       <translation>Editare revoluţie</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderShapeBinder.cpp" line="199"/>
+      <location filename="../../ViewProviderShapeBinder.cpp" line="196"/>
       <source>Edit shape binder</source>
       <translation>Editaţi forma de conexiune</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderShapeBinder.cpp" line="308"/>
+      <location filename="../../ViewProviderShapeBinder.cpp" line="305"/>
       <source>Synchronize</source>
       <translation>Sincronizare</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderShapeBinder.cpp" line="310"/>
+      <location filename="../../ViewProviderShapeBinder.cpp" line="307"/>
       <source>Select bound object</source>
       <translation>Selectaţi obiectul legat</translation>
     </message>
@@ -3957,27 +3949,27 @@ This feature is broken and can't be edited.</source>
       <translation>Transformare a reusit</translation>
     </message>
     <message>
-      <location filename="../../WorkflowManager.cpp" line="138"/>
+      <location filename="../../WorkflowManager.cpp" line="140"/>
       <source>The document "%1" you are editing was designed with an old version of PartDesign workbench.</source>
       <translation>Documentul pe care îl editați "%1" a fost de proiectat cu o vechea versiune Part Design a bancului de lucru.</translation>
     </message>
     <message>
-      <location filename="../../WorkflowManager.cpp" line="141"/>
+      <location filename="../../WorkflowManager.cpp" line="143"/>
       <source>Do you want to migrate in order to use modern PartDesign features?</source>
       <translation>Doriţi să migreze în scopul de a utiliza elemente moderne din PartDesign?</translation>
     </message>
     <message>
-      <location filename="../../WorkflowManager.cpp" line="144"/>
+      <location filename="../../WorkflowManager.cpp" line="146"/>
       <source>The document "%1" seems to be either in the middle of the migration process from legacy PartDesign or have a slightly broken structure.</source>
       <translation>Documentul "%1" pare să fie în mijlocul procesului de migrare de la moştenirea PartDesign sau are o structură uşor spartă.</translation>
     </message>
     <message>
-      <location filename="../../WorkflowManager.cpp" line="148"/>
+      <location filename="../../WorkflowManager.cpp" line="150"/>
       <source>Do you want to make the migration automatically?</source>
       <translation>Vrei să faci migrarea automat?</translation>
     </message>
     <message>
-      <location filename="../../WorkflowManager.cpp" line="150"/>
+      <location filename="../../WorkflowManager.cpp" line="152"/>
       <source>Note: If you choose to migrate you won't be able to edit the file with an older FreeCAD version.
 If you refuse to migrate you won't be able to use new PartDesign features like Bodies and Parts. As a result you also won't be able to use your parts in the assembly workbench.
 Although you will be able to migrate any moment later with 'Part Design -&gt; Migrate'.</source>
@@ -3986,12 +3978,12 @@ Dacă refuzați să migrați, nu veți putea folosi noile funcții PartDesign, c
 Deși veți putea migra în orice moment mai târziu cu „Part Design -&gt; Migrate”.</translation>
     </message>
     <message>
-      <location filename="../../WorkflowManager.cpp" line="159"/>
+      <location filename="../../WorkflowManager.cpp" line="161"/>
       <source>Migrate manually</source>
       <translation>Migrare manuală</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderHelix.cpp" line="55"/>
+      <location filename="../../ViewProviderHelix.cpp" line="51"/>
       <source>Edit helix</source>
       <translation>Editare helix</translation>
     </message>
@@ -4049,313 +4041,184 @@ Deși veți putea migra în orice moment mai târziu cu „Part Design -&gt; Mig
       <translation>Parametrii buzunarului</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="20"/>
+      <location filename="../../../SprocketFeature.ui" line="26"/>
       <source>Number of teeth:</source>
       <translation>Număr de dinţi:</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="40"/>
+      <location filename="../../../SprocketFeature.ui" line="52"/>
       <source>Sprocket Reference</source>
       <translation>Referință Sprocket</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="48"/>
+      <location filename="../../../SprocketFeature.ui" line="66"/>
       <source>ANSI 25</source>
       <translation>ANSI 25</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="53"/>
+      <location filename="../../../SprocketFeature.ui" line="71"/>
       <source>ANSI 35</source>
       <translation>ANSI 35</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="58"/>
+      <location filename="../../../SprocketFeature.ui" line="76"/>
       <source>ANSI 41</source>
       <translation>ANSI 41</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="63"/>
+      <location filename="../../../SprocketFeature.ui" line="81"/>
       <source>ANSI 40</source>
       <translation>ANSI 40</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="68"/>
+      <location filename="../../../SprocketFeature.ui" line="86"/>
       <source>ANSI 50</source>
       <translation>ANSI 50</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="73"/>
+      <location filename="../../../SprocketFeature.ui" line="91"/>
       <source>ANSI 60</source>
       <translation>ANSI 60</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="78"/>
+      <location filename="../../../SprocketFeature.ui" line="96"/>
       <source>ANSI 80</source>
       <translation>ANSI 80</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="83"/>
+      <location filename="../../../SprocketFeature.ui" line="101"/>
       <source>ANSI 100</source>
       <translation>ANSI 100</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="88"/>
+      <location filename="../../../SprocketFeature.ui" line="106"/>
       <source>ANSI 120</source>
       <translation>ANSI 120</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="93"/>
+      <location filename="../../../SprocketFeature.ui" line="111"/>
       <source>ANSI 140</source>
       <translation>ANSI 140</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="98"/>
+      <location filename="../../../SprocketFeature.ui" line="116"/>
       <source>ANSI 160</source>
       <translation>ANSI 160</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="103"/>
+      <location filename="../../../SprocketFeature.ui" line="121"/>
       <source>ANSI 180</source>
       <translation>ANSI 180</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="108"/>
+      <location filename="../../../SprocketFeature.ui" line="126"/>
       <source>ANSI 200</source>
       <translation>ANSI 200</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="113"/>
+      <location filename="../../../SprocketFeature.ui" line="131"/>
       <source>ANSI 240</source>
       <translation>ANSI 240</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="118"/>
+      <location filename="../../../SprocketFeature.ui" line="136"/>
       <source>Bicycle with Derailleur</source>
       <translation>Deraioare pentru bicicletă</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="123"/>
+      <location filename="../../../SprocketFeature.ui" line="141"/>
       <source>Bicycle without Derailleur</source>
       <translation>Deraioare pentru bicicletă</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="128"/>
+      <location filename="../../../SprocketFeature.ui" line="146"/>
       <source>ISO 606 06B</source>
       <translation>ISO 606 06B</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="133"/>
+      <location filename="../../../SprocketFeature.ui" line="151"/>
       <source>ISO 606 08B</source>
       <translation>ISO 606 06B</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="138"/>
+      <location filename="../../../SprocketFeature.ui" line="156"/>
       <source>ISO 606 10B</source>
       <translation>ISO 606 10B</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="143"/>
+      <location filename="../../../SprocketFeature.ui" line="161"/>
       <source>ISO 606 12B</source>
       <translation>ISO 606 12B</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="148"/>
+      <location filename="../../../SprocketFeature.ui" line="166"/>
       <source>ISO 606 16B</source>
       <translation>ISO 606 16B</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="153"/>
+      <location filename="../../../SprocketFeature.ui" line="171"/>
       <source>ISO 606 20B</source>
       <translation>ISO 606 20B</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="158"/>
+      <location filename="../../../SprocketFeature.ui" line="176"/>
       <source>ISO 606 24B</source>
       <translation>ISO 606 24B</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="163"/>
+      <location filename="../../../SprocketFeature.ui" line="181"/>
       <source>Motorcycle 420</source>
       <translation>Motocicletă 420</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="168"/>
+      <location filename="../../../SprocketFeature.ui" line="186"/>
       <source>Motorcycle 425</source>
       <translation>Motocicletă 425</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="173"/>
+      <location filename="../../../SprocketFeature.ui" line="191"/>
       <source>Motorcycle 428</source>
       <translation>Motocicletă 428</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="178"/>
+      <location filename="../../../SprocketFeature.ui" line="196"/>
       <source>Motorcycle 520</source>
       <translation>Motocicletă 520</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="183"/>
+      <location filename="../../../SprocketFeature.ui" line="201"/>
       <source>Motorcycle 525</source>
       <translation>Motocicletă 525</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="188"/>
+      <location filename="../../../SprocketFeature.ui" line="206"/>
       <source>Motorcycle 530</source>
       <translation>Motocicletă 530</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="193"/>
+      <location filename="../../../SprocketFeature.ui" line="211"/>
       <source>Motorcycle 630</source>
       <translation>Motocicletă 630</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="201"/>
+      <location filename="../../../SprocketFeature.ui" line="219"/>
       <source>Chain Pitch:</source>
       <translation>Bucătărie lanţ:</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="220"/>
+      <location filename="../../../SprocketFeature.ui" line="238"/>
       <source>0 in</source>
       <translation>0 în</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="248"/>
-      <source>Roller Diameter:</source>
-      <translation>Diametru scripete:</translation>
+      <location filename="../../../SprocketFeature.ui" line="266"/>
+      <source>Chain Roller Diameter:</source>
+      <translation type="unfinished">Chain Roller Diameter:</translation>
     </message>
     <message>
-      <location filename="../../../SprocketFeature.ui" line="292"/>
-      <source>Thickness:</source>
-      <translation>Grosime:</translation>
-    </message>
-  </context>
-  <context>
-    <name>TaskHole</name>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="24"/>
-      <source>Position</source>
-      <translation type="unfinished">Position</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="35"/>
-      <source>Face</source>
-      <translation>Faţă</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="49"/>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="87"/>
-      <source>Edge</source>
-      <translation>Margine</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="63"/>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="101"/>
-      <source>Distance</source>
-      <translation type="unfinished">Distance</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="137"/>
-      <source>Type</source>
-      <translation>Tip</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="145"/>
-      <source>Through</source>
-      <translation>Peste</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="152"/>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="492"/>
-      <source>Depth</source>
-      <translation>Adâncimea</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="161"/>
-      <source>Threaded</source>
-      <translation>Filetul</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="168"/>
-      <source>Countersink</source>
-      <translation>Frezaj</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="175"/>
-      <source>Counterbore</source>
-      <translation>Frezarea</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="196"/>
-      <source>Hole norm</source>
-      <translation>Normă de găurire</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="202"/>
-      <source>Custom dimensions</source>
-      <translation>Dimensiuni personalizate</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="218"/>
-      <source>Tolerance</source>
-      <translation>Toleranţă</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="249"/>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="368"/>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="474"/>
-      <source>Diameter</source>
-      <translation>Diametru</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="280"/>
-      <source>Bolt/Washer</source>
-      <translation>Șasibă/Rondelă</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="329"/>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="337"/>
-      <source>Thread norm</source>
-      <translation>Normă de filetare</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="399"/>
-      <source> Custom thread length</source>
-      <translation> Lungimea de filet personalizat</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="423"/>
-      <source>Finish depth</source>
-      <translation>Adâncime finală</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="466"/>
-      <source>Data</source>
-      <translation>Date</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="510"/>
-      <source>Counterbore/sink dia</source>
-      <translation>Diamètru de fraizare</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="528"/>
-      <source>Counterbore depth</source>
-      <translation>Profondeur de frezare</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="546"/>
-      <source>Countersink angle</source>
-      <translation>Unghi de frezare</translation>
-    </message>
-    <message>
-      <location filename="../../../FeatureHole/TaskHole.ui" line="564"/>
-      <source>Thread length</source>
-      <translation>Lungimea filetată</translation>
+      <location filename="../../../SprocketFeature.ui" line="310"/>
+      <source>Tooth Width</source>
+      <translation type="unfinished">Tooth Width</translation>
     </message>
   </context>
   <context>
@@ -4637,11 +4500,6 @@ peste 90: rază mai mare la partea de jos</translation>
   <context>
     <name>TaskTransformedMessages</name>
     <message>
-      <location filename="../../TaskTransformedMessages.ui" line="14"/>
-      <source>Form</source>
-      <translation>Formular</translation>
-    </message>
-    <message>
       <location filename="../../TaskTransformedMessages.ui" line="25"/>
       <source>No message</source>
       <translation>Nici un mesaj</translation>
@@ -4891,85 +4749,85 @@ peste 90: rază mai mare la partea de jos</translation>
       <translation>BaseCaracteristica are o formă goală</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="78"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="79"/>
       <source>Cannot do boolean cut without BaseFeature</source>
       <translation>Nu se poate face taietura booleana fara caracteristici de baza</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="92"/>
-      <location filename="../../../App/FeatureBoolean.cpp" line="112"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="93"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="114"/>
       <source>Cannot do boolean with anything but Part::Feature and its derivatives</source>
       <translation>Nu se poate face boolean cu orice altceva decât Part::Caracteristică și derivații săi</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="99"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="100"/>
       <source>Cannot do boolean operation with invalid base shape</source>
       <translation>Nu se poate efectua operația booleană cu forma de bază invalidă</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="105"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="106"/>
       <source>Cannot do boolean on feature which is not in a body</source>
       <translation>Nu se poate face boolean pe o caracteristică care nu se află într-un corp</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="119"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="124"/>
       <source>Base shape is null</source>
       <translation>Forma de bază este nulă</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="122"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="127"/>
       <source>Tool shape is null</source>
       <translation>Forma sculei este nulă</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="127"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="132"/>
       <source>Fusion of tools failed</source>
       <translation>Fuziunea uneltelor a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="132"/>
-      <location filename="../../../App/FeatureGroove.cpp" line="161"/>
-      <location filename="../../../App/FeatureHole.cpp" line="1900"/>
-      <location filename="../../../App/FeatureLoft.cpp" line="293"/>
-      <location filename="../../../App/FeatureLoft.cpp" line="311"/>
-      <location filename="../../../App/FeaturePad.cpp" line="222"/>
+      <location filename="../../../App/FeaturePad.cpp" line="229"/>
+      <location filename="../../../App/FeaturePocket.cpp" line="222"/>
       <location filename="../../../App/FeaturePipe.cpp" line="394"/>
       <location filename="../../../App/FeaturePipe.cpp" line="414"/>
-      <location filename="../../../App/FeaturePocket.cpp" line="228"/>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="104"/>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="124"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="137"/>
+      <location filename="../../../App/FeatureLoft.cpp" line="293"/>
+      <location filename="../../../App/FeatureLoft.cpp" line="311"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="103"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="123"/>
+      <location filename="../../../App/FeatureHole.cpp" line="1900"/>
+      <location filename="../../../App/FeatureGroove.cpp" line="217"/>
       <source>Resulting shape is not a solid</source>
       <translation>Forma rezultată nu este solidă</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="136"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="141"/>
       <source>Cut out failed</source>
       <translation>Tăierea a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="141"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="146"/>
       <source>Common operation failed</source>
       <translation>Operație comună eșuată</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureBoolean.cpp" line="152"/>
       <location filename="../../../App/FeatureChamfer.cpp" line="223"/>
-      <location filename="../../../App/FeatureDraft.cpp" line="323"/>
-      <location filename="../../../App/FeatureFillet.cpp" line="137"/>
-      <location filename="../../../App/FeatureGroove.cpp" line="168"/>
-      <location filename="../../../App/FeatureHole.cpp" line="1908"/>
-      <location filename="../../../App/FeatureLoft.cpp" line="296"/>
-      <location filename="../../../App/FeatureLoft.cpp" line="314"/>
-      <location filename="../../../App/FeaturePad.cpp" line="226"/>
-      <location filename="../../../App/FeaturePad.cpp" line="235"/>
+      <location filename="../../../App/FeaturePad.cpp" line="233"/>
+      <location filename="../../../App/FeaturePad.cpp" line="242"/>
+      <location filename="../../../App/FeaturePocket.cpp" line="191"/>
+      <location filename="../../../App/FeaturePocket.cpp" line="226"/>
       <location filename="../../../App/FeaturePipe.cpp" line="398"/>
       <location filename="../../../App/FeaturePipe.cpp" line="418"/>
-      <location filename="../../../App/FeaturePocket.cpp" line="197"/>
-      <location filename="../../../App/FeaturePocket.cpp" line="232"/>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="108"/>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="128"/>
+      <location filename="../../../App/FeatureDraft.cpp" line="323"/>
+      <location filename="../../../App/FeatureBoolean.cpp" line="157"/>
+      <location filename="../../../App/FeatureFillet.cpp" line="137"/>
+      <location filename="../../../App/FeatureLoft.cpp" line="296"/>
+      <location filename="../../../App/FeatureLoft.cpp" line="314"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="107"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="127"/>
+      <location filename="../../../App/FeatureHole.cpp" line="1908"/>
+      <location filename="../../../App/FeatureGroove.cpp" line="224"/>
       <source>Result has multiple solids: that is not currently supported.</source>
-      <translation type="unfinished">Result has multiple solids: that is not currently supported.</translation>
+      <translation>Rezultatul are mai multe solide: acest lucru nu este suportat în prezent.</translation>
     </message>
     <message>
       <location filename="../../../App/FeatureChamfer.cpp" line="203"/>
@@ -5020,18 +4878,18 @@ peste 90: rază mai mare la partea de jos</translation>
       <translation>Eșuare creare fillet</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureGroove.cpp" line="78"/>
+      <location filename="../../../App/FeatureGroove.cpp" line="87"/>
       <source>Angle of groove too large</source>
       <translation>Unghiul de canelă prea mare</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureGroove.cpp" line="82"/>
+      <location filename="../../../App/FeatureGroove.cpp" line="91"/>
       <source>Angle of groove too small</source>
       <translation>Unghiul de canelă prea mic</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureGroove.cpp" line="101"/>
       <location filename="../../../App/FeatureHole.cpp" line="1669"/>
+      <location filename="../../../App/FeatureGroove.cpp" line="108"/>
       <source>The requested feature cannot be created. The reason may be that:
   - the active Body does not contain a base shape, so there is no
   material to be removed;
@@ -5042,31 +4900,31 @@ peste 90: rază mai mare la partea de jos</translation>
   - schița selectată nu aparține Organismului activ.</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureGroove.cpp" line="118"/>
-      <location filename="../../../App/FeatureRevolution.cpp" line="118"/>
+      <location filename="../../../App/FeatureRevolution.cpp" line="126"/>
+      <location filename="../../../App/FeatureGroove.cpp" line="130"/>
       <source>Creating a face from sketch failed</source>
       <translation>Crearea unei fațete din schiță a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureGroove.cpp" line="140"/>
-      <location filename="../../../App/FeatureRevolution.cpp" line="140"/>
+      <location filename="../../../App/FeatureRevolution.cpp" line="142"/>
+      <location filename="../../../App/FeatureGroove.cpp" line="146"/>
       <source>Revolve axis intersects the sketch</source>
       <translation>Axa Revolve intersectează schița</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureGroove.cpp" line="156"/>
+      <location filename="../../../App/FeatureGroove.cpp" line="212"/>
       <source>Cut out of base feature failed</source>
       <translation>Nu s-a reușit decuparea funcției de bază</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureGroove.cpp" line="173"/>
-      <location filename="../../../App/FeatureRevolution.cpp" line="165"/>
+      <location filename="../../../App/FeatureRevolution.cpp" line="198"/>
+      <location filename="../../../App/FeatureGroove.cpp" line="202"/>
       <source>Could not revolve the sketch!</source>
       <translation>Nu s-a putut revolta schița!</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureGroove.cpp" line="180"/>
-      <location filename="../../../App/FeatureRevolution.cpp" line="172"/>
+      <location filename="../../../App/FeatureRevolution.cpp" line="208"/>
+      <location filename="../../../App/FeatureGroove.cpp" line="236"/>
       <source>Could not create face from sketch.
 Intersecting sketch entities in a sketch are not allowed.</source>
       <translation>Nu s-a putut crea fața din schiță.
@@ -5116,47 +4974,51 @@ Entitățile de schiță intersectate dintr-o schiță nu sunt permise.</transla
       <translation>Eroare: Fața trebuie să fie plană</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureHelix.cpp" line="256"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="251"/>
       <source>Error: Could not build</source>
       <translation>Eroare: Nu s-a putut construi</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureHelix.cpp" line="296"/>
-      <location filename="../../../App/FeatureHelix.cpp" line="330"/>
-      <location filename="../../../App/FeatureHelix.cpp" line="360"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="263"/>
+      <source>Error: Could not make solid helix with open wire</source>
+      <translation type="unfinished">Error: Could not make solid helix with open wire</translation>
+    </message>
+    <message>
       <location filename="../../../App/FeatureHole.cpp" line="2145"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="297"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="327"/>
       <source>Error: Result is not a solid</source>
       <translation>Eroare: Rezultatul nu este solid</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureHelix.cpp" line="310"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="277"/>
       <source>Error: There is nothing to subtract</source>
       <translation>Eroare: Nu există nimic de diminuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureHelix.cpp" line="314"/>
-      <location filename="../../../App/FeatureHelix.cpp" line="334"/>
-      <location filename="../../../App/FeatureHelix.cpp" line="364"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="281"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="301"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="331"/>
       <source>Error: Result has multiple solids</source>
       <translation>Eroare: Rezultatul are mai multe solide</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureHelix.cpp" line="324"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="291"/>
       <source>Error: Adding the helix failed</source>
       <translation>Eroare: Adăugarea helixului a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureHelix.cpp" line="347"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="314"/>
       <source>Error: Intersecting the helix failed</source>
       <translation>Eroare: Intersectarea helixului a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureHelix.cpp" line="354"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="321"/>
       <source>Error: Subtracting the helix failed</source>
       <translation>Eroare: scăderea helix a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureHelix.cpp" line="376"/>
+      <location filename="../../../App/FeatureHelix.cpp" line="343"/>
       <source>Error: Could not create face from sketch</source>
       <translation>Eroare: Nu s-a putut crea fața din schiță</translation>
     </message>
@@ -5226,15 +5088,15 @@ Entitățile de schiță intersectate dintr-o schiță nu sunt permise.</transla
       <translation>Eroare: Adăugarea temei de discuţie a eşuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureHole.cpp" line="1892"/>
       <location filename="../../../App/FeatureTransformed.cpp" line="283"/>
       <location filename="../../../App/FeatureTransformed.cpp" line="298"/>
+      <location filename="../../../App/FeatureHole.cpp" line="1892"/>
       <source>Boolean operation failed</source>
       <translation>Operația Booleană a eșuat</translation>
     </message>
     <message>
+      <location filename="../../../App/FeaturePocket.cpp" line="242"/>
       <location filename="../../../App/FeatureHole.cpp" line="1919"/>
-      <location filename="../../../App/FeaturePocket.cpp" line="248"/>
       <source>Could not create face from sketch.
 Intersecting sketch entities or multiple faces in a sketch are not allowed for making a pocket up to a face.</source>
       <translation>Nu s-a putut crea fața din schiță.
@@ -5331,14 +5193,9 @@ Elementele de intersectare ale schiței sau multiplele fețe dintr-o schiță nu
       <translation>Loft: A survenit o eroare fatală la crearea mansardului</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePad.cpp" line="75"/>
-      <source>Length of pad too small</source>
-      <translation>Lungimea suportului este prea mică</translation>
-    </message>
-    <message>
-      <location filename="../../../App/FeaturePad.cpp" line="78"/>
-      <source>Second length of pad too small</source>
-      <translation>Lungimea suportului este prea mică</translation>
+      <location filename="../../../App/FeaturePad.cpp" line="98"/>
+      <source>Pad: Can't pad up to shape without base shape.</source>
+      <translation type="unfinished">Pad: Can't pad up to shape without base shape.</translation>
     </message>
     <message>
       <location filename="../../../App/FeaturePad.cpp" line="130"/>
@@ -5351,17 +5208,17 @@ Elementele de intersectare ale schiței sau multiplele fețe dintr-o schiță nu
       <translation>Pad: Crearea unei fațete din schiță a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePad.cpp" line="205"/>
+      <location filename="../../../App/FeaturePad.cpp" line="212"/>
       <source>Pad: Resulting shape is empty</source>
       <translation>Tastatură: Forma rezultantă este goală</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePad.cpp" line="216"/>
+      <location filename="../../../App/FeaturePad.cpp" line="223"/>
       <source>Pad: Fusion with base feature failed</source>
       <translation>Pad: Fuziunea cu caracteristica de bază a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePad.cpp" line="248"/>
+      <location filename="../../../App/FeaturePad.cpp" line="255"/>
       <source>Could not create face from sketch.
 Intersecting sketch entities or multiple faces in a sketch are not allowed.</source>
       <translation>Nu s-a putut crea fața din schiță.
@@ -5448,200 +5305,190 @@ Nu sunt permise entități intersectate de schiță sau multiple fețe dintr-o s
       <translation>A aparut o eroare fatala la crearea conductei</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePipe.cpp" line="558"/>
+      <location filename="../../../App/FeaturePipe.cpp" line="556"/>
       <source>Invalid element in spine.</source>
       <translation>Element nevalid în coloana vertebrală.</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePipe.cpp" line="561"/>
+      <location filename="../../../App/FeaturePipe.cpp" line="559"/>
       <source>Element in spine is neither an edge nor a wire.</source>
       <translation>Elementul din coloana vertebrală nu este nici margine, nici sârmă.</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePipe.cpp" line="574"/>
+      <location filename="../../../App/FeaturePipe.cpp" line="572"/>
       <source>Spine is not connected.</source>
       <translation>Spinul nu este conectat.</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePipe.cpp" line="578"/>
+      <location filename="../../../App/FeaturePipe.cpp" line="576"/>
       <source>Spine is neither an edge nor a wire.</source>
       <translation>Spinul nu este nici margine, nici sârmă.</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePipe.cpp" line="582"/>
+      <location filename="../../../App/FeaturePipe.cpp" line="580"/>
       <source>Invalid spine.</source>
       <translation>coloană vertebrală nevalidă.</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePocket.cpp" line="82"/>
-      <source>Pocket: Length of pocket too small</source>
-      <translation>Pocket: Lungimea de buzunar prea mică</translation>
-    </message>
-    <message>
-      <location filename="../../../App/FeaturePocket.cpp" line="86"/>
-      <source>Pocket: Second length of pocket too small</source>
-      <translation>Pocket: A doua lungime a buzunarului prea mică</translation>
-    </message>
-    <message>
-      <location filename="../../../App/FeaturePocket.cpp" line="138"/>
+      <location filename="../../../App/FeaturePocket.cpp" line="132"/>
       <source>Pocket: Creation failed because direction is orthogonal to sketch's normal vector</source>
       <translation>Pocket: Creare eșuată deoarece direcția este ortogonală pentru vectorul normal al schiței</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePocket.cpp" line="149"/>
+      <location filename="../../../App/FeaturePocket.cpp" line="143"/>
       <source>Pocket: Creating a face from sketch failed</source>
       <translation>Pocket: Crearea unei fațete din schiță a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePocket.cpp" line="155"/>
+      <location filename="../../../App/FeaturePocket.cpp" line="149"/>
       <source>Pocket: Extruding up to a face is only possible if the sketch is located on a face</source>
       <translation>Pocket: Extragerea pe o faţă este posibilă doar dacă schiţa este localizată pe o faţă</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePocket.cpp" line="190"/>
+      <location filename="../../../App/FeaturePocket.cpp" line="184"/>
       <source>Pocket: Up to face: Could not get SubShape!</source>
       <translation>Pocket: Pana la fata: Nu s-a putut obtine Subforma!</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePocket.cpp" line="214"/>
+      <location filename="../../../App/FeaturePocket.cpp" line="208"/>
       <source>Pocket: Resulting shape is empty</source>
       <translation>Pocket: Forma rezultantă este goală</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePocket.cpp" line="223"/>
+      <location filename="../../../App/FeaturePocket.cpp" line="217"/>
       <source>Pocket: Cut out of base feature failed</source>
       <translation>Pocket: Nu s-a reușit decuparea funcției de bază</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="90"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="89"/>
       <source>Cannot subtract primitive feature without base feature</source>
       <translation>Nu se poate scădea funcția primitivă fără caracteristica de bază</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="99"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="98"/>
       <source>Adding the primitive failed</source>
       <translation>Adăugarea primitivului a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="119"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="118"/>
       <source>Subtracting the primitive failed</source>
       <translation>Scăderea primitivului a eșuat</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="199"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="198"/>
       <source>Length of box too small</source>
       <translation>Lungimea cutiei este prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="201"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="200"/>
       <source>Width of box too small</source>
       <translation>Lățimea casetei prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="203"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="202"/>
       <source>Height of box too small</source>
       <translation>Înălțimea cutiei prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="249"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="248"/>
       <source>Radius of cylinder too small</source>
       <translation>Raza cilindrului prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="251"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="250"/>
       <source>Height of cylinder too small</source>
       <translation>Înălţimea cilindrului prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="253"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="252"/>
       <source>Rotation angle of cylinder too small</source>
       <translation>Unghiul de rotație al cilindrului prea mic</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="306"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="305"/>
       <source>Radius of sphere too small</source>
       <translation>Raza sferei prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="355"/>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="357"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="354"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="356"/>
       <source>Radius of cone cannot be negative</source>
       <translation>Raza conului nu poate fi negativă</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="359"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="358"/>
       <source>The radii for cones must not be equal</source>
       <translation>Raza pentru conuri nu trebuie să fie egală</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="361"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="360"/>
       <source>Height of cone too small</source>
       <translation>Înălțimea conului prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="418"/>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="420"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="417"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="419"/>
       <source>Radius of ellipsoid too small</source>
       <translation>Raza de ellipsoid prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="502"/>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="504"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="501"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="503"/>
       <source>Radius of torus too small</source>
       <translation>Raza prea mică a torței</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="567"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="566"/>
       <source>Polygon of prism is invalid, must have 3 or more sides</source>
       <translation>Poligonul de prismă nu este valabil, trebuie să aibă 3 sau mai multe feţe</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="569"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="568"/>
       <source>Circumradius of the polygon, of the prism, is too small</source>
       <translation>Circumrazul poligonului, prism, este prea mic</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="571"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="570"/>
       <source>Height of prism is too small</source>
       <translation>Înălțimea prismei este prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="652"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="651"/>
       <source>delta x of wedge too small</source>
       <translation>delta x de încheietură prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="655"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="654"/>
       <source>delta y of wedge too small</source>
       <translation>delta y wedge prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="658"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="657"/>
       <source>delta z of wedge too small</source>
       <translation>delta z wedge prea mică</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="661"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="660"/>
       <source>delta z2 of wedge is negative</source>
       <translation>delta z2 wedge  este negativă</translation>
     </message>
     <message>
-      <location filename="../../../App/FeaturePrimitive.cpp" line="664"/>
+      <location filename="../../../App/FeaturePrimitive.cpp" line="663"/>
       <source>delta x2 of wedge is negative</source>
       <translation>delta z2 wedge  este negativă</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureRevolution.cpp" line="77"/>
+      <location filename="../../../App/FeatureRevolution.cpp" line="87"/>
       <source>Angle of revolution too large</source>
       <translation>Unghiul revoluției prea mare</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureRevolution.cpp" line="81"/>
+      <location filename="../../../App/FeatureRevolution.cpp" line="91"/>
       <source>Angle of revolution too small</source>
       <translation>Unghiul revoluției este prea mic</translation>
     </message>
     <message>
-      <location filename="../../../App/FeatureRevolution.cpp" line="157"/>
+      <location filename="../../../App/FeatureRevolution.cpp" line="190"/>
       <source>Fusion with base feature failed</source>
       <translation>Fuziunea cu caracteristica de bază a eșuat</translation>
     </message>
@@ -5668,7 +5515,7 @@ Nu sunt permise entități intersectate de schiță sau multiple fețe dintr-o s
     <message>
       <location filename="../../../App/FeatureTransformed.cpp" line="261"/>
       <source>Shape of additive/subtractive feature is empty</source>
-      <translation type="unfinished">Shape of additive/subtractive feature is empty</translation>
+      <translation>Forma elementului aditiv/substractiv este goală</translation>
     </message>
     <message>
       <location filename="../../../App/FeatureTransformed.cpp" line="269"/>

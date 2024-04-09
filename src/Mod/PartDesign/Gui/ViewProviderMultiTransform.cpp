@@ -47,7 +47,7 @@ std::vector<App::DocumentObject*> ViewProviderMultiTransform::_claimChildren() c
 {
     PartDesign::MultiTransform* pcMultiTransform = static_cast<PartDesign::MultiTransform*>(getObject());
     if (!pcMultiTransform)
-        return std::vector<App::DocumentObject*>(); // TODO: Show error?
+        return {}; // TODO: Show error?
 
     return pcMultiTransform->Transformations.getValues();
 }
@@ -64,12 +64,12 @@ bool ViewProviderMultiTransform::onDelete(const std::vector<std::string> &svec) 
     std::vector<App::DocumentObject*> transformFeatures = pcMultiTransform->Transformations.getValues();
 
     // if the multitransform object was deleted the transformed features must be deleted, too
-    for (std::vector<App::DocumentObject*>::const_iterator it = transformFeatures.begin(); it != transformFeatures.end(); ++it)
-    {
-        if (*it)
+    for (auto it : transformFeatures) {
+        if (it) {
             Gui::Command::doCommand(
                 Gui::Command::Doc,"App.getDocument('%s').removeObject(\"%s\")", \
-                    (*it)->getDocument()->getName(), (*it)->getNameInDocument());
+                    it->getDocument()->getName(), it->getNameInDocument());
+        }
     }
 
     // Handle Originals

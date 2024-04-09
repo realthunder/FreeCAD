@@ -89,7 +89,7 @@ class GuiExport Clipping : public QDialog
 
 public:
     Clipping(Gui::View3DInventor* view, QWidget* parent = nullptr);
-    ~Clipping();
+    ~Clipping() override;
 
     static void restoreClipPlanes(Gui::View3DInventor *view,
                                   const Base::Vector3d &posX, bool enableX,
@@ -140,7 +140,7 @@ protected:
     void onDirZValueChanged(double);
 
 public:
-    void done(int);
+    void done(int) override;
 
 private:
     class Private;

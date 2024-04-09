@@ -61,8 +61,8 @@ public:
     App::PropertyFloat  HighlightAdjust;
     App::PropertyFloat  HighlightOffset;
     App::PropertyBool   ShowAllEdges;
-
-    static const char* LineStyleEnums[];
+    App::PropertyColor   FaceColor;
+    App::PropertyPercent FaceTransparency;
 
     void attach(App::DocumentObject *) override;
     bool useNewSelectionModel(void) const override {return false;}
@@ -70,16 +70,17 @@ public:
     bool canDelete(App::DocumentObject* obj) const override;
     bool setEdit(int ModNum) override;
     bool doubleClicked(void) override;
-
-public:
     void onChanged(const App::Property *prop) override;
     void handleChangedPropertyType(Base::XMLReader &reader, const char *TypeName, App::Property * prop) override;
     App::Color prefSectionColor(void);
     App::Color prefHighlightColor(void);
     int prefHighlightStyle(void);
 
-
     std::vector<App::DocumentObject*> claimChildren(void) const override;
+    void fixSceneDependencies();
+
+    std::vector<std::string> getSelectedCosmetics(std::vector<std::string> subNames);
+    void deleteCosmeticElements(std::vector<std::string> removables);
 
     TechDraw::DrawViewPart* getViewObject() const override;
     TechDraw::DrawViewPart* getViewPart() const;

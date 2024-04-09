@@ -23,12 +23,14 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <array>
 # include <QAction>
 # include <QApplication>
 # include <QDockWidget>
 # include <QMap>
 # include <QMouseEvent>
 # include <QPointer>
+# include <QTimer>
 #endif
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -36,19 +38,17 @@
 #include <App/Application.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
+
 #include "DockWindowManager.h"
 #include "MainWindow.h"
-#include "OverlayWidgets.h"
+#include "OverlayManager.h"
+
 
 using namespace Gui;
 
-DockWindowItems::DockWindowItems()
-{
-}
+DockWindowItems::DockWindowItems() = default;
 
-DockWindowItems::~DockWindowItems()
-{
-}
+DockWindowItems::~DockWindowItems() = default;
 
 void DockWindowItems::addDockWidget(const char* name, Qt::DockWidgetArea pos, bool visibility, bool tabbed)
 {
@@ -112,14 +112,13 @@ public:
         if (static_cast<QMouseEvent*>(e)->buttons() != Qt::NoButton)
             return false;
         auto pos = QCursor::pos();
-        const int m = 5;
-        QPoint topLeft = widget->mapToGlobal(QPoint(m, m));
+        QPoint topLeft = widget->mapToGlobal(QPoint(cursorMargin, cursorMargin));
         int h = widget->frameGeometry().height();
         int w = widget->frameGeometry().width();
-        QPoint bottomRight = widget->mapToGlobal(QPoint(w-m, h-m));
-        bool left = QRect(topLeft - QPoint(m,m), QSize(m, h)).contains(pos);
-        bool right = QRect(bottomRight.x(), topLeft.y(), m, h).contains(pos);
-        bool bottom = QRect(topLeft.x()-m, bottomRight.y(), w, m).contains(pos);
+        QPoint bottomRight = widget->mapToGlobal(QPoint(w-cursorMargin, h-cursorMargin));
+        bool left = QRect(topLeft - QPoint(cursorMargin,cursorMargin), QSize(cursorMargin, h)).contains(pos);
+        bool right = QRect(bottomRight.x(), topLeft.y(), cursorMargin, h).contains(pos);
+        bool bottom = QRect(topLeft.x()-cursorMargin, bottomRight.y(), w, cursorMargin).contains(pos);
         auto cursor = Qt::ArrowCursor;
         if (left && bottom)
             cursor = Qt::SizeBDiagCursor;
@@ -144,6 +143,7 @@ public:
     }
 
     bool overridden = false;
+    int cursorMargin = 5;
 };
 
 struct DockWindowManagerP
@@ -151,10 +151,11 @@ struct DockWindowManagerP
     QList<QDockWidget*> _dockedWindows;
     QMap<QString, QPointer<QWidget> > _dockWindows;
     DockWindowItems _dockWindowItems;
-    ParameterGrp::handle hPref;
-    boost::signals2::scoped_connection connParam;
-    QTimer timer;
-    DockWidgetEventFilter dockWidgetEventFilter;
+    ParameterGrp::handle _hPref;
+    boost::signals2::scoped_connection _connParam;
+    QTimer _timer;
+    DockWidgetEventFilter _dockWidgetEventFilter;
+    QPointer<OverlayManager> overlayManager;
 };
 } // namespace Gui
 
@@ -176,32 +177,60 @@ void DockWindowManager::destruct()
 DockWindowManager::DockWindowManager()
 {
     d = new DockWindowManagerP;
-    qApp->installEventFilter(&d->dockWidgetEventFilter);
-    d->hPref = App::GetApplication().GetUserParameter().GetGroup(
-            "BaseApp/MainWindow/DockWindows");
-    d->connParam = d->hPref->Manager()->signalParamChanged.connect(
-        [this](ParameterGrp *Param, ParameterGrp::ParamType Type, const char *, const char *) {
-            if(Param == d->hPref && Type == ParameterGrp::ParamType::FCBool)
-                d->timer.start(100);
-        });
+    d->_hPref = App::GetApplication().GetUserParameter().GetGroup("BaseApp/MainWindow/DockWindows");
 
-    d->timer.setSingleShot(true);
-
-    connect(&d->timer, &QTimer::timeout, [this](){
-        for(auto w : this->getDockWindows()) {
-            if (auto dw = qobject_cast<QDockWidget*>(w)) {
-                QSignalBlocker blocker(dw);
-                QByteArray dockName = dw->toggleViewAction()->data().toByteArray();
-                dw->setVisible(d->hPref->GetBool(dockName, dw->isVisible()));
-            }
-        }
-    });
+    if (d->_hPref->GetBool("ActivateOverlay", true)) {
+        setupOverlayManagement();
+    }
 }
 
 DockWindowManager::~DockWindowManager()
 {
     d->_dockedWindows.clear();
     delete d;
+}
+
+bool DockWindowManager::isOverlayActivated() const
+{
+    return (d->overlayManager != nullptr);
+}
+
+void DockWindowManager::setupOverlayManagement()
+{
+    d->overlayManager = OverlayManager::instance();
+
+    qApp->installEventFilter(&d->_dockWidgetEventFilter);
+
+    d->_dockWidgetEventFilter.cursorMargin = d->_hPref->GetInt("CursorMargin", 5);
+    d->_connParam = d->_hPref->Manager()->signalParamChanged.connect(
+        [this](ParameterGrp *Param, ParameterGrp::ParamType Type, const char *name, const char *) {
+            if(Param == d->_hPref) {
+                switch(Type) {
+                case ParameterGrp::ParamType::FCBool:
+                    // For batch process UI setting changes, e.g. loading new preferences
+                    d->_timer.start(100);
+                    break;
+                case ParameterGrp::ParamType::FCInt:
+                    if (name && boost::equals(name, "CursorMargin"))
+                        d->_dockWidgetEventFilter.cursorMargin = d->_hPref->GetInt("CursorMargin", 5);
+                    break;
+                default:
+                    break;
+                }
+            }
+        });
+
+    d->_timer.setSingleShot(true);
+
+    connect(&d->_timer, &QTimer::timeout, [this](){
+        for(auto w : this->getDockWindows()) {
+            if (auto dw = qobject_cast<QDockWidget*>(w)) {
+                QSignalBlocker blocker(dw);
+                QByteArray dockName = dw->toggleViewAction()->data().toByteArray();
+                dw->setVisible(d->_hPref->GetBool(dockName, dw->isVisible()));
+            }
+        }
+    });
 }
 
 /**
@@ -218,7 +247,10 @@ QDockWidget* DockWindowManager::addDockWindow(const char* name, QWidget* widget,
     // creates the dock widget as container to embed this widget
     MainWindow* mw = getMainWindow();
     dw = new QDockWidget(mw);
-    OverlayManager::instance()->setupTitleBar(dw);
+
+    if (d->overlayManager) {
+        d->overlayManager->setupTitleBar(dw);
+    }
 
     // Note: By default all dock widgets are hidden but the user can show them manually in the view menu.
     // First, hide immediately the dock widget to avoid flickering, after setting up the dock widgets
@@ -254,12 +286,14 @@ QDockWidget* DockWindowManager::addDockWindow(const char* name, QWidget* widget,
 
     d->_dockedWindows.push_back(dw);
 
-    OverlayManager::instance()->initDockWidget(dw, widget);
+    if (d->overlayManager) {
+        d->overlayManager->initDockWidget(dw);
+    }
 
     connect(dw->toggleViewAction(), &QAction::triggered, [this, dw](){
-        Base::ConnectionBlocker block(d->connParam);
+        Base::ConnectionBlocker block(d->_connParam);
         QByteArray dockName = dw->toggleViewAction()->data().toByteArray();
-        d->hPref->SetBool(dockName.constData(), dw->isVisible());
+        d->_hPref->SetBool(dockName.constData(), dw->isVisible());
     });
 
     auto cb = []() {getMainWindow()->saveWindowSettings(true);};
@@ -274,9 +308,25 @@ QDockWidget* DockWindowManager::addDockWindow(const char* name, QWidget* widget,
  */
 QWidget* DockWindowManager::getDockWindow(const char* name) const
 {
+    QString nameUtf = QString::fromUtf8(name);
     for (QList<QDockWidget*>::ConstIterator it = d->_dockedWindows.cbegin(); it != d->_dockedWindows.cend(); ++it) {
-        if ((*it)->objectName() == QString::fromUtf8(name))
+        if ((*it)->objectName() == nameUtf)
             return (*it)->widget();
+    }
+
+    return nullptr;
+}
+
+/**
+ * Returns the dock widget by name.
+ * If it does not exist 0 is returned.
+ */
+QDockWidget* DockWindowManager::getDockContainer(const char* name) const
+{
+    QString nameUtf = QString::fromUtf8(name);
+    for (QList<QDockWidget*>::ConstIterator it = d->_dockedWindows.cbegin(); it != d->_dockedWindows.cend(); ++it) {
+        if ((*it)->objectName() == nameUtf)
+            return (*it);
     }
 
     return nullptr;
@@ -303,7 +353,11 @@ QWidget* DockWindowManager::removeDockWindow(const char* name)
         if ((*it)->objectName() == QString::fromUtf8(name)) {
             QDockWidget* dw = *it;
             d->_dockedWindows.erase(it);
-            OverlayManager::instance()->unsetupDockWidget(dw);
+
+            if (d->overlayManager) {
+                d->overlayManager->unsetupDockWidget(dw);
+            }
+
             getMainWindow()->removeDockWidget(dw);
             // avoid to destruct the embedded widget
             widget = dw->widget();
@@ -333,7 +387,9 @@ void DockWindowManager::removeDockWindow(QWidget* widget)
         if ((*it)->widget() == widget) {
             QDockWidget* dw = *it;
             d->_dockedWindows.erase(it);
-            OverlayManager::instance()->unsetupDockWidget(dw);
+            if (d->overlayManager) {
+                d->overlayManager->unsetupDockWidget(dw);
+            }
             getMainWindow()->removeDockWidget(dw);
             // avoid to destruct the embedded widget
             widget->setParent(nullptr);
@@ -444,18 +500,17 @@ void DockWindowManager::setup(DockWindowItems* items)
 
     QList<QDockWidget*> docked = d->_dockedWindows;
     const QList<DockWindowItem>& dws = items->dockWidgets();
-
-    for (QList<DockWindowItem>::ConstIterator it = dws.begin(); it != dws.end(); ++it) {
-        QDockWidget* dw = findDockWidget(docked, it->name);
-        QByteArray dockName = it->name.toUtf8();
-        bool visible = d->hPref->GetBool(dockName.constData(), it->visibility);
+    for (const auto& it : dws) {
+        QDockWidget* dw = findDockWidget(docked, it.name);
+        QByteArray dockName = it.name.toUtf8();
+        bool visible = d->_hPref->GetBool(dockName.constData(), it.visibility);
 
         if (!dw) {
-            QMap<QString, QPointer<QWidget> >::Iterator jt = d->_dockWindows.find(it->name);
+            QMap<QString, QPointer<QWidget> >::Iterator jt = d->_dockWindows.find(it.name);
             if (jt != d->_dockWindows.end()) {
-                dw = addDockWindow(jt.value()->objectName().toUtf8(), jt.value(), it->pos);
+                dw = addDockWindow(jt.value()->objectName().toUtf8(), jt.value(), it.pos);
                 jt.value()->show();
-                dw->toggleViewAction()->setData(it->name);
+                dw->toggleViewAction()->setData(it.name);
                 dw->setVisible(visible);
                 if(!visible)
                     continue;
@@ -468,8 +523,63 @@ void DockWindowManager::setup(DockWindowItems* items)
             docked.removeAt(index);
         }
 
-        if(dw)
-            OverlayManager::instance()->setupDockWidget(dw);
+        if (d->overlayManager && dw && visible) {
+            d->overlayManager->setupDockWidget(dw);
+        }
+    }
+
+    tabifyDockWidgets(items);
+}
+
+void DockWindowManager::tabifyDockWidgets(DockWindowItems* items)
+{
+    // Tabify dock widgets only once to avoid to override the current layout
+    // in case it was modified by the user. The user shouldn't be forced to
+    // restore a possibly changed layout after switching to another workbench.
+    static bool tabify = false;
+    if (tabify) {
+        return;
+    }
+
+    std::array<QList<QDockWidget*>, 4> areas;
+    const QList<DockWindowItem>& dws = items->dockWidgets();
+    QList<QDockWidget*> docked = d->_dockedWindows;
+    for (const auto& it : dws) {
+        QDockWidget* dw = findDockWidget(docked, it.name);
+        if (it.tabbed && dw) {
+            Qt::DockWidgetArea pos = getMainWindow()->dockWidgetArea(dw);
+            switch (pos) {
+                case Qt::LeftDockWidgetArea:
+                    areas[0] << dw;
+                    break;
+                case Qt::RightDockWidgetArea:
+                    areas[1] << dw;
+                    break;
+                case Qt::TopDockWidgetArea:
+                    areas[2] << dw;
+                    break;
+                case Qt::BottomDockWidgetArea:
+                    areas[3] << dw;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    // tabify dock widgets for which "tabbed" is true and which have the same position
+    for (auto& area : areas) {
+        for (auto it : area) {
+            if (it != area.front()) {
+                getMainWindow()->tabifyDockWidget(area.front(), it);
+                tabify = true;
+            }
+        }
+
+        // activate the first of the tabbed dock widgets
+        if (area.size() > 1) {
+            area.front()->raise();
+        }
     }
 }
 
@@ -480,21 +590,19 @@ void DockWindowManager::saveState()
         QDockWidget* dw = findDockWidget(d->_dockedWindows, it->name);
         if (dw) {
             QByteArray dockName = dw->toggleViewAction()->data().toByteArray();
-            d->hPref->SetBool(dockName.constData(), dw->isVisible());
+            d->_hPref->SetBool(dockName.constData(), dw->isVisible());
         }
     }
 }
 
 void DockWindowManager::loadState()
 {
-    ParameterGrp::handle hPref = App::GetApplication().GetUserParameter().GetGroup("BaseApp")
-        ->GetGroup("MainWindow")->GetGroup("DockWindows");
     const QList<DockWindowItem>& dockItems = d->_dockWindowItems.dockWidgets();
     for (QList<DockWindowItem>::ConstIterator it = dockItems.begin(); it != dockItems.end(); ++it) {
         QDockWidget* dw = findDockWidget(d->_dockedWindows, it->name);
         if (dw) {
             QByteArray dockName = it->name.toUtf8();
-            bool visible = hPref->GetBool(dockName.constData(), it->visibility);
+            bool visible = d->_hPref->GetBool(dockName.constData(), it->visibility);
             dw->setVisible(visible);
         }
     }

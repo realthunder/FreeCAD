@@ -37,15 +37,16 @@ See https://en.wikipedia.org/wiki/B%C3%A9zier_curve
 # @{
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
+import FreeCAD as App
 import FreeCADGui as Gui
-import draftutils.utils as utils
-import draftutils.todo as todo
-import draftguitools.gui_base_original as gui_base_original
-import draftguitools.gui_tool_utils as gui_tool_utils
-import draftguitools.gui_lines as gui_lines
-import draftguitools.gui_trackers as trackers
-
-from draftutils.messages import _msg, _err
+from draftguitools import gui_base_original
+from draftguitools import gui_lines
+from draftguitools import gui_tool_utils
+from draftguitools import gui_trackers as trackers
+from draftutils import params
+from draftutils import todo
+from draftutils import utils
+from draftutils.messages import _err, _msg, _toolmsg
 from draftutils.translate import translate
 
 
@@ -70,7 +71,8 @@ class BezCurve(gui_lines.Line):
         Activate the specific Bézier curve tracker.
         """
         super(BezCurve, self).Activated(name="BezCurve",
-                                        icon="Draft_BezCurve")
+                                        icon="Draft_BezCurve",
+                                        task_title=translate("draft","Bézier curve"))
         if self.doc:
             self.bezcurvetrack = trackers.bezcurveTracker()
 
@@ -146,10 +148,10 @@ class BezCurve(gui_lines.Line):
             self.bezcurvetrack.on()
             if self.planetrack:
                 self.planetrack.set(self.node[0])
-            _msg(translate("draft", "Pick next point"))
+            _toolmsg(translate("draft", "Pick next point"))
         else:
             self.obj.Shape = self.updateShape(self.node)
-            _msg(translate("draft", "Pick next point"))
+            _toolmsg(translate("draft", "Pick next point"))
 
     def updateShape(self, pts):
         """Create shape for display during creation process."""
@@ -228,11 +230,19 @@ Gui.addCommand('Draft_BezCurve', BezCurve())
 
 
 class CubicBezCurve(gui_lines.Line):
-    """Gui command for the 3rd degree Bézier Curve tool."""
+    """Gui command for the 3rd degree Bézier Curve tool.
+
+    The EnableSelection parameter has an impact on SoMouseButtonEvents. If the
+    mouse is over a highlighted object and EnableSelection is `True` the mouse
+    up event is not detected. When this command is activated EnableSelection is
+    therefore temporarily set to `False`.
+    See: https://github.com/FreeCAD/FreeCAD/issues/6452
+    """
 
     def __init__(self):
         super(CubicBezCurve, self).__init__(wiremode=True)
         self.degree = 3
+        self.old_EnableSelection = True
 
     def GetResources(self):
         """Set icon, menu and tooltip."""
@@ -247,8 +257,12 @@ class CubicBezCurve(gui_lines.Line):
 
         Activate the specific BezCurve tracker.
         """
+        self.old_EnableSelection = params.get_param_view("EnableSelection")
+        params.set_param_view("EnableSelection", False)
+
         super(CubicBezCurve, self).Activated(name="CubicBezCurve",
-                                             icon="Draft_CubicBezCurve")
+                                             icon="Draft_CubicBezCurve",
+                                             task_title=translate("draft","Cubic Bézier curve"))
         if self.doc:
             self.bezcurvetrack = trackers.bezcurveTracker()
 
@@ -373,11 +387,11 @@ class CubicBezCurve(gui_lines.Line):
             self.bezcurvetrack.on()
             if self.planetrack:
                 self.planetrack.set(self.node[0])
-            _msg(translate("draft", "Click and drag to define next knot"))
+            _toolmsg(translate("draft", "Click and drag to define next knot"))
         elif (len(self.node) - 1) % self.degree == 1 and len(self.node) > 2:
             # is a knot
             self.obj.Shape = self.updateShape(self.node[:-1])
-            _msg(translate("draft", "Click and drag to define next knot"))
+            _toolmsg(translate("draft", "Click and drag to define next knot"))
 
     def updateShape(self, pts):
         """Create shape for display during creation process."""
@@ -417,6 +431,8 @@ class CubicBezCurve(gui_lines.Line):
         closed: bool, optional
             Close the curve if `True`.
         """
+        params.set_param_view("EnableSelection", self.old_EnableSelection)
+
         if self.ui:
             if hasattr(self, "bezcurvetrack"):
                 self.bezcurvetrack.finalize()

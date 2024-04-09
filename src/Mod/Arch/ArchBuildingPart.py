@@ -195,14 +195,14 @@ BuildingTypes = ['Undefined',
 ]
 
 
-def makeBuildingPart(objectslist=None,baseobj=None,name="BuildingPart"):
+def makeBuildingPart(objectslist=None,baseobj=None,name=None):
 
-    '''makeBuildingPart(objectslist): creates a buildingPart including the
+    '''makeBuildingPart([objectslist],[name]): creates a buildingPart including the
     objects from the given list.'''
 
     obj = FreeCAD.ActiveDocument.addObject("App::GeometryPython","BuildingPart")
     #obj = FreeCAD.ActiveDocument.addObject("App::FeaturePython","BuildingPart")
-    obj.Label = translate("Arch","BuildingPart")
+    obj.Label = name if name else translate("Arch","BuildingPart")
     BuildingPart(obj)
     obj.IfcType = "Building Element Part"
     if FreeCAD.GuiUp:
@@ -212,22 +212,22 @@ def makeBuildingPart(objectslist=None,baseobj=None,name="BuildingPart"):
     return obj
 
 
-def makeFloor(objectslist=None,baseobj=None,name="Floor"):
+def makeFloor(objectslist=None,baseobj=None,name=None):
 
     """overwrites ArchFloor.makeFloor"""
 
     obj = makeBuildingPart(objectslist)
-    obj.Label = name
+    obj.Label = name if name else translate("Arch","Floor")
     obj.IfcType = "Building Storey"
     return obj
 
 
-def makeBuilding(objectslist=None,baseobj=None,name="Building"):
+def makeBuilding(objectslist=None,baseobj=None,name=None):
 
     """overwrites ArchBuilding.makeBuilding"""
 
     obj = makeBuildingPart(objectslist)
-    obj.Label = name
+    obj.Label = name if name else translate("Arch","Building")
     obj.IfcType = "Building"
     obj.addProperty("App::PropertyEnumeration","BuildingType","Building",QT_TRANSLATE_NOOP("App::Property","The type of this building"))
     obj.BuildingType = BuildingTypes
@@ -286,7 +286,7 @@ class CommandBuildingPart:
         return {'Pixmap'  : 'Arch_BuildingPart',
                 'MenuText': QT_TRANSLATE_NOOP("Arch_BuildingPart","BuildingPart"),
                 'Accel': "B, P",
-                'ToolTip': QT_TRANSLATE_NOOP("Arch_BuildingPart","Creates a BuildingPart object including selected objects")}
+                'ToolTip': QT_TRANSLATE_NOOP("Arch_BuildingPart","Creates a BuildingPart including selected objects")}
 
     def IsActive(self):
 
@@ -301,9 +301,10 @@ class CommandBuildingPart:
         ss += "]"
         FreeCAD.ActiveDocument.openTransaction(translate("Arch","Create BuildingPart"))
         FreeCADGui.addModule("Arch")
-        FreeCADGui.doCommand("obj = Arch.makeBuildingPart("+ss+")")
         FreeCADGui.addModule("Draft")
-        FreeCADGui.doCommand("obj.Placement = FreeCAD.DraftWorkingPlane.getPlacement()")
+        FreeCADGui.addModule("WorkingPlane")
+        FreeCADGui.doCommand("obj = Arch.makeBuildingPart("+ss+")")
+        FreeCADGui.doCommand("obj.Placement = WorkingPlane.get_working_plane().get_placement()")
         FreeCADGui.doCommand("Draft.autogroup(obj)")
         FreeCAD.ActiveDocument.commitTransaction()
         FreeCAD.ActiveDocument.recompute()
@@ -356,11 +357,11 @@ class BuildingPart(ArchIFC.IfcProduct):
 
         self.setProperties(obj)
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 
@@ -807,7 +808,9 @@ class ViewProviderBuildingPart:
                         if hasattr(vobj,prop) and hasattr(child.ViewObject,prop[8:]) and not hasattr(child,"ChildrenOverride"):
                             setattr(child.ViewObject,prop[8:],getattr(vobj,prop))
         elif prop in ["CutView","CutMargin"]:
-            if hasattr(vobj,"CutView") and FreeCADGui.ActiveDocument.ActiveView:
+            if hasattr(vobj, "CutView") \
+                    and FreeCADGui.ActiveDocument.ActiveView \
+                    and hasattr(FreeCADGui.ActiveDocument.ActiveView, "getSceneGraph"):
                 sg = FreeCADGui.ActiveDocument.ActiveView.getSceneGraph()
                 if vobj.CutView:
                     from pivy import coin
@@ -963,30 +966,22 @@ class ViewProviderBuildingPart:
         FreeCADGui.Selection.clearSelection()
 
     def setWorkingPlane(self,restore=False):
+        vobj = self.Object.ViewObject
 
-        if hasattr(self,"Object") and hasattr(FreeCAD,"DraftWorkingPlane"):
-            import FreeCADGui
-            autoclip = False
-            if hasattr(self.Object.ViewObject,"AutoCutView"):
-                autoclip = self.Object.ViewObject.AutoCutView
-            if restore:
-                FreeCAD.DraftWorkingPlane.restore()
-                if autoclip:
-                    self.Object.ViewObject.CutView = False
-            else:
-                FreeCAD.DraftWorkingPlane.save()
-                FreeCADGui.runCommand("Draft_SelectPlane")
-                if autoclip:
-                    self.Object.ViewObject.CutView = True
-            if hasattr(FreeCADGui,"Snapper"):
-                FreeCADGui.Snapper.setGrid()
-            if hasattr(FreeCADGui,"draftToolBar"):
-                if restore and hasattr(self,"wptext"):
-                    FreeCADGui.draftToolBar.wplabel.setText(self.wptext)
-                else:
-                    self.wptext = FreeCADGui.draftToolBar.wplabel.text()
-                    FreeCADGui.draftToolBar.wplabel.setText(self.Object.Label)
-            FreeCAD.DraftWorkingPlane.lastBuildingPart = self.Object.Name
+        import WorkingPlane
+        wp = WorkingPlane.get_working_plane(update=False)
+        autoclip = False
+        if hasattr(vobj,"AutoCutView"):
+            autoclip = vobj.AutoCutView
+        if restore:
+            if wp.label.rstrip("*") == self.Object.Label:
+                wp._previous()
+            if autoclip:
+                vobj.CutView = False
+        else:
+            wp.align_to_selection()
+            if autoclip:
+                vobj.CutView = True
 
     def writeCamera(self):
 
@@ -1054,10 +1049,10 @@ class ViewProviderBuildingPart:
                     no.LongName = no.CloneOf.LongName
             FreeCAD.ActiveDocument.recompute()
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
     def writeInventor(self,obj):

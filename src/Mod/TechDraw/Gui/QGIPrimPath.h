@@ -44,9 +44,16 @@ class TechDrawGuiExport QGIPrimPath : public QGraphicsItem
     using inherited = QGraphicsItem;
 public:
     explicit QGIPrimPath();
-    ~QGIPrimPath() {}
+    ~QGIPrimPath() override = default;
 
     enum {Type = QGraphicsItem::UserType + 170};
+
+    int type() const override { return Type;}
+    void paint(QPainter * painter, const QStyleOptionGraphicsItem * option, QWidget * widget = nullptr ) override;
+    QPainterPath shape() const override;
+    QRectF boundingRect() const override;
+    QPainterPath opaqueArea() const override;
+
 
     void setHighlighted(bool state);
     virtual void setPrettyNormal();
@@ -68,7 +75,7 @@ public:
     void setFill(QBrush b);
     void resetFill();
     void setFillColor(QColor c);
-    QColor getFillColor(void) { return m_colDefFill; }
+    QColor getFillColor() { return m_colDefFill; }
     void setFillOverride(bool b) { m_fillOverride = b; }
 
     bool hasHover() const { return m_hasHover; }
@@ -79,33 +86,35 @@ public:
     double getStrokeWidth() const { return m_strokeWidth; }
     void setStrokeWidth(double width);
 
-    int type() const override { return Type;}
-    QRectF boundingRect() const override;
-    QPainterPath shape() const override;
-    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override;
-    QPainterPath opaqueArea() const override;
-
     static QPainterPath shapeFromPath(const QPainterPath &path, const QPen &pen, bool filled=true);
 
     virtual void setPreselect(bool enable);
     virtual void setTools() const;
 
-protected:
-    virtual void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override;
-    virtual void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override;
-    virtual QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
 
-    virtual QColor getNormalColor(void);
-    virtual QColor getPreColor(void);
-    virtual QColor getSelectColor(void);
-    Base::Reference<ParameterGrp> getParmGroup(void);
-    virtual Qt::PenCapStyle prefCapStyle(void);
+protected:
+    void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override;
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override;
+    QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
+
+    virtual bool multiselectEligible() { return false; }
+
+    void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
+
+    virtual QColor getNormalColor();
+    virtual QColor getPreColor();
+    virtual QColor getSelectColor();
+    Base::Reference<ParameterGrp> getParmGroup();
+    virtual Qt::PenCapStyle prefCapStyle();
 
     mutable QPen m_pen;
+    bool multiselectActivated;
     QColor m_colCurrent;
     QColor m_colNormal;
     bool   m_colOverride;
     Qt::PenStyle m_styleCurrent;
+    Qt::PenStyle m_styleNormal;
     double m_width;
     Qt::PenCapStyle m_capStyle;
 
@@ -115,9 +124,9 @@ protected:
 
     QColor m_colDefFill;                        //"no color" default normal fill color
     QColor m_colNormalFill;                     //current Normal fill color def or plain fill
-    Qt::BrushStyle m_styleDef;                  //default Normal fill style
-    Qt::BrushStyle m_styleNormal;               //current Normal fill style
-    Qt::BrushStyle m_styleSelect;               //Select/preSelect fill style
+    Qt::BrushStyle m_fillDef;                  //default Normal fill style
+    Qt::BrushStyle m_fillNormal;               //current Normal fill style
+    Qt::BrushStyle m_fillSelect;               //Select/preSelect fill style
 
     bool m_fillOverride;
     bool m_hasHover = false;

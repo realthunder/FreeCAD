@@ -72,7 +72,7 @@ FC_LOG_LEVEL_INIT("Part",true,true)
 #endif
 
 using namespace Part;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 namespace bio = boost::iostreams;
 
 // ============================================================================
@@ -226,7 +226,7 @@ App::DocumentObject *SubShapeBinder::getSubObject(const char *subname, PyObject 
     auto sobj = Part::Feature::getSubObject(subname,pyObj,mat,transform,depth);
     if(sobj)
         return sobj;
-    if(Data::ComplexGeoData::findElementName(subname)==subname)
+    if(Data::findElementName(subname)==subname)
         return nullptr;
 
     const char *dot = strchr(subname, '.');
@@ -250,7 +250,7 @@ App::DocumentObject *SubShapeBinder::getSubObject(const char *subname, PyObject 
                     continue;
             } else if(!boost::equals(sobj->getNameInDocument(), name))
                 continue;
-            name = Data::ComplexGeoData::noElementName(sub.c_str());
+            name = Data::noElementName(sub.c_str());
             name += dot+1;
             if(mat && transform)
                 *mat *= Placement.getValue().toMatrix();
@@ -455,7 +455,7 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                     std::ostringstream ss;
                     ss << "Failed to obtain shape " <<
                         obj->getFullName() << '.' 
-                        << Data::ComplexGeoData::oldElementName(sub.c_str());
+                        << Data::oldElementName(sub.c_str());
                     errMsg = ss.str();
                 }
             }
@@ -508,8 +508,8 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                     && shape.Hasher != getDocument()->getStringHasher())
             {
                 ss.str("");
-                ss << Data::ComplexGeoData::externalTagPostfix()
-                   << Data::ComplexGeoData::elementMapPrefix()
+                ss << Data::externalTagPostfix()
+                   << Data::elementMapPrefix()
                    << Part::OpCodes::Shapebinder << ':' << shapeOwners[idx].first
                    << ':' << shapeOwners[idx].second;
                 shape.reTagElementMap(-getID(),
@@ -1035,7 +1035,7 @@ void SubShapeBinder::onChanged(const App::Property *prop) {
         {
             contextDoc = Context.getValue()->getDocument();
             connRecomputedObj = contextDoc->signalRecomputedObject.connect(
-                    boost::bind(&SubShapeBinder::slotRecomputedObject, this, bp::_1));
+                    std::bind(&SubShapeBinder::slotRecomputedObject, this, sp::_1));
         }
     }else if(!App::GetApplication().isRestoring() && !getDocument()->isPerformingTransaction()) {
         if(prop == &Support) {
@@ -1078,7 +1078,7 @@ void SubShapeBinder::onChanged(const App::Property *prop) {
                 linked = linked->getSubObject(subs.empty() ? "" : subs[0].c_str());
                 if (linked) {
                     connLabelChange = linked->Label.signalChanged.connect(
-                            boost::bind(&SubShapeBinder::slotLabelChanged, this));
+                            std::bind(&SubShapeBinder::slotLabelChanged, this));
                     slotLabelChanged();
                 }
             }
@@ -1434,7 +1434,7 @@ SubShapeBinder::import(const App::SubObjectT &_feature,
                         (resolvedSub + element).c_str(), true);
                 if (res.size()) {
                     std::string tmp;
-                    return App::SubObjectT(binder, res.front().index.toString(tmp));
+                    return App::SubObjectT(binder, res.front().index.appendToStringBuffer(tmp));
                 }
             } catch (Base::Exception &e) {
                 if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
@@ -1483,7 +1483,7 @@ SubShapeBinder::import(const App::SubObjectT &_feature,
             if (res.size()) {
                 std::string tmp;
                 guard.release();
-                return App::SubObjectT(binder, res.front().index.toString(tmp));
+                return App::SubObjectT(binder, res.front().index.appendToStringBuffer(tmp));
             }
         } catch (Base::Exception &e) {
             if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))

@@ -49,7 +49,7 @@
 #include "ViewProviderPage.h"
 
 using namespace TechDrawGui;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 PROPERTY_SOURCE(TechDrawGui::ViewProviderDrawingView, Gui::ViewProviderDocumentObject)
 
@@ -79,14 +79,15 @@ void ViewProviderDrawingView::attach(App::DocumentObject *pcFeat)
 //    Base::Console().Message("VPDV::attach(%s)\n", pcFeat->getNameInDocument());
     ViewProviderDocumentObject::attach(pcFeat);
 
-    auto bnd = boost::bind(&ViewProviderDrawingView::onGuiRepaint, this, bp::_1);
+    //NOLINTBEGIN
+    auto bnd = std::bind(&ViewProviderDrawingView::onGuiRepaint, this, sp::_1);
+    //NOLINTEND
     auto feature = getViewObject();
     if (feature) {
-        const char* temp = feature->getNameInDocument();
-        if (temp) {
+        if (feature->isAttachedToDocument()) {
             // it could happen that feature is not completely in the document yet and getNameInDocument returns
             // nullptr, so we only update m_myName if we got a valid string.
-            m_myName = temp;
+            m_myName = feature->getNameInDocument();
         }
         connectGuiRepaint = feature->signalGuiPaint.connect(bnd);
         //TODO: would be good to start the QGIV creation process here, but no guarantee we actually have
@@ -131,7 +132,7 @@ void ViewProviderDrawingView::show()
     if (!obj || obj->isRestoring())
         return;
 
-    if (obj->getTypeId().isDerivedFrom(TechDraw::DrawView::getClassTypeId())) {
+    if (obj->isDerivedFrom<TechDraw::DrawView>()) {
         QGIView* qView = getQView();
         if (qView) {
             qView->draw();
@@ -147,7 +148,7 @@ void ViewProviderDrawingView::hide()
     if (!obj || obj->isRestoring())
         return;
 
-    if (obj->getTypeId().isDerivedFrom(TechDraw::DrawView::getClassTypeId())) {
+    if (obj->isDerivedFrom<TechDraw::DrawView>()) {
         QGIView* qView = getQView();
         if (qView) {
             //note: hiding an item in the scene clears its selection status

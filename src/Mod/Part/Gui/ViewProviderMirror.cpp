@@ -73,22 +73,43 @@ ViewProviderMirror::~ViewProviderMirror()
 
 void ViewProviderMirror::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
+    // don't add plane editor to context menu if MirrorPlane is set because it would override any changes, anyway
+    Part::Mirroring* mf = static_cast<Part::Mirroring*>(getObject());
+    Part::Feature* ref = static_cast<Part::Feature*>(mf->MirrorPlane.getValue());
+    bool enabled = true;
+    if (ref){
+        enabled = false;
+    }
     QAction* act;
     act = menu->addAction(QObject::tr("Edit mirror plane"), receiver, member);
+    act->setEnabled(enabled);
     act->setData(QVariant((int)ViewProvider::Default));
+
     ViewProviderPart::setupContextMenu(menu, receiver, member);
 }
 
 bool ViewProviderMirror::setEdit(int ModNum)
 {
-    if (ModNum == ViewProvider::Default) {
+    if (ModNum == ViewProvider::Default || ModNum == ViewProvider::Transform) {
         ModNum = ViewProvider::TransformAt;
         editing = true;
     }
+
+    if (ModNum == ViewProvider::TransformAt) {
+        // get the properties from the mirror feature
+        Part::Mirroring* mf = static_cast<Part::Mirroring*>(getObject());
+        Part::Feature* ref = static_cast<Part::Feature*>(mf->MirrorPlane.getValue());
+        if (ref) { //skip this editor if MirrorPlane property is set
+            editing = false;
+            return false;
+        }
+    }
+
     if (!ViewProviderPart::setEdit(ModNum)) {
         editing = false;
         return false;
     }
+
     return true;
 }
 
@@ -178,14 +199,12 @@ ViewProviderFillet::ViewProviderFillet()
     sPixmap = "Part_Fillet";
 }
 
-ViewProviderFillet::~ViewProviderFillet()
-{
-}
+ViewProviderFillet::~ViewProviderFillet() = default;
 
 void ViewProviderFillet::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
-    if (prop->getTypeId() == Part::PropertyShapeHistory::getClassTypeId()) {
+    if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
         if (hist.size() != 1)
@@ -290,14 +309,12 @@ ViewProviderChamfer::ViewProviderChamfer()
     sPixmap = "Part_Chamfer";
 }
 
-ViewProviderChamfer::~ViewProviderChamfer()
-{
-}
+ViewProviderChamfer::~ViewProviderChamfer() = default;
 
 void ViewProviderChamfer::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
-    if (prop->getTypeId() == Part::PropertyShapeHistory::getClassTypeId()) {
+    if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
         if (hist.size() != 1)
@@ -402,9 +419,7 @@ ViewProviderRevolution::ViewProviderRevolution()
     sPixmap = "Part_Revolve";
 }
 
-ViewProviderRevolution::~ViewProviderRevolution()
-{
-}
+ViewProviderRevolution::~ViewProviderRevolution() = default;
 
 std::vector<App::DocumentObject*> ViewProviderRevolution::claimChildren() const
 {
@@ -433,9 +448,7 @@ ViewProviderLoft::ViewProviderLoft()
     sPixmap = "Part_Loft";
 }
 
-ViewProviderLoft::~ViewProviderLoft()
-{
-}
+ViewProviderLoft::~ViewProviderLoft() = default;
 
 std::vector<App::DocumentObject*> ViewProviderLoft::claimChildren() const
 {
@@ -456,9 +469,7 @@ ViewProviderSweep::ViewProviderSweep()
     sPixmap = "Part_Sweep";
 }
 
-ViewProviderSweep::~ViewProviderSweep()
-{
-}
+ViewProviderSweep::~ViewProviderSweep() = default;
 
 std::vector<App::DocumentObject*> ViewProviderSweep::claimChildren() const
 {
@@ -483,9 +494,7 @@ ViewProviderOffset::ViewProviderOffset()
     sPixmap = "Part_Offset";
 }
 
-ViewProviderOffset::~ViewProviderOffset()
-{
-}
+ViewProviderOffset::~ViewProviderOffset() = default;
 
 void ViewProviderOffset::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
@@ -567,9 +576,7 @@ ViewProviderThickness::ViewProviderThickness()
     sPixmap = "Part_Thickness";
 }
 
-ViewProviderThickness::~ViewProviderThickness()
-{
-}
+ViewProviderThickness::~ViewProviderThickness() = default;
 
 void ViewProviderThickness::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
@@ -646,9 +653,7 @@ ViewProviderRefine::ViewProviderRefine()
     sPixmap = "Part_Refine_Shape";
 }
 
-ViewProviderRefine::~ViewProviderRefine()
-{
-}
+ViewProviderRefine::~ViewProviderRefine() = default;
 
 // ---------------------------------------
 
@@ -660,6 +665,4 @@ ViewProviderReverse::ViewProviderReverse()
     //sPixmap = "Part_Reverse_Shape";
 }
 
-ViewProviderReverse::~ViewProviderReverse()
-{
-}
+ViewProviderReverse::~ViewProviderReverse() = default;

@@ -57,8 +57,10 @@ import FreeCAD
 import Draft
 import DraftVecUtils
 from FreeCAD import Vector
+from draftutils import params
+from draftutils import utils
 from draftutils.translate import translate
-from draftutils.messages import _msg, _wrn, _err
+from draftutils.messages import _err, _msg, _wrn
 
 if FreeCAD.GuiUp:
     from PySide import QtGui
@@ -655,11 +657,8 @@ class svgHandler(xml.sax.ContentHandler):
     def __init__(self):
         super().__init__()
         """Retrieve Draft parameters and initialize."""
-        _prefs = "User parameter:BaseApp/Preferences/Mod/Draft"
-        params = FreeCAD.ParamGet(_prefs)
-        self.style = params.GetInt("svgstyle")
-        self.disableUnitScaling = params.GetBool("svgDisableUnitScaling",
-                                                 False)
+        self.style = params.get_param("svgstyle")
+        self.disableUnitScaling = params.get_param("svgDisableUnitScaling")
         self.count = 0
         self.transform = None
         self.grouptransform = []
@@ -674,16 +673,13 @@ class svgHandler(xml.sax.ContentHandler):
         import Part
 
         if gui and draftui:
-            r = float(draftui.color.red()/255.0)
-            g = float(draftui.color.green()/255.0)
-            b = float(draftui.color.blue()/255.0)
+            r = float(draftui.color.red() / 255.0)
+            g = float(draftui.color.green() / 255.0)
+            b = float(draftui.color.blue() / 255.0)
             self.lw = float(draftui.linewidth)
         else:
-            self.lw = float(params.GetInt("linewidth"))
-            c = params.GetUnsigned("color")
-            r = float(((c >> 24) & 0xFF)/255)
-            g = float(((c >> 16) & 0xFF)/255)
-            b = float(((c >> 8) & 0xFF)/255)
+            self.lw = float(params.get_param_view("DefaultShapeLineWidth"))
+            r, g, b, _ = utils.get_rgba_tuple(params.get_param_view("DefaultShapeLineColor"))
         self.col = (r, g, b, 0.0)
 
     def format(self, obj):
@@ -820,18 +816,16 @@ class svgHandler(xml.sax.ContentHandler):
                 if 'width' in data \
                         and 'height' in data \
                         and 'viewBox' in data:
-                    vbw = float(data['viewBox'][2])
-                    vbh = float(data['viewBox'][3])
-                    w = attrs.getValue('width')
-                    h = attrs.getValue('height')
-                    self.viewbox = (vbw, vbh)
                     if len(self.grouptransform) == 0:
                         unitmode = 'mm' + str(self.svgdpi)
                     else:
                         # nested svg element
                         unitmode = 'css' + str(self.svgdpi)
-                    abw = getsize(w, unitmode)
-                    abh = getsize(h, unitmode)
+                    vbw = getsize(data['viewBox'][2], 'discard')
+                    vbh = getsize(data['viewBox'][3], 'discard')
+                    abw = getsize(attrs.getValue('width'), unitmode)
+                    abh = getsize(attrs.getValue('height'), unitmode)
+                    self.viewbox = (vbw, vbh)
                     sx = abw / vbw
                     sy = abh / vbh
                     _data = data.get('preserveAspectRatio', [])
@@ -955,6 +949,8 @@ class svgHandler(xml.sax.ContentHandler):
                         sh = makewire(path)
                         if self.fill and sh.isClosed():
                             sh = Part.Face(sh)
+                            if sh.isValid() is False:
+                                sh.fix(1e-6, 0, 1)
                         sh = self.applyTrans(sh)
                         obj = self.doc.addObject("Part::Feature", pathname)
                         obj.Shape = sh
@@ -1227,6 +1223,8 @@ class svgHandler(xml.sax.ContentHandler):
                                 and len(sh.Wires) == 1 \
                                 and sh.Wires[0].isClosed():
                             sh = Part.Face(sh)
+                            if sh.isValid() is False:
+                                sh.fix(1e-6, 0, 1)
                         sh = self.applyTrans(sh)
                         obj = self.doc.addObject("Part::Feature", pathname)
                         obj.Shape = sh
@@ -1244,6 +1242,8 @@ class svgHandler(xml.sax.ContentHandler):
                 # sh = Part.Wire(path)
                 if self.fill and sh.isClosed():
                     sh = Part.Face(sh)
+                    if sh.isValid() is False:
+                        sh.fix(1e-6, 0, 1)
                 sh = self.applyTrans(sh)
                 obj = self.doc.addObject("Part::Feature", pathname)
                 obj.Shape = sh
@@ -1808,8 +1808,7 @@ def export(exportList, filename):
     None
         If `exportList` doesn't have shapes to export.
     """
-    _prefs = "User parameter:BaseApp/Preferences/Mod/Draft"
-    svg_export_style = FreeCAD.ParamGet(_prefs).GetInt("svg_export_style")
+    svg_export_style = params.get_param("svg_export_style")
     if svg_export_style != 0 and svg_export_style != 1:
         _msg(translate("ImportSVG",
                        "Unknown SVG export style, switching to Translated"))
@@ -1892,7 +1891,7 @@ def export(exportList, filename):
             # raw-style exports do not translate the sketch
             svg.write('<g id="%s" transform="scale(1,-1)">\n' % ob.Name)
 
-        svg.write(Draft.get_svg(ob))
+        svg.write(Draft.get_svg(ob, override=False))
         _label_enc = str(ob.Label.encode('utf8'))
         _label = _label_enc.replace('<', '&lt;').replace('>', '&gt;')
         # replace('"', "&quot;")

@@ -68,7 +68,7 @@ namespace App {
      %token ONE
      %token NUM
      %token IDENTIFIER
-     %token UNIT
+     %token UNIT USUNIT
      %token INTEGER
      %token CONSTANT
      %token CELLADDRESS
@@ -118,7 +118,6 @@ namespace App {
      %left '^'    /* exponentiation */
 
 %start input
-
 %%
 
 input

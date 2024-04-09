@@ -23,21 +23,21 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
-# include <Python.h>
-# include <vtkCompositeDataSet.h>
-# include <vtkMultiBlockDataSet.h>
-# include <vtkMultiPieceDataSet.h>
-# include <vtkPolyData.h>
-# include <vtkRectilinearGrid.h>
-# include <vtkStructuredGrid.h>
-# include <vtkUnstructuredGrid.h>
-# include <vtkUniformGrid.h>
-# include <vtkXMLDataSetWriter.h>
-# include <vtkXMLImageDataReader.h>
-# include <vtkXMLPolyDataReader.h>
-# include <vtkXMLRectilinearGridReader.h>
-# include <vtkXMLStructuredGridReader.h>
-# include <vtkXMLUnstructuredGridReader.h>
+#include <Python.h>
+#include <vtkCompositeDataSet.h>
+#include <vtkMultiBlockDataSet.h>
+#include <vtkMultiPieceDataSet.h>
+#include <vtkPolyData.h>
+#include <vtkRectilinearGrid.h>
+#include <vtkStructuredGrid.h>
+#include <vtkUniformGrid.h>
+#include <vtkUnstructuredGrid.h>
+#include <vtkXMLDataSetWriter.h>
+#include <vtkXMLImageDataReader.h>
+#include <vtkXMLPolyDataReader.h>
+#include <vtkXMLRectilinearGridReader.h>
+#include <vtkXMLStructuredGridReader.h>
+#include <vtkXMLUnstructuredGridReader.h>
 #endif
 
 #include <App/Application.h>
@@ -54,49 +54,48 @@
 
 using namespace Fem;
 
-TYPESYSTEM_SOURCE(Fem::PropertyPostDataObject , App::Property)
+TYPESYSTEM_SOURCE(Fem::PropertyPostDataObject, App::Property)
 
-PropertyPostDataObject::PropertyPostDataObject()
-{
-}
+PropertyPostDataObject::PropertyPostDataObject() = default;
 
-PropertyPostDataObject::~PropertyPostDataObject()
-{
-}
+PropertyPostDataObject::~PropertyPostDataObject() = default;
 
-void PropertyPostDataObject::scaleDataObject(vtkDataObject *dataObject, double s)
+void PropertyPostDataObject::scaleDataObject(vtkDataObject* dataObject, double s)
 {
-    auto scalePoints = [](vtkPoints *points, double s) {
+    auto scalePoints = [](vtkPoints* points, double s) {
         for (vtkIdType i = 0; i < points->GetNumberOfPoints(); i++) {
             double xyz[3];
             points->GetPoint(i, xyz);
-            for (int j = 0; j < 3; j++)
-                xyz[j] *= s;
+            for (double& j : xyz) {
+                j *= s;
+            }
             points->SetPoint(i, xyz);
         }
     };
 
     if (dataObject->GetDataObjectType() == VTK_POLY_DATA) {
-        vtkPolyData *dataSet = vtkPolyData::SafeDownCast(dataObject);
+        vtkPolyData* dataSet = vtkPolyData::SafeDownCast(dataObject);
         scalePoints(dataSet->GetPoints(), s);
     }
     else if (dataObject->GetDataObjectType() == VTK_STRUCTURED_GRID) {
-        vtkStructuredGrid *dataSet = vtkStructuredGrid::SafeDownCast(dataObject);
+        vtkStructuredGrid* dataSet = vtkStructuredGrid::SafeDownCast(dataObject);
         scalePoints(dataSet->GetPoints(), s);
     }
     else if (dataObject->GetDataObjectType() == VTK_UNSTRUCTURED_GRID) {
-        vtkUnstructuredGrid *dataSet = vtkUnstructuredGrid::SafeDownCast(dataObject);
+        vtkUnstructuredGrid* dataSet = vtkUnstructuredGrid::SafeDownCast(dataObject);
         scalePoints(dataSet->GetPoints(), s);
     }
     else if (dataObject->GetDataObjectType() == VTK_MULTIBLOCK_DATA_SET) {
-        vtkMultiBlockDataSet *dataSet = vtkMultiBlockDataSet::SafeDownCast(dataObject);
-        for (unsigned int i = 0; i < dataSet->GetNumberOfBlocks(); i++)
+        vtkMultiBlockDataSet* dataSet = vtkMultiBlockDataSet::SafeDownCast(dataObject);
+        for (unsigned int i = 0; i < dataSet->GetNumberOfBlocks(); i++) {
             scaleDataObject(dataSet->GetBlock(i), s);
+        }
     }
     else if (dataObject->GetDataObjectType() == VTK_MULTIPIECE_DATA_SET) {
-        vtkMultiPieceDataSet *dataSet = vtkMultiPieceDataSet::SafeDownCast(dataObject);
-        for (unsigned int i = 0; i < dataSet->GetNumberOfPieces(); i++)
+        vtkMultiPieceDataSet* dataSet = vtkMultiPieceDataSet::SafeDownCast(dataObject);
+        for (unsigned int i = 0; i < dataSet->GetNumberOfPieces(); i++) {
             scaleDataObject(dataSet->GetPiece(i), s);
+        }
     }
 }
 
@@ -109,7 +108,7 @@ void PropertyPostDataObject::scale(double s)
     }
 }
 
-void PropertyPostDataObject::setValue(const vtkSmartPointer<vtkDataObject> &ds)
+void PropertyPostDataObject::setValue(const vtkSmartPointer<vtkDataObject>& ds)
 {
     aboutToSetValue();
 
@@ -124,7 +123,7 @@ void PropertyPostDataObject::setValue(const vtkSmartPointer<vtkDataObject> &ds)
     hasSetValue();
 }
 
-const vtkSmartPointer<vtkDataObject> &PropertyPostDataObject::getValue() const
+const vtkSmartPointer<vtkDataObject>& PropertyPostDataObject::getValue() const
 {
     return m_dataObject;
 }
@@ -144,26 +143,26 @@ bool PropertyPostDataObject::isDataSet()
 int PropertyPostDataObject::getDataType()
 {
 
-    if (!m_dataObject)
+    if (!m_dataObject) {
         return -1;
+    }
 
     return m_dataObject->GetDataObjectType();
 }
 
 
-PyObject *PropertyPostDataObject::getPyObject()
+PyObject* PropertyPostDataObject::getPyObject()
 {
-    //TODO: fetch the vtk python object from the data set and return it
+    // TODO: fetch the vtk python object from the data set and return it
     return Py::new_reference_to(Py::None());
 }
 
-void PropertyPostDataObject::setPyObject(PyObject * /*value*/)
-{
-}
+void PropertyPostDataObject::setPyObject(PyObject* /*value*/)
+{}
 
-App::Property *PropertyPostDataObject::Copy() const
+App::Property* PropertyPostDataObject::Copy() const
 {
-    PropertyPostDataObject *prop = new PropertyPostDataObject();
+    PropertyPostDataObject* prop = new PropertyPostDataObject();
     if (m_dataObject) {
 
         prop->createDataObjectByExternalType(m_dataObject);
@@ -208,10 +207,10 @@ void PropertyPostDataObject::createDataObjectByExternalType(vtkSmartPointer<vtkD
 }
 
 
-void PropertyPostDataObject::Paste(const App::Property &from)
+void PropertyPostDataObject::Paste(const App::Property& from)
 {
     aboutToSetValue();
-    m_dataObject = dynamic_cast<const PropertyPostDataObject &>(from).m_dataObject;
+    m_dataObject = dynamic_cast<const PropertyPostDataObject&>(from).m_dataObject;
     hasSetValue();
 }
 
@@ -222,30 +221,30 @@ unsigned int PropertyPostDataObject::getMemSize() const
 
 void PropertyPostDataObject::getPaths(std::vector<App::ObjectIdentifier>& /*paths*/) const
 {
- /* paths.push_back(App::ObjectIdentifier(getContainer())
-                    << App::ObjectIdentifier::Component::SimpleComponent(getName())
-                    << App::ObjectIdentifier::Component::SimpleComponent(
-                           App::ObjectIdentifier::String("ShapeType")));
-    paths.push_back(App::ObjectIdentifier(getContainer())
-                    << App::ObjectIdentifier::Component::SimpleComponent(getName())
-                    << App::ObjectIdentifier::Component::SimpleComponent(
-                           App::ObjectIdentifier::String("Orientation")));
-    paths.push_back(App::ObjectIdentifier(getContainer())
-                    << App::ObjectIdentifier::Component::SimpleComponent(getName())
-                    << App::ObjectIdentifier::Component::SimpleComponent(
-                           App::ObjectIdentifier::String("Length")));
-    paths.push_back(App::ObjectIdentifier(getContainer())
-                    << App::ObjectIdentifier::Component::SimpleComponent(getName())
-                    << App::ObjectIdentifier::Component::SimpleComponent(
-                           App::ObjectIdentifier::String("Area")));
-    paths.push_back(App::ObjectIdentifier(getContainer())
-                    << App::ObjectIdentifier::Component::SimpleComponent(getName())
-                    << App::ObjectIdentifier::Component::SimpleComponent(
-                           App::ObjectIdentifier::String("Volume")));
-    */
+    /* paths.push_back(App::ObjectIdentifier(getContainer())
+                       << App::ObjectIdentifier::Component::SimpleComponent(getName())
+                       << App::ObjectIdentifier::Component::SimpleComponent(
+                              App::ObjectIdentifier::String("ShapeType")));
+       paths.push_back(App::ObjectIdentifier(getContainer())
+                       << App::ObjectIdentifier::Component::SimpleComponent(getName())
+                       << App::ObjectIdentifier::Component::SimpleComponent(
+                              App::ObjectIdentifier::String("Orientation")));
+       paths.push_back(App::ObjectIdentifier(getContainer())
+                       << App::ObjectIdentifier::Component::SimpleComponent(getName())
+                       << App::ObjectIdentifier::Component::SimpleComponent(
+                              App::ObjectIdentifier::String("Length")));
+       paths.push_back(App::ObjectIdentifier(getContainer())
+                       << App::ObjectIdentifier::Component::SimpleComponent(getName())
+                       << App::ObjectIdentifier::Component::SimpleComponent(
+                              App::ObjectIdentifier::String("Area")));
+       paths.push_back(App::ObjectIdentifier(getContainer())
+                       << App::ObjectIdentifier::Component::SimpleComponent(getName())
+                       << App::ObjectIdentifier::Component::SimpleComponent(
+                              App::ObjectIdentifier::String("Volume")));
+       */
 }
 
-void PropertyPostDataObject::Save(Base::Writer &writer) const
+void PropertyPostDataObject::Save(Base::Writer& writer) const
 {
     std::string extension;
     if(!m_dataObject) {
@@ -272,18 +271,18 @@ void PropertyPostDataObject::Save(Base::Writer &writer) const
             extension += "vtu";
             break;
         case VTK_UNIFORM_GRID:
-            extension += "vti"; //image data
+            extension += "vti"; // image data
             break;
-            //TODO:multi-datasets use multiple files, this needs to be implemented specially
-//         case VTK_COMPOSITE_DATA_SET:
-//             prop->m_dataObject = vtkCompositeDataSet::New();
-//             break;
-//         case VTK_MULTIBLOCK_DATA_SET:
-//             prop->m_dataObject = vtkMultiBlockDataSet::New();
-//             break;
-//         case VTK_MULTIPIECE_DATA_SET:
-//             prop->m_dataObject = vtkMultiPieceDataSet::New();
-//             break;
+            // TODO:multi-datasets use multiple files, this needs to be implemented specially
+            //         case VTK_COMPOSITE_DATA_SET:
+            //             prop->m_dataObject = vtkCompositeDataSet::New();
+            //             break;
+            //         case VTK_MULTIBLOCK_DATA_SET:
+            //             prop->m_dataObject = vtkMultiBlockDataSet::New();
+            //             break;
+            //         case VTK_MULTIPIECE_DATA_SET:
+            //             prop->m_dataObject = vtkMultiPieceDataSet::New();
+            //             break;
         default:
             break;
     };
@@ -291,7 +290,7 @@ void PropertyPostDataObject::Save(Base::Writer &writer) const
     if(forceXML) {
         writer.Stream() << writer.ind() << "<Data cdata=\""
             << extension << "\"/>\n";
-        save(writer.beginCharStream(false) << '\n', writer);
+        save(writer.beginCharStream() << '\n', writer);
         writer.endCharStream() << '\n' << writer.ind() << "</Data>\n";
     } else {
         writer.Stream() << writer.ind() << "<Data file=\""
@@ -300,16 +299,17 @@ void PropertyPostDataObject::Save(Base::Writer &writer) const
     }
 }
 
-void PropertyPostDataObject::Restore(Base::XMLReader &reader)
+void PropertyPostDataObject::Restore(Base::XMLReader& reader)
 {
     reader.readElement("Data");
 
     std::string ext = reader.getAttribute("cdata","");
     if(ext.size()) {
-        restore(reader.beginCharStream(false),ext);
+        restore(reader.beginCharStream(),ext);
         return;
-    } else if(!reader.hasAttribute("file"))
+    } else if(!reader.hasAttribute("file")) {
         return;
+    }
 
     std::string file(reader.getAttribute("file"));
 
@@ -319,7 +319,7 @@ void PropertyPostDataObject::Restore(Base::XMLReader &reader)
     }
 }
 
-void PropertyPostDataObject::SaveDocFile(Base::Writer &writer) const
+void PropertyPostDataObject::SaveDocFile(Base::Writer& writer) const
 {
     save(writer.Stream(),writer);
 }
@@ -328,8 +328,9 @@ void PropertyPostDataObject::save(std::ostream &s, Base::Writer &writer) const
 {
     // If the shape is empty we simply store nothing. The file size will be 0 which
     // can be checked when reading in the data.
-    if (!m_dataObject)
+    if (!m_dataObject) {
         return;
+    }
 
     Base::FileInfo fi(App::Application::getTempFileName(), true);
 
@@ -343,7 +344,7 @@ void PropertyPostDataObject::save(std::ostream &s, Base::Writer &writer) const
 
 #ifdef VTK_CELL_ARRAY_V2
     // Looks like an invalid data object that causes a crash with vtk9
-    vtkUnstructuredGrid *dataGrid = vtkUnstructuredGrid::SafeDownCast(m_dataObject);
+    vtkUnstructuredGrid* dataGrid = vtkUnstructuredGrid::SafeDownCast(m_dataObject);
     if (dataGrid && (dataGrid->GetPiece() < 0 || dataGrid->GetNumberOfPoints() <= 0)) {
         std::cerr << "PropertyPostDataObject::SaveDocFile: ignore empty vtkUnstructuredGrid\n";
         return;
@@ -355,11 +356,12 @@ void PropertyPostDataObject::save(std::ostream &s, Base::Writer &writer) const
         // not be created we should not abort.
         // We only print an error message but continue writing the next files to the
         // stream...
-        App::PropertyContainer *father = this->getContainer();
+        App::PropertyContainer* father = this->getContainer();
         if (father && father->isDerivedFrom(App::DocumentObject::getClassTypeId())) {
-            App::DocumentObject *obj = static_cast<App::DocumentObject *>(father);
+            App::DocumentObject* obj = static_cast<App::DocumentObject*>(father);
             Base::Console().Error("Dataset of '%s' cannot be written to vtk file '%s'\n",
-                                  obj->Label.getValue(), fi.filePath().c_str());
+                                  obj->Label.getValue(),
+                                  fi.filePath().c_str());
         }
         else {
             Base::Console().Error("Cannot save vtk file '%s'\n", fi.filePath().c_str());
@@ -379,7 +381,7 @@ void PropertyPostDataObject::save(std::ostream &s, Base::Writer &writer) const
     file.close();
 }
 
-void PropertyPostDataObject::RestoreDocFile(Base::Reader &reader)
+void PropertyPostDataObject::RestoreDocFile(Base::Reader& reader)
 {
     Base::FileInfo xml(reader.getFileName());
     restore(reader,xml.extension());
@@ -394,7 +396,7 @@ void PropertyPostDataObject::restore(std::istream &reader, const std::string &ex
     Base::ofstream file(fi, std::ios::out | std::ios::binary);
     unsigned long ulSize = 0;
     if (reader) {
-        std::streambuf *buf = file.rdbuf();
+        std::streambuf* buf = file.rdbuf();
         reader >> buf;
         file.flush();
         ulSize = buf->pubseekoff(0, std::ios::cur, std::ios::in);
@@ -406,16 +408,21 @@ void PropertyPostDataObject::restore(std::istream &reader, const std::string &ex
         // TODO: read in of composite data structures need to be coded,
         // including replace of "GetOutputAsDataSet()"
         vtkSmartPointer<vtkXMLReader> xmlReader;
-        if (extension == "vtp")
+        if (extension == "vtp") {
             xmlReader = vtkSmartPointer<vtkXMLPolyDataReader>::New();
-        else if (extension == "vts")
+        }
+        else if (extension == "vts") {
             xmlReader = vtkSmartPointer<vtkXMLStructuredGridReader>::New();
-        else if (extension == "vtr")
+        }
+        else if (extension == "vtr") {
             xmlReader = vtkSmartPointer<vtkXMLRectilinearGridReader>::New();
-        else if (extension == "vtu")
+        }
+        else if (extension == "vtu") {
             xmlReader = vtkSmartPointer<vtkXMLUnstructuredGridReader>::New();
-        else if (extension == "vti")
+        }
+        else if (extension == "vti") {
             xmlReader = vtkSmartPointer<vtkXMLImageDataReader>::New();
+        }
 
         xmlReader->SetFileName(fi.filePath().c_str());
         xmlReader->Update();
@@ -425,11 +432,12 @@ void PropertyPostDataObject::restore(std::istream &reader, const std::string &ex
             // not be read it's NOT an indication for an invalid input stream 'reader'.
             // We only print an error message but continue reading the next files from the
             // stream...
-            App::PropertyContainer *father = this->getContainer();
+            App::PropertyContainer* father = this->getContainer();
             if (father && father->isDerivedFrom(App::DocumentObject::getClassTypeId())) {
-                App::DocumentObject *obj = static_cast<App::DocumentObject *>(father);
+                App::DocumentObject* obj = static_cast<App::DocumentObject*>(father);
                 Base::Console().Error("Dataset file '%s' with data of '%s' seems to be empty\n",
-                                      fi.filePath().c_str(), obj->Label.getValue());
+                                      fi.filePath().c_str(),
+                                      obj->Label.getValue());
             }
             else {
                 Base::Console().Warning("Loaded Dataset file '%s' seems to be empty\n",

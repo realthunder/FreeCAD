@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>270</width>
-    <height>190</height>
+    <height>249</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -42,25 +42,105 @@
     </widget>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_2">
+    <layout class="QHBoxLayout" name="_5">
      <item>
-      <widget class="QLabel" name="label_2">
+      <widget class="QLabel" name="labelMode">
        <property name="text">
-        <string>Length</string>
+        <string>Mode</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="Gui::QuantitySpinBox" name="spinLength" native="true">
-       <property name="unit" stdset="0">
-        <string notr="true">mm</string>
-       </property>
-       <property name="value" stdset="0">
-        <double>100.000000000000000</double>
-       </property>
+      <widget class="QComboBox" name="comboMode">
+       <item>
+        <property name="text">
+         <string>Overall Length</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Offset</string>
+        </property>
+       </item>
       </widget>
      </item>
     </layout>
+   </item>
+   <item>
+    <widget class="QWidget" name="lengthWrapper" native="true">
+     <layout class="QHBoxLayout" name="_3">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="labelLength">
+        <property name="text">
+         <string>Length</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="Gui::QuantitySpinBox" name="spinLength" native="true">
+        <property name="keyboardTracking" stdset="0">
+         <bool>false</bool>
+        </property>
+        <property name="unit" stdset="0">
+         <string notr="true">mm</string>
+        </property>
+        <property name="value" stdset="0">
+         <double>100.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="offsetWrapper" native="true">
+     <layout class="QHBoxLayout" name="_4">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="labelOffset">
+        <property name="text">
+         <string>Offset</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="Gui::QuantitySpinBox" name="spinOffset" native="true">
+        <property name="keyboardTracking" stdset="0">
+         <bool>false</bool>
+        </property>
+        <property name="unit" stdset="0">
+         <string notr="true">mm</string>
+        </property>
+        <property name="value" stdset="0">
+         <double>10.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
@@ -72,7 +152,7 @@
       </widget>
      </item>
      <item>
-      <widget class="Gui::UIntSpinBox" name="spinOccurrences" native="true"/>
+      <widget class="Gui::UIntSpinBox" name="spinOccurrences"/>
      </item>
     </layout>
    </item>
@@ -120,8 +200,8 @@
   </customwidget>
   <customwidget>
    <class>Gui::UIntSpinBox</class>
-   <extends>QWidget</extends>
-   <header location="global">Gui/SpinBox.h</header>
+   <extends>QSpinBox</extends>
+   <header>Gui/SpinBox.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

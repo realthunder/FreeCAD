@@ -346,7 +346,7 @@ SoBrepFaceSet::SoBrepFaceSet()
     selContext2 = std::make_shared<SelContext>();
     packedColor = 0;
 
-    pimpl.reset(new VBO);
+    pimpl = std::make_unique<VBO>();
 
     partIndexSensor.attach(&partIndex);
     partIndexSensor.setData(this);
@@ -355,9 +355,7 @@ SoBrepFaceSet::SoBrepFaceSet()
     });
 }
 
-SoBrepFaceSet::~SoBrepFaceSet()
-{
-}
+SoBrepFaceSet::~SoBrepFaceSet() = default;
 
 void SoBrepFaceSet::onPartIndexChange() {
     bboxPicker.clear();
@@ -721,9 +719,6 @@ void SoBrepFaceSet::glRender(SoGLRenderAction *action, bool inpath)
         renderShape(action,ctx,ctx2,true);
 
     if(pushed) {
-        SbBool notify = enableNotify(FALSE);
-        materialIndex.setNum(0);
-        if(notify) enableNotify(notify);
         state->pop();
     }else if(inpath) {
         renderSelection(action,ctx,true,true); 
@@ -1117,7 +1112,7 @@ int SoBrepFaceSet::overrideMaterialBinding(
             SoMaterialBindingElement::set(state,SoMaterialBindingElement::OVERALL);
             SoOverrideElement::setMaterialBindingOverride(state, this, true);
             packedColors.push_back(diffuseColor);
-            SoLazyElement::setPacked(state, this,1, &packedColors[0], hasTransparency);
+            SoLazyElement::setPacked(state, this,1, packedColors.data(), hasTransparency);
             SoTextureEnabledElement::set(state,this,false);
             return true;
         }
@@ -1221,13 +1216,16 @@ int SoBrepFaceSet::overrideMaterialBinding(
             }
         }
 
-        SbBool notify = enableNotify(FALSE);
-        materialIndex.setValuesPointer(matIndex.size(),&matIndex[0]);
-        if(notify) enableNotify(notify);
+        size_t num = materialIndex.getNum();
+        if (num != matIndex.size() || materialIndex.getValues(0) != matIndex.data()) {
+            SbBool notify = enableNotify(FALSE);
+            materialIndex.setValuesPointer(matIndex.size(), matIndex.data());
+            if (notify) enableNotify(notify);
+        }
 
         SoMaterialBindingElement::set(state, this, SoMaterialBindingElement::PER_PART_INDEXED);
         SoOverrideElement::setMaterialBindingOverride(state, this, true);
-        SoLazyElement::setPacked(state, this, packedColors.size(), &packedColors[0], hasTransparency);
+        SoLazyElement::setPacked(state, this, packedColors.size(), packedColors.data(), hasTransparency);
         SoTextureEnabledElement::set(state,this,false);
     }
     return pushed;

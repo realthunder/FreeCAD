@@ -45,7 +45,7 @@
 
 using namespace Gui::Dialog;
 using namespace std;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 
 /* TRANSLATOR Gui::Dialog::DlgDisplayPropertiesImp */
@@ -179,9 +179,11 @@ DlgDisplayPropertiesImp::DlgDisplayPropertiesImp(bool floating, QWidget* parent,
 
     Gui::Selection().Attach(this);
 
+    //NOLINTBEGIN
     d->connectChangedObject =
-    Gui::Application::Instance->signalChangedObject.connect(boost::bind
-        (&DlgDisplayPropertiesImp::slotChangedObject, this, bp::_1, bp::_2));
+    Gui::Application::Instance->signalChangedObject.connect(std::bind
+        (&DlgDisplayPropertiesImp::slotChangedObject, this, sp::_1, sp::_2));
+    //NOLINTEND
 }
 
 /**
@@ -271,7 +273,7 @@ void DlgDisplayPropertiesImp::slotChangedObject(const Gui::ViewProvider& obj,
         if (!name)
             return;
         std::string prop_name = name;
-        if (prop.getTypeId() == App::PropertyColor::getClassTypeId()) {
+        if (prop.is<App::PropertyColor>()) {
             App::Color value = static_cast<const App::PropertyColor&>(prop).getValue();
             if (prop_name == "ShapeColor") {
                 bool blocked = d->ui.buttonColor->blockSignals(true);
@@ -295,7 +297,7 @@ void DlgDisplayPropertiesImp::slotChangedObject(const Gui::ViewProvider& obj,
                 d->ui.buttonPointColor->blockSignals(blocked);
             }
         }
-        else if (prop.getTypeId().isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
+        else if (prop.isDerivedFrom<App::PropertyInteger>()) {
             long value = static_cast<const App::PropertyInteger&>(prop).getValue();
             if (prop_name == "Transparency") {
                 bool blocked = d->ui.spinTransparency->blockSignals(true);
@@ -314,7 +316,7 @@ void DlgDisplayPropertiesImp::slotChangedObject(const Gui::ViewProvider& obj,
                 d->ui.sliderLineTransparency->blockSignals(blocked);
             }
         }
-        else if (prop.getTypeId().isDerivedFrom(App::PropertyFloat::getClassTypeId())) {
+        else if (prop.isDerivedFrom<App::PropertyFloat>()) {
             double value = static_cast<const App::PropertyFloat&>(prop).getValue();
             if (prop_name == "PointSize") {
                 bool blocked = d->ui.spinPointSize->blockSignals(true);
@@ -709,10 +711,7 @@ TaskDisplayProperties::TaskDisplayProperties()
     Content.push_back(taskbox);
 }
 
-TaskDisplayProperties::~TaskDisplayProperties()
-{
-    // automatically deleted in the sub-class
-}
+TaskDisplayProperties::~TaskDisplayProperties() = default;
 
 QDialogButtonBox::StandardButtons TaskDisplayProperties::getStandardButtons() const
 {

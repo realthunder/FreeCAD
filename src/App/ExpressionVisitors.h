@@ -46,7 +46,7 @@ public:
     {
     }
 
-    void visit(Expression &node) {
+    void visit(Expression &node) override {
         this->renameObjectIdentifier(node,paths,owner);
     }
 
@@ -63,7 +63,7 @@ public:
     {
     }
 
-    void visit(Expression &node) {
+    void visit(Expression &node) override {
         this->updateElementReference(node,feature,reverse);
     }
 
@@ -98,7 +98,7 @@ public:
         : ExpressionModifier<P>(prop),address(address),rowCount(rowCount),colCount(colCount)
     {}
 
-    void visit(Expression &node) {
+    void visit(Expression &node) override {
         this->moveCells(node,address,rowCount,colCount);
     }
 
@@ -114,7 +114,7 @@ public:
         : ExpressionModifier<P>(prop),rowOffset(rowOffset),colOffset(colOffset)
     {}
 
-    void visit(Expression &node) {
+    void visit(Expression &node) override {
         this->offsetCells(node,rowOffset,colOffset);
     }
 

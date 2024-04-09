@@ -4,3 +4,6 @@
 [submodule "src/3rdParty/Diligent"]
 	path = src/3rdParty/Diligent
 	url = https://github.com/realthunder/DiligentEngine.git
+[submodule "src/3rdParty/OndselSolver"]
+	path = src/3rdParty/OndselSolver
+	url = https://github.com/Ondsel-Development/OndselSolver.git

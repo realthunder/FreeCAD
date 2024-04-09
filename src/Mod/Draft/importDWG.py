@@ -42,6 +42,7 @@ https://knowledge.autodesk.com/support/autocad/downloads/
 
 import FreeCAD
 from FreeCAD import Console as FCC
+from draftutils import params
 
 if FreeCAD.GuiUp:
     from draftutils.translate import translate
@@ -135,8 +136,8 @@ def export(objectslist, filename):
 def get_libredwg_converter(typ):
     """Find the LibreDWG converter.
 
-    It searches the FreeCAD parameters database, then searches the OS search path
-    on Linux and Windows systems. There are no standard installation paths.
+    It searches the FreeCAD parameters database, then searches the OS search path.
+    There are no standard installation paths.
 
     `typ` is required because LibreDWG uses two converters and we store only one.
 
@@ -153,22 +154,21 @@ def get_libredwg_converter(typ):
     import os
     import platform
 
-    p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Draft")
-    path = p.GetString("TeighaFileConverter")
+    path = params.get_param("TeighaFileConverter")
 
     if "dwg2dxf" in path or "dxf2dwg" in path: # path set manually
         if typ not in path:
             path = os.path.dirname(path) + "/" + typ + os.path.splitext(path)[1]
         if os.path.exists(path) and os.path.isfile(path):
             return path
-    elif platform.system() == "Linux":
-        for sub in os.getenv("PATH").split(":"):
-            path = sub + "/" + typ
+    elif platform.system() == "Windows":
+        for sub in os.getenv("PATH").split(os.pathsep):
+            path = sub.replace("\\", "/") + "/" + typ + ".exe"
             if os.path.exists(path) and os.path.isfile(path):
                 return path
-    elif platform.system() == "Windows":
-        for sub in os.getenv("PATH").split(";"):
-            path = sub.replace("\\", "/") + "/" + typ + ".exe"
+    else: # for Linux and macOS
+        for sub in os.getenv("PATH").split(os.pathsep):
+            path = sub + "/" + typ
             if os.path.exists(path) and os.path.isfile(path):
                 return path
 
@@ -178,8 +178,7 @@ def get_libredwg_converter(typ):
 def get_oda_converter():
     """Find the ODA converter.
 
-    It searches the FreeCAD parameters database, then searches for common
-    paths on Linux and Windows systems.
+    It searches the FreeCAD parameters database, then searches for common paths.
 
     Parameters
     ----------
@@ -193,14 +192,9 @@ def get_oda_converter():
     import os
     import platform
 
-    p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Draft")
-    path = p.GetString("TeighaFileConverter")
+    path = params.get_param("TeighaFileConverter")
 
     if "ODAFileConverter" in path: # path set manually
-        if os.path.exists(path) and os.path.isfile(path):
-            return path
-    elif platform.system() == "Linux":
-        path = "/usr/bin/ODAFileConverter"
         if os.path.exists(path) and os.path.isfile(path):
             return path
     elif platform.system() == "Windows":
@@ -210,6 +204,14 @@ def get_oda_converter():
                 path = odadir + "/" + sub + "/" + "ODAFileConverter.exe"
                 if os.path.exists(path) and os.path.isfile(path):
                     return path
+    elif platform.system() == "Linux":
+        path = "/usr/bin/ODAFileConverter"
+        if os.path.exists(path) and os.path.isfile(path):
+            return path
+    else: # for macOS
+        path = "/Applications/ODAFileConverter.app/Contents/MacOS/ODAFileConverter"
+        if os.path.exists(path) and os.path.isfile(path):
+            return path
 
     return None
 
@@ -217,8 +219,7 @@ def get_oda_converter():
 def get_qcad_converter():
     """Find the QCAD converter.
 
-    It searches the FreeCAD parameters database, then searches for common
-    paths on Linux and Windows systems.
+    It searches the FreeCAD parameters database, then searches for common paths.
 
     Parameters
     ----------
@@ -232,20 +233,22 @@ def get_qcad_converter():
     import os
     import platform
 
-    p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Draft")
-    path = p.GetString("TeighaFileConverter")
+    path = params.get_param("TeighaFileConverter")
 
     if "dwg2dwg" in path: # path set manually
         pass
+    elif platform.system() == "Windows":
+        path = os.path.expandvars("%ProgramFiles%\\QCAD\\dwg2dwg.bat").replace("\\", "/")
     elif platform.system() == "Linux":
         # /home/$USER/opt/qcad-3.28.1-trial-linux-qt5.14-x86_64/dwg2dwg
         path = os.path.expandvars("/home/$USER/opt")
-        for sub in os.listdir(path):
-            if "qcad" in sub:
-                path = path + "/" + sub + "/" + "dwg2dwg"
-                break
-    elif platform.system() == "Windows":
-        path = os.path.expandvars("%ProgramFiles%\\QCAD\\dwg2dwg.bat").replace("\\", "/")
+        if os.path.exists(path) and os.path.isdir(path):
+            for sub in os.listdir(path):
+                if "qcad" in sub:
+                    path = path + "/" + sub + "/" + "dwg2dwg"
+                    break
+    else: # for macOS
+        path = "/Applications/QCAD.app/Contents/Resources/dwg2dwg"
 
     if os.path.exists(path) and os.path.isfile(path):
         return path
@@ -272,8 +275,7 @@ def convertToDxf(dwgfilename):
     import tempfile
 
     dwgfilename = dwgfilename.replace("\\", "/")
-    p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Draft")
-    conv = p.GetInt("DWGConversion", 0)
+    conv = params.get_param("DWGConversion")
     error_msg = translate("draft", """Error during DWG conversion.
 Try moving the DWG file to a directory path without spaces and non-english characters,
 or try saving to a lower DWG version.""") + "\n"
@@ -362,8 +364,7 @@ def convertToDwg(dxffilename, dwgfilename):
 
     dxffilename = dxffilename.replace("\\", "/")
     dwgfilename = dwgfilename.replace("\\", "/")
-    p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Draft")
-    conv = p.GetInt("DWGConversion", 0)
+    conv = params.get_param("DWGConversion")
 
     if conv in [0, 1]: # LibreDWG
         libredwg = get_libredwg_converter("dxf2dwg")

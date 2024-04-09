@@ -23,6 +23,12 @@
 
 #include <FCConfig.h>
 
+#if defined(_MSC_VER)
+#include <windows.h>
+#include <dbghelp.h>
+#endif
+
+
 #ifdef _PreComp_
 #   undef _PreComp_
 #endif
@@ -52,7 +58,7 @@
 #include <Gui/Application.h>
 
 
-void PrintInitHelp(void);
+void PrintInitHelp();
 
 const char sBanner[] = "\xc2\xa9 Juergen Riegel, Werner Mayer, Yorik van Havre and others 2001-2023\n"\
 "FreeCAD is free and open-source software licensed under the terms of LGPL2+ license.\n"\
@@ -98,6 +104,8 @@ private:
 int main( int argc, char ** argv )
 {
 #if defined (FC_OS_LINUX) || defined(FC_OS_BSD)
+    setlocale(LC_ALL, ""); // use native environment settings
+
     // Make sure to setup the Qt locale system before setting LANG and LC_ALL to C.
     // which is needed to use the system locale settings.
     (void)QLocale::system();
@@ -149,7 +157,7 @@ int main( int argc, char ** argv )
     App::Application::Config()["ExeName"] = "FreeCAD";
     App::Application::Config()["ExeVendor"] = "FreeCAD";
     App::Application::Config()["AppDataSkipVendor"] = "true";
-    App::Application::Config()["MaintainerUrl"] = "http://www.freecad.org/wiki/Main_Page";
+    App::Application::Config()["MaintainerUrl"] = "https://www.freecad.org/wiki/Main_Page";
 
     // set the banner (for logging and console)
     App::Application::Config()["CopyrightInfo"] = sBanner;
@@ -159,9 +167,9 @@ int main( int argc, char ** argv )
     App::Application::Config()["StartWorkbench"] = "StartWorkbench";
     //App::Application::Config()["HiddenDockWindow"] = "Property editor";
     App::Application::Config()["SplashAlignment" ] = "Bottom|Left";
-    App::Application::Config()["SplashTextColor" ] = "#ffffff"; // white
-    App::Application::Config()["SplashInfoColor" ] = "#c8c8c8"; // light grey
-    App::Application::Config()["SplashInfoPosition" ] = "15.210";
+    App::Application::Config()["SplashTextColor" ] = "#8aadf4"; // light blue
+    App::Application::Config()["SplashInfoColor" ] = "#8aadf4"; // light blue 
+    App::Application::Config()["SplashInfoPosition" ] = "6,75";
 
     QGuiApplication::setDesktopFileName(QStringLiteral("org.freecad.FreeCAD.desktop"));
 
@@ -266,9 +274,9 @@ int main( int argc, char ** argv )
         if (App::Application::Config()["Console"] == "1")
             App::Application::runApplication();
         if (App::Application::Config()["RunMode"] == "Gui" ||
-            App::Application::Config()["RunMode"] == "Internal")
+            App::Application::Config()["RunMode"] == "Internal") {
             Gui::Application::runApplication();
-        else
+        } else
             App::Application::runApplication();
     }
     catch (const Base::SystemExitException& e) {
@@ -306,8 +314,6 @@ int main( int argc, char ** argv )
 }
 
 #if defined(_MSC_VER)
-#include <windows.h>
-#include <dbghelp.h>
 
 typedef BOOL (__stdcall *tMDWD)(
   IN HANDLE hProcess,

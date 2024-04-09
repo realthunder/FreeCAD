@@ -80,10 +80,10 @@ class IfcContextView:
     def transform(self):
         FreeCADGui.ActiveDocument.setEdit(self.Object, 1)
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
 
@@ -152,7 +152,7 @@ class IfcContextUI:
         """
         data = ArchIFC.IfcRoot.getObjIfcComplexAttribute(self, self.object, "RepresentationContexts")
         for lineEdit in self.lineEditObjects:
-            if lineEdit.objectName() in data.keys():
+            if lineEdit.objectName() in data:
                 lineEdit.setText(data[lineEdit.objectName()])
 
     def createFormEntry(self, name, label):

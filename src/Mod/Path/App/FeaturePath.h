@@ -38,22 +38,22 @@ namespace Path
 class PathExport Feature : public Part::Feature
 {
     typedef Part::Feature inherited;
-    PROPERTY_HEADER(Path::Feature);
+    PROPERTY_HEADER_WITH_OVERRIDE(Path::Feature);
 
 public:
     /// Constructor
-    Feature(void);
-    virtual ~Feature();
+    Feature();
+    ~Feature() override;
 
     /// returns the type name of the ViewProvider
-    virtual const char* getViewProviderName(void) const {
+    const char* getViewProviderName() const override {
         return "PathGui::ViewProviderPath";
     }
-    virtual App::DocumentObjectExecReturn *execute(void) {
+    App::DocumentObjectExecReturn *execute() override {
         return App::DocumentObject::StdReturn;
     }
-    virtual short mustExecute(void) const;
-    virtual PyObject *getPyObject(void);
+    short mustExecute() const override;
+    PyObject *getPyObject() override;
 
     PropertyPath                Path;
     App::PropertyBool           BuildShape;
@@ -61,7 +61,7 @@ public:
 
 protected:
     /// get called by the container when a property has changed
-    virtual void onChanged (const App::Property* prop);
+    void onChanged (const App::Property* prop) override;
 
 };
 

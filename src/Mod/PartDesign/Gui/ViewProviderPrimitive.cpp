@@ -41,14 +41,9 @@ using namespace PartDesignGui;
 
 PROPERTY_SOURCE(PartDesignGui::ViewProviderPrimitive,PartDesignGui::ViewProviderAddSub)
 
-ViewProviderPrimitive::ViewProviderPrimitive()
-{
-}
+ViewProviderPrimitive::ViewProviderPrimitive() = default;
 
-ViewProviderPrimitive::~ViewProviderPrimitive()
-{
-
-}
+ViewProviderPrimitive::~ViewProviderPrimitive() = default;
 
 void ViewProviderPrimitive::attach(App::DocumentObject* obj) {
     auto* prim = static_cast<PartDesign::FeaturePrimitive*>(obj);

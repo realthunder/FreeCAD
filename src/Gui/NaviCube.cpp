@@ -32,6 +32,7 @@
 # else
 #  include <GL/gl.h>
 # endif
+# include <boost/math/constants/constants.hpp>
 # include <Inventor/nodes/SoOrthographicCamera.h>
 # include <Inventor/events/SoEvent.h>
 # include <Inventor/events/SoLocation2Event.h>
@@ -538,9 +539,10 @@ GLuint NaviCubeShared::createCubeFaceTex(const char* text, int shape) {
 	paint.end();
     auto texture = new QOpenGLTexture(image.mirrored());
     m_glTextures.emplace_back(texture);
-	texture->generateMipMaps();
+    texture->setMaximumAnisotropy(4.0);
 	texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
     texture->setMagnificationFilter(QOpenGLTexture::Linear);
+	texture->generateMipMaps();
     return texture->textureId();
 }
 
@@ -672,9 +674,10 @@ GLuint NaviCubeShared::createButtonTex(int button, bool stroke) {
 
     auto texture = new QOpenGLTexture(image.mirrored());
     m_glTextures.emplace_back(texture);
-	texture->generateMipMaps();
+    texture->setMaximumAnisotropy(4.0);
 	texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
     texture->setMagnificationFilter(QOpenGLTexture::Linear);
+	texture->generateMipMaps();
     return texture->textureId();
 }
 
@@ -744,9 +747,10 @@ GLuint NaviCubeShared::createMenuTex(bool forPicking) {
 	painter.end();
     auto texture = new QOpenGLTexture(image.mirrored());
     m_glTextures.emplace_back(texture);
-	texture->generateMipMaps();
+    texture->setMaximumAnisotropy(4.0);
 	texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
     texture->setMagnificationFilter(QOpenGLTexture::Linear);
+	texture->generateMipMaps();
     return texture->textureId();
 }
 

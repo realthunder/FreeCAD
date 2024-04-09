@@ -62,8 +62,7 @@ ViewProviderPart::ViewProviderPart()
     sPixmap = "Geofeaturegroup.svg";
 }
 
-ViewProviderPart::~ViewProviderPart()
-{ }
+ViewProviderPart::~ViewProviderPart() = default;
 
 App::PropertyLinkSub *ViewProviderPart::getColoredElementsProperty() const {
     if(!getObject())
@@ -108,7 +107,9 @@ void ViewProviderPart::setupContextMenu(QMenu* menu, QObject* receiver, const ch
 {
     auto func = new Gui::ActionFunction(menu);
     QAction* act = menu->addAction(QObject::tr("Toggle active part"));
-    func->trigger(act, std::bind(&ViewProviderPart::doubleClicked, this));
+    func->trigger(act, [this](){
+        this->doubleClicked();
+    });
 
     if(getColoredElementsProperty()) {
         act = menu->addAction(QObject::tr("Override colors..."), receiver, member);

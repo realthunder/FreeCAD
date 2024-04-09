@@ -46,7 +46,6 @@ public:
     App::PropertyLink CuttingToolWireObject;
     App::PropertyEnumeration ProjectionStrategy;//Offset or Aligned
 
-    TopoDS_Shape getShapeToCut() override;
     TopoDS_Shape makeCuttingTool(double dMax) override;
     gp_Ax2 getCSFromBase(const std::string sectionName) const override;
     bool isBaseValid() const override;
@@ -116,6 +115,8 @@ public:
 
 private:
     static gp_Dir getFaceNormal(TopoDS_Face& face);
+    bool validateOffsetProfile(TopoDS_Wire profile, Base::Vector3d direction, double angleThresholdDeg) const;
+    std::pair<Base::Vector3d, Base::Vector3d> getSegmentEnds(TopoDS_Edge segment) const;
 
     TopoDS_Shape m_toolFaceShape;
     TopoDS_Shape m_alignResult;

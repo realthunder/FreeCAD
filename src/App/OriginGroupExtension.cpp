@@ -71,7 +71,7 @@ bool OriginGroupExtension::extensionGetSubObject(DocumentObject *&ret, const cha
 {
     App::DocumentObject *originObj = Origin.getValue ();
     const char *dot;
-    if(originObj && originObj->getNameInDocument() &&
+    if(originObj && originObj->isAttachedToDocument() &&
        subname && (dot=strchr(subname,'.')))
     {
         bool found;
@@ -200,7 +200,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
     std::vector<App::Property*> list;
     obj->getPropertyList(list);
     for(App::Property* prop : list) {
-        if(prop->getTypeId().isDerivedFrom(App::PropertyLink::getClassTypeId())) {
+        if(prop->isDerivedFrom<App::PropertyLink>()) {
 
             auto p = static_cast<App::PropertyLink*>(prop);
             if(!p->getValue() || !p->getValue()->isDerivedFrom(App::OriginFeature::getClassTypeId()))
@@ -208,7 +208,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
 
             p->setValue(getOrigin()->getOriginFeature(static_cast<OriginFeature*>(p->getValue())->Role.getValue()));
         }
-        else if(prop->getTypeId().isDerivedFrom(App::PropertyLinkList::getClassTypeId())) {
+        else if(prop->isDerivedFrom<App::PropertyLinkList>()) {
             auto p = static_cast<App::PropertyLinkList*>(prop);
             auto vec = p->getValues();
             std::vector<App::DocumentObject*> result;
@@ -224,7 +224,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
             if(changed)
                 static_cast<App::PropertyLinkList*>(prop)->setValues(result);
         }
-        else if(prop->getTypeId().isDerivedFrom(App::PropertyLinkSub::getClassTypeId())) {
+        else if(prop->isDerivedFrom<App::PropertyLinkSub>()) {
             auto p = static_cast<App::PropertyLinkSub*>(prop);
             if(!p->getValue() || !p->getValue()->isDerivedFrom(App::OriginFeature::getClassTypeId()))
                 continue;
@@ -232,7 +232,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
             std::vector<std::string> subValues = p->getSubValues();
             p->setValue(getOrigin()->getOriginFeature(static_cast<OriginFeature*>(p->getValue())->Role.getValue()), subValues);
         }
-        else if(prop->getTypeId().isDerivedFrom(App::PropertyLinkSubList::getClassTypeId())) {
+        else if(prop->isDerivedFrom<App::PropertyLinkSubList>()) {
             auto p = static_cast<App::PropertyLinkSubList*>(prop);
             auto vec = p->getSubListValues();
             bool changed = false;

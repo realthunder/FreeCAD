@@ -113,10 +113,7 @@ DlgSettingsGeneral::DlgSettingsGeneral(QWidget* parent)
 /**
  *  Destroys the object and frees any allocated resources
  */
-DlgSettingsGeneral::~DlgSettingsGeneral()
-{
-    // no need to delete child widgets, Qt does it all for us
-}
+DlgSettingsGeneral::~DlgSettingsGeneral() = default;
 
 void DlgSettingsGeneral::saveSettings()
 {
@@ -190,10 +187,7 @@ DlgImportExportIges::DlgImportExportIges(QWidget* parent)
 /**
  *  Destroys the object and frees any allocated resources
  */
-DlgImportExportIges::~DlgImportExportIges()
-{
-    // no need to delete child widgets, Qt does it all for us
-}
+DlgImportExportIges::~DlgImportExportIges() = default;
 
 void DlgImportExportIges::saveSettings()
 {
@@ -270,10 +264,7 @@ DlgImportExportStep::DlgImportExportStep(QWidget* parent)
 /**
  *  Destroys the object and frees any allocated resources
  */
-DlgImportExportStep::~DlgImportExportStep()
-{
-    // no need to delete child widgets, Qt does it all for us
-}
+DlgImportExportStep::~DlgImportExportStep() = default;
 
 void DlgImportExportStep::saveSettings()
 {

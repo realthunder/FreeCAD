@@ -91,7 +91,7 @@ void DemoMode::reset()
         view->getViewer()->stopAnimating();
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
         ("User parameter:BaseApp/Preferences/View");
-    hGrp->Notify("UseAutoRotation");
+    hGrp->Notify("UseNavigationAnimations");
 }
 
 void DemoMode::accept()
@@ -150,7 +150,7 @@ Gui::View3DInventor* DemoMode::activeView() const
 
 float DemoMode::getSpeed(int v) const
 {
-    float speed = (static_cast<float>(v)) / 50.0f; // let 2.0 be the maximum speed
+    float speed = (static_cast<float>(v)) / 10.0f; // let 10.0 be the maximum speed
     return speed;
 }
 
@@ -180,7 +180,7 @@ void DemoMode::onAngleSliderValueChanged(int v)
         SbRotation rot(SbVec3f(-1, 0, 0), angle);
         reorientCamera(cam ,rot);
         this->oldvalue = v;
-        if (view->getViewer()->isAnimating()) {
+        if (view->getViewer()->isSpinning()) {
             startAnimation(view);
         }
     }
@@ -206,7 +206,7 @@ void DemoMode::onSpeedSliderValueChanged(int v)
 {
     Q_UNUSED(v);
     Gui::View3DInventor* view = activeView();
-    if (view && view->getViewer()->isAnimating()) {
+    if (view && view->getViewer()->isSpinning()) {
         startAnimation(view);
     }
 }
@@ -216,7 +216,7 @@ void DemoMode::onPlayButtonToggled(bool pressed)
     Gui::View3DInventor* view = activeView();
     if (view) {
         if (pressed) {
-            if (!view->getViewer()->isAnimating()) {
+            if (!view->getViewer()->isSpinning()) {
                 SoCamera* cam = view->getViewer()->getSoRenderManager()->getCamera();
                 if (cam) {
                     SbRotation rot = cam->orientation.getValue();
@@ -263,17 +263,16 @@ void DemoMode::onTimeoutValueChanged(int v)
 void DemoMode::onAutoPlay()
 {
     Gui::View3DInventor* view = activeView();
-    if (view && !view->getViewer()->isAnimating()) {
+    if (view && !view->getViewer()->isSpinning()) {
         ui->playButton->setChecked(true);
+        startAnimation(view);
     }
 }
 
 void DemoMode::startAnimation(Gui::View3DInventor* view)
 {
-    if (!view->getViewer()->isAnimationEnabled())
-        view->getViewer()->setAnimationEnabled(true);
-    view->getViewer()->startAnimating(getDirection(view),
-        getSpeed(ui->speedSlider->value()));
+    view->getViewer()->startSpinningAnimation(getDirection(view),
+                                              getSpeed(ui->speedSlider->value()));
 }
 
 void DemoMode::onTimerCheckToggled(bool on)

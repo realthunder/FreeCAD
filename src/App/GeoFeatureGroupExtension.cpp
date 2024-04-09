@@ -269,7 +269,7 @@ void GeoFeatureGroupExtension::extensionOnChanged(const Property* p) {
             for(auto it=children.begin(),itNext=it;it!=children.end();it=itNext) {
                 ++itNext;
                 auto obj = *it;
-                if(!obj || !obj->getNameInDocument()) {
+                if(!obj || !obj->isAttachedToDocument()) {
                     error = true;
                     itNext = children.erase(it);
                     if(obj)
@@ -366,7 +366,7 @@ void GeoFeatureGroupExtension::extensionOnChanged(const Property* p) {
 std::vector< DocumentObject* > GeoFeatureGroupExtension::getScopedObjectsFromLinks(const DocumentObject* obj, LinkScope scope) {
 
     if(!obj)
-        return std::vector< DocumentObject* >();
+        return {};
 
     //we get all linked objects. We can't use outList() as this includes the links from expressions
     std::vector< App::DocumentObject* > result;
@@ -387,7 +387,7 @@ std::vector< DocumentObject* > GeoFeatureGroupExtension::getScopedObjectsFromLin
 std::vector< DocumentObject* > GeoFeatureGroupExtension::getScopedObjectsFromLink(App::Property* prop, LinkScope scope) {
 
     if(!prop)
-        return std::vector< DocumentObject* >();
+        return {};
 
     std::vector< App::DocumentObject* > result;
     auto link = Base::freecad_dynamic_cast<PropertyLinkBase>(prop);
@@ -451,8 +451,8 @@ void GeoFeatureGroupExtension::getCSInList(const DocumentObject* obj,
 
 std::vector< DocumentObject* > GeoFeatureGroupExtension::getCSRelevantLinks(const DocumentObject* obj) {
 
-    if(!obj || !obj->getNameInDocument() || obj->testStatus(App::ObjectStatus::Remove))
-        return std::vector< DocumentObject* >();
+    if(!obj || !obj->isAttachedToDocument() || obj->testStatus(App::ObjectStatus::Remove))
+        return {};
 
     //get all out links
     std::vector<DocumentObject*> vec;
@@ -479,7 +479,7 @@ void GeoFeatureGroupExtension::recursiveCSRelevantLinks(const DocumentObject* ob
 
     //go on traversing the graph in all directions!
     for(auto o : links) {   
-        if(!o || !o->getNameInDocument()
+        if(!o || !o->isAttachedToDocument()
               || o->testStatus(App::ObjectStatus::Remove)
               || o == obj 
               || std::find(vec.begin(), vec.end(), o) != vec.end())
@@ -638,6 +638,7 @@ void GeoFeatureGroupExtension::getInvalidLinkObjects(const DocumentObject* obj, 
 int GeoFeatureGroupExtension::extensionIsElementVisible(const char *) const {
     return -1;
 }
+
 
 // Python feature ---------------------------------------------------------
 

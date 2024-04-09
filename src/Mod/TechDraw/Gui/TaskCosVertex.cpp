@@ -55,6 +55,7 @@
 using namespace Gui;
 using namespace TechDraw;
 using namespace TechDrawGui;
+using DU = DrawUtil;
 
 TaskCosVertex::TaskCosVertex(TechDraw::DrawViewPart* baseFeat,
                                TechDraw::DrawPage* page) :
@@ -122,6 +123,7 @@ void TaskCosVertex::setUiPrimary()
     ui->dsbY->setUnit(Base::Unit::Length);
 }
 
+// set the ui x,y to apparent coords (ie invertY)
 void TaskCosVertex::updateUi()
 {
     double x = m_savePoint.x();
@@ -135,7 +137,8 @@ void TaskCosVertex::addCosVertex(QPointF qPos)
     Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Add Cosmetic Vertex"));
 
 //    Base::Console().Message("TCV::addCosVertex(%s)\n", TechDraw::DrawUtil::formatVector(qPos).c_str());
-    Base::Vector3d pos(qPos.x(), -qPos.y());
+    Base::Vector3d pos = DU::invertY(DU::toVector3d(qPos));
+    pos = CosmeticVertex::makeCanonicalPoint(m_baseFeat, pos);
 //    int idx =
     (void) m_baseFeat->addCosmeticVertex(pos);
     m_baseFeat->requestPaint();
@@ -214,7 +217,6 @@ void TaskCosVertex::onTrackerFinished(std::vector<QPointF> pts, QGIView* qgParen
 
     QPointF dragEnd = pts.front();            //scene pos of mouse click
 
-    double scale = m_baseFeat->getScale();
     double x = Rez::guiX(m_baseFeat->X.getValue());
     double y = Rez::guiX(m_baseFeat->Y.getValue());
 
@@ -234,7 +236,13 @@ void TaskCosVertex::onTrackerFinished(std::vector<QPointF> pts, QGIView* qgParen
 
     QPointF basePosScene(x, -y);                 //base position in scene coords
     QPointF displace = dragEnd - basePosScene;
-    QPointF scenePosCV = displace / scale;
+    QPointF scenePosCV = displace;
+
+    //  Invert Y value so the math works.
+    Base::Vector3d posToRotate = DU::invertY(DU::toVector3d(scenePosCV));
+    posToRotate = CosmeticVertex::makeCanonicalPoint(m_baseFeat, posToRotate);
+    // now put Y value back to display form
+    scenePosCV = DU::toQPointF(DU::invertY(posToRotate));
 
     m_savePoint = Rez::appX(scenePosCV);
     updateUi();
@@ -300,6 +308,8 @@ bool TaskCosVertex::accept()
         return false;
 
     removeTracker();
+    // whatever is in the ui for x,y is treated as an unscaled, unrotated, invertedY position.
+    // the position from the tracker is unscaled & unrotated before updating the ui
     double x = ui->dsbX->value().getValue();
     double y = ui->dsbY->value().getValue();
     QPointF uiPoint(x, -y);

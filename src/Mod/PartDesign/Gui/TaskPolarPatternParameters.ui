@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>256</width>
-    <height>190</height>
+    <height>245</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -42,31 +42,117 @@
     </widget>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_2">
+    <layout class="QHBoxLayout" name="_2">
      <item>
-      <widget class="QLabel" name="label_2">
+      <widget class="QLabel" name="label_3">
        <property name="text">
-        <string>Angle</string>
+        <string>Mode</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="Gui::QuantitySpinBox" name="polarAngle" native="true">
-       <property name="unit" stdset="0">
-        <string notr="true">deg</string>
-       </property>
-       <property name="minimum" stdset="0">
-        <double>0.000000000000000</double>
-       </property>
-       <property name="maximum" stdset="0">
-        <double>360.000000000000000</double>
-       </property>
-       <property name="value" stdset="0">
-        <double>360.000000000000000</double>
-       </property>
+      <widget class="QComboBox" name="comboMode">
+       <item>
+        <property name="text">
+         <string>Overall Angle</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Offset Angle</string>
+        </property>
+       </item>
       </widget>
      </item>
     </layout>
+   </item>
+   <item>
+    <widget class="QWidget" name="polarAngleWrapper" native="true">
+     <layout class="QHBoxLayout" name="_4">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="label_2">
+        <property name="text">
+         <string>Angle</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="Gui::QuantitySpinBox" name="polarAngle" native="true">
+        <property name="keyboardTracking" stdset="0">
+         <bool>false</bool>
+        </property>
+        <property name="unit" stdset="0">
+         <string notr="true">deg</string>
+        </property>
+        <property name="minimum" stdset="0">
+         <double>0.000000000000000</double>
+        </property>
+        <property name="maximum" stdset="0">
+         <double>360.000000000000000</double>
+        </property>
+        <property name="value" stdset="0">
+         <double>360.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="angleOffsetWrapper" native="true">
+     <layout class="QHBoxLayout" name="_3">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="label2">
+        <property name="text">
+         <string>Offset</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="Gui::QuantitySpinBox" name="angleOffset" native="true">
+        <property name="keyboardTracking" stdset="0">
+         <bool>false</bool>
+        </property>
+        <property name="unit" stdset="0">
+         <string notr="true">deg</string>
+        </property>
+        <property name="minimum" stdset="0">
+         <double>0.000000000000000</double>
+        </property>
+        <property name="maximum" stdset="0">
+         <double>360.000000000000000</double>
+        </property>
+        <property name="value" stdset="0">
+         <double>360.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
@@ -78,7 +164,7 @@
       </widget>
      </item>
      <item>
-      <widget class="Gui::UIntSpinBox" name="spinOccurrences" native="true"/>
+      <widget class="Gui::UIntSpinBox" name="spinOccurrences"/>
      </item>
     </layout>
    </item>
@@ -126,8 +212,8 @@
   </customwidget>
   <customwidget>
    <class>Gui::UIntSpinBox</class>
-   <extends>QWidget</extends>
-   <header location="global">Gui/SpinBox.h</header>
+   <extends>QSpinBox</extends>
+   <header>Gui/SpinBox.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

@@ -122,9 +122,9 @@ public:
     void initObjects() const;
 
     /// Axis types
-    static constexpr char* AxisRoles[3] = {"X_Axis", "Y_Axis", "Z_Axis"};
+    static constexpr const char* AxisRoles[3] = {"X_Axis", "Y_Axis", "Z_Axis"};
     /// Baseplane types
-    static constexpr char* PlaneRoles[3] = {"XY_Plane", "XZ_Plane", "YZ_Plane"};
+    static constexpr const char* PlaneRoles[3] = {"XY_Plane", "XZ_Plane", "YZ_Plane"};
 
     // Axis links
     PropertyLinkList OriginFeatures;

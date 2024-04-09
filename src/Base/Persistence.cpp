@@ -37,66 +37,72 @@
 
 using namespace Base;
 
-TYPESYSTEM_SOURCE_ABSTRACT(Base::Persistence,Base::BaseClass)
+TYPESYSTEM_SOURCE_ABSTRACT(Base::Persistence, Base::BaseClass)
 
 
 //**************************************************************************
 // Construction/Destruction
 
 
-
 //**************************************************************************
 // separator for other implementation aspects
 
-unsigned int Persistence::getMemSize () const
+unsigned int Persistence::getMemSize() const
 {
     // you have to implement this method in all descending classes!
     assert(0);
     return 0;
 }
 
-void Persistence::Save (Writer &/*writer*/) const
+void Persistence::Save(Writer& /*writer*/) const
 {
     // you have to implement this method in all descending classes!
     assert(0);
 }
 
-void Persistence::Restore(XMLReader &/*reader*/)
+void Persistence::Restore(XMLReader& /*reader*/)
 {
     // you have to implement this method in all descending classes!
     assert(0);
 }
 
-void Persistence::SaveDocFile (Writer &/*writer*/) const
-{
-}
+void Persistence::SaveDocFile(Writer& /*writer*/) const
+{}
 
-void Persistence::RestoreDocFile(Reader &/*reader*/)
-{
-}
+void Persistence::RestoreDocFile(Reader& /*reader*/)
+{}
 
 std::string Persistence::encodeAttribute(const std::string& str)
 {
     std::string tmp;
-    for (std::string::const_iterator it = str.begin(); it != str.end(); ++it) {
-        if (*it == '<')
+    for (char it : str) {
+        if (it == '<') {
             tmp += "&lt;";
-        else if (*it == '\"')
+        }
+        else if (it == '\"') {
             tmp += "&quot;";
-        else if (*it == '\'')
+        }
+        else if (it == '\'') {
             tmp += "&apos;";
-        else if (*it == '&')
+        }
+        else if (it == '&') {
             tmp += "&amp;";
-        else if (*it == '>')
+        }
+        else if (it == '>') {
             tmp += "&gt;";
-        else if (*it == '\r')
+        }
+        else if (it == '\r') {
             tmp += "&#13;";
-        else if (*it == '\n')
+        }
+        else if (it == '\n') {
             tmp += "&#10;";
-        else if (*it == '\t')
+        }
+        else if (it == '\t') {
             tmp += "&#9;";
-        else
-            tmp += *it;
+        }
+        else {
+            tmp += it;
+        }
     }
 
     return tmp;
@@ -104,16 +110,17 @@ std::string Persistence::encodeAttribute(const std::string& str)
 
 void Persistence::dumpToStream(std::ostream& stream, int compression)
 {
-    //we need to close the zipstream to get a good result, the only way to do this is to delete the ZipWriter.
-    //Hence the scope...
+    // we need to close the zipstream to get a good result, the only way to do this is to delete the
+    // ZipWriter. Hence the scope...
     {
-        //create the writer
+        // create the writer
         Base::ZipWriter writer(stream);
         writer.setLevel(compression);
         writer.putNextEntry("Persistence.xml");
         writer.setMode("BinaryBrep");
 
-        //save the content (we need to encapsulte it with xml tags to be able to read single element xmls like happen for properties)
+        // save the content (we need to encapsulate it with xml tags to be able to read single
+        // element xmls like happen for properties)
         writer.Stream() << "<Content>" << std::endl;
         Save(writer);
         writer.Stream() << "</Content>";
@@ -127,8 +134,9 @@ void Persistence::restoreFromStream(std::istream& stream)
     Base::ZipReader zreader(zipstream,std::string("<stream>"));
     Base::XMLReader reader(zreader);
 
-    if (!reader.isValid())
+    if (!reader.isValid()) {
         throw Base::ValueError("Unable to construct reader");
+    }
 
     reader.readElement("Content");
     Restore(reader);

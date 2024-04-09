@@ -95,70 +95,70 @@
       <translation>Übertragungsverzeichnis</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="240"/>
+      <location filename="../ui/openscadprefs-base.ui" line="243"/>
       <source>The path to the directory for transferring files to and from OpenSCAD</source>
       <translation>Der Pfad zum Verzeichnis für die Übertragung von Dateien zu und von OpenSCAD</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="258"/>
+      <location filename="../ui/openscadprefs-base.ui" line="261"/>
       <source>OpenSCAD export</source>
       <translation>OpenSCAD Export</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="266"/>
+      <location filename="../ui/openscadprefs-base.ui" line="269"/>
       <source>Maximum fragment size</source>
       <translation>Maximale Fragmentgröße</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="289"/>
+      <location filename="../ui/openscadprefs-base.ui" line="292"/>
       <source>angle (fa)</source>
-      <translation type="unfinished">angle (fa)</translation>
+      <translation>Winkel (font awesome? Bracket?)</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="385"/>
+      <location filename="../ui/openscadprefs-base.ui" line="388"/>
       <source>Convexity</source>
       <translation>Konvexität</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="286"/>
-      <location filename="../ui/openscadprefs-base.ui" line="296"/>
+      <location filename="../ui/openscadprefs-base.ui" line="289"/>
+      <location filename="../ui/openscadprefs-base.ui" line="299"/>
       <source>Minimum angle for a fragment</source>
       <translation>Minimaler Winkel für ein Fragment</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="328"/>
-      <location filename="../ui/openscadprefs-base.ui" line="353"/>
+      <location filename="../ui/openscadprefs-base.ui" line="331"/>
+      <location filename="../ui/openscadprefs-base.ui" line="356"/>
       <source>Minimum size of a fragment</source>
       <translation>Mindestgröße eines Fragments</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="331"/>
+      <location filename="../ui/openscadprefs-base.ui" line="334"/>
       <source>size (fs)</source>
       <translation>Größe (fs)</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="359"/>
+      <location filename="../ui/openscadprefs-base.ui" line="362"/>
       <source>mm</source>
       <translation>mm</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="422"/>
+      <location filename="../ui/openscadprefs-base.ui" line="425"/>
       <source>Mesh fallback</source>
       <translation>Netz-Element Notfalllösung</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="442"/>
-      <location filename="../ui/openscadprefs-base.ui" line="459"/>
+      <location filename="../ui/openscadprefs-base.ui" line="445"/>
+      <location filename="../ui/openscadprefs-base.ui" line="462"/>
       <source>Deflection</source>
       <translation>Durchbiegung</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="445"/>
+      <location filename="../ui/openscadprefs-base.ui" line="448"/>
       <source>deflection</source>
       <translation>Durchbiegung</translation>
     </message>
     <message>
-      <location filename="../ui/openscadprefs-base.ui" line="452"/>
+      <location filename="../ui/openscadprefs-base.ui" line="455"/>
       <source>Triangulation settings</source>
       <translation>Triangulationseinstellungen</translation>
     </message>
@@ -184,7 +184,7 @@
     <message>
       <location filename="../../OpenSCADCommands.py" line="92"/>
       <source>Unable to explode %s</source>
-      <translation type="unfinished">Unable to explode %s</translation>
+      <translation>%s kann nicht explodiert werden</translation>
     </message>
     <message>
       <location filename="../../OpenSCADCommands.py" line="139"/>
@@ -205,7 +205,7 @@
     <message>
       <location filename="../../OpenSCADCommands.py" line="369"/>
       <source>Clear</source>
-      <translation>Löschen</translation>
+      <translation>Leeren</translation>
     </message>
     <message>
       <location filename="../../OpenSCADCommands.py" line="366"/>
@@ -276,7 +276,7 @@
       <location filename="../../OpenSCADCommands.py" line="482"/>
       <location filename="../../OpenSCADCommands.py" line="486"/>
       <source>Mesh Boolean</source>
-      <translation type="unfinished">Mesh Boolean</translation>
+      <translation>Boolsche Operation am Netz-Element</translation>
     </message>
     <message>
       <location filename="../../OpenSCADCommands.py" line="487"/>
@@ -286,7 +286,7 @@
     <message>
       <location filename="../../OpenSCADUtils.py" line="654"/>
       <source>OpenSCAD file contains both 2D and 3D shapes. That is not supported in this importer, all shapes must have the same dimensionality.</source>
-      <translation>Die OpenSCAD-Datei enthält sowohl 2D- als auch 3D-Formen. Dies wird in diesem Importierer nicht unterstützt, alle Formen müssen die gleiche Dimension haben.</translation>
+      <translation>Die OpenSCAD-Datei enthält sowohl 2D- als auch 3D-Formen. Dies wird von diesem Importierer nicht unterstützt; alle Formen müssen dieselbe Dimensionalität besitzen.</translation>
     </message>
     <message>
       <location filename="../../OpenSCADUtils.py" line="665"/>
@@ -311,7 +311,7 @@
     <message>
       <location filename="../../OpenSCADCommands.py" line="100"/>
       <source>Explode Group</source>
-      <translation type="unfinished">Explode Group</translation>
+      <translation>Gruppe explodieren</translation>
     </message>
     <message>
       <location filename="../../OpenSCADCommands.py" line="103"/>

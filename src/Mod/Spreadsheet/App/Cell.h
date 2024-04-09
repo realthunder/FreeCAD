@@ -23,9 +23,10 @@
 #ifndef CELL_H
 #define CELL_H
 
-#include <string>
-#include <set>
 #include <QVariant>
+#include <set>
+#include <string>
+
 #include <App/Expression.h>
 #include <App/Material.h>
 #include <App/Range.h>
@@ -34,64 +35,70 @@
 #include "Utils.h"
 
 
-namespace Base {
+namespace Base
+{
 class Unit;
 class XMLReader;
 class Writer;
-}
+}  // namespace Base
 
-namespace Spreadsheet {
+namespace Spreadsheet
+{
 
 class PropertySheet;
 class DisplayUnit;
 
-class SpreadsheetExport Cell {
+class SpreadsheetExport Cell
+{
 private:
-    Cell(const Cell & other);
+    Cell(const Cell& other);
+
 public:
+    Cell(const App::CellAddress& _address, PropertySheet* _owner);
 
-    Cell(const App::CellAddress & _address, PropertySheet * _owner);
+    Cell(PropertySheet* _owner, const Cell& other);
 
-    Cell(PropertySheet * _owner, const Cell & other);
-
-    Cell& operator=( const Cell& rhs );
+    Cell& operator=(const Cell& rhs);
 
     ~Cell();
 
-    const App::Expression * getExpression(bool withFormat=false) const;
+    const App::Expression* getExpression(bool withFormat = false) const;
 
-    bool getStringContent(std::string & s, bool persistent=false) const;
+    bool getStringContent(std::string& s, bool persistent = false) const;
 
     void setContent(const char * value, bool eval=false);
 
     void setAlignment(int _alignment);
-    bool getAlignment(int & _alignment) const;
+    bool getAlignment(int& _alignment) const;
 
-    void setStyle(const std::set<std::string> & _style);
-    bool getStyle(std::set<std::string> & style) const;
+    void setStyle(const std::set<std::string>& _style);
+    bool getStyle(std::set<std::string>& style) const;
 
-    void setForeground(const App::Color &color);
-    bool getForeground(App::Color &color) const;
+    void setForeground(const App::Color& color);
+    bool getForeground(App::Color& color) const;
 
-    void setBackground(const App::Color &color);
-    bool getBackground(App::Color &color) const;
+    void setBackground(const App::Color& color);
+    bool getBackground(App::Color& color) const;
 
-    void setDisplayUnit(const std::string & unit);
-    bool getDisplayUnit(DisplayUnit &unit) const;
+    void setDisplayUnit(const std::string& unit);
+    bool getDisplayUnit(DisplayUnit& unit) const;
 
     void setAlias(const std::string & n, bool silent = false);
     bool getAlias(std::string & n ) const;
-    bool hasAlias() const {return isUsed(ALIAS_SET);}
+    bool hasAlias() const
+    {
+        return isUsed(ALIAS_SET);
+    }
 
     bool isAliasLocked(App::CellAddress *addr = nullptr) const;
 
-    void setComputedUnit(const Base::Unit & unit);
-    bool getComputedUnit(Base::Unit & unit) const;
+    void setComputedUnit(const Base::Unit& unit);
+    bool getComputedUnit(Base::Unit& unit) const;
 
     void setSpans(int rows, int columns);
-    bool getSpans(int & rows, int & columns) const;
+    bool getSpans(int& rows, int& columns) const;
 
-    void setException(const std::string & e, bool silent=false);
+    void setException(const std::string& e, bool silent = false);
 
     void clearException();
 
@@ -99,13 +106,20 @@ public:
 
     void setDirty();
 
-    void setResolveException(const std::string &e);
+    void setResolveException(const std::string& e);
 
     void clearResolveException();
 
-    const std::string &getException() const { return exceptionStr; }
+    const std::string& getException() const
+    {
+        return exceptionStr;
+    }
 
-    bool hasException() const { return isUsed(EXCEPTION_SET) || isUsed(PARSE_EXCEPTION_SET) || isUsed(RESOLVE_EXCEPTION_SET); }
+    bool hasException() const
+    {
+        return isUsed(EXCEPTION_SET) || isUsed(PARSE_EXCEPTION_SET)
+            || isUsed(RESOLVE_EXCEPTION_SET);
+    }
 
     void moveAbsolute(App::CellAddress newAddress);
 
@@ -125,15 +139,24 @@ public:
 
     bool isUsed() const;
 
-    void mark() { setUsed(MARK_SET); }
+    void mark()
+    {
+        setUsed(MARK_SET);
+    }
 
-    bool isMarked() const { return isUsed(MARK_SET); }
+    bool isMarked() const
+    {
+        return isUsed(MARK_SET);
+    }
 
-    void visit(App::ExpressionVisitor & v);
+    void visit(App::ExpressionVisitor& v);
 
     App::ExpressionPtr tryParseExpression(const char *) const;
 
-    App::CellAddress getAddress() const { return address; }
+    App::CellAddress getAddress() const
+    {
+        return address;
+    }
 
     /*[[[cog
     import SheetParams
@@ -188,27 +211,26 @@ public:
     static const int ALIGNMENT_VIMPLIED;
 
     /* Static functions */
-    static int decodeAlignment(const std::string &itemStr, int alignment);
+    static int decodeAlignment(const std::string& itemStr, int alignment);
     static std::string encodeAlignment(int alignment);
 
-    static std::string encodeStyle(const std::set<std::string> &style);
+    static std::string encodeStyle(const std::set<std::string>& style);
 
-    static std::string encodeColor(const App::Color &color);
-    static App::Color decodeColor(const std::string &color, const App::Color &defaultColor);
+    static std::string encodeColor(const App::Color& color);
+    static App::Color decodeColor(const std::string& color, const App::Color& defaultColor);
 
     void checkAutoAlias();
 
 private:
+    void setParseException(const std::string& e);
+
+    void setExpression(App::ExpressionPtr &&expr, int type=PasteAll);
 
     void _setAlias(const std::string & n);
 
     void applyAutoAlias();
 
     void saveStyle(std::ostream &os, bool endTag=true) const;
-
-    void setParseException(const std::string & e);
-
-    void setExpression(App::ExpressionPtr &&expr, int type=PasteAll);
 
     void setUsed(int mask, bool state = true);
 
@@ -234,7 +256,7 @@ private:
     static const int RESOLVE_EXCEPTION_SET;
 
     App::CellAddress address;
-    PropertySheet * owner;
+    PropertySheet* owner;
 
     int used;
     mutable App::ExpressionPtr expression;
@@ -257,6 +279,6 @@ private:
     friend class Sheet;
 };
 
-}
+}  // namespace Spreadsheet
 
-#endif // CELL_H
+#endif  // CELL_H

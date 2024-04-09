@@ -25,6 +25,10 @@
 
 #include <FCConfig.h>
 
+#ifdef _MSC_VER
+#pragma warning(disable : 4251)
+#endif
+
 #ifdef _PreComp_
 
 // standard
@@ -39,6 +43,7 @@
 #include <QDateTime>
 
 // Boost
+#include <boost/algorithm/string/regex.hpp>
 #include <boost/format.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
@@ -97,6 +102,6 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#endif// _PreComp_
+#endif  // _PreComp_
 
 #endif

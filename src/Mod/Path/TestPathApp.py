@@ -22,6 +22,8 @@
 
 import TestApp
 
+from PathTests.TestPathProfile import TestPathProfile
+
 from PathTests.TestPathAdaptive import TestPathAdaptive
 from PathTests.TestPathCore import TestPathCore
 from PathTests.TestPathDepthParams import depthTestCases
@@ -47,6 +49,7 @@ from PathTests.TestPathPost import TestBuildPostList
 from PathTests.TestPathPost import TestOutputNameSubstitution
 
 from PathTests.TestPathPreferences import TestPathPreferences
+from PathTests.TestPathProfile import TestPathProfile
 from PathTests.TestPathPropertyBag import TestPathPropertyBag
 from PathTests.TestPathRotationGenerator import TestPathRotationGenerator
 from PathTests.TestPathSetupSheet import TestPathSetupSheet
@@ -69,6 +72,8 @@ from PathTests.TestRefactoredGrblPost import TestRefactoredGrblPost
 from PathTests.TestRefactoredLinuxCNCPost import TestRefactoredLinuxCNCPost
 from PathTests.TestRefactoredMach3Mach4Post import TestRefactoredMach3Mach4Post
 from PathTests.TestRefactoredTestPost import TestRefactoredTestPost
+from PathTests.TestRefactoredTestPostGCodes import TestRefactoredTestPostGCodes
+from PathTests.TestRefactoredTestPostMCodes import TestRefactoredTestPostMCodes
 
 # dummy usage to get flake8 and lgtm quiet
 False if depthTestCases.__name__ else True
@@ -92,6 +97,7 @@ False if TestPathOpUtil.__name__ else True
 # False if TestPathPost.__name__ else True
 False if TestPathPostUtils.__name__ else True
 False if TestPathPreferences.__name__ else True
+False if TestPathProfile.__name__ else True
 False if TestPathPropertyBag.__name__ else True
 False if TestPathRotationGenerator.__name__ else True
 False if TestPathSetupSheet.__name__ else True
@@ -116,3 +122,5 @@ False if TestRefactoredGrblPost.__name__ else True
 False if TestRefactoredLinuxCNCPost.__name__ else True
 False if TestRefactoredMach3Mach4Post.__name__ else True
 False if TestRefactoredTestPost.__name__ else True
+False if TestRefactoredTestPostGCodes.__name__ else True
+False if TestRefactoredTestPostMCodes.__name__ else True

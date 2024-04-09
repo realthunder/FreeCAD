@@ -275,8 +275,6 @@ public:
      */
     virtual Property *copyBeforeChange(void) const {return nullptr;}
 
-    virtual void beforeSave() const {}
-
     void SetRestoreError(const char *) override;
 
     /** Return a unique ID for the property
@@ -288,6 +286,8 @@ public:
      * cause hard to debug problem if use pointer as key. 
      */
     int64_t getID() const {return _id;}
+
+    virtual void beforeSave() const {}
 
     friend class PropertyContainer;
     friend struct PropertyData;
@@ -317,17 +317,17 @@ protected:
     /// Return a file name suitable for saving this property
     std::string getFileName(const char *postfix=0, const char *prefix=0) const;
 
-private:
     // forbidden
-    Property(const Property&);
-    Property& operator = (const Property&);
+    Property(const Property&) = delete;
+    Property& operator = (const Property&) = delete;
 
+private:
     // Sync status with Property_Type
     void syncType(unsigned type);
 
 private:
-    PropertyContainer *father;
-    const char *myName;
+    PropertyContainer *father{nullptr};
+    const char *myName{nullptr};
     std::unique_ptr<Property> _old;
     int64_t _id;
 
@@ -365,7 +365,7 @@ public:
  */
 template<class P> class AtomicPropertyChangeInterface {
 protected:
-    AtomicPropertyChangeInterface() : signalCounter(0), hasChanged(false) { }
+    AtomicPropertyChangeInterface() = default;
 
 public:
 
@@ -441,8 +441,8 @@ public:
     };
 
 protected:
-    int signalCounter; /**< Counter for invoking transaction start/stop */
-    bool hasChanged;
+    int signalCounter{0}; /**< Counter for invoking transaction start/stop */
+    bool hasChanged{false};
 };
 
 

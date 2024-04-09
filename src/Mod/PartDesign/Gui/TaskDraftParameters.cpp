@@ -273,7 +273,7 @@ void TaskDraftParameters::onAngleChanged(double angle)
     recompute();
 }
 
-double TaskDraftParameters::getAngle(void) const
+double TaskDraftParameters::getAngle() const
 {
     return ui->draftAngle->value().getValue();
 }
@@ -289,7 +289,7 @@ void TaskDraftParameters::onReversedChanged(const bool on) {
     recompute();
 }
 
-bool TaskDraftParameters::getReversed(void) const
+bool TaskDraftParameters::getReversed() const
 {
     return ui->checkReverse->isChecked();
 }
@@ -365,10 +365,7 @@ TaskDlgDraftParameters::TaskDlgDraftParameters(ViewProviderDraft *DressUpView)
     Content.push_back(parameter);
 }
 
-TaskDlgDraftParameters::~TaskDlgDraftParameters()
-{
-
-}
+TaskDlgDraftParameters::~TaskDlgDraftParameters() = default;
 
 //==== calls from the TaskView ===============================================================
 

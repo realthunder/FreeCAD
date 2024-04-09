@@ -64,6 +64,7 @@
 
 
 using namespace TechDraw;
+using DU = DrawUtil;
 
 App::PropertyFloatConstraint::Constraints DrawGeomHatch::scaleRange = {
     Precision::Confusion(), std::numeric_limits<double>::max(), (0.1)}; // increment by 0.1
@@ -267,9 +268,9 @@ std::vector<LineSet>  DrawGeomHatch::getTrimmedLinesSection(DrawViewSection* sou
 
     //f may be above or below paper plane and must be moved so Common operation in
     //getTrimmedLines succeeds
-    TopoDS_Shape moved = TechDraw::moveShape(f,
+    TopoDS_Shape moved = ShapeUtils::moveShape(f,
                                               offset);
-    TopoDS_Face fMoved = TopoDS::Face(GeometryObject::invertGeometry(moved));
+    TopoDS_Face fMoved = TopoDS::Face(ShapeUtils::invertGeometry(moved));
     return getTrimmedLines(
         source,
         lineSets,
@@ -575,6 +576,13 @@ TopoDS_Face DrawGeomHatch::extractFace(DrawViewPart* source, int iface )
         return TopoDS_Face();
     }
     return TopoDS::Face(temp);
+}
+
+//! get a translated label string from the context (ex TaskActiveView), the base name (ex ActiveView) and
+//! the unique name within the document (ex ActiveView001), and use it to update the Label property.
+void DrawGeomHatch::translateLabel(std::string context, std::string baseName, std::string uniqueName)
+{
+    Label.setValue(DU::translateArbitrary(context, baseName, uniqueName));
 }
 
 //--------------------------------------------------------------------------------------------------

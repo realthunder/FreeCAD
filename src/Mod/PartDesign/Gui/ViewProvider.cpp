@@ -81,9 +81,7 @@ ViewProvider::ViewProvider()
     }
 }
 
-ViewProvider::~ViewProvider()
-{
-}
+ViewProvider::~ViewProvider() = default;
 
 bool ViewProvider::doubleClicked()
 {
@@ -126,7 +124,7 @@ void ViewProvider::addDefaultAction(QMenu* menu, const QString& text)
     QAction* act = menu->addAction(text);
     act->setData(QVariant((int)ViewProvider::Default));
     Gui::ActionFunction* func = new Gui::ActionFunction(menu);
-    func->trigger(act, boost::bind(&ViewProvider::startDefaultEditMode, this));
+    func->trigger(act, std::bind(&ViewProvider::startDefaultEditMode, this));
 }
 
 void ViewProvider::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
@@ -925,7 +923,7 @@ void ViewProvider::reattach(App::DocumentObject *obj)
 bool ViewProvider::getDetailPath(
         const char *subname, SoFullPath *path, bool append, SoDetail *&det) const
 {
-    if (!Data::ComplexGeoData::isElementName(subname)) {
+    if (!Data::isElementName(subname)) {
         auto body = PartDesign::Body::findBodyOf(getObject());
         auto dot = strchr(subname ? subname : "", '.');
         if (body && dot) {

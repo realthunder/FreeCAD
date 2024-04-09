@@ -61,6 +61,7 @@
 #include "ViewProviderEllipseParametric.h"
 #include "ViewProviderExt.h"
 #include "ViewProviderExtrusion.h"
+#include "ViewProviderScale.h"
 #include "ViewProviderHelixParametric.h"
 #include "ViewProviderPrimitive.h"
 #include "ViewProviderPython.h"
@@ -77,12 +78,14 @@
 #include "ViewProviderSpline.h"
 #include "ViewProviderTorusParametric.h"
 #include "Workbench.h"
+#include "WorkbenchManipulator.h"
 
 
 // use a different name to CreateCommand()
 void CreatePartCommands();
 void CreateSimplePartCommands();
 void CreateParamPartCommands();
+void CreatePartSelectCommands();
 
 void loadPartResource()
 {
@@ -100,8 +103,6 @@ public:
     {
         initialize("This module is the PartGui module."); // register with Python
     }
-
-    ~Module() override {}
 
 private:
 };
@@ -151,6 +152,7 @@ PyMOD_INIT_FUNC(PartGui)
     Py_INCREF(pAttachEngineTextsModule);
     PyModule_AddObject(partGuiModule, "AttachEngineResources", pAttachEngineTextsModule);
 
+    // clang-format off
     PartGui::PropertyEnumAttacherItem               ::init();
     PartGui::SoBrepFaceSet                          ::initClass();
     PartGui::SoBrepEdgeSet                          ::initClass();
@@ -174,6 +176,7 @@ PyMOD_INIT_FUNC(PartGui)
     PartGui::ViewProviderImport                     ::init();
     PartGui::ViewProviderCurveNet                   ::init();
     PartGui::ViewProviderExtrusion                  ::init();
+    PartGui::ViewProviderScale                      ::init();
     PartGui::ViewProvider2DObject                   ::init();
     PartGui::ViewProvider2DObjectPython             ::init();
     PartGui::ViewProvider2DObjectGrid               ::init();
@@ -215,11 +218,15 @@ PyMOD_INIT_FUNC(PartGui)
     PartGui::ArcEngine                              ::initClass();
 
     PartGui::Workbench                              ::init();
+    auto manip = std::make_shared<PartGui::WorkbenchManipulator>();
+    Gui::WorkbenchManipulator::installManipulator(manip);
+    // clang-format on
 
     // instantiating the commands
     CreatePartCommands();
     CreateSimplePartCommands();
     CreateParamPartCommands();
+    CreatePartSelectCommands();
     try{
         Py::Object ae = Base::Interpreter().runStringObject("__import__('AttachmentEditor.Commands').Commands");
         Py::Module(partGuiModule).setAttr(std::string("AttachmentEditor"),ae);
@@ -241,8 +248,6 @@ PyMOD_INIT_FUNC(PartGui)
 
     // add resources and reloads the translators
     loadPartResource();
-
-    Gui::Workbench::addPermanentMenuItem("Part_SectionCut", "Std_ToggleClipPlane");
 
     // register bitmaps
     // Gui::BitmapFactoryInst& rclBmpFactory = Gui::BitmapFactory();

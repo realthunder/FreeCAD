@@ -30,22 +30,25 @@
 // INCLUDE YOUR PREFERENCE PAGES HERE
 //
 #include "DlgPreferencesImp.h"
-#include "DlgSettings3DViewImp.h"
-#include "DlgSettingsUI.h"
-#include "DlgSettingsNavigation.h"
-#include "DlgSettingsSelection.h"
-#include "DlgSettingsViewColor.h"
-#include "DlgSettingsDrawStyles.h"
-#include "DlgGeneralImp.h"
-#include "DlgEditorImp.h"
-#include "DlgSettingsNotificationArea.h"
-#include "DlgSettingsPythonConsole.h"
-#include "DlgSettingsMacroImp.h"
-#include "DlgSettingsDocumentImp.h"
-#include "DlgSettingsObjects.h"
-#include "DlgReportViewImp.h"
-#include "DlgSettingsWorkbenchesImp.h"
-#include "DlgSettingsPreferencePack.h"
+#include "PreferencePages/DlgSettings3DViewImp.h"
+#include "PreferencePages/DlgSettingsCacheDirectory.h"
+#include "PreferencePages/DlgSettingsDocumentImp.h"
+#include "PreferencePages/DlgSettingsDrawStyles.h"
+#include "PreferencePages/DlgSettingsEditor.h"
+#include "PreferencePages/DlgSettingsGeneral.h"
+#include "PreferencePages/DlgSettingsLightSources.h"
+#include "PreferencePages/DlgSettingsMacroImp.h"
+#include "PreferencePages/DlgSettingsNavigation.h"
+#include "PreferencePages/DlgSettingsNotificationArea.h"
+#include "PreferencePages/DlgSettingsObjects.h"
+#include "PreferencePages/DlgSettingsPreferencePack.h"
+#include "PreferencePages/DlgSettingsPythonConsole.h"
+#include "PreferencePages/DlgSettingsReportView.h"
+#include "PreferencePages/DlgSettingsSelection.h"
+#include "PreferencePages/DlgSettingsTheme.h"
+#include "PreferencePages/DlgSettingsUI.h"
+#include "PreferencePages/DlgSettingsViewColor.h"
+#include "PreferencePages/DlgSettingsWorkbenchesImp.h"
 
 #include "DlgToolbarsImp.h"
 #include "DlgActionsImp.h"
@@ -53,7 +56,6 @@
 #include "DlgCustomizeSpaceball.h"
 #include "DlgCustomizeSpNavSettings.h"
 #include "DlgIconBrowser.h"
-#include "DlgSettingsCacheDirectory.h"
 #include "InputField.h"
 #include "QuantitySpinBox.h"
 #include "PrefWidgets.h"
@@ -61,6 +63,7 @@
 using namespace Gui;
 using namespace Gui::Dialog;
 
+// clang-format off
 /**
  * Registers all preference pages or widgets to create them dynamically at any later time.
  */
@@ -69,24 +72,28 @@ WidgetFactorySupplier::WidgetFactorySupplier()
     // ADD YOUR PREFERENCE PAGES HERE
     //
     //
-    new PrefPageProducer<DlgGeneralImp>            ( QT_TRANSLATE_NOOP("QObject","General") );
-    DlgGeneralImp::attachObserver();
-    new PrefPageProducer<DlgSettingsDocumentImp>   ( QT_TRANSLATE_NOOP("QObject","General") );
-    new PrefPageProducer<DlgSettingsObjects>       ( QT_TRANSLATE_NOOP("QObject","General") );
-    new PrefPageProducer<DlgSettingsSelection>     ( QT_TRANSLATE_NOOP("QObject","General") );
-    new PrefPageProducer<DlgSettingsCacheDirectory>( QT_TRANSLATE_NOOP("QObject","General") );
+    new PrefPageProducer<DlgSettingsGeneral>          ( QT_TRANSLATE_NOOP("QObject","General") );
+    DlgSettingsGeneral::attachObserver();
+    new PrefPageProducer<DlgSettingsDocumentImp>      ( QT_TRANSLATE_NOOP("QObject","General") );
+    new PrefPageProducer<DlgSettingsObjects>          ( QT_TRANSLATE_NOOP("QObject","General") );
+    new PrefPageProducer<DlgSettingsSelection>        ( QT_TRANSLATE_NOOP("QObject","General") );
+    new PrefPageProducer<DlgSettingsCacheDirectory>   ( QT_TRANSLATE_NOOP("QObject","General") );
     new PrefPageProducer<DlgSettingsNotificationArea> ( QT_TRANSLATE_NOOP("QObject","General") );
-    new PrefPageProducer<DlgReportViewImp>         ( QT_TRANSLATE_NOOP("QObject","General") );
-    new PrefPageProducer<DlgSettingsPreferencePack>( QT_TRANSLATE_NOOP("QObject","General") );
-    new PrefPageProducer<DlgSettings3DViewImp>     ( QT_TRANSLATE_NOOP("QObject","Display") );
+    new PrefPageProducer<DlgSettingsReportView>            ( QT_TRANSLATE_NOOP("QObject","General") );
+    new PrefPageProducer<DlgSettingsPreferencePack>   ( QT_TRANSLATE_NOOP("QObject","General") );
+    new PrefPageProducer<DlgSettings3DViewImp>        ( QT_TRANSLATE_NOOP("QObject","Display") );
     DlgSettings3DViewImp::attachObserver();
-    new PrefPageProducer<DlgSettingsUI>            ( QT_TRANSLATE_NOOP("QObject","Display") );
-    new PrefPageProducer<DlgSettingsNavigation>    ( QT_TRANSLATE_NOOP("QObject","Display") );
-    new PrefPageProducer<DlgSettingsViewColor>     ( QT_TRANSLATE_NOOP("QObject","Display") );
-    new PrefPageProducer<DlgSettingsDrawStyles>    ( QT_TRANSLATE_NOOP("QObject","Display") );
+    new PrefPageProducer<DlgSettingsLightSources>     ( QT_TRANSLATE_NOOP("QObject","Display") );
+    new PrefPageProducer<DlgSettingsUI>               ( QT_TRANSLATE_NOOP("QObject","Display") );
+    new PrefPageProducer<DlgSettingsNavigation>       ( QT_TRANSLATE_NOOP("QObject","Display") );
+    new PrefPageProducer<DlgSettingsViewColor>        ( QT_TRANSLATE_NOOP("QObject","Display") );
+    new PrefPageProducer<DlgSettingsTheme>            ( QT_TRANSLATE_NOOP("QObject","Display") );
+    DlgSettingsTheme::attachObserver();
+    new PrefPageProducer<DlgSettingsDrawStyles>       ( QT_TRANSLATE_NOOP("QObject","Display") );
+    new PrefPageProducer<DlgSettingsWorkbenchesImp>   ( QT_TRANSLATE_NOOP("QObject","Workbenches") );
     new PrefPageProducer<DlgSettingsMacroImp>         ( QT_TRANSLATE_NOOP("QObject", "Python"));
     new PrefPageProducer<DlgSettingsPythonConsole>    ( QT_TRANSLATE_NOOP("QObject", "Python"));
-    new PrefPageProducer<DlgSettingsEditorImp>        ( QT_TRANSLATE_NOOP("QObject", "Python"));
+    new PrefPageProducer<DlgSettingsEditor>           ( QT_TRANSLATE_NOOP("QObject", "Python"));
 
     // ADD YOUR CUSTOMIZE PAGES HERE
     //
@@ -127,3 +134,4 @@ WidgetFactorySupplier::WidgetFactorySupplier()
     new WidgetProducer<Gui::DoubleSpinBox>;
     new WidgetProducer<Gui::QuantitySpinBox>;
 }
+// clang-format on

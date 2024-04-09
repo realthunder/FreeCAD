@@ -25,20 +25,25 @@
 #ifndef APP_MAPPED_NAME_H
 #define APP_MAPPED_NAME_H
 
-
+#include <memory>
 #include <string>
 
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <QByteArray>
 #include <QHash>
+#include <QVector>
+#include <utility>
 
-#include "ComplexGeoData.h"
+#include "ElementNamingUtils.h"
 #include "IndexedName.h"
+#include "StringHasher.h"
 
 
 namespace Data
 {
+
+using ElementIDRefs = QVector<::App::StringIDRef>;
 
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
@@ -62,8 +67,8 @@ public:
         if (!name) {
             return;
         }
-        if (boost::starts_with(name, ComplexGeoData::elementMapPrefix())) {
-            name += ComplexGeoData::elementMapPrefix().size();
+        if (boost::starts_with(name, elementMapPrefix())) {
+            name += elementMapPrefix().size();
         }
 
         data = size < 0 ? QByteArray(name) : QByteArray(name, size);
@@ -78,9 +83,9 @@ public:
     {
         auto size = nameString.size();
         const char* name = nameString.c_str();
-        if (boost::starts_with(nameString, ComplexGeoData::elementMapPrefix())) {
-            name += ComplexGeoData::elementMapPrefix().size();
-            size -= ComplexGeoData::elementMapPrefix().size();
+        if (boost::starts_with(nameString, elementMapPrefix())) {
+            name += elementMapPrefix().size();
+            size -= elementMapPrefix().size();
         }
         data = QByteArray(name, static_cast<int>(size));
     }
@@ -89,13 +94,20 @@ public:
     /// is appended as text to the MappedName. In that case the memory is *not* shared between the
     /// original IndexedName and the MappedName.
     explicit MappedName(const IndexedName& element)
-        : data(QByteArray::fromRawData(element.getType(), qstrlen(element.getType()))),
-          raw(true)
+        : data(QByteArray::fromRawData(element.getType(),
+                                       static_cast<int>(qstrlen(element.getType()))))
+        , raw(true)
     {
         if (element.getIndex() > 0) {
             this->data += QByteArray::number(element.getIndex());
             this->raw = false;
         }
+    }
+
+    explicit MappedName(const App::StringIDRef& sid)
+        : raw(false)
+    {
+        sid.toBytes(this->data);
     }
 
     MappedName()
@@ -121,16 +133,16 @@ public:
     /// \param other The mapped name to copy. Its data and postfix become the new MappedName's data
     /// \param postfix The postfix for the new MappedName
     MappedName(const MappedName& other, const char* postfix)
-        : data(other.data + other.postfix),
-          postfix(postfix),
-          raw(false)
+        : data(other.data + other.postfix)
+        , postfix(postfix)
+        , raw(false)
     {}
 
     /// Move constructor
     MappedName(MappedName&& other) noexcept
-        : data(std::move(other.data)),
-          postfix(std::move(other.postfix)),
-          raw(other.raw)
+        : data(std::move(other.data))
+        , postfix(std::move(other.postfix))
+        , raw(other.raw)
     {}
 
     ~MappedName() = default;
@@ -622,7 +634,7 @@ public:
     const char* appendToBufferWithPrefix(std::string& buf) const
     {
         if (!toIndexedName()) {
-            buf += ComplexGeoData::elementMapPrefix();
+            buf += elementMapPrefix();
         }
         appendToBuffer(buf);
         return buf.c_str();
@@ -714,7 +726,7 @@ public:
     }
 
     /// Ensure that this data is unshared, making a copy if necessary.
-    void compact();
+    void compact() const;
 
     /// Boolean conversion is the inverse of empty(), returning true if there is data in either the
     /// data or postfix, and false if there is nothing in either.
@@ -786,8 +798,7 @@ public:
         if (!searchTarget) {
             return -1;
         }
-        if (startPosition < 0
-            || startPosition >= this->data.size()) {
+        if (startPosition < 0 || startPosition >= this->data.size()) {
             if (startPosition >= data.size()) {
                 startPosition -= data.size();
             }
@@ -887,16 +898,61 @@ public:
             offset);
     }
 
+    /// Extract tagOut and other information from a encoded element name
+    ///
+    /// \param tagOut: optional pointer to receive the extracted tagOut
+    /// \param lenOut: optional pointer to receive the length field after the tagOut field.
+    ///             This gives the length of the previous hashed element name starting
+    ///             from the beginning of the give element name.
+    /// \param postfixOut: optional pointer to receive the postfixOut starting at the found tagOut field.
+    /// \param typeOut: optional pointer to receive the element typeOut character
+    /// \param negative: return negative tagOut as it is. If disabled, then always return positive tagOut.
+    ///                  Negative tagOut is sometimes used for element disambiguation.
+    /// \param recursive: recursively find the last non-zero tagOut
+    ///
+    /// \return Return the end position of the tagOut field, or return -1 if not found.
+    int findTagInElementName(long* tagOut = nullptr, int* lenOut = nullptr, std::string* postfixOut = nullptr,
+                             char* typeOut = nullptr, bool negative = false,
+                             bool recursive = true) const;
+
     /// Get a hash for this MappedName
     std::size_t hash() const
     {
         return qHash(data, qHash(postfix));
     }
 
+    /** Convenience method to hash the main element name
+     *
+     * @param name: main element name
+     * @param sid: store any output string ID references
+     * @return the hashed element name;
+     */
+    MappedName hashElementName(App::StringHasherRef hasher, ElementIDRefs &sid) const;
+
+    /// Reverse hashElementName()
+    MappedName dehashElementName(const App::StringHasherRef &hasher) const;
+
 private:
     QByteArray data;
     QByteArray postfix;
     bool raw;
+};
+
+struct AppExport ElementNameComp
+{
+    /** Comparison function to make topo name more stable
+     *
+     * The sorting decompose the name into either of the following two forms
+     *      '#' + hex_digits + tail
+     *      non_digits + digits + tail
+     *
+     * The non-digits part is compared lexically, while the digits part is
+     * compared by its integer value.
+     *
+     * The reason for this is to prevent name with bigger digits (usually means
+     * comes late in history) comes early when sorting.
+     */
+    bool operator()(const MappedName &a, const MappedName &b) const;
 };
 
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)

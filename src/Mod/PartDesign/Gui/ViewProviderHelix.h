@@ -42,7 +42,7 @@ public:
     void setupContextMenu(QMenu*, QObject*, const char*) override;
 
     /// grouping handling
-    std::vector<App::DocumentObject*> _claimChildren(void)const override;
+    std::vector<App::DocumentObject*> _claimChildren()const override;
 
     bool onDelete(const std::vector<std::string> &) override;
 

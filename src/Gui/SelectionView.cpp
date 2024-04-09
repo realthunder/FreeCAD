@@ -160,9 +160,7 @@ SelectionView::SelectionView(Gui::Document* pcDocument, QWidget *parent)
         });
 }
 
-SelectionView::~SelectionView()
-{
-}
+SelectionView::~SelectionView() = default;
 
 void SelectionView::leaveEvent(QEvent *)
 {
@@ -415,8 +413,12 @@ void SelectionView::toPython()
     if(!sobj)
         return;
     try {
-        doCommandT(Command::Gui, "_obj, _matrix, _shp = %s.getSubObject('%s', retType=2)",
-                Command::getObjectCmd(objT.getObject()), objT.getSubName());
+        std::string obj = Command::getObjectCmd(objT.getObject());
+        std::string subname = objT.getSubNameNoElement();
+        doCommandT(Command::Gui, "_obj, _matrix, _shp = %s.getSubObject('%s', retType=2)", obj, subname);
+        if (subname != objT.getSubName()) {
+            doCommandT(Command::Gui, "_element = %s.getSubObject('%s')", obj, objT.getSubName());
+        }
     }
     catch (const Base::Exception& e) {
         e.ReportException();
@@ -447,7 +449,7 @@ static std::string getModule(const char* type)
     return prefix;
 }
 
-void SelectionView::showPart(void)
+void SelectionView::showPart()
 {
     auto *item = selectionView->currentItem();
     if (!item)

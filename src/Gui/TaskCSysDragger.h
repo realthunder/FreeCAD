@@ -20,6 +20,7 @@
  *                                                                         *
  ***************************************************************************/
 
+
 #ifndef TASKCSYSDRAGGER_H
 #define TASKCSYSDRAGGER_H
 
@@ -27,6 +28,7 @@
 #include <App/DocumentObserver.h>
 
 class QTimer;
+class SoDragger;
 
 namespace Gui
 {
@@ -42,16 +44,18 @@ namespace Gui
       TaskCSysDragger(ViewProviderDocumentObject *vpObjectIn, SoFCCSysDragger *draggerIn);
       ~TaskCSysDragger() override;
       QDialogButtonBox::StandardButtons getStandardButtons() const override
-        { return QDialogButtonBox::Ok;}
+        { return QDialogButtonBox::Ok | QDialogButtonBox::Cancel;}
       void open() override;
       bool accept() override;
       void onEndMove();
       void recompute(bool finish);
+      bool reject() override;
     private Q_SLOTS:
       void onTIncrementSlot(double freshValue);
       void onRIncrementSlot(double freshValue);
       void onToggleShowOnTop(bool);
     private:
+      static void dragStartCallback(void * data, SoDragger * d);
       void setupGui();
       App::DocumentObjectT vpObject;
       SoFCCSysDragger *dragger;
@@ -62,6 +66,7 @@ namespace Gui
       PrefCheckBox *checkBoxShowOnTop = nullptr;
       PrefCheckBox *checkBoxRecompute = nullptr;
       QTimer *timer = nullptr;
+      int transactionId = 0;
   };
 }
 

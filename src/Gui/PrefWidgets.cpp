@@ -633,9 +633,7 @@ PrefSpinBox::PrefSpinBox ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefSpinBox::~PrefSpinBox()
-{
-}
+PrefSpinBox::~PrefSpinBox() = default;
 
 void PrefSpinBox::setAutoSave(bool enable)
 {
@@ -703,9 +701,7 @@ PrefDoubleSpinBox::PrefDoubleSpinBox ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefDoubleSpinBox::~PrefDoubleSpinBox()
-{
-}
+PrefDoubleSpinBox::~PrefDoubleSpinBox() = default;
 
 void PrefDoubleSpinBox::setAutoSave(bool enable)
 {
@@ -774,9 +770,7 @@ PrefLineEdit::PrefLineEdit ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefLineEdit::~PrefLineEdit()
-{
-}
+PrefLineEdit::~PrefLineEdit() = default;
 
 void PrefLineEdit::setAutoSave(bool enable)
 {
@@ -859,9 +853,7 @@ PrefTextEdit::PrefTextEdit(QWidget* parent)
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefTextEdit::~PrefTextEdit()
-{
-}
+PrefTextEdit::~PrefTextEdit() = default;
 
 void PrefTextEdit::setAutoSave(bool enable)
 {
@@ -909,9 +901,7 @@ PrefFileChooser::PrefFileChooser ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefFileChooser::~PrefFileChooser()
-{
-}
+PrefFileChooser::~PrefFileChooser() = default;
 
 void PrefFileChooser::setAutoSave(bool enable)
 {
@@ -951,9 +941,7 @@ PrefComboBox::PrefComboBox ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefComboBox::~PrefComboBox()
-{
-}
+PrefComboBox::~PrefComboBox() = default;
 
 void PrefComboBox::setAutoSave(bool enable)
 {
@@ -1134,9 +1122,7 @@ PrefCheckBox::PrefCheckBox ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefCheckBox::~PrefCheckBox()
-{
-}
+PrefCheckBox::~PrefCheckBox() = default;
 
 void PrefCheckBox::setAutoSave(bool enable)
 {
@@ -1177,9 +1163,7 @@ PrefRadioButton::PrefRadioButton ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefRadioButton::~PrefRadioButton()
-{
-}
+PrefRadioButton::~PrefRadioButton() = default;
 
 void PrefRadioButton::setAutoSave(bool enable)
 {
@@ -1220,9 +1204,7 @@ PrefSlider::PrefSlider ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefSlider::~PrefSlider()
-{
-}
+PrefSlider::~PrefSlider() = default;
 
 void PrefSlider::setAutoSave(bool enable)
 {
@@ -1263,9 +1245,7 @@ PrefColorButton::PrefColorButton ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefColorButton::~PrefColorButton()
-{
-}
+PrefColorButton::~PrefColorButton() = default;
 
 void PrefColorButton::setAutoSave(bool enable)
 {
@@ -1317,9 +1297,7 @@ PrefUnitSpinBox::PrefUnitSpinBox ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefUnitSpinBox::~PrefUnitSpinBox()
-{
-}
+PrefUnitSpinBox::~PrefUnitSpinBox() = default;
 
 void PrefUnitSpinBox::setAutoSave(bool enable)
 {
@@ -1385,9 +1363,7 @@ PrefQuantitySpinBox::PrefQuantitySpinBox (QWidget * parent)
 {
 }
 
-PrefQuantitySpinBox::~PrefQuantitySpinBox()
-{
-}
+PrefQuantitySpinBox::~PrefQuantitySpinBox() = default;
 
 void PrefQuantitySpinBox::contextMenuEvent(QContextMenuEvent *event)
 {
@@ -1412,19 +1388,19 @@ void PrefQuantitySpinBox::contextMenuEvent(QContextMenuEvent *event)
     menu->setToolTipsVisible(true);
 #endif
 
-    for (QStringList::const_iterator it = history.begin();it!= history.end();++it) {
+    for (const auto & it : history) {
         QAction *action;
-        if (it->size() > 50) {
-            action = menu->addAction(QStringLiteral("%1...%2").arg(it->left(22), it->right(22)));
-            if (it->size() < 1024)
-                action->setToolTip(*it);
+        if (it.size() > 50) {
+            action = menu->addAction(QStringLiteral("%1...%2").arg(it.left(22), it.right(22)));
+            if (it.size() < 1024)
+                action->setToolTip(it);
             else
                 action->setToolTip(QStringLiteral("%1\n\n...\n\n%2").arg(
-                            it->left(500), it->right(500)));
+                            it.left(500), it.right(500)));
         } else
-            action = menu->addAction(*it);
+            action = menu->addAction(it);
         actions.push_back(action);
-        values.push_back(*it);
+        values.push_back(it);
     }
 
     // add the save value portion of the menu
@@ -1447,8 +1423,8 @@ void PrefQuantitySpinBox::contextMenuEvent(QContextMenuEvent *event)
     }
     else {
         int i=0;
-        for (std::vector<QAction *>::const_iterator it = actions.begin();it!=actions.end();++it,i++) {
-            if (*it == userAction) {
+        for (const auto &it : actions) {
+            if (it == userAction) {
                 if (values[i].startsWith(QLatin1Char('='))) {
                     QString msg;
                     try {
@@ -1573,9 +1549,7 @@ PrefFontBox::PrefFontBox ( QWidget * parent )
     setAutoSave(PrefParam::AutoSave());
 }
 
-PrefFontBox::~PrefFontBox()
-{
-}
+PrefFontBox::~PrefFontBox() = default;
 
 void PrefFontBox::setAutoSave(bool enable)
 {
@@ -1612,7 +1586,7 @@ void PrefFontBox::savePreferences()
 
   QFont currFont = currentFont();
   QString currName = currFont.family();
-  getWindowParameter()->SetASCII( entryName() , currName.toUtf8() );
+  getWindowParameter()->SetASCII(entryName(), currName.toUtf8());
 }
 
 #include "moc_PrefWidgets.cpp"

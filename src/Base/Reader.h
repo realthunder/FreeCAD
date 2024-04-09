@@ -39,13 +39,14 @@
 #include "Writer.h"
 #include "Stream.h"
 
-namespace zipios {
+namespace zipios
+{
 class ZipInputStream;
 }
 
 XERCES_CPP_NAMESPACE_BEGIN
-    class DefaultHandler;
-    class SAX2XMLReader;
+class DefaultHandler;
+class SAX2XMLReader;
 XERCES_CPP_NAMESPACE_END
 
 namespace Base
@@ -90,9 +91,9 @@ void PropertyContainer::Save (short indent,std::ostream &str)
     std::map<std::string,Property*>::iterator it;
     for(it = Map.begin(); it != Map.end(); ++it)
     {
-        str << ind(indent+1) << "<Property name=\"" << it->first << "\" type=\"" << it->second->getTypeId().getName() << "\">" ;
-        it->second->Save(indent+2,str);
-        str << "</Property>" << endl;
+        str << ind(indent+1) << "<Property name=\"" << it->first << "\" type=\"" <<
+it->second->getTypeId().getName() << "\">" ; it->second->Save(indent+2,str); str << "</Property>" <<
+endl;
     }
     str << ind(indent) << "</Properties>" << endl;
 }
@@ -118,15 +119,17 @@ void PropertyContainer::Restore(Base::Reader &reader)
  * \see Base::Persistence
  * \author Juergen Riegel
  */
-class BaseExport XMLReader : public XERCES_CPP_NAMESPACE_QUALIFIER DefaultHandler
+class BaseExport XMLReader: public XERCES_CPP_NAMESPACE_QUALIFIER DefaultHandler
 {
 public:
-
-    enum ReaderStatus {
-        PartialRestore = 0,                     // This bit indicates that a partial restore took place somewhere in this Document
-        PartialRestoreInDocumentObject = 1,     // This bit is local to the DocumentObject being read indicating a partial restore therein
-        PartialRestoreInProperty = 2,           // Local to the Property
-        PartialRestoreInObject = 3              // Local to the object partially restored itself
+    enum ReaderStatus
+    {
+        PartialRestore =
+            0,  // This bit indicates that a partial restore took place somewhere in this Document
+        PartialRestoreInDocumentObject = 1,  // This bit is local to the DocumentObject being read
+                                             // indicating a partial restore therein
+        PartialRestoreInProperty = 2,        // Local to the Property
+        PartialRestoreInObject = 3           // Local to the object partially restored itself
     };
     /// open the file and read the first element
     XMLReader(Base::Reader &reader, std::size_t bufsize=16*1024);
@@ -140,9 +143,18 @@ public:
     std::streamsize read(char_type* s, std::streamsize n);
     //@}
 
-    bool isValid() const { return _valid; }
-    bool isVerbose() const { return _verbose; }
-    void setVerbose(bool on) { _verbose = on; }
+    bool isValid() const
+    {
+        return _valid;
+    }
+    bool isVerbose() const
+    {
+        return _verbose;
+    }
+    void setVerbose(bool on)
+    {
+        _verbose = on;
+    }
 
     /** @name Parser handling */
     //@{
@@ -172,6 +184,19 @@ public:
      * additional guard when calling readElement() at deeper level.
      */
     void readElement   (const char* ElementName=nullptr, int *guard=nullptr);
+
+    /// return true if the end of an element is reached, false otherwise
+    bool isEndOfElement() const;
+
+    /// return true if the on the start of the document, false otherwise
+    bool isStartOfDocument() const;
+
+    /// return true if the end of the document is reached, false otherwise
+    bool isEndOfDocument() const;
+
+    /// Read in the next element. Return true if it succeeded and false otherwise
+    bool readNextElement();
+
     /** read until an end element is found
      *
      * @param ElementName: optional end element name to look for. If given, then
@@ -188,7 +213,18 @@ public:
      *  This function assumes you are in the middle of an element, or else
      *  exception will be thrown.
      */
-    void readCharacters(const char *filename, bool base64);
+    void readCharacters(const char* filename, CharStreamFormat format = CharStreamFormat::Raw);
+    /** Read element base-64 encoded character content and save to a file
+     *
+     *  @param filename: file name to save into
+     *
+     *  This function assumes you are in the middle of an element, or else
+     *  exception will be thrown.
+     */
+    void readBase64(const char* filename)
+    {
+        readCharacters(filename, CharStreamFormat::Base64Encoded);
+    }
     /** Read element character content as text string
      *
      *  This function reads the entire character content of the current element
@@ -201,17 +237,27 @@ public:
     std::string readCharacters();
     /** Obtain an input stream for reading characters
      *
-     *  @param base64: whether to decode data using base64
+     *  @param format: character stream format
      *
      *  @return Return a input stream for reading characters. The stream will be
      *  auto destroyed when you call with readElement() or readEndElement(), or
      *  you can end it explicitly with endCharStream().
      */
-    std::istream &beginCharStream(bool base64=false);
+    std::istream& beginCharStream(CharStreamFormat format = CharStreamFormat::Raw);
+
+    /** Create an input stream for reading base 64 encoded binary data
+     *
+     * @return Returns an input stream.
+     */
+    std::istream& beginBase64Stream()
+    {
+        return beginCharStream(CharStreamFormat::Base64Encoded);
+    }
+
     /// Manually end the current character stream
     void endCharStream();
     /// Obtain the current character stream
-    std::istream &charStream();
+    std::istream& charStream();
     //@}
 
     /** @name Attribute handling */
@@ -220,7 +266,7 @@ public:
     unsigned int getAttributeCount() const;
     /// check if the read element has a special attribute
     bool hasAttribute(const char* AttrName) const;
-    /// return the named attribute as an interer (does type checking)
+    /// return the named attribute as an integer (does type checking)
     long getAttributeAsInteger(const char* AttrName, const char *def=nullptr) const;
     unsigned long getAttributeAsUnsigned(const char* AttrName, const char *def=nullptr) const;
     /// return the named attribute as a double floating point (does type checking)
@@ -248,18 +294,18 @@ public:
 
     /// get all registered file names
     const std::vector<std::string>& getFilenames() const;
-    bool isRegistered(Base::Persistence *Object) const;
+    bool isRegistered(Base::Persistence* Object) const;
     virtual void addName(const char*, const char*);
     virtual const char* getName(const char*) const;
     virtual bool doNameMapping() const;
     //@}
 
     /// Schema Version of the document
-    int DocumentSchema;
+    int DocumentSchema {0};
     /// Version of FreeCAD that wrote this document
     std::string ProgramVersion;
     /// Version of the file format
-    int FileVersion;
+    int FileVersion {0};
 
     /// sets simultaneously the global and local PartialRestore bits
     void setPartialRestore(bool on);
@@ -274,7 +320,7 @@ public:
     void setStatus(ReaderStatus pos, bool on);
 
     /// read the next element
-    void read(void);
+    void read();
 
 protected:
 
@@ -287,16 +333,21 @@ protected:
     //@{
     void startDocument() override;
     void endDocument() override;
-    void startElement(const XMLCh* const uri, const XMLCh* const localname, const XMLCh* const qname, const XERCES_CPP_NAMESPACE_QUALIFIER Attributes& attrs) override;
-    void endElement  (const XMLCh* const uri, const XMLCh *const localname, const XMLCh *const qname) override;
-    void characters         (const XMLCh* const chars, const XMLSize_t length) override;
+    void startElement(const XMLCh* const uri,
+                      const XMLCh* const localname,
+                      const XMLCh* const qname,
+                      const XERCES_CPP_NAMESPACE_QUALIFIER Attributes& attrs) override;
+    void endElement(const XMLCh* const uri,
+                    const XMLCh* const localname,
+                    const XMLCh* const qname) override;
+    void characters(const XMLCh* const chars, const XMLSize_t length) override;
     void ignorableWhitespace(const XMLCh* const chars, const XMLSize_t length) override;
     //@}
 
     /** @name Lexical handler */
     //@{
-    void startCDATA  () override;
-    void endCDATA    () override;
+    void startCDATA() override;
+    void endCDATA() override;
     //@}
 
     /** @name Document handler */
@@ -316,15 +367,16 @@ protected:
     void resetErrors() override;
     //@}
 
-    int Level;
+    int Level {0};
     std::string LocalName;
     std::string Characters;
-    std::streamsize CharacterOffset;
+    std::streamsize CharacterOffset {-1};
 
-    std::map<std::string,std::string> AttrMap;
-    using AttrMapType = std::map<std::string,std::string>;
+    std::map<std::string, std::string> AttrMap;
+    using AttrMapType = std::map<std::string, std::string>;
 
-    enum {
+    enum
+    {
         None = 0,
         Chars,
         StartDocument,
@@ -334,14 +386,14 @@ protected:
         EndElement,
         StartCDATA,
         EndCDATA
-    }   ReadType;
+    } ReadType {None};
 
 
     FileInfo _File;
     XERCES_CPP_NAMESPACE_QUALIFIER SAX2XMLReader* parser;
     XERCES_CPP_NAMESPACE_QUALIFIER XMLPScanToken token;
-    bool _valid;
-    bool _verbose;
+    bool _valid {false};
+    bool _verbose {true};
 
     std::vector<FileEntry> FileList;
     std::vector<std::string> FileNames;
@@ -352,11 +404,11 @@ protected:
 
     std::unique_ptr<std::istream> CharStream;
 
-    Base::Reader *_reader;
-    bool _ownReader;
+    Base::Reader *_reader {nullptr};
+    bool _ownReader {false};
 };
 
-class BaseExport Reader : public std::istream
+class BaseExport Reader: public std::istream
 {
 public:
     Reader(std::istream&, const std::string&, XMLReader *parent=nullptr);
@@ -419,7 +471,7 @@ private:
     std::size_t size;
 };
 
-}
+}  // namespace Base
 
 
 #endif

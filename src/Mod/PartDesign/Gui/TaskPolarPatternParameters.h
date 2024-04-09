@@ -57,8 +57,10 @@ public:
 
 private Q_SLOTS:
     void onAxisChanged(int num);
+    void onModeChanged(const int mode);
     void onCheckReverse(const bool on);
     void onAngle(const double a);
+    void onOffset(const double a);
     void onOccurrences(const uint n);
     void onUpdateView(bool) override;
 
@@ -76,6 +78,7 @@ private:
     void connectSignals();
     void setupUI();
     void updateUI() override;
+    void adaptVisibilityToMode();
 
 private:
     std::unique_ptr<Ui_TaskPolarPatternParameters> ui;
@@ -91,7 +94,7 @@ class TaskDlgPolarPatternParameters : public TaskDlgTransformedParameters
 
 public:
     explicit TaskDlgPolarPatternParameters(ViewProviderPolarPattern *PolarPatternView);
-    ~TaskDlgPolarPatternParameters() override {}
+    ~TaskDlgPolarPatternParameters() override = default;
 };
 
 } //namespace PartDesignGui

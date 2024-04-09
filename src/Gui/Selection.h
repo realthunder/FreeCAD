@@ -297,7 +297,7 @@ private:
 class GuiExport SelectionGate
 {
 public:
-    virtual ~SelectionGate(){}
+    virtual ~SelectionGate() = default;
     virtual bool allow(App::Document*,App::DocumentObject*, const char*)=0;
     virtual void setOverrideCursor();
     virtual void restoreCursor();
@@ -673,10 +673,16 @@ public:
      */
     //@{
     /// Return the current selection stack size
-    int selStackBackSize() const {return _SelStackBack.size();}
+    std::size_t selStackBackSize() const
+    {
+        return _SelStackBack.size();
+    }
 
     /// Return the current forward selection stack size
-    int selStackForwardSize() const {return _SelStackForward.size();}
+    std::size_t selStackForwardSize() const
+    {
+        return _SelStackForward.size();
+    }
 
     /** Obtain selected objects from stack
      *
@@ -762,6 +768,22 @@ public:
     /// return trun if there are parent of the given object
     static bool checkTopParent(App::SubObjectT &sobjT);
 
+    /** @name Selection style functions
+     *
+     * The selection style changes the way selection works. In Greedy selection
+     * it is as if you were pressing Ctrl.
+     */
+    //@{
+    enum class SelectionStyle {
+        NormalSelection,
+        GreedySelection
+    };
+    /// Changes the style of selection between greedy and normal.
+    void setSelectionStyle(SelectionStyle selStyle);
+    /// Get the style of selection.
+    SelectionStyle getSelectionStyle();
+    //@}
+
     static SelectionSingleton& instance();
     static void destruct ();
     friend class SelectionFilter;
@@ -784,6 +806,7 @@ protected:
     static PyObject *sGetCompleteSelection(PyObject *self,PyObject *args);
     static PyObject *sGetSelectionEx      (PyObject *self,PyObject *args);
     static PyObject *sGetSelectionObject  (PyObject *self,PyObject *args);
+    static PyObject *sSetSelectionStyle   (PyObject *self,PyObject *args);
     static PyObject *sAddSelObserver      (PyObject *self,PyObject *args);
     static PyObject *sRemSelObserver      (PyObject *self,PyObject *args);
     static PyObject *sAddSelectionGate    (PyObject *self,PyObject *args);
@@ -873,7 +896,7 @@ protected:
     mutable SelContainer _SelList;
 
     mutable std::vector<_SelObj> _PickedList;
-    bool _needPickedList = false;
+    bool _needPickedList{false};
 
     using SelStackItem = std::vector<App::SubObjectT>;
     std::deque<SelStackItem> _SelStackBack;
@@ -914,6 +937,8 @@ protected:
     int fmtDecimal = -1;
 
     std::vector<App::SubObjectT> ContextObjectStack;
+
+    SelectionStyle selectionStyle;
 };
 
 /**

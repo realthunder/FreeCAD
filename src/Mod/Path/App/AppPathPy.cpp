@@ -40,6 +40,7 @@
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Interpreter.h>
+#include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Base/Stream.h>
 #include <Base/VectorPy.h>
 #include <Mod/Part/App/OCCError.h>
@@ -193,7 +194,7 @@ namespace PathApp {
       Py::Object show(const Py::Tuple& args)
       {
           PyObject *pcObj;
-          char *name = "Path";
+          const char *name = "Path";
           if (!PyArg_ParseTuple(args.ptr(), "O!|s", &(Path::PathPy::Type), &pcObj, &name))
               throw Py::Exception();
 
@@ -304,13 +305,14 @@ namespace PathApp {
           PyObject *pShapes=nullptr;
           PyObject *start=nullptr;
           PyObject *return_end=Py_False;
-          static char* kwd_list[] = {"shapes", "start", "return_end",
+          static const std::array<const char *, 22> kwd_list {"shapes", "start", "return_end",
                   PARAM_FIELD_STRINGS(ARG,AREA_PARAMS_PATH), nullptr};
-          if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(),
+          if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(),
                   "O|O!O!" PARAM_PY_KWDS(AREA_PARAMS_PATH),
                   kwd_list, &pShapes, &(Base::VectorPy::Type), &start, &PyBool_Type, &return_end,
-                  PARAM_REF(PARAM_FARG,AREA_PARAMS_PATH)))
+                  PARAM_REF(PARAM_FARG,AREA_PARAMS_PATH))) {
               throw Py::Exception();
+          }
 
           std::list<TopoDS_Shape> shapes;
           if (PyObject_TypeCheck(pShapes, &(Part::TopoShapePy::Type)))
@@ -355,10 +357,10 @@ namespace PathApp {
           PARAM_PY_DECLARE_INIT(PARAM_FARG,AREA_PARAMS_SORT)
           PyObject *pShapes=nullptr;
           PyObject *start=nullptr;
-          static char* kwd_list[] = {"shapes", "start",
+          static const std::array<const char *, 12> kwd_list {"shapes", "start",
                   PARAM_FIELD_STRINGS(ARG,AREA_PARAMS_ARC_PLANE),
                   PARAM_FIELD_STRINGS(ARG,AREA_PARAMS_SORT), nullptr};
-          if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(),
+          if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(),
                   "O|O!"
                   PARAM_PY_KWDS(AREA_PARAMS_ARC_PLANE)
                   PARAM_PY_KWDS(AREA_PARAMS_SORT),

@@ -1,9 +1,3 @@
-if(MSVC)
-    add_definitions(-DHAVE_ACOSH -DHAVE_ATANH -DHAVE_ASINH)
-else(MSVC)
-    add_definitions(-DHAVE_LIMITS_H -DHAVE_CONFIG_H)
-endif(MSVC)
-
 include_directories(
     ${CMAKE_BINARY_DIR}
     ${CMAKE_SOURCE_DIR}/src
@@ -51,6 +45,7 @@ set(PartGui_UIC_SRCS
     DlgExportStep.ui
     DlgExportHeaderStep.ui
     DlgExtrusion.ui
+    DlgScale.ui
     DlgImportStep.ui
     DlgFilletEdges.ui
     DlgImportExportIges.ui
@@ -85,6 +80,7 @@ SET(PartGui_SRCS
     BoxSelection.cpp
     BoxSelection.h
     Command.cpp
+    CommandFilter.cpp
     CommandSimple.cpp
     CommandParametric.cpp
     CrossSections.cpp
@@ -103,6 +99,9 @@ SET(PartGui_SRCS
     DlgExtrusion.cpp
     DlgExtrusion.h
     DlgExtrusion.ui
+    DlgScale.cpp
+    DlgScale.h
+    DlgScale.ui
     DlgFilletEdges.cpp
     DlgFilletEdges.h
     DlgFilletEdges.ui
@@ -210,6 +209,8 @@ SET(PartGui_SRCS
     ViewProviderImport.h
     ViewProviderExtrusion.cpp
     ViewProviderExtrusion.h
+    ViewProviderScale.cpp
+    ViewProviderScale.h
     ViewProvider2DObject.cpp
     ViewProvider2DObject.h
     ViewProviderMirror.cpp
@@ -226,6 +227,8 @@ SET(PartGui_SRCS
     ViewProviderSubShapeBinder.h
     Workbench.cpp
     Workbench.h
+    WorkbenchManipulator.cpp
+    WorkbenchManipulator.h
     ReferenceHighlighter.cpp
     ReferenceHighlighter.h
     SectionCutting.cpp

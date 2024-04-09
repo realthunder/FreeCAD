@@ -66,7 +66,6 @@ class PropertyEditor : public QTreeView
     Q_PROPERTY(QColor groupTextColor READ groupTextColor WRITE setGroupTextColor DESIGNABLE true SCRIPTABLE true) // clazy:exclude=qproperty-without-notify
     Q_PROPERTY(QBrush itemBackground READ itemBackground WRITE setItemBackground DESIGNABLE true SCRIPTABLE true) // clazy:exclude=qproperty-without-notify
 
-
 public:
     explicit PropertyEditor(bool isViewEditor = false);
     ~PropertyEditor() override;

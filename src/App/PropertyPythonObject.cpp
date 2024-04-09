@@ -99,11 +99,19 @@ std::string PropertyPythonObject::toString() const
         }
         Py::Callable method(pickle.getAttr(std::string("dumps")));
         Py::Object dump;
-        if (this->object.hasAttr("__getstate__")) {
+        if (this->object.hasAttr("dumps")) {
+            Py::Tuple args;
+            Py::Callable state(this->object.getAttr("dumps"));
+            dump = state.apply(args);
+        }
+#if PY_VERSION_HEX < 0x030b0000
+        // support add-ons that use the old method names
+        else if (this->object.hasAttr("__getstate__")) {
             Py::Tuple args;
             Py::Callable state(this->object.getAttr("__getstate__"));
             dump = state.apply(args);
         }
+#endif
         else if (this->object.hasAttr("__dict__")) {
             dump = this->object.getAttr("__dict__");
         }
@@ -143,12 +151,21 @@ void PropertyPythonObject::fromString(const std::string& repr)
         args.setItem(0, Py::String(repr));
         Py::Object res = method.apply(args);
 
-        if (this->object.hasAttr("__setstate__")) {
+        if (this->object.hasAttr("loads")) {
+            Py::Tuple args(1);
+            args.setItem(0, res);
+            Py::Callable state(this->object.getAttr("loads"));
+            state.apply(args);
+        }
+#if PY_VERSION_HEX < 0x030b0000
+        // support add-ons that use the old method names
+        else if (this->object.hasAttr("__setstate__")) {
             Py::Tuple args(1);
             args.setItem(0, res);
             Py::Callable state(this->object.getAttr("__setstate__"));
             state.apply(args);
         }
+#endif
         else if (this->object.hasAttr("__dict__")) {
             if (!res.isNone()) {
                 this->object.setAttr("__dict__", res);
@@ -170,7 +187,7 @@ void PropertyPythonObject::loadPickle(const std::string& str)
     Base::PyGILStateLocker lock;
     try {
         std::string buffer = str;
-        boost::regex pickle("S'(\\w+)'.+S'(\\w+)'\\n");
+        boost::regex pickle(R"(S'(\w+)'.+S'(\w+)'\n)");
         boost::match_results<std::string::const_iterator> what;
         std::string::const_iterator start, end;
         start = buffer.begin();
@@ -193,19 +210,19 @@ void PropertyPythonObject::loadPickle(const std::string& str)
 std::string PropertyPythonObject::encodeValue(const std::string& str) const
 {
     std::string tmp;
-    for (std::string::const_iterator it = str.begin(); it != str.end(); ++it) {
-        if (*it == '<')
+    for (char it : str) {
+        if (it == '<')
             tmp += "&lt;";
-        else if (*it == '"')
+        else if (it == '"')
             tmp += "&quot;";
-        else if (*it == '&')
+        else if (it == '&')
             tmp += "&amp;";
-        else if (*it == '>')
+        else if (it == '>')
             tmp += "&gt";
-        else if (*it == '\n')
+        else if (it == '\n')
             tmp += "\\n";
         else
-            tmp += *it;
+            tmp += it;
     }
 
     return tmp;
@@ -312,7 +329,7 @@ void PropertyPythonObject::Save (Base::Writer &writer) const
             writer.Stream() << " value=\"null\"/>\n";
         else if(json.size()) {
             writer.Stream() << " cdata=\"1\">\n";
-            writer.beginCharStream(false) << '\n' << json << '\n';
+            writer.beginCharStream() << '\n' << json << '\n';
             writer.endCharStream() << '\n' << writer.ind() << "</Python>\n";
         } else 
             writer.Stream() << "/>\n";
@@ -328,7 +345,7 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
 
     bool load_json=false;
     bool load_pickle=false;
-    bool load_failed = true;
+    bool load_failed=false;
 
     std::string buffer;
     if(reader.hasAttribute("value")) {
@@ -343,12 +360,11 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
         }
     }
 
-    Base::PyGILStateLocker lock;
-
     aboutToSetValue();
 
     try {
-        static boost::regex pickle("^\\(i(\\w+)\\n(\\w+)\\n");
+        Base::PyGILStateLocker lock;
+        static boost::regex pickle(R"(^\(i(\w+)\n(\w+)\n)");
         boost::match_results<std::string::const_iterator> what;
         std::string::const_iterator start, end;
         start = buffer.begin();
@@ -387,6 +403,7 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
         }
     }
     catch (Py::Exception&) {
+        Base::PyGILStateLocker lock;
         Base::PyException e; // extract the Python error text
         e.ReportException();
         this->object = Py::None();
@@ -403,12 +420,12 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
         reader.addFile(file.c_str(),this);
     } 
     
-    if(buffer.size()) {
+    if(!buffer.empty()) {
         if (load_json)
             this->fromString(buffer);
         else if (load_pickle)
             this->loadPickle(buffer);
-        else if (!load_failed)
+        else if (load_failed)
             Base::Console().Error("PropertyPythonObject::Restore: unsupported serialisation: %s\n", buffer.c_str());
     }
     hasSetValue();
@@ -444,7 +461,7 @@ Property *PropertyPythonObject::Copy() const
 
 void PropertyPythonObject::Paste(const Property &from)
 {
-    if (from.getTypeId() == PropertyPythonObject::getClassTypeId()) {
+    if (from.is<PropertyPythonObject>()) {
         Base::PyGILStateLocker lock;
         aboutToSetValue();
         this->object = static_cast<const PropertyPythonObject&>(from).object;

@@ -47,12 +47,12 @@ __url__    = "https://www.freecad.org"
 #  This module provides tools to build grid systems
 
 
-def makeGrid(name="Grid"):
+def makeGrid(name=None):
 
-    '''makeGrid(): makes a grid object'''
+    '''makeGrid([name]): makes a grid object'''
 
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython","Grid")
-    obj.Label = translate("Arch",name)
+    obj.Label = name if name else translate("Arch","Grid")
     ArchGrid(obj)
     if FreeCAD.GuiUp:
         ViewProviderArchGrid(obj.ViewObject)
@@ -279,11 +279,11 @@ class ArchGrid:
         else:
             return [f.CenterOfMass for f in obj.Shape.Faces]
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 
@@ -330,11 +330,11 @@ class ViewProviderArchGrid:
     def edit(self):
         FreeCADGui.ActiveDocument.setEdit(self.Object, 0)
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 

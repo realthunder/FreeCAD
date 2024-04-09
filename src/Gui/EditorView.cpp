@@ -50,6 +50,8 @@
 #include "Macro.h"
 #include "MainWindow.h"
 #include "PythonEditor.h"
+#include "PythonTracing.h"
+#include "WaitCursor.h"
 
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
@@ -471,6 +473,8 @@ void EditorView::printPdf()
         QStringLiteral("%1 (*.pdf)").arg(tr("PDF file")));
     if (!filename.isEmpty()) {
         QPrinter printer(QPrinter::ScreenResolution);
+        // setPdfVersion sets the printied PDF Version to comply with PDF/A-1b, more details under: https://www.kdab.com/creating-pdfa-documents-qt/
+        printer.setPdfVersion(QPagedPaintDevice::PdfVersion_A1b);
         printer.setOutputFormat(QPrinter::PdfFormat);
         printer.setOutputFileName(filename);
         d->textEdit->document()->print(&printer);
@@ -594,10 +598,12 @@ PythonEditorView::PythonEditorView(PythonEditor* editor, QWidget* parent)
 {
     connect(this, &PythonEditorView::changeFileName,
             editor, &PythonEditor::setFileName);
+    watcher = new PythonTracingWatcher(this);
 }
 
 PythonEditorView::~PythonEditorView()
 {
+    delete watcher;
 }
 
 /**
@@ -644,13 +650,17 @@ void PythonEditorView::executeScript()
     if (EditorView::onHasMsg("Save"))
         EditorView::onMsg("Save", nullptr);
     try {
+        getMainWindow()->setCursor(Qt::WaitCursor);
+        PythonTracingLocker tracelock(watcher->getTrace());
         Application::Instance->macroManager()->run(Gui::MacroManager::File,fileName().toUtf8());
+        getMainWindow()->unsetCursor();
     }
     catch (const Base::SystemExitException&) {
         // handle SystemExit exceptions
         Base::PyGILStateLocker locker;
         Base::PyException e;
         e.ReportException();
+        getMainWindow()->unsetCursor();
     }
 }
 

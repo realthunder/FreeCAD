@@ -108,18 +108,18 @@ protected:
     App::PropertyLinkSub* propReferenceAxis;
     void getReferenceAxis(App::DocumentObject*& obj, std::vector<std::string>& sub) const;
 
-    double getOffset(void) const;
-    bool   getAlongSketchNormal(void) const;
-    bool   getCustom(void) const;
-    std::string getReferenceAxis(void) const;
-    double getXDirection(void) const;
-    double getYDirection(void) const;
-    double getZDirection(void) const;
-    bool   getReversed(void) const;
-    bool   getMidplane(void) const;
-    int    getMode(void) const;
-    QString getFaceName(void) const;
-    void updateDirectionEdits(void);
+    double getOffset() const;
+    bool   getAlongSketchNormal() const;
+    bool   getCustom() const;
+    std::string getReferenceAxis() const;
+    double getXDirection() const;
+    double getYDirection() const;
+    double getZDirection() const;
+    bool   getReversed() const;
+    bool   getMidplane() const;
+    int    getMode() const;
+    QString getFaceName() const;
+    void updateDirectionEdits();
     void setDirectionMode(int index);
     void addAxisToCombo(App::DocumentObject* linkObj, const std::string &linkSubname, const QString &itemText);
 

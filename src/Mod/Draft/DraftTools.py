@@ -68,8 +68,7 @@ __url__ = "https://www.freecad.org"
 if not hasattr(FreeCADGui, "Snapper"):
     FreeCADGui.Snapper = gui_snapper.Snapper()
 
-if not hasattr(FreeCAD, "DraftWorkingPlane"):
-    FreeCAD.DraftWorkingPlane = WorkingPlane.plane()
+WorkingPlane.get_working_plane()
 
 # ---------------------------------------------------------------------------
 # Commands that have been migrated to their own modules
@@ -79,7 +78,6 @@ import draftguitools.gui_selectplane
 import draftguitools.gui_setstyle
 import draftguitools.gui_planeproxy
 from draftguitools.gui_togglemodes import ToggleConstructionMode
-from draftguitools.gui_togglemodes import ToggleContinueMode
 from draftguitools.gui_togglemodes import ToggleDisplayMode
 from draftguitools.gui_groups import AddToGroup
 from draftguitools.gui_groups import SelectGroup
@@ -98,22 +96,6 @@ from draftguitools.gui_layers import Layer
 # ---------------------------------------------------------------------------
 # update the translation engine
 FreeCADGui.updateLocale()
-
-# sets the default working plane
-plane = WorkingPlane.plane()
-FreeCAD.DraftWorkingPlane = plane
-defaultWP = Draft.getParam("defaultWP",0)
-if defaultWP == 1: plane.alignToPointAndAxis(Vector(0,0,0), Vector(0,0,1), 0)
-elif defaultWP == 2: plane.alignToPointAndAxis(Vector(0,0,0), Vector(0,1,0), 0)
-elif defaultWP == 3: plane.alignToPointAndAxis(Vector(0,0,0), Vector(1,0,0), 0)
-
-# last snapped objects, for quick intersection calculation
-lastObj = [0,0]
-
-# Set modifier keys
-from draftguitools.gui_tool_utils import MODCONSTRAIN
-from draftguitools.gui_tool_utils import MODSNAP
-from draftguitools.gui_tool_utils import MODALT
 
 # ---------------------------------------------------------------------------
 # General functions

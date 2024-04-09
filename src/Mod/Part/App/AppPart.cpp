@@ -67,6 +67,7 @@
 #include "FeatureCompound.h"
 #include "PropertyDressUp.h"
 #include "FeatureExtrusion.h"
+#include "FeatureScale.h"
 #include "FeatureFace.h"
 #include "FeatureFillet.h"
 #include "FeatureGeometrySet.h"
@@ -446,6 +447,7 @@ PyMOD_INIT_FUNC(Part)
     Part::Compound              ::init();
     Part::Compound2             ::init();
     Part::Extrusion             ::init();
+    Part::Scale                 ::init();
     Part::Revolution            ::init();
     Part::Mirroring             ::init();
     Part::ImportStep            ::init();

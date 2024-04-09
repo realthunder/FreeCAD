@@ -94,8 +94,8 @@ TaskBooleanParameters::TaskBooleanParameters(ViewProviderBoolean *BooleanView,QW
     connect(ui->listWidgetBodies, &QListWidget::itemSelectionChanged,
             this, &TaskBooleanParameters::onItemSelection);
 
-    undoConn = App::GetApplication().signalUndo.connect(boost::bind(&TaskBooleanParameters::populate,this));
-    redoConn = App::GetApplication().signalRedo.connect(boost::bind(&TaskBooleanParameters::populate,this));
+    undoConn = App::GetApplication().signalUndo.connect(std::bind(&TaskBooleanParameters::populate,this));
+    redoConn = App::GetApplication().signalRedo.connect(std::bind(&TaskBooleanParameters::populate,this));
 
     populate();
 
@@ -418,7 +418,7 @@ void TaskBooleanParameters::onTypeChanged(int index)
 
 }
 
-const std::vector<std::string> TaskBooleanParameters::getBodies(void) const
+const std::vector<std::string> TaskBooleanParameters::getBodies() const
 {
     std::vector<std::string> result;
     for (int i = 0; i < ui->listWidgetBodies->count(); i++)
@@ -426,7 +426,7 @@ const std::vector<std::string> TaskBooleanParameters::getBodies(void) const
     return result;
 }
 
-int TaskBooleanParameters::getType(void) const
+int TaskBooleanParameters::getType() const
 {
     return ui->comboType->currentIndex();
 }
@@ -466,9 +466,7 @@ void TaskBooleanParameters::onButtonRemove()
     populate();
 }
 
-TaskBooleanParameters::~TaskBooleanParameters()
-{
-}
+TaskBooleanParameters::~TaskBooleanParameters() = default;
 
 void TaskBooleanParameters::changeEvent(QEvent *e)
 {
@@ -510,10 +508,7 @@ TaskDlgBooleanParameters::TaskDlgBooleanParameters(ViewProviderBoolean *BooleanV
     Content.push_back(parameter);
 }
 
-TaskDlgBooleanParameters::~TaskDlgBooleanParameters()
-{
-
-}
+TaskDlgBooleanParameters::~TaskDlgBooleanParameters() = default;
 
 //==== calls from the TaskView ===============================================================
 
@@ -531,7 +526,7 @@ void TaskDlgBooleanParameters::clicked(int)
 bool TaskDlgBooleanParameters::accept()
 {
     auto obj = BooleanView->getObject();
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         return false;
 
     std::vector<std::string> bodies = parameter->getBodies();

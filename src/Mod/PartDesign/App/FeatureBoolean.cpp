@@ -57,7 +57,6 @@ Boolean::Boolean()
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign");
     this->Refine.setValue(hGrp->GetBool("RefineModel", false));
-
     initExtension(this);
 }
 
@@ -87,7 +86,7 @@ App::DocumentObjectExecReturn *Boolean::execute()
                 found = true;
                 break;
             }
-            if (!tool->isDerivedFrom(Part::SubShapeBinder::getClassTypeId()))
+            if (!tool->isDerivedFrom<Part::SubShapeBinder>())
                 continue;
             auto binder = static_cast<PartDesign::SubShapeBinder*>(tool);
             for (auto & link : binder->Support.getSubListValues()) {

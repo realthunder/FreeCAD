@@ -23,9 +23,9 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
-# include <QApplication>
-# include <QEvent>
-# include <QKeyEvent>
+#include <QApplication>
+#include <QEvent>
+#include <QKeyEvent>
 #endif
 
 #include <Base/Console.h>
@@ -35,7 +35,7 @@
 
 using namespace SpreadsheetGui;
 
-LineEdit::LineEdit(QWidget *parent)
+LineEdit::LineEdit(QWidget* parent)
     : Gui::ExpressionLineEdit(parent, false, '=', true)
     , lastKeyPressed(0)
 {
@@ -45,12 +45,13 @@ LineEdit::LineEdit(QWidget *parent)
 bool LineEdit::event(QEvent *event)
 {
     if (event && event->type() == QEvent::FocusOut) {
-        if (lastKeyPressed)
+        if (lastKeyPressed) {
             Q_EMIT finishedWithKey(lastKeyPressed, lastModifiers);
+        }
         lastKeyPressed = 0;
     }
     else if (event && event->type() == QEvent::KeyPress && !completerActive()) {
-        QKeyEvent * kevent = static_cast<QKeyEvent*>(event);
+        QKeyEvent* kevent = static_cast<QKeyEvent*>(event);
         lastKeyPressed = kevent->key();
         lastModifiers = kevent->modifiers();
     }

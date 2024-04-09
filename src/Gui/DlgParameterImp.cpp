@@ -60,7 +60,7 @@
 #include "ViewParams.h"
 
 
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 using namespace Gui::Dialog;
 
 static QByteArray _LastParameterSet;
@@ -585,8 +585,8 @@ void DlgParameterImp::onCheckBoxMonitorToggled(bool checked)
     if (!monitor.handle) {
         monitor.handle = curParamManager;
         monitor.conn = curParamManager->signalParamChanged.connect(
-                boost::bind(&DlgParameterImp::slotParamChanged,
-                this, bp::_1, bp::_2, bp::_3, bp::_4));
+                std::bind(&DlgParameterImp::slotParamChanged,
+                this, sp::_1, sp::_2, sp::_3, sp::_4));
     }
     auto &changes = monitor.changes;
     QSignalBlocker block(paramGroup);
@@ -1998,9 +1998,7 @@ ParameterText::ParameterText ( ParameterValue * parent, QString label, const cha
     setText(2, QString::fromUtf8(value));
 }
 
-ParameterText::~ParameterText()
-{
-}
+ParameterText::~ParameterText() = default;
 
 void ParameterText::changeValue()
 {
@@ -2042,9 +2040,7 @@ ParameterInt::ParameterInt ( ParameterValue * parent, QString label, long value,
     setText(2, QStringLiteral("%1").arg(value));
 }
 
-ParameterInt::~ParameterInt()
-{
-}
+ParameterInt::~ParameterInt() = default;
 
 void ParameterInt::changeValue()
 {
@@ -2086,9 +2082,7 @@ ParameterUInt::ParameterUInt ( ParameterValue * parent, QString label, unsigned 
     setText(2, QStringLiteral("%1").arg(value));
 }
 
-ParameterUInt::~ParameterUInt()
-{
-}
+ParameterUInt::~ParameterUInt() = default;
 
 void ParameterUInt::changeValue()
 {
@@ -2139,9 +2133,7 @@ ParameterFloat::ParameterFloat ( ParameterValue * parent, QString label, double 
     setText(2, QStringLiteral("%1").arg(value));
 }
 
-ParameterFloat::~ParameterFloat()
-{
-}
+ParameterFloat::~ParameterFloat() = default;
 
 void ParameterFloat::changeValue()
 {
@@ -2183,9 +2175,7 @@ ParameterBool::ParameterBool ( ParameterValue * parent, QString label, bool valu
     setText(2, value ? QStringLiteral("true") : QStringLiteral("false"));
 }
 
-ParameterBool::~ParameterBool()
-{
-}
+ParameterBool::~ParameterBool() = default;
 
 void ParameterBool::changeValue()
 {

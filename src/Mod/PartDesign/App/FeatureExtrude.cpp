@@ -53,9 +53,7 @@ App::PropertyQuantityConstraint::Constraints FeatureExtrude::signedLengthConstra
 double FeatureExtrude::maxAngle = 90 - Base::toDegrees<double>(Precision::Angular());
 App::PropertyAngle::Constraints FeatureExtrude::floatAngle = { -maxAngle, maxAngle, 1.0 };
 
-FeatureExtrude::FeatureExtrude()
-{
-}
+FeatureExtrude::FeatureExtrude() = default;
 
 void FeatureExtrude::initProperties(const char *group)
 {
@@ -260,6 +258,9 @@ void FeatureExtrude::updateProperties(const std::string &method)
         isLength2Enabled = true;
         isTaperVisible = true;
         isTaper2Visible = true;
+        isReversedEnabled = true;
+    }
+    else if (method == "UpToShape") {
         isReversedEnabled = true;
     }
 

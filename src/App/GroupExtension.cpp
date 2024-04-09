@@ -35,7 +35,7 @@
 FC_LOG_LEVEL_INIT("App",true,true);
 
 using namespace App;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 EXTENSION_PROPERTY_SOURCE(App::GroupExtension, App::DocumentObjectExtension)
 
@@ -87,13 +87,13 @@ GroupExtension::~GroupExtension() = default;
 
 bool GroupExtension::getChildDefaultExport(App::DocumentObject *obj, int reason) const
 {
-    if (obj && obj->getNameInDocument())
+    if (obj && obj->isAttachedToDocument())
         return getExportGroupProperty(reason).find(obj->getNameInDocument()) != nullptr;
     return false;
 }
 
 bool GroupExtension::queryChildExport(App::DocumentObject *obj, int reason) const {
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         return false;
     switch(ExportMode.getValue()) {
     case ExportDisabled:
@@ -254,7 +254,7 @@ void GroupExtension::removeObjectsFromDocument()
 void GroupExtension::removeObjectFromDocument(DocumentObject* obj)
 {
     // check that object is not invalid
-    if (!obj || !obj->getNameInDocument())
+    if (!obj || !obj->isAttachedToDocument())
         return;
 
     // remove all children
@@ -364,9 +364,9 @@ std::vector<DocumentObject*> GroupExtension::getObjectsOfType(const Base::Type& 
 {
     std::vector<DocumentObject*> type;
     const std::vector<DocumentObject*>& grp = Group.getValues();
-    for (std::vector<DocumentObject*>::const_iterator it = grp.begin(); it != grp.end(); ++it) {
-        if ( (*it)->getTypeId().isDerivedFrom(typeId))
-            type.push_back(*it);
+    for (auto it : grp) {
+        if (it->getTypeId().isDerivedFrom(typeId))
+            type.push_back(it);
     }
 
     return type;
@@ -376,8 +376,8 @@ int GroupExtension::countObjectsOfType(const Base::Type& typeId) const
 {
     int type=0;
     const std::vector<DocumentObject*>& grp = Group.getValues();
-    for (std::vector<DocumentObject*>::const_iterator it = grp.begin(); it != grp.end(); ++it) {
-        if ( (*it)->getTypeId().isDerivedFrom(typeId))
+    for (auto it : grp) {
+        if ( it->getTypeId().isDerivedFrom(typeId))
             type++;
     }
 
@@ -445,7 +445,7 @@ void GroupExtension::extensionOnChanged(const Property* p) {
             std::unordered_set<App::DocumentObject*> objSet;
 
             int error = Group.removeIf( [&](App::DocumentObject *obj) {
-                if(!obj || !obj->getNameInDocument()) {
+                if(!obj || !obj->isAttachedToDocument()) {
                     if(obj)
                         FC_WARN("Remove invalid member " << obj->getFullName() 
                                 <<  " from " << owner->getFullName());
@@ -497,16 +497,16 @@ void GroupExtension::extensionOnChanged(const Property* p) {
     if(p == &Group || p == &ExportMode) {
         _Conns.clear();
         for(auto obj : Group.getValues()) {
-            if(!obj || !obj->getNameInDocument())
+            if(!obj || !obj->isAttachedToDocument())
                 continue;
             queryChildExport(obj, DocumentObject::GS_DEFAULT);
-            _Conns.push_back(obj->Visibility.signalChanged.connect(boost::bind(
-                            &GroupExtension::slotChildChanged,this,bp::_1)));
+            _Conns.push_back(obj->Visibility.signalChanged.connect(std::bind(
+                            &GroupExtension::slotChildChanged,this,sp::_1)));
             auto groupTouched = Base::freecad_dynamic_cast<PropertyBool>(
                     obj->getPropertyByName("_GroupTouched"));
             if(groupTouched && groupTouched->getContainer() == obj)
-                _Conns.push_back(groupTouched->signalChanged.connect(boost::bind(
-                                &GroupExtension::slotChildChanged,this,bp::_1)));
+                _Conns.push_back(groupTouched->signalChanged.connect(std::bind(
+                                &GroupExtension::slotChildChanged,this,sp::_1)));
         }
     } else if(p == &owner->Visibility) {
         if(!_togglingVisibility 
@@ -529,7 +529,7 @@ void GroupExtension::extensionOnChanged(const Property* p) {
                 else {
                     std::map<std::string,std::string> hc;
                     for(auto obj : Group.getValues()) {
-                        if(!obj || !obj->getNameInDocument())
+                        if(!obj || !obj->isAttachedToDocument())
                             continue;
                         hc.emplace(obj->getNameInDocument(),"");
                     }
@@ -540,7 +540,7 @@ void GroupExtension::extensionOnChanged(const Property* p) {
 
             int visCount = 0;
             for(auto obj : Group.getValues()) {
-                if(!obj || !obj->getNameInDocument())
+                if(!obj || !obj->isAttachedToDocument())
                     continue;
                 if(obj->Visibility.getValue()!=vis) {
                     if(vis && hiddenChildren && hiddenChildren->getValue(obj->getNameInDocument()))
@@ -556,7 +556,7 @@ void GroupExtension::extensionOnChanged(const Property* p) {
                 // In case all children is invisible, and the group itself is
                 // made visible. Set all children as visible.
                 for(auto obj : Group.getValues()) {
-                    if(!obj || !obj->getNameInDocument())
+                    if(!obj || !obj->isAttachedToDocument())
                         continue;
                     obj->Visibility.setValue(true);
                 }
@@ -606,7 +606,7 @@ void GroupExtension::slotChildChanged(const Property &prop) {
             if(hiddenChildren && hiddenChildren->getContainer()==owner) {
                 std::map<std::string,std::string> hc;
                 for(auto obj : Group.getValues()) {
-                    if(!obj || !obj->getNameInDocument())
+                    if(!obj || !obj->isAttachedToDocument())
                         continue;
                     if(!obj->Visibility.getValue()) 
                         hc.emplace(obj->getNameInDocument(),"");
@@ -656,7 +656,7 @@ bool GroupExtension::extensionGetSubObjects(std::vector<std::string> &ret, int r
         return true;
 
     for(auto obj : Group.getValues()) {
-        if(obj && obj->getNameInDocument()) {
+        if(obj && obj->isAttachedToDocument()) {
             if(reason != DocumentObject::GS_DEFAULT || queryChildExport(obj, reason))
                 ret.push_back(std::string(obj->getNameInDocument())+'.');
         }
@@ -665,7 +665,7 @@ bool GroupExtension::extensionGetSubObjects(std::vector<std::string> &ret, int r
 }
 
 int GroupExtension::extensionIsElementVisibleEx(const char *subname, int reason) const {
-    auto element = Data::ComplexGeoData::findElementName(subname);
+    auto element = Data::findElementName(subname);
     if(subname != element) {
         if(reason!=DocumentObject::GS_SELECT || !LinkBaseExtension::isSubnameHidden(getExtendedObject(),subname))
             return -1;
@@ -707,7 +707,7 @@ void GroupExtension::onExtendedDocumentRestored() {
         if(hiddenChildren && hiddenChildren->getContainer()==getExtendedObject()) {
             std::map<std::string,std::string> hc;
             for(auto child : Group.getValue()) {
-                if(child && child->getNameInDocument() && !child->Visibility.getValue())
+                if(child && child->isAttachedToDocument() && !child->Visibility.getValue())
                     hc.emplace(child->getNameInDocument(),"");
             }
             hiddenChildren->setValues(std::move(hc));
@@ -749,7 +749,7 @@ void GroupExtension::getAllChildren(std::vector<App::DocumentObject*> &res,
         std::set<App::DocumentObject*> &rset) const
 {
     for(auto obj : Group.getValues()) {
-        if(!obj || !obj->getNameInDocument())
+        if(!obj || !obj->isAttachedToDocument())
             continue;
         if(!rset.insert(obj).second)
             continue;

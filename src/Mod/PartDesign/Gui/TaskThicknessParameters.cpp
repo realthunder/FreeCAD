@@ -154,8 +154,7 @@ void TaskThicknessParameters::onModeChanged(int mode) {
     recompute();
 }
 
-
-double TaskThicknessParameters::getValue(void) const
+double TaskThicknessParameters::getValue() const
 {
     return ui->Value->value().getValue();
 }
@@ -168,7 +167,7 @@ void TaskThicknessParameters::onReversedChanged(const bool on) {
     recompute();
 }
 
-bool TaskThicknessParameters::getReversed(void) const
+bool TaskThicknessParameters::getReversed() const
 {
     return ui->checkReverse->isChecked();
 }
@@ -181,7 +180,7 @@ void TaskThicknessParameters::onIntersectionChanged(const bool on) {
     recompute();
 }
 
-bool TaskThicknessParameters::getIntersection(void) const
+bool TaskThicknessParameters::getIntersection() const
 {
     return ui->checkIntersection->isChecked();
 }
@@ -194,17 +193,17 @@ void TaskThicknessParameters::onMakeOffsetChanged(const bool on) {
     recompute();
 }
 
-bool TaskThicknessParameters::getMakeOffset(void) const
+bool TaskThicknessParameters::getMakeOffset() const
 {
     return ui->checkMakeOffset->isChecked();
 }
 
-int TaskThicknessParameters::getJoinType(void) const {
-
+int TaskThicknessParameters::getJoinType() const
+{
     return ui->joinComboBox->currentIndex();
 }
 
-int TaskThicknessParameters::getMode(void) const {
+int TaskThicknessParameters::getMode() const {
 
     return ui->modeComboBox->currentIndex();
 }
@@ -240,10 +239,7 @@ TaskDlgThicknessParameters::TaskDlgThicknessParameters(ViewProviderThickness *Dr
     Content.push_back(parameter);
 }
 
-TaskDlgThicknessParameters::~TaskDlgThicknessParameters()
-{
-
-}
+TaskDlgThicknessParameters::~TaskDlgThicknessParameters() = default;
 
 //==== calls from the TaskView ===============================================================
 

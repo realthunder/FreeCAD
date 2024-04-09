@@ -64,8 +64,8 @@ TextureMapping::TextureMapping(QWidget* parent, Qt::WindowFlags fl)
     // add all supported QImage formats
     QStringList formats;
     QList<QByteArray> qtformats = QImageReader::supportedImageFormats();
-    for (QList<QByteArray>::Iterator it = qtformats.begin(); it != qtformats.end(); ++it) {
-        formats << QStringLiteral("*.%1").arg(QString::fromUtf8(*it));
+    for (const auto & it : qtformats) {
+        formats << QStringLiteral("*.%1").arg(QString::fromUtf8(it));
     }
 
     ui->fileChooser->setFilter(tr("Image files (%1)").arg(formats.join(QStringLiteral(" "))));
@@ -188,10 +188,7 @@ TaskTextureMapping::TaskTextureMapping()
     Content.push_back(taskbox);
 }
 
-TaskTextureMapping::~TaskTextureMapping()
-{
-    // automatically deleted in the sub-class
-}
+TaskTextureMapping::~TaskTextureMapping() = default;
 
 bool TaskTextureMapping::accept()
 {

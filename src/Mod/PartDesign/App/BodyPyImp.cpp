@@ -23,7 +23,6 @@
 
 #include "PreCompiled.h"
 
-#include "Mod/Part/App/Part2DObject.h"
 #include "Mod/PartDesign/App/Body.h"
 #include "Mod/PartDesign/App/Feature.h"
 
@@ -36,7 +35,7 @@ using namespace PartDesign;
 // returns a string which represents the object e.g. when printed in python
 std::string BodyPy::representation() const
 {
-    return std::string("<body object>");
+    return {"<body object>"};
 }
 
 
@@ -57,7 +56,7 @@ PyObject* BodyPy::insertObject(PyObject *args)
     PyObject* targetPy;
     PyObject* afterPy = Py_False;
     if (!PyArg_ParseTuple(args, "O!O|O!", &(App::DocumentObjectPy::Type), &featurePy,
-                            &targetPy, &PyBool_Type, &afterPy)) {
+                                          &targetPy, &PyBool_Type, &afterPy)) {
         return nullptr;
     }
 

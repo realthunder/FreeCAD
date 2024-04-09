@@ -22,13 +22,14 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
-# include <cmath>
-# include <iostream>
+#include <cmath>
+#include <iostream>
 #endif
 
 #include "MeshFlatteningNurbs.h"
 
 
+// clang-format off
 namespace nurbs{
 
 double divide(double a, double b)
@@ -200,8 +201,9 @@ void add_triplets(Eigen::VectorXd values, double row, std::vector<trip> &triplet
 {
     for (unsigned int i=0; i < values.size(); i++)
     {
-        if (values(i) != 0.)
-            triplets.push_back(trip(row, i, values(i)));
+        if (values(i) != 0.) {
+            triplets.emplace_back(trip(row, i, values(i)));
+        }
     }
 }
 
@@ -515,3 +517,4 @@ Eigen::VectorXd NurbsBase1D::getUMesh(int num_u_points)
 
 
 }
+// clang-format on

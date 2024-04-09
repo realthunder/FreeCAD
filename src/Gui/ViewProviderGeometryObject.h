@@ -98,13 +98,13 @@ protected:
     void addBoundSwitch();
 
 protected:
-    SoMaterial       * pcShapeMaterial;
+    SoMaterial       * pcShapeMaterial{nullptr};
 
 private:
-    SoFCBoundingBox  * pcBoundingBox;
-    SoSwitch         * pcBoundSwitch;
-    SoBaseColor      * pcBoundColor;
-    SoNodeSensor     * pcSwitchSensor;
+    SoFCBoundingBox  * pcBoundingBox{nullptr};
+    SoSwitch         * pcBoundSwitch{nullptr};
+    SoBaseColor      * pcBoundColor{nullptr};
+    SoNodeSensor     * pcSwitchSensor{nullptr};
 };
 
 } // namespace Gui

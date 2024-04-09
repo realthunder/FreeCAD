@@ -47,7 +47,7 @@
 #include "PrefWidgets.h"
 #include "Tree.h"
 #include "FileDialog.h"
-#include "DlgGeneralImp.h"
+#include "PreferencePages/DlgSettingsGeneral.h"
 #include "DlgIconBrowser.h"
 
 FC_LOG_LEVEL_INIT("Gui", true, true)
@@ -202,7 +202,7 @@ void DlgIconBrowser::on_btnRefresh_clicked()
     {
         QSignalBlocker blocker(ui->IconSets);
         ui->IconSets->clear();
-        DlgGeneralImp::populateStylesheets("IconSet", "iconset",
+        DlgSettingsGeneral::populateStylesheets("IconSet", "iconset",
                 ui->IconSets, "None", QStringList(QStringLiteral("*.txt")));
     }
 

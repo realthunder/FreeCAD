@@ -312,8 +312,10 @@ void Extrusion::extrudeShape(TopoShape &result,
         ExtrusionHelper::makeDraft(params, myShape, drafts, result.Hasher);
         if (drafts.empty()) {
             Standard_Failure::Raise("Drafting shape failed");
-        }else
+        }
+        else {
             result.makECompound(drafts,0,false);
+        }
     }
     else {
         //Regular (non-tapered) extrusion!
@@ -372,12 +374,12 @@ TYPESYSTEM_SOURCE(Part::FaceMakerExtrusion, Part::FaceMakerCheese)
 
 std::string FaceMakerExtrusion::getUserFriendlyName() const
 {
-    return std::string(QT_TRANSLATE_NOOP("Part_FaceMaker", "Part Extrude facemaker"));
+    return {QT_TRANSLATE_NOOP("Part_FaceMaker", "Part Extrude facemaker")};
 }
 
 std::string FaceMakerExtrusion::getBriefExplanation() const
 {
-    return std::string(QT_TRANSLATE_NOOP("Part_FaceMaker", "Supports making faces with holes, does not support nesting."));
+    return {QT_TRANSLATE_NOOP("Part_FaceMaker", "Supports making faces with holes, does not support nesting.")};
 }
 
 #if OCC_VERSION_HEX >= 0x070600

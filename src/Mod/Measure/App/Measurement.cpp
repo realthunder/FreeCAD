@@ -70,10 +70,7 @@ Measurement::Measurement()
     References3D.setScope(App::LinkScope::Global);
 }
 
-Measurement::~Measurement()
-{
-
-}
+Measurement::~Measurement() = default;
 
 #define _MEASURE_ERROR(_err, _msg) do {\
     if (this->silent) \

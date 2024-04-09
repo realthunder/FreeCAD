@@ -23,6 +23,8 @@
 #ifndef BASE_PYOBJECTBASE_H
 #define BASE_PYOBJECTBASE_H
 
+// clang-format off
+// NOLINTBEGIN(cppcoreguidelines-macro-usage)
 // Std. configurations
 
 // (re-)defined in pyconfig.h
@@ -117,7 +119,7 @@ inline void Assert(int expr, char *msg)         // C++ assert
 inline PyObject* getTypeAsObject(PyTypeObject* type) {
     // See https://en.cppreference.com/w/cpp/string/byte/memcpy
     // and https://en.cppreference.com/w/cpp/language/reinterpret_cast
-    PyObject* obj;
+    PyObject* obj{};
     std::memcpy(&obj, &type, sizeof type);
     return obj;
 }
@@ -184,7 +186,7 @@ namespace Base
  *  @see Py_Try
  *  @see Py_Assert
  */
-class BaseExport PyObjectBase : public PyObject
+class BaseExport PyObjectBase : public PyObject //NOLINT
 {
     /** Py_Header struct from python.h.
      *  Every PyObjectBase object is also a python object. So you can use
@@ -337,15 +339,15 @@ private:
     void clearAttributes();
 
 protected:
-    std::bitset<32> StatusBits;
+    std::bitset<32> StatusBits; //NOLINT
     /// pointer to the handled class
-    void * _pcTwinPointer;
+    void * _pcTwinPointer; //NOLINT
 
 public:
-    PyObject* baseProxy;
+    PyObject* baseProxy{nullptr}; //NOLINT
 
 private:
-    PyObject* attrDict;
+    PyObject* attrDict{nullptr};
 };
 
 
@@ -510,8 +512,9 @@ inline PyObject * PyAsUnicodeObject(const char *str)
     // Returns a new reference, don't increment it!
     Py_ssize_t len = Py_SAFE_DOWNCAST(strlen(str), size_t, Py_ssize_t);
     PyObject *p = PyUnicode_DecodeUTF8(str, len, nullptr);
-    if (!p)
+    if (!p) {
         throw Base::UnicodeError("UTF8 conversion failure at PyAsUnicodeString()");
+    }
     return p;
 }
 
@@ -546,12 +549,15 @@ inline void PyTypeCheck(PyObject** ptr, int (*method)(PyObject*), const char* ms
         *ptr = nullptr;
         return;
     }
-    if (!method(*ptr))
+    if (!method(*ptr)) {
         throw Base::TypeError(msg);
+    }
 }
 
 
 } // namespace Base
 
+// NOLINTEND(cppcoreguidelines-macro-usage)
+// clang-format on
 
-#endif // BASE_PYOBJECTBASE_H
+#endif  // BASE_PYOBJECTBASE_H

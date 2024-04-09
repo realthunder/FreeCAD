@@ -128,9 +128,7 @@ CallTipsList::CallTipsList(QPlainTextEdit* parent)
     compKeys.append(Qt::Key_BraceRight);
 }
 
-CallTipsList::~CallTipsList()
-{
-}
+CallTipsList::~CallTipsList() = default;
 
 void CallTipsList::keyboardSearch(const QString& wordPrefix)
 {
@@ -751,7 +749,7 @@ void CallTipsList::callTipItemActivated(QListWidgetItem *item)
     if (!sel.isEmpty()) {
         // in case the cursor moved too far on the right side
         const QChar underscore =  QLatin1Char('_');
-        const QChar ch = sel.at(sel.count()-1);
+        const QChar ch = sel.at(sel.size()-1);
         if (!ch.isLetterOrNumber() && ch != underscore)
             cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor);
     }
@@ -770,7 +768,7 @@ void CallTipsList::callTipItemActivated(QListWidgetItem *item)
        * Try to find out if call needs arguments.
        * For this we search the description for appropriate hints ...
        */
-      QRegularExpression argumentMatcher( QRegularExpression::escape( callTip.name ) + QStringLiteral("\\s*\\(\\s*\\w+.*\\)") );
+      QRegularExpression argumentMatcher( QRegularExpression::escape( callTip.name ) + QStringLiteral(R"(\s*\(\s*\w+.*\))") );
       argumentMatcher.setPatternOptions( QRegularExpression::InvertedGreedinessOption ); //< set regex non-greedy!
       if (argumentMatcher.match( callTip.description ).hasMatch())
       {
@@ -797,16 +795,16 @@ QString CallTipsList::stripWhiteSpace(const QString& str)
     int minspace=INT_MAX;
     int line=0;
     for (QStringList::iterator it = lines.begin(); it != lines.end(); ++it, ++line) {
-        if (it->count() > 0 && line > 0) {
+        if (it->size() > 0 && line > 0) {
             int space = 0;
-            for (int i=0; i<it->count(); i++) {
+            for (int i=0; i<it->size(); i++) {
                 if ((*it)[i] == QLatin1Char('\t'))
                     space++;
                 else
                     break;
             }
 
-            if (it->count() > space)
+            if (it->size() > space)
                 minspace = std::min<int>(minspace, space);
         }
     }
@@ -819,7 +817,7 @@ QString CallTipsList::stripWhiteSpace(const QString& str)
             if (line == 0 && !it->isEmpty()) {
                 strippedlines << *it;
             }
-            else if (it->count() > 0 && line > 0) {
+            else if (it->size() > 0 && line > 0) {
                 strippedlines << it->mid(minspace);
             }
         }

@@ -55,6 +55,7 @@ class DocumentObjectData;
 class TreeWidgetItemDelegate;
 
 using DocumentObjectDataPtr = std::shared_ptr<DocumentObjectData>;
+class TreeWidgetItemDelegate;
 
 GuiExport int treeViewIconSize();
 GuiExport bool isTreeViewDragging();
@@ -64,6 +65,8 @@ GuiExport const QByteArray &treeVisibilityIconTag();
 GuiExport const QByteArray &treeUnselectableIconTag();
 GuiExport const QByteArray &treeMainIconTag();
 GuiExport const QByteArray &treeNoIconTag();
+
+GuiExport bool isTreeViewDragging();
 
 /** Tree view that allows drag & drop of document objects.
  * @author Werner Mayer
@@ -79,7 +82,7 @@ public:
     explicit TreeWidget(const char *name, QWidget* parent=nullptr);
     ~TreeWidget() override;
 
-    static void setupResizableColumn(TreeWidget *tree=0);
+    static void setupResizableColumn(TreeWidget *tree=nullptr);
     static void scrollItemToTop();
     static void selectAllInstances(const ViewProviderDocumentObject &vpd);
     static void selectLinkedObject(App::DocumentObject *linked);

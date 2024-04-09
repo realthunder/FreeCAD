@@ -115,7 +115,7 @@ Part::Feature* Transformed::getBaseObject(bool silent) const {
     // NOTE: may be here supposed to be last origin but in order to keep the old behaviour keep here first 
     App::DocumentObject* firstOriginal = originals.empty() ? NULL : originals.front();
     if (firstOriginal) {
-        if(firstOriginal->isDerivedFrom(Part::Feature::getClassTypeId())) {
+        if(firstOriginal->isDerivedFrom<Part::Feature>()) {
             rv = static_cast<Part::Feature*>(firstOriginal);
         } else {
             err = QT_TRANSLATE_NOOP("Exception", "Transformation feature Linked object is not a Part object");
@@ -134,23 +134,23 @@ Part::Feature* Transformed::getBaseObject(bool silent) const {
 App::DocumentObject* Transformed::getSketchObject() const
 {
     std::vector<DocumentObject*> originals = OriginalSubs.getValues();
-    if (!originals.empty() && originals.front()->getTypeId().isDerivedFrom(PartDesign::ProfileBased::getClassTypeId())) {
+    if (!originals.empty() && originals.front()->isDerivedFrom<PartDesign::ProfileBased>()) {
         return (static_cast<PartDesign::ProfileBased*>(originals.front()))->getVerifiedSketch(true);
     }
-    else if (!originals.empty() && originals.front()->getTypeId().isDerivedFrom(PartDesign::FeatureAddSub::getClassTypeId())) {
+    else if (!originals.empty() && originals.front()->isDerivedFrom<PartDesign::FeatureAddSub>()) {
         return nullptr;
     }
-    else if (this->getTypeId().isDerivedFrom(LinearPattern::getClassTypeId())) {
+    else if (this->isDerivedFrom<LinearPattern>()) {
         // if Originals is empty then try the linear pattern's Direction property
         const LinearPattern* pattern = static_cast<const LinearPattern*>(this);
         return pattern->Direction.getValue();
     }
-    else if (this->getTypeId().isDerivedFrom(PolarPattern::getClassTypeId())) {
+    else if (this->isDerivedFrom<PolarPattern>()) {
         // if Originals is empty then try the polar pattern's Axis property
         const PolarPattern* pattern = static_cast<const PolarPattern*>(this);
         return pattern->Axis.getValue();
     }
-    else if (this->getTypeId().isDerivedFrom(Mirrored::getClassTypeId())) {
+    else if (this->isDerivedFrom<Mirrored>()) {
         // if Originals is empty then try the mirror pattern's MirrorPlane property
         const Mirrored* pattern = static_cast<const Mirrored*>(this);
         return pattern->MirrorPlane.getValue();
@@ -165,7 +165,7 @@ void Transformed::handleChangedPropertyType(Base::XMLReader &reader, const char 
     // The property 'Angle' of PolarPattern has changed from PropertyFloat
     // to PropertyAngle and the property 'Length' has changed to PropertyLength.
     Base::Type inputType = Base::Type::fromName(TypeName);
-    if (prop->getTypeId().isDerivedFrom(App::PropertyFloat::getClassTypeId()) &&
+    if (prop->isDerivedFrom<App::PropertyFloat>() &&
         inputType.isDerivedFrom(App::PropertyFloat::getClassTypeId())) {
         // Do not directly call the property's Restore method in case the implementation
         // has changed. So, create a temporary PropertyFloat object and assign the value.
@@ -322,7 +322,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
                     break;
                 }
 
-                if(!obj->isDerivedFrom(FeatureAddSub::getClassTypeId())) {
+                if(!obj->isDerivedFrom<FeatureAddSub>()) {
                     next = -2;
                     break;
                 }
@@ -373,7 +373,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
         int startIndex = canSkipFirst && body && body->isSibling(this, obj) ? 1 : 0;
 
         if (SubTransform.getValue() 
-                && obj->isDerivedFrom(PartDesign::FeatureAddSub::getClassTypeId())) 
+                && obj->isDerivedFrom<PartDesign::FeatureAddSub>()) 
         {
             PartDesign::FeatureAddSub* feature = static_cast<PartDesign::FeatureAddSub*>(obj);
             if(feature->Suppress.getValue())

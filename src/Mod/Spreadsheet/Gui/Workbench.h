@@ -33,44 +33,45 @@
 class QColor;
 class QToolBar;
 
-namespace SpreadsheetGui {
+namespace SpreadsheetGui
+{
 
 /**
  * @author Eivind Kvedalen
  */
 
-class SpreadsheetGuiExport WorkbenchHelper : public QObject
+class SpreadsheetGuiExport WorkbenchHelper: public QObject
 {
     Q_OBJECT
 
 public Q_SLOTS:
-    void setForegroundColor(const QColor &color);
-    void setBackgroundColor(const QColor &color);
+    void setForegroundColor(const QColor& color);
+    void setBackgroundColor(const QColor& color);
 };
 
-class SpreadsheetGuiExport Workbench : public Gui::StdWorkbench
+class SpreadsheetGuiExport Workbench: public Gui::StdWorkbench
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-  Workbench();
-  ~Workbench() override;
-  void activated() override;
+    Workbench();
+    ~Workbench() override;
+    void activated() override;
 
 private:
-  bool initialized;
-  std::unique_ptr<WorkbenchHelper> workbenchHelper;
-  QPointer<QtColorPicker> foregroundColor;
-  QPointer<QtColorPicker> backgroundColor;
+    bool initialized;
+    std::unique_ptr<WorkbenchHelper> workbenchHelper;
+    QPointer<QtColorPicker> foregroundColor;
+    QPointer<QtColorPicker> backgroundColor;
 
 protected:
-  Gui::MenuItem *setupMenuBar() const override;
-  Gui::ToolBarItem* setupToolBars() const override;
-  Gui::ToolBarItem* setupCommandBars() const override;
-  void onToolbarOrientationChange(QToolBar *);
+    Gui::MenuItem *setupMenuBar() const override;
+    Gui::ToolBarItem* setupToolBars() const override;
+    Gui::ToolBarItem* setupCommandBars() const override;
+    void onToolbarOrientationChange(QToolBar *);
 };
 
-} // namespace SpreadsheetModGui
+}  // namespace SpreadsheetGui
 
 
-#endif // SPREADSHEET_WORKBENCH_H
+#endif  // SPREADSHEET_WORKBENCH_H

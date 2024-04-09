@@ -50,9 +50,7 @@ TaskPadParameters::TaskPadParameters(ViewProviderPad *PadView,
     setupDialog(newObj, historyPath);
 }
 
-TaskPadParameters::~TaskPadParameters()
-{
-}
+TaskPadParameters::~TaskPadParameters() = default;
 
 void TaskPadParameters::translateModeList(int index)
 {

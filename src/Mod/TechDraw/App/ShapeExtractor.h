@@ -39,7 +39,7 @@ namespace TechDraw
 class TechDrawExport ShapeExtractor
 {
 public:
-    static TopoDS_Shape getShapes(const std::vector<App::DocumentObject*> links);
+    static TopoDS_Shape getShapes(const std::vector<App::DocumentObject*> links, bool include2d = true);
     static std::vector<TopoDS_Shape> getShapes2d(const std::vector<App::DocumentObject*> links);
     static std::vector<TopoDS_Shape> getShapesFromObject(const App::DocumentObject* docObj);
     static TopoDS_Shape getShapesFused(const std::vector<App::DocumentObject*> links);
@@ -49,10 +49,12 @@ public:
     static bool isEdgeType(App::DocumentObject* obj);
     static bool isPointType(App::DocumentObject* obj);
     static bool isDraftPoint(App::DocumentObject* obj);
-    static Base::Vector3d getLocation3dFromFeat(App::DocumentObject* obj);
-    static bool prefAdd2d();
+    static bool isDatumPoint(App::DocumentObject* obj);
+    static Base::Vector3d getLocation3dFromFeat(App::DocumentObject *obj);
 
     static TopoDS_Shape stripInfiniteShapes(TopoDS_Shape inShape);
+
+    static TopoDS_Shape getLocatedShape(const App::DocumentObject* docObj);
 
 protected:
 

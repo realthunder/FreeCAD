@@ -35,8 +35,9 @@ import PySide.QtGui as QtGui
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
-import draftutils.utils as utils
-import draftutils.gui_utils as gui_utils
+from draftutils import gui_utils
+from draftutils import params
+from draftutils import utils
 from draftutils.translate import translate
 
 if App.GuiUp:
@@ -106,7 +107,7 @@ class ViewProviderDraft(object):
                              "Draft",
                              QT_TRANSLATE_NOOP("App::Property",
                                                "Defines an SVG pattern."))
-            patterns = list(utils.svg_patterns().keys())
+            patterns = list(utils.svg_patterns())
             patterns.sort()
             vobj.Pattern = ["None"] + patterns
 
@@ -116,9 +117,9 @@ class ViewProviderDraft(object):
                              "Draft",
                              QT_TRANSLATE_NOOP("App::Property",
                                                "Defines the size of the SVG pattern."))
-            vobj.PatternSize = utils.get_param("HatchPatternSize", 1)
+            vobj.PatternSize = params.get_param("HatchPatternSize")
 
-    def __getstate__(self):
+    def dumps(self):
         """Return a tuple of all serializable objects or None.
 
         When saving the document this view provider object gets stored
@@ -138,7 +139,7 @@ class ViewProviderDraft(object):
         """
         return None
 
-    def __setstate__(self, state):
+    def loads(self, state):
         """Set some internal properties for all restored objects.
 
         When a document is restored this method is used to set some properties
@@ -147,7 +148,7 @@ class ViewProviderDraft(object):
         Override this method to define the properties to change for the
         restored serialized objects.
 
-        By default no objects were serialized with `__getstate__`,
+        By default no objects were serialized with `dumps`,
         so nothing needs to be done here, and it returns `None`.
 
         Parameters
@@ -283,7 +284,7 @@ class ViewProviderDraft(object):
                             path = vobj.TextureImage
                     if not path:
                         if hasattr(vobj, "Pattern"):
-                            if str(vobj.Pattern) in list(utils.svg_patterns().keys()):
+                            if str(vobj.Pattern) in utils.svg_patterns():
                                 path = utils.svg_patterns()[vobj.Pattern][1]
                             else:
                                 path = "None"
@@ -303,7 +304,7 @@ class ViewProviderDraft(object):
                                     if i.exists():
                                         size = None
                                         if ".SVG" in path.upper():
-                                            size = utils.get_param("HatchPatternResolution", 128)
+                                            size = params.get_param("HatchPatternResolution")
                                             if not size:
                                                 size = 128
                                         im = gui_utils.load_texture(path, size)

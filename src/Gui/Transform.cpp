@@ -59,13 +59,9 @@ public:
 
 // ----------------------------------------------------------------------------
 
-TransformStrategy::TransformStrategy()
-{
-}
+TransformStrategy::TransformStrategy() = default;
 
-TransformStrategy::~TransformStrategy()
-{
-}
+TransformStrategy::~TransformStrategy() = default;
 
 Base::Vector3d TransformStrategy::getRotationCenter() const
 {
@@ -76,7 +72,7 @@ Base::Vector3d TransformStrategy::getRotationCenter() const
         Base::BoundBox3d bbox;
         bool first=true;
         for (const auto & object : objects) {
-            if (object->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+            if (object->isDerivedFrom<App::GeoFeature>()) {
                 // search for a data property
                 const App::PropertyGeometry* geo = static_cast<App::GeoFeature*>(object)->getPropertyOfGeometry();
                 if (geo) {
@@ -130,7 +126,7 @@ void TransformStrategy::acceptDataTransform(const Base::Matrix4D& mat, App::Docu
     }
 
     // Apply the transformation
-    if (obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+    if (obj->isDerivedFrom<App::GeoFeature>()) {
         // search for a data property
         const App::PropertyGeometry* geo = static_cast<App::GeoFeature*>(obj)->getPropertyOfGeometry();
         if (geo) {
@@ -205,9 +201,7 @@ DefaultTransformStrategy::DefaultTransformStrategy(QWidget* w) : widget(w)
     onSelectionChanged(mod);
 }
 
-DefaultTransformStrategy::~DefaultTransformStrategy()
-{
-}
+DefaultTransformStrategy::~DefaultTransformStrategy() = default;
 
 std::set<App::DocumentObject*> DefaultTransformStrategy::transformObjects() const
 {
@@ -231,7 +225,7 @@ void DefaultTransformStrategy::onSelectionChanged(const Gui::SelectionChanges& m
     std::vector<App::DocumentObject*> sel = Gui::Selection().getObjectsOfType
         (App::DocumentObject::getClassTypeId());
     for (const auto & it : sel) {
-        if (it->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+        if (it->isDerivedFrom<App::GeoFeature>()) {
             // search for a data property
             const App::PropertyGeometry* geo = static_cast<App::GeoFeature*>(it)->getPropertyOfGeometry();
             if (geo) {
@@ -439,10 +433,7 @@ TaskTransform::TaskTransform()
     Content.push_back(taskbox);
 }
 
-TaskTransform::~TaskTransform()
-{
-    // automatically deleted in the sub-class
-}
+TaskTransform::~TaskTransform() = default;
 
 void TaskTransform::setTransformStrategy(TransformStrategy* ts)
 {

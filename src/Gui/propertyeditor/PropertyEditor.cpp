@@ -342,7 +342,7 @@ void PropertyEditor::openEditor(const QModelIndex &index)
     }
     if(parent == doc)
         str << tr("document").toUtf8().constData();
-    else if(obj && obj->getNameInDocument())
+    else if(obj && obj->isAttachedToDocument())
         str << obj->Label.getValue();
     else
         str << tr("property").toUtf8().constData();

@@ -203,21 +203,21 @@ QVariant ButtonModel::data (const QModelIndex &index, int role) const
     if (index.row() >= (int)groupVector.size())
     {
         Base::Console().Log("index error in ButtonModel::data\n");
-        return QVariant();
+        return {};
     }
     if (role == Qt::DisplayRole)
-        return QVariant(getLabel(index.row()));
+        return {getLabel(index.row())};
     if (role == Qt::DecorationRole)
     {
         static QPixmap icon(BitmapFactory().pixmap("spaceball_button").scaled
                             (32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
-        return QVariant(icon);
+        return {icon};
     }
     if (role == Qt::UserRole)
-        return QVariant(QString::fromStdString(groupVector.at(index.row())->GetASCII("Command")));
+        return {QString::fromStdString(groupVector.at(index.row())->GetASCII("Command"))};
     if (role == Qt::SizeHintRole)
-        return QVariant(QSize(32, 32));
-    return QVariant();
+        return {QSize(32, 32)};
+    return {};
 }
 
 void ButtonModel::insertButtonRows(int number)
@@ -337,10 +337,12 @@ void CommandView::goClicked(const QModelIndex &index)
 
 CommandNode::CommandNode(NodeType typeIn)
 {
+    //NOLINTBEGIN
     nodeType = typeIn;
     parent = nullptr;
     children.clear();
     aCommand = nullptr;
+    //NOLINTEND
 }
 
 CommandNode::~CommandNode()
@@ -352,8 +354,10 @@ CommandNode::~CommandNode()
 
 CommandModel::CommandModel(QObject *parent) : QAbstractItemModel(parent)
 {
+    //NOLINTBEGIN
     rootNode = nullptr;
     initialize();
+    //NOLINTEND
 }
 
 CommandModel::~CommandModel()
@@ -365,13 +369,13 @@ CommandModel::~CommandModel()
 QModelIndex CommandModel::index(int row, int column, const QModelIndex &parent) const
 {
     if (!rootNode)
-        return QModelIndex();
+        return {};
     if (!parent.isValid())
         return createIndex(row, column, rootNode->children.at(row));
 
     CommandNode *parentNode = nodeFromIndex(parent);
     if (!parentNode)
-        return QModelIndex();
+        return {};
     return createIndex(row, column, parentNode->children.at(row));
 }
 
@@ -379,17 +383,17 @@ QModelIndex CommandModel::parent(const QModelIndex &index) const
 {
     CommandNode *base = nodeFromIndex(index);
     if (!base)
-        return QModelIndex();
+        return {};
     CommandNode *parentNode = base->parent;
     if (!parentNode)
-        return QModelIndex();
+        return {};
     CommandNode *grandParentNode = parentNode->parent;
     if (!grandParentNode)
-        return QModelIndex();
+        return {};
 
     int row = grandParentNode->children.indexOf(parentNode);
     if (row == -1)
-        return QModelIndex();
+        return {};
     return createIndex(row, index.column(), parentNode);
 }
 
@@ -414,19 +418,19 @@ QVariant CommandModel::data(const QModelIndex &index, int role) const
 {
     CommandNode *node = nodeFromIndex(index);
     if (!node)
-        return QVariant();
+        return {};
     if (role == Qt::DisplayRole)
     {
         if (node->nodeType == CommandNode::CommandType)
-            return QVariant(qApp->translate(node->aCommand->className(), node->aCommand->getMenuText()));
+            return {qApp->translate(node->aCommand->className(), node->aCommand->getMenuText())};
         if (node->nodeType == CommandNode::GroupType)
         {
             if (node->children.empty())
-                return QVariant();
+                return {};
             CommandNode *childNode = node->children.at(0);
-            return QVariant(childNode->aCommand->translatedGroupName());
+            return {qApp->translate(childNode->aCommand->className(), childNode->aCommand->getGroupName())};
         }
-        return QVariant();
+        return {};
     }
     if (role == Qt::DecorationRole)
     {
@@ -437,33 +441,35 @@ QVariant CommandModel::data(const QModelIndex &index, int role) const
                                 (32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
         }
     }
-    if (role == Qt::SizeHintRole)
+    if (role == Qt::SizeHintRole) {
         if (node->nodeType == CommandNode::CommandType)
-            return QVariant(QSize(32, 32));
+            return {QSize(32, 32)};
+    }
     if (role == Qt::UserRole)
     {
         if (node->nodeType == CommandNode::CommandType)
-            return QVariant(QString::fromUtf8(node->aCommand->getName()));
+            return {QString::fromUtf8(node->aCommand->getName())};
         if (node->nodeType == CommandNode::GroupType)
         {
             if (node->children.empty())
-                return QVariant();
+                return {};
             CommandNode *childNode = node->children.at(0);
-            return QVariant(QString::fromUtf8(childNode->aCommand->getGroupName()));
+            return {QString::fromUtf8(childNode->aCommand->getGroupName())};
         }
-        return QVariant();
+        return {};
     }
-    if (role == Qt::ToolTipRole)
+    if (role == Qt::ToolTipRole) {
         if (node->nodeType == CommandNode::CommandType)
-            return QVariant(QString::fromUtf8(node->aCommand->getToolTipText()));
-    return QVariant();
+            return {QString::fromUtf8(node->aCommand->getToolTipText())};
+    }
+    return {};
 }
 
 QVariant CommandModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
     if (role == Qt::DisplayRole && orientation == Qt::Horizontal && section == 0)
-        return QVariant(tr("Commands"));
-    return QVariant();
+        return {tr("Commands")};
+    return {};
 }
 
 Qt::ItemFlags CommandModel::flags (const QModelIndex &index) const
@@ -597,8 +603,10 @@ QStringList CommandModel::orderedGroups()
 
 PrintModel::PrintModel(QObject *parent, ButtonModel *buttonModelIn, CommandModel *commandModelIn) : QAbstractTableModel(parent)
 {
+    //NOLINTBEGIN
     buttonModel = buttonModelIn;
     commandModel = commandModelIn;
+    //NOLINTEND
 }
 
 int PrintModel::rowCount(const QModelIndex &parent) const
@@ -626,28 +634,28 @@ QVariant PrintModel::data(const QModelIndex &index, int role) const
         //command column;
         QString commandName(buttonModel->data(buttonModel->index(index.row(), 0), Qt::UserRole).toString());
         if (commandName.isEmpty())
-            return (QVariant());
+            return {};
 
         QModelIndexList indexList(commandModel->match(commandModel->index(0,0), Qt::UserRole, QVariant(commandName), 1,
                                                    Qt::MatchWrap | Qt::MatchRecursive));
         if (indexList.isEmpty())
-            return QVariant();
+            return {};
 
         return commandModel->data(indexList.at(0), role);
     }
-    return QVariant();
+    return {};
 }
 
 QVariant PrintModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
     if (role != Qt::DisplayRole || orientation != Qt::Horizontal)
-        return QVariant();
+        return {};
     if (section == 0)
-        return QVariant(tr("Button"));
+        return {tr("Button")};
     if (section == 1)
-        return QVariant(tr("Command"));
+        return {tr("Command")};
     else
-        return QVariant();
+        return {};
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -684,10 +692,7 @@ DlgCustomizeSpaceball::DlgCustomizeSpaceball(QWidget *parent)
     connect(printReference, &QPushButton::clicked, this, &DlgCustomizeSpaceball::goPrint);
 }
 
-DlgCustomizeSpaceball::~DlgCustomizeSpaceball()
-{
-
-}
+DlgCustomizeSpaceball::~DlgCustomizeSpaceball() = default;
 
 void DlgCustomizeSpaceball::setMessage(const QString& message)
 {

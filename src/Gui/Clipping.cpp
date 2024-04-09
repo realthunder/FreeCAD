@@ -211,11 +211,11 @@ public:
     CoinPtr<ClipDragger> draggerZ;
     CoinPtr<ClipDragger> draggerCustom;
     CoinPtr<SoPickStyle> pickStyle;
-    bool flipX;
-    bool flipY;
-    bool flipZ;
-    SoTimerSensor* sensor;
-    bool busy = false;
+    bool flipX{false};
+    bool flipY{false};
+    bool flipZ{false};
+    SoTimerSensor* sensor{nullptr};
+    bool busy{false};
 
     void initClip(CoinPtr<SoClipPlane> &clip,
                   CoinPtr<ClipDragger> &dragger,

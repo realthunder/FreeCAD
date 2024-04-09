@@ -58,9 +58,7 @@ ViewProviderBoolean::ViewProviderBoolean()
         static_cast<SoFCSwitch*>(pcModeSwitch)->defaultChild = 1;
 }
 
-ViewProviderBoolean::~ViewProviderBoolean()
-{
-}
+ViewProviderBoolean::~ViewProviderBoolean() = default;
 
 
 void ViewProviderBoolean::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)

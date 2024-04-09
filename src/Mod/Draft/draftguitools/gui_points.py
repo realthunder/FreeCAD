@@ -41,11 +41,11 @@ from PySide.QtCore import QT_TRANSLATE_NOOP
 import FreeCAD as App
 import FreeCADGui as Gui
 import Draft_rc
-import draftutils.utils as utils
-import draftutils.gui_utils as gui_utils
-import draftguitools.gui_base_original as gui_base_original
-import draftutils.todo as todo
-
+from draftguitools import gui_base_original
+from draftutils import gui_utils
+from draftutils import params
+from draftutils import todo
+from draftutils import utils
 from draftutils.translate import translate
 
 # The module is used to prevent complaints from code checkers (flake8)
@@ -64,15 +64,8 @@ class Point(gui_base_original.Creator):
 
     def Activated(self):
         """Execute when the command is called."""
-        super(Point, self).Activated(name="Point")
-        self.view = gui_utils.get3DView()
+        super().Activated(name="Point")
         self.stack = []
-        rot = self.view.getCameraNode().getField("orientation").getValue()
-        upv = App.Vector(rot.multVec(coin.SbVec3f(0, 1, 0)).getValue())
-        App.DraftWorkingPlane.setup(self.view.getViewDirection().negative(),
-                                    App.Vector(0, 0, 0),
-                                    upv)
-        self.point = None
         if self.ui:
             self.ui.pointUi(title=translate("draft", self.featureName), icon="Draft_Point")
             self.ui.isRelative.hide()
@@ -121,7 +114,7 @@ class Point(gui_base_original.Creator):
                 # to be committed through the `draftutils.todo.ToDo` class.
                 commitlist = []
                 Gui.addModule("Draft")
-                if utils.getParam("UsePartPrimitives", False):
+                if params.get_param("UsePartPrimitives"):
                     # Insert a Part::Primitive object
                     _cmd = 'FreeCAD.ActiveDocument.'
                     _cmd += 'addObject("Part::Vertex", "Point")'
@@ -159,7 +152,7 @@ class Point(gui_base_original.Creator):
             Restart (continue) the command if `True`, or if `None` and
             `ui.continueMode` is `True`.
         """
-        super(Point, self).finish()
+        super().finish()
         if self.callbackClick:
             self.view.removeEventCallbackPivy(coin.SoMouseButtonEvent.getClassTypeId(), self.callbackClick)
         if self.callbackMove:

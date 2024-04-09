@@ -56,7 +56,7 @@
 using namespace PartGui;
 using namespace Gui;
 using namespace Attacher;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 class Filter : public Gui::SelectionFilterGate
 {
@@ -92,8 +92,8 @@ const QString makeRefString(const App::DocumentObject* obj, const std::string& s
     if (!obj)
         return QObject::tr("No reference selected");
 
-    if (obj->getTypeId().isDerivedFrom(App::OriginFeature::getClassTypeId()) ||
-        obj->getTypeId().isDerivedFrom(Part::Datum::getClassTypeId()))
+    if (obj->isDerivedFrom<App::OriginFeature>() ||
+        obj->isDerivedFrom<Part::Datum>())
         // App::Plane, Line or Datum feature
         return QString::fromUtf8(obj->getNameInDocument());
 
@@ -299,9 +299,11 @@ TaskAttacher::TaskAttacher(Gui::ViewProviderDocumentObject *ViewProvider, QWidge
 
     refresh();
 
+    //NOLINTBEGIN
     // connect object deletion with slot
-    auto bnd1 = boost::bind(&TaskAttacher::objectDeleted, this, bp::_1);
-    auto bnd2 = boost::bind(&TaskAttacher::documentDeleted, this, bp::_1);
+    auto bnd1 = std::bind(&TaskAttacher::objectDeleted, this, sp::_1);
+    auto bnd2 = std::bind(&TaskAttacher::documentDeleted, this, sp::_1);
+    //NOLINTEND
     Gui::Document* document = Gui::Application::Instance->getDocument(ViewProvider->getObject()->getDocument());
     connectDelObject = document->signalDeletedObject.connect(bnd1);
     connectDelDocument = document->signalDeleteDocument.connect(bnd2);
@@ -389,9 +391,9 @@ void TaskAttacher::documentDeleted(const Gui::Document&)
 const QString makeHintText(std::set<eRefType> hint)
 {
     QString result;
-    for (std::set<eRefType>::const_iterator t = hint.begin(); t != hint.end(); t++) {
+    for (auto t : hint) {
         QString tText;
-        tText = AttacherGui::getShapeTypeText(*t);
+        tText = AttacherGui::getShapeTypeText(t);
         result += (result.size() == 0 ?  QStringLiteral("") : QStringLiteral("/")) + tText;
     }
 
@@ -1266,7 +1268,7 @@ void TaskAttacher::visibilityAutomation(bool opening_not_closing)
             return;
         if (!ViewProvider->getObject())
             return;
-        if (!ViewProvider->getObject()->getNameInDocument())
+        if (!ViewProvider->getObject()->isAttachedToDocument())
             return;
 
         auto editDoc = Gui::Application::Instance->editDocument();
@@ -1357,10 +1359,7 @@ TaskDlgAttacher::TaskDlgAttacher(Gui::ViewProviderDocumentObject *ViewProvider,
     }
 }
 
-TaskDlgAttacher::~TaskDlgAttacher()
-{
-
-}
+TaskDlgAttacher::~TaskDlgAttacher() = default;
 
 //==== calls from the TaskView ===============================================================
 

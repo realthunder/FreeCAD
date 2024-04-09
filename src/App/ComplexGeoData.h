@@ -1,41 +1,41 @@
-/***************************************************************************
- *   Copyright (c) 2002 Jürgen Riegel <juergen.riegel@web.de>              *
- *                                                                         *
- *   This file is part of the FreeCAD CAx development system.              *
- *                                                                         *
- *   This library is free software; you can redistribute it and/or         *
- *   modify it under the terms of the GNU Library General Public           *
- *   License as published by the Free Software Foundation; either          *
- *   version 2 of the License, or (at your option) any later version.      *
- *                                                                         *
- *   This library  is distributed in the hope that it will be useful,      *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU Library General Public License for more details.                  *
- *                                                                         *
- *   You should have received a copy of the GNU Library General Public     *
- *   License along with this library; see the file COPYING.LIB. If not,    *
- *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
- *   Suite 330, Boston, MA  02111-1307, USA                                *
- *                                                                         *
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/****************************************************************************
+ *                                                                          *
+ *   Copyright (c) 2002 Jürgen Riegel <juergen.riegel@web.de>               *
+ *   Copyright (c) 2022 Zheng, Lei <realthunder.dev@gmail.com>              *
+ *   Copyright (c) 2023 FreeCAD Project Association                         *
+ *                                                                          *
+ *   This file is part of FreeCAD.                                          *
+ *                                                                          *
+ *   FreeCAD is free software: you can redistribute it and/or modify it     *
+ *   under the terms of the GNU Lesser General Public License as            *
+ *   published by the Free Software Foundation, either version 2.1 of the   *
+ *   License, or (at your option) any later version.                        *
+ *                                                                          *
+ *   FreeCAD is distributed in the hope that it will be useful, but         *
+ *   WITHOUT ANY WARRANTY; without even the implied warranty of             *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU       *
+ *   Lesser General Public License for more details.                        *
+ *                                                                          *
+ *   You should have received a copy of the GNU Lesser General Public       *
+ *   License along with FreeCAD. If not, see                                *
+ *   <https://www.gnu.org/licenses/>.                                       *
+ *                                                                          *
  ***************************************************************************/
 
 
-#ifndef _AppComplexGeoData_h_
-#define _AppComplexGeoData_h_
+#ifndef APP_COMPLEX_GEO_DATA_H
+#define APP_COMPLEX_GEO_DATA_H
 
 #include <algorithm>
-#include <cstring>
-#include <memory>
-#include <cctype>
-#include <functional>
 
-#include <QVector>
-
+#include <Base/Bitmask.h>
 #include <Base/Handle.h>
 #include <Base/Matrix.h>
 #include <Base/Persistence.h>
-#include <Base/Bitmask.h>
+#include "MappedName.h"
+#include "MappedElement.h"
+#include "ElementMap.h"
 #include "StringHasher.h"
 
 #ifdef __GNUC__
@@ -47,7 +47,7 @@ namespace Base
 {
 class Placement;
 class Rotation;
-template <class _Precision> class BoundBox3;
+template <class _Precision> class BoundBox3;// NOLINT
 using BoundBox3d = BoundBox3<double>;
 }
 
@@ -62,23 +62,13 @@ enum class SearchOption {
 };
 typedef Base::Flags<SearchOption> SearchOptions;
 
-class ElementMap;
-typedef std::shared_ptr<ElementMap> ElementMapPtr;
-
-typedef QVector<App::StringIDRef> ElementIDRefs;
-
-class IndexedName;
-class MappedName;
-struct MappedElement;
-struct MappedChildElements;
-
 /** Segments
- *  Subelement type of the ComplexGeoData type
+ *  Sub-element type of the ComplexGeoData type
  *  It is used to split an object in further sub-parts.
  */
 class AppExport Segment: public Base::BaseClass
 {
-    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();// NOLINT
 
 public:
     ~Segment() override = default;
@@ -90,7 +80,7 @@ public:
  */
 class AppExport ComplexGeoData: public Base::Persistence, public Base::Handled
 {
-    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();// NOLINT
 
 public:
     struct Line  {uint32_t I1; uint32_t I2;};
@@ -103,19 +93,22 @@ public:
     /// Constructor
     ComplexGeoData();
     /// Destructor
-    ~ComplexGeoData() override;
+    ~ComplexGeoData() override = default;
 
-    /** @name Subelement management */
+    /** @name Sub-element management */
     //@{
     /** Sub type list
-     *  List of different subelement types
-     *  its NOT a list of the subelements itself
+     *  List of different sub-element types
+     *  its NOT a list of the sub-elements itself
      */
-    virtual const std::vector<const char*>& getElementTypes(void) const=0;
+    virtual const std::vector<const char*>& getElementTypes() const=0;
     virtual unsigned long countSubElements(const char* Type) const=0;
-    /// get the subelement by type and number
+    /// Returns a generic element type and index. The determined element type isn't
+    /// necessarily supported by this geometry.
+    static std::pair<std::string, unsigned long> getTypeAndIndex(const char* Name);
+    /// get the sub-element by type and number
     virtual Segment* getSubElement(const char* Type, unsigned long) const=0;
-    /// get subelement by combined name
+    /// get sub-element by combined name
     virtual Segment* getSubElementByName(const char* Name) const;
     /** Get lines from segment */
     virtual void getLinesFromSubElement(
@@ -196,50 +189,9 @@ public:
     virtual bool getRotation(Base::Rotation &) const {return false;}
     //@}
 
+
     /** @name Element name mapping */
     //@{
-    /// Special prefix to mark the beginning of a mapped sub-element name
-    static const std::string &elementMapPrefix();
-    /// Special postfix to mark the following tag encoded as hex number
-    static const std::string &tagPostfix();
-    /// Special postfix to mark the following tag encoded as decimal number
-    static const std::string &decTagPostfix();
-    /// Special postfix to mark the name includes encoding from an external object
-    static const std::string &externalTagPostfix();
-    /// Special postfix to mark the index of an array element
-    static const std::string &indexPostfix();
-    /// Special prefix to mark a missing element
-    static const std::string &missingPrefix();
-    /// Check if a subname contains missing element
-    static bool hasMissingElement(const char *subname);
-    /** Check if the name starts with elementMapPrefix()
-     *
-     * @param name: input name
-     * @return Returns the name stripped with elementMapPrefix(), or 0 if not
-     * start with the prefix
-     */
-    static const char *isMappedElement(const char *name);
-
-    /// Strip out the trailing element name if there is mapped element name precedes it.
-    static std::string newElementName(const char *name);
-    /// Strip out the mapped element name if there is one.
-    static std::string oldElementName(const char *name);
-    /// Strip out the old and new element name if there is one.
-    static std::string noElementName(const char *name);
-
-    /// Find the start of an element name in a subname
-    static const char *findElementName(const char *subname);
-    
-    /// Check if the given subname contains element name
-    static bool hasElementName(const char *subname) {
-        subname = findElementName(subname);
-        return subname && *subname;
-    }
-
-    /// Return the element name portion of the subname without mapping prefix
-    static inline const char *hasMappedElementName(const char *subname) {
-        return isMappedElement(findElementName(subname));
-    }
 
     /** Get element indexed name
      *
@@ -260,15 +212,15 @@ public:
      * @param sid: optional output of and App::StringID involved forming this mapped name
      * @return Returns the mapped name.
      */
-    MappedName getMappedName(const IndexedName & element, 
+    MappedName getMappedName(const IndexedName & element,
                              bool allowUnmapped = false,
                              ElementIDRefs *sid = nullptr) const;
 
     /** Return a pair of indexed name and mapped name
      *
      * @param name: the input name.
-     * @param sid: optional output of and App::StringID involved forming this
-     *             mapped name
+     * @param sid: optional output of any App::StringID involved in forming
+     *             this mapped name
      * @param copy: if true, copy the name string, or else use it as constant
      *              string, and caller must make sure the memory is not freed.
      *
@@ -322,26 +274,17 @@ public:
 
     void setMappedChildElements(const std::vector<MappedChildElements> & children);
     std::vector<MappedChildElements> getMappedChildElements() const;
-
-    /** Convenience method to hash the main element name
-     *
-     * @param name: main element name
-     * @param sid: store any output string ID references
-     * @return the hashed element name;
-     */
-    MappedName hashElementName(const MappedName & name, ElementIDRefs &sid) const;
-
+     
     /// Hash the child element map postfixes to shorten element name from hierarchical maps
     void hashChildMaps();
 
     /// Check if there is child element map
     bool hasChildElementMap() const;
 
-    /// Reverse hashElementName()
-    MappedName dehashElementName(const MappedName & name) const;
-     
     /// Append the Tag (if and only if it is non zero) into the element map
-    virtual void reTagElementMap(long tag, App::StringHasherRef hasher, const char *postfix=0) {
+    virtual void reTagElementMap(long tag,
+                                 App::StringHasherRef hasher,
+                                 const char *postfix=nullptr) {
         (void)tag;
         (void)hasher;
         (void)postfix;
@@ -367,7 +310,7 @@ public:
      * @return Returns the existing element map.
      */
     virtual ElementMapPtr resetElementMap(ElementMapPtr elementMap=ElementMapPtr()) {
-        _ElementMap.swap(elementMap);
+        _elementMap.swap(elementMap);
         return elementMap;
     }
 
@@ -376,7 +319,7 @@ public:
 
     /// Set the entire element map
     void setElementMap(const std::vector<MappedElement> &elements);
-    
+
     /// Get the current element map size
     size_t getElementMapSize(bool flush=true) const;
 
@@ -388,34 +331,6 @@ public:
 
     /// Return true to signal element map version change
     virtual bool checkElementMapVersion(const char * ver) const;
-
-    /// Check if the given subname only contains an element name
-    static bool isElementName(const char *subname) {
-        return subname && *subname && findElementName(subname)==subname;
-    }
-
-    /** Extract tag and other information from a encoded element name
-     *
-     * @param name: encoded element name
-     * @param tag: optional pointer to receive the extracted tag
-     * @param len: optional pointer to receive the length field after the tag field.
-     *             This gives the length of the previous hashsed element name starting
-     *             from the beginning of the give element name.
-     * @param postfix: optional pointer to receive the postfix starting at the found tag field.
-     * @param type: optional pointer to receive the element type character
-     * @param negative: return negative tag as it is. If disabled, then always return positive tag.
-     *                  Negative tag is sometimes used for element disambiguation.
-     * @param recursive: recursively find the last non-zero tag
-     *
-     * @return Return the end position of the tag field, or return -1 if not found.
-     */
-    static int findTagInElementName(const MappedName & name,
-                                    long *tag=0,
-                                    int *len=0,
-                                    std::string *postfix=0,
-                                    char *type=0,
-                                    bool negative=false,
-                                    bool recursive=true);
 
     /** Element trace callback
      *
@@ -451,7 +366,7 @@ public:
     void Restore(Base::XMLReader &reader) override;
     void SaveDocFile(Base::Writer &writer) const override;
     void RestoreDocFile(Base::Reader &reader) override;
-    unsigned int getMemSize (void) const override;
+    unsigned int getMemSize () const override;
     void setPersistenceFileName(const char *name) const;
     virtual void beforeSave() const;
     bool isRestoreFailed() const { return _restoreFailed; }
@@ -460,10 +375,6 @@ public:
 
     virtual bool isSame(const ComplexGeoData &other) const = 0;
 
-public:
-    /// String hasher for element name shortening
-    mutable App::StringHasherRef Hasher;
-
 protected:
     virtual MappedName renameDuplicateElement(int index,
                                               const IndexedName & element, 
@@ -471,7 +382,8 @@ protected:
                                               const MappedName & name,
                                               ElementIDRefs &sids);
 
-    void restoreStream(std::istream &s, std::size_t count);
+    void restoreStream(std::istream & stream, std::size_t count);
+    void readElements(Base::XMLReader& reader, size_t count);
 
     /// from local to outside
     inline Base::Vector3d transformPointToOutside(const Base::Vector3f& vec) const
@@ -529,18 +441,21 @@ protected:
                               static_cast<float>(tmp.z));
     }
 
-public:
-    mutable long Tag;
-
-protected:
     ElementMapPtr elementMap(bool flush=true) const;
 
+public:
+    /// String hasher for element name shortening
+    mutable App::StringHasherRef Hasher;
+
+    mutable long Tag{0};
+
+
 protected:
-    mutable std::string _PersistenceName;
+    mutable std::string _persistenceName;
     mutable bool _restoreFailed = false;
 
 private:
-    ElementMapPtr _ElementMap;
+    ElementMapPtr _elementMap;
 };
 
 } //namespace Data

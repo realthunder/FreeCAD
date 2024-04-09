@@ -424,7 +424,7 @@ void PropertyFileIncluded::Restore(Base::XMLReader &reader)
             // is in the document transient path
             aboutToSetValue();
             _cValue = getDocTransientPath() + "/" + file;
-            reader.readCharacters(_cValue.c_str(),true);
+            reader.readBase64(_cValue.c_str());
             reader.readEndElement("FileIncluded");
             _BaseFileName = file;
             // set read-only after restoring the file

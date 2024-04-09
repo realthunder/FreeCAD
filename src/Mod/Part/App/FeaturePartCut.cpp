@@ -34,9 +34,7 @@ using namespace Part;
 PROPERTY_SOURCE(Part::Cut, Part::Boolean)
 
 
-Cut::Cut()
-{
-}
+Cut::Cut() = default;
 
 const char *Cut::opCode() const {
     return Part::OpCodes::Cut;

@@ -678,8 +678,8 @@ public:
     void purgeTouched() override;
 
 protected:
-    App::DocumentObject *_pcLink;
-    int _revision = 0;
+    App::DocumentObject *_pcLink{nullptr};
+    int _revision{0};
 };
 
 /** The general Link Property with Child scope
@@ -925,11 +925,11 @@ public:
     void setSyncSubObject(bool enable);
 
 protected:
-    App::DocumentObject*     _pcLinkSub;
+    App::DocumentObject*     _pcLinkSub{nullptr};
     std::vector<std::string> _cSubList;
     std::vector<ShadowSub> _ShadowSubList;
     std::vector<int> _mapped;
-    int _revision = 0;
+    int _revision{0};
     std::vector<int> _revisions;
 };
 

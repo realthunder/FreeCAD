@@ -1,19 +1,19 @@
 /***************************************************************************
-*   Copyright (c) 2004 Jürgen Riegel <juergen.riegel@web.de>              *
-*                                                                         *
-*   This file is part of the FreeCAD CAx development system.              *
-*                                                                         *
-*   This library is free software; you can redistribute it and/or         *
-*   modify it under the terms of the GNU Library General Public           *
-*   License as published by the Free Software Foundation; either          *
-*   version 2 of the License, or (at your option) any later version.      *
-*                                                                         *
-*   This library  is distributed in the hope that it will be useful,      *
-*   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
-*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
-*   GNU Library General Public License for more details.                  *
-*                                                                         *
-*   You should have received a copy of the GNU Library General Public     *
+ *   Copyright (c) 2004 Jürgen Riegel <juergen.riegel@web.de>              *
+ *                                                                         *
+ *   This file is part of the FreeCAD CAx development system.              *
+ *                                                                         *
+ *   This library is free software; you can redistribute it and/or         *
+ *   modify it under the terms of the GNU Library General Public           *
+ *   License as published by the Free Software Foundation; either          *
+ *   version 2 of the License, or (at your option) any later version.      *
+ *                                                                         *
+ *   This library  is distributed in the hope that it will be useful,      *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU Library General Public License for more details.                  *
+ *                                                                         *
+ *   You should have received a copy of the GNU Library General Public     *
  *   License along with this library; see the file COPYING.LIB. If not,    *
  *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
  *   Suite 330, Boston, MA  02111-1307, USA                                *
@@ -61,6 +61,8 @@
 #include <Base/Tools.h>
 #include <Base/QtTools.h>
 
+#include <Base/UnitsApi.h>
+
 #include <Language/Translator.h>
 #include "Renderer/Renderer.h"
 #include <Quarter/Quarter.h>
@@ -73,7 +75,8 @@
 #include "CommandActionPy.h"
 #include "CommandPy.h"
 #include "Control.h"
-#include "DlgSettingsCacheDirectory.h"
+#include "PreferencePages/DlgSettingsCacheDirectory.h"
+#include "DlgCheckableMessageBox.h"
 #include "DocumentPy.h"
 #include "DocumentRecovery.h"
 #include "EditorView.h"
@@ -91,7 +94,8 @@
 #include "MainWindowPy.h"
 #include "SoFCDB.h"
 #include "Selection.h"
-#include "SoFCOffscreenRenderer.h"
+#include "SelectionFilterPy.h"
+#include "SoQtOffscreenRendererPy.h"
 #include "SplitView3DInventor.h"
 #include "TaskView/TaskView.h"
 #include "TaskView/TaskDialogPython.h"
@@ -133,6 +137,7 @@
 #include "WaitCursor.h"
 #include "Workbench.h"
 #include "WorkbenchManager.h"
+#include "WorkbenchManipulator.h"
 #include "WidgetFactory.h"
 
 
@@ -186,11 +191,8 @@ public:
 // Pimpl class
 struct ApplicationP
 {
-    explicit ApplicationP(bool GUIenabled) :
-    activeDocument(nullptr),
-    editDocument(nullptr),
-    isClosing(false),
-    startingUp(_ApplicationStartUp)
+    explicit ApplicationP(bool GUIenabled)
+        : startingUp(_ApplicationStartUp)
     {
         startingUp = true;
 
@@ -223,13 +225,13 @@ struct ApplicationP
     /// list of all handled documents
     std::map<const App::Document*, Gui::Document*> documents;
     /// Active document
-    Gui::Document*   activeDocument;
-    Gui::Document*  editDocument;
+    Gui::Document*   activeDocument{nullptr};
+    Gui::Document*  editDocument{nullptr};
     MacroManager*  macroMngr;
     PreferencePackManager* prefPackManager;
     /// List of all registered views
     std::list<Gui::BaseView*> passive;
-    bool isClosing;
+    bool isClosing{false};
     bool &startingUp;
     /// Handles all commands
     CommandManager commandManager;
@@ -252,7 +254,7 @@ FreeCADGui_subgraphFromObject(PyObject * /*self*/, PyObject *args)
         auto base =
             static_cast<Base::BaseClass*>(Base::Type::createInstanceByName(vp.c_str(), true));
         if (base
-            && base->getTypeId().isDerivedFrom(Gui::ViewProviderDocumentObject::getClassTypeId())) {
+            && base->isDerivedFrom<Gui::ViewProviderDocumentObject>()) {
             std::unique_ptr<Gui::ViewProviderDocumentObject> vp(
                 static_cast<Gui::ViewProviderDocumentObject*>(base));
             std::map<std::string, App::Property*> Map;
@@ -261,7 +263,7 @@ FreeCADGui_subgraphFromObject(PyObject * /*self*/, PyObject *args)
 
             // this is needed to initialize Python-based view providers
             App::Property* pyproxy = vp->getPropertyByName("Proxy");
-            if (pyproxy && pyproxy->getTypeId() == App::PropertyPythonObject::getClassTypeId()) {
+            if (pyproxy && pyproxy->is<App::PropertyPythonObject>()) {
                 static_cast<App::PropertyPythonObject*>(pyproxy)->setValue(Py::Long(1));
             }
 
@@ -375,7 +377,7 @@ namespace {
         std::stringstream str;
         str << "Image formats (";
         for (const auto& ext : supportedFormats) {
-            str << "*." << ext.constData() << " ";
+            str << "*." << ext.constData() << " *." << ext.toUpper().constData() << " ";
         }
         str << ")";
 
@@ -388,6 +390,7 @@ Application::Application(bool GUIenabled)
 {
     //App::GetApplication().Attach(this);
     if (GUIenabled) {
+        //NOLINTBEGIN
         App::GetApplication().signalNewDocument.connect(
             std::bind(&Gui::Application::slotNewDocument, this, sp::_1, sp::_2));
         App::GetApplication().signalDeleteDocument.connect(
@@ -400,6 +403,7 @@ Application::Application(bool GUIenabled)
             std::bind(&Gui::Application::slotRelabelDocument, this, sp::_1));
         App::GetApplication().signalShowHidden.connect(
             std::bind(&Gui::Application::slotShowHidden, this, sp::_1));
+        //NOLINTEND
 
         App::GetApplication().signalFinishOpenDocument.connect([]() {
             std::vector<App::Document*> docs;
@@ -600,6 +604,7 @@ Application::~Application()
 {
     Base::Console().Log("Destruct Gui::Application\n");
     WorkbenchManager::destruct();
+    WorkbenchManipulator::removeAll();
     SelectionSingleton::destruct();
     Translator::destruct();
     WidgetFactorySupplier::destruct();
@@ -918,6 +923,7 @@ void Application::slotNewDocument(const App::Document& Doc, bool isMainDoc)
     auto pDoc = new Gui::Document(const_cast<App::Document*>(&Doc),this);
     d->documents[&Doc] = pDoc;
 
+    //NOLINTBEGIN
     // connect the signals to the application for the new document
     pDoc->signalNewObject.connect(std::bind(&Gui::Application::slotNewObject, this, sp::_1));
     pDoc->signalDeletedObject.connect(std::bind(&Gui::Application::slotDeletedObject,
@@ -930,6 +936,7 @@ void Application::slotNewDocument(const App::Document& Doc, bool isMainDoc)
         this, sp::_1));
     pDoc->signalInEdit.connect(std::bind(&Gui::Application::slotInEdit, this, sp::_1));
     pDoc->signalResetEdit.connect(std::bind(&Gui::Application::slotResetEdit, this, sp::_1));
+    //NOLINTEND
 
     signalNewDocument(*pDoc, isMainDoc);
     if (isMainDoc)
@@ -1034,6 +1041,19 @@ void Application::slotActiveDocument(const App::Document& Doc)
                 Base::PyGILStateLocker lock;
                 Py::Module("FreeCADGui").setAttr(std::string("ActiveDocument"),Py::None());
             }
+        }
+
+        // Update the application to show the unit change
+        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath
+            ("User parameter:BaseApp/Preferences/Units");
+        if( Doc.FileName.getValue()[0] != '\0' &&  ! hGrp->GetBool("IgnoreProjectSchema")) {
+            int userSchema = Doc.UnitSystem.getValue();
+            Base::UnitsApi::setSchema(static_cast<Base::UnitSystem>(userSchema));
+            getMainWindow()->setUserSchema(userSchema);
+            Application::Instance->onUpdate();
+        }else{// set up Unit system default
+			Base::UnitsApi::setSchema((Base::UnitSystem)hGrp->GetInt("UserSchema",0));
+			Base::UnitsApi::setDecimals(hGrp->GetInt("Decimals", Base::UnitsApi::getDecimals()));
         }
         signalActiveDocument(*doc->second);
         updateActions();
@@ -1773,7 +1793,7 @@ QPixmap Application::workbenchIcon(const QString& wb, QString *iconPath) const
         if (!s.isEmpty())
             return icon.pixmap(s[0]);
     }
-    return QPixmap();
+    return {};
 }
 
 QString Application::workbenchToolTip(const QString& wb) const
@@ -1797,7 +1817,7 @@ QString Application::workbenchToolTip(const QString& wb) const
         }
     }
 
-    return QString();
+    return {};
 }
 
 QString Application::workbenchMenuText(const QString& wb) const
@@ -1822,7 +1842,7 @@ QString Application::workbenchMenuText(const QString& wb) const
         }
     }
 
-    return QString();
+    return {};
 }
 
 QStringList Application::workbenches() const
@@ -1880,7 +1900,7 @@ void Application::setupContextMenu(const char* recipient, MenuItem* items) const
     if (actWb) {
         // when populating the context-menu of a Python workbench invoke the method
         // 'ContextMenu' of the handler object
-        if (actWb->getTypeId().isDerivedFrom(PythonWorkbench::getClassTypeId())) {
+        if (actWb->isDerivedFrom<PythonWorkbench>()) {
             static_cast<PythonWorkbench*>(actWb)->clearContextMenu();
             Base::PyGILStateLocker lock;
             PyObject* pWorkbench = nullptr;
@@ -1904,7 +1924,7 @@ void Application::setupContextMenu(const char* recipient, MenuItem* items) const
                 }
             }
         }
-        actWb->setupContextMenu(recipient, items);
+        actWb->createContextMenu(recipient, items);
     }
 }
 
@@ -1940,6 +1960,7 @@ void setCategoryFilterRules()
     stream << "qt.qpa.xcb.warning=false\n";
     stream << "qt.qpa.mime.warning=false\n";
     stream << "qt.svg.warning=false\n";
+    stream << "qt.xkb.compose.warning=false\n";
     stream.flush();
     QLoggingCategory::setFilterRules(filter);
 }
@@ -1950,26 +1971,35 @@ _qt_msg_handler_old old_qtmsg_handler = nullptr;
 
 void messageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
-    Q_UNUSED(context);
+    QByteArray output;
+    if (context.category && strcmp(context.category, "default") != 0) {
+        output.append('(');
+        output.append(context.category);
+        output.append(')');
+        output.append(' ');
+    }
+
+    output.append(msg.toUtf8());
+
     switch (type)
     {
     case QtInfoMsg:
     case QtDebugMsg:
 #ifdef FC_DEBUG
-        Base::Console().Message("%s\n", msg.toUtf8().constData());
+        Base::Console().Message("%s\n", output.constData());
 #else
         // do not stress user with Qt internals but write to log file if enabled
-        Base::Console().Log("%s\n", msg.toUtf8().constData());
+        Base::Console().Log("%s\n", output.constData());
 #endif
         break;
     case QtWarningMsg:
-        Base::Console().Warning("%s\n", msg.toUtf8().constData());
+        Base::Console().Warning("%s\n", output.constData());
         break;
     case QtCriticalMsg:
-        Base::Console().Error("%s\n", msg.toUtf8().constData());
+        Base::Console().Error("%s\n", output.constData());
         break;
     case QtFatalMsg:
-        Base::Console().Error("%s\n", msg.toUtf8().constData());
+        Base::Console().Error("%s\n", output.constData());
         abort();                    // deliberately core dump
     }
 #ifdef FC_OS_WIN32
@@ -2194,7 +2224,7 @@ void preAppSetup()
 
 void postAppSetup()
 {
-    // http://forum.freecadweb.org/viewtopic.php?f=3&t=15540
+    // http://forum.freecad.org/viewtopic.php?f=3&t=15540
     qApp->setAttribute(Qt::AA_DontShowIconsInMenus, false);
 
     // Make sure that we use '.' as decimal point. See also
@@ -2271,7 +2301,7 @@ void postAppSetup()
     QIcon::setThemeName(QStringLiteral("FreeCAD-default"));
 #else
     // Option to opt-out from using a Linux desktop icon theme.
-    // https://forum.freecadweb.org/viewtopic.php?f=4&t=35624
+    // https://forum.freecad.org/viewtopic.php?f=4&t=35624
     //
     // bool themePaths = hTheme->GetBool("ThemeSearchPaths",true);
     //
@@ -2321,7 +2351,9 @@ void postMainWindowSetup(MainWindow &mw)
         QString major  = QString::fromUtf8(config["BuildVersionMajor"].c_str());
         QString minor  = QString::fromUtf8(config["BuildVersionMinor"].c_str());
         QString point = QString::fromUtf8(config["BuildVersionPoint"].c_str());
-        QString title = QStringLiteral("%1 %2.%3.%4").arg(qApp->applicationName(), major, minor, point);
+        QString suffix = QString::fromUtf8(config["BuildVersionSuffix"].c_str());
+        QString title =
+            QStringLiteral("%1 %2.%3.%4%5").arg(qApp->applicationName(), major, minor, point, suffix);
         mw.setWindowTitle(title);
     } else {
         mw.setWindowTitle(qApp->applicationName());
@@ -2380,6 +2412,25 @@ void postMainWindowSetup(MainWindow &mw)
 
             int major = context.format().majorVersion();
             int minor = context.format().minorVersion();
+
+#ifdef NDEBUG
+            // In release mode, issue a warning to users that their version of OpenGL is
+            // potentially going to cause problems
+            if (major < 2) {
+                auto message =
+                    QObject::tr("This system is running OpenGL %1.%2. "
+                                "FreeCAD requires OpenGL 2.0 or above. "
+                                "Please upgrade your graphics driver and/or card as required.")
+                        .arg(major)
+                        .arg(minor)
+                    + QStringLiteral("\n");
+                Base::Console().Warning(message.toStdString().c_str());
+                Dialog::DlgCheckableMessageBox::showMessage(
+                    Gui::GUISingleApplication::applicationName() + QStringLiteral(" - ")
+                        + QObject::tr("Invalid OpenGL Version"),
+                    message);
+            }
+#endif
             const char* glVersion = reinterpret_cast<const char*>(glGetString(GL_VERSION));
             Base::Console().Log("OpenGL version is: %d.%d (%s)\n", major, minor, glVersion);
         }
@@ -2744,7 +2795,6 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
         qApp->setPalette(newPal);
     }
 
-    QString current = mw->property("fc_currentStyleSheet").toString();
     mw->setProperty("fc_currentStyleSheet", qssFile);
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
@@ -2752,10 +2802,6 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
     if (!iconSet.isEmpty())
         getMainWindow()->setOverrideExtraIcons(iconSet);
 
-    // Icon set change is also triggered by style change, so we'll set
-    // stylesheet regardless of changes
-    //
-    // if (!qssFile.isEmpty() && current != qssFile) {
     if (!qssFile.isEmpty()) {
         // Search for stylesheet in user-defined search paths.
         // For qss they are set-up in runApplication() with the prefix "qss"
@@ -2772,7 +2818,10 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
         if (!f.fileName().isEmpty() && f.open(QFile::ReadOnly | QFile::Text)) {
             mdi->setBackground(QBrush(Qt::NoBrush));
             QTextStream str(&f);
-            qApp->setStyleSheet(str.readAll());
+
+            QString styleSheetContent = replaceVariablesInQss(str.readAll());
+
+            qApp->setStyleSheet(styleSheetContent);
 
             ActionStyleEvent e(ActionStyleEvent::Clear);
             qApp->sendEvent(mw, &e);
@@ -2798,8 +2847,7 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
             }
         }
     }
-
-    if (qssFile.isEmpty()) {
+    else {
         if (tiledBackground) {
             qApp->setStyleSheet(QString());
             ActionStyleEvent e(ActionStyleEvent::Restore);
@@ -2821,6 +2869,49 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
     if (!d->startingUp) {
         if (mdi->style())
             mdi->style()->unpolish(qApp);
+    }
+}
+
+QString Application::replaceVariablesInQss(QString qssText)
+{
+    //First we fetch the colors from preferences,
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Themes");
+    unsigned long longAccentColor1 = hGrp->GetUnsigned("ThemeAccentColor1", 0);
+    unsigned long longAccentColor2 = hGrp->GetUnsigned("ThemeAccentColor2", 0);
+    unsigned long longAccentColor3 = hGrp->GetUnsigned("ThemeAccentColor3", 0);
+
+    //convert them to hex.
+    //Note: the ulong contains alpha channels so 8 hex characters when we need 6 here.
+    QString accentColor1 = QStringLiteral("#%1").arg(longAccentColor1, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
+    QString accentColor2 = QStringLiteral("#%1").arg(longAccentColor2, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
+    QString accentColor3 = QStringLiteral("#%1").arg(longAccentColor3, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
+
+    qssText = qssText.replace(QStringLiteral("@ThemeAccentColor1"), accentColor1);
+    qssText = qssText.replace(QStringLiteral("@ThemeAccentColor2"), accentColor2);
+    qssText = qssText.replace(QStringLiteral("@ThemeAccentColor3"), accentColor3);
+
+    //Base::Console().Warning("%s\n", qssText.toStdString());
+    return qssText;
+}
+
+void Application::checkForDeprecatedSettings()
+{
+    // From 0.21, `FCBak` will be the intended default backup format
+    bool makeBackups = App::GetApplication()
+                           .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Document")
+                           ->GetBool("CreateBackupFiles", true);
+    if (makeBackups) {
+        bool useFCBakExtension =
+            App::GetApplication()
+                .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Document")
+                ->GetBool("UseFCBakExtension", true);
+        if (!useFCBakExtension) {
+            // TODO: This should be translated
+            Base::Console().Warning("The `.FCStd#` backup format is deprecated as of v0.21 and may "
+                                    "be removed in future versions.\n"
+                                    "To update, check the 'Preferences->General->Document->Use "
+                                    "date and FCBak extension' option.\n");
+        }
     }
 }
 

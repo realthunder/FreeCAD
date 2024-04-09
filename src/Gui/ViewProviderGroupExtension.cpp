@@ -50,9 +50,7 @@ ViewProviderGroupExtension::ViewProviderGroupExtension()
     initExtensionType(ViewProviderGroupExtension::getExtensionClassTypeId());
 }
 
-ViewProviderGroupExtension::~ViewProviderGroupExtension()
-{
-}
+ViewProviderGroupExtension::~ViewProviderGroupExtension() = default;
 
 bool ViewProviderGroupExtension::extensionCanDragObjects() const {
     return true;

@@ -56,8 +56,8 @@ class TechDrawGuiExport QGIDecoration : public QGraphicsItemGroup
 {
     using inherited = QGraphicsItemGroup;
 public:
-    explicit QGIDecoration(void);
-    ~QGIDecoration() {}
+    explicit QGIDecoration();
+    ~QGIDecoration() override = default;
     enum {Type = QGraphicsItem::UserType + 173};
     int type() const override { return Type;}
 
@@ -79,7 +79,7 @@ public:
     double getWidth() { return m_width; }
     void setStyle(Qt::PenStyle s);
     void setColor(QColor c);
-    QColor getColor(void) { return m_colNormal; }
+    QColor getColor() { return m_colNormal; }
     void setFill(Qt::BrushStyle bs) { m_brushCurrent = bs; }
     void makeMark(double x, double y);
     void makeMark(Base::Vector3d v);
@@ -117,9 +117,10 @@ protected:
     virtual void setPrettySel() {}
     virtual void setupEventFilter();
 
-    virtual QColor prefNormalColor(void);
-    virtual QColor prefPreColor(void);
-    virtual QColor prefSelectColor(void);
+    virtual QColor prefNormalColor();
+    virtual QColor prefPreColor();
+    virtual QColor prefSelectColor();
+
     QPen m_pen;
     QBrush m_brush;
     QColor m_colCurrent;

@@ -24,6 +24,7 @@
 #define GUI_PYTHONCONSOLE_H
 
 #include <Python.h>
+#include <QTimer>
 #include "PythonEditor.h"
 
 
@@ -41,6 +42,9 @@ class GuiExport InteractiveInterpreter
 public:
     InteractiveInterpreter();
     ~InteractiveInterpreter();
+
+    bool isOccupied() const;
+    bool interrupt() const;
 
     bool hasPending() const;
     bool push(const QString &line);
@@ -154,6 +158,7 @@ private:
     void appendOutput(const QString&, int);
     void loadHistory() const;
     void saveHistory() const;
+    void flushOutput();
 
 Q_SIGNALS:
     void pendingSource( );
@@ -161,13 +166,13 @@ Q_SIGNALS:
 private:
     struct PythonConsoleP* d;
 
+    PythonConsoleHighlighter* pythonSyntax{nullptr};
+    QString *_sourceDrain{nullptr};
+    QString _historyFile;
+    QTimer *flusher{nullptr};
+
     friend class PythonStdout;
     friend class PythonStderr;
-
-private:
-    PythonConsoleHighlighter* pythonSyntax;
-    QString                 *_sourceDrain;
-    QString                  _historyFile;
 };
 
 /**

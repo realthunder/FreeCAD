@@ -178,8 +178,8 @@ def InitApplications():
         InstallFile = os.path.join(Dir,"Init.py")
         if (os.path.exists(InstallFile)):
             try:
-                with open(file=InstallFile, encoding="utf-8") as f:
-                    exec(f.read())
+                with open(InstallFile, 'rt', encoding='utf-8') as f:
+                    exec(compile(f.read(), InstallFile, 'exec'))
             except Exception as inst:
                 Log('Init:      Initializing ' + Dir + '... failed\n')
                 Log('-'*100+'\n')
@@ -303,7 +303,7 @@ Crt = FreeCAD.Console.PrintCritical
 Ntf = FreeCAD.Console.PrintNotification
 Tnf = FreeCAD.Console.PrintTranslatedNotification
 
-#store the cmake variales
+#store the cmake variables
 App.__cmake__ = cmake;
 
 #store unit test names

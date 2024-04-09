@@ -42,9 +42,7 @@ Compound::Compound()
     Links.setSize(0);
 }
 
-Compound::~Compound()
-{
-}
+Compound::~Compound() = default;
 
 short Compound::mustExecute() const
 {
@@ -70,11 +68,11 @@ App::DocumentObjectExecReturn *Compound::execute()
 
         const std::vector<DocumentObject*>& links = Links.getValues();
         std::vector<TopoShape> shapes;
-        for (std::vector<DocumentObject*>::const_iterator it = links.begin(); it != links.end(); ++it) {
-            if (*it) {
-                auto pos = tempLinks.insert(*it);
+        for (auto link : links) {
+            if (link) {
+                auto pos = tempLinks.insert(link);
                 if (pos.second) {
-                    const TopoDS_Shape& sh = Feature::getShape(*it);
+                    const TopoDS_Shape& sh = Feature::getShape(link);
                     if (!sh.IsNull()) {
                         builder.Add(comp, sh);
                         TopTools_IndexedMapOfShape faceMap;
@@ -91,7 +89,7 @@ App::DocumentObjectExecReturn *Compound::execute()
             }
         }
 
-        this->Shape.setValue(TopoShape().makECompound(shapes));
+        this->Shape.setValue(comp);
 
         // make sure the 'PropertyShapeHistory' is not safed in undo/redo (#0001889)
         PropertyShapeHistory prop;

@@ -59,8 +59,10 @@ public:
 /** Curvature information. */
 struct MeshExport CurvatureInfo
 {
-    float fMaxCurvature, fMinCurvature;
-    Base::Vector3f cMaxCurvDir, cMinCurvDir;
+    float fMaxCurvature {0.0F};
+    float fMinCurvature {0.0F};
+    Base::Vector3f cMaxCurvDir;
+    Base::Vector3f cMinCurvDir;
 
     bool operator == (const CurvatureInfo &other) const {
         return fMaxCurvature == other.fMaxCurvature
@@ -80,17 +82,17 @@ class MeshExport PropertyCurvatureList: public App::PropertyListsT<CurvatureInfo
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    enum {
-        MeanCurvature  = 0,  /**< Mean curvature */
-        GaussCurvature = 1,  /**< Gaussian curvature */
-        MaxCurvature   = 2,  /**< Maximum curvature */
-        MinCurvature   = 3,  /**< Minimum curvature */
-        AbsCurvature   = 4   /**< Absolute curvature */
+    enum
+    {
+        MeanCurvature = 0,  /**< Mean curvature */
+        GaussCurvature = 1, /**< Gaussian curvature */
+        MaxCurvature = 2,   /**< Maximum curvature */
+        MinCurvature = 3,   /**< Minimum curvature */
+        AbsCurvature = 4    /**< Absolute curvature */
     };
 
 public:
     PropertyCurvatureList();
-    ~PropertyCurvatureList() override;
 
     std::vector<float> getCurvature( int tMode) const;
 
@@ -113,17 +115,16 @@ protected:
 
 /** Mesh material properties
  */
-class MeshExport PropertyMaterial : public App::Property
+class MeshExport PropertyMaterial: public App::Property
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
     PropertyMaterial() = default;
-    ~PropertyMaterial() override = default;
 
     /** Sets the property
      */
-    void setValue(const MeshCore::Material &mat);
+    void setValue(const MeshCore::Material& mat);
     void setAmbientColor(const std::vector<App::Color>& col);
     void setDiffuseColor(const std::vector<App::Color>& col);
     void setSpecularColor(const std::vector<App::Color>& col);
@@ -144,7 +145,7 @@ public:
     PyObject* getPyObject() override;
     void setPyObject(PyObject*) override;
 
-    void Save (Base::Writer& writer) const override;
+    void Save(Base::Writer& writer) const override;
     void Restore(Base::XMLReader& reader) override;
 
     void SaveDocFile(Base::Writer& writer) const override;
@@ -165,13 +166,18 @@ private:
 /** The mesh kernel property class.
  * @author Werner Mayer
  */
-class MeshExport PropertyMeshKernel : public App::PropertyComplexGeoData
+class MeshExport PropertyMeshKernel: public App::PropertyComplexGeoData
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
     PropertyMeshKernel();
     ~PropertyMeshKernel() override;
+
+    PropertyMeshKernel(const PropertyMeshKernel&) = delete;
+    PropertyMeshKernel(PropertyMeshKernel&&) = delete;
+    PropertyMeshKernel& operator=(const PropertyMeshKernel&) = delete;
+    PropertyMeshKernel& operator=(PropertyMeshKernel&&) = delete;
 
     /** @name Getter/setter */
     //@{
@@ -195,9 +201,9 @@ public:
     /** Returns a the attached mesh object by reference. It cannot be modified
      * from outside.
      */
-    const MeshObject &getValue() const;
-    const MeshObject *getValuePtr() const;
-    unsigned int getMemSize () const override;
+    const MeshObject& getValue() const;
+    const MeshObject* getValuePtr() const;
+    unsigned int getMemSize() const override;
     //@}
 
     /** @name Getting basic geometric entities */
@@ -212,8 +218,8 @@ public:
     MeshObject* startEditing();
     void finishEditing();
     /// Transform the real mesh data
-    void transformGeometry(const Base::Matrix4D &rclMat) override;
-    void setPointIndices( const std::vector<std::pair<PointIndex, Base::Vector3f> >& );
+    void transformGeometry(const Base::Matrix4D& rclMat) override;
+    void setPointIndices(const std::vector<std::pair<PointIndex, Base::Vector3f>>&);
     void setTransform(const Base::Matrix4D& rclTrf) override;
     Base::Matrix4D getTransform() const override;
     //@}
@@ -230,30 +236,31 @@ public:
      * wrapper for the mesh object or simply a list of triangles, i.e. a list
      * of lists of three floats.
      */
-    void setPyObject(PyObject *value) override;
+    void setPyObject(PyObject* value) override;
     //@}
 
-    const char* getEditorName() const override {
+    const char* getEditorName() const override
+    {
         return "MeshGui::PropertyMeshKernelItem";
     }
 
     /** @name Save/restore */
     //@{
-    void Save (Base::Writer &writer) const override;
-    void Restore(Base::XMLReader &reader) override;
+    void Save(Base::Writer& writer) const override;
+    void Restore(Base::XMLReader& reader) override;
 
-    void SaveDocFile (Base::Writer &writer) const override;
-    void RestoreDocFile(Base::Reader &reader) override;
+    void SaveDocFile(Base::Writer& writer) const override;
+    void RestoreDocFile(Base::Reader& reader) override;
 
-    App::Property *Copy() const override;
-    void Paste(const App::Property &from) override;
+    App::Property* Copy() const override;
+    void Paste(const App::Property& from) override;
     //@}
 
 private:
     Base::Reference<MeshObject> _meshObject;
-    MeshPy* meshPyObject;
+    MeshPy* meshPyObject {nullptr};
 };
 
-} // namespace Mesh
+}  // namespace Mesh
 
-#endif // MESH_MESHPROPERTIES_H
+#endif  // MESH_MESHPROPERTIES_H

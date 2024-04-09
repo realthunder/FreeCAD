@@ -30,6 +30,7 @@
 # include <QString>
 # include <QImage>
 # include <QPixmap>
+# include <boost/core/ignore_unused.hpp>
 #endif
 
 #include <Base/Tools.h>
@@ -52,13 +53,40 @@
 
 
 #include "TaskSketcherElements.h"
-#include "ui_TaskSketcherElements.h"
-#include "ViewProviderSketch.h"
 #include "Utils.h"
+#include "ViewProviderSketch.h"
+#include "ui_TaskSketcherElements.h"
 
 using namespace Sketcher;
 using namespace SketcherGui;
 using namespace Gui::TaskView;
+
+// Translation block for context menu: do not remove
+#if 0
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Point Coincidence");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Point on Object");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Vertical Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Horizontal Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Parallel Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Perpendicular Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Tangent Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Equal Length");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Symmetric");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Block Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Lock Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Horizontal Distance");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Vertical Distance");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Length Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Radius Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Diameter Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Radiam Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Angle Constraint");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Toggle construction geometry");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Select Constraints");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Select Origin");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Select Horizontal Axis");
+QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Select Vertical Axis");
+#endif
 
 enum ColumnIndex {
     ColType,
@@ -270,7 +298,7 @@ public:
 
         Data::IndexedName name = sketch->shapeTypeFromGeoId(ElementNbr, (Sketcher::PointPos)(element));
         std::string tmp;
-        setText(ColumnIndex::ColName, QString::fromUtf8(name.toString(tmp)));
+        setText(ColumnIndex::ColName, QString::fromUtf8(name.appendToStringBuffer(tmp)));
         std::string mapped = sketch->convertSubName(name,false);
         setText(ColumnIndex::ColMapped, QString::fromUtf8(mapped.c_str()));
     }
@@ -296,8 +324,7 @@ ElementView::ElementView(QWidget *parent)
 }
 
 ElementView::~ElementView()
-{
-}
+{}
 
 void ElementView::contextMenuEvent (QContextMenuEvent* event)
 {
@@ -339,8 +366,8 @@ void ElementView::contextMenuEvent (QContextMenuEvent* event)
 
     Gui::MenuManager::getInstance()->setupContextMenu(&mitems, menu);
 
-    QAction* remove = menu.addAction(tr("Delete"), this, &ElementView::deleteSelectedItems,
-        QKeySequence(QKeySequence::Delete));
+    QAction* remove = menu.addAction(tr("Delete"), this, &ElementView::deleteSelectedItems);
+    remove->setShortcut(QKeySequence(QKeySequence::Delete));
     remove->setEnabled(!items.isEmpty());
 
     menu.menuAction()->setIconVisibleInMenu(true);
@@ -351,7 +378,8 @@ void ElementView::contextMenuEvent (QContextMenuEvent* event)
 void ElementView::deleteSelectedItems()
 {
     App::Document* doc = App::GetApplication().getActiveDocument();
-    if (!doc) return;
+    if (!doc)
+        return;
 
     doc->openTransaction("Delete element");
     std::vector<Gui::SelectionObject> sel = Gui::Selection().getSelectionEx(doc->getName());
@@ -382,8 +410,8 @@ void ElementView::keyPressEvent(QKeyEvent * event)
 
 /* TRANSLATOR SketcherGui::TaskSketcherElements */
 
-TaskSketcherElements::TaskSketcherElements(ViewProviderSketch *sketchView)
-    : TaskBox(Gui::BitmapFactory().pixmap("document-new"),tr("Elements"),true, 0)
+TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
+    : TaskBox(Gui::BitmapFactory().pixmap("document-new"), tr("Elements"), true, nullptr)
     , sketchView(sketchView)
     , ui(new Ui_TaskSketcherElements())
     , focusItemIndex(-1)
@@ -395,7 +423,7 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch *sketchView)
     proxy = new QWidget(this);
     ui->setupUi(proxy);
 #ifdef Q_OS_MAC
-    QString cmdKey = QString::fromUtf8("\xe2\x8c\x98"); // U+2318
+    QString cmdKey = QString::fromUtf8("\xe2\x8c\x98");// U+2318
 #else
     // translate the text (it's offered by Qt's translation files)
     // but avoid being picked up by lupdate
@@ -410,11 +438,7 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch *sketchView)
     ui->elementsWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->elementsWidget->setMouseTracking(true);
     ui->elementsWidget->setColumnCount(5);
-#if QT_VERSION >= 0x050000
     ui->elementsWidget->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-#else
-    ui->elementsWidget->header()->setResizeMode(0, QHeaderView::ResizeToContents);
-#endif
     ui->elementsWidget->header()->setStretchLastSection(false);
     ui->elementsWidget->headerItem()->setText(ColumnIndex::ColType, tr("Type"));
     ui->elementsWidget->headerItem()->setText(ColumnIndex::ColName, tr("Name"));
@@ -449,7 +473,7 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch *sketchView)
        );
 
     connectionElementsChanged = sketchView->getSketchObject()->signalElementsChanged.connect(
-        boost::bind(&SketcherGui::TaskSketcherElements::slotElementsChanged, this));
+        std::bind(&SketcherGui::TaskSketcherElements::slotElementsChanged, this));
 
     this->groupLayout()->addWidget(proxy);
 
@@ -484,8 +508,8 @@ void TaskSketcherElements::onSelectionChanged(const Gui::SelectionChanges& msg)
     if (msg.Type == Gui::SelectionChanges::ClrSelection) {
         clearWidget();
     }
-    else if (msg.Type == Gui::SelectionChanges::AddSelection ||
-             msg.Type == Gui::SelectionChanges::RmvSelection) {
+    else if (msg.Type == Gui::SelectionChanges::AddSelection
+             || msg.Type == Gui::SelectionChanges::RmvSelection) {
         bool select = (msg.Type == Gui::SelectionChanges::AddSelection);
         App::DocumentObject *selObj = msg.Object.getObject();
         // is it this object??
@@ -769,18 +793,19 @@ void TaskSketcherElements::on_elementsWidget_itemEntered(QTreeWidgetItem *item)
     }
 }
 
-void TaskSketcherElements::leaveEvent (QEvent * event)
+void TaskSketcherElements::leaveEvent(QEvent* event)
 {
     Q_UNUSED(event);
     Gui::Selection().rmvPreselect();
     ui->elementsWidget->clearFocus();
 }
 
-void TaskSketcherElements::slotElementsChanged(void)
+void TaskSketcherElements::slotElementsChanged()
 {
     assert(sketchView);
     // Build up ListView with the elements
-    const std::vector< Part::Geometry * > &vals = sketchView->getSketchObject()->Geometry.getValues();
+    Sketcher::SketchObject* sketch = sketchView->getSketchObject();
+    const std::vector<Part::Geometry*>& vals = sketch->Geometry.getValues();
 
     int currentRow = 0;
     auto currentIndex = ui->elementsWidget->indexAt(QPoint(0,0));
@@ -794,7 +819,6 @@ void TaskSketcherElements::slotElementsChanged(void)
     int element = ui->comboBoxElementFilter->currentIndex();
     int filterindex = ui->comboBoxModeFilter->currentIndex();
 
-    auto sketch = sketchView->getSketchObject();
     for(int i=0;i<(int)vals.size();++i) {
         auto item = new ElementItem(ui->elementsWidget,sketch, i, vals[i]);
         item->setElement(sketch,element, filterindex);
@@ -994,6 +1018,5 @@ MultIcon & MultIcon::operator=(const char* name)
     Internal = QIcon(QPixmap::fromImage(imgInt));
     return *this;
 }
-
 
 #include "moc_TaskSketcherElements.cpp"

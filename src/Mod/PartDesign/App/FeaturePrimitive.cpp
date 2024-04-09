@@ -65,7 +65,6 @@ const App::PropertyQuantityConstraint::Constraints quantityRangeZero = { 0.0, FL
 PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::FeaturePrimitive, PartDesign::FeatureAddSub)
 
 FeaturePrimitive::FeaturePrimitive()
-  :  primitiveType(Box)
 {
     Part::AttachExtension::initExtension(this);
 }
@@ -145,7 +144,7 @@ bool FeaturePrimitive::isElementGenerated(const TopoShape &, const Data::MappedN
     if(!getBaseObject(true))
         return false;
     long tag = 0;
-    Data::ComplexGeoData::findTagInElementName(name,&tag);
+    name.findTagInElementName(&tag);
     return tag == getID();
 }
 

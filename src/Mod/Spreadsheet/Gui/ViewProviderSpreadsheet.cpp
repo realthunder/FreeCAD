@@ -24,9 +24,9 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
-# include <sstream>
-# include <QMenu>
-# include <QString>
+#include <QMenu>
+#include <QString>
+#include <sstream>
 #endif
 
 #include <Gui/Application.h>
@@ -36,9 +36,9 @@
 #include <Gui/View3DInventor.h>
 #include <Mod/Spreadsheet/App/Sheet.h>
 
+#include "SpreadsheetView.h"
 #include "ViewProviderSpreadsheet.h"
 #include "ViewProviderSpreadsheetPy.h"
-#include "SpreadsheetView.h"
 
 
 using namespace Base;
@@ -59,7 +59,7 @@ ViewProviderSheet::~ViewProviderSheet()
 {
     if (!view.isNull()) {
         Gui::getMainWindow()->removeWindow(view);
-//        delete view;
+        //        delete view;
     }
 }
 
@@ -68,7 +68,7 @@ void ViewProviderSheet::setDisplayMode(const char* ModeName)
     ViewProviderDocumentObject::setDisplayMode(ModeName);
 }
 
-std::vector<std::string> ViewProviderSheet::getDisplayModes(void) const
+std::vector<std::string> ViewProviderSheet::getDisplayModes() const
 {
     std::vector<std::string> StrList;
     StrList.emplace_back("Spreadsheet");
@@ -128,14 +128,14 @@ bool ViewProviderSheet::doubleClicked()
     return true;
 }
 
-void ViewProviderSheet::setupContextMenu(QMenu * menu, QObject *receiver, const char *member)
+void ViewProviderSheet::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
     QAction* act;
     act = menu->addAction(QObject::tr("Show spreadsheet"), receiver, member);
     act->setData(QVariant((int)ViewProvider::Default));
 }
 
-Sheet *ViewProviderSheet::getSpreadsheetObject() const
+Sheet* ViewProviderSheet::getSpreadsheetObject() const
 {
     return freecad_dynamic_cast<Sheet>(pcObject);
 }
@@ -143,21 +143,23 @@ Sheet *ViewProviderSheet::getSpreadsheetObject() const
 void ViewProviderSheet::beforeDelete()
 {
     ViewProviderDocumentObject::beforeDelete();
-    if(!view)
+    if (!view) {
         return;
-    if(view==Gui::getMainWindow()->activeWindow())
-        getDocument()->setActiveView(nullptr,Gui::View3DInventor::getClassTypeId());
+    }
+    if (view == Gui::getMainWindow()->activeWindow()) {
+        getDocument()->setActiveView(nullptr, Gui::View3DInventor::getClassTypeId());
+    }
     Gui::getMainWindow()->removeWindow(view);
 }
 
-SheetView *ViewProviderSheet::showSpreadsheetView()
+SheetView* ViewProviderSheet::showSpreadsheetView()
 {
-    if (!view){
-        Gui::Document* doc = Gui::Application::Instance->getDocument
-            (this->pcObject->getDocument());
+    if (!view) {
+        Gui::Document* doc = Gui::Application::Instance->getDocument(this->pcObject->getDocument());
         view = new SheetView(doc, this->pcObject, Gui::getMainWindow());
         view->setWindowIcon(Gui::BitmapFactory().pixmap(":icons/Spreadsheet.svg"));
-        view->setWindowTitle(QString::fromUtf8(pcObject->Label.getValue()) + QStringLiteral("[*]"));
+        view->setWindowTitle(QString::fromUtf8(pcObject->Label.getValue())
+                             + QStringLiteral("[*]"));
         Gui::getMainWindow()->addWindow(view);
         startEditing();
     }
@@ -165,7 +167,7 @@ SheetView *ViewProviderSheet::showSpreadsheetView()
     return view;
 } 
 
-Gui::MDIView *ViewProviderSheet::getMDIView() const
+Gui::MDIView* ViewProviderSheet::getMDIView() const
 {
     return const_cast<ViewProviderSheet*>(this)->showSpreadsheetView();
 }
@@ -187,21 +189,23 @@ void ViewProviderSheet::updateData(const App::Property* prop)
     view->updateCell(prop);
 }
 
-PyObject *ViewProviderSheet::getPyObject()
+PyObject* ViewProviderSheet::getPyObject()
 {
-    if (!pyViewObject)
+    if (!pyViewObject) {
         pyViewObject = new ViewProviderSpreadsheetPy(this);
+    }
     pyViewObject->IncRef();
     return pyViewObject;
 }
 
 // Python feature -----------------------------------------------------------------------
 
-namespace Gui {
+namespace Gui
+{
 /// @cond DOXERR
 PROPERTY_SOURCE_TEMPLATE(SpreadsheetGui::ViewProviderSheetPython, SpreadsheetGui::ViewProviderSheet)
 /// @endcond
 
 // explicit template instantiation
 template class SpreadsheetGuiExport ViewProviderPythonFeatureT<ViewProviderSheet>;
-}
+}  // namespace Gui

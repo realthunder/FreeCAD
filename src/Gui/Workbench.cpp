@@ -28,6 +28,7 @@
 #endif
 
 #include "Workbench.h"
+#include "WorkbenchManipulator.h"
 #include "WorkbenchPy.h"
 #include "Action.h"
 #include "Application.h"
@@ -206,13 +207,9 @@ using namespace Gui;
 /// @namespace Gui @class Workbench
 TYPESYSTEM_SOURCE_ABSTRACT(Gui::Workbench, Base::BaseClass)
 
-Workbench::Workbench()
-{
-}
+Workbench::Workbench() = default;
 
-Workbench::~Workbench()
-{
-}
+Workbench::~Workbench() = default;
 
 const std::string &Workbench::name() const
 {
@@ -240,7 +237,7 @@ void Workbench::setupCustomToolbars(ToolBarItem* root, const char* toolbar) cons
     }
 
     // for this workbench global toolbars are not allowed
-    if (getTypeId() == NoneWorkbench::getClassTypeId()) {
+    if (is<NoneWorkbench>()) {
         return;
     }
 
@@ -322,6 +319,12 @@ void Workbench::setupCustomToolbars(ToolBarItem* root, const char *group, const 
 void Workbench::setupCustomShortcuts() const
 {
     // Now managed by ShortcutManager
+}
+
+void Workbench::createContextMenu(const char* recipient, MenuItem* item) const
+{
+    setupContextMenu(recipient, item);
+    WorkbenchManipulator::changeContextMenu(recipient, item);
 }
 
 void Workbench::setupContextMenu(const char* recipient,MenuItem* item) const
@@ -411,6 +414,7 @@ bool Workbench::activate()
 {
     ToolBarItem* tb = setupToolBars();
     setupCustomToolbars(tb, "Toolbar");
+    WorkbenchManipulator::changeToolBars(tb);
     ToolBarManager::getInstance()->setup( tb );
     delete tb;
 
@@ -420,11 +424,13 @@ bool Workbench::activate()
     //delete cb;
 
     DockWindowItems* dw = setupDockWindows();
+    WorkbenchManipulator::changeDockWindows(dw);
     DockWindowManager::instance()->setup( dw );
     delete dw;
 
     MenuItem* mb = setupMenuBar();
     addPermanentMenuItems(mb);
+    WorkbenchManipulator::changeMenuBar(mb);
     MenuManager::getInstance()->setup( mb );
     delete mb;
 
@@ -576,9 +582,7 @@ StdWorkbench::StdWorkbench()
 {
 }
 
-StdWorkbench::~StdWorkbench()
-{
-}
+StdWorkbench::~StdWorkbench() = default;
 
 void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
 {
@@ -623,8 +627,9 @@ void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
         measure->setCommand("Measure");
         *measure << "View_Measure_Toggle_All" << "View_Measure_Clear_All";
 
-        *item << "Std_ViewFitAll" << "Std_ViewSelection" << "Std_DrawStyle" << StdViews << measure
-              << "Separator" << "Std_ViewDockUndockFullscreen";
+        *item << "Std_ViewFitAll" << "Std_ViewSelection" << "Std_DrawStyle"
+              << StdViews << measure << "Separator"
+              << "Std_ViewDockUndockFullscreen";
 
         if (Gui::Selection().hasSelection()) {
             setupCommon("Std_TreeSelection");
@@ -640,6 +645,7 @@ void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
 
 void StdWorkbench::createMainWindowPopupMenu(MenuItem* item) const
 {
+    // *item << "Std_ToggleToolBarLock";
     *item << "Std_DlgCustomize";
 }
 
@@ -651,12 +657,12 @@ MenuItem* StdWorkbench::setupMenuBar() const
     // File
     auto file = new MenuItem( menuBar );
     file->setCommand("&File");
-    *file << "Std_New" << "Std_Open" << "Std_OpenDirectory" << "Separator" << "Std_CloseActiveWindow"
+    *file << "Std_New" << "Std_Open" << "Std_OpenDirectory" << "Std_RecentFiles" << "Separator" << "Std_CloseActiveWindow"
           << "Std_CloseAllWindows" << "Separator" << "Std_Save" << "Std_SaveAs" << "Std_SaveAsDirectory"
           << "Std_SaveCopy" << "Std_SaveAll" << "Std_Revert" << "Separator" << "Std_Import"
           << "Std_Export" << "Std_MergeProjects" << "Std_ProjectInfo"
           << "Separator" << "Std_Print" << "Std_PrintPreview" << "Std_PrintPdf"
-          << "Separator" << "Std_RecentFiles" << "Separator" << "Std_Quit";
+          << "Separator" << "Std_Quit";
 
     // Edit
     auto edit = new MenuItem( menuBar );
@@ -720,11 +726,20 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Separator" << visu
           << "Std_ToolTipDisable"
           << "Std_ToggleNavigation"
-          << "Std_SetAppearance" << "Std_GroupRandomColor" << "Separator"
-          << "Std_Workbench" << "Std_ToolBarMenu" << "Std_DockViewMenu";
-    if(Application::Instance->commandManager().getCommandByName("Std_DockOverlay"))
+          << "Std_SetAppearance"
+          << "Std_GroupRandomColor"
+          << "Separator"
+          << "Std_Workbench"
+          << "Std_ToolBarMenu"
+          << "Std_DockViewMenu";
+    if (DockWindowManager::instance()->isOverlayActivated() &&
+        Application::Instance->commandManager().getCommandByName("Std_DockOverlay"))
         *view << "Std_DockOverlay";
-    *view << "Std_ViewStatusBar" << "Separator" << "Std_TreeViewActions";
+    *view << "Separator"
+          << "Std_ToggleTransparency"
+          << "Std_LinkSelectActions"
+          << "Std_TreeViewActions"
+          << "Std_ViewStatusBar";
 
     // Tools
     auto tool = new MenuItem( menuBar );
@@ -737,6 +752,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Std_ViewLoadImage"
           << "Std_SceneInspector"
           << "Std_DependencyGraph"
+          << "Std_ExportDependencyGraph"
           << "Std_ProjectUtil"
           << "Std_PickGeometry"
           << "Std_ItemMenu"
@@ -762,7 +778,6 @@ MenuItem* StdWorkbench::setupMenuBar() const
     auto macro = new MenuItem( menuBar );
     macro->setCommand("&Macro");
     *macro << "Std_DlgMacroRecord"
-           << "Std_MacroStopRecord"
            << "Std_DlgMacroExecute"
            << "Std_RecentMacros"
            << "Std_MacroPreselectionCommands"
@@ -813,7 +828,7 @@ ToolBarItem* StdWorkbench::setupToolBars() const
           << "Separator" << "Std_Refresh";
     
     // Clipboard
-    auto clipboard = new ToolBarItem( root , ToolBarItem::HideStyle::HIDDEN );
+    auto clipboard = new ToolBarItem( root , ToolBarItem::DefaultVisibility::Hidden );
     clipboard->setCommand("Clipboard");
     *clipboard << "Std_Cut" << "Std_Copy" << "Std_Paste";
     
@@ -825,16 +840,16 @@ ToolBarItem* StdWorkbench::setupToolBars() const
     }
 
     // Macro
-    auto macro = new ToolBarItem( root );
+    auto macro = new ToolBarItem( root, ToolBarItem::DefaultVisibility::Hidden);
     macro->setCommand("Macro");
-    *macro << "Std_DlgMacroRecord" << "Std_MacroStopRecord" << "Std_DlgMacroExecute"
+    *macro << "Std_DlgMacroRecord" << "Std_DlgMacroExecute"
            << "Std_DlgMacroExecuteDirect";
 
     // View
     auto view = new ToolBarItem( root );
     view->setCommand("View");
     *view << "Std_ViewFitAll" << "Std_ViewSelection" << "Std_DrawStyle" << "Std_SelOptions" << "Std_TreeViewActions"
-          << "Separator" << "Std_SelBack" << "Std_SelForward" << "Std_SelUp" << "Std_LinkSelectActions"
+          << "Separator" << "Std_SelBack" << "Std_SelForward" << "Std_SelUp"
           << "Separator" << "Std_MeasureDistance" ;
 
     // Structure
@@ -861,7 +876,7 @@ ToolBarItem* StdWorkbench::setupCommandBars() const
     // Special Ops
     auto macro = new ToolBarItem( root );
     macro->setCommand("Special Ops");
-    *macro << "Std_DlgParameter" << "Std_DlgPreferences" << "Std_DlgMacroRecord" << "Std_MacroStopRecord"
+    *macro << "Std_DlgParameter" << "Std_DlgPreferences" << "Std_DlgMacroRecord"
            << "Std_DlgMacroExecute" << "Std_DlgCustomize";
 
     return root;
@@ -876,7 +891,8 @@ DockWindowItems* StdWorkbench::setupDockWindows() const
     root->addDockWidget("Std_PropertyView", Qt::LeftDockWidgetArea, true, false);
     root->addDockWidget("Std_SelectionView", Qt::LeftDockWidgetArea, false, false);
     root->addDockWidget("Std_TaskWatcher", Qt::LeftDockWidgetArea, false, false);
-    root->addDockWidget("Std_ComboView", Qt::LeftDockWidgetArea, false, false);
+    root->addDockWidget("Std_ComboView", Qt::LeftDockWidgetArea, true, true);
+    root->addDockWidget("Std_TaskView", Qt::LeftDockWidgetArea, true, true);
     root->addDockWidget("Std_ReportView", Qt::BottomDockWidgetArea, true, true);
     root->addDockWidget("Std_PythonView", Qt::BottomDockWidgetArea, true, true);
 
@@ -901,9 +917,7 @@ BlankWorkbench::BlankWorkbench()
 {
 }
 
-BlankWorkbench::~BlankWorkbench()
-{
-}
+BlankWorkbench::~BlankWorkbench() = default;
 
 void BlankWorkbench::activated()
 {
@@ -954,9 +968,7 @@ NoneWorkbench::NoneWorkbench()
 {
 }
 
-NoneWorkbench::~NoneWorkbench()
-{
-}
+NoneWorkbench::~NoneWorkbench() = default;
 
 void NoneWorkbench::setupContextMenu(const char* recipient,MenuItem* item) const
 {
@@ -1024,9 +1036,7 @@ TestWorkbench::TestWorkbench()
 {
 }
 
-TestWorkbench::~TestWorkbench()
-{
-}
+TestWorkbench::~TestWorkbench() = default;
 
 MenuItem* TestWorkbench::setupMenuBar() const
 {
@@ -1066,10 +1076,7 @@ ToolBarItem* TestWorkbench::setupCommandBars() const
 
 TYPESYSTEM_SOURCE_ABSTRACT(Gui::PythonBaseWorkbench, Gui::Workbench)
 
-PythonBaseWorkbench::PythonBaseWorkbench()
-  : _menuBar(nullptr), _contextMenu(nullptr), _toolBar(nullptr), _commandBar(nullptr), _workbenchPy(nullptr)
-{
-}
+PythonBaseWorkbench::PythonBaseWorkbench() = default;
 
 PythonBaseWorkbench::~PythonBaseWorkbench()
 {
@@ -1258,9 +1265,7 @@ PythonBlankWorkbench::PythonBlankWorkbench()
     _commandBar = new ToolBarItem;
 }
 
-PythonBlankWorkbench::~PythonBlankWorkbench()
-{
-}
+PythonBlankWorkbench::~PythonBlankWorkbench() = default;
 
 // -----------------------------------------------------------------------
 
@@ -1275,9 +1280,7 @@ PythonWorkbench::PythonWorkbench()
     _commandBar = new ToolBarItem;
 }
 
-PythonWorkbench::~PythonWorkbench()
-{
-}
+PythonWorkbench::~PythonWorkbench() = default;
 
 MenuItem* PythonWorkbench::setupMenuBar() const
 {

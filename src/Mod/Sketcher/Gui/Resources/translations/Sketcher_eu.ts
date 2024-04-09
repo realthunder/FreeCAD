@@ -4,12 +4,12 @@
   <context>
     <name>CmdSketcherBSplineComb</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="196"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="127"/>
       <source>Show/hide B-spline curvature comb</source>
       <translation>Erakutsi/ezkutatu B-spline elementuen kurbadura-orrazia</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="197"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="129"/>
       <source>Switches between showing and hiding the curvature comb for all B-splines</source>
       <translation>B-spline guztien kurbadura-orrazia erakusten/ezkutatzen ditu</translation>
     </message>
@@ -17,12 +17,12 @@
   <context>
     <name>CmdSketcherBSplineDegree</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="138"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="68"/>
       <source>Show/hide B-spline degree</source>
       <translation>Erakutsi/ezkutatu B-spline funtzioaren gradua</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="139"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="69"/>
       <source>Switches between showing and hiding the degree for all B-splines</source>
       <translation>B-spline guztien gradua erakusten/ezkutatzen ditu</translation>
     </message>
@@ -30,12 +30,12 @@
   <context>
     <name>CmdSketcherBSplineKnotMultiplicity</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="225"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="157"/>
       <source>Show/hide B-spline knot multiplicity</source>
       <translation>Erakutsi/ezkutatu B-spline adabegi-aniztasuna</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="226"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="159"/>
       <source>Switches between showing and hiding the knot multiplicity for all B-splines</source>
       <translation>B-spline guztien adabegi-aniztasuna erakusten/ezkutatzen ditu</translation>
     </message>
@@ -43,12 +43,12 @@
   <context>
     <name>CmdSketcherBSplinePoleWeight</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="254"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="187"/>
       <source>Show/hide B-spline control point weight</source>
       <translation>Erakutsi/ezkutatu B-spline kontrol-puntuaren pisua</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="255"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="188"/>
       <source>Switches between showing and hiding the control point weight for all B-splines</source>
       <translation>B-spline guztien kontrol-puntuen pisuak erakusten/ezkutatzen ditu</translation>
     </message>
@@ -56,12 +56,12 @@
   <context>
     <name>CmdSketcherBSplinePolygon</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="167"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="97"/>
       <source>Show/hide B-spline control polygon</source>
       <translation>Erakutsi/ezkutatu B-spline kontrol-poligonoa</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="168"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="99"/>
       <source>Switches between showing and hiding the control polygons for all B-splines</source>
       <translation>B-spline guztien kontrol-poligonoak erakusten/ezkutatzen ditu</translation>
     </message>
@@ -69,12 +69,12 @@
   <context>
     <name>CmdSketcherCarbonCopy</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1569"/>
-      <source>Create a carbon copy</source>
-      <translation>Sortu kalkoa</translation>
+      <location filename="../../CommandCreateGeo.cpp" line="1750"/>
+      <source>Create carbon copy</source>
+      <translation>Sortu kopia bat</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1570"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1751"/>
       <source>Copy the geometry of another sketch</source>
       <translation>Kopiatu beste krokis bateko geometria</translation>
     </message>
@@ -82,12 +82,12 @@
   <context>
     <name>CmdSketcherClone</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1450"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1467"/>
       <source>Clone</source>
       <translation>Klonatu</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1452"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1469"/>
       <source>Creates a clone of the geometry taking as reference the last selected point</source>
       <translation>Geometriaren klon bat sortzen du, erreferentzia gisa hautatutako azken puntua hartuta</translation>
     </message>
@@ -95,32 +95,32 @@
   <context>
     <name>CmdSketcherCompBSplineShowHideGeometryInformation</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="283"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="218"/>
       <source>Show/hide B-spline information layer</source>
       <translation>Erakutsi/ezkutatu B-spline funtzioaren informazio-geruza</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="358"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="300"/>
       <source>Show/hide B-spline degree</source>
       <translation>Erakutsi/ezkutatu B-spline funtzioaren gradua</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="365"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="309"/>
       <source>Show/hide B-spline control polygon</source>
       <translation>Erakutsi/ezkutatu B-spline kontrol-poligonoa</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="372"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="318"/>
       <source>Show/hide B-spline curvature comb</source>
       <translation>Erakutsi/ezkutatu B-spline elementuen kurbadura-orrazia</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="379"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="327"/>
       <source>Show/hide B-spline knot multiplicity</source>
       <translation>Erakutsi/ezkutatu B-spline adabegi-aniztasuna</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="387"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="337"/>
       <source>Show/hide B-spline control point weight</source>
       <translation>Erakutsi/ezkutatu B-spline kontrol-puntuaren pisua</translation>
     </message>
@@ -128,27 +128,27 @@
   <context>
     <name>CmdSketcherCompConstrainRadDia</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5873"/>
+      <location filename="../../CommandConstraints.cpp" line="8233"/>
       <source>Constrain arc or circle</source>
       <translation>Murriztu arkua edo zirkulua</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5874"/>
+      <location filename="../../CommandConstraints.cpp" line="8234"/>
       <source>Constrain an arc or a circle</source>
       <translation>Murriztu arku bat edo zirkulu bat</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5979"/>
+      <location filename="../../CommandConstraints.cpp" line="8344"/>
       <source>Constrain radius</source>
       <translation>Murriztu erradioa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5983"/>
+      <location filename="../../CommandConstraints.cpp" line="8350"/>
       <source>Constrain diameter</source>
       <translation>Murriztu diametroa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5987"/>
+      <location filename="../../CommandConstraints.cpp" line="8356"/>
       <source>Constrain auto radius/diameter</source>
       <translation>Murriztu erradio/diametro automatikoa</translation>
     </message>
@@ -156,12 +156,12 @@
   <context>
     <name>CmdSketcherCompCopy</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1532"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1549"/>
       <source>Clone</source>
       <translation>Klonatu</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1534"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1551"/>
       <source>Creates a clone of the geometry taking as reference the last selected point</source>
       <translation>Geometriaren klon bat sortzen du, erreferentzia gisa hautatutako azken puntua hartuta</translation>
     </message>
@@ -169,22 +169,22 @@
   <context>
     <name>CmdSketcherCompCreateArc</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="437"/>
+      <location filename="../../CommandCreateGeo.cpp" line="469"/>
       <source>Create arc</source>
       <translation>Sortu arkua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="438"/>
+      <location filename="../../CommandCreateGeo.cpp" line="470"/>
       <source>Create an arc in the sketcher</source>
       <translation>Sortu arku bat krokisgilean</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="515"/>
+      <location filename="../../CommandCreateGeo.cpp" line="554"/>
       <source>Center and end points</source>
       <translation>Puntu zentrala eta bukaerakoa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="519"/>
+      <location filename="../../CommandCreateGeo.cpp" line="561"/>
       <source>End points and rim point</source>
       <translation>Bukaera puntuak eta ertzeko puntua</translation>
     </message>
@@ -192,12 +192,12 @@
   <context>
     <name>CmdSketcherCompCreateBSpline</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="995"/>
-      <source>Create a B-spline</source>
-      <translation>Sortu B-spline bat</translation>
+      <location filename="../../CommandCreateGeo.cpp" line="1088"/>
+      <source>Create B-spline</source>
+      <translation>Sortu B-spline elementua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="996"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1089"/>
       <source>Create a B-spline in the sketch</source>
       <translation>Sortu B-spline bat krokisean</translation>
     </message>
@@ -205,22 +205,22 @@
   <context>
     <name>CmdSketcherCompCreateCircle</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1160"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1282"/>
       <source>Create circle</source>
       <translation>Sortu zirkulua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1161"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1283"/>
       <source>Create a circle in the sketcher</source>
       <translation>Sortu zirkulu bat krokisgilean</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1238"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1367"/>
       <source>Center and rim point</source>
       <translation>Puntu zentrala eta ertzeko puntua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1242"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1373"/>
       <source>3 rim points</source>
       <translation>3 ertzeko puntu</translation>
     </message>
@@ -228,37 +228,37 @@
   <context>
     <name>CmdSketcherCompCreateConic</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="728"/>
-      <source>Create a conic</source>
+      <location filename="../../CommandCreateGeo.cpp" line="774"/>
+      <source>Create conic</source>
       <translation>Sortu koniko bat</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="729"/>
+      <location filename="../../CommandCreateGeo.cpp" line="775"/>
       <source>Create a conic in the sketch</source>
       <translation>Sortu kono bat krokisgilean</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="833"/>
+      <location filename="../../CommandCreateGeo.cpp" line="893"/>
       <source>Ellipse by center, major radius, point</source>
       <translation>Elipsea puntu zentrala, erradio handia eta puntu baten bidez</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="837"/>
+      <location filename="../../CommandCreateGeo.cpp" line="903"/>
       <source>Ellipse by periapsis, apoapsis, minor radius</source>
       <translation>Elipsea periapsi, apoapsi eta erradio txikiaren bidez</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="841"/>
+      <location filename="../../CommandCreateGeo.cpp" line="913"/>
       <source>Arc of ellipse by center, major radius, endpoints</source>
       <translation>Elipse-arku bat puntu zentrala, erradio handia eta amaiera-puntuak erabiliz</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="845"/>
+      <location filename="../../CommandCreateGeo.cpp" line="923"/>
       <source>Arc of hyperbola by center, major radius, endpoints</source>
       <translation>Hiperbola-arku bat puntu zentrala, erradio handia eta amaiera-puntuak erabiliz</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="849"/>
+      <location filename="../../CommandCreateGeo.cpp" line="932"/>
       <source>Arc of parabola by focus, vertex, endpoints</source>
       <translation>Parabola-arku bat fokua, erpina eta amaiera-puntuak erabiliz</translation>
     </message>
@@ -266,22 +266,22 @@
   <context>
     <name>CmdSketcherCompCreateFillets</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1352"/>
-      <source>Fillets</source>
-      <translation>Biribiltzeak</translation>
+      <location filename="../../CommandCreateGeo.cpp" line="1488"/>
+      <source>Create fillet</source>
+      <translation>Sortu biribiltzea</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1353"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1489"/>
       <source>Create a fillet between two lines</source>
       <translation>Sortu biribiltze bat bi lerroren artean</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1428"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1571"/>
       <source>Sketch fillet</source>
       <translation>Krokis-biribiltzea</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1432"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1577"/>
       <source>Constraint-preserving sketch fillet</source>
       <translation>Murrizketak mantentzen dituen krokis-biribiltzea</translation>
     </message>
@@ -289,27 +289,27 @@
   <context>
     <name>CmdSketcherCompCreateRectangles</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="232"/>
-      <source>Create rectangles</source>
-      <translation>Sortu laukizuzenak</translation>
+      <location filename="../../CommandCreateGeo.cpp" line="243"/>
+      <source>Create rectangle</source>
+      <translation>Sortu laukizuzena</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="233"/>
+      <location filename="../../CommandCreateGeo.cpp" line="244"/>
       <source>Creates a rectangle in the sketch</source>
       <translation>Sortu laukizuzen bat krokisean</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="316"/>
+      <location filename="../../CommandCreateGeo.cpp" line="341"/>
       <source>Rectangle</source>
       <translation>Laukizuzena</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="320"/>
+      <location filename="../../CommandCreateGeo.cpp" line="347"/>
       <source>Centered rectangle</source>
       <translation>Laukizuzen zentratua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="324"/>
+      <location filename="../../CommandCreateGeo.cpp" line="353"/>
       <source>Rounded rectangle</source>
       <translation>Laukizuzen biribildua</translation>
     </message>
@@ -317,47 +317,47 @@
   <context>
     <name>CmdSketcherCompCreateRegularPolygon</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1842"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2103"/>
       <source>Create regular polygon</source>
       <translation>Sortu poligono erregularra</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1843"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2104"/>
       <source>Create a regular polygon in the sketcher</source>
       <translation>Sortu poligono erregular bat krokisgilean</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1959"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2228"/>
       <source>Triangle</source>
       <translation>Triangelua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1963"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2236"/>
       <source>Square</source>
       <translation>Laukia</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1967"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2243"/>
       <source>Pentagon</source>
       <translation>Pentagonoa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1971"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2251"/>
       <source>Hexagon</source>
       <translation>Hexagonoa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1975"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2259"/>
       <source>Heptagon</source>
       <translation>Heptagonoa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1979"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2267"/>
       <source>Octagon</source>
       <translation>Oktagonoa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1983"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2276"/>
       <source>Regular polygon</source>
       <translation>Poligono erregularra</translation>
     </message>
@@ -365,22 +365,22 @@
   <context>
     <name>CmdSketcherCompModifyKnotMultiplicity</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="899"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="636"/>
       <source>Modify knot multiplicity</source>
       <translation>Aldatu adabegi-aniztasuna</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="900"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="637"/>
       <source>Modifies the multiplicity of the selected knot of a B-spline</source>
       <translation>B-spline batean hautatutako adabegi baten aniztasuna aldatzen du</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="961"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="702"/>
       <source>Increase knot multiplicity</source>
       <translation>Handitu adabegi-aniztasuna</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="968"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="711"/>
       <source>Decrease knot multiplicity</source>
       <translation>Txikitu adabegi-aniztasuna</translation>
     </message>
@@ -388,12 +388,12 @@
   <context>
     <name>CmdSketcherConstrainAngle</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6017"/>
+      <location filename="../../CommandConstraints.cpp" line="8393"/>
       <source>Constrain angle</source>
       <translation>Murriztu angelua</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6018"/>
+      <location filename="../../CommandConstraints.cpp" line="8394"/>
       <source>Fix the angle of a line or the angle between two lines</source>
       <translation>Finkatu lerro baten angelua edo bi lerroren arteko angelua</translation>
     </message>
@@ -401,12 +401,12 @@
   <context>
     <name>CmdSketcherConstrainBlock</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1579"/>
+      <location filename="../../CommandConstraints.cpp" line="3339"/>
       <source>Constrain block</source>
       <translation>Murriztu blokea</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1580"/>
+      <location filename="../../CommandConstraints.cpp" line="3340"/>
       <source>Block the selected edge from moving</source>
       <translation>Blokeatu hautatutako ertza, lekuz aldatu ez dadin</translation>
     </message>
@@ -414,12 +414,12 @@
   <context>
     <name>CmdSketcherConstrainCoincident</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1897"/>
+      <location filename="../../CommandConstraints.cpp" line="4053"/>
       <source>Constrain coincident</source>
       <translation>Murriztu bat datozenak</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1898"/>
+      <location filename="../../CommandConstraints.cpp" line="4054"/>
       <source>Create a coincident constraint between points, or a concentric constraint between circles, arcs, and ellipses</source>
       <translation>Sortu bat datorren murrizketa bat puntuen artean, edo murrizketa kontzentriko bat zirkuluen, arkuen eta elipseen artean</translation>
     </message>
@@ -427,12 +427,12 @@
   <context>
     <name>CmdSketcherConstrainDiameter</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5279"/>
+      <location filename="../../CommandConstraints.cpp" line="7544"/>
       <source>Constrain diameter</source>
       <translation>Murriztu diametroa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5280"/>
+      <location filename="../../CommandConstraints.cpp" line="7545"/>
       <source>Fix the diameter of a circle or an arc</source>
       <translation>Finkatu zirkulu baten edo arku baten diametroa</translation>
     </message>
@@ -440,12 +440,12 @@
   <context>
     <name>CmdSketcherConstrainDistance</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2150"/>
+      <location filename="../../CommandConstraints.cpp" line="4157"/>
       <source>Constrain distance</source>
       <translation>Murriztu distantzia</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2151"/>
+      <location filename="../../CommandConstraints.cpp" line="4158"/>
       <source>Fix a length of a line or the distance between a line and a vertex or between two circles</source>
       <translation>Finkatu lerro baten luzera edo lerro baten eta erpin baten arteko edo bi zirkuluren arteko distantzia</translation>
     </message>
@@ -453,12 +453,12 @@
   <context>
     <name>CmdSketcherConstrainDistanceX</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2878"/>
+      <location filename="../../CommandConstraints.cpp" line="4782"/>
       <source>Constrain horizontal distance</source>
       <translation>Murriztu distantzia horizontala</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2879"/>
+      <location filename="../../CommandConstraints.cpp" line="4783"/>
       <source>Fix the horizontal distance between two points or line ends</source>
       <translation>Finkatu bi punturen edo bi lerro-amaieren arteko distantzia horizontala</translation>
     </message>
@@ -466,12 +466,12 @@
   <context>
     <name>CmdSketcherConstrainDistanceY</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3138"/>
+      <location filename="../../CommandConstraints.cpp" line="5086"/>
       <source>Constrain vertical distance</source>
       <translation>Murriztu distantzia bertikala</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3139"/>
+      <location filename="../../CommandConstraints.cpp" line="5087"/>
       <source>Fix the vertical distance between two points or line ends</source>
       <translation>Finkatu bi punturen edo bi lerro-amaieren arteko distantzia bertikala</translation>
     </message>
@@ -479,12 +479,12 @@
   <context>
     <name>CmdSketcherConstrainEqual</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6558"/>
+      <location filename="../../CommandConstraints.cpp" line="8827"/>
       <source>Constrain equal</source>
       <translation>Murriztu berdin</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6559"/>
+      <location filename="../../CommandConstraints.cpp" line="8829"/>
       <source>Create an equality constraint between two lines or between circles and arcs</source>
       <translation>Sortu berdintasun-murrizketa bat bi lerroren artean edo zirkuluen eta arkuen artean</translation>
     </message>
@@ -492,12 +492,12 @@
   <context>
     <name>CmdSketcherConstrainHorizontal</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="888"/>
+      <location filename="../../CommandConstraints.cpp" line="2961"/>
       <source>Constrain horizontally</source>
       <translation>Murriztu horizontalean</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="889"/>
+      <location filename="../../CommandConstraints.cpp" line="2962"/>
       <source>Create a horizontal constraint on the selected item</source>
       <translation>Sortu murrizketa horizontala hautatutako elementuan</translation>
     </message>
@@ -505,27 +505,27 @@
   <context>
     <name>CmdSketcherConstrainLock</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1352"/>
+      <location filename="../../CommandConstraints.cpp" line="3052"/>
       <source>Constrain lock</source>
       <translation>Blokeo-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1353"/>
+      <location filename="../../CommandConstraints.cpp" line="3053"/>
       <source>Create both a horizontal and a vertical distance constraint
 on the selected vertex</source>
-      <translation>Sortu distantzia-murrizketa horizontala eta bertikala 
+      <translation>Sortu distantzia-murrizketa horizontala eta bertikala
 hautatutako erpinean</translation>
     </message>
   </context>
   <context>
     <name>CmdSketcherConstrainParallel</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3389"/>
+      <location filename="../../CommandConstraints.cpp" line="5384"/>
       <source>Constrain parallel</source>
       <translation>Murriztu paraleloa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3390"/>
+      <location filename="../../CommandConstraints.cpp" line="5385"/>
       <source>Create a parallel constraint between two lines</source>
       <translation>Sortu murrizketa paraleloa bi lerroren artean</translation>
     </message>
@@ -533,12 +533,12 @@ hautatutako erpinean</translation>
   <context>
     <name>CmdSketcherConstrainPerpendicular</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3544"/>
+      <location filename="../../CommandConstraints.cpp" line="5554"/>
       <source>Constrain perpendicular</source>
       <translation>Murriztu perpendikularra</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3545"/>
+      <location filename="../../CommandConstraints.cpp" line="5555"/>
       <source>Create a perpendicular constraint between two lines</source>
       <translation>Sortu murrizketa perpendikularra bi lerroren artean</translation>
     </message>
@@ -546,12 +546,12 @@ hautatutako erpinean</translation>
   <context>
     <name>CmdSketcherConstrainPointOnObject</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2647"/>
+      <location filename="../../CommandConstraints.cpp" line="4105"/>
       <source>Constrain point onto object</source>
       <translation>Murriztu puntua objektuan</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2648"/>
+      <location filename="../../CommandConstraints.cpp" line="4106"/>
       <source>Fix a point onto an object</source>
       <translation>Finkatu puntu bat objektu batean</translation>
     </message>
@@ -559,38 +559,25 @@ hautatutako erpinean</translation>
   <context>
     <name>CmdSketcherConstrainRadiam</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5563"/>
+      <location filename="../../CommandConstraints.cpp" line="7863"/>
       <source>Constrain auto radius/diameter</source>
       <translation>Murriztu erradio/diametro automatikoa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5564"/>
+      <location filename="../../CommandConstraints.cpp" line="7864"/>
       <source>Fix the diameter if a circle is chosen, or the radius if an arc/spline pole is chosen</source>
       <translation>Finkatu diamteroa zirkulu bat hautatu bada, edo erradioa arku/spline polo bat hautatu bada</translation>
     </message>
   </context>
   <context>
-    <name>CmdSketcherConstrainRadius</name>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="4972"/>
-      <source>Constrain radius or weight</source>
-      <translation>Murriztu erradioa edo pisua</translation>
-    </message>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="4973"/>
-      <source>Fix the radius of a circle or an arc or fix the weight of a pole of a B-Spline</source>
-      <translation>Finkatu zirkulu baten edo arku baten erradioa edo finkatu B-Spline baten polo baten pisua</translation>
-    </message>
-  </context>
-  <context>
     <name>CmdSketcherConstrainSnellsLaw</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7104"/>
-      <source>Constrain refraction (Snell's law')</source>
+      <location filename="../../CommandConstraints.cpp" line="9427"/>
+      <source>Constrain refraction (Snell's law)</source>
       <translation>Murriztu errefrakzioa (Snell-en legea)</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7105"/>
+      <location filename="../../CommandConstraints.cpp" line="9428"/>
       <source>Create a refraction law (Snell's law)constraint between two endpoints of rays
 and an edge as an interface.</source>
       <translation>Sortu Snell-en errefrakzio-legearen murrizketa bat, izpien bi amaiera-punturen
@@ -600,12 +587,12 @@ artean eta ertz bat interfaze modura erabilita.</translation>
   <context>
     <name>CmdSketcherConstrainSymmetric</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6788"/>
+      <location filename="../../CommandConstraints.cpp" line="9070"/>
       <source>Constrain symmetrical</source>
       <translation>Murriztu simetrikoki</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6789"/>
+      <location filename="../../CommandConstraints.cpp" line="9071"/>
       <source>Create a symmetry constraint between two points
 with respect to a line or a third point</source>
       <translation>Sortu simetria-murrizketa bat bi punturen artean,
@@ -615,12 +602,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherConstrainTangent</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4202"/>
+      <location filename="../../CommandConstraints.cpp" line="6308"/>
       <source>Constrain tangent</source>
       <translation>Murriztu tangentea</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4203"/>
+      <location filename="../../CommandConstraints.cpp" line="6309"/>
       <source>Create a tangent constraint between two entities</source>
       <translation>Sortu murrizketa tangentea bi lerroren artean</translation>
     </message>
@@ -628,12 +615,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherConstrainVertical</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1116"/>
+      <location filename="../../CommandConstraints.cpp" line="3006"/>
       <source>Constrain vertically</source>
       <translation>Murriztu bertikalean</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1117"/>
+      <location filename="../../CommandConstraints.cpp" line="3007"/>
       <source>Create a vertical constraint on the selected item</source>
       <translation>Sortu murrizketa bertikala hautatutako elementuan</translation>
     </message>
@@ -641,12 +628,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherConvertToNURBS</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="412"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="115"/>
       <source>Convert geometry to B-spline</source>
       <translation>Bihurtu geometria B-spline</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="413"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="116"/>
       <source>Converts the selected geometry to a B-spline</source>
       <translation>Hautatutako geometria B-spline bihurtzen du</translation>
     </message>
@@ -654,12 +641,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCopy</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1399"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1416"/>
       <source>Copy</source>
       <translation>Kopiatu</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1400"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1417"/>
       <source>Creates a simple copy of the geometry taking as reference the last selected point</source>
       <translation>Geometriaren kopia sinple bat sortzen du, erreferentzia gisa hautatutako azken puntua hartuz</translation>
     </message>
@@ -667,12 +654,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreate3PointArc</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="407"/>
+      <location filename="../../CommandCreateGeo.cpp" line="437"/>
       <source>Create arc by three points</source>
       <translation>Sortu arkua hiru puntutik abiatuz</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="408"/>
+      <location filename="../../CommandCreateGeo.cpp" line="438"/>
       <source>Create an arc by its end points and a point along the arc</source>
       <translation>Sortu arku bat amaiera-puntuak eta arkuan dagoen puntu bat erabiliz</translation>
     </message>
@@ -680,12 +667,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreate3PointCircle</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1130"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1250"/>
       <source>Create circle by three points</source>
       <translation>Sortu zirkulua hiru puntutik abiatuz</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1131"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1251"/>
       <source>Create a circle by 3 perimeter points</source>
       <translation>Sortu zirkulu bat 3 perimetro-puntutik abiatuz</translation>
     </message>
@@ -693,12 +680,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateArc</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="375"/>
+      <location filename="../../CommandCreateGeo.cpp" line="405"/>
       <source>Create arc by center</source>
       <translation>Sortu arkua erdigunetik abiatuz</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="376"/>
+      <location filename="../../CommandCreateGeo.cpp" line="406"/>
       <source>Create an arc by its center and by its end points</source>
       <translation>Sortu arku bat puntu zentrala eta amaiera-puntuak erabiliz</translation>
     </message>
@@ -706,12 +693,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateArcOfEllipse</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="636"/>
-      <source>Create an arc of ellipse</source>
+      <location filename="../../CommandCreateGeo.cpp" line="684"/>
+      <source>Create arc of ellipse</source>
       <translation>Sortu elipse-arku bat</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="637"/>
+      <location filename="../../CommandCreateGeo.cpp" line="685"/>
       <source>Create an arc of ellipse in the sketch</source>
       <translation>Sortu elipse-arku bat krokisean</translation>
     </message>
@@ -719,12 +706,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateArcOfHyperbola</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="665"/>
-      <source>Create an arc of hyperbola</source>
+      <location filename="../../CommandCreateGeo.cpp" line="713"/>
+      <source>Create arc of hyperbola</source>
       <translation>Sortu hiperbola-arku bat</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="666"/>
+      <location filename="../../CommandCreateGeo.cpp" line="714"/>
       <source>Create an arc of hyperbola in the sketch</source>
       <translation>Sortu hiperbola-arku bat krokisean</translation>
     </message>
@@ -732,12 +719,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateArcOfParabola</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="693"/>
-      <source>Create an arc of parabola</source>
+      <location filename="../../CommandCreateGeo.cpp" line="741"/>
+      <source>Create arc of parabola</source>
       <translation>Sortu parabola-arku bat</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="694"/>
+      <location filename="../../CommandCreateGeo.cpp" line="742"/>
       <source>Create an arc of parabola in the sketch</source>
       <translation>Sortu parabola-arku bat krokisean</translation>
     </message>
@@ -745,25 +732,25 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateBSpline</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="868"/>
+      <location filename="../../CommandCreateGeo.cpp" line="956"/>
       <source>Create B-spline</source>
       <translation>Sortu B-spline elementua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="869"/>
-      <source>Create a B-spline via control points in the sketch.</source>
+      <location filename="../../CommandCreateGeo.cpp" line="957"/>
+      <source>Create a B-spline by control points in the sketch.</source>
       <translation>Sortu B-spline bat krokiseko kontrol-puntuak erabilita.</translation>
     </message>
   </context>
   <context>
     <name>CmdSketcherCreateCircle</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="540"/>
+      <location filename="../../CommandCreateGeo.cpp" line="586"/>
       <source>Create circle</source>
       <translation>Sortu zirkulua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="541"/>
+      <location filename="../../CommandCreateGeo.cpp" line="587"/>
       <source>Create a circle in the sketch</source>
       <translation>Sortu zirkulu bat krokisean</translation>
     </message>
@@ -771,12 +758,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateEllipseBy3Points</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="607"/>
+      <location filename="../../CommandCreateGeo.cpp" line="653"/>
       <source>Create ellipse by 3 points</source>
       <translation>Sortu elipsea hiru puntutik abiatuz</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="608"/>
+      <location filename="../../CommandCreateGeo.cpp" line="654"/>
       <source>Create an ellipse by 3 points in the sketch</source>
       <translation>Sortu elipse bat krokisean 3 puntutik abiatuz</translation>
     </message>
@@ -784,12 +771,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateEllipseByCenter</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="574"/>
+      <location filename="../../CommandCreateGeo.cpp" line="620"/>
       <source>Create ellipse by center</source>
       <translation>Sortu elipsea erdigunetik abiatuz</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="575"/>
+      <location filename="../../CommandCreateGeo.cpp" line="621"/>
       <source>Create an ellipse by center in the sketch</source>
       <translation>Sortu elipse bat krokisean erdigunetik abiatuz</translation>
     </message>
@@ -797,12 +784,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateFillet</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1292"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1425"/>
       <source>Create fillet</source>
       <translation>Sortu biribiltzea</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1293"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1426"/>
       <source>Create a fillet between two lines or at a coincident point</source>
       <translation>Sortu bi lerroren arteko biribiltzea bat datozen puntu batean</translation>
     </message>
@@ -810,12 +797,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateHeptagon</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1751"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2011"/>
       <source>Create heptagon</source>
       <translation>Sortu heptagonoa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1752"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2012"/>
       <source>Create a heptagon in the sketch</source>
       <translation>Sortu heptagono bat krokisean</translation>
     </message>
@@ -823,12 +810,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateHexagon</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1722"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1982"/>
       <source>Create hexagon</source>
       <translation>Sortu hexagonoa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1723"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1983"/>
       <source>Create a hexagon in the sketch</source>
       <translation>Sortu hexagono bat krokisean</translation>
     </message>
@@ -836,12 +823,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateLine</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="108"/>
+      <location filename="../../CommandCreateGeo.cpp" line="112"/>
       <source>Create line</source>
       <translation>Sortu lerroa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="109"/>
+      <location filename="../../CommandCreateGeo.cpp" line="113"/>
       <source>Create a line in the sketch</source>
       <translation>Sortu lerro bat krokisean</translation>
     </message>
@@ -849,12 +836,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateOblong</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="201"/>
+      <location filename="../../CommandCreateGeo.cpp" line="209"/>
       <source>Create rounded rectangle</source>
       <translation>Sortu laukizuzen biribildua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="202"/>
+      <location filename="../../CommandCreateGeo.cpp" line="210"/>
       <source>Create a rounded rectangle in the sketch</source>
       <translation>Sortu laukizuzen biribildu bat krokisean</translation>
     </message>
@@ -862,12 +849,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateOctagon</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1780"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2040"/>
       <source>Create octagon</source>
       <translation>Sortu oktogonoa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1781"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2041"/>
       <source>Create an octagon in the sketch</source>
       <translation>Sortu oktogono bat krokisean</translation>
     </message>
@@ -875,12 +862,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreatePentagon</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1692"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1952"/>
       <source>Create pentagon</source>
       <translation>Sortu pentagonoa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1693"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1953"/>
       <source>Create a pentagon in the sketch</source>
       <translation>Sortu pentagono bat krokisean</translation>
     </message>
@@ -888,25 +875,25 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreatePeriodicBSpline</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="901"/>
+      <location filename="../../CommandCreateGeo.cpp" line="989"/>
       <source>Create periodic B-spline</source>
       <translation>Sortu B-spline periodikoa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="902"/>
-      <source>Create a periodic B-spline via control points in the sketch.</source>
+      <location filename="../../CommandCreateGeo.cpp" line="990"/>
+      <source>Create a periodic B-spline by control points in the sketch.</source>
       <translation>Sortu B-spline periodiko bat krokiseko kontrol-puntuak erabilita.</translation>
     </message>
   </context>
   <context>
     <name>CmdSketcherCreatePoint</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1263"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1396"/>
       <source>Create point</source>
       <translation>Sortu puntua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1264"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1397"/>
       <source>Create a point in the sketch</source>
       <translation>Sortu puntu bat krokisean</translation>
     </message>
@@ -914,12 +901,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreatePointFillet</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1321"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1455"/>
       <source>Create corner-preserving fillet</source>
       <translation>Sortu izkina mantentzen duen biribiltzea</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1322"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1456"/>
       <source>Fillet that preserves intersection point and most constraints</source>
       <translation>Ebakidura-puntua eta murrizketa gehienak mantentzen dituen biribiltzea</translation>
     </message>
@@ -927,12 +914,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreatePolyline</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="343"/>
+      <location filename="../../CommandCreateGeo.cpp" line="373"/>
       <source>Create polyline</source>
       <translation>Sortu polilerroa</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="344"/>
+      <location filename="../../CommandCreateGeo.cpp" line="374"/>
       <source>Create a polyline in the sketch. 'M' Key cycles behaviour</source>
       <translation>Sortu polilerro bat krokisean. 'M' teklak portaera ziklikoa sortzen du</translation>
     </message>
@@ -940,12 +927,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateRectangle</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="140"/>
+      <location filename="../../CommandCreateGeo.cpp" line="144"/>
       <source>Create rectangle</source>
       <translation>Sortu laukizuzena</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="141"/>
+      <location filename="../../CommandCreateGeo.cpp" line="145"/>
       <source>Create a rectangle in the sketch</source>
       <translation>Sortu laukizuzen bat krokisean</translation>
     </message>
@@ -953,12 +940,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateRectangleCenter</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="169"/>
+      <location filename="../../CommandCreateGeo.cpp" line="175"/>
       <source>Create centered rectangle</source>
       <translation>Sortu laukizuzen zentratua</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="170"/>
+      <location filename="../../CommandCreateGeo.cpp" line="176"/>
       <source>Create a centered rectangle in the sketch</source>
       <translation>Sortu laukizuzen zentratu bat krokisean</translation>
     </message>
@@ -966,12 +953,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateRegularPolygon</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1809"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2069"/>
       <source>Create regular polygon</source>
       <translation>Sortu poligono erregularra</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1810"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2070"/>
       <source>Create a regular polygon in the sketch</source>
       <translation>Sortu poligono erregular bat krokisean</translation>
     </message>
@@ -979,12 +966,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateSlot</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1603"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1832"/>
       <source>Create slot</source>
       <translation>Sortu arteka</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1604"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1833"/>
       <source>Create a slot in the sketch</source>
       <translation>Sortu arteka bat krokisean</translation>
     </message>
@@ -992,12 +979,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateSquare</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1663"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1923"/>
       <source>Create square</source>
       <translation>Sortu laukia</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1664"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1924"/>
       <source>Create a square in the sketch</source>
       <translation>Sortu lauki bat krokisean</translation>
     </message>
@@ -1005,12 +992,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherCreateTriangle</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1634"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1894"/>
       <source>Create equilateral triangle</source>
       <translation>Sortu triangelu aldeberdina</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1635"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1895"/>
       <source>Create an equilateral triangle in the sketch</source>
       <translation>Sortu triangelu aldeberdin bat krokisean</translation>
     </message>
@@ -1018,12 +1005,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherDecreaseDegree</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="559"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="268"/>
       <source>Decrease B-spline degree</source>
       <translation>Txikitu B-spline elementuaren gradua</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="560"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="269"/>
       <source>Decreases the degree of the B-spline</source>
       <translation>B-spline elementuaren gradua txikitzen du</translation>
     </message>
@@ -1031,12 +1018,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherDecreaseKnotMultiplicity</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="774"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="498"/>
       <source>Decrease knot multiplicity</source>
       <translation>Txikitu adabegi-aniztasuna</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="775"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="499"/>
       <source>Decreases the multiplicity of the selected knot of a B-spline</source>
       <translation>B-spline batean hautatutako adabegi baten aniztasuna txikitzen du</translation>
     </message>
@@ -1044,12 +1031,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherDeleteAllConstraints</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2054"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2076"/>
       <source>Delete all constraints</source>
       <translation>Ezabatu murrizketa guztiak</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2055"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2077"/>
       <source>Delete all constraints in the sketch</source>
       <translation>Ezabatu krokiseko murrizketa guztiak</translation>
     </message>
@@ -1057,12 +1044,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherDeleteAllGeometry</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1986"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2007"/>
       <source>Delete all geometry</source>
       <translation>Ezabatu geometria osoa</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1987"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2008"/>
       <source>Delete all geometry and constraints in the current sketch, with the exception of external geometry</source>
       <translation>Ezabatu uneko krokiseko geometria eta murrizketa guztiak, kanpoko geometria salbu</translation>
     </message>
@@ -1070,12 +1057,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherEditSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="274"/>
+      <location filename="../../Command.cpp" line="310"/>
       <source>Edit sketch</source>
       <translation>Editatu krokisa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="275"/>
+      <location filename="../../Command.cpp" line="311"/>
       <source>Edit the selected sketch.</source>
       <translation>Editatu hautatutako krokisa.</translation>
     </message>
@@ -1083,12 +1070,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherExtend</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1482"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1632"/>
       <source>Extend edge</source>
       <translation>Hedatu ertza</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1483"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1633"/>
       <source>Extend an edge with respect to the picked position</source>
       <translation>Hedatu ertz bat aukeratutako posizioaren arabera</translation>
     </message>
@@ -1096,12 +1083,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherExternal</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1540"/>
-      <source>Create an external geometry</source>
+      <location filename="../../CommandCreateGeo.cpp" line="1721"/>
+      <source>Create external geometry</source>
       <translation>Sortu kanpo-geometria</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1541"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1722"/>
       <source>Create an edge linked to an external geometry</source>
       <translation>Sortu kanpo-geometria bati estekatutako ertz bat</translation>
     </message>
@@ -1109,12 +1096,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherIncreaseDegree</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="486"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="191"/>
       <source>Increase B-spline degree</source>
       <translation>Handitu B-spline elementuaren gradua</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="487"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="192"/>
       <source>Increases the degree of the B-spline</source>
       <translation>B-spline elementuaren gradua handitzen du</translation>
     </message>
@@ -1122,12 +1109,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherIncreaseKnotMultiplicity</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="636"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="350"/>
       <source>Increase knot multiplicity</source>
       <translation>Handitu adabegi-aniztasuna</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="637"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="351"/>
       <source>Increases the multiplicity of the selected knot of a B-spline</source>
       <translation>B-spline batean hautatutako adabegi baten aniztasuna handitzen du</translation>
     </message>
@@ -1135,12 +1122,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherInsertKnot</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1138"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="890"/>
       <source>Insert knot</source>
       <translation>Txertatu adabegia</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1139"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="891"/>
       <source>Inserts knot at given parameter. If a knot already exists at that parameter, it's multiplicity is increased by one.</source>
       <translation>Adabegi bat txertatzen du emandako parametro batean. Adabegia lehendik badago parametro horretan, bere aniztasuna batean gehitzen da.</translation>
     </message>
@@ -1148,12 +1135,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherJoinCurves</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1200"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="958"/>
       <source>Join curves</source>
       <translation>Elkartu kurbak</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1201"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="959"/>
       <source>Join two curves at selected end points</source>
       <translation>Elkartu bi kurba hautatutako amaierako puntuetan</translation>
     </message>
@@ -1161,12 +1148,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherLeaveSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="304"/>
+      <location filename="../../Command.cpp" line="341"/>
       <source>Leave sketch</source>
       <translation>Utzi krokisa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="305"/>
+      <location filename="../../Command.cpp" line="342"/>
       <source>Finish editing the active sketch.</source>
       <translation>Amaitu krokis aktiboaren edizioa.</translation>
     </message>
@@ -1174,12 +1161,12 @@ lerro batekiko edo hirugarren puntu batekiko</translation>
   <context>
     <name>CmdSketcherMapSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="503"/>
+      <location filename="../../Command.cpp" line="552"/>
       <source>Map sketch to face...</source>
       <translation>Mapatu krokisa aurpegira...</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="504"/>
+      <location filename="../../Command.cpp" line="553"/>
       <source>Set the 'Support' of a sketch.
 First select the supporting geometry, for example, a face or an edge of a solid object,
 then call this command, then choose the desired sketch.</source>
@@ -1188,7 +1175,7 @@ Lehenengo, hautatu euskarri izango den geometria, adibidez objektu solido baten
 aurpegi edo ertz bat, ondoren deitu komando hau eta aukeratu nahi den krokisa.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="556"/>
+      <location filename="../../Command.cpp" line="617"/>
       <source>Some of the selected objects depend on the sketch to be mapped. Circular dependencies are not allowed.</source>
       <translation>Hautatutako zenbait objektuk krokisa mapeatua izan dadin behar dute. Mendekotasun zirkularrak ez dira onartzen.</translation>
     </message>
@@ -1196,22 +1183,22 @@ aurpegi edo ertz bat, ondoren deitu komando hau eta aukeratu nahi den krokisa.</
   <context>
     <name>CmdSketcherMergeSketches</name>
     <message>
-      <location filename="../../Command.cpp" line="859"/>
+      <location filename="../../Command.cpp" line="953"/>
       <source>Merge sketches</source>
       <translation>Fusionatu krokisak</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="860"/>
+      <location filename="../../Command.cpp" line="954"/>
       <source>Create a new sketch from merging two or more selected sketches.</source>
       <translation>Sortu krokis berria hautatutako krokis bi edo gehiago fusionatuta.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="873"/>
+      <location filename="../../Command.cpp" line="969"/>
       <source>Wrong selection</source>
       <translation>Hautapen okerra</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="874"/>
+      <location filename="../../Command.cpp" line="970"/>
       <source>Select at least two sketches.</source>
       <translation>Hautatu gutxienez bi krokis.</translation>
     </message>
@@ -1219,12 +1206,12 @@ aurpegi edo ertz bat, ondoren deitu komando hau eta aukeratu nahi den krokisa.</
   <context>
     <name>CmdSketcherMirrorSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="752"/>
+      <location filename="../../Command.cpp" line="826"/>
       <source>Mirror sketch</source>
       <translation>Ispilatu krokisa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="753"/>
+      <location filename="../../Command.cpp" line="827"/>
       <source>Create a new mirrored sketch for each selected sketch
 by using the X or Y axes, or the origin point,
 as mirroring reference.</source>
@@ -1233,12 +1220,12 @@ X edo Y ardatza erabilita, edo jatorrizko puntua erabilita,
 ispilatzerako erreferentzia gisa.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="768"/>
+      <location filename="../../Command.cpp" line="844"/>
       <source>Wrong selection</source>
       <translation>Hautapen okerra</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="769"/>
+      <location filename="../../Command.cpp" line="845"/>
       <source>Select one or more sketches.</source>
       <translation>Hautatu krokis bat edo gehiago.</translation>
     </message>
@@ -1246,12 +1233,12 @@ ispilatzerako erreferentzia gisa.</translation>
   <context>
     <name>CmdSketcherMove</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1498"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1515"/>
       <source>Move</source>
       <translation>Mugitu</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1499"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1516"/>
       <source>Moves the geometry taking as reference the last selected point</source>
       <translation>Geometria mugitzen du, hautatutako azken puntua erreferentzia gisa hartuta</translation>
     </message>
@@ -1259,12 +1246,12 @@ ispilatzerako erreferentzia gisa.</translation>
   <context>
     <name>CmdSketcherNewSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="149"/>
+      <location filename="../../Command.cpp" line="155"/>
       <source>Create sketch</source>
       <translation>Sortu krokisa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="150"/>
+      <location filename="../../Command.cpp" line="156"/>
       <source>Create a new sketch.</source>
       <translation>Sortu krokis berria.</translation>
     </message>
@@ -1272,12 +1259,12 @@ ispilatzerako erreferentzia gisa.</translation>
   <context>
     <name>CmdSketcherRectangularArray</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1837"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1855"/>
       <source>Rectangular array</source>
       <translation>Matrize laukizuzena</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1838"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1856"/>
       <source>Creates a rectangular array pattern of the geometry taking as reference the last selected point</source>
       <translation>Geometriaren matrize-eredu laukizuzena sortzen du, erreferentzia modura hautatutako azken puntua hartuta</translation>
     </message>
@@ -1285,12 +1272,12 @@ ispilatzerako erreferentzia gisa.</translation>
   <context>
     <name>CmdSketcherRemoveAxesAlignment</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2122"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2147"/>
       <source>Remove axes alignment</source>
       <translation>Kendu ardatzen lerrokatzea</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2123"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2148"/>
       <source>Modifies constraints to remove axes alignment while trying to preserve the constraint relationship of the selection</source>
       <translation>Murrizketak aldatzen ditu ardatzen lerrokatzea kentzeko eta aldi berean hautapenaren murrizketa-erlazioak mantentzeko</translation>
     </message>
@@ -1298,12 +1285,12 @@ ispilatzerako erreferentzia gisa.</translation>
   <context>
     <name>CmdSketcherReorientSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="376"/>
+      <location filename="../../Command.cpp" line="415"/>
       <source>Reorient sketch...</source>
       <translation>Aldatu krokisaren orientazioa...</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="377"/>
+      <location filename="../../Command.cpp" line="416"/>
       <source>Place the selected sketch on one of the global coordinate planes.
 This will clear the 'Support' property, if any.</source>
       <translation>Kokatu krokis hautatua koordenatu globalen planoetako batean.
@@ -1313,12 +1300,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherRestoreInternalAlignmentGeometry</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="742"/>
+      <location filename="../../CommandSketcherTools.cpp" line="748"/>
       <source>Show/hide internal geometry</source>
       <translation>Erakutsi/ezkutatu barne-geometria</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="743"/>
+      <location filename="../../CommandSketcherTools.cpp" line="749"/>
       <source>Show all internal geometry or hide unused internal geometry</source>
       <translation>Erakutsi barne-geometria guztia edo ezkutatu erabili gabeko barne-geometria</translation>
     </message>
@@ -1326,8 +1313,8 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSelectConflictingConstraints</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="464"/>
-      <location filename="../../CommandSketcherTools.cpp" line="465"/>
+      <location filename="../../CommandSketcherTools.cpp" line="470"/>
+      <location filename="../../CommandSketcherTools.cpp" line="471"/>
       <source>Select conflicting constraints</source>
       <translation>Hautatu gatazkan dauden murrizketak</translation>
     </message>
@@ -1335,12 +1322,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSelectConstraints</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="67"/>
+      <location filename="../../CommandSketcherTools.cpp" line="71"/>
       <source>Select associated constraints</source>
       <translation>Hautatu elkartuta dauden murrizketak</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="69"/>
+      <location filename="../../CommandSketcherTools.cpp" line="73"/>
       <source>Select the constraints associated with the selected geometrical elements</source>
       <translation>Hautatu elementu geometriko hautatuei lotutako murrizketak</translation>
     </message>
@@ -1348,12 +1335,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSelectElementsAssociatedWithConstraints</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="525"/>
+      <location filename="../../CommandSketcherTools.cpp" line="531"/>
       <source>Select associated geometry</source>
       <translation>Hautatu elkartutako geometria</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="527"/>
+      <location filename="../../CommandSketcherTools.cpp" line="533"/>
       <source>Select the geometrical elements associated with the selected constraints</source>
       <translation>Hautatu murrizketa hautatuei lotutako elementu geometrikoak</translation>
     </message>
@@ -1361,12 +1348,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSelectElementsWithDoFs</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="649"/>
+      <location filename="../../CommandSketcherTools.cpp" line="655"/>
       <source>Select unconstrained DoF</source>
       <translation>Hautatu murrizketarik gabeko askatasun-gradua</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="650"/>
+      <location filename="../../CommandSketcherTools.cpp" line="656"/>
       <source>Select geometrical elements where the solver still detects unconstrained degrees of freedom.</source>
       <translation>Hautatu elementu geometrikoak ebazleak elementu horietan murriztu gabeko askatasun-graduak detektatzen dituenean.</translation>
     </message>
@@ -1374,12 +1361,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSelectHorizontalAxis</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="239"/>
+      <location filename="../../CommandSketcherTools.cpp" line="245"/>
       <source>Select horizontal axis</source>
       <translation>Hautatu ardatz horizontala</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="240"/>
+      <location filename="../../CommandSketcherTools.cpp" line="246"/>
       <source>Select the local horizontal axis of the sketch</source>
       <translation>Hautatu krokisaren ardatz horizontal lokala</translation>
     </message>
@@ -1387,8 +1374,8 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSelectMalformedConstraints</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="345"/>
-      <location filename="../../CommandSketcherTools.cpp" line="346"/>
+      <location filename="../../CommandSketcherTools.cpp" line="351"/>
+      <location filename="../../CommandSketcherTools.cpp" line="352"/>
       <source>Select malformed constraints</source>
       <translation>Hautatu gaizki eratutako murrizketak</translation>
     </message>
@@ -1396,12 +1383,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSelectOrigin</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="147"/>
+      <location filename="../../CommandSketcherTools.cpp" line="152"/>
       <source>Select origin</source>
       <translation>Hautatu jatorria</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="148"/>
+      <location filename="../../CommandSketcherTools.cpp" line="153"/>
       <source>Select the local origin point of the sketch</source>
       <translation>Hautatu krokisaren jatorrizko puntu lokala</translation>
     </message>
@@ -1409,8 +1396,8 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSelectPartiallyRedundantConstraints</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="404"/>
-      <location filename="../../CommandSketcherTools.cpp" line="405"/>
+      <location filename="../../CommandSketcherTools.cpp" line="410"/>
+      <location filename="../../CommandSketcherTools.cpp" line="411"/>
       <source>Select partially redundant constraints</source>
       <translation>Hautatu partzialki erredundanteak diren murrizketak</translation>
     </message>
@@ -1418,8 +1405,8 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSelectRedundantConstraints</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="283"/>
-      <location filename="../../CommandSketcherTools.cpp" line="284"/>
+      <location filename="../../CommandSketcherTools.cpp" line="289"/>
+      <location filename="../../CommandSketcherTools.cpp" line="290"/>
       <source>Select redundant constraints</source>
       <translation>Hautatu murrizketa erredundanteak</translation>
     </message>
@@ -1427,12 +1414,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSelectVerticalAxis</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="194"/>
+      <location filename="../../CommandSketcherTools.cpp" line="200"/>
       <source>Select vertical axis</source>
       <translation>Hautatu ardatz bertikala</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="195"/>
+      <location filename="../../CommandSketcherTools.cpp" line="201"/>
       <source>Select the local vertical axis of the sketch</source>
       <translation>Hautatu krokisaren ardatz bertikal lokala</translation>
     </message>
@@ -1440,12 +1427,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSplit</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1513"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1663"/>
       <source>Split edge</source>
       <translation>Zatitu ertza</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1514"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1664"/>
       <source>Splits an edge into two while preserving constraints</source>
       <translation>Ertz bat bi zatitan zatitzen du murrizketak mantenduta</translation>
     </message>
@@ -1453,12 +1440,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherStopOperation</name>
     <message>
-      <location filename="../../Command.cpp" line="341"/>
+      <location filename="../../Command.cpp" line="379"/>
       <source>Stop operation</source>
       <translation>Gelditu eragiketa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="342"/>
+      <location filename="../../Command.cpp" line="380"/>
       <source>When in edit mode, stop the active operation (drawing, constraining, etc.).</source>
       <translation>Edizio moduan, gelditu eragiketa aktiboa (marraztea, murriztea, etab.).</translation>
     </message>
@@ -1466,12 +1453,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSwitchVirtualSpace</name>
     <message>
-      <location filename="../../CommandSketcherVirtualSpace.cpp" line="89"/>
+      <location filename="../../CommandSketcherVirtualSpace.cpp" line="96"/>
       <source>Switch virtual space</source>
       <translation>Aldatu espazio birtuala</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherVirtualSpace.cpp" line="90"/>
+      <location filename="../../CommandSketcherVirtualSpace.cpp" line="98"/>
       <source>Switches the selected constraints or the view to the other virtual space</source>
       <translation>Hautatutako murrizketak edo bista beste espazio birtualera aldatzen du</translation>
     </message>
@@ -1479,12 +1466,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherSymmetry</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="855"/>
+      <location filename="../../CommandSketcherTools.cpp" line="863"/>
       <source>Symmetry</source>
       <translation>Simetria</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="857"/>
+      <location filename="../../CommandSketcherTools.cpp" line="865"/>
       <source>Creates symmetric geometry with respect to the last selected line or point</source>
       <translation>Geometria simetrikoa sortzen du hautatutako azken lerro edo puntuekiko</translation>
     </message>
@@ -1492,12 +1479,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherToggleActiveConstraint</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7423"/>
+      <location filename="../../CommandConstraints.cpp" line="9786"/>
       <source>Activate/deactivate constraint</source>
       <translation>Aktibatu/desaktibatu murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7424"/>
+      <location filename="../../CommandConstraints.cpp" line="9787"/>
       <source>Activates or deactivates the selected constraints</source>
       <translation>Hautatutako murrizketak aktibatzen edo desaktibatzen ditu</translation>
     </message>
@@ -1505,12 +1492,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherToggleConstruction</name>
     <message>
-      <location filename="../../CommandAlterGeometry.cpp" line="71"/>
+      <location filename="../../CommandAlterGeometry.cpp" line="73"/>
       <source>Toggle construction geometry</source>
       <translation>Txandakatu eraikuntza-geometria</translation>
     </message>
     <message>
-      <location filename="../../CommandAlterGeometry.cpp" line="72"/>
+      <location filename="../../CommandAlterGeometry.cpp" line="74"/>
       <source>Toggles the toolbar or selected geometry to/from construction mode</source>
       <translation>Tresna-barra edo hautatutako geometria txandakatzen du eraikuntza modura</translation>
     </message>
@@ -1518,12 +1505,12 @@ Horrela 'Euskarria' propietatea garbituko da, halakorik badago.</translation>
   <context>
     <name>CmdSketcherToggleDrivingConstraint</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7290"/>
+      <location filename="../../CommandConstraints.cpp" line="9627"/>
       <source>Toggle driving/reference constraint</source>
       <translation>Aktibatu/desaktibatu gidatze/erreferentziako murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7291"/>
+      <location filename="../../CommandConstraints.cpp" line="9628"/>
       <source>Set the toolbar, or the selected constraints,
 into driving or reference mode</source>
       <translation>Ezarri tresna-barra, edo hautatutako murrizketak,
@@ -1533,12 +1520,12 @@ gidatze edo erreferentziako moduan</translation>
   <context>
     <name>CmdSketcherTrimming</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1451"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1601"/>
       <source>Trim edge</source>
       <translation>Muxarratu ertza</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1452"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1602"/>
       <source>Trim an edge with respect to the picked position</source>
       <translation>Muxarratu ertz bat aukeratutako posizioaren arabera</translation>
     </message>
@@ -1546,24 +1533,24 @@ gidatze edo erreferentziako moduan</translation>
   <context>
     <name>CmdSketcherValidateSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="714"/>
+      <location filename="../../Command.cpp" line="786"/>
       <source>Validate sketch...</source>
       <translation>Balidatu krokisa...</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="715"/>
+      <location filename="../../Command.cpp" line="787"/>
       <source>Validate a sketch by looking at missing coincidences,
 invalid constraints, degenerated geometry, etc.</source>
       <translation>Balioztatu krokis bat falta diren bat etortzeak, baliogabeko
 murrizketak, geometria degeneratuak, etab. aztertuta.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="729"/>
+      <location filename="../../Command.cpp" line="803"/>
       <source>Wrong selection</source>
       <translation>Hautapen okerra</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="730"/>
+      <location filename="../../Command.cpp" line="804"/>
       <source>Select only one sketch.</source>
       <translation>Hautatu krokis bakar bat.</translation>
     </message>
@@ -1571,12 +1558,12 @@ murrizketak, geometria degeneratuak, etab. aztertuta.</translation>
   <context>
     <name>CmdSketcherViewSection</name>
     <message>
-      <location filename="../../Command.cpp" line="943"/>
+      <location filename="../../Command.cpp" line="1045"/>
       <source>View section</source>
       <translation>Bistaratu sekzioa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="944"/>
+      <location filename="../../Command.cpp" line="1046"/>
       <source>When in edit mode, switch between section view and full view.</source>
       <translation>Edizio moduan, txandakatu sekzio-bista eta bista osoa.</translation>
     </message>
@@ -1584,12 +1571,12 @@ murrizketak, geometria degeneratuak, etab. aztertuta.</translation>
   <context>
     <name>CmdSketcherViewSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="681"/>
+      <location filename="../../Command.cpp" line="751"/>
       <source>View sketch</source>
       <translation>Bistaratu krokisa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="682"/>
+      <location filename="../../Command.cpp" line="752"/>
       <source>When in edit mode, set the camera orientation perpendicular to the sketch plane.</source>
       <translation>Edizio moduan, ezarri kameraren orientazioa krokis-planoarekiko perpendikularrean.</translation>
     </message>
@@ -1597,536 +1584,636 @@ murrizketak, geometria degeneratuak, etab. aztertuta.</translation>
   <context>
     <name>Command</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="984"/>
-      <location filename="../../CommandConstraints.cpp" line="1054"/>
-      <source>Add horizontal constraint</source>
-      <translation>Gehitu murrizketa horizontala</translation>
-    </message>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="993"/>
-      <location filename="../../CommandConstraints.cpp" line="1080"/>
-      <location filename="../../CommandConstraints.cpp" line="1317"/>
-      <source>Add horizontal alignment</source>
-      <translation>Gehitu lerrokatze horizontala</translation>
-    </message>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="1221"/>
-      <location filename="../../CommandConstraints.cpp" line="1292"/>
-      <source>Add vertical constraint</source>
-      <translation>Gehitu murrizketa bertikala</translation>
-    </message>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="1229"/>
-      <source>Add vertical alignment</source>
-      <translation>Gehitu lerrokatze bertikala</translation>
-    </message>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="1433"/>
+      <location filename="../../CommandConstraints.cpp" line="3140"/>
       <source>Add 'Lock' constraint</source>
       <translation>Gehitu 'Blokeo' murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1474"/>
+      <location filename="../../CommandConstraints.cpp" line="3194"/>
       <source>Add relative 'Lock' constraint</source>
       <translation>Gehitu 'Blokeo' erlatiboko murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1519"/>
+      <location filename="../../CommandConstraints.cpp" line="3259"/>
       <source>Add fixed constraint</source>
       <translation>Gehitu murrizketa finkoa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1665"/>
+      <location filename="../../CommandConstraints.cpp" line="3431"/>
       <source>Add 'Block' constraint</source>
       <translation>Gehitu 'Bloke' murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1709"/>
+      <location filename="../../CommandConstraints.cpp" line="3480"/>
       <source>Add block constraint</source>
       <translation>Gehitu bloke-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1843"/>
-      <location filename="../../CommandConstraints.cpp" line="2034"/>
-      <location filename="../../CommandConstraints.cpp" line="2112"/>
+      <location filename="../../CommandConstraints.cpp" line="3819"/>
+      <location filename="../../CommandConstraints.cpp" line="4008"/>
       <source>Add coincident constraint</source>
       <translation>Gehitu bat datorren murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2221"/>
-      <location filename="../../CommandConstraints.cpp" line="2441"/>
+      <location filename="../../CommandConstraints.cpp" line="4240"/>
+      <location filename="../../CommandConstraints.cpp" line="4537"/>
       <source>Add distance from horizontal axis constraint</source>
       <translation>Gehitu distantzia ardatz horizontaleko murrizketatik</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2229"/>
-      <location filename="../../CommandConstraints.cpp" line="2448"/>
+      <location filename="../../CommandConstraints.cpp" line="4252"/>
+      <location filename="../../CommandConstraints.cpp" line="4551"/>
       <source>Add distance from vertical axis constraint</source>
       <translation>Gehitu distantzia ardatz bertikaleko murrizketatik</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2237"/>
-      <location filename="../../CommandConstraints.cpp" line="2455"/>
+      <location filename="../../CommandConstraints.cpp" line="4264"/>
+      <location filename="../../CommandConstraints.cpp" line="4564"/>
       <source>Add point to point distance constraint</source>
       <translation>Gehitu puntutik punturako distantzia-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2272"/>
-      <location filename="../../CommandConstraints.cpp" line="2533"/>
+      <location filename="../../CommandConstraints.cpp" line="1710"/>
+      <location filename="../../CommandConstraints.cpp" line="4307"/>
+      <location filename="../../CommandConstraints.cpp" line="4652"/>
       <source>Add point to line Distance constraint</source>
       <translation>Gehitu puntutik lerrorako distantzia-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2321"/>
-      <location filename="../../CommandConstraints.cpp" line="2583"/>
+      <location filename="../../CommandConstraints.cpp" line="4388"/>
+      <location filename="../../CommandConstraints.cpp" line="4707"/>
       <source>Add circle to circle distance constraint</source>
       <translation>Gehitu zirkulutik zirkulurako distantzia-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2358"/>
+      <location filename="../../CommandConstraints.cpp" line="4431"/>
       <source>Add circle to line distance constraint</source>
       <translation>Gehitu zirkulutik lerrorako distantzia-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2393"/>
-      <location filename="../../CommandConstraints.cpp" line="2487"/>
+      <location filename="../../CommandConstraints.cpp" line="1799"/>
+      <location filename="../../CommandConstraints.cpp" line="1822"/>
+      <location filename="../../CommandConstraints.cpp" line="1892"/>
+      <location filename="../../CommandConstraints.cpp" line="1974"/>
+      <location filename="../../CommandConstraints.cpp" line="4479"/>
+      <location filename="../../CommandConstraints.cpp" line="4601"/>
       <source>Add length constraint</source>
       <translation>Gehitu luzera-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2734"/>
-      <location filename="../../CommandConstraints.cpp" line="2817"/>
+      <location filename="../../CommandConstraints.cpp" line="1300"/>
+      <location filename="../../CommandConstraints.cpp" line="1483"/>
+      <location filename="../../CommandConstraints.cpp" line="1575"/>
+      <source>Dimension</source>
+      <translation>Kota</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1679"/>
+      <source>Add lock constraint</source>
+      <translation>Gehitu blokeo-murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1674"/>
+      <source>Add 'Distance to origin' constraint</source>
+      <translation>Gehitu jatorrirako distantzia murrizketa gisa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1691"/>
+      <location filename="../../CommandConstraints.cpp" line="2296"/>
+      <location filename="../../CommandConstraints.cpp" line="2494"/>
+      <source>Add Distance constraint</source>
+      <translation>Gehitu distantzia-murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1696"/>
+      <location filename="../../CommandConstraints.cpp" line="1725"/>
+      <location filename="../../CommandConstraints.cpp" line="1748"/>
+      <source>Add 'Horizontal' constraints</source>
+      <translation>Gehitu murrizketa horizontalak</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1700"/>
+      <location filename="../../CommandConstraints.cpp" line="1732"/>
+      <location filename="../../CommandConstraints.cpp" line="1755"/>
+      <source>Add 'Vertical' constraints</source>
+      <translation>Gehitu murrizketa bertikalak</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1715"/>
+      <location filename="../../CommandConstraints.cpp" line="1767"/>
+      <source>Add Symmetry constraint</source>
+      <translation>Gehitu simetria-murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1738"/>
+      <location filename="../../CommandConstraints.cpp" line="1903"/>
+      <source>Add Symmetry constraints</source>
+      <translation>Gehitu simetria-murrizketak</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1772"/>
+      <location filename="../../CommandConstraints.cpp" line="1784"/>
+      <source>Add Distance constraints</source>
+      <translation>Gehitu distantzia-murrizketak</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1832"/>
+      <source>Add Horizontal constraint</source>
+      <translation>Gehitu murrizketa horizontala</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1837"/>
+      <source>Add Vertical constraint</source>
+      <translation>Gehitu murrizketa bertikala</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1841"/>
+      <source>Add Block constraint</source>
+      <translation>Gehitu bloke-murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1856"/>
+      <source>Add Angle constraint</source>
+      <translation>Gehitu angelu-murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1866"/>
+      <location filename="../../CommandConstraints.cpp" line="1993"/>
+      <location filename="../../CommandConstraints.cpp" line="2003"/>
+      <location filename="../../CommandConstraints.cpp" line="2041"/>
+      <source>Add Equality constraint</source>
+      <translation>Gehitu berdintasun-murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1877"/>
+      <source>Add Equality constraints</source>
+      <translation>Gehitu berdintasun-murrizketak</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1927"/>
+      <location filename="../../CommandConstraints.cpp" line="1937"/>
+      <location filename="../../CommandConstraints.cpp" line="1950"/>
+      <source>Add Radius constraint</source>
+      <translation>Gehitu erradio-murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1931"/>
+      <location filename="../../CommandConstraints.cpp" line="1946"/>
+      <source>Add arc angle constraint</source>
+      <translation>Gehitu arkuaren angelu-murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1983"/>
+      <source>Add concentric and length constraint</source>
+      <translation>Gehitu luzeraren eta zentrokidetasunaren murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="2472"/>
+      <source>Add DistanceX constraint</source>
+      <translation>Gehitu X distantziaren murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="2483"/>
+      <source>Add DistanceY constraint</source>
+      <translation>Gehitu Y distantziaren murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="4337"/>
+      <source>Add point to circle Distance constraint</source>
+      <translation>Gehitu puntutik zirkulurako distantzia-murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="3732"/>
+      <location filename="../../CommandConstraints.cpp" line="3922"/>
       <source>Add point on object constraint</source>
       <translation>Gehitu objektu gaineko puntuaren murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2981"/>
-      <location filename="../../CommandConstraints.cpp" line="3087"/>
+      <location filename="../../CommandConstraints.cpp" line="4895"/>
+      <location filename="../../CommandConstraints.cpp" line="5022"/>
       <source>Add point to point horizontal distance constraint</source>
       <translation>Gehitu puntutik punturako distantzia horizontaleko murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3013"/>
+      <location filename="../../CommandConstraints.cpp" line="4936"/>
       <source>Add fixed x-coordinate constraint</source>
       <translation>Gehitu X koordenatu finkoko murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3236"/>
-      <location filename="../../CommandConstraints.cpp" line="3341"/>
+      <location filename="../../CommandConstraints.cpp" line="5197"/>
+      <location filename="../../CommandConstraints.cpp" line="5321"/>
       <source>Add point to point vertical distance constraint</source>
       <translation>Gehitu puntutik punturako distantzia bertikaleko murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3267"/>
+      <location filename="../../CommandConstraints.cpp" line="5235"/>
       <source>Add fixed y-coordinate constraint</source>
       <translation>Gehitu Y koordenatu finkoko murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3474"/>
-      <location filename="../../CommandConstraints.cpp" line="3516"/>
+      <location filename="../../CommandConstraints.cpp" line="5476"/>
+      <location filename="../../CommandConstraints.cpp" line="5520"/>
       <source>Add parallel constraint</source>
       <translation>Gehitu murrizketa paraleloa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3640"/>
-      <location filename="../../CommandConstraints.cpp" line="3713"/>
-      <location filename="../../CommandConstraints.cpp" line="3873"/>
-      <location filename="../../CommandConstraints.cpp" line="3909"/>
-      <location filename="../../CommandConstraints.cpp" line="4055"/>
-      <location filename="../../CommandConstraints.cpp" line="4089"/>
-      <location filename="../../CommandConstraints.cpp" line="4139"/>
+      <location filename="../../CommandConstraints.cpp" line="5660"/>
+      <location filename="../../CommandConstraints.cpp" line="5747"/>
+      <location filename="../../CommandConstraints.cpp" line="5919"/>
+      <location filename="../../CommandConstraints.cpp" line="5969"/>
+      <location filename="../../CommandConstraints.cpp" line="6120"/>
+      <location filename="../../CommandConstraints.cpp" line="6169"/>
+      <location filename="../../CommandConstraints.cpp" line="6225"/>
       <source>Add perpendicular constraint</source>
       <translation>Gehitu murrizketa perpendikularra</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3753"/>
+      <location filename="../../CommandConstraints.cpp" line="5795"/>
       <source>Add perpendicularity constraint</source>
       <translation>Gehitu perpendikulartasun-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4238"/>
+      <location filename="../../CommandConstraints.cpp" line="6351"/>
       <source>Swap coincident+tangency with ptp tangency</source>
       <translation>Trukatu bat etortzea+tangentzia ptp tangentziarekin</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4257"/>
+      <location filename="../../CommandConstraints.cpp" line="6373"/>
       <source>Swap PointOnObject+tangency with point to curve tangency</source>
       <translation>Trukatu PuntuaObjektuan+tangentzia puntutik kurbarako tangentziarekin</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4354"/>
-      <location filename="../../CommandConstraints.cpp" line="4429"/>
-      <location filename="../../CommandConstraints.cpp" line="4482"/>
-      <location filename="../../CommandConstraints.cpp" line="4653"/>
-      <location filename="../../CommandConstraints.cpp" line="4816"/>
-      <location filename="../../CommandConstraints.cpp" line="4882"/>
-      <location filename="../../CommandConstraints.cpp" line="4911"/>
+      <location filename="../../CommandConstraints.cpp" line="6480"/>
+      <location filename="../../CommandConstraints.cpp" line="6574"/>
+      <location filename="../../CommandConstraints.cpp" line="6631"/>
+      <location filename="../../CommandConstraints.cpp" line="6818"/>
+      <location filename="../../CommandConstraints.cpp" line="6995"/>
+      <location filename="../../CommandConstraints.cpp" line="7065"/>
+      <location filename="../../CommandConstraints.cpp" line="7098"/>
       <source>Add tangent constraint</source>
       <translation>Gehitu tangente-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4539"/>
-      <location filename="../../CommandConstraints.cpp" line="4546"/>
-      <location filename="../../CommandConstraints.cpp" line="4553"/>
-      <location filename="../../CommandConstraints.cpp" line="4577"/>
-      <location filename="../../CommandConstraints.cpp" line="4585"/>
-      <location filename="../../CommandConstraints.cpp" line="4610"/>
-      <location filename="../../CommandConstraints.cpp" line="4618"/>
-      <location filename="../../CommandConstraints.cpp" line="4645"/>
-      <location filename="../../CommandConstraints.cpp" line="4737"/>
-      <location filename="../../CommandConstraints.cpp" line="4744"/>
-      <location filename="../../CommandConstraints.cpp" line="4751"/>
-      <location filename="../../CommandConstraints.cpp" line="4775"/>
-      <location filename="../../CommandConstraints.cpp" line="4782"/>
-      <location filename="../../CommandConstraints.cpp" line="4808"/>
+      <location filename="../../CommandConstraints.cpp" line="6685"/>
+      <location filename="../../CommandConstraints.cpp" line="6696"/>
+      <location filename="../../CommandConstraints.cpp" line="6708"/>
+      <location filename="../../CommandConstraints.cpp" line="6732"/>
+      <location filename="../../CommandConstraints.cpp" line="6745"/>
+      <location filename="../../CommandConstraints.cpp" line="6769"/>
+      <location filename="../../CommandConstraints.cpp" line="6781"/>
+      <location filename="../../CommandConstraints.cpp" line="6806"/>
+      <location filename="../../CommandConstraints.cpp" line="6900"/>
+      <location filename="../../CommandConstraints.cpp" line="6911"/>
+      <location filename="../../CommandConstraints.cpp" line="6923"/>
+      <location filename="../../CommandConstraints.cpp" line="6947"/>
+      <location filename="../../CommandConstraints.cpp" line="6959"/>
+      <location filename="../../CommandConstraints.cpp" line="6983"/>
       <source>Add tangent constraint point</source>
       <translation>Gehitu tangentzia-murrizketako puntua</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5094"/>
-      <location filename="../../CommandConstraints.cpp" line="5129"/>
-      <location filename="../../CommandConstraints.cpp" line="5148"/>
-      <location filename="../../CommandConstraints.cpp" line="5210"/>
+      <location filename="../../CommandConstraints.cpp" line="7311"/>
+      <location filename="../../CommandConstraints.cpp" line="7355"/>
+      <location filename="../../CommandConstraints.cpp" line="7384"/>
+      <location filename="../../CommandConstraints.cpp" line="7461"/>
       <source>Add radius constraint</source>
       <translation>Gehitu erradio-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5392"/>
-      <location filename="../../CommandConstraints.cpp" line="5421"/>
-      <location filename="../../CommandConstraints.cpp" line="5433"/>
-      <location filename="../../CommandConstraints.cpp" line="5503"/>
+      <location filename="../../CommandConstraints.cpp" line="7663"/>
+      <location filename="../../CommandConstraints.cpp" line="7695"/>
+      <location filename="../../CommandConstraints.cpp" line="7716"/>
+      <location filename="../../CommandConstraints.cpp" line="7792"/>
       <source>Add diameter constraint</source>
       <translation>Gehitu diametro-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5680"/>
-      <location filename="../../CommandConstraints.cpp" line="5719"/>
-      <location filename="../../CommandConstraints.cpp" line="5740"/>
-      <location filename="../../CommandConstraints.cpp" line="5816"/>
+      <location filename="../../CommandConstraints.cpp" line="7990"/>
+      <location filename="../../CommandConstraints.cpp" line="8038"/>
+      <location filename="../../CommandConstraints.cpp" line="8073"/>
+      <location filename="../../CommandConstraints.cpp" line="8162"/>
       <source>Add radiam constraint</source>
       <translation>Gehitu erradio/diametro-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6110"/>
-      <location filename="../../CommandConstraints.cpp" line="6247"/>
-      <location filename="../../CommandConstraints.cpp" line="6279"/>
-      <location filename="../../CommandConstraints.cpp" line="6303"/>
-      <location filename="../../CommandConstraints.cpp" line="6420"/>
-      <location filename="../../CommandConstraints.cpp" line="6476"/>
+      <location filename="../../CommandConstraints.cpp" line="213"/>
+      <location filename="../../CommandConstraints.cpp" line="8495"/>
+      <location filename="../../CommandConstraints.cpp" line="8603"/>
+      <location filename="../../CommandConstraints.cpp" line="8629"/>
+      <location filename="../../CommandConstraints.cpp" line="8724"/>
       <source>Add angle constraint</source>
       <translation>Gehitu angelu-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6702"/>
-      <location filename="../../CommandConstraints.cpp" line="6755"/>
+      <location filename="../../CommandConstraints.cpp" line="8976"/>
+      <location filename="../../CommandConstraints.cpp" line="9031"/>
       <source>Add equality constraint</source>
       <translation>Gehitu berdintasun-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6880"/>
-      <location filename="../../CommandConstraints.cpp" line="6936"/>
-      <location filename="../../CommandConstraints.cpp" line="6952"/>
-      <location filename="../../CommandConstraints.cpp" line="7044"/>
-      <location filename="../../CommandConstraints.cpp" line="7081"/>
+      <location filename="../../CommandConstraints.cpp" line="9165"/>
+      <location filename="../../CommandConstraints.cpp" line="9224"/>
+      <location filename="../../CommandConstraints.cpp" line="9245"/>
+      <location filename="../../CommandConstraints.cpp" line="9352"/>
+      <location filename="../../CommandConstraints.cpp" line="9398"/>
       <source>Add symmetric constraint</source>
       <translation>Gehitu simetria-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7238"/>
+      <location filename="../../CommandConstraints.cpp" line="9562"/>
       <source>Add Snell's law constraint</source>
       <translation>Gehitu Snell-en legearen murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7381"/>
+      <location filename="../../CommandConstraints.cpp" line="9741"/>
       <source>Toggle constraint to driving/reference</source>
       <translation>Txandakatu murrizketa gidatze/erreferentziara</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7466"/>
+      <location filename="../../CommandConstraints.cpp" line="9830"/>
       <source>Activate/Deactivate constraint</source>
       <translation>Aktibatu/desaktibatu murrizketa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="215"/>
+      <location filename="../../Command.cpp" line="231"/>
       <source>Create a new sketch on a face</source>
       <translation>Sortu krokis berria aurpegi batean</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="247"/>
+      <location filename="../../Command.cpp" line="272"/>
       <source>Create a new sketch</source>
       <translation>Sortu krokis berria</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="484"/>
+      <location filename="../../Command.cpp" line="526"/>
       <source>Reorient sketch</source>
       <translation>Aldatu krokisaren orientazioa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="642"/>
+      <location filename="../../Command.cpp" line="707"/>
       <source>Attach sketch</source>
       <translation>Erantsi krokisa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="648"/>
+      <location filename="../../Command.cpp" line="715"/>
       <source>Detach sketch</source>
       <translation>Askatu krokisa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="784"/>
+      <location filename="../../Command.cpp" line="860"/>
       <source>Create a mirrored sketch for each selected sketch</source>
       <translation>Sortu hautatutako krokis bakoitzaren krokis ispilatu bat</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="883"/>
+      <location filename="../../Command.cpp" line="979"/>
       <source>Merge sketches</source>
       <translation>Fusionatu krokisak</translation>
     </message>
     <message>
-      <location filename="../../CommandAlterGeometry.cpp" line="155"/>
+      <location filename="../../CommandAlterGeometry.cpp" line="180"/>
       <source>Toggle draft from/to draft</source>
       <translation>Txandakatu zirriborrotik/zirriborroa</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerLine.h" line="99"/>
+      <location filename="../../DrawSketchHandlerLine.h" line="128"/>
       <source>Add sketch line</source>
       <translation>Gehitu krokis-lerroa</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerRectangle.h" line="154"/>
+      <location filename="../../DrawSketchHandlerRectangle.h" line="346"/>
       <source>Add sketch box</source>
       <translation>Gehitu krokis-koadroa</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerRectangle.h" line="192"/>
-      <source>Add centered sketch box</source>
-      <translation>Gehitu zentratutako krokis-kutxa</translation>
-    </message>
-    <message>
-      <location filename="../../DrawSketchHandlerRectangle.h" line="441"/>
-      <source>Add rounded rectangle</source>
-      <translation>Gehitu laukizuzen biribildua</translation>
-    </message>
-    <message>
-      <location filename="../../DrawSketchHandlerLineSet.h" line="401"/>
+      <location filename="../../DrawSketchHandlerLineSet.h" line="457"/>
       <source>Add line to sketch wire</source>
       <translation>Gehitu lerroa krokis-alanbreari</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerLineSet.h" line="421"/>
+      <location filename="../../DrawSketchHandlerLineSet.h" line="485"/>
       <source>Add arc to sketch wire</source>
       <translation>Gehitu arkua krokis-alanbreari</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerArc.h" line="177"/>
-      <location filename="../../DrawSketchHandlerArc.h" line="426"/>
+      <location filename="../../DrawSketchHandlerArc.h" line="240"/>
       <source>Add sketch arc</source>
       <translation>Gehitu krokis-arkua</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerCircle.h" line="107"/>
-      <location filename="../../DrawSketchHandlerCircle.h" line="280"/>
+      <location filename="../../DrawSketchHandlerCircle.h" line="173"/>
       <source>Add sketch circle</source>
       <translation>Gehitu krokis-zirkulua</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerEllipse.h" line="736"/>
+      <location filename="../../DrawSketchHandlerEllipse.h" line="167"/>
       <source>Add sketch ellipse</source>
       <translation>Gehitu krokis-elipsea</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerArcOfEllipse.h" line="264"/>
+      <location filename="../../DrawSketchHandlerArcOfEllipse.h" line="307"/>
       <source>Add sketch arc of ellipse</source>
       <translation>Gehitu elipse baten arkuaren krokisa</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerArcOfHyperbola.h" line="272"/>
+      <location filename="../../DrawSketchHandlerArcOfHyperbola.h" line="312"/>
       <source>Add sketch arc of hyperbola</source>
       <translation>Gehitu hiperbola baten arkuaren krokisa</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerArcOfParabola.h" line="229"/>
+      <location filename="../../DrawSketchHandlerArcOfParabola.h" line="243"/>
       <source>Add sketch arc of Parabola</source>
       <translation>Gehitu parabola baten arkuaren krokisa</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerBSpline.h" line="105"/>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="117"/>
       <source>Add Pole circle</source>
       <translation>Gehitu polo-zirkulua</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerPoint.h" line="64"/>
+      <location filename="../../DrawSketchHandlerPoint.h" line="83"/>
       <source>Add sketch point</source>
       <translation>Gehitu krokis-puntua</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerFillet.h" line="150"/>
-      <location filename="../../DrawSketchHandlerFillet.h" line="228"/>
+      <location filename="../../DrawSketchHandlerFillet.h" line="179"/>
+      <location filename="../../DrawSketchHandlerFillet.h" line="274"/>
       <source>Create fillet</source>
       <translation>Sortu biribiltzea</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerTrimming.h" line="130"/>
+      <location filename="../../DrawSketchHandlerTrimming.h" line="150"/>
       <source>Trim edge</source>
       <translation>Muxarratu ertza</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerExtend.h" line="243"/>
+      <location filename="../../DrawSketchHandlerExtend.h" line="290"/>
       <source>Extend edge</source>
       <translation>Hedatu ertza</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerSplitting.h" line="133"/>
+      <location filename="../../DrawSketchHandlerSplitting.h" line="147"/>
       <source>Split edge</source>
       <translation>Zatitu ertza</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerExternal.h" line="136"/>
+      <location filename="../../DrawSketchHandlerExternal.h" line="164"/>
       <source>Add external geometry</source>
       <translation>Gehitu kanpo-geometria</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerSlot.h" line="183"/>
+      <location filename="../../DrawSketchHandlerSlot.h" line="154"/>
       <source>Add slot</source>
       <translation>Gehitu arteka</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerPolygon.h" line="117"/>
-      <source>Add hexagon</source>
-      <translation>Gehitu hexagonoa</translation>
-    </message>
-    <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="438"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="141"/>
       <source>Convert to NURBS</source>
       <translation>Bihurtu NURBS</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="512"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="217"/>
       <source>Increase spline degree</source>
       <translation>Handitu spline elementuaren gradua</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="587"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="296"/>
       <source>Decrease spline degree</source>
       <translation>Txikitu spline elementuaren gradua</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="671"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="388"/>
       <source>Increase knot multiplicity</source>
       <translation>Handitu adabegi-aniztasuna</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="809"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="536"/>
       <source>Decrease knot multiplicity</source>
       <translation>Txikitu adabegi-aniztasuna</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1034"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="779"/>
       <source>Insert knot</source>
       <translation>Txertatu adabegia</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1287"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="1055"/>
       <source>Join Curves</source>
       <translation>Elkartu kurbak</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="818"/>
+      <location filename="../../CommandSketcherTools.cpp" line="825"/>
       <source>Exposing Internal Geometry</source>
       <translation>Barne-geometria agerian uzten</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1034"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1044"/>
       <source>Create symmetric geometry</source>
       <translation>Sortu geometria simetrikoa</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1191"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1202"/>
       <source>Copy/clone/move geometry</source>
       <translation>Kopiatu/klonatu/mugitu geometria</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1766"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1783"/>
       <source>Create copy of geometry</source>
       <translation>Sortu geometriaren kopia</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2016"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2037"/>
       <source>Delete all geometry</source>
       <translation>Ezabatu geometria osoa</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2083"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2105"/>
       <source>Delete All Constraints</source>
       <translation>Ezabatu murrizketa guztiak</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2211"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2239"/>
       <source>Remove Axes Alignment</source>
       <translation>Kendu ardatzen lerrokatzea</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherVirtualSpace.cpp" line="151"/>
+      <location filename="../../CommandSketcherVirtualSpace.cpp" line="168"/>
       <source>Toggle constraints to the other virtual space</source>
       <translation>Txandakatu murrizketak beste espazio birtualera</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherVirtualSpace.cpp" line="159"/>
-      <location filename="../../TaskSketcherConstraints.cpp" line="1027"/>
-      <location filename="../../TaskSketcherConstraints.cpp" line="1138"/>
-      <location filename="../../TaskSketcherConstraints.cpp" line="1402"/>
+      <location filename="../../CommandSketcherVirtualSpace.cpp" line="178"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="1127"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="1240"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="1517"/>
       <source>Update constraint's virtual space</source>
       <translation>Eguneratu murrizketen espazio birtuala</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandler.cpp" line="795"/>
+      <location filename="../../DrawSketchHandler.cpp" line="957"/>
+      <location filename="../../DrawSketchDefaultHandler.h" line="847"/>
       <source>Add auto constraints</source>
       <translation>Gehitu murrizketa automatikoak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="626"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="706"/>
       <source>Swap constraint names</source>
       <translation>Trukatu murrizketen izenak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="1123"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="1225"/>
       <source>Rename sketch constraint</source>
       <translation>Aldatu krokis-murrizketaren izena</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="803"/>
+      <location filename="../../ViewProviderSketch.cpp" line="1066"/>
       <source>Drag Point</source>
       <translation>Arrastatu puntua</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="835"/>
+      <location filename="../../ViewProviderSketch.cpp" line="1104"/>
       <source>Drag Curve</source>
       <translation>Arrastatu kurba</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="887"/>
+      <location filename="../../ViewProviderSketch.cpp" line="1168"/>
       <source>Drag Constraint</source>
       <translation>Arrastatu murrizketa</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="1076"/>
+      <location filename="../../ViewProviderSketch.cpp" line="1365"/>
       <source>Modify sketch constraints</source>
       <translation>Aldatu krokis-murrizketak</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="109"/>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="118"/>
       <source>Add Knot Point</source>
       <translation>Gehitu adabegi-puntua</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="131"/>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="166"/>
       <source>Create a carbon copy</source>
       <translation>Sortu kalkoa</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerOffset.h" line="361"/>
+      <source>Offset</source>
+      <translation>Desplazamendua</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerPolygon.h" line="112"/>
+      <source>Add polygon</source>
+      <translation type="unfinished">Add polygon</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerArcSlot.h" line="175"/>
+      <source>Add sketch arc slot</source>
+      <translation type="unfinished">Add sketch arc slot</translation>
     </message>
   </context>
   <context>
     <name>CommandGroup</name>
     <message>
-      <location filename="../../Workbench.cpp" line="34"/>
+      <location filename="../../Workbench.cpp" line="36"/>
       <source>Sketcher</source>
       <translation>Krokisgilea</translation>
     </message>
@@ -2134,96 +2221,109 @@ murrizketak, geometria degeneratuak, etab. aztertuta.</translation>
   <context>
     <name>Exceptions</name>
     <message>
-      <location filename="../../../App/SketchAnalysis.cpp" line="472"/>
+      <location filename="../../../App/SketchAnalysis.cpp" line="479"/>
       <source>Autoconstrain error: Unsolvable sketch while applying coincident constraints.</source>
       <translation>Automurrizketa-errorea: Ebatzi ezin den krokisa bat datozen murrizketak aplikatzean.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchAnalysis.cpp" line="559"/>
+      <location filename="../../../App/SketchAnalysis.cpp" line="567"/>
       <source>Autoconstrain error: Unsolvable sketch while applying vertical/horizontal constraints.</source>
       <translation>Automurrizketa-errorea: Ebatzi ezin den krokisa murrizketa bertikalak/horizontalak aplikatzean.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchAnalysis.cpp" line="766"/>
+      <location filename="../../../App/SketchAnalysis.cpp" line="776"/>
       <source>Autoconstrain error: Unsolvable sketch while applying equality constraints.</source>
       <translation>Automurrizketa-errorea: Ebatzi ezin den krokisa berdintasun-murrizketak aplikatzean.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchAnalysis.cpp" line="825"/>
+      <location filename="../../../App/SketchAnalysis.cpp" line="839"/>
       <source>Autoconstrain error: Unsolvable sketch without constraints.</source>
       <translation>Automurrizketa-errorea: Ebatzi ezin den krokisa, murrizketarik gabekoa.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchAnalysis.cpp" line="870"/>
+      <location filename="../../../App/SketchAnalysis.cpp" line="885"/>
       <source>Autoconstrain error: Unsolvable sketch after applying horizontal and vertical constraints.</source>
       <translation>Automurrizketa-errorea: Ebatzi ezin den krokisa murrizketa bertikalak eta horizontalak aplikatu ondoren.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchAnalysis.cpp" line="895"/>
+      <location filename="../../../App/SketchAnalysis.cpp" line="910"/>
       <source>Autoconstrain error: Unsolvable sketch after applying point-on-point constraints.</source>
       <translation>Automurrizketa-errorea: Ebatzi ezin den krokisa puntuz puntuko murrizketak aplikatu ondoren.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchAnalysis.cpp" line="927"/>
+      <location filename="../../../App/SketchAnalysis.cpp" line="942"/>
       <source>Autoconstrain error: Unsolvable sketch after applying equality constraints.</source>
       <translation>Automurrizketa-errorea: Ebatzi ezin den krokisa berdintasun-murrizketak aplikatu ondoren.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="2117"/>
+      <location filename="../../../App/SketchObject.cpp" line="2277"/>
       <source>Unable to guess intersection of curves. Try adding a coincident constraint between the vertices of the curves you are intending to fillet.</source>
       <translation>Ezin izan da kurben ebakidura antzeman. Saiatu bat datorren murrizketa bat gehitzen biribildu nahi dituzun kurben erpinen artean.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="6300"/>
-      <location filename="../../../App/SketchObject.cpp" line="6508"/>
+      <location filename="../../../App/SketchObject.cpp" line="6459"/>
+      <location filename="../../../App/SketchObject.cpp" line="6667"/>
       <source>BSpline Geometry Index (GeoID) is out of bounds.</source>
       <translation>BSpline geometria-indizea (GeoID) mugetatik kanpo dago.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="6305"/>
+      <location filename="../../../App/SketchObject.cpp" line="6464"/>
       <source>You are requesting no change in knot multiplicity.</source>
       <translation>Adabegi-aniztasunean aldaketarik ez egitea eskatzen ari zara.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="6311"/>
-      <location filename="../../../App/SketchObject.cpp" line="6518"/>
+      <location filename="../../../App/SketchObject.cpp" line="6470"/>
+      <location filename="../../../App/SketchObject.cpp" line="6677"/>
       <source>The Geometry Index (GeoId) provided is not a B-spline curve.</source>
       <translation>Hornitutako geometria-indizea (GeoId) ez da Bspline kurba bat.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="6320"/>
+      <location filename="../../../App/SketchObject.cpp" line="6479"/>
       <source>The knot index is out of bounds. Note that in accordance with OCC notation, the first knot has index 1 and not zero.</source>
       <translation>Adabegi-indizea mugetatik kanpo dago. Kontuan izan, OCC notazioaren arabera, lehen adabegiaren indize-zenbakiak 1 izan behar duela, ez 0.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="6331"/>
+      <location filename="../../../App/SketchObject.cpp" line="6490"/>
       <source>The multiplicity cannot be increased beyond the degree of the B-spline.</source>
       <translation>Aniztasuna ezin da handitu Bspline-aren gradutik gora.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="6339"/>
+      <location filename="../../../App/SketchObject.cpp" line="6498"/>
       <source>The multiplicity cannot be decreased beyond zero.</source>
       <translation>Aniztasuna ezin da txikitu zerotik behera.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="6353"/>
+      <location filename="../../../App/SketchObject.cpp" line="6512"/>
       <source>OCC is unable to decrease the multiplicity within the maximum tolerance.</source>
       <translation>OCC-k ezin du aniztasuna txikitu tolerantzia maximoaren barruan.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="6512"/>
+      <location filename="../../../App/SketchObject.cpp" line="6671"/>
       <source>Knot cannot have zero multiplicity.</source>
       <translation>Adabegiak ezin du zero aniztasuna izan.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="6529"/>
+      <location filename="../../../App/SketchObject.cpp" line="6688"/>
       <source>Knot multiplicity cannot be higher than the degree of the BSpline.</source>
-      <translation>Adabegi-aniztasunak ezin du izan BSpline-aren graduak baino handiagoa.</translation>
+      <translation>Adabegi-aniztasunak ezin du izan B-spline kurbaren graduak baino handiagoa.</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="6535"/>
+      <location filename="../../../App/SketchObject.cpp" line="6694"/>
       <source>Knot cannot be inserted outside the BSpline parameter range.</source>
-      <translation>Adabegia ezin da txertatu BSpline parametro-barrutiaren kanpoaldean.</translation>
+      <translation>Adabegia ezin da txertatu B-spline parametro-barrutiaren kanpoaldean.</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.cpp" line="348"/>
+      <location filename="../../SketcherToolDefaultWidget.cpp" line="375"/>
+      <location filename="../../SketcherToolDefaultWidget.cpp" line="388"/>
+      <location filename="../../SketcherToolDefaultWidget.cpp" line="401"/>
+      <location filename="../../SketcherToolDefaultWidget.cpp" line="414"/>
+      <location filename="../../SketcherToolDefaultWidget.cpp" line="426"/>
+      <location filename="../../SketcherToolDefaultWidget.cpp" line="440"/>
+      <location filename="../../SketcherToolDefaultWidget.cpp" line="467"/>
+      <location filename="../../SketcherToolDefaultWidget.cpp" line="583"/>
+      <source>ToolWidget parameter index out of range</source>
+      <translation type="unfinished">ToolWidget parameter index out of range</translation>
     </message>
   </context>
   <context>
@@ -2237,223 +2337,220 @@ murrizketak, geometria degeneratuak, etab. aztertuta.</translation>
   <context>
     <name>QObject</name>
     <message>
-      <location filename="../../AppSketcherGui.cpp" line="132"/>
-      <location filename="../../AppSketcherGui.cpp" line="133"/>
-      <location filename="../../AppSketcherGui.cpp" line="134"/>
-      <location filename="../../AppSketcherGui.cpp" line="135"/>
+      <location filename="../../AppSketcherGui.cpp" line="141"/>
+      <location filename="../../AppSketcherGui.cpp" line="143"/>
+      <location filename="../../AppSketcherGui.cpp" line="145"/>
+      <location filename="../../AppSketcherGui.cpp" line="147"/>
       <source>Sketcher</source>
       <translation>Krokisgilea</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="117"/>
+      <location filename="../../Command.cpp" line="122"/>
       <source>There are no modes that accept the selected set of subelements</source>
       <translation>Ez dago hautatutako azpielementu multzoa onartzen duen modurik</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="120"/>
+      <location filename="../../Command.cpp" line="125"/>
       <source>Broken link to support subelements</source>
       <translation>Subelements onartzen To hautsi esteka</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="123"/>
-      <location filename="../../Command.cpp" line="132"/>
+      <location filename="../../Command.cpp" line="128"/>
+      <location filename="../../Command.cpp" line="138"/>
       <source>Unexpected error</source>
       <translation>Espero ez zen errorea</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="127"/>
+      <location filename="../../Command.cpp" line="132"/>
       <source>Face is non-planar</source>
       <translation>Aurpegia ez da planarra</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="129"/>
+      <location filename="../../Command.cpp" line="134"/>
       <source>Selected shapes are of wrong form (e.g., a curved edge where a straight one is needed)</source>
       <translation>Hautatutako formak okerrak dira (adib. ertz kurbatu bat dago ertz zuzena behar den tokian)</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="170"/>
+      <location filename="../../Command.cpp" line="178"/>
       <source>Sketch mapping</source>
       <translation>Krokisaren mapatzea</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="171"/>
+      <location filename="../../Command.cpp" line="179"/>
       <source>Can't map the sketch to selected object. %1.</source>
       <translation>Ezin da mapatu hautatutako objektuaren krokisa. %1.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="178"/>
-      <location filename="../../Command.cpp" line="585"/>
+      <location filename="../../Command.cpp" line="186"/>
+      <location filename="../../Command.cpp" line="646"/>
       <source>Don't attach</source>
       <translation>Ez erantsi</translation>
     </message>
     <message>
-      <location filename="../../CommandAlterGeometry.cpp" line="141"/>
-      <location filename="../../CommandAlterGeometry.cpp" line="149"/>
-      <location filename="../../CommandConstraints.cpp" line="149"/>
-      <location filename="../../CommandConstraints.cpp" line="156"/>
-      <location filename="../../CommandConstraints.cpp" line="916"/>
-      <location filename="../../CommandConstraints.cpp" line="1144"/>
-      <location filename="../../CommandConstraints.cpp" line="1382"/>
-      <location filename="../../CommandConstraints.cpp" line="1406"/>
-      <location filename="../../CommandConstraints.cpp" line="1411"/>
-      <location filename="../../CommandConstraints.cpp" line="1607"/>
-      <location filename="../../CommandConstraints.cpp" line="1639"/>
-      <location filename="../../CommandConstraints.cpp" line="1644"/>
-      <location filename="../../CommandConstraints.cpp" line="1987"/>
-      <location filename="../../CommandConstraints.cpp" line="1999"/>
-      <location filename="../../CommandConstraints.cpp" line="2020"/>
-      <location filename="../../CommandConstraints.cpp" line="2096"/>
-      <location filename="../../CommandConstraints.cpp" line="2183"/>
-      <location filename="../../CommandConstraints.cpp" line="2195"/>
-      <location filename="../../CommandConstraints.cpp" line="2380"/>
-      <location filename="../../CommandConstraints.cpp" line="2414"/>
-      <location filename="../../CommandConstraints.cpp" line="2509"/>
-      <location filename="../../CommandConstraints.cpp" line="2601"/>
-      <location filename="../../CommandConstraints.cpp" line="2709"/>
-      <location filename="../../CommandConstraints.cpp" line="2749"/>
-      <location filename="../../CommandConstraints.cpp" line="2772"/>
-      <location filename="../../CommandConstraints.cpp" line="2784"/>
-      <location filename="../../CommandConstraints.cpp" line="2831"/>
-      <location filename="../../CommandConstraints.cpp" line="2849"/>
-      <location filename="../../CommandConstraints.cpp" line="2910"/>
-      <location filename="../../CommandConstraints.cpp" line="2922"/>
-      <location filename="../../CommandConstraints.cpp" line="2952"/>
-      <location filename="../../CommandConstraints.cpp" line="3003"/>
-      <location filename="../../CommandConstraints.cpp" line="3033"/>
-      <location filename="../../CommandConstraints.cpp" line="3064"/>
-      <location filename="../../CommandConstraints.cpp" line="3168"/>
-      <location filename="../../CommandConstraints.cpp" line="3180"/>
-      <location filename="../../CommandConstraints.cpp" line="3206"/>
-      <location filename="../../CommandConstraints.cpp" line="3257"/>
-      <location filename="../../CommandConstraints.cpp" line="3287"/>
-      <location filename="../../CommandConstraints.cpp" line="3318"/>
-      <location filename="../../CommandConstraints.cpp" line="3419"/>
-      <location filename="../../CommandConstraints.cpp" line="3433"/>
-      <location filename="../../CommandConstraints.cpp" line="3448"/>
-      <location filename="../../CommandConstraints.cpp" line="3465"/>
-      <location filename="../../CommandConstraints.cpp" line="3505"/>
-      <location filename="../../CommandConstraints.cpp" line="3592"/>
-      <location filename="../../CommandConstraints.cpp" line="3604"/>
-      <location filename="../../CommandConstraints.cpp" line="3635"/>
-      <location filename="../../CommandConstraints.cpp" line="3682"/>
-      <location filename="../../CommandConstraints.cpp" line="3693"/>
-      <location filename="../../CommandConstraints.cpp" line="3731"/>
-      <location filename="../../CommandConstraints.cpp" line="3741"/>
-      <location filename="../../CommandConstraints.cpp" line="3748"/>
-      <location filename="../../CommandConstraints.cpp" line="3773"/>
-      <location filename="../../CommandConstraints.cpp" line="3783"/>
-      <location filename="../../CommandConstraints.cpp" line="3793"/>
-      <location filename="../../CommandConstraints.cpp" line="3954"/>
-      <location filename="../../CommandConstraints.cpp" line="3964"/>
-      <location filename="../../CommandConstraints.cpp" line="3975"/>
-      <location filename="../../CommandConstraints.cpp" line="4133"/>
-      <location filename="../../CommandConstraints.cpp" line="4304"/>
-      <location filename="../../CommandConstraints.cpp" line="4316"/>
-      <location filename="../../CommandConstraints.cpp" line="4348"/>
-      <location filename="../../CommandConstraints.cpp" line="4394"/>
-      <location filename="../../CommandConstraints.cpp" line="4414"/>
-      <location filename="../../CommandConstraints.cpp" line="4422"/>
-      <location filename="../../CommandConstraints.cpp" line="4449"/>
-      <location filename="../../CommandConstraints.cpp" line="4456"/>
-      <location filename="../../CommandConstraints.cpp" line="4468"/>
-      <location filename="../../CommandConstraints.cpp" line="4476"/>
-      <location filename="../../CommandConstraints.cpp" line="4502"/>
-      <location filename="../../CommandConstraints.cpp" line="4510"/>
-      <location filename="../../CommandConstraints.cpp" line="4700"/>
-      <location filename="../../CommandConstraints.cpp" line="4708"/>
-      <location filename="../../CommandConstraints.cpp" line="4861"/>
-      <location filename="../../CommandConstraints.cpp" line="4905"/>
-      <location filename="../../CommandConstraints.cpp" line="5000"/>
-      <location filename="../../CommandConstraints.cpp" line="5012"/>
-      <location filename="../../CommandConstraints.cpp" line="5074"/>
-      <location filename="../../CommandConstraints.cpp" line="5082"/>
-      <location filename="../../CommandConstraints.cpp" line="5203"/>
-      <location filename="../../CommandConstraints.cpp" line="5307"/>
-      <location filename="../../CommandConstraints.cpp" line="5319"/>
-      <location filename="../../CommandConstraints.cpp" line="5363"/>
-      <location filename="../../CommandConstraints.cpp" line="5380"/>
-      <location filename="../../CommandConstraints.cpp" line="5488"/>
-      <location filename="../../CommandConstraints.cpp" line="5496"/>
-      <location filename="../../CommandConstraints.cpp" line="5591"/>
-      <location filename="../../CommandConstraints.cpp" line="5603"/>
-      <location filename="../../CommandConstraints.cpp" line="5660"/>
-      <location filename="../../CommandConstraints.cpp" line="5668"/>
-      <location filename="../../CommandConstraints.cpp" line="5809"/>
-      <location filename="../../CommandConstraints.cpp" line="6058"/>
-      <location filename="../../CommandConstraints.cpp" line="6070"/>
-      <location filename="../../CommandConstraints.cpp" line="6103"/>
-      <location filename="../../CommandConstraints.cpp" line="6166"/>
-      <location filename="../../CommandConstraints.cpp" line="6266"/>
-      <location filename="../../CommandConstraints.cpp" line="6324"/>
-      <location filename="../../CommandConstraints.cpp" line="6468"/>
-      <location filename="../../CommandConstraints.cpp" line="6586"/>
-      <location filename="../../CommandConstraints.cpp" line="6600"/>
+      <location filename="../../CommandSketcherVirtualSpace.cpp" line="121"/>
+      <location filename="../../CommandSketcherVirtualSpace.cpp" line="130"/>
+      <location filename="../../CommandSketcherVirtualSpace.cpp" line="157"/>
+      <location filename="../../CommandAlterGeometry.cpp" line="165"/>
+      <location filename="../../CommandAlterGeometry.cpp" line="174"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="169"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="244"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="327"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="380"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="440"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="528"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="576"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="938"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="1048"/>
+      <location filename="../../CommandConstraints.cpp" line="171"/>
+      <location filename="../../CommandConstraints.cpp" line="178"/>
+      <location filename="../../CommandConstraints.cpp" line="2274"/>
+      <location filename="../../CommandConstraints.cpp" line="2403"/>
+      <location filename="../../CommandConstraints.cpp" line="2419"/>
+      <location filename="../../CommandConstraints.cpp" line="2676"/>
+      <location filename="../../CommandConstraints.cpp" line="3085"/>
+      <location filename="../../CommandConstraints.cpp" line="3112"/>
+      <location filename="../../CommandConstraints.cpp" line="3117"/>
+      <location filename="../../CommandConstraints.cpp" line="3370"/>
+      <location filename="../../CommandConstraints.cpp" line="3404"/>
+      <location filename="../../CommandConstraints.cpp" line="3409"/>
+      <location filename="../../CommandConstraints.cpp" line="3696"/>
+      <location filename="../../CommandConstraints.cpp" line="3726"/>
+      <location filename="../../CommandConstraints.cpp" line="3749"/>
+      <location filename="../../CommandConstraints.cpp" line="3780"/>
+      <location filename="../../CommandConstraints.cpp" line="3803"/>
+      <location filename="../../CommandConstraints.cpp" line="3937"/>
+      <location filename="../../CommandConstraints.cpp" line="3959"/>
+      <location filename="../../CommandConstraints.cpp" line="3990"/>
+      <location filename="../../CommandConstraints.cpp" line="4197"/>
+      <location filename="../../CommandConstraints.cpp" line="4209"/>
+      <location filename="../../CommandConstraints.cpp" line="4458"/>
+      <location filename="../../CommandConstraints.cpp" line="4466"/>
+      <location filename="../../CommandConstraints.cpp" line="4505"/>
+      <location filename="../../CommandConstraints.cpp" line="4625"/>
+      <location filename="../../CommandConstraints.cpp" line="4731"/>
+      <location filename="../../CommandConstraints.cpp" line="4818"/>
+      <location filename="../../CommandConstraints.cpp" line="4831"/>
+      <location filename="../../CommandConstraints.cpp" line="4864"/>
+      <location filename="../../CommandConstraints.cpp" line="4926"/>
+      <location filename="../../CommandConstraints.cpp" line="4962"/>
+      <location filename="../../CommandConstraints.cpp" line="4998"/>
+      <location filename="../../CommandConstraints.cpp" line="5121"/>
+      <location filename="../../CommandConstraints.cpp" line="5134"/>
+      <location filename="../../CommandConstraints.cpp" line="5165"/>
+      <location filename="../../CommandConstraints.cpp" line="5227"/>
+      <location filename="../../CommandConstraints.cpp" line="5261"/>
+      <location filename="../../CommandConstraints.cpp" line="5297"/>
+      <location filename="../../CommandConstraints.cpp" line="5419"/>
+      <location filename="../../CommandConstraints.cpp" line="5433"/>
+      <location filename="../../CommandConstraints.cpp" line="5449"/>
+      <location filename="../../CommandConstraints.cpp" line="5468"/>
+      <location filename="../../CommandConstraints.cpp" line="5509"/>
+      <location filename="../../CommandConstraints.cpp" line="5608"/>
+      <location filename="../../CommandConstraints.cpp" line="5620"/>
+      <location filename="../../CommandConstraints.cpp" line="5655"/>
+      <location filename="../../CommandConstraints.cpp" line="5719"/>
+      <location filename="../../CommandConstraints.cpp" line="5729"/>
+      <location filename="../../CommandConstraints.cpp" line="5770"/>
+      <location filename="../../CommandConstraints.cpp" line="5782"/>
+      <location filename="../../CommandConstraints.cpp" line="5790"/>
+      <location filename="../../CommandConstraints.cpp" line="5819"/>
+      <location filename="../../CommandConstraints.cpp" line="5828"/>
+      <location filename="../../CommandConstraints.cpp" line="5840"/>
+      <location filename="../../CommandConstraints.cpp" line="6020"/>
+      <location filename="../../CommandConstraints.cpp" line="6029"/>
+      <location filename="../../CommandConstraints.cpp" line="6041"/>
+      <location filename="../../CommandConstraints.cpp" line="6220"/>
+      <location filename="../../CommandConstraints.cpp" line="6429"/>
+      <location filename="../../CommandConstraints.cpp" line="6441"/>
+      <location filename="../../CommandConstraints.cpp" line="6475"/>
+      <location filename="../../CommandConstraints.cpp" line="6539"/>
+      <location filename="../../CommandConstraints.cpp" line="6559"/>
+      <location filename="../../CommandConstraints.cpp" line="6568"/>
+      <location filename="../../CommandConstraints.cpp" line="6597"/>
+      <location filename="../../CommandConstraints.cpp" line="6606"/>
       <location filename="../../CommandConstraints.cpp" line="6618"/>
-      <location filename="../../CommandConstraints.cpp" line="6625"/>
-      <location filename="../../CommandConstraints.cpp" line="6646"/>
-      <location filename="../../CommandConstraints.cpp" line="6678"/>
-      <location filename="../../CommandConstraints.cpp" line="6695"/>
-      <location filename="../../CommandConstraints.cpp" line="6748"/>
-      <location filename="../../CommandConstraints.cpp" line="6831"/>
-      <location filename="../../CommandConstraints.cpp" line="6845"/>
-      <location filename="../../CommandConstraints.cpp" line="6872"/>
-      <location filename="../../CommandConstraints.cpp" line="6896"/>
-      <location filename="../../CommandConstraints.cpp" line="6928"/>
-      <location filename="../../CommandConstraints.cpp" line="6968"/>
-      <location filename="../../CommandConstraints.cpp" line="6992"/>
-      <location filename="../../CommandConstraints.cpp" line="7036"/>
-      <location filename="../../CommandConstraints.cpp" line="7054"/>
-      <location filename="../../CommandConstraints.cpp" line="7138"/>
-      <location filename="../../CommandConstraints.cpp" line="7148"/>
-      <location filename="../../CommandConstraints.cpp" line="7173"/>
-      <location filename="../../CommandConstraints.cpp" line="7184"/>
-      <location filename="../../CommandConstraints.cpp" line="7195"/>
-      <location filename="../../CommandConstraints.cpp" line="7203"/>
-      <location filename="../../CommandConstraints.cpp" line="7329"/>
-      <location filename="../../CommandConstraints.cpp" line="7340"/>
-      <location filename="../../CommandConstraints.cpp" line="7374"/>
-      <location filename="../../CommandConstraints.cpp" line="7448"/>
-      <location filename="../../CommandConstraints.cpp" line="7459"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="464"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="535"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="613"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="664"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="720"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="802"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="843"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1180"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1281"/>
-      <location filename="../../CommandSketcherTools.cpp" line="92"/>
-      <location filename="../../CommandSketcherTools.cpp" line="766"/>
-      <location filename="../../CommandSketcherTools.cpp" line="880"/>
-      <location filename="../../CommandSketcherTools.cpp" line="889"/>
-      <location filename="../../CommandSketcherTools.cpp" line="996"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1006"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1262"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1271"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1332"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1857"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1866"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1930"/>
-      <location filename="../../CommandSketcherTools.cpp" line="2142"/>
-      <location filename="../../CommandSketcherTools.cpp" line="2151"/>
-      <location filename="../../CommandSketcherTools.cpp" line="2197"/>
-      <location filename="../../CommandSketcherVirtualSpace.cpp" line="111"/>
-      <location filename="../../CommandSketcherVirtualSpace.cpp" line="119"/>
-      <location filename="../../CommandSketcherVirtualSpace.cpp" line="142"/>
+      <location filename="../../CommandConstraints.cpp" line="6626"/>
+      <location filename="../../CommandConstraints.cpp" line="6653"/>
+      <location filename="../../CommandConstraints.cpp" line="6661"/>
+      <location filename="../../CommandConstraints.cpp" line="6866"/>
+      <location filename="../../CommandConstraints.cpp" line="6874"/>
+      <location filename="../../CommandConstraints.cpp" line="7048"/>
+      <location filename="../../CommandConstraints.cpp" line="7093"/>
+      <location filename="../../CommandConstraints.cpp" line="7211"/>
+      <location filename="../../CommandConstraints.cpp" line="7224"/>
+      <location filename="../../CommandConstraints.cpp" line="7291"/>
+      <location filename="../../CommandConstraints.cpp" line="7299"/>
+      <location filename="../../CommandConstraints.cpp" line="7455"/>
+      <location filename="../../CommandConstraints.cpp" line="7575"/>
+      <location filename="../../CommandConstraints.cpp" line="7588"/>
+      <location filename="../../CommandConstraints.cpp" line="7634"/>
+      <location filename="../../CommandConstraints.cpp" line="7652"/>
+      <location filename="../../CommandConstraints.cpp" line="7778"/>
+      <location filename="../../CommandConstraints.cpp" line="7786"/>
+      <location filename="../../CommandConstraints.cpp" line="7895"/>
+      <location filename="../../CommandConstraints.cpp" line="7908"/>
+      <location filename="../../CommandConstraints.cpp" line="7970"/>
+      <location filename="../../CommandConstraints.cpp" line="7978"/>
+      <location filename="../../CommandConstraints.cpp" line="8156"/>
+      <location filename="../../CommandConstraints.cpp" line="8439"/>
+      <location filename="../../CommandConstraints.cpp" line="8452"/>
+      <location filename="../../CommandConstraints.cpp" line="8488"/>
+      <location filename="../../CommandConstraints.cpp" line="8578"/>
+      <location filename="../../CommandConstraints.cpp" line="8591"/>
+      <location filename="../../CommandConstraints.cpp" line="8656"/>
+      <location filename="../../CommandConstraints.cpp" line="8717"/>
+      <location filename="../../CommandConstraints.cpp" line="8860"/>
+      <location filename="../../CommandConstraints.cpp" line="8874"/>
+      <location filename="../../CommandConstraints.cpp" line="8893"/>
+      <location filename="../../CommandConstraints.cpp" line="8900"/>
+      <location filename="../../CommandConstraints.cpp" line="8921"/>
+      <location filename="../../CommandConstraints.cpp" line="8954"/>
+      <location filename="../../CommandConstraints.cpp" line="8970"/>
+      <location filename="../../CommandConstraints.cpp" line="9025"/>
+      <location filename="../../CommandConstraints.cpp" line="9117"/>
+      <location filename="../../CommandConstraints.cpp" line="9131"/>
+      <location filename="../../CommandConstraints.cpp" line="9158"/>
+      <location filename="../../CommandConstraints.cpp" line="9187"/>
+      <location filename="../../CommandConstraints.cpp" line="9217"/>
+      <location filename="../../CommandConstraints.cpp" line="9267"/>
+      <location filename="../../CommandConstraints.cpp" line="9296"/>
+      <location filename="../../CommandConstraints.cpp" line="9345"/>
+      <location filename="../../CommandConstraints.cpp" line="9369"/>
+      <location filename="../../CommandConstraints.cpp" line="9463"/>
+      <location filename="../../CommandConstraints.cpp" line="9473"/>
+      <location filename="../../CommandConstraints.cpp" line="9498"/>
+      <location filename="../../CommandConstraints.cpp" line="9508"/>
+      <location filename="../../CommandConstraints.cpp" line="9519"/>
+      <location filename="../../CommandConstraints.cpp" line="9526"/>
+      <location filename="../../CommandConstraints.cpp" line="9686"/>
+      <location filename="../../CommandConstraints.cpp" line="9698"/>
+      <location filename="../../CommandConstraints.cpp" line="9735"/>
+      <location filename="../../CommandConstraints.cpp" line="9812"/>
+      <location filename="../../CommandConstraints.cpp" line="9824"/>
+      <location filename="../../CommandSketcherTools.cpp" line="96"/>
+      <location filename="../../CommandSketcherTools.cpp" line="772"/>
+      <location filename="../../CommandSketcherTools.cpp" line="888"/>
+      <location filename="../../CommandSketcherTools.cpp" line="897"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1005"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1015"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1274"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1284"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1346"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1875"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1885"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1949"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2167"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2177"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2224"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2289"/>
       <source>Wrong selection</source>
       <translation>Hautapen okerra</translation>
     </message>
     <message>
-      <location filename="../../CommandAlterGeometry.cpp" line="142"/>
-      <location filename="../../CommandAlterGeometry.cpp" line="150"/>
+      <location filename="../../CommandAlterGeometry.cpp" line="166"/>
+      <location filename="../../CommandAlterGeometry.cpp" line="175"/>
       <source>Select edge(s) from the sketch.</source>
       <translation>Hautatu krokiseko ertza(k).</translation>
-    </message>
-    <message>
-      <location filename="../../EditDatumDialog.cpp" line="81"/>
-      <source>Distance constraint</source>
-      <translation>Distantzia-murrizketa</translation>
     </message>
     <message>
       <location filename="../../EditDatumDialog.cpp" line="82"/>
@@ -2461,328 +2558,312 @@ murrizketak, geometria degeneratuak, etab. aztertuta.</translation>
       <translation>Ezin da zero puntua editatu krokisak gatazkan dauden murrizketak dituelako</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="222"/>
+      <location filename="../../EditDatumDialog.cpp" line="81"/>
       <source>Dimensional constraint</source>
       <translation>Kota-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="150"/>
+      <location filename="../../CommandConstraints.cpp" line="172"/>
       <source>Cannot add a constraint between two external geometries.</source>
       <translation>Ezin da murrizketa bat gehitu bi kanpo-geometriaren artean.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="157"/>
+      <location filename="../../CommandConstraints.cpp" line="179"/>
       <source>Cannot add a constraint between two fixed geometries. Fixed geometries include external geometry, blocked geometry, and special points such as B-spline knot points.</source>
       <translation>Ezin da murrizketa bat gehitu bi geometria finkoren artean. Geometria finkoek kanpo-geometriak, blokeatutako geometriak eta puntu bereziak (esaterako, B-spline adabegi-puntuak) barne hartzen dituzte.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="491"/>
+      <location filename="../../CommandConstraints.cpp" line="708"/>
       <source>Sketcher Constraint Substitution</source>
       <translation>Kroskisgile-murrizketen ordezkapena</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="497"/>
+      <location filename="../../CommandConstraints.cpp" line="714"/>
       <source>Keep notifying me of constraint substitutions</source>
       <translation>Jarraitu murrizketa-ordezkapenak jakinarazten</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="538"/>
-      <location filename="../../CommandConstraints.cpp" line="549"/>
-      <location filename="../../CommandConstraints.cpp" line="561"/>
+      <location filename="../../CommandConstraints.cpp" line="792"/>
+      <location filename="../../CommandConstraints.cpp" line="803"/>
+      <location filename="../../CommandConstraints.cpp" line="815"/>
       <source>Only sketch and its support are allowed to be selected.</source>
       <translation>Krokisa eta bere euskarria soilik onartzen dira hautatzea.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="570"/>
+      <location filename="../../CommandConstraints.cpp" line="824"/>
       <source>One of the selected has to be on the sketch.</source>
       <translation>Hautatuetako batek krokisean egon behar du.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="917"/>
-      <location filename="../../CommandConstraints.cpp" line="1145"/>
+      <location filename="../../CommandConstraints.cpp" line="2677"/>
       <source>Select an edge from the sketch.</source>
       <translation>Hautatu krokiseko ertz bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="942"/>
-      <location filename="../../CommandConstraints.cpp" line="954"/>
-      <location filename="../../CommandConstraints.cpp" line="959"/>
-      <location filename="../../CommandConstraints.cpp" line="977"/>
-      <location filename="../../CommandConstraints.cpp" line="1004"/>
-      <location filename="../../CommandConstraints.cpp" line="1031"/>
-      <location filename="../../CommandConstraints.cpp" line="1043"/>
-      <location filename="../../CommandConstraints.cpp" line="1048"/>
-      <location filename="../../CommandConstraints.cpp" line="1171"/>
-      <location filename="../../CommandConstraints.cpp" line="1187"/>
-      <location filename="../../CommandConstraints.cpp" line="1194"/>
-      <location filename="../../CommandConstraints.cpp" line="1213"/>
-      <location filename="../../CommandConstraints.cpp" line="1240"/>
-      <location filename="../../CommandConstraints.cpp" line="1269"/>
-      <location filename="../../CommandConstraints.cpp" line="1277"/>
-      <location filename="../../CommandConstraints.cpp" line="1286"/>
+      <location filename="../../CommandConstraints.cpp" line="2641"/>
+      <location filename="../../CommandConstraints.cpp" line="2650"/>
+      <location filename="../../CommandConstraints.cpp" line="2702"/>
+      <location filename="../../CommandConstraints.cpp" line="2726"/>
+      <location filename="../../CommandConstraints.cpp" line="2780"/>
+      <location filename="../../CommandConstraints.cpp" line="2814"/>
       <source>Impossible constraint</source>
       <translation>Ezinezko murrizketa</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="942"/>
-      <location filename="../../CommandConstraints.cpp" line="1031"/>
-      <location filename="../../CommandConstraints.cpp" line="1172"/>
-      <location filename="../../CommandConstraints.cpp" line="1269"/>
+      <location filename="../../CommandConstraints.cpp" line="2703"/>
+      <location filename="../../CommandConstraints.cpp" line="2815"/>
       <source>The selected edge is not a line segment.</source>
       <translation>Hautatutako ertza ez da lerro segmentu bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="950"/>
-      <location filename="../../CommandConstraints.cpp" line="1039"/>
-      <location filename="../../CommandConstraints.cpp" line="1181"/>
-      <location filename="../../CommandConstraints.cpp" line="1281"/>
-      <location filename="../../CommandConstraints.cpp" line="1655"/>
-      <location filename="../../CommandConstraints.cpp" line="1704"/>
+      <location filename="../../CommandConstraints.cpp" line="2633"/>
+      <location filename="../../CommandConstraints.cpp" line="3421"/>
+      <location filename="../../CommandConstraints.cpp" line="3474"/>
       <source>Double constraint</source>
       <translation>Murrizketa bikoitza</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="950"/>
-      <location filename="../../CommandConstraints.cpp" line="1039"/>
-      <location filename="../../CommandConstraints.cpp" line="1182"/>
-      <location filename="../../CommandConstraints.cpp" line="1188"/>
-      <location filename="../../CommandConstraints.cpp" line="1277"/>
+      <location filename="../../CommandConstraints.cpp" line="2634"/>
       <source>The selected edge already has a horizontal constraint!</source>
       <translation>Hautatutako ertzak badauka murrizketa horizontal bat!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="954"/>
-      <location filename="../../CommandConstraints.cpp" line="1043"/>
-      <location filename="../../CommandConstraints.cpp" line="1281"/>
+      <location filename="../../CommandConstraints.cpp" line="2642"/>
       <source>The selected edge already has a vertical constraint!</source>
       <translation>Hautatutako ertzak badauka murrizketa bertikal bat!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="959"/>
-      <location filename="../../CommandConstraints.cpp" line="1048"/>
-      <location filename="../../CommandConstraints.cpp" line="1195"/>
-      <location filename="../../CommandConstraints.cpp" line="1286"/>
-      <location filename="../../CommandConstraints.cpp" line="1656"/>
-      <location filename="../../CommandConstraints.cpp" line="1704"/>
+      <location filename="../../CommandConstraints.cpp" line="2651"/>
+      <location filename="../../CommandConstraints.cpp" line="3422"/>
+      <location filename="../../CommandConstraints.cpp" line="3475"/>
       <source>The selected edge already has a Block constraint!</source>
       <translation>Hautatutako ertzak badauka bloke-murrizketa bat!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="977"/>
-      <source>The selected item(s) can't accept a horizontal constraint!</source>
-      <translation>Hautatutako elementua(e)k ez du(te) murrizketa horizontal bat onartzen!</translation>
-    </message>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="1004"/>
-      <location filename="../../CommandConstraints.cpp" line="1241"/>
+      <location filename="../../CommandConstraints.cpp" line="2781"/>
       <source>There are more than one fixed points selected. Select a maximum of one fixed point!</source>
       <translation>Puntu finko bat baino gehiago dago hautatuta. Gehienez puntu finko bakarra hautatu behar duzu!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1214"/>
-      <source>The selected item(s) can't accept a vertical constraint!</source>
-      <translation>Hautatutako elementua(e)k ez du(te) murrizketa bertikal bat onartzen!</translation>
-    </message>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="1383"/>
-      <location filename="../../CommandConstraints.cpp" line="1608"/>
-      <location filename="../../CommandConstraints.cpp" line="2184"/>
+      <location filename="../../CommandConstraints.cpp" line="3086"/>
+      <location filename="../../CommandConstraints.cpp" line="3371"/>
+      <location filename="../../CommandConstraints.cpp" line="4198"/>
       <source>Select vertices from the sketch.</source>
       <translation>Hautatu krokiseko erpinak.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1407"/>
+      <location filename="../../CommandConstraints.cpp" line="3113"/>
       <source>Select one vertex from the sketch other than the origin.</source>
       <translation>Hautatu krokiseko erpin bat, jatorria ez dena.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1412"/>
+      <location filename="../../CommandConstraints.cpp" line="3118"/>
       <source>Select only vertices from the sketch. The last selected vertex may be the origin.</source>
       <translation>Hautatu krokiseko erpinak soilik. Hautatutako azken erpina jatorria izan daiteke.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1620"/>
+      <location filename="../../CommandConstraints.cpp" line="3384"/>
       <source>Wrong solver status</source>
       <translation>Ebazle-egoera okerra</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1621"/>
+      <location filename="../../CommandConstraints.cpp" line="3385"/>
       <source>A Block constraint cannot be added if the sketch is unsolved or there are redundant and conflicting constraints.</source>
       <translation>Ezin da bloke-murrizketarik gehitu krokisa ebatzi gabe badago edo murrizketa errepikatuak eta gatazkan daudenak badaude.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1640"/>
+      <location filename="../../CommandConstraints.cpp" line="3405"/>
       <source>Select one edge from the sketch.</source>
       <translation>Hautatu krokiseko ertz bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1645"/>
+      <location filename="../../CommandConstraints.cpp" line="3410"/>
       <source>Select only edges from the sketch.</source>
       <translation>Hautatu krokiseko ertzak soilik.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7149"/>
+      <location filename="../../CommandConstraints.cpp" line="9474"/>
       <source>Number of selected objects is not 3</source>
       <translation>Hautatutako objektuen kopurua ez da 3</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="836"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1299"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="566"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="1071"/>
+      <location filename="../../CommandConstraints.cpp" line="739"/>
       <source>Error</source>
       <translation>Errorea</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1937"/>
+      <location filename="../../CommandConstraints.cpp" line="740"/>
+      <source>Unexpected error. More information may be available in the Report View.</source>
+      <translation>Ustekabeko errorea. Txosten-bistan informazio gehiago aurkitu daiteke.</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="2727"/>
+      <source>The selected item(s) can't accept a horizontal or vertical constraint!</source>
+      <translation type="unfinished">The selected item(s) can't accept a horizontal or vertical constraint!</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="3629"/>
       <source>Endpoint to endpoint tangency was applied instead.</source>
       <translation>Amaiera-puntutik amaiera-punturako tangentzia aplikatu da horren ordez.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1988"/>
-      <source>Select two or more points from the sketch.</source>
-      <translation>Hautatu krokiseko bi puntu edo gehiago.</translation>
-    </message>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="2000"/>
-      <source>Select two or more vertices from the sketch.</source>
-      <translation>Hautatu krokiseko bi erpin edo gehiago.</translation>
-    </message>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="2021"/>
+      <location filename="../../CommandConstraints.cpp" line="3804"/>
       <source>Select two or more vertices from the sketch for a coincident constraint, or two or more circles, ellipses, arcs or arcs of ellipse for a concentric constraint.</source>
       <translation>Hautatu krokisaren bi erpin edo gehiago bat datorren murrizketa baterako, edo bi edo gehiago zirkulu, elipse, arku edo arkuen elipse, murrizketa kontzentriko baterako.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2097"/>
+      <location filename="../../CommandConstraints.cpp" line="3991"/>
       <source>Select two vertices from the sketch for a coincident constraint, or two circles, ellipses, arcs or arcs of ellipse for a concentric constraint.</source>
       <translation>Hautatu krokisaren bi erpin bat datorren murrizketa baterako, edo bi zirkulu, elipse, arku edo arkuen elipse, murrizketa kontzentriko baterako.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2196"/>
+      <location filename="../../CommandConstraints.cpp" line="4210"/>
       <source>Select exactly one line or one point and one line or two points from the sketch.</source>
       <translation>Hautatu krokiseko lerro bat edo puntu bat edo lerro bat eta bi puntu.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2381"/>
+      <location filename="../../CommandConstraints.cpp" line="4467"/>
       <source>Cannot add a length constraint on an axis!</source>
       <translation>Ezin zaio luzera-murrizketa bat gehitu ardatz bati!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2415"/>
-      <location filename="../../CommandConstraints.cpp" line="2602"/>
+      <location filename="../../CommandConstraints.cpp" line="4506"/>
+      <location filename="../../CommandConstraints.cpp" line="4732"/>
       <source>Select exactly one line or one point and one line or two points or two circles from the sketch.</source>
       <translation>Hautatu krokiseko lerro bat edo puntu bat eta lerro bat edo bi puntu edo bi zirkulu.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2510"/>
+      <location filename="../../CommandConstraints.cpp" line="4626"/>
       <source>This constraint does not make sense for non-linear curves.</source>
       <translation>Murrizketa honek ez du zentzurik linealak ez diren kurbekin.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2682"/>
+      <location filename="../../CommandConstraints.cpp" line="3587"/>
       <source>Endpoint to edge tangency was applied instead.</source>
       <translation>Amaiera-puntutik ertzerako tangentzia aplikatu da horren ordez.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2710"/>
-      <location filename="../../CommandConstraints.cpp" line="2911"/>
-      <location filename="../../CommandConstraints.cpp" line="3169"/>
-      <location filename="../../CommandConstraints.cpp" line="5001"/>
-      <location filename="../../CommandConstraints.cpp" line="5308"/>
-      <location filename="../../CommandConstraints.cpp" line="5592"/>
-      <location filename="../../CommandConstraints.cpp" line="6059"/>
+      <location filename="../../CommandConstraints.cpp" line="4819"/>
+      <location filename="../../CommandConstraints.cpp" line="5122"/>
+      <location filename="../../CommandConstraints.cpp" line="7212"/>
+      <location filename="../../CommandConstraints.cpp" line="7576"/>
+      <location filename="../../CommandConstraints.cpp" line="7896"/>
+      <location filename="../../CommandConstraints.cpp" line="8440"/>
       <source>Select the right things from the sketch.</source>
       <translation>Hautatu krokiseko elementu egokiak.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2750"/>
-      <location filename="../../CommandConstraints.cpp" line="2832"/>
-      <location filename="../../CommandConstraints.cpp" line="3636"/>
-      <location filename="../../CommandConstraints.cpp" line="3749"/>
-      <location filename="../../CommandConstraints.cpp" line="3794"/>
-      <location filename="../../CommandConstraints.cpp" line="3976"/>
-      <location filename="../../CommandConstraints.cpp" line="4134"/>
-      <location filename="../../CommandConstraints.cpp" line="4349"/>
-      <location filename="../../CommandConstraints.cpp" line="4477"/>
-      <location filename="../../CommandConstraints.cpp" line="4511"/>
-      <location filename="../../CommandConstraints.cpp" line="4709"/>
-      <location filename="../../CommandConstraints.cpp" line="4906"/>
-      <location filename="../../CommandConstraints.cpp" line="5364"/>
-      <location filename="../../CommandConstraints.cpp" line="5497"/>
-      <location filename="../../CommandConstraints.cpp" line="6104"/>
-      <location filename="../../CommandConstraints.cpp" line="6167"/>
-      <location filename="../../CommandConstraints.cpp" line="6469"/>
-      <location filename="../../CommandConstraints.cpp" line="7204"/>
+      <location filename="../../CommandConstraints.cpp" line="3750"/>
+      <location filename="../../CommandConstraints.cpp" line="3938"/>
+      <location filename="../../CommandConstraints.cpp" line="5656"/>
+      <location filename="../../CommandConstraints.cpp" line="5791"/>
+      <location filename="../../CommandConstraints.cpp" line="5841"/>
+      <location filename="../../CommandConstraints.cpp" line="6042"/>
+      <location filename="../../CommandConstraints.cpp" line="6221"/>
+      <location filename="../../CommandConstraints.cpp" line="6476"/>
+      <location filename="../../CommandConstraints.cpp" line="6627"/>
+      <location filename="../../CommandConstraints.cpp" line="6662"/>
+      <location filename="../../CommandConstraints.cpp" line="6875"/>
+      <location filename="../../CommandConstraints.cpp" line="7094"/>
+      <location filename="../../CommandConstraints.cpp" line="7635"/>
+      <location filename="../../CommandConstraints.cpp" line="7787"/>
+      <location filename="../../CommandConstraints.cpp" line="8489"/>
+      <location filename="../../CommandConstraints.cpp" line="8579"/>
+      <location filename="../../CommandConstraints.cpp" line="8718"/>
+      <location filename="../../CommandConstraints.cpp" line="9527"/>
       <source>Select an edge that is not a B-spline weight.</source>
       <translation>Hautatu B-spline pisua ez den ertz bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2773"/>
+      <location filename="../../CommandConstraints.cpp" line="3671"/>
+      <source>Select either several points, or several conics for concentricity.</source>
+      <translation type="unfinished">Select either several points, or several conics for concentricity.</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="3674"/>
+      <source>Select either one point and several curves, or one curve and several points</source>
+      <translation type="unfinished">Select either one point and several curves, or one curve and several points</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="3677"/>
+      <source>Select either one point and several curves or one curve and several points for pointOnObject, or several points for coincidence, or several conics for concentricity.</source>
+      <translation type="unfinished">Select either one point and several curves or one curve and several points for pointOnObject, or several points for coincidence, or several conics for concentricity.</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="3781"/>
       <source>None of the selected points were constrained onto the respective curves, because they are parts of the same element, because they are both external geometry, or because the edge is not eligible.</source>
       <translation>Hautatutako puntuetako bat ere ez dago murriztuta bakoitzari dagokion kurban, elementu bereko osagai direlako, kanpo-geometria direlako edo ertza hautatu ezin delako.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2850"/>
+      <location filename="../../CommandConstraints.cpp" line="3960"/>
       <source>None of the selected points were constrained onto the respective curves, either because they are parts of the same element, or because they are both external geometry.</source>
       <translation>Hautatutako puntuetako bat ere ez dago murriztuta bakoitzari dagokion kurban, bai elementu bereko osagai direlako bai kanpo-geometria direlako.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2923"/>
-      <location filename="../../CommandConstraints.cpp" line="3034"/>
-      <location filename="../../CommandConstraints.cpp" line="3181"/>
-      <location filename="../../CommandConstraints.cpp" line="3288"/>
+      <location filename="../../CommandConstraints.cpp" line="4459"/>
+      <source>Cannot add a length constraint on this selection!</source>
+      <translation type="unfinished">Cannot add a length constraint on this selection!</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="4832"/>
+      <location filename="../../CommandConstraints.cpp" line="4963"/>
+      <location filename="../../CommandConstraints.cpp" line="5135"/>
+      <location filename="../../CommandConstraints.cpp" line="5262"/>
       <source>Select exactly one line or up to two points from the sketch.</source>
       <translation>Hautatu krokiseko lerro bat, puntu bat edo bi puntu.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2953"/>
+      <location filename="../../CommandConstraints.cpp" line="4865"/>
       <source>Cannot add a horizontal length constraint on an axis!</source>
       <translation>Ezin zaio luzera horizontaleko murrizketa bat gehitu ardatz bati!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3004"/>
+      <location filename="../../CommandConstraints.cpp" line="4927"/>
       <source>Cannot add a fixed x-coordinate constraint on the origin point!</source>
       <translation>Ezin zaio X koordenatu finkoko murrizketa bat gehitu jatorri-puntuari!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3065"/>
-      <location filename="../../CommandConstraints.cpp" line="3319"/>
+      <location filename="../../CommandConstraints.cpp" line="4999"/>
+      <location filename="../../CommandConstraints.cpp" line="5298"/>
       <source>This constraint only makes sense on a line segment or a pair of points.</source>
       <translation>Murriztapen honek lerro segmentuetan edo puntu-bikoteetan soilik du zentzua.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3207"/>
+      <location filename="../../CommandConstraints.cpp" line="5166"/>
       <source>Cannot add a vertical length constraint on an axis!</source>
       <translation>Ezin zaio luzera bertikaleko murrizketa bat gehitu ardatz bati!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3258"/>
+      <location filename="../../CommandConstraints.cpp" line="5228"/>
       <source>Cannot add a fixed y-coordinate constraint on the origin point!</source>
       <translation>Ezin zaio Y koordenatu finkoko murrizketa bat gehitu jatorri-puntuari!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3420"/>
+      <location filename="../../CommandConstraints.cpp" line="5420"/>
       <source>Select two or more lines from the sketch.</source>
       <translation>Hautatu krokiseko bi lerro edo gehiago.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3434"/>
-      <location filename="../../CommandConstraints.cpp" line="6601"/>
+      <location filename="../../CommandConstraints.cpp" line="5434"/>
+      <location filename="../../CommandConstraints.cpp" line="8875"/>
       <source>Select at least two lines from the sketch.</source>
       <translation>Hautatu krokiseko bi lerro, gutxienez.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3449"/>
+      <location filename="../../CommandConstraints.cpp" line="5450"/>
       <source>Select a valid line.</source>
       <translation>Hautatu baliozko lerro bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3466"/>
-      <location filename="../../CommandConstraints.cpp" line="3506"/>
+      <location filename="../../CommandConstraints.cpp" line="5469"/>
+      <location filename="../../CommandConstraints.cpp" line="5510"/>
       <source>The selected edge is not a valid line.</source>
       <translation>Hautatutako ertza ez da baliozko lerro bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3585"/>
+      <location filename="../../CommandConstraints.cpp" line="5599"/>
       <source>There is a number of ways this constraint can be applied.
 
 Accepted combinations: two curves; an endpoint and a curve; two endpoints; two curves and a point.</source>
@@ -2792,42 +2873,42 @@ Accepted combinations: two curves; an endpoint and a curve; two endpoints; two c
 Onartutako konbinazioak: bi kurba; amaiera-puntu bat eta kurba bat; bi amaiera-puntu; bi kurba eta puntu bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3589"/>
+      <location filename="../../CommandConstraints.cpp" line="5604"/>
       <source>Select some geometry from the sketch.</source>
       <comment>perpendicular constraint</comment>
       <translation>Hautatu krokiseko geometriaren bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3694"/>
-      <location filename="../../CommandConstraints.cpp" line="3732"/>
+      <location filename="../../CommandConstraints.cpp" line="5730"/>
+      <location filename="../../CommandConstraints.cpp" line="5771"/>
       <source>Cannot add a perpendicularity constraint at an unconnected point!</source>
       <translation>Ezin zaio perpendikulartasun-murrizketa bat gehitu konektatu gabeko puntu bati!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3742"/>
-      <location filename="../../CommandConstraints.cpp" line="3784"/>
-      <location filename="../../CommandConstraints.cpp" line="3965"/>
+      <location filename="../../CommandConstraints.cpp" line="5783"/>
+      <location filename="../../CommandConstraints.cpp" line="5829"/>
+      <location filename="../../CommandConstraints.cpp" line="6030"/>
       <source>Perpendicular to B-spline edge currently unsupported.</source>
       <translation>Oraindik ez da onartzen perpendikularra B-spline ertzean.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3774"/>
-      <location filename="../../CommandConstraints.cpp" line="3955"/>
+      <location filename="../../CommandConstraints.cpp" line="5820"/>
+      <location filename="../../CommandConstraints.cpp" line="6021"/>
       <source>One of the selected edges should be a line.</source>
       <translation>Hautatutako ertzetako batek lerroa izan behar du.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4248"/>
+      <location filename="../../CommandConstraints.cpp" line="6362"/>
       <source>Endpoint to endpoint tangency was applied. The coincident constraint was deleted.</source>
       <translation>Amaiera-puntutik amaiera-punturako tangentzia aplikatu da. Bat datorren murrizketa ezabatu egin da.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4269"/>
+      <location filename="../../CommandConstraints.cpp" line="6389"/>
       <source>Endpoint to edge tangency was applied. The point on object constraint was deleted.</source>
       <translation>Amaiera-puntutik ertzerako tangentzia aplikatu da. Objektuaren gaineko puntuaren murrizketa ezabatu egin da.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4297"/>
+      <location filename="../../CommandConstraints.cpp" line="6420"/>
       <source>There are a number of ways this constraint can be applied.
 
 Accepted combinations: two curves; an endpoint and a curve; two endpoints; two curves and a point.</source>
@@ -2837,402 +2918,444 @@ Accepted combinations: two curves; an endpoint and a curve; two endpoints; two c
 Onartutako konbinazioak: bi kurba; amaiera-puntu bat eta kurba bat; bi amaiera-puntu; bi kurba eta puntu bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4301"/>
+      <location filename="../../CommandConstraints.cpp" line="6425"/>
       <source>Select some geometry from the sketch.</source>
       <comment>tangent constraint</comment>
       <translation>Hautatu krokiseko geometriaren bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4423"/>
-      <location filename="../../CommandConstraints.cpp" line="4457"/>
-      <location filename="../../CommandConstraints.cpp" line="4862"/>
+      <location filename="../../CommandConstraints.cpp" line="6569"/>
+      <location filename="../../CommandConstraints.cpp" line="6607"/>
+      <location filename="../../CommandConstraints.cpp" line="7049"/>
       <source>Cannot add a tangency constraint at an unconnected point!</source>
       <translation>Ezin zaio tangentzia-murrizketa gehitu konektatu gabeko puntu bati!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4415"/>
-      <location filename="../../CommandConstraints.cpp" line="4450"/>
+      <location filename="../../CommandConstraints.cpp" line="6560"/>
+      <location filename="../../CommandConstraints.cpp" line="6598"/>
       <source>Tangent constraint at B-spline knot is only supported with lines!</source>
       <translation>B-spline adabegiko tangente-murrizketa lerroekin soilik onartzen da.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1956"/>
+      <location filename="../../CommandConstraints.cpp" line="3649"/>
       <source>B-spline knot to endpoint tangency was applied instead.</source>
       <translation>B-splinearen adabegitik amaiera-punturako tangentzia aplikatu da horren ordez.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="2785"/>
-      <source>Select either one point and several curves, or one curve and several points.</source>
-      <translation>Hautatu puntu bat edo kurba anitz, edo kurba bat eta puntu anitz.</translation>
-    </message>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="3605"/>
-      <location filename="../../CommandConstraints.cpp" line="4317"/>
+      <location filename="../../CommandConstraints.cpp" line="5621"/>
+      <location filename="../../CommandConstraints.cpp" line="6442"/>
       <source>Wrong number of selected objects!</source>
       <translation>Hautatutako objektu kopuru okerra!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="3683"/>
-      <location filename="../../CommandConstraints.cpp" line="4395"/>
+      <location filename="../../CommandConstraints.cpp" line="5720"/>
+      <location filename="../../CommandConstraints.cpp" line="6540"/>
       <source>With 3 objects, there must be 2 curves and 1 point.</source>
       <translation>3 objektu badira, 2 kurba eta puntu1 egon behar dute.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="4469"/>
-      <location filename="../../CommandConstraints.cpp" line="4503"/>
-      <location filename="../../CommandConstraints.cpp" line="4701"/>
+      <location filename="../../CommandConstraints.cpp" line="6619"/>
+      <location filename="../../CommandConstraints.cpp" line="6654"/>
+      <location filename="../../CommandConstraints.cpp" line="6867"/>
       <source>Tangency to B-spline edge currently unsupported.</source>
-      <translation>Oraindik ez da onartzen tangentea B-Spline ertzean.</translation>
+      <translation>Oraindik ez da onartzen tangentea B-spline kurbaren ertzean.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5013"/>
-      <location filename="../../CommandConstraints.cpp" line="5075"/>
-      <location filename="../../CommandConstraints.cpp" line="5320"/>
-      <location filename="../../CommandConstraints.cpp" line="5381"/>
-      <location filename="../../CommandConstraints.cpp" line="5604"/>
-      <location filename="../../CommandConstraints.cpp" line="5661"/>
+      <location filename="../../CommandConstraints.cpp" line="7225"/>
+      <location filename="../../CommandConstraints.cpp" line="7292"/>
+      <location filename="../../CommandConstraints.cpp" line="7589"/>
+      <location filename="../../CommandConstraints.cpp" line="7653"/>
+      <location filename="../../CommandConstraints.cpp" line="7909"/>
+      <location filename="../../CommandConstraints.cpp" line="7971"/>
       <source>Select one or more arcs or circles from the sketch.</source>
       <translation>Hautatu krokiseko arku edo zirkulu bat edo gehiago.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5083"/>
-      <location filename="../../CommandConstraints.cpp" line="5669"/>
+      <location filename="../../CommandConstraints.cpp" line="7300"/>
+      <location filename="../../CommandConstraints.cpp" line="7979"/>
       <source>Select either only one or more B-Spline poles or only one or more arcs or circles from the sketch, but not mixed.</source>
-      <translation>Hautatu B-Spline polo bat edo gehiago edo zirkuluen arku bat edo gehiago krokisean, baina ez bi motak nahastuta.</translation>
+      <translation>Hautatu B-spline polo bat edo gehiago edo zirkuluen arku bat edo gehiago krokisean, baina ez bi motak nahastuta.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5204"/>
-      <location filename="../../CommandConstraints.cpp" line="5489"/>
-      <location filename="../../CommandConstraints.cpp" line="5810"/>
+      <location filename="../../CommandConstraints.cpp" line="7456"/>
+      <location filename="../../CommandConstraints.cpp" line="7779"/>
+      <location filename="../../CommandConstraints.cpp" line="8157"/>
       <source>Constraint only applies to arcs or circles.</source>
       <translation>Murrizketa arkuei edo zirkuluei soilik aplikatzen zaie.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6071"/>
-      <location filename="../../CommandConstraints.cpp" line="6325"/>
+      <location filename="../../CommandConstraints.cpp" line="8453"/>
+      <location filename="../../CommandConstraints.cpp" line="8657"/>
       <source>Select one or two lines from the sketch. Or select two edges and a point.</source>
       <translation>Hautatu krokisaren lerro bat edo bi. Edo hautatu bi ertz eta puntu bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6232"/>
-      <location filename="../../CommandConstraints.cpp" line="6405"/>
+      <location filename="../../CommandConstraints.cpp" line="207"/>
       <source>Parallel lines</source>
       <translation>Lerro paraleloak</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6233"/>
-      <location filename="../../CommandConstraints.cpp" line="6406"/>
+      <location filename="../../CommandConstraints.cpp" line="208"/>
       <source>An angle constraint cannot be set for two parallel lines.</source>
       <translation>Ezin da angelu-murrizketa bat ezarri bi lerro paralelotarako.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6267"/>
+      <location filename="../../CommandConstraints.cpp" line="8592"/>
       <source>Cannot add an angle constraint on an axis!</source>
       <translation>Ezin zaio angelu-murrizketa bat gehitu ardatz bati!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6587"/>
+      <location filename="../../CommandConstraints.cpp" line="8861"/>
       <source>Select two edges from the sketch.</source>
       <translation>Hautatu krokiseko bi ertz.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6619"/>
+      <location filename="../../CommandConstraints.cpp" line="8894"/>
       <source>Select two or more compatible edges.</source>
       <translation>Hautatu bateragarriak diren bi ertz edo gehiago.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6626"/>
+      <location filename="../../CommandConstraints.cpp" line="8901"/>
       <source>Sketch axes cannot be used in equality constraints.</source>
       <translation>Krokis-ardatzak ezin dira erabili berdintasun-murrizketetan.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6647"/>
+      <location filename="../../CommandConstraints.cpp" line="8922"/>
       <source>Equality for B-spline edge currently unsupported.</source>
       <translation>Momentuz ez dago onartuta B-spline ertzen berdintasuna.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6679"/>
-      <location filename="../../CommandConstraints.cpp" line="6696"/>
-      <location filename="../../CommandConstraints.cpp" line="6749"/>
+      <location filename="../../CommandConstraints.cpp" line="2275"/>
+      <location filename="../../CommandConstraints.cpp" line="8955"/>
+      <location filename="../../CommandConstraints.cpp" line="8971"/>
+      <location filename="../../CommandConstraints.cpp" line="9026"/>
       <source>Select two or more edges of similar type.</source>
       <translation>Hautatu antzekoak diren bi ertz edo gehiago.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6832"/>
-      <location filename="../../CommandConstraints.cpp" line="6846"/>
-      <location filename="../../CommandConstraints.cpp" line="6897"/>
-      <location filename="../../CommandConstraints.cpp" line="6969"/>
-      <location filename="../../CommandConstraints.cpp" line="7055"/>
+      <location filename="../../CommandConstraints.cpp" line="9118"/>
+      <location filename="../../CommandConstraints.cpp" line="9132"/>
+      <location filename="../../CommandConstraints.cpp" line="9188"/>
+      <location filename="../../CommandConstraints.cpp" line="9268"/>
+      <location filename="../../CommandConstraints.cpp" line="9370"/>
       <source>Select two points and a symmetry line, two points and a symmetry point or a line and a symmetry point from the sketch.</source>
       <translation>Hautatu krokiseko bi puntu eta simetria-lerro bat, bi puntu eta simetria-puntu bat edo lerro bat eta simetria-puntu bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6873"/>
-      <location filename="../../CommandConstraints.cpp" line="7037"/>
+      <location filename="../../CommandConstraints.cpp" line="9159"/>
+      <location filename="../../CommandConstraints.cpp" line="9346"/>
       <source>Cannot add a symmetry constraint between a line and its end points.</source>
       <translation>Ezin da simetria-murrizketarik gehitu lerro baten eta haren amaiera-puntuen artean.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="6929"/>
-      <location filename="../../CommandConstraints.cpp" line="6993"/>
+      <location filename="../../CommandConstraints.cpp" line="2404"/>
+      <location filename="../../CommandConstraints.cpp" line="2420"/>
+      <location filename="../../CommandConstraints.cpp" line="9218"/>
+      <location filename="../../CommandConstraints.cpp" line="9297"/>
       <source>Cannot add a symmetry constraint between a line and its end points!</source>
       <translation>Ezin da simetria-murrizketarik gehitu lerro baten eta haren amaiera-puntuen artean!</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7125"/>
+      <location filename="../../CommandConstraints.cpp" line="9448"/>
       <source>Select two endpoints of lines to act as rays, and an edge representing a boundary. The first selected point corresponds to index n1, second to n2, and datum value sets the ratio n2/n1.</source>
       <comment>Constraint_SnellsLaw</comment>
       <translation>Hautatu lerroen bi amaiera-puntu izpi gisa joka dezaten, eta muga bat adieraziko duen ertz bat. Hautatutako lehen puntua n1 indizeari dagokio, bigarrena n2 indizeari, eta zero puntuaren balioak n2/n1 erlazioa ezartzen du.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7134"/>
+      <location filename="../../CommandConstraints.cpp" line="9457"/>
       <source>Selected objects are not just geometry from one sketch.</source>
       <translation>Hautatutako elementuak ez dira soilik krokis bateko geometria.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7174"/>
+      <location filename="../../CommandConstraints.cpp" line="9499"/>
       <source>Cannot create constraint with external geometry only.</source>
       <translation>Ezin da murrizketa sortu kanpo-geometria soilik erabiliz.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7185"/>
+      <location filename="../../CommandConstraints.cpp" line="9509"/>
       <source>Incompatible geometry is selected.</source>
       <translation>Bateragarria ez den geometria hautatu da.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7196"/>
+      <location filename="../../CommandConstraints.cpp" line="9520"/>
       <source>SnellsLaw on B-spline edge is currently unsupported.</source>
       <translation>Oraindik ez da onartzen Snell-en legea B-spline ertzean.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7330"/>
-      <location filename="../../CommandConstraints.cpp" line="7341"/>
-      <location filename="../../CommandConstraints.cpp" line="7375"/>
-      <location filename="../../CommandConstraints.cpp" line="7449"/>
-      <location filename="../../CommandConstraints.cpp" line="7460"/>
+      <location filename="../../CommandConstraints.cpp" line="9687"/>
+      <location filename="../../CommandConstraints.cpp" line="9699"/>
+      <location filename="../../CommandConstraints.cpp" line="9736"/>
+      <location filename="../../CommandConstraints.cpp" line="9813"/>
+      <location filename="../../CommandConstraints.cpp" line="9825"/>
       <source>Select constraints from the sketch.</source>
       <translation>Hautatu krokiseko murrizketak.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherVirtualSpace.cpp" line="112"/>
-      <location filename="../../CommandSketcherVirtualSpace.cpp" line="120"/>
-      <location filename="../../CommandSketcherVirtualSpace.cpp" line="143"/>
+      <location filename="../../CommandSketcherVirtualSpace.cpp" line="122"/>
+      <location filename="../../CommandSketcherVirtualSpace.cpp" line="131"/>
+      <location filename="../../CommandSketcherVirtualSpace.cpp" line="158"/>
       <source>Select constraint(s) from the sketch.</source>
       <translation>Hautatu krokiseko murrizketa(k).</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerBSpline.h" line="226"/>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="259"/>
       <source>B-Spline Degree</source>
-      <translation>B-Spline gradua</translation>
+      <translation>B-spline gradua</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerBSpline.h" line="227"/>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="260"/>
       <source>Define B-Spline Degree, between 1 and %1:</source>
       <translation>Definitu B-spline gradua, 1 eta %1 artekoa:</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="702"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1052"/>
-      <location filename="../../DrawSketchHandlerFillet.h" line="239"/>
+      <location filename="../../DrawSketchHandlerFillet.h" line="292"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="421"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="796"/>
       <source>CAD Kernel Error</source>
       <translation>CAD kernel-errorea</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="465"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="170"/>
       <source>None of the selected elements is an edge.</source>
       <translation>Hautatutako elementuetako bat ere ez da ertza.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="536"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="614"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="245"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="328"/>
       <source>At least one of the selected objects was not a B-Spline and was ignored.</source>
       <translation>Hautatutako objektuetako bat, gutxienez, ez da B-spline motakoa, eta ezikusi egin da.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="665"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="803"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="381"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="529"/>
       <source>The selection comprises more than one item. Please select just one knot.</source>
       <translation>Hautapenak elementu bat baino gehiago du. Hautatu adabegi bakar bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="711"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1060"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="430"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="804"/>
       <source>Input Error</source>
       <translation>Sarrera-errorea</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="721"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="844"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="441"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="577"/>
       <source>None of the selected elements is a knot of a B-spline</source>
       <translation>Hautatutako elementuetan ez dago B-spline baten adabegirik</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1166"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1233"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="920"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="993"/>
       <source>Selection is empty</source>
       <translation>Hautapena hutsik dago</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1167"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="921"/>
       <source>Nothing is selected. Please select a b-spline.</source>
       <translation>Ez da ezer hautatu. Hautatu B-spline bat.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1181"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="939"/>
       <source>Please select a b-spline curve to insert a knot (not a knot on it). If the curve is not a b-spline, please convert it into one first.</source>
       <translation>Hautatu B-spline kurbat bat adabegi bat txertatzeko (ez adabegia gainean jartzeko). Kurba ez bada B-spline bat, bihurtu lehenengo.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1234"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="994"/>
       <source>Nothing is selected. Please select end points of curves.</source>
       <translation>Ez da ezer hautatu. Hautatu kurben amaierako puntuak.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1260"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="1021"/>
       <source>Too many curves on point</source>
       <translation>Kurba gehiegi puntuan</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1261"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1269"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="1022"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="1032"/>
       <source>Exactly two curves should end at the selected point to be able to join them.</source>
       <translation>Bi kurbak soilik amaitu beharko lukete hautatutako puntuan, haiek elkartu ahal izateko.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1268"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="1031"/>
       <source>Too few curves on point</source>
       <translation>Kurba gutxiegi puntuan</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="1282"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="1049"/>
       <source>Two end points, or coincident point should be selected.</source>
       <translation>Amaierako bi puntu, edo bat datozen puntuak, hautatu beharko lirateke.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="93"/>
-      <location filename="../../CommandSketcherTools.cpp" line="767"/>
-      <location filename="../../CommandSketcherTools.cpp" line="881"/>
-      <location filename="../../CommandSketcherTools.cpp" line="890"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1263"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1272"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1858"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1867"/>
-      <location filename="../../CommandSketcherTools.cpp" line="2143"/>
-      <location filename="../../CommandSketcherTools.cpp" line="2152"/>
+      <location filename="../../CommandSketcherTools.cpp" line="97"/>
+      <location filename="../../CommandSketcherTools.cpp" line="773"/>
+      <location filename="../../CommandSketcherTools.cpp" line="889"/>
+      <location filename="../../CommandSketcherTools.cpp" line="898"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1275"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1285"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1876"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1886"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2168"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2178"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2290"/>
       <source>Select elements from a single sketch.</source>
       <translation>Hautatu krokis bakar bateko elementuak.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="627"/>
+      <location filename="../../CommandSketcherTools.cpp" line="633"/>
       <source>No constraint selected</source>
       <translation>Ez da murrizketarik hautatu</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="628"/>
+      <location filename="../../CommandSketcherTools.cpp" line="634"/>
       <source>At least one constraint must be selected</source>
       <translation>Gutxienez murrizketa bat hautatu behar da</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="997"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1006"/>
       <source>A symmetric construction requires at least two geometric elements, the last geometric element being the reference for the symmetry construction.</source>
       <translation>Eraikuntza simetrikoak gutxienez bi elementu geometriko behar ditu, eta azken elementu geometrikoa simetria-eraikuntzaren erreferentzia izango da.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1007"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1016"/>
       <source>The last element must be a point or a line serving as reference for the symmetry construction.</source>
       <translation>Azken elementuak simetria-eraikuntzarentzat erreferentzia gisa balioko duen puntu edo lerro bat izan behar du.</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1333"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1931"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1347"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1950"/>
       <source>A copy requires at least one selected non-external geometric element</source>
       <translation>Kopia batek behar du kanpokoa ez den elementu geometriko bat, gutxienez, hautatua egon dadin</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2002"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2023"/>
       <source>Delete All Geometry</source>
       <translation>Ezabatu geometria guztia</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2003"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2024"/>
       <source>Are you really sure you want to delete all geometry and constraints?</source>
       <translation>Ziur zaude geometria eta murrizketa guztiak ezabatu nahi dituzula?</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2069"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2091"/>
       <source>Delete All Constraints</source>
       <translation>Ezabatu murrizketa guztiak</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2070"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2092"/>
       <source>Are you really sure you want to delete all the constraints?</source>
       <translation>Ziur zaude murrizketa guztiak ezabatu nahi dituzula?</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="2198"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2225"/>
       <source>Removal of axes alignment requires at least one selected non-external geometric element</source>
       <translation>Ardatzen lerrokatzea kentzeko, kanpokoa ez den elementu geometriko bat, gutxienez, hautatu behar da</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="473"/>
+      <location filename="../../TaskSketcherElements.cpp" line="530"/>
       <source>Unsupported visual layer operation</source>
       <translation>Ikusizko geruzan onartzen ez den eragiketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="474"/>
+      <location filename="../../TaskSketcherElements.cpp" line="531"/>
       <source>It is currently unsupported to move external geometry to another visual layer. External geometry will be omitted</source>
       <translation>Momentuz ez da onartzen kanpoko geometria bat ikusizko beste geruza batera eramatea. Kanpoko geometriari ez ikusiarena egingo zaio</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="233"/>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="253"/>
       <source>Set knot multiplicity</source>
       <translation>Ezarri adabegi-aniztasuna</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="234"/>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="254"/>
       <source>Set knot multiplicity at the last point provided, between 1 and %1:Note that multiplicity may be ignored under certain circumstances.Please refer to documentation for details</source>
       <translation>Ezarri adabegi-aniztasuna emandako azken puntuan, 1 eta %1 artean: Kontuan izan aniztasunari ez ikusiarena egin ahal zaiola zenbait egoeratan. Begiratu dokumentazioa xehetasun gehiagorako</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerFillet.h" line="301"/>
+      <source>Value Error</source>
+      <translation>Balio-errorea</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerLine.h" line="215"/>
+      <source>Line parameters</source>
+      <translation type="unfinished">Line parameters</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerOffset.h" line="178"/>
+      <source>Offset parameters</source>
+      <translation type="unfinished">Offset parameters</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerPolygon.h" line="205"/>
+      <source>Polygon parameters</source>
+      <translation type="unfinished">Polygon parameters</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerRectangle.h" line="585"/>
+      <source>Rectangle parameters</source>
+      <translation type="unfinished">Rectangle parameters</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerArc.h" line="347"/>
+      <source>Arc parameters</source>
+      <translation type="unfinished">Arc parameters</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerArcSlot.h" line="272"/>
+      <source>Arc Slot parameters</source>
+      <translation type="unfinished">Arc Slot parameters</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerCircle.h" line="278"/>
+      <source>Circle parameters</source>
+      <translation type="unfinished">Circle parameters</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerEllipse.h" line="284"/>
+      <source>Ellipse parameters</source>
+      <translation type="unfinished">Ellipse parameters</translation>
     </message>
   </context>
   <context>
     <name>SketcherGui::CarbonCopySelection</name>
     <message>
-      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="56"/>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="78"/>
       <source>Carbon copy would cause a circular dependency.</source>
       <translation>Kalkoak mendekotasun zirkularra sortuko luke.</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="59"/>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="81"/>
       <source>This object is in another document.</source>
       <translation>Objektu hau beste dokumentu batean dago.</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="62"/>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="84"/>
       <source>This object belongs to another body. Hold Ctrl to allow cross-references.</source>
       <translation>Objektu hau beste gorputz batena da. Mantendu Ctrl sakatuta erreferentzia gurutzatuak ahalbidetzeko.</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="65"/>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="89"/>
       <source>This object belongs to another body and it contains external geometry. Cross-reference not allowed.</source>
       <translation>Objektu hau beste gorputz batekoa da eta kanpo-geometria dauka. Erreferentzia gurutzatuak ez dira onartzen.</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="68"/>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="93"/>
       <source>This object belongs to another part.</source>
       <translation>Objektu hau beste gorputz batena da.</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="71"/>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="97"/>
       <source>The selected sketch is not parallel to this sketch. Hold Ctrl+Alt to allow non-parallel sketches.</source>
       <translation>Hautatutako krokisa ez da krokis honen paraleloa. Eutsi sakatu Ctrl+Alt paraleloak ez diren krokisak ahalbidetzeko.</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="74"/>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="102"/>
       <source>The XY axes of the selected sketch do not have the same direction as this sketch. Hold Ctrl+Alt to disregard it.</source>
       <translation>Hautatutako krokisaren XY ardatzek ez dute kroskis honen norabide bera. Eutsi Ctrl+Alt hori ez ikusteko.</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="77"/>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="107"/>
       <source>The origin of the selected sketch is not aligned with the origin of this sketch. Hold Ctrl+Alt to disregard it.</source>
       <translation>Hautatutako krokisaren jatorria ez dago lerrokatuta kroskis honen jatorriarekin. Eutsi Ctrl+Alt hori ez ikusteko.</translation>
     </message>
@@ -3240,132 +3363,132 @@ Onartutako konbinazioak: bi kurba; amaiera-puntu bat eta kurba bat; bi amaiera-p
   <context>
     <name>SketcherGui::ConstraintFilterList</name>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="105"/>
+      <location filename="../../TaskSketcherConstraints.h" line="109"/>
       <source>All</source>
       <translation>Dena</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="106"/>
+      <location filename="../../TaskSketcherConstraints.h" line="110"/>
       <source>Geometric</source>
       <translation>Geometrikoa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="107"/>
+      <location filename="../../TaskSketcherConstraints.h" line="111"/>
       <source>Coincident</source>
       <translation>Bat datorrena</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="108"/>
+      <location filename="../../TaskSketcherConstraints.h" line="112"/>
       <source>Point on Object</source>
       <translation>Puntua objektuan</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="109"/>
+      <location filename="../../TaskSketcherConstraints.h" line="113"/>
       <source>Vertical</source>
       <translation>Bertikala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="110"/>
+      <location filename="../../TaskSketcherConstraints.h" line="114"/>
       <source>Horizontal</source>
       <translation>Horizontala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="111"/>
+      <location filename="../../TaskSketcherConstraints.h" line="115"/>
       <source>Parallel</source>
       <translation>Paraleloa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="112"/>
+      <location filename="../../TaskSketcherConstraints.h" line="116"/>
       <source>Perpendicular</source>
       <translation>Perpendikularra</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="113"/>
+      <location filename="../../TaskSketcherConstraints.h" line="117"/>
       <source>Tangent</source>
       <translation>Tangentea</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="114"/>
+      <location filename="../../TaskSketcherConstraints.h" line="118"/>
       <source>Equality</source>
       <translation>Berdintasuna</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="115"/>
+      <location filename="../../TaskSketcherConstraints.h" line="119"/>
       <source>Symmetric</source>
       <translation>Simetrikoa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="116"/>
+      <location filename="../../TaskSketcherConstraints.h" line="120"/>
       <source>Block</source>
       <translation>Blokea</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="117"/>
+      <location filename="../../TaskSketcherConstraints.h" line="121"/>
       <source>Internal Alignment</source>
       <translation>Barne-lerrokatzea</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="118"/>
+      <location filename="../../TaskSketcherConstraints.h" line="122"/>
       <source>Datums</source>
       <translation>Zero puntuak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="119"/>
+      <location filename="../../TaskSketcherConstraints.h" line="123"/>
       <source>Horizontal Distance</source>
       <translation>Distantzia horizontala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="120"/>
+      <location filename="../../TaskSketcherConstraints.h" line="124"/>
       <source>Vertical Distance</source>
       <translation>Distantzia bertikala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="121"/>
+      <location filename="../../TaskSketcherConstraints.h" line="125"/>
       <source>Distance</source>
       <translation>Distantzia</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="122"/>
+      <location filename="../../TaskSketcherConstraints.h" line="126"/>
       <source>Radius</source>
       <translation>Erradioa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="123"/>
+      <location filename="../../TaskSketcherConstraints.h" line="127"/>
       <source>Weight</source>
       <translation>Pisua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="124"/>
+      <location filename="../../TaskSketcherConstraints.h" line="128"/>
       <source>Diameter</source>
       <translation>Diametroa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="125"/>
+      <location filename="../../TaskSketcherConstraints.h" line="129"/>
       <source>Angle</source>
       <translation>Angelua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="126"/>
+      <location filename="../../TaskSketcherConstraints.h" line="130"/>
       <source>Snell's Law</source>
       <translation>Snell-en legea</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="127"/>
+      <location filename="../../TaskSketcherConstraints.h" line="131"/>
       <source>Named</source>
       <translation>Izendatua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="128"/>
+      <location filename="../../TaskSketcherConstraints.h" line="132"/>
       <source>Reference</source>
       <translation>Erreferentzia</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="129"/>
+      <location filename="../../TaskSketcherConstraints.h" line="133"/>
       <source>Selected constraints</source>
       <translation>Hautatutako murrizketak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.h" line="130"/>
+      <location filename="../../TaskSketcherConstraints.h" line="134"/>
       <source>Associated constraints</source>
       <translation>Elkartutako murrizketak</translation>
     </message>
@@ -3373,67 +3496,67 @@ Onartutako konbinazioak: bi kurba; amaiera-puntu bat eta kurba bat; bi amaiera-p
   <context>
     <name>SketcherGui::ConstraintView</name>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="65"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="66"/>
       <source>Select Elements</source>
       <translation>Hautatu elementuak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="493"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="561"/>
       <source>Change value</source>
       <translation>Aldatu balioa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="497"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="566"/>
       <source>Toggle to/from reference</source>
       <translation>Txandakatu nondik/nora erreferentzia</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="500"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="570"/>
       <source>Deactivate</source>
       <translation>Desaktibatu</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="500"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="570"/>
       <source>Activate</source>
       <translation>Aktibatu</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="504"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="574"/>
       <source>Show constraints</source>
       <translation>Erakutsi murrizketak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="506"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="576"/>
       <source>Hide constraints</source>
       <translation>Ezkutatu murrizketak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="512"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="586"/>
       <source>Rename</source>
       <translation>Aldatu izena</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="519"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="593"/>
       <source>Center sketch</source>
       <translation>Zentratu krokisa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="522"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="596"/>
       <source>Delete</source>
       <translation>Ezabatu</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="526"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="601"/>
       <source>Swap constraint names</source>
       <translation>Trukatu murrizketen izenak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="617"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="696"/>
       <source>Unnamed constraint</source>
       <translation>Izenik gabeko murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="618"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="697"/>
       <source>Only the names of named constraints can be swapped.</source>
       <translation>Izendun murrizketen izenak soilik truka daitezke.</translation>
     </message>
@@ -3441,74 +3564,74 @@ Onartutako konbinazioak: bi kurba; amaiera-puntu bat eta kurba bat; bi amaiera-p
   <context>
     <name>SketcherGui::EditDatumDialog</name>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="98"/>
+      <location filename="../../EditDatumDialog.cpp" line="99"/>
       <source>Insert angle</source>
       <translation>Txertatu angelua</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="100"/>
+      <location filename="../../EditDatumDialog.cpp" line="101"/>
       <source>Angle:</source>
       <translation>Angelua:</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="104"/>
+      <location filename="../../EditDatumDialog.cpp" line="106"/>
       <source>Insert radius</source>
       <translation>Txertatu erradioa</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="106"/>
+      <location filename="../../EditDatumDialog.cpp" line="108"/>
       <source>Radius:</source>
       <translation>Erradioa:</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="110"/>
+      <location filename="../../EditDatumDialog.cpp" line="113"/>
       <source>Insert diameter</source>
       <translation>Txertatu diametroa</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="112"/>
+      <location filename="../../EditDatumDialog.cpp" line="115"/>
       <source>Diameter:</source>
       <translation>Diametroa:</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="116"/>
+      <location filename="../../EditDatumDialog.cpp" line="120"/>
       <source>Insert weight</source>
       <translation>Txertatu pisua</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="117"/>
+      <location filename="../../EditDatumDialog.cpp" line="121"/>
       <source>Weight:</source>
       <translation>Pisua:</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="121"/>
+      <location filename="../../EditDatumDialog.cpp" line="126"/>
       <source>Refractive index ratio</source>
       <comment>Constraint_SnellsLaw</comment>
       <translation>Errefrakzio-indizea</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="122"/>
+      <location filename="../../EditDatumDialog.cpp" line="127"/>
       <source>Ratio n2/n1:</source>
       <comment>Constraint_SnellsLaw</comment>
       <translation>n2/n1 erlazioa:</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="127"/>
+      <location filename="../../EditDatumDialog.cpp" line="133"/>
       <source>Insert length</source>
       <translation>Txertatu luzera</translation>
     </message>
     <message>
-      <location filename="../../EditDatumDialog.cpp" line="129"/>
+      <location filename="../../EditDatumDialog.cpp" line="135"/>
       <source>Length:</source>
       <translation>Luzera:</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7216"/>
+      <location filename="../../CommandConstraints.cpp" line="9538"/>
       <source>Refractive index ratio</source>
       <translation>Errefrakzio-indizea</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="7217"/>
+      <location filename="../../CommandConstraints.cpp" line="9539"/>
       <source>Ratio n2/n1:</source>
       <translation>n2/n1 erlazioa:</translation>
     </message>
@@ -3516,215 +3639,215 @@ Onartutako konbinazioak: bi kurba; amaiera-puntu bat eta kurba bat; bi amaiera-p
   <context>
     <name>SketcherGui::ElementFilterList</name>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="226"/>
+      <location filename="../../TaskSketcherElements.cpp" line="238"/>
       <source>Normal</source>
       <translation>Normala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="227"/>
+      <location filename="../../TaskSketcherElements.cpp" line="239"/>
       <source>Construction</source>
       <translation>Eraikuntza</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="228"/>
+      <location filename="../../TaskSketcherElements.cpp" line="240"/>
       <source>Internal</source>
       <translation>Barnekoa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="229"/>
+      <location filename="../../TaskSketcherElements.cpp" line="241"/>
       <source>External</source>
       <translation>Kanpokoa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="230"/>
+      <location filename="../../TaskSketcherElements.cpp" line="242"/>
       <source>All types</source>
       <translation>Mota guztiak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="231"/>
+      <location filename="../../TaskSketcherElements.cpp" line="243"/>
       <source>Point</source>
       <translation>Puntua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="232"/>
+      <location filename="../../TaskSketcherElements.cpp" line="244"/>
       <source>Line</source>
       <translation>Lerroa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="233"/>
+      <location filename="../../TaskSketcherElements.cpp" line="245"/>
       <source>Circle</source>
       <translation>Zirkulua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="234"/>
+      <location filename="../../TaskSketcherElements.cpp" line="246"/>
       <source>Ellipse</source>
       <translation>Elipsea</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="235"/>
+      <location filename="../../TaskSketcherElements.cpp" line="247"/>
       <source>Arc of circle</source>
       <translation>Zirkulu-arkua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="236"/>
+      <location filename="../../TaskSketcherElements.cpp" line="248"/>
       <source>Arc of ellipse</source>
       <translation>Elipse-arkua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="237"/>
+      <location filename="../../TaskSketcherElements.cpp" line="249"/>
       <source>Arc of hyperbola</source>
       <translation>Hiperbole-arkua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="238"/>
+      <location filename="../../TaskSketcherElements.cpp" line="250"/>
       <source>Arc of parabola</source>
       <translation>Parabola-arkua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="239"/>
+      <location filename="../../TaskSketcherElements.cpp" line="251"/>
       <source>B-Spline</source>
-      <translation>B-Spline</translation>
+      <translation>B-spline</translation>
     </message>
   </context>
   <context>
     <name>SketcherGui::ElementView</name>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="61"/>
+      <location filename="../../TaskSketcherElements.cpp" line="62"/>
       <source>Point Coincidence</source>
       <translation>Puntu kointzidentzia</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="62"/>
+      <location filename="../../TaskSketcherElements.cpp" line="63"/>
       <source>Point on Object</source>
       <translation>Puntua objektuan</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="63"/>
+      <location filename="../../TaskSketcherElements.cpp" line="64"/>
       <source>Vertical Constraint</source>
       <translation>Murrizketa bertikala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="64"/>
+      <location filename="../../TaskSketcherElements.cpp" line="65"/>
       <source>Horizontal Constraint</source>
       <translation>Murrizketa horizontala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="65"/>
+      <location filename="../../TaskSketcherElements.cpp" line="66"/>
       <source>Parallel Constraint</source>
       <translation>Paralelo-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="66"/>
+      <location filename="../../TaskSketcherElements.cpp" line="67"/>
       <source>Perpendicular Constraint</source>
       <translation>Elkartzuta-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="67"/>
+      <location filename="../../TaskSketcherElements.cpp" line="68"/>
       <source>Tangent Constraint</source>
       <translation>Ukitzaile-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="68"/>
+      <location filename="../../TaskSketcherElements.cpp" line="69"/>
       <source>Equal Length</source>
       <translation>Luzera berdina</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="69"/>
+      <location filename="../../TaskSketcherElements.cpp" line="70"/>
       <source>Symmetric</source>
       <translation>Simetrikoa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="70"/>
+      <location filename="../../TaskSketcherElements.cpp" line="71"/>
       <source>Block Constraint</source>
       <translation>Bloke-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="71"/>
+      <location filename="../../TaskSketcherElements.cpp" line="72"/>
       <source>Lock Constraint</source>
       <translation>Zerrapo-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="72"/>
+      <location filename="../../TaskSketcherElements.cpp" line="73"/>
       <source>Horizontal Distance</source>
       <translation>Distantzia horizontala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="73"/>
+      <location filename="../../TaskSketcherElements.cpp" line="74"/>
       <source>Vertical Distance</source>
       <translation>Distantzia bertikala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="74"/>
+      <location filename="../../TaskSketcherElements.cpp" line="75"/>
       <source>Length Constraint</source>
       <translation>Luzera-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="75"/>
+      <location filename="../../TaskSketcherElements.cpp" line="76"/>
       <source>Radius Constraint</source>
       <translation>Erradio-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="76"/>
+      <location filename="../../TaskSketcherElements.cpp" line="77"/>
       <source>Diameter Constraint</source>
       <translation>Diametro-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="77"/>
+      <location filename="../../TaskSketcherElements.cpp" line="78"/>
       <source>Radiam Constraint</source>
       <translation>Erradio/diametro murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="78"/>
+      <location filename="../../TaskSketcherElements.cpp" line="79"/>
       <source>Angle Constraint</source>
       <translation>Angelu-murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="79"/>
+      <location filename="../../TaskSketcherElements.cpp" line="80"/>
       <source>Toggle construction geometry</source>
       <translation>Txandakatu eraikuntza-geometria</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="80"/>
+      <location filename="../../TaskSketcherElements.cpp" line="81"/>
       <source>Select Constraints</source>
       <translation>Hautatu murrizketak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="81"/>
+      <location filename="../../TaskSketcherElements.cpp" line="82"/>
       <source>Select Origin</source>
       <translation>Hautatu jatorria</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="82"/>
+      <location filename="../../TaskSketcherElements.cpp" line="83"/>
       <source>Select Horizontal Axis</source>
       <translation>Hautatu ardatz horizontala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="83"/>
+      <location filename="../../TaskSketcherElements.cpp" line="84"/>
       <source>Select Vertical Axis</source>
       <translation>Hautatu ardatz bertikala</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="528"/>
+      <location filename="../../TaskSketcherElements.cpp" line="669"/>
       <source>Layer</source>
       <translation>Geruza</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="536"/>
+      <location filename="../../TaskSketcherElements.cpp" line="679"/>
       <source>Layer 0</source>
       <translation>Geruza 0</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="537"/>
+      <location filename="../../TaskSketcherElements.cpp" line="680"/>
       <source>Layer 1</source>
       <translation>Geruza 1</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="538"/>
+      <location filename="../../TaskSketcherElements.cpp" line="681"/>
       <source>Hidden</source>
       <translation>Ezkutua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="543"/>
+      <location filename="../../TaskSketcherElements.cpp" line="686"/>
       <source>Delete</source>
       <translation>Ezabatu</translation>
     </message>
@@ -3732,22 +3855,22 @@ Onartutako konbinazioak: bi kurba; amaiera-puntu bat eta kurba bat; bi amaiera-p
   <context>
     <name>SketcherGui::ExternalSelection</name>
     <message>
-      <location filename="../../DrawSketchHandlerExternal.h" line="50"/>
+      <location filename="../../DrawSketchHandlerExternal.h" line="70"/>
       <source>Linking this will cause circular dependency.</source>
       <translation>Hau estekatzeak mendekotasun zirkularra sortuko du.</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerExternal.h" line="53"/>
+      <location filename="../../DrawSketchHandlerExternal.h" line="73"/>
       <source>This object is in another document.</source>
       <translation>Objektu hau beste dokumentu batean dago.</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerExternal.h" line="56"/>
+      <location filename="../../DrawSketchHandlerExternal.h" line="77"/>
       <source>This object belongs to another body, can't link.</source>
       <translation>Objektu hau beste gorputz batena da, ezin da estekatu.</translation>
     </message>
     <message>
-      <location filename="../../DrawSketchHandlerExternal.h" line="59"/>
+      <location filename="../../DrawSketchHandlerExternal.h" line="81"/>
       <source>This object belongs to another part, can't link.</source>
       <translation>Objektu hau beste pieza batena da, ezin da estekatu.</translation>
     </message>
@@ -3788,8 +3911,8 @@ Onartutako konbinazioak: bi kurba; amaiera-puntu bat eta kurba bat; bi amaiera-p
   <context>
     <name>SketcherGui::PropertyConstraintListItem</name>
     <message>
-      <location filename="../../PropertyConstraintListItem.cpp" line="129"/>
-      <location filename="../../PropertyConstraintListItem.cpp" line="182"/>
+      <location filename="../../PropertyConstraintListItem.cpp" line="132"/>
+      <location filename="../../PropertyConstraintListItem.cpp" line="189"/>
       <source>Unnamed</source>
       <translation>Izenik gabea</translation>
     </message>
@@ -4009,6 +4132,131 @@ Edizio moduan berriro sartu behar da horrek eragina izan dezan.</translation>
       <location filename="../../SketcherSettings.ui" line="149"/>
       <source>Notify automatic constraint substitutions</source>
       <translation>Jakinarazi murrizketen ordezkapen automatikoak</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="165"/>
+      <source>Unify Coincident and PointOnObject in a single tool.</source>
+      <translation type="unfinished">Unify Coincident and PointOnObject in a single tool.</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="168"/>
+      <source>Unify Coincident and PointOnObject</source>
+      <translation type="unfinished">Unify Coincident and PointOnObject</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="184"/>
+      <source>Use the automatic horizontal/vertical constraint tool. This create a command group in which you have the auto tool, horizontal and vertical.</source>
+      <translation type="unfinished">Use the automatic horizontal/vertical constraint tool. This create a command group in which you have the auto tool, horizontal and vertical.</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="187"/>
+      <source>Auto tool for Horizontal/Vertical</source>
+      <translation type="unfinished">Auto tool for Horizontal/Vertical</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="212"/>
+      <source>Dimension Constraint</source>
+      <translation>Kota-murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="218"/>
+      <source>Dimensioning constraints:</source>
+      <translation>Dimentsio-murrizketak:</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="225"/>
+      <source>Select the type of dimensioning constraints for your toolbar:
+'Single tool': A single tool for all dimensioning constraints in the toolbar : Distance, Distance X / Y, Angle, Radius. (Others in dropdown)
+'Separated tools': Individual tools for each dimensioning constraint.
+'Both': You will have both the 'Dimension' tool and the separated tools.
+This setting is only for the toolbar. Whichever you chose, all tools are always available in the menu and through shortcuts.</source>
+      <translation>Hautatu zure tresna-barrak zein motatako kota-murrizketa izango duen:
+'Tresna bakarra': Tresna bakarra tresna-barrako kota-murrizketa guztietarako : Distantzia, X / Y distantzia, angelua, erradioa. (Besteak goitibeherakoan)
+'Tresna bereiztuak': Banakako tresnak kota-murrizketa bakoitzerako.
+'Biak': 'Kota' tresna eta tresna bereiztuak, biak izango dira.
+Ezarpen hau tresna-barrarako soilik da. Aukeratzen dena edozein izanda ere, menuetan tresna guztiak egongo dira eta lasterbideen bidez ere erabili ahal izango dira.</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="236"/>
+      <source>Dimension tool diameter/radius mode:</source>
+      <translation>Kota-tresnaren diametro/erradio modua:</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="243"/>
+      <source>While using the Dimension tool you may chose how to handle circles and arcs:
+'Auto': The tool will apply radius to arcs and diameter to circles.
+'Diameter': The tool will apply diameter to both arcs and circles.
+'Radius': The tool will apply radius to both arcs and circles.</source>
+      <translation>Koten tresna erabiltzean, zirkuluak eta arkuak nola maneiatzen diren aukeratu daiteke:
+'Auto': Tresnak erradioak aplikatuko ditu arkuetan eta diametroak zirkuluetan.
+'Diametroa': Tresnak diametroak aplikatuko ditu bai arkuetan bai zirkuluetan.
+'Erradioa': Tresnak erradioak aplikatuko ditu bai arkuetan bai zirkuluetan.</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="262"/>
+      <source>Tool Parameters</source>
+      <translation type="unfinished">Tool Parameters</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="268"/>
+      <source> On-View-Parameters :</source>
+      <translation type="unfinished"> On-View-Parameters :</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.ui" line="275"/>
+      <source>Choose a visibility mode for the On-View-Parameters:
+'Disabled': On-View-Parameters are completely disabled.
+'Only dimensional': Only dimensional On-View-Parameters are visible. They are the most useful. For example the radius of a circle.
+'All': Both dimensional and positional On-View-Parameters. Positionals are the (x,y) position of the cursor. For example for the center of a circle.</source>
+      <translation type="unfinished">Choose a visibility mode for the On-View-Parameters:
+'Disabled': On-View-Parameters are completely disabled.
+'Only dimensional': Only dimensional On-View-Parameters are visible. They are the most useful. For example the radius of a circle.
+'All': Both dimensional and positional On-View-Parameters. Positionals are the (x,y) position of the cursor. For example for the center of a circle.</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.cpp" line="143"/>
+      <source>Single tool</source>
+      <translation>Tresna bakarra</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.cpp" line="144"/>
+      <source>Separated tools</source>
+      <translation>Tresna bereiztuak</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.cpp" line="145"/>
+      <source>Both</source>
+      <translation>Biak</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.cpp" line="162"/>
+      <source>Auto</source>
+      <translation>Automatikoa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.cpp" line="163"/>
+      <source>Diameter</source>
+      <translation>Diametroa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.cpp" line="164"/>
+      <source>Radius</source>
+      <translation>Erradioa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.cpp" line="174"/>
+      <source>Disabled</source>
+      <translation type="unfinished">Disabled</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.cpp" line="175"/>
+      <source>Only dimensional</source>
+      <translation type="unfinished">Only dimensional</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherSettings.cpp" line="176"/>
+      <source>All</source>
+      <translation>Dena</translation>
     </message>
   </context>
   <context>
@@ -4455,12 +4703,12 @@ Horrela, objektuak krokis-planoaren atzean soilik egongo dira ikusgai.</translat
       <translation>Aplikatu lehendik dauden krokisei</translation>
     </message>
     <message>
-      <location filename="../../SketcherSettings.cpp" line="288"/>
+      <location filename="../../SketcherSettings.cpp" line="407"/>
       <source>Unexpected C++ exception</source>
       <translation>Espero ez zen C++ salbuespena</translation>
     </message>
     <message>
-      <location filename="../../SketcherSettings.cpp" line="291"/>
+      <location filename="../../SketcherSettings.cpp" line="410"/>
       <source>Sketcher</source>
       <translation>Krokisgilea</translation>
     </message>
@@ -4468,55 +4716,55 @@ Horrela, objektuak krokis-planoaren atzean soilik egongo dira ikusgai.</translat
   <context>
     <name>SketcherGui::SketcherValidation</name>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="162"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="187"/>
       <source>No missing coincidences</source>
       <translation>Ez dago falta den bat etortzerik</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="163"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="188"/>
       <source>No missing coincidences found</source>
       <translation>Ez da aurkitu falta den bat etortzerik</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="168"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="196"/>
       <source>Missing coincidences</source>
       <translation>Falta diren bat etortzeak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="169"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="197"/>
       <source>%1 missing coincidences found</source>
       <translation>Falta diren %1 bat etortze aurkitu dira</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="214"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="248"/>
       <source>No invalid constraints</source>
       <translation>Ez dago baliogabeko murrizketarik</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="215"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="249"/>
       <source>No invalid constraints found</source>
       <translation>Ez da baliozko murrizketarik aurkitu</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="219"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="255"/>
       <source>Invalid constraints</source>
       <translation>Baliogabeko murrizketak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="220"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="256"/>
       <source>Invalid constraints found</source>
       <translation>Baliogabeko murrizketak aurkitu dira</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="257"/>
-      <location filename="../../TaskSketcherValidation.cpp" line="268"/>
-      <location filename="../../TaskSketcherValidation.cpp" line="275"/>
-      <location filename="../../TaskSketcherValidation.cpp" line="289"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="299"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="314"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="325"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="342"/>
       <source>Reversed external geometry</source>
       <translation>Alderantzizko kanpo-geometria</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="258"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="300"/>
       <source>%1 reversed external-geometry arcs were found. Their endpoints are encircled in 3d view.
 
 %2 constraints are linking to the endpoints. The constraints have been listed in Report view (menu View -&gt; Panels -&gt; Report view).
@@ -4529,7 +4777,7 @@ Click "Swap endpoints in constraints" button to reassign endpoints. Do this only
 Sakatu "Trukatu amaiera-puntuak murrizketetan" botoia amaiera-puntuak berriro esleitzeko. Egin behin bakarrik 0.15 bertsioa baino zaharragoa den FreeCAD batekin sortutako krokisetan.</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="269"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="315"/>
       <source>%1 reversed external-geometry arcs were found. Their endpoints are encircled in 3d view.
 
 However, no constraints linking to the endpoints were found.</source>
@@ -4538,75 +4786,70 @@ However, no constraints linking to the endpoints were found.</source>
 Hala ere, ez da aurkitu amaiera-puntuei estekatutako murrizketarik.</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="276"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="326"/>
       <source>No reversed external-geometry arcs were found.</source>
       <translation>Ez da aurkitu alderantzizko kanpo-geometria duen arkurik.</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="290"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="343"/>
       <source>%1 changes were made to constraints linking to endpoints of reversed arcs.</source>
       <translation>%1 aldaketa egin dira alderantzizko arkuen amaiera-puntuei estekatutako murrizketetan.</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="306"/>
-      <location filename="../../TaskSketcherValidation.cpp" line="323"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="363"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="384"/>
       <source>Constraint orientation locking</source>
       <translation>Orientazio-blokearen murrizketa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="307"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="364"/>
       <source>Orientation locking was enabled and recomputed for %1 constraints. The constraints have been listed in Report view (menu View -&gt; Panels -&gt; Report view).</source>
       <translation>Orientazio-blokeoa gaitu eta birkakulatu egin da %1 murrizketatarako. Murrizketak txosten-bistan zerrendatu dira ('Ikusi &gt; Panelak &gt; Txosten-bista' menuan).</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="324"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="385"/>
       <source>Orientation locking was disabled for %1 constraints. The constraints have been listed in Report view (menu View -&gt; Panels -&gt; Report view). Note that for all future constraints, the locking still defaults to ON.</source>
       <translation>Orientazioaren blokeoa desgaitu egin da %1 murrizketarako. Murrizketak txosten-bistan zerrendatu dira ('Bista &gt; Panelak &gt; Txosten-bista' menuan). Kontuan izan geroagoko murrizketetarako blokeoak aktibatuta jarraituko duela.</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="339"/>
-      <location filename="../../TaskSketcherValidation.cpp" line="352"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="403"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="422"/>
       <source>Delete constraints to external geom.</source>
       <translation>Ezabatu kanpo-geometrien murrizketak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="340"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="404"/>
       <source>You are about to delete ALL constraints that deal with external geometry. This is useful to rescue a sketch with broken/changed links to external geometry. Are you sure you want to delete the constraints?</source>
       <translation>Kanpo-geometriarekin zerikusia duten murrizketa GUZTIAK ezabatzera zoaz. Ekintza hori erabilgarria da kanpo-geometriarekin esteka hautsiak/aldatuak dituen krokisekin. Benetan ezabatu nahi dituzu murrizketak?</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="353"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="423"/>
       <source>All constraints that deal with external geometry were deleted.</source>
       <translation>Kanpo-geometriarekin zerikusia duten murrizketa guztiak ezabatu dira.</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="417"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="493"/>
       <source>No degenerated geometry</source>
       <translation>Ez dago geometria degeneraturik</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="418"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="494"/>
       <source>No degenerated geometry found</source>
       <translation>Ez da aurkitu geometria degeneraturik</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="422"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="500"/>
       <source>Degenerated geometry</source>
       <translation>Geometria degeneratua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherValidation.cpp" line="423"/>
+      <location filename="../../TaskSketcherValidation.cpp" line="501"/>
       <source>%1 degenerated geometry found</source>
       <translation>Geometria degeneratu %1 aurkitu da</translation>
     </message>
   </context>
   <context>
     <name>SketcherGui::TaskSketcherConstraints</name>
-    <message>
-      <location filename="../../TaskSketcherConstraints.ui" line="26"/>
-      <source>Form</source>
-      <translation>Inprimakia</translation>
-    </message>
     <message>
       <location filename="../../TaskSketcherConstraints.ui" line="40"/>
       <source>Check to toggle filters</source>
@@ -4633,51 +4876,54 @@ Hala ere, ez da aurkitu amaiera-puntuei estekatutako murrizketarik.</translation
       <translation>Ezarpenak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="734"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="816"/>
       <source>Constraints</source>
       <translation>Murrizketak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="757"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="841"/>
       <source>Auto constraints</source>
       <translation>Murrizketa automatikoak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="758"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="842"/>
       <source>Auto remove redundants</source>
       <translation>Automatikoki kendu erredundanteak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="759"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="843"/>
       <source>Show only filtered Constraints</source>
       <translation>Erakutsi iragazitako murrizketak soilik</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="760"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="844"/>
       <source>Extended information (in widget)</source>
       <translation>Informazio hedatua (widgetean)</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="761"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="845"/>
       <source>Hide internal alignment (in widget)</source>
       <translation>Ezkutatu barneko lerrokatzea (widgetean)</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherConstraints.cpp" line="1049"/>
-      <location filename="../../TaskSketcherConstraints.cpp" line="1132"/>
       <location filename="../../TaskSketcherConstraints.cpp" line="1148"/>
-      <location filename="../../TaskSketcherConstraints.cpp" line="1425"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="1541"/>
       <source>Error</source>
       <translation>Errorea</translation>
+    </message>
+    <message>
+      <location filename="../../TaskSketcherConstraints.cpp" line="1148"/>
+      <source>Impossible to update visibility tracking</source>
+      <translation>Ezin da ikusgaitasun-jarraipena eguneratu</translation>
+    </message>
+    <message>
+      <location filename="../../TaskSketcherConstraints.cpp" line="1541"/>
+      <source>Impossible to update visibility tracking: </source>
+      <translation>Ezin da ikusgaitasun-jarraipena eguneratu: </translation>
     </message>
   </context>
   <context>
     <name>SketcherGui::TaskSketcherElements</name>
-    <message>
-      <location filename="../../TaskSketcherElements.ui" line="26"/>
-      <source>Form</source>
-      <translation>Inprimakia</translation>
-    </message>
     <message>
       <location filename="../../TaskSketcherElements.ui" line="40"/>
       <source>Check to toggle filters</source>
@@ -4699,120 +4945,120 @@ Hala ere, ez da aurkitu amaiera-puntuei estekatutako murrizketarik.</translation
       <translation>Ezarpenak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1377"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1381"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1385"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1389"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1393"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1397"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1401"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1405"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1409"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1413"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1590"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1597"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1604"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1611"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1618"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1625"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1632"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1639"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1646"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1652"/>
       <source>Construction</source>
       <translation>Eraikuntza</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="833"/>
+      <location filename="../../TaskSketcherElements.cpp" line="995"/>
       <source>Elements</source>
       <translation>Elementuak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1376"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1378"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1478"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1479"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1588"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1593"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1729"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1730"/>
       <source>Point</source>
       <translation>Puntua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1377"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1381"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1385"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1389"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1393"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1397"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1401"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1405"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1409"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1413"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1591"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1598"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1605"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1612"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1619"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1626"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1633"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1640"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1647"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1653"/>
       <source>Internal</source>
       <translation>Barnekoa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1380"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1382"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1481"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1482"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1595"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1600"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1732"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1733"/>
       <source>Line</source>
       <translation>Lerroa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1384"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1386"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1484"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1485"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1602"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1607"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1735"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1736"/>
       <source>Arc</source>
       <translation>Arkua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1388"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1390"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1487"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1488"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1609"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1614"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1738"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1739"/>
       <source>Circle</source>
       <translation>Zirkulua</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1392"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1394"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1490"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1491"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1616"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1621"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1741"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1742"/>
       <source>Ellipse</source>
       <translation>Elipsea</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1396"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1398"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1493"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1494"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1623"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1628"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1745"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1746"/>
       <source>Elliptical Arc</source>
       <translation>Arku eliptikoa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1400"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1402"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1496"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1497"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1630"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1635"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1749"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1750"/>
       <source>Hyperbolic Arc</source>
       <translation>Arku hiperbolikoa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1404"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1406"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1499"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1500"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1637"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1642"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1753"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1754"/>
       <source>Parabolic Arc</source>
       <translation>Arku parabolikoa</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1408"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1410"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1502"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1503"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1644"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1649"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1756"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1757"/>
       <source>BSpline</source>
-      <translation>BSpline</translation>
+      <translation>B-spline</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1412"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1414"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1505"/>
-      <location filename="../../TaskSketcherElements.cpp" line="1506"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1650"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1655"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1758"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1759"/>
       <source>Other</source>
       <translation>Beste bat</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherElements.cpp" line="1548"/>
+      <location filename="../../TaskSketcherElements.cpp" line="1799"/>
       <source>Extended information</source>
       <translation>Informazio gehiago</translation>
     </message>
@@ -4820,42 +5066,42 @@ Hala ere, ez da aurkitu amaiera-puntuei estekatutako murrizketarik.</translation
   <context>
     <name>SketcherGui::TaskSketcherMessages</name>
     <message>
-      <location filename="../../TaskSketcherMessages.cpp" line="43"/>
+      <location filename="../../TaskSketcherMessages.cpp" line="44"/>
       <source>Solver messages</source>
       <translation>Ebazlearen mezuak</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherMessages.cpp" line="77"/>
+      <location filename="../../TaskSketcherMessages.cpp" line="99"/>
       <source>Auto update</source>
       <translation>Eguneratu automatikoki</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherMessages.cpp" line="78"/>
+      <location filename="../../TaskSketcherMessages.cpp" line="100"/>
       <source>Executes a recomputation of active document after every sketch action</source>
       <translation>Dokumentu aktiboaren birkalkulua exekutatzen du krokisaren ekintza bakoitzaren ondoren</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherMessages.cpp" line="114"/>
+      <location filename="../../TaskSketcherMessages.cpp" line="142"/>
       <source>Click to select the conflicting constraints.</source>
       <translation>Egin klik gatazkan dauden murrizketak hautatzeko.</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherMessages.cpp" line="117"/>
+      <location filename="../../TaskSketcherMessages.cpp" line="144"/>
       <source>Click to select the redundant constraints.</source>
       <translation>Egin klik murrizketa erredundanteak hautatzeko.</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherMessages.cpp" line="120"/>
+      <location filename="../../TaskSketcherMessages.cpp" line="147"/>
       <source>The sketch has unconstrained elements giving rise to those Degrees Of Freedom. Click to select the unconstrained elements.</source>
       <translation>Krokisak murriztu gabeko elementuak ditu, eta horrek askatasun-gradu horiek sortzen ditu. Egin klik murriztu gabeko elementuak hautatzeko.</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherMessages.cpp" line="123"/>
+      <location filename="../../TaskSketcherMessages.cpp" line="150"/>
       <source>Click to select the malformed constraints.</source>
       <translation>Egin klik gaizki eratutako murrizketak hautatzeko.</translation>
     </message>
     <message>
-      <location filename="../../TaskSketcherMessages.cpp" line="126"/>
+      <location filename="../../TaskSketcherMessages.cpp" line="153"/>
       <source>Some constraints in combination are partially redundant. Click to select the partially redundant constraints.</source>
       <translation>Zenbait murrizketa, elkarrekin konbinatuta, partzialki errendundanteak dira. Egin klik partzialki errendundanteak diren murrizketak hautatzeko.</translation>
     </message>
@@ -4863,7 +5109,7 @@ Hala ere, ez da aurkitu amaiera-puntuei estekatutako murrizketarik.</translation
   <context>
     <name>SketcherGui::TaskSketcherSolverAdvanced</name>
     <message>
-      <location filename="../../TaskSketcherSolverAdvanced.cpp" line="57"/>
+      <location filename="../../TaskSketcherSolverAdvanced.cpp" line="58"/>
       <source>Advanced solver control</source>
       <translation>Ebazle-kontrol aurreratua</translation>
     </message>
@@ -5032,112 +5278,112 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>SketcherGui::ViewProviderSketch</name>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2780"/>
+      <location filename="../../ViewProviderSketch.cpp" line="2840"/>
       <source>Edit sketch</source>
       <translation>Editatu krokisa</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2797"/>
+      <location filename="../../ViewProviderSketch.cpp" line="2857"/>
       <source>A dialog is already open in the task panel</source>
       <translation>Elkarrizketa-koadro bat irekita dago ataza-panelean</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2798"/>
+      <location filename="../../ViewProviderSketch.cpp" line="2858"/>
       <source>Do you want to close this dialog?</source>
       <translation>Elkarrizketa-koadro hau itxi nahi duzu?</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2812"/>
+      <location filename="../../ViewProviderSketch.cpp" line="2872"/>
       <source>Invalid sketch</source>
       <translation>Baliogabeko krokisa</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2813"/>
+      <location filename="../../ViewProviderSketch.cpp" line="2873"/>
       <source>Do you want to open the sketch validation tool?</source>
       <translation>Krokisak balidatzeko tresna ireki nahi al duzu?</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2814"/>
+      <location filename="../../ViewProviderSketch.cpp" line="2874"/>
       <source>The sketch is invalid and cannot be edited.</source>
       <translation>Krokisa baliogabea da eta ezin da editatu.</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2938"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3012"/>
       <source>Please remove the following constraint:</source>
       <translation>Kendu honako murrizketa:</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2939"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3013"/>
       <source>Please remove at least one of the following constraints:</source>
       <translation>Kendu gutxienez honako murrizketetako bat:</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2945"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3019"/>
       <source>Please remove the following redundant constraint:</source>
       <translation>Kendu erredundantea den honako murrizketa:</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2946"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3020"/>
       <source>Please remove the following redundant constraints:</source>
       <translation>Kendu erredundanteak diren honako murriketak:</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2952"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3026"/>
       <source>The following constraint is partially redundant:</source>
       <translation>Honako murrizketa partzialki erredundantea da:</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2953"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3027"/>
       <source>The following constraints are partially redundant:</source>
       <translation>Honako murrizketak partzialki erredundanteak dira:</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2959"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3033"/>
       <source>Please remove the following malformed constraint:</source>
       <translation>Kendu gaizki eratuta dagoen honako murrizketa:</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="2960"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3034"/>
       <source>Please remove the following malformed constraints:</source>
       <translation>Kendu gaizki eratuta dauden honako murrizketak:</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="3018"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3092"/>
       <source>Empty sketch</source>
       <translation>Krokis hutsa</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="3022"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3097"/>
       <source>Over-constrained: </source>
       <translation>Gehiegi murriztutakoa: </translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="3028"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3103"/>
       <source>Malformed constraints: </source>
       <translation>Gaizki eratutako murrizketak: </translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="3034"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3111"/>
       <source>Redundant constraints:</source>
       <translation>Murrizketa erredundanteak:</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="3040"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3117"/>
       <source>Partially redundant:</source>
       <translation>Partzialki erredundantea:</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="3046"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3124"/>
       <source>Solver failed to converge</source>
       <translation>Ebazleak ezin izan du konbergitu</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="3051"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3130"/>
       <source>Under constrained:</source>
       <translation>Gutxiegi murriztutakoa:</translation>
     </message>
     <message numerus="yes">
-      <location filename="../../ViewProviderSketch.cpp" line="3053"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3132"/>
       <source>%n DoF(s)</source>
       <translation>
         <numerusform>Askatasun-gradu %n</numerusform>
@@ -5145,7 +5391,7 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
       </translation>
     </message>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="3056"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3136"/>
       <source>Fully constrained</source>
       <translation>Osorik murritua</translation>
     </message>
@@ -5153,8 +5399,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_BSplineComb</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="374"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="376"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="320"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="323"/>
       <source>Switches between showing and hiding the curvature comb for all B-splines</source>
       <translation>B-spline guztien kurbadura-orrazia erakusten/ezkutatzen ditu</translation>
     </message>
@@ -5162,8 +5408,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_BSplineDecreaseKnotMultiplicity</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="970"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="972"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="714"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="717"/>
       <source>Decreases the multiplicity of the selected knot of a B-spline</source>
       <translation>B-spline batean hautatutako adabegi baten aniztasuna txikitzen du</translation>
     </message>
@@ -5171,8 +5417,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_BSplineDegree</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="360"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="362"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="302"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="305"/>
       <source>Switches between showing and hiding the degree for all B-splines</source>
       <translation>B-spline guztien gradua erakusten/ezkutatzen ditu</translation>
     </message>
@@ -5180,8 +5426,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_BSplineIncreaseKnotMultiplicity</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="963"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="965"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="705"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="708"/>
       <source>Increases the multiplicity of the selected knot of a B-spline</source>
       <translation>B-spline batean hautatutako adabegi baten aniztasuna handitzen du</translation>
     </message>
@@ -5189,8 +5435,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_BSplineKnotMultiplicity</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="381"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="383"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="329"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="332"/>
       <source>Switches between showing and hiding the knot multiplicity for all B-splines</source>
       <translation>B-spline guztien adabegi-aniztasuna erakusten/ezkutatzen ditu</translation>
     </message>
@@ -5198,8 +5444,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_BSplinePoleWeight</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="389"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="391"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="339"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="342"/>
       <source>Switches between showing and hiding the control point weight for all B-splines</source>
       <translation>B-spline guztien kontrol-puntuen pisuak erakusten/ezkutatzen ditu</translation>
     </message>
@@ -5207,8 +5453,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_BSplinePolygon</name>
     <message>
-      <location filename="../../CommandSketcherBSpline.cpp" line="367"/>
-      <location filename="../../CommandSketcherBSpline.cpp" line="369"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="311"/>
+      <location filename="../../CommandSketcherOverlay.cpp" line="314"/>
       <source>Switches between showing and hiding the control polygons for all B-splines</source>
       <translation>B-spline guztien kontrol-poligonoak erakusten/ezkutatzen ditu</translation>
     </message>
@@ -5216,8 +5462,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_Clone</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1607"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1610"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1624"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1627"/>
       <source>Creates a clone of the geometry taking as reference the last selected point</source>
       <translation>Geometriaren klon bat sortzen du, erreferentzia gisa hautatutako azken puntua hartuta</translation>
     </message>
@@ -5225,17 +5471,17 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CompCopy</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1606"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1623"/>
       <source>Clone</source>
       <translation>Klonatu</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1614"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1631"/>
       <source>Copy</source>
       <translation>Kopiatu</translation>
     </message>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1622"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1639"/>
       <source>Move</source>
       <translation>Mugitu</translation>
     </message>
@@ -5243,8 +5489,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_ConstrainDiameter</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5984"/>
-      <location filename="../../CommandConstraints.cpp" line="5985"/>
+      <location filename="../../CommandConstraints.cpp" line="8351"/>
+      <location filename="../../CommandConstraints.cpp" line="8353"/>
       <source>Fix the diameter of a circle or an arc</source>
       <translation>Finkatu zirkulu baten edo arku baten diametroa</translation>
     </message>
@@ -5252,7 +5498,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_ConstrainRadiam</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5989"/>
+      <location filename="../../CommandConstraints.cpp" line="8358"/>
+      <location filename="../../CommandConstraints.cpp" line="8360"/>
       <source>Fix the radius/diameter of a circle or an arc</source>
       <translation>Finkatu zirkulu baten edo arku baten erradioa/diametroa</translation>
     </message>
@@ -5260,25 +5507,17 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_ConstrainRadius</name>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="5980"/>
-      <location filename="../../CommandConstraints.cpp" line="5981"/>
+      <location filename="../../CommandConstraints.cpp" line="8345"/>
+      <location filename="../../CommandConstraints.cpp" line="8347"/>
       <source>Fix the radius of a circle or an arc</source>
       <translation>Finkatu zirkulu baten edo arku baten erradioa</translation>
     </message>
   </context>
   <context>
-    <name>Sketcher_ConstraintRadiam</name>
-    <message>
-      <location filename="../../CommandConstraints.cpp" line="5988"/>
-      <source>Fix the radius/diameter of a circle or an arc</source>
-      <translation>Finkatu zirkulu baten edo arku baten erradioa/diametroa</translation>
-    </message>
-  </context>
-  <context>
     <name>Sketcher_Copy</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1615"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1618"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1632"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1635"/>
       <source>Creates a simple copy of the geometry taking as reference the last selected point</source>
       <translation>Geometriaren kopia sinple bat sortzen du, erreferentzia gisa hautatutako azken puntua hartuz</translation>
     </message>
@@ -5286,8 +5525,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_Create3PointArc</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="520"/>
-      <location filename="../../CommandCreateGeo.cpp" line="521"/>
+      <location filename="../../CommandCreateGeo.cpp" line="563"/>
+      <location filename="../../CommandCreateGeo.cpp" line="566"/>
       <source>Create an arc by its end points and a point along the arc</source>
       <translation>Sortu arku bat amaiera-puntuak eta arkuan dagoen puntu bat erabiliz</translation>
     </message>
@@ -5295,8 +5534,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_Create3PointCircle</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1243"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1244"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1375"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1377"/>
       <source>Create a circle by 3 rim points</source>
       <translation>Sortu zirkulu bat 3 ertz-puntutik abiatuz</translation>
     </message>
@@ -5304,8 +5543,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateArc</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="516"/>
-      <location filename="../../CommandCreateGeo.cpp" line="517"/>
+      <location filename="../../CommandCreateGeo.cpp" line="555"/>
+      <location filename="../../CommandCreateGeo.cpp" line="558"/>
       <source>Create an arc by its center and by its end points</source>
       <translation>Sortu arku bat puntu zentrala eta amaiera-puntuak erabiliz</translation>
     </message>
@@ -5313,8 +5552,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateArcOfEllipse</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="842"/>
-      <location filename="../../CommandCreateGeo.cpp" line="843"/>
+      <location filename="../../CommandCreateGeo.cpp" line="915"/>
+      <location filename="../../CommandCreateGeo.cpp" line="918"/>
       <source>Create an arc of ellipse by its center, major radius, and endpoints</source>
       <translation>Sortu elipse-arku bat erdiko puntua, erradio handia eta amaiera-puntuak erabiliz</translation>
     </message>
@@ -5322,8 +5561,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateArcOfHyperbola</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="846"/>
-      <location filename="../../CommandCreateGeo.cpp" line="847"/>
+      <location filename="../../CommandCreateGeo.cpp" line="925"/>
+      <location filename="../../CommandCreateGeo.cpp" line="928"/>
       <source>Create an arc of hyperbola by its center, major radius, and endpoints</source>
       <translation>Sortu hiperbola-arku bat erdiko puntua, erradio handia eta amaiera-puntuak erabiliz</translation>
     </message>
@@ -5331,8 +5570,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateArcOfParabola</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="850"/>
-      <location filename="../../CommandCreateGeo.cpp" line="851"/>
+      <location filename="../../CommandCreateGeo.cpp" line="935"/>
+      <location filename="../../CommandCreateGeo.cpp" line="938"/>
       <source>Create an arc of parabola by its focus, vertex, and endpoints</source>
       <translation>Sortu parabola-arku bat fokua, erpina eta amaiera-puntuak erabiliz</translation>
     </message>
@@ -5340,13 +5579,13 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateBSpline</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1098"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1202"/>
       <source>B-spline by control points</source>
       <translation>B-spline kontrol-puntuetatik</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1099"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1100"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1204"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1206"/>
       <source>Create a B-spline by control points</source>
       <translation>Sortu B-spline bat kontrol-puntuetatik abiatuz</translation>
     </message>
@@ -5354,8 +5593,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateCircle</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1239"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1240"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1368"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1370"/>
       <source>Create a circle by its center and by a rim point</source>
       <translation>Sortu zirkulu bat puntu zentrala eta ertz-puntu bat erabiliz</translation>
     </message>
@@ -5363,8 +5602,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateEllipseBy3Points</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="838"/>
-      <location filename="../../CommandCreateGeo.cpp" line="839"/>
+      <location filename="../../CommandCreateGeo.cpp" line="906"/>
+      <location filename="../../CommandCreateGeo.cpp" line="909"/>
       <source>Create a ellipse by periapsis, apoapsis, and minor radius</source>
       <translation>Sortu elipse bat periapsia, apoapsia eta erradio txikia erabiliz</translation>
     </message>
@@ -5372,8 +5611,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateEllipseByCenter</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="834"/>
-      <location filename="../../CommandCreateGeo.cpp" line="835"/>
+      <location filename="../../CommandCreateGeo.cpp" line="896"/>
+      <location filename="../../CommandCreateGeo.cpp" line="899"/>
       <source>Create an ellipse by center, major radius and point</source>
       <translation>Sortu elipse bat puntu zentrala, erradio handia eta puntu bat erabiliz</translation>
     </message>
@@ -5381,8 +5620,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateFillet</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1429"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1430"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1573"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1575"/>
       <source>Creates a radius between two lines</source>
       <translation>Bi lerroren arteko erradio bat sortzen du</translation>
     </message>
@@ -5390,8 +5629,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateHeptagon</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1976"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1977"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2261"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2264"/>
       <source>Create a heptagon by its center and by one corner</source>
       <translation>Sortu heptagono bat bere erdigunea eta izkina bat erabiliz</translation>
     </message>
@@ -5399,8 +5638,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateHexagon</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1972"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1973"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2253"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2256"/>
       <source>Create a hexagon by its center and by one corner</source>
       <translation>Sortu hexagono bat bere erdigunea eta izkina bat erabiliz</translation>
     </message>
@@ -5408,7 +5647,7 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateOblong</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="325"/>
+      <location filename="../../CommandCreateGeo.cpp" line="355"/>
       <source>Create a rounded rectangle</source>
       <translation>Sortu laukizuzen biribildua</translation>
     </message>
@@ -5416,14 +5655,14 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateOctagon</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1980"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1981"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2269"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2272"/>
       <source>Create an octagon by its center and by one corner</source>
       <translation>Sortu oktogono bat bere erdigunea eta izkina bat erabiliz</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1984"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1985"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2278"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2281"/>
       <source>Create a regular polygon by its center and by one corner</source>
       <translation>Sortu poligono erregular bat bere erdigunea eta izkina bat erabiliz</translation>
     </message>
@@ -5431,8 +5670,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreatePentagon</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1968"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1969"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2245"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2248"/>
       <source>Create a pentagon by its center and by one corner</source>
       <translation>Sortu pentagono bat bere erdigunea eta izkina bat erabiliz</translation>
     </message>
@@ -5440,8 +5679,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreatePointFillet</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1433"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1434"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1580"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1583"/>
       <source>Fillet that preserves constraints and intersection point</source>
       <translation>Murrizketak eta ebakidura-puntua mantentzen dituen biribiltzea</translation>
     </message>
@@ -5449,7 +5688,7 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateRectangle</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="317"/>
+      <location filename="../../CommandCreateGeo.cpp" line="343"/>
       <source>Create a rectangle</source>
       <translation>Sortu laukizuzena</translation>
     </message>
@@ -5457,7 +5696,7 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateRectangle_Center</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="321"/>
+      <location filename="../../CommandCreateGeo.cpp" line="349"/>
       <source>Create a centered rectangle</source>
       <translation>Sortu laukizuzen zentratua</translation>
     </message>
@@ -5465,8 +5704,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateSquare</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1964"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1965"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2237"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2240"/>
       <source>Create a square by its center and by one corner</source>
       <translation>Sortu lauki bat bere erdigunea eta izkina bat erabiliz</translation>
     </message>
@@ -5474,8 +5713,8 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_CreateTriangle</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1960"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1961"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2230"/>
+      <location filename="../../CommandCreateGeo.cpp" line="2233"/>
       <source>Create an equilateral triangle by its center and by one corner</source>
       <translation>Sortu triangelu aldeberdin bat bere erdigunea eta izkina bat erabiliz</translation>
     </message>
@@ -5483,13 +5722,13 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_Create_Periodic_BSpline</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1102"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1208"/>
       <source>Periodic B-spline by control points</source>
       <translation>B-spline periodikoa kontrol-puntuetatik</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1103"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1104"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1211"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1214"/>
       <source>Create a periodic B-spline by control points</source>
       <translation>Sortu B-spline periodiko bat krokiseko kontrol-puntuetatik abiatuz</translation>
     </message>
@@ -5497,64 +5736,64 @@ Krokisaren geometriak eta murrizketak analizatzen dira horretarako.</translation
   <context>
     <name>Sketcher_MapSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="528"/>
+      <location filename="../../Command.cpp" line="580"/>
       <source>No sketch found</source>
       <translation>Ez da krokisik aurkitu</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="529"/>
+      <location filename="../../Command.cpp" line="581"/>
       <source>The document doesn't have a sketch</source>
       <translation>Dokumentuak ez dauka krokis bat</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="538"/>
+      <location filename="../../Command.cpp" line="593"/>
       <source>Select sketch</source>
       <translation>Hautatu krokisa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="539"/>
+      <location filename="../../Command.cpp" line="594"/>
       <source>Select a sketch from the list</source>
       <translation>Hautatu zerrendako krokis bat</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="596"/>
+      <location filename="../../Command.cpp" line="659"/>
       <source> (incompatible with selection)</source>
       <translation> (bateraezina hautapenarekin)</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="598"/>
+      <location filename="../../Command.cpp" line="660"/>
       <source> (current)</source>
       <translation> (unekoa)</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="605"/>
+      <location filename="../../Command.cpp" line="668"/>
       <source> (suggested)</source>
       <translation> (iradokia)</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="611"/>
+      <location filename="../../Command.cpp" line="675"/>
       <source>Sketch attachment</source>
       <translation>Krokis-eranskina</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="613"/>
+      <location filename="../../Command.cpp" line="677"/>
       <source>Current attachment mode is incompatible with the new selection.
 Select the method to attach this sketch to selected objects.</source>
       <translation>Uneko eranste modua ez da bateragarria hautapen berriarekin.
 Hautatu krokis hau hautatutako objektuei eransteko erabiliko den metodoa.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="617"/>
+      <location filename="../../Command.cpp" line="681"/>
       <source>Select the method to attach this sketch to selected objects.</source>
       <translation>Hautatu zein metodo erabiliko den krokis hau hautatutako objektuei eransteko.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="656"/>
+      <location filename="../../Command.cpp" line="725"/>
       <source>Map sketch</source>
       <translation>Mapatu krokisa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="657"/>
+      <location filename="../../Command.cpp" line="726"/>
       <source>Can't map a sketch to support:
 %1</source>
       <translation>Ezin da mapatu euskarrirako krokis bat:
@@ -5564,8 +5803,8 @@ Hautatu krokis hau hautatutako objektuei eransteko erabiliko den metodoa.</trans
   <context>
     <name>Sketcher_Move</name>
     <message>
-      <location filename="../../CommandSketcherTools.cpp" line="1623"/>
-      <location filename="../../CommandSketcherTools.cpp" line="1625"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1640"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1642"/>
       <source>Moves the geometry taking as reference the last selected point</source>
       <translation>Geometria mugitzen du, hautatutako azken puntua erreferentzia gisa hartuta</translation>
     </message>
@@ -5573,12 +5812,12 @@ Hautatu krokis hau hautatutako objektuei eransteko erabiliko den metodoa.</trans
   <context>
     <name>Sketcher_NewSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="187"/>
+      <location filename="../../Command.cpp" line="197"/>
       <source>Sketch attachment</source>
       <translation>Krokis-eranskina</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="188"/>
+      <location filename="../../Command.cpp" line="198"/>
       <source>Select the method to attach this sketch to selected object</source>
       <translation>Hautatu zein metodo erabiliko den krokis hau hautatutako objektuari eransteko</translation>
     </message>
@@ -5586,12 +5825,12 @@ Hautatu krokis hau hautatutako objektuei eransteko erabiliko den metodoa.</trans
   <context>
     <name>Sketcher_ReorientSketch</name>
     <message>
-      <location filename="../../Command.cpp" line="390"/>
+      <location filename="../../Command.cpp" line="431"/>
       <source>Sketch has support</source>
       <translation>Krokisak euskarria du</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="391"/>
+      <location filename="../../Command.cpp" line="432"/>
       <source>Sketch with a support face cannot be reoriented.
 Do you want to detach it from the support?</source>
       <translation>Euskarri-aurpegi bat duen krokisen orientazioa ezin da aldatu.
@@ -5600,11 +5839,6 @@ Euskarritik askatu nahi duzu?</translation>
   </context>
   <context>
     <name>TaskSketcherMessages</name>
-    <message>
-      <location filename="../../TaskSketcherMessages.ui" line="14"/>
-      <source>Form</source>
-      <translation>Inprimakia</translation>
-    </message>
     <message>
       <location filename="../../TaskSketcherMessages.ui" line="20"/>
       <source>DOF</source>
@@ -5623,11 +5857,6 @@ Euskarritik askatu nahi duzu?</translation>
   </context>
   <context>
     <name>TaskSketcherSolverAdvanced</name>
-    <message>
-      <location filename="../../TaskSketcherSolverAdvanced.ui" line="14"/>
-      <source>Form</source>
-      <translation>Inprimakia</translation>
-    </message>
     <message>
       <location filename="../../TaskSketcherSolverAdvanced.ui" line="22"/>
       <source>Default algorithm used for Sketch solving</source>
@@ -5900,7 +6129,7 @@ Eigen Sparse QR algoritmoa matrize sakabanatuetarako optimizatuta dago; normalea
   <context>
     <name>ViewProviderSketch</name>
     <message>
-      <location filename="../../ViewProviderSketch.cpp" line="3002"/>
+      <location filename="../../ViewProviderSketch.cpp" line="3076"/>
       <source>and %1 more</source>
       <translation>eta %1 gehiago</translation>
     </message>
@@ -5908,55 +6137,65 @@ Eigen Sparse QR algoritmoa matrize sakabanatuetarako optimizatuta dago; normalea
   <context>
     <name>Workbench</name>
     <message>
-      <location filename="../../Workbench.cpp" line="35"/>
+      <location filename="../../Workbench.cpp" line="37"/>
       <source>P&amp;rofiles</source>
       <translation>P&amp;rofilak</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="36"/>
+      <location filename="../../Workbench.cpp" line="38"/>
       <source>S&amp;ketch</source>
       <translation>&amp;Zirriborroa</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="37"/>
+      <location filename="../../Workbench.cpp" line="39"/>
       <source>Sketcher</source>
       <translation>Krokisgilea</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="38"/>
+      <location filename="../../Workbench.cpp" line="40"/>
+      <source>Sketcher edit mode</source>
+      <translation>Krokisgilearen edizio-modua</translation>
+    </message>
+    <message>
+      <location filename="../../Workbench.cpp" line="41"/>
       <source>Sketcher geometries</source>
       <translation>Krokisgile-geometriak</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="39"/>
+      <location filename="../../Workbench.cpp" line="42"/>
       <source>Sketcher constraints</source>
       <translation>Krokisgilearen murrizketak</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="40"/>
+      <location filename="../../Workbench.cpp" line="43"/>
       <source>Sketcher tools</source>
       <translation>Krokisgilearen tresnak</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="41"/>
+      <location filename="../../Workbench.cpp" line="44"/>
       <source>Sketcher B-spline tools</source>
       <translation>Krokisgilearen B-spline tresnak</translation>
     </message>
     <message>
-      <location filename="../../Workbench.cpp" line="42"/>
+      <location filename="../../Workbench.cpp" line="45"/>
       <source>Sketcher virtual space</source>
       <translation>Krokisgilearen espazio birtuala</translation>
+    </message>
+    <message>
+      <location filename="../../Workbench.cpp" line="46"/>
+      <source>Sketcher edit tools</source>
+      <translation>Krokisgilearen edizio-tresnak</translation>
     </message>
   </context>
   <context>
     <name>Sketcher_ProfilesHexagon1</name>
     <message>
-      <location filename="../../../Profiles.py" line="53"/>
+      <location filename="../../../Profiles.py" line="59"/>
       <source>Creates a hexagonal profile</source>
       <translation>Profil hexagonala sortzen du</translation>
     </message>
     <message>
-      <location filename="../../../Profiles.py" line="58"/>
+      <location filename="../../../Profiles.py" line="64"/>
       <source>Creates a hexagonal profile in the sketch</source>
       <translation>Profil hexagonal bat sortzen du krokisean</translation>
     </message>
@@ -6080,105 +6319,311 @@ Sareta-tartea aldatuko da pixel-zenbaki hau baino txikiagoa bihurtzen bada.</tra
   <context>
     <name>GridSpaceAction</name>
     <message>
-      <location filename="../../Command.cpp" line="1011"/>
-      <source>Grid Auto Spacing</source>
+      <location filename="../../Command.cpp" line="1119"/>
+      <source>Grid auto spacing</source>
       <translation>Sareta-tarte automatikoa</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1012"/>
+      <location filename="../../Command.cpp" line="1120"/>
       <source>Resize grid automatically depending on zoom.</source>
       <translation>Aldatu saretaren tamaina automatikoki, zoomaren arabera.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1015"/>
+      <location filename="../../Command.cpp" line="1123"/>
       <source>Spacing</source>
       <translation>Tartea</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1016"/>
-      <source>Distance between two subsequent grid lines</source>
-      <translation>Bi sareta-lerro jarraien arteko distantzia</translation>
-    </message>
-  </context>
-  <context>
-    <name>CmdSketcherGrid</name>
-    <message>
-      <location filename="../../Command.cpp" line="1103"/>
-      <source>Activate Grid</source>
-      <translation>Aktibatu sareta</translation>
-    </message>
-    <message>
-      <location filename="../../Command.cpp" line="1104"/>
-      <source>Activate grid and grid settings</source>
-      <translation>Aktibatu sareta eta sareta-ezarpenak</translation>
+      <location filename="../../Command.cpp" line="1124"/>
+      <source>Distance between two subsequent grid lines.</source>
+      <translation>Bi sareta-lerro jarraien arteko distantzia.</translation>
     </message>
   </context>
   <context>
     <name>Notifications</name>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="327"/>
+      <location filename="../../../App/SketchObject.cpp" line="395"/>
       <source>The Sketch has malformed constraints!</source>
       <translation>Krokisak gaizki eratutako murrizketak ditu!</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="333"/>
+      <location filename="../../../App/SketchObject.cpp" line="401"/>
       <source>The Sketch has partially redundant constraints!</source>
       <translation>Krokisak partzialki erredundanteak diren murrizketak ditu!</translation>
     </message>
     <message>
-      <location filename="../../../App/SketchObject.cpp" line="8962"/>
+      <location filename="../../../App/SketchObject.cpp" line="9121"/>
       <source>Parabolas were migrated. Migrated files won't open in previous versions of FreeCAD!!
 </source>
       <translation>Parabolak migratu dira. Migratutako fitxategiak ezin dira ireki FreeCADen aurreko bertsioetan.</translation>
     </message>
     <message>
-      <location filename="../../CommandConstraints.cpp" line="1673"/>
-      <location filename="../../CommandConstraints.cpp" line="1718"/>
-      <location filename="../../CommandConstraints.cpp" line="3663"/>
-      <location filename="../../CommandConstraints.cpp" line="4162"/>
-      <location filename="../../CommandConstraints.cpp" line="4377"/>
-      <location filename="../../CommandConstraints.cpp" line="4934"/>
-      <location filename="../../CommandConstraints.cpp" line="7263"/>
+      <location filename="../../DrawSketchHandlerLine.h" line="136"/>
+      <location filename="../../DrawSketchHandlerRectangle.h" line="354"/>
+      <location filename="../../DrawSketchHandlerTrimming.h" line="161"/>
+      <location filename="../../DrawSketchHandlerArcOfEllipse.h" line="332"/>
+      <location filename="../../DrawSketchHandlerExtend.h" line="336"/>
+      <location filename="../../DrawSketchHandlerSlot.h" line="164"/>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="186"/>
+      <location filename="../../DrawSketchHandlerArcOfParabola.h" line="267"/>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="130"/>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="205"/>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="319"/>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="632"/>
+      <location filename="../../DrawSketchHandlerCircle.h" line="181"/>
+      <location filename="../../DrawSketchHandlerArcOfHyperbola.h" line="261"/>
+      <location filename="../../DrawSketchHandlerArcOfHyperbola.h" line="340"/>
+      <location filename="../../DrawSketchHandlerSplitting.h" line="158"/>
+      <location filename="../../DrawSketchHandlerExternal.h" line="188"/>
+      <location filename="../../DrawSketchHandlerPolygon.h" line="134"/>
+      <location filename="../../DrawSketchHandlerLineSet.h" line="470"/>
+      <location filename="../../DrawSketchHandlerLineSet.h" line="500"/>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="135"/>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="216"/>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="321"/>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="534"/>
+      <location filename="../../DrawSketchHandlerEllipse.h" line="188"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1224"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1801"/>
+      <location filename="../../CommandSketcherTools.cpp" line="2246"/>
+      <location filename="../../DrawSketchHandlerArcSlot.h" line="183"/>
+      <location filename="../../DrawSketchHandlerPoint.h" line="93"/>
       <source>Error</source>
       <translation>Errorea</translation>
     </message>
-  </context>
-  <context>
-    <name>CmdSketcherCreateBSplineByInterpolation</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="931"/>
-      <source>Interpolate B-spline</source>
-      <translation>Interpolatu B-spline kurba</translation>
+      <location filename="../../CommandSketcherTools.cpp" line="2043"/>
+      <source>Failed to delete all geometry</source>
+      <translation>Huts egin du geometria osoa ezabatzeak</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="932"/>
-      <source>Create a B-spline by interpolation, i.e. via knots in the sketch.</source>
-      <translation>Sortu B-spline bat interpolazioa erabiliz, alegia, krokiseko adabegiak erabiliz.</translation>
-    </message>
-  </context>
-  <context>
-    <name>CmdSketcherCreatePeriodicBSplineByInterpolation</name>
-    <message>
-      <location filename="../../CommandCreateGeo.cpp" line="961"/>
-      <source>Interpolate periodic B-spline</source>
-      <translation>Interpolatu B-spline periodikoa</translation>
+      <location filename="../../CommandSketcherTools.cpp" line="2112"/>
+      <source>Failed to delete all constraints</source>
+      <translation>Huts egin du murrizketa guztiak ezabatzeak</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="962"/>
-      <source>Create a periodic B-spline by interpolation, i.e. via knots in the sketch.</source>
-      <translation>Sortu B-spline periodiko bat interpolazioa erabiliz, alegia, krokiseko adabegiak erabiliz.</translation>
+      <location filename="../../CommandSketcherTools.cpp" line="2326"/>
+      <source>Invalid selection</source>
+      <translation>Baliogabeko hautapena</translation>
+    </message>
+    <message>
+      <location filename="../../CommandSketcherTools.cpp" line="2327"/>
+      <source>Selection has no valid geometries. BSplines, Points are not supported yet.</source>
+      <translation type="unfinished">Selection has no valid geometries. BSplines, Points are not supported yet.</translation>
+    </message>
+    <message>
+      <location filename="../../../App/SketchObjectPyImp.cpp" line="389"/>
+      <source>The constraint has invalid index information and is malformed.</source>
+      <translation>Murrizketak indize-informazio baliogabea du eta gaizki eratuta dago.</translation>
+    </message>
+    <message>
+      <location filename="../../CommandSketcherBSpline.cpp" line="468"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="604"/>
+      <location filename="../../CommandSketcherBSpline.cpp" line="832"/>
+      <location filename="../../CommandConstraints.cpp" line="387"/>
+      <location filename="../../CommandConstraints.cpp" line="467"/>
+      <location filename="../../CommandConstraints.cpp" line="564"/>
+      <location filename="../../CommandConstraints.cpp" line="654"/>
+      <location filename="../../CommandConstraints.cpp" line="728"/>
+      <location filename="../../CommandConstraints.cpp" line="5954"/>
+      <location filename="../../CommandConstraints.cpp" line="6158"/>
+      <location filename="../../CommandSketcherTools.cpp" line="836"/>
+      <location filename="../../CommandSketcherTools.cpp" line="1056"/>
+      <source>Invalid Constraint</source>
+      <translation>Baliogabeko murrizketa</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerLineSet.h" line="501"/>
+      <source>Failed to add arc</source>
+      <translation>Huts egin du arkua gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerArcOfEllipse.h" line="333"/>
+      <source>Failed to add arc of ellipse</source>
+      <translation>Huts egin du elipsearen arkua gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerArcOfHyperbola.h" line="262"/>
+      <source>Cannot create arc of hyperbola from invalid angles, try again!</source>
+      <translation>Ezin da hirperbolaren arkua sortu angeluak baliogabeak badira, saiatu berriro.</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerArcOfHyperbola.h" line="341"/>
+      <source>Cannot create arc of hyperbola</source>
+      <translation>Ezin da hiperbolaren arkua sortu</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerArcOfParabola.h" line="268"/>
+      <source>Cannot create arc of parabola</source>
+      <translation>Ezin da parabolaren arkua sortu</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="136"/>
+      <source>Error adding B-Spline pole</source>
+      <translation>Errorea B-spline poloa gehitzean</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="217"/>
+      <source>Error creating B-spline pole</source>
+      <translation>Errorea B-spline poloa sortzean</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="633"/>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="535"/>
+      <source>Error creating B-spline</source>
+      <translation>Errorea B-spline kurba gehitzean</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerBSpline.h" line="322"/>
+      <source>Error deleting last pole</source>
+      <translation>Errorea azken poloa ezabatzean</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="131"/>
+      <source>Cannot add knot point</source>
+      <translation>Ezin da adabegi-puntua gehitu</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="206"/>
+      <source>Cannot add internal alignment points</source>
+      <translation>Ezin dira barneko lerrokatze-puntuak gehitu</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerBSplineByInterpolation.h" line="320"/>
+      <source>Error removing knot</source>
+      <translation>Errorea adabegia kentzean</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerCarbonCopy.h" line="187"/>
+      <source>Failed to add carbon copy</source>
+      <translation>Huts egin du kalkoa gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerCircle.h" line="182"/>
+      <source>Failed to add circle</source>
+      <translation>Huts egin du zirkulua gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerExtend.h" line="337"/>
+      <source>Failed to extend edge</source>
+      <translation>Huts egin du ertza luzatzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerExternal.h" line="189"/>
+      <source>Failed to add external geometry</source>
+      <translation>Huts egin du kanpo-geometria gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerFillet.h" line="199"/>
+      <source>Failed to create fillet</source>
+      <translation>Huts egin du biribiltzea sortzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerLine.h" line="137"/>
+      <location filename="../../DrawSketchHandlerLineSet.h" line="471"/>
+      <source>Failed to add line</source>
+      <translation>Huts egin du lerroa gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerLine.h" line="141"/>
+      <location filename="../../DrawSketchHandlerRectangle.h" line="359"/>
+      <location filename="../../DrawSketchHandlerSlot.h" line="169"/>
+      <location filename="../../DrawSketchHandlerArc.h" line="253"/>
+      <location filename="../../DrawSketchHandlerCircle.h" line="186"/>
+      <location filename="../../DrawSketchHandlerPolygon.h" line="139"/>
+      <location filename="../../DrawSketchHandlerEllipse.h" line="193"/>
+      <location filename="../../DrawSketchHandlerArcSlot.h" line="188"/>
+      <source>Tool execution aborted</source>
+      <translation type="unfinished">Tool execution aborted</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerPoint.h" line="94"/>
+      <source>Failed to add point</source>
+      <translation>Huts egin du puntua gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerPolygon.h" line="135"/>
+      <source>Failed to add polygon</source>
+      <translation>Huts egin du poligonoa gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerRectangle.h" line="355"/>
+      <source>Failed to add box</source>
+      <translation>Huts egin du kutxa gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerSlot.h" line="165"/>
+      <source>Failed to add slot</source>
+      <translation>Huts egin du arteka gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerSplitting.h" line="159"/>
+      <source>Failed to add edge</source>
+      <translation>Huts egin du ertza gehitzeak</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerTrimming.h" line="162"/>
+      <source>Failed to trim edge</source>
+      <translation>Huts egin du ertza muxarratzeak</translation>
+    </message>
+    <message>
+      <location filename="../../TaskSketcherConstraints.cpp" line="1235"/>
+      <location filename="../../TaskSketcherConstraints.cpp" line="1253"/>
+      <location filename="../../EditDatumDialog.cpp" line="249"/>
+      <source>Value Error</source>
+      <translation>Balio-errorea</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchDefaultHandler.h" line="892"/>
+      <source>Autoconstraints cause redundancy. Removing them</source>
+      <translation type="unfinished">Autoconstraints cause redundancy. Removing them</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchDefaultHandler.h" line="911"/>
+      <source>Redundant constraint is not an autoconstraint. No autoconstraints or additional constraints were added. Please report!</source>
+      <translation type="unfinished">Redundant constraint is not an autoconstraint. No autoconstraints or additional constraints were added. Please report!</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchDefaultHandler.h" line="926"/>
+      <source>Autoconstraints cause conflicting constraints - Please report!</source>
+      <translation type="unfinished">Autoconstraints cause conflicting constraints - Please report!</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchDefaultHandler.h" line="952"/>
+      <source>Unexpected Redundancy/Conflicting constraint. Check the constraints and autoconstraints of this operation.</source>
+      <translation type="unfinished">Unexpected Redundancy/Conflicting constraint. Check the constraints and autoconstraints of this operation.</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerOffset.h" line="1098"/>
+      <source>Invalid Value</source>
+      <translation>Balio baliogabea</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerOffset.h" line="1099"/>
+      <source>Offset value can't be 0.</source>
+      <translation>Desplazamendu-balioak ezin du 0 izan.</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerArcSlot.h" line="184"/>
+      <source>Failed to add arc slot</source>
+      <translation type="unfinished">Failed to add arc slot</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerEllipse.h" line="189"/>
+      <source>Failed to add ellipse</source>
+      <translation type="unfinished">Failed to add ellipse</translation>
     </message>
   </context>
   <context>
     <name>Sketcher_CreateBSplineByInterpolation</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1106"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1218"/>
       <source>B-spline by knots</source>
       <translation>B-spline kurba adabegietatik</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1107"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1108"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1219"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1221"/>
       <source>Create a B-spline by knots</source>
       <translation>Sortu B-spline bat adabegietatik abiatuz</translation>
     </message>
@@ -6186,13 +6631,13 @@ Sareta-tartea aldatuko da pixel-zenbaki hau baino txikiagoa bihurtzen bada.</tra
   <context>
     <name>Sketcher_Create_Periodic_BSplineByInterpolation</name>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1110"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1225"/>
       <source>Periodic B-spline by knots</source>
       <translation>B-spline periodikoa adabegietatik</translation>
     </message>
     <message>
-      <location filename="../../CommandCreateGeo.cpp" line="1111"/>
-      <location filename="../../CommandCreateGeo.cpp" line="1112"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1228"/>
+      <location filename="../../CommandCreateGeo.cpp" line="1231"/>
       <source>Create a periodic B-spline by knots</source>
       <translation>Sortu B-spline periodiko bat adabegietatik abiatuz</translation>
     </message>
@@ -6200,71 +6645,58 @@ Sareta-tartea aldatuko da pixel-zenbaki hau baino txikiagoa bihurtzen bada.</tra
   <context>
     <name>SnapSpaceAction</name>
     <message>
-      <location filename="../../Command.cpp" line="1241"/>
+      <location filename="../../Command.cpp" line="1362"/>
       <source>Snap to objects</source>
       <translation>Atxiki objektuei</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1242"/>
+      <location filename="../../Command.cpp" line="1363"/>
       <source>New points will snap to the currently preselected object. It will also snap to the middle of lines and arcs.</source>
       <translation>Puntu berriak aurretik hautatutako objektuari atxikiko zaizkio. Lerroen eta arkuen erdiguneari ere atxikiko zaizkie.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1245"/>
-      <source>Snap to Grid</source>
+      <location filename="../../Command.cpp" line="1367"/>
+      <source>Snap to grid</source>
       <translation>Atxiki saretari</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1246"/>
+      <location filename="../../Command.cpp" line="1369"/>
       <source>New points will snap to the nearest grid line.
 Points must be set closer than a fifth of the grid spacing to a grid line to snap.</source>
       <translation>Puntu berriak sareta-lerro hurbilenari atxikiko zaizkio.
 Puntuak sareta-tartearen bosten bat baino hurbilago ezarri behar dira lerro batetik, atxikitzea gertatzeko.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1249"/>
+      <location filename="../../Command.cpp" line="1373"/>
       <source>Snap angle</source>
       <translation>Atxiki angeluari</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1250"/>
-      <source>Angular step for tools that use 'Snap at Angle' (line for instance). Hold CTRL to enable 'Snap at Angle'. The angle start from the East axis (horizontal right)</source>
-      <translation>'Atxiki angeluari' (lerroa distantziarako) erabiltzen duten tresnetarako urrats angeluarra. Eutsi Ctrl sakatuta 'Atxiki angeluari'' gaitzeko. Angelua ekialdeko ardatzean (horizontala eskuina) hasten da</translation>
-    </message>
-  </context>
-  <context>
-    <name>CmdSketcherSnap</name>
-    <message>
-      <location filename="../../Command.cpp" line="1343"/>
-      <source>Toggle Snap</source>
-      <translation>Txandakatu atxikitzea</translation>
-    </message>
-    <message>
-      <location filename="../../Command.cpp" line="1344"/>
-      <source>Toggle all snapping functionalities. In the menu you can toggle individually 'Snap to Grid', 'Snap to Objects' and further snap settings</source>
-      <translation>Aktibatu/desaktibatu atxikitze-funtzionaltasun guztiak. Menuan, ' Atxiki saretari', 'Atxiki objektuei' eta gainerako atxikitze-ezarpenak eskuz aktibatu/desaktibatu daitezke</translation>
+      <location filename="../../Command.cpp" line="1375"/>
+      <source>Angular step for tools that use 'Snap at Angle' (line for instance). Hold CTRL to enable 'Snap at Angle'. The angle starts from the positive X axis of the sketch.</source>
+      <translation>'Atxiki angeluari' (lerroa distantziarako) erabiltzen duten tresnetarako urrats angeluarra. Eutsi Ctrl sakatuta 'Atxiki angeluari'' gaitzeko. Angelua krokisaren X ardatz positiboan hasten da.</translation>
     </message>
   </context>
   <context>
     <name>RenderingOrderAction</name>
     <message>
-      <location filename="../../Command.cpp" line="1471"/>
-      <location filename="../../Command.cpp" line="1476"/>
-      <location filename="../../Command.cpp" line="1481"/>
+      <location filename="../../Command.cpp" line="1609"/>
+      <location filename="../../Command.cpp" line="1616"/>
+      <location filename="../../Command.cpp" line="1623"/>
       <source>Normal Geometry</source>
       <translation>Geometria normala</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1471"/>
-      <location filename="../../Command.cpp" line="1476"/>
-      <location filename="../../Command.cpp" line="1481"/>
+      <location filename="../../Command.cpp" line="1610"/>
+      <location filename="../../Command.cpp" line="1617"/>
+      <location filename="../../Command.cpp" line="1624"/>
       <source>Construction Geometry</source>
       <translation>Eraikuntza-geometria</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1471"/>
-      <location filename="../../Command.cpp" line="1476"/>
-      <location filename="../../Command.cpp" line="1481"/>
+      <location filename="../../Command.cpp" line="1611"/>
+      <location filename="../../Command.cpp" line="1618"/>
+      <location filename="../../Command.cpp" line="1625"/>
       <source>External Geometry</source>
       <translation>Kanpo-geometria</translation>
     </message>
@@ -6272,14 +6704,380 @@ Puntuak sareta-tartearen bosten bat baino hurbilago ezarri behar dira lerro bate
   <context>
     <name>CmdRenderingOrder</name>
     <message>
-      <location filename="../../Command.cpp" line="1577"/>
+      <location filename="../../Command.cpp" line="1734"/>
       <source>Configure rendering order</source>
       <translation>Konfiguratu errendatze-ordena</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="1578"/>
+      <location filename="../../Command.cpp" line="1735"/>
       <source>Reorder the items in the list to configure rendering order.</source>
       <translation>Zerrendako elementuak birantolatu errenderizazio ordena konfiguratzeko.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherGrid</name>
+    <message>
+      <location filename="../../Command.cpp" line="1220"/>
+      <source>Toggle grid</source>
+      <translation>Txandakatu sareta</translation>
+    </message>
+    <message>
+      <location filename="../../Command.cpp" line="1222"/>
+      <source>Toggle the grid in the sketch. In the menu you can change grid settings.</source>
+      <translation>Aktibatu/desaktibatu krokiseko sareta. Menuan sareta-ezarpenak aldatu daitezke.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherSnap</name>
+    <message>
+      <location filename="../../Command.cpp" line="1475"/>
+      <source>Toggle snap</source>
+      <translation>Txandakatu atxikitzea</translation>
+    </message>
+    <message>
+      <location filename="../../Command.cpp" line="1477"/>
+      <source>Toggle all snap functionality. In the menu you can toggle 'Snap to grid' and 'Snap to objects' individually, and change further snap settings.</source>
+      <translation>Txandakatu atxikitze-funtzionaltasun guztiak. Menuan 'Atxiki saretari' eta 'Atxiki ojektuei' banaka txandakatu daitezke, eta beste atxikitze-ezarpen batzuk ere aldatu daitezke.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherCreateBSplineByInterpolation</name>
+    <message>
+      <location filename="../../CommandCreateGeo.cpp" line="1020"/>
+      <source>Create B-spline by knots</source>
+      <translation>Sortu B-spline bat adabegietatik abiatuz</translation>
+    </message>
+    <message>
+      <location filename="../../CommandCreateGeo.cpp" line="1021"/>
+      <source>Create a B-spline by knots, i.e. by interpolation, in the sketch.</source>
+      <translation>Sortu B-spline bat adabegietatik abiatuz, alegia interpolazio bidez, krokisean.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherCreatePeriodicBSplineByInterpolation</name>
+    <message>
+      <location filename="../../CommandCreateGeo.cpp" line="1052"/>
+      <source>Create periodic B-spline by knots</source>
+      <translation>Sortu B-spline periodiko bat adabegietatik abiatuz</translation>
+    </message>
+    <message>
+      <location filename="../../CommandCreateGeo.cpp" line="1054"/>
+      <source>Create a periodic B-spline by knots, i.e. by interpolation, in the sketch.</source>
+      <translation>Sortu B-spline periodiko bat adabegietatik abiatuz, alegia interpolazio bidez, krokisean.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherDimension</name>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="2549"/>
+      <source>Dimension</source>
+      <translation>Kota</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="2550"/>
+      <source>Constrain contextually based on your selection.
+Depending on your selection you might have several constraints available. You can cycle through them using M key.
+Left clicking on empty space will validate the current constraint. Right clicking or pressing Esc will cancel.</source>
+      <translation>Murriztu testuinguruaren arabera, hautapenean oinarrituta.
+Hautapenaren arabera, murriztapen batzuk edo besteak egon daitezke erabilgarri. Haien artean saltatzeko, erabili M tekla.
+Hutsi dagoen espazioan klik eginda, uneko murriztapena baliozkotuko da. Eskuineko klik eginda edo Esc erabilita ekintza bertan behera geratuko da.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherArcOverlay</name>
+    <message>
+      <location filename="../../CommandSketcherOverlay.cpp" line="363"/>
+      <source>Show/hide circular helper for arcs</source>
+      <translation>Erakutsi/ezkutatu laguntzaile zirkularra arkuetarako</translation>
+    </message>
+    <message>
+      <location filename="../../CommandSketcherOverlay.cpp" line="365"/>
+      <source>Switches between showing and hiding the circular helper for all arcs</source>
+      <translation>Laguntzaile zirkularra erakusten edo ezkutatzen du arku guztietarako</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherCompDimensionTools</name>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1159"/>
+      <source>Dimension</source>
+      <translation>Kota</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="1160"/>
+      <source>Dimension tools.</source>
+      <translation>Koten tresnak.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherConstrainRadius</name>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="7180"/>
+      <source>Constrain radius</source>
+      <translation>Murriztu erradioa</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="7181"/>
+      <source>Fix the radius of a circle or an arc</source>
+      <translation>Finkatu zirkulu baten edo arku baten erradioa</translation>
+    </message>
+  </context>
+  <context>
+    <name>SketcherGui::SketcherToolDefaultWidget</name>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="14"/>
+      <source>Form</source>
+      <translation>Inprimakia</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="22"/>
+      <source>Mode (M)</source>
+      <translation>Modua (M)</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="46"/>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="70"/>
+      <source>Mode</source>
+      <translation>Modua</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="94"/>
+      <source>Parameter 1</source>
+      <translation>1 parametroa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="115"/>
+      <source>Parameter 2</source>
+      <translation>2 parametroa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="136"/>
+      <source>Parameter 3</source>
+      <translation>3 parametroa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="157"/>
+      <source>Parameter 4</source>
+      <translation>4 parametroa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="178"/>
+      <source>Parameter 5</source>
+      <translation>5 parametroa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="199"/>
+      <source>Parameter 6</source>
+      <translation>6 parametroa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="220"/>
+      <source>Parameter 7</source>
+      <translation>7 parametroa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="241"/>
+      <source>Parameter 8</source>
+      <translation>8 parametroa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="262"/>
+      <source>Parameter 9</source>
+      <translation>9 parametroa</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="283"/>
+      <source>Parameter 10</source>
+      <translation type="unfinished">Parameter 10</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="305"/>
+      <source>Checkbox 1 toolTip</source>
+      <translation type="unfinished">Checkbox 1 toolTip</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="308"/>
+      <source>Checkbox 1</source>
+      <translation type="unfinished">Checkbox 1</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="327"/>
+      <source>Checkbox 2 toolTip</source>
+      <translation type="unfinished">Checkbox 2 toolTip</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="330"/>
+      <source>Checkbox 2</source>
+      <translation type="unfinished">Checkbox 2</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="349"/>
+      <source>Checkbox 3 toolTip</source>
+      <translation type="unfinished">Checkbox 3 toolTip</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="352"/>
+      <source>Checkbox 3</source>
+      <translation type="unfinished">Checkbox 3</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="371"/>
+      <source>Checkbox 4 toolTip</source>
+      <translation type="unfinished">Checkbox 4 toolTip</translation>
+    </message>
+    <message>
+      <location filename="../../SketcherToolDefaultWidget.ui" line="374"/>
+      <source>Checkbox 4</source>
+      <translation type="unfinished">Checkbox 4</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherOffset</name>
+    <message>
+      <location filename="../../CommandSketcherTools.cpp" line="2267"/>
+      <source>Offset geometry</source>
+      <translation type="unfinished">Offset geometry</translation>
+    </message>
+    <message>
+      <location filename="../../CommandSketcherTools.cpp" line="2268"/>
+      <source>Offset selected geometries. A positive offset length makes the offset go outward, a negative length inward.</source>
+      <translation type="unfinished">Offset selected geometries. A positive offset length makes the offset go outward, a negative length inward.</translation>
+    </message>
+  </context>
+  <context>
+    <name>TaskSketcherTool_c1_offset</name>
+    <message>
+      <location filename="../../DrawSketchHandlerOffset.h" line="1075"/>
+      <source>Delete original geometries (U)</source>
+      <translation type="unfinished">Delete original geometries (U)</translation>
+    </message>
+  </context>
+  <context>
+    <name>TaskSketcherTool_c2_offset</name>
+    <message>
+      <location filename="../../DrawSketchHandlerOffset.h" line="1079"/>
+      <source>Add offset constraint (J)</source>
+      <translation type="unfinished">Add offset constraint (J)</translation>
+    </message>
+  </context>
+  <context>
+    <name>ToolWidgetManager_p4</name>
+    <message>
+      <location filename="../../DrawSketchHandlerPolygon.h" line="306"/>
+      <source>Sides 'U'/'J'</source>
+      <translation type="unfinished">Sides 'U'/'J'</translation>
+    </message>
+  </context>
+  <context>
+    <name>TaskSketcherTool_c1_rectangle</name>
+    <message>
+      <location filename="../../DrawSketchHandlerRectangle.h" line="1652"/>
+      <source>Rounded corners (U)</source>
+      <translation type="unfinished">Rounded corners (U)</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerRectangle.h" line="1655"/>
+      <source>Create a rectangle with rounded corners.</source>
+      <translation type="unfinished">Create a rectangle with rounded corners.</translation>
+    </message>
+  </context>
+  <context>
+    <name>TaskSketcherTool_c2_rectangle</name>
+    <message>
+      <location filename="../../DrawSketchHandlerRectangle.h" line="1661"/>
+      <source>Frame (J)</source>
+      <translation type="unfinished">Frame (J)</translation>
+    </message>
+    <message>
+      <location filename="../../DrawSketchHandlerRectangle.h" line="1664"/>
+      <source>Create two rectangles, one in the other with a constant thickness.</source>
+      <translation type="unfinished">Create two rectangles, one in the other with a constant thickness.</translation>
+    </message>
+  </context>
+  <context>
+    <name>SketcherGui::TaskSketcherTool</name>
+    <message>
+      <location filename="../../TaskSketcherTool.cpp" line="48"/>
+      <source>Tool parameters</source>
+      <translation type="unfinished">Tool parameters</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherCompHorizontalVertical</name>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="2606"/>
+      <source>Horizontal/Vertical</source>
+      <translation type="unfinished">Horizontal/Vertical</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="2607"/>
+      <source>Constrains a single line to either horizontal or vertical.</source>
+      <translation type="unfinished">Constrains a single line to either horizontal or vertical.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherConstrainHorVer</name>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="2915"/>
+      <source>Horizontal/Vertical</source>
+      <translation type="unfinished">Horizontal/Vertical</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="2916"/>
+      <source>Constrains a single line to either horizontal or vertical, whichever is closer to current alignment.</source>
+      <translation type="unfinished">Constrains a single line to either horizontal or vertical, whichever is closer to current alignment.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherCompCurveEdition</name>
+    <message>
+      <location filename="../../CommandCreateGeo.cpp" line="1693"/>
+      <source>Curve Edition</source>
+      <translation type="unfinished">Curve Edition</translation>
+    </message>
+    <message>
+      <location filename="../../CommandCreateGeo.cpp" line="1694"/>
+      <source>Curve Edition tools.</source>
+      <translation type="unfinished">Curve Edition tools.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherCompSlot</name>
+    <message>
+      <location filename="../../CommandCreateGeo.cpp" line="1782"/>
+      <source>Slots</source>
+      <translation type="unfinished">Slots</translation>
+    </message>
+    <message>
+      <location filename="../../CommandCreateGeo.cpp" line="1783"/>
+      <source>Slot tools.</source>
+      <translation type="unfinished">Slot tools.</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherCreateArcSlot</name>
+    <message>
+      <location filename="../../CommandCreateGeo.cpp" line="1863"/>
+      <source>Create arc slot</source>
+      <translation type="unfinished">Create arc slot</translation>
+    </message>
+    <message>
+      <location filename="../../CommandCreateGeo.cpp" line="1864"/>
+      <source>Create an arc slot in the sketch</source>
+      <translation type="unfinished">Create an arc slot in the sketch</translation>
+    </message>
+  </context>
+  <context>
+    <name>CmdSketcherConstrainCoincidentUnified</name>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="3540"/>
+      <source>Constrain coincident</source>
+      <translation>Murriztu bat datozenak</translation>
+    </message>
+    <message>
+      <location filename="../../CommandConstraints.cpp" line="3541"/>
+      <source>Create a coincident constraint between points, or fix a point on an edge, or a concentric constraint between circles, arcs, and ellipses</source>
+      <translation type="unfinished">Create a coincident constraint between points, or fix a point on an edge, or a concentric constraint between circles, arcs, and ellipses</translation>
     </message>
   </context>
 </TS>

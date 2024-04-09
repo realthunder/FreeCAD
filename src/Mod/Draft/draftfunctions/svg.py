@@ -33,10 +33,10 @@ import lazy_loader.lazy_loader as lz
 import FreeCAD as App
 import DraftVecUtils
 import WorkingPlane
-import draftutils.utils as utils
-import draftfunctions.svgtext as svgtext
-
+from draftfunctions import svgtext
 from draftfunctions.svgshapes import get_proj, get_circle, get_path
+from draftutils import params
+from draftutils import utils
 from draftutils.messages import _wrn, _err
 
 # Delay import of module until first use because it is heavy
@@ -50,15 +50,14 @@ DraftGeomUtils = lz.LazyLoader("DraftGeomUtils", globals(), "DraftGeomUtils")
 
 def get_line_style(line_style, scale):
     """Return a linestyle scaled by a factor."""
-    param = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Draft")
     style = None
 
     if line_style == "Dashed":
-        style = param.GetString("svgDashedLine", "2,2")
+        style = params.get_param("svgDashedLine")
     elif line_style == "Dashdot":
-        style = param.GetString("svgDashdotLine", "3,2,0.2,2")
+        style = params.get_param("svgDashdotLine")
     elif line_style == "Dotted":
-        style = param.GetString("svgDottedLine", "0.2,2")
+        style = params.get_param("svgDottedLine")
     elif line_style:
         if "," in line_style:
             style = line_style
@@ -350,10 +349,14 @@ def _svg_dimension(obj, plane, scale, linewidth, fontsize,
                 if vobj.FlipArrows:
                     angle = angle + math.pi
 
-            svg += get_arrow(obj,
-                             vobj.ArrowType,
-                             p2, arrowsize, stroke, linewidth,
-                             angle)
+            if not hasattr(obj, "Diameter") \
+                    or obj.Diameter \
+                    or not prx.is_linked_to_circle():
+                svg += get_arrow(obj,
+                                 vobj.ArrowType,
+                                 p2, arrowsize, stroke, linewidth,
+                                 angle)
+
             svg += get_arrow(obj,
                              vobj.ArrowType,
                              p3, arrowsize, stroke, linewidth,
@@ -392,7 +395,7 @@ def get_svg(obj,
 
     direction: Base::Vector3, optional
         It defaults to `None`.
-        It is an arbitrary projection vector or a `WorkingPlane.Plane`
+        It is an arbitrary projection vector or a `WorkingPlane.PlaneBase`
         instance.
 
     linestyle: optional
@@ -458,13 +461,13 @@ def get_svg(obj,
     if direction:
         if isinstance(direction, App.Vector):
             if direction != App.Vector(0, 0, 0):
-                plane = WorkingPlane.plane()
-                plane.alignToPointAndAxis_SVG(App.Vector(0, 0, 0),
-                                              direction.negative().negative(),
-                                              0)
+                plane = WorkingPlane.PlaneBase()
+                plane.align_to_point_and_axis_svg(App.Vector(0, 0, 0),
+                                                  direction.negative().negative(),
+                                                  0)
             else:
                 raise ValueError("'direction' cannot be: Vector(0, 0, 0)")
-        elif isinstance(direction, WorkingPlane.plane):
+        elif isinstance(direction, WorkingPlane.PlaneBase):
             plane = direction
 
     stroke = "#000000"
@@ -859,6 +862,7 @@ def get_svg(obj,
                                     pathname='%s_w%04d' % (obj.Name, i))
                     wiredEdges.extend(w.Edges)
             if len(wiredEdges) != len(obj.Shape.Edges):
+                fill = 'none' # Required if obj has a face. Edges processed here have no face.
                 for i, e in enumerate(obj.Shape.Edges):
                     if DraftGeomUtils.findEdge(e, wiredEdges) is None:
                         svg += get_path(obj, plane,

@@ -24,10 +24,24 @@
 #ifndef GUI_TASKVIEW_TASKBALLOON_H
 #define GUI_TASKVIEW_TASKBALLOON_H
 
+#include <App/DocumentObserver.h>
 #include <Gui/TaskView/TaskDialog.h>
 #include <Gui/TaskView/TaskView.h>
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
+namespace Gui
+{
+class Document;
+}
+namespace App
+{
+class Document;
+}
+
+namespace TechDraw
+{
+class DrawViewBalloon;
+}
 
 namespace TechDrawGui
 {
@@ -47,6 +61,9 @@ public:
     virtual bool accept();
     virtual bool reject();
     void recomputeFeature();
+    TechDraw::DrawViewBalloon *getBalloonFeat();
+    ViewProviderBalloon *getBalloonView();
+    void setupTransaction();
 
 private Q_SLOTS:
     void onTextChanged();
@@ -64,6 +81,11 @@ private:
     std::unique_ptr<Ui_TaskBalloon> ui;
     QGIViewBalloon *m_parent;
     ViewProviderBalloon* m_balloonVP;
+
+    App::DocumentObjectT m_balloon;
+    App::Document* m_appDocument;
+    Gui::Document* m_guiDocument;
+    int m_transactionID = 0;
 };
 
 class TaskDlgBalloon : public Gui::TaskView::TaskDialog

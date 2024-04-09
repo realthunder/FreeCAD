@@ -22,21 +22,22 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
-# include <Geom_BSplineSurface.hxx>
-# include <TColgp_Array1OfPnt.hxx>
+#include <Geom_BSplineSurface.hxx>
+#include <TColgp_Array1OfPnt.hxx>
 #endif
 
 #include <Base/Console.h>
 #include <Base/Converter.h>
 #include <Base/GeometryPyCXX.h>
 #include <Base/Interpreter.h>
-#include <Mod/Part/App/BSplineSurfacePy.h>
+#include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Mod/Mesh/App/MeshPy.h>
+#include <Mod/Part/App/BSplineSurfacePy.h>
 #include <Mod/Points/App/PointsPy.h>
 #if defined(HAVE_PCL_FILTERS)
-# include <pcl/filters/passthrough.h>
-# include <pcl/filters/voxel_grid.h>
-# include <pcl/point_types.h>
+#include <pcl/filters/passthrough.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/point_types.h>
 #endif
 
 #include "ApproxSurface.h"
@@ -46,7 +47,7 @@
 #include "Segmentation.h"
 #include "SurfaceTriangulation.h"
 
-
+// clang-format off
 /*
 Dependency of pcl components:
 common: none
@@ -157,8 +158,6 @@ public:
         initialize("This module is the ReverseEngineering module."); // register with Python
     }
 
-    ~Module() override {}
-
 private:
     Py::Object approxSurface(const Py::Tuple& args, const Py::Dict& kwds)
     {
@@ -180,15 +179,16 @@ private:
         PyObject* correction = Py_True;
         double factor = 1.0;
 
-        static char* kwds_approx[] = {"Points", "UDegree", "VDegree", "NbUPoles", "NbVPoles",
-                                      "Smooth", "Weight", "Grad", "Bend", "Curv",
-                                      "Iterations", "Correction", "PatchFactor","UVDirs", nullptr};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|iiiiO!ddddiO!dO!",kwds_approx,
-                                        &o,&uDegree,&vDegree,&uPoles,&vPoles,
-                                        &PyBool_Type,&smooth,&weight,&grad,&bend,&curv,
-                                        &iteration,&PyBool_Type,&correction,&factor,
-                                        &PyTuple_Type,&uvdirs))
+        static const std::array<const char *, 15> kwds_approx{"Points", "UDegree", "VDegree", "NbUPoles", "NbVPoles",
+                                                              "Smooth", "Weight", "Grad", "Bend", "Curv", "Iterations",
+                                                              "Correction", "PatchFactor", "UVDirs", nullptr};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|iiiiO!ddddiO!dO!", kwds_approx,
+                                                 &o, &uDegree, &vDegree, &uPoles, &vPoles,
+                                                 &PyBool_Type, &smooth, &weight, &grad, &bend, &curv,
+                                                 &iteration, &PyBool_Type, &correction, &factor,
+                                                 &PyTuple_Type, &uvdirs)) {
             throw Py::Exception();
+        }
 
         int uOrder = uDegree + 1;
         int vOrder = vDegree + 1;
@@ -232,9 +232,9 @@ private:
                 for (Py::Sequence::iterator it = l.begin(); it != l.end(); ++it) {
                     Py::Tuple t(*it);
                     pts.emplace_back(
-                        (float)Py::Float(t.getItem(0)),
-                        (float)Py::Float(t.getItem(1)),
-                        (float)Py::Float(t.getItem(2))
+                        Py::Float(t.getItem(0)),
+                        Py::Float(t.getItem(1)),
+                        Py::Float(t.getItem(2))
                     );
                 }
             }
@@ -245,8 +245,8 @@ private:
             }
 
             int index=0;
-            for (std::vector<Base::Vector3f>::iterator it = pts.begin(); it != pts.end(); ++it) {
-                clPoints(index++) = gp_Pnt(it->x, it->y, it->z);
+            for (const auto & pt : pts) {
+                clPoints(index++) = gp_Pnt(pt.x, pt.y, pt.z);
             }
 
             Reen::BSplineParameterCorrection pc(uOrder,vOrder,uPoles,vPoles);
@@ -313,9 +313,9 @@ Mesh.show(m)
         int ksearch=5;
         double mu=2.5;
 
-        static char* kwds_greedy[] = {"Points", "SearchRadius", "Mu", "KSearch",
+        static const std::array<const char*,6> kwds_greedy {"Points", "SearchRadius", "Mu", "KSearch",
                                       "Normals", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!d|diO", kwds_greedy,
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!d|diO", kwds_greedy,
                                         &(Points::PointsPy::Type), &pts,
                                         &searchRadius, &mu, &ksearch, &vec))
             throw Py::Exception();
@@ -351,9 +351,9 @@ Mesh.show(m)
         int solverDivide=-1;
         double samplesPerNode=-1.0;
 
-        static char* kwds_poisson[] = {"Points", "KSearch", "OctreeDepth", "SolverDivide",
+        static const std::array<const char*,7> kwds_poisson {"Points", "KSearch", "OctreeDepth", "SolverDivide",
                                       "SamplesPerNode", "Normals", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iiidO", kwds_poisson,
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iiidO", kwds_poisson,
                                         &(Points::PointsPy::Type), &pts,
                                         &ksearch, &octreeDepth, &solverDivide, &samplesPerNode, &vec))
             throw Py::Exception();
@@ -381,35 +381,29 @@ Mesh.show(m)
 
         return Py::asObject(new Mesh::MeshPy(mesh));
     }
-    /*
+   /*
 import ReverseEngineering as Reen
 import Points
 import Mesh
 import random
 import math
-
 r=random.Random()
-
 p=Points.Points()
 pts=[]
 for i in range(21):
   for j in range(21):
     pts.append(App.Vector(i,j,r.random()))
-
 p.addPoints(pts)
 m=Reen.viewTriangulation(p,21,21)
 Mesh.show(m)
-
 def boxmueller():
   r1,r2=random.random(),random.random()
   return math.sqrt(-2*math.log(r1))*math.cos(2*math.pi*r2)
-
 p=Points.Points()
 pts=[]
 for i in range(21):
   for j in range(21):
     pts.append(App.Vector(i,j,r.gauss(5,0.05)))
-
 p.addPoints(pts)
 m=Reen.viewTriangulation(p,21,21)
 Mesh.show(m)
@@ -420,8 +414,8 @@ Mesh.show(m)
         int width;
         int height;
 
-        static char* kwds_view[] = {"Points", "Width", "Height", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|ii", kwds_view,
+        static const std::array<const char*,4> kwds_view {"Points", "Width", "Height", NULL};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|ii", kwds_view,
                                         &(Points::PointsPy::Type), &pts,
                                         &width, &height))
             throw Py::Exception();
@@ -445,8 +439,8 @@ Mesh.show(m)
         PyObject *vec = 0;
         int ksearch=5;
 
-        static char* kwds_greedy[] = {"Points", "KSearch", "Normals", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iO", kwds_greedy,
+        static const std::array<const char*,4> kwds_greedy {"Points", "KSearch", "Normals", NULL};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iO", kwds_greedy,
                                         &(Points::PointsPy::Type), &pts,
                                         &ksearch, &vec))
             throw Py::Exception();
@@ -477,8 +471,8 @@ Mesh.show(m)
         PyObject *vec = 0;
         int ksearch=5;
 
-        static char* kwds_greedy[] = {"Points", "KSearch", "Normals", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iO", kwds_greedy,
+        static const std::array<const char*,4> kwds_greedy {"Points", "KSearch", "Normals", NULL};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iO", kwds_greedy,
                                         &(Points::PointsPy::Type), &pts,
                                         &ksearch, &vec))
             throw Py::Exception();
@@ -503,20 +497,17 @@ Mesh.show(m)
 
         return Py::asObject(new Mesh::MeshPy(mesh));
     }
-    /*
+/*
 import ReverseEngineering as Reen
 import Points
 import Mesh
 import random
-
 r=random.Random()
-
 p=Points.Points()
 pts=[]
 for i in range(21):
   for j in range(21):
     pts.append(App.Vector(i,j,r.gauss(5,0.05)))
-
 p.addPoints(pts)
 m=Reen.marchingCubesHoppe(Points=p)
 Mesh.show(m)
@@ -527,8 +518,8 @@ Mesh.show(m)
         PyObject *vec = 0;
         int ksearch=5;
 
-        static char* kwds_greedy[] = {"Points", "KSearch", "Normals", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iO", kwds_greedy,
+        static const std::array<const char*,4> kwds_greedy {"Points", "KSearch", "Normals", NULL};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iO", kwds_greedy,
                                         &(Points::PointsPy::Type), &pts,
                                         &ksearch, &vec))
             throw Py::Exception();
@@ -566,9 +557,9 @@ Mesh.show(m)
         double boundarySmoothness = 0.2;
         double boundaryWeight = 0.0;
 
-        static char* kwds_approx[] = {"Points", "Degree", "Refinement", "Iterations",
+        static const std::array<const char*,9> kwds_approx {"Points", "Degree", "Refinement", "Iterations",
                                       "InteriorSmoothness", "InteriorWeight", "BoundarySmoothness", "BoundaryWeight", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iiidddd", kwds_approx,
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iiidddd", kwds_approx,
                                         &(Points::PointsPy::Type), &pts,
                                         &degree, &refinement, &iterations,
                                         &interiorSmoothness, &interiorWeight,
@@ -602,8 +593,8 @@ Mesh.show(m)
         double voxDimY = 0;
         double voxDimZ = 0;
 
-        static char* kwds_voxel[] = {"Points", "DimX", "DimY", "DimZ", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!d|dd", kwds_voxel,
+        static const std::array<const char*,5>  kwds_voxel {"Points", "DimX", "DimY", "DimZ", NULL};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!d|dd", kwds_voxel,
                                         &(Points::PointsPy::Type), &pts,
                                         &voxDimX, &voxDimY, &voxDimZ))
             throw Py::Exception();
@@ -645,8 +636,8 @@ Mesh.show(m)
         int ksearch=0;
         double searchRadius=0;
 
-        static char* kwds_normals[] = {"Points", "KSearch", "SearchRadius", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|id", kwds_normals,
+        static const std::array<const char*,4> kwds_normals {"Points", "KSearch", "SearchRadius", NULL};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|id", kwds_normals,
                                         &(Points::PointsPy::Type), &pts,
                                         &ksearch, &searchRadius))
             throw Py::Exception();
@@ -674,8 +665,8 @@ Mesh.show(m)
         PyObject *vec = 0;
         int ksearch=5;
 
-        static char* kwds_segment[] = {"Points", "KSearch", "Normals", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iO", kwds_segment,
+        static const std::array<const char*,4> kwds_segment {"Points", "KSearch", "Normals", NULL};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|iO", kwds_segment,
                                         &(Points::PointsPy::Type), &pts,
                                         &ksearch, &vec))
             throw Py::Exception();
@@ -714,8 +705,8 @@ Mesh.show(m)
         PyObject *pts;
         int ksearch=5;
 
-        static char* kwds_segment[] = {"Points", "KSearch", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|i", kwds_segment,
+        static const std::array<const char*,3> kwds_segment {"Points", "KSearch", NULL};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|i", kwds_segment,
                                         &(Points::PointsPy::Type), &pts, &ksearch))
             throw Py::Exception();
 
@@ -738,41 +729,33 @@ Mesh.show(m)
     }
 #endif
 #if defined(HAVE_PCL_SAMPLE_CONSENSUS)
-    /*
+/*
 import ReverseEngineering as reen
 import Points
 import Part
-
 p = App.ActiveDocument.Points.Points
 data = p.Points
 n = reen.normalEstimation(p, 10)
-
 model = reen.sampleConsensus(SacModel="Plane", Points=p)
 indices = model["Model"]
 param = model["Parameters"]
-
 plane = Part.Plane()
 plane.Axis = param[0:3]
 plane.Position = -plane.Axis * param[3]
-
 np = Points.Points()
 np.addPoints([data[i] for i in indices])
 Points.show(np)
-
 # sort in descending order
 indices = list(indices)
 indices.sort(reverse=True)
-
 # remove points of segment
 for i in indices:
     del data[i]
     del n[i]
-
 p = Points.Points()
 p.addPoints(data)
 model = reen.sampleConsensus(SacModel="Cylinder", Points=p, Normals=n)
 indices = model["Model"]
-
 np = Points.Points()
 np.addPoints([data[i] for i in indices])
 Points.show(np)
@@ -783,8 +766,8 @@ Points.show(np)
         PyObject *vec = nullptr;
         const char* sacModelType = nullptr;
 
-        static char* kwds_sample[] = {"SacModel", "Points", "Normals", NULL};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "sO!|O", kwds_sample,
+        static const std::array<const char*,4> kwds_sample {"SacModel", "Points", "Normals", NULL};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "sO!|O", kwds_sample,
                                         &sacModelType, &(Points::PointsPy::Type), &pts, &vec))
             throw Py::Exception();
 
@@ -855,3 +838,4 @@ PyMOD_INIT_FUNC(ReverseEngineering)
     Base::Console().Log("Loading ReverseEngineering module... done\n");
     PyMOD_Return(mod);
 }
+// clang-format on

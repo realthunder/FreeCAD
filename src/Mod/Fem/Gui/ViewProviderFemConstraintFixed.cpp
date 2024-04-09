@@ -24,18 +24,18 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
-# include <QMessageBox>
-# include <Inventor/SbRotation.h>
-# include <Inventor/SbVec3f.h>
-# include <Inventor/nodes/SoMultipleCopy.h>
-# include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/SbRotation.h>
+#include <Inventor/SbVec3f.h>
+#include <Inventor/nodes/SoMultipleCopy.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <QMessageBox>
 #endif
 
-#include <Mod/Fem/App/FemConstraintFixed.h>
 #include "Gui/Control.h"
+#include <Mod/Fem/App/FemConstraintFixed.h>
 
-#include "ViewProviderFemConstraintFixed.h"
 #include "TaskFemConstraintFixed.h"
+#include "ViewProviderFemConstraintFixed.h"
 
 
 using namespace FemGui;
@@ -48,32 +48,34 @@ ViewProviderFemConstraintFixed::ViewProviderFemConstraintFixed()
     sPixmap = "FEM_ConstraintFixed";
 }
 
-ViewProviderFemConstraintFixed::~ViewProviderFemConstraintFixed()
-{
-}
+ViewProviderFemConstraintFixed::~ViewProviderFemConstraintFixed() = default;
 
 bool ViewProviderFemConstraintFixed::setEdit(int ModNum)
 {
-    if (ModNum == ViewProvider::Default ) {
+    if (ModNum == ViewProvider::Default) {
         // When double-clicking on the item for this constraint the
         // object unsets and sets its edit mode without closing
         // the task panel
-        Gui::TaskView::TaskDialog *dlg = Gui::Control().activeDialog();
-        TaskDlgFemConstraintFixed *constrDlg = qobject_cast<TaskDlgFemConstraintFixed *>(dlg);
-        if (constrDlg && constrDlg->getConstraintView() != this)
-            constrDlg = nullptr; // another constraint left open its task panel
+        Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
+        TaskDlgFemConstraintFixed* constrDlg = qobject_cast<TaskDlgFemConstraintFixed*>(dlg);
+        if (constrDlg && constrDlg->getConstraintView() != this) {
+            constrDlg = nullptr;  // another constraint left open its task panel
+        }
         if (dlg && !constrDlg) {
             // This case will occur in the ShaftWizard application
             checkForWizard();
             if (!wizardWidget || !wizardSubLayout) {
                 // No shaft wizard is running
-                if (!dlg->tryClose())
+                if (!dlg->tryClose()) {
                     return false;
-            } else if (constraintDialog) {
+                }
+            }
+            else if (constraintDialog) {
                 // Another FemConstraint* dialog is already open inside the Shaft Wizard
                 // Ignore the request to open another dialog
                 return false;
-            } else {
+            }
+            else {
                 constraintDialog = new TaskFemConstraintFixed(this);
                 return true;
             }
@@ -83,35 +85,40 @@ bool ViewProviderFemConstraintFixed::setEdit(int ModNum)
         Gui::Selection().clearSelection();
 
         // start the edit dialog
-        if (constrDlg)
+        if (constrDlg) {
             Gui::Control().showDialog(constrDlg);
-        else
+        }
+        else {
             Gui::Control().showDialog(new TaskDlgFemConstraintFixed(this));
+        }
 
         return true;
-    } else {
-        return ViewProviderDocumentObject::setEdit(ModNum); // clazy:exclude=skipped-base-method
+    }
+    else {
+        return ViewProviderDocumentObject::setEdit(ModNum);  // clazy:exclude=skipped-base-method
     }
 }
 
 #define WIDTH (2)
 #define HEIGHT (1)
-//#define USE_MULTIPLE_COPY  //OvG: MULTICOPY fails to update scaled display on initial drawing - so disable
+// #define USE_MULTIPLE_COPY  //OvG: MULTICOPY fails to update scaled display on initial drawing -
+// so disable
 
 void ViewProviderFemConstraintFixed::updateData(const App::Property* prop)
 {
     // Gets called whenever a property of the attached object changes
-    Fem::ConstraintFixed *pcConstraint = static_cast<Fem::ConstraintFixed *>(this->getObject());
-    float scaledwidth = WIDTH * pcConstraint->Scale.getValue(); //OvG: Calculate scaled values once only
+    Fem::ConstraintFixed* pcConstraint = static_cast<Fem::ConstraintFixed*>(this->getObject());
+    float scaledwidth =
+        WIDTH * pcConstraint->Scale.getValue();  // OvG: Calculate scaled values once only
     float scaledheight = HEIGHT * pcConstraint->Scale.getValue();
 
 #ifdef USE_MULTIPLE_COPY
-    //OvG: always need access to cp for scaling
+    // OvG: always need access to cp for scaling
     SoMultipleCopy* cp = new SoMultipleCopy();
     if (pShapeSep->getNumChildren() == 0) {
         // Set up the nodes
         cp->matrix.setNum(0);
-        cp->addChild((SoNode*)createFixed(scaledheight, scaledwidth)); //OvG: Scaling
+        cp->addChild((SoNode*)createFixed(scaledheight, scaledwidth));  // OvG: Scaling
         pShapeSep->addChild(cp);
     }
 #endif
@@ -119,8 +126,9 @@ void ViewProviderFemConstraintFixed::updateData(const App::Property* prop)
     if (prop == &pcConstraint->Points) {
         const std::vector<Base::Vector3d>& points = pcConstraint->Points.getValues();
         const std::vector<Base::Vector3d>& normals = pcConstraint->Normals.getValues();
-        if (points.size() != normals.size())
+        if (points.size() != normals.size()) {
             return;
+        }
         std::vector<Base::Vector3d>::const_iterator n = normals.begin();
 
 #ifdef USE_MULTIPLE_COPY
@@ -133,9 +141,8 @@ void ViewProviderFemConstraintFixed::updateData(const App::Property* prop)
         Gui::coinRemoveAllChildren(pShapeSep);
 #endif
 
-        for (std::vector<Base::Vector3d>::const_iterator p = points.begin(); p != points.end();
-             p++) {
-            SbVec3f base(p->x, p->y, p->z);
+        for (const auto& point : points) {
+            SbVec3f base(point.x, point.y, point.z);
             SbVec3f dir(n->x, n->y, n->z);
             SbRotation rot(SbVec3f(0, -1, 0), dir);
 #ifdef USE_MULTIPLE_COPY
@@ -146,7 +153,7 @@ void ViewProviderFemConstraintFixed::updateData(const App::Property* prop)
 #else
             SoSeparator* sep = new SoSeparator();
             createPlacement(sep, base, rot);
-            createFixed(sep, scaledheight, scaledwidth); //OvG: Scaling
+            createFixed(sep, scaledheight, scaledwidth);  // OvG: Scaling
             pShapeSep->addChild(sep);
 #endif
             n++;

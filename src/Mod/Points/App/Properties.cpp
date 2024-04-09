@@ -22,10 +22,10 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
-# include <algorithm>
-# include <cmath>
-# include <iostream>
-# include <QtConcurrentMap>
+#include <QtConcurrentMap>
+#include <algorithm>
+#include <cmath>
+#include <iostream>
 #endif
 
 #include <Base/Converter.h>
@@ -35,11 +35,11 @@
 #include <Base/VectorPy.h>
 #include <Base/Writer.h>
 
-#include "Properties.h"
 #include "Points.h"
+#include "Properties.h"
 
 #ifdef _MSC_VER
-# include <ppl.h>
+#include <ppl.h>
 #endif
 
 
@@ -49,7 +49,7 @@ using namespace std;
 TYPESYSTEM_SOURCE(Points::PropertyGreyValue, App::PropertyFloat)
 TYPESYSTEM_SOURCE(Points::PropertyGreyValueList, App::PropertyLists)
 TYPESYSTEM_SOURCE(Points::PropertyNormalList, App::PropertyLists)
-TYPESYSTEM_SOURCE(Points::PropertyCurvatureList , App::PropertyLists)
+TYPESYSTEM_SOURCE(Points::PropertyCurvatureList, App::PropertyLists)
 
 void PropertyGreyValueList::removeIndices( const std::vector<unsigned long>& uIndices )
 {
@@ -59,28 +59,32 @@ void PropertyGreyValueList::removeIndices( const std::vector<unsigned long>& uIn
 
     const std::vector<float>& rValueList = getValues();
 
-    assert( uSortedInds.size() <= rValueList.size() );
-    if ( uSortedInds.size() > rValueList.size() )
+    assert(uSortedInds.size() <= rValueList.size());
+    if (uSortedInds.size() > rValueList.size()) {
         return;
+    }
 
     std::vector<float> remainValue;
     remainValue.reserve(rValueList.size() - uSortedInds.size());
 
     std::vector<unsigned long>::iterator pos = uSortedInds.begin();
-    for ( std::vector<float>::const_iterator it = rValueList.begin(); it != rValueList.end(); ++it ) {
+    for (std::vector<float>::const_iterator it = rValueList.begin(); it != rValueList.end(); ++it) {
         unsigned long index = it - rValueList.begin();
-        if (pos == uSortedInds.end())
-            remainValue.push_back( *it );
-        else if (index != *pos)
-            remainValue.push_back( *it );
-        else 
+        if (pos == uSortedInds.end()) {
+            remainValue.push_back(*it);
+        }
+        else if (index != *pos) {
+            remainValue.push_back(*it);
+        }
+        else {
             ++pos;
+        }
     }
 
     setValues(std::move(remainValue));
 }
 
-void PropertyNormalList::transformGeometry(const Base::Matrix4D &mat)
+void PropertyNormalList::transformGeometry(const Base::Matrix4D& mat)
 {
     // A normal vector is only a direction with unit length, so we only need to rotate it
     // (no translations or scaling)
@@ -106,9 +110,11 @@ void PropertyNormalList::transformGeometry(const Base::Matrix4D &mat)
 
     // Rotate the normal vectors
 #ifdef _MSC_VER
-    Concurrency::parallel_for_each(_lValueList.begin(), _lValueList.end(), [rot](Base::Vector3f& value) {
-        value = rot * value;
-    });
+    Concurrency::parallel_for_each(_lValueList.begin(),
+                                   _lValueList.end(),
+                                   [rot](Base::Vector3f& value) {
+                                       value = rot * value;
+                                   });
 #else
     QtConcurrent::blockingMap(_lValueList, [rot](Base::Vector3f& value) {
         rot.multVec(value, value);
@@ -119,7 +125,7 @@ void PropertyNormalList::transformGeometry(const Base::Matrix4D &mat)
     guard.tryInvoke();
 }
 
-void PropertyNormalList::removeIndices( const std::vector<unsigned long>& uIndices )
+void PropertyNormalList::removeIndices(const std::vector<unsigned long>& uIndices)
 {
     // We need a sorted array
     std::vector<unsigned long> uSortedInds = uIndices;
@@ -127,36 +133,34 @@ void PropertyNormalList::removeIndices( const std::vector<unsigned long>& uIndic
 
     const std::vector<Base::Vector3f>& rValueList = getValues();
 
-    assert( uSortedInds.size() <= rValueList.size() );
-    if ( uSortedInds.size() > rValueList.size() )
+    assert(uSortedInds.size() <= rValueList.size());
+    if (uSortedInds.size() > rValueList.size()) {
         return;
+    }
 
     std::vector<Base::Vector3f> remainValue;
     remainValue.reserve(rValueList.size() - uSortedInds.size());
 
     std::vector<unsigned long>::iterator pos = uSortedInds.begin();
-    for ( std::vector<Base::Vector3f>::const_iterator it = rValueList.begin(); it != rValueList.end(); ++it ) {
+    for (std::vector<Base::Vector3f>::const_iterator it = rValueList.begin();
+         it != rValueList.end();
+         ++it) {
         unsigned long index = it - rValueList.begin();
-        if (pos == uSortedInds.end())
-            remainValue.push_back( *it );
-        else if (index != *pos)
-            remainValue.push_back( *it );
-        else 
+        if (pos == uSortedInds.end()) {
+            remainValue.push_back(*it);
+        }
+        else if (index != *pos) {
+            remainValue.push_back(*it);
+        }
+        else {
             ++pos;
+        }
     }
 
     setValues(std::move(remainValue));
 }
 
-PropertyCurvatureList::PropertyCurvatureList()
-{
-
-}
-
-PropertyCurvatureList::~PropertyCurvatureList()
-{
-
-}
+PropertyCurvatureList::PropertyCurvatureList() = default;
 
 std::vector<float> PropertyCurvatureList::getCurvature( int mode ) const
 {
@@ -166,42 +170,44 @@ std::vector<float> PropertyCurvatureList::getCurvature( int mode ) const
 
     // Mean curvature
     if (mode == MeanCurvature) {
-        for (std::vector<Points::CurvatureInfo>::const_iterator it=fCurvInfo.begin();it!=fCurvInfo.end(); ++it) {
-            fValues.push_back( 0.5f*(it->fMaxCurvature+it->fMinCurvature) );
+        for (const auto& it : fCurvInfo) {
+            fValues.push_back(0.5f * (it.fMaxCurvature + it.fMinCurvature));
         }
     }
     // Gaussian curvature
     else if (mode == GaussCurvature) {
-        for (std::vector<Points::CurvatureInfo>::const_iterator it=fCurvInfo.begin();it!=fCurvInfo.end(); ++it) {
-            fValues.push_back( it->fMaxCurvature * it->fMinCurvature );
+        for (const auto& it : fCurvInfo) {
+            fValues.push_back(it.fMaxCurvature * it.fMinCurvature);
         }
     }
     // Maximum curvature
     else if (mode == MaxCurvature) {
-        for (std::vector<Points::CurvatureInfo>::const_iterator it=fCurvInfo.begin();it!=fCurvInfo.end(); ++it) {
-            fValues.push_back( it->fMaxCurvature );
+        for (const auto& it : fCurvInfo) {
+            fValues.push_back(it.fMaxCurvature);
         }
     }
     // Minimum curvature
     else if (mode == MinCurvature) {
-        for (std::vector<Points::CurvatureInfo>::const_iterator it=fCurvInfo.begin();it!=fCurvInfo.end(); ++it) {
-            fValues.push_back( it->fMinCurvature );
+        for (const auto& it : fCurvInfo) {
+            fValues.push_back(it.fMinCurvature);
         }
     }
     // Absolute curvature
     else if (mode == AbsCurvature) {
-        for (std::vector<Points::CurvatureInfo>::const_iterator it=fCurvInfo.begin();it!=fCurvInfo.end(); ++it) {
-            if (fabs(it->fMaxCurvature) > fabs(it->fMinCurvature))
-                fValues.push_back( it->fMaxCurvature );
-            else
-                fValues.push_back( it->fMinCurvature );
+        for (const auto& it : fCurvInfo) {
+            if (fabs(it.fMaxCurvature) > fabs(it.fMinCurvature)) {
+                fValues.push_back(it.fMaxCurvature);
+            }
+            else {
+                fValues.push_back(it.fMinCurvature);
+            }
         }
     }
 
     return fValues;
 }
 
-void PropertyCurvatureList::transformGeometry(const Base::Matrix4D &mat)
+void PropertyCurvatureList::transformGeometry(const Base::Matrix4D& mat)
 {
     // The principal direction is only a vector with unit length, so we only need to rotate it
     // (no translations or scaling)
@@ -237,34 +243,40 @@ void PropertyCurvatureList::transformGeometry(const Base::Matrix4D &mat)
     guard.tryInvoke();
 }
 
-void PropertyCurvatureList::removeIndices( const std::vector<unsigned long>& uIndices )
+void PropertyCurvatureList::removeIndices(const std::vector<unsigned long>& uIndices)
 {
     // We need a sorted array
     std::vector<unsigned long> uSortedInds = uIndices;
     std::sort(uSortedInds.begin(), uSortedInds.end());
 
-    assert( uSortedInds.size() <= _lValueList.size() );
-    if ( uSortedInds.size() > _lValueList.size() )
+    assert(uSortedInds.size() <= _lValueList.size());
+    if (uSortedInds.size() > _lValueList.size()) {
         return;
+    }
 
     std::vector<CurvatureInfo> remainValue;
     remainValue.reserve(_lValueList.size() - uSortedInds.size());
 
     std::vector<unsigned long>::iterator pos = uSortedInds.begin();
-    for ( std::vector<CurvatureInfo>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it ) {
+    for (std::vector<CurvatureInfo>::const_iterator it = _lValueList.begin();
+         it != _lValueList.end();
+         ++it) {
         unsigned long index = it - _lValueList.begin();
-        if (pos == uSortedInds.end())
-            remainValue.push_back( *it );
-        else if (index != *pos)
-            remainValue.push_back( *it );
-        else 
+        if (pos == uSortedInds.end()) {
+            remainValue.push_back(*it);
+        }
+        else if (index != *pos) {
+            remainValue.push_back(*it);
+        }
+        else {
             ++pos;
+        }
     }
 
     setValues(std::move(remainValue));
 }
 
-PyObject *PropertyCurvatureList::getPyObject()
+PyObject* PropertyCurvatureList::getPyObject()
 {
     throw Base::NotImplementedError("Not yet implemented");
 }
@@ -293,7 +305,7 @@ bool PropertyCurvatureList::saveXML(Base::Writer &writer) const
 void PropertyCurvatureList::restoreXML(Base::XMLReader &reader)
 {
     unsigned count = reader.getAttributeAsUnsigned("count");
-    auto &s = reader.beginCharStream(false);
+    auto &s = reader.beginCharStream();
     std::vector<CurvatureInfo> values(count);
     for(auto &v : values) {
         s >> v.fMaxCurvature
@@ -321,24 +333,23 @@ void PropertyCurvatureList::saveStream(Base::OutputStream &str) const
 void PropertyCurvatureList::restoreStream(Base::InputStream &str, unsigned uCt)
 {
     std::vector<CurvatureInfo> values(uCt);
-    for (std::vector<CurvatureInfo>::iterator it = values.begin(); it != values.end(); ++it) {
-        str >> it->fMaxCurvature >> it->fMinCurvature;
-        str >> it->cMaxCurvDir.x >> it->cMaxCurvDir.y >> it->cMaxCurvDir.z;
-        str >> it->cMinCurvDir.x >> it->cMinCurvDir.y >> it->cMinCurvDir.z;
+    for (auto& value : values) {
+        str >> value.fMaxCurvature >> value.fMinCurvature;
+        str >> value.cMaxCurvDir.x >> value.cMaxCurvDir.y >> value.cMaxCurvDir.z;
+        str >> value.cMinCurvDir.x >> value.cMinCurvDir.y >> value.cMinCurvDir.z;
     }
     setValues(std::move(values));
 }
 
-App::Property *PropertyCurvatureList::Copy() const
+App::Property* PropertyCurvatureList::Copy() const
 {
     PropertyCurvatureList* prop = new PropertyCurvatureList();
     prop->_lValueList = this->_lValueList;
     return prop;
 }
 
-void PropertyCurvatureList::Paste(const App::Property &from)
+void PropertyCurvatureList::Paste(const App::Property& from)
 {
     const PropertyCurvatureList& prop = dynamic_cast<const PropertyCurvatureList&>(from);
     setValues(prop._lValueList);
 }
-

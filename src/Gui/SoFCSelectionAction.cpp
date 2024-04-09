@@ -158,9 +158,7 @@ SoFCHighlightAction::SoFCHighlightAction ()
 }
 
 
-SoFCHighlightAction::~SoFCHighlightAction()
-{
-}
+SoFCHighlightAction::~SoFCHighlightAction() = default;
 
 
 void SoFCHighlightAction::beginTraversal(SoNode *node)
@@ -244,9 +242,7 @@ SoFCSelectionAction::SoFCSelectionAction ()
 }
 
 
-SoFCSelectionAction::~SoFCSelectionAction()
-{
-}
+SoFCSelectionAction::~SoFCSelectionAction() = default;
 
 
 void SoFCSelectionAction::beginTraversal(SoNode *node)
@@ -326,9 +322,7 @@ SoFCEnableSelectionAction::SoFCEnableSelectionAction (const SbBool& sel)
 }
 
 
-SoFCEnableSelectionAction::~SoFCEnableSelectionAction()
-{
-}
+SoFCEnableSelectionAction::~SoFCEnableSelectionAction() = default;
 
 
 void SoFCEnableSelectionAction::beginTraversal(SoNode *node)
@@ -408,9 +402,7 @@ SoFCEnableHighlightAction::SoFCEnableHighlightAction (const SbBool& sel)
 }
 
 
-SoFCEnableHighlightAction::~SoFCEnableHighlightAction()
-{
-}
+SoFCEnableHighlightAction::~SoFCEnableHighlightAction() = default;
 
 
 void SoFCEnableHighlightAction::beginTraversal(SoNode *node)
@@ -490,9 +482,7 @@ SoFCSelectionColorAction::SoFCSelectionColorAction (const SoSFColor& col)
 }
 
 
-SoFCSelectionColorAction::~SoFCSelectionColorAction()
-{
-}
+SoFCSelectionColorAction::~SoFCSelectionColorAction() = default;
 
 
 void SoFCSelectionColorAction::beginTraversal(SoNode *node)
@@ -572,9 +562,7 @@ SoFCHighlightColorAction::SoFCHighlightColorAction (const SoSFColor& col)
 }
 
 
-SoFCHighlightColorAction::~SoFCHighlightColorAction()
-{
-}
+SoFCHighlightColorAction::~SoFCHighlightColorAction() = default;
 
 
 void SoFCHighlightColorAction::beginTraversal(SoNode *node)
@@ -654,9 +642,7 @@ SoFCDocumentAction::SoFCDocumentAction (const SoSFString& docName)
 }
 
 
-SoFCDocumentAction::~SoFCDocumentAction()
-{
-}
+SoFCDocumentAction::~SoFCDocumentAction() = default;
 
 
 void SoFCDocumentAction::beginTraversal(SoNode *node)
@@ -726,14 +712,12 @@ void SoFCDocumentObjectAction::finish()
   atexit_cleanup();
 }
 
-SoFCDocumentObjectAction::SoFCDocumentObjectAction () : _handled(false)
+SoFCDocumentObjectAction::SoFCDocumentObjectAction()
 {
   SO_ACTION_CONSTRUCTOR(SoFCDocumentObjectAction);
 }
 
-SoFCDocumentObjectAction::~SoFCDocumentObjectAction()
-{
-}
+SoFCDocumentObjectAction::~SoFCDocumentObjectAction() = default;
 
 void SoFCDocumentObjectAction::beginTraversal(SoNode *node)
 {
@@ -796,14 +780,12 @@ void SoGLSelectAction::initClass()
 
 SoGLSelectAction::SoGLSelectAction (const SbViewportRegion& region,
                                     const SbViewportRegion& select)
-  : vpregion(region), vpselect(select), _handled(false)
+  : vpregion(region), vpselect(select)
 {
   SO_ACTION_CONSTRUCTOR(SoGLSelectAction);
 }
 
-SoGLSelectAction::~SoGLSelectAction()
-{
-}
+SoGLSelectAction::~SoGLSelectAction() = default;
 
 const SbViewportRegion& SoGLSelectAction::getViewportRegion () const
 {
@@ -871,14 +853,12 @@ void SoVisibleFaceAction::initClass()
   SO_ACTION_ADD_METHOD(SoFCSelection,callDoAction);
 }
 
-SoVisibleFaceAction::SoVisibleFaceAction () : _handled(false)
+SoVisibleFaceAction::SoVisibleFaceAction ()
 {
   SO_ACTION_CONSTRUCTOR(SoVisibleFaceAction);
 }
 
-SoVisibleFaceAction::~SoVisibleFaceAction()
-{
-}
+SoVisibleFaceAction::~SoVisibleFaceAction() = default;
 
 void SoVisibleFaceAction::beginTraversal(SoNode *node)
 {
@@ -946,9 +926,7 @@ SoUpdateVBOAction::SoUpdateVBOAction ()
   SO_ACTION_CONSTRUCTOR(SoUpdateVBOAction);
 }
 
-SoUpdateVBOAction::~SoUpdateVBOAction()
-{
-}
+SoUpdateVBOAction::~SoUpdateVBOAction() = default;
 
 void SoUpdateVBOAction::finish()
 {
@@ -972,18 +950,6 @@ class SoBoxSelectionRenderActionP {
 public:
     SoBoxSelectionRenderActionP(SoBoxSelectionRenderAction * master)
       : master(master)
-      , searchaction(nullptr)
-      , selectsearch(nullptr)
-      , camerasearch(nullptr)
-      , bboxaction(nullptr)
-      , basecolor(nullptr)
-      , postprocpath(nullptr)
-      , highlightPath(nullptr)
-      , localRoot(nullptr)
-      , xform(nullptr)
-      , cube(nullptr)
-      , drawstyle(nullptr)
-      , root(nullptr)
     {
         dummypath = new SoPath;
         dummypath->ref();
@@ -997,28 +963,28 @@ public:
     void apply(SoBoxSelectionRenderAction *action, const SoPathList &plist, SbBool obeysrules);
 
     SoBoxSelectionRenderAction * master;
-    SoSearchAction * searchaction;
-    SoSearchAction * selectsearch;
-    SoSearchAction * camerasearch;
-    SoGetBoundingBoxAction * bboxaction;
-    SoBaseColor * basecolor;
-    SoTempPath * postprocpath;
-    SoPath * highlightPath;
-    SoSeparator * localRoot;
-    SoMatrixTransform * xform;
-    SoCube * cube;
-    SoDrawStyle * drawstyle;
+    SoSearchAction * searchaction{nullptr};
+    SoSearchAction * selectsearch{nullptr};
+    SoSearchAction * camerasearch{nullptr};
+    SoGetBoundingBoxAction * bboxaction{nullptr};
+    SoBaseColor * basecolor{nullptr};
+    SoTempPath * postprocpath{nullptr};
+    SoPath * highlightPath{nullptr};
+    SoSeparator * localRoot{nullptr};
+    SoMatrixTransform * xform{nullptr};
+    SoCube * cube{nullptr};
+    SoDrawStyle * drawstyle{nullptr};
     SoColorPacker colorpacker;
-    SoNode *root;
+    SoNode *root{nullptr};
     std::map<int, SoPathList> latedelayedpaths;
     SoPathList latepickpaths;
     using PathPtr = CoinPtr<SoPath>;
     std::unordered_set<PathPtr, PathHasher<PathPtr>, PathHasher<PathPtr>> latepickpathset;
     SoPathList tmppathlist;
-    unsigned delayedpathcount = 0;
-    int currentdelayedpath = 0;
-    SoPath *dummypath;
-    bool busy = false;
+    unsigned delayedpathcount{0};
+    int currentdelayedpath{0};
+    SoPath *dummypath{nullptr};
+    bool busy{false};
 
     void initBoxGraph();
     void updateBbox(const SoPath * path);

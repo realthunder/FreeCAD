@@ -44,7 +44,6 @@ from draftgeoutils.linear_algebra import (linearFromPoints,
                                           determinant)
 
 # Needs math, Part, and vector tools
-from draftgeoutils.general import PARAMGRP as params
 from draftgeoutils.general import NORM
 
 from draftgeoutils.general import (precision,
@@ -77,7 +76,13 @@ from draftgeoutils.geometry import (findPerpendicular,
                                     calculatePlacement,
                                     mirror,
                                     are_coplanar,
-                                    is_straight_line)
+                                    is_straight_line,
+                                    mirror_matrix,
+                                    uv_vectors_from_face,
+                                    placement_from_face,
+                                    placement_from_points,
+                                    distance_to_plane,
+                                    project_point_on_plane)
 
 from draftgeoutils.edges import (findEdge,
                                  orientEdge,

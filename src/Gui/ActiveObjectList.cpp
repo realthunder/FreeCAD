@@ -60,26 +60,40 @@ App::DocumentObject *ActiveObjectList::_getObject(ObjectInfo &info,
                                                   App::DocumentObject **parent,
                                                   std::string *subname) const
 {
-    if (parent)
+    if (parent) {
         *parent = info.obj;
-    if (subname)
+    }
+    if (subname) {
         *subname = info.subname;
+    }
     auto obj = info.obj;
-    if(info.subname.size()) {
+    if (!obj || !obj->isAttachedToDocument()) {
+        return nullptr;
+    }
+    if (!info.subname.empty()) {
         obj = obj->getSubObject(info.subname.c_str());
-        if (obj)
+        if (obj) {
             obj = obj->getLinkedObject(true);
-    } else if (obj->getParents().size())
+        }
+    }
+    else if (obj->getParents().size()) {
         obj = nullptr;
+    }
+
     if (obj != info.activeObject) {
         setHighlight(info, false);
         auto newInfo = getObjectInfo(info.activeObject, 0);
-        if (newInfo.activeObject == nullptr)
+        if (newInfo.activeObject == nullptr) {
             return nullptr;
+        }
         newInfo.mode = info.mode;
         info = newInfo;
-        if(parent) *parent = info.obj;
-        if(subname) *subname = info.subname;
+        if(parent) {
+            *parent = info.obj;
+        }
+        if(subname) {
+            *subname = info.subname;
+        }
         setHighlight(info, true);
     }
 
@@ -98,17 +112,18 @@ void ActiveObjectList::setHighlight(const ObjectInfo &info, bool enable) const
 Gui::ActiveObjectList::ObjectInfo Gui::ActiveObjectList::getObjectInfo(App::DocumentObject *obj, const char *subname) const
 {
     ObjectInfo info;
-    info.obj = 0;
-    info.activeObject = 0;
+    info.obj = nullptr;
+    info.activeObject = nullptr;
     info.mode = HighlightMode::UserDefined;
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         return info;
     bool checkSelection = true;
     if(subname) {
         info.obj = obj;
         info.subname = subname;
         checkSelection = false;
-    }else{
+    }
+    else {
         // No subname is given, try Selection().getContext() first
         auto ctxobj = Gui::Selection().getContext().getSubObject();
         if (ctxobj && (ctxobj == obj || ctxobj->getLinkedObject(true) == obj)) {

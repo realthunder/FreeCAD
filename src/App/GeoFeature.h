@@ -28,6 +28,7 @@
 #include "DocumentObject.h"
 #include "MappedElement.h"
 #include "PropertyGeo.h"
+#include "ComplexGeoData.h"
 
 
 namespace App

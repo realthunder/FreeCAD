@@ -41,6 +41,7 @@
 #include "DrawViewDimension.h"
 #include "DrawViewPart.h"
 #include "Preferences.h"
+#include "DrawUtil.h"
 
 
 using namespace TechDraw;
@@ -278,8 +279,7 @@ int DrawPage::removeView(App::DocumentObject* docObj)
         return -1;
     }
 
-    const char* name = docObj->getNameInDocument();
-    if (!name) {
+    if (!docObj->isAttachedToDocument()) {
         return -1;
     }
     const std::vector<App::DocumentObject*> currViews = Views.getValues();
@@ -291,7 +291,7 @@ int DrawPage::removeView(App::DocumentObject* docObj)
             continue;
         }
 
-        std::string viewName = name;
+        std::string viewName = docObj->getNameInDocument();
         if (viewName.compare((*it)->getNameInDocument()) != 0) {
             newViews.push_back((*it));
         }
@@ -380,7 +380,7 @@ void DrawPage::unsetupObject()
         const std::vector<App::DocumentObject*> currViews = Views.getValues();
         for (auto& v : currViews) {
             //NOTE: the order of objects in Page.Views does not reflect the object hierarchy
-            //      this means that a ProjGroup could be deleted before it's child ProjGroupItems.
+            //      this means that a ProjGroup could be deleted before its child ProjGroupItems.
             //      this causes problems when removing objects from document
             if (v->isAttachedToDocument()) {
                 std::string viewName = v->getNameInDocument();
@@ -466,6 +466,13 @@ bool DrawPage::GlobalUpdateDrawings(void)
 bool DrawPage::AllowPageOverride(void)
 {
     return Preferences::getPreferenceGroup("General")->GetBool("AllowPageOverride", true);
+}
+
+//! get a translated label string from the context (ex TaskActiveView), the base name (ex ActiveView) and
+//! the unique name within the document (ex ActiveView001), and use it to update the Label property.
+void DrawPage::translateLabel(std::string context, std::string baseName, std::string uniqueName)
+{
+    Label.setValue(DrawUtil::translateArbitrary(context, baseName, uniqueName));
 }
 
 

@@ -44,9 +44,7 @@ using namespace Part;
 PROPERTY_SOURCE(Part::Common, Part::Boolean)
 
 
-Common::Common()
-{
-}
+Common::Common() = default;
 
 const char *Common::opCode() const {
     return Part::OpCodes::Common;
@@ -139,8 +137,8 @@ App::DocumentObjectExecReturn *MultiCommon::execute()
                     history.push_back(hist2);
                 }
                 else {
-                    for (std::vector<ShapeHistory>::iterator jt = history.begin(); jt != history.end(); ++jt)
-                        jt->join(hist1);
+                    for (auto & jt : history)
+                        jt.join(hist1);
                     history.push_back(hist2);
                 }
             }
@@ -161,8 +159,8 @@ App::DocumentObjectExecReturn *MultiCommon::execute()
                     BRepBuilderAPI_RefineModel mkRefine(oldShape);
                     resShape = mkRefine.Shape();
                     ShapeHistory hist(mkRefine, TopAbs_FACE, resShape, oldShape);
-                    for (std::vector<ShapeHistory>::iterator jt = history.begin(); jt != history.end(); ++jt)
-                        jt->join(hist);
+                    for (auto & jt : history)
+                        jt.join(hist);
                 }
                 catch (Standard_Failure&) {
                     // do nothing

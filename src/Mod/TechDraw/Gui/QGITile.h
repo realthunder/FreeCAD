@@ -48,7 +48,7 @@ class TechDrawGuiExport QGITile : public QGIDecoration
     using inherited = QGIDecoration;
 public:
     explicit QGITile(TechDraw::DrawTileWeld*);
-    ~QGITile(void) override;
+    ~QGITile() override;
 
     enum {Type = QGraphicsItem::UserType + 325};
     int type(void) const override { return Type;}
@@ -65,8 +65,8 @@ public:
     void setTileScale(double s);
     void setTailRight(bool b) { m_tailRight = b; }
     void setAltWeld(bool b) { m_altWeld = b; }
-    bool isTailRight(void);
-    void draw(void) override;
+    bool isTailRight();
+    void draw() override;
 
     void setPrettyNormal() override;
     void setPrettyPre() override;

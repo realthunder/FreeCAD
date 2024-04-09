@@ -22,7 +22,7 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
-# include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSeparator.h>
 #endif
 
 #include <Gui/ViewProviderBuilder.h>
@@ -35,12 +35,10 @@ using namespace SketcherGui;
 PROPERTY_SOURCE(SketcherGui::ViewProviderCustom, SketcherGui::ViewProviderSketch)
 
 ViewProviderCustom::ViewProviderCustom()
-{
-}
+{}
 
 ViewProviderCustom::~ViewProviderCustom()
-{
-}
+{}
 
 void ViewProviderCustom::onChanged(const App::Property* prop)
 {
@@ -60,14 +58,15 @@ void ViewProviderCustom::onChanged(const App::Property* prop)
 
 void ViewProviderCustom::updateData(const App::Property* prop)
 {
-    if (prop->getTypeId().isDerivedFrom(App::PropertyComplexGeoData::getClassTypeId())) {
+    if (prop->isDerivedFrom<App::PropertyComplexGeoData>()) {
         std::map<const App::Property*, Gui::ViewProvider*>::iterator it = propView.find(prop);
         if (it == propView.end()) {
             Gui::ViewProvider* view = Gui::ViewProviderBuilder::create(prop->getTypeId());
             if (view) {
-                if (view->getTypeId().isDerivedFrom(Gui::ViewProviderDocumentObject::getClassTypeId())) {
+                if (view->isDerivedFrom<Gui::ViewProviderDocumentObject>()) {
                     static_cast<Gui::ViewProviderDocumentObject*>(view)->attach(this->getObject());
-                    static_cast<Gui::ViewProviderDocumentObject*>(view)->setDisplayMode(this->getActiveDisplayMode().c_str());
+                    static_cast<Gui::ViewProviderDocumentObject*>(view)->setDisplayMode(
+                        this->getActiveDisplayMode().c_str());
                 }
                 propView[prop] = view;
                 view->updateData(prop);
@@ -82,7 +81,8 @@ void ViewProviderCustom::updateData(const App::Property* prop)
 
 // -----------------------------------------------------------------------
 
-namespace Gui {
+namespace Gui
+{
 /// @cond DOXERR
 PROPERTY_SOURCE_TEMPLATE(SketcherGui::ViewProviderPython, SketcherGui::ViewProviderSketch)
 /// @endcond
@@ -96,5 +96,4 @@ PROPERTY_SOURCE_TEMPLATE(SketcherGui::ViewProviderCustomPython, SketcherGui::Vie
 
 // explicit template instantiation
 template class SketcherGuiExport ViewProviderPythonFeatureT<SketcherGui::ViewProviderCustom>;
-}
-
+}  // namespace Gui

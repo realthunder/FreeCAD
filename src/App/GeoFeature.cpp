@@ -32,7 +32,7 @@
 #include "ComplexGeoData.h"
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
-#include "MappedElement.h"
+#include "ElementNamingUtils.h"
 
 FC_LOG_LEVEL_INIT("GeoFeature",true,true);
 
@@ -111,10 +111,10 @@ GeoFeature::_getElementName(const char *name, const Data::MappedElement &mapped)
     std::pair<std::string,std::string> ret;
     if (mapped.index && mapped.name) {
         std::ostringstream ss;
-        ss << Data::ComplexGeoData::elementMapPrefix()
+        ss << Data::elementMapPrefix()
            << mapped.name << '.' << mapped.index;
         ret.first = ss.str();
-        mapped.index.toString(ret.second);
+        mapped.index.appendToStringBuffer(ret.second);
     } else if (mapped.name) {
         FC_TRACE("element mapped name " << name << " not found in " << getFullName());
         ret.first = name;
@@ -122,11 +122,11 @@ GeoFeature::_getElementName(const char *name, const Data::MappedElement &mapped)
         if(dot) {
             // deliberately mangle the old style element name to signal a
             // missing reference
-            ret.second = Data::ComplexGeoData::missingPrefix();
+            ret.second = Data::missingPrefix();
             ret.second += dot+1;
         }
     } else {
-        mapped.index.toString(ret.second);
+        mapped.index.appendToStringBuffer(ret.second);
     }
 
     return ret;
@@ -139,11 +139,11 @@ DocumentObject *GeoFeature::resolveElement(DocumentObject *obj, const char *subn
 {
     elementName.first.clear();
     elementName.second.clear();
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         return nullptr;
     if(!subname)
         subname = "";
-    const char *element = Data::ComplexGeoData::findElementName(subname);
+    const char *element = Data::findElementName(subname);
     if(_element) *_element = element;
     // Exclude element in subname to prevent warning message of element not found
     auto sobj = obj->getSubObject(std::string(subname, element).c_str());
@@ -162,15 +162,15 @@ DocumentObject *GeoFeature::resolveElement(DocumentObject *obj, const char *subn
         return nullptr;
     if(!element || !element[0]) {
         if(append) 
-            elementName.second = Data::ComplexGeoData::oldElementName(subname);
-        return sobj;
+            elementName.second = Data::oldElementName(subname);
+    return sobj;
     }
 
     if(!geo || hasHiddenMarker(element)) {
         if(!append) 
             elementName.second = element;
         else
-            elementName.second = Data::ComplexGeoData::oldElementName(subname);
+            elementName.second = Data::oldElementName(subname);
         return sobj;
     }
     if(!append) 
@@ -186,7 +186,7 @@ DocumentObject *GeoFeature::resolveElement(DocumentObject *obj, const char *subn
 }
 
 bool GeoFeature::hasMissingElement(const char *subname) {
-    return Data::ComplexGeoData::hasMissingElement(subname);
+    return Data::hasMissingElement(subname);
     if(!subname)
         return false;
     auto dot = strrchr(subname,'.');

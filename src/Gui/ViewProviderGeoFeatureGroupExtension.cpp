@@ -170,7 +170,7 @@ void ViewProviderGeoFeatureGroupExtension::extensionUpdateData(const App::Proper
             if(linkView) {
                 for(auto obj : group->Group.getValues()) {
                     // check for plain group
-                    if(!obj || !obj->getNameInDocument())
+                    if(!obj || !obj->isAttachedToDocument())
                         continue;
                     auto ext = App::GeoFeatureGroupExtension::getNonGeoGroup(obj);
                     if(!ext)

@@ -32,6 +32,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <Base/Reader.h>
+#include <Base/Tools.h>
 #include <Mod/TechDraw/App/DrawViewPy.h>  // generated from DrawViewPy.xml
 
 #include "DrawView.h"
@@ -44,10 +45,33 @@
 
 
 using namespace TechDraw;
+using DU = DrawUtil;
 
 //===========================================================================
 // DrawView
 //===========================================================================
+
+#if 0   // needed for Qt's lupdate utility
+    QT_TRANSLATE_NOOP("DrawPage", "Page");
+    QT_TRANSLATE_NOOP("DrawSVGTemplate", "Template");
+    QT_TRANSLATE_NOOP("DrawView", "View");
+    QT_TRANSLATE_NOOP("DrawViewPart", "View");
+    QT_TRANSLATE_NOOP("DrawViewSection", "Section");
+    QT_TRANSLATE_NOOP("DrawComplexSection", "Section");
+    QT_TRANSLATE_NOOP("DrawViewDetail", "Detail");
+    QT_TRANSLATE_NOOP("DrawActiveView", "ActiveView");
+    QT_TRANSLATE_NOOP("DrawViewAnnotation", "Annotation");
+    QT_TRANSLATE_NOOP("DrawViewImage", "Image");
+    QT_TRANSLATE_NOOP("DrawViewSymbol", "Symbol");
+    QT_TRANSLATE_NOOP("DrawViewArch", "Arch");
+    QT_TRANSLATE_NOOP("DrawViewDraft", "Draft");
+    QT_TRANSLATE_NOOP("DrawLeaderLine", "LeaderLine");
+    QT_TRANSLATE_NOOP("DrawViewBalloon", "Balloon");
+    QT_TRANSLATE_NOOP("DrawViewDimension", "Dimension");
+    QT_TRANSLATE_NOOP("DrawViewDimExtent", "Extent");
+    QT_TRANSLATE_NOOP("DrawHatch", "Hatch");
+    QT_TRANSLATE_NOOP("DrawGeomHatch", "GeomHatch");
+#endif
 
 const char* DrawView::ScaleTypeEnums[]= {"Page",
                                          "Automatic",
@@ -287,7 +311,7 @@ int DrawView::countParentPages() const
     parentAll.erase(last, parentAll.end());
 
     for (auto& parent : parentAll) {
-        if (parent->getTypeId().isDerivedFrom(DrawPage::getClassTypeId())) {
+        if (parent->isDerivedFrom<DrawPage>()) {
             count++;
         }
     }
@@ -304,9 +328,9 @@ DrawPage* DrawView::findParentPage() const
     DrawViewCollection *collection = nullptr;
     std::vector<App::DocumentObject*> parentsAll = getInList();
     for (auto& parent : parentsAll) {
-        if (parent->getTypeId().isDerivedFrom(DrawPage::getClassTypeId())) {
+        if (parent->isDerivedFrom<DrawPage>()) {
             page = static_cast<TechDraw::DrawPage *>(parent);
-        } else if (parent->getTypeId().isDerivedFrom(DrawViewCollection::getClassTypeId())) {
+        } else if (parent->isDerivedFrom<DrawViewCollection>()) {
             collection = static_cast<TechDraw::DrawViewCollection *>(parent);
             page = collection->findParentPage();
         }
@@ -328,9 +352,9 @@ std::vector<DrawPage*> DrawView::findAllParentPages() const
     std::vector<App::DocumentObject*> parentsAll = getInList();
 
    for (auto& parent : parentsAll) {
-        if (parent->getTypeId().isDerivedFrom(DrawPage::getClassTypeId())) {
+        if (parent->isDerivedFrom<DrawPage>()) {
             page = static_cast<TechDraw::DrawPage*>(parent);
-        } else if (parent->getTypeId().isDerivedFrom(DrawViewCollection::getClassTypeId())) {
+        } else if (parent->isDerivedFrom<DrawViewCollection>()) {
             collection = static_cast<TechDraw::DrawViewCollection *>(parent);
             page = collection->findParentPage();
         }
@@ -352,7 +376,7 @@ bool DrawView::isInClip()
 {
     std::vector<App::DocumentObject*> parent = getInList();
     for (std::vector<App::DocumentObject*>::iterator it = parent.begin(); it != parent.end(); ++it) {
-        if ((*it)->getTypeId().isDerivedFrom(DrawViewClip::getClassTypeId())) {
+        if ((*it)->isDerivedFrom<DrawViewClip>()) {
             return true;
         }
     }
@@ -364,7 +388,7 @@ DrawViewClip* DrawView::getClipGroup()
     std::vector<App::DocumentObject*> parent = getInList();
     App::DocumentObject* obj = nullptr;
     for (std::vector<App::DocumentObject*>::iterator it = parent.begin(); it != parent.end(); ++it) {
-        if ((*it)->getTypeId().isDerivedFrom(DrawViewClip::getClassTypeId())) {
+        if ((*it)->isDerivedFrom<DrawViewClip>()) {
             obj = (*it);
             DrawViewClip* result = dynamic_cast<DrawViewClip*>(obj);
             return result;
@@ -439,7 +463,7 @@ void DrawView::setPosition(double x, double y, bool force)
     if ( (!isLocked()) ||
          (force) ) {
         double currX = X.getValue();
-        double currY = X.getValue();
+        double currY = Y.getValue();
         if (!DrawUtil::fpCompare(currX, x, 0.001)) {    // 0.001mm tolerance
             X.setValue(x);
         }
@@ -470,7 +494,7 @@ std::vector<TechDraw::DrawLeaderLine*> DrawView::getLeaders() const
     std::vector<TechDraw::DrawLeaderLine*> result;
     std::vector<App::DocumentObject*> children = getInList();
     for (std::vector<App::DocumentObject*>::iterator it = children.begin(); it != children.end(); ++it) {
-        if ((*it)->getTypeId().isDerivedFrom(DrawLeaderLine::getClassTypeId())) {
+        if ((*it)->isDerivedFrom<DrawLeaderLine>()) {
             TechDraw::DrawLeaderLine* lead = dynamic_cast<TechDraw::DrawLeaderLine*>(*it);
             result.push_back(lead);
         }
@@ -593,6 +617,17 @@ void DrawView::requestPaint()
 {
 //    Base::Console().Message("DV::requestPaint() - %s\n", getNameInDocument());
     signalGuiPaint(this);
+}
+
+//! get a translated label string from the context (ex TaskActiveView), the base name (ex ActiveView) and
+//! the unique name within the document (ex ActiveView001), and use it to update the Label property.
+void DrawView::translateLabel(std::string context, std::string baseName, std::string uniqueName)
+{
+//    Base::Console().Message("DV::translateLabel - context: %s baseName: %s uniqueName: %s\n",
+//                            context.c_str(), baseName.c_str(), uniqueName.c_str());
+
+    Label.setValue(DU::translateArbitrary(context, baseName, uniqueName));
+//    Base::Console().Message("DV::translateLabel - new label: %s\n", Label.getValue());
 }
 
 PyObject *DrawView::getPyObject(void)

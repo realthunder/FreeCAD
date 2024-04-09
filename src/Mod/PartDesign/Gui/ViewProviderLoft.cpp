@@ -44,9 +44,7 @@ ViewProviderLoft::ViewProviderLoft()
     sPixmap = "PartDesign_AdditiveLoft.svg";
 }
 
-ViewProviderLoft::~ViewProviderLoft()
-{
-}
+ViewProviderLoft::~ViewProviderLoft() = default;
 
 std::vector<App::DocumentObject*> ViewProviderLoft::_claimChildren() const
 {

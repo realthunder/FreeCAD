@@ -31,6 +31,7 @@
 #include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
+#include <Gui/Control.h>
 
 #include "TaskBalloon.h"
 #include "ui_TaskBalloon.h"
@@ -47,18 +48,19 @@ TaskBalloon::TaskBalloon(QGIViewBalloon *parent, ViewProviderBalloon *balloonVP)
     ui(new Ui_TaskBalloon)
 {
     int i = 0;
-    m_parent = parent;
-    m_balloonVP = balloonVP;
+    (void)parent;
+    m_balloon = balloonVP->getObject();
+    auto feat = getBalloonFeat();
 
     ui->setupUi(this);
 
-    ui->qsbShapeScale->setValue(parent->getBalloonFeat()->ShapeScale.getValue());
+    ui->qsbShapeScale->setValue(feat->ShapeScale.getValue());
     connect(ui->qsbShapeScale, qOverload<double>(&QuantitySpinBox::valueChanged), this, &TaskBalloon::onShapeScaleChanged);
 
-    ui->qsbSymbolScale->setValue(parent->getBalloonFeat()->EndTypeScale.getValue());
+    ui->qsbSymbolScale->setValue(feat->EndTypeScale.getValue());
     connect(ui->qsbSymbolScale, qOverload<double>(&QuantitySpinBox::valueChanged), this, &TaskBalloon::onEndSymbolScaleChanged);
 
-    std::string value = parent->getBalloonFeat()->Text.getValue();
+    std::string value = feat->Text.getValue();
     QString qs = QString::fromUtf8(value.data(), value.size());
     ui->leText->setText(qs);
     ui->leText->selectAll();
@@ -66,11 +68,11 @@ TaskBalloon::TaskBalloon(QGIViewBalloon *parent, ViewProviderBalloon *balloonVP)
     QTimer::singleShot(0, ui->leText, qOverload<>(&QLineEdit::setFocus));
 
     DrawGuiUtil::loadArrowBox(ui->comboEndSymbol);
-    i = parent->getBalloonFeat()->EndType.getValue();
+    i = feat->EndType.getValue();
     ui->comboEndSymbol->setCurrentIndex(i);
     connect(ui->comboEndSymbol, qOverload<int>(&QComboBox::currentIndexChanged), this, &TaskBalloon::onEndSymbolChanged);
 
-    i = parent->getBalloonFeat()->BubbleShape.getValue();
+    i = feat->BubbleShape.getValue();
     ui->comboBubbleShape->setCurrentIndex(i);
     connect(ui->comboBubbleShape, qOverload<int>(&QComboBox::currentIndexChanged), this, &TaskBalloon::onBubbleShapeChanged);
 
@@ -92,12 +94,13 @@ TaskBalloon::TaskBalloon(QGIViewBalloon *parent, ViewProviderBalloon *balloonVP)
         ui->qsbLineWidth->setValue(balloonVP->LineWidth.getValue());
     }
     // new balloons have already the preferences BalloonKink length
-    ui->qsbKinkLength->setValue(parent->getBalloonFeat()->KinkLength.getValue());
+    ui->qsbKinkLength->setValue(feat->KinkLength.getValue());
 
     connect(ui->qsbFontSize, qOverload<double>(&QuantitySpinBox::valueChanged), this, &TaskBalloon::onFontsizeChanged);
     connect(ui->comboLineVisible, qOverload<int>(&QComboBox::currentIndexChanged), this, &TaskBalloon::onLineVisibleChanged);
     connect(ui->qsbLineWidth, qOverload<double>(&QuantitySpinBox::valueChanged), this, &TaskBalloon::onLineWidthChanged);
     connect(ui->qsbKinkLength, qOverload<double>(&QuantitySpinBox::valueChanged), this, &TaskBalloon::onKinkLengthChanged);
+
 }
 
 TaskBalloon::~TaskBalloon()
@@ -106,94 +109,150 @@ TaskBalloon::~TaskBalloon()
 
 bool TaskBalloon::accept()
 {
-    Gui::Document* doc = m_balloonVP->getDocument();
-    Gui::Command::updateActive();
-    Gui::Command::commitCommand();
-    doc->resetEdit();
+    if (auto vp = getBalloonView()) {
+        setupTransaction();
+        Gui::Document* doc = vp->getDocument();
+        Gui::Command::updateActive();
+        Gui::Command::commitCommand();
+        doc->resetEdit();
+    }
 
     return true;
 }
 
 bool TaskBalloon::reject()
 {
-    Gui::Document* doc = m_balloonVP->getDocument();
-    doc->abortCommand();
-    recomputeFeature();
-    m_parent->updateView(true);
-    doc->resetEdit();
+    App::GetApplication().closeActiveTransaction(true);
+    if (auto vp = getBalloonView()) {
+        Gui::Document* doc = vp->getDocument();
+        doc->resetEdit();
+    }
 
     return true;
 }
 
+void TaskBalloon::setupTransaction() {
+    int tid = 0;
+    const char *name = App::GetApplication().getActiveTransaction(&tid);
+    if(tid && tid == m_transactionID)
+        return;
+
+    std::string n(QT_TRANSLATE_NOOP("Command", "Edit "));
+    n += m_balloon.getObjectName();
+    if(!name || n != name)
+        App::GetApplication().setActiveTransaction(n.c_str());
+
+    if(!m_transactionID)
+        m_transactionID = tid;
+}
+
 void TaskBalloon::recomputeFeature()
 {
-    App::DocumentObject* objVP = m_balloonVP->getObject();
-    assert(objVP);
-    objVP->getDocument()->recomputeFeature(objVP);
+    Gui::Command::updateActive();
+}
+
+DrawViewBalloon *TaskBalloon::getBalloonFeat()
+{
+    return Base::freecad_dynamic_cast<DrawViewBalloon>(m_balloon.getObject());
+}
+
+ViewProviderBalloon *TaskBalloon::getBalloonView()
+{
+    return Base::freecad_dynamic_cast<ViewProviderBalloon>(
+            Gui::Application::Instance->getViewProvider(getBalloonFeat()));
 }
 
 void TaskBalloon::onTextChanged()
 {
-    m_parent->getBalloonFeat()->Text.setValue(ui->leText->text().toUtf8().constData());
-    recomputeFeature();
+    if (auto feat = getBalloonFeat()) {
+        setupTransaction();
+        feat->Text.setValue(ui->leText->text().toUtf8().constData());
+        recomputeFeature();
+    }
 }
 
 void TaskBalloon::onColorChanged()
 {
-    App::Color ac;
-    ac.setValue<QColor>(ui->textColor->color());
-    m_balloonVP->Color.setValue(ac);
-    recomputeFeature();
+    if (auto vp = getBalloonView()) {
+        setupTransaction();
+        App::Color ac;
+        ac.setValue<QColor>(ui->textColor->color());
+        vp->Color.setValue(ac);
+        recomputeFeature();
+    }
 }
 
 void TaskBalloon::onFontsizeChanged()
 {
-    m_balloonVP->Fontsize.setValue(ui->qsbFontSize->value().getValue());
-    recomputeFeature();
+    if (auto vp = getBalloonView()) {
+        setupTransaction();
+        vp->Fontsize.setValue(ui->qsbFontSize->value().getValue());
+        recomputeFeature();
+    }
 }
 
 void TaskBalloon::onBubbleShapeChanged()
 {
-    m_parent->getBalloonFeat()->BubbleShape.setValue(ui->comboBubbleShape->currentIndex());
-    recomputeFeature();
+    if (auto feat = getBalloonFeat()) {
+        setupTransaction();
+        feat->BubbleShape.setValue(ui->comboBubbleShape->currentIndex());
+        recomputeFeature();
+    }
 }
 
 void TaskBalloon::onShapeScaleChanged()
 {
-    m_parent->getBalloonFeat()->ShapeScale.setValue(ui->qsbShapeScale->value().getValue());
-    recomputeFeature();
+    if (auto feat = getBalloonFeat()) {
+        setupTransaction();
+        feat->ShapeScale.setValue(ui->qsbShapeScale->value().getValue());
+        recomputeFeature();
+    }
 }
 
 void TaskBalloon::onEndSymbolChanged()
 {
-    m_parent->getBalloonFeat()->EndType.setValue(ui->comboEndSymbol->currentIndex());
-    recomputeFeature();
+    if (auto feat = getBalloonFeat()) {
+        setupTransaction();
+        feat->EndType.setValue(ui->comboEndSymbol->currentIndex());
+        recomputeFeature();
+    }
 }
 
 void TaskBalloon::onEndSymbolScaleChanged()
 {
-    m_parent->getBalloonFeat()->EndTypeScale.setValue(ui->qsbSymbolScale->value().getValue());
-    recomputeFeature();
+    if (auto feat = getBalloonFeat()) {
+        setupTransaction();
+        feat->EndTypeScale.setValue(ui->qsbSymbolScale->value().getValue());
+        recomputeFeature();
+    }
 }
 
 void TaskBalloon::onLineVisibleChanged()
 {
-    m_balloonVP->LineVisible.setValue(ui->comboLineVisible->currentIndex());
-    recomputeFeature();
+    if (auto vp = getBalloonView()) {
+        setupTransaction();
+        vp->LineVisible.setValue(ui->comboLineVisible->currentIndex());
+        recomputeFeature();
+    }
 }
 
 void TaskBalloon::onLineWidthChanged()
 {
-    m_balloonVP->LineWidth.setValue(ui->qsbLineWidth->value().getValue());
-    recomputeFeature();
+    if (auto vp = getBalloonView()) {
+        setupTransaction();
+        vp->LineWidth.setValue(ui->qsbLineWidth->value().getValue());
+        recomputeFeature();
+    }
 }
 
 void TaskBalloon::onKinkLengthChanged()
 {
-    m_parent->getBalloonFeat()->KinkLength.setValue(ui->qsbKinkLength->value().getValue());
-    recomputeFeature();
+    if (auto feat = getBalloonFeat()) {
+        setupTransaction();
+        feat->KinkLength.setValue(ui->qsbKinkLength->value().getValue());
+        recomputeFeature();
+    }
 }
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 TaskDlgBalloon::TaskDlgBalloon(QGIViewBalloon *parent, ViewProviderBalloon *balloonVP) :
@@ -229,14 +288,12 @@ void TaskDlgBalloon::clicked(int i)
 bool TaskDlgBalloon::accept()
 {
     widget->accept();
-    App::GetApplication().closeActiveTransaction();
     return true;
 }
 
 bool TaskDlgBalloon::reject()
 {
     widget->reject();
-    App::GetApplication().closeActiveTransaction(true);
     return true;
 }
 

@@ -123,8 +123,8 @@ public:
     }
     void init()
     {
-        page->m_atCursor = hGrp->GetBool("ZoomAtCursor", 1l);
-        page->m_invertZoom = hGrp->GetBool("InvertZoom", 0l);
+        page->m_atCursor = hGrp->GetBool("ZoomAtCursor", true);
+        page->m_invertZoom = hGrp->GetBool("InvertZoom", false);
         page->m_zoomIncrement = hGrp->GetFloat("ZoomStep", 0.02);
 
         page->m_reversePan = Preferences::getPreferenceGroup("General")->GetInt("KbPan", 1);
@@ -167,7 +167,7 @@ public:
 
 QGVPage::QGVPage(ViewProviderPage* vpPage, QGSPage* scenePage, QWidget* parent)
     : QGraphicsView(parent), m_renderer(Native), drawBkg(true), m_vpPage(nullptr),
-      m_scene(scenePage), balloonPlacing(false), panningActive(false), m_showGrid(false),
+      m_scene(scenePage), balloonPlacing(false), m_showGrid(false),
       m_navStyle(nullptr), d(new Private(this))
 {
     assert(vpPage);
@@ -561,6 +561,16 @@ void QGVPage::resetCursor()
 void QGVPage::setPanCursor() { activateCursor(panCursor); }
 
 void QGVPage::setZoomCursor() { activateCursor(zoomCursor); }
+
+void QGVPage::zoomIn()
+{
+    m_navStyle->zoomIn();
+}
+
+void QGVPage::zoomOut()
+{
+    m_navStyle->zoomOut();
+}
 
 void QGVPage::drawForeground(QPainter* painter, const QRectF& rect)
 {

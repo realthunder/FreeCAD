@@ -53,7 +53,7 @@ public:
     /// destructor
     ~ViewProvider() override;
 
-    bool doubleClicked(void) override;
+    bool doubleClicked() override;
     void updateData(const App::Property*) override;
     void onChanged(const App::Property* prop) override;
 
@@ -73,7 +73,7 @@ public:
     //Returns the ViewProvider of the body the feature belongs to, or NULL, if not in a body
     ViewProviderBody* getBodyViewProvider();
 
-    PyObject* getPyObject(void) override;
+    PyObject* getPyObject() override;
 
     void getExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &) const override;
     bool iconMouseEvent(QMouseEvent *, const QByteArray &tag) override;
@@ -117,7 +117,7 @@ protected:
     virtual TaskDlgFeatureParameters *getEditDialog();
 
     std::string oldWb;
-    bool isSetTipIcon;
+    bool isSetTipIcon = false;
     mutable QPixmap pxTipIcon;
 
     std::unique_ptr<PartGui::ViewProviderPart> pSuppressedView;

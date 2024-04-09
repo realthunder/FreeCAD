@@ -184,10 +184,13 @@ public:
     {
         return "SplashObserver";
     }
-    void SendLog(const std::string& notifiername, const std::string& msg, Base::LogStyle level) override
+    void SendLog(const std::string& notifiername, const std::string& msg, Base::LogStyle level,
+                 Base::IntendedRecipient recipient, Base::ContentType content) override
     {
         Q_UNUSED(notifiername)
-        
+        Q_UNUSED(recipient)
+        Q_UNUSED(content)
+
 #ifdef FC_DEBUG
         Log(msg.c_str());
         Q_UNUSED(level)
@@ -209,7 +212,7 @@ public:
         }
         else {
             // ignore activation of commands
-            rx.setPattern(QStringLiteral("^\\s*(\\+App::|Create|CmdC:|CmdG:|Act:)\\s*"));
+            rx.setPattern(QStringLiteral(R"(^\s*(\+App::|Create|CmdC:|CmdG:|Act:)\s*)"));
             match = rx.match(msg);
             if (match.hasMatch() && match.capturedStart() == 0)
                 return;
@@ -352,13 +355,19 @@ void SplashScreen::drawContents ( QPainter * painter )
     QSplashScreen::drawContents(painter);
 }
 
+void SplashScreen::setShowMessages(bool on)
+{
+    messages->bErr = on;
+    messages->bMsg = on;
+    messages->bLog = on;
+    messages->bWrn = on;
+}
+
 // ------------------------------------------------------------------------------
 
 AboutDialogFactory* AboutDialogFactory::factory = nullptr;
 
-AboutDialogFactory::~AboutDialogFactory()
-{
-}
+AboutDialogFactory::~AboutDialogFactory() = default;
 
 QDialog *AboutDialogFactory::create(QWidget *parent) const
 {
@@ -485,6 +494,7 @@ void AboutDialog::setupLabels()
     QString major  = QString::fromUtf8(config["BuildVersionMajor"].c_str());
     QString minor  = QString::fromUtf8(config["BuildVersionMinor"].c_str());
     QString point  = QString::fromUtf8(config["BuildVersionPoint"].c_str());
+    QString suffix = QString::fromUtf8(config["BuildVersionSuffix"].c_str());
     QString build  = QString::fromUtf8(config["BuildRevision"].c_str());
     QString disda  = QString::fromUtf8(config["BuildRevisionDate"].c_str());
     QString mturl  = QString::fromUtf8(config["MaintainerUrl"].c_str());
@@ -503,7 +513,7 @@ void AboutDialog::setupLabels()
     }
 
     QString version = ui->labelBuildVersion->text();
-    version.replace(QStringLiteral("Unknown"), QStringLiteral("%1.%2.%3").arg(major, minor, point));
+    version.replace(QStringLiteral("Unknown"), QStringLiteral("%1.%2.%3%4").arg(major, minor, point, suffix));
     ui->labelBuildVersion->setText(version);
 
     QString revision = ui->labelBuildRevision->text();
@@ -842,9 +852,9 @@ void AboutDialog::showLibraryInformation()
     QTextStream out(&html);
     out << "<html><head/><body style=\" font-size:8.25pt; font-weight:400; font-style:normal;\">"
         << "<p>" << msg << "<br/></p>\n<ul>\n";
-    for (QList<LibraryInfo>::iterator it = libInfo.begin(); it != libInfo.end(); ++it) {
-        out << "<li><p>" << it->name << " " << it->version << "</p>"
-               "<p><a href=\"" << it->href << "\">" << it->url
+    for (const auto & it : libInfo) {
+        out << "<li><p>" << it.name << " " << it.version << "</p>"
+               "<p><a href=\"" << it.href << "\">" << it.url
             << "</a><br/></p></li>\n";
     }
     out << "</ul>\n</body>\n</html>";
@@ -897,6 +907,7 @@ void AboutDialog::copyToClipboard()
     QString major  = QString::fromUtf8(config["BuildVersionMajor"].c_str());
     QString minor  = QString::fromUtf8(config["BuildVersionMinor"].c_str());
     QString point  = QString::fromUtf8(config["BuildVersionPoint"].c_str());
+    QString suffix = QString::fromUtf8(config["BuildVersionSuffix"].c_str());
     QString build  = QString::fromUtf8(config["BuildRevision"].c_str());
 
     QString deskEnv = QProcessEnvironment::systemEnvironment().value(QStringLiteral("XDG_CURRENT_DESKTOP"),QStringLiteral(""));
@@ -912,10 +923,10 @@ void AboutDialog::copyToClipboard()
         }
     }
 
-    str << "[code]\n";
+    str << "```\n";
     str << "OS: " << prettyProductInfoWrapper() << deskInfo << '\n';
     str << "Word size of " << exe << ": " << QSysInfo::WordSize << "-bit\n";
-    str << "Version: " << major << "." << minor << "." << point << "." << build;
+    str << "Version: " << major << "." << minor << "." << point << suffix << "." << build;
     char *appimage = getenv("APPIMAGE");
     if (appimage)
         str << " AppImage";
@@ -993,7 +1004,7 @@ void AboutDialog::copyToClipboard()
         }
     }
 
-    str << "[/code]\n";
+    str << "```\n";
     QClipboard* cb = QApplication::clipboard();
     cb->setText(data);
 }
@@ -1011,9 +1022,7 @@ LicenseView::LicenseView(QWidget* parent)
     setCentralWidget(browser);
 }
 
-LicenseView::~LicenseView()
-{
-}
+LicenseView::~LicenseView() = default;
 
 void LicenseView::setSource(const QUrl& url)
 {

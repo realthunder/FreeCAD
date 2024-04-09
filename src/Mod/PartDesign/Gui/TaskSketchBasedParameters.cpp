@@ -993,7 +993,7 @@ const QString TaskSketchBasedParameters::onSelectUpToFace(const Gui::SelectionCh
             if (hist.obj != base)
                 continue;
             tmp.clear();
-            element = hist.element.toPrefixedString(tmp);
+            element = hist.element.appendToBufferWithPrefix(tmp);
             if (!baseShape.getSubShape(element, true).IsNull())
                 break;
             element = nullptr;
@@ -1135,7 +1135,7 @@ void TaskSketchBasedParameters::onSelectionChanged(const Gui::SelectionChanges& 
 QVariant TaskSketchBasedParameters::setUpToFace(const QString& text)
 {
     if (text.isEmpty())
-        return QVariant();
+        return {};
 
     QStringList parts = text.split(QChar::fromLatin1(':'));
     if (parts.length() < 2)
@@ -1144,15 +1144,15 @@ QVariant TaskSketchBasedParameters::setUpToFace(const QString& text)
     // Check whether this is the name of an App::Plane or Part::Datum feature
     App::DocumentObject* obj = vp->getObject()->getDocument()->getObject(parts[0].toUtf8());
     if (!obj)
-        return QVariant();
+        return {};
 
-    if (obj->getTypeId().isDerivedFrom(App::Plane::getClassTypeId())) {
+    if (obj->isDerivedFrom<App::Plane>()) {
         // everything is OK (we assume a Part can only have exactly 3 App::Plane objects located at the base of the feature tree)
-        return QVariant();
+        return {};
     }
-    else if (obj->getTypeId().isDerivedFrom(Part::Datum::getClassTypeId())) {
+    else if (obj->isDerivedFrom<Part::Datum>()) {
         // it's up to the document to check that the datum plane is in the same body
-        return QVariant();
+        return {};
     }
     else {
         // We must expect that "parts[1]" is the translation of "Face" followed by an ID.
@@ -1196,13 +1196,13 @@ QVariant TaskSketchBasedParameters::objectNameByLabel(const QString& label,
     // go through all objects and check the labels
     std::string name = label.toUtf8().data();
     std::vector<App::DocumentObject*> objs = doc->getObjects();
-    for (std::vector<App::DocumentObject*>::iterator it = objs.begin(); it != objs.end(); ++it) {
-        if (name == (*it)->Label.getValue()) {
-            return QVariant(QByteArray((*it)->getNameInDocument()));
+    for (auto obj : objs) {
+        if (name == obj->Label.getValue()) {
+            return QVariant(QByteArray(obj->getNameInDocument()));
         }
     }
 
-    return QVariant(); // no such feature found
+    return {}; // no such feature found
 }
 
 QString TaskSketchBasedParameters::getFaceReference(const QString& obj, const QString& sub) const
@@ -1211,9 +1211,9 @@ QString TaskSketchBasedParameters::getFaceReference(const QString& obj, const QS
     QString o = obj.left(obj.indexOf(QStringLiteral(":")));
 
     if (o.isEmpty())
-        return QString();
+        return {};
 
-    return QStringLiteral("(App.getDocument(\"%1\").getObject(\"%2\"), [\"%3\"])")
+    return QStringLiteral(R"((App.getDocument("%1").%2, ["%3"]))")
             .arg(QString::fromUtf8(doc->getName()), o, sub);
 }
 
@@ -1225,7 +1225,7 @@ QString TaskSketchBasedParameters::make2DLabel(const App::DocumentObject* sectio
     }
     else if (subValues.empty()) {
         Base::Console().Error("No valid subelement linked in %s\n", section->Label.getValue());
-        return QString();
+        return {};
     }
     else {
         return QString::fromStdString((std::string(section->getNameInDocument()) + ":" + subValues[0]));
@@ -1249,10 +1249,7 @@ TaskDlgSketchBasedParameters::TaskDlgSketchBasedParameters(PartDesignGui::ViewPr
 {
 }
 
-TaskDlgSketchBasedParameters::~TaskDlgSketchBasedParameters()
-{
-
-}
+TaskDlgSketchBasedParameters::~TaskDlgSketchBasedParameters() = default;
 
 //==== calls from the TaskView ===============================================================
 
@@ -1262,7 +1259,7 @@ bool TaskDlgSketchBasedParameters::accept() {
 
     // Make sure the feature is what we are expecting
     // Should be fine but you never know...
-    if (!feature->getTypeId().isDerivedFrom(PartDesign::ProfileBased::getClassTypeId())) {
+    if (!feature->isDerivedFrom<PartDesign::ProfileBased>()) {
         throw Base::TypeError("Bad object processed in the sketch based dialog.");
     }
 

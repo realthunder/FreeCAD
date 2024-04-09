@@ -34,10 +34,9 @@ import FreeCAD as App
 import FreeCADGui as Gui
 import Draft_rc  # include resources, icons, ui files
 import DraftVecUtils
-import draftutils.utils as utils
-
 from FreeCAD import Units as U
-from draftutils.messages import _msg, _wrn, _err, _log
+from draftutils import params
+from draftutils.messages import _err, _log, _msg, _wrn
 from draftutils.translate import translate
 
 # The module is used to prevent complaints from code checkers (flake8)
@@ -124,9 +123,9 @@ class TaskPanelPolarArray:
         self.form.input_c_z.setProperty('rawValue', self.center.z)
         self.form.input_c_z.setProperty('unit', length_unit)
 
-        self.fuse = utils.get_param("Draft_array_fuse", False)
-        self.use_link = utils.get_param("Draft_array_Link", True)
-        self.build_shape = utils.get_param("Draft_array_build_shape", True)
+        self.fuse = utils.get_param("Draft_array_fuse")
+        self.use_link = utils.get_param("Draft_array_Link")
+        self.build_shape = utils.get_param("Draft_array_build_shape")
 
         self.form.checkbox_fuse.setChecked(self.fuse)
         self.form.checkbox_link.setChecked(self.use_link)
@@ -304,7 +303,7 @@ class TaskPanelPolarArray:
         """Execute as a callback when the fuse checkbox changes."""
         self.fuse = self.form.checkbox_fuse.isChecked()
         self.print_fuse_state(self.fuse)
-        utils.set_param("Draft_array_fuse", self.fuse)
+        params.set_param("Draft_array_fuse", self.fuse)
 
     def print_link_state(self, use_link):
         """Print the link state translated."""
@@ -318,7 +317,7 @@ class TaskPanelPolarArray:
         """Execute as a callback when the link checkbox changes."""
         self.use_link = self.form.checkbox_link.isChecked()
         self.print_link_state(self.use_link)
-        utils.set_param("Draft_array_Link", self.use_link)
+        params.set_param("Draft_array_Link", self.use_link)
 
     def print_build_shape_state(self, build_shape):
         """Print the build_shape state translated."""
@@ -366,9 +365,7 @@ class TaskPanelPolarArray:
         point :
             is a vector that arrives by the callback.
         plane :
-            is a `WorkingPlane` instance, for example,
-            `App.DraftWorkingPlane`. It is not used at the moment,
-            but could be used to set up the grid.
+            is a `WorkingPlane.PlaneGui` instance. Not used at the moment.
         mask :
             is a string that specifies which coordinate is being
             edited. It is used to restrict edition of a single coordinate.

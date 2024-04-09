@@ -86,7 +86,7 @@ public:
    explicit NullShapeException(const char * sMessage);
    explicit NullShapeException(const std::string& sMessage);
    /// Destruction
-   ~NullShapeException() throw() override {}
+   ~NullShapeException() noexcept override = default;
 };
 
 /* A special sub-class to indicate boolean failures
@@ -99,8 +99,18 @@ public:
    explicit BooleanException(const char * sMessage);
    explicit BooleanException(const std::string& sMessage);
    /// Destruction
-   ~BooleanException() throw() override {}
+   ~BooleanException() noexcept override = default;
 };
+
+
+/// When tracing an element's history, one can either stop the trace when the element's type
+/// changes, or continue tracing the history through the change. This enumeration replaces a boolean
+/// parameter in the original Toponaming branch by realthunder.
+enum class HistoryTraceType {
+    stopOnTypeChange,
+    followTypeChange
+};
+
 
 /** The representation for a CAD Shape
  */
@@ -186,6 +196,9 @@ public:
 
     /** @name Subelement management */
     //@{
+    /// Unlike \ref getTypeAndIndex() this function only handles the supported
+    /// element types.
+    static std::pair<std::string, unsigned long> getElementTypeAndIndex(const char* Name);
     /** Sub type list
      *  List of different subelement types
      *  it is NOT a list of the subelements itself
@@ -1353,14 +1366,14 @@ public:
         return res;
     }
 
-    static TopoDS_Shape &move(TopoDS_Shape &s, const TopLoc_Location &);
-    static TopoDS_Shape moved(const TopoDS_Shape &s, const TopLoc_Location &);
-    static TopoDS_Shape &move(TopoDS_Shape &s, const gp_Trsf &);
-    static TopoDS_Shape moved(const TopoDS_Shape &s, const gp_Trsf &);
-    static TopoDS_Shape &locate(TopoDS_Shape &s, const TopLoc_Location &loc);
-    static TopoDS_Shape located(const TopoDS_Shape &s, const TopLoc_Location &);
-    static TopoDS_Shape &locate(TopoDS_Shape &s, const gp_Trsf &);
-    static TopoDS_Shape located(const TopoDS_Shape &s, const gp_Trsf &);
+    static TopoDS_Shape& move(TopoDS_Shape& tds, const TopLoc_Location& loc);
+    static TopoDS_Shape moved(const TopoDS_Shape& tds, const TopLoc_Location& loc);
+    static TopoDS_Shape& move(TopoDS_Shape& tds, const gp_Trsf& transfer);
+    static TopoDS_Shape moved(const TopoDS_Shape& tds, const gp_Trsf& transfer);
+    static TopoDS_Shape& locate(TopoDS_Shape& tds, const TopLoc_Location& loc);
+    static TopoDS_Shape located(const TopoDS_Shape& tds, const TopLoc_Location& loc);
+    static TopoDS_Shape& locate(TopoDS_Shape& tds, const gp_Trsf& transfer);
+    static TopoDS_Shape located(const TopoDS_Shape& tds, const gp_Trsf& transfer);
     //@}
 
     /** Make a new shape with transformation that may contain non-uniform scaling
@@ -2388,12 +2401,6 @@ public:
      * These functions are implemented in TopoShapeEx.cpp
      */
     //@{
-
-    static const std::string &modPostfix();
-    static const std::string &genPostfix();
-    static const std::string &modgenPostfix();
-    static const std::string &upperPostfix();
-    static const std::string &lowerPostfix();
 
     void mapSubElement(const TopoShape &other,const char *op=nullptr, bool forceHasher=false);
     void mapSubElement(const std::vector<TopoShape> &shapes, const char *op=nullptr);

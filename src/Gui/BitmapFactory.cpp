@@ -415,7 +415,7 @@ QPixmap BitmapFactoryInst::pixmap(const char* name,
                                   std::string *iconpath) const
 {
     if (!name || *name == '\0')
-        return QPixmap();
+        return {};
 
     std::string _name;
     adjustIconName(_name, name);

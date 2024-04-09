@@ -28,6 +28,7 @@
 #endif
 
 #include <Base/Console.h>
+#include <App/Application.h>
 
 #include "PropertyPage.h"
 #include "PrefWidgets.h"
@@ -145,9 +146,7 @@ PreferenceUiForm::PreferenceUiForm(const QString& fn, QWidget* parent)
     }
 }
 
-PreferenceUiForm::~PreferenceUiForm()
-{
-}
+PreferenceUiForm::~PreferenceUiForm() = default;
 
 void PreferenceUiForm::changeEvent(QEvent *e)
 {
@@ -212,6 +211,24 @@ void PreferenceUiForm::saveSettings()
     savePrefWidgets<Gui::PrefQuantitySpinBox*>();
 }
 
+void PreferencePage::resetSettingsToDefaults()
+{
+    auto prefs = this->findChildren<QObject*>();
+
+    for (const auto& pref : prefs) {
+        if (!pref->property("prefPath").isNull() && !pref->property("prefEntry").isNull()) {
+            std::string path = pref->property("prefPath").toString().toStdString();
+            std::string entry = pref->property("prefEntry").toString().toStdString();
+
+            ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+                std::string("User parameter:BaseApp/Preferences/" + path).c_str());
+
+            for (const auto& pn : hGrp->GetParameterNames(entry.c_str())) {
+                hGrp->RemoveAttribute(pn.first, pn.second.c_str());
+            }
+        }
+    }
+}
 // ----------------------------------------------------------------
 
 /** Construction */
@@ -220,9 +237,7 @@ CustomizeActionPage::CustomizeActionPage(QWidget* parent) : QWidget(parent)
 }
 
 /** Destruction */
-CustomizeActionPage::~CustomizeActionPage()
-{
-}
+CustomizeActionPage::~CustomizeActionPage() = default;
 
 bool CustomizeActionPage::event(QEvent* e)
 {
@@ -261,40 +276,6 @@ bool CustomizeActionPage::event(QEvent* e)
 void CustomizeActionPage::changeEvent(QEvent *e)
 {
     QWidget::changeEvent(e);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
-ParamHandlers::ParamHandlers()
-{
-}
-
-ParamHandlers::~ParamHandlers()
-{
-}
-
-void ParamHandlers::addHandler(const ParamKey &key, const std::shared_ptr<ParamHandler> &handler)
-{
-    if (handlers.empty()) {
-        conn = App::GetApplication().GetUserParameter().signalParamChanged.connect(
-            [this](ParameterGrp *Param, ParameterGrp::ParamType, const char *Name, const char *) {
-                if (!Param || !Name)
-                    return;
-                auto it =  handlers.find(ParamKey(Param, Name));
-                if (it != handlers.end() && it->second->onChange(&it->first)) {
-                    pendings.insert(it->second);
-                    timer.start(100);
-                }
-            });
-
-        timer.setSingleShot(true);
-        QObject::connect(&timer, &QTimer::timeout, [this]() {
-            for (const auto &v : pendings) {
-                v->onTimer();
-            }
-            pendings.clear();
-        });
-    }
-    handlers[key] = handler;
 }
 
 #include "moc_PropertyPage.cpp"

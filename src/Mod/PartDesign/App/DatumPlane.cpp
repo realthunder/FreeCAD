@@ -63,9 +63,7 @@ Plane::Plane()
     makeShape();
 }
 
-Plane::~Plane()
-{
-}
+Plane::~Plane() = default;
 
 void Plane::makeShape()
 {

@@ -23,12 +23,26 @@
 #ifndef SKETCHERGUI_DrawSketchHandlerTrimming_H
 #define SKETCHERGUI_DrawSketchHandlerTrimming_H
 
+#include <QApplication>
+#include <Base/Tools.h>
+
+#include <Gui/Notifications.h>
+#include <Gui/SelectionFilter.h>
+#include <Gui/Command.h>
+#include <Gui/CommandT.h>
+
+#include <Mod/Sketcher/App/SketchObject.h>
+
+#include "DrawSketchHandler.h"
 #include "GeometryCreationMode.h"
+#include "Utils.h"
+#include "ViewProviderSketch.h"
 
 
-namespace SketcherGui {
+namespace SketcherGui
+{
 
-extern GeometryCreationMode geometryCreationMode; // defined in CommandCreateGeo.cpp
+extern GeometryCreationMode geometryCreationMode;  // defined in CommandCreateGeo.cpp
 
 class TrimmingSelection : public SketcherSelectionFilterGate
 {
@@ -37,28 +51,28 @@ public:
         : SketcherSelectionFilterGate(obj)
     {}
 
-    bool allow(App::Document * /*pDoc*/, App::DocumentObject *pObj, const char *sSubName) override
+    bool allow(App::Document* /*pDoc*/, App::DocumentObject* pObj, const char* sSubName) override
     {
-        if (pObj != this->object)
+        if (pObj != this->object) {
             return false;
-        if (!sSubName || sSubName[0] == '\0')
+        }
+        if (!sSubName || sSubName[0] == '\0') {
             return false;
+        }
         std::string element(sSubName);
-        if (element.substr(0,4) == "Edge") {
-            int GeoId = std::atoi(element.substr(4,4000).c_str()) - 1;
-            Sketcher::SketchObject *Sketch = static_cast<Sketcher::SketchObject*>(object);
-            const Part::Geometry *geom = Sketch->getGeometry(GeoId);
-            if (geom->getTypeId().isDerivedFrom(Part::GeomTrimmedCurve::getClassTypeId())   ||
-                geom->getTypeId() == Part::GeomCircle::getClassTypeId()                     ||
-                geom->getTypeId() == Part::GeomEllipse::getClassTypeId()                    ||
-                geom->getTypeId() == Part::GeomBSplineCurve::getClassTypeId()
-            ) {
+        if (element.substr(0, 4) == "Edge") {
+            int GeoId = std::atoi(element.substr(4, 4000).c_str()) - 1;
+            Sketcher::SketchObject* Sketch = static_cast<Sketcher::SketchObject*>(object);
+            const Part::Geometry* geom = Sketch->getGeometry(GeoId);
+            if (geom->isDerivedFrom<Part::GeomTrimmedCurve>() || geom->is<Part::GeomCircle>()
+                || geom->is<Part::GeomEllipse>() || geom->is<Part::GeomBSplineCurve>()) {
                 // We do not trim internal geometry of complex geometries
-                if( Sketcher::GeometryFacade::isInternalType(geom, Sketcher::InternalType::None))
+                if (Sketcher::GeometryFacade::isInternalType(geom, Sketcher::InternalType::None)) {
                     return true;
+                }
             }
         }
-        return  false;
+        return false;
     }
 };
 
@@ -67,7 +81,7 @@ class DrawSketchHandlerTrimming: public DrawSketchHandler
 {
 public:
     DrawSketchHandlerTrimming() = default;
-    virtual ~DrawSketchHandlerTrimming()
+    ~DrawSketchHandlerTrimming() override
     {
         Gui::Selection().rmvSelectionGate();
     }
@@ -79,30 +93,36 @@ public:
         int GeoId = getPreselectCurve();
 
         if (GeoId > -1) {
-            auto sk = static_cast<Sketcher::SketchObject *>(sketchgui->getObject());
+            auto sk = static_cast<Sketcher::SketchObject*>(sketchgui->getObject());
             int GeoId1, GeoId2;
             Base::Vector3d intersect1, intersect2;
-            if(sk->seekTrimPoints(GeoId, Base::Vector3d(onSketchPos.x,onSketchPos.y,0),
-                                  GeoId1, intersect1,
-                                  GeoId2, intersect2)) {
+            if (sk->seekTrimPoints(GeoId,
+                                   Base::Vector3d(onSketchPos.x, onSketchPos.y, 0),
+                                   GeoId1,
+                                   intersect1,
+                                   GeoId2,
+                                   intersect2)) {
 
                 EditMarkers.resize(0);
 
-                if(GeoId1 != Sketcher::GeoEnum::GeoUndef)
+                if (GeoId1 != Sketcher::GeoEnum::GeoUndef) {
                     EditMarkers.emplace_back(intersect1.x, intersect1.y);
+                }
                 else {
                     auto start = sk->getPoint(GeoId, Sketcher::PointPos::start);
                     EditMarkers.emplace_back(start.x, start.y);
                 }
 
-                if(GeoId2 != Sketcher::GeoEnum::GeoUndef)
+                if (GeoId2 != Sketcher::GeoEnum::GeoUndef) {
                     EditMarkers.emplace_back(intersect2.x, intersect2.y);
+                }
                 else {
                     auto end = sk->getPoint(GeoId, Sketcher::PointPos::end);
-                    EditMarkers.emplace_back( end.x, end.y);
+                    EditMarkers.emplace_back(end.x, end.y);
                 }
 
-                drawEditMarkers(EditMarkers, 2); // maker augmented by two sizes (see supported marker sizes)
+                drawEditMarkers(EditMarkers,
+                                2);  // maker augmented by two sizes (see supported marker sizes)
             }
         }
         else {
@@ -121,20 +141,24 @@ public:
     {
         int GeoId = getPreselectCurve();
         if (GeoId > -1) {
-            const Part::Geometry *geom = sketchgui->getSketchObject()->getGeometry(GeoId);
-            if (geom->getTypeId().isDerivedFrom(Part::GeomTrimmedCurve::getClassTypeId())   ||
-                geom->getTypeId() == Part::GeomCircle::getClassTypeId()                     ||
-                geom->getTypeId() == Part::GeomEllipse::getClassTypeId() ||
-                geom->getTypeId() == Part::GeomBSplineCurve::getClassTypeId() ) {
+            const Part::Geometry* geom = sketchgui->getSketchObject()->getGeometry(GeoId);
+            if (geom->isDerivedFrom<Part::GeomTrimmedCurve>() || geom->is<Part::GeomCircle>()
+                || geom->is<Part::GeomEllipse>() || geom->is<Part::GeomBSplineCurve>()) {
                 try {
                     Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Trim edge"));
-                    Gui::cmdAppObjectArgs(sketchgui->getObject(), "trim(%d,App.Vector(%f,%f,0))",
-                              GeoId, onSketchPos.x, onSketchPos.y);
+                    Gui::cmdAppObjectArgs(sketchgui->getObject(),
+                                          "trim(%d,App.Vector(%f,%f,0))",
+                                          GeoId,
+                                          onSketchPos.x,
+                                          onSketchPos.y);
                     Gui::Command::commitCommand();
-                    tryAutoRecompute(static_cast<Sketcher::SketchObject *>(sketchgui->getObject()));
+                    tryAutoRecompute(static_cast<Sketcher::SketchObject*>(sketchgui->getObject()));
                 }
-                catch (const Base::Exception& e) {
-                    Base::Console().Error("Failed to trim edge: %s\n", e.what());
+                catch (const Base::Exception&) {
+                    Gui::NotifyError(sketchgui,
+                                     QT_TRANSLATE_NOOP("Notifications", "Error"),
+                                     QT_TRANSLATE_NOOP("Notifications", "Failed to trim edge"));
+
                     Gui::Command::abortCommand();
                 }
             }
@@ -142,8 +166,10 @@ public:
             EditMarkers.resize(0);
             drawEditMarkers(EditMarkers);
         }
-        else // exit the trimming tool if the user clicked on empty space
-            sketchgui->purgeHandler(); // no code after this line, Handler get deleted in ViewProvider
+        else {  // exit the trimming tool if the user clicked on empty space
+            sketchgui
+                ->purgeHandler();  // no code after this line, Handler get deleted in ViewProvider
+        }
 
         return true;
     }
@@ -156,7 +182,8 @@ private:
         Gui::Selection().addSelectionGate(new TrimmingSelection(sketchgui->getObject()));
     }
 
-    QString getCrosshairCursorSVGName() const override {
+    QString getCrosshairCursorSVGName() const override
+    {
         return QStringLiteral("Sketcher_Pointer_Trimming");
     }
 
@@ -165,9 +192,7 @@ private:
 };
 
 
+}  // namespace SketcherGui
 
-} // namespace SketcherGui
 
-
-#endif // SKETCHERGUI_DrawSketchHandlerTrimming_H
-
+#endif  // SKETCHERGUI_DrawSketchHandlerTrimming_H

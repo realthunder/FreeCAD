@@ -58,8 +58,7 @@ public:
     explicit UrlHandler(QObject* parent = nullptr)
         : QObject(parent){
     }
-    ~UrlHandler() override {
-    }
+    ~UrlHandler() override = default;
     virtual void openUrl(App::Document*, const QUrl&) {
     }
 };
@@ -217,6 +216,8 @@ public:
 
     void initDockWindows(bool show);
 
+    bool isRestoringWindowState() const;
+
 public Q_SLOTS:
     /**
      * Updates the standard actions of a text editor such as Cut, Copy, Paste, Undo and Redo.
@@ -226,6 +227,10 @@ public Q_SLOTS:
      * Sets text to the pane in the status bar.
      */
     void setPaneText(int i, QString text);
+    /**
+     * Sets the userschema in the status bar
+    */
+    void setUserSchema(int userSchema);
     /**
      * Arranges all child windows in a tile pattern.
      */
@@ -270,8 +275,6 @@ public Q_SLOTS:
 
     void showMessage (const QString & message, int timeout = 0);
 
-    bool isRestoringWindowState() const;
-
 protected:
     /**
      * This method checks if the main window can be closed by checking all open documents and views.
@@ -305,6 +308,8 @@ private:
     bool setupSelectionView();
     bool setupReportView();
     bool setupPythonConsole();
+
+    static void renderDevBuildWarning(QPainter &painter, const QPoint startPosition, const QSize maxSize);
 
 private Q_SLOTS:
     /**
@@ -350,7 +355,7 @@ private Q_SLOTS:
 
 Q_SIGNALS:
     void timeEvent();
-    void windowStateChanged(Gui::MDIView*);
+    void windowStateChanged(QWidget*);
     void workbenchActivated(const QString&);
     void mainWindowClosed();
 
@@ -384,7 +389,8 @@ public:
     /** Observes its parameter group. */
     void OnChange(Base::Subject<const char*> &rCaller, const char * sReason) override;
 
-    void SendLog(const std::string& notifiername, const std::string& msg, Base::LogStyle level) override;
+    void SendLog(const std::string& notifiername, const std::string& msg, Base::LogStyle level,
+                 Base::IntendedRecipient recipient, Base::ContentType content) override;
 
     /// name of the observer
     const char *Name() override {return "StatusBar";}

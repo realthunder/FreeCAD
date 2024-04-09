@@ -43,7 +43,7 @@
 #include "WorkflowManager.h"
 
 using namespace std;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 DEF_STD_CMD_ACL(CmdPrimtiveCompAdditive)
 
@@ -86,15 +86,15 @@ CmdPrimtiveCompAdditive::CmdPrimtiveCompAdditive()
     eType           = ForEdit;
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, false, bp::_1, bp::_2), "Part_Box");
+            std::bind(&commandOverride, this, 0, false, sp::_1, sp::_2), "Part_Box");
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 1, false, bp::_1, bp::_2), "Part_Cylinder");
+            std::bind(&commandOverride, this, 1, false, sp::_1, sp::_2), "Part_Cylinder");
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 2, false, bp::_1, bp::_2), "Part_Sphere");
+            std::bind(&commandOverride, this, 2, false, sp::_1, sp::_2), "Part_Sphere");
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 3, false, bp::_1, bp::_2), "Part_Cone");
+            std::bind(&commandOverride, this, 3, false, sp::_1, sp::_2), "Part_Cone");
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 5, false, bp::_1, bp::_2), "Part_Torus");
+            std::bind(&commandOverride, this, 5, false, sp::_1, sp::_2), "Part_Torus");
 }
 
 void CmdPrimtiveCompAdditive::activated(int iMsg)
@@ -162,7 +162,7 @@ void CmdPrimtiveCompAdditive::activated(int iMsg)
     PartDesignGui::setEdit(prm,pcActiveBody);
 }
 
-Gui::Action * CmdPrimtiveCompAdditive::createAction(void)
+Gui::Action * CmdPrimtiveCompAdditive::createAction()
 {
     Gui::ActionGroup* pcAction = new Gui::ActionGroup(this, Gui::getMainWindow());
     pcAction->setDropDownMenu(true);
@@ -254,7 +254,7 @@ void CmdPrimtiveCompAdditive::languageChange()
     arc8->setStatusTip(arc8->toolTip());
 }
 
-bool CmdPrimtiveCompAdditive::isActive(void)
+bool CmdPrimtiveCompAdditive::isActive()
 {
     return (hasActiveDocument() && !Gui::Control().activeDialog());
 }
@@ -273,15 +273,15 @@ CmdPrimtiveCompSubtractive::CmdPrimtiveCompSubtractive()
     eType           = ForEdit;
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, true, bp::_1, bp::_2), "Part_Box");
+            std::bind(&commandOverride, this, 0, true, sp::_1, sp::_2), "Part_Box");
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 1, true, bp::_1, bp::_2), "Part_Cylinder");
+            std::bind(&commandOverride, this, 1, true, sp::_1, sp::_2), "Part_Cylinder");
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 2, true, bp::_1, bp::_2), "Part_Sphere");
+            std::bind(&commandOverride, this, 2, true, sp::_1, sp::_2), "Part_Sphere");
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 3, true, bp::_1, bp::_2), "Part_Cone");
+            std::bind(&commandOverride, this, 3, true, sp::_1, sp::_2), "Part_Cone");
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 5, true, bp::_1, bp::_2), "Part_Torus");
+            std::bind(&commandOverride, this, 5, true, sp::_1, sp::_2), "Part_Torus");
 }
 
 void CmdPrimtiveCompSubtractive::activated(int iMsg)
@@ -329,7 +329,7 @@ void CmdPrimtiveCompSubtractive::activated(int iMsg)
     PartDesignGui::setEdit(Feat,pcActiveBody);
 }
 
-Gui::Action * CmdPrimtiveCompSubtractive::createAction(void)
+Gui::Action * CmdPrimtiveCompSubtractive::createAction()
 {
     Gui::ActionGroup* pcAction = new Gui::ActionGroup(this, Gui::getMainWindow());
     pcAction->setDropDownMenu(true);
@@ -421,7 +421,7 @@ void CmdPrimtiveCompSubtractive::languageChange()
     arc8->setStatusTip(arc8->toolTip());
 }
 
-bool CmdPrimtiveCompSubtractive::isActive(void)
+bool CmdPrimtiveCompSubtractive::isActive()
 {
     return (hasActiveDocument() && !Gui::Control().activeDialog());
 }
@@ -430,7 +430,7 @@ bool CmdPrimtiveCompSubtractive::isActive(void)
 // Initialization
 //===========================================================================
 
-void CreatePartDesignPrimitiveCommands(void)
+void CreatePartDesignPrimitiveCommands()
 {
     Gui::CommandManager &rcCmdMgr = Gui::Application::Instance->commandManager();
 

@@ -1152,7 +1152,7 @@ HelixPrimitive::HelixPrimitive(std::shared_ptr<Ui_DlgPrimitives> ui, Part::Helix
     ui->helixPitch->setRange(0, INT_MAX);
     ui->helixHeight->setRange(0, INT_MAX);
     ui->helixRadius->setRange(0, INT_MAX);
-    ui->helixAngle->setRange(-90, 90);
+    ui->helixAngle->setRange(-89.9, 89.9);
 
     if (feature) {
         ui->helixPitch->setValue(feature->Pitch.getQuantityValue());
@@ -1804,9 +1804,7 @@ DlgPrimitives::DlgPrimitives(QWidget* parent, Part::Primitive* feature)
 /*
  *  Destroys the object and frees any allocated resources
  */
-DlgPrimitives::~DlgPrimitives()
-{
-}
+DlgPrimitives::~DlgPrimitives() = default;
 
 void DlgPrimitives::activatePage()
 {
@@ -2198,11 +2196,6 @@ TaskPrimitives::TaskPrimitives()
     Content.push_back(taskbox);
 }
 
-TaskPrimitives::~TaskPrimitives()
-{
-    // automatically deleted in the sub-class
-}
-
 QDialogButtonBox::StandardButtons TaskPrimitives::getStandardButtons() const
 {
     return QDialogButtonBox::Close|
@@ -2244,11 +2237,6 @@ TaskPrimitivesEdit::TaskPrimitivesEdit(Part::Primitive* feature)
     taskbox = new Gui::TaskView::TaskBox(QPixmap(), location->windowTitle(), true, nullptr);
     taskbox->groupLayout()->addWidget(location);
     Content.push_back(taskbox);
-}
-
-TaskPrimitivesEdit::~TaskPrimitivesEdit()
-{
-    // automatically deleted in the sub-class
 }
 
 QDialogButtonBox::StandardButtons TaskPrimitivesEdit::getStandardButtons() const

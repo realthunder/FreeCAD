@@ -3761,7 +3761,7 @@ TopoShape::decodeElementComboName(const Data::IndexedName &element,
     int plen = (int)elementMapPrefix().size();
     int markerLen = strlen(marker);
     int len;
-    int pos = findTagInElementName(name, nullptr, &len);
+    int pos = name.findTagInElementName(nullptr, &len);
     if (pos < 0) {
         // It is possible to encode combo name without using a tag, e.g.
         // Sketcher object creates wire using edges that are created by itself,
@@ -3793,7 +3793,7 @@ TopoShape::decodeElementComboName(const Data::IndexedName &element,
 
     std::string text;
     len += plen + markerLen;
-    name.toString(text, len, pos-len);
+    name.appendToBuffer(text, len, pos-len);
 
     if (this->Hasher) {
         if (auto id = App::StringID::fromString(names.back().toRawBytes())) {
@@ -4400,31 +4400,6 @@ TopoShape &TopoShape::makESHAPE(const TopoDS_Shape &shape, const Mapper &mapper,
         delayed = true;
     }
     return *this;
-}
-
-const std::string &TopoShape::modPostfix() {
-    static std::string postfix(elementMapPrefix() + ":M");
-    return postfix;
-}
-
-const std::string &TopoShape::modgenPostfix() {
-    static std::string postfix(modPostfix() + "G");
-    return postfix;
-}
-
-const std::string &TopoShape::genPostfix() {
-    static std::string postfix(elementMapPrefix() + ":G");
-    return postfix;
-}
-
-const std::string &TopoShape::upperPostfix() {
-    static std::string postfix(elementMapPrefix() + ":U");
-    return postfix;
-}
-
-const std::string &TopoShape::lowerPostfix() {
-    static std::string postfix(elementMapPrefix() + ":L");
-    return postfix;
 }
 
 TopoShape &TopoShape::makESlice(const TopoShape &shape,
@@ -5160,7 +5135,7 @@ TopoShape::getRelatedElements(const char *_name, bool sameType) const {
     std::string postfix;
     char type;
     // extract tag and source element name length
-    if(findTagInElementName(name,&tag,&len,&postfix,&type,true) < 0)
+    if(name.findTagInElementName(&tag,&len,&postfix,&type,true) < 0)
         return ret;
 
     // recover the original element name
@@ -5169,10 +5144,10 @@ TopoShape::getRelatedElements(const char *_name, bool sameType) const {
     std::ostringstream ss;
 
     // First, search the name in the previous modeling step.
-    auto dehashed = dehashElementName(original);
+    auto dehashed = original.dehashElementName(Hasher);
     long tag2;
     char type2;
-    if(findTagInElementName(dehashed,&tag2,0,0,&type2,true) < 0) {
+    if(dehashed.findTagInElementName(&tag2,0,0,&type2,true) < 0) {
         ss.str("");
         encodeElementName(type,dehashed,ss,&sids,0,tag);
     }else if(tag2!=tag && tag2!=-tag) {
@@ -5193,7 +5168,7 @@ TopoShape::getRelatedElements(const char *_name, bool sameType) const {
     Data::MappedName modName(name);
     encodeElementName(type,modName,ss,&sids);
     bool found = false;
-    if(findTagInElementName(modName,&tag,&len,nullptr,nullptr,true) >= 0) {
+    if(modName.findTagInElementName(&tag,&len,nullptr,nullptr,true) >= 0) {
         std::string prefix;
         modName.toString(prefix, 0, len + (int)modPostfix().size());
         for(auto &v : getElementNamesWithPrefix(prefix.c_str())) {

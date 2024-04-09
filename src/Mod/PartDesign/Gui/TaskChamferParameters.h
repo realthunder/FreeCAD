@@ -71,7 +71,6 @@ private Q_SLOTS:
     void onSize2Changed(double);
     void onAngleChanged(double);
     void onFlipDirection(bool);
-
 protected:
     void changeEvent(QEvent *e) override;
     void refresh() override;
@@ -88,11 +87,11 @@ protected:
     void onAddAllEdges(void);
     void onCheckBoxUseAllEdgesToggled(bool checked);
 
-    int getType(void) const;
-    double getSize(void) const;
-    double getSize2(void) const;
-    double getAngle(void) const;
-    bool getFlipDirection(void) const;
+    int getType() const;
+    double getSize() const;
+    double getSize2() const;
+    double getAngle() const;
+    bool getFlipDirection() const;
     void onNewItem(QTreeWidgetItem *item);
     
 private:

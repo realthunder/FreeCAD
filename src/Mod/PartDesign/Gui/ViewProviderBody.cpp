@@ -70,7 +70,7 @@
 
 
 using namespace PartDesignGui;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 const char* PartDesignGui::ViewProviderBody::BodyModeEnum[] = {"Through","Tip",nullptr};
 
@@ -145,7 +145,9 @@ void ViewProviderBody::setupContextMenu(QMenu* menu, QObject* receiver, const ch
 
     Gui::ActionFunction* func = new Gui::ActionFunction(menu);
     QAction* act = menu->addAction(tr("Toggle active body"));
-    func->trigger(act, std::bind(&ViewProviderBody::doubleClicked, this));
+    func->trigger(act, [this]() {
+        this->doubleClicked();
+    });
 
     act = menu->addAction(body->AutoGroupSolids.getValue() ? 
                           tr("Disable auto solid group") : tr("Enable auto solid group"));
@@ -586,8 +588,9 @@ void ViewProviderBody::onChanged(const App::Property* prop) {
 
 void ViewProviderBody::unifyVisualProperty(const App::Property* prop) {
 
-    if(!pcObject || isRestoring())
+    if (!pcObject || isRestoring()) {
         return;
+    }
 
     if(prop == &Visibility ||
        prop == &Selectable ||
@@ -600,8 +603,17 @@ void ViewProviderBody::unifyVisualProperty(const App::Property* prop) {
        prop == &MappedColors ||
        prop == &DiffuseColor ||
        prop == &PointColorArray ||
-       prop == &LineColorArray)
+       prop == &LineColorArray) {
         return;
+    }
+
+    // Fixes issue 11197. In case of affected projects where the bounding box of a sub-feature
+    // is shown allow it to hide it
+    if (prop == &BoundingBox) {
+        if (BoundingBox.getValue()) {
+            return;
+        }
+    }
 
     Gui::Document *gdoc = Gui::Application::Instance->getDocument ( pcObject->getDocument() ) ;
 
@@ -615,12 +627,12 @@ void ViewProviderBody::unifyVisualProperty(const App::Property* prop) {
 #else
     auto features = body->Group.getValues();
     for(auto feature : features) {
-        if(feature->isDerivedFrom(PartDesign::Feature::getClassTypeId()))
+        if(feature->isDerivedFrom<PartDesign::Feature>())
 #endif
         {
             //copy over the properties data
-            auto vp = dynamic_cast<PartGui::ViewProviderPart*>(gdoc->getViewProvider(feature));
-            if(vp) {
+            if (auto vp = Base::freecad_dynamic_cast<PartGui::ViewProviderPart>(
+                        gdoc->getViewProvider(feature))) {
                 auto p = vp->getPropertyByName(prop->getName());
                 if(p && prop->isDerivedFrom(p->getTypeId())) {
                     if(prop==&ShapeColor) {

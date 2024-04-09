@@ -111,6 +111,7 @@ class TechDrawExport BaseGeom : public std::enable_shared_from_this<BaseGeom>
         Base::Vector3d nearPoint(const BaseGeomPtr p);
         static BaseGeomPtr baseFactory(TopoDS_Edge edge);
         static bool validateEdge(TopoDS_Edge edge);
+        static TopoDS_Edge completeEdge(const TopoDS_Edge &edge);
         bool closed();
         BaseGeomPtr copy();
         std::string dump();
@@ -153,18 +154,13 @@ class TechDrawExport BaseGeom : public std::enable_shared_from_this<BaseGeom>
         void setCosmeticTag(std::string t) { cosmeticTag = t; }
         Part::TopoShape asTopoShape(double scale);
 
+        virtual double getStartAngle() { return 0.0; }
+        virtual double getEndAngle() { return 0.0; }
+        virtual bool clockwiseAngle() { return false; }
+        virtual void clockwiseAngle(bool direction) { (void) direction; }
+
 protected:
         void createNewTag();
-
-        void intersectionLL(TechDraw::BaseGeomPtr geom1,
-                            TechDraw::BaseGeomPtr geom2,
-                            std::vector<Base::Vector3d>& interPoints);
-        void intersectionCL(TechDraw::BaseGeomPtr geom1,
-                            TechDraw::BaseGeomPtr geom2,
-                            std::vector<Base::Vector3d>& interPoints);
-        void intersectionCC(TechDraw::BaseGeomPtr geom1,
-                            TechDraw::BaseGeomPtr geom2,
-                            std::vector<Base::Vector3d>& interPoints);
 
         GeomType geomType;
         ExtractionType extractType;     //obs
@@ -223,6 +219,10 @@ class TechDrawExport AOE: public Ellipse
         ~AOE() override = default;
 
     public:
+        double getStartAngle() override { return startAngle; }
+        double getEndAngle() override { return endAngle; }
+        bool clockwiseAngle() override { return cw; }
+        void clockwiseAngle(bool direction) override  { cw = direction; }
         Base::Vector3d startPnt;  //TODO: The points are used for drawing, the angles for bounding box calcs - seems redundant
         Base::Vector3d endPnt;
         Base::Vector3d midPnt;
@@ -247,6 +247,11 @@ class TechDrawExport AOC: public Circle
         ~AOC() override = default;
 
     public:
+        double getStartAngle() override { return startAngle; }
+        double getEndAngle() override { return endAngle; }
+        bool clockwiseAngle() override { return cw; }
+        void clockwiseAngle(bool direction) override  { cw = direction; }
+
         std::string toString() const override;
         void Save(Base::Writer& w) const override;
         void Restore(Base::XMLReader& r) override;
@@ -290,6 +295,9 @@ class TechDrawExport BSpline: public BaseGeom
         ~BSpline() override = default;
 
     public:
+        double getStartAngle() override { return startAngle; }
+        double getEndAngle() override { return endAngle; }
+
         Base::Vector3d startPnt;
         Base::Vector3d endPnt;
         Base::Vector3d midPnt;

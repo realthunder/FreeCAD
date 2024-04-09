@@ -113,16 +113,7 @@ void ViewProviderAttachExtension::extensionUpdateData(const App::Property* prop)
 void ViewProviderAttachExtension::extensionSetupContextMenu(QMenu* menu, QObject*, const char*)
 {
     // The "Attachment" menu is now exposed by PartGui::ViewProviderExt
-#if 0
-    // toggle command to display components
-    Gui::ActionFunction* func = new Gui::ActionFunction(menu);
-    QAction* act = menu->addAction(QObject::tr("Attachment editor"));
-    if (Gui::Control().activeDialog())
-        act->setDisabled(true);
-    func->trigger(act, boost::bind(&ViewProviderAttachExtension::showAttachmentEditor, this));
-#else
     (void)menu;
-#endif
 }
 
 void ViewProviderAttachExtension::showAttachmentEditor()

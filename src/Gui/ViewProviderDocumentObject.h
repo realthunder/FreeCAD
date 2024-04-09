@@ -267,8 +267,8 @@ private:
     void attachDocumentObject(App::DocumentObject*);
 
 protected:
-    App::DocumentObject *pcObject;
-    Gui::Document* pcDocument;
+    App::DocumentObject *pcObject{nullptr};
+    Gui::Document* pcDocument{nullptr};
 
     CoinPtr<SoShadowStyle> pcShadowStyle;
 

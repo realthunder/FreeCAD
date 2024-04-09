@@ -67,6 +67,7 @@ class MainWindowStateObserver:
             timer.start(100)
 
 
+
 def pythonToolbars():
     """Manage Python based toolbar in BIM workbench."""
 

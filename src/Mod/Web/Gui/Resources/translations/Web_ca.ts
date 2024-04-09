@@ -76,7 +76,7 @@
       <location filename="../../Command.cpp" line="159"/>
       <location filename="../../Command.cpp" line="160"/>
       <source>Stop loading</source>
-      <translation>Aturar la carrega</translation>
+      <translation>Atura la càrrega</translation>
     </message>
   </context>
   <context>
@@ -104,7 +104,7 @@
       <location filename="../../Command.cpp" line="218"/>
       <location filename="../../Command.cpp" line="219"/>
       <source>Zoom out</source>
-      <translation>Allunyar</translation>
+      <translation>Allunya</translation>
     </message>
   </context>
   <context>
@@ -122,19 +122,19 @@
     <message>
       <location filename="../../Command.cpp" line="48"/>
       <source>Opens a website in FreeCAD</source>
-      <translation>Obre una pàgina web al FreeCAD</translation>
+      <translation>Obre un lloc web al FreeCAD</translation>
     </message>
   </context>
   <context>
     <name>QObject</name>
     <message>
-      <location filename="../../AppWebGui.cpp" line="93"/>
-      <location filename="../../BrowserView.cpp" line="815"/>
+      <location filename="../../BrowserView.cpp" line="865"/>
+      <location filename="../../AppWebGui.cpp" line="91"/>
       <source>Browser</source>
       <translation>Navegador</translation>
     </message>
     <message>
-      <location filename="../../BrowserView.cpp" line="623"/>
+      <location filename="../../BrowserView.cpp" line="668"/>
       <source>File does not exist!</source>
       <translation>El fitxer no existeix!</translation>
     </message>
@@ -142,42 +142,42 @@
   <context>
     <name>WebGui::BrowserView</name>
     <message>
-      <location filename="../../BrowserView.cpp" line="611"/>
-      <location filename="../../BrowserView.cpp" line="616"/>
-      <location filename="../../BrowserView.cpp" line="619"/>
+      <location filename="../../BrowserView.cpp" line="643"/>
+      <location filename="../../BrowserView.cpp" line="650"/>
+      <location filename="../../BrowserView.cpp" line="659"/>
       <source>Error</source>
       <translation>Error</translation>
     </message>
     <message>
-      <location filename="../../BrowserView.cpp" line="616"/>
+      <location filename="../../BrowserView.cpp" line="651"/>
       <source>There were errors while loading the file. Some data might have been modified or not recovered at all. Look in the report view for more specific information about the objects involved.</source>
-      <translation>S'han produït errors en carregar el fitxer. Algunes dades es poden haver modificades o no s'han recuperat. Consulteu la vista d'informe per a obtenir informació més específica sobre els objectes implicats.</translation>
+      <translation>S'han produït errors en carregar el fitxer. Algunes dades es poden haver modificat o no s'han recuperat. Consulteu la vista d'informe per a obtenir informació més específica sobre els objectes implicats.</translation>
     </message>
     <message>
-      <location filename="../../BrowserView.cpp" line="619"/>
+      <location filename="../../BrowserView.cpp" line="660"/>
       <source>There were serious errors while loading the file. Some data might have been modified or not recovered at all. Saving the project will most likely result in loss of data.</source>
       <translation>Hi ha hagut errors greus en carregar el fitxer. Pot ser que s'hagin modificat dades o no s'hagin recuperat. Desar el projecte probablement provocarà la pèrdua de dades.</translation>
     </message>
     <message>
-      <location filename="../../BrowserView.cpp" line="783"/>
+      <location filename="../../BrowserView.cpp" line="833"/>
       <source>Loading %1...</source>
-      <translation>Carregant 1%...</translation>
+      <translation>S'està carregant %1...</translation>
     </message>
   </context>
   <context>
     <name>WebGui::WebView</name>
     <message>
-      <location filename="../../BrowserView.cpp" line="362"/>
+      <location filename="../../BrowserView.cpp" line="370"/>
       <source>Open in External Browser</source>
       <translation>Obre en un navegador extern</translation>
     </message>
     <message>
-      <location filename="../../BrowserView.cpp" line="365"/>
+      <location filename="../../BrowserView.cpp" line="373"/>
       <source>Open in new window</source>
       <translation>Obre en una finestra nova</translation>
     </message>
     <message>
-      <location filename="../../BrowserView.cpp" line="411"/>
+      <location filename="../../BrowserView.cpp" line="431"/>
       <source>View source</source>
       <translation>Visualitza la font</translation>
     </message>

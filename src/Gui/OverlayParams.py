@@ -98,7 +98,7 @@ class ParamAnimationCurve(ParamProxy):
     {param.widget_name}->setCurrentIndex({param.namespace}::{param.class_name}::default{param.name}());''')
 
 Params = [
-    ParamInt('CornerNaviCube', 1, on_change=True),
+    ParamInt('CornerNaviCube', 1, on_change=True, subpath='User parameter:BaseApp/Preferences/NaviCube'),
     ParamBool('DockOverlayAutoView', True, on_change=True, title="Auto hide in non 3D view"),
     ParamInt('DockOverlayDelay', 200, "Overlay dock (re),layout delay.", title="Layout delay (ms)", proxy=ParamSpinBox(0, 5000, 100)),
     ParamInt('DockOverlayRevealDelay', 2000),
@@ -148,6 +148,9 @@ Params = [
          title="Animation duration (ms)", proxy=ParamSpinBox(0, 5000, 100)),
     ParamInt('DockOverlayAnimationCurve', 7, "Auto hide animation curve type", title="Animation curve type", proxy=ParamAnimationCurve()),
     ParamBool('DockOverlayHidePropertyViewScrollBar', False, "Hide property view scroll bar in dock overlay", title="Hide property view scroll bar"),
+    ParamInt('DockOverlayMinimumSize', 30, on_change=True,
+            doc="Minimum overlay dock widget width/height",
+            title="Minimum dock widget size"),
 ]
 
 def declare():

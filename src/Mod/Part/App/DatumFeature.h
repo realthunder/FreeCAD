@@ -43,7 +43,7 @@ public:
     //short mustExecute();
 
     /// returns the type name of the view provider
-    const char* getViewProviderName(void) const override = 0;
+    const char* getViewProviderName() const override = 0;
 
     /// Returns a point of the feature it counts as it's base
     virtual Base::Vector3d getBasePoint () const;

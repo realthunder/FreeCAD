@@ -63,6 +63,7 @@
 #include "DrawViewSection.h"
 #include "GeometryObject.h"
 #include "Preferences.h"
+#include "ShapeUtils.h"
 
 
 using namespace TechDraw;
@@ -84,6 +85,13 @@ DrawViewDetail::DrawViewDetail() : m_saveDvp(nullptr), m_saveDvs(nullptr)
                       "Location of detail in BaseView");
     ADD_PROPERTY_TYPE(Radius, (10.0), dgroup, App::Prop_None, "Size of detail area");
     ADD_PROPERTY_TYPE(Reference, ("1"), dgroup, App::Prop_None, "An identifier for this detail");
+
+    static const char* agroup{"Appearance"};
+    ADD_PROPERTY_TYPE(ShowMatting, (Preferences::showDetailMatting()), agroup, App::Prop_None,
+             "Show or hide the matting around the detail view");
+    ADD_PROPERTY_TYPE(ShowHighlight, (Preferences::showDetailHighlight()), agroup, App::Prop_None,
+             "Show or hide the detail highlight in the source view");
+
 
     getParameters();
     m_fudge = 1.01;
@@ -139,7 +147,7 @@ App::DocumentObjectExecReturn* DrawViewDetail::execute()
         return DrawView::execute();
     }
 
-    if (!baseObj->getTypeId().isDerivedFrom(TechDraw::DrawViewPart::getClassTypeId())) {
+    if (!baseObj->isDerivedFrom<TechDraw::DrawViewPart>()) {
         //this can only happen via scripting?
         return DrawView::execute();
     }
@@ -215,7 +223,7 @@ void DrawViewDetail::detailExec(const TopoDS_Shape& shape, DrawViewPart* dvp, Dr
         params.shape = m_saveShape;
         params.viewAxis = m_viewAxis;
         params.dirDetail = dvp->Direction.getValue();
-        gp_Pnt gpCenter = TechDraw::findCentroid(params.shape, params.dirDetail);
+        gp_Pnt gpCenter = ShapeUtils::findCentroid(params.shape, params.dirDetail);
         params.shapeCenter = Base::Vector3d(gpCenter.X(), gpCenter.Y(), gpCenter.Z());
         m_saveCentroid = params.shapeCenter;//centroid of original shape
         params.anchorPoint = AnchorPoint.getValue();
@@ -256,14 +264,11 @@ void DrawViewDetail::makeDetailShape(const DetailParams &params)
     double radius = params.radius;
     const Base::Vector3d &dirDetail = params.dirDetail;
 
-    int solidCount = DrawUtil::countSubShapes(params.shape, TopAbs_SOLID);
-    int shellCount = DrawUtil::countSubShapes(params.shape, TopAbs_SHELL);
-
     TopoDS_Shape copyShape = params.shape;
 
     if (params.moveShape) {
         //section cutShape should already be on origin
-        copyShape = TechDraw::moveShape(copyShape,//centre shape on origin
+        copyShape = ShapeUtils::moveShape(copyShape,//centre shape on origin
                                         -params.shapeCenter);
     }
 
@@ -272,7 +277,6 @@ void DrawViewDetail::makeDetailShape(const DetailParams &params)
     //    anchor.RotateZ(baseRotationRad);
 
     anchor = DrawUtil::toR3(params.viewAxis, anchor);//actual anchor coords in R3
-
 
     Bnd_Box bbxSource;
     bbxSource.SetGap(0.0);
@@ -321,86 +325,30 @@ void DrawViewDetail::makeDetailShape(const DetailParams &params)
     Handle(Message_ProgressIndicator) pi = new Part::ProgressIndicator(
             params.progress->numberOfSteps(), params.progress);
     try {
-
-        //for each solid and shell in the input shape, make a common with the tool and
-        //add the result to a compound.  This avoids issues with some geometry errors in the
-        //input shape.
-        BRep_Builder builder;
-        TopoDS_Compound pieces;
-        builder.MakeCompound(pieces);
-        if (solidCount > 0) {
-            TopExp_Explorer expl(copyShape, TopAbs_SOLID);
-            for (; expl.More(); expl.Next()) {
-                const TopoDS_Solid& s = TopoDS::Solid(expl.Current());
-
-                TopoDS_Shape result = shapeShapeIntersect(s, tool, pi);
-                if (result.IsNull())
-                    continue;
-
-                //this might be overkill for piecewise algo
-                //Did we get at least 1 solid?
-                TopExp_Explorer xp;
-                xp.Init(result, TopAbs_SOLID);
-                if (xp.More() != Standard_True) {
-                    continue;
-                }
-                builder.Add(pieces, result);
-            }
-        }
-
-        if (shellCount > 0) {
-            TopExp_Explorer expl(copyShape, TopAbs_SHELL);
-            for (; expl.More(); expl.Next()) {
-                const TopoDS_Shell& s = TopoDS::Shell(expl.Current());
-
-                TopoDS_Shape result = shapeShapeIntersect(s, tool, pi);
-                if (result.IsNull())
-                    continue;
-
-                //this might be overkill for piecewise algo
-                //Did we get at least 1 shell?
-                TopExp_Explorer xp;
-                xp.Init(result, TopAbs_SHELL);
-                if (xp.More() != Standard_True) {
-                    continue;
-                }
-                builder.Add(pieces, result);
-            }
-        }
+        TopoDS_Shape detailShape = shapeShapeIntersect(copyShape, tool, pi);
+        output->detailShape = detailShape;
 
         if (debugDetail()) {
             BRepTools::Write(tool, "DVDTool.brep");     //debug
             BRepTools::Write(copyShape, "DVDCopy.brep");//debug
-            BRepTools::Write(pieces, "DVDCommon.brep"); //debug
+            BRepTools::Write(detailShape, "DVDCommon.brep"); //debug
         }
 
         gp_Pnt inputCenter;
         //centroid of result
-        inputCenter = TechDraw::findCentroid(pieces, dirDetail);
+        inputCenter = ShapeUtils::findCentroid(detailShape, dirDetail);
         Base::Vector3d centroid(inputCenter.X(), inputCenter.Y(), inputCenter.Z());
         output->centroid = centroid;//center of massaged shape
 
-        if ((solidCount > 0) || (shellCount > 0)) {
-            //align shape with detail anchor
-            TopoDS_Shape centeredShape = TechDraw::moveShape(pieces, anchor * -1.0);
-            output->shape = TechDraw::scaleShape(centeredShape, params.scale);
-            if (debugDetail()) {
-                BRepTools::Write(output->shape, "DVDScaled.brep");//debug
-            }
-        }
-        else {
-            //no solids, no shells, do what you can with edges
-            TopoDS_Shape projectedEdges = projectEdgesOntoFace(copyShape, extrusionFace, gdir);
-            TopoDS_Shape centeredShape = TechDraw::moveShape(projectedEdges, anchor * -1.0);
-            if (debugDetail()) {
-                BRepTools::Write(projectedEdges, "DVDProjectedEdges.brep");//debug
-                BRepTools::Write(centeredShape, "DVDCenteredShape.brep");  //debug
-            }
-            output->shape = TechDraw::scaleShape(centeredShape, params.scale);
+        //align shape with detail anchor
+        TopoDS_Shape centeredShape = ShapeUtils::moveShape(detailShape, anchor * -1.0);
+        output->shape = ShapeUtils::scaleShape(centeredShape, params.scale);
+        if (debugDetail()) {
+            BRepTools::Write(output->shape, "DVDScaled.brep");//debug
         }
 
         if (!DrawUtil::fpCompare(params.rotation, 0.0)) {
-            output->shape = TechDraw::rotateShape(output->shape, params.viewAxis, params.rotation);
+            output->shape = ShapeUtils::rotateShape(output->shape, params.viewAxis, params.rotation);
         }
     }//end try block
     catch (Base::Exception& e1) {
@@ -440,6 +388,7 @@ void DrawViewDetail::onMakeDetailFinished(std::shared_ptr<Output> output)
     waitingForDetail(false);
     m_progress.reset();
     m_scaledShape = output->shape;
+    m_detailShape = output->detailShape;
     m_saveCentroid += output->centroid;
 
     //ancestor's buildGeometryObject will run HLR and face finding in a separate thread

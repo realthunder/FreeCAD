@@ -60,9 +60,9 @@ __author__ = "Yorik van Havre"
 __url__ = "https://www.freecad.org"
 
 
-def makeSite(objectslist=None,baseobj=None,name="Site"):
+def makeSite(objectslist=None,baseobj=None,name=None):
 
-    '''makeBuilding(objectslist): creates a site including the
+    '''makeBuilding([objectslist],[baseobj],[name]): creates a site including the
     objects from the given list.'''
 
     if not FreeCAD.ActiveDocument:
@@ -70,7 +70,7 @@ def makeSite(objectslist=None,baseobj=None,name="Site"):
         return
     import Part
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython","Site")
-    obj.Label = translate("Arch",name)
+    obj.Label = name if name else translate("Arch","Site")
     _Site(obj)
     if FreeCAD.GuiUp:
         _ViewProviderSite(obj.ViewObject)
@@ -90,15 +90,13 @@ def toNode(shape):
     """builds a linear pivy node from a shape"""
 
     from pivy import coin
-    buf = shape.writeInventor(2,0.01)
-    buf = buf.replace("\n","")
+    buf = shape.writeInventor(2,0.01).replace("\n","")
     buf = re.findall("point \[(.*?)\]",buf)
     pts = []
     for c in buf:
-        pts.extend(c.split(","))
+        pts.extend(zip(*[iter( c.split() )]*3) )
     pc = []
-    for p in pts:
-        v = p.strip().split()
+    for v in pts:
         v = [float(v[0]),float(v[1]),float(v[2])]
         if (not pc) or (pc[-1] != v):
             pc.append(v)
@@ -513,7 +511,7 @@ class _CommandSite:
         return {'Pixmap'  : 'Arch_Site',
                 'MenuText': QT_TRANSLATE_NOOP("Arch_Site","Site"),
                 'Accel': "S, I",
-                'ToolTip': QT_TRANSLATE_NOOP("Arch_Site","Creates a site object including selected objects.")}
+                'ToolTip': QT_TRANSLATE_NOOP("Arch_Site","Creates a site including selected objects.")}
 
     def IsActive(self):
 
@@ -818,11 +816,11 @@ class _Site(ArchIFC.IfcProduct):
             g.append(child)
             obj.Group = g
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 
@@ -1164,6 +1162,11 @@ class _ViewProviderSite:
 
         if hasattr(self, 'trueNorthRotation') and self.trueNorthRotation is not None:
             return
+        if not FreeCADGui.ActiveDocument.ActiveView:
+            return
+        if not hasattr(FreeCADGui.ActiveDocument.ActiveView, 'getSceneGraph'):
+            return
+
         from pivy import coin
         self.trueNorthRotation = coin.SoTransform()
         sg = FreeCADGui.ActiveDocument.ActiveView.getSceneGraph()
@@ -1172,10 +1175,18 @@ class _ViewProviderSite:
 
     def removeTrueNorthRotation(self):
 
-        if hasattr(self, 'trueNorthRotation') and self.trueNorthRotation is not None:
-            sg = FreeCADGui.ActiveDocument.ActiveView.getSceneGraph()
-            sg.removeChild(self.trueNorthRotation)
-            self.trueNorthRotation = None
+        if not hasattr(self, 'trueNorthRotation'):
+            return
+        if self.trueNorthRotation is None:
+            return
+        if not FreeCADGui.ActiveDocument.ActiveView:
+            return
+        if not hasattr(FreeCADGui.ActiveDocument.ActiveView, 'getSceneGraph'):
+            return
+
+        sg = FreeCADGui.ActiveDocument.ActiveView.getSceneGraph()
+        sg.removeChild(self.trueNorthRotation)
+        self.trueNorthRotation = None
 
     def updateTrueNorthRotation(self):
 
@@ -1223,11 +1234,11 @@ class _ViewProviderSite:
             return
         self.compass.scale(vobj.Object.ProjectedArea)
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 

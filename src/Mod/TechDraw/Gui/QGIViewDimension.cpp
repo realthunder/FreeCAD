@@ -509,11 +509,24 @@ QVariant QGIViewDimension::itemChange(GraphicsItemChange change, const QVariant&
             datumLabel->setSelected(false);
         }
         draw();
+        return value;
+    }
+    if(change == ItemPositionChange && scene()) {
+        // QGIVDimension doesn't really change position the way other views do.
+        // If we call QGIView::itemChange it will set the position to (0,0) instead of
+        // using the label's position, and the Dimension will be in the wrong place.
+        // QGIVBalloon behaves the same way.
+        return QGraphicsItem::itemChange(change, value);
     }
     return QGIView::itemChange(change, value);
 }
 
-//Set selection state for this and it's children
+bool QGIViewDimension::getGroupSelection()
+{
+    return datumLabel->isSelected();
+}
+
+//Set selection state for this and its children
 void QGIViewDimension::setGroupSelection(bool isSelected)
 {
     //    Base::Console().Message("QGIVD::setGroupSelection(%d)\n", b);
@@ -1280,7 +1293,9 @@ void QGIViewDimension::drawArrows(int count, const Base::Vector2d positions[], d
         }
 
         arrow->setStyle(QGIArrow::getPrefArrowStyle());
-        arrow->setSize(QGIArrow::getPrefArrowSize());
+        auto vp = static_cast<ViewProviderDimension*>(getViewProvider(getViewObject()));
+        auto arrowSize = vp->Arrowsize.getValue();
+        arrow->setSize(arrowSize);
         arrow->setFlipped(flipped);
 
         if (QGIArrow::getPrefArrowStyle() != 7) {// if not "None"
@@ -2119,7 +2134,7 @@ void QGIViewDimension::drawDistance(TechDraw::DrawViewDimension* dimension,
                              dimension->ExtensionAngle.getValue() * M_PI / 180.0);
     }
     else {
-        drawDistanceExecutive(fromQtApp(linePoints.first()), fromQtApp(linePoints.second()),
+        drawDistanceExecutive(fromQtApp(linePoints.extensionLineFirst()), fromQtApp(linePoints.extensionLineSecond()),
                               lineAngle, labelRectangle, standardStyle, renderExtent, flipArrows);
     }
 }
@@ -2637,7 +2652,13 @@ double QGIViewDimension::getDefaultArrowTailLength() const
 {
     // Arrow length shall be equal to font height and both ISO and ASME seem
     // to have arrow tail twice the arrow length, so let's make it twice arrow size
-    return QGIArrow::getPrefArrowSize() * 2.0;
+    auto arrowSize = PreferencesGui::dimArrowSize();
+    auto vp = static_cast<ViewProviderDimension*>(getViewProvider(getViewObject()));
+    if (vp) {
+        arrowSize = vp->Arrowsize.getValue();
+
+    }
+    return  arrowSize * 2.0;
 }
 
 double QGIViewDimension::getDefaultIsoDimensionLineSpacing() const

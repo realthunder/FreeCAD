@@ -23,6 +23,8 @@
 #ifndef GUI_TASKVIEW_TaskRevolutionParameters_H
 #define GUI_TASKVIEW_TaskRevolutionParameters_H
 
+#include <Mod/PartDesign/App/FeatureRevolution.h>
+#include <Mod/PartDesign/App/FeatureGroove.h>
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderRevolution.h"
 
@@ -61,9 +63,13 @@ public:
 
 private Q_SLOTS:
     void onAngleChanged(double);
+    void onAngle2Changed(double);
     void onAxisChanged(int);
     void onMidplane(bool);
     void onReversed(bool);
+    void onModeChanged(int);
+    void onButtonFace(const bool pressed = true);
+    void onFaceName(const QString& text);
 
 protected:
     void onSelectionModeChanged(SelectionMode) override;
@@ -71,10 +77,12 @@ protected:
     void changeEvent(QEvent *e) override;
     bool updateView() const;
     void getReferenceAxis(App::DocumentObject *&obj, std::vector<std::string> &sub) const;
-    double getAngle(void) const;
-    bool getMidplane(void) const;
-    bool getReversed(void) const;
+    double getAngle() const;
+    bool getMidplane() const;
+    bool getReversed() const;
+    QString getFaceName() const;
     void onAxisButton(bool checked);
+    void setCheckboxes(PartDesign::Revolution::RevolMethod mode);
 
     bool eventFilter(QObject *o, QEvent *ev) override;
 
@@ -83,17 +91,24 @@ protected:
     //mirrors of revolution's or groove's properties
     //should have been done by inheriting revolution and groove from common class...
     App::PropertyAngle* propAngle;
+    App::PropertyAngle* propAngle2;
     App::PropertyBool* propReversed;
     App::PropertyBool* propMidPlane;
     App::PropertyLinkSub* propReferenceAxis;
+    App::PropertyLinkSub* propUpToFace;
 
 private:
     void connectSignals();
     void updateUI();
+    void translateModeList(int index);
+    // TODO: This is common with extrude. Maybe send to superclass.
+    void translateFaceName();
+    void clearFaceName();
 
 private:
     std::unique_ptr<Ui_TaskRevolutionParameters> ui;
     QWidget *proxy;
+    bool isGroove;
 
     /**
      * @brief axesInList is the list of links corresponding to axis combo; must

@@ -269,7 +269,7 @@ void ViewProviderSavedView::apply(CaptureOptions options)
             if (auto prop = obj->getCameraProperty<App::PropertyString>("CameraSettings")) {
                 try {
                     if (boost::starts_with(prop->getStrValue(), "SetCamera "))
-                        view->setCamera(prop->getValue()+10, 20, 400);
+                        view->setCamera(prop->getValue()+10, 400);
                 } catch (Base::Exception &e) {
                     e.ReportException();
                 }

@@ -166,12 +166,13 @@ public:
    */
   virtual std::string getFullName(bool python=false) const {
       (void)python;
-      return std::string();
+      return {};
   }
 
   /// Return owner document of this container
-  virtual App::Document *getOwnerDocument() const 
-    {return nullptr;}
+  virtual App::Document *getOwnerDocument() const {
+      return nullptr;
+  }
 
   /// find a property by its name
   virtual Property *getPropertyByName(const char* name) const;
@@ -276,18 +277,17 @@ protected:
   virtual void handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *PropName);
   virtual void handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, Property * prop);
 
-private:
+public:
   // forbidden
-  PropertyContainer(const PropertyContainer&);
-  PropertyContainer& operator = (const PropertyContainer&);
+  PropertyContainer(const PropertyContainer&) = delete;
+  PropertyContainer& operator = (const PropertyContainer&) = delete;
 
 protected:
   DynamicProperty dynamicProps;
 
-
 private: 
   std::string _propertyPrefix;
-  static PropertyData propertyData; 
+  static PropertyData propertyData;
 
   mutable std::unique_ptr<PropertyContainerP> _pimpl;
 };
@@ -327,7 +327,7 @@ private: \
   TYPESYSTEM_HEADER_WITH_OVERRIDE(); \
 protected: \
   static const App::PropertyData * getPropertyDataPtr(void); \
-  virtual const App::PropertyData &getPropertyData(void) const override; \
+  const App::PropertyData &getPropertyData(void) const override; \
 private: \
   static App::PropertyData propertyData
 ///

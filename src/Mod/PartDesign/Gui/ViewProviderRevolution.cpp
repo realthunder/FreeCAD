@@ -39,9 +39,7 @@ ViewProviderRevolution::ViewProviderRevolution()
     sPixmap = "PartDesign_Revolution.svg";
 }
 
-ViewProviderRevolution::~ViewProviderRevolution()
-{
-}
+ViewProviderRevolution::~ViewProviderRevolution() = default;
 
 void ViewProviderRevolution::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {

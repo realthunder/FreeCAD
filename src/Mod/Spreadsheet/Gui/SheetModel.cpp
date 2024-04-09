@@ -45,16 +45,23 @@
 using namespace SpreadsheetGui;
 using namespace Spreadsheet;
 using namespace App;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
-SheetModel::SheetModel(Sheet* _sheet, QObject* parent) : QAbstractTableModel(parent), sheet(_sheet)
+SheetModel::SheetModel(Sheet* _sheet, QObject* parent)
+    : QAbstractTableModel(parent)
+    , sheet(_sheet)
 {
-    cellUpdatedConnection = sheet->cellUpdated.connect(bind(&SheetModel::cellUpdated, this, bp::_1));
-    rangeUpdatedConnection = sheet->rangeUpdated.connect(bind(&SheetModel::rangeUpdated, this, bp::_1));
-    tableRefreshConnection = sheet->tableRefresh.connect([this]() {
-        beginResetModel();
-        endResetModel();
-    });
+    // NOLINTBEGIN
+    cellUpdatedConnection =
+        sheet->cellUpdated.connect(std::bind(&SheetModel::cellUpdated, this, sp::_1));
+    rangeUpdatedConnection =
+        sheet->rangeUpdated.connect(std::bind(&SheetModel::rangeUpdated, this, sp::_1));
+    tableRefreshConnection =
+        sheet->tableRefresh.connect([this]() {
+            beginResetModel();
+            endResetModel();
+        });
+    // NOLINTEND
 
     aliasBgColor = QColor(Base::Tools::fromStdString(SheetParams::getAliasedCellBackgroundColor()));
     lockedAliasColor = QColor(Base::Tools::fromStdString(SheetParams::getLockedAliasedCellColor()));
@@ -133,7 +140,7 @@ QVariant formatCellDisplay(QString value, const Cell* cell)
     }
     return QVariant(value);
 }
-}// namespace
+}  // namespace
 
 QVariant SheetModel::data(const QModelIndex& index, int role) const
 {
@@ -142,10 +149,11 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
     int col = index.column();
     const Cell* cell = sheet->getCell(CellAddress(row, col));
 
-    if (!cell)
+    if (!cell) {
         cell = emptyCell;
+    }
 
-//#define DEBUG_DEPS
+// #define DEBUG_DEPS
 #ifdef DEBUG_DEPS
     if (role == Qt::ToolTipRole) {
         QString v;
@@ -157,15 +165,17 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
 
         if (deps.size() > 0) {
             v += QString::fromUtf8("Depends on:");
-            for (std::set<std::string>::const_iterator i = deps.begin(); i != deps.end(); ++i)
+            for (std::set<std::string>::const_iterator i = deps.begin(); i != deps.end(); ++i) {
                 v += QString::fromUtf8("\n\t") + Tools::fromStdString(*i);
+            }
             v += QString::fromUtf8("\n");
         }
         if (provides.size() > 0) {
             v += QString::fromUtf8("Used by:");
             for (std::set<std::string>::const_iterator i = provides.begin(); i != provides.end();
-                 ++i)
+                 ++i) {
                 v += QString::fromUtf8("\n\t") + Tools::fromStdString(*i);
+            }
             v += QString::fromUtf8("\n");
         }
         return QVariant(v);
@@ -173,8 +183,9 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
 #else
     if (!cell->hasException() && role == Qt::ToolTipRole) {
         std::string alias;
-        if (cell->getAlias(alias))
+        if (cell->getAlias(alias)) {
             return QVariant(Base::Tools::fromStdString(alias));
+        }
     }
 #endif
 
@@ -190,8 +201,9 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
                     QString::fromUtf8("#ERR: %1").arg(Tools::fromStdString(cell->getException())));
 #else
                 std::string str;
-                if (cell->getStringContent(str))
+                if (cell->getStringContent(str)) {
                     return QVariant::fromValue(QString::fromUtf8(str.c_str()));
+                }
                 return QVariant::fromValue(QString::fromUtf8("#ERR"));
 #endif
             }
@@ -211,7 +223,7 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
         } catch (Base::Exception &e) {
             e.ReportException();
         }
-        return QVariant();
+        return {};
     }
 
     if(cell == emptyCell)
@@ -224,12 +236,16 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
     if (role == Qt::BackgroundRole) {
         Color color;
 
-        if (cell->getBackground(color))
-            return QVariant::fromValue(QColor(255.0 * color.r, 255.0 * color.g, 255.0 * color.b, 255.0 * color.a));
-        else if (cell->hasAlias())
+        if (cell->getBackground(color)) {
+            return QVariant::fromValue(
+                    QColor(255.0 * color.r, 255.0 * color.g, 255.0 * color.b, 255.0 * color.a));
+        }
+        else if (cell->hasAlias()) {
             return QVariant::fromValue(cell->isAliasLocked() ? lockedAliasColor : aliasBgColor);
-        else
-            return QVariant();
+        }
+        else {
+            return {};
+        }
     }
 
     int qtAlignment = 0;
@@ -237,30 +253,39 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
     int alignment;
     cell->getAlignment(alignment);
 
-    if (alignment & Cell::ALIGNMENT_LEFT)
+    if (alignment & Cell::ALIGNMENT_LEFT) {
         qtAlignment |= Qt::AlignLeft;
-    if (alignment & Cell::ALIGNMENT_HCENTER)
+    }
+    if (alignment & Cell::ALIGNMENT_HCENTER) {
         qtAlignment |= Qt::AlignHCenter;
-    if (alignment & Cell::ALIGNMENT_RIGHT)
+    }
+    if (alignment & Cell::ALIGNMENT_RIGHT) {
         qtAlignment |= Qt::AlignRight;
-    if (alignment & Cell::ALIGNMENT_TOP)
+    }
+    if (alignment & Cell::ALIGNMENT_TOP) {
         qtAlignment |= Qt::AlignTop;
-    if (alignment & Cell::ALIGNMENT_VCENTER)
+    }
+    if (alignment & Cell::ALIGNMENT_VCENTER) {
         qtAlignment |= Qt::AlignVCenter;
-    if (alignment & Cell::ALIGNMENT_BOTTOM)
+    }
+    if (alignment & Cell::ALIGNMENT_BOTTOM) {
         qtAlignment |= Qt::AlignBottom;
+    }
 
     std::set<std::string> style;
     if (role == Qt::FontRole && cell->getStyle(style)) {
         QFont f;
 
-        for (std::set<std::string>::const_iterator i = style.begin(); i != style.end(); ++i) {
-            if (*i == "bold")
+        for (const auto& i : style) {
+            if (i == "bold") {
                 f.setBold(true);
-            else if (*i == "italic")
+            }
+            else if (i == "italic") {
                 f.setItalic(true);
-            else if (*i == "underline")
+            }
+            else if (i == "underline") {
                 f.setUnderline(true);
+            }
         }
 
         return QVariant::fromValue(f);
@@ -271,8 +296,10 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
 
     if (!prop || dirty) {
         switch (role) {
-            case  Qt::ForegroundRole: {
-                return QColor(0, 0, 255.0); // TODO: Remove this hardcoded color, replace with preference
+            case Qt::ForegroundRole: {
+                return QColor(0,
+                              0,
+                              255.0);  // TODO: Remove this hardcoded color, replace with preference
             }
             case Qt::TextAlignmentRole: {
                 qtAlignment = Qt::AlignHCenter | Qt::AlignVCenter;
@@ -282,23 +309,25 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
                 if(cell->getExpression()) {
                     std::string str;
                     if (cell->getStringContent(str)) {
-                        if (!str.empty() && str[0] == '=')
+                        if (!str.empty() && str[0] == '=') {
                             // If this is a real computed value, indicate that a recompute is
                             // needed before we can display it
                             return QVariant(QStringLiteral("#PENDING"));
-                        else
+                        }
+                        else {
                             // If it's just a simple value, display the new value, but still
                             // format it as a pending value to indicate to the user that
                             // a recompute is needed
                             return QVariant(QString::fromUtf8(str.c_str()));
+                        }
                     }
-                    else
-                        return QVariant();
+                    else {
+                        return {};
+                    }
                 }
-                else
-                    return QVariant();
+                return {};
             default:
-                return QVariant();
+                return {};
         }
     }
     else if (prop->isDerivedFrom(App::PropertyString::getClassTypeId())) {
@@ -308,6 +337,10 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
         switch (role) {
             case Qt::ForegroundRole:
                 return getForeground(cell);
+            case Qt::DisplayRole: {
+                QString v = QString::fromUtf8(stringProp->getValue());
+                return formatCellDisplay(v, cell);
+            }
             case Qt::TextAlignmentRole: {
                 if (alignment & Cell::ALIGNMENT_HIMPLIED) {
                     qtAlignment &= ~(Qt::AlignLeft | Qt::AlignHCenter | Qt::AlignRight);
@@ -319,12 +352,8 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
                 }
                 return QVariant::fromValue(qtAlignment);
             }
-            case Qt::DisplayRole: {
-                QString v = QString::fromUtf8(stringProp->getValue());
-                return formatCellDisplay(v, cell);
-            }
             default:
-                return QVariant();
+                return {};
         }
     }
     else if (prop->isDerivedFrom(App::PropertyQuantity::getClassTypeId())) {
@@ -361,9 +390,11 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
                 if (cell->getDisplayUnit(displayUnit)) {
                     if (computedUnit.isEmpty() || computedUnit == displayUnit.unit) {
                         QString number =
-                            QLocale().toString(floatProp->getValue() / displayUnit.scaler, 'f',
+                            QLocale().toString(floatProp->getValue() / displayUnit.scaler,
+                                               'f',
                                                Base::UnitsApi::getDecimals());
-                        //QString number = QString::number(floatProp->getValue() / displayUnit.scaler);
+                        // QString number = QString::number(floatProp->getValue() /
+                        // displayUnit.scaler);
                         v = number + Base::Tools::fromStdString(" " + displayUnit.stringRep);
                     }
                     else {
@@ -381,7 +412,7 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
                 return formatCellDisplay(v, cell);
             }
             default:
-                return QVariant();
+                return {};
         }
     }
     else if (prop->isDerivedFrom(App::PropertyFloat::getClassTypeId())
@@ -390,8 +421,9 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
         double d;
         long l;
         bool isInteger = false;
-        if (prop->isDerivedFrom(App::PropertyFloat::getClassTypeId()))
+        if (prop->isDerivedFrom(App::PropertyFloat::getClassTypeId())) {
             d = static_cast<const App::PropertyFloat*>(prop)->getValue();
+        }
         else {
             isInteger = true;
             l = static_cast<const App::PropertyInteger*>(prop)->getValue();
@@ -418,21 +450,23 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
 
                 // Display locale specific decimal separator (#0003875,#0003876)
                 if (cell->getDisplayUnit(displayUnit)) {
-                    QString number = QLocale().toString(d / displayUnit.scaler, 'f',
+                    QString number = QLocale().toString(d / displayUnit.scaler,
+                                                        'f',
                                                         Base::UnitsApi::getDecimals());
-                    //QString number = QString::number(d / displayUnit.scaler);
+                    // QString number = QString::number(d / displayUnit.scaler);
                     v = number + Base::Tools::fromStdString(" " + displayUnit.stringRep);
                 }
                 else if (!isInteger) {
                     v = QLocale::system().toString(d, 'f', Base::UnitsApi::getDecimals());
-                    //v = QString::number(d);
+                    // v = QString::number(d);
                 }
-                else
+                else {
                     v = QString::number(l);
+                }
                 return formatCellDisplay(v, cell);
             }
             default:
-                return QVariant();
+                return {};
         }
     }
     else {
@@ -477,22 +511,24 @@ QVariant SheetModel::data(const QModelIndex& index, int role) const
                 return QVariant(QString::fromUtf8(value.c_str()));
             }
             default:
-                return QVariant();
+                return {};
         }
     }
 
-    return QVariant();
+    return {};
 }
 
 QVariant SheetModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
     if (role == Qt::SizeHintRole) {
-        if (orientation == Qt::Horizontal)
+        if (orientation == Qt::Horizontal) {
             return QVariant(
                 QSize(sheet->getColumnWidth(section), PropertyRowHeights::defaultHeight));
-        else
+        }
+        else {
             return QVariant(
                 QSize(PropertyColumnWidths::defaultHeaderWidth, sheet->getRowHeight(section)));
+        }
     }
     if (role == Qt::DisplayRole) {
         if (orientation == Qt::Horizontal) {
@@ -513,7 +549,7 @@ QVariant SheetModel::headerData(int section, Qt::Orientation orientation, int ro
            (orientation == Qt::Vertical && sheet->hiddenRows.getValues().count(section)))
            return QColor(0,0,255);
     }
-    return QVariant();
+    return {};
 }
 
 bool SheetModel::setData(const QModelIndex & index, const QVariant & value, int role)

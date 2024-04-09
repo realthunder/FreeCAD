@@ -117,8 +117,8 @@ bool setEdit(App::DocumentObject *obj, App::DocumentObject *container, const cha
     auto active = activeView->getActiveObject<App::DocumentObject*>(key,&parent,&subname);
     if(container && active!=container) {
         parent = obj;
-        subname.clear();
-    } else {
+    }
+    else {
         subname += obj->getNameInDocument();
         subname += '.';
     }
@@ -240,7 +240,7 @@ PartDesign::Body * makeBodyActive(App::DocumentObject *body, App::Document *doc,
     return dynamic_cast<PartDesign::Body*>(body);
 }
 
-void needActiveBodyError(void)
+void needActiveBodyError()
 {
     QMessageBox::warning( Gui::getMainWindow(),
         QObject::tr("Active Body Required"),
@@ -348,7 +348,7 @@ void fixSketchSupport (Sketcher::SketchObject* sketch)
         return; // Sketch is on a face of a solid, do nothing
 
     const App::Document* doc = sketch->getDocument();
-    PartDesign::Body *body = getBodyFor(sketch, /*messageIfNot*/ 0);
+    PartDesign::Body *body = getBodyFor(sketch, /*messageIfNot*/ false);
     if (!body) {
         throw Base::RuntimeError ("Couldn't find body for the sketch");
     }
@@ -526,14 +526,14 @@ bool isFeatureMovable(App::DocumentObject* const feat)
     if (!feat)
         return false;
 
-    if (feat->getTypeId().isDerivedFrom(PartDesign::Feature::getClassTypeId())) {
+    if (feat->isDerivedFrom<PartDesign::Feature>()) {
         auto prim = static_cast<PartDesign::Feature*>(feat);
         App::DocumentObject* bf = prim->BaseFeature.getValue();
         if (bf)
             return false;
     }
 
-    if (feat->getTypeId().isDerivedFrom(PartDesign::ProfileBased::getClassTypeId())) {
+    if (feat->isDerivedFrom<PartDesign::ProfileBased>()) {
         auto prim = static_cast<PartDesign::ProfileBased*>(feat);
         auto sk = prim->getVerifiedSketch(true);
 
@@ -570,7 +570,7 @@ bool isFeatureMovable(App::DocumentObject* const feat)
     if (feat->hasExtension(Part::AttachExtension::getExtensionClassTypeId())) {
         auto attachable = feat->getExtensionByType<Part::AttachExtension>();
         App::DocumentObject* support = attachable->AttachmentSupport.getValue();
-        if (support && !support->getTypeId().isDerivedFrom(App::OriginFeature::getClassTypeId()))
+        if (support && !support->isDerivedFrom<App::OriginFeature>())
             return false;
     }
 
@@ -585,7 +585,7 @@ std::vector<App::DocumentObject*> collectMovableDependencies(std::vector<App::Do
     {
 
         // Get sketches and datums from profile based features
-        if (feat->getTypeId().isDerivedFrom(PartDesign::ProfileBased::getClassTypeId())) {
+        if (feat->isDerivedFrom<PartDesign::ProfileBased>()) {
             auto prim = static_cast<PartDesign::ProfileBased*>(feat);
             Part::Part2DObject* sk = prim->getVerifiedSketch(true);
             if (sk) {
@@ -598,19 +598,19 @@ std::vector<App::DocumentObject*> collectMovableDependencies(std::vector<App::Do
             }
             if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
                 App::DocumentObject* axis = prop->getValue();
-                if (axis && !axis->getTypeId().isDerivedFrom(App::OriginFeature::getClassTypeId())){
+                if (axis && !axis->isDerivedFrom<App::OriginFeature>()){
                     unique_objs.insert(axis);
                 }
             }
             if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("Spine"))) {
                 App::DocumentObject* axis = prop->getValue();
-                if (axis && !axis->getTypeId().isDerivedFrom(App::OriginFeature::getClassTypeId())){
+                if (axis && !axis->isDerivedFrom<App::OriginFeature>()){
                     unique_objs.insert(axis);
                 }
             }
             if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("AuxillerySpine"))) {
                 App::DocumentObject* axis = prop->getValue();
-                if (axis && !axis->getTypeId().isDerivedFrom(App::OriginFeature::getClassTypeId())){
+                if (axis && !axis->isDerivedFrom<App::OriginFeature>()){
                     unique_objs.insert(axis);
                 }
             }
@@ -629,7 +629,7 @@ void relinkToOrigin(App::DocumentObject* feat, PartDesign::Body* targetbody)
     if (feat->hasExtension(Part::AttachExtension::getExtensionClassTypeId())) {
         auto attachable = feat->getExtensionByType<Part::AttachExtension>();
         App::DocumentObject* support = attachable->AttachmentSupport.getValue();
-        if (support && support->getTypeId().isDerivedFrom(App::OriginFeature::getClassTypeId())) {
+        if (support && support->isDerivedFrom<App::OriginFeature>()) {
             auto originfeat = static_cast<App::OriginFeature*>(support);
             App::OriginFeature* targetOriginFeature = targetbody->getOrigin()->getOriginFeature(originfeat->Role.getValue());
             if (targetOriginFeature) {
@@ -637,11 +637,11 @@ void relinkToOrigin(App::DocumentObject* feat, PartDesign::Body* targetbody)
             }
         }
     }
-    else if (feat->getTypeId().isDerivedFrom(PartDesign::ProfileBased::getClassTypeId())) {
+    else if (feat->isDerivedFrom<PartDesign::ProfileBased>()) {
         auto prim = static_cast<PartDesign::ProfileBased*>(feat);
         if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
             App::DocumentObject* axis = prop->getValue();
-            if (axis && axis->getTypeId().isDerivedFrom(App::OriginFeature::getClassTypeId())){
+            if (axis && axis->isDerivedFrom<App::OriginFeature>()){
                 auto originfeat = static_cast<App::OriginFeature*>(axis);
                 App::OriginFeature* targetOriginFeature = targetbody->getOrigin()->getOriginFeature(originfeat->Role.getValue());
                 if (targetOriginFeature) {
@@ -1726,11 +1726,11 @@ bool populateGeometryReferences(QTreeWidget *treeWidget, App::PropertyLinkSub &p
         bool popped = false;
         for(auto &element : Part::Feature::getRelatedElements(base,ref.c_str())) {
             tmp.clear();
-            element.name.toString(tmp);
+            element.name.appendToBuffer(tmp);
             if (!subSet.insert(tmp).second)
                 continue;
             indexedName.clear();
-            element.index.toString(indexedName);
+            element.index.appendToStringBuffer(indexedName);
             if (!subSet.insert(indexedName).second)
                 continue;
             FC_WARN("guess element reference in " << prop.getFullName() << ": " << ref << " -> " << element.name);
@@ -1746,13 +1746,13 @@ bool populateGeometryReferences(QTreeWidget *treeWidget, App::PropertyLinkSub &p
         }
         if(!popped) {
             std::string missingSub = refs.back();
-            if(!boost::starts_with(missingSub,Data::ComplexGeoData::missingPrefix()))
-                missingSub = Data::ComplexGeoData::missingPrefix()+missingSub;
+            if(!boost::starts_with(missingSub,Data::missingPrefix()))
+                missingSub = Data::missingPrefix()+missingSub;
             auto item = new QTreeWidgetItem(treeWidget);
             item->setText(0, QString::fromStdString(missingSub));
 
             setGeometryItemText(item, sub.second);
-            setGeometryItemReference(item, Data::ComplexGeoData::newElementName(ref.c_str()));
+            setGeometryItemReference(item, Data::newElementName(ref.c_str()));
             item->setForeground(0, Qt::red);
             refs.back() = ref; // use new style name for future guessing
         }

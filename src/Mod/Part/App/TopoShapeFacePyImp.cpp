@@ -66,6 +66,7 @@
 #include <BRepOffsetAPI_MakeEvolved.hxx>
 
 #include <Base/GeometryPyCXX.h>
+#include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Base/VectorPy.h>
 
 #include <Mod/Part/App/BezierSurfacePy.h>
@@ -92,6 +93,15 @@
 #include "Tools.h"
 
 using namespace Part;
+
+namespace{
+const TopoDS_Face& getTopoDSFace(const TopoShapeFacePy* theFace){
+    const TopoDS_Face& f = TopoDS::Face(theFace->getTopoShapePtr()->getShape());
+    if (f.IsNull())
+        throw Py::ValueError("Face is null");
+    return f;
+}
+}
 
 // returns a string which represent the object e.g. when printed in python
 std::string TopoShapeFacePy::representation() const
@@ -405,7 +415,7 @@ PyObject* TopoShapeFacePy::makeOffset(PyObject *args)
     double dist;
     if (!PyArg_ParseTuple(args, "d",&dist))
         return nullptr;
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
     BRepBuilderAPI_FindPlane findPlane(f);
     if (!findPlane.Found()) {
         PyErr_SetString(PartExceptionOCCError, "No planar face");
@@ -430,7 +440,7 @@ PyObject* TopoShapeFacePy::valueAt(PyObject *args)
     if (!PyArg_ParseTuple(args, "dd",&u,&v))
         return nullptr;
 
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
 
     BRepAdaptor_Surface adapt(f);
     BRepLProp_SLProps prop(adapt,u,v,0,Precision::Confusion());
@@ -444,7 +454,7 @@ PyObject* TopoShapeFacePy::normalAt(PyObject *args)
     if (!PyArg_ParseTuple(args, "dd",&u,&v))
         return nullptr;
 
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
     Standard_Boolean done;
     gp_Dir dir;
 
@@ -463,7 +473,7 @@ PyObject* TopoShapeFacePy::getUVNodes(PyObject *args)
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
 
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
     TopLoc_Location aLoc;
     Handle (Poly_Triangulation) mesh = BRep_Tool::Triangulation(f,aLoc);
     if (mesh.IsNull()) {
@@ -506,7 +516,7 @@ PyObject* TopoShapeFacePy::tangentAt(PyObject *args)
 
     gp_Dir dir;
     Py::Tuple tuple(2);
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
     BRepAdaptor_Surface adapt(f);
 
     BRepLProp_SLProps prop(adapt,u,v,2,Precision::Confusion());
@@ -537,7 +547,7 @@ PyObject* TopoShapeFacePy::curvatureAt(PyObject *args)
         return nullptr;
 
     Py::Tuple tuple(2);
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
     BRepAdaptor_Surface adapt(f);
 
     BRepLProp_SLProps prop(adapt,u,v,2,Precision::Confusion());
@@ -560,7 +570,7 @@ PyObject* TopoShapeFacePy::derivative1At(PyObject *args)
         return nullptr;
 
     Py::Tuple tuple(2);
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
     BRepAdaptor_Surface adapt(f);
 
     try {
@@ -580,7 +590,7 @@ PyObject* TopoShapeFacePy::derivative2At(PyObject *args)
         return nullptr;
 
     Py::Tuple tuple(2);
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
     BRepAdaptor_Surface adapt(f);
 
     try {
@@ -637,7 +647,7 @@ PyObject* TopoShapeFacePy::validate(PyObject *args)
         const TopoDS_Face& face = TopoDS::Face(getTopoShapePtr()->getShape());
         BRepCheck_Analyzer aChecker(face);
         if (!aChecker.IsValid()) {
-            TopoDS_Wire outerwire = ShapeAnalysis::OuterWire(face);
+            TopoDS_Wire outerwire = BRepTools::OuterWire(face);
             TopTools_IndexedMapOfShape myMap;
             myMap.Add(outerwire);
 
@@ -760,9 +770,9 @@ PyObject* TopoShapeFacePy::cutHoles(PyObject *args)
             }
 
             if (!wires.empty()) {
-                const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+                auto f = getTopoDSFace(this);
                 BRepBuilderAPI_MakeFace mkFace(f);
-                for (auto & wire : wires)
+                for (const auto & wire : wires)
                     mkFace.Add(TopoDS::Wire(wire.getShape()));
                 if (!mkFace.IsDone()) {
                     switch (mkFace.Error()) {
@@ -935,20 +945,20 @@ Py::Object TopoShapeFacePy::getSurface() const
 
 Py::Float TopoShapeFacePy::getTolerance() const
 {
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
     return Py::Float(BRep_Tool::Tolerance(f));
 }
 
 void TopoShapeFacePy::setTolerance(Py::Float tol)
 {
     BRep_Builder aBuilder;
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
     aBuilder.UpdateFace(f, (double)tol);
 }
 
 Py::Tuple TopoShapeFacePy::getParameterRange() const
 {
-    const TopoDS_Face& f = TopoDS::Face(getTopoShapePtr()->getShape());
+    auto f = getTopoDSFace(this);
     BRepAdaptor_Surface adapt(f);
     double u1 = adapt.FirstUParameter();
     double u2 = adapt.LastUParameter();
@@ -980,17 +990,16 @@ Py::Object TopoShapeFacePy::getWire() const
 
 Py::Object TopoShapeFacePy::getOuterWire() const
 {
-    const TopoDS_Shape& clSh = getTopoShapePtr()->getShape();
-    if (clSh.IsNull())
+    const TopoDS_Shape& shape = getTopoShapePtr()->getShape();
+    if (shape.IsNull())
         throw Py::RuntimeError("Null shape");
-    if (clSh.ShapeType() == TopAbs_FACE) {
-        TopoDS_Face clFace = (TopoDS_Face&)clSh;
-        TopoDS_Wire clWire;
+    if (shape.ShapeType() == TopAbs_FACE) {
+        TopoDS_Wire wire;
         if (PartParams::getUseBrepToolsOuterWire())
-            clWire = BRepTools::OuterWire(clFace);
+            wire = BRepTools::OuterWire(TopoDS::Face(shape));
         else
-            clWire = ShapeAnalysis::OuterWire(clFace);
-        Base::PyObjectBase* wirepy = new TopoShapeWirePy(new TopoShape(clWire));
+            wire = ShapeAnalysis::OuterWire(TopoDS::Face(shape));
+        Base::PyObjectBase* wirepy = new TopoShapeWirePy(new TopoShape(wire));
         wirepy->setNotTracking();
         return Py::asObject(wirepy);
     }

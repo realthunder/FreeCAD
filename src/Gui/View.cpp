@@ -37,7 +37,7 @@ PROPERTY_SOURCE_ABSTRACT(Gui::BaseView,App::PropertyContainer)
 
 
 BaseView::BaseView( Gui::Document* pcDocument)
-  :_pcDocument(pcDocument), bIsDetached(false)
+  :_pcDocument(pcDocument)
 {
     static std::atomic<int> _nextID;
     _id = ++_nextID;

@@ -295,17 +295,33 @@ QVariant QGIViewBalloon::itemChange(GraphicsItemChange change, const QVariant& v
             balloonLabel->setSelected(false);
         }
         draw();
+        return value;
     }
+
+    if(change == ItemPositionChange && scene()) {
+        // QGIVBalloon doesn't really change position the way other views do.
+        // If we call QGIView::itemChange it will set the position to (0,0) instead of
+        // using the label's position, and the Balloon will be in the wrong place.
+        // QGIVDimension behaves the same way.
+        return QGraphicsItem::itemChange(change, value);
+    }
+
     return QGIView::itemChange(change, value);
 }
 
-//Set selection state for this and it's children
+bool QGIViewBalloon::getGroupSelection()
+{
+    return balloonLabel->isSelected();
+}
+
+//Set selection state for this and its children
 void QGIViewBalloon::setGroupSelection(bool isSelected)
 {
     //    Base::Console().Message("QGIVB::setGroupSelection(%d)\n", b);
     setSelected(isSelected);
     balloonLabel->setSelected(isSelected);
     balloonLines->setSelected(isSelected);
+    balloonShape->setSelected(isSelected);
     arrow->setSelected(isSelected);
 }
 
@@ -372,7 +388,7 @@ void QGIViewBalloon::setViewPartFeature(TechDraw::DrawViewBalloon* balloonFeat)
 
 void QGIViewBalloon::updateView(bool update)
 {
-    //    Base::Console().Message("QGIVB::updateView()\n");
+    // Base::Console().Message("QGIVB::updateView()\n");
     Q_UNUSED(update);
     auto balloon(dynamic_cast<TechDraw::DrawViewBalloon*>(getViewObject()));
     if (!balloon) {
@@ -397,7 +413,7 @@ void QGIViewBalloon::updateView(bool update)
 //update the bubble contents
 void QGIViewBalloon::updateBalloon(bool obtuse)
 {
-    //    Base::Console().Message("QGIVB::updateBalloon()\n");
+    // Base::Console().Message("QGIVB::updateBalloon()\n");
     (void)obtuse;
     const auto balloon(dynamic_cast<TechDraw::DrawViewBalloon*>(getViewObject()));
     if (!balloon) {
@@ -567,41 +583,27 @@ void QGIViewBalloon::placeBalloon(QPointF pos)
 
 void QGIViewBalloon::draw()
 {
-    //    Base::Console().Message("QGIVB::draw()\n");
+    // Base::Console().Message("QGIVB::draw()\n");
     // just redirect
     drawBalloon(false);
 }
 
 void QGIViewBalloon::drawBalloon(bool dragged)
 {
-    //    Base::Console().Message("QGIVB::drawBalloon(%d)\n", dragged);
-    if (!isVisible()) {
-        return;
-    }
+    // Base::Console().Message("QGIVB::drawBalloon(%d)\n", dragged);
+    prepareGeometryChange();
 
     TechDraw::DrawViewBalloon* balloon = dynamic_cast<TechDraw::DrawViewBalloon*>(getViewObject());
-    if ((!balloon) ||//nothing to draw, don't try
+    if ((!balloon) ||
         (!balloon->isDerivedFrom(TechDraw::DrawViewBalloon::getClassTypeId()))) {
-        balloonLabel->hide();
-        hide();
+        //nothing to draw, don't try
         return;
     }
-
-    balloonLabel->show();
-    show();
 
     const TechDraw::DrawView* refObj = balloon->getParentView();
-    if (!refObj) {
-        return;
-    }
-    //    if (!refObj->hasGeometry()) {// nothing to draw yet (restoring)
-    //        balloonLabel->hide();
-    //        hide();
-    //        return;
-    //    }
-
     auto vp = static_cast<ViewProviderBalloon*>(getViewProvider(getViewObject()));
-    if (!vp) {
+    if (!refObj || !vp) {
+        // can't draw this.  probably restoring.
         return;
     }
 
@@ -752,15 +754,16 @@ void QGIViewBalloon::drawBalloon(bool dragged)
 
     offsetLR = (lblCenter.x < arrowTipX) ? offsetLR : -offsetLR;
 
+    // avoid starting the line inside the balloon
+    dLineStart.y = lblCenter.y + offsetUD;
+    dLineStart.x = lblCenter.x + offsetLR;
+
     if (DrawUtil::fpCompare(kinkLength, 0.0)
         && strcmp(balloonType,
                   "Line")) {//if no kink, then dLine start sb on line from center to arrow
-        dLineStart = lblCenter;
         kinkPoint = dLineStart;
     }
     else {
-        dLineStart.y = lblCenter.y + offsetUD;
-        dLineStart.x = lblCenter.x + offsetLR;
         kinkLength = (lblCenter.x < arrowTipX) ? kinkLength : -kinkLength;
         kinkPoint.y = dLineStart.y;
         kinkPoint.x = dLineStart.x + kinkLength;
@@ -843,6 +846,7 @@ void QGIViewBalloon::drawBalloon(bool dragged)
         setPrettyNormal();
     }
 
+    update();
     if (parentItem()) {
         parentItem()->update();
     }

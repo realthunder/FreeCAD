@@ -50,11 +50,11 @@ Thickness::Thickness()
     Mode.setEnums(ModeEnums);
     ADD_PROPERTY_TYPE(Join, (long(0)), "Thickness", App::Prop_None, "Join type");
     Join.setEnums(JoinEnums);
-    ADD_PROPERTY_TYPE(Reversed,(false),"Thickness",App::Prop_None,"Apply the thickness towards the solids interior");
-    ADD_PROPERTY_TYPE(Intersection,(false),"Thickness",App::Prop_None,"Enable intersection-handling");
+    ADD_PROPERTY_TYPE(Reversed, (true), "Thickness", App::Prop_None,
+                      "Apply the thickness towards the solids interior");
+    ADD_PROPERTY_TYPE(Intersection, (false), "Thickness", App::Prop_None,
+                      "Enable intersection-handling");
     ADD_PROPERTY_TYPE(MakeOffset,(false),"Thickness",App::Prop_None,"Make a thicken or shrunken solid instead of a thin shell");
-
-    AddSubType.setStatus(App::Property::ReadOnly, false);
 }
 
 short Thickness::mustExecute() const

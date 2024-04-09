@@ -31,7 +31,8 @@
 #include <Mod/Spreadsheet/SpreadsheetGlobal.h>
 
 
-namespace Spreadsheet {
+namespace Spreadsheet
+{
 class Sheet;
 }
 
@@ -40,7 +41,7 @@ namespace SpreadsheetGui
 
 class SheetView;
 
-class SpreadsheetGuiExport ViewProviderSheet : public Gui::ViewProviderDocumentObject
+class SpreadsheetGuiExport ViewProviderSheet: public Gui::ViewProviderDocumentObject
 {
     PROPERTY_HEADER_WITH_OVERRIDE(SpreadsheetGui::ViewProviderSheet);
 
@@ -52,10 +53,13 @@ public:
     ~ViewProviderSheet() override;
 
     void setDisplayMode(const char* ModeName) override;
-    bool useNewSelectionModel(void) const override {return false;}
+    bool useNewSelectionModel() const override
+    {
+        return false;
+    }
     std::vector<std::string> getDisplayModes() const override;
 
-    bool doubleClicked(void) override;
+    bool doubleClicked() override;
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
 
     Spreadsheet::Sheet* getSpreadsheetObject() const;
@@ -66,24 +70,31 @@ public:
 
     bool setEdit(int ModNum) override;
 
-    bool isShow(void) const override { return true; }
+    bool isShow() const override
+    {
+        return true;
+    }
 
-    Gui::MDIView *getMDIView() const override;
+    Gui::MDIView* getMDIView() const override;
 
-    inline SheetView* getView() const { return view; }
+    inline SheetView* getView() const
+    {
+        return view;
+    }
 
-    PyObject *getPyObject() override;
+    PyObject* getPyObject() override;
 
 protected:
     SheetView* showSpreadsheetView();
-    void updateData(const App::Property *prop) override;
+    void updateData(const App::Property* prop) override;
+
 private:
     QPointer<SheetView> view;
 };
 
 using ViewProviderSheetPython = Gui::ViewProviderPythonFeatureT<ViewProviderSheet>;
 
-} //namespace Spreadsheet
+}  // namespace SpreadsheetGui
 
 
-#endif // SPREADSHEET_ViewProviderSpreadsheet_H
+#endif  // SPREADSHEET_ViewProviderSpreadsheet_H

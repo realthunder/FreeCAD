@@ -29,6 +29,7 @@
 # include <BRepBuilderAPI_MakeVertex.hxx>
 # include <BRepBuilderAPI_MakeSolid.hxx>
 # include <BRepBuilderAPI_MakePolygon.hxx>
+# include <BRepGProp.hxx>
 # include <BRepPrim_Cylinder.hxx>
 # include <BRepPrim_Wedge.hxx>
 # include <BRepPrimAPI_MakeCone.hxx>
@@ -60,7 +61,7 @@
 
 
 namespace Part {
-    const App::PropertyQuantityConstraint::Constraints apexRange = {-90.0, 90.0, 0.1};
+    const App::PropertyQuantityConstraint::Constraints apexRange = {-89.9, 89.9, 0.1};
     const App::PropertyQuantityConstraint::Constraints torusRangeV = {-180.0, 180.0, 1.0};
     const App::PropertyQuantityConstraint::Constraints angleRangeU = {0.0, 360.0, 1.0};
     const App::PropertyQuantityConstraint::Constraints angleRangeV = {-90.0, 90.0, 1.0};
@@ -78,9 +79,7 @@ Primitive::Primitive()
     touch();
 }
 
-Primitive::~Primitive()
-{
-}
+Primitive::~Primitive() = default;
 
 short Primitive::mustExecute() const
 {
@@ -128,7 +127,7 @@ void Primitive::handleChangedPropertyType(Base::XMLReader &reader, const char * 
     // types don't match if both inherit from PropertyFloat because all derived
     // classes do not re-implement the Save/Restore methods.
     Base::Type inputType = Base::Type::fromName(TypeName);
-    if (prop->getTypeId().isDerivedFrom(App::PropertyFloat::getClassTypeId()) &&
+    if (prop->isDerivedFrom<App::PropertyFloat>() &&
         inputType.isDerivedFrom(App::PropertyFloat::getClassTypeId())) {
         // Do not directly call the property's Restore method in case the implementation
         // has changed. So, create a temporary PropertyFloat object and assign the value.
@@ -168,9 +167,7 @@ Vertex::Vertex()
     ADD_PROPERTY(Z,(0.0f));
 }
 
-Vertex::~Vertex()
-{
-}
+Vertex::~Vertex() = default;
 
 short Vertex::mustExecute() const
 {
@@ -190,7 +187,7 @@ App::DocumentObjectExecReturn *Vertex::execute()
 
     BRepBuilderAPI_MakeVertex MakeVertex(point);
     const TopoDS_Vertex& vertex = MakeVertex.Vertex();
-    this->Shape.setValue(vertex,false);
+    this->Shape.setValue(vertex, false);
 
     return Primitive::execute();
 }
@@ -223,9 +220,7 @@ Line::Line()
     ADD_PROPERTY_TYPE(Z2,(1.0),"Vertex 2 - Finish",App::Prop_None,"Z value of the finish vertex");
 }
 
-Line::~Line()
-{
-}
+Line::~Line() = default;
 
 short Line::mustExecute() const
 {
@@ -255,7 +250,7 @@ App::DocumentObjectExecReturn *Line::execute()
     if (!mkEdge.IsDone())
         return new App::DocumentObjectExecReturn("Failed to create edge");
     const TopoDS_Edge& edge = mkEdge.Edge();
-    this->Shape.setValue(edge,false);
+    this->Shape.setValue(edge, false);
 
     return Primitive::execute();
 }
@@ -332,7 +327,7 @@ App::DocumentObjectExecReturn *Plane::execute()
     }
 
     TopoDS_Shape ResultShape = mkFace.Shape();
-    this->Shape.setValue(ResultShape,false);
+    this->Shape.setValue(ResultShape, false);
 
     return Primitive::execute();
 }
@@ -375,7 +370,7 @@ App::DocumentObjectExecReturn *Sphere::execute()
                                         Angle2.getValue()/180.0f*M_PI,
                                         Angle3.getValue()/180.0f*M_PI);
         TopoDS_Shape ResultShape = mkSphere.Shape();
-        this->Shape.setValue(ResultShape,false);
+        this->Shape.setValue(ResultShape, false);
     }
     catch (Standard_Failure& e) {
 
@@ -473,7 +468,7 @@ App::DocumentObjectExecReturn *Ellipsoid::execute()
             BRepBuilderAPI_GTransform mkTrsf(mkSphere.Shape(), mat);
             ResultShape = mkTrsf.Shape();
         }
-        this->Shape.setValue(ResultShape,false);
+        this->Shape.setValue(ResultShape, false);
     }
     catch (Standard_Failure& e) {
 
@@ -522,7 +517,7 @@ App::DocumentObjectExecReturn *Cylinder::execute()
         // the direction vector for the prism is the height for z and the given angle
         BRepPrim_Cylinder prim = mkCylr.Cylinder();
         TopoDS_Shape ResultShape = makePrism(Height.getValue(), prim.BottomFace());
-        this->Shape.setValue(ResultShape,false);
+        this->Shape.setValue(ResultShape, false);
     }
     catch (Standard_Failure& e) {
 
@@ -633,7 +628,7 @@ App::DocumentObjectExecReturn *RegularPolygon::execute()
             v = mat * v;
         }
         mkPoly.Add(gp_Pnt(v.x,v.y,v.z));
-        this->Shape.setValue(mkPoly.Shape(),false);
+        this->Shape.setValue(mkPoly.Shape(), false);
     }
     catch (Standard_Failure& e) {
 
@@ -766,6 +761,8 @@ Helix::Helix()
     LocalCoord.setEnums(LocalCSEnums);
     ADD_PROPERTY_TYPE(Style,(long(0)),"Helix style",App::Prop_Hidden,"Old style creates incorrect and new style create correct helices");
     Style.setEnums(StyleEnums);
+    ADD_PROPERTY_TYPE(Length,(1.0),"Helix",App::Prop_None,"The length of the helix");
+    Length.setReadOnly(true);
 }
 
 void Helix::onChanged(const App::Property* prop)
@@ -818,7 +815,14 @@ App::DocumentObjectExecReturn *Helix::execute()
             Standard_Failure::Raise("Number of turns too high (> 1e4)");
         Standard_Real myRadiusTop = myRadius + myHeight * tan(myAngle/180.0f*M_PI);
 
-        this->Shape.setValue(TopoShape().makeSpiralHelix(myRadius, myRadiusTop, myHeight, nbTurns, mySegLen, myLocalCS),false);
+        this->Shape.setValue(TopoShape().makeSpiralHelix(myRadius, myRadiusTop, myHeight, nbTurns, mySegLen, myLocalCS), false);
+
+        // props.Mass() may seem a strange way to get the Length, but 
+        // https://dev.opencascade.org/doc/refman/html/class_b_rep_g_prop.html#ab1d4bacc290bfaa8df13dd99ae7b8e70
+        // confirms this.
+        GProp_GProps props;
+        BRepGProp::LinearProperties(Shape.getShape().getShape(), props);
+        Length.setValue(props.Mass());
     }
     catch (Standard_Failure& e) {
 
@@ -840,6 +844,8 @@ Spiral::Spiral()
     Rotations.setConstraints(&quantityRange);
     ADD_PROPERTY_TYPE(SegmentLength,(1.0),"Spiral",App::Prop_None,"The number of turns per spiral subdivision");
     SegmentLength.setConstraints(&quantityRange);
+    ADD_PROPERTY_TYPE(Length,(1.0),"Spiral",App::Prop_None,"The length of the spiral");
+    Length.setReadOnly(true);
 }
 
 void Spiral::onChanged(const App::Property* prop)
@@ -882,6 +888,10 @@ App::DocumentObjectExecReturn *Spiral::execute()
             Standard_Failure::Raise("Number of rotations too small");
 
         this->Shape.setValue(TopoShape().makeSpiralHelix(myRadius, myRadiusTop, 0, myNumRot, mySegLen, Standard_False), false);
+
+        GProp_GProps props;
+        BRepGProp::LinearProperties(Shape.getShape().getShape(), props);
+        Length.setValue(props.Mass());
         return Primitive::execute();
     }
     catch (Standard_Failure& e) {
@@ -964,7 +974,7 @@ App::DocumentObjectExecReturn *Wedge::execute()
             xmax, ymax, zmax, z2max, x2max);
         BRepBuilderAPI_MakeSolid mkSolid;
         mkSolid.Add(mkWedge.Shell());
-        this->Shape.setValue(mkSolid.Solid(),false);
+        this->Shape.setValue(mkSolid.Solid(), false);
     }
     catch (Standard_Failure& e) {
         return new App::DocumentObjectExecReturn(e.GetMessageString());
@@ -1002,9 +1012,7 @@ Ellipse::Ellipse()
     Angle2.setConstraints(&angleRange);
 }
 
-Ellipse::~Ellipse()
-{
-}
+Ellipse::~Ellipse() = default;
 
 short Ellipse::mustExecute() const
 {
@@ -1030,7 +1038,7 @@ App::DocumentObjectExecReturn *Ellipse::execute()
     BRepBuilderAPI_MakeEdge clMakeEdge(ellipse, Base::toRadians<double>(this->Angle1.getValue()),
                                                 Base::toRadians<double>(this->Angle2.getValue()));
     const TopoDS_Edge& edge = clMakeEdge.Edge();
-    this->Shape.setValue(edge,false);
+    this->Shape.setValue(edge, false);
 
     return Primitive::execute();
 }

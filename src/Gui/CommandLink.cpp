@@ -33,6 +33,7 @@
 #include <App/Application.h>
 #include <App/AutoTransaction.h>
 #include <App/ComplexGeoData.h>
+#include <App/ElementNamingUtils.h>
 #include <App/Document.h>
 #include <App/DocumentObjectGroup.h>
 #include <App/DocumentObject.h>
@@ -290,7 +291,12 @@ StdCmdLinkMake::StdCmdLinkMake()
 {
     sGroup        = "Link";
     sMenuText     = QT_TR_NOOP("Make link");
-    sToolTipText  = QT_TR_NOOP("Create a link to the selected object(s)");
+    static std::string toolTip = std::string("<p>")
+        + QT_TR_NOOP("A Link is an object that references or links to another object in the same "
+        "document, or in another document.Unlike Clones, Links reference the original Shape directly, "
+        " making them more memory efficient which helps with the creation of complex assemblies.")
+        + "</p>";
+    sToolTipText = toolTip.c_str();
     sWhatsThis    = "Std_LinkMake";
     sStatusTip    = sToolTipText;
     eType         = AlterDoc;
@@ -298,7 +304,7 @@ StdCmdLinkMake::StdCmdLinkMake()
 }
 
 bool StdCmdLinkMake::isActive() {
-    return !!App::GetApplication().getActiveDocument();
+    return App::GetApplication().getActiveDocument();
 }
 
 void StdCmdLinkMake::activated(int) {
@@ -579,7 +585,7 @@ static void linkConvert(bool unlink) {
         info.inited = true;
         if(unlink) {
             auto linked = obj->getLinkedObject(false);
-            if(!linked || !linked->getNameInDocument() || linked == obj) {
+            if(!linked || !linked->isAttachedToDocument() || linked == obj) {
                 FC_WARN("skip non link");
                 continue;
             }
@@ -614,7 +620,7 @@ static void linkConvert(bool unlink) {
             App::DocumentObject *replaceObj;
             if(unlink) {
                 replaceObj = obj->getLinkedObject(false);
-                if(!replaceObj || !replaceObj->getNameInDocument() || replaceObj == obj)
+                if(!replaceObj || !replaceObj->isAttachedToDocument() || replaceObj == obj)
                     continue;
             }else{
                 auto name = doc->getUniqueObjectName("Link");
@@ -754,10 +760,10 @@ static std::map<App::Document*, std::vector<App::DocumentObject*> > getLinkImpor
     std::map<App::Document*, std::vector<App::DocumentObject*> > objMap;
     for(auto &sel : Selection().getCompleteSelection(ResolveMode::NoResolve)) {
         auto obj = sel.pObject->resolve(sel.SubName);
-        if(!obj || !obj->getNameInDocument())
+        if(!obj || !obj->isAttachedToDocument())
             continue;
         for(auto o : obj->getOutList()) {
-            if(o && o->getNameInDocument() && o->getDocument()!=obj->getDocument()) {
+            if(o && o->isAttachedToDocument() && o->getDocument()!=obj->getDocument()) {
                 objMap[obj->getDocument()].push_back(obj);
                 break;
             }
@@ -887,7 +893,7 @@ static App::DocumentObject *getSelectedLink(bool finalLink, std::string *subname
     if(!vp)
         return nullptr;
 
-    const char *element = Data::ComplexGeoData::findElementName(sels[0].SubName);
+    const char *element = Data::findElementName(sels[0].SubName);
 
     auto linkedVp = vp->getLinkedViewProvider(subname,finalLink);
     if(!linkedVp || linkedVp==vp) {
@@ -917,7 +923,7 @@ static App::DocumentObject *getSelectedLink(bool finalLink, std::string *subname
         return nullptr;
 
     auto linked = linkedVp->getObject();
-    if(!linked || !linked->getNameInDocument())
+    if(!linked || !linked->isAttachedToDocument())
         return nullptr;
 
     if(subname && sels[0].pObject!=sobj && sels[0].SubName) {
@@ -1104,6 +1110,7 @@ public:
         eType         = AlterDoc;
         bCanLog       = false;
 
+        addCommand(new StdCmdLinkMake());
         addCommand(new StdCmdLinkMakeRelative());
         addCommand(new StdCmdLinkReplace());
         addCommand(new StdCmdLinkUnlink());
@@ -1127,7 +1134,6 @@ namespace Gui {
 void CreateLinkCommands()
 {
     CommandManager &rcCmdMgr = Application::Instance->commandManager();
-    rcCmdMgr.addCommand(new StdCmdLinkMake());
     rcCmdMgr.addCommand(new StdCmdLinkActions());
     rcCmdMgr.addCommand(new StdCmdLinkMakeGroup());
     rcCmdMgr.addCommand(new StdCmdLinkSelectActions());

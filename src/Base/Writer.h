@@ -24,7 +24,6 @@
 #define BASE_WRITER_H
 
 
-#include <memory>
 #include <set>
 #include <unordered_set>
 #include <string>
@@ -42,7 +41,6 @@
 #include <zipios++/meta-iostreams.h>
 
 #include "FileInfo.h"
-
 
 
 namespace Base
@@ -67,12 +65,12 @@ public:
     /// switch the writer in XML only mode (no files allowed)
     void setForceXML(int on);
     /// check on state
-    int isForceXML();
+    int isForceXML() const;
 
     /// split xml among each object
     void setSplitXML(bool on);
     /// check whether to split xml among each object
-    bool isSplitXML();
+    bool isSplitXML() const;
 
     /// set preference of binary output
     void setPreferBinary(bool on);
@@ -88,8 +86,8 @@ public:
     void insertAsciiFile(const char* FileName);
     /// insert a binary file BASE64 coded as CDATA section in the XML file
     void insertBinFile(const char* FileName, unsigned base64_line_size=80);
-    /// insert text string as CDATA 
-    void insertText(const std::string &s);
+    /// insert text string as CDATA
+    void insertText(const std::string& str);
 
     /** @name additional file writing */
     //@{
@@ -100,7 +98,7 @@ public:
         return addFile(Name.c_str(),Object);
     }
     /// process the requested file storing
-    virtual void writeFiles()=0;
+    virtual void writeFiles() = 0;
     /// get all registered file names
     const std::vector<std::string>& getFilenames() const;
     /// Set mode
@@ -133,39 +131,63 @@ public:
     /** @name pretty formatting for XML */
     //@{
     /// get the current indentation
-    const char* ind() const {return indBuf;}
+    const char* ind() const
+    {
+        return indBuf;
+    }
     /// increase indentation by one tab
     void incInd();
     /// decrease indentation by one tab
     void decInd();
     //@}
 
-    virtual std::ostream &Stream()=0;
+    virtual std::ostream& Stream() = 0;
 
     /** Create an output stream for storing character content
-     * @param base64: If true, the input will be base64 encoded before storing.
-     *                If false, the input is assumed to be valid character with
+     * The input is assumed to be valid character with
+     * the current XML encoding, and will be enclosed inside
+     * CDATA section.  The stream will scan the input and
+     * properly escape any CDATA ending inside.
+     *
+     * @param format: If Base64Encoded, the input will be base64 encoded before storing.
+     *                If Raw, the input is assumed to be valid character with
      *                the current XML encoding, and will be enclosed inside
      *                CDATA section.  The stream will scan the input and
      *                properly escape any CDATA ending inside.
+     *
      * @param line_size: specifies the line size of the base64 output
+     *
      * @return Returns an output stream.
      *
      * You must call endCharStream() to end the current character stream.
      */
-    std::ostream &beginCharStream(bool base64=false, unsigned line_size=80);
+    std::ostream& beginCharStream(CharStreamFormat format = CharStreamFormat::Raw, unsigned line_size = 80);
+
+    /** Create an output stream for storing base 64 encoded binary data
+     *
+     * @param line_size: specifies the line size of the base64 output
+     * @return Returns an output stream.
+     */
+    std::ostream& beginBase64Stream(unsigned line_size = 80)
+    {
+        return beginCharStream(CharStreamFormat::Base64Encoded, line_size);
+    }
+
     /** End the current character output stream
      * @return Returns the normal writer stream for convenience
      */
-    std::ostream &endCharStream();
+    std::ostream& endCharStream();
     /// Return the current character output stream
-    std::ostream &charStream();
+    std::ostream& charStream();
+
+    // NOLINTBEGIN
 
 protected:
-    std::string getUniqueFileName(const char *Name);
-    struct FileEntry {
+    std::string getUniqueFileName(const char* Name);
+    struct FileEntry
+    {
         std::string FileName;
-        const Base::Persistence *Object;
+        const Base::Persistence* Object;
     };
     std::vector<FileEntry> FileList;
     std::vector<std::string> FileNames;
@@ -173,25 +195,28 @@ protected:
     std::vector<std::string> Errors;
     std::set<std::string> Modes;
 
-    int indent;
-    short indent_size;
-    char indBuf[65];
+    int indent {0};;
+    short indent_size {2};
+    char indBuf[65] {};
 
-    int forceXML;
-    bool splitXML;
-    bool preferBinary;
+    int forceXML {0};
+    bool splitXML {false};
+    bool preferBinary {true};
 
-    int fileVersion;
+    int fileVersion {1};
+    // NOLINTEND
+
+public:
+    Writer(const Writer&) = delete;
+    Writer(Writer&&) = delete;
+    Writer& operator=(const Writer&) = delete;
+    Writer& operator=(Writer&&) = delete;
 
 private:
     /// name for underlying file saves
     std::string ObjectName;
     std::unique_ptr<std::ostream> CharStream;
-    bool CharBase64 = false;
-
-private:
-    Writer(const Writer&);
-    Writer& operator=(const Writer&);
+    CharStreamFormat charStreamFormat {CharStreamFormat::Raw};
 };
 
 
@@ -201,20 +226,34 @@ private:
  * \see Base::Persistence
  * \author Juergen Riegel
  */
-class BaseExport ZipWriter : public Writer
+class BaseExport ZipWriter: public Writer
 {
 public:
-    ZipWriter(const char* FileName);
-    ZipWriter(std::ostream&);
+    explicit ZipWriter(const char* FileName);
+    explicit ZipWriter(std::ostream&);
     ~ZipWriter() override;
 
     void writeFiles() override;
 
-    std::ostream &Stream() override{return ZipStream;}
+    std::ostream& Stream() override
+    {
+        return ZipStream;
+    }
 
-    void setComment(const char* str){ZipStream.setComment(str);}
-    void setLevel(int level){ZipStream.setLevel( level );}
+    void setComment(const char* str)
+    {
+        ZipStream.setComment(str);
+    }
+    void setLevel(int level)
+    {
+        ZipStream.setLevel(level);
+    }
     void putNextEntry(const char *filename, const char *objName=nullptr) override;
+
+    ZipWriter(const ZipWriter&) = delete;
+    ZipWriter(ZipWriter&&) = delete;
+    ZipWriter& operator=(const ZipWriter&) = delete;
+    ZipWriter& operator=(ZipWriter&&) = delete;
 
 private:
     zipios::ZipOutputStream ZipStream;
@@ -226,16 +265,25 @@ private:
  * \see Base::Persistence
  * \author Juergen Riegel
  */
-class BaseExport StringWriter : public Writer
+class BaseExport StringWriter: public Writer
 {
 
 public:
     StringWriter();
 
-    std::ostream &Stream() override{return StrStream;}
-    std::string getString() const {return StrStream.str();}
+    void clear()
+    {
+        StrStream.str("");
+    }
+    std::ostream& Stream() override
+    {
+        return StrStream;
+    }
+    std::string getString() const
+    {
+        return StrStream.str();
+    }
     void writeFiles() override;
-    void clear() { StrStream.str(""); }
 
 private:
     std::ostringstream StrStream;
@@ -246,32 +294,44 @@ private:
   \see Base::Persistence
   \author Werner Mayer
  */
-class BaseExport FileWriter : public Writer
+class BaseExport FileWriter: public Writer
 {
 public:
-    FileWriter(const char* DirName);
+    explicit FileWriter(const char* DirName);
     ~FileWriter() override;
 
     void putNextEntry(const char *filename, const char *objName=nullptr) override;
     void writeFiles() override;
 
-    std::ostream &Stream() override{return FileStream;}
-    void close() {FileStream.close();}
+    std::ostream& Stream() override
+    {
+        return FileStream;
+    }
+    void close()
+    {
+        FileStream.close();
+    }
     /*!
      This method can be re-implemented in sub-classes to avoid
      to write out certain objects. The default implementation
      always returns true.
      */
-    virtual bool shouldWrite(const std::string& name, const Base::Persistence *Object) const;
+    virtual bool shouldWrite(const std::string& name, const Base::Persistence* Object) const;
+
+    FileWriter(const FileWriter&) = delete;
+    FileWriter(FileWriter&&) = delete;
+    FileWriter& operator=(const FileWriter&) = delete;
+    FileWriter& operator=(FileWriter&&) = delete;
 
 protected:
+    // NOLINTBEGIN
     std::string DirName;
     std::ofstream FileStream;
+    // NOLINTEND
 };
 
 
-}  //namespace Base
+}  // namespace Base
 
 
-#endif // BASE_WRITER_H
-
+#endif  // BASE_WRITER_H

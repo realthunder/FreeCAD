@@ -51,13 +51,12 @@ else:
 #  and supports exporting faces with more than 3 vertices
 #  and supports object colors / materials
 
-p = Draft.precision()
-
 if open.__module__ in ['__builtin__','io']:
     pythonopen = open
 
 def findVert(aVertex,aList):
     "finds aVertex in aList, returns index"
+    p = Draft.precision()
     for i in range(len(aList)):
         if round(aVertex.X,p) == round(aList[i].X,p):
             if round(aVertex.Y,p) == round(aList[i].Y,p):
@@ -66,6 +65,7 @@ def findVert(aVertex,aList):
     return None
 
 def getIndices(shape,offsetv,offsetvn,colors,dosegment):
+    p = Draft.precision()
     vlist = []
     vnlist = []
     elist = []
@@ -93,7 +93,7 @@ def getIndices(shape,offsetv,offsetvn,colors,dosegment):
             vlist.append(" "+str(round(v[0],p))+" "+str(round(v[1],p))+" "+str(round(v[2],p)))
 
         for vn in mesh.Facets:
-            vnlist.append(" "+str(vn.Normal[0]) + " " + str(vn.Normal[1]) + " " + str(vn.Normal[2]))
+            vnlist.append(" "+str(round(vn.Normal[0],p))+" "+str(round(vn.Normal[1],p))+" "+str(round(vn.Normal[2],p)))
 
         for i, vn in enumerate(topology[1]):
             flist.append(" "+str(vn[0]+offsetv)+"//"+str(i+offsetvn)+\
@@ -167,7 +167,7 @@ def _export(exportSet, filename, colors):
     outfile = codecs.open(filename,"wb",encoding="utf8")
     ver = FreeCAD.Version()
     outfile.write("# FreeCAD v" + ver[0] + "." + ver[1] + " build" + ver[2] + " Arch module\n")
-    outfile.write("# http://www.freecad.org\n")
+    outfile.write("# https://www.freecad.org\n")
     offsetv = 1
     offsetvn = 1
 
@@ -384,8 +384,8 @@ def _export(exportSet, filename, colors):
 
 def open(filename):
     "called when freecad wants to open a file"
-    docname = (os.path.splitext(os.path.basename(filename))[0])
-    doc = FreeCAD.newDocument(docname.encode("utf8"))
+    docname = os.path.splitext(os.path.basename(filename))[0]
+    doc = FreeCAD.newDocument(docname)
     doc.Label = docname
     return insert(filename,doc.Name)
 
@@ -512,4 +512,3 @@ def makeMesh(doc,activeobject,verts,facets,material,colortable):
         mobj.Mesh = mesh
         if segments and FreeCAD.GuiUp:
             mobj.ViewObject.highlightSegments()
-

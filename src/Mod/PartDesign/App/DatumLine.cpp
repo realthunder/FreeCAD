@@ -62,9 +62,7 @@ Line::Line()
     Support.touch();
 }
 
-Line::~Line()
-{
-}
+Line::~Line() = default;
 
 void Line::makeShape()
 {

@@ -76,20 +76,21 @@ protected:
 
     void makeLabel(QLineEdit* parent);
 
-private:
-    App::ObjectIdentifier path;
-    std::shared_ptr<App::Expression> lastExpression;
-
 protected:
-    ExpressionLabel* iconLabel;
-    QPalette defaultPalette;
-    int iconHeight;
-
     void expressionChange(const App::ObjectIdentifier& id);
     void objectDeleted(const App::DocumentObject&);
     boost::signals2::scoped_connection expressionchanged;
     boost::signals2::scoped_connection objectdeleted;
-    bool m_autoApply;
+
+protected:
+    ExpressionLabel* iconLabel{nullptr};
+    QPalette defaultPalette;
+    int iconHeight{-1};
+    bool m_autoApply{false};
+
+private:
+    App::ObjectIdentifier path;
+    std::shared_ptr<App::Expression> lastExpression;
 };
 
 }

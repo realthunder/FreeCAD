@@ -23,7 +23,7 @@ if(BUILD_GUI)
         list (APPEND FREECAD_QT_COMPONENTS Designer)
     endif()
 endif()
-if (BUILD_TEST)
+if (ENABLE_DEVELOPER_TESTS)
     list (APPEND FREECAD_QT_COMPONENTS Test)
 endif ()
 
@@ -37,6 +37,8 @@ endforeach()
 set(CMAKE_AUTOMOC TRUE)
 set(CMAKE_AUTOUIC TRUE)
 set(QtCore_MOC_EXECUTABLE ${Qt${FREECAD_QT_MAJOR_VERSION}Core_MOC_EXECUTABLE})
+
+add_definitions(-DQT_NO_KEYWORDS)
 
 message(STATUS "Set up to compile with Qt ${Qt${FREECAD_QT_MAJOR_VERSION}Core_VERSION}")
 
@@ -67,6 +69,14 @@ if (Qt${FREECAD_QT_MAJOR_VERSION}Core_VERSION VERSION_LESS 5.15.0)
         qt5_add_translation("${_qm_files}" ${ARGN})
         set("${_qm_files}" "${${_qm_files}}" PARENT_SCOPE)
     endfunction()
+
+    # Since Qt 5.15 Q_DISABLE_COPY_MOVE is defined
+    set (HAVE_Q_DISABLE_COPY_MOVE 0)
+    configure_file(${CMAKE_SOURCE_DIR}/src/QtCore.h.cmake ${CMAKE_BINARY_DIR}/src/QtCore.h)
+else()
+    # Since Qt 5.15 Q_DISABLE_COPY_MOVE is defined
+    set (HAVE_Q_DISABLE_COPY_MOVE 1)
+    configure_file(${CMAKE_SOURCE_DIR}/src/QtCore.h.cmake ${CMAKE_BINARY_DIR}/src/QtCore.h)
 endif()
 
 function(qt_find_and_add_translation _qm_files _tr_dir _qm_dir)

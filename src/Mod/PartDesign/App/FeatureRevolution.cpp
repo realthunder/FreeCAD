@@ -25,6 +25,7 @@
 #ifndef _PreComp_
 # include <BRepAlgoAPI_Fuse.hxx>
 # include <BRepPrimAPI_MakeRevol.hxx>
+# include <BRepFeat_MakeRevol.hxx>
 # include <gp_Lin.hxx>
 # include <Precision.hxx>
 # include <TopExp_Explorer.hxx>
@@ -44,6 +45,7 @@ using namespace PartDesign;
 
 namespace PartDesign {
 
+const char* Revolution::TypeEnums[]= {"Angle", "UpToLast", "UpToFirst", "UpToFace", "TwoAngles", nullptr};
 
 PROPERTY_SOURCE(PartDesign::Revolution, PartDesign::ProfileBased)
 
@@ -51,9 +53,14 @@ const App::PropertyAngle::Constraints Revolution::floatAngle = { Base::toDegrees
 
 Revolution::Revolution()
 {
+    ADD_PROPERTY_TYPE(Type, (0L), "Revolution", App::Prop_None, "Revolution type");
+    Type.setEnums(TypeEnums);
     ADD_PROPERTY_TYPE(Base,(Base::Vector3d(0.0,0.0,0.0)),"Revolution", App::Prop_ReadOnly, "Base");
     ADD_PROPERTY_TYPE(Axis,(Base::Vector3d(0.0,1.0,0.0)),"Revolution", App::Prop_ReadOnly, "Axis");
     ADD_PROPERTY_TYPE(Angle,(360.0),"Revolution", App::Prop_None, "Angle");
+    ADD_PROPERTY_TYPE(UpToFace, (nullptr), "Revolution", App::Prop_None, "Face where revolution will end");
+    ADD_PROPERTY_TYPE(Angle2, (60.0), "Revolution", App::Prop_None, "Revolution length in 2nd direction");
+
     Angle.setConstraints(&floatAngle);
     ADD_PROPERTY_TYPE(ReferenceAxis,(nullptr),"Revolution",(App::Prop_None),"Reference axis of revolution");
 }
@@ -64,7 +71,9 @@ short Revolution::mustExecute() const
         ReferenceAxis.isTouched() ||
         Axis.isTouched() ||
         Base.isTouched() ||
-        Angle.isTouched())
+        UpToFace.isTouched() ||
+        Angle.isTouched() ||
+        Angle2.isTouched())
         return 1;
     return ProfileBased::mustExecute();
 }
@@ -72,17 +81,16 @@ short Revolution::mustExecute() const
 App::DocumentObjectExecReturn *Revolution::execute()
 {
     // Validate parameters
-    double angle = Angle.getValue();
-    if (angle > 360.0)
+    // All angles are in radians unless explicitly stated
+    double angleDeg = Angle.getValue();
+    if (angleDeg > 360.0)
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Angle of revolution too large"));
 
-    angle = Base::toRadians<double>(angle);
+    double angle = Base::toRadians<double>(angleDeg);
     if (angle < Precision::Angular())
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Angle of revolution too small"));
 
-    // Reverse angle if selected
-    if (Reversed.getValue() && !Midplane.getValue())
-        angle *= (-1.0);
+    double angle2 = Base::toRadians(Angle2.getValue());
 
     TopoShape sketchshape;
     try {
@@ -116,13 +124,7 @@ App::DocumentObjectExecReturn *Revolution::execute()
         if (sketchshape.isNull())
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Creating a face from sketch failed"));
 
-        // Rotate the face by half the angle to get Revolution symmetric to sketch plane
-        if (Midplane.getValue()) {
-            gp_Trsf mov;
-            mov.SetRotation(gp_Ax1(pnt, dir), Base::toRadians<double>(Angle.getValue()) * (-1.0) / 2.0);
-            TopLoc_Location loc(mov);
-            sketchshape.move(loc);
-        }
+       RevolMethod method = methodFromString(Type.getValueAsString());
 
         auto invObjLoc = this->positionByPrevious();
         pnt.Transform(invObjLoc.Transformation());
@@ -138,14 +140,43 @@ App::DocumentObjectExecReturn *Revolution::execute()
                 return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Revolve axis intersects the sketch"));
         }
 
-        // revolve the face to a solid
         TopoShape result(0,getDocument()->getStringHasher());
-        try {
-            result.makERevolve(sketchshape,gp_Ax1(pnt, dir), angle);
-            result = refineShapeIfActive(result);
-        }catch(Standard_Failure &) {
-            return new App::DocumentObjectExecReturn("Could not revolve the sketch!");
+
+        if (method == RevolMethod::ToFace || method == RevolMethod::ToFirst || method == RevolMethod::ToLast) {
+            TopoShape upToFace;
+            if (method == RevolMethod::ToFace) {
+                getUpToFaceFromLinkSub(upToFace, UpToFace);
+                upToFace.move(invObjLoc);
+            }
+            else
+                throw Base::RuntimeError("ProfileBased: Revolution up to first/last is not yet supported");
+
+            // TODO: This method is designed for extrusions. needs to be adapted for revolutions.
+            // getUpToFace(upToFace, base, supportface, sketchshape, method, dir);
+
+            TopoShape supportface = getSupportFace();
+            if (supportface.countSubShapes(TopAbs_FACE) == 0)
+                supportface = TopoShape();
+            else
+                supportface.move(invObjLoc);
+
+            if (Reversed.getValue())
+                dir.Reverse();
+
+            RevolMode mode = RevolMode::None;
+            generateRevolution(result, base, sketchshape, supportface, upToFace, gp_Ax1(pnt, dir), method, mode, Standard_True);
         }
+        else {
+            bool midplane = Midplane.getValue();
+            bool reversed = Reversed.getValue();
+            generateRevolution(result, sketchshape, gp_Ax1(pnt, dir), angle, angle2, midplane, reversed, method);
+        }
+
+        result = refineShapeIfActive(result);
+
+        // eventually disable some settings that are not valid for the current method
+        updateProperties(method);
+
 
         // set the additive shape property for later usage in e.g. pattern
         this->AddSubShape.setValue(result);            
@@ -189,6 +220,7 @@ App::DocumentObjectExecReturn *Revolution::execute()
 
         boolOp = refineShapeIfActive(boolOp);
         Shape.setValue(getSolid(boolOp));
+
         return App::DocumentObject::StdReturn;
     }
     catch (Standard_Failure& e) {
@@ -225,6 +257,157 @@ void Revolution::updateAxis()
 
     Base.setValue(base.x,base.y,base.z);
     Axis.setValue(dir.x,dir.y,dir.z);
+}
+
+Revolution::RevolMethod Revolution::methodFromString(const std::string& methodStr)
+{
+    if (methodStr == "Angle")
+        return RevolMethod::Dimension;
+    if (methodStr == "UpToLast")
+        return RevolMethod::ToLast;
+    if (methodStr == "ThroughAll")
+        return RevolMethod::ThroughAll;
+    if (methodStr == "UpToFirst")
+        return RevolMethod::ToFirst;
+    if (methodStr == "UpToFace")
+        return RevolMethod::ToFace;
+    if (methodStr == "TwoAngles")
+        return RevolMethod::TwoDimensions;
+
+    throw Base::ValueError("Revolution:: No such method");
+    return RevolMethod::Dimension;
+}
+
+void Revolution::generateRevolution(TopoShape& revol,
+                                    const TopoShape& sketchshape,
+                                    const gp_Ax1& axis,
+                                    const double angle,
+                                    const double angle2,
+                                    const bool midplane,
+                                    const bool reversed,
+                                    RevolMethod method)
+{
+    if (method == RevolMethod::Dimension || method == RevolMethod::TwoDimensions || method == RevolMethod::ThroughAll) {
+        double angleTotal = angle;
+        double angleOffset = 0.;
+
+        if (method == RevolMethod::TwoDimensions) {
+            // Rotate the face by `angle2`/`angle` to get "second" angle
+            angleTotal += angle2;
+            angleOffset = angle2 * -1.0;
+        }
+        else if (midplane) {
+            // Rotate the face by half the angle to get Revolution symmetric to sketch plane
+            angleOffset = -angle / 2;
+        }
+
+        if (fabs(angleTotal) < Precision::Angular())
+            throw Base::ValueError("Cannot create a revolution with zero angle.");
+
+        gp_Ax1 revolAx(axis);
+        if (reversed) {
+            revolAx.Reverse();
+        }
+
+        TopoShape from = sketchshape;
+        if (method == RevolMethod::TwoDimensions || midplane) {
+            gp_Trsf mov;
+            mov.SetRotation(revolAx, angleOffset);
+            TopLoc_Location loc(mov);
+            from.move(loc);
+        }
+
+        // revolve the face to a solid
+        try {
+            revol.makERevolve(from, revolAx, angleTotal);
+        }catch(Standard_Failure &) {
+            throw Base::RuntimeError("ProfileBased: RevolMaker failed! Could not revolve the sketch!");
+        }
+    }
+    else {
+        std::stringstream str;
+        str << "ProfileBased: Internal error: Unknown method for generateRevolution()";
+        throw Base::RuntimeError(str.str());
+    }
+}
+
+void Revolution::generateRevolution(TopoShape& revol,
+                                    const TopoShape& baseshape,
+                                    const TopoShape& profileshape,
+                                    const TopoShape& supportface,
+                                    const TopoShape& uptoface,
+                                    const gp_Ax1& axis,
+                                    RevolMethod method,
+                                    RevolMode Mode,
+                                    Standard_Boolean Modify)
+{
+    if (method == RevolMethod::ToFirst || method == RevolMethod::ToFace || method == RevolMethod::ToLast) {
+        BRepFeat_MakeRevol RevolMaker;
+        TopoShape base = baseshape;
+        for (const auto &face : profileshape.getSubShapes(TopAbs_FACE)) {
+            RevolMaker.Init(base.getShape(),
+                            TopoDS::Face(face),
+                            TopoDS::Face(supportface.getShape()),
+                            axis, Mode, Modify);
+            RevolMaker.Perform(TopoDS::Face(uptoface.getShape()));
+            if (!RevolMaker.IsDone())
+                throw Base::RuntimeError("ProfileBased: Up to face: Could not revolve the sketch!");
+
+            revol.makEShape(RevolMaker, {base, profileshape, supportface}, Part::OpCodes::Revolve);
+
+            if (Mode == RevolMode::None)
+                Mode = RevolMode::FuseWithBase;
+
+            base = revol;
+        }
+        revol = base;
+    }
+    else {
+        std::stringstream str;
+        str << "ProfileBased: Internal error: Unknown method for generateRevolution()";
+        throw Base::RuntimeError(str.str());
+    }
+}
+
+void Revolution::updateProperties(RevolMethod method)
+{
+    // disable settings that are not valid on the current method
+    // disable everything unless we are sure we need it
+    bool isAngleEnabled = false;
+    bool isAngle2Enabled = false;
+    bool isMidplaneEnabled = false;
+    bool isReversedEnabled = false;
+    bool isUpToFaceEnabled = false;
+    if (method == RevolMethod::Dimension) {
+        isAngleEnabled = true;
+        isMidplaneEnabled = true;
+        isReversedEnabled = !Midplane.getValue();
+    }
+    else if (method == RevolMethod::ToLast) {
+        isReversedEnabled = true;
+    }
+    else if (method == RevolMethod::ThroughAll) {
+        isMidplaneEnabled = true;
+        isReversedEnabled = !Midplane.getValue();
+    }
+    else if (method == RevolMethod::ToFirst) {
+        isReversedEnabled = true;
+    }
+    else if (method == RevolMethod::ToFace) {
+        isReversedEnabled = true;
+        isUpToFaceEnabled = true;
+    }
+    else if (method == RevolMethod::TwoDimensions) {
+        isAngleEnabled = true;
+        isAngle2Enabled = true;
+        isReversedEnabled = true;
+    }
+
+    Angle.setReadOnly(!isAngleEnabled);
+    Angle2.setReadOnly(!isAngle2Enabled);
+    Midplane.setReadOnly(!isMidplaneEnabled);
+    Reversed.setReadOnly(!isReversedEnabled);
+    UpToFace.setReadOnly(!isUpToFaceEnabled);
 }
 
 }

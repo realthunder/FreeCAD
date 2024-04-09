@@ -50,9 +50,7 @@
 
 using namespace Part;
 
-BRepOffsetAPI_MakeOffsetFix::BRepOffsetAPI_MakeOffsetFix()
-{
-}
+BRepOffsetAPI_MakeOffsetFix::BRepOffsetAPI_MakeOffsetFix() = default;
 
 BRepOffsetAPI_MakeOffsetFix::BRepOffsetAPI_MakeOffsetFix(const GeomAbs_JoinType Join, const Standard_Boolean IsOpenResult)
     :myJoin(Join)
@@ -60,9 +58,7 @@ BRepOffsetAPI_MakeOffsetFix::BRepOffsetAPI_MakeOffsetFix(const GeomAbs_JoinType 
 {
 }
 
-BRepOffsetAPI_MakeOffsetFix::~BRepOffsetAPI_MakeOffsetFix()
-{
-}
+BRepOffsetAPI_MakeOffsetFix::~BRepOffsetAPI_MakeOffsetFix() = default;
 
 void BRepOffsetAPI_MakeOffsetFix::AddWire(const TopoDS_Wire& Spine)
 {

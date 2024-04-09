@@ -233,9 +233,7 @@ Command::Command(const char* name)
     bCanLog     = true;
 }
 
-Command::~Command()
-{
-}
+Command::~Command() = default;
 
 void Command::setShortcut(const QString &shortcut)
 {
@@ -477,17 +475,28 @@ void Command::invoke(int i, TriggerSource trigger)
 void Command::_invoke(int id, bool disablelog)
 {
     try {
-        App::AutoTransaction committer(
-                (App::DocumentParams::getViewObjectTransaction()
-                || (eType&NoTransaction)) ? "" : displayText.c_str(), true);
-
+        bool recordViewObject = false;
+        const char *transactionName = displayText.c_str();
+        if (App::DocumentParams::getViewObjectTransaction()) {
+            recordViewObject = true;
+        }
+        else {
+            if (eType & NoTransaction) {
+                transactionName = "";
+            }
+            else if (eType & ViewTransaction) {
+                recordViewObject = true;
+            }
+        }
+        App::AutoTransaction committer(transactionName, /*tmpName*/true, recordViewObject);
 
         // set the application module type for the macro
         getGuiApplication()->macroManager()->setModule(sAppModule);
 
         std::unique_ptr<LogDisabler> logdisabler;
-        if (disablelog)
-            logdisabler.reset(new LogDisabler);
+        if (disablelog) {
+            logdisabler = std::make_unique<LogDisabler>();
+        }
 
         // check if it really works NOW (could be a delay between click deactivation of the button)
         if (isActive()) {
@@ -644,7 +653,7 @@ std::string Command::getObjectCmd(const char *Name, const App::Document *doc,
 {
     if(!doc) doc = App::GetApplication().getActiveDocument();
     if(!doc || !Name)
-        return std::string("None");
+        return {"None"};
     std::ostringstream str;
     if(prefix)
         str << prefix;
@@ -658,8 +667,8 @@ std::string Command::getObjectCmd(const char *Name, const App::Document *doc,
 std::string Command::getObjectCmd(const App::DocumentObject *obj,
         const char *prefix, const char *postfix, bool gui)
 {
-    if(!obj || !obj->getNameInDocument())
-        return std::string("None");
+    if(!obj || !obj->isAttachedToDocument())
+        return {"None"};
     return getObjectCmd(obj->getNameInDocument(), obj->getDocument(), prefix, postfix,gui);
 }
 
@@ -850,7 +859,7 @@ void Command::_copyVisual(const char *file, int line, const char* to, const char
 
 void Command::_copyVisual(const char *file, int line, const App::DocumentObject *to, const char* attr_to, const App::DocumentObject *from, const char *attr_from)
 {
-    if(!from || !from->getNameInDocument() || !to || !to->getNameInDocument())
+    if(!from || !from->isAttachedToDocument() || !to || !to->isAttachedToDocument())
         return;
     static std::map<std::string,std::string> attrMap = {
         {"ShapeColor","ShapeMaterial.DiffuseColor"},
@@ -1190,6 +1199,36 @@ GroupCommand::~GroupCommand()
         _hParam->Detach(this);
 }
 
+bool GroupCommand::isCheckable() const
+{
+    return checkable;
+}
+
+void GroupCommand::setCheckable(bool on)
+{
+    checkable = on;
+}
+
+bool GroupCommand::isExclusive() const
+{
+    return exclusive;
+}
+
+void GroupCommand::setExclusive(bool on)
+{
+    exclusive = on;
+}
+
+bool GroupCommand::hasDropDownMenu() const
+{
+    return dropDownMenu;
+}
+
+void GroupCommand::setDropDownMenu(bool on)
+{
+    dropDownMenu = on;
+}
+
 int GroupCommand::addCommand(Command *cmd, bool reg) {
     cmds.emplace_back(cmd,cmds.size());
     if(cmd && reg)
@@ -1226,14 +1265,15 @@ std::vector<Command*> GroupCommand::getCommands() const
 Action * GroupCommand::createAction(void) {
     ActionGroup* pcAction = new ActionGroup(this, getMainWindow());
     pcAction->setMenuRole(QAction::NoRole);
-    pcAction->setDropDownMenu(true);
-    pcAction->setExclusive(false);
-    pcAction->setCheckable(true);
-    pcAction->setWhatsThis(QString::fromUtf8(sWhatsThis));
+    pcAction->setDropDownMenu(hasDropDownMenu());
+    pcAction->setExclusive(isExclusive());
+    pcAction->setCheckable(isCheckable());
+    pcAction->setWhatsThis(QString::fromLatin1(sWhatsThis));
 
     int idx = _defaultAction;
-    if (_hParam)
+    if (_hParam) {
         _hParam->GetInt(_hEntry.c_str(), _defaultAction);
+    }
 
     int i=-1;
     for(auto &v : cmds) {
@@ -1242,8 +1282,9 @@ Action * GroupCommand::createAction(void) {
             pcAction->addAction(QStringLiteral(""))->setSeparator(true);
         else {
             v.first->addToGroup(pcAction);
-            if(idx<0 && !(v.first->getType() & NoDefaultAction))
+            if(idx<0 && !(v.first->getType() & NoDefaultAction)) {
                 idx = i;
+            }
         }
     }
 
@@ -1332,9 +1373,7 @@ MacroCommand::MacroCommand(const char* name, bool system, bool preselect)
     }
 }
 
-MacroCommand::~MacroCommand()
-{
-}
+MacroCommand::~MacroCommand() = default;
 
 void MacroCommand::activated(int iMsg)
 {
@@ -1523,8 +1562,9 @@ PythonCommand::PythonCommand(const char* name, PyObject * pcPyCommand, const cha
 
     auto& rcCmdMgr = Gui::Application::Instance->commandManager();
 
-    connPyCmdInitialized = rcCmdMgr.signalPyCmdInitialized.connect(
-        boost::bind(&PythonCommand::onActionInit, this));
+    connPyCmdInitialized = rcCmdMgr.signalPyCmdInitialized.connect([this]() {
+        this->onActionInit();
+    });
 }
 
 PythonCommand::~PythonCommand()
@@ -1760,8 +1800,9 @@ PythonGroupCommand::PythonGroupCommand(const char* name, PyObject * pcPyCommand)
 
     auto& rcCmdMgr = Gui::Application::Instance->commandManager();
 
-    connPyCmdInitialized = rcCmdMgr.signalPyCmdInitialized.connect(
-        boost::bind(&PythonGroupCommand::onActionInit, this));
+    connPyCmdInitialized = rcCmdMgr.signalPyCmdInitialized.connect([this]() {
+        this->onActionInit();
+    });
 }
 
 PythonGroupCommand::~PythonGroupCommand()

@@ -102,7 +102,7 @@
   <context>
     <name>TestGui::UnitTestDialog</name>
     <message>
-      <location filename="../../UnitTestImp.cpp" line="166"/>
+      <location filename="../../UnitTestImp.cpp" line="165"/>
       <source>Help</source>
       <translation>Помоћ</translation>
     </message>
@@ -118,12 +118,12 @@ Double click on an error in the tree view to see more information about it, incl
 Два пута кликните на грешку у прегледу стаблом да видите више информација о њему, укључујући праћење спремника.</translation>
     </message>
     <message>
-      <location filename="../../UnitTestImp.cpp" line="178"/>
+      <location filename="../../UnitTestImp.cpp" line="179"/>
       <source>About FreeCAD UnitTest</source>
       <translation>О FreeCAD UnitTest програму</translation>
     </message>
     <message>
-      <location filename="../../UnitTestImp.cpp" line="178"/>
+      <location filename="../../UnitTestImp.cpp" line="180"/>
       <source>Copyright (c) Werner Mayer
 
 FreeCAD UnitTest is part of FreeCAD and supports writing Unit Tests for ones own modules.</source>

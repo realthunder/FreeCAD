@@ -61,10 +61,6 @@ PROPERTY_SOURCE(Gui::ViewProviderGeometryObject, Gui::ViewProviderDragger)
 const App::PropertyIntegerConstraint::Constraints intPercent = {0, 100, 5};
 
 ViewProviderGeometryObject::ViewProviderGeometryObject()
-    : pcBoundingBox(nullptr)
-    , pcBoundSwitch(nullptr)
-    , pcBoundColor(nullptr)
-    , pcSwitchSensor(nullptr)
 {
     float r,g,b;
 
@@ -100,6 +96,7 @@ ViewProviderGeometryObject::ViewProviderGeometryObject()
     pcShapeMaterial = new SoMaterial;
     pcShapeMaterial->diffuseColor.setValue(r, g, b);
     pcShapeMaterial->transparency = float(initialTransparency);
+    ShapeMaterial.setTransparency((float)initialTransparency / 100.0f);
     pcShapeMaterial->ref();
 
     sPixmap = "Feature";

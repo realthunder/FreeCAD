@@ -66,6 +66,7 @@ void DlgPrefsTechDrawDimensionsImp::saveSettings()
     ui->leFormatSpec->onSave();
     ui->pdsbGapISO->onSave();
     ui->pdsbGapASME->onSave();
+    ui->pdsbLineSpacingFactorISO->onSave();
 }
 
 void DlgPrefsTechDrawDimensionsImp::loadSettings()
@@ -74,10 +75,11 @@ void DlgPrefsTechDrawDimensionsImp::loadSettings()
     //Quantity widgets do not use preset value since they are based on
     //QAbstractSpinBox
     double fontDefault = Preferences::dimFontSizeMM();
+    double arrowDefault = Preferences::dimArrowSize();
     ui->plsb_FontSize->setValue(fontDefault);
 //    double arrowDefault = 5.0;
 //    plsb_ArrowSize->setValue(arrowDefault);
-    ui->plsb_ArrowSize->setValue(fontDefault);
+    ui->plsb_ArrowSize->setValue(arrowDefault);
 
     ui->pcbStandardAndStyle->onRestore();
     ui->cbGlobalDecimals->onRestore();
@@ -97,6 +99,8 @@ void DlgPrefsTechDrawDimensionsImp::loadSettings()
 
     ui->pdsbGapISO->onRestore();
     ui->pdsbGapASME->onRestore();
+    ui->pdsbLineSpacingFactorISO->onRestore();
+
 }
 
 /**

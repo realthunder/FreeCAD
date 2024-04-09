@@ -216,16 +216,7 @@ Any values of the SetupSheet that are changed from their default are preselected
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/DlgJobTemplateExport.ui" line="133"/>
-        <source>Enable all Operations for which the configuration values should be exported.
-
-&lt;br/&gt;
-
-Note that only operations are listed which currently have configuration values setup.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/DlgJobTemplateExport.ui" line="147"/>
+        <location filename="../panels/DlgJobTemplateExport.ui" line="145"/>
         <source>If enabled the creation of stock is included in the template. If a template does not include a stock definition the default stock creation algorithm will be used (creation from the Base object&apos;s bounding box).
 
 This option is most useful if stock is a box or cylinder, or if the machine has a standard placement for machining.
@@ -234,17 +225,17 @@ Note that this option is disabled if a stock object from an existing solid is us
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/DlgJobTemplateExport.ui" line="186"/>
+        <location filename="../panels/DlgJobTemplateExport.ui" line="184"/>
         <source>Hint about the current stock extent setting.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/DlgJobTemplateExport.ui" line="193"/>
+        <location filename="../panels/DlgJobTemplateExport.ui" line="191"/>
         <source>If enabled the current placement of the stock solid is stored in the template.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/DlgJobTemplateExport.ui" line="212"/>
+        <location filename="../panels/DlgJobTemplateExport.ui" line="210"/>
         <source>Hint about the current stock placement.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -259,12 +250,19 @@ Note that this option is disabled if a stock object from an existing solid is us
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/DlgJobTemplateExport.ui" line="154"/>
+        <location filename="../panels/DlgJobTemplateExport.ui" line="133"/>
+        <source>Enable all operations for which the configuration values should be exported.
+
+Note that only operations which currently have configuration values set are listed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/DlgJobTemplateExport.ui" line="152"/>
         <source>Stock</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/DlgJobTemplateExport.ui" line="163"/>
+        <location filename="../panels/DlgJobTemplateExport.ui" line="161"/>
         <source>If enabled the current size settings for the stock object are included in the template.
 
 For Box and Cylinder stocks this means the actual size of the stock solid being created.
@@ -273,17 +271,17 @@ For stock from the Base object&apos;s bounding box it means the extra material i
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/DlgJobTemplateExport.ui" line="170"/>
+        <location filename="../panels/DlgJobTemplateExport.ui" line="168"/>
         <source>Extent</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/DlgJobTemplateExport.ui" line="196"/>
+        <location filename="../panels/DlgJobTemplateExport.ui" line="194"/>
         <source>Placement</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/DlgJobTemplateExport.ui" line="250"/>
+        <location filename="../panels/DlgJobTemplateExport.ui" line="248"/>
         <source>Export</source>
         <translation type="unfinished"></translation>
     </message>
@@ -537,35 +535,6 @@ For stock from the Base object&apos;s bounding box it means the extra material i
 <context>
     <name>Form</name>
     <message>
-        <location filename="../panels/DressupPathBoundary.ui" line="14"/>
-        <location filename="../panels/PageBaseGeometryEdit.ui" line="20"/>
-        <location filename="../panels/PageBaseHoleGeometryEdit.ui" line="14"/>
-        <location filename="../panels/PageBaseLocationEdit.ui" line="14"/>
-        <location filename="../panels/PageDepthsEdit.ui" line="17"/>
-        <location filename="../panels/PageDiametersEdit.ui" line="14"/>
-        <location filename="../panels/PageHeightsEdit.ui" line="14"/>
-        <location filename="../panels/PageOpAdaptiveEdit.ui" line="14"/>
-        <location filename="../panels/PageOpCustomEdit.ui" line="14"/>
-        <location filename="../panels/PageOpDeburrEdit.ui" line="14"/>
-        <location filename="../panels/PageOpDrillingEdit.ui" line="14"/>
-        <location filename="../panels/PageOpEngraveEdit.ui" line="14"/>
-        <location filename="../panels/PageOpHelixEdit.ui" line="14"/>
-        <location filename="../panels/PageOpPocketExtEdit.ui" line="14"/>
-        <location filename="../panels/PageOpPocketFullEdit.ui" line="14"/>
-        <location filename="../panels/PageOpProbeEdit.ui" line="14"/>
-        <location filename="../panels/PageOpProfileFullEdit.ui" line="14"/>
-        <location filename="../panels/PageOpSlotEdit.ui" line="14"/>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="14"/>
-        <location filename="../panels/PageOpThreadMillingEdit.ui" line="14"/>
-        <location filename="../panels/PageOpVcarveEdit.ui" line="14"/>
-        <location filename="../panels/PageOpWaterlineEdit.ui" line="14"/>
-        <location filename="../panels/SetupOp.ui" line="14"/>
-        <location filename="../panels/ToolEditor.ui" line="14"/>
-        <location filename="../preferences/PathDressupHoldingTags.ui" line="14"/>
-        <source>Form</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../panels/DressupPathBoundary.ui" line="20"/>
         <source>Boundary Body</source>
         <translation type="unfinished"></translation>
@@ -732,17 +701,17 @@ For stock from the Base object&apos;s bounding box it means the extra material i
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageBaseGeometryEdit.ui" line="72"/>
         <location filename="../panels/PageBaseHoleGeometryEdit.ui" line="49"/>
+        <location filename="../panels/PageBaseGeometryEdit.ui" line="72"/>
         <location filename="../panels/PageBaseLocationEdit.ui" line="43"/>
         <source>Add</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageBaseGeometryEdit.ui" line="82"/>
         <location filename="../panels/PageBaseHoleGeometryEdit.ui" line="59"/>
-        <location filename="../panels/PageBaseLocationEdit.ui" line="53"/>
         <location filename="../panels/PropertyBag.ui" line="48"/>
+        <location filename="../panels/PageBaseGeometryEdit.ui" line="82"/>
+        <location filename="../panels/PageBaseLocationEdit.ui" line="53"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
@@ -793,8 +762,8 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageBaseGeometryEdit.ui" line="99"/>
         <location filename="../panels/PageBaseHoleGeometryEdit.ui" line="76"/>
+        <location filename="../panels/PageBaseGeometryEdit.ui" line="99"/>
         <source>All objects will be processed using the same operation properties.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -839,32 +808,32 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageDepthsEdit.ui" line="39"/>
         <location filename="../panels/SetupGlobal.ui" line="36"/>
+        <location filename="../panels/PageDepthsEdit.ui" line="39"/>
         <source>Start Depth</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageDepthsEdit.ui" line="46"/>
         <location filename="../panels/PageDiametersEdit.ui" line="27"/>
+        <location filename="../panels/PageDepthsEdit.ui" line="46"/>
         <source>Start Depth of the operation. The highest point in Z-axis the operation needs to process.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageDepthsEdit.ui" line="59"/>
         <location filename="../panels/PageDiametersEdit.ui" line="43"/>
+        <location filename="../panels/PageDepthsEdit.ui" line="59"/>
         <source>Transfer the Z value of the selected feature as the Start Depth for the operation.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageDepthsEdit.ui" line="92"/>
         <location filename="../panels/PageDiametersEdit.ui" line="64"/>
+        <location filename="../panels/PageDepthsEdit.ui" line="92"/>
         <source>The depth of the operation which corresponds to the lowest value in Z-axis the operation needs to process.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageDepthsEdit.ui" line="105"/>
         <location filename="../panels/PageDiametersEdit.ui" line="80"/>
+        <location filename="../panels/PageDepthsEdit.ui" line="105"/>
         <source>Transfer the Z value of the selected feature as the Final Depth for the operation.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -879,14 +848,14 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageDepthsEdit.ui" line="85"/>
         <location filename="../panels/SetupGlobal.ui" line="52"/>
+        <location filename="../panels/PageDepthsEdit.ui" line="85"/>
         <source>Final Depth</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageDepthsEdit.ui" line="131"/>
         <location filename="../panels/SetupGlobal.ui" line="68"/>
+        <location filename="../panels/PageDepthsEdit.ui" line="131"/>
         <source>Step Down</source>
         <translation type="unfinished"></translation>
     </message>
@@ -926,34 +895,34 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../panels/PageOpWaterlineEdit.ui" line="36"/>
         <location filename="../panels/PageOpCustomEdit.ui" line="42"/>
-        <location filename="../panels/PageOpDeburrEdit.ui" line="60"/>
-        <location filename="../panels/PageOpDeburrEdit.ui" line="92"/>
-        <location filename="../panels/PageOpDrillingEdit.ui" line="42"/>
-        <location filename="../panels/PageOpDrillingEdit.ui" line="56"/>
         <location filename="../panels/PageOpEngraveEdit.ui" line="36"/>
         <location filename="../panels/PageOpEngraveEdit.ui" line="50"/>
         <location filename="../panels/PageOpHelixEdit.ui" line="36"/>
         <location filename="../panels/PageOpHelixEdit.ui" line="50"/>
+        <location filename="../panels/PageOpDrillingEdit.ui" line="42"/>
+        <location filename="../panels/PageOpDrillingEdit.ui" line="56"/>
         <location filename="../panels/PageOpSurfaceEdit.ui" line="36"/>
         <location filename="../panels/PageOpSurfaceEdit.ui" line="50"/>
-        <location filename="../panels/PageOpWaterlineEdit.ui" line="36"/>
+        <location filename="../panels/PageOpDeburrEdit.ui" line="60"/>
+        <location filename="../panels/PageOpDeburrEdit.ui" line="92"/>
         <source>The tool and its settings to be used for this operation.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpCustomEdit.ui" line="49"/>
-        <location filename="../panels/PageOpDeburrEdit.ui" line="85"/>
-        <location filename="../panels/PageOpDrillingEdit.ui" line="49"/>
-        <location filename="../panels/PageOpEngraveEdit.ui" line="43"/>
-        <location filename="../panels/PageOpPocketFullEdit.ui" line="43"/>
-        <location filename="../panels/PageOpProfileFullEdit.ui" line="43"/>
-        <location filename="../panels/PageOpSlotEdit.ui" line="52"/>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="43"/>
-        <location filename="../panels/PageOpVcarveEdit.ui" line="43"/>
-        <location filename="../panels/PageOpWaterlineEdit.ui" line="46"/>
         <location filename="../panels/SetupGlobal.ui" line="255"/>
         <location filename="../panels/SetupGlobal.ui" line="261"/>
+        <location filename="../panels/PageOpWaterlineEdit.ui" line="46"/>
+        <location filename="../panels/PageOpCustomEdit.ui" line="49"/>
+        <location filename="../panels/PageOpEngraveEdit.ui" line="43"/>
+        <location filename="../panels/PageOpSlotEdit.ui" line="52"/>
+        <location filename="../panels/PageOpProfileFullEdit.ui" line="43"/>
+        <location filename="../panels/PageOpDrillingEdit.ui" line="49"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="43"/>
+        <location filename="../panels/PageOpPocketFullEdit.ui" line="43"/>
+        <location filename="../panels/PageOpDeburrEdit.ui" line="85"/>
+        <location filename="../panels/PageOpVcarveEdit.ui" line="43"/>
         <source>Coolant Mode</source>
         <translation type="unfinished"></translation>
     </message>
@@ -963,28 +932,28 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpAdaptiveEdit.ui" line="23"/>
-        <location filename="../panels/PageOpCustomEdit.ui" line="35"/>
-        <location filename="../panels/PageOpDeburrEdit.ui" line="53"/>
-        <location filename="../panels/PageOpDrillingEdit.ui" line="35"/>
-        <location filename="../panels/PageOpEngraveEdit.ui" line="29"/>
-        <location filename="../panels/PageOpHelixEdit.ui" line="29"/>
-        <location filename="../panels/PageOpPocketFullEdit.ui" line="29"/>
         <location filename="../panels/PageOpProbeEdit.ui" line="35"/>
-        <location filename="../panels/PageOpProfileFullEdit.ui" line="29"/>
-        <location filename="../panels/PageOpSlotEdit.ui" line="35"/>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="29"/>
-        <location filename="../panels/PageOpThreadMillingEdit.ui" line="20"/>
-        <location filename="../panels/PageOpVcarveEdit.ui" line="29"/>
-        <location filename="../panels/PageOpWaterlineEdit.ui" line="29"/>
         <location filename="../panels/SetupGlobal.ui" line="180"/>
+        <location filename="../panels/PageOpWaterlineEdit.ui" line="29"/>
+        <location filename="../panels/PageOpThreadMillingEdit.ui" line="20"/>
+        <location filename="../panels/PageOpCustomEdit.ui" line="35"/>
+        <location filename="../panels/PageOpEngraveEdit.ui" line="29"/>
+        <location filename="../panels/PageOpSlotEdit.ui" line="35"/>
+        <location filename="../panels/PageOpHelixEdit.ui" line="29"/>
+        <location filename="../panels/PageOpProfileFullEdit.ui" line="29"/>
+        <location filename="../panels/PageOpDrillingEdit.ui" line="35"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="29"/>
+        <location filename="../panels/PageOpPocketFullEdit.ui" line="29"/>
+        <location filename="../panels/PageOpDeburrEdit.ui" line="53"/>
+        <location filename="../panels/PageOpVcarveEdit.ui" line="29"/>
+        <location filename="../panels/PageOpAdaptiveEdit.ui" line="23"/>
         <source>Tool Controller</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpAdaptiveEdit.ui" line="33"/>
-        <location filename="../panels/PageOpHelixEdit.ui" line="43"/>
         <location filename="../panels/SetupGlobal.ui" line="249"/>
+        <location filename="../panels/PageOpHelixEdit.ui" line="43"/>
+        <location filename="../panels/PageOpAdaptiveEdit.ui" line="33"/>
         <source>Coolant</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1004,8 +973,8 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpAdaptiveEdit.ui" line="90"/>
         <location filename="../panels/PageOpPocketFullEdit.ui" line="178"/>
+        <location filename="../panels/PageOpAdaptiveEdit.ui" line="90"/>
         <source>Step Over Percent</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1055,8 +1024,8 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpAdaptiveEdit.ui" line="55"/>
         <location filename="../panels/PageOpPocketFullEdit.ui" line="237"/>
+        <location filename="../panels/PageOpAdaptiveEdit.ui" line="55"/>
         <source>Use Outline</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1111,10 +1080,10 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpDeburrEdit.ui" line="131"/>
+        <location filename="../panels/PageOpThreadMillingEdit.ui" line="167"/>
         <location filename="../panels/PageOpHelixEdit.ui" line="87"/>
         <location filename="../panels/PageOpProfileFullEdit.ui" line="82"/>
-        <location filename="../panels/PageOpThreadMillingEdit.ui" line="167"/>
+        <location filename="../panels/PageOpDeburrEdit.ui" line="131"/>
         <source>Direction</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1124,15 +1093,15 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../panels/PageOpHelixEdit.ui" line="98"/>
         <location filename="../panels/PageOpDeburrEdit.ui" line="141"/>
         <location filename="../panels/PageOpDeburrEdit.ui" line="148"/>
-        <location filename="../panels/PageOpHelixEdit.ui" line="98"/>
         <source>CW</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpDeburrEdit.ui" line="153"/>
         <location filename="../panels/PageOpHelixEdit.ui" line="103"/>
+        <location filename="../panels/PageOpDeburrEdit.ui" line="153"/>
         <source>CCW</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1157,8 +1126,6 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpDeburrEdit.ui" line="198"/>
-        <location filename="../panels/PageOpDeburrEdit.ui" line="225"/>
         <location filename="../panels/ToolEditor.ui" line="77"/>
         <location filename="../panels/ToolEditor.ui" line="134"/>
         <location filename="../panels/ToolEditor.ui" line="144"/>
@@ -1168,6 +1135,8 @@ Reset deletes all current items from the list and fills the list with all circul
         <location filename="../panels/ToolEditor.ui" line="223"/>
         <location filename="../panels/ToolEditor.ui" line="240"/>
         <location filename="../panels/ToolEditor.ui" line="280"/>
+        <location filename="../panels/PageOpDeburrEdit.ui" line="198"/>
+        <location filename="../panels/PageOpDeburrEdit.ui" line="225"/>
         <source>mm</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1308,11 +1277,6 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpPocketExtEdit.ui" line="65"/>
-        <source>Extend the corner between two edges of a pocket. If selected adjacent edges are combined</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../panels/PageOpPocketExtEdit.ui" line="68"/>
         <source>Extend Corners</source>
         <translation type="unfinished"></translation>
@@ -1353,6 +1317,11 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../panels/PageOpPocketExtEdit.ui" line="65"/>
+        <source>Extend the corner between two edges of a pocket. Selected adjacent edges are combined.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../panels/PageOpPocketExtEdit.ui" line="139"/>
         <source>Disable</source>
         <translation type="unfinished"></translation>
@@ -1383,11 +1352,11 @@ Reset deletes all current items from the list and fills the list with all circul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpPocketFullEdit.ui" line="36"/>
-        <location filename="../panels/PageOpPocketFullEdit.ui" line="50"/>
         <location filename="../panels/PageOpProbeEdit.ui" line="42"/>
         <location filename="../panels/PageOpProfileFullEdit.ui" line="36"/>
         <location filename="../panels/PageOpProfileFullEdit.ui" line="50"/>
+        <location filename="../panels/PageOpPocketFullEdit.ui" line="36"/>
+        <location filename="../panels/PageOpPocketFullEdit.ui" line="50"/>
         <location filename="../panels/PageOpVcarveEdit.ui" line="36"/>
         <location filename="../panels/PageOpVcarveEdit.ui" line="50"/>
         <source>The tool and its settings to be used for this operation</source>
@@ -1471,14 +1440,24 @@ The latter can be used to face of the entire stock area to ensure uniform height
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../panels/PageOpPocketFullEdit.ui" line="258"/>
+        <source>Check to skip machining regions that have already been cleared by previous operations</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PageOpPocketFullEdit.ui" line="261"/>
+        <source>Use Rest Machining</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../panels/PageOpPocketFullEdit.ui" line="204"/>
         <source>Material Allowance</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpPocketFullEdit.ui" line="227"/>
         <location filename="../panels/PageOpProfileFullEdit.ui" line="130"/>
         <location filename="../panels/PageOpSurfaceEdit.ui" line="257"/>
+        <location filename="../panels/PageOpPocketFullEdit.ui" line="227"/>
         <source>Use Start Point</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1734,9 +1713,9 @@ The latter can be used to face of the entire stock area to ensure uniform height
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../panels/PageOpWaterlineEdit.ui" line="98"/>
         <location filename="../panels/PageOpSlotEdit.ui" line="345"/>
         <location filename="../panels/PageOpSurfaceEdit.ui" line="91"/>
-        <location filename="../panels/PageOpWaterlineEdit.ui" line="98"/>
         <source>Layer Mode</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1776,8 +1755,8 @@ The latter can be used to face of the entire stock area to ensure uniform height
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="105"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="117"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="105"/>
         <source>Cut Pattern</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1792,14 +1771,14 @@ The latter can be used to face of the entire stock area to ensure uniform height
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="63"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="79"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="63"/>
         <source>Bounding Box</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="70"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="91"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="70"/>
         <source>Select the overall boundary for the operation.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1809,14 +1788,14 @@ The latter can be used to face of the entire stock area to ensure uniform height
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="98"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="110"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="98"/>
         <source>Complete the operation in a single pass at depth, or multiple passes to final depth.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="112"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="129"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="112"/>
         <source>Set the geometric clearing pattern to use for the operation.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1836,29 +1815,19 @@ The latter can be used to face of the entire stock area to ensure uniform height
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="162"/>
-        <source>Additional offset to the selected bounding box along the X axis.&quot;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="172"/>
-        <source>Additional offset to the selected bounding box along the Y axis.&quot;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../panels/PageOpSurfaceEdit.ui" line="191"/>
         <source>Dropcutter lines are created parallel to this axis.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="205"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="149"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="205"/>
         <source>Set the Z-axis depth offset from the target surface.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="244"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="194"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="244"/>
         <source>Set the sampling resolution. Smaller values quickly increase processing time.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1868,8 +1837,8 @@ The latter can be used to face of the entire stock area to ensure uniform height
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="264"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="204"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="264"/>
         <source>Enable optimization of linear paths (co-linear points). Removes unnecessary co-linear points from G-code output.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1889,33 +1858,43 @@ The latter can be used to face of the entire stock area to ensure uniform height
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="162"/>
+        <source>Additional offset to the selected bounding box along the X axis.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="172"/>
+        <source>Additional offset to the selected bounding box along the Y axis.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../panels/PageOpSurfaceEdit.ui" line="198"/>
         <source>Depth offset</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="215"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="159"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="215"/>
         <source>Step over</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="222"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="172"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="222"/>
         <source>The amount by which the tool is laterally displaced on each cycle of the pattern, specified in percent of the tool diameter.
 
 A step over of 100% results in no overlap between two different cycles.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="237"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="187"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="237"/>
         <source>Sample interval</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpSurfaceEdit.ui" line="267"/>
         <location filename="../panels/PageOpWaterlineEdit.ui" line="207"/>
+        <location filename="../panels/PageOpSurfaceEdit.ui" line="267"/>
         <source>Optimize Linear Paths</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1988,13 +1967,6 @@ Default: &quot;OpStockZMax+SetupSheet.ClearanceHeightOffset&quot;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/SetupGlobal.ui" line="129"/>
-        <source>ClearanceHeightOffset - can be used by expressions to set the default ClearanceHeight for new operations.
-
-Default: &quot;3 mm&quot;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../panels/SetupGlobal.ui" line="145"/>
         <source>Expression set as SafeHeight for new operations.
 
@@ -2024,6 +1996,13 @@ Default: &quot;5mm&quot;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../panels/SetupGlobal.ui" line="129"/>
+        <source>ClearanceHeightOffset - can be used by expressions to set the default ClearanceHeight for new operations.
+
+Default: 3 mm</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../panels/SetupGlobal.ui" line="186"/>
         <source>Rapid Speeds</source>
         <translation type="unfinished"></translation>
@@ -2049,8 +2028,8 @@ Default: &quot;5mm&quot;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpThreadMillingEdit.ui" line="52"/>
         <location filename="../panels/ToolEditor.ui" line="43"/>
+        <location filename="../panels/PageOpThreadMillingEdit.ui" line="52"/>
         <source>Type</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2080,8 +2059,8 @@ Default: &quot;5mm&quot;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpThreadMillingEdit.ui" line="144"/>
         <location filename="../panels/SetupGlobal.ui" line="24"/>
+        <location filename="../panels/PageOpThreadMillingEdit.ui" line="144"/>
         <source>Operation</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2096,11 +2075,6 @@ Default: &quot;5mm&quot;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PageOpVcarveEdit.ui" line="63"/>
-        <source>&lt;br/&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../panels/PageOpVcarveEdit.ui" line="66"/>
         <source>Discretization Deflection</source>
         <translation type="unfinished"></translation>
@@ -2112,7 +2086,7 @@ Default: &quot;5mm&quot;</source>
     </message>
     <message>
         <location filename="../panels/PageOpVcarveEdit.ui" line="105"/>
-        <source>Sets how aggressively colinear segments are filtered from the voronoi diagram. Valid values are 0 - 90 degrees (larger numbers filter more). Default = 10</source>
+        <source>Sets how aggressively colinear segments are filtered from the Voronoi diagram. Valid values are 0 - 90 degrees (larger numbers filter more). Default = 10</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2377,6 +2351,35 @@ If the radius is bigger than that which the tag shape itself supports, the resul
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../preferences/PathJob.ui" line="188"/>
+        <source>Enter a path and optionally file name (see below) to be used as the default for the post processor export.
+The following substitutions are performed before the name is resolved at the time of the post processing:
+Substitution allows the following:
+%D ... directory of the active document
+%d ... name of the active document (with extension)
+%M ... user macro directory
+%j ... name of the active Job object
+
+The Following can be used if output is being split. If Output is not split
+these will be ignored.
+%T ... Tool Number
+%t ... Tool Controller label
+
+%W ... Work Coordinate System
+%O ... Operation Label
+
+When splitting output, a sequence number will always be added.
+
+if %S is included, you can specify where the number occurs.  Without it, the number will be added to the end of the string.
+
+%S ... Sequence Number
+
+The following example store all files with the same name as the document the directory /home/freecad (please remove quotes):
+&amp;quot;/home/cnc/%d.g-code&amp;quot;
+See the file save policy below on how to deal with name conflicts.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../preferences/PathJob.ui" line="230"/>
         <source>File Save Policy</source>
         <translation type="unfinished"></translation>
@@ -2440,35 +2443,6 @@ If left empty the macro directory is used.</source>
 This can be helpful when almost all jobs will be processed by the same machine with a similar setup.
 
 If left empty no template will be preselected.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../preferences/PathJob.ui" line="188"/>
-        <source>Enter a path and optionally file name (see below) to be used as the default for the post-processor export.
-The following substitutions are performed before the name is resolved at the time of the post-processing:
-Substitution allows the following:
-%D ... directory of the active document
-%d ... name of the active document (with extension)
-%M ... user macro directory
-%j ... name of the active Job object
-
-The Following can be used if output is being split. If Output is not split
-these will be ignored.
-%T ... Tool Number
-%t ... Tool Controller label
-
-%W ... Work Coordinate System
-%O ... Operation Label
-
-When splitting output, a sequence number will always be added.
-
-if %S is included, you can specify where the number occurs.  Without it, the number will be added to the end of the string.
-
-%S ... Sequence Number
-
-The following example store all files with the same name as the document the directory /home/freecad (please remove quotes):
-&amp;quot;/home/cnc/%d.g-code&amp;quot;
-See the file save policy below on how to deal with name conflicts.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2612,127 +2586,122 @@ Should multiple tools or tool shapes with the same name exist in different direc
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="35"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="57"/>
+        <source>Path highlight color</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../DlgSettingsPathColor.ui" line="70"/>
         <source>Default normal path color</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="42"/>
-        <source>The default color for new shapes</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="68"/>
-        <source>Default pathline width</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="75"/>
-        <source>The default line thickness for new shapes</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="78"/>
-        <source>px</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../../DlgSettingsPathColor.ui" line="103"/>
-        <source>Default path marker color</source>
+        <source>Bounding box normal color</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../DlgSettingsPathColor.ui" line="110"/>
-        <location filename="../../DlgSettingsPathColor.ui" line="143"/>
+        <source>The default color for new shapes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../DlgSettingsPathColor.ui" line="156"/>
+        <source>Probe path color</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../DlgSettingsPathColor.ui" line="202"/>
+        <source>Bounding box selection color</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../DlgSettingsPathColor.ui" line="248"/>
+        <source>Default pathline width</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../DlgSettingsPathColor.ui" line="29"/>
+        <source>The default line thickness for new shapes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../DlgSettingsPathColor.ui" line="32"/>
+        <source>px</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../DlgSettingsPathColor.ui" line="215"/>
+        <source>Default path marker color</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../DlgSettingsPathColor.ui" line="77"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="130"/>
         <location filename="../../DlgSettingsPathColor.ui" line="176"/>
-        <location filename="../../DlgSettingsPathColor.ui" line="226"/>
-        <location filename="../../DlgSettingsPathColor.ui" line="259"/>
-        <location filename="../../DlgSettingsPathColor.ui" line="292"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="222"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="255"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="275"/>
         <source>The default line color for new shapes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="136"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="169"/>
         <source>Rapid path color</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="169"/>
-        <source>Probe Path color</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="196"/>
-        <source>Machine extents color</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="219"/>
-        <source>Path Highlight Color</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="252"/>
-        <source>Bounding Box Normal Color</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="285"/>
-        <source>Bounding Box Selection Color</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="352"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="304"/>
         <source>UI Settings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="361"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="313"/>
         <source>Path Selection Style</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="374"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="326"/>
         <source>Default path shape selection behavior in 3D viewer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="384"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="336"/>
         <source>Shape</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="389"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="341"/>
         <source>Bounding Box</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="394"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="346"/>
         <source>None</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="402"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="354"/>
         <source>Task Panel Layout</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="416"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="368"/>
         <source>Classic</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="421"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="373"/>
         <source>Classic - reversed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="426"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="378"/>
         <source>Multi Panel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../DlgSettingsPathColor.ui" line="431"/>
+        <location filename="../../DlgSettingsPathColor.ui" line="383"/>
         <source>Multi Panel - reversed</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2774,7 +2743,17 @@ Should multiple tools or tool shapes with the same name exist in different direc
     </message>
     <message>
         <location filename="../preferences/Advanced.ui" line="67"/>
-        <source>Suppress Velocity warning</source>
+        <source>Suppress feed rate warning</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../preferences/Advanced.ui" line="111"/>
+        <source>OpenCAMLib</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../preferences/Advanced.ui" line="117"/>
+        <source>If OpenCAMLib is installed with Python bindings it can be used by some additional 3D operations. NOTE: Enabling OpenCAMLib here requires a restart of FreeCAD to take effect.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2783,32 +2762,17 @@ Should multiple tools or tool shapes with the same name exist in different direc
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences/Advanced.ui" line="111"/>
-        <source>Open CAMlib</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../preferences/Advanced.ui" line="135"/>
-        <source>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:&apos;DejaVu Sans&apos;; font-size:12pt; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:&apos;Sans&apos;; font-size:16pt;&quot;&gt;If openCAMlib is installed with its python interface it can be used by some additional 3d operations.&lt;/span&gt;&lt;/p&gt;
-&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:&apos;Sans&apos;; font-size:16pt;&quot;&gt;Changing this value requires a restart of FreeCAD to take effect.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../preferences/Advanced.ui" line="147"/>
+        <location filename="../preferences/Advanced.ui" line="127"/>
         <source>Enable OCL dependent features</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences/Advanced.ui" line="160"/>
+        <location filename="../preferences/Advanced.ui" line="140"/>
         <source>Suppress warning if openCAMlib cannot be found</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences/Advanced.ui" line="163"/>
+        <location filename="../preferences/Advanced.ui" line="143"/>
         <source>Suppress openCAMlib warning</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2912,48 +2876,48 @@ p, li { white-space: pre-wrap; }
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="54"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="52"/>
         <source>Arc</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="55"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="53"/>
         <source>Tangent</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="56"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="54"/>
         <source>Perpendicular</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="169"/>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="176"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="168"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="175"/>
         <source>Length/Radius positive not Null</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="677"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="464"/>
         <source>LeadInOut</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="681"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="468"/>
         <source>Creates a Cutter Radius Compensation G41/G42 Entry Dressup object from a selected path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="696"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="483"/>
         <source>Please select one path object</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="703"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="490"/>
         <source>The selected object is not a path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="709"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="496"/>
         <source>Please select a Profile object</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2979,8 +2943,8 @@ p, li { white-space: pre-wrap; }
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/AxisMapEdit.ui" line="20"/>
         <location filename="../panels/HoldingTagsEdit.ui" line="80"/>
+        <location filename="../panels/AxisMapEdit.ui" line="20"/>
         <source>Radius</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3395,8 +3359,8 @@ p, li { white-space: pre-wrap; }
 <context>
     <name>TaskPathSimulator</name>
     <message>
-        <location filename="../panels/TaskPathCamoticsSim.ui" line="14"/>
         <location filename="../panels/TaskPathSimulator.ui" line="14"/>
+        <location filename="../panels/TaskPathCamoticsSim.ui" line="14"/>
         <source>Path Simulator</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3636,8 +3600,8 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <location filename="../panels/PathEdit.ui" line="85"/>
-        <location filename="../panels/PathEdit.ui" line="1288"/>
-        <location filename="../panels/PathEdit.ui" line="1507"/>
+        <location filename="../panels/PathEdit.ui" line="1281"/>
+        <location filename="../panels/PathEdit.ui" line="1500"/>
         <source>Edit</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3659,35 +3623,6 @@ p, li { white-space: pre-wrap; }
     <message>
         <location filename="../panels/PathEdit.ui" line="134"/>
         <source>Output File</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="141"/>
-        <source>Enter a path and optionally file name (see below) to be used as the default for the post processor export.
-The following substitutions are performed before the name is resolved at the time of the post-processing:
-Substitution allows the following:
-%D ... directory of the active document
-%d ... name of the active document (with extension)
-%M ... user macro directory
-%j ... name of the active Job object
-
-The Following can be used if output is being split. If Output is not split
-these will be ignored.
-%T ... Tool Number
-%t ... Tool Controller label
-
-%W ... Work Coordinate System
-%O ... Operation Label
-
-When splitting output, a sequence number will always be added.
-
-if %S is included, you can specify where the number occurs.  Without it, the number will be    added to the end of the string.
-
-%S ... Sequence Number
-
-The following example store all files with the same name as the document the directory /home/freecad (please remove quotes):
-&quot;/home/cnc/%d.g-code&quot;
-See the file save policy below on how to deal with name conflicts.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3738,17 +3673,265 @@ FreeCAD has no knowledge of where a particular coordinate system exists within t
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="397"/>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If multiple coordinate systems are in use, setting this to TRUE will cause the gcode to be written to multiple output files as controlled by the &apos;order by&apos; property.  For example, if ordering by Fixture, the first output file will be for the first fixture and separate file for the second.
-
-
-
-&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+        <location filename="../panels/PathEdit.ui" line="409"/>
+        <source>Split Output</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="404"/>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If True, post-processing will create multiple output files based on the &lt;span style=&quot; font-style:italic;&quot;&gt;order by&lt;/span&gt; setting.
+        <location filename="../panels/PathEdit.ui" line="433"/>
+        <source>Setup</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="451"/>
+        <source>Layout</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="457"/>
+        <source>Stock</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="478"/>
+        <source>Create Box</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="483"/>
+        <source>Create Cylinder</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="488"/>
+        <source>Extend Model&apos;s Bounding Box</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="493"/>
+        <source>Use Existing Solid</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="501"/>
+        <source>Refresh</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="535"/>
+        <source>Ext. X</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="555"/>
+        <source>Ext. Y</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="568"/>
+        <source>Ext. Z</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="587"/>
+        <source>Radius</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="597"/>
+        <location filename="../panels/PathEdit.ui" line="633"/>
+        <source>Height</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="613"/>
+        <source>Length</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="623"/>
+        <source>Width</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="649"/>
+        <source>Alignment</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="655"/>
+        <source>Move to Origin</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="662"/>
+        <source>Set Origin</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="669"/>
+        <source>Center in Stock</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="676"/>
+        <source>XY in Stock</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="686"/>
+        <source>Set</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="692"/>
+        <source>X-Axis</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="699"/>
+        <source>Y-Axis</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="706"/>
+        <source>Z-Axis</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="713"/>
+        <source>X=0</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="720"/>
+        <source>Y=0</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="727"/>
+        <source>Z=0</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="734"/>
+        <source>Link Stock and Model</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="744"/>
+        <source>Move - XY</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="902"/>
+        <source>Rotate - XY</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="958"/>
+        <source>Compound</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1018"/>
+        <location filename="../panels/PathEdit.ui" line="1319"/>
+        <source>Default Values</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1024"/>
+        <source>Depths</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1030"/>
+        <source>Start Depth</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1114"/>
+        <source>Expression set as ClearanceHeight for new operations.
+
+Default: &quot;OpStockZMax+SetupSheet.ClearanceHeightOffset&quot;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1139"/>
+        <source>Expression set as SafeHeight for new operations.
+
+Default: &quot;OpStockZMax+SetupSheet.SafeHeightOffset&quot;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1148"/>
+        <source>SafeHeightOffset can be for expressions to set the SafeHeight for new operations.
+
+Default: &quot;5mm&quot;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1247"/>
+        <source>Horizontal Feed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1259"/>
+        <source>Vertical Feed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1347"/>
+        <source>Rapid horizontal speed assigned as HorizRapid to new ToolController.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1367"/>
+        <source>Rapid vertical speed assigned to VertRapid of new ToolController.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1046"/>
+        <source>Final Depth</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="141"/>
+        <source>Enter a path and optionally file name (see below) to be used as the default for the post processor export.
+The following substitutions are performed before the name is resolved at the time of the post processing:
+Substitution allows the following:
+%D ... directory of the active document
+%d ... name of the active document (with extension)
+%M ... user macro directory
+%j ... name of the active Job object
+
+The Following can be used if output is being split. If Output is not split
+these will be ignored.
+%T ... Tool Number
+%t ... Tool Controller label
+
+%W ... Work Coordinate System
+%O ... Operation Label
+
+When splitting output, a sequence number will always be added.
+
+if %S is included, you can specify where the number occurs.  Without it, the number will be    added to the end of the string.
+
+%S ... Sequence Number
+
+The following example store all files with the same name as the document the directory /home/freecad (please remove quotes):
+&quot;/home/cnc/%d.g-code&quot;
+See the file save policy below on how to deal with name conflicts.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="397"/>
+        <source>If multiple coordinate systems are in use, setting this to TRUE will cause the gcode to be written to multiple output files as controlled by the &apos;order by&apos; property.  For example, if ordering by Fixture, the first output file will be for the first fixture and separate file for the second.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="400"/>
+        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If True, post processing will create multiple output files based on the &lt;span style=&quot; font-style:italic;&quot;&gt;order by&lt;/span&gt; setting.
 
 
 For example, if &lt;span style=&quot; font-style:italic;&quot;&gt;order by&lt;/span&gt; is set to Tool, the first output file will contain the first tool change and all operations, in all coordinate systems, that can be done with that tool before the next tool change is called.
@@ -3758,368 +3941,142 @@ If &lt;span style=&quot; font-style:italic;&quot;&gt;order by&lt;/span&gt; is se
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="413"/>
-        <source>Split Output</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="437"/>
-        <source>Setup</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="455"/>
-        <source>Layout</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="461"/>
-        <source>Stock</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="482"/>
-        <source>Create Box</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="487"/>
-        <source>Create Cylinder</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="492"/>
-        <source>Extend Model&apos;s Bounding Box</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="497"/>
-        <source>Use Existing Solid</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="505"/>
-        <source>Refresh</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="539"/>
-        <source>Ext. X</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="559"/>
-        <source>Ext. Y</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="572"/>
-        <source>Ext. Z</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="591"/>
-        <source>Radius</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="601"/>
-        <location filename="../panels/PathEdit.ui" line="637"/>
-        <source>Height</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="617"/>
-        <source>Length</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="627"/>
-        <source>Width</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="653"/>
-        <source>Alignment</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="659"/>
-        <source>Move to Origin</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="666"/>
-        <source>Set Origin</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="673"/>
-        <source>Center in Stock</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="680"/>
-        <source>XY in Stock</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="690"/>
-        <source>Set</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="696"/>
-        <source>X-Axis</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="703"/>
-        <source>Y-Axis</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="710"/>
-        <source>Z-Axis</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="717"/>
-        <source>X=0</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="724"/>
-        <source>Y=0</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="731"/>
-        <source>Z=0</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="738"/>
-        <source>Link Stock and Model</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="748"/>
-        <source>Move - XY</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="906"/>
-        <source>Rotate - XY</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="962"/>
-        <source>Compound</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1022"/>
-        <location filename="../panels/PathEdit.ui" line="1326"/>
-        <source>Default Values</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1028"/>
-        <source>Depths</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1034"/>
-        <source>Start Depth</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1041"/>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Expression set as the StartDepth of a newly created operation.
+        <location filename="../panels/PathEdit.ui" line="1037"/>
+        <source>Expression set as the StartDepth of a newly created operation.
 
+Default: OpStartDepth</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1053"/>
+        <source>Expression set as the FinalDepth for a newly created operation.
 
-Default: OpStartDepth&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+Default: OpFinalDepth</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1058"/>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Expression set as the FinalDepth for a newly created operation.
-
-
-Default: OpFinalDepth&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1075"/>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Expression set as the StepDown of a newly created operation.
-
-
-Default: OpToolDiameter&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1121"/>
-        <source>Expression set as ClearanceHeight for new operations.
-
-Default: &quot;OpStockZMax+SetupSheet.ClearanceHeightOffset&quot;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1130"/>
-        <source>ClearanceHeightOffset - can be used by expressions to set the default ClearanceHeight for new operations.
-
-Default: &quot;3 mm&quot;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1146"/>
-        <source>Expression set as SafeHeight for new operations.
-
-Default: &quot;OpStockZMax+SetupSheet.SafeHeightOffset&quot;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1155"/>
-        <source>SafeHeightOffset can be for expressions to set the SafeHeight for new operations.
-
-Default: &quot;5mm&quot;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1254"/>
-        <source>Horizontal Feed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1266"/>
-        <source>Vertical Feed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1354"/>
-        <source>Rapid horizontal speed assigned as HorizRapid to new ToolController.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1374"/>
-        <source>Rapid vertical speed assigned to VertRapid of new ToolController.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1051"/>
-        <source>Final Depth</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../panels/PathEdit.ui" line="1068"/>
+        <location filename="../panels/PathEdit.ui" line="1062"/>
         <source>Step Down</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1088"/>
+        <location filename="../panels/PathEdit.ui" line="1069"/>
+        <source>Expression set as the StepDown of a newly created operation.
+
+Default: OpToolDiameter</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1081"/>
         <source>Heights</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1094"/>
+        <location filename="../panels/PathEdit.ui" line="1087"/>
         <source>Expression</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1104"/>
+        <location filename="../panels/PathEdit.ui" line="1097"/>
         <source>Offset</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1114"/>
+        <location filename="../panels/PathEdit.ui" line="1107"/>
         <source>Clearance</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1139"/>
+        <location filename="../panels/PathEdit.ui" line="1123"/>
+        <source>ClearanceHeightOffset - can be used by expressions to set the default ClearanceHeight for new operations.
+
+Default: 3 mm</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../panels/PathEdit.ui" line="1132"/>
         <source>Safe</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1167"/>
+        <location filename="../panels/PathEdit.ui" line="1160"/>
         <source>Coolant</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1173"/>
+        <location filename="../panels/PathEdit.ui" line="1166"/>
         <source>Coolant Mode</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1204"/>
-        <location filename="../panels/PathEdit.ui" line="1222"/>
+        <location filename="../panels/PathEdit.ui" line="1197"/>
+        <location filename="../panels/PathEdit.ui" line="1215"/>
         <source>Tools</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1241"/>
+        <location filename="../panels/PathEdit.ui" line="1234"/>
         <source>Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1246"/>
+        <location filename="../panels/PathEdit.ui" line="1239"/>
         <source>Nr.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1251"/>
-        <location filename="../panels/PathEdit.ui" line="1263"/>
+        <location filename="../panels/PathEdit.ui" line="1244"/>
+        <location filename="../panels/PathEdit.ui" line="1256"/>
         <source>Feed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1275"/>
+        <location filename="../panels/PathEdit.ui" line="1268"/>
         <source>Spindle</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1295"/>
+        <location filename="../panels/PathEdit.ui" line="1288"/>
         <source>Add</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1305"/>
+        <location filename="../panels/PathEdit.ui" line="1298"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1332"/>
+        <location filename="../panels/PathEdit.ui" line="1325"/>
         <source>Rapid Speeds</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1341"/>
+        <location filename="../panels/PathEdit.ui" line="1334"/>
         <source>Horizontal</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1361"/>
+        <location filename="../panels/PathEdit.ui" line="1354"/>
         <source>Vertical</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1402"/>
+        <location filename="../panels/PathEdit.ui" line="1395"/>
         <source>Workplan</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1414"/>
+        <location filename="../panels/PathEdit.ui" line="1407"/>
         <source>Active Tool </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1527"/>
+        <location filename="../panels/PathEdit.ui" line="1520"/>
         <source>Delete</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../panels/PathEdit.ui" line="1538"/>
+        <location filename="../panels/PathEdit.ui" line="1531"/>
         <source>Op Defaults</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4234,9 +4191,10 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Base/Gui/IconViewProvider.py" line="97"/>
         <location filename="../../../Path/Tool/Gui/Controller.py" line="116"/>
+        <location filename="../../../Path/Base/Gui/IconViewProvider.py" line="97"/>
         <source>Edit</source>
+        <extracomment>int = field(default=None)</extracomment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4367,19 +4325,19 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Pocket.py" line="333"/>
+        <location filename="../../../Path/Op/Pocket.py" line="334"/>
         <source>A planar adaptive start is unavailable. The non-planar will be attempted.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Pocket.py" line="349"/>
-        <location filename="../../../Path/Op/Pocket.py" line="379"/>
+        <location filename="../../../Path/Op/Pocket.py" line="350"/>
+        <location filename="../../../Path/Op/Pocket.py" line="380"/>
         <source>The non-planar adaptive start is also unavailable.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Gui/Engrave.py" line="76"/>
         <location filename="../../../Path/Op/Gui/Vcarve.py" line="65"/>
+        <location filename="../../../Path/Op/Gui/Engrave.py" line="76"/>
         <source>%s is not a Base Model object of the job %s</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4399,8 +4357,8 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Post/Command.py" line="566"/>
         <location filename="../../../PathScripts/PathUtilsGui.py" line="91"/>
+        <location filename="../../../Path/Post/Command.py" line="561"/>
         <source>Choose a Path Job</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4504,7 +4462,6 @@ For example:
     <message>
         <location filename="../../../Path/Base/PropertyBag.py" line="75"/>
         <source>List of custom property groups</source>
-        <extracomment>int = field(default=None)</extracomment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4566,13 +4523,13 @@ For example:
     </message>
     <message>
         <location filename="../../../Path/Dressup/Boundary.py" line="53"/>
-        <location filename="../../../Path/Dressup/Tags.py" line="943"/>
-        <location filename="../../../Path/Dressup/Gui/AxisMap.py" line="54"/>
-        <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="423"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="940"/>
         <location filename="../../../Path/Dressup/Gui/Dragknife.py" line="58"/>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="63"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="61"/>
         <location filename="../../../Path/Dressup/Gui/RampEntry.py" line="57"/>
         <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="62"/>
+        <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="423"/>
+        <location filename="../../../Path/Dressup/Gui/AxisMap.py" line="54"/>
         <source>The base path to modify</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4587,72 +4544,72 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/DogboneII.py" line="202"/>
+        <location filename="../../../Path/Dressup/DogboneII.py" line="203"/>
         <source>The base path to dress up</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/DogboneII.py" line="210"/>
+        <location filename="../../../Path/Dressup/DogboneII.py" line="211"/>
         <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="429"/>
         <source>The side of path to insert bones</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/DogboneII.py" line="227"/>
+        <location filename="../../../Path/Dressup/DogboneII.py" line="228"/>
         <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="437"/>
         <source>The style of bones</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/DogboneII.py" line="238"/>
+        <location filename="../../../Path/Dressup/DogboneII.py" line="239"/>
         <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="455"/>
         <source>The algorithm to determine the bone length</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/DogboneII.py" line="249"/>
+        <location filename="../../../Path/Dressup/DogboneII.py" line="250"/>
         <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="463"/>
         <source>Dressup length if incision is set to &apos;custom&apos;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/DogboneII.py" line="257"/>
+        <location filename="../../../Path/Dressup/DogboneII.py" line="258"/>
         <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="445"/>
         <source>Bones that aren&apos;t dressed up</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Tags.py" line="949"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="946"/>
         <source>Width of tags.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Tags.py" line="955"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="952"/>
         <source>Height of tags.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Tags.py" line="961"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="958"/>
         <source>Angle of tag plunge and ascent.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Tags.py" line="967"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="964"/>
         <source>Radius of the fillet for the tag.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Tags.py" line="973"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="970"/>
         <source>Locations of inserted holding tags</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Tags.py" line="979"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="976"/>
         <source>IDs of disabled holding tags</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Tags.py" line="988"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="985"/>
         <source>Factor determining the # of segments used to approximate rounded tags.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4682,57 +4639,57 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="69"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="67"/>
         <source>Calculate roll-on to path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="75"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="73"/>
         <source>Calculate roll-off from path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="81"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="79"/>
         <source>Keep the Tool Down in Path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="87"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="85"/>
         <source>Length or Radius of the approach</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="93"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="91"/>
         <source>Length or Radius of the exit</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="99"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="97"/>
         <source>The Style of motion into the Path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="106"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="104"/>
         <source>The Style of motion out of the Path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="113"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="111"/>
         <source>Extends LeadIn distance</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="119"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="117"/>
         <source>Extends LeadOut distance</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="125"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="123"/>
         <source>Perform plunges with G0</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="133"/>
+        <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="131"/>
         <source>Apply LeadInOut to layers within an operation</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4799,7 +4756,7 @@ For example:
     <message>
         <location filename="../../../Path/Main/Job.py" line="136"/>
         <location filename="../../../Path/Main/Job.py" line="143"/>
-        <source>Last Time the Job was post-processed</source>
+        <source>Last Time the Job was post processed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4866,9 +4823,9 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Job.py" line="501"/>
         <location filename="../../../Path/Op/Base.py" line="192"/>
         <location filename="../../../Path/Op/Base.py" line="463"/>
+        <location filename="../../../Path/Main/Job.py" line="501"/>
         <source>Operations Cycle Time Estimation</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4953,8 +4910,8 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Fixture.py" line="63"/>
         <location filename="../../../Path/Op/Base.py" line="172"/>
+        <location filename="../../../Path/Main/Gui/Fixture.py" line="63"/>
         <source>Make False, to prevent operation from generating code</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4974,8 +4931,8 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Adaptive.py" line="983"/>
         <location filename="../../../Path/Op/Helix.py" line="127"/>
+        <location filename="../../../Path/Op/Adaptive.py" line="983"/>
         <location filename="../../../Path/Op/PocketBase.py" line="151"/>
         <source>Percent of cutter diameter to step over on each pass</source>
         <translation type="unfinished"></translation>
@@ -5151,10 +5108,10 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Base.py" line="314"/>
-        <location filename="../../../Path/Op/Slot.py" line="236"/>
         <location filename="../../../Path/Op/Surface.py" line="431"/>
+        <location filename="../../../Path/Op/Slot.py" line="236"/>
         <location filename="../../../Path/Op/Waterline.py" line="460"/>
+        <location filename="../../../Path/Op/Base.py" line="314"/>
         <source>Make True, if specifying a Start Point</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5179,7 +5136,7 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Custom.py" line="54"/>
+        <location filename="../../../Path/Op/Custom.py" line="104"/>
         <source>The G-code to be inserted</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5268,9 +5225,9 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../../../Path/Op/Vcarve.py" line="214"/>
         <location filename="../../../Path/Op/Engrave.py" line="71"/>
         <location filename="../../../Path/Op/Engrave.py" line="81"/>
-        <location filename="../../../Path/Op/Vcarve.py" line="214"/>
         <source>Additional base objects to be engraved</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5311,9 +5268,9 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../../../Path/Op/Profile.py" line="143"/>
         <location filename="../../../Path/Op/Helix.py" line="142"/>
         <location filename="../../../Path/Op/Helix.py" line="167"/>
-        <location filename="../../../Path/Op/Profile.py" line="143"/>
         <source>Extra value to stay away from final profile- good for roughing toolpath</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5333,9 +5290,9 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Pocket.py" line="66"/>
-        <location filename="../../../Path/Op/Profile.py" line="117"/>
         <location filename="../../../Path/Op/Surface.py" line="247"/>
+        <location filename="../../../Path/Op/Profile.py" line="117"/>
+        <location filename="../../../Path/Op/Pocket.py" line="66"/>
         <location filename="../../../Path/Op/Waterline.py" line="267"/>
         <source>Choose how to process multiple Base Geometry features.</source>
         <translation type="unfinished"></translation>
@@ -5356,8 +5313,8 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/PocketBase.py" line="128"/>
         <location filename="../../../Path/Op/Profile.py" line="108"/>
+        <location filename="../../../Path/Op/PocketBase.py" line="128"/>
         <source>The direction that the toolpath should go around the part ClockWise (CW) or CounterClockWise (CCW)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5393,8 +5350,25 @@ For example:
     </message>
     <message>
         <location filename="../../../Path/Op/PocketBase.py" line="186"/>
-        <location filename="../../../Path/Op/PocketBase.py" line="246"/>
+        <location filename="../../../Path/Op/PocketBase.py" line="265"/>
         <source>Last Stepover Radius.  If 0, 50% of cutter is used. Tuning this can be used to improve stepover for some shapes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Op/PocketBase.py" line="195"/>
+        <location filename="../../../Path/Op/PocketBase.py" line="277"/>
+        <source>Skips machining regions that have already been cleared by previous operations.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Op/PocketBase.py" line="204"/>
+        <location filename="../../../Path/Op/PocketBase.py" line="288"/>
+        <source>The areas cleared by this operation, one area per height, stored as a compound part. Used internally for rest machining.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Op/PocketBase.py" line="299"/>
+        <source>Flag to indicate that the rest machining regions have never been computed, and must be recomputed before being used.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5458,8 +5432,8 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Slot.py" line="122"/>
         <location filename="../../../Path/Op/Surface.py" line="127"/>
+        <location filename="../../../Path/Op/Slot.py" line="122"/>
         <location filename="../../../Path/Op/Waterline.py" line="205"/>
         <source>Show the temporary path construction objects when module is in DEBUG mode.</source>
         <translation type="unfinished"></translation>
@@ -5475,8 +5449,8 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Slot.py" line="147"/>
         <location filename="../../../Path/Op/Surface.py" line="291"/>
+        <location filename="../../../Path/Op/Slot.py" line="147"/>
         <location filename="../../../Path/Op/Waterline.py" line="329"/>
         <source>Set the geometric clearing pattern to use for the operation.</source>
         <translation type="unfinished"></translation>
@@ -5492,8 +5466,8 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Slot.py" line="174"/>
         <location filename="../../../Path/Op/Surface.py" line="326"/>
+        <location filename="../../../Path/Op/Slot.py" line="174"/>
         <location filename="../../../Path/Op/Waterline.py" line="372"/>
         <source>Complete the operation in a single pass at depth, or multiple passes to final depth.</source>
         <translation type="unfinished"></translation>
@@ -5524,8 +5498,8 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Slot.py" line="228"/>
         <location filename="../../../Path/Op/Surface.py" line="423"/>
+        <location filename="../../../Path/Op/Slot.py" line="228"/>
         <location filename="../../../Path/Op/Waterline.py" line="452"/>
         <source>The custom start point for the path of this operation</source>
         <translation type="unfinished"></translation>
@@ -5950,14 +5924,6 @@ For example:
     </message>
 </context>
 <context>
-    <name>PathGui</name>
-    <message>
-        <location filename="../../../Path/Base/Util.py" line="58"/>
-        <source>%s has no property %s (%s))</source>
-        <translation type="unfinished"></translation>
-    </message>
-</context>
-<context>
     <name>Path_PropertyBag</name>
     <message>
         <location filename="../../../Path/Base/Gui/PropertyBag.py" line="439"/>
@@ -5996,17 +5962,17 @@ For example:
 <context>
     <name>Path_DressupTag</name>
     <message>
-        <location filename="../../../Path/Dressup/Tags.py" line="1310"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="1307"/>
         <source>Cannot insert holding tags for this path - please select a Profile path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Tags.py" line="1360"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="1357"/>
         <source>The selected object is not a path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Tags.py" line="1365"/>
+        <location filename="../../../Path/Dressup/Tags.py" line="1362"/>
         <source>Please select a Profile object</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6047,22 +6013,22 @@ For example:
 <context>
     <name>Path_Dressup</name>
     <message>
+        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="366"/>
         <location filename="../../../Path/Dressup/Gui/AxisMap.py" line="284"/>
-        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="368"/>
         <source>Please select one path object
 </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="371"/>
         <location filename="../../../Path/Dressup/Gui/AxisMap.py" line="289"/>
-        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="373"/>
         <source>The selected object is not a path
 </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="376"/>
         <location filename="../../../Path/Dressup/Gui/AxisMap.py" line="294"/>
-        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="378"/>
         <source>Please select a Path object</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6214,13 +6180,13 @@ For example:
 <context>
     <name>Path_Probe</name>
     <message>
-        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="293"/>
+        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="292"/>
         <source>Select Probe Point File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="295"/>
         <location filename="../../../Path/Op/Gui/Probe.py" line="95"/>
+        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="294"/>
         <source>All Files (*.*)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6243,12 +6209,12 @@ For example:
 <context>
     <name>Path_DressupZCorrect</name>
     <message>
-        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="347"/>
+        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="346"/>
         <source>Z Depth Correction</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="351"/>
+        <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="350"/>
         <source>Use Probe Map to correct Z depth</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6441,7 +6407,7 @@ For example:
     <message>
         <location filename="../../../Path/Main/Gui/Inspect.py" line="145"/>
         <source>&lt;b&gt;Note&lt;/b&gt;: This dialog shows Path Commands in FreeCAD base units (mm/s). 
- Values will be converted to the desired unit during post-processing.</source>
+ Values will be converted to the desired unit during post processing.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -6485,230 +6451,306 @@ For example:
 <context>
     <name>Path_Sanity</name>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="120"/>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="124"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="126"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="130"/>
         <source>Check the path job for common errors</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="245"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="215"/>
+        <source>Setup Report for FreeCAD Job</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="216"/>
+        <source>Table of Contents</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="217"/>
+        <source>Part Information</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="218"/>
+        <source>Run Summary</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="219"/>
+        <source>Rough Stock</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="220"/>
+        <source>Tool Data</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="221"/>
+        <source>Output</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="222"/>
+        <source>Fixtures</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="224"/>
+        <source>Squawks</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="225"/>
         <source>Base Object(s)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="246"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="226"/>
         <source>Job Sequence</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="247"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="227"/>
         <source>Job Description</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="248"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="228"/>
         <source>Job Type</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="249"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="229"/>
         <source>CAD File Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="250"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="230"/>
         <source>Last Save Date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="251"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="231"/>
         <source>Customer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="253"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="233"/>
         <source>Designer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="288"/>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="333"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="238"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="514"/>
         <source>Operation</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="289"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="239"/>
         <source>Minimum Z Height</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="290"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="240"/>
         <source>Maximum Z Height</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="291"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="242"/>
         <source>Cycle Time</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="292"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="243"/>
         <source>Coolant</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="294"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="244"/>
         <source>TOTAL JOB</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="327"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="246"/>
         <source>Tool Number</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="328"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="509"/>
         <source>Description</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="329"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="510"/>
         <source>Manufacturer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="330"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="511"/>
         <source>Part Number</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="331"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="512"/>
         <source>URL</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="332"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="513"/>
         <source>Inspection Notes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="334"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="515"/>
         <source>Tool Controller</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="335"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="516"/>
         <source>Feed Rate</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="336"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="517"/>
         <source>Spindle Speed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="337"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="518"/>
         <source>Tool Shape</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="339"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="520"/>
         <source>Tool Diameter</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="390"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="521"/>
         <source>X Size</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="391"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="522"/>
         <source>Y Size</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="392"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="523"/>
         <source>Z Size</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="394"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="525"/>
         <source>Material</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="407"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="526"/>
         <source>Work Offsets</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="408"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="527"/>
         <source>Order By</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="410"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="529"/>
         <source>Part Datum</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="422"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="530"/>
         <source>G-code File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="423"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="531"/>
         <source>Last Post Process Date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="424"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="532"/>
         <source>Stops</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="425"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="533"/>
         <source>Programmer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="426"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="534"/>
         <source>Machine</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="427"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="535"/>
         <source>Postprocessor</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="428"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="536"/>
         <source>Post Processor Flags</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="429"/>
-        <source>File Size (kbs)</source>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="537"/>
+        <source>File Size (kB)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="431"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="539"/>
         <source>Line Count</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="444"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="540"/>
         <source>Note</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="445"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="541"/>
         <source>Operator</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Main/Gui/Sanity.py" line="447"/>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="543"/>
         <source>Date</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="1332"/>
+        <source>Tool number {} is a legacy tool. Legacy tools not 
+                        supported by Path-Sanity</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="1343"/>
+        <source>Tool number {} used by multiple tools</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="1371"/>
+        <source>Tool Controller &apos;{}&apos; has no spindlespeed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="1399"/>
+        <source>Tool Controller &apos;{}&apos; is not used</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="1494"/>
+        <source>Consider Specifying the Stock Material</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Main/Gui/Sanity.py" line="1585"/>
+        <source>The Job has not been post-processed</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -6768,6 +6810,11 @@ For example:
     <message>
         <location filename="../../../Path/Op/Area.py" line="122"/>
         <source>no job for operation %s found.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Op/Area.py" line="259"/>
+        <source>Previous operation %s is required for rest machining, but it has no stored rest machining metadata. Recomputing to generate this metadata...</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -6872,14 +6919,14 @@ For example:
 <context>
     <name>PathProfile</name>
     <message>
-        <location filename="../../../Path/Op/Helix.py" line="75"/>
         <location filename="../../../Path/Op/Profile.py" line="209"/>
+        <location filename="../../../Path/Op/Helix.py" line="75"/>
         <source>Outside</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Helix.py" line="76"/>
         <location filename="../../../Path/Op/Profile.py" line="210"/>
+        <location filename="../../../Path/Op/Helix.py" line="76"/>
         <source>Inside</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6919,17 +6966,17 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Profile.py" line="382"/>
+        <location filename="../../../Path/Op/Profile.py" line="385"/>
         <source>The selected edge(s) are inaccessible. If multiple, re-ordering selection might work.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Profile.py" line="488"/>
+        <location filename="../../../Path/Op/Profile.py" line="491"/>
         <source>Unable to create path for face(s).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Profile.py" line="637"/>
+        <location filename="../../../Path/Op/Profile.py" line="640"/>
         <source>Check edge selection and Final Depth requirements for profiling open edge(s).</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7015,7 +7062,7 @@ For example:
 <context>
     <name>PathPocket</name>
     <message>
-        <location filename="../../../Path/Op/Pocket.py" line="191"/>
+        <location filename="../../../Path/Op/Pocket.py" line="192"/>
         <source>Final depth set below ZMin of face(s) selected.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7035,12 +7082,12 @@ For example:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Gui/PocketBase.py" line="81"/>
+        <location filename="../../../Path/Op/Gui/PocketBase.py" line="82"/>
         <source>Pass Extension</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Op/Gui/PocketBase.py" line="87"/>
+        <location filename="../../../Path/Op/Gui/PocketBase.py" line="88"/>
         <source>The distance the facing operation will extend beyond the boundary shape.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8107,12 +8154,12 @@ Aborting op creation</source>
 <context>
     <name>Path_Post</name>
     <message>
-        <location filename="../../../Path/Post/Command.py" line="477"/>
+        <location filename="../../../Path/Post/Command.py" line="472"/>
         <source>Post Process</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../../Path/Post/Command.py" line="479"/>
+        <location filename="../../../Path/Post/Command.py" line="474"/>
         <source>Post Process the selected Job</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8283,6 +8330,48 @@ Aborting op creation</source>
     <message>
         <location filename="../../../Path/Tool/Gui/BitLibraryCmd.py" line="80"/>
         <source>Open an editor to manage ToolBit libraries</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>QObject</name>
+    <message>
+        <location filename="../../../InitGui.py" line="87"/>
+        <location filename="../../../InitGui.py" line="90"/>
+        <location filename="../../../InitGui.py" line="267"/>
+        <location filename="../../AppPathGui.cpp" line="90"/>
+        <source>Path</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>PathGui</name>
+    <message>
+        <location filename="../../../Path/Base/Util.py" line="58"/>
+        <source>%s has no property %s (%s)</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>PathCustom</name>
+    <message>
+        <location filename="../../../Path/Op/Custom.py" line="63"/>
+        <source>Text</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Op/Custom.py" line="64"/>
+        <source>File</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Op/Custom.py" line="178"/>
+        <source>Custom file %s could not be found.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../../Path/Op/Custom.py" line="188"/>
+        <source>Invalid Gcode line: %s</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

@@ -38,6 +38,8 @@
 #include <Base/VectorPy.h>
 #include <Base/Writer.h>
 
+#include "ComplexGeoData.h"
+#include "Document.h"
 #include "PropertyGeo.h"
 
 #include "Document.h"
@@ -311,7 +313,7 @@ bool PropertyVectorList::saveXML(Base::Writer &writer) const
 void PropertyVectorList::restoreXML(Base::XMLReader &reader)
 {
     unsigned count = reader.getAttributeAsUnsigned("count");
-    auto &s = reader.beginCharStream(false);
+    auto &s = reader.beginCharStream();
     std::vector<Base::Vector3d> values(count);
     for(auto &v : values) 
         s >> v.x >> v.y >> v.z;
@@ -322,15 +324,15 @@ void PropertyVectorList::restoreXML(Base::XMLReader &reader)
 void PropertyVectorList::saveStream(Base::OutputStream &str) const
 {
     if (!isSinglePrecision()) {
-        for (std::vector<Base::Vector3d>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
-            str << it->x << it->y << it->z;
+        for (const auto & it : _lValueList) {
+            str << it.x << it.y << it.z;
         }
     }
     else {
-        for (std::vector<Base::Vector3d>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
-            float x = (float)it->x;
-            float y = (float)it->y;
-            float z = (float)it->z;
+        for (const auto & it : _lValueList) {
+            float x = (float)it.x;
+            float y = (float)it.y;
+            float z = (float)it.z;
             str << x << y << z;
         }
     }
@@ -340,15 +342,15 @@ void PropertyVectorList::restoreStream(Base::InputStream &str, unsigned uCt)
 {
     std::vector<Base::Vector3d> values(uCt);
     if (!isSinglePrecision()) {
-        for (std::vector<Base::Vector3d>::iterator it = values.begin(); it != values.end(); ++it) {
-            str >> it->x >> it->y >> it->z;
+        for (auto & it : values) {
+            str >> it.x >> it.y >> it.z;
         }
     }
     else {
         float x,y,z;
-        for (std::vector<Base::Vector3d>::iterator it = values.begin(); it != values.end(); ++it) {
+        for (auto & it : values) {
             str >> x >> y >> z;
-            it->Set(x, y, z);
+            it.Set(x, y, z);
         }
     }
     setValues(std::move(values));
@@ -406,7 +408,7 @@ bool _PropertyVectorList::saveXML(Base::Writer &writer) const
 void _PropertyVectorList::restoreXML(Base::XMLReader &reader)
 {
     unsigned count = reader.getAttributeAsUnsigned("count");
-    auto &s = reader.beginCharStream(false);
+    auto &s = reader.beginCharStream();
     std::vector<Base::Vector3f> values(count);
     for(auto &v : values) 
         s >> v.x >> v.y >> v.z;
@@ -624,7 +626,7 @@ bool PropertyMatrixList::saveXML(Base::Writer &writer) const
 void PropertyMatrixList::restoreXML(Base::XMLReader &reader)
 {
     unsigned count = reader.getAttributeAsUnsigned("count");
-    auto &s = reader.beginCharStream(false);
+    auto &s = reader.beginCharStream();
     std::vector<Base::Matrix4D> values;
     values.reserve(count);
     for (unsigned i=0; i<count; ++i) {
@@ -1128,7 +1130,7 @@ bool PropertyPlacementList::saveXML(Base::Writer &writer) const
 void PropertyPlacementList::restoreXML(Base::XMLReader &reader)
 {
     unsigned count = reader.getAttributeAsUnsigned("count");
-    auto &s = reader.beginCharStream(false);
+    auto &s = reader.beginCharStream();
     std::vector<Base::Placement> values(count);
     for(auto &v : values) {
         Base::Vector3d pos,axis;
@@ -1144,20 +1146,20 @@ void PropertyPlacementList::restoreXML(Base::XMLReader &reader)
 void PropertyPlacementList::saveStream(Base::OutputStream &str) const
 {
     if (!isSinglePrecision()) {
-        for (std::vector<Base::Placement>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
-            str << it->getPosition().x << it->getPosition().y << it->getPosition().z
-                << it->getRotation()[0] << it->getRotation()[1] << it->getRotation()[2] << it->getRotation()[3] ;
+        for (const auto & it : _lValueList) {
+            str << it.getPosition().x << it.getPosition().y << it.getPosition().z
+                << it.getRotation()[0] << it.getRotation()[1] << it.getRotation()[2] << it.getRotation()[3] ;
         }
     }
     else {
-        for (std::vector<Base::Placement>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
-            float x = (float)it->getPosition().x;
-            float y = (float)it->getPosition().y;
-            float z = (float)it->getPosition().z;
-            float q0 = (float)it->getRotation()[0];
-            float q1 = (float)it->getRotation()[1];
-            float q2 = (float)it->getRotation()[2];
-            float q3 = (float)it->getRotation()[3];
+        for (const auto & it : _lValueList) {
+            float x = (float)it.getPosition().x;
+            float y = (float)it.getPosition().y;
+            float z = (float)it.getPosition().z;
+            float q0 = (float)it.getRotation()[0];
+            float q1 = (float)it.getRotation()[1];
+            float q2 = (float)it.getRotation()[2];
+            float q3 = (float)it.getRotation()[3];
             str << x << y << z << q0 << q1 << q2 << q3;
         }
     }
@@ -1167,23 +1169,23 @@ void PropertyPlacementList::restoreStream(Base::InputStream &str, unsigned uCt)
 {
     std::vector<Base::Placement> values(uCt);
     if (!isSinglePrecision()) {
-        for (std::vector<Base::Placement>::iterator it = values.begin(); it != values.end(); ++it) {
+        for (auto & it : values) {
             Base::Vector3d pos;
             double q0, q1, q2, q3;
             str >> pos.x >> pos.y >> pos.z >> q0 >> q1 >> q2 >> q3;
             Base::Rotation rot(q0,q1,q2,q3);
-            it->setPosition(pos);
-            it->setRotation(rot);
+            it.setPosition(pos);
+            it.setRotation(rot);
         }
     }
     else {
         float x,y,z,q0,q1,q2,q3;
-        for (std::vector<Base::Placement>::iterator it = values.begin(); it != values.end(); ++it) {
+        for (auto & it : values) {
             str >> x >> y >> z >> q0 >> q1 >> q2 >> q3;
             Base::Vector3d pos(x, y, z);
             Base::Rotation rot(q0,q1,q2,q3);
-            it->setPosition(pos);
-            it->setRotation(rot);
+            it.setPosition(pos);
+            it.setRotation(rot);
         }
     }
     setValues(std::move(values));
@@ -1227,7 +1229,7 @@ PropertyPlacementLink::~PropertyPlacementLink() = default;
 
 App::Placement * PropertyPlacementLink::getPlacementObject() const
 {
-    if (_pcLink->getTypeId().isDerivedFrom(App::Placement::getClassTypeId()))
+    if (_pcLink->isDerivedFrom<App::Placement>())
         return dynamic_cast<App::Placement*>(_pcLink);
     else
         return nullptr;
@@ -1531,8 +1533,11 @@ void PropertyComplexGeoData::afterRestore()
     if (data && data->isRestoreFailed()) {
         data->resetRestoreFailure();
         auto owner = Base::freecad_dynamic_cast<DocumentObject>(getContainer());
-        if (owner && owner->getDocument() && !owner->getDocument()->testStatus(App::Document::PartialDoc))
+        if (owner &&
+            owner->getDocument() &&
+            !owner->getDocument()->testStatus(App::Document::PartialDoc)) {
             owner->getDocument()->addRecomputeObject(owner);
+        }
     }
     PropertyGeometry::afterRestore();
 }

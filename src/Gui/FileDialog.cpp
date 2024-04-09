@@ -27,6 +27,7 @@
 # include <QButtonGroup>
 # include <QCompleter>
 # include <QCryptographicHash>
+# include <QDialogButtonBox>
 # include <QDir>
 # include <QGridLayout>
 # include <QGroupBox>
@@ -126,13 +127,11 @@ FileDialog::FileDialog(QWidget * parent)
     new PrefWidgetStates(this, true, "FileDialog", this);
 }
 
-FileDialog::~FileDialog()
-{
-}
+FileDialog::~FileDialog() = default;
 
 void FileDialog::onSelectedFilter(const QString& /*filter*/)
 {
-    QRegularExpression rx(QStringLiteral("\\(\\*.(\\w+)"));
+    QRegularExpression rx(QStringLiteral(R"(\(\*.(\w+))"));
     QString suf = selectedNameFilter();
     auto match = rx.match(suf);
     if (match.hasMatch()) {
@@ -281,7 +280,7 @@ QString FileDialog::getSaveFileName (QWidget * parent, const QString & caption, 
         }
 
         QRegularExpression rx;
-        rx.setPattern(QStringLiteral("\\s(\\(\\*\\.\\w{1,})\\W"));
+        rx.setPattern(QStringLiteral(R"(\s(\(\*\.\w{1,})\W)"));
         auto match = rx.match(*filterToSearch);
         if (match.hasMatch()) {
             int index = match.capturedStart();
@@ -358,7 +357,7 @@ QString FileDialog::getSaveFileName (QWidget * parent, const QString & caption, 
         setWorkingDirectory(checkDocumentXML(file));
         return file;
     } else {
-        return QString();
+        return {};
     }
 }
 
@@ -455,7 +454,7 @@ QString FileDialog::getOpenFileName(QWidget * parent, const QString & caption, c
         setWorkingDirectory(checkDocumentXML(file));
         return file;
     } else {
-        return QString();
+        return {};
     }
 }
 
@@ -612,9 +611,7 @@ FileOptionsDialog::FileOptionsDialog( QWidget* parent, Qt::WindowFlags fl )
     connect(extensionButton, &QPushButton::clicked, this, &FileOptionsDialog::toggleExtension);
 }
 
-FileOptionsDialog::~FileOptionsDialog()
-{
-}
+FileOptionsDialog::~FileOptionsDialog() = default;
 
 void FileOptionsDialog::accept()
 {
@@ -655,7 +652,7 @@ void FileOptionsDialog::accept()
     else if (!fn.isEmpty()) {
         QFileInfo fi(fn);
         QString ext = fi.completeSuffix();
-        QRegularExpression rx(QStringLiteral("\\(\\*.(\\w+)"));
+        QRegularExpression rx(QStringLiteral(R"(\(\*.(\w+))"));
         QString suf = selectedNameFilter();
         auto match = rx.match(suf);
         if (match.hasMatch())
@@ -741,13 +738,9 @@ QWidget* FileOptionsDialog::getOptionsWidget() const
 /**
  * Constructs an empty file icon provider called \a name, with the parent \a parent.
  */
-FileIconProvider::FileIconProvider()
-{
-}
+FileIconProvider::FileIconProvider() = default;
 
-FileIconProvider::~FileIconProvider()
-{
-}
+FileIconProvider::~FileIconProvider() = default;
 
 QIcon FileIconProvider::icon(IconType type) const
 {
@@ -848,9 +841,7 @@ FileChooser::FileChooser ( QWidget * parent )
     setFocusProxy(lineEdit);
 }
 
-FileChooser::~FileChooser()
-{
-}
+FileChooser::~FileChooser() = default;
 
 void FileChooser::resizeEvent(QResizeEvent* e)
 {
@@ -1039,7 +1030,7 @@ SelectModule::SelectModule (const QString& type, const SelectModule::Dict& types
         QString module = it.value();
 
         // ignore file types in (...)
-        rx.setPattern(QStringLiteral("\\s+\\([\\w\\*\\s\\.]+\\)$"));
+        rx.setPattern(QStringLiteral(R"(\s+\([\w\*\s\.]+\)$)"));
         auto match = rx.match(filter);
         if (match.hasMatch()) {
             filter = filter.left(match.capturedStart());
@@ -1069,16 +1060,17 @@ SelectModule::SelectModule (const QString& type, const SelectModule::Dict& types
     spacerItem1 = new QSpacerItem(131, 31, QSizePolicy::Expanding, QSizePolicy::Minimum);
     hboxLayout->addItem(spacerItem1);
 
-    okButton = new QPushButton(this);
-    okButton->setObjectName(QString::fromUtf8("okButton"));
-    okButton->setText(tr("Select"));
-    okButton->setEnabled(false);
+    buttonBox = new QDialogButtonBox(this);
+    buttonBox->setObjectName(QString::fromUtf8("buttonBox"));
+    buttonBox->setStandardButtons(QDialogButtonBox::Open | QDialogButtonBox::Cancel);
+    buttonBox->button(QDialogButtonBox::Open)->setEnabled(false);
 
-    hboxLayout->addWidget(okButton);
+    hboxLayout->addWidget(buttonBox);
     gridLayout->addLayout(hboxLayout, 2, 0, 1, 1);
 
     // connections
-    connect(okButton, &QPushButton::clicked, this, &SelectModule::accept);
+    connect(buttonBox, &QDialogButtonBox::accepted, this, &SelectModule::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, this, &SelectModule::reject);
 #if QT_VERSION < QT_VERSION_CHECK(5,15,0)
     connect(group, qOverload<int>(&QButtonGroup::buttonClicked), this, &SelectModule::onButtonClicked);
 #else
@@ -1086,9 +1078,7 @@ SelectModule::SelectModule (const QString& type, const SelectModule::Dict& types
 #endif
 }
 
-SelectModule::~SelectModule()
-{
-}
+SelectModule::~SelectModule() = default;
 
 void SelectModule::accept()
 {
@@ -1103,10 +1093,8 @@ void SelectModule::reject()
 
 void SelectModule::onButtonClicked()
 {
-    if (group->checkedButton())
-        okButton->setEnabled(true);
-    else
-        okButton->setEnabled(false);
+    QWidget* button = buttonBox->button(QDialogButtonBox::Open);
+    button->setEnabled(group->checkedButton() != nullptr);
 }
 
 QString SelectModule::getModule() const
@@ -1243,6 +1231,7 @@ SelectModule::Dict SelectModule::importHandler(const QStringList& fileNames, con
             SelectModule dlg(it.key(),it.value(), getMainWindow());
             QApplication::beep();
             if (dlg.exec() == 0) {
+                // Cancelled
                 dict.clear();
                 break;
             }

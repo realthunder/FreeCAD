@@ -44,9 +44,7 @@ ViewProviderPipe::ViewProviderPipe()
     sPixmap = "PartDesign_AdditivePipe";
 }
 
-ViewProviderPipe::~ViewProviderPipe()
-{
-}
+ViewProviderPipe::~ViewProviderPipe() = default;
 
 std::vector<App::DocumentObject*> ViewProviderPipe::_claimChildren() const
 {

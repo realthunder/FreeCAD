@@ -38,13 +38,9 @@ using namespace Gui;
 
 TYPESYSTEM_SOURCE(Gui::OpenCascadeNavigationStyle, Gui::UserNavigationStyle)
 
-OpenCascadeNavigationStyle::OpenCascadeNavigationStyle()
-{
-}
+OpenCascadeNavigationStyle::OpenCascadeNavigationStyle() = default;
 
-OpenCascadeNavigationStyle::~OpenCascadeNavigationStyle()
-{
-}
+OpenCascadeNavigationStyle::~OpenCascadeNavigationStyle() = default;
 
 const char* OpenCascadeNavigationStyle::mouseButtons(ViewerMode mode)
 {
@@ -255,6 +251,9 @@ SbBool OpenCascadeNavigationStyle::processSoEvent(const SoEvent * const ev)
         newmode = NavigationStyle::PANNING;
         break;
     case CTRLDOWN|BUTTON2DOWN:
+        if (newmode != NavigationStyle::DRAGGING) {
+            saveCursorPosition(ev);
+        }
         newmode = NavigationStyle::DRAGGING;
         break;
     case BUTTON2DOWN:

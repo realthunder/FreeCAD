@@ -31,7 +31,7 @@
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
-#include <Gui/Command.h>
+#include <Gui/CommandT.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
 #include <Gui/ViewProvider.h>
@@ -335,17 +335,21 @@ void TaskLeaderLine::onLineStyleChanged()
 void TaskLeaderLine::createLeaderFeature(std::vector<Base::Vector3d> converted)
 {
 //    Base::Console().Message("TTL::createLeaderFeature()\n");
-    m_leaderName = m_basePage->getDocument()->getUniqueObjectName("LeaderLine");
+    const std::string objectName{"LeaderLine"};
+    std::string m_leaderName = m_basePage->getDocument()->getUniqueObjectName(objectName.c_str());
     m_leaderType = "TechDraw::DrawLeaderLine";
 
     Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Create Leader"));
-    FCMD_OBJ_DOC_CMD(m_basePage,"addObject('" << m_leaderType << "','" << m_leaderName << "')");
+    Gui::cmdAppDocument(m_basePage,std::ostringstream() << "addObject('" << m_leaderType << "','" << m_leaderName << "')");
     App::DocumentObject* obj = m_basePage->getDocument()->getObject(m_leaderName.c_str());
     if (!obj) {
         throw Base::RuntimeError("TaskLeaderLine - new markup object not found");
     }
-    FCMD_OBJ_CMD(m_basePage,"addView(" << Gui::Command::getObjectCmd(obj) << ")");
-    FCMD_OBJ_CMD(obj,"LeaderParent = " << Gui::Command::getObjectCmd(m_baseFeat));
+    Gui::cmdAppObjectArgs(obj, "translateLabel('DrawLeaderLine', 'LeaderLine', '%s')", m_leaderName, m_leaderName);
+    Gui::cmdAppObject(m_basePage, std::ostringstream() << "addView(" << Gui::Command::getObjectCmd(obj) << ")");
+    if (m_baseFeat) {
+        Gui::cmdAppObject(obj, std::ostringstream() << "LeaderParent = " << Gui::Command::getObjectCmd(m_baseFeat));
+    }
 
     if (obj->isDerivedFrom(TechDraw::DrawLeaderLine::getClassTypeId())) {
         m_lineFeat = static_cast<TechDraw::DrawLeaderLine*>(obj);

@@ -69,7 +69,7 @@
 #include "Command.h"
 #include "CommandCompleter.h"
 #include "DlgUndoRedo.h"
-#include "DlgSettingsWorkbenchesImp.h"
+#include "PreferencePages/DlgSettingsWorkbenchesImp.h"
 #include "Document.h"
 #include "EditorView.h"
 #include "FileDialog.h"
@@ -78,8 +78,8 @@
 #include "PieMenu.h"
 #include "PythonEditor.h"
 #include "SelectionView.h"
-#include "ToolBarManager.h"
 #include "ShortcutManager.h"
+#include "ToolBarManager.h"
 #include "Tools.h"
 #include "UserSettings.h"
 #include "View3DInventor.h"
@@ -95,7 +95,7 @@ FC_LOG_LEVEL_INIT("Gui", true, true)
 
 using namespace Gui;
 using namespace Gui::Dialog;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 /**
  * Constructs an action called \a name with parent \a parent. It also stores a pointer
@@ -583,11 +583,11 @@ Action::addWidget(QMenu *menu,
  * Constructs an action called \a name with parent \a parent. It also stores a pointer
  * to the command object.
  */
-ActionGroup::ActionGroup ( Command* pcCmd,QObject * parent)
-  : Action(pcCmd, parent)
-  , _group(nullptr)
-  , _dropDown(false)
-  , _isMode(false)
+ActionGroup::ActionGroup(Command* pcCmd, QObject* parent)
+    : Action(pcCmd, parent)
+    , _group(nullptr)
+    , _dropDown(false)
+    , _isMode(false)
 {
     _group = new QActionGroup(this);
     connect(_group, &QActionGroup::triggered, this, qOverload<QAction*>(&ActionGroup::onActivated));
@@ -770,15 +770,6 @@ void ActionGroup::onActivated (QAction* act)
 {
     int index = actions().indexOf(act);
 
-    // The following logic is moved to Command::onInvoke()
-#if 0
-    this->setIcon(a->icon());
-
-    if (!this->_isMode) {
-        this->setToolTip(a->toolTip());
-    }
-    this->setProperty("defaultAction", QVariant(index));
-#endif
 
     command()->invoke(index, Command::TriggerChildAction);
 }
@@ -786,32 +777,13 @@ void ActionGroup::onActivated (QAction* act)
 
 // --------------------------------------------------------------------
 
-namespace Gui {
-
-/**
- * The WorkbenchActionEvent class is used to send an event of which workbench must be activated.
- * We cannot activate the workbench directly as we will destroy the widget that emits the signal.
- * @author Werner Mayer
- */
-class WorkbenchActionEvent : public QEvent
-{
-public:
-    explicit WorkbenchActionEvent(QAction* act)
-      : QEvent(QEvent::User), act(act)
-    { }
-    QAction* action() const
-    { return act; }
-private:
-    QAction* act;
-
-    Q_DISABLE_COPY(WorkbenchActionEvent)
-};
-}
-
 WorkbenchComboBox::WorkbenchComboBox(WorkbenchGroup* wb, QWidget* parent) : QComboBox(parent), group(wb)
 {
-    connect(this, qOverload<int>(&WorkbenchComboBox::activated),
-            this, qOverload<int>(&WorkbenchComboBox::onActivated));
+    connect(this, qOverload<int>(&WorkbenchComboBox::activated), this,
+        [this](int item) {
+            int index = itemData(item).toInt();
+            group->actions()[index]->trigger();
+        });
     connect(getMainWindow(), &MainWindow::workbenchActivated,
             this, &WorkbenchComboBox::onWorkbenchActivated);
     connect(wb, &WorkbenchGroup::workbenchListUpdated,
@@ -850,28 +822,25 @@ void WorkbenchComboBox::populate()
 
     auto wb = WorkbenchManager::instance()->active();
     QString current;
-    if (wb)
+    if (wb) {
         current = QString::fromUtf8(wb->name().c_str());
+    }
 
     for (auto action : actions) {
-        if (!action->isVisible())
+        if (!action->isVisible()) {
             continue;
+        }
         QIcon icon = action->icon();
-        if (icon.isNull())
+        if (icon.isNull()) {
             this->addItem(action->text(), action->data());
-        else
+        }
+        else {
             this->addItem(icon, action->text(), action->data());
-        if (current == action->objectName())
+        }
+        if (current == action->objectName()) {
             this->setCurrentIndex(this->count()-1);
+        }
     }
-}
-
-void WorkbenchComboBox::onActivated(int item)
-{
-    // Send the event to the workbench group to delay the destruction of the emitting widget.
-    int index = itemData(item).toInt();
-    WorkbenchActionEvent* ev = new WorkbenchActionEvent(this->group->actions()[index]);
-    QApplication::postEvent(this->group, ev);
 }
 
 void WorkbenchComboBox::onActivated(QAction* action)
@@ -879,10 +848,12 @@ void WorkbenchComboBox::onActivated(QAction* action)
     // set the according item to the action
     QVariant data = action->data();
     int index = this->findData(data);
-    if (index >= 0)
+    if (index >= 0) {
         setCurrentIndex(index);
-    else
+    }
+    else {
         populate();
+    }
 }
 
 void WorkbenchComboBox::onWorkbenchActivated(const QString& name)
@@ -897,11 +868,11 @@ void WorkbenchComboBox::onWorkbenchActivated(const QString& name)
     // activateWorkbench the method refreshWorkbenchList() shouldn't set the
     // checked item.
     //QVariant item = itemData(currentIndex());
-    QList<QAction*> act = group->actions();
-    for (QList<QAction*>::Iterator it = act.begin(); it != act.end(); ++it) {
-        if ((*it)->objectName() == name) {
-            if (/*(*it)->data() != item*/!(*it)->isChecked()) {
-                (*it)->trigger();
+
+    for (QAction* action : actions()) {
+        if (action->objectName() == name) {
+            if (!action->isChecked()) {
+                action->trigger();
             }
             break;
         }
@@ -1263,9 +1234,9 @@ WorkbenchGroup::WorkbenchGroup (  Command* pcCmd, QObject * parent )
         action->setData(QVariant(i)); // set the index
     }
 
-    Application::Instance->signalActivateWorkbench.connect(boost::bind(&WorkbenchGroup::slotActivateWorkbench, this, bp::_1));
-    Application::Instance->signalAddWorkbench.connect(boost::bind(&WorkbenchGroup::slotAddWorkbench, this, bp::_1));
-    Application::Instance->signalRemoveWorkbench.connect(boost::bind(&WorkbenchGroup::slotRemoveWorkbench, this, bp::_1));
+    Application::Instance->signalActivateWorkbench.connect(std::bind(&WorkbenchGroup::slotActivateWorkbench, this, sp::_1));
+    Application::Instance->signalAddWorkbench.connect(std::bind(&WorkbenchGroup::slotAddWorkbench, this, sp::_1));
+    Application::Instance->signalRemoveWorkbench.connect(std::bind(&WorkbenchGroup::slotRemoveWorkbench, this, sp::_1));
 }
 
 WorkbenchGroup::~WorkbenchGroup()
@@ -1448,14 +1419,6 @@ void WorkbenchGroup::refreshWorkbenchList()
     workbenchListUpdated();
 }
 
-void WorkbenchGroup::customEvent( QEvent* event )
-{
-    if (event->type() == QEvent::User) {
-        auto ce = static_cast<Gui::WorkbenchActionEvent*>(event);
-        ce->action()->trigger();
-    }
-}
-
 void WorkbenchGroup::slotActivateWorkbench(const char* /*name*/)
 {
 }
@@ -1556,7 +1519,7 @@ RecentFilesAction::RecentFilesAction ( Command* pcCmd, QObject * parent )
   , visibleItems(4)
   , maximumItems(20)
 {
-    _pimpl.reset(new Private(this, "User parameter:BaseApp/Preferences/RecentFiles"));
+    _pimpl = std::make_unique<Private>(this, "User parameter:BaseApp/Preferences/RecentFiles");
     restore();
 }
 
@@ -1684,7 +1647,10 @@ void RecentFilesAction::restore()
     std::vector<std::string> MRU = hGrp->GetASCIIs("MRU");
     QStringList files;
     for(const auto& it : MRU) {
-        files.append(QString::fromUtf8(it.c_str()));
+        auto filePath = QString::fromUtf8(it.c_str());
+        if (QFileInfo::exists(filePath)) {
+            files.append(filePath);
+        }
     }
     setFiles(files);
 }
@@ -1796,16 +1762,17 @@ void RecentMacrosAction::setFiles(const QStringList& files)
     // Raise a single warning no matter how many conflicts
     if (!existingCommands.isEmpty()) {
         auto msgMain = QStringLiteral("Recent macros : keyboard shortcut(s)");
-        for (int index = 0; index < accel_col.count(); index++) {
-            msgMain = msgMain + QStringLiteral(" %1").arg(accel_col[index]);
+        for (int index = 0; index < accel_col.size(); index++) {
+            msgMain += QStringLiteral(" %1").arg(accel_col[index]);
         }
-        msgMain = msgMain + QStringLiteral(" disabled because of conflicts with");
+        msgMain += QStringLiteral(" disabled because of conflicts with");
         for (int index = 0; index < existingCommands.count(); index++) {
-            msgMain = msgMain + QStringLiteral(" %1").arg(existingCommands[index]);
+            msgMain += QStringLiteral(" %1").arg(existingCommands[index]);
         }
-        msgMain = msgMain + QStringLiteral(" respectively.\nHint: In Preferences -> Macros -> Recent Macros -> Keyboard Modifiers"
-                                           " this should be Ctrl+Shift+ by default, if this is now blank then you should revert"
-                                           " it back to Ctrl+Shift+ by pressing both keys at the same time.");
+        msgMain += QStringLiteral(" respectively.\nHint: In Preferences -> Python -> Macro ->"
+                             " Recent Macros menu -> Keyboard Modifiers this should be Ctrl+Shift+"
+                             " by default, if this is now blank then you should revert it back to"
+                             " Ctrl+Shift+ by pressing both keys at the same time.");
         Base::Console().Warning("%s\n", qPrintable(msgMain));
     }
 }

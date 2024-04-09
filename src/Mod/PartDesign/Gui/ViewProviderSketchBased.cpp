@@ -35,14 +35,9 @@ using namespace PartDesignGui;
 PROPERTY_SOURCE(PartDesignGui::ViewProviderSketchBased, PartDesignGui::ViewProviderAddSub)
 
 
-ViewProviderSketchBased::ViewProviderSketchBased()
-{
-}
+ViewProviderSketchBased::ViewProviderSketchBased() = default;
 
-
-ViewProviderSketchBased::~ViewProviderSketchBased()
-{
-}
+ViewProviderSketchBased::~ViewProviderSketchBased() = default;
 
 
 std::vector<App::DocumentObject*> ViewProviderSketchBased::_claimChildren() const {

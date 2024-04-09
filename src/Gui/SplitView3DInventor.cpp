@@ -334,8 +334,6 @@ SplitView3DInventor::SplitView3DInventor(int views, Gui::Document* pcDocument, Q
     setupSettings();
 }
 
-SplitView3DInventor::~SplitView3DInventor()
-{
-}
+SplitView3DInventor::~SplitView3DInventor() = default;
 
 #include "moc_SplitView3DInventor.cpp"

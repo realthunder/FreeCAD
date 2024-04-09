@@ -456,7 +456,7 @@ def getCoinCamera(camerastring):
         for child in node.getChildren():
             if ("SoOrthographicCamera" in str(child)) or ("SoPerspectiveCamera" in str(child)):
                 return child
-    print("unnable to build a camera node from string:",camerastring)
+    print("unable to build a camera node from string:",camerastring)
     return None
 
 
@@ -471,11 +471,15 @@ def viewer(scene=None,background=(1.0,1.0,1.0),lightdir=None):
 
     # Initialize Coin. This returns a main window to use
     from pivy import coin
-    from pivy import sogui
+    from pivy import quarter
+    from PySide2 import QtWidgets
 
-    win = sogui.SoGui.init()
+    app = QtWidgets.QApplication([])
+    # Create a Qt widget, which will be our window.
+    win = quarter.QuarterWidget()
+
     if win is None:
-        print("Unable to create a SoGui window")
+        print("Unable to create a Quarter window")
         return
 
     win.setBackgroundColor(coin.SbColor(background[0],background[1],background[2]))
@@ -495,17 +499,14 @@ def viewer(scene=None,background=(1.0,1.0,1.0),lightdir=None):
     # ref the scene so it doesn't get garbage-collected
     scene.ref()
 
-    # Create a viewer in which to see our scene graph
-    viewer = sogui.SoGuiExaminerViewer(win)
-
     # Put our scene into viewer, change the title
-    viewer.setSceneGraph(scene)
-    viewer.setTitle("Coin viewer")
-    viewer.show()
+    win.setSceneGraph(scene)
+    win.setWindowTitle("Coin viewer")
 
-    sogui.SoGui.show(win) # Display main window
-    sogui.SoGui.mainLoop()     # Main Coin event loop
-
+    # IMPORTANT!!!!! Windows are hidden by default.
+    win.show()
+    # Start the event loop.
+    app.exec_()
 
 
 def embedLight(scene,lightdir):
@@ -632,7 +633,7 @@ def buildGuiDocumentFromColors(document,colors,camera=None):
 
     guidoc =  "<?xml version='1.0' encoding='utf-8'?>\n"
     guidoc += "<!--\n"
-    guidoc += " FreeCAD Document, see http://www.freecad.org for more information...\n"
+    guidoc += " FreeCAD Document, see https://www.freecad.org for more information...\n"
     guidoc += "-->\n"
     guidoc += "<Document SchemaVersion=\"1\">\n"
 
@@ -711,7 +712,7 @@ def buildGuiDocumentFromGuiData(document,guidata):
 
     guidoc =  "<?xml version='1.0' encoding='utf-8'?>\n"
     guidoc += "<!--\n"
-    guidoc += " FreeCAD Document, see http://www.freecad.org for more information...\n"
+    guidoc += " FreeCAD Document, see https://www.freecad.org for more information...\n"
     guidoc += "-->\n"
     guidoc += "<Document SchemaVersion=\"1\">\n"
 

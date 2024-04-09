@@ -260,9 +260,9 @@ Kontuan izan aukera hau desgaituta dagoela lehendik dagoen solido bateko pieza-o
       <source>Enable all operations for which the configuration values should be exported.
 
 Note that only operations which currently have configuration values set are listed.</source>
-      <translation type="unfinished">Enable all operations for which the configuration values should be exported.
+      <translation>Gaitu konfigurazio-balioak esportatu beharko liratekeen eragiketa guztiak.
 
-Note that only operations which currently have configuration values set are listed.</translation>
+Kontuan izan konfigurazio-balioak dituzten eragiketak soilik zerrendatuko direla.</translation>
     </message>
     <message>
       <location filename="../panels/DlgJobTemplateExport.ui" line="152"/>
@@ -547,35 +547,6 @@ Oinarri-objektuaren muga-kutxatik eratorritako piezari dagokionez, esan nahi du 
   <context>
     <name>Form</name>
     <message>
-      <location filename="../panels/DressupPathBoundary.ui" line="14"/>
-      <location filename="../panels/PageBaseGeometryEdit.ui" line="20"/>
-      <location filename="../panels/PageBaseHoleGeometryEdit.ui" line="14"/>
-      <location filename="../panels/PageBaseLocationEdit.ui" line="14"/>
-      <location filename="../panels/PageDepthsEdit.ui" line="17"/>
-      <location filename="../panels/PageDiametersEdit.ui" line="14"/>
-      <location filename="../panels/PageHeightsEdit.ui" line="14"/>
-      <location filename="../panels/PageOpAdaptiveEdit.ui" line="14"/>
-      <location filename="../panels/PageOpCustomEdit.ui" line="14"/>
-      <location filename="../panels/PageOpDeburrEdit.ui" line="14"/>
-      <location filename="../panels/PageOpDrillingEdit.ui" line="14"/>
-      <location filename="../panels/PageOpEngraveEdit.ui" line="14"/>
-      <location filename="../panels/PageOpHelixEdit.ui" line="14"/>
-      <location filename="../panels/PageOpPocketExtEdit.ui" line="14"/>
-      <location filename="../panels/PageOpPocketFullEdit.ui" line="14"/>
-      <location filename="../panels/PageOpProbeEdit.ui" line="14"/>
-      <location filename="../panels/PageOpProfileFullEdit.ui" line="14"/>
-      <location filename="../panels/PageOpSlotEdit.ui" line="14"/>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="14"/>
-      <location filename="../panels/PageOpThreadMillingEdit.ui" line="14"/>
-      <location filename="../panels/PageOpVcarveEdit.ui" line="14"/>
-      <location filename="../panels/PageOpWaterlineEdit.ui" line="14"/>
-      <location filename="../panels/SetupOp.ui" line="14"/>
-      <location filename="../panels/ToolEditor.ui" line="14"/>
-      <location filename="../preferences/PathDressupHoldingTags.ui" line="14"/>
-      <source>Form</source>
-      <translation>Inprimakia</translation>
-    </message>
-    <message>
       <location filename="../panels/DressupPathBoundary.ui" line="20"/>
       <source>Boundary Body</source>
       <translation>Muga-gorputza</translation>
@@ -742,17 +713,17 @@ Oinarri-objektuaren muga-kutxatik eratorritako piezari dagokionez, esan nahi du 
       <translation>Oinarri-geometrien zerrenda garbitzen du</translation>
     </message>
     <message>
-      <location filename="../panels/PageBaseGeometryEdit.ui" line="72"/>
       <location filename="../panels/PageBaseHoleGeometryEdit.ui" line="49"/>
+      <location filename="../panels/PageBaseGeometryEdit.ui" line="72"/>
       <location filename="../panels/PageBaseLocationEdit.ui" line="43"/>
       <source>Add</source>
       <translation>Gehitu</translation>
     </message>
     <message>
-      <location filename="../panels/PageBaseGeometryEdit.ui" line="82"/>
       <location filename="../panels/PageBaseHoleGeometryEdit.ui" line="59"/>
-      <location filename="../panels/PageBaseLocationEdit.ui" line="53"/>
       <location filename="../panels/PropertyBag.ui" line="48"/>
+      <location filename="../panels/PageBaseGeometryEdit.ui" line="82"/>
+      <location filename="../panels/PageBaseLocationEdit.ui" line="53"/>
       <source>Remove</source>
       <translation>Kendu</translation>
     </message>
@@ -807,8 +778,8 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Berrezarri</translation>
     </message>
     <message>
-      <location filename="../panels/PageBaseGeometryEdit.ui" line="99"/>
       <location filename="../panels/PageBaseHoleGeometryEdit.ui" line="76"/>
+      <location filename="../panels/PageBaseGeometryEdit.ui" line="99"/>
       <source>All objects will be processed using the same operation properties.</source>
       <translation>Objektu guztiak eragiketa-propietate berak erabilita prozesatuko dira.</translation>
     </message>
@@ -853,32 +824,32 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Kokapen guztiak eragiketa-propietate berak erabilita prozesatuko dira.</translation>
     </message>
     <message>
-      <location filename="../panels/PageDepthsEdit.ui" line="39"/>
       <location filename="../panels/SetupGlobal.ui" line="36"/>
+      <location filename="../panels/PageDepthsEdit.ui" line="39"/>
       <source>Start Depth</source>
       <translation>Hasierako sakonera</translation>
     </message>
     <message>
-      <location filename="../panels/PageDepthsEdit.ui" line="46"/>
       <location filename="../panels/PageDiametersEdit.ui" line="27"/>
+      <location filename="../panels/PageDepthsEdit.ui" line="46"/>
       <source>Start Depth of the operation. The highest point in Z-axis the operation needs to process.</source>
       <translation>Eragiketaren hasierako sakonera. Eragiketak Z ardatzean prozesatu behar duen punturik altuena.</translation>
     </message>
     <message>
-      <location filename="../panels/PageDepthsEdit.ui" line="59"/>
       <location filename="../panels/PageDiametersEdit.ui" line="43"/>
+      <location filename="../panels/PageDepthsEdit.ui" line="59"/>
       <source>Transfer the Z value of the selected feature as the Start Depth for the operation.</source>
       <translation>Transferitu hautatutako elementuaren Z balioa eragiketaren hasierako sakonerara.</translation>
     </message>
     <message>
-      <location filename="../panels/PageDepthsEdit.ui" line="92"/>
       <location filename="../panels/PageDiametersEdit.ui" line="64"/>
+      <location filename="../panels/PageDepthsEdit.ui" line="92"/>
       <source>The depth of the operation which corresponds to the lowest value in Z-axis the operation needs to process.</source>
       <translation>Eragiketaren sakonera, eragiketak Z ardatzean prozesatu behar duen punturik baxuenari dagokiona.</translation>
     </message>
     <message>
-      <location filename="../panels/PageDepthsEdit.ui" line="105"/>
       <location filename="../panels/PageDiametersEdit.ui" line="80"/>
+      <location filename="../panels/PageDepthsEdit.ui" line="105"/>
       <source>Transfer the Z value of the selected feature as the Final Depth for the operation.</source>
       <translation>Transferitu hautatutako elementuaren Z balioa eragiketaren amaierako sakonerara.</translation>
     </message>
@@ -893,14 +864,14 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Eragiketaren azken moztearen sakonera. Amaiera garbiagoa sortzeko erabili daiteke.</translation>
     </message>
     <message>
-      <location filename="../panels/PageDepthsEdit.ui" line="85"/>
       <location filename="../panels/SetupGlobal.ui" line="52"/>
+      <location filename="../panels/PageDepthsEdit.ui" line="85"/>
       <source>Final Depth</source>
       <translation>Amaierako sakonera</translation>
     </message>
     <message>
-      <location filename="../panels/PageDepthsEdit.ui" line="131"/>
       <location filename="../panels/SetupGlobal.ui" line="68"/>
+      <location filename="../panels/PageDepthsEdit.ui" line="131"/>
       <source>Step Down</source>
       <translation>Beheratzea</translation>
     </message>
@@ -940,34 +911,34 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Altuera librea</translation>
     </message>
     <message>
+      <location filename="../panels/PageOpWaterlineEdit.ui" line="36"/>
       <location filename="../panels/PageOpCustomEdit.ui" line="42"/>
-      <location filename="../panels/PageOpDeburrEdit.ui" line="60"/>
-      <location filename="../panels/PageOpDeburrEdit.ui" line="92"/>
-      <location filename="../panels/PageOpDrillingEdit.ui" line="42"/>
-      <location filename="../panels/PageOpDrillingEdit.ui" line="56"/>
       <location filename="../panels/PageOpEngraveEdit.ui" line="36"/>
       <location filename="../panels/PageOpEngraveEdit.ui" line="50"/>
       <location filename="../panels/PageOpHelixEdit.ui" line="36"/>
       <location filename="../panels/PageOpHelixEdit.ui" line="50"/>
+      <location filename="../panels/PageOpDrillingEdit.ui" line="42"/>
+      <location filename="../panels/PageOpDrillingEdit.ui" line="56"/>
       <location filename="../panels/PageOpSurfaceEdit.ui" line="36"/>
       <location filename="../panels/PageOpSurfaceEdit.ui" line="50"/>
-      <location filename="../panels/PageOpWaterlineEdit.ui" line="36"/>
+      <location filename="../panels/PageOpDeburrEdit.ui" line="60"/>
+      <location filename="../panels/PageOpDeburrEdit.ui" line="92"/>
       <source>The tool and its settings to be used for this operation.</source>
       <translation>Eragiketa honetan erabiliko den tresna eta bere ezarpenak.</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpCustomEdit.ui" line="49"/>
-      <location filename="../panels/PageOpDeburrEdit.ui" line="85"/>
-      <location filename="../panels/PageOpDrillingEdit.ui" line="49"/>
-      <location filename="../panels/PageOpEngraveEdit.ui" line="43"/>
-      <location filename="../panels/PageOpPocketFullEdit.ui" line="43"/>
-      <location filename="../panels/PageOpProfileFullEdit.ui" line="43"/>
-      <location filename="../panels/PageOpSlotEdit.ui" line="52"/>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="43"/>
-      <location filename="../panels/PageOpVcarveEdit.ui" line="43"/>
-      <location filename="../panels/PageOpWaterlineEdit.ui" line="46"/>
       <location filename="../panels/SetupGlobal.ui" line="255"/>
       <location filename="../panels/SetupGlobal.ui" line="261"/>
+      <location filename="../panels/PageOpWaterlineEdit.ui" line="46"/>
+      <location filename="../panels/PageOpCustomEdit.ui" line="49"/>
+      <location filename="../panels/PageOpEngraveEdit.ui" line="43"/>
+      <location filename="../panels/PageOpSlotEdit.ui" line="52"/>
+      <location filename="../panels/PageOpProfileFullEdit.ui" line="43"/>
+      <location filename="../panels/PageOpDrillingEdit.ui" line="49"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="43"/>
+      <location filename="../panels/PageOpPocketFullEdit.ui" line="43"/>
+      <location filename="../panels/PageOpDeburrEdit.ui" line="85"/>
+      <location filename="../panels/PageOpVcarveEdit.ui" line="43"/>
       <source>Coolant Mode</source>
       <translation>Hozgarri-modua</translation>
     </message>
@@ -977,28 +948,28 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>G Gode</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpAdaptiveEdit.ui" line="23"/>
-      <location filename="../panels/PageOpCustomEdit.ui" line="35"/>
-      <location filename="../panels/PageOpDeburrEdit.ui" line="53"/>
-      <location filename="../panels/PageOpDrillingEdit.ui" line="35"/>
-      <location filename="../panels/PageOpEngraveEdit.ui" line="29"/>
-      <location filename="../panels/PageOpHelixEdit.ui" line="29"/>
-      <location filename="../panels/PageOpPocketFullEdit.ui" line="29"/>
       <location filename="../panels/PageOpProbeEdit.ui" line="35"/>
-      <location filename="../panels/PageOpProfileFullEdit.ui" line="29"/>
-      <location filename="../panels/PageOpSlotEdit.ui" line="35"/>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="29"/>
-      <location filename="../panels/PageOpThreadMillingEdit.ui" line="20"/>
-      <location filename="../panels/PageOpVcarveEdit.ui" line="29"/>
-      <location filename="../panels/PageOpWaterlineEdit.ui" line="29"/>
       <location filename="../panels/SetupGlobal.ui" line="180"/>
+      <location filename="../panels/PageOpWaterlineEdit.ui" line="29"/>
+      <location filename="../panels/PageOpThreadMillingEdit.ui" line="20"/>
+      <location filename="../panels/PageOpCustomEdit.ui" line="35"/>
+      <location filename="../panels/PageOpEngraveEdit.ui" line="29"/>
+      <location filename="../panels/PageOpSlotEdit.ui" line="35"/>
+      <location filename="../panels/PageOpHelixEdit.ui" line="29"/>
+      <location filename="../panels/PageOpProfileFullEdit.ui" line="29"/>
+      <location filename="../panels/PageOpDrillingEdit.ui" line="35"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="29"/>
+      <location filename="../panels/PageOpPocketFullEdit.ui" line="29"/>
+      <location filename="../panels/PageOpDeburrEdit.ui" line="53"/>
+      <location filename="../panels/PageOpVcarveEdit.ui" line="29"/>
+      <location filename="../panels/PageOpAdaptiveEdit.ui" line="23"/>
       <source>Tool Controller</source>
       <translation>Tresna-kontrolagailua</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpAdaptiveEdit.ui" line="33"/>
-      <location filename="../panels/PageOpHelixEdit.ui" line="43"/>
       <location filename="../panels/SetupGlobal.ui" line="249"/>
+      <location filename="../panels/PageOpHelixEdit.ui" line="43"/>
+      <location filename="../panels/PageOpAdaptiveEdit.ui" line="33"/>
       <source>Coolant</source>
       <translation>Hozgarria</translation>
     </message>
@@ -1018,8 +989,8 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Eragiketa mota</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpAdaptiveEdit.ui" line="90"/>
       <location filename="../panels/PageOpPocketFullEdit.ui" line="178"/>
+      <location filename="../panels/PageOpAdaptiveEdit.ui" line="90"/>
       <source>Step Over Percent</source>
       <translation>Gainditze-ehunekoa</translation>
     </message>
@@ -1069,8 +1040,8 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Amaierako profila</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpAdaptiveEdit.ui" line="55"/>
       <location filename="../panels/PageOpPocketFullEdit.ui" line="237"/>
+      <location filename="../panels/PageOpAdaptiveEdit.ui" line="55"/>
       <source>Use Outline</source>
       <translation>Erabili eskema</translation>
     </message>
@@ -1125,10 +1096,10 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Gelditu</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpDeburrEdit.ui" line="131"/>
+      <location filename="../panels/PageOpThreadMillingEdit.ui" line="167"/>
       <location filename="../panels/PageOpHelixEdit.ui" line="87"/>
       <location filename="../panels/PageOpProfileFullEdit.ui" line="82"/>
-      <location filename="../panels/PageOpThreadMillingEdit.ui" line="167"/>
+      <location filename="../panels/PageOpDeburrEdit.ui" line="131"/>
       <source>Direction</source>
       <translation>Norabidea</translation>
     </message>
@@ -1138,15 +1109,15 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Profila sortzeko erabiliko den den norabidea, erloju-orratzen noranzkoan edo aurka.</translation>
     </message>
     <message>
+      <location filename="../panels/PageOpHelixEdit.ui" line="98"/>
       <location filename="../panels/PageOpDeburrEdit.ui" line="141"/>
       <location filename="../panels/PageOpDeburrEdit.ui" line="148"/>
-      <location filename="../panels/PageOpHelixEdit.ui" line="98"/>
       <source>CW</source>
       <translation>erlojuaren noranzkoan</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpDeburrEdit.ui" line="153"/>
       <location filename="../panels/PageOpHelixEdit.ui" line="103"/>
+      <location filename="../panels/PageOpDeburrEdit.ui" line="153"/>
       <source>CCW</source>
       <translation>erlojuaren noranzkoaren aurka</translation>
     </message>
@@ -1171,8 +1142,6 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Elkargune zorrotza</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpDeburrEdit.ui" line="198"/>
-      <location filename="../panels/PageOpDeburrEdit.ui" line="225"/>
       <location filename="../panels/ToolEditor.ui" line="77"/>
       <location filename="../panels/ToolEditor.ui" line="134"/>
       <location filename="../panels/ToolEditor.ui" line="144"/>
@@ -1182,6 +1151,8 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <location filename="../panels/ToolEditor.ui" line="223"/>
       <location filename="../panels/ToolEditor.ui" line="240"/>
       <location filename="../panels/ToolEditor.ui" line="280"/>
+      <location filename="../panels/PageOpDeburrEdit.ui" line="198"/>
+      <location filename="../panels/PageOpDeburrEdit.ui" line="225"/>
       <source>mm</source>
       <translation>mm</translation>
     </message>
@@ -1322,11 +1293,6 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Hautatuta badago, balizko luzapen guztiak bistaratuko dira. Gaitutako luzapenak purpura kolorez eta gaitu gabeko luzapenak hori kolorez</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpPocketExtEdit.ui" line="65"/>
-      <source>Extend the corner between two edges of a pocket. If selected adjacent edges are combined</source>
-      <translation>Luzatu poltsa baten bi ertzen arteko izkina. Hautatuta badago, elkarren ondoko ertzak konbinatuko dira</translation>
-    </message>
-    <message>
       <location filename="../panels/PageOpPocketExtEdit.ui" line="68"/>
       <source>Extend Corners</source>
       <translation>Hedatu izkinak</translation>
@@ -1367,6 +1333,11 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Gaitu</translation>
     </message>
     <message>
+      <location filename="../panels/PageOpPocketExtEdit.ui" line="65"/>
+      <source>Extend the corner between two edges of a pocket. Selected adjacent edges are combined.</source>
+      <translation>Luzatu poltsa baten bi ertzen arteko izkina. Elkarren ondoko ertzak konbinatu egingo dira.</translation>
+    </message>
+    <message>
       <location filename="../panels/PageOpPocketExtEdit.ui" line="139"/>
       <source>Disable</source>
       <translation>Desgaitu</translation>
@@ -1397,11 +1368,11 @@ Prozesatuko diren elementuak gehitzeko, hautatu elementua eta sakatu 'Gehitu'. E
       <translation>Eredua</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpPocketFullEdit.ui" line="36"/>
-      <location filename="../panels/PageOpPocketFullEdit.ui" line="50"/>
       <location filename="../panels/PageOpProbeEdit.ui" line="42"/>
       <location filename="../panels/PageOpProfileFullEdit.ui" line="36"/>
       <location filename="../panels/PageOpProfileFullEdit.ui" line="50"/>
+      <location filename="../panels/PageOpPocketFullEdit.ui" line="36"/>
+      <location filename="../panels/PageOpPocketFullEdit.ui" line="50"/>
       <location filename="../panels/PageOpVcarveEdit.ui" line="36"/>
       <location filename="../panels/PageOpVcarveEdit.ui" line="50"/>
       <source>The tool and its settings to be used for this operation</source>
@@ -1487,14 +1458,24 @@ Azken aukera pieza gordinaren area osoaren aurpegirako erabili daiteke, hurrengo
       <translation>Hau hautatuta badago, eragiketak hautatutako oinarri-geometriaren eskema erabiliko du eta zulo eta uharte guztiei ez ikusiarena egingo die</translation>
     </message>
     <message>
+      <location filename="../panels/PageOpPocketFullEdit.ui" line="258"/>
+      <source>Check to skip machining regions that have already been cleared by previous operations</source>
+      <translation>Markatu hau aurreko eragiketekin garbitu diren mekanizazio-eskualdeak saltatzeko</translation>
+    </message>
+    <message>
+      <location filename="../panels/PageOpPocketFullEdit.ui" line="261"/>
+      <source>Use Rest Machining</source>
+      <translation>Erabili artezketa-mekanizazioa</translation>
+    </message>
+    <message>
       <location filename="../panels/PageOpPocketFullEdit.ui" line="204"/>
       <source>Material Allowance</source>
       <translation>Material-perdoia</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpPocketFullEdit.ui" line="227"/>
       <location filename="../panels/PageOpProfileFullEdit.ui" line="130"/>
       <location filename="../panels/PageOpSurfaceEdit.ui" line="257"/>
+      <location filename="../panels/PageOpPocketFullEdit.ui" line="227"/>
       <source>Use Start Point</source>
       <translation>Erabili hasiera-puntua</translation>
     </message>
@@ -1750,9 +1731,9 @@ Azken aukera pieza gordinaren area osoaren aurpegirako erabili daiteke, hurrengo
       <translation>Luzatu bidearen amaiera</translation>
     </message>
     <message>
+      <location filename="../panels/PageOpWaterlineEdit.ui" line="98"/>
       <location filename="../panels/PageOpSlotEdit.ui" line="345"/>
       <location filename="../panels/PageOpSurfaceEdit.ui" line="91"/>
-      <location filename="../panels/PageOpWaterlineEdit.ui" line="98"/>
       <source>Layer Mode</source>
       <translation>Geruza-modua</translation>
     </message>
@@ -1792,8 +1773,8 @@ Azken aukera pieza gordinaren area osoaren aurpegirako erabili daiteke, hurrengo
       <translation>Eskaneatze mota</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="105"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="117"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="105"/>
       <source>Cut Pattern</source>
       <translation>Mozte-eredua</translation>
     </message>
@@ -1808,14 +1789,14 @@ Azken aukera pieza gordinaren area osoaren aurpegirako erabili daiteke, hurrengo
       <translation>Saihestu azken X aurpegiak</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="63"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="79"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="63"/>
       <source>Bounding Box</source>
       <translation>Muga-kutxa</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="70"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="91"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="70"/>
       <source>Select the overall boundary for the operation.</source>
       <translation>Hautatu eragiketarako muga orokorra.</translation>
     </message>
@@ -1825,14 +1806,14 @@ Azken aukera pieza gordinaren area osoaren aurpegirako erabili daiteke, hurrengo
       <translation>Planarra: Laua, 3D gainazal eskaneatzea. Birakaria: 4. ardatzeko eskaneatze birakaria.</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="98"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="110"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="98"/>
       <source>Complete the operation in a single pass at depth, or multiple passes to final depth.</source>
       <translation>Osatu eragiketa pasaldi bakarrean sakoneran, edo pasaldi anitzetan azken sakoneraraino.</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="112"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="129"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="112"/>
       <source>Set the geometric clearing pattern to use for the operation.</source>
       <translation>Ezarri eragiketarako erabiliko den garbitze geometrikoko eredua.</translation>
     </message>
@@ -1857,14 +1838,14 @@ Azken aukera pieza gordinaren area osoaren aurpegirako erabili daiteke, hurrengo
       <translation>Erortze-ebakigailuaren lerroak ardatz honen paraleloan sortzen dira.</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="205"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="149"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="205"/>
       <source>Set the Z-axis depth offset from the target surface.</source>
       <translation>Ezarri Z ardatzeko sakonera-desplazamendua helburuko gainazaletik.</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="244"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="194"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="244"/>
       <source>Set the sampling resolution. Smaller values quickly increase processing time.</source>
       <translation>Ezarri laginketa-bereizmena. Balio txikiagoak prozesatze-denbora asko handitzen dute.</translation>
     </message>
@@ -1874,8 +1855,8 @@ Azken aukera pieza gordinaren area osoaren aurpegirako erabili daiteke, hurrengo
       <translation>Markatu 'Egia', hasierako puntu bat adieraziko bada</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="264"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="204"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="264"/>
       <source>Enable optimization of linear paths (co-linear points). Removes unnecessary co-linear points from G-code output.</source>
       <translation>Gaitu bide linealen optimizazioa (puntu lerrokideak). Beharrezkoak ez diren puntu lerrokideak kentzen ditu G-code irteeratik.</translation>
     </message>
@@ -1897,12 +1878,12 @@ Azken aukera pieza gordinaren area osoaren aurpegirako erabili daiteke, hurrengo
     <message>
       <location filename="../panels/PageOpSurfaceEdit.ui" line="162"/>
       <source>Additional offset to the selected bounding box along the X axis.</source>
-      <translation type="unfinished">Additional offset to the selected bounding box along the X axis.</translation>
+      <translation>Desplazamendu gehigarria hautatutako muga-kutxaraino X ardatzean zehar.</translation>
     </message>
     <message>
       <location filename="../panels/PageOpSurfaceEdit.ui" line="172"/>
       <source>Additional offset to the selected bounding box along the Y axis.</source>
-      <translation type="unfinished">Additional offset to the selected bounding box along the Y axis.</translation>
+      <translation>Desplazamendu gehigarria hautatutako muga-kutxaraino Y ardatzean zehar.</translation>
     </message>
     <message>
       <location filename="../panels/PageOpSurfaceEdit.ui" line="198"/>
@@ -1910,14 +1891,14 @@ Azken aukera pieza gordinaren area osoaren aurpegirako erabili daiteke, hurrengo
       <translation>Sakoneraren desplazamendua</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="215"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="159"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="215"/>
       <source>Step over</source>
       <translation>Urrats bat aurrera</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="222"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="172"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="222"/>
       <source>The amount by which the tool is laterally displaced on each cycle of the pattern, specified in percent of the tool diameter.
 
 A step over of 100% results in no overlap between two different cycles.</source>
@@ -1926,14 +1907,14 @@ A step over of 100% results in no overlap between two different cycles.</source>
 Gainditzea % 100ekoa bada, ez da gainjartzerik egongo zikloen artean.</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="237"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="187"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="237"/>
       <source>Sample interval</source>
       <translation>Lagin-tartea</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpSurfaceEdit.ui" line="267"/>
       <location filename="../panels/PageOpWaterlineEdit.ui" line="207"/>
+      <location filename="../panels/PageOpSurfaceEdit.ui" line="267"/>
       <source>Optimize Linear Paths</source>
       <translation>Optimizatu bide linealak</translation>
     </message>
@@ -2051,9 +2032,9 @@ Balio lehenetsia: "5mm"</translation>
       <source>ClearanceHeightOffset - can be used by expressions to set the default ClearanceHeight for new operations.
 
 Default: 3 mm</source>
-      <translation type="unfinished">ClearanceHeightOffset - can be used by expressions to set the default ClearanceHeight for new operations.
+      <translation>ClearanceHeightOffset - adierazpenek hau erabili dezakete eragiketa berrien altuera librearen desplazamendu lehenetsia ezartzeko.
 
-Default: 3 mm</translation>
+Balio lehenetsia: 3 mm</translation>
     </message>
     <message>
       <location filename="../panels/SetupGlobal.ui" line="186"/>
@@ -2081,8 +2062,8 @@ Default: 3 mm</translation>
       <translation>Orientazioa</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpThreadMillingEdit.ui" line="52"/>
       <location filename="../panels/ToolEditor.ui" line="43"/>
+      <location filename="../panels/PageOpThreadMillingEdit.ui" line="52"/>
       <source>Type</source>
       <translation>Mota</translation>
     </message>
@@ -2112,8 +2093,8 @@ Default: 3 mm</translation>
       <translation>TPI</translation>
     </message>
     <message>
-      <location filename="../panels/PageOpThreadMillingEdit.ui" line="144"/>
       <location filename="../panels/SetupGlobal.ui" line="24"/>
+      <location filename="../panels/PageOpThreadMillingEdit.ui" line="144"/>
       <source>Operation</source>
       <translation>Eragiketa</translation>
     </message>
@@ -2140,7 +2121,7 @@ Default: 3 mm</translation>
     <message>
       <location filename="../panels/PageOpVcarveEdit.ui" line="105"/>
       <source>Sets how aggressively colinear segments are filtered from the Voronoi diagram. Valid values are 0 - 90 degrees (larger numbers filter more). Default = 10</source>
-      <translation type="unfinished">Sets how aggressively colinear segments are filtered from the Voronoi diagram. Valid values are 0 - 90 degrees (larger numbers filter more). Default = 10</translation>
+      <translation>Segmentu lerrokideak Voronoi diagramatik zein indarrarekin iragazten diren ezartzen du. Baliozko balioak: 0 - 90 gradu (zenbaki handiagoarekin gehiago iragaziko da). Balio lehenetsia = 10</translation>
     </message>
     <message>
       <location filename="../panels/PageOpVcarveEdit.ui" line="98"/>
@@ -2410,6 +2391,59 @@ Erradioa etiketa-formak onartzen duena baino handiagoa bada, emaitza gisa sortuk
       <translation>Bide lehenetsia</translation>
     </message>
     <message>
+      <location filename="../preferences/PathJob.ui" line="188"/>
+      <source>Enter a path and optionally file name (see below) to be used as the default for the post processor export.
+The following substitutions are performed before the name is resolved at the time of the post processing:
+Substitution allows the following:
+%D ... directory of the active document
+%d ... name of the active document (with extension)
+%M ... user macro directory
+%j ... name of the active Job object
+
+The Following can be used if output is being split. If Output is not split
+these will be ignored.
+%T ... Tool Number
+%t ... Tool Controller label
+
+%W ... Work Coordinate System
+%O ... Operation Label
+
+When splitting output, a sequence number will always be added.
+
+if %S is included, you can specify where the number occurs.  Without it, the number will be added to the end of the string.
+
+%S ... Sequence Number
+
+The following example store all files with the same name as the document the directory /home/freecad (please remove quotes):
+&amp;quot;/home/cnc/%d.g-code&amp;quot;
+See the file save policy below on how to deal with name conflicts.</source>
+      <translation>Sartu bide-izen bat eta, aukeran, fitxategi-izen bat (ikusi behean) post-prozesatzailearen esportazioak erabili dezan.
+Honako ordezkapenak gauzatuko dira post-prozesatzearen garaian izena ebatzi baino lehen:
+Ordezkapenak honakoa ahalbidetzen du:
+%D ... dokumentu aktiboaren direktorioa
+%d ... dokumentu aktiboaren izena (hedapenarekin)
+%M ... erabiltzailearen makro-direktorioa
+%j ... lan-objektu aktiboaren izena
+
+Honakoa erabili daiteke irteera zatitzen bada. Irteera zatitzen ez bada,
+ez ikusiarena egingo zaie.
+%T ... Tresna-zenbakia
+%t ... Tresna-kontrolagailuaren etiketa
+
+%W ... Laneko koordenatu-sistema
+%O ... Eragiketa-etiketeta
+
+Irteera zatitzean, sekuentzia-zenbaki bat gehituko da beti.
+
+%S sartzen bada, zenbakia non gertatzen den zehaztu daiteke. Hura gabe, zenbakia katearen amaieran gehituko da.
+
+%S ... Sekuentzia-zenbakia
+
+Hurrengo adibidean, dokumentuaren izen bera duten fitxategi guztiak /home/freecad direktorioan biltegiratzen ditu (kendu komatxoak):
+&amp;quot;/home/cnc/%d.g-code&amp;quot;
+Ikusi fitxategia gordetzeko politika, behean, izen-gatazkak nola ebatzi jakiteko.</translation>
+    </message>
+    <message>
       <location filename="../preferences/PathJob.ui" line="230"/>
       <source>File Save Policy</source>
       <translation>Fitxategiak gordetzeko politika</translation>
@@ -2480,59 +2514,6 @@ If left empty no template will be preselected.</source>
 Hau erabilgarria izan daiteke ia lan guztiak makina berarekin eta antzeko konfigurazioarekin prozesatuko direnean.
 
 Hutsik uzten bada, ez da txantiloirik hautatuko aurretiaz.</translation>
-    </message>
-    <message>
-      <location filename="../preferences/PathJob.ui" line="188"/>
-      <source>Enter a path and optionally file name (see below) to be used as the default for the post-processor export.
-The following substitutions are performed before the name is resolved at the time of the post-processing:
-Substitution allows the following:
-%D ... directory of the active document
-%d ... name of the active document (with extension)
-%M ... user macro directory
-%j ... name of the active Job object
-
-The Following can be used if output is being split. If Output is not split
-these will be ignored.
-%T ... Tool Number
-%t ... Tool Controller label
-
-%W ... Work Coordinate System
-%O ... Operation Label
-
-When splitting output, a sequence number will always be added.
-
-if %S is included, you can specify where the number occurs.  Without it, the number will be added to the end of the string.
-
-%S ... Sequence Number
-
-The following example store all files with the same name as the document the directory /home/freecad (please remove quotes):
-&amp;quot;/home/cnc/%d.g-code&amp;quot;
-See the file save policy below on how to deal with name conflicts.</source>
-      <translation>Sartu bide-izen bat eta, aukeran, fitxategi-izen bat (ikusi behean) post-prozesatzailearen esportazioak erabili dezan.
-Honako ordezkapenak gauzatuko dira post-prozesatzearen garaian izena ebatzi baino lehen:
-Ordezkapenak honakoa ahalbidetzen du:
-%D ... dokumentu aktiboaren direktorioa
-%d ... dokumentu aktiboaren izena (hedapenarekin)
-%M ... erabiltzailearen makro-direktorioa
-%j ... lan-objektu aktiboaren izena
-
-Honakoa erabili daiteke irteera zatitzen bada. Irteera zatitzen ez bada,
-ez ikusiarena egingo zaie.
-%T ... Tresna-zenbakia
-%t ... Tresna-kontrolagailuaren etiketa
-
-%W ... Laneko koordenatu-sistema
-%O ... Eragiketa-etiketeta
-
-Irteera zatitzean, sekuentzia-zenbaki bat gehituko da beti.
-
-%S sartzen bada, zenbakia non gertatzen den zehaztu daiteke. Hura gabe, zenbakia katearen amaieran gehituko da.
-
-%S ... Sekuentzia-zenbakia
-
-Hurrengo adibidean, dokumentuaren izen bera duten fitxategi guztiak /home/freecad direktorioan biltegiratzen ditu (kendu komatxoak):
-&amp;quot;/home/cnc/%d.g-code&amp;quot;
-Ikusi fitxategia gordetzeko politika, behean, izen-gatazkak nola ebatzi jakiteko.</translation>
     </message>
     <message>
       <location filename="../preferences/PathJob.ui" line="247"/>
@@ -2677,127 +2658,122 @@ Izen bera duten tresna edo tresna-forma anitz badaude direktorio desberdinetan, 
       <translation>Bide-kolore lehenetsiak</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="35"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="57"/>
+      <source>Path highlight color</source>
+      <translation>Bidea nabarmentzeko kolorea</translation>
+    </message>
+    <message>
+      <location filename="../../DlgSettingsPathColor.ui" line="70"/>
       <source>Default normal path color</source>
       <translation>Bide-kolore normal lehenetsia</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="42"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="103"/>
+      <source>Bounding box normal color</source>
+      <translation>Muga-kutxaren kolore normala</translation>
+    </message>
+    <message>
+      <location filename="../../DlgSettingsPathColor.ui" line="110"/>
       <source>The default color for new shapes</source>
       <translation>Forma berrien kolore lehenetsia</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="68"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="156"/>
+      <source>Probe path color</source>
+      <translation>Haztatze-bidearen kolorea</translation>
+    </message>
+    <message>
+      <location filename="../../DlgSettingsPathColor.ui" line="202"/>
+      <source>Bounding box selection color</source>
+      <translation>Muga-kutxaren hautapen-kolorea</translation>
+    </message>
+    <message>
+      <location filename="../../DlgSettingsPathColor.ui" line="248"/>
       <source>Default pathline width</source>
       <translation>Bide-lerroaren zabalera lehenetsia</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="75"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="29"/>
       <source>The default line thickness for new shapes</source>
       <translation>Forma berrien lerro-lodiera lehenetsia</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="78"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="32"/>
       <source>px</source>
       <translation>px</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="103"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="215"/>
       <source>Default path marker color</source>
       <translation>Bide-markatzailearen kolore lehenetsia</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="110"/>
-      <location filename="../../DlgSettingsPathColor.ui" line="143"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="77"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="130"/>
       <location filename="../../DlgSettingsPathColor.ui" line="176"/>
-      <location filename="../../DlgSettingsPathColor.ui" line="226"/>
-      <location filename="../../DlgSettingsPathColor.ui" line="259"/>
-      <location filename="../../DlgSettingsPathColor.ui" line="292"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="222"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="255"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="275"/>
       <source>The default line color for new shapes</source>
       <translation>Forma berrietarako lerro-kolore lehenetsia</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="136"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="169"/>
       <source>Rapid path color</source>
       <translation>Bide-kolore azkarra</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="169"/>
-      <source>Probe Path color</source>
-      <translation>Haztatze-bidearen kolorea</translation>
-    </message>
-    <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="196"/>
-      <source>Machine extents color</source>
-      <translation>Makina-hedaduren kolorea</translation>
-    </message>
-    <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="219"/>
-      <source>Path Highlight Color</source>
-      <translation>Bidea nabarmentzeko kolorea</translation>
-    </message>
-    <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="252"/>
-      <source>Bounding Box Normal Color</source>
-      <translation>Muga-kutxaren kolore normala</translation>
-    </message>
-    <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="285"/>
-      <source>Bounding Box Selection Color</source>
-      <translation>Muga-kutxaren hautapen-kolorea</translation>
-    </message>
-    <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="352"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="304"/>
       <source>UI Settings</source>
       <translation>Erabiltzaile-interfazearen ezarpenak</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="361"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="313"/>
       <source>Path Selection Style</source>
       <translation>Bidearen hautapen-estiloa</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="374"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="326"/>
       <source>Default path shape selection behavior in 3D viewer</source>
       <translation>Bide-formaren hautapen-portaera lehenetsia 3D ikustailean</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="384"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="336"/>
       <source>Shape</source>
       <translation>Forma</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="389"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="341"/>
       <source>Bounding Box</source>
       <translation>Muga-kutxa</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="394"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="346"/>
       <source>None</source>
       <translation>Bat ere ez</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="402"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="354"/>
       <source>Task Panel Layout</source>
       <translation>Ataza-panelaren diseinua</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="416"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="368"/>
       <source>Classic</source>
       <translation>Klasikoa</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="421"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="373"/>
       <source>Classic - reversed</source>
       <translation>Klasikoa - alderantzikatua</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="426"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="378"/>
       <source>Multi Panel</source>
       <translation>Panel anitza</translation>
     </message>
     <message>
-      <location filename="../../DlgSettingsPathColor.ui" line="431"/>
+      <location filename="../../DlgSettingsPathColor.ui" line="383"/>
       <source>Multi Panel - reversed</source>
       <translation>Panel anitza - alderantzikatua</translation>
     </message>
@@ -2839,8 +2815,18 @@ Izen bera duten tresna edo tresna-forma anitz badaude direktorio desberdinetan, 
     </message>
     <message>
       <location filename="../preferences/Advanced.ui" line="67"/>
-      <source>Suppress Velocity warning</source>
-      <translation>Ezabatu abiadura-abisua</translation>
+      <source>Suppress feed rate warning</source>
+      <translation>Ezabatu elikatze-tasaren abisua</translation>
+    </message>
+    <message>
+      <location filename="../preferences/Advanced.ui" line="111"/>
+      <source>OpenCAMLib</source>
+      <translation>OpenCAMLib</translation>
+    </message>
+    <message>
+      <location filename="../preferences/Advanced.ui" line="117"/>
+      <source>If OpenCAMLib is installed with Python bindings it can be used by some additional 3D operations. NOTE: Enabling OpenCAMLib here requires a restart of FreeCAD to take effect.</source>
+      <translation>OpenCAMLib liburutegia Python loturekin instalatu bada, zenbait 3D eragiketatan erabili daiteke. OHARRA: OpenCAMLib gaitzeko FreeCAD berrabiarazi behar da.</translation>
     </message>
     <message>
       <location filename="../preferences/Advanced.ui" line="86"/>
@@ -2848,37 +2834,17 @@ Izen bera duten tresna edo tresna-forma anitz badaude direktorio desberdinetan, 
       <translation>Ezabatu hautapen-moduaren abisua</translation>
     </message>
     <message>
-      <location filename="../preferences/Advanced.ui" line="111"/>
-      <source>Open CAMlib</source>
-      <translation>Ireki CAMlib</translation>
-    </message>
-    <message>
-      <location filename="../preferences/Advanced.ui" line="135"/>
-      <source>&lt;!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd"&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name="qrichtext" content="1" /&gt;&lt;style type="text/css"&gt;
-p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=" font-family:'DejaVu Sans'; font-size:12pt; font-weight:400; font-style:normal;"&gt;
-&lt;p style=" margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"&gt;&lt;span style=" font-family:'Sans'; font-size:16pt;"&gt;If openCAMlib is installed with its python interface it can be used by some additional 3d operations.&lt;/span&gt;&lt;/p&gt;
-&lt;p style=" margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"&gt;&lt;span style=" font-family:'Sans'; font-size:16pt;"&gt;Changing this value requires a restart of FreeCAD to take effect.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation>&lt;!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd"&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name="qrichtext" content="1" /&gt;&lt;style type="text/css"&gt;
-p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=" font-family:'DejaVu Sans'; font-size:12pt; font-weight:400; font-style:normal;"&gt;
-&lt;p style=" margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"&gt;&lt;span style=" font-family:'Sans'; font-size:16pt;"&gt;openCAMlib bere Python interfazearekin instalatuta badago, zenbait 3D eragiketa gehiagotan erabili daiteke.&lt;/span&gt;&lt;/p&gt;
-&lt;p style=" margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"&gt;&lt;span style=" font-family:'Sans'; font-size:16pt;"&gt;Balio hau aldatzen bada, FreeCAD berrabiarazi behar da indarrean sar dadin.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-      <location filename="../preferences/Advanced.ui" line="147"/>
+      <location filename="../preferences/Advanced.ui" line="127"/>
       <source>Enable OCL dependent features</source>
       <translation>Gaitu OCL mendekoak diren eginbideak</translation>
     </message>
     <message>
-      <location filename="../preferences/Advanced.ui" line="160"/>
+      <location filename="../preferences/Advanced.ui" line="140"/>
       <source>Suppress warning if openCAMlib cannot be found</source>
       <translation>Ezabatu abisua openCAMlib ezin bada aurkitu</translation>
     </message>
     <message>
-      <location filename="../preferences/Advanced.ui" line="163"/>
+      <location filename="../preferences/Advanced.ui" line="143"/>
       <source>Suppress openCAMlib warning</source>
       <translation>Ezabatu openCAMlib abisua</translation>
     </message>
@@ -2982,48 +2948,48 @@ p, li { white-space: pre-wrap; }
       <translation>Sartu geruzak</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="54"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="52"/>
       <source>Arc</source>
       <translation>Arkua</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="55"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="53"/>
       <source>Tangent</source>
       <translation>Tangentea</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="56"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="54"/>
       <source>Perpendicular</source>
       <translation>Perpendikularra</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="169"/>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="176"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="168"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="175"/>
       <source>Length/Radius positive not Null</source>
       <translation>Luzera/erradio positiboa ez nulua</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="677"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="464"/>
       <source>LeadInOut</source>
       <translation>sarrera-irteera</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="681"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="468"/>
       <source>Creates a Cutter Radius Compensation G41/G42 Entry Dressup object from a selected path</source>
       <translation>Ebakigailu-erradioaren konpentsazioaren G41/G42 sarrerako jantzi-objektu bat sortzen du hautatutako bide bat erabilita</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="696"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="483"/>
       <source>Please select one path object</source>
       <translation>Hautatu bide-objektu bat</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="703"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="490"/>
       <source>The selected object is not a path</source>
       <translation>Hautatutako objektua ez da bide bat</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="709"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="496"/>
       <source>Please select a Profile object</source>
       <translation>Hautatu profil-objektu bat</translation>
     </message>
@@ -3049,8 +3015,8 @@ p, li { white-space: pre-wrap; }
       <translation>Ardatz-maparen jantzia</translation>
     </message>
     <message>
-      <location filename="../panels/AxisMapEdit.ui" line="20"/>
       <location filename="../panels/HoldingTagsEdit.ui" line="80"/>
+      <location filename="../panels/AxisMapEdit.ui" line="20"/>
       <source>Radius</source>
       <translation>Erradioa</translation>
     </message>
@@ -3465,8 +3431,8 @@ p, li { white-space: pre-wrap; }
   <context>
     <name>TaskPathSimulator</name>
     <message>
-      <location filename="../panels/TaskPathCamoticsSim.ui" line="14"/>
       <location filename="../panels/TaskPathSimulator.ui" line="14"/>
+      <location filename="../panels/TaskPathCamoticsSim.ui" line="14"/>
       <source>Path Simulator</source>
       <translation>Bide-simulatzailea</translation>
     </message>
@@ -3732,59 +3698,6 @@ p, li { white-space: pre-wrap; }
       <translation>Irteerako fitxategia</translation>
     </message>
     <message>
-      <location filename="../panels/PathEdit.ui" line="141"/>
-      <source>Enter a path and optionally file name (see below) to be used as the default for the post processor export.
-The following substitutions are performed before the name is resolved at the time of the post-processing:
-Substitution allows the following:
-%D ... directory of the active document
-%d ... name of the active document (with extension)
-%M ... user macro directory
-%j ... name of the active Job object
-
-The Following can be used if output is being split. If Output is not split
-these will be ignored.
-%T ... Tool Number
-%t ... Tool Controller label
-
-%W ... Work Coordinate System
-%O ... Operation Label
-
-When splitting output, a sequence number will always be added.
-
-if %S is included, you can specify where the number occurs.  Without it, the number will be    added to the end of the string.
-
-%S ... Sequence Number
-
-The following example store all files with the same name as the document the directory /home/freecad (please remove quotes):
-"/home/cnc/%d.g-code"
-See the file save policy below on how to deal with name conflicts.</source>
-      <translation>Sartu bide-izen bat eta, aukeran, fitxategi-izen bat (ikusi behean) post-prozesatzailearen esportazioak erabili dezan.
-Honako ordezkapenak gauzatuko dira post-prozesatzearen garaian izena ebatzi baino lehen:
-Ordezkapenak honakoa ahalbidetzen du:
-%D ... dokumentu aktiboaren direktorioa
-%d ... dokumentu aktiboaren izena (hedapenarekin)
-%M ... erabiltzailearen makro-direktorioa
-%j ... lan-objektu aktiboaren izena
-
-Honakoa erabili daiteke irteera zatitzen bada. Irteera zatitzen ez bada,
-ez ikusiarena egingo zaie.
-%T ... Tresna-zenbakia
-%t ... Tresna-kontrolagailuaren etiketa
-
-%W ... Laneko koordenatu-sistema
-%O ... Eragiketa-etiketeta
-
-Irteera zatitzean, sekuentzia-zenbaki bat gehituko da beti.
-
-%S sartzen bada, zenbakia non gertatzen den zehaztu daiteke. Hura gabe, zenbakia katearen amaieran gehituko da.
-
-%S ... Sekuentzia-zenbakia
-
-Hurrengo adibidean, dokumentuaren izen bera duten fitxategi guztiak /home/freecad direktorioan biltegiratzen ditu (kendu komatxoak):
-"/home/cnc/%d.g-code"
-Ikusi fitxategia gordetzeko politika, behean, izen-gatazkak nola ebatzi jakiteko.</translation>
-    </message>
-    <message>
       <location filename="../panels/PathEdit.ui" line="179"/>
       <source>Processor</source>
       <translation>Prozesadorea</translation>
@@ -3837,21 +3750,6 @@ Eragiketaren arabera ordenatuta, koordenatu-sistema guztietako eragiketa bakoitz
 FreeCAD has no knowledge of where a particular coordinate system exists within the machine coordinate system so adding additional coordinate systems to your job will have no visual change within your job. It will, however, change your gcode output. The exact way in which the output is affected is controlled by the 'order by' setting.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
       <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=" font-style:italic;"&gt;Laneko koordenatu-sistemak&lt;/span&gt;, &lt;span style=" font-style:italic;"&gt;Laneko desplazamenduak&lt;/span&gt;, &lt;span style=" font-style:italic;"&gt;Finkapen-desplazamenduak&lt;/span&gt; edo &lt;span style=" font-style:italic;"&gt;Finkapenak&lt;/span&gt; deitutakoak erabilgarriak dira ekoizpen-lan eraginkorrak eraikitzeko, alegia, pieza bera makina berean hainbat aldiz egiteko.
 FreeCAD aplikazioak ez daki koordenatu-sistema jakin bat non existitzen den makinaren koordenatu-sistemaren baitan; beraz, zure lanaren koordenatu-sistema gehigarriek ez dute ikusizko aldaketarik izango zure lanean. Hala ere, gcode irteera bai aldatuko dela. Irteera 'ordenatu honen arabera' ezarpenari kasu eginda moldatuko da.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-      <location filename="../panels/PathEdit.ui" line="400"/>
-      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If True, post-processing will create multiple output files based on the &lt;span style=" font-style:italic;"&gt;order by&lt;/span&gt; setting.
-
-
-For example, if &lt;span style=" font-style:italic;"&gt;order by&lt;/span&gt; is set to Tool, the first output file will contain the first tool change and all operations, in all coordinate systems, that can be done with that tool before the next tool change is called.
-
-
-If &lt;span style=" font-style:italic;"&gt;order by&lt;/span&gt; is set to &lt;span style=" font-style:italic;"&gt;operation&lt;/span&gt; and &lt;span style=" font-style:italic;"&gt;split output&lt;/span&gt; is true, each operation will be written to a separate file.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-      <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Egia bada, post-prozesatzeak irteerako fitxategi anitz sortuko ditu, &lt;span style=" font-style:italic;"&gt;ordenatu honen arabera&lt;/span&gt; ezarpenean oinarrituta.
-
-Adibidez, &lt;span style=" font-style:italic;"&gt;ordenatu honen arabera&lt;/span&gt; aukeran 'Tresna' ezarri bada, irteerako lehen fitxategiak lehen tresna-aldaketa eta tresna horrekin egin daitezkeen eragiketa guztiak (hurrengo tresna-aldaketa deitu arte) izango ditu, koordenatu-sistema guztietan.
-
-&lt;span style=" font-style:italic;"&gt;Ordenatu honen arabera&lt;/span&gt; aukeran &lt;span style=" font-style:italic;"&gt;eragiketa&lt;/span&gt; ezarri bada eta &lt;span style=" font-style:italic;"&gt;zatitu irteera&lt;/span&gt; egia bada, eragiketa bakoitza fitxategi batean idatziko da.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
       <location filename="../panels/PathEdit.ui" line="409"/>
@@ -4083,9 +3981,77 @@ Balio lehenetsia: "5mm"</translation>
       <translation>Amaierako sakonera</translation>
     </message>
     <message>
+      <location filename="../panels/PathEdit.ui" line="141"/>
+      <source>Enter a path and optionally file name (see below) to be used as the default for the post processor export.
+The following substitutions are performed before the name is resolved at the time of the post processing:
+Substitution allows the following:
+%D ... directory of the active document
+%d ... name of the active document (with extension)
+%M ... user macro directory
+%j ... name of the active Job object
+
+The Following can be used if output is being split. If Output is not split
+these will be ignored.
+%T ... Tool Number
+%t ... Tool Controller label
+
+%W ... Work Coordinate System
+%O ... Operation Label
+
+When splitting output, a sequence number will always be added.
+
+if %S is included, you can specify where the number occurs.  Without it, the number will be    added to the end of the string.
+
+%S ... Sequence Number
+
+The following example store all files with the same name as the document the directory /home/freecad (please remove quotes):
+"/home/cnc/%d.g-code"
+See the file save policy below on how to deal with name conflicts.</source>
+      <translation>Sartu bide-izen bat eta, aukeran, fitxategi-izen bat (ikusi behean) post-prozesatzailearen esportazioak erabili dezan.
+Honako ordezkapenak gauzatuko dira post-prozesatzearen garaian izena ebatzi baino lehen:
+Ordezkapenak honakoa ahalbidetzen du:
+%D ... dokumentu aktiboaren direktorioa
+%d ... dokumentu aktiboaren izena (hedapenarekin)
+%M ... erabiltzailearen makro-direktorioa
+%j ... lan-objektu aktiboaren izena
+
+Honakoa erabili daiteke irteera zatitzen bada. Irteera zatitzen ez bada,
+ez ikusiarena egingo zaie.
+%T ... Tresna-zenbakia
+%t ... Tresna-kontrolagailuaren etiketa
+
+%W ... Laneko koordenatu-sistema
+%O ... Eragiketa-etiketeta
+
+Irteera zatitzean, sekuentzia-zenbaki bat gehituko da beti.
+
+%S sartzen bada, zenbakia non gertatzen den zehaztu daiteke. Hura gabe, zenbakia katearen amaieran gehituko da.
+
+%S ... Sekuentzia-zenbakia
+
+Hurrengo adibidean, dokumentuaren izen bera duten fitxategi guztiak /home/freecad direktorioan biltegiratzen ditu (kendu komatxoak):
+"/home/cnc/%d.g-code"
+Ikusi fitxategia gordetzeko politika, behean, izen-gatazkak nola ebatzi jakiteko.</translation>
+    </message>
+    <message>
       <location filename="../panels/PathEdit.ui" line="397"/>
       <source>If multiple coordinate systems are in use, setting this to TRUE will cause the gcode to be written to multiple output files as controlled by the 'order by' property.  For example, if ordering by Fixture, the first output file will be for the first fixture and separate file for the second.</source>
-      <translation type="unfinished">If multiple coordinate systems are in use, setting this to TRUE will cause the gcode to be written to multiple output files as controlled by the 'order by' property.  For example, if ordering by Fixture, the first output file will be for the first fixture and separate file for the second.</translation>
+      <translation>Koordenatu-sistema anitz erabiltzen ari badira, hemen TRUE (egia) ezartzen bada, gcode kodea irteerako fitxategi anitzetan idatziko da, 'ordena honen arabera' propietateak kontrolatutako moduan. Adibidez, finkapenaren arabera ordenatzen bada, irteerako lehen fitxategia lehen finkapenerako izango da, eta fitxategi bereizi bat sortuko da bigarrenerako.</translation>
+    </message>
+    <message>
+      <location filename="../panels/PathEdit.ui" line="400"/>
+      <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If True, post processing will create multiple output files based on the &lt;span style=" font-style:italic;"&gt;order by&lt;/span&gt; setting.
+
+
+For example, if &lt;span style=" font-style:italic;"&gt;order by&lt;/span&gt; is set to Tool, the first output file will contain the first tool change and all operations, in all coordinate systems, that can be done with that tool before the next tool change is called.
+
+
+If &lt;span style=" font-style:italic;"&gt;order by&lt;/span&gt; is set to &lt;span style=" font-style:italic;"&gt;operation&lt;/span&gt; and &lt;span style=" font-style:italic;"&gt;split output&lt;/span&gt; is true, each operation will be written to a separate file.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+      <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Egia bada, post-prozesatzeak irteerako fitxategi anitz sortuko ditu, &lt;span style=" font-style:italic;"&gt;ordenatu honen arabera&lt;/span&gt; ezarpenean oinarrituta.
+
+Adibidez, &lt;span style=" font-style:italic;"&gt;ordenatu honen arabera&lt;/span&gt; aukeran 'Tresna' ezarri bada, irteerako lehen fitxategiak lehen tresna-aldaketa eta tresna horrekin egin daitezkeen eragiketa guztiak (hurrengo tresna-aldaketa deitu arte) izango ditu, koordenatu-sistema guztietan.
+
+&lt;span style=" font-style:italic;"&gt;Ordenatu honen arabera&lt;/span&gt; aukeran &lt;span style=" font-style:italic;"&gt;eragiketa&lt;/span&gt; ezarri bada eta &lt;span style=" font-style:italic;"&gt;zatitu irteera&lt;/span&gt; egia bada, eragiketa bakoitza fitxategi batean idatziko da.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
       <location filename="../panels/PathEdit.ui" line="1037"/>
@@ -4144,9 +4110,9 @@ Balio lehenetsia: OpToolDiameter</translation>
       <source>ClearanceHeightOffset - can be used by expressions to set the default ClearanceHeight for new operations.
 
 Default: 3 mm</source>
-      <translation type="unfinished">ClearanceHeightOffset - can be used by expressions to set the default ClearanceHeight for new operations.
+      <translation>ClearanceHeightOffset - adierazpenek hau erabili dezakete eragiketa berrien altuera librearen desplazamendu lehenetsia ezartzeko.
 
-Default: 3 mm</translation>
+Balio lehenetsia: 3 mm</translation>
     </message>
     <message>
       <location filename="../panels/PathEdit.ui" line="1132"/>
@@ -4356,9 +4322,10 @@ Adibidez:
       <translation>Ez erakutsi berriro</translation>
     </message>
     <message>
-      <location filename="../../../Path/Base/Gui/IconViewProvider.py" line="97"/>
       <location filename="../../../Path/Tool/Gui/Controller.py" line="116"/>
+      <location filename="../../../Path/Base/Gui/IconViewProvider.py" line="97"/>
       <source>Edit</source>
+      <extracomment>int = field(default=None)</extracomment>
       <translation>Editatu</translation>
     </message>
     <message>
@@ -4489,19 +4456,19 @@ Adibidez:
       <translation>erlojuaren noranzkoaren aurka</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Pocket.py" line="333"/>
+      <location filename="../../../Path/Op/Pocket.py" line="334"/>
       <source>A planar adaptive start is unavailable. The non-planar will be attempted.</source>
       <translation>Hasiera moldakor planarra ez dago erabilgarri. Planarra ez dena probatuko da.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Pocket.py" line="349"/>
-      <location filename="../../../Path/Op/Pocket.py" line="379"/>
+      <location filename="../../../Path/Op/Pocket.py" line="350"/>
+      <location filename="../../../Path/Op/Pocket.py" line="380"/>
       <source>The non-planar adaptive start is also unavailable.</source>
       <translation>Hasiera moldakor ez planarra ere ez dago erabilgarri.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Gui/Engrave.py" line="76"/>
       <location filename="../../../Path/Op/Gui/Vcarve.py" line="65"/>
+      <location filename="../../../Path/Op/Gui/Engrave.py" line="76"/>
       <source>%s is not a Base Model object of the job %s</source>
       <translation>%s ez da oinarri-ereduen objektua %s lanerako</translation>
     </message>
@@ -4521,8 +4488,8 @@ Adibidez:
       <translation>Profilatu eredu osoa, aurpegi hautatua(k) edo ertz hautatua(k)</translation>
     </message>
     <message>
-      <location filename="../../../Path/Post/Command.py" line="566"/>
       <location filename="../../../PathScripts/PathUtilsGui.py" line="91"/>
+      <location filename="../../../Path/Post/Command.py" line="561"/>
       <source>Choose a Path Job</source>
       <translation>Aukeratu bide-lan bat</translation>
     </message>
@@ -4626,7 +4593,6 @@ Adibidez:
     <message>
       <location filename="../../../Path/Base/PropertyBag.py" line="75"/>
       <source>List of custom property groups</source>
-      <extracomment>int = field(default=None)</extracomment>
       <translation>Propietate-talde pertsonalizatuen zerrenda</translation>
     </message>
     <message>
@@ -4688,13 +4654,13 @@ Adibidez:
     </message>
     <message>
       <location filename="../../../Path/Dressup/Boundary.py" line="53"/>
-      <location filename="../../../Path/Dressup/Tags.py" line="943"/>
-      <location filename="../../../Path/Dressup/Gui/AxisMap.py" line="54"/>
-      <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="423"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="940"/>
       <location filename="../../../Path/Dressup/Gui/Dragknife.py" line="58"/>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="63"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="61"/>
       <location filename="../../../Path/Dressup/Gui/RampEntry.py" line="57"/>
       <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="62"/>
+      <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="423"/>
+      <location filename="../../../Path/Dressup/Gui/AxisMap.py" line="54"/>
       <source>The base path to modify</source>
       <translation>Aldatuko den oinarri-bidea</translation>
     </message>
@@ -4709,72 +4675,72 @@ Adibidez:
       <translation>Mugak inklusio- ala esklusio-maskara bat deskribatzen duen zehazten du.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/DogboneII.py" line="202"/>
+      <location filename="../../../Path/Dressup/DogboneII.py" line="203"/>
       <source>The base path to dress up</source>
       <translation>Jantziko den oinarri-bidea</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/DogboneII.py" line="210"/>
+      <location filename="../../../Path/Dressup/DogboneII.py" line="211"/>
       <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="429"/>
       <source>The side of path to insert bones</source>
       <translation>Hezurrak txertatuko zaizkion bidearen aldea</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/DogboneII.py" line="227"/>
+      <location filename="../../../Path/Dressup/DogboneII.py" line="228"/>
       <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="437"/>
       <source>The style of bones</source>
       <translation>Hezurren estiloa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/DogboneII.py" line="238"/>
+      <location filename="../../../Path/Dressup/DogboneII.py" line="239"/>
       <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="455"/>
       <source>The algorithm to determine the bone length</source>
       <translation>Hezur-luzera zehaztuko duen algoritmoa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/DogboneII.py" line="249"/>
+      <location filename="../../../Path/Dressup/DogboneII.py" line="250"/>
       <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="463"/>
       <source>Dressup length if incision is set to 'custom'</source>
       <translation>Jantziaren luzera ebakia pertsonalizatua bada</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/DogboneII.py" line="257"/>
+      <location filename="../../../Path/Dressup/DogboneII.py" line="258"/>
       <location filename="../../../Path/Dressup/Gui/Dogbone.py" line="445"/>
       <source>Bones that aren't dressed up</source>
       <translation>Jantzi gabe dauden hezurrak</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Tags.py" line="949"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="946"/>
       <source>Width of tags.</source>
       <translation>Etiketen zabalera.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Tags.py" line="955"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="952"/>
       <source>Height of tags.</source>
       <translation>Etiketen altuera.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Tags.py" line="961"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="958"/>
       <source>Angle of tag plunge and ascent.</source>
       <translation>Etiketaren sakontze- eta igotze-angelua.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Tags.py" line="967"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="964"/>
       <source>Radius of the fillet for the tag.</source>
       <translation>Biribiltze-erradioa etiketarako.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Tags.py" line="973"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="970"/>
       <source>Locations of inserted holding tags</source>
       <translation>Txertatutako euste-etiketen kokapenak</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Tags.py" line="979"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="976"/>
       <source>IDs of disabled holding tags</source>
       <translation>Desgaitutako euste-etiketen IDak</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Tags.py" line="988"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="985"/>
       <source>Factor determining the # of segments used to approximate rounded tags.</source>
       <translation>Etiketa biribilduetara hurbiltzeko erabiliko diren # segmentuak zehazteko faktorea.</translation>
     </message>
@@ -4804,57 +4770,57 @@ Adibidez:
       <translation>Izkina-ekintzan igoko den altuera</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="69"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="67"/>
       <source>Calculate roll-on to path</source>
       <translation>Kalkulatu kulunkatzea bidera</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="75"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="73"/>
       <source>Calculate roll-off from path</source>
       <translation>Kalkulatu kulunkatzea bidetik</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="81"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="79"/>
       <source>Keep the Tool Down in Path</source>
       <translation>Mantendu tresna bidean</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="87"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="85"/>
       <source>Length or Radius of the approach</source>
       <translation>Hurbilketaren luzera edo erradioa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="93"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="91"/>
       <source>Length or Radius of the exit</source>
       <translation>Irteeraren luzera edo erradioa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="99"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="97"/>
       <source>The Style of motion into the Path</source>
       <translation>Mugimenduaren estiloa bidean</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="106"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="104"/>
       <source>The Style of motion out of the Path</source>
       <translation>Mugimenduaren estiloa bidetik kanpo</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="113"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="111"/>
       <source>Extends LeadIn distance</source>
       <translation>Sarrera-distantzia luzatzen du</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="119"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="117"/>
       <source>Extends LeadOut distance</source>
       <translation>Irteera-distantzia luzatzen du</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="125"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="123"/>
       <source>Perform plunges with G0</source>
       <translation>Murgiltzeak gauzatzen ditu G0-rekin</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="133"/>
+      <location filename="../../../Path/Dressup/Gui/LeadInOut.py" line="131"/>
       <source>Apply LeadInOut to layers within an operation</source>
       <translation>Aplikatu sarrera-irteera geruzei eragiketa batean</translation>
     </message>
@@ -4921,7 +4887,7 @@ Adibidez:
     <message>
       <location filename="../../../Path/Main/Job.py" line="136"/>
       <location filename="../../../Path/Main/Job.py" line="143"/>
-      <source>Last Time the Job was post-processed</source>
+      <source>Last Time the Job was post processed</source>
       <translation>Lana post-prozesatu zen azken aldia</translation>
     </message>
     <message>
@@ -4988,9 +4954,9 @@ Adibidez:
       <translation>Lanerako tresna-kontrolagailu guztien bilduma</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Job.py" line="501"/>
       <location filename="../../../Path/Op/Base.py" line="192"/>
       <location filename="../../../Path/Op/Base.py" line="463"/>
+      <location filename="../../../Path/Main/Job.py" line="501"/>
       <source>Operations Cycle Time Estimation</source>
       <translation>Eragiketen ziklo-denboraren kalkulua</translation>
     </message>
@@ -5075,8 +5041,8 @@ Adibidez:
       <translation>Finkapen-desplazamenduen kopurua</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Fixture.py" line="63"/>
       <location filename="../../../Path/Op/Base.py" line="172"/>
+      <location filename="../../../Path/Main/Gui/Fixture.py" line="63"/>
       <source>Make False, to prevent operation from generating code</source>
       <translation>Markatu 'Faltsua', eragiketak koderik sortu dezan saihestu nahi baduzu</translation>
     </message>
@@ -5096,8 +5062,8 @@ Adibidez:
       <translation>Zehaztasunean eta errendimenduan eragina du</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Adaptive.py" line="983"/>
       <location filename="../../../Path/Op/Helix.py" line="127"/>
+      <location filename="../../../Path/Op/Adaptive.py" line="983"/>
       <location filename="../../../Path/Op/PocketBase.py" line="151"/>
       <source>Percent of cutter diameter to step over on each pass</source>
       <translation>Igaroaldi bakoitzean ebakigailu-diametroaren zein ehuneko gainditu behar den</translation>
@@ -5273,10 +5239,10 @@ Adibidez:
       <translation>Bide honen hasiera-puntua</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Base.py" line="314"/>
-      <location filename="../../../Path/Op/Slot.py" line="236"/>
       <location filename="../../../Path/Op/Surface.py" line="431"/>
+      <location filename="../../../Path/Op/Slot.py" line="236"/>
       <location filename="../../../Path/Op/Waterline.py" line="460"/>
+      <location filename="../../../Path/Op/Base.py" line="314"/>
       <source>Make True, if specifying a Start Point</source>
       <translation>Markatu 'Egia', hasierako puntu bat adieraziko bada</translation>
     </message>
@@ -5301,7 +5267,7 @@ Adibidez:
       <translation>Desgaitutako elementuen zerrenda</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Custom.py" line="54"/>
+      <location filename="../../../Path/Op/Custom.py" line="104"/>
       <source>The G-code to be inserted</source>
       <translation>Txertatuko den G-code kodea</translation>
     </message>
@@ -5390,9 +5356,9 @@ Adibidez:
       <translation>Aplikatu G99 atzeratzea: eragiketa honetan, zuloen arteko atzeratze-altueraraino soilik atzeratu</translation>
     </message>
     <message>
+      <location filename="../../../Path/Op/Vcarve.py" line="214"/>
       <location filename="../../../Path/Op/Engrave.py" line="71"/>
       <location filename="../../../Path/Op/Engrave.py" line="81"/>
-      <location filename="../../../Path/Op/Vcarve.py" line="214"/>
       <source>Additional base objects to be engraved</source>
       <translation>Grabatuko diren oinarri-objektu gehigarriak</translation>
     </message>
@@ -5433,9 +5399,9 @@ Adibidez:
       <translation>Hasierako erradioa</translation>
     </message>
     <message>
+      <location filename="../../../Path/Op/Profile.py" line="143"/>
       <location filename="../../../Path/Op/Helix.py" line="142"/>
       <location filename="../../../Path/Op/Helix.py" line="167"/>
-      <location filename="../../../Path/Op/Profile.py" line="143"/>
       <source>Extra value to stay away from final profile- good for roughing toolpath</source>
       <translation>Amaierako profiletik aldentzeko balio gehigarria - ona arbastatzeko tresna-bidearentzako</translation>
     </message>
@@ -5455,9 +5421,9 @@ Adibidez:
       <translation>Baztertu aurpegi barruan igotako areak.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Pocket.py" line="66"/>
-      <location filename="../../../Path/Op/Profile.py" line="117"/>
       <location filename="../../../Path/Op/Surface.py" line="247"/>
+      <location filename="../../../Path/Op/Profile.py" line="117"/>
+      <location filename="../../../Path/Op/Pocket.py" line="66"/>
       <location filename="../../../Path/Op/Waterline.py" line="267"/>
       <source>Choose how to process multiple Base Geometry features.</source>
       <translation>Aukeratu nola prozesatuko diren oinarri-geometriako elementu anitz.</translation>
@@ -5478,8 +5444,8 @@ Adibidez:
       <translation>Prozesatu eredua eta pieza oinarri-geometriarik hautatuta ez duen eragiketa batean.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/PocketBase.py" line="128"/>
       <location filename="../../../Path/Op/Profile.py" line="108"/>
+      <location filename="../../../Path/Op/PocketBase.py" line="128"/>
       <source>The direction that the toolpath should go around the part ClockWise (CW) or CounterClockWise (CCW)</source>
       <translation>Tresna-bideak piezaren inguruan izan behar duen norabidea: erlojuaren noranzkoan (CW), edo aurka (CCW)</translation>
     </message>
@@ -5515,9 +5481,26 @@ Adibidez:
     </message>
     <message>
       <location filename="../../../Path/Op/PocketBase.py" line="186"/>
-      <location filename="../../../Path/Op/PocketBase.py" line="246"/>
+      <location filename="../../../Path/Op/PocketBase.py" line="265"/>
       <source>Last Stepover Radius.  If 0, 50% of cutter is used. Tuning this can be used to improve stepover for some shapes</source>
       <translation>Azken gainditze-erradioa. Balioa 0 bada, ebakigailuaren % 50a soilik erabiliko da. Hau doituta, gainditzea hobetu daiteke zenbait formen kasuan</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Op/PocketBase.py" line="195"/>
+      <location filename="../../../Path/Op/PocketBase.py" line="277"/>
+      <source>Skips machining regions that have already been cleared by previous operations.</source>
+      <translation>Aurreko eragiketekin garbitu diren mekanizazio-eskualdeak saltatzen ditu.</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Op/PocketBase.py" line="204"/>
+      <location filename="../../../Path/Op/PocketBase.py" line="288"/>
+      <source>The areas cleared by this operation, one area per height, stored as a compound part. Used internally for rest machining.</source>
+      <translation>Eragiketa honek garbitzen dituen areak, area bana altuera bakoitzeko, konposatu-atal gisa biltegiratua. Barnean erabilia artezketa-mekanizaziorako.</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Op/PocketBase.py" line="299"/>
+      <source>Flag to indicate that the rest machining regions have never been computed, and must be recomputed before being used.</source>
+      <translation>Artezketa-mekanizazioko eskualdeak inoiz ez direla kalkulatu eta erabiliak izan baino lehen berriro kalkulatu behar direla adierazten duen bandera.</translation>
     </message>
     <message>
       <location filename="../../../Path/Op/Probe.py" line="55"/>
@@ -5580,8 +5563,8 @@ Adibidez:
       <translation>Markatu 'Egia', ebakigailuaren erradio-konpentsazioa erabili nahi bada</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Slot.py" line="122"/>
       <location filename="../../../Path/Op/Surface.py" line="127"/>
+      <location filename="../../../Path/Op/Slot.py" line="122"/>
       <location filename="../../../Path/Op/Waterline.py" line="205"/>
       <source>Show the temporary path construction objects when module is in DEBUG mode.</source>
       <translation>Erakutsi aldi baterako bide-eraikuntzaren objektuak modulua ARAZKETA moduan dagoenean.</translation>
@@ -5597,8 +5580,8 @@ Adibidez:
       <translation>Sartu amaiera-puntu pertsonalizatua arteka-biderako.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Slot.py" line="147"/>
       <location filename="../../../Path/Op/Surface.py" line="291"/>
+      <location filename="../../../Path/Op/Slot.py" line="147"/>
       <location filename="../../../Path/Op/Waterline.py" line="329"/>
       <source>Set the geometric clearing pattern to use for the operation.</source>
       <translation>Ezarri eragiketarako erabiliko den garbitze geometrikoko eredua.</translation>
@@ -5614,8 +5597,8 @@ Adibidez:
       <translation>Balio positiboak bidearen amaiera luzatzen du, negatiboak laburtu egiten du.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Slot.py" line="174"/>
       <location filename="../../../Path/Op/Surface.py" line="326"/>
+      <location filename="../../../Path/Op/Slot.py" line="174"/>
       <location filename="../../../Path/Op/Waterline.py" line="372"/>
       <source>Complete the operation in a single pass at depth, or multiple passes to final depth.</source>
       <translation>Osatu eragiketa pasaldi bakarrean sakoneran, edo pasaldi anitzetan azken sakoneraraino.</translation>
@@ -5646,8 +5629,8 @@ Adibidez:
       <translation>Gaitu arteka-bidearen mozte-norabidea alderantzikatzea.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Slot.py" line="228"/>
       <location filename="../../../Path/Op/Surface.py" line="423"/>
+      <location filename="../../../Path/Op/Slot.py" line="228"/>
       <location filename="../../../Path/Op/Waterline.py" line="452"/>
       <source>The custom start point for the path of this operation</source>
       <translation>Eragiketa honen bidearen hasiera-puntu pertsonalizatua</translation>
@@ -6111,17 +6094,17 @@ Adibidez:
   <context>
     <name>Path_DressupTag</name>
     <message>
-      <location filename="../../../Path/Dressup/Tags.py" line="1310"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="1307"/>
       <source>Cannot insert holding tags for this path - please select a Profile path</source>
       <translation>Ezin dira euste-etiketak txertatu bide honetarako - hautatu profil-bide bat</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Tags.py" line="1360"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="1357"/>
       <source>The selected object is not a path</source>
       <translation>Hautatutako objektua ez da bide bat</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Tags.py" line="1365"/>
+      <location filename="../../../Path/Dressup/Tags.py" line="1362"/>
       <source>Please select a Profile object</source>
       <translation>Hautatu profil-objektu bat</translation>
     </message>
@@ -6162,24 +6145,24 @@ Adibidez:
   <context>
     <name>Path_Dressup</name>
     <message>
+      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="366"/>
       <location filename="../../../Path/Dressup/Gui/AxisMap.py" line="284"/>
-      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="368"/>
       <source>Please select one path object
 </source>
       <translation>Hautatu bide-objektu bat
 </translation>
     </message>
     <message>
+      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="371"/>
       <location filename="../../../Path/Dressup/Gui/AxisMap.py" line="289"/>
-      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="373"/>
       <source>The selected object is not a path
 </source>
       <translation>Hautatutako objektua ez da bide bat
 </translation>
     </message>
     <message>
+      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="376"/>
       <location filename="../../../Path/Dressup/Gui/AxisMap.py" line="294"/>
-      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="378"/>
       <source>Please select a Path object</source>
       <translation>Hautatu bide-objektu bat</translation>
     </message>
@@ -6331,13 +6314,13 @@ Adibidez:
   <context>
     <name>Path_Probe</name>
     <message>
-      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="293"/>
+      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="292"/>
       <source>Select Probe Point File</source>
       <translation>Hautatu haztatze-puntuen fitxategia</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="295"/>
       <location filename="../../../Path/Op/Gui/Probe.py" line="95"/>
+      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="294"/>
       <source>All Files (*.*)</source>
       <translation>Fitxategi guztiak (*.*)</translation>
     </message>
@@ -6360,12 +6343,12 @@ Adibidez:
   <context>
     <name>Path_DressupZCorrect</name>
     <message>
-      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="347"/>
+      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="346"/>
       <source>Z Depth Correction</source>
       <translation>Z sakoneraren zuzenketa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="351"/>
+      <location filename="../../../Path/Dressup/Gui/ZCorrect.py" line="350"/>
       <source>Use Probe Map to correct Z depth</source>
       <translation>Erabili haztatze-mapa Z sakonera zuzentzeko</translation>
     </message>
@@ -6558,7 +6541,7 @@ Adibidez:
     <message>
       <location filename="../../../Path/Main/Gui/Inspect.py" line="145"/>
       <source>&lt;b&gt;Note&lt;/b&gt;: This dialog shows Path Commands in FreeCAD base units (mm/s). 
- Values will be converted to the desired unit during post-processing.</source>
+ Values will be converted to the desired unit during post processing.</source>
       <translation>&lt;b&gt;Oharra&lt;/b&gt;: Elkarrizketa-koadro honek FreeCADen oinarri-unitateetan (mm/s) erakusten ditu bide-komandoak. 
  Balioak post-prozesatzean bihurtuko dira nahi diren unitateetara.</translation>
     </message>
@@ -6603,231 +6586,308 @@ Adibidez:
   <context>
     <name>Path_Sanity</name>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="120"/>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="124"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="126"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="130"/>
       <source>Check the path job for common errors</source>
       <translation>Aztertu bide-lana errore arruntak bilatzeko</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="245"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="215"/>
+      <source>Setup Report for FreeCAD Job</source>
+      <translation>Txosten-konfigurazioa FreeCAD lanerako</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="216"/>
+      <source>Table of Contents</source>
+      <translation>Edukien aurkibidea</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="217"/>
+      <source>Part Information</source>
+      <translation>Zatiaren informazioa</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="218"/>
+      <source>Run Summary</source>
+      <translation>Exekutatu laburpena</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="219"/>
+      <source>Rough Stock</source>
+      <translation>Pieza gordin zimurra</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="220"/>
+      <source>Tool Data</source>
+      <translation>Tresna-datuak</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="221"/>
+      <source>Output</source>
+      <translation>Irteera</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="222"/>
+      <source>Fixtures</source>
+      <translation>Finkapenak</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="224"/>
+      <source>Squawks</source>
+      <translation>Irrintziak</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="225"/>
       <source>Base Object(s)</source>
       <translation>Oinarri-objektua(k)</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="246"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="226"/>
       <source>Job Sequence</source>
       <translation>Lan-sekuentzia</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="247"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="227"/>
       <source>Job Description</source>
       <translation>Lanaren deskribapena</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="248"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="228"/>
       <source>Job Type</source>
       <translation>Lan mota</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="249"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="229"/>
       <source>CAD File Name</source>
       <translation>CAD fitxategiaren izena</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="250"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="230"/>
       <source>Last Save Date</source>
       <translation>Azken gordetze-data</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="251"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="231"/>
       <source>Customer</source>
       <translation>Bezeroa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="253"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="233"/>
       <source>Designer</source>
       <translation>Diseinatzailea</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="288"/>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="333"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="238"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="514"/>
       <source>Operation</source>
       <translation>Eragiketa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="289"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="239"/>
       <source>Minimum Z Height</source>
       <translation>Z altuera minimoa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="290"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="240"/>
       <source>Maximum Z Height</source>
       <translation>Z altuera maximoa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="291"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="242"/>
       <source>Cycle Time</source>
       <translation>Ziklo-denbora</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="292"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="243"/>
       <source>Coolant</source>
       <translation>Hozgarria</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="294"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="244"/>
       <source>TOTAL JOB</source>
       <translation>LAN OSOA</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="327"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="246"/>
       <source>Tool Number</source>
       <translation>Tresna-zenbakia</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="328"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="509"/>
       <source>Description</source>
       <translation>Deskribapena</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="329"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="510"/>
       <source>Manufacturer</source>
       <translation>Fabrikatzailea</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="330"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="511"/>
       <source>Part Number</source>
       <translation>Pieza-zenbakia</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="331"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="512"/>
       <source>URL</source>
       <translation>URLa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="332"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="513"/>
       <source>Inspection Notes</source>
       <translation>Ikuskatze-oharrak</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="334"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="515"/>
       <source>Tool Controller</source>
       <translation>Tresna-kontrolagailua</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="335"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="516"/>
       <source>Feed Rate</source>
       <translation>Elikatze-tasa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="336"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="517"/>
       <source>Spindle Speed</source>
       <translation>Hax-abiadura</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="337"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="518"/>
       <source>Tool Shape</source>
       <translation>Tresna-forma</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="339"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="520"/>
       <source>Tool Diameter</source>
       <translation>Tresna-diametroa</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="390"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="521"/>
       <source>X Size</source>
       <translation>X tamaina</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="391"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="522"/>
       <source>Y Size</source>
       <translation>Y tamaina</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="392"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="523"/>
       <source>Z Size</source>
       <translation>Z tamaina</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="394"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="525"/>
       <source>Material</source>
       <translation>Materiala</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="407"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="526"/>
       <source>Work Offsets</source>
       <translation>Laneko desplazamenduak</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="408"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="527"/>
       <source>Order By</source>
       <translation>Ordenatu honen arabera:</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="410"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="529"/>
       <source>Part Datum</source>
       <translation>Piezaren zero puntua</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="422"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="530"/>
       <source>G-code File</source>
       <translation>G-code fitxategia</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="423"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="531"/>
       <source>Last Post Process Date</source>
       <translation>Post-prozesatzearen azken data</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="424"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="532"/>
       <source>Stops</source>
       <translation>Geldiuneak</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="425"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="533"/>
       <source>Programmer</source>
       <translation>Programatzailea</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="426"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="534"/>
       <source>Machine</source>
       <translation>Makina</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="427"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="535"/>
       <source>Postprocessor</source>
       <translation>Post-prozesatzailea</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="428"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="536"/>
       <source>Post Processor Flags</source>
       <translation>Post-prozesatzailearen banderak</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="429"/>
-      <source>File Size (kb)</source>
-      <translation type="unfinished">File Size (kb)</translation>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="537"/>
+      <source>File Size (kB)</source>
+      <translation>Fitxategi tamaina (kB)</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="431"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="539"/>
       <source>Line Count</source>
       <translation>Lerro kopurua</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="444"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="540"/>
       <source>Note</source>
       <translation>Oharra</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="445"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="541"/>
       <source>Operator</source>
       <translation>Eragilea</translation>
     </message>
     <message>
-      <location filename="../../../Path/Main/Gui/Sanity.py" line="447"/>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="543"/>
       <source>Date</source>
       <translation>Data</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="1332"/>
+      <source>Tool number {} is a legacy tool. Legacy tools not 
+                        supported by Path-Sanity</source>
+      <translation>{} zenbakidun tresna zaharra da. Path-Sanity tresnak 
+                        ez ditu tresna zaharrak onartzen</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="1343"/>
+      <source>Tool number {} used by multiple tools</source>
+      <translation>Tresna batek baino gehiagok erabiltzen du {} zenbakidun tresna </translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="1371"/>
+      <source>Tool Controller '{}' has no spindlespeed</source>
+      <translation>'{}' tresna-kontrolagailuak ez du hax-abiadurarik</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="1399"/>
+      <source>Tool Controller '{}' is not used</source>
+      <translation>'{}' tresna-kontrolagailua ez da erabiltzen</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="1494"/>
+      <source>Consider Specifying the Stock Material</source>
+      <translation>Kontuan hartu pieza gordina zehaztu daitekeela</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Main/Gui/Sanity.py" line="1585"/>
+      <source>The Job has not been post-processed</source>
+      <translation>Lana ez da post-prozesatu</translation>
     </message>
   </context>
   <context>
@@ -6888,6 +6948,11 @@ Adibidez:
       <source>no job for operation %s found.</source>
       <translation>ez da lanik aurkitu %s eragiketarako.</translation>
     </message>
+    <message>
+      <location filename="../../../Path/Op/Area.py" line="259"/>
+      <source>Previous operation %s is required for rest machining, but it has no stored rest machining metadata. Recomputing to generate this metadata...</source>
+      <translation>Aurretik %s eragiketa behar da artezketa-mekanizaziorako, baina ez du artezketa-mekanizazioko metadaturik. Berriro kalkulatzen metadatu horiek sortzeko...</translation>
+    </message>
   </context>
   <context>
     <name>Path_Operation</name>
@@ -6918,7 +6983,7 @@ Adibidez:
     <message>
       <location filename="../../../Path/Op/Deburr.py" line="188"/>
       <source>Round</source>
-      <translation>Biribildua</translation>
+      <translation type="unfinished">Round</translation>
     </message>
     <message>
       <location filename="../../../Path/Op/Deburr.py" line="189"/>
@@ -6990,14 +7055,14 @@ Adibidez:
   <context>
     <name>PathProfile</name>
     <message>
-      <location filename="../../../Path/Op/Helix.py" line="75"/>
       <location filename="../../../Path/Op/Profile.py" line="209"/>
+      <location filename="../../../Path/Op/Helix.py" line="75"/>
       <source>Outside</source>
       <translation>Kanpoan</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Helix.py" line="76"/>
       <location filename="../../../Path/Op/Profile.py" line="210"/>
+      <location filename="../../../Path/Op/Helix.py" line="76"/>
       <source>Inside</source>
       <translation>Barruan</translation>
     </message>
@@ -7024,7 +7089,7 @@ Adibidez:
     <message>
       <location filename="../../../Path/Op/Profile.py" line="204"/>
       <source>Round</source>
-      <translation>Biribildua</translation>
+      <translation type="unfinished">Round</translation>
     </message>
     <message>
       <location filename="../../../Path/Op/Profile.py" line="205"/>
@@ -7037,17 +7102,17 @@ Adibidez:
       <translation>Zorrotza</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Profile.py" line="382"/>
+      <location filename="../../../Path/Op/Profile.py" line="385"/>
       <source>The selected edge(s) are inaccessible. If multiple, re-ordering selection might work.</source>
       <translation>Ertz hautatua(k) ezin dira eskuratu. Anitz badira, hautapena berrordenatzeak arazoa konpondu dezake.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Profile.py" line="488"/>
+      <location filename="../../../Path/Op/Profile.py" line="491"/>
       <source>Unable to create path for face(s).</source>
       <translation>Ezin izan da sortu bidea aurpegietarako.</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Profile.py" line="637"/>
+      <location filename="../../../Path/Op/Profile.py" line="640"/>
       <source>Check edge selection and Final Depth requirements for profiling open edge(s).</source>
       <translation>Egiaztatu ertz irekia(k) profilatzeko behar diren ertz-hautapena eta amaierako sakonera.</translation>
     </message>
@@ -7133,7 +7198,7 @@ Adibidez:
   <context>
     <name>PathPocket</name>
     <message>
-      <location filename="../../../Path/Op/Pocket.py" line="191"/>
+      <location filename="../../../Path/Op/Pocket.py" line="192"/>
       <source>Final depth set below ZMin of face(s) selected.</source>
       <translation>Azken sakonera, hautatutako aurpegi(ar)en ZMin azpitik ezarrita.</translation>
     </message>
@@ -7153,12 +7218,12 @@ Adibidez:
       <translation>Y</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Gui/PocketBase.py" line="81"/>
+      <location filename="../../../Path/Op/Gui/PocketBase.py" line="82"/>
       <source>Pass Extension</source>
       <translation>Igaroaldien hedadura</translation>
     </message>
     <message>
-      <location filename="../../../Path/Op/Gui/PocketBase.py" line="87"/>
+      <location filename="../../../Path/Op/Gui/PocketBase.py" line="88"/>
       <source>The distance the facing operation will extend beyond the boundary shape.</source>
       <translation>Aurpegia sortzeko eragiketa hedatuko den distantzia muga-formaz kanpo.</translation>
     </message>
@@ -7928,7 +7993,7 @@ Adibidez:
       <location filename="../../../Path/Op/Gui/Array.py" line="142"/>
       <location filename="../../../Path/Op/Gui/Array.py" line="205"/>
       <source>Make False, to prevent operation from generating code</source>
-      <translation>Markatu 'Faltsua', eragiketak koderik sortu dezan saihestu nahi baduzu</translation>
+      <translation>Markatu 'Gezurra', eragiketak koderik sortu dezan saihestu nahi baduzu</translation>
     </message>
     <message>
       <location filename="../../../Path/Op/Gui/Base.py" line="189"/>
@@ -8227,12 +8292,12 @@ Aukeren sorrera abortatzen</translation>
   <context>
     <name>Path_Post</name>
     <message>
-      <location filename="../../../Path/Post/Command.py" line="477"/>
+      <location filename="../../../Path/Post/Command.py" line="472"/>
       <source>Post Process</source>
       <translation>Post-prozesua</translation>
     </message>
     <message>
-      <location filename="../../../Path/Post/Command.py" line="479"/>
+      <location filename="../../../Path/Post/Command.py" line="474"/>
       <source>Post Process the selected Job</source>
       <translation>Post-prozesatu hautatutako lana</translation>
     </message>
@@ -8424,7 +8489,30 @@ Sortu?</translation>
     <message>
       <location filename="../../../Path/Base/Util.py" line="58"/>
       <source>%s has no property %s (%s)</source>
-      <translation type="unfinished">%s has no property %s (%s)</translation>
+      <translation>%s-(e)k ez dauka %s propietatea (%s)</translation>
+    </message>
+  </context>
+  <context>
+    <name>PathCustom</name>
+    <message>
+      <location filename="../../../Path/Op/Custom.py" line="63"/>
+      <source>Text</source>
+      <translation>Testua</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Op/Custom.py" line="64"/>
+      <source>File</source>
+      <translation>Fitxategia</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Op/Custom.py" line="178"/>
+      <source>Custom file %s could not be found.</source>
+      <translation>Ezin izan da aurkitu %s fitxategi pertsonalizatua.</translation>
+    </message>
+    <message>
+      <location filename="../../../Path/Op/Custom.py" line="188"/>
+      <source>Invalid Gcode line: %s</source>
+      <translation>G-code lerro baliogabea: %s</translation>
     </message>
   </context>
 </TS>

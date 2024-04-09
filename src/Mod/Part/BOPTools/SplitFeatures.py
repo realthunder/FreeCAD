@@ -22,7 +22,7 @@
 
 __title__="BOPTools.SplitFeatures module"
 __author__ = "DeepSOIC"
-__url__ = "http://www.freecad.org"
+__url__ = "https://www.freecad.org"
 __doc__ = "Shape splitting document objects (features)."
 
 from . import SplitAPI
@@ -35,7 +35,7 @@ if FreeCAD.GuiUp:
 
 # -------------------------- translation-related code -------------------------
 # See forum thread "A new Part tool is being born... JoinFeatures!"
-# http://forum.freecad.org/viewtopic.php?f=22&t=11112&start=30#p90239
+# https://forum.freecad.org/viewtopic.php?f=22&t=11112&start=30#p90239
     try:
         _fromUtf8 = QtCore.QString.fromUtf8
     except Exception:
@@ -103,10 +103,10 @@ class ViewProviderBooleanFragments:
         self.ViewObject = vobj
         self.Object = vobj.Object
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
     def claimChildren(self):
@@ -264,10 +264,10 @@ class ViewProviderSlice:
         self.ViewObject = vobj
         self.Object = vobj.Object
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
     def claimChildren(self):
@@ -447,10 +447,10 @@ class ViewProviderXOR:
         self.ViewObject = vobj
         self.Object = vobj.Object
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
     def claimChildren(self):

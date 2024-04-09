@@ -61,6 +61,9 @@ public:
     App::PropertyFloat  Radius;
     App::PropertyString Reference;
 
+    App::PropertyBool   ShowMatting;
+    App::PropertyBool   ShowHighlight;
+
     short mustExecute() const override;
     App::DocumentObjectExecReturn *execute() override;
     void onChanged(const App::Property* prop) override;
@@ -84,10 +87,12 @@ public:
                                              gp_Dir& projDir);
 
     std::vector<DrawViewDetail*> getDetailRefs() const override;
+    TopoDS_Shape getDetailShape() const { return m_detailShape; }
 
 protected:
     struct Output {
         TopoDS_Shape shape;
+        TopoDS_Shape detailShape;
         Base::Vector3d centroid;
     };
     void onMakeDetailFinished(std::shared_ptr<Output> output);
@@ -124,6 +129,7 @@ private:
     std::unique_ptr<QFutureWatcher<void>> m_detailWatcher;
     std::shared_ptr<Base::SequencerLauncher> m_progress;
     bool m_waitingForDetail = false;
+    TopoDS_Shape m_detailShape;
 };
 
 using DrawViewDetailPython = App::FeaturePythonT<DrawViewDetail>;

@@ -74,7 +74,8 @@ void View3DSettings::applySettings()
     OnChange(*hGrp,"CornerCoordSystem");
     OnChange(*hGrp,"CornerCoordSystemSize");
     OnChange(*hGrp,"ShowAxisCross");
-    OnChange(*hGrp,"UseAutoRotation");
+    OnChange(*hGrp,"UseNavigationAnimations");
+    OnChange(*hGrp,"UseSpinningAnimations");
     OnChange(*hGrp,"Gradient");
     OnChange(*hGrp,"RadialGradient");
     OnChange(*hGrp,"BackgroundColor");
@@ -88,6 +89,7 @@ void View3DSettings::applySettings()
     OnChange(*hGrp,"UseVBO");
     OnChange(*hGrp,"RenderCache");
     OnChange(*hGrp,"Orthographic");
+    OnChange(*hGrp,"EnableHeadlight");
     OnChange(*hGrp,"HeadlightColor");
     OnChange(*hGrp,"HeadlightDirection");
     OnChange(*hGrp,"HeadlightIntensity");
@@ -109,7 +111,13 @@ void View3DSettings::applySettings()
 void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::MessageType Reason)
 {
     const ParameterGrp& rGrp = static_cast<ParameterGrp&>(rCaller);
-    if (strcmp(Reason,"HeadlightColor") == 0) {
+    if (strcmp(Reason,"EnableHeadlight") == 0) {
+        bool enable = rGrp.GetBool("EnableHeadlight", true);
+        for (auto _viewer : _viewers) {
+            _viewer->setHeadlightEnabled(enable);
+        }
+    }
+    else if (strcmp(Reason,"HeadlightColor") == 0) {
         unsigned long headlight = rGrp.GetUnsigned("HeadlightColor",ULONG_MAX); // default color (white)
         float transparency;
         SbColor headlightColor;
@@ -138,7 +146,7 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
     }
     else if (strcmp(Reason,"EnableBacklight") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setBacklight(rGrp.GetBool("EnableBacklight", false));
+            _viewer->setBacklightEnabled(rGrp.GetBool("EnableBacklight", false));
         }
     }
     else if (strcmp(Reason,"BacklightColor") == 0) {
@@ -288,9 +296,14 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
             _viewer->setAxisCross(rGrp.GetBool("ShowAxisCross", false));
         }
     }
-    else if (strcmp(Reason,"UseAutoRotation") == 0) {
+    else if (strcmp(Reason,"UseNavigationAnimations") == 0) {
         for (auto _viewer : _viewers) {
-            _viewer->setAnimationEnabled(rGrp.GetBool("UseAutoRotation", false));
+            _viewer->setAnimationEnabled(rGrp.GetBool("UseNavigationAnimations", true));
+        }
+    }
+    else if (strcmp(Reason,"UseSpinningAnimations") == 0) {
+        for (auto _viewer : _viewers) {
+            _viewer->setSpinningAnimationEnabled(rGrp.GetBool("UseSpinningAnimations", false));
         }
     }
     else if (strcmp(Reason,"Gradient") == 0 || strcmp(Reason,"RadialGradient") == 0) {
@@ -451,22 +464,11 @@ NaviCubeSettings::NaviCubeSettings(ParameterGrp::handle hGrp,
         [this](ParameterGrp*, ParameterGrp::ParamType, const char *Name, const char *) {
             parameterChanged(Name);
     });
-
 }
 
 NaviCubeSettings::~NaviCubeSettings()
 {
     connectParameterChanged.disconnect();
-}
-
-QString NaviCubeSettings::getDefaultSansserifFont()
-{
-    // "FreeCAD NaviCube" family susbtitutions are set in MainWindow::MainWindow
-    QFont font(QStringLiteral("FreeCAD NaviCube"));
-    font.setStyleHint(QFont::SansSerif);
-    // QFontInfo is required to get the actually matched font family
-    return QFontInfo(font).family();
-    // return QStringLiteral("FreeCAD NaviCube");
 }
 
 void NaviCubeSettings::applySettings()
@@ -475,6 +477,7 @@ void NaviCubeSettings::applySettings()
     parameterChanged("EmphaseColor");
     parameterChanged("HiliteColor");
     parameterChanged("CornerNaviCube");
+    parameterChanged("OffsetX"); // Updates OffsetY too
     parameterChanged("CubeSize");
     parameterChanged("ChamferSize");
     parameterChanged("NaviRotateToNearest");
@@ -515,9 +518,7 @@ void NaviCubeSettings::parameterChanged(const char* Name)
         nc->setFontZoom(hGrp->GetFloat("FontZoom", 0.3));
     }
     else if (strcmp(Name, "FontString") == 0) {
-        std::string font =
-            hGrp->GetASCII("FontString", getDefaultSansserifFont().toStdString().c_str());
-        nc->setFont(font);
+        nc->setFont(hGrp->GetASCII("FontString"));
     }
     else if (strcmp(Name, "FontWeight") == 0) {
         nc->setFontWeight(hGrp->GetInt("FontWeight", 0));
@@ -545,7 +546,7 @@ void NaviCubeSettings::parameterChanged(const char* Name)
         nc->setBorderWidth(hGrp->GetFloat("BorderWidth", 1.1));
     }
     else if (strcmp(Name, "ShowCS") == 0) {
-        nc->setShowCS(hGrp->GetBool("ShowCS", 1));
+        nc->setShowCS(hGrp->GetBool("ShowCS", true));
     }
     else if (strcmp(Name, "TextTop") == 0 || strcmp(Name, "TextBottom") == 0
              || strcmp(Name, "TextFront") == 0 || strcmp(Name, "TextRear") == 0

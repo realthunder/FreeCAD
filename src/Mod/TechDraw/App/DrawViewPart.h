@@ -129,10 +129,13 @@ public:
 
     static TopoDS_Shape centerScaleRotate(DrawViewPart* dvp, TopoDS_Shape& inOutShape,
                                           Base::Vector3d centroid);
+
     std::vector<TechDraw::DrawHatch*> getHatches() const;
     std::vector<TechDraw::DrawGeomHatch*> getGeomHatches() const;
     std::vector<TechDraw::DrawViewDimension*> getDimensions() const;
     std::vector<TechDraw::DrawViewBalloon*> getBalloons() const;
+    virtual std::vector<DrawViewSection*> getSectionRefs() const;
+    virtual std::vector<DrawViewDetail*> getDetailRefs() const;
 
     const std::vector<TechDraw::VertexPtr> getVertexGeometry() const;
     const BaseGeomPtrVector getEdgeGeometry() const;
@@ -140,34 +143,36 @@ public:
     const std::vector<TechDraw::FacePtr> getFaceGeometry() const;
 
     bool hasGeometry() const;
-    TechDraw::GeometryObjectPtr getGeometryObject() const;
+    TechDraw::GeometryObjectPtr getGeometryObject(bool noException=false) const;
 
     TechDraw::VertexPtr getVertex(std::string vertexName) const;
     TechDraw::BaseGeomPtr getEdge(std::string edgeName) const;
     TechDraw::FacePtr getFace(std::string faceName) const;
 
-    TechDraw::BaseGeomPtr
-    getGeomByIndex(int idx) const;//get existing geom for edge idx in projection
-    TechDraw::VertexPtr
-    getProjVertexByIndex(int idx) const;//get existing geom for vertex idx in projection
-
+    //get existing geom for edge idx in projection
+    TechDraw::BaseGeomPtr getGeomByIndex(int idx) const;
+    //get existing geom for vertex idx in projection
+    TechDraw::VertexPtr getProjVertexByIndex(int idx) const;
+    // get existing geom for vertex by unique tag
     TechDraw::VertexPtr getProjVertexByCosTag(std::string cosTag);
-    std::vector<TechDraw::BaseGeomPtr>
-    getFaceEdgesByIndex(int idx) const;//get edges for face idx in projection
+    //get edges for face idx in projection
+    std::vector<TechDraw::BaseGeomPtr> getFaceEdgesByIndex(int idx) const;
+    // get the wires that define face idx
+    virtual std::vector<TopoDS_Wire> getWireForFace(int idx) const;
+    //returns a compound of all the visible projected edges
+    TopoDS_Shape getEdgeCompound() const;
 
+    // projected geometry measurements
     virtual Base::BoundBox3d getBoundingBox() const;
     double getBoxX() const;
     double getBoxY() const;
     QRectF getRect() const override;
-    virtual std::vector<DrawViewSection*>
-    getSectionRefs() const;//are there ViewSections based on this ViewPart?
-    virtual std::vector<DrawViewDetail*> getDetailRefs() const;
+    double getSizeAlongVector(Base::Vector3d alignmentVector);
 
-
+    // ancillary projection routines
     virtual Base::Vector3d projectPoint(const Base::Vector3d& pt, bool invert = true) const;
     virtual Base::Vector3d inverseProjectPoint(const Base::Vector3d& pt, bool invert=true) const;
     virtual BaseGeomPtr projectEdge(const TopoDS_Edge& e) const;
-    virtual BaseGeomPtrVector projectWire(const TopoDS_Wire& inWire) const;
 
     virtual gp_Ax2 getViewAxis(const Base::Vector3d& pt, const Base::Vector3d& direction,
                                const bool flip = true) const;
@@ -178,59 +183,31 @@ public:
     virtual Base::Vector3d getCurrentCentroid() const;
     virtual Base::Vector3d getLegacyX(const Base::Vector3d& pt, const Base::Vector3d& axis,
                                       const bool flip = true) const;
+
     gp_Ax2 localVectorToCS(const Base::Vector3d localUnit) const;
     Base::Vector3d localVectorToDirection(const Base::Vector3d localUnit) const;
-
-    Base::Vector3d getLocalOrigin3d() const;
-    Base::Vector3d getLocalOrigin2d() const;
-
-    static bool handleFaces();
-    static bool newFaceFinder();
 
     static TopoDS_Shape shapeShapeIntersect(const TopoDS_Shape& shape0,
                                             const TopoDS_Shape& shape1,
                                             Handle(Message_ProgressIndicator) pi = nullptr);
     static bool isTrulyEmpty(TopoDS_Shape inShape);
 
+    // switches
+    static bool handleFaces();
+    static bool newFaceFinder();
+
     bool isUnsetting() { return nowUnsetting; }
 
-    virtual std::vector<TopoDS_Wire> getWireForFace(int idx) const;
-
-    virtual TopoDS_Shape getSourceShape() const;
-    virtual TopoDS_Shape getSourceShapeFused() const;
-    virtual std::vector<TopoDS_Shape> getSourceShape2d() const;
+    virtual TopoDS_Shape getSourceShape(bool fuse = false) const;
     virtual TopoDS_Shape getShapeForDetail() const;
+    std::vector<App::DocumentObject*> getAllSources() const;
 
-    TopoDS_Shape getShape() const;
-    double getSizeAlongVector(Base::Vector3d alignmentVector);
-
-    virtual void postHlrTasks();
-    virtual void postFaceExtractionTasks();
-
-    bool isIso() const;
-
-    void clearCosmeticVertexes();
-    void refreshCVGeoms();
-    void addCosmeticVertexesToGeom();
-    int add1CVToGV(std::string tag);
-    int getCVIndex(std::string tag);
-
-    void clearCosmeticEdges();
-    void refreshCEGeoms();
-    void addCosmeticEdgesToGeom();
-    int add1CEToGE(std::string tag);
-
-    void clearCenterLines();
-    void refreshCLGeoms();
-    void addCenterLinesToGeom();
-    int add1CLToGE(std::string tag);
-
-    void clearGeomFormats();
-
+    // debug routines
     void dumpVerts(const std::string text);
     void dumpCosVerts(const std::string text);
     void dumpCosEdges(const std::string text);
 
+    // routines related to landmark dimensions (obs?)
     std::string addReferenceVertex(Base::Vector3d v);
     void addReferencesToGeom();
     void removeReferenceVertex(std::string tag);
@@ -238,8 +215,9 @@ public:
     void removeAllReferencesFromGeom();
     void resetReferenceVerts();
 
-    std::vector<App::DocumentObject*> getAllSources() const;
-
+    // routines related to multi-threading
+    virtual void postHlrTasks();
+    virtual void postFaceExtractionTasks();
     bool waitingForFaces() const { return m_waitingForFaces; }
     bool waitingForHlr() const { return m_waitingForHlr; }
     virtual bool waitingForResult() const;
@@ -262,7 +240,6 @@ protected:
     void buildGeometryObject(TopoDS_Shape& shape, const gp_Ax2& viewAxis);
     void makeGeometryForShape(TopoDS_Shape& shape);//const??
     void partExec(TopoDS_Shape& shape);
-    void addShapes2d();
 
     struct ExtractFaceParams {
         std::string featureName;
@@ -272,26 +249,19 @@ protected:
     };
     static void extractFaces(const ExtractFaceParams &params);
 
+    virtual void addPoints();
+
+    static void findFacesNew(const ExtractFaceParams &params,
+                             const std::vector<TechDraw::BaseGeomPtr>& goEdges);
+    static void findFacesOld(const ExtractFaceParams &params,
+                             const std::vector<TechDraw::BaseGeomPtr>& goEdges);
+
     Base::Vector3d shapeCentroid;
-    void getRunControl();
 
     bool m_handleFaces;
 
     TopoDS_Shape m_saveShape;     //TODO: make this a Property.  Part::TopoShapeProperty??
     Base::Vector3d m_saveCentroid;//centroid before centering shape in origin
-
-    void handleChangedPropertyName(Base::XMLReader& reader, const char* TypeName,
-                                   const char* PropName) override;
-
-    bool prefHardViz();
-    bool prefSeamViz();
-    bool prefSmoothViz();
-    bool prefIsoViz();
-    bool prefHardHid();
-    bool prefSeamHid();
-    bool prefSmoothHid();
-    bool prefIsoHid();
-    int prefIsoCount();
 
     std::vector<TechDraw::VertexPtr> m_referenceVerts;
 

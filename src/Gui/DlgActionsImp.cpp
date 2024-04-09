@@ -604,9 +604,7 @@ IconFolders::IconFolders(const QStringList& paths, QWidget* parent)
         addButton->setDisabled(true);
 }
 
-IconFolders::~IconFolders()
-{
-}
+IconFolders::~IconFolders() = default;
 
 void IconFolders::addFolder()
 {

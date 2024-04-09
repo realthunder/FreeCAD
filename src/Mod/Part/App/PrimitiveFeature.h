@@ -315,6 +315,7 @@ public:
     App::PropertyQuantityConstraint SegmentLength;
     App::PropertyEnumeration     LocalCoord;
     App::PropertyEnumeration     Style;
+    App::PropertyLength Length;
 
     /** @name methods override feature */
     //@{
@@ -346,6 +347,7 @@ public:
     App::PropertyQuantityConstraint Rotations;
     App::PropertyLength Radius;
     App::PropertyQuantityConstraint SegmentLength;
+    App::PropertyLength Length;
 
     /** @name methods override feature */
     //@{

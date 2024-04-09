@@ -51,14 +51,15 @@ FC_LOG_LEVEL_INIT("ViewProviderPythonFeature", true, true)
 
 
 using namespace Gui;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 
 // ----------------------------------------------------------------------------
 
 ViewProviderPythonFeatureImp::ViewProviderPythonFeatureImp(
         ViewProviderDocumentObject* vp, App::PropertyPythonObject &proxy)
-  : object(vp), Proxy(proxy), has__object__(false)
+  : object(vp)
+  , Proxy(proxy)
 {
 }
 
@@ -141,7 +142,7 @@ QIcon ViewProviderPythonFeatureImp::getIcon() const
     try {
         Py::Object ret(Base::pyCall(py_getIcon.ptr()));
         if(ret.isNone())
-            return QIcon();
+            return {};
 
         std::string _type;
         const char *type = nullptr;
@@ -186,7 +187,7 @@ QIcon ViewProviderPythonFeatureImp::getIcon() const
         }
     }
 
-    return QIcon();
+    return {};
 }
 
 void ViewProviderPythonFeatureImp::getExtraIcons(
@@ -446,7 +447,7 @@ ViewProviderPythonFeatureImp::ValueT ViewProviderPythonFeatureImp::getDetailPath
 
 std::vector<Base::Vector3d> ViewProviderPythonFeatureImp::getSelectionShape(const char* /*Element*/) const
 {
-    return std::vector<Base::Vector3d>();
+    return {};
 }
 
 ViewProviderPythonFeatureImp::ValueT
@@ -1295,8 +1296,8 @@ ViewProviderPythonFeatureImp::ValueT
 ViewProviderPythonFeatureImp::replaceObject(
         App::DocumentObject *oldObj, App::DocumentObject *newObj)
 {
-    if(!oldObj || !oldObj->getNameInDocument()
-            || !newObj || !newObj->getNameInDocument())
+    if(!oldObj || !oldObj->isAttachedToDocument()
+            || !newObj || !newObj->isAttachedToDocument())
         return NotImplemented;
 
     FC_PY_CALL_CHECK(replaceObject);

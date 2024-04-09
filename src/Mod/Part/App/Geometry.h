@@ -137,9 +137,9 @@ protected:
     boost::uuids::uuid tag;
     std::vector<std::shared_ptr<GeometryExtension>> extensions;
 
-private:
-    Geometry(const Geometry&);
-    Geometry& operator = (const Geometry&);
+public:
+    Geometry(const Geometry&) = delete;
+    Geometry& operator = (const Geometry&) = delete;
 };
 
 class PartExport GeomPoint : public Geometry
@@ -528,6 +528,8 @@ public:
     double getRadius() const;
     void setRadius(double Radius);
 
+    double getAngle(bool emulateCCWXY) const;
+
     void getRange(double& u, double& v, bool emulateCCWXY) const override;
     void setRange(double u, double v, bool emulateCCWXY) override;
 
@@ -594,6 +596,7 @@ public:
     void setMinorRadius(double Radius);
     Base::Vector3d getMajorAxisDir() const;
     void setMajorAxisDir(Base::Vector3d newdir);
+    Base::Vector3d getMinorAxisDir() const;
 
     void getRange(double& u, double& v, bool emulateCCWXY) const override;
     void setRange(double u, double v, bool emulateCCWXY) override;
@@ -658,6 +661,7 @@ public:
     void setMinorRadius(double Radius);
     Base::Vector3d getMajorAxisDir() const;
     void setMajorAxisDir(Base::Vector3d newdir);
+    Base::Vector3d getMinorAxisDir() const;
 
     void getRange(double& u, double& v, bool emulateCCWXY) const override;
     void setRange(double u, double v, bool emulateCCWXY) override;

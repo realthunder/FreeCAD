@@ -596,6 +596,21 @@ public:
 
         TRUNC,
 
+        // Vector
+        VANGLE,
+        VCROSS,
+        VDOT,
+        VLINEDIST,
+        VLINESEGDIST,
+        VLINEPROJ,
+        VNORMALIZE,
+        VPLANEDIST,
+        VPLANEPROJ,
+        VSCALE,
+        VSCALEX,
+        VSCALEY,
+        VSCALEZ,
+
         // Matrix
         MINVERT, // invert matrix/placement/rotation
         MROTATE, // Rotate matrix/placement/rotation around axis, by rotation object, or by euler angles.
@@ -666,6 +681,8 @@ protected:
 
     static Py::Object evalAggregate(const Expression *owner, int type, const ExpressionList &args);
     static Base::Vector3d evaluateSecondVectorArgument(const Expression *expression, const ExpressionList &arguments);
+    static double extractLengthValueArgument(const Expression *expression, const ExpressionList &arguments, int argumentIndex);
+    static Base::Vector3d extractVectorArgument(const Expression *expression, const ExpressionList &arguments, int argumentIndex);
     static void initialiseObject(const Py::Object *object, const ExpressionList &arguments, const unsigned long offset = 0);
     static Py::Object transformFirstArgument(
         const Expression *expression,

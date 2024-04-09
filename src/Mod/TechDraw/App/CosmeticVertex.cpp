@@ -35,9 +35,12 @@
 #include "CosmeticVertexPy.h"
 #include "LineGroup.h"
 #include "Preferences.h"
+#include "DrawUtil.h"
+#include "DrawViewPart.h"
 
 using namespace TechDraw;
 using namespace std;
+using DU = DrawUtil;
 
 TYPESYSTEM_SOURCE(TechDraw::CosmeticVertex, Base::Persistence)
 
@@ -71,8 +74,9 @@ CosmeticVertex::CosmeticVertex(const TechDraw::CosmeticVertex* cv) : TechDraw::V
     createNewTag();
 }
 
-CosmeticVertex::CosmeticVertex(Base::Vector3d loc) : TechDraw::Vertex(loc)
+CosmeticVertex::CosmeticVertex(const Base::Vector3d& loc) : TechDraw::Vertex(loc)
 {
+//    Base::Console().Message("CV::CV(%s)\n", DU::formatVector(loc).c_str());
     permaPoint = loc;
     linkGeom = -1;
     color = Preferences::vertexColor();
@@ -87,12 +91,12 @@ CosmeticVertex::CosmeticVertex(Base::Vector3d loc) : TechDraw::Vertex(loc)
 
 }
 
-void CosmeticVertex::move(Base::Vector3d newPos)
+void CosmeticVertex::move(const Base::Vector3d& newPos)
 {
     permaPoint = newPos;
 }
 
-void CosmeticVertex::moveRelative(Base::Vector3d movement)
+void CosmeticVertex::moveRelative(const Base::Vector3d& movement)
 {
     permaPoint += movement;
 }
@@ -172,9 +176,47 @@ void CosmeticVertex::Restore(Base::XMLReader &reader)
     tag = u1;
 }
 
-Base::Vector3d CosmeticVertex::scaled(double factor)
+Base::Vector3d CosmeticVertex::scaled(const double factor)
 {
     return permaPoint * factor;
+}
+
+Base::Vector3d CosmeticVertex::rotatedAndScaled(const double scale, const double rotDegrees)
+{
+    Base::Vector3d scaledPoint = scaled(scale);
+    if (rotDegrees != 0.0) {
+        // invert the Y coordinate so the rotation math works out
+        scaledPoint = DU::invertY(scaledPoint);
+        scaledPoint.RotateZ(rotDegrees * M_PI / 180.0);
+        scaledPoint = DU::invertY(scaledPoint);
+    }
+    return scaledPoint;
+}
+
+//! converts a point into its unscaled, unrotated form.  If point is Gui space coordinates,
+//! it should be inverted (DU::invertY) before calling this method, and the result should be
+//! inverted on return.
+Base::Vector3d CosmeticVertex::makeCanonicalPoint(DrawViewPart* dvp, Base::Vector3d point, bool unscale)
+{
+    // Base::Console().Message("CV::makeCanonicalPoint(%s)\n", DU::formatVector(point).c_str());
+    double rotDeg = dvp->Rotation.getValue();
+
+    Base::Vector3d result = point;
+    if (rotDeg != 0.0) {
+        // unrotate the point
+        double rotRad = rotDeg * M_PI / 180.0;
+        // we always rotate around the origin.
+        result.RotateZ(-rotRad);
+    }
+
+    if (unscale) {
+        // unrotated point is scaled and we need to unscale it (the normal situation)
+        double scale = dvp->getScale();
+        return result / scale;
+    }
+
+    // return the unrotated version of input point without unscaling
+    return result;
 }
 
 boost::uuids::uuid CosmeticVertex::getTag() const
@@ -202,7 +244,7 @@ void CosmeticVertex::createNewTag()
     tag = gen();
 }
 
-void CosmeticVertex::assignTag(const TechDraw::CosmeticVertex * cv)
+void CosmeticVertex::assignTag(const TechDraw::CosmeticVertex* cv)
 {
     if(cv->getTypeId() == this->getTypeId())
         this->tag = cv->tag;
@@ -233,7 +275,7 @@ PyObject* CosmeticVertex::getPyObject()
     return Py::new_reference_to(PythonObject);
 }
 
-
+// To do: make const
 void CosmeticVertex::dump(const char* title)
 {
     Base::Console().Message("CV::dump - %s \n", title);

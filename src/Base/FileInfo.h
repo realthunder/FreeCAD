@@ -34,29 +34,42 @@
 namespace Base
 {
 
+/// When reading and writing a character stream, the incoming data can be dumped into the stream
+/// unaltered (if it contains only data that is valid in the current XML character set), or it can
+/// be Base64-encoded. This enum is used by Reader and Writer to distinguish the two cases.
+enum class CharStreamFormat
+{
+    Raw,
+    Base64Encoded
+};
+
 /** File name unification
-  * This class handles everything related to file names
-  * the file names are internal generally UTF-8 encoded on
-  * all platforms.
-  */
+ * This class handles everything related to file names
+ * the file names are internal generally UTF-8 encoded on
+ * all platforms.
+ */
 class BaseExport FileInfo
 {
 public:
-    enum Permissions {
+    enum Permissions
+    {
         WriteOnly = 0x01,
         ReadOnly = 0x02,
         ReadWrite = 0x03,
     };
 
     /// Construction
-    FileInfo (const char* _FileName="", bool autoDelete=false);
-    FileInfo (const std::string &_FileName, bool autoDelete=false);
+    explicit FileInfo(const char* fileName = "", bool autoDelete=false);
+    explicit FileInfo(const std::string& fileName, bool autoDelete=false);
     /// Destruction
     ~FileInfo(); 
     /// Set a new file name
     void setFile(const char* name);
     /// Set a new file name
-    void setFile(const std::string &name){setFile(name.c_str());}
+    void setFile(const std::string& name)
+    {
+        setFile(name.c_str());
+    }
 
 
     /** @name extraction of information */
@@ -64,11 +77,11 @@ public:
     /// Returns the file name, including the path (which may be absolute or relative).
     const std::string &filePath () const;
     /// Returns the dir path name (which may be absolute or relative).
-    std::string dirPath () const;
+    std::string dirPath() const;
     /// Returns the name of the file, excluding the path, including the extension.
-    std::string fileName () const;
+    std::string fileName() const;
     /// Returns the name of the file, excluding the path and the extension.
-    std::string fileNamePure () const;
+    std::string fileNamePure() const;
     /// Convert the path name into a UTF-16 encoded wide string format.
     /// @note: Use this function on Windows only.
     std::wstring toStdWString() const;
@@ -80,7 +93,7 @@ public:
      *  ext = fi.extension();   // ext = "gz"
      *@endcode
      */
-    std::string extension () const;
+    std::string extension() const;
     /** Returns the complete extension of the file.
      * The complete extension consists of all characters in the file after (but not including)
      * the first '.' character.
@@ -89,27 +102,29 @@ public:
      *  ext = fi.completeExtension();   // ext = "tar.gz"
      *@endcode
      */
-    std::string completeExtension () const;
+    std::string completeExtension() const;
     /// Checks for a special extension, NOT case sensitive
-    bool hasExtension (const char* Ext) const;
+    bool hasExtension(const char* Ext) const;
+    /// Checks for any of the special extensions, NOT case sensitive
+    bool hasExtension(std::initializer_list<const char*> Exts) const;
     //@}
 
     /** @name methods to test the status of the file or dir */
     //@{
     /// Does the file exist?
-    bool exists () const;
+    bool exists() const;
     /// Checks if the file exist and is readable
-    bool isReadable () const;
+    bool isReadable() const;
     /// Checks if the file exist and is writable
-    bool isWritable () const;
+    bool isWritable() const;
     /// Tries to set the file permission
-    bool setPermissions (Permissions);
+    bool setPermissions(Permissions);
     /// Checks if it is a file (not a directory)
-    bool isFile () const;
+    bool isFile() const;
     /// Checks if it is a directory (not a file)
-    bool isDir () const;
+    bool isDir() const;
     /// The size of the file
-    unsigned int size () const;
+    unsigned int size() const;
     /// Returns the time when the file was last modified.
     TimeInfo lastModified() const;
     /// Returns the time when the file was last read (accessed).
@@ -119,8 +134,9 @@ public:
     /** @name Directory management*/
     //@{
     /// Creates a directory. Returns true if successful; otherwise returns false.
-    bool createDirectory( ) const;
-    /// Creates a directory and all its parent directories. Returns true if successful; otherwise returns false.
+    bool createDirectory() const;
+    /// Creates a directory and all its parent directories. Returns true if successful; otherwise
+    /// returns false.
     bool createDirectories() const;
     /// Get a list of the directory content
     std::vector<Base::FileInfo> getDirectoryContent() const;
@@ -140,21 +156,21 @@ public:
     /** @name Tools */
     //@{
     /// Get a unique File Name in the given or (if 0) in the temp path
-    static std::string getTempFileName(const char* FileName=nullptr, const char* path=nullptr);
+    static std::string getTempFileName(const char* FileName = nullptr, const char* path = nullptr);
     /// Get the path to the dir which is considered to temp files
-    static const std::string &getTempPath();
+    static const std::string& getTempPath();
     /// Convert from filesystem path to string
-    static std::string pathToString(const boost::filesystem::path& p);
+    static std::string pathToString(const boost::filesystem::path& path);
     /// Convert from string to filesystem path
     static boost::filesystem::path stringToPath(const std::string& str);
     //@}
 
-protected:
+private:
     std::string FileName;
-    bool AutoDelete;
+    bool AutoDelete{false};
 };
 
-} //namespace Base
+}  // namespace Base
 
 
-#endif // BASE_FILEINFO_H
+#endif  // BASE_FILEINFO_H

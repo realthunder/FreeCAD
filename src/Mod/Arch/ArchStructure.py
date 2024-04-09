@@ -61,9 +61,9 @@ for pre in Presets:
         Categories.append(pre[1])
 
 
-def makeStructure(baseobj=None,length=None,width=None,height=None,name="Structure"):
+def makeStructure(baseobj=None,length=None,width=None,height=None,name=None):
 
-    '''makeStructure([obj],[length],[width],[height],[swap]): creates a
+    '''makeStructure([baseobj],[length],[width],[height],[name]): creates a
     structure element based on the given profile object and the given
     extrusion height. If no base object is given, you can also specify
     length and width for a cubic object.'''
@@ -73,7 +73,6 @@ def makeStructure(baseobj=None,length=None,width=None,height=None,name="Structur
         return
     p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Arch")
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython","Structure")
-    obj.Label = translate("Arch","Structure")
     _Structure(obj)
     if FreeCAD.GuiUp:
         _ViewProviderStructure(obj.ViewObject)
@@ -118,18 +117,19 @@ def makeStructure(baseobj=None,length=None,width=None,height=None,name="Structur
                 obj.Length = h
 
     if not height and not length:
-        obj.IfcType = "Undefined"
+        obj.IfcType = "Building Element Proxy"
+        obj.Label = name if name else translate("Arch","Structure")
     elif obj.Length > obj.Height:
         obj.IfcType = "Beam"
-        obj.Label = translate("Arch","Beam")
+        obj.Label = name if name else translate("Arch","Beam")
     elif obj.Height > obj.Length:
         obj.IfcType = "Column"
-        obj.Label = translate("Arch","Column")
+        obj.Label = name if name else translate("Arch","Column")
     return obj
 
-def makeStructuralSystem(objects=[],axes=[],name="StructuralSystem"):
+def makeStructuralSystem(objects=[],axes=[],name=None):
 
-    '''makeStructuralSystem(objects,axes): makes a structural system
+    '''makeStructuralSystem([objects],[axes],[name]): makes a structural system
     based on the given objects and axes'''
 
     if not FreeCAD.ActiveDocument:
@@ -145,8 +145,8 @@ def makeStructuralSystem(objects=[],axes=[],name="StructuralSystem"):
     else:
         objects = [None]
     for o in objects:
-        obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython",name)
-        obj.Label = translate("Arch",name)
+        obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython","StructuralSystem")
+        obj.Label = name if name else translate("Arch","StructuralSystem")
         _StructuralSystem(obj)
         if FreeCAD.GuiUp:
             _ViewProviderStructuralSystem(obj.ViewObject)
@@ -170,9 +170,8 @@ def placeAlongEdge(p1,p2,horizontal=False):
 
     pl = FreeCAD.Placement()
     pl.Base = p1
-    up = FreeCAD.Vector(0,0,1)
-    if hasattr(FreeCAD,"DraftWorkingPlane"):
-        up = FreeCAD.DraftWorkingPlane.axis
+    import WorkingPlane
+    up = WorkingPlane.get_working_plane(update=False).axis
     zaxis = p2.sub(p1)
     yaxis = up.cross(zaxis)
     if yaxis.Length > 0:
@@ -194,7 +193,7 @@ class CommandStructuresFromSelection:
     def GetResources(self):
         return {'Pixmap': 'Arch_MultipleStructures',
                 'MenuText': QT_TRANSLATE_NOOP("Arch_StructuresFromSelection", "Multiple Structures"),
-                'ToolTip': QT_TRANSLATE_NOOP("Arch_StructuresFromSelection", "Create multiple Arch Structure objects from a selected base, using each selected edge as an extrusion path")}
+                'ToolTip': QT_TRANSLATE_NOOP("Arch_StructuresFromSelection", "Create multiple Arch Structures from a selected base, using each selected edge as an extrusion path")}
 
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
@@ -231,7 +230,7 @@ class CommandStructuralSystem:
     def GetResources(self):
         return {'Pixmap': 'Arch_StructuralSystem',
                 'MenuText': QT_TRANSLATE_NOOP("Arch_StructuralSystem", "Structural System"),
-                'ToolTip': QT_TRANSLATE_NOOP("Arch_StructuralSystem", "Create a structural system object from a selected structure and axis")}
+                'ToolTip': QT_TRANSLATE_NOOP("Arch_StructuralSystem", "Create a structural system from a selected structure and axis")}
 
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
@@ -269,7 +268,7 @@ class _CommandStructure:
         return {'Pixmap'  : 'Arch_Structure',
                 'MenuText': QT_TRANSLATE_NOOP("Arch_Structure","Structure"),
                 'Accel': "S, T",
-                'ToolTip': QT_TRANSLATE_NOOP("Arch_Structure","Creates a structure object from scratch or from a selected object (sketch, wire, face or solid)")}
+                'ToolTip': QT_TRANSLATE_NOOP("Arch_Structure","Creates a structure from scratch or from a selected object (sketch, wire, face or solid)")}
 
     def IsActive(self):
 
@@ -290,6 +289,7 @@ class _CommandStructure:
         self.bpoint = None
         self.bmode = False
         self.precastvalues = None
+        self.wp = None
         sel = FreeCADGui.Selection.getSelection()
         if sel:
             st = Draft.getObjectsOfType(sel,"Structure")
@@ -309,15 +309,15 @@ class _CommandStructure:
                 return
 
         # interactive mode
-        if hasattr(FreeCAD,"DraftWorkingPlane"):
-            FreeCAD.DraftWorkingPlane.setup()
+        import WorkingPlane
+        self.wp = WorkingPlane.get_working_plane()
 
         self.points = []
         self.tracker = DraftTrackers.boxTracker()
         self.tracker.width(self.Width)
         self.tracker.height(self.Height)
         self.tracker.length(self.Length)
-        self.tracker.setRotation(FreeCAD.DraftWorkingPlane.getRotation().Rotation)
+        self.tracker.setRotation(self.wp.get_placement().Rotation)
         self.tracker.on()
         self.precast = ArchPrecast._PrecastTaskPanel()
         self.dents = ArchPrecast._DentsTaskPanel()
@@ -344,6 +344,7 @@ class _CommandStructure:
         horiz = True # determines the type of rotation to apply to the final object
         FreeCAD.ActiveDocument.openTransaction(translate("Arch","Create Structure"))
         FreeCADGui.addModule("Arch")
+        FreeCADGui.addModule("WorkingPlane")
         if self.Profile is not None:
             try: # try to update latest precast values - fails if dialog has been destroyed already
                 self.precastvalues = self.precast.getValues()
@@ -361,8 +362,7 @@ class _CommandStructure:
                     delta = FreeCAD.Vector(0,0-self.Width/2,0)
                 else:
                     delta = FreeCAD.Vector(-self.Length/2,-self.Width/2,0)
-                if hasattr(FreeCAD,"DraftWorkingPlane"):
-                    delta = FreeCAD.DraftWorkingPlane.getRotation().multVec(delta)
+                delta = self.wp.get_global_coords(delta,as_vector=True)
                 point = point.add(delta)
                 if self.bpoint:
                     self.bpoint = self.bpoint.add(delta)
@@ -396,7 +396,8 @@ class _CommandStructure:
             FreeCADGui.doCommand('s.Placement = Arch.placeAlongEdge('+DraftVecUtils.toString(self.bpoint)+","+DraftVecUtils.toString(point)+","+str(horiz)+")")
         else:
             FreeCADGui.doCommand('s.Placement.Base = '+DraftVecUtils.toString(point))
-            FreeCADGui.doCommand('s.Placement.Rotation = s.Placement.Rotation.multiply(FreeCAD.DraftWorkingPlane.getRotation().Rotation)')
+            FreeCADGui.doCommand('wp = WorkingPlane.get_working_plane()')
+            FreeCADGui.doCommand('s.Placement.Rotation = s.Placement.Rotation.multiply(wp.get_placement().Rotation)')
 
         FreeCADGui.addModule("Draft")
         FreeCADGui.doCommand("Draft.autogroup(s)")
@@ -543,16 +544,14 @@ class _CommandStructure:
                 delta = Vector(0,0,self.Height/2)
             else:
                 delta = Vector(self.Length/2,0,0)
-            if hasattr(FreeCAD,"DraftWorkingPlane"):
-                delta = FreeCAD.DraftWorkingPlane.getRotation().multVec(delta)
+            delta = self.wp.get_global_coords(delta,as_vector=True)
             if self.modec.isChecked():
                 self.tracker.pos(point.add(delta))
                 self.tracker.on()
             else:
                 if self.bpoint:
                     delta = Vector(0,0,-self.Height/2)
-                    if hasattr(FreeCAD,"DraftWorkingPlane"):
-                        delta = FreeCAD.DraftWorkingPlane.getRotation().multVec(delta)
+                    delta = self.wp.get_global_coords(delta,as_vector=True)
                     self.tracker.update([self.bpoint.add(delta),point.add(delta)])
                     self.tracker.on()
                     l = (point.sub(self.bpoint)).Length
@@ -1009,7 +1008,7 @@ class _Structure(ArchComponent.Component):
 
     def getNodeEdges(self,obj):
 
-        "returns a list of edges from stuctural nodes"
+        "returns a list of edges from structural nodes"
 
         edges = []
         if obj.Nodes:

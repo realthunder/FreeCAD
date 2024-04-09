@@ -22,19 +22,21 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <boost/algorithm/string/regex.hpp>
 #include <boost/format.hpp>
-#endif// #ifndef _PreComp_
+#endif  // #ifndef _PreComp_
 
 #include <Base/Exception.h>
 #include <Mod/Sketcher/App/Constraint.h>
 #include <Mod/Sketcher/App/GeometryFacade.h>
+#include <Mod/Sketcher/App/SketchObject.h>
 
 #include "PythonConverter.h"
 
 
 using namespace Sketcher;
 
-std::string PythonConverter::convert(const Part::Geometry* geo)
+std::string PythonConverter::convert(const Part::Geometry* geo, Mode mode)
 {
     // "addGeometry(Part.LineSegment(App.Vector(%f,%f,0),App.Vector(%f,%f,0)),%s)"
 
@@ -43,6 +45,16 @@ std::string PythonConverter::convert(const Part::Geometry* geo)
 
     command = boost::str(boost::format("addGeometry(%s,%s)\n") % sg.creation
                          % (sg.construction ? "True" : "False"));
+
+    if ((geo->getTypeId() != Part::GeomEllipse::getClassTypeId()
+         || geo->getTypeId() != Part::GeomArcOfEllipse::getClassTypeId()
+         || geo->getTypeId() != Part::GeomArcOfHyperbola::getClassTypeId()
+         || geo->getTypeId() != Part::GeomArcOfParabola::getClassTypeId()
+         || geo->getTypeId() != Part::GeomBSplineCurve::getClassTypeId())
+        && mode == Mode::CreateInternalGeometry) {
+        command +=
+            boost::str(boost::format("exposeInternalGeometry(len(ActiveSketch.Geometry))\n"));
+    }
 
     return command;
 }
@@ -59,46 +71,95 @@ std::string PythonConverter::convert(const Sketcher::Constraint* constraint)
 }
 
 std::string PythonConverter::convert(const std::string& doc,
-                                     const std::vector<Part::Geometry*>& geos)
+                                     const std::vector<Part::Geometry*>& geos,
+                                     Mode mode)
 {
-    std::string geolist = "geoList = []\n";
-    std::string constrgeolist = "constrGeoList = []\n";
+    if (geos.empty()) {
+        return std::string();
+    }
 
-    int ngeo = 0, nconstr = 0;
+    // Generates a list for consecutive geometries of construction type, or of normal type
+    auto printGeoList = [&doc](const std::string& geolist, int ngeos, bool construction) {
+        std::string command;
+
+        if (ngeos > 0) {
+            if (construction) {
+                command = boost::str(
+                    boost::format("constrGeoList = []\n%s\n%s.addGeometry(constrGeoList,%s)\ndel "
+                                  "constrGeoList")
+                    % geolist % doc % "True");
+            }
+            else {
+                command = boost::str(
+                    boost::format("geoList = []\n%s\n%s.addGeometry(geoList,%s)\ndel geoList")
+                    % geolist % doc % "False");
+            }
+        }
+
+        return command;
+    };
+
+    std::string command = boost::str(boost::format("lastGeoId = len(ActiveSketch.Geometry)\n"));
+
+    // Adds a list of consecutive geometries of a same construction type to the generating command
+    auto addToCommands = [&command,
+                          &printGeoList](const std::string& geolist, int ngeos, bool construction) {
+        auto newcommand = printGeoList(geolist, ngeos, construction);
+
+        if (command.empty()) {
+            command = std::move(newcommand);
+        }
+        else {
+            command += "\n";
+            command += newcommand;
+        }
+    };
+
+    std::string geolist;
+    int ngeos = 0;
+    bool currentconstruction = Sketcher::GeometryFacade::getConstruction(geos[0]);
 
     for (auto geo : geos) {
         auto sg = process(geo);
 
+        if (sg.construction != currentconstruction) {
+            // if it switches from construction to normal or vice versa, flush elements so far in
+            // order to keep order of creation
+            addToCommands(geolist, ngeos, currentconstruction);
+
+            geolist.clear();
+            ngeos = 0;
+            currentconstruction = sg.construction;
+        }
+
         if (sg.construction) {
-            constrgeolist = boost::str(boost::format("%s\nconstrGeoList.append(%s)\n")
-                                       % constrgeolist % sg.creation);
-            nconstr++;
+            geolist =
+                boost::str(boost::format("%s\nconstrGeoList.append(%s)\n") % geolist % sg.creation);
         }
         else {
             geolist = boost::str(boost::format("%s\ngeoList.append(%s)\n") % geolist % sg.creation);
-            ngeo++;
+        }
+
+        ngeos++;
+    }
+
+    addToCommands(geolist, ngeos, currentconstruction);
+
+    int index = 0;
+    if (mode == Mode::CreateInternalGeometry) {
+        for (auto geo : geos) {
+            index++;
+            if (geo->getTypeId() != Part::GeomEllipse::getClassTypeId()
+                || geo->getTypeId() != Part::GeomArcOfEllipse::getClassTypeId()
+                || geo->getTypeId() != Part::GeomArcOfHyperbola::getClassTypeId()
+                || geo->getTypeId() != Part::GeomArcOfParabola::getClassTypeId()
+                || geo->getTypeId() != Part::GeomBSplineCurve::getClassTypeId()) {
+                std::string newcommand =
+                    boost::str(boost::format("exposeInternalGeometry(lastGeoId + %d)\n") % (index));
+                command += newcommand;
+            }
         }
     }
-
-    if (ngeo > 0) {
-        geolist = boost::str(boost::format("%s\n%s.addGeometry(geoList,%s)\ndel geoList\n")
-                             % geolist % doc % "False");
-    }
-
-    if (nconstr > 0) {
-        constrgeolist =
-            boost::str(boost::format("%s\n%s.addGeometry(constrGeoList,%s)\ndel constrGeoList")
-                       % constrgeolist % doc % "True");
-    }
-
-    std::string command;
-
-    if (ngeo > 0 && nconstr > 0)
-        command = geolist + constrgeolist;
-    else if (ngeo > 0)
-        command = std::move(geolist);
-    else if (nconstr > 0)
-        command = std::move(constrgeolist);
 
     return command;
 }
@@ -173,16 +234,85 @@ PythonConverter::SingleGeometry PythonConverter::process(const Part::Geometry* g
              [](const Part::Geometry* geo) {
                  auto ellipse = static_cast<const Part::GeomEllipse*>(geo);
                  SingleGeometry sg;
-                 auto periapsis =
-                     ellipse->getCenter() + ellipse->getMajorAxisDir() * ellipse->getMajorRadius();
-                 auto positiveB =
-                     ellipse->getCenter() + ellipse->getMinorAxisDir() * ellipse->getMinorRadius();
                  auto center = ellipse->getCenter();
+                 auto periapsis = center + ellipse->getMajorAxisDir() * ellipse->getMajorRadius();
+                 auto positiveB = center + ellipse->getMinorAxisDir() * ellipse->getMinorRadius();
                  sg.creation =
                      boost::str(boost::format("Part.Ellipse(App.Vector(%f, %f, %f), App.Vector(%f, "
                                               "%f, %f), App.Vector(%f, %f, %f))")
                                 % periapsis.x % periapsis.y % periapsis.z % positiveB.x
                                 % positiveB.y % positiveB.z % center.x % center.y % center.z);
+                 sg.construction = Sketcher::GeometryFacade::getConstruction(geo);
+                 return sg;
+             }},
+            {Part::GeomArcOfEllipse::getClassTypeId(),
+             [](const Part::Geometry* geo) {
+                 auto aoe = static_cast<const Part::GeomArcOfEllipse*>(geo);
+                 SingleGeometry sg;
+                 auto center = aoe->getCenter();
+                 auto periapsis = center + aoe->getMajorAxisDir() * aoe->getMajorRadius();
+                 auto positiveB = center + aoe->getMinorAxisDir() * aoe->getMinorRadius();
+                 sg.creation = boost::str(
+                     boost::format(
+                         "Part.ArcOfEllipse(Part.Ellipse(App.Vector(%f, %f, %f), App.Vector(%f, "
+                         "%f, %f), App.Vector(%f, %f, %f)), %f, %f)")
+                     % periapsis.x % periapsis.y % periapsis.z % positiveB.x % positiveB.y
+                     % positiveB.z % center.x % center.y % center.z % aoe->getFirstParameter()
+                     % aoe->getLastParameter());
+                 sg.construction = Sketcher::GeometryFacade::getConstruction(geo);
+                 return sg;
+             }},
+            {Part::GeomArcOfHyperbola::getClassTypeId(),
+             [](const Part::Geometry* geo) {
+                 auto aoh = static_cast<const Part::GeomArcOfHyperbola*>(geo);
+                 SingleGeometry sg;
+                 auto center = aoh->getCenter();
+                 auto majAxisPoint = center + aoh->getMajorAxisDir() * aoh->getMajorRadius();
+                 auto minAxisPoint = center + aoh->getMinorAxisDir() * aoh->getMinorRadius();
+                 sg.creation = boost::str(
+                     boost::format("Part.ArcOfHyperbola(Part.Hyperbola(App.Vector(%f, %f, %f), "
+                                   "App.Vector(%f, %f, %f), App.Vector(%f, %f, %f)), %f, %f)")
+                     % majAxisPoint.x % majAxisPoint.y % majAxisPoint.z % minAxisPoint.x
+                     % minAxisPoint.y % minAxisPoint.z % center.x % center.y % center.z
+                     % aoh->getFirstParameter() % aoh->getLastParameter());
+                 sg.construction = Sketcher::GeometryFacade::getConstruction(geo);
+                 return sg;
+             }},
+            {Part::GeomArcOfParabola::getClassTypeId(),
+             [](const Part::Geometry* geo) {
+                 auto aop = static_cast<const Part::GeomArcOfParabola*>(geo);
+                 SingleGeometry sg;
+                 auto focus = aop->getFocus();
+                 auto axisPoint = aop->getCenter();
+                 sg.creation = boost::str(
+                     boost::format("Part.ArcOfParabola(Part.Parabola(App.Vector(%f, %f, %f), "
+                                   "App.Vector(%f, %f, %f), App.Vector(0, 0, 1)), %f, %f)")
+                     % focus.x % focus.y % focus.z % axisPoint.x % axisPoint.y % axisPoint.z
+                     % aop->getFirstParameter() % aop->getLastParameter());
+                 sg.construction = Sketcher::GeometryFacade::getConstruction(geo);
+                 return sg;
+             }},
+            {Part::GeomBSplineCurve::getClassTypeId(),
+             [](const Part::Geometry* geo) {
+                 auto bSpline = static_cast<const Part::GeomBSplineCurve*>(geo);
+
+                 std::stringstream stream;
+                 std::vector<Base::Vector3d> poles = bSpline->getPoles();
+                 for (auto& pole : poles) {
+                     stream << "App.Vector(" << pole.x << "," << pole.y << "),";
+                 }
+                 std::string controlpoints = stream.str();
+                 // remove last comma and add brackets
+                 int index = controlpoints.rfind(',');
+                 controlpoints.resize(index);
+                 controlpoints.insert(0, 1, '[');
+                 controlpoints.append(1, ']');
+
+                 SingleGeometry sg;
+                 sg.creation =
+                     boost::str(boost::format("Part.BSplineCurve (%s,None,None,%s,%d,None,False)")
+                                % controlpoints.c_str() % (bSpline->isPeriodic() ? "True" : "False")
+                                % bSpline->getDegree());
                  sg.construction = Sketcher::GeometryFacade::getConstruction(geo);
                  return sg;
              }},
@@ -203,8 +333,9 @@ PythonConverter::SingleGeometry PythonConverter::process(const Part::Geometry* g
 
     auto result = converterMap.find(geo->getTypeId());
 
-    if (result == converterMap.end())
+    if (result == converterMap.end()) {
         THROWM(Base::ValueError, "PythonConverter: Geometry Type not supported")
+    }
 
     auto creator = result->second;
 
@@ -302,26 +433,37 @@ std::string PythonConverter::process(const Sketcher::Constraint* constraint)
              }},
             {Sketcher::InternalAlignment,
              [](const Sketcher::Constraint* constr) {
-                 if (constr->InternalAlignmentIndex == EllipseMajorDiameter
-                     || constr->InternalAlignmentIndex == EllipseMinorDiameter) {
+                 if (constr->AlignmentType == EllipseMajorDiameter
+                     || constr->AlignmentType == EllipseMinorDiameter
+                     || constr->AlignmentType == HyperbolaMajor
+                     || constr->AlignmentType == HyperbolaMinor
+                     || constr->AlignmentType == ParabolaFocalAxis) {
                      return boost::str(
                          boost::format("Sketcher.Constraint('InternalAlignment:%s', %i, %i)")
                          % constr->internalAlignmentTypeToString() % constr->First
                          % constr->Second);
                  }
-                 else if (constr->InternalAlignmentIndex == EllipseFocus1
-                          || constr->InternalAlignmentIndex == EllipseFocus2) {
+                 else if (constr->AlignmentType == EllipseFocus1
+                          || constr->AlignmentType == EllipseFocus2
+                          || constr->AlignmentType == HyperbolaFocus
+                          || constr->AlignmentType == ParabolaFocus) {
                      return boost::str(
                          boost::format("Sketcher.Constraint('InternalAlignment:%s', %i, %i, %i)")
                          % constr->internalAlignmentTypeToString() % constr->First
                          % static_cast<int>(constr->FirstPos) % constr->Second);
                  }
-                 else if (constr->InternalAlignmentIndex == BSplineControlPoint) {
+                 else if (constr->AlignmentType == BSplineControlPoint) {
                      return boost::str(
                          boost::format(
                              "Sketcher.Constraint('InternalAlignment:%s', %i, %i, %i, %i)")
                          % constr->internalAlignmentTypeToString() % constr->First
                          % static_cast<int>(constr->FirstPos) % constr->Second
+                         % constr->InternalAlignmentIndex);
+                 }
+                 else if (constr->AlignmentType == BSplineKnotPoint) {
+                     return boost::str(
+                         boost::format("Sketcher.Constraint('InternalAlignment:%s', %i, 1, %i, %i)")
+                         % constr->internalAlignmentTypeToString() % constr->First % constr->Second
                          % constr->InternalAlignmentIndex);
                  }
 
@@ -452,10 +594,18 @@ std::string PythonConverter::process(const Sketcher::Constraint* constraint)
 
     auto result = converterMap.find(constraint->Type);
 
-    if (result == converterMap.end())
+    if (result == converterMap.end()) {
         THROWM(Base::ValueError, "PythonConverter: Constraint Type not supported")
+    }
 
     auto creator = result->second;
 
     return creator(constraint);
+}
+
+std::vector<std::string> PythonConverter::multiLine(std::string&& singlestring)
+{
+    std::vector<std::string> tokens;
+    split_regex(tokens, singlestring, boost::regex("(\n)+"));
+    return tokens;
 }

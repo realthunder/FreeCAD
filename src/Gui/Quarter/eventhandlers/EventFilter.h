@@ -48,15 +48,15 @@ class QUARTER_DLL_API EventFilter : public QObject {
 
 public:
   EventFilter(QObject * parent);
-  ~EventFilter();
+  ~EventFilter() override;
 
   void registerInputDevice(InputDevice * device);
   void unregisterInputDevice(InputDevice * device);
 
   const QPoint & globalMousePosition() const;
 
-public:
-  bool eventFilter(QObject * obj, QEvent * event);
+protected:
+  bool eventFilter(QObject * obj, QEvent * event) override;
 
 private:
   class EventFilterP * pimpl;

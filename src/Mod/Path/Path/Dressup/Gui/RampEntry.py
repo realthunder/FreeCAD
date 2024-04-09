@@ -164,10 +164,10 @@ class ObjectDressup:
 
         return data
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self, state):
+    def loads(self, state):
         return None
 
     def onChanged(self, obj, prop):
@@ -192,8 +192,8 @@ class ObjectDressup:
     def setup(self, obj):
         obj.Angle = 60
         obj.Method = 2
-        if PathDressup.baseOp(obj).StartDepth is not None:
-            obj.DressupStartDepth = PathDressup.baseOp(obj).StartDepth
+        if PathDressup.baseOp(obj.Base).StartDepth is not None:
+            obj.DressupStartDepth = PathDressup.baseOp(obj.Base).StartDepth
 
     def execute(self, obj):
         if not obj.Base:
@@ -203,7 +203,7 @@ class ObjectDressup:
         if not obj.Base.Path:
             return
 
-        if not obj.Base.Active:
+        if not PathDressup.baseOp(obj.Base).Active:
             path = Path.Path("(inactive operation)")
             obj.Path = path
             return
@@ -479,9 +479,9 @@ class ObjectDressup:
         ):
             return Part.makeLine(startPoint, endPoint)
         elif type(originalEdge.Curve) == Part.Circle:
-            arcMid = originalEdge.valueAt(
-                (originalEdge.FirstParameter + originalEdge.LastParameter) / 2
-            )
+            firstParameter = originalEdge.Curve.parameter(startPoint)
+            lastParameter = originalEdge.Curve.parameter(endPoint)
+            arcMid = originalEdge.valueAt((firstParameter + lastParameter) / 2)
             arcMid.z = (startPoint.z + endPoint.z) / 2
             return Part.Arc(startPoint, arcMid, endPoint).toShape()
         else:
@@ -884,10 +884,10 @@ class ViewProviderDressup:
             arg1.Object.Base = None
         return True
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self, state):
+    def loads(self, state):
         return None
 
 

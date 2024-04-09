@@ -95,6 +95,10 @@ SET(PathPythonMainGui_SRCS
     Path/Main/Gui/JobDlg.py
     Path/Main/Gui/PreferencesJob.py
     Path/Main/Gui/Sanity.py
+    Path/Main/Gui/Sanity_Bulb.svg
+    Path/Main/Gui/Sanity_Caution.svg
+    Path/Main/Gui/Sanity_Note.svg
+    Path/Main/Gui/Sanity_Warning.svg
     Path/Main/Gui/Simulator.py
 )
 
@@ -130,6 +134,7 @@ SET(PathPythonPostScripts_SRCS
     Path/Post/scripts/comparams_post.py
     Path/Post/scripts/dxf_post.py
     Path/Post/scripts/dynapath_post.py
+    Path/Post/scripts/estlcam_post.py
     Path/Post/scripts/example_pre.py
     Path/Post/scripts/fablin_post.py
     Path/Post/scripts/fanuc_post.py
@@ -156,6 +161,7 @@ SET(PathPythonPostScripts_SRCS
     Path/Post/scripts/slic3r_pre.py
     Path/Post/scripts/smoothie_post.py
     Path/Post/scripts/uccnc_post.py
+    Path/Post/scripts/wedm_post.py
 )
 
 SET(PathPythonOp_SRCS
@@ -279,6 +285,7 @@ SET(PathTests_SRCS
     PathTests/drill_test1.FCStd
     PathTests/PathTestUtils.py
     PathTests/test_adaptive.fcstd
+    PathTests/test_profile.fcstd
     PathTests/test_centroid_00.ngc
     PathTests/test_filenaming.fcstd
     PathTests/test_geomop.fcstd
@@ -306,6 +313,7 @@ SET(PathTests_SRCS
     PathTests/TestPathOpUtil.py
     PathTests/TestPathPost.py
     PathTests/TestPathPreferences.py
+    PathTests/TestPathProfile.py
     PathTests/TestPathPropertyBag.py
     PathTests/TestPathRotationGenerator.py
     PathTests/TestPathSetupSheet.py
@@ -323,6 +331,8 @@ SET(PathTests_SRCS
     PathTests/TestRefactoredLinuxCNCPost.py
     PathTests/TestRefactoredMach3Mach4Post.py
     PathTests/TestRefactoredTestPost.py
+    PathTests/TestRefactoredTestPostGCodes.py
+    PathTests/TestRefactoredTestPostMCodes.py
     PathTests/Tools/Bit/test-path-tool-bit-bit-00.fctb
     PathTests/Tools/Library/test-path-tool-bit-library-00.fctl
     PathTests/Tools/Shape/test-path-tool-bit-shape-00.fcstd

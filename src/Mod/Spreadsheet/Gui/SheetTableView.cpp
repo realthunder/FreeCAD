@@ -33,7 +33,7 @@
 # include <QPushButton>
 # include <QToolTip>
 #endif
-# include <QTextTableCell>
+#include <QTextTableCell>
 
 #include <Base/Tools.h>
 #include <App/Application.h>
@@ -53,35 +53,37 @@
 #include "SheetModel.h"
 #include <Mod/Spreadsheet/App/Cell.h>
 
-#include "SheetTableView.h"
-#include "LineEdit.h"
-#include "PropertiesDialog.h"
 #include "DlgBindSheet.h"
 #include "DlgSheetConf.h"
+#include "LineEdit.h"
+#include "PropertiesDialog.h"
+#include "SheetTableView.h"
 
 
 using namespace SpreadsheetGui;
 using namespace Spreadsheet;
 using namespace App;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
-void SheetViewHeader::mouseReleaseEvent(QMouseEvent *event)
+void SheetViewHeader::mouseReleaseEvent(QMouseEvent* event)
 {
     QHeaderView::mouseReleaseEvent(event);
     Q_EMIT resizeFinished();
 }
 
-bool SheetViewHeader::viewportEvent(QEvent *e) {
-    if(e->type() == QEvent::ContextMenu) {
-        auto *ce = static_cast<QContextMenuEvent*>(e);
+bool SheetViewHeader::viewportEvent(QEvent* e)
+{
+    if (e->type() == QEvent::ContextMenu) {
+        auto* ce = static_cast<QContextMenuEvent*>(e);
         int section = logicalIndexAt(ce->pos());
-        if(section>=0) {
-            if(orientation() == Qt::Horizontal) {
-                if(!owner->selectionModel()->isColumnSelected(section,owner->rootIndex())) {
+        if (section >= 0) {
+            if (orientation() == Qt::Horizontal) {
+                if (!owner->selectionModel()->isColumnSelected(section, owner->rootIndex())) {
                     owner->clearSelection();
                     owner->selectColumn(section);
                 }
-            }else if(!owner->selectionModel()->isRowSelected(section,owner->rootIndex())) {
+            }
+            else if (!owner->selectionModel()->isRowSelected(section, owner->rootIndex())) {
                 owner->clearSelection();
                 owner->selectRow(section);
             }
@@ -94,7 +96,7 @@ static std::pair<int, int> selectedMinMaxRows(QModelIndexList list)
 {
     int min = std::numeric_limits<int>::max();
     int max = 0;
-    for (const auto & item : list) {
+    for (const auto& item : list) {
         int row = item.row();
         min = std::min(row, min);
         max = std::max(row, max);
@@ -106,7 +108,7 @@ static std::pair<int, int> selectedMinMaxColumns(QModelIndexList list)
 {
     int min = std::numeric_limits<int>::max();
     int max = 0;
-    for (const auto & item : list) {
+    for (const auto& item : list) {
         int column = item.column();
         min = std::min(column, min);
         max = std::max(column, max);
@@ -114,12 +116,11 @@ static std::pair<int, int> selectedMinMaxColumns(QModelIndexList list)
     return {min, max};
 }
 
-SheetTableView::SheetTableView(QWidget *parent)
+SheetTableView::SheetTableView(QWidget* parent)
     : QTableView(parent)
     , sheet(nullptr)
     , tabCounter(0)
 {
-
     actionShowRows = new QAction(tr("Show all rows"), this);
     actionShowRows->setCheckable(true);
     connect(actionShowRows, SIGNAL(toggled(bool)), this, SLOT(showRows()));
@@ -150,7 +151,8 @@ SheetTableView::SheetTableView(QWidget *parent)
                 connect(insertBefore, &QAction::triggered, this, &SheetTableView::insertRows);
 
                 if (max < model()->rowCount() - 1) {
-                    auto insertAfter = menu.addAction(tr("Insert %n row(s) below", "", selection.size()));
+                    auto insertAfter =
+                        menu.addAction(tr("Insert %n row(s) below", "", selection.size()));
                     connect(insertAfter, &QAction::triggered, this, &SheetTableView::insertRowsAfter);
                 }
             } else {
@@ -630,7 +632,7 @@ void SheetTableView::insertRowsAfter()
 {
     assert(sheet);
     const auto rows = selectionModel()->selectedRows();
-    const auto & [min, max] = selectedMinMaxRows(rows);
+    const auto& [min, max] = selectedMinMaxRows(rows);
     assert(max - min == rows.size() - 1);
     Q_UNUSED(min)
 
@@ -656,9 +658,10 @@ void SheetTableView::removeRows()
     std::vector<int> sortedRows;
 
     /* Make sure rows are sorted in descending order */
-    for (QModelIndexList::const_iterator it = rows.cbegin(); it != rows.cend(); ++it)
-        sortedRows.push_back(it->row());
-    std::sort(sortedRows.begin(), sortedRows.end(), std::greater<int>());
+    for (const auto& it : rows) {
+        sortedRows.push_back(it.row());
+    }
+    std::sort(sortedRows.begin(), sortedRows.end(), std::greater<>());
 
     App::AutoTransaction committer(QT_TRANSLATE_NOOP("Command", "Remove rows"));
     try {
@@ -692,8 +695,9 @@ void SheetTableView::insertColumns()
     }
 
     /* Make sure rows are sorted in ascending order */
-    for (QModelIndexList::const_iterator it = cols.cbegin(); it != cols.cend(); ++it)
-        sortedColumns.push_back(it->column());
+    for (const auto& it : cols) {
+        sortedColumns.push_back(it.column());
+    }
     std::sort(sortedColumns.begin(), sortedColumns.end());
 
     App::AutoTransaction committer(QT_TRANSLATE_NOOP("Command", "Insert columns"));
@@ -712,8 +716,9 @@ void SheetTableView::insertColumns()
                     ++count;
                     ++it;
                 }
-                else
+                else {
                     break;
+                }
             }
 
             Gui::cmdAppObjectArgs(sheet, "insertColumns('%s', %d)",
@@ -739,7 +744,10 @@ void SheetTableView::insertColumnsAfter()
     Q_UNUSED(min)
 
     Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Insert columns"));
-    Gui::cmdAppObjectArgs(sheet, "insertColumns('%s', %d)", columnName(max + 1).c_str(), columns.size());
+    Gui::cmdAppObjectArgs(sheet,
+                          "insertColumns('%s', %d)",
+                          columnName(max + 1).c_str(),
+                          columns.size());
     Gui::Command::commitCommand();
     Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
 }
@@ -759,9 +767,10 @@ void SheetTableView::removeColumns()
     }
 
     /* Make sure rows are sorted in descending order */
-    for (QModelIndexList::const_iterator it = cols.cbegin(); it != cols.cend(); ++it)
-        sortedColumns.push_back(it->column());
-    std::sort(sortedColumns.begin(), sortedColumns.end(), std::greater<int>());
+    for (const auto& it : cols) {
+        sortedColumns.push_back(it.column());
+    }
+    std::sort(sortedColumns.begin(), sortedColumns.end(), std::greater<>());
 
     App::AutoTransaction committer(QT_TRANSLATE_NOOP("Command", "Remove columns"));
     try {
@@ -810,25 +819,24 @@ void SheetTableView::toggleRows() {
     sheet->hiddenRows.setValues(hidden);
 }
 
-SheetTableView::~SheetTableView()
-{
-
-}
+SheetTableView::~SheetTableView() = default;
 
 void SheetTableView::updateCellSpan()
 {
     int rows, cols;
 
     // Unspan first to avoid overlap
-    for (const auto &addr : spanChanges) {
-        if (rowSpan(addr.row(), addr.col()) > 1 || columnSpan(addr.row(), addr.col()) > 1)
+    for (const auto& addr : spanChanges) {
+        if (rowSpan(addr.row(), addr.col()) > 1 || columnSpan(addr.row(), addr.col()) > 1) {
             setSpan(addr.row(), addr.col(), 1, 1);
+        }
     }
 
-    for (const auto &addr : spanChanges) {
+    for (const auto& addr : spanChanges) {
         sheet->getSpans(addr, rows, cols);
-        if (rows > 1 || cols > 1)
+        if (rows > 1 || cols > 1) {
             setSpan(addr.row(), addr.col(), rows, cols);
+        }
     }
     spanChanges.clear();
 }
@@ -836,7 +844,7 @@ void SheetTableView::updateCellSpan()
 void SheetTableView::setSheet(Sheet* _sheet)
 {
     sheet = _sheet;
-    cellSpanChangedConnection = sheet->cellSpanChanged.connect([&](const CellAddress &addr) {
+    cellSpanChangedConnection = sheet->cellSpanChanged.connect([&](const CellAddress& addr) {
         spanChanges.insert(addr);
         timer.start(10);
     });
@@ -844,8 +852,8 @@ void SheetTableView::setSheet(Sheet* _sheet)
     // Update row and column spans
     std::vector<std::string> usedCells = sheet->getUsedCells();
 
-    for (std::vector<std::string>::const_iterator i = usedCells.begin(); i != usedCells.end(); ++i) {
-        CellAddress address(*i);
+    for (const auto& i : usedCells) {
+        CellAddress address(i);
         auto cell = sheet->getCell(address);
         if(cell && !cell->hasException() && cell->isPersistentEditMode())
             openPersistentEditor(model()->index(address.row(),address.col()));
@@ -862,16 +870,18 @@ void SheetTableView::setSheet(Sheet* _sheet)
     for (std::map<int, int>::const_iterator i = columWidths.begin(); i != columWidths.end(); ++i) {
         int newSize = i->second;
 
-        if (newSize > 0 && horizontalHeader()->sectionSize(i->first) != newSize)
+        if (newSize > 0 && horizontalHeader()->sectionSize(i->first) != newSize) {
             setColumnWidth(i->first, newSize);
+        }
     }
 
     std::map<int, int> rowHeights = sheet->getRowHeights();
     for (std::map<int, int>::const_iterator i = rowHeights.begin(); i != rowHeights.end(); ++i) {
         int newSize = i->second;
 
-        if (newSize > 0 && verticalHeader()->sectionSize(i->first) != newSize)
+        if (newSize > 0 && verticalHeader()->sectionSize(i->first) != newSize) {
             setRowHeight(i->first, newSize);
+        }
     }
 
     updateHiddenRows();
@@ -886,8 +896,9 @@ void SheetTableView::commitData(QWidget* editor)
 bool SheetTableView::edit(const QModelIndex& index, EditTrigger trigger, QEvent* event)
 {
     auto delegate = qobject_cast<SpreadsheetDelegate*>(itemDelegate());
-    if (delegate)
+    if (delegate) {
         delegate->setEditTrigger(trigger);
+    }
     return QTableView::edit(index, trigger, event);
 }
 
@@ -898,34 +909,39 @@ bool SheetTableView::event(QEvent* event)
         // and handle them.
         QKeyEvent* kevent = static_cast<QKeyEvent*>(event);
         switch (kevent->key()) {
-        case Qt::Key_Return: [[fallthrough]];
-        case Qt::Key_Enter: [[fallthrough]];
-        case Qt::Key_Home: [[fallthrough]];
-        case Qt::Key_End: [[fallthrough]];
-        case Qt::Key_Left: [[fallthrough]];
-        case Qt::Key_Right: [[fallthrough]];
-        case Qt::Key_Up: [[fallthrough]];
-        case Qt::Key_Down: [[fallthrough]];
-        case Qt::Key_Tab: [[fallthrough]];
-        case Qt::Key_Backtab:
-            finishEditWithMove(kevent->key(), kevent->modifiers());
-            return true;
-        // Also handle the delete key here:
-        case Qt::Key_Delete:
-            deleteSelection();
-            return true;
-        case Qt::Key_Escape:
-            sheet->setCopyOrCutRanges({});
-            return true;
-        default:
-            break;
+            case Qt::Key_Return:
+                [[fallthrough]];
+            case Qt::Key_Enter:
+                [[fallthrough]];
+            case Qt::Key_Home:
+                [[fallthrough]];
+            case Qt::Key_End:
+                [[fallthrough]];
+            case Qt::Key_Left:
+                [[fallthrough]];
+            case Qt::Key_Right:
+                [[fallthrough]];
+            case Qt::Key_Up:
+                [[fallthrough]];
+            case Qt::Key_Down:
+                [[fallthrough]];
+            case Qt::Key_Tab:
+                [[fallthrough]];
+            case Qt::Key_Backtab:
+                finishEditWithMove(kevent->key(), kevent->modifiers());
+                return true;
+            // Also handle the delete key here:
+            case Qt::Key_Delete:
+                deleteSelection();
+                return true;
+            case Qt::Key_Escape:
+                sheet->setCopyOrCutRanges({});
+                return true;
+            default:
+                break;
         }
 
-        if (kevent->key() == Qt::Key_Escape) {
-            sheet->setCopyOrCutRanges({});
-            return true;
-        }
-        else if (kevent->matches(QKeySequence::Cut)) {
+        if (kevent->matches(QKeySequence::Cut)) {
             cutSelection();
             return true;
         }
@@ -939,21 +955,30 @@ bool SheetTableView::event(QEvent* event)
         }
     }
     else if (event && event->type() == QEvent::ShortcutOverride) {
-        QKeyEvent * kevent = static_cast<QKeyEvent*>(event);
-        if (kevent->modifiers() == Qt::NoModifier ||
-            kevent->modifiers() == Qt::ShiftModifier ||
-            kevent->modifiers() == Qt::KeypadModifier) {
+        QKeyEvent* kevent = static_cast<QKeyEvent*>(event);
+        if (kevent->modifiers() == Qt::NoModifier || kevent->modifiers() == Qt::ShiftModifier
+            || kevent->modifiers() == Qt::KeypadModifier) {
             switch (kevent->key()) {
-                case Qt::Key_Return: [[fallthrough]];
-                case Qt::Key_Enter: [[fallthrough]];
-                case Qt::Key_Delete: [[fallthrough]];
-                case Qt::Key_Home: [[fallthrough]];
-                case Qt::Key_End: [[fallthrough]];
-                case Qt::Key_Backspace: [[fallthrough]];
-                case Qt::Key_Left: [[fallthrough]];
-                case Qt::Key_Right: [[fallthrough]];
-                case Qt::Key_Up: [[fallthrough]];
-                case Qt::Key_Down: [[fallthrough]];
+                case Qt::Key_Return:
+                    [[fallthrough]];
+                case Qt::Key_Enter:
+                    [[fallthrough]];
+                case Qt::Key_Delete:
+                    [[fallthrough]];
+                case Qt::Key_Home:
+                    [[fallthrough]];
+                case Qt::Key_End:
+                    [[fallthrough]];
+                case Qt::Key_Backspace:
+                    [[fallthrough]];
+                case Qt::Key_Left:
+                    [[fallthrough]];
+                case Qt::Key_Right:
+                    [[fallthrough]];
+                case Qt::Key_Up:
+                    [[fallthrough]];
+                case Qt::Key_Down:
+                    [[fallthrough]];
                 case Qt::Key_Tab:
                     kevent->accept();
                     break;
@@ -994,7 +1019,9 @@ void SheetTableView::deleteSelection()
             std::vector<Range>::const_iterator i = ranges.begin();
 
             for (; i != ranges.end(); ++i) {
-                Gui::Command::doCommand(Gui::Command::Doc,"App.ActiveDocument.%s.clear('%s')", sheet->getNameInDocument(),
+                Gui::Command::doCommand(Gui::Command::Doc,
+                                        "App.ActiveDocument.%s.clear('%s')",
+                                        sheet->getNameInDocument(),
                                         i->rangeString().c_str());
             }
             Gui::Command::updateActive();
@@ -1013,13 +1040,13 @@ void SheetTableView::copySelection()
     _copySelection(selectedRanges(), true);
 }
 
-void SheetTableView::_copySelection(const std::vector<App::Range> &ranges, bool copy)
+void SheetTableView::_copySelection(const std::vector<App::Range>& ranges, bool copy)
 {
     int minRow = INT_MAX;
     int maxRow = 0;
     int minCol = INT_MAX;
     int maxCol = 0;
-    for (auto &range : ranges) {
+    for (auto& range : ranges) {
         minRow = std::min(minRow, range.from().row());
         maxRow = std::max(maxRow, range.to().row());
         minCol = std::min(minCol, range.from().col());
@@ -1027,23 +1054,25 @@ void SheetTableView::_copySelection(const std::vector<App::Range> &ranges, bool 
     }
 
     QString selectedText;
-    for (int i=minRow; i<=maxRow; i++) {
-        for (int j=minCol; j<=maxCol; j++) {
-            QModelIndex index = model()->index(i,j);
+    for (int i = minRow; i <= maxRow; i++) {
+        for (int j = minCol; j <= maxCol; j++) {
+            QModelIndex index = model()->index(i, j);
             QString cell = index.data(Qt::EditRole).toString();
-            if (j < maxCol)
+            if (j < maxCol) {
                 cell.append(QChar::fromLatin1('\t'));
+            }
             selectedText += cell;
         }
-        if (i < maxRow)
+        if (i < maxRow) {
             selectedText.append(QChar::fromLatin1('\n'));
+        }
     }
 
     Base::StringWriter writer;
-    sheet->getCells()->copyCells(writer,ranges);
-    QMimeData *mime = new QMimeData();
+    sheet->getCells()->copyCells(writer, ranges);
+    QMimeData* mime = new QMimeData();
     mime->setText(selectedText);
-    mime->setData(_SheetMime,QByteArray(writer.getString().c_str()));
+    mime->setData(_SheetMime, QByteArray(writer.getString().c_str()));
     QApplication::clipboard()->setMimeData(mime);
 
     sheet->setCopyOrCutRanges(std::move(ranges), copy);
@@ -1085,20 +1114,22 @@ void SheetTableView::_pasteClipboard(const char *name, int type)
     try {
         bool copy = true;
         auto ranges = sheet->getCopyOrCutRange(copy);
-        if(ranges.empty()) {
+        if (ranges.empty()) {
             copy = false;
             ranges = sheet->getCopyOrCutRange(copy);
         }
 
-        if(ranges.size())
+        if (!ranges.empty()) {
             _copySelection(ranges, copy);
+        }
 
         const QMimeData* mimeData = QApplication::clipboard()->mimeData();
-        if(!mimeData || !mimeData->hasText())
+        if (!mimeData || !mimeData->hasText()) {
             return;
+        }
 
-        if(!copy) {
-            for(auto &range : ranges) {
+        if (!copy) {
+            for (auto& range : ranges) {
                 do {
                     sheet->clear(*range);
                 } while (range.next());
@@ -1106,40 +1137,43 @@ void SheetTableView::_pasteClipboard(const char *name, int type)
         }
 
         ranges = selectedRanges();
-        if(ranges.empty())
+        if (ranges.empty()) {
             return;
+        }
 
         Range range = ranges.back();
         if (!mimeData->hasFormat(_SheetMime)) {
             CellAddress current = range.from();
             QString text = mimeData->text();
             QStringList cells = text.split(QLatin1Char('\n'));
-            int i=0;
+            int i = 0;
             for (const auto& it : cells) {
                 QStringList cols = it.split(QLatin1Char('\t'));
-                int j=0;
+                int j = 0;
                 for (const auto& jt : cols) {
-                    QModelIndex index = model()->index(current.row()+i, current.col()+j);
+                    QModelIndex index = model()->index(current.row() + i, current.col() + j);
                     model()->setData(index, jt);
                     j++;
                 }
                 i++;
             }
-        }else{
+        }
+        else {
             QByteArray res = mimeData->data(_SheetMime);
             Base::ByteArrayIStreambuf buf(res);
             std::istream in(nullptr);
             in.rdbuf(&buf);
             Base::XMLReader reader("<memory>", in);
-            sheet->getCells()->pasteCells(reader,range,(Cell::PasteType)type);
+            sheet->getCells()->pasteCells(reader, range, (Cell::PasteType)type);
         }
 
         GetApplication().getActiveDocument()->recompute();
-
-    }catch(Base::Exception &e) {
+    }
+    catch (Base::Exception& e) {
         e.ReportException();
-        QMessageBox::critical(Gui::getMainWindow(), QObject::tr("Copy & Paste failed"),
-                QString::fromUtf8(e.what()));
+        QMessageBox::critical(Gui::getMainWindow(),
+                              QObject::tr("Copy & Paste failed"),
+                              QString::fromUtf8(e.what()));
         return;
     }
     clearSelection();
@@ -1184,116 +1218,137 @@ void SheetTableView::finishEditWithMove(int keyPressed, Qt::KeyboardModifiers mo
     int rowSpan;
     sheet->getSpans(CellAddress(targetRow, targetColumn), rowSpan, colSpan);
     switch (keyPressed) {
-    case Qt::Key_Return:
-    case Qt::Key_Enter:
-        if (modifiers == Qt::NoModifier) {
-            targetRow += rowSpan;
-            targetColumn -= tabCounter;
-        }
-        else if (modifiers == Qt::ShiftModifier) {
-            targetRow -= 1;
-            targetColumn -= tabCounter;
-        }
-        else {
-            // For an unrecognized modifier, just go down
-            targetRow += rowSpan;
-        }
-        tabCounter = 0;
-        break;
-
-    case Qt::Key_Home:
-        // Home: row 1, same column
-        // Ctrl-Home: row 1, column 1
-        targetRow = 0;
-        if (modifiers == Qt::ControlModifier)
-            targetColumn = 0;
-        tabCounter = 0;
-        break;
-
-    case Qt::Key_End:
-    {
-        // End should take you to the last occupied cell in the current column
-        // Ctrl-End takes you to the last cell in the sheet
-        auto usedCells = sheet->getCells()->getNonEmptyCells();
-        for (const auto& cell : usedCells) {
+        case Qt::Key_Return:
+        case Qt::Key_Enter:
             if (modifiers == Qt::NoModifier) {
-                if (cell.col() == targetColumn)
-                    targetRow = std::max(targetRow, cell.row());
+                targetRow += rowSpan;
+                targetColumn -= tabCounter;
             }
-            else if (modifiers == Qt::ControlModifier) {
-                targetRow = std::max(targetRow, cell.row());
-                targetColumn = std::max(targetColumn, cell.col());
+            else if (modifiers == Qt::ShiftModifier) {
+                targetRow -= 1;
+                targetColumn -= tabCounter;
             }
-        }
-        tabCounter = 0;
-        break;
-    }
-
-    case Qt::Key_Left:
-        if (targetColumn == 0)
-            break; // Nothing to do, we're already in the first column
-        if (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier)
-            targetColumn--;
-        else if (modifiers == Qt::ControlModifier ||
-                 modifiers == (Qt::ControlModifier | Qt::ShiftModifier))
-            scanForRegionBoundary(targetRow, targetColumn, 0, -1);
-        else
-            targetColumn--; //Unrecognized modifier combination: default to just moving one cell
-        tabCounter = 0;
-        break;
-    case Qt::Key_Right:
-        if (targetColumn >= this->model()->columnCount() - 1)
-            break; // Nothing to do, we're already in the last column
-        if (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier)
-            targetColumn += colSpan;
-        else if (modifiers == Qt::ControlModifier ||
-                 modifiers == (Qt::ControlModifier | Qt::ShiftModifier))
-            scanForRegionBoundary(targetRow, targetColumn, 0, 1);
-        else
-            targetColumn += colSpan; //Unrecognized modifier combination: default to just moving one cell
-        tabCounter = 0;
-        break;
-    case Qt::Key_Up:
-        if (targetRow == 0)
-            break; // Nothing to do, we're already in the first column
-        if (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier)
-            targetRow--;
-        else if (modifiers == Qt::ControlModifier ||
-                 modifiers == (Qt::ControlModifier | Qt::ShiftModifier))
-            scanForRegionBoundary(targetRow, targetColumn, -1, 0);
-        else
-            targetRow--; //Unrecognized modifier combination: default to just moving one cell
-        tabCounter = 0;
-        break;
-    case Qt::Key_Down:
-        if (targetRow >= this->model()->rowCount() - 1)
-            break; // Nothing to do, we're already in the last row
-        if (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier)
-            targetRow += rowSpan;
-        else if (modifiers == Qt::ControlModifier ||
-                 modifiers == (Qt::ControlModifier | Qt::ShiftModifier))
-            scanForRegionBoundary(targetRow, targetColumn, 1, 0);
-        else
-            targetRow += rowSpan; //Unrecognized modifier combination: default to just moving one cell
-        tabCounter = 0;
-        break;
-    case Qt::Key_Tab:
-        if (modifiers == Qt::NoModifier) {
-            tabCounter++;
-            targetColumn += colSpan;
-        }
-        else if (modifiers == Qt::ShiftModifier) {
+            else {
+                // For an unrecognized modifier, just go down
+                targetRow += rowSpan;
+            }
             tabCounter = 0;
-            targetColumn--;
+            break;
+
+        case Qt::Key_Home:
+            // Home: row 1, same column
+            // Ctrl-Home: row 1, column 1
+            targetRow = 0;
+            if (modifiers == Qt::ControlModifier) {
+                targetColumn = 0;
+            }
+            tabCounter = 0;
+            break;
+
+        case Qt::Key_End: {
+            // End should take you to the last occupied cell in the current column
+            // Ctrl-End takes you to the last cell in the sheet
+            auto usedCells = sheet->getCells()->getNonEmptyCells();
+            for (const auto& cell : usedCells) {
+                if (modifiers == Qt::NoModifier) {
+                    if (cell.col() == targetColumn) {
+                        targetRow = std::max(targetRow, cell.row());
+                    }
+                }
+                else if (modifiers == Qt::ControlModifier) {
+                    targetRow = std::max(targetRow, cell.row());
+                    targetColumn = std::max(targetColumn, cell.col());
+                }
+            }
+            tabCounter = 0;
+            break;
         }
-        break;
-    case Qt::Key_Backtab:
-        modifiers.setFlag(Qt::ShiftModifier, false);
-        targetColumn--;
-        tabCounter = 0;
-        break;
-    default:
-        break;
+
+        case Qt::Key_Left:
+            if (targetColumn == 0) {
+                break;  // Nothing to do, we're already in the first column
+            }
+            if (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier) {
+                targetColumn--;
+            }
+            else if (modifiers == Qt::ControlModifier
+                     || modifiers == (Qt::ControlModifier | Qt::ShiftModifier)) {
+                scanForRegionBoundary(targetRow, targetColumn, 0, -1);
+            }
+            else {
+                targetColumn--;  // Unrecognized modifier combination: default to just moving one
+                                 // cell
+            }
+            tabCounter = 0;
+            break;
+        case Qt::Key_Right:
+            if (targetColumn >= this->model()->columnCount() - 1) {
+                break;  // Nothing to do, we're already in the last column
+            }
+            if (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier) {
+                targetColumn += colSpan;
+            }
+            else if (modifiers == Qt::ControlModifier
+                     || modifiers == (Qt::ControlModifier | Qt::ShiftModifier)) {
+                scanForRegionBoundary(targetRow, targetColumn, 0, 1);
+            }
+            else {
+                targetColumn +=
+                    colSpan;  // Unrecognized modifier combination: default to just moving one cell
+            }
+            tabCounter = 0;
+            break;
+        case Qt::Key_Up:
+            if (targetRow == 0) {
+                break;  // Nothing to do, we're already in the first column
+            }
+            if (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier) {
+                targetRow--;
+            }
+            else if (modifiers == Qt::ControlModifier
+                     || modifiers == (Qt::ControlModifier | Qt::ShiftModifier)) {
+                scanForRegionBoundary(targetRow, targetColumn, -1, 0);
+            }
+            else {
+                targetRow--;  // Unrecognized modifier combination: default to just moving one cell
+            }
+            tabCounter = 0;
+            break;
+        case Qt::Key_Down:
+            if (targetRow >= this->model()->rowCount() - 1) {
+                break;  // Nothing to do, we're already in the last row
+            }
+            if (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier) {
+                targetRow += rowSpan;
+            }
+            else if (modifiers == Qt::ControlModifier
+                     || modifiers == (Qt::ControlModifier | Qt::ShiftModifier)) {
+                scanForRegionBoundary(targetRow, targetColumn, 1, 0);
+            }
+            else {
+                targetRow +=
+                    rowSpan;  // Unrecognized modifier combination: default to just moving one cell
+            }
+            tabCounter = 0;
+            break;
+        case Qt::Key_Tab:
+            if (modifiers == Qt::NoModifier) {
+                tabCounter++;
+                targetColumn += colSpan;
+            }
+            else if (modifiers == Qt::ShiftModifier) {
+                tabCounter = 0;
+                targetColumn--;
+            }
+            break;
+        case Qt::Key_Backtab:
+            if (modifiers == Qt::NoModifier) {
+                targetColumn--;
+            }
+            tabCounter = 0;
+            break;
+        default:
+            break;
     }
 
     if (this->sheet->isMergedCell(CellAddress(targetRow, targetColumn))) {
@@ -1308,16 +1363,18 @@ void SheetTableView::finishEditWithMove(int keyPressed, Qt::KeyboardModifiers mo
     targetRow = std::max(0, std::min(targetRow, maxRow));
     targetColumn = std::max(0, std::min(targetColumn, maxCol));
 
-    if (!(modifiers & Qt::ShiftModifier) || keyPressed == Qt::Key_Tab || keyPressed == Qt::Key_Enter || keyPressed == Qt::Key_Return) {
-        // We have to use this method so that Ctrl-modifier combinations don't result in multiple selection
+    if (!(modifiers & Qt::ShiftModifier) || keyPressed == Qt::Key_Tab || keyPressed == Qt::Key_Enter
+        || keyPressed == Qt::Key_Return) {
+        // We have to use this method so that Ctrl-modifier combinations don't result in multiple
+        // selection
         this->selectionModel()->setCurrentIndex(model()->index(targetRow, targetColumn),
-            QItemSelectionModel::ClearAndSelect);
+                                                QItemSelectionModel::ClearAndSelect);
     }
     else if (modifiers & Qt::ShiftModifier) {
-        // With shift down, this motion becomes a block selection command, rather than just simple motion:
+        // With shift down, this motion becomes a block selection command, rather than just simple
+        // motion:
         ModifyBlockSelection(targetRow, targetColumn);
     }
-
 }
 
 void SheetTableView::ModifyBlockSelection(int targetRow, int targetCol)
@@ -1329,23 +1386,29 @@ void SheetTableView::ModifyBlockSelection(int targetRow, int targetCol)
     auto selection = this->selectionModel()->selection();
     for (const auto& range : selection) {
         if (range.contains(currentIndex())) {
-            // This range contains the current cell, so it's the one we're going to modify (assuming we're at one of the corners)
+            // This range contains the current cell, so it's the one we're going to modify (assuming
+            // we're at one of the corners)
             int rangeMinRow = range.top();
             int rangeMaxRow = range.bottom();
             int rangeMinCol = range.left();
             int rangeMaxCol = range.right();
-            if ((startingRow == rangeMinRow || startingRow == rangeMaxRow) &&
-                (startingCol == rangeMinCol || startingCol == rangeMaxCol)) {
+            if ((startingRow == rangeMinRow || startingRow == rangeMaxRow)
+                && (startingCol == rangeMinCol || startingCol == rangeMaxCol)) {
                 if (range.contains(model()->index(targetRow, targetCol))) {
-                    // If the range already contains the target cell, then we're making the range smaller
-                    if (startingRow == rangeMinRow)
+                    // If the range already contains the target cell, then we're making the range
+                    // smaller
+                    if (startingRow == rangeMinRow) {
                         rangeMinRow = targetRow;
-                    if (startingRow == rangeMaxRow)
+                    }
+                    if (startingRow == rangeMaxRow) {
                         rangeMaxRow = targetRow;
-                    if (startingCol == rangeMinCol)
+                    }
+                    if (startingCol == rangeMinCol) {
                         rangeMinCol = targetCol;
-                    if (startingCol == rangeMaxCol)
+                    }
+                    if (startingCol == rangeMaxCol) {
                         rangeMaxCol = targetCol;
+                    }
                 }
                 else {
                     // We're making the range bigger
@@ -1356,21 +1419,25 @@ void SheetTableView::ModifyBlockSelection(int targetRow, int targetCol)
                 }
                 QItemSelection oldRange(range.topLeft(), range.bottomRight());
                 this->selectionModel()->select(oldRange, QItemSelectionModel::Deselect);
-                QItemSelection newRange(model()->index(rangeMinRow, rangeMinCol), model()->index(rangeMaxRow, rangeMaxCol));
+                QItemSelection newRange(model()->index(rangeMinRow, rangeMinCol),
+                                        model()->index(rangeMaxRow, rangeMaxCol));
                 this->selectionModel()->select(newRange, QItemSelectionModel::Select);
             }
             break;
         }
     }
 
-    this->selectionModel()->setCurrentIndex(model()->index(targetRow, targetCol), QItemSelectionModel::Current);
+    this->selectionModel()->setCurrentIndex(model()->index(targetRow, targetCol),
+                                            QItemSelectionModel::Current);
 }
 
-void SheetTableView::mergeCells() {
+void SheetTableView::mergeCells()
+{
     Gui::Application::Instance->commandManager().runCommandByName("Spreadsheet_MergeCells");
 }
 
-void SheetTableView::splitCell() {
+void SheetTableView::splitCell()
+{
     Gui::Application::Instance->commandManager().runCommandByName("Spreadsheet_SplitCell");
 }
 
@@ -1389,13 +1456,14 @@ void SheetTableView::closeEditor(QWidget * editor, QAbstractItemDelegate::EndEdi
     }
 }
 
-void SheetTableView::selectionChanged(const QItemSelection &selected, const QItemSelection &deselected)
+void SheetTableView::selectionChanged(const QItemSelection& selected,
+                                      const QItemSelection& deselected)
 {
     Gui::getMainWindow()->updateActions();
     QTableView::selectionChanged(selected, deselected);
 }
 
-void SheetTableView::edit ( const QModelIndex & index )
+void SheetTableView::edit(const QModelIndex& index)
 {
     QTableView::edit(index);
 }
@@ -1475,8 +1543,9 @@ void SheetTableView::contextMenuEvent(QContextMenuEvent *) {
         actionCut->setEnabled(true);
         actionCopy->setEnabled(true);
         actionDel->setEnabled(true);
-        actionSplit->setEnabled(selectedIndexesRaw().size() == 1 &&
-            sheet->isMergedCell(CellAddress(currentIndex().row(),currentIndex().column())));
+        actionSplit->setEnabled(
+            selectedIndexesRaw().size() == 1
+            && sheet->isMergedCell(CellAddress(currentIndex().row(), currentIndex().column())));
         actionMerge->setEnabled(selectedIndexesRaw().size() > 1);
     }
 
@@ -1576,11 +1645,11 @@ QString SheetTableView::toHtml() const
     QTextCharFormat bgFormat;
     bgFormat.setBackground(QBrush(bgColor));
 
-    QTextTable *table = cursor.insertTable(rowCount + 2, colCount + 2, tableFormat);
+    QTextTable* table = cursor.insertTable(rowCount + 2, colCount + 2, tableFormat);
 
     // The header cells of the rows
     for (int row = 0; row < rowCount + 1; row++) {
-        QTextTableCell headerCell = table->cellAt(row+1, 0);
+        QTextTableCell headerCell = table->cellAt(row + 1, 0);
         headerCell.setFormat(bgFormat);
         QTextCursor headerCellCursor = headerCell.firstCursorPosition();
         QString data = model()->headerData(row, Qt::Vertical).toString();
@@ -1589,7 +1658,7 @@ QString SheetTableView::toHtml() const
 
     // The header cells of the columns
     for (int col = 0; col < colCount + 1; col++) {
-        QTextTableCell headerCell = table->cellAt(0, col+1);
+        QTextTableCell headerCell = table->cellAt(0, col + 1);
         headerCell.setFormat(bgFormat);
         QTextCursor headerCellCursor = headerCell.firstCursorPosition();
         QTextBlockFormat blockFormat = headerCellCursor.blockFormat();

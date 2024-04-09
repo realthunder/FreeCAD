@@ -50,8 +50,8 @@ public:
     TaskDressUpParameters(ViewProviderDressUp *DressUpView, bool selectEdges, bool selectFaces, QWidget* parent = nullptr);
     ~TaskDressUpParameters() override;
 
-    std::vector<std::string> getReferences(void) const;
-    Part::Feature *getBase(void) const;
+    std::vector<std::string> getReferences() const;
+    Part::Feature *getBase() const;
 
     void setupTransaction();
 
@@ -71,7 +71,7 @@ protected Q_SLOTS:
     void onItemEntered(QTreeWidgetItem* current, int);
     void onItemSelectionChanged();
     virtual void onTimer();
-    virtual void onRefDeleted(void);
+    virtual void onRefDeleted();
 
 protected:
     void exitSelectionMode();

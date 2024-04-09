@@ -51,24 +51,23 @@ FC_LOG_LEVEL_INIT("Spreadsheet",true,true)
 using namespace Spreadsheet;
 using namespace SpreadsheetGui;
 
-SpreadsheetDelegate::SpreadsheetDelegate(Spreadsheet::Sheet * _sheet, QWidget *parent)
+SpreadsheetDelegate::SpreadsheetDelegate(Spreadsheet::Sheet* _sheet, QWidget* parent)
     : QStyledItemDelegate(parent)
     , sheet(_sheet)
-{
-}
+{}
 
 void SpreadsheetDelegate::setEditTrigger(QAbstractItemView::EditTrigger trigger)
 {
     editTrigger = trigger;
 }
 
-QWidget *SpreadsheetDelegate::createEditor(QWidget *parent,
-                                          const QStyleOptionViewItem &,
-                                          const QModelIndex &index) const
+QWidget* SpreadsheetDelegate::createEditor(QWidget* parent,
+                                           const QStyleOptionViewItem&,
+                                           const QModelIndex& index) const
 {
-    App::CellAddress addr(index.row(),index.column());
-    App::Range range(addr,addr);
-    if(sheet && sheet->getCellBinding(range)) {
+    App::CellAddress addr(index.row(), index.column());
+    App::Range range(addr, addr);
+    if (sheet && sheet->getCellBinding(range)) {
         FC_ERR("Bound cell " << addr.toString() << " cannot be edited");
         return nullptr;
     }
@@ -188,8 +187,7 @@ void SpreadsheetDelegate::setEditorData(QWidget *editor,
     Base::StateLocker guard(updating);
 
     QVariant data = index.model()->data(index, Qt::EditRole);
-    TextEdit *edit = qobject_cast<TextEdit*>(editor);
-    if (edit) {
+    if (auto edit = qobject_cast<TextEdit*>(editor)) {
         edit->setPlainText(data.toString());
         if (lastEditor == edit) {
             lastEditor = nullptr;
@@ -302,13 +300,14 @@ void SpreadsheetDelegate::setEditorData(QWidget *editor,
     }
 }
 
-void SpreadsheetDelegate::setModelData(QWidget *editor,
-    QAbstractItemModel *model, const QModelIndex &index) const
+void SpreadsheetDelegate::setModelData(QWidget* editor,
+                                       QAbstractItemModel* model,
+                                       const QModelIndex& index) const
 {
     if(updating)
         return;
 
-    TextEdit *edit = qobject_cast<TextEdit *>(editor);
+    auto edit = qobject_cast<TextEdit *>(editor);
     if (edit) {
         model->setData(index, edit->toPlainText());
         return;
@@ -357,49 +356,59 @@ void SpreadsheetDelegate::onEditorFinishedWithKey(int key, Qt::KeyboardModifiers
     Q_EMIT finishedWithKey(key, modifiers);
 }
 
-QSize SpreadsheetDelegate::sizeHint(const QStyleOptionViewItem & option, const QModelIndex & index) const
+QSize SpreadsheetDelegate::sizeHint(const QStyleOptionViewItem& option,
+                                    const QModelIndex& index) const
 {
     Q_UNUSED(option);
     Q_UNUSED(index);
-    return QSize();
+    return {};
 }
 
-static inline void drawBorder(QPainter *painter, const QStyleOptionViewItem &option,
-        unsigned flags, QColor color, Qt::PenStyle style)
+static inline void drawBorder(QPainter* painter,
+                              const QStyleOptionViewItem& option,
+                              unsigned flags,
+                              QColor color,
+                              Qt::PenStyle style)
 {
-    if(!flags)
+    if (!flags) {
         return;
+    }
     QPen pen(color);
     pen.setWidth(2);
     pen.setStyle(style);
     painter->setPen(pen);
 
-    QRect rect = option.rect.adjusted(1,1,0,0);
-    if(flags == Sheet::BorderAll) {
-        painter->drawRect(rect.adjusted(0,0,-1,-1));
+    QRect rect = option.rect.adjusted(1, 1, 0, 0);
+    if (flags == Sheet::BorderAll) {
+        painter->drawRect(rect.adjusted(0, 0, -1, -1));
         return;
     }
-    if(flags & Sheet::BorderLeft)
+    if (flags & Sheet::BorderLeft) {
         painter->drawLine(rect.topLeft(), rect.bottomLeft());
-    if(flags & Sheet::BorderTop)
+    }
+    if (flags & Sheet::BorderTop) {
         painter->drawLine(rect.topLeft(), rect.topRight());
-    if(flags & Sheet::BorderRight)
+    }
+    if (flags & Sheet::BorderRight) {
         painter->drawLine(rect.topRight(), rect.bottomRight());
-    if(flags & Sheet::BorderBottom)
+    }
+    if (flags & Sheet::BorderBottom) {
         painter->drawLine(rect.bottomLeft(), rect.bottomRight());
+    }
 }
 
-void SpreadsheetDelegate::paint(QPainter *painter,
-        const QStyleOptionViewItem &option, const QModelIndex &index ) const
+void SpreadsheetDelegate::paint(QPainter* painter,
+                                const QStyleOptionViewItem& option,
+                                const QModelIndex& index) const
 {
     QStyledItemDelegate::paint(painter, option, index);
-    if(!sheet)
+    if (!sheet) {
         return;
+    }
     App::CellAddress addr(index.row(), index.column());
     drawBorder(painter, option, sheet->getCellBindingBorder(addr), Qt::blue, Qt::SolidLine);
-    drawBorder(painter, option, sheet->getCopyOrCutBorder(addr,true), Qt::green, Qt::DashLine);
-    drawBorder(painter, option, sheet->getCopyOrCutBorder(addr,false), Qt::red, Qt::DashLine);
+    drawBorder(painter, option, sheet->getCopyOrCutBorder(addr, true), Qt::green, Qt::DashLine);
+    drawBorder(painter, option, sheet->getCopyOrCutBorder(addr, false), Qt::red, Qt::DashLine);
 }
 
 #include "moc_SpreadsheetDelegate.cpp"
-

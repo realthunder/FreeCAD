@@ -39,7 +39,8 @@
 #include <App/GroupExtension.h>
 #include <App/Link.h>
 #include <App/OriginFeature.h>
-#include "Feature.h"
+#include <App/ElementNamingUtils.h>
+#include <Mod/Part/App/TopoShape.h>
 
 #include "ShapeBinder.h"
 
@@ -50,7 +51,7 @@ FC_LOG_LEVEL_INIT("PartDesign",true,true)
 #endif
 
 using namespace PartDesign;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 // ============================================================================
 
@@ -150,7 +151,7 @@ void ShapeBinder::getFilteredReferences(const App::PropertyLinkSubList* prop,
     //we only allow one part feature, so get the first one we find
     size_t index = 0;
     for (auto* it : objs) {
-        if (it && it->getTypeId().isDerivedFrom(Part::Feature::getClassTypeId())) {
+        if (it && it->isDerivedFrom<Part::Feature>()) {
             obj = static_cast<Part::Feature*>(it);
             break;
         }
@@ -181,11 +182,11 @@ void ShapeBinder::getFilteredReferences(const App::PropertyLinkSubList* prop,
     else {
         // search for Origin features
         for (auto* it : objs) {
-            if (it && it->getTypeId().isDerivedFrom(App::Line::getClassTypeId())) {
+            if (it && it->isDerivedFrom<App::Line>()) {
                 obj = static_cast<App::GeoFeature*>(it);
                 break;
             }
-            else if (it && it->getTypeId().isDerivedFrom(App::Plane::getClassTypeId())) {
+            else if (it && it->isDerivedFrom<App::Plane>()) {
                 obj = static_cast<App::GeoFeature*>(it);
                 break;
             }
@@ -198,7 +199,7 @@ Part::TopoShape ShapeBinder::buildShapeFromReferences(App::GeoFeature* obj, std:
     if (!obj)
         return TopoDS_Shape();
 
-    if (obj->getTypeId().isDerivedFrom(Part::Feature::getClassTypeId())) {
+    if (obj->isDerivedFrom<Part::Feature>()) {
         Part::Feature* part = static_cast<Part::Feature*>(obj);
         if (subs.empty())
             return part->Shape.getValue();
@@ -223,14 +224,14 @@ Part::TopoShape ShapeBinder::buildShapeFromReferences(App::GeoFeature* obj, std:
             return cmp;
         }
     }
-    else if (obj->getTypeId().isDerivedFrom(App::Line::getClassTypeId())) {
+    else if (obj->isDerivedFrom<App::Line>()) {
         gp_Lin line;
         BRepBuilderAPI_MakeEdge mkEdge(line);
         Part::TopoShape shape(mkEdge.Shape());
         shape.setPlacement(obj->Placement.getValue());
         return shape;
     }
-    else if (obj->getTypeId().isDerivedFrom(App::Plane::getClassTypeId())) {
+    else if (obj->isDerivedFrom<App::Plane>()) {
         gp_Pln plane;
         BRepBuilderAPI_MakeFace mkFace(plane);
         Part::TopoShape shape(mkFace.Shape());
@@ -256,8 +257,10 @@ void ShapeBinder::onSettingDocument()
 {
     App::Document* document = getDocument();
     if (document) {
-        this->connectDocumentChangedObject = document->signalChangedObject.connect(boost::bind
-            (&ShapeBinder::slotChangedObject, this, bp::_1, bp::_2));
+        //NOLINTBEGIN
+        this->connectDocumentChangedObject = document->signalChangedObject.connect(std::bind
+            (&ShapeBinder::slotChangedObject, this, sp::_1, sp::_2));
+        //NOLINTEND
     }
 }
 
@@ -270,7 +273,7 @@ void ShapeBinder::slotChangedObject(const App::DocumentObject& Obj, const App::P
         return;
     if (!TraceSupport.getValue())
         return;
-    if (!Prop.getTypeId().isDerivedFrom(App::PropertyPlacement::getClassTypeId()))
+    if (!Prop.isDerivedFrom<App::PropertyPlacement>())
         return;
 
     App::GeoFeature* obj = nullptr;
@@ -304,13 +307,9 @@ void ShapeBinder::slotChangedObject(const App::DocumentObject& Obj, const App::P
 
 PROPERTY_SOURCE(PartDesign::SubShapeBinder, Part::SubShapeBinder)
 
-SubShapeBinder::SubShapeBinder()
-{
-}
+SubShapeBinder::SubShapeBinder() = default;
 
-SubShapeBinder::~SubShapeBinder()
-{
-}
+SubShapeBinder::~SubShapeBinder() = default;
 
 ////////////////////////////////////////////////////////////////////////////////////////
 

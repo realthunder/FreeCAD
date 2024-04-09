@@ -36,6 +36,7 @@
 #include "Document.h"
 #include "DlgActivateWindowImp.h"
 #include "DockWindowManager.h"
+#include "ToolBarManager.h"
 
 #include <Base/Exception.h>
 #include <App/Document.h>

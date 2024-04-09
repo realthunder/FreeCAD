@@ -67,6 +67,7 @@ DlgAddProperty::DlgAddProperty(QWidget* parent,
 
     std::vector<Base::Type> types;
     Base::Type::getAllDerivedFrom(Base::Type::fromName("App::Property"),types);
+    std::sort(types.begin(), types.end(), [](Base::Type a, Base::Type b) { return strcmp(a.getName(), b.getName()) < 0; });
     for(const auto &type : types) {
         bool filtered = false;
         for (auto &t : filters) {
@@ -90,10 +91,7 @@ DlgAddProperty::DlgAddProperty(QWidget* parent,
 /**
  *  Destroys the object and frees any allocated resources
  */
-DlgAddProperty::~DlgAddProperty()
-{
-    // no need to delete child widgets, Qt does it all for us
-}
+DlgAddProperty::~DlgAddProperty() = default;
 
 static std::string containerName(const App::PropertyContainer *c) {
     auto doc = Base::freecad_dynamic_cast<App::Document>(c);

@@ -49,7 +49,7 @@ import draftguitools.gui_trackers as trackers
 import draftutils.gui_utils as gui_utils
 
 from draftutils.translate import translate
-from draftutils.messages import _msg
+from draftutils.messages import _toolmsg, _msg
 
 DraftGeomUtils = lz.LazyLoader("DraftGeomUtils", globals(), "DraftGeomUtils")
 
@@ -90,15 +90,15 @@ class Dimension(gui_base_original.Creator):
         if self.cont:
             self.finish()
         elif self.selected_app_measure():
-            super(Dimension, self).Activated(name="Dimension")
+            super().Activated(name="Dimension")
             self.dimtrack = trackers.dimTracker()
             self.arctrack = trackers.arcTracker()
             self.create_with_app_measure()
             self.finish()
         else:
-            super(Dimension, self).Activated(name="Dimension")
+            super().Activated(name="Dimension")
             if self.ui:
-                self.ui.pointUi(title=translate("draft", self.featureName), icon="Draft_Dimension")
+                self.ui.pointUi(title=translate("draft", "Dimension"), icon="Draft_Dimension")
                 self.ui.continueCmd.show()
                 self.ui.selectButton.show()
                 self.altdown = False
@@ -120,7 +120,7 @@ class Dimension(gui_base_original.Creator):
                 self.info = None
                 self.selectmode = False
                 self.set_selection()
-                _msg(translate("draft", "Pick first point"))
+                _toolmsg(translate("draft", "Pick first point"))
 
     def set_selection(self):
         """Fill the nodes according to the selected geometry."""
@@ -176,7 +176,7 @@ class Dimension(gui_base_original.Creator):
         """Terminate the operation."""
         self.cont = None
         self.dir = None
-        super(Dimension, self).finish()
+        super().finish()
         if self.ui:
             self.dimtrack.finalize()
             self.arctrack.finalize()
@@ -184,7 +184,7 @@ class Dimension(gui_base_original.Creator):
     def angle_dimension_normal(self, edge1, edge2):
         rot = App.Rotation(DraftGeomUtils.vec(edge1),
                            DraftGeomUtils.vec(edge2),
-                           App.DraftWorkingPlane.getNormal(),
+                           self.wp.axis,
                            "XYZ")
         norm = rot.multVec(App.Vector(0, 0, 1))
         vnorm = gui_utils.get_3d_view().getViewDirection()
@@ -280,9 +280,8 @@ class Dimension(gui_base_original.Creator):
         _cmd += ')'
         _cmd_list = ['_dim_ = ' + _cmd]
 
-        plane = App.DraftWorkingPlane
-        dir_u = DraftVecUtils.toString(plane.u)
-        dir_v = DraftVecUtils.toString(plane.v)
+        dir_u = DraftVecUtils.toString(self.wp.u)
+        dir_v = DraftVecUtils.toString(self.wp.v)
         if direction == "X":
             _cmd_list += ['_dim_.Direction = ' + dir_u]
         elif direction == "Y":
@@ -363,13 +362,13 @@ class Dimension(gui_base_original.Creator):
             if arg["Key"] == "ESCAPE":
                 self.finish()
         elif arg["Type"] == "SoLocation2Event":  # mouse movement detection
-            shift = gui_tool_utils.hasMod(arg, gui_tool_utils.MODCONSTRAIN)
+            shift = gui_tool_utils.hasMod(arg, gui_tool_utils.get_mod_constrain_key())
             if self.arcmode or self.point2:
-                gui_tool_utils.setMod(arg, gui_tool_utils.MODCONSTRAIN, False)
+                gui_tool_utils.setMod(arg, gui_tool_utils.get_mod_constrain_key(), False)
             (self.point,
              ctrlPoint, self.info) = gui_tool_utils.getPoint(self, arg,
                                                              noTracker=(len(self.node)>0))
-            if (gui_tool_utils.hasMod(arg, gui_tool_utils.MODALT)
+            if (gui_tool_utils.hasMod(arg, gui_tool_utils.get_mod_alt_key())
                     or self.selectmode) and (len(self.node) < 3):
                 self.dimtrack.off()
                 if not self.altdown:
@@ -420,7 +419,7 @@ class Dimension(gui_base_original.Creator):
                     self.ui.switchUi(False)
                     if hasattr(Gui, "Snapper"):
                         Gui.Snapper.setSelectMode(False)
-                if self.dir and ( (len(self.node) < 2) or self.ui.continueMode):
+                if self.node and self.dir and len(self.node) < 2:
                     _p = DraftVecUtils.project(self.point.sub(self.node[0]),
                                                self.dir)
                     self.point = self.node[0].add(_p)
@@ -468,7 +467,7 @@ class Dimension(gui_base_original.Creator):
                     self.ui.redraw()
                     if (not self.node) and (not self.support):
                         gui_tool_utils.getSupport(arg)
-                    if (gui_tool_utils.hasMod(arg, gui_tool_utils.MODALT)
+                    if (gui_tool_utils.hasMod(arg, gui_tool_utils.get_mod_alt_key())
                             or self.selectmode) and (len(self.node) < 3):
                         # print("snapped: ",self.info)
                         if self.info:
@@ -581,28 +580,27 @@ class Dimension(gui_base_original.Creator):
         by projecting on the working plane.
         """
         if not self.proj_point1 or not self.proj_point2:
-            plane = App.DraftWorkingPlane
-            self.proj_point1 = plane.projectPoint(self.node[0])
-            self.proj_point2 = plane.projectPoint(self.node[1])
-            proj_u= plane.u.dot(self.proj_point2 - self.proj_point1)
-            proj_v= plane.v.dot(self.proj_point2 - self.proj_point1)
+            self.proj_point1 = self.wp.project_point(self.node[0])
+            self.proj_point2 = self.wp.project_point(self.node[1])
+            proj_u= self.wp.u.dot(self.proj_point2 - self.proj_point1)
+            proj_v= self.wp.v.dot(self.proj_point2 - self.proj_point1)
             active_view = Gui.ActiveDocument.ActiveView
             cursor = active_view.getCursorPos()
             cursor_point = active_view.getPoint(cursor)
-            self.point = plane.projectPoint(cursor_point)
+            self.point = self.wp.project_point(cursor_point)
             if not self.force:
                 ref_point = self.point - (self.proj_point2 + self.proj_point1)*1/2
-                ref_angle = abs(ref_point.getAngle(plane.u))
+                ref_angle = abs(ref_point.getAngle(self.wp.u))
                 if (ref_angle > math.pi/4) and (ref_angle <= 0.75*math.pi):
                     self.force = 2
                 else:
                     self.force = 1
             if self.force == 1:
                 self.node[0] = self.proj_point1
-                self.node[1] = self.proj_point1 + plane.v*proj_v
+                self.node[1] = self.proj_point1 + self.wp.v*proj_v
             elif self.force == 2:
                 self.node[0] = self.proj_point1
-                self.node[1] = self.proj_point1 + plane.u*proj_u
+                self.node[1] = self.proj_point1 + self.wp.u*proj_u
 
 
 Gui.addCommand('Draft_Dimension', Dimension())

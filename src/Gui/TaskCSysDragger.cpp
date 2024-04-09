@@ -67,6 +67,8 @@ TaskCSysDragger::TaskCSysDragger(Gui::ViewProviderDocumentObject* vpObjectIn, Gu
   dragger->ref();
   setupGui();
 
+  transactionId = App::GetApplication().setActiveTransaction("Transform");
+
   QTimer::singleShot(0, this, [this]() {
     auto obj = vpObject.getObject();
     if (!obj)
@@ -97,6 +99,14 @@ TaskCSysDragger::~TaskCSysDragger()
   dragger->unref();
   Gui::Application::Instance->commandManager().getCommandByName("Std_OrthographicCamera")->setEnabled(true);
   Gui::Application::Instance->commandManager().getCommandByName("Std_PerspectiveCamera")->setEnabled(true);
+}
+
+void TaskCSysDragger::dragStartCallback(void *, SoDragger *)
+{
+    // This is called when a manipulator is about to manipulating
+    if (!App::GetApplication().getActiveTransaction()) {
+        App::GetApplication().setActiveTransaction("Transform");
+    }
 }
 
 void TaskCSysDragger::setupGui()
@@ -208,6 +218,7 @@ void TaskCSysDragger::onRIncrementSlot(double freshValue)
 
 void TaskCSysDragger::open()
 {
+  dragger->addStartCallback(dragStartCallback, this);
   //we can't have user switching camera types while dragger is shown.
   Gui::Application::Instance->commandManager().getCommandByName("Std_OrthographicCamera")->setEnabled(false);
   Gui::Application::Instance->commandManager().getCommandByName("Std_PerspectiveCamera")->setEnabled(false);
@@ -228,11 +239,13 @@ void TaskCSysDragger::recompute(bool finish)
   if (dObject) {
     Gui::Document* document = Gui::Application::Instance->editDocument();
     if (document) {
-        if (!App::GetApplication().getActiveTransaction())
-            App::GetApplication().setActiveTransaction("Recompute");
+        if (!App::GetApplication().getActiveTransaction()) {
+            App::GetApplication().setActiveTransaction("Transform");
+        }
         document->getDocument()->recompute();
-        if (finish)
+        if (finish) {
             document->resetEdit();
+        }
     }
   }
 }
@@ -245,6 +258,12 @@ bool TaskCSysDragger::accept()
 
   recompute(true);
   return Gui::TaskView::TaskDialog::accept();
+}
+
+bool TaskCSysDragger::reject()
+{
+  App::GetApplication().closeActiveTransaction(/*abort*/true, transactionId);
+  return Gui::TaskView::TaskDialog::reject();
 }
 
 #include "moc_TaskCSysDragger.cpp"

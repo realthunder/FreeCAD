@@ -45,7 +45,7 @@ class TechDrawGuiExport QGIHighlight : public QGIDecoration
     using inherited = QGIDecoration;
 public:
     explicit QGIHighlight();
-    ~QGIHighlight();
+    ~QGIHighlight() override;
 
     enum {Type = QGraphicsItem::UserType + 176};
     int type() const override { return Type;}
@@ -57,13 +57,15 @@ public:
     void setBounds(double x1, double y1, double x2, double y2);
     void setReference(const char* sym);
     void setFont(QFont f, double fsize);
-    virtual void draw() override;
+    void draw() override;
     void setInteractive(bool state);
 
     void setReferenceOffset(double offset) { m_referenceOffset = offset; }
     void setReferenceAngle(double angle) { m_referenceAngle = angle; }
 
     void onDragFinished() override;
+
+    void setLinePen(QPen isoPen);
 
     QPainterPath shape() const override;
 

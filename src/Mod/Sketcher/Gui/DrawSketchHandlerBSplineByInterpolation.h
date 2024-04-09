@@ -26,29 +26,38 @@
 #include <Inventor/events/SoKeyboardEvent.h>
 #include <QInputDialog>
 
+#include <Gui/Notifications.h>
+#include <Gui/Command.h>
+#include <Gui/CommandT.h>
+
+#include <Mod/Sketcher/App/SketchObject.h>
+
+#include "DrawSketchHandler.h"
 #include "GeometryCreationMode.h"
+#include "Utils.h"
+#include "ViewProviderSketch.h"
 
 
 namespace SketcherGui
 {
 
-extern GeometryCreationMode geometryCreationMode;// defined in CommandCreateGeo.cpp
+extern GeometryCreationMode geometryCreationMode;  // defined in CommandCreateGeo.cpp
 
 class DrawSketchHandlerBSplineByInterpolation: public DrawSketchHandler
 {
 public:
     explicit DrawSketchHandlerBSplineByInterpolation(int constructionMethod)
-        : Mode(STATUS_SEEK_FIRST_POINT),
-          MousePressMode(MOUSE_NOT_PRESSED),
-          ConstrMethod(constructionMethod),
-          SplineDegree(3),
-          IsClosed(false)
+        : Mode(STATUS_SEEK_FIRST_POINT)
+        , MousePressMode(MOUSE_NOT_PRESSED)
+        , ConstrMethod(constructionMethod)
+        , SplineDegree(3)
+        , IsClosed(false)
     {
         addSugConstraint();
         applyCursor();
     }
 
-    virtual ~DrawSketchHandlerBSplineByInterpolation() = default;
+    ~DrawSketchHandlerBSplineByInterpolation() override = default;
 
     /// modes
     enum SELECT_MODE
@@ -100,7 +109,7 @@ public:
 
         if (Mode == STATUS_SEEK_FIRST_POINT) {
             BSplineKnots.push_back(onSketchPos);
-            BSplineMults.push_back(1);// NOTE: not strictly true for end-points
+            BSplineMults.push_back(1);  // NOTE: not strictly true for end-points
 
             Mode = STATUS_SEEK_ADDITIONAL_POINTS;
 
@@ -116,8 +125,10 @@ public:
 
                 knotGeoIds.push_back(getHighestCurveIndex());
             }
-            catch (const Base::Exception& e) {
-                Base::Console().Error("%s\n", e.what());
+            catch (const Base::Exception&) {
+                Gui::NotifyError(sketchgui,
+                                 QT_TRANSLATE_NOOP("Notifications", "Error"),
+                                 QT_TRANSLATE_NOOP("Notifications", "Cannot add knot point"));
                 Gui::Command::abortCommand();
 
                 static_cast<Sketcher::SketchObject*>(sketchgui->getObject())->solve();
@@ -127,8 +138,10 @@ public:
 
             // add auto constraints on knot
             if (!sugConstr.back().empty()) {
-                createAutoConstraints(
-                    sugConstr.back(), knotGeoIds.back(), Sketcher::PointPos::start, false);
+                createAutoConstraints(sugConstr.back(),
+                                      knotGeoIds.back(),
+                                      Sketcher::PointPos::start,
+                                      false);
             }
 
             static_cast<Sketcher::SketchObject*>(sketchgui->getObject())->solve();
@@ -139,32 +152,34 @@ public:
             // check if coincidence issues with first or last added knot
             for (auto& ac : sugConstr.back()) {
                 if (ac.Type == Sketcher::Coincident) {
-                    if (ac.GeoId == knotGeoIds[0] && ac.PosId == Sketcher::PointPos::start)
+                    if (ac.GeoId == knotGeoIds[0] && ac.PosId == Sketcher::PointPos::start) {
                         IsClosed = true;
+                    }
                     else {
                         // The coincidence with first point may be indirect
                         const auto coincidents =
                             static_cast<Sketcher::SketchObject*>(sketchgui->getObject())
-                            ->getAllCoincidentPoints(ac.GeoId, ac.PosId);
-                        if (coincidents.find(knotGeoIds[0]) != coincidents.end() &&
-                            coincidents.at(knotGeoIds[0]) == Sketcher::PointPos::start)
+                                ->getAllCoincidentPoints(ac.GeoId, ac.PosId);
+                        if (coincidents.find(knotGeoIds[0]) != coincidents.end()
+                            && coincidents.at(knotGeoIds[0]) == Sketcher::PointPos::start) {
                             IsClosed = true;
-                        else if (coincidents.find(knotGeoIds.back()) != coincidents.end() &&
-                                 coincidents.at(knotGeoIds.back()) == Sketcher::PointPos::start) {
-                            return true;// OCCT doesn't allow consecutive points being coincident
                         }
-
+                        else if (coincidents.find(knotGeoIds.back()) != coincidents.end()
+                                 && coincidents.at(knotGeoIds.back())
+                                     == Sketcher::PointPos::start) {
+                            return true;  // OCCT doesn't allow consecutive points being coincident
+                        }
                     }
                 }
             }
 
             BSplineKnots.push_back(onSketchPos);
-            BSplineMults.push_back(1);// NOTE: not strictly true for end-points
+            BSplineMults.push_back(1);  // NOTE: not strictly true for end-points
 
             if (IsClosed) {
                 Mode = STATUS_CLOSE;
 
-                if (ConstrMethod == 1) {// if periodic we do not need the last pole
+                if (ConstrMethod == 1) {  // if periodic we do not need the last pole
                     BSplineKnots.pop_back();
                     sugConstr.pop_back();
 
@@ -184,8 +199,11 @@ public:
 
                 knotGeoIds.push_back(getHighestCurveIndex());
             }
-            catch (const Base::Exception& e) {
-                Base::Console().Error("%s\n", e.what());
+            catch (const Base::Exception&) {
+                Gui::NotifyError(
+                    sketchgui,
+                    QT_TRANSLATE_NOOP("Notifications", "Error"),
+                    QT_TRANSLATE_NOOP("Notifications", "Cannot add internal alignment points"));
                 Gui::Command::abortCommand();
 
                 static_cast<Sketcher::SketchObject*>(sketchgui->getObject())->solve();
@@ -195,8 +213,10 @@ public:
 
             // add auto constraints on knot
             if (!sugConstr.back().empty()) {
-                createAutoConstraints(
-                    sugConstr.back(), knotGeoIds.back(), Sketcher::PointPos::start, false);
+                createAutoConstraints(sugConstr.back(),
+                                      knotGeoIds.back(),
+                                      Sketcher::PointPos::start,
+                                      false);
             }
 
             if (!IsClosed) {
@@ -247,12 +267,14 @@ public:
         // On pressing Backspace delete last knot
         else if (SoKeyboardEvent::BACKSPACE == key && pressed) {
             // when mouse is pressed we are in a transitional state so don't mess with it
-            if (MOUSE_PRESSED == MousePressMode)
+            if (MOUSE_PRESSED == MousePressMode) {
                 return;
+            }
 
             // can only delete last knot if it exists
-            if (STATUS_SEEK_FIRST_POINT == Mode || STATUS_CLOSE == Mode)
+            if (STATUS_SEEK_FIRST_POINT == Mode || STATUS_CLOSE == Mode) {
                 return;
+            }
 
             // if only first knot exists it's equivalent to canceling current spline
             if (knotGeoIds.size() == 1) {
@@ -270,8 +292,9 @@ public:
                         ->Constraints.getValues();
                 for (int i = constraints.size() - 1; i >= 0; --i) {
                     if (delGeoId == constraints[i]->First || delGeoId == constraints[i]->Second
-                        || delGeoId == constraints[i]->Third)
+                        || delGeoId == constraints[i]->Third) {
                         Gui::cmdAppObjectArgs(sketchgui->getObject(), "delConstraint(%d)", i);
+                    }
                 }
 
                 // Remove knot
@@ -291,8 +314,10 @@ public:
                 drawControlPolygonToPosition(prevCursorPosition);
                 drawCursorToPosition(prevCursorPosition);
             }
-            catch (const Base::Exception& e) {
-                Base::Console().Error("%s\n", e.what());
+            catch (const Base::Exception&) {
+                Gui::NotifyError(sketchgui,
+                                 QT_TRANSLATE_NOOP("Notifications", "Error"),
+                                 QT_TRANSLATE_NOOP("Notifications", "Error removing knot"));
                 // some commands might have already deleted some constraints/geometries but not
                 // others
                 Gui::Command::abortCommand();
@@ -339,8 +364,8 @@ public:
                 resetHandlerState();
             }
         }
-        else {// we have no data (CurrentConstraint == 0) so user when right-clicking really wants
-              // to exit
+        else {  // we have no data (CurrentConstraint == 0) so user when right-clicking really wants
+                // to exit
             DrawSketchHandler::quit();
         }
     }
@@ -367,7 +392,12 @@ private:
 
     QString getCrosshairCursorSVGName() const override
     {
-        return QString::fromLatin1("Sketcher_Pointer_Create_BSpline");
+        if (SketcherGui::DrawSketchHandlerBSplineByInterpolation::ConstrMethod == 1) {
+            return QString::fromLatin1("Sketcher_Pointer_Create_Periodic_BSplineByInterpolation");
+        }
+        else {
+            return QString::fromLatin1("Sketcher_Pointer_Create_BSplineByInterpolation");
+        }
     }
 
     void addSugConstraint()
@@ -418,9 +448,9 @@ private:
 
             if (ConstrMethod == 0) {
                 BSplineMults.front() =
-                    myDegree + 1;// FIXME: This is hardcoded until degree can be changed
+                    myDegree + 1;  // FIXME: This is hardcoded until degree can be changed
                 BSplineMults.back() =
-                    myDegree + 1;// FIXME: This is hardcoded until degree can be changed
+                    myDegree + 1;  // FIXME: This is hardcoded until degree can be changed
             }
 
             std::vector<std::stringstream> streams;
@@ -466,8 +496,9 @@ private:
             // FIXME: Decide whether to force a knot or not.
             std::vector<bool> isBetweenC0Points(BSplineKnots.size(), false);
             for (size_t i = 1; i < BSplineKnots.size() - 1; ++i) {
-                if (BSplineMults[i - 1] >= myDegree && BSplineMults[i + 1] >= myDegree)
+                if (BSplineMults[i - 1] >= myDegree && BSplineMults[i + 1] >= myDegree) {
                     isBetweenC0Points[i] = true;
+                }
             }
 
             int currentgeoid = getHighestCurveIndex();
@@ -502,12 +533,13 @@ private:
                     }
                     else {
                         Gui::Command::runCommand(
-                            Gui::Command::Gui, "_finalbsp_poles.extend(_bsps[-1].getPoles()[1:])");
+                            Gui::Command::Gui,
+                            "_finalbsp_poles.extend(_bsps[-1].getPoles()[1:])");
                         Gui::Command::runCommand(Gui::Command::Gui,
                                                  "_finalbsp_knots.extend([_finalbsp_knots[-1] + i "
                                                  "for i in _bsps[-1].getKnots()[1:]])");
                         Gui::Command::runCommand(Gui::Command::Gui,
-                                                 "_finalbsp_mults[-1] = 3");// FIXME: Hardcoded
+                                                 "_finalbsp_mults[-1] = 3");  // FIXME: Hardcoded
                         Gui::Command::runCommand(
                             Gui::Command::Gui,
                             "_finalbsp_mults.extend(_bsps[-1].getMultiplicities()[1:])");
@@ -522,7 +554,7 @@ private:
                     "(_finalbsp_poles,_finalbsp_mults,_finalbsp_knots,%s,%d,None,False),%s)",
                     ConstrMethod == 0 ? "False" : "True",
                     myDegree,
-                    geometryCreationMode == Construction ? "True" : "False");
+                    constructionModeAsBooleanText());
                 currentgeoid++;
 
                 // TODO: Confirm we do not need to delete individual elements
@@ -596,11 +628,14 @@ private:
                 Gui::Command::doCommand(Gui::Command::Doc, cstream.str().c_str());
 
                 // for showing the rest of internal geometry on creation
-                Gui::cmdAppObjectArgs(
-                    sketchgui->getObject(), "exposeInternalGeometry(%d)", currentgeoid);
+                Gui::cmdAppObjectArgs(sketchgui->getObject(),
+                                      "exposeInternalGeometry(%d)",
+                                      currentgeoid);
             }
-            catch (const Base::Exception& e) {
-                Base::Console().Error("%s\n", e.what());
+            catch (const Base::Exception&) {
+                Gui::NotifyError(sketchgui,
+                                 QT_TRANSLATE_NOOP("Notifications", "Error"),
+                                 QT_TRANSLATE_NOOP("Notifications", "Error creating B-spline"));
                 Gui::Command::abortCommand();
 
                 tryAutoRecomputeIfNotSolve(
@@ -622,8 +657,8 @@ private:
                      * right button of the mouse */
                 }
                 else {
-                    sketchgui
-                        ->purgeHandler();// no code after this line, Handler get deleted in ViewProvider
+                    sketchgui->purgeHandler();  // no code after this line, Handler get deleted in
+                                                // ViewProvider
                 }
 
                 return false;
@@ -650,8 +685,8 @@ private:
                  * right button of the mouse */
             }
             else {
-                sketchgui
-                    ->purgeHandler();// no code after this line, Handler get deleted in ViewProvider
+                sketchgui->purgeHandler();  // no code after this line, Handler get deleted in
+                                            // ViewProvider
             }
         }
         else {
@@ -681,7 +716,7 @@ protected:
 };
 
 
-}// namespace SketcherGui
+}  // namespace SketcherGui
 
 
-#endif// SKETCHERGUI_DrawSketchHandlerBSplineByInterpolation_H
+#endif  // SKETCHERGUI_DrawSketchHandlerBSplineByInterpolation_H

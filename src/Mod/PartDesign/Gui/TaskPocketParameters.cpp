@@ -43,9 +43,7 @@ TaskPocketParameters::TaskPocketParameters(ViewProviderPocket *PocketView,QWidge
     setupDialog(newObj, "User parameter:BaseApp/History/Pocket/");
 }
 
-TaskPocketParameters::~TaskPocketParameters()
-{
-}
+TaskPocketParameters::~TaskPocketParameters() = default;
 
 void TaskPocketParameters::translateModeList(int index)
 {

@@ -4,17 +4,17 @@
   <context>
     <name>CmdMeshPartCrossSections</name>
     <message>
-      <location filename="../../Command.cpp" line="268"/>
+      <location filename="../../Command.cpp" line="280"/>
       <source>MeshPart</source>
       <translation>Maillage</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="269"/>
+      <location filename="../../Command.cpp" line="281"/>
       <source>Cross-sections...</source>
       <translation>Coupes...</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="270"/>
+      <location filename="../../Command.cpp" line="282"/>
       <source>Cross-sections</source>
       <translation>Coupes</translation>
     </message>
@@ -22,17 +22,17 @@
   <context>
     <name>CmdMeshPartCurveOnMesh</name>
     <message>
-      <location filename="../../Command.cpp" line="304"/>
+      <location filename="../../Command.cpp" line="316"/>
       <source>Mesh</source>
       <translation>Maillage</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="305"/>
+      <location filename="../../Command.cpp" line="317"/>
       <source>Curve on mesh...</source>
       <translation>Courbe sur maillage ...</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="306"/>
+      <location filename="../../Command.cpp" line="318"/>
       <source>Creates an approximated curve on top of a mesh.
 This command only works with a 'mesh' object.</source>
       <translation>Crée une courbe approximative au dessus d'un maillage.
@@ -60,17 +60,17 @@ Cette commande ne fonctionne qu'avec un objet "mesh".</translation>
   <context>
     <name>CmdMeshPartSection</name>
     <message>
-      <location filename="../../Command.cpp" line="184"/>
+      <location filename="../../Command.cpp" line="192"/>
       <source>Mesh</source>
       <translation>Maillage</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="185"/>
+      <location filename="../../Command.cpp" line="193"/>
       <source>Create section from mesh and plane</source>
       <translation>Créer une section à partir d'un maillage et d'un plan</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="186"/>
+      <location filename="../../Command.cpp" line="194"/>
       <source>Section</source>
       <translation>Section</translation>
     </message>
@@ -91,18 +91,18 @@ Cette commande ne fonctionne qu'avec un objet "mesh".</translation>
       <location filename="../../Command.cpp" line="85"/>
       <location filename="../../Command.cpp" line="86"/>
       <source>Trims a mesh with a plane</source>
-      <translation>Ajuste le maillage avec un plan</translation>
+      <translation>Ajuster le maillage avec un plan</translation>
     </message>
   </context>
   <context>
     <name>Command</name>
     <message>
-      <location filename="../../Command.cpp" line="128"/>
+      <location filename="../../Command.cpp" line="134"/>
       <source>Trim with plane</source>
       <translation>Ajuster avec un plan</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="207"/>
+      <location filename="../../Command.cpp" line="217"/>
       <source>Section with plane</source>
       <translation>Section avec un plan</translation>
     </message>
@@ -137,7 +137,7 @@ Cette commande ne fonctionne qu'avec un objet "mesh".</translation>
     <message>
       <location filename="../../CrossSections.ui" line="52"/>
       <source>Position:</source>
-      <translation>Position :</translation>
+      <translation>Position :</translation>
     </message>
     <message>
       <location filename="../../CrossSections.ui" line="71"/>
@@ -157,7 +157,7 @@ Cette commande ne fonctionne qu'avec un objet "mesh".</translation>
     <message>
       <location filename="../../CrossSections.ui" line="109"/>
       <source>Distance:</source>
-      <translation>Distance :</translation>
+      <translation>Longueur :</translation>
     </message>
     <message>
       <location filename="../../CrossSections.ui" line="128"/>
@@ -170,7 +170,7 @@ Cette commande ne fonctionne qu'avec un objet "mesh".</translation>
       <translation>Racorder les arêtes si la distance est inférieure à</translation>
     </message>
     <message>
-      <location filename="../../CrossSections.cpp" line="366"/>
+      <location filename="../../CrossSections.cpp" line="384"/>
       <source>Failure</source>
       <translation>Échec</translation>
     </message>
@@ -178,32 +178,32 @@ Cette commande ne fonctionne qu'avec un objet "mesh".</translation>
   <context>
     <name>MeshPartGui::CurveOnMeshHandler</name>
     <message>
-      <location filename="../../CurveOnMesh.cpp" line="364"/>
+      <location filename="../../CurveOnMesh.cpp" line="362"/>
       <source>Create</source>
       <translation>Créer</translation>
     </message>
     <message>
-      <location filename="../../CurveOnMesh.cpp" line="366"/>
+      <location filename="../../CurveOnMesh.cpp" line="364"/>
       <source>Close wire</source>
       <translation>Fermer un fil</translation>
     </message>
     <message>
-      <location filename="../../CurveOnMesh.cpp" line="368"/>
+      <location filename="../../CurveOnMesh.cpp" line="366"/>
       <source>Clear</source>
       <translation>Effacer</translation>
     </message>
     <message>
-      <location filename="../../CurveOnMesh.cpp" line="369"/>
+      <location filename="../../CurveOnMesh.cpp" line="367"/>
       <source>Cancel</source>
       <translation>Annuler</translation>
     </message>
     <message>
-      <location filename="../../CurveOnMesh.cpp" line="615"/>
+      <location filename="../../CurveOnMesh.cpp" line="624"/>
       <source>Wrong mesh picked</source>
       <translation>Mauvaise maille choisie</translation>
     </message>
     <message>
-      <location filename="../../CurveOnMesh.cpp" line="655"/>
+      <location filename="../../CurveOnMesh.cpp" line="663"/>
       <source>No point was picked</source>
       <translation>Aucun point n'a été sélectionné</translation>
     </message>
@@ -227,7 +227,7 @@ Cette commande ne fonctionne qu'avec un objet "Mesh", pas avec une face ou une s
     <message>
       <location filename="../../TaskCurveOnMesh.ui" line="38"/>
       <source>Wire</source>
-      <translation>Fil</translation>
+      <translation>Polyligne</translation>
     </message>
     <message>
       <location filename="../../TaskCurveOnMesh.ui" line="44"/>
@@ -393,7 +393,7 @@ La valeur la plus petite est 0.</translation>
     <message>
       <location filename="../../Tessellation.ui" line="234"/>
       <source>Very coarse</source>
-      <translation>Très grossier</translation>
+      <translation>Très grossièrement</translation>
     </message>
     <message>
       <location filename="../../Tessellation.ui" line="239"/>
@@ -486,32 +486,32 @@ Une valeur dans la plage de 0.2-10.</translation>
       <translation>Laisser le panneau ouvert</translation>
     </message>
     <message>
-      <location filename="../../Tessellation.cpp" line="61"/>
+      <location filename="../../Tessellation.cpp" line="62"/>
       <source>Gmsh</source>
       <translation>Gmsh</translation>
     </message>
     <message>
-      <location filename="../../Tessellation.cpp" line="225"/>
-      <location filename="../../Tessellation.cpp" line="231"/>
+      <location filename="../../Tessellation.cpp" line="235"/>
+      <location filename="../../Tessellation.cpp" line="241"/>
       <source>No active document</source>
       <translation>Aucun document actif</translation>
     </message>
     <message>
-      <location filename="../../Tessellation.cpp" line="259"/>
+      <location filename="../../Tessellation.cpp" line="272"/>
       <source>You have selected a body without tip.
 Either set the tip of the body or select a different shape, please.</source>
       <translation>Vous avez sélectionné un corps sans fonction résultante.
 Définissez la fonction résultante du corps ou sélectionnez une forme différente, s'il vous plaît.</translation>
     </message>
     <message>
-      <location filename="../../Tessellation.cpp" line="263"/>
+      <location filename="../../Tessellation.cpp" line="278"/>
       <source>You have selected a shape without faces.
 Select a different shape, please.</source>
       <translation>Vous avez sélectionné une forme sans face.
 Merci de sélectionner une forme différente.</translation>
     </message>
     <message>
-      <location filename="../../Tessellation.cpp" line="267"/>
+      <location filename="../../Tessellation.cpp" line="282"/>
       <source>Select a shape for meshing, first.</source>
       <translation>Sélectionner d'abord une forme pour le maillage.</translation>
     </message>
@@ -519,12 +519,12 @@ Merci de sélectionner une forme différente.</translation>
   <context>
     <name>MeshPart_Section</name>
     <message>
-      <location filename="../../Command.cpp" line="197"/>
+      <location filename="../../Command.cpp" line="206"/>
       <source>Select plane</source>
-      <translation>Sélectionnez un plan</translation>
+      <translation>Sélectionner un plan</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="198"/>
+      <location filename="../../Command.cpp" line="207"/>
       <source>Please select a plane at which you section the mesh.</source>
       <translation>Veuillez sélectionner un plan à partir duquel vous découpez le maillage.</translation>
     </message>
@@ -534,35 +534,35 @@ Merci de sélectionner une forme différente.</translation>
     <message>
       <location filename="../../Command.cpp" line="95"/>
       <source>Select plane</source>
-      <translation>Sélectionnez un plan</translation>
+      <translation>Sélectionner un plan</translation>
     </message>
     <message>
       <location filename="../../Command.cpp" line="96"/>
       <source>Please select a plane at which you trim the mesh.</source>
-      <translation>Veuillez sélectionner un plan à partir duquel vous ajustez le maillage.</translation>
+      <translation>Sélectionnez un plan à partir duquel vous ajustez le maillage.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="102"/>
+      <location filename="../../Command.cpp" line="103"/>
       <source>Trim by plane</source>
       <translation>Découpe par un plan</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="103"/>
+      <location filename="../../Command.cpp" line="104"/>
       <source>Select the side you want to keep.</source>
-      <translation>Sélectionnez le coté que vous souhaitez conserver.</translation>
+      <translation>Sélectionner le coté à conserver.</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="104"/>
+      <location filename="../../Command.cpp" line="106"/>
       <source>Below</source>
       <translation>En dessous</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="105"/>
+      <location filename="../../Command.cpp" line="108"/>
       <source>Above</source>
       <translation>Au-dessus</translation>
     </message>
     <message>
-      <location filename="../../Command.cpp" line="106"/>
+      <location filename="../../Command.cpp" line="110"/>
       <source>Split</source>
       <translation>Scinder</translation>
     </message>
@@ -578,12 +578,12 @@ Merci de sélectionner une forme différente.</translation>
   <context>
     <name>MeshPart_CreateFlatMesh</name>
     <message>
-      <location filename="../../MeshFlatteningCommand.py" line="47"/>
-      <source>Unwrap Mesh</source>
+      <location filename="../../MeshFlatteningCommand.py" line="49"/>
+      <source>Unwrap mesh</source>
       <translation>Développer un maillage</translation>
     </message>
     <message>
-      <location filename="../../MeshFlatteningCommand.py" line="50"/>
+      <location filename="../../MeshFlatteningCommand.py" line="52"/>
       <source>Find a flat representation of a mesh.</source>
       <translation>Rechercher une représentation plane d’un maillage.</translation>
     </message>
@@ -591,12 +591,12 @@ Merci de sélectionner une forme différente.</translation>
   <context>
     <name>MeshPart_CreateFlatFace</name>
     <message>
-      <location filename="../../MeshFlatteningCommand.py" line="79"/>
-      <source>Unwrap Face</source>
+      <location filename="../../MeshFlatteningCommand.py" line="88"/>
+      <source>Unwrap face</source>
       <translation>Développer une face</translation>
     </message>
     <message>
-      <location filename="../../MeshFlatteningCommand.py" line="82"/>
+      <location filename="../../MeshFlatteningCommand.py" line="91"/>
       <source>Find a flat representation of a face.</source>
       <translation>Rechercher une représentation plane d’une face.</translation>
     </message>

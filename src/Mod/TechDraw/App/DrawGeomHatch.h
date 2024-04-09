@@ -54,7 +54,7 @@ class TechDrawExport DrawGeomHatch : public App::DocumentObject
 
 public:
     DrawGeomHatch();
-    ~DrawGeomHatch() = default;
+    ~DrawGeomHatch() override = default;
 
     App::PropertyLinkSub     Source;                                   //the dvX & face(s) this crosshatch belongs to
     App::PropertyFile        FilePattern;
@@ -102,6 +102,8 @@ public:
     static std::string prefGeomHatchName();
     static App::Color prefGeomHatchColor();
     static std::vector<LineSet> makeLineSets(std::string fileSpec, std::string myPattern);
+
+    void translateLabel(std::string context, std::string baseName, std::string uniqueName);
 
 protected:
     void replacePatIncluded(std::string newHatchFileName);

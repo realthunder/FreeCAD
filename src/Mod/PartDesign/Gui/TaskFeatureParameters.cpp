@@ -318,10 +318,7 @@ TaskDlgFeatureParameters::TaskDlgFeatureParameters(PartDesignGui::ViewProvider *
     assert(vp);
 }
 
-TaskDlgFeatureParameters::~TaskDlgFeatureParameters()
-{
-
-}
+TaskDlgFeatureParameters::~TaskDlgFeatureParameters() = default;
 
 bool TaskDlgFeatureParameters::accept() {
     App::DocumentObject* feature = vp->getObject();
@@ -338,7 +335,7 @@ bool TaskDlgFeatureParameters::accept() {
         }
         // Make sure the feature is what we are expecting
         // Should be fine but you never know...
-        if ( !feature->getTypeId().isDerivedFrom(PartDesign::Feature::getClassTypeId()) ) {
+        if ( !feature->isDerivedFrom<PartDesign::Feature>() ) {
             throw Base::TypeError("Bad object processed in the feature dialog.");
         }
 

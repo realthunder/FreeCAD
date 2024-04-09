@@ -39,12 +39,12 @@ public:
     explicit TaskThicknessParameters(ViewProviderDressUp *DressUpView, QWidget *parent=nullptr);
     ~TaskThicknessParameters() override;
 
-    double getValue(void) const;
-    bool getReversed(void) const;
-    bool getMakeOffset(void) const;
-    bool getIntersection(void) const;
-    int  getMode(void) const;
-    int  getJoinType(void) const;
+    double getValue() const;
+    bool getReversed() const;
+    bool getMakeOffset() const;
+    bool getIntersection() const;
+    int  getMode() const;
+    int  getJoinType() const;
 
 private Q_SLOTS:
     void onValueChanged(double angle);

@@ -53,7 +53,7 @@
 
 #include <boost/range.hpp>
 
-#include <App/ComplexGeoData.h>
+#include <App/ElementNamingUtils.h>
 #include <App/Document.h>
 #include <App/GeoFeature.h>
 #include <App/GeoFeatureGroupExtension.h>
@@ -163,7 +163,7 @@ public:
     std::map<qint64, QIcon> iconMap;
 
     static ViewProviderDocumentObject *getView(App::DocumentObject *obj) {
-        if(obj && obj->getNameInDocument()) {
+        if(obj && obj->isAttachedToDocument()) {
             return Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
                     Application::Instance->getViewProvider(obj));
         }
@@ -221,8 +221,10 @@ public:
         :ref(0),pcLinked(vp)
     {
         FC_TRACE("new link to " << pcLinked->getObject()->getFullName());
+        //NOLINTBEGIN
         connChangeIcon = vp->signalChangeIcon.connect(
-                boost::bind(&LinkInfo::slotChangeIcon,this));
+                std::bind(&LinkInfo::slotChangeIcon,this));
+        //NOLINTEND
         vp->forceUpdate(true);
         sensor.setFunction(sensorCB);
         sensor.setData(this);
@@ -234,8 +236,7 @@ public:
         transformSensor.setData(this);
     }
 
-    ~LinkInfo() {
-    }
+    ~LinkInfo() = default;
 
     bool checkName(const char *name) const {
         return isLinked() && strcmp(name,getLinkedName())==0;
@@ -247,7 +248,7 @@ public:
 
     bool isLinked() const {
         return pcLinked && pcLinked->getObject() &&
-           pcLinked->getObject()->getNameInDocument();
+           pcLinked->getObject()->isAttachedToDocument();
     }
 
     const char *getLinkedName() const {
@@ -365,12 +366,12 @@ public:
     // VC2013 has trouble with template argument dependent lookup in
     // namespace. Have to put the below functions in global namespace.
     //
-    // However, gcc seems to behave the oppsite, hence the conditional
+    // However, gcc seems to behave the opposite, hence the conditional
     // compilation  here.
     //
-#ifdef _MSC_VER
-    friend void ::intrusive_ptr_add_ref(LinkInfo *px);
-    friend void ::intrusive_ptr_release(LinkInfo *px);
+#if defined(_MSC_VER)
+    friend void Gui::intrusive_ptr_add_ref(LinkInfo *px);
+    friend void Gui::intrusive_ptr_release(LinkInfo *px);
 #else
     friend inline void intrusive_ptr_add_ref(LinkInfo *px) { px->addref(); }
     friend inline void intrusive_ptr_release(LinkInfo *px) { px->release(); }
@@ -694,7 +695,7 @@ public:
         }
 
         auto pcSwitch = pcSwitches[type];
-        if(*subname == 0 || !pcChildGroup || !pcSwitch || Data::ComplexGeoData::isElementName(subname))
+        if(*subname == 0 || !pcChildGroup || !pcSwitch || Data::isElementName(subname))
             return pcLinked->getDetailPath(subname,path,false,det);
 
         if(path){
@@ -722,11 +723,11 @@ public:
         const char *nextsub = subname;
         if(!dot)
             return false;
-        auto obj = pcLinked->getObject();
-        auto sobj = obj;
-        while(1) {
+        auto geoGroup = pcLinked->getObject();
+        auto sobj = geoGroup;
+        while(true) {
             std::string objname = std::string(nextsub,dot-nextsub+1);
-            if(!obj->getSubObject(objname.c_str())) {
+            if(!geoGroup->getSubObject(objname.c_str())) {
                 // sub object is not found, abort.
                 break;
             }
@@ -755,7 +756,7 @@ public:
                 break;
             }
             // new style mapped sub-element
-            if(Data::ComplexGeoData::isMappedElement(dot+1))
+            if(Data::isMappedElement(dot+1))
                 break;
             auto next = strchr(dot+1,'.');
             if(!next) {
@@ -806,13 +807,18 @@ public:
     }
 };
 
-#ifdef _MSC_VER
-void intrusive_ptr_add_ref(Gui::LinkInfo *px){
-    px->addref();
-}
+#if defined(_MSC_VER)
+namespace Gui
+{
+    void intrusive_ptr_add_ref(Gui::LinkInfo* px)
+    {
+        px->addref();
+    }
 
-void intrusive_ptr_release(Gui::LinkInfo *px){
-    px->release();
+    void intrusive_ptr_release(Gui::LinkInfo* px)
+    {
+        px->release();
+    }
 }
 #endif
 
@@ -1200,13 +1206,13 @@ void LinkView::setLinkViewObject(ViewProviderDocumentObject *vpd,
     subInfo.clear();
     for(const auto &sub : subs) {
         if(sub.empty()) continue;
-        std::string subname = Data::ComplexGeoData::noElementName(sub.c_str());
-        std::string element = Data::ComplexGeoData::oldElementName(
-                Data::ComplexGeoData::findElementName(sub.c_str()));
+        std::string subname = Data::noElementName(sub.c_str());
+        std::string element = Data::oldElementName(
+                Data::findElementName(sub.c_str()));
         auto it = subInfo.find(subname);
         if(it == subInfo.end()) {
             it = subInfo.insert(std::make_pair(subname,std::unique_ptr<SubInfo>())).first;
-            it->second.reset(new SubInfo(*this));
+            it->second = std::make_unique<SubInfo>(*this);
         }
         if(!element.empty())
             it->second->subElements.insert(std::move(element));
@@ -1249,7 +1255,7 @@ void LinkView::setSize(int _size) {
         pcLinkRoot->addChild(info->pcSwitch);
 
     while(nodeArray.size()<size) {
-        nodeArray.push_back(std::unique_ptr<Element>(new Element(*this)));
+        nodeArray.push_back(std::make_unique<Element>(*this));
         auto &info = *nodeArray.back();
         info.pcTransform = new SoMatrixTransform;
         info.pcSwitch = new SoFCSwitch;
@@ -1423,8 +1429,9 @@ void LinkView::setChildren(const std::vector<App::DocumentObject*> &children,
     std::map<App::DocumentObject*, size_t> groups;
     for(size_t i=0;i<children.size();++i) {
         auto obj = children[i];
-        if(nodeArray.size()<=i)
-            nodeArray.push_back(std::unique_ptr<Element>(new Element(*this)));
+        if(nodeArray.size()<=i) {
+            nodeArray.push_back(std::make_unique<Element>(*this));
+        }
         auto &info = *nodeArray[i];
         info.groupIndex = -1;
         info.link(obj);
@@ -1764,7 +1771,7 @@ bool LinkView::linkGetDetailPath(const char *subname, SoFullPath *path, SoDetail
         if (subname[0]>='0' && subname[0]<='9') {
             idx = App::LinkBaseExtension::getArrayIndex(subname,&subname);
         } else {
-            while(1) {
+            while(true) {
                 const char *dot = strchr(subname,'.');
                 if(!dot)
                     break;
@@ -1861,7 +1868,7 @@ bool LinkView::linkGetDetailPath(const char *subname, SoFullPath *path, SoDetail
                     ++nextsub;
                 }
                 if(*nextsub && !sub.subElements.empty()) {
-                    auto element = Data::ComplexGeoData::oldElementName(nextsub);
+                    auto element = Data::oldElementName(nextsub);
                     if (sub.subElements.find(element)==sub.subElements.end())
                        break;
                 }
@@ -2165,7 +2172,7 @@ bool ViewProviderLink::setLinkType(App::LinkBaseExtension *ext) {
 }
 
 App::LinkBaseExtension *ViewProviderLink::getLinkExtension() {
-    if(!pcObject || !pcObject->getNameInDocument())
+    if(!pcObject || !pcObject->isAttachedToDocument())
         return 0;
 
     auto ext = pcObject->getExtensionByType<App::LinkBaseExtension>(true);
@@ -2228,7 +2235,7 @@ App::LinkBaseExtension *ViewProviderLink::getLinkExtension() {
 }
 
 const App::LinkBaseExtension *ViewProviderLink::getLinkExtension() const{
-    if(!pcObject || !pcObject->getNameInDocument())
+    if(!pcObject || !pcObject->isAttachedToDocument())
         return nullptr;
     return const_cast<App::DocumentObject*>(pcObject)->getExtensionByType<App::LinkBaseExtension>(true);
 }
@@ -2797,7 +2804,7 @@ bool ViewProviderLink::getDetailPath(
         appendPath(pPath,pcModeSwitch);
     }
     if(childVpLink
-            && (Data::ComplexGeoData::isElementName(subname)
+            && (Data::isElementName(subname)
                 || !subname || !subname[0])) {
         if(childVpLink->getDetail(false,LinkView::SnapshotTransform,subname,det,pPath))
             return true;
@@ -3126,7 +3133,7 @@ bool ViewProviderLink::initDraggingPlacement(int mode) {
     Base::PyGILStateLocker lock;
     try {
         auto* proxy = getPropertyByName("Proxy");
-        if (proxy && proxy->getTypeId() == App::PropertyPythonObject::getClassTypeId()) {
+        if (proxy && proxy->is<App::PropertyPythonObject>()) {
             Py::Object feature = static_cast<App::PropertyPythonObject*>(proxy)->getValue();
             const char *fname = "initDraggingPlacement";
             if (feature.hasAttr(fname)) {
@@ -3141,7 +3148,7 @@ bool ViewProviderLink::initDraggingPlacement(int mode) {
                         FC_ERR("initDraggingPlacement() expects return of type tuple(matrix,placement,boundbox)");
                         return false;
                     }
-                    dragCtx.reset(new DraggerContext);
+                    dragCtx = std::make_unique<DraggerContext>();
                     dragCtx->initialPlacement = *static_cast<Base::PlacementPy*>(pypla)->getPlacementPtr();
                     dragCtx->preTransform = *static_cast<Base::MatrixPy*>(pymat)->getMatrixPtr();
                     dragCtx->bbox = *static_cast<Base::BoundBoxPy*>(pybbox)->getBoundBoxPtr();
@@ -3171,7 +3178,7 @@ bool ViewProviderLink::initDraggingPlacement(int mode) {
         return false;
     }
 
-    dragCtx.reset(new DraggerContext);
+    dragCtx = std::make_unique<DraggerContext>();
 
     dragCtx->preTransform = doc->getEditingTransform();
     doc->setEditingTransform(dragCtx->preTransform);
@@ -3501,7 +3508,7 @@ bool ViewProviderLink::callDraggerProxy(const char *fname, bool update) {
     Base::PyGILStateLocker lock;
     try {
         auto* proxy = getPropertyByName("Proxy");
-        if (proxy && proxy->getTypeId() == App::PropertyPythonObject::getClassTypeId()) {
+        if (proxy && proxy->is<App::PropertyPythonObject>()) {
             Py::Object feature = static_cast<App::PropertyPythonObject*>(proxy)->getValue();
             if (feature.hasAttr(fname)) {
                 Py::Callable method(feature.getAttr(fname));
@@ -3690,7 +3697,7 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
         // In case of multi-level linking, we recursively call into each level,
         // and merge the colors
         auto vpd = &vp;
-        while(1) {
+        while(true) {
             if(!vpd->getObject())
                 break;
             auto link = vpd->getObject()->getLinkedObject(false);
@@ -3783,7 +3790,7 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
     }
     std::map<std::string, App::Color> ret;
     for(const auto &v : colors) {
-        const char *pos = 0;
+        const char *pos = nullptr;
         auto sobj = vp.getObject()->resolve(v.first.c_str(),nullptr,nullptr,&pos);
         if(!sobj || !pos)
             continue;

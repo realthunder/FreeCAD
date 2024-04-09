@@ -175,10 +175,10 @@ void TaskFeaturePick::updateList()
     bool hasExternal = false;
     unsigned used = 0;
 
-    for (std::vector<featureStatus>::const_iterator st = statuses.begin(); st != statuses.end(); st++) {
+    for (auto status : statuses) {
         QListWidgetItem* item = ui->listWidget->item(index);
 
-        switch (*st) {
+        switch (status) {
             case validFeature: item->setHidden(false); break;
             case invalidShape: item->setHidden(true); break;
             case isUsed: item->setHidden(!ui->checkUsed->isChecked()); used++; break;
@@ -225,8 +225,11 @@ std::vector<App::DocumentObject*> TaskFeaturePick::getFeatures()
 
     std::vector<App::DocumentObject*> result;
 
-    for (std::vector<QString>::const_iterator s = features.begin(); s != features.end(); ++s)
-        result.push_back(App::GetApplication().getDocument(documentName.c_str())->getObject(s->toUtf8().data()));
+    for (const auto& feature : features) {
+        result.push_back(App::GetApplication()
+                             .getDocument(documentName.c_str())
+                             ->getObject(feature.toUtf8().data()));
+    }
 
     return result;
 }
@@ -242,7 +245,7 @@ std::vector<App::DocumentObject*> TaskFeaturePick::buildFeatures()
 
         auto activePart = PartDesignGui::getPartFor(activeBody, false);
 
-        for (std::vector<featureStatus>::const_iterator st = statuses.begin(); st != statuses.end(); st++) {
+        for (auto status : statuses) {
             QListWidgetItem* item = ui->listWidget->item(index);
 
             if (item->isSelected() && !item->isHidden()) {
@@ -250,24 +253,24 @@ std::vector<App::DocumentObject*> TaskFeaturePick::buildFeatures()
                 auto obj = App::GetApplication().getDocument(documentName.c_str())->getObject(t.toUtf8().data());
 
                 //build the dependent copy or reference if wanted by the user
-                if (*st == otherBody || *st == otherPart || *st == notInBody) {
+                if (status == otherBody || status == otherPart || status == notInBody) {
                     if (!ui->radioXRef->isChecked()) {
                         auto copy = makeCopy(obj, "", ui->radioIndependent->isChecked());
 
-                        if (*st == otherBody) {
+                        if (status == otherBody) {
                             activeBody->addObject(copy);
                         }
-                        else if (*st == otherPart) {
+                        else if (status == otherPart) {
                             auto oBody = PartDesignGui::getBodyFor(obj, false);
                             if (!oBody)
                                 activePart->addObject(copy);
                             else
                                 activeBody->addObject(copy);
                         }
-                        else if (*st == notInBody) {
+                        else if (status == notInBody) {
                             activeBody->addObject(copy);
                             // doesn't supposed to get here anything but sketch but to be on the safe side better to check
-                            if (copy->getTypeId().isDerivedFrom(Sketcher::SketchObject::getClassTypeId())) {
+                            if (copy->isDerivedFrom<Sketcher::SketchObject>()) {
                                 Sketcher::SketchObject *sketch = static_cast<Sketcher::SketchObject*>(copy);
                                 PartDesignGui::fixSketchSupport(sketch);
                             }
@@ -329,10 +332,10 @@ App::DocumentObject* TaskFeaturePick::makeCopy(App::DocumentObject* obj, std::st
 
             //independent copies don't have links and are not attached
             if(independent && (
-                prop->getTypeId().isDerivedFrom(App::PropertyLink::getClassTypeId()) ||
-                prop->getTypeId().isDerivedFrom(App::PropertyLinkList::getClassTypeId()) ||
-                prop->getTypeId().isDerivedFrom(App::PropertyLinkSub::getClassTypeId()) ||
-                prop->getTypeId().isDerivedFrom(App::PropertyLinkSubList::getClassTypeId())||
+                prop->isDerivedFrom<App::PropertyLink>() ||
+                prop->isDerivedFrom<App::PropertyLinkList>() ||
+                prop->isDerivedFrom<App::PropertyLinkSub>() ||
+                prop->isDerivedFrom<App::PropertyLinkSubList>()||
                 ( prop->getGroup() && strcmp(prop->getGroup(),"Attachment")==0) ))    {
 
                 ++it;
@@ -382,13 +385,13 @@ App::DocumentObject* TaskFeaturePick::makeCopy(App::DocumentObject* obj, std::st
             long int mode = mmDeactivated;
             Part::Datum *datumCopy = static_cast<Part::Datum*>(copy);
 
-            if(obj->getTypeId() == PartDesign::Point::getClassTypeId()) {
+            if(obj->is<PartDesign::Point>()) {
                 mode = mm0Vertex;
             }
-            else if(obj->getTypeId() == PartDesign::Line::getClassTypeId()) {
+            else if(obj->is<PartDesign::Line>()) {
                 mode = mm1TwoPoints;
             }
-            else if(obj->getTypeId() == PartDesign::Plane::getClassTypeId()) {
+            else if(obj->is<PartDesign::Plane>()) {
                 mode = mmFlatFace;
             }
             else
@@ -405,7 +408,7 @@ App::DocumentObject* TaskFeaturePick::makeCopy(App::DocumentObject* obj, std::st
                 datumCopy->Shape.setValue(static_cast<Part::Datum*>(obj)->Shape.getValue());
             }
         }
-        else if(obj->getTypeId() == PartDesign::ShapeBinder::getClassTypeId() ||
+        else if(obj->is<PartDesign::ShapeBinder>() ||
                 obj->isDerivedFrom(Part::Feature::getClassTypeId())) {
 
             copy = App::GetApplication().getActiveDocument()->addObject("PartDesign::ShapeBinder", name.c_str());

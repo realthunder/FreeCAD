@@ -39,12 +39,14 @@ class QActionGroup;
 class QPopupMenu;
 class QToolBar;
 
-namespace App {
+namespace App
+{
 class DocumentObject;
 class Property;
-}
+}  // namespace App
 
-namespace Ui {
+namespace Ui
+{
 class Sheet;
 }
 
@@ -55,7 +57,7 @@ namespace SpreadsheetGui
 
 class SpreadsheetDelegate;
 
-class SpreadsheetGuiExport SheetView : public Gui::MDIView
+class SpreadsheetGuiExport SheetView: public Gui::MDIView
 {
     Q_OBJECT
 
@@ -65,9 +67,12 @@ public:
     SheetView(Gui::Document* pcDocument, App::DocumentObject* docObj, QWidget* parent);
     ~SheetView() override;
 
-    const char *getName(void) const override {return "SheetView";}
+    const char* getName() const override
+    {
+        return "SheetView";
+    }
 
-    bool onMsg(const char* pMsg,const char** ppReturn) override;
+    bool onMsg(const char* pMsg, const char** ppReturn) override;
     bool onHasMsg(const char* pMsg) const override;
 
     /** @name Printing */
@@ -78,9 +83,12 @@ public:
     void print(QPrinter*) override;
     //@}
 
-    void updateCell(const App::Property * prop);
+    void updateCell(const App::Property* prop);
 
-    Spreadsheet::Sheet * getSheet() { return sheet; }
+    Spreadsheet::Sheet* getSheet()
+    {
+        return sheet;
+    }
 
     std::vector<App::Range> selectedRanges() const;
 
@@ -89,7 +97,9 @@ public:
 
     void select(App::CellAddress cell, QItemSelectionModel::SelectionFlags flags);
 
-    void select(App::CellAddress topLeft, App::CellAddress bottomRight, QItemSelectionModel::SelectionFlags flags);
+    void select(App::CellAddress topLeft,
+                App::CellAddress bottomRight,
+                QItemSelectionModel::SelectionFlags flags);
 
     QModelIndex currentIndex() const;
 
@@ -97,7 +107,7 @@ public:
 
     void deleteSelection();
 
-    PyObject *getPyObject(void) override;
+    PyObject* getPyObject() override;
 
     void deleteSelf() override;
 
@@ -109,12 +119,13 @@ protected Q_SLOTS:
     void confirmAliasChanged(const QString& text);
     void aliasChanged(const QString& text);
     void confirmContentChanged(const QString& text);
-    void currentChanged( const QModelIndex & current, const QModelIndex & previous );
+    void currentChanged(const QModelIndex& current, const QModelIndex& previous);
     void columnResized(int col, int oldSize, int newSize);
     void rowResized(int row, int oldSize, int newSize);
     void columnResizeFinished();
     void rowResizeFinished();
-    void modelUpdated(const QModelIndex & topLeft, const QModelIndex & bottomRight);
+    void modelUpdated(const QModelIndex& topLeft, const QModelIndex& bottomRight);
+
 protected:
     void updateContentLine();
     void updateAliasLine();
@@ -122,10 +133,10 @@ protected:
     void resizeColumn(int col, int newSize);
     void resizeRow(int col, int newSize);
 
-    Ui::Sheet * ui;
-    Spreadsheet::Sheet * sheet;
-    SpreadsheetDelegate * delegate;
-    SheetModel * model;
+    Ui::Sheet* ui;
+    Spreadsheet::Sheet* sheet;
+    SpreadsheetDelegate* delegate;
+    SheetModel* model;
     boost::signals2::scoped_connection columnWidthChangedConnection;
     boost::signals2::scoped_connection rowHeightChangedConnection;
     boost::signals2::scoped_connection positionChangedConnection;
@@ -137,20 +148,20 @@ private:
     Py::SmartPtr pythonObject;
 };
 
-class SheetViewPy : public Py::PythonExtension<SheetViewPy>
+class SheetViewPy: public Py::PythonExtension<SheetViewPy>
 {
 public:
     using BaseType = Py::PythonExtension<SheetViewPy>;
     static void init_type();
 
-    explicit SheetViewPy(SheetView *mdi);
+    explicit SheetViewPy(SheetView* mdi);
     ~SheetViewPy() override;
 
     Py::Object repr() override;
-    Py::Object getattr(const char *) override;
+    Py::Object getattr(const char*) override;
     Py::Object getSheet(const Py::Tuple&);
     Py::Object cast_to_base(const Py::Tuple&);
-    
+
     Py::Object selectedRanges(const Py::Tuple&);
     Py::Object selectedCells(const Py::Tuple&);
     Py::Object select(const Py::Tuple&);
@@ -163,6 +174,6 @@ protected:
     Gui::MDIViewPy *base;
 };
 
-} // namespace SpreadsheetModGui
+}  // namespace SpreadsheetGui
 
-#endif // SpreadsheetView_H
+#endif  // SpreadsheetView_H

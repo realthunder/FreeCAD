@@ -122,9 +122,9 @@ void FeatureAddSub::getAddSubShape(std::vector<std::pair<Part::TopoShape, Type> 
 
 const std::string &FeatureAddSub::addsubElementPrefix()
 {
-    static std::string res(Data::ComplexGeoData::elementMapPrefix()
+    static std::string res(Data::elementMapPrefix()
                            + "AddSub"
-                           + Data::ComplexGeoData::elementMapPrefix());
+                           + Data::elementMapPrefix());
     return res;
 }
 
@@ -147,10 +147,10 @@ bool FeatureAddSub::isRecomputePaused() const
 namespace App {
 /// @cond DOXERR
 PROPERTY_SOURCE_TEMPLATE(PartDesign::FeatureAddSubPython, PartDesign::FeatureAddSub)
-template<> const char* PartDesign::FeatureAddSubPython::getViewProviderName(void) const {
+template<> const char* PartDesign::FeatureAddSubPython::getViewProviderName() const {
     return "PartDesignGui::ViewProviderPython";
 }
-template<> PyObject* PartDesign::FeatureAddSubPython::getPyObject(void) {
+template<> PyObject* PartDesign::FeatureAddSubPython::getPyObject() {
     if (PythonObject.is(Py::_None())) {
         // ref counter is set to 1
         PythonObject = Py::Object(new FeaturePythonPyT<PartDesign::FeaturePy>(this),true);
@@ -172,9 +172,7 @@ FeatureAdditivePython::FeatureAdditivePython()
 {
 }
 
-FeatureAdditivePython::~FeatureAdditivePython()
-{
-}
+FeatureAdditivePython::~FeatureAdditivePython() = default;
 
 
 PROPERTY_SOURCE(PartDesign::FeatureSubtractivePython, PartDesign::FeatureAddSubPython)
@@ -184,9 +182,7 @@ FeatureSubtractivePython::FeatureSubtractivePython()
     initAddSubType(Subtractive);
 }
 
-FeatureSubtractivePython::~FeatureSubtractivePython()
-{
-}
+FeatureSubtractivePython::~FeatureSubtractivePython() = default;
 
 PROPERTY_SOURCE(PartDesign::FeatureIntersectingPython, PartDesign::FeatureAddSubPython)
 

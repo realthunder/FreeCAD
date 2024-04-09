@@ -67,9 +67,9 @@ public:
 private:
     QUrl uri;
     mutable QImage image;
-    View3DInventorViewer* viewer;
-    int size;
-    bool updateOnSave = true;
+    View3DInventorViewer* viewer{nullptr};
+    int size{0};
+    bool updateOnSave{true};
 };
 
 }

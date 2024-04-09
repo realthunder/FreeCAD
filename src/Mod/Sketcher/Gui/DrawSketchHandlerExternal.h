@@ -23,12 +23,29 @@
 #ifndef SKETCHERGUI_DrawSketchHandlerExternal_H
 #define SKETCHERGUI_DrawSketchHandlerExternal_H
 
+#include <App/OriginFeature.h>
+#include <Mod/Part/App/DatumFeature.h>
+
+#include <Gui/Notifications.h>
+#include <Gui/SelectionFilter.h>
+#include <Gui/Command.h>
+#include <Gui/CommandT.h>
+#include <Gui/View3DInventor.h>
+#include <Gui/View3DInventorViewer.h>
+#include <Gui/MDIView.h>
+
+#include <Mod/Sketcher/App/SketchObject.h>
+
+#include "DrawSketchHandler.h"
 #include "GeometryCreationMode.h"
+#include "Utils.h"
+#include "ViewProviderSketch.h"
 
 
-namespace SketcherGui {
+namespace SketcherGui
+{
 
-extern GeometryCreationMode geometryCreationMode; // defined in CommandCreateGeo.cpp
+extern GeometryCreationMode geometryCreationMode;  // defined in CommandCreateGeo.cpp
 
 class ExternalSelection : public SketcherSelectionFilterGate
 {
@@ -39,9 +56,9 @@ public:
     {
     }
 
-    bool allow(App::Document *pDoc, App::DocumentObject *pObj, const char *sSubName) override
+    bool allow(App::Document* pDoc, App::DocumentObject* pObj, const char* sSubName) override
     {
-        Sketcher::SketchObject *sketch = static_cast<Sketcher::SketchObject*>(object);
+        Sketcher::SketchObject* sketch = static_cast<Sketcher::SketchObject*>(object);
 
         this->notAllowedReason = "";
 
@@ -58,40 +75,30 @@ public:
         Sketcher::SketchObject::eReasonList msg;
         if (!sketch->isExternalAllowed(pDoc, pObj, &msg)){
             switch(msg){
-            case Sketcher::SketchObject::rlCircularReference:
-                this->notAllowedReason = QT_TR_NOOP("Linking this will cause circular dependency. ");
-                break;
+                case Sketcher::SketchObject::rlCircularReference:
+                    this->notAllowedReason = QT_TR_NOOP("Linking this will cause circular dependency. ");
+                    break;
 
-                // We'll auto create shapebinder in the following cases.
-#if 1
-            case Sketcher::SketchObject::rlOtherDoc:
-            case Sketcher::SketchObject::rlOtherBody:
-            case Sketcher::SketchObject::rlOtherPart:
-                return true;
-#else
-            case Sketcher::SketchObject::rlOtherDoc:
-                this->notAllowedReason = QT_TR_NOOP("This object is in another document.");
-                break;
-            case Sketcher::SketchObject::rlOtherBody:
-                this->notAllowedReason = QT_TR_NOOP("This object belongs to another body, can't link.");
-                break;
-            case Sketcher::SketchObject::rlOtherPart:
-                this->notAllowedReason = QT_TR_NOOP("This object belongs to another part, can't link.");
-                break;
-#endif
-            default:
-                break;
+                    // We'll auto create shapebinder in the following cases.
+                case Sketcher::SketchObject::rlOtherDoc:
+                case Sketcher::SketchObject::rlOtherBody:
+                case Sketcher::SketchObject::rlOtherPart:
+                    return true;
+                default:
+                    break;
             }
             return false;
         }
 
-        // Note: its better to search the support of the sketch in case the sketch support is a base plane
-        //Part::BodyBase* body = Part::BodyBase::findBodyOf(sketch);
-        //if ( body && body->hasFeature ( pObj ) && body->isAfter ( pObj, sketch ) ) {
-            // Don't allow selection after the sketch in the same body
-            // NOTE: allowness of features in other bodies is handled by SketchObject::isExternalAllowed()
-            // TODO may be this should be in SketchObject::isExternalAllowed() (2015-08-07, Fat-Zer)
-            //return false;
+        // Note: its better to search the support of the sketch in case the sketch support is a base
+        // plane
+        // Part::BodyBase* body = Part::BodyBase::findBodyOf(sketch);
+        // if ( body && body->hasFeature ( pObj ) && body->isAfter ( pObj, sketch ) ) {
+        // Don't allow selection after the sketch in the same body
+        // NOTE: allowness of features in other bodies is handled by
+        // SketchObject::isExternalAllowed()
+        // TODO may be this should be in SketchObject::isExternalAllowed() (2015-08-07, Fat-Zer)
+        // return false;
         //}
 
         std::string element(sSubName);
@@ -103,10 +110,10 @@ public:
         {
             return true;
         }
-        if (pObj->getTypeId().isDerivedFrom(App::Plane::getClassTypeId()) ||
-            pObj->getTypeId().isDerivedFrom(Part::Datum::getClassTypeId()))
+        if (pObj->isDerivedFrom<App::Plane>() || pObj->isDerivedFrom<Part::Datum>()) {
             return true;
-        return  false;
+        }
+        return false;
     }
 
 private:
@@ -231,8 +238,9 @@ public:
     void mouseMove(Base::Vector2d onSketchPos) override
     {
         Q_UNUSED(onSketchPos);
-        if (Gui::Selection().hasPreselection())
+        if (Gui::Selection().hasPreselection()) {
             applyCursor();
+        }
     }
 
     bool pressButton(Base::Vector2d onSketchPos) override
@@ -245,20 +253,24 @@ public:
     {
         Q_UNUSED(onSketchPos);
         /* this is ok not to call to purgeHandler
-        * in continuous creation mode because the
-        * handler is destroyed by the quit() method on pressing the
-        * right button of the mouse */
+         * in continuous creation mode because the
+         * handler is destroyed by the quit() method on pressing the
+         * right button of the mouse */
         return true;
     }
 
-    bool allowExternalDocument() const override {return true;}
+    bool allowExternalDocument() const override
+    {
+        return true;
+    }
 
     bool onSelectionChanged(const Gui::SelectionChanges& msg) override
     {
         if (msg.Type == Gui::SelectionChanges::AddSelection) {
             App::DocumentObject* obj = msg.Object.getObject();
-            if (obj == NULL)
+            if (!obj) {
                 throw Base::ValueError("Sketcher: External geometry: Invalid object in selection");
+            }
 
             auto indexedName = Data::IndexedName(msg.Object.getOldElementName().c_str());
             if (intersection ||
@@ -330,5 +342,4 @@ public:
 } // namespace SketcherGui
 
 
-#endif // SKETCHERGUI_DrawSketchHandlerExternal_H
-
+#endif  // SKETCHERGUI_DrawSketchHandlerExternal_H

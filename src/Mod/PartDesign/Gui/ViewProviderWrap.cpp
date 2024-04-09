@@ -150,7 +150,7 @@ bool ViewProviderWrap::getDetailPath(
     auto owner = Base::freecad_dynamic_cast<PartDesign::FeatureWrap>(getObject());
     auto wrapped = owner->WrapFeature.getValue();
     if (wrapped && subname
-                && subname != Data::ComplexGeoData::findElementName(subname)) {
+                && subname != Data::findElementName(subname)) {
         const char * dot = strchr(subname,'.');
         if (dot && boost::equals(CharRange(subname, dot), wrapped->getNameInDocument())) {
             if(append) {

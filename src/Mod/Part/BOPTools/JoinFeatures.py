@@ -22,7 +22,7 @@
 
 __title__ = "BOPTools.JoinFeatures module"
 __author__ = "DeepSOIC"
-__url__ = "http://www.freecad.org"
+__url__ = "https://www.freecad.org"
 __doc__ = "Implementation of document objects (features) for connect, ebmed and cutout operations."
 
 from . import JoinAPI
@@ -36,7 +36,7 @@ if FreeCAD.GuiUp:
 
 # -------------------------- translation-related code -------------------------
 # Thanks, yorik! (see forum thread "A new Part tool is being born... JoinFeatures!"
-# http://forum.freecad.org/viewtopic.php?f=22&t=11112&start=30#p90239 )
+# https://forum.freecad.org/viewtopic.php?f=22&t=11112&start=30#p90239 )
 
     try:
         _fromUtf8 = QtCore.QString.fromUtf8
@@ -148,10 +148,10 @@ class ViewProviderConnect:
         self.ViewObject = vobj
         self.Object = vobj.Object
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
     def claimChildren(self):
@@ -262,10 +262,10 @@ class ViewProviderEmbed:
         self.ViewObject = vobj
         self.Object = vobj.Object
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
     def claimChildren(self):
@@ -359,10 +359,10 @@ class ViewProviderCutout:
         self.ViewObject = vobj
         self.Object = vobj.Object
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
     def claimChildren(self):

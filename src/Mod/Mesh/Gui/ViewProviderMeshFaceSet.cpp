@@ -22,18 +22,18 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
-# include <algorithm>
+#include <algorithm>
 
-# include <Inventor/nodes/SoBaseColor.h>
-# include <Inventor/nodes/SoCoordinate3.h>
-# include <Inventor/nodes/SoDrawStyle.h>
-# include <Inventor/nodes/SoIndexedLineSet.h>
-# include <Inventor/nodes/SoMaterial.h>
-# include <Inventor/nodes/SoSeparator.h>
-# include <Inventor/nodes/SoSwitch.h>
-# include <Inventor/SoPickedPoint.h>
-# include <Inventor/details/SoFaceDetail.h>
-# include <Inventor/SoFullPath.h>
+#include <Inventor/nodes/SoBaseColor.h>
+#include <Inventor/nodes/SoCoordinate3.h>
+#include <Inventor/nodes/SoDrawStyle.h>
+#include <Inventor/nodes/SoIndexedLineSet.h>
+#include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSwitch.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/details/SoFaceDetail.h>
+#include <Inventor/SoFullPath.h>
 #endif
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -57,6 +57,7 @@ PROPERTY_SOURCE(MeshGui::ViewProviderMeshFaceSet, MeshGui::ViewProviderMesh)
 
 ViewProviderMeshFaceSet::ViewProviderMeshFaceSet()
 {
+    // NOLINTBEGIN
     directRendering = false;
     triangleCount = 2500000;
 
@@ -74,6 +75,7 @@ ViewProviderMeshFaceSet::ViewProviderMeshFaceSet()
     SoFCMaterialEngine* engine = new SoFCMaterialEngine();
     engine->diffuseColor.connectFrom(&pcShapeMaterial->diffuseColor);
     pcMeshFaces->updateGLArray.connectFrom(&engine->trigger);
+    // NOLINTEND
 }
 
 ViewProviderMeshFaceSet::~ViewProviderMeshFaceSet()
@@ -84,7 +86,7 @@ ViewProviderMeshFaceSet::~ViewProviderMeshFaceSet()
     pcMeshFaces->unref();
 }
 
-void ViewProviderMeshFaceSet::attach(App::DocumentObject *pcFeat)
+void ViewProviderMeshFaceSet::attach(App::DocumentObject* pcFeat)
 {
     ViewProviderMesh::attach(pcFeat);
 
@@ -94,16 +96,18 @@ void ViewProviderMeshFaceSet::attach(App::DocumentObject *pcFeat)
     // read the threshold from the preferences
     int size = Mesh::MeshParams::getRenderTriangleLimit();
     if (size > 0) {
-        pcMeshShape->renderTriangleLimit = (unsigned int)(pow(10.0f,size));
-        static_cast<SoFCIndexedFaceSet*>(pcMeshFaces)->renderTriangleLimit = (unsigned int)(pow(10.0f,size));
+        pcMeshShape->renderTriangleLimit = (unsigned int)(pow(10.0f, size));
+        static_cast<SoFCIndexedFaceSet*>(pcMeshFaces)->renderTriangleLimit =
+            (unsigned int)(pow(10.0f, size));
     }
 }
 
 void ViewProviderMeshFaceSet::updateData(const App::Property* prop)
 {
     ViewProviderMesh::updateData(prop);
-    if (prop->getTypeId() == Mesh::PropertyMeshKernel::getClassTypeId()) {
-        const Mesh::MeshObject* mesh = static_cast<const Mesh::PropertyMeshKernel*>(prop)->getValuePtr();
+    if (prop->is<Mesh::PropertyMeshKernel>()) {
+        const Mesh::MeshObject* mesh =
+            static_cast<const Mesh::PropertyMeshKernel*>(prop)->getValuePtr();
 
         bool direct = MeshRenderer::shouldRenderDirectly(mesh->countFacets() > this->triangleCount);
         if (direct) {
@@ -136,10 +140,12 @@ void ViewProviderMeshFaceSet::updateData(const App::Property* prop)
         showOpenEdges(OpenEdges.getValue());
         std::vector<Mesh::FacetIndex> selection;
         mesh->getFacetsFromSelection(selection);
-        if (selection.empty())
+        if (selection.empty()) {
             unhighlightSelection();
-        else
+        }
+        else {
             highlightSelection();
+        }
     }
 }
 
@@ -166,15 +172,16 @@ void ViewProviderMeshFaceSet::showOpenEdges(bool show)
             pcOpenEdge->addChild(lines);
 
             // Build up the lines with indices to the list of vertices 'pcMeshCoord'
-            int index=0;
-            const MeshCore::MeshKernel& rMesh = static_cast<Mesh::Feature*>(pcObject)->Mesh.getValue().getKernel();
+            int index = 0;
+            const MeshCore::MeshKernel& rMesh =
+                static_cast<Mesh::Feature*>(pcObject)->Mesh.getValue().getKernel();
             const MeshCore::MeshFacetArray& rFaces = rMesh.GetFacets();
-            for (MeshCore::MeshFacetArray::_TConstIterator it = rFaces.begin(); it != rFaces.end(); ++it) {
-                for (int i=0; i<3; i++) {
-                    if (it->_aulNeighbours[i] == MeshCore::FACET_INDEX_MAX) {
-                        lines->coordIndex.set1Value(index++,it->_aulPoints[i]);
-                        lines->coordIndex.set1Value(index++,it->_aulPoints[(i+1)%3]);
-                        lines->coordIndex.set1Value(index++,SO_END_LINE_INDEX);
+            for (const auto& rFace : rFaces) {
+                for (int i = 0; i < 3; i++) {
+                    if (rFace._aulNeighbours[i] == MeshCore::FACET_INDEX_MAX) {
+                        lines->coordIndex.set1Value(index++, rFace._aulPoints[i]);
+                        lines->coordIndex.set1Value(index++, rFace._aulPoints[(i + 1) % 3]);
+                        lines->coordIndex.set1Value(index++, SO_END_LINE_INDEX);
                     }
                 }
             }
@@ -187,15 +194,17 @@ void ViewProviderMeshFaceSet::showOpenEdges(bool show)
 
 SoShape* ViewProviderMeshFaceSet::getShapeNode() const
 {
-    if (directRendering)
+    if (directRendering) {
         return this->pcMeshShape;
+    }
     return this->pcMeshFaces;
 }
 
 SoNode* ViewProviderMeshFaceSet::getCoordNode() const
 {
-    if (directRendering)
+    if (directRendering) {
         return this->pcMeshNode;
+    }
     return this->pcMeshCoord;
 }
 
@@ -227,7 +236,7 @@ bool ViewProviderMeshFaceSet::getDetailPath(const char *subname,
 
     if (!subname)
         subname = "";
-    auto subelement = Data::ComplexGeoData::findElementName(subname);
+    auto subelement = Data::findElementName(subname);
     Data::IndexedName indexedName(subname, elementNames, /*allowOthers*/false);
     if (!subelement || subelement != subname || indexedName.getIndex() <= 0)
         return inherited::getDetailPath(subname, pPath, append, det);

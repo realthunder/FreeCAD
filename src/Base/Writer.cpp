@@ -29,6 +29,7 @@
 
 #include "Writer.h"
 #include "Base64.h"
+#include "Base64Filter.h"
 #include "Exception.h"
 #include "FileInfo.h"
 #include "Persistence.h"
@@ -43,30 +44,34 @@ using namespace zipios;
 
 // boost iostream filter to escape ']]>' in text file saved into CDATA section.
 // It does not check if the character is valid utf8 or not.
-struct cdata_filter {
+struct cdata_filter
+{
 
-    typedef char char_type;
-    typedef boost::iostreams::output_filter_tag category;
+    using char_type = char;
+    using category = boost::iostreams::output_filter_tag;
 
     template<typename Device>
-    inline bool put(Device& dev, char c) {
-        switch(state) {
+    inline bool put(Device& dev, char ch)
+    {
+        switch (state) {
             case 0:
             case 1:
-                if(c == ']')
+                if (ch == ']') {
                     ++state;
-                else
+                }
+                else {
                     state = 0;
+                }
                 break;
             case 2:
-                if(c == '>') {
+                if (ch == '>') {
                     static const char escape[] = "]]><![CDATA[";
-                    boost::iostreams::write(dev,escape,sizeof(escape)-1);
+                    boost::iostreams::write(dev, escape, sizeof(escape) - 1);
                 }
                 state = 0;
                 break;
         }
-        return boost::iostreams::put(dev,c);
+        return boost::iostreams::put(dev, ch);
     }
 
     int state = 0;
@@ -77,41 +82,39 @@ struct cdata_filter {
 // ---------------------------------------------------------------------------
 
 Writer::Writer(short indent_size)
-  : indent(0)
-  , indent_size(indent_size)
-  , indBuf{}
-  , forceXML(0)
-  , splitXML(false)
-  , preferBinary(true)
-  , fileVersion(1)
+  : indent_size(indent_size)
 {
-    indBuf[0] = '\0';
 }
 
 Writer::~Writer() = default;
 
-std::ostream &Writer::beginCharStream(bool base64, unsigned line_size) {
-    if(CharStream)
+std::ostream& Writer::beginCharStream(CharStreamFormat format, unsigned line_size)
+{
+    if (CharStream) {
         throw Base::RuntimeError("Writer::beginCharStream(): invalid state");
-    CharBase64 = base64;
-    if(base64) {
-        CharStream = create_base64_encoder(Stream(),line_size);
-    } else {
+    }
+    charStreamFormat = format;
+    if (format == CharStreamFormat::Base64Encoded) {
+        CharStream = create_base64_encoder(Stream(), line_size);
+    }
+    else {
         Stream() << "<![CDATA[";
-        CharStream.reset(new bio::filtering_ostream);
-        auto f = static_cast<bio::filtering_ostream*>(CharStream.get());
-        f->push(cdata_filter());
-        f->push(Stream());
-        *f << std::setprecision(std::numeric_limits<double>::digits10 + 1);
+        CharStream = std::make_unique<boost::iostreams::filtering_ostream>();
+        auto* filteredStream = dynamic_cast<boost::iostreams::filtering_ostream*>(CharStream.get());
+        filteredStream->push(cdata_filter());
+        filteredStream->push(Stream());
+        *filteredStream << std::setprecision(std::numeric_limits<double>::digits10 + 1);
     }
     return *CharStream;
 }
 
-std::ostream &Writer::endCharStream() {
+std::ostream& Writer::endCharStream()
+{
     if(CharStream) {
         CharStream.reset();
-        if(!CharBase64)
+        if (charStreamFormat == CharStreamFormat::Raw) {
             Stream() << "]]>";
+        }
     }
     return Stream();
 }
@@ -124,9 +127,9 @@ std::ostream& Writer::charStream()
     return *CharStream;
 }
 
-void Writer::insertText(const std::string& s)
+void Writer::insertText(const std::string& str)
 {
-    beginCharStream(false) << s;
+    beginCharStream() << str;
     endCharStream();
 }
 
@@ -135,9 +138,11 @@ void Writer::insertAsciiFile(const char* FileName)
     Base::FileInfo fi(FileName);
     Base::ifstream from(fi, std::ios::in | std::ios::binary);
     if (!from)
+    if (!from) {
         throw Base::FileException("Writer::insertAsciiFile() Could not open file!");
+    }
 
-    beginCharStream(false) << from.rdbuf();
+    beginCharStream() << from.rdbuf();
     endCharStream();
 }
 
@@ -148,7 +153,7 @@ void Writer::insertBinFile(const char* FileName, unsigned line_size)
     if (!from)
         throw Base::FileException("Writer::insertBinaryFile() Could not open file!");
 
-    beginCharStream(true,line_size) << from.rdbuf();
+    beginCharStream(CharStreamFormat::Base64Encoded, line_size) << from.rdbuf();
     endCharStream();
 }
 
@@ -157,7 +162,7 @@ void Writer::setForceXML(int on)
     forceXML = on;
 }
 
-int Writer::isForceXML(void)
+int Writer::isForceXML() const
 {
     return forceXML;
 }
@@ -167,7 +172,7 @@ void Writer::setSplitXML(bool on)
     splitXML = on;
 }
 
-bool Writer::isSplitXML()
+bool Writer::isSplitXML() const
 {
     return splitXML;
 }
@@ -182,9 +187,9 @@ bool Writer::isPreferBinary() const
     return preferBinary;
 }
 
-void Writer::setFileVersion(int v)
+void Writer::setFileVersion(int version)
 {
-    fileVersion = v;
+    fileVersion = version;
 }
 
 int Writer::getFileVersion() const
@@ -216,8 +221,9 @@ std::set<std::string> Writer::getModes() const
 void Writer::clearMode(const std::string& mode)
 {
     std::set<std::string>::iterator it = Modes.find(mode);
-    if (it != Modes.end())
+    if (it != Modes.end()) {
         Modes.erase(it);
+    }
 }
 
 void Writer::clearModes()
@@ -245,7 +251,7 @@ std::vector<std::string> Writer::getErrors() const
     return Errors;
 }
 
-const std::string &Writer::addFile(const char* Name,const Base::Persistence *Object)
+const std::string& Writer::addFile(const char* Name,const Base::Persistence *Object)
 {
     assert(Name);
 
@@ -264,7 +270,7 @@ const std::string &Writer::addFile(const char* Name,const Base::Persistence *Obj
     return entry.FileName;
 }
 
-std::string Writer::getUniqueFileName(const char *Name)
+std::string Writer::getUniqueFileName(const char* Name)
 {
     std::vector<std::string> names;
     names.reserve(FileNames.size());
@@ -279,8 +285,10 @@ std::string Writer::getUniqueFileName(const char *Name)
     }
     std::stringstream str;
     str << Base::Tools::getUniqueName(CleanName, names);
-    if (!ext.empty())
+    if (!ext.empty()) {
         str << "." << ext;
+    }
+
     return str.str();
 }
 
@@ -319,7 +327,7 @@ void Writer::putNextEntry(const char *file, const char *obj) {
 // ----------------------------------------------------------------------------
 
 ZipWriter::ZipWriter(const char* FileName)
-  : ZipStream(FileName)
+    : ZipStream(FileName)
 {
 #ifdef _MSC_VER
     ZipStream.imbue(std::locale::empty());
@@ -327,11 +335,11 @@ ZipWriter::ZipWriter(const char* FileName)
     ZipStream.imbue(std::locale::classic());
 #endif
     ZipStream.precision(std::numeric_limits<double>::digits10 + 1);
-    ZipStream.setf(ios::fixed,ios::floatfield);
+    ZipStream.setf(ios::fixed, ios::floatfield);
 }
 
 ZipWriter::ZipWriter(std::ostream& os)
-  : ZipStream(os)
+    : ZipStream(os)
 {
 #ifdef _MSC_VER
     ZipStream.imbue(std::locale::empty());
@@ -339,7 +347,7 @@ ZipWriter::ZipWriter(std::ostream& os)
     ZipStream.imbue(std::locale::classic());
 #endif
     ZipStream.precision(std::numeric_limits<double>::digits10 + 1);
-    ZipStream.setf(ios::fixed,ios::floatfield);
+    ZipStream.setf(ios::fixed, ios::floatfield);
 }
 
 void ZipWriter::putNextEntry(const char *file, const char *obj) {
@@ -379,15 +387,16 @@ StringWriter::StringWriter() {
 }
 
 void StringWriter::writeFiles() {
-    if(FileList.size())
+    if(!FileList.empty()) {
         throw Base::FileException("StringWriter does not support saving into multiple files");
+    }
 }
 
 // ----------------------------------------------------------------------------
 
-FileWriter::FileWriter(const char* DirName) : DirName(DirName)
-{
-}
+FileWriter::FileWriter(const char* DirName)
+    : DirName(DirName)
+{}
 
 FileWriter::~FileWriter() = default;
 
@@ -400,7 +409,7 @@ void FileWriter::putNextEntry(const char* file, const char *obj)
     this->FileStream << std::setprecision(std::numeric_limits<double>::digits10 + 1);
 }
 
-bool FileWriter::shouldWrite(const std::string& , const Base::Persistence *) const
+bool FileWriter::shouldWrite(const std::string& /*name*/, const Base::Persistence* /*obj*/) const
 {
     return true;
 }

@@ -40,11 +40,11 @@ class TechDrawGuiExport QGIDimLines : public QGIEdge
     using inherited = QGIEdge;
 public:
     explicit QGIDimLines();
-    ~QGIDimLines() {}
+    ~QGIDimLines() override = default;
 
     enum {Type = QGraphicsItem::UserType + 175};
     int type() const override { return Type;}
-    virtual QRectF boundingRect() const override;
+    QRectF boundingRect() const override;
 
 public:
     void draw();

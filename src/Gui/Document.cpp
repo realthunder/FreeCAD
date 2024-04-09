@@ -39,12 +39,12 @@
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <App/AutoTransaction.h>
-#include <App/ComplexGeoData.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectGroup.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/Transactions.h>
+#include <App/ElementNamingUtils.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Matrix.h>
@@ -76,7 +76,7 @@
 FC_LOG_LEVEL_INIT("Gui", true, true)
 
 using namespace Gui;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 namespace Gui {
 
@@ -212,62 +212,64 @@ Document::Document(App::Document* pcDocument,Application * app)
     d->_editingViewer = nullptr;
     d->_editMode = 0;
 
+    //NOLINTBEGIN
     // Setup the connections
     d->connectNewObject = pcDocument->signalNewObject.connect
-        (boost::bind(&Gui::Document::slotNewObject, this, bp::_1), boost::signals2::at_front);
+        (std::bind(&Gui::Document::slotNewObject, this, sp::_1), boost::signals2::at_front);
     d->connectDelObject = pcDocument->signalDeletedObject.connect
-        (boost::bind(&Gui::Document::slotDeletedObject, this, bp::_1));
+        (std::bind(&Gui::Document::slotDeletedObject, this, sp::_1));
     d->connectCngObject = pcDocument->signalChangedObject.connect
-        (boost::bind(&Gui::Document::slotChangedObject, this, bp::_1, bp::_2));
+        (std::bind(&Gui::Document::slotChangedObject, this, sp::_1, sp::_2));
     d->connectRenObject = pcDocument->signalRelabelObject.connect
-        (boost::bind(&Gui::Document::slotRelabelObject, this, bp::_1));
+        (std::bind(&Gui::Document::slotRelabelObject, this, sp::_1));
     d->connectActObject = pcDocument->signalActivatedObject.connect
-        (boost::bind(&Gui::Document::slotActivatedObject, this, bp::_1));
+        (std::bind(&Gui::Document::slotActivatedObject, this, sp::_1));
     d->connectActObjectBlocker = boost::signals2::shared_connection_block
         (d->connectActObject, false);
     d->connectSaveDocument = pcDocument->signalSaveDocument.connect
-        (boost::bind(&Gui::Document::Save, this, bp::_1));
+        (std::bind(&Gui::Document::Save, this, sp::_1));
     d->connectRestDocument = pcDocument->signalRestoreDocument.connect
-        (boost::bind(&Gui::Document::Restore, this, bp::_1));
+        (std::bind(&Gui::Document::Restore, this, sp::_1));
     d->connectStartLoadDocument = App::GetApplication().signalStartRestoreDocument.connect
-        (boost::bind(&Gui::Document::slotStartRestoreDocument, this, bp::_1));
+        (std::bind(&Gui::Document::slotStartRestoreDocument, this, sp::_1));
     d->connectFinishLoadDocument = App::GetApplication().signalFinishRestoreDocument.connect
-        (boost::bind(&Gui::Document::slotFinishRestoreDocument, this, bp::_1));
+        (std::bind(&Gui::Document::slotFinishRestoreDocument, this, sp::_1));
     d->connectShowHidden = App::GetApplication().signalShowHidden.connect
-        (boost::bind(&Gui::Document::slotShowHidden, this, bp::_1));
+        (std::bind(&Gui::Document::slotShowHidden, this, sp::_1));
 
     d->connectChangePropertyEditor = pcDocument->signalChangePropertyEditor.connect
-        (boost::bind(&Gui::Document::slotChangePropertyEditor, this, bp::_1, bp::_2));
+        (std::bind(&Gui::Document::slotChangePropertyEditor, this, sp::_1, sp::_2));
     d->connectChangeDocument = d->_pcDocument->signalChanged.connect // use the same slot function
-        (boost::bind(&Gui::Document::slotChangePropertyEditor, this, bp::_1, bp::_2));
+        (std::bind(&Gui::Document::slotChangePropertyEditor, this, sp::_1, sp::_2));
     d->connectChangeDocumentBlocker = boost::signals2::shared_connection_block
         (d->connectChangeDocument, true);
     d->connectFinishRestoreObject = pcDocument->signalFinishRestoreObject.connect
-        (boost::bind(&Gui::Document::slotFinishRestoreObject, this, bp::_1));
+        (std::bind(&Gui::Document::slotFinishRestoreObject, this, sp::_1));
     d->connectExportObjects = pcDocument->signalExportViewObjects.connect
-        (boost::bind(&Gui::Document::exportObjects, this, bp::_1, bp::_2));
+        (std::bind(&Gui::Document::exportObjects, this, sp::_1, sp::_2));
     d->connectImportObjects = pcDocument->signalImportViewObjects.connect
-        (boost::bind(&Gui::Document::importObjects, this, bp::_1, bp::_2, bp::_3));
+        (std::bind(&Gui::Document::importObjects, this, sp::_1, sp::_2, sp::_3));
     d->connectFinishImportObjects = pcDocument->signalFinishImportObjects.connect
-        (boost::bind(&Gui::Document::slotFinishImportObjects, this, bp::_1));
+        (std::bind(&Gui::Document::slotFinishImportObjects, this, sp::_1));
 
     d->connectUndoDocument = pcDocument->signalUndo.connect
-        (boost::bind(&Gui::Document::slotUndoDocument, this, bp::_1));
+        (std::bind(&Gui::Document::slotUndoDocument, this, sp::_1));
     d->connectRedoDocument = pcDocument->signalRedo.connect
-        (boost::bind(&Gui::Document::slotRedoDocument, this, bp::_1));
+        (std::bind(&Gui::Document::slotRedoDocument, this, sp::_1));
     d->connectRecomputed = pcDocument->signalRecomputed.connect
-        (boost::bind(&Gui::Document::slotRecomputed, this, bp::_1, bp::_2));
+        (std::bind(&Gui::Document::slotRecomputed, this, sp::_1, sp::_2));
     d->connectSkipRecompute = pcDocument->signalSkipRecompute.connect
-        (boost::bind(&Gui::Document::slotSkipRecompute, this, bp::_1, bp::_2));
+        (std::bind(&Gui::Document::slotSkipRecompute, this, sp::_1, sp::_2));
     d->connectTouchedObject = pcDocument->signalTouchedObject.connect
-        (boost::bind(&Gui::Document::slotTouchedObject, this, bp::_1));
+        (std::bind(&Gui::Document::slotTouchedObject, this, sp::_1));
     d->connectPurgeTouchedObject = pcDocument->signalPurgeTouchedObject.connect
-        (boost::bind(&Gui::Document::slotTouchedObject, this, bp::_1));
+        (std::bind(&Gui::Document::slotTouchedObject, this, sp::_1));
 
     d->connectTransactionAppend = pcDocument->signalTransactionAppend.connect
-        (boost::bind(&Gui::Document::slotTransactionAppend, this, bp::_1, bp::_2));
+        (std::bind(&Gui::Document::slotTransactionAppend, this, sp::_1, sp::_2));
     d->connectTransactionRemove = pcDocument->signalTransactionRemove.connect
-        (boost::bind(&Gui::Document::slotTransactionRemove, this, bp::_1, bp::_2));
+        (std::bind(&Gui::Document::slotTransactionRemove, this, sp::_1, sp::_2));
+    //NOLINTEND
 
     d->connectStartSave = pcDocument->signalStartSave.connect(
         [this](const App::Document &doc, const std::string &) {
@@ -402,7 +404,7 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
     }
 
     auto obj = vp->getObject();
-    if(!obj->getNameInDocument()) {
+    if(!obj->isAttachedToDocument()) {
         FC_ERR("cannot edit detached object");
         return false;
     }
@@ -421,7 +423,7 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         } else {
             auto sels = Gui::Selection().getCompleteSelection(ResolveMode::NoResolve);
             for(auto &sel : sels) {
-                if(!sel.pObject || !sel.pObject->getNameInDocument())
+                if(!sel.pObject || !sel.pObject->isAttachedToDocument())
                     continue;
                 if(!parentObj)
                     parentObj = sel.pObject;
@@ -498,7 +500,7 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
     d->_editSubElement.clear();
     d->_editSubname.clear();
     if (subname) {
-        const char *element = Data::ComplexGeoData::findElementName(subname);
+        const char *element = Data::findElementName(subname);
         if (element) {
             d->_editSubname = std::string(subname,element-subname);
             d->_editSubElement = element;
@@ -508,7 +510,7 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         }
     }
     auto sobj = obj->getSubObject(d->_editSubname.c_str(),nullptr,&d->_editingTransform);
-    if(!sobj || !sobj->getNameInDocument()) {
+    if(!sobj || !sobj->isAttachedToDocument()) {
         FC_ERR("Invalid sub object '" << obj->getFullName()
                 << '.' << (subname?subname:"") << "'");
         return false;
@@ -774,7 +776,7 @@ void Document::setShow(const char* name)
 {
     ViewProvider* pcProv = getViewProviderByName(name);
 
-    if (pcProv && pcProv->getTypeId().isDerivedFrom(ViewProviderDocumentObject::getClassTypeId())) {
+    if (pcProv && pcProv->isDerivedFrom<ViewProviderDocumentObject>()) {
         static_cast<ViewProviderDocumentObject*>(pcProv)->Visibility.setValue(true);
     }
 }
@@ -784,7 +786,7 @@ void Document::setHide(const char* name)
 {
     ViewProvider* pcProv = getViewProviderByName(name);
 
-    if (pcProv && pcProv->getTypeId().isDerivedFrom(ViewProviderDocumentObject::getClassTypeId())) {
+    if (pcProv && pcProv->isDerivedFrom<ViewProviderDocumentObject>()) {
         static_cast<ViewProviderDocumentObject*>(pcProv)->Visibility.setValue(false);
     }
 }
@@ -805,7 +807,6 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
 {
     auto pcProvider = static_cast<ViewProviderDocumentObject*>(getViewProvider(&Obj));
     if (!pcProvider) {
-        //Base::Console().Log("Document::slotNewObject() called\n");
         std::string cName = Obj.getViewProviderNameStored();
         for(;;) {
             if (cName.empty()) {
@@ -823,10 +824,11 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
             }
             else if (cName!=Obj.getViewProviderName() && !pcProvider->allowOverride(Obj)) {
                 FC_WARN("View provider type '" << cName << "' does not support " << Obj.getFullName());
+                delete pcProvider;
                 pcProvider = nullptr;
                 cName = Obj.getViewProviderName();
             }
-             else {
+            else {
                 break;
             }
         }
@@ -885,7 +887,6 @@ void Document::slotDeletedObject(const App::DocumentObject& Obj)
 {
     std::list<Gui::BaseView*>::iterator vIt;
     setModified(true);
-    //Base::Console().Log("Document::slotDeleteObject() called\n");
 
     // cycling to all views of the document
     ViewProvider* viewProvider = getViewProvider(&Obj);
@@ -1099,7 +1100,7 @@ void Document::slotSkipRecompute(const App::Document& doc, const std::vector<App
     }
     if(!obj)
         obj = doc.getActiveObject();
-    if(!obj || !obj->getNameInDocument() || (!objs.empty() && objs.front()!=obj))
+    if(!obj || !obj->isAttachedToDocument() || (!objs.empty() && objs.front()!=obj))
         return;
     obj->recomputeFeature(true);
 }
@@ -1902,7 +1903,7 @@ void Document::SaveDocFile (Base::Writer &writer) const
             << " view3d=\"" << view3Ds.size() << "\"";
     if(writer.getFileVersion() > 1) {
         writer.Stream() << ">\n";
-        writer.beginCharStream(false) << '\n' << getCameraSettings();
+        writer.beginCharStream() << '\n' << getCameraSettings();
         writer.endCharStream() << '\n' << writer.ind() << "</Camera>\n";
     } else {
         writer.Stream() << " settings=\"" 
@@ -1913,7 +1914,7 @@ void Document::SaveDocFile (Base::Writer &writer) const
             auto &info = cameraInfo[i];
             writer.Stream() << writer.ind() << "<CameraExtra id=\""
                 << info.id << "\" binding=\"" << info.binding << "\">\n";
-            writer.beginCharStream(false) << '\n' << getCameraSettings(&info.settings);
+            writer.beginCharStream() << '\n' << getCameraSettings(&info.settings);
             writer.endCharStream() << '\n' << writer.ind() << "</CameraExtra>\n";
         }
     }
@@ -1924,11 +1925,12 @@ void Document::SaveDocFile (Base::Writer &writer) const
         writer.Stream() << writer.ind() << "<View3D id=\"" << view->getID() << "\">";
         stringWriter.clear();
         view->Save(stringWriter);
-        writer.beginCharStream(false) << '\n' << stringWriter.getString();
+        writer.beginCharStream() << '\n' << stringWriter.getString();
         writer.endCharStream() << '\n' << writer.ind() << "</View3D>\n";
     }
 
     writer.decInd(); // indentation for camera settings
+
     writer.Stream() << "</Document>\n";
 }
 
@@ -2123,7 +2125,6 @@ MDIView *Document::createView(const Base::Type& typeId)
 
         view3D->setWindowTitle(title);
         view3D->setWindowModified(this->isModified());
-        view3D->setWindowIcon(QApplication::windowIcon());
         view3D->resize(400, 300);
 
         if (!cameraSettings.empty()) {
@@ -2147,7 +2148,7 @@ Gui::MDIView* Document::cloneView(Gui::MDIView* oldview)
     if (!oldview)
         return nullptr;
 
-    if (oldview->getTypeId() == View3DInventor::getClassTypeId()) {
+    if (oldview->is<View3DInventor>()) {
         auto view3D = new View3DInventor(this, getMainWindow());
 
         auto firstView = static_cast<View3DInventor*>(oldview);
@@ -2923,6 +2924,8 @@ void Document::slotChangePropertyEditor(const App::Document &doc, const App::Pro
                 getDocument()->ThumbnailFile.setValue("");
             }
             d->thumb.setUpdateOnSave(doc.SaveThumbnail.getValue());
+        } else if (&Prop == &doc.UnitSystem) {
+            getMainWindow()->setUserSchema(doc.UnitSystem.getValue());
         }
     }
 }

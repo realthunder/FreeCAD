@@ -49,10 +49,12 @@ class TechDrawGuiExport QGISectionLine : public QGIDecoration
     using inherited = QGIDecoration;
 public:
     explicit QGISectionLine();
-    ~QGISectionLine() {}
+    ~QGISectionLine() override = default;
 
     enum {Type = QGraphicsItem::UserType + 172};
-    int type() const { return Type;}
+    int type() const override { return Type;}
+    QPainterPath shape() const override;
+    void draw() override;
 
     void setEnds(const Base::Vector3d &l1, const Base::Vector3d &l2);
     void setEnds(const QPointF &start, const QPointF &end);
@@ -69,9 +71,8 @@ public:
     bool pathMode() { return m_pathMode; }
     void setChangePoints(const TechDraw::ChangePointVector &changePoints);
     void clearChangePoints();
-    virtual void draw();
     void setInteractive(bool enable, bool movable);
-    QPainterPath shape() const override;
+    void setLinePen(QPen isoPen);
 
     void setSymbolOffsets(const QPointF &p1, const QPointF &p2);
 
@@ -102,7 +103,7 @@ protected:
     void clearChangePointMarks();
 
 private:
-    char* m_symbol;
+    const char*        m_symbol;
     QGIEdge          * m_line;
     QGIEdge          * m_extend;
     QGIArrow*          m_arrow1;

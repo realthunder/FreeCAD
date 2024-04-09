@@ -31,13 +31,16 @@
 #include <Mod/Spreadsheet/SpreadsheetGlobal.h>
 
 
-namespace Spreadsheet {
+namespace Spreadsheet
+{
 
 SpreadsheetExport std::string columnName(int col);
 SpreadsheetExport std::string rowName(int row);
 
-SpreadsheetExport void createRectangles(std::set<std::pair<int, int> > & cells, std::map<std::pair<int, int>, std::pair<int, int> > & rectangles);
+SpreadsheetExport void
+createRectangles(std::set<std::pair<int, int>>& cells,
+                 std::map<std::pair<int, int>, std::pair<int, int>>& rectangles);
 
-}
+}  // namespace Spreadsheet
 
-#endif // UTILS_H
+#endif  // UTILS_H

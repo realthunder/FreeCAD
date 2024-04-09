@@ -30,11 +30,13 @@
 #include <QTreeWidget>
 #include <QIcon>
 
-namespace App {
+namespace App
+{
 class Property;
 }
 
-namespace SketcherGui {
+namespace SketcherGui
+{
 
 class ViewProviderSketch;
 class Ui_TaskSketcherElements;
@@ -46,8 +48,8 @@ class ElementView : public QTreeWidget
     typedef QTreeWidget inherited;
 
 public:
-    explicit ElementView(QWidget *parent = 0);
-    ~ElementView();
+    explicit ElementView(QWidget *parent = nullptr);
+    ~ElementView() override;
 
 
 Q_SIGNALS:
@@ -63,13 +65,13 @@ protected Q_SLOTS:
 
 class ElementFilterList;
 
-class TaskSketcherElements : public Gui::TaskView::TaskBox, public Gui::SelectionObserver
+class TaskSketcherElements: public Gui::TaskView::TaskBox, public Gui::SelectionObserver
 {
     Q_OBJECT
 
 public:
-    TaskSketcherElements(ViewProviderSketch *sketchView);
-    ~TaskSketcherElements();
+    explicit TaskSketcherElements(ViewProviderSketch *sketchView);
+    ~TaskSketcherElements() override;
 
     /// Observer message from the Selection
     void onSelectionChanged(const Gui::SelectionChanges& msg);
@@ -91,10 +93,10 @@ public Q_SLOTS:
     void on_autoSwitchBox_stateChanged(int state);
 
 protected:
-    void changeEvent(QEvent *e);
-    void leaveEvent ( QEvent * event );
+    void changeEvent(QEvent *e) override;
+    void leaveEvent ( QEvent * event ) override;
     ViewProviderSketch *sketchView;
-    typedef boost::signals2::connection Connection;
+    using Connection = boost::signals2::connection;
     Connection connectionElementsChanged;
 
 private:
@@ -110,6 +112,6 @@ private:
     bool inhibitSelectionUpdate;
 };
 
-} //namespace SketcherGui
+}  // namespace SketcherGui
 
-#endif // GUI_TASKVIEW_TASKAPPERANCE_H
+#endif  // GUI_TASKVIEW_TASKAPPERANCE_H

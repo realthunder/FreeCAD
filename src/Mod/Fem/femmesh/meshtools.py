@@ -518,7 +518,7 @@ def get_femelement_sets(
     # get remaining femelements for the fem_objects
     if has_remaining_femelements:
         femelement_table_array = np.zeros_like(referenced_femelements)
-        femelement_table_array[list(femelement_table.keys())] = 1
+        femelement_table_array[list(femelement_table)] = 1
         remaining_femelements_array = femelement_table_array > referenced_femelements
         remaining_femelements = [
             i.item() for i in np.nditer(remaining_femelements_array.nonzero())
@@ -803,7 +803,8 @@ def get_force_obj_vertex_nodeload_table(
     #         ("refshape_name.elemname", node_load_table)
     #     ]
     force_obj_node_load_table = []
-    node_load = frc_obj.Force / len(frc_obj.References)
+    force_quantity = FreeCAD.Units.Quantity(frc_obj.Force.getValueAs("N"))
+    node_load = force_quantity / len(frc_obj.References)
     for o, elem_tup in frc_obj.References:
         node_count = len(elem_tup)
         for elem in elem_tup:
@@ -863,7 +864,8 @@ def get_force_obj_edge_nodeload_table(
             )
             sum_ref_edge_length += ref_edge.Length
     if sum_ref_edge_length != 0:
-        force_per_sum_ref_edge_length = frc_obj.Force / sum_ref_edge_length
+        force_quantity = FreeCAD.Units.Quantity(frc_obj.Force.getValueAs("N"))
+        force_per_sum_ref_edge_length = force_quantity / sum_ref_edge_length
     for o, elem_tup in frc_obj.References:
         for elem in elem_tup:
             ref_edge = o.Shape.getElement(elem)
@@ -907,7 +909,8 @@ def get_force_obj_edge_nodeload_table(
         for node in ref_shape[1]:
             sum_node_load += ref_shape[1][node]  # for debugging
 
-    ratio = sum_node_load / frc_obj.Force
+    force_quantity = FreeCAD.Units.Quantity(frc_obj.Force.getValueAs("N"))
+    ratio = sum_node_load / force_quantity
     if ratio < 0.99 or ratio > 1.01:
         FreeCAD.Console.PrintMessage(
             "Deviation  sum_node_load to frc_obj.Force is more than 1% : {}\n"
@@ -927,7 +930,7 @@ def get_force_obj_edge_nodeload_table(
         )
         FreeCAD.Console.PrintMessage(
             "  frc_obj.Force:            {}\n"
-            .format(frc_obj.Force)
+            .format(force_quantity)
         )
         FreeCAD.Console.PrintMessage(
             "  the reason could be simply a circle length --> "
@@ -1135,7 +1138,8 @@ def get_force_obj_face_nodeload_table(
             )
             sum_ref_face_area += ref_face.Area
     if sum_ref_face_area != 0:
-        force_per_sum_ref_face_area = frc_obj.Force / sum_ref_face_area
+        force_quantity = FreeCAD.Units.Quantity(frc_obj.Force.getValueAs("N"))
+        force_per_sum_ref_face_area = force_quantity / sum_ref_face_area
     for o, elem_tup in frc_obj.References:
         for elem in elem_tup:
             ref_face = o.Shape.getElement(elem)
@@ -1178,7 +1182,8 @@ def get_force_obj_face_nodeload_table(
         for node in ref_shape[1]:
             sum_node_load += ref_shape[1][node]  # for debugging
 
-    ratio = sum_node_load / frc_obj.Force
+    force_quantity = FreeCAD.Units.Quantity(frc_obj.Force.getValueAs("N"))
+    ratio = sum_node_load / force_quantity
     if ratio < 0.99 or ratio > 1.01:
         FreeCAD.Console.PrintMessage(
             "Deviation sum_node_load to frc_obj.Force is more than 1% :  {}\n"
@@ -1198,7 +1203,7 @@ def get_force_obj_face_nodeload_table(
         )
         FreeCAD.Console.PrintMessage(
             "  frc_obj.Force:          {}\n"
-            .format(frc_obj.Force)
+            .format(force_quantity)
         )
         FreeCAD.Console.PrintMessage(
             "  the reason could be simply a circle area --> "
@@ -1292,7 +1297,7 @@ def get_ref_facenodes_areas(
     # G. Lakshmi Narasaiah, Finite Element Analysis, p206ff
     # FIXME: only gives exact results in case of a real triangle. If for S6 or C3D10 elements
     # the midnodes are not on the line between the end nodes the area will not be a triangle
-    # see http://forum.freecad.org/viewtopic.php?f=18&t=10939&start=40#p91355  and ff
+    # see https://forum.freecad.org/viewtopic.php?f=18&t=10939&start=40#p91355  and ff
     # same applies for the quads
     # results are exact only if mid nodes are on the line between corner nodes
 

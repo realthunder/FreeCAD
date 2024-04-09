@@ -428,7 +428,7 @@ Sweep::Sweep()
     Sections.setSize(0);
     ADD_PROPERTY_TYPE(Spine,(nullptr),"Sweep",App::Prop_None,"Path to sweep along");
     ADD_PROPERTY_TYPE(Solid,(false),"Sweep",App::Prop_None,"Create solid");
-    ADD_PROPERTY_TYPE(Frenet,(false),"Sweep",App::Prop_None,"Frenet");
+    ADD_PROPERTY_TYPE(Frenet,(true),"Sweep",App::Prop_None,"Frenet");
     ADD_PROPERTY_TYPE(Transition,(long(1)),"Sweep",App::Prop_None,"Transition mode");
     ADD_PROPERTY_TYPE(Linearize,(false), "Sweep", App::Prop_None,
             "Linearize the resut shape by simplify linear edge and planar face into line and plane");
@@ -472,8 +472,8 @@ App::DocumentObjectExecReturn *Sweep::execute()
         try {
             if (!subedge.empty()) {
                 BRepBuilderAPI_MakeWire mkWire;
-                for (std::vector<std::string>::const_iterator it = subedge.begin(); it != subedge.end(); ++it) {
-                    TopoDS_Shape subshape = Feature::getTopoShape(spine, it->c_str(), true /*need element*/).getShape();
+                for (const auto & it : subedge) {
+                    TopoDS_Shape subshape = Feature::getTopoShape(spine, it.c_str(), true /*need element*/).getShape();
                     mkWire.Add(TopoDS::Edge(subshape));
                 }
                 path = mkWire.Wire();
@@ -557,7 +557,7 @@ App::DocumentObjectExecReturn *Sweep::execute()
             }
             // There is a weird behaviour of BRepOffsetAPI_MakePipeShell when trying to add the wire as is.
             // If we re-create the wire then everything works fine.
-            // http://forum.freecad.org/viewtopic.php?f=10&t=2673&sid=fbcd2ff4589f0b2f79ed899b0b990648#p20268
+            // https://forum.freecad.org/viewtopic.php?f=10&t=2673&sid=fbcd2ff4589f0b2f79ed899b0b990648#p20268
             if (shape.ShapeType() == TopAbs_FACE) {
                 TopoDS_Wire faceouterWire = ShapeAnalysis::OuterWire(TopoDS::Face(shape));
                 profiles.Append(faceouterWire);
@@ -741,8 +741,8 @@ App::DocumentObjectExecReturn *Thickness::execute()
 
     TopTools_ListOfShape closingFaces;
     const std::vector<std::string>& subStrings = Faces.getSubValues();
-    for (std::vector<std::string>::const_iterator it = subStrings.begin(); it != subStrings.end(); ++it) {
-        TopoDS_Face face = TopoDS::Face(shape.getSubShape(it->c_str()));
+    for (const auto & it : subStrings) {
+        TopoDS_Face face = TopoDS::Face(shape.getSubShape(it.c_str()));
         closingFaces.Append(face);
     }
 #else

@@ -96,9 +96,9 @@ GENERATE_QM = {
     "Cloud",
     "Draft",
     "Inspection",
-    "Material",
     "OpenSCAD",
     "Tux",
+    "Help",
 }
 
 # locations list contains Module name, relative path to translation folder and relative path to qrc file
@@ -116,6 +116,7 @@ locations = [
         "../Mod/Draft/Resources/translations",
         "../Mod/Draft/Resources/Draft.qrc",
     ],
+    ["Base", "../Base/Resources/translations", "../Base/Resources/Base.qrc"],
     [
         "Drawing",
         "../Mod/Drawing/Gui/Resources/translations",
@@ -127,10 +128,16 @@ locations = [
         "../Mod/Fem/Gui/Resources/Fem.qrc",
     ],
     ["FreeCAD", "../Gui/Language", "../Gui/Language/translation.qrc"],
+    ["Help", "../Mod/Help/Resources/translations", "../Mod/Help/Resources/Help.qrc"],
     [
         "Inspection",
         "../Mod/Inspection/Gui/Resources/translations",
         "../Mod/Inspection/Gui/Resources/Inspection.qrc",
+    ],
+    [
+        "Material",
+        "../Mod/Material/Gui/Resources/translations",
+        "../Mod/Material/Gui/Resources/Material.qrc",
     ],
     [
         "Mesh",
@@ -435,11 +442,14 @@ def doFile(tsfilepath, targetpath, lncode, qrcpath):
     basename = os.path.basename(tsfilepath)[:-3]
     # filename fixes
     if basename + ".ts" in LEGACY_NAMING_MAP.values():
-        basename = list(LEGACY_NAMING_MAP.keys())[
+        basename = list(LEGACY_NAMING_MAP)[
             list(LEGACY_NAMING_MAP.values()).index(basename + ".ts")
         ][:-3]
     newname = basename + "_" + lncode + ".ts"
     newpath = targetpath + os.sep + newname
+    if not os.path.exists(newpath):
+        # If this language code does not exist for the given TS file, bail out
+        return
     shutil.copyfile(tsfilepath, newpath)
     if basename in GENERATE_QM:
         print(f"Generating QM for {basename}")

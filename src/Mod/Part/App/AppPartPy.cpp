@@ -77,12 +77,13 @@
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
 #include <App/ExpressionParser.h>
-#include <App/MappedElement.h>
+#include <App/ElementNamingUtils.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
 #include <Base/GeometryPyCXX.h>
 #include <Base/Interpreter.h>
+#include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Base/VectorPy.h>
 
 #include "BSplineSurfacePy.h"
@@ -163,8 +164,6 @@ public:
     {
         initialize("This is a module working with the BRepFeat package."); // register with Python
     }
-
-    ~BRepFeatModule() override {}
 };
 
 class BRepOffsetAPIModule : public Py::ExtensionModule<BRepOffsetAPIModule>
@@ -174,8 +173,6 @@ public:
     {
         initialize("This is a module working with the BRepOffsetAPI package."); // register with Python
     }
-
-    ~BRepOffsetAPIModule() override {}
 };
 
 class Geom2dModule : public Py::ExtensionModule<Geom2dModule>
@@ -185,8 +182,6 @@ public:
     {
         initialize("This is a module working with 2d geometries."); // register with Python
     }
-
-    ~Geom2dModule() override {}
 };
 
 class GeomPlateModule : public Py::ExtensionModule<GeomPlateModule>
@@ -196,8 +191,6 @@ public:
     {
         initialize("This is a module working with the GeomPlate framework."); // register with Python
     }
-
-    ~GeomPlateModule() override {}
 };
 
 class HLRBRepModule : public Py::ExtensionModule<HLRBRepModule>
@@ -207,8 +200,6 @@ public:
     {
         initialize("This is a module working with the HLRBRep framework."); // register with Python
     }
-
-    ~HLRBRepModule() override {}
 };
 
 class ShapeFixModule : public Py::ExtensionModule<ShapeFixModule>
@@ -236,8 +227,6 @@ public:
         );
         initialize("This is a module working with the ShapeFix framework."); // register with Python
     }
-
-    ~ShapeFixModule() override {}
 
 private:
     Py::Object sameParameter(const Py::Tuple& args)
@@ -306,8 +295,6 @@ public:
     {
         initialize("This is a module working with the ShapeUpgrade framework."); // register with Python
     }
-
-    ~ShapeUpgradeModule() override {}
 };
 
 class ChFi2dModule : public Py::ExtensionModule<ChFi2dModule>
@@ -317,8 +304,6 @@ public:
     {
         initialize("This is a module working with the ChFi2d framework."); // register with Python
     }
-
-    ~ChFi2dModule() override {}
 };
 
 class Module : public Py::ExtensionModule<Module>
@@ -588,9 +573,10 @@ public:
             "The sorted list can be used to create a Wire."
         );
         add_varargs_method("sortEdges",&Module::sortEdges2,
-            "sortEdges(list of edges) -- list of lists of edges\n"
+            "sortEdges(list of edges, [tol3d]) -- list of lists of edges\n"
             "It does basically the same as __sortEdges__ but sorts all input edges and thus returns\n"
-            "a list of lists of edges"
+            "a list of lists of edges\n"
+            "optional 3D tolerance defaults to Precision::Confusion"
         );
         add_varargs_method("__toPythonOCC__",&Module::toPythonOCC,
             "__toPythonOCC__(shape) -- Helper method to convert an internal shape to pythonocc shape"
@@ -608,7 +594,7 @@ public:
             "* transform: if False, then skip obj's transformation. Use this if mat already include obj's\n"
             "             transformation matrix\n"
             "* retType: 0: return TopoShape,\n"
-            "           1: return (shape,subObj,mat), where subObj is the object referenced in 'subname',\n"
+            "           1: return (shape,mat,subObj), where subObj is the object referenced in 'subname',\n"
             "              and 'mat' is the accumulated transformation matrix of that sub-object.\n"
             "           2: same as 1, but make sure 'subObj' is resolved if it is a link.\n"
             "* refine: refine the returned shape"
@@ -691,8 +677,6 @@ public:
         PyModule_AddObject(m_module, "ShapeUpgrade", shapeUpgrade.module().ptr());
         PyModule_AddObject(m_module, "ChFi2d", chFi2d.module().ptr());
     }
-
-    ~Module() override {}
 
 private:
     Py::Object invoke_method_keyword( void *method_def,
@@ -777,14 +761,14 @@ private:
         if (file.extension().empty())
             throw Py::RuntimeError("No file extension");
 
-        if (file.hasExtension("stp") || file.hasExtension("step")) {
+        if (file.hasExtension({"stp", "step"})) {
             // create new document and add Import feature
             App::Document *pcDoc = App::GetApplication().newDocument();
             ImportStepParts(pcDoc,EncodedName.c_str());
 
             pcDoc->recompute();
         }
-        else if (file.hasExtension("igs") || file.hasExtension("iges")) {
+        else if (file.hasExtension({"igs", "iges"})) {
             App::Document *pcDoc = App::GetApplication().newDocument();
             ImportIgesParts(pcDoc,EncodedName.c_str());
             pcDoc->recompute();
@@ -825,12 +809,12 @@ private:
             pcDoc = App::GetApplication().newDocument(DocName);
         }
 
-        if (file.hasExtension("stp") || file.hasExtension("step")) {
+        if (file.hasExtension({"stp", "step"})) {
             ImportStepParts(pcDoc,EncodedName.c_str());
 
             pcDoc->recompute();
         }
-        else if (file.hasExtension("igs") || file.hasExtension("iges")) {
+        else if (file.hasExtension({"igs", "iges"})) {
             ImportIgesParts(pcDoc,EncodedName.c_str());
             pcDoc->recompute();
         }
@@ -866,7 +850,7 @@ private:
             PyObject* item = (*it).ptr();
             if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
                 App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
-                if (obj->getTypeId().isDerivedFrom(Part::Feature::getClassTypeId())) {
+                if (obj->isDerivedFrom<Part::Feature>()) {
                     Part::Feature* part = static_cast<Part::Feature*>(obj);
                     const TopoDS_Shape& shape = part->Shape.getValue();
                     if (!shape.IsNull())
@@ -1039,8 +1023,8 @@ private:
         PyObject *keepOrder = Py_False;
         PyObject *shared = Py_False;
         double tol = 1e-7;
-        static char* kwd_list[] = {"shapes", "op", "tol", "keep_order", "shared", nullptr};
-        if(!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|sdOO", kwd_list,
+        static std::array<const char*,6> kwd_list = {"shapes", "op", "tol", "keep_order", "shared", nullptr};
+        if(!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|sdOO", kwd_list,
                                         &obj, &op, &tol, &keepOrder, &shared))
             throw Py::Exception();
         TopoShape res;
@@ -1145,8 +1129,8 @@ private:
         const char *style=nullptr;
         PyObject *keepBezier = Py_False;
         const char *op=nullptr;
-        static char* kwd_list[] = {"shapes", "style", "keepBezier",  "op", nullptr};
-        if(!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|sOs", kwd_list,
+        static std::array<const char*,5> kwd_list = {"shapes", "style", "keepBezier",  "op", nullptr};
+        if(!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|sOs", kwd_list,
                                                    &obj, &style, &keepBezier, &op))
             throw Py::Exception();
         
@@ -1194,10 +1178,10 @@ private:
         PyObject *orders = Py_None;
         PyObject *anisotropy = params.anisotropy ? Py_True : Py_False;
         const char *op = nullptr;
-        static char* kwd_list[] = {"shapes", "surface", "supports", 
+        static std::array<const char*,16> kwd_list = {"shapes", "surface", "supports", 
             "orders","degree","ptsOnCurve","numIter","anisotropy",
             "tol2d", "tol3d", "tolG1", "tolG2", "maxDegree", "maxSegments", "op", nullptr};
-        if(!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|O!OOIIIOddddIIs", kwd_list,
+        if(!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|O!OOIIIOddddIIs", kwd_list,
                                         &obj, &pySurface, &orders, &params.degree, &params.ptsoncurve,
                                         &params.numiter, &anisotropy, &params.tol2d, &params.tol3d,
                                         &params.tolG1, &params.tolG2, &params.maxdeg, &params.maxseg, &op))
@@ -1968,7 +1952,7 @@ private:
         PyObject *pshape;
         double radius;
         double tolerance=0.001;
-        char* scont = "C0";
+        const char* scont = "C0";
         int maxdegree = 3;
         int maxsegment = 30;
 
@@ -2378,10 +2362,10 @@ private:
         tEdgeClusterVector aclusteroutput = acluster.GetClusters();
 
         Py::List root_list;
-        for (tEdgeClusterVector::iterator it=aclusteroutput.begin(); it != aclusteroutput.end();++it) {
+        for (const auto & it : aclusteroutput) {
             Py::List add_list;
-            for (tEdgeVector::iterator it1=(*it).begin();it1 != (*it).end();++it1) {
-                add_list.append(Py::Object(new TopoShapeEdgePy(new TopoShape(*it1)),true));
+            for (const auto& it1 : it) {
+                add_list.append(Py::Object(new TopoShapeEdgePy(new TopoShape(it1)),true));
             }
             root_list.append(add_list);
         }
@@ -2414,8 +2398,9 @@ private:
         }
 
         Py::List sorted_list;
-        for (auto &edge : TopoShape::sortEdges(edges, PyObject_IsTrue(keepOrder), tol))
+        for (const auto &edge : TopoShape::sortEdges(edges, PyObject_IsTrue(keepOrder), tol)) {
             sorted_list.append(Py::asObject(new TopoShapeEdgePy(new TopoShape(edge))));
+        }
 
         return sorted_list;
     }
@@ -2424,8 +2409,9 @@ private:
         PyObject *obj;
         PyObject *keepOrder = Py_False;
         double tol = 0;
-        if (!PyArg_ParseTuple(args.ptr(), "O|dO", &obj, &tol, &keepOrder))
+        if (!PyArg_ParseTuple(args.ptr(), "O|dO", &obj, &tol, &keepOrder)) {
             Base::PyException::ThrowException();
+        }
 
         Py::Sequence list(obj);
         std::list<TopoShape> edges;
@@ -2447,7 +2433,7 @@ private:
         Py::List root_list;
         while(!edges.empty()) {
             Py::List sorted_list;
-            for (auto &edge : TopoShape::sortEdges(edges, Base::asBoolean(keepOrder), tol)) {
+            for (const auto &edge : TopoShape::sortEdges(edges, Base::asBoolean(keepOrder), tol)) {
                 sorted_list.append(Py::asObject(new TopoShapeEdgePy(new TopoShape(edge))));
             }
             root_list.append(sorted_list);
@@ -2499,13 +2485,16 @@ private:
         PyObject *noElementMap = Py_False;
         PyObject *refine = Py_False;
         short retType = 0;
-        static char* kwd_list[] = {"obj", "subname", "mat",
-            "needSubElement","transform","retType","noElementMap","refine",nullptr};
-        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|sO!O!O!hO!O!", kwd_list,
-                &App::DocumentObjectPy::Type, &pObj, &subname, &Base::MatrixPy::Type, &pyMat,
-                &PyBool_Type,&needSubElement,&PyBool_Type,&transform,&retType,
-                &PyBool_Type,&noElementMap,&PyBool_Type,&refine))
+        static const std::array<const char *, 9> kwd_list{"obj", "subname", "mat",
+                                                          "needSubElement", "transform", "retType", "noElementMap",
+                                                          "refine", nullptr};
+        if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O!|sO!O!O!hO!O!", kwd_list,
+                                                 &App::DocumentObjectPy::Type, &pObj, &subname, &Base::MatrixPy::Type,
+                                                 &pyMat,
+                                                 &PyBool_Type, &needSubElement, &PyBool_Type, &transform, &retType,
+                                                 &PyBool_Type, &noElementMap, &PyBool_Type, &refine)) {
             throw Py::Exception();
+        }
 
         App::DocumentObject *obj =
             static_cast<App::DocumentObjectPy*>(pObj)->getDocumentObjectPtr();
@@ -2541,9 +2530,9 @@ private:
         std::string tmp,tmp2;
         for(auto &v : ret) {
             tmp.clear();
-            v.index.toString(tmp);
+            v.index.appendToStringBuffer(tmp);
             tmp2.clear();
-            v.name.toString(tmp2);
+            v.name.appendToBuffer(tmp2);
             list.append(Py::TupleN(Py::String(tmp2),Py::String(tmp)));
         }
         return list;
@@ -2570,11 +2559,11 @@ private:
             else
                 ret.setItem(0,Py::Int(history.tag));
             tmp.clear();
-            ret.setItem(1,Py::String(history.element.toString(tmp)));
+            ret.setItem(1,Py::String(history.element.appendToBuffer(tmp)));
             Py::List intermedates;
             for(auto &h : history.intermediates) {
                 tmp.clear();
-                intermedates.append(Py::String(h.toString(tmp)));
+                intermedates.append(Py::String(h.appendToBuffer(tmp)));
             }
             ret.setItem(2,intermedates);
             list.append(ret);
@@ -2603,7 +2592,7 @@ private:
             else
                 ret.setItem(0,Py::Int(history.tag));
             tmp.clear();
-            history.element.toString(tmp);
+            history.element.appendToBuffer(tmp);
             std::pair<std::string, std::string> elementName;
             if (App::GeoFeature::resolveElement(
                         history.obj, tmp.c_str(), elementName)
@@ -2614,12 +2603,12 @@ private:
                 else
                     ret.setItem(1,Py::String(elementName.first));
             } else
-                ret.setItem(1,Py::String(history.element.toString(tmp)));
+                ret.setItem(1,Py::String(history.element.appendToBuffer(tmp)));
 
             Py::List intermediates;
             for(auto &h : history.intermediates) {
                 tmp.clear();
-                h.toString(tmp);
+                h.appendToBuffer(tmp);
                 std::pair<std::string, std::string> elementName;
                 if (App::GeoFeature::resolveElement(
                             history.obj, tmp.c_str(), elementName, true)
@@ -2630,7 +2619,7 @@ private:
                     else
                         intermediates.append(Py::String(elementName.first));
                 } else
-                    intermediates.append(Py::String(h.toString(tmp)));
+                    intermediates.append(Py::String(h.appendToBuffer(tmp)));
             }
             ret.setItem(2,intermediates);
             list.append(ret);
@@ -2642,14 +2631,14 @@ private:
         const char *subname;
         if (!PyArg_ParseTuple(args.ptr(), "s",&subname))
             throw Py::Exception();
-        auto element = Data::ComplexGeoData::findElementName(subname);
+        auto element = Data::findElementName(subname);
         std::string sub(subname,element-subname);
         Py::List list;
         list.append(Py::String(sub));
         const char *dot = strchr(element,'.');
         if(!dot)
             dot = element+strlen(element);
-        const char *mapped = Data::ComplexGeoData::isMappedElement(element);
+        const char *mapped = Data::isMappedElement(element);
         if(mapped)
             list.append(Py::String(std::string(mapped,dot-mapped)));
         else
@@ -2673,8 +2662,8 @@ private:
         if (!subname.empty() && subname[subname.size()-1]!='.')
             subname += '.';
         if (mapped && mapped[0]) {
-            if (!Data::ComplexGeoData::isMappedElement(mapped))
-                subname += Data::ComplexGeoData::elementMapPrefix();
+            if (!Data::isMappedElement(mapped))
+                subname += Data::elementMapPrefix();
             subname += mapped;
         }
         if (element && element[0]) {
@@ -2691,8 +2680,8 @@ private:
         PyObject *wholeobj = Py_True;
         PyObject *nosobj = Py_True;
         PyObject *noelement = Py_False;
-        static char* kwd_list[] = {"obj", "editObj", "wholeObject", "noSubObject", "noSubElement", 0};
-        if(!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "OO|OO", kwd_list,
+        static std::array<const char*, 6> kwd_list = {"obj", "editObj", "wholeObject", "noSubObject", "noSubElement", nullptr};
+        if(!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "OO|OO", kwd_list,
                 &pyobj, &pyeditobj, &wholeobj, &nosobj, &noelement))
             throw Py::Exception();
 
@@ -2746,8 +2735,9 @@ private:
         PyObject *no_open_original = Py_True;
         double tol = 1e-6;
         const char *op = "";
-        static char* kwd_list[] = {"shape", "split", "merge", "tighten", "outline", "keep_open", "no_open_original", "tol", "op", 0};
-        if(!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|OOOOOds", kwd_list,
+        static std::array<const char*,10> kwd_list = {"shape", "split", "merge", "tighten", "outline",
+                                                      "keep_open", "no_open_original", "tol", "op", nullptr};
+        if(!Base::Wrapped_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|OOOOOds", kwd_list,
                 &pyshape, &split, &merge, &tighten, &outline, &keep_open, &no_open_original, &tol, &op))
             throw Py::Exception();
 

@@ -270,7 +270,7 @@ App::DocumentObject *FeatureWrap::getSubObject(const char *subname,
     while(subname && *subname=='.') ++subname; // skip leading .
     auto wrapped = WrapFeature.getValue();
     if (wrapped && subname
-                && subname != Data::ComplexGeoData::findElementName(subname)) {
+                && subname != Data::findElementName(subname)) {
         const char * dot = strchr(subname,'.');
         if (dot && boost::equals(CharRange(subname, dot), wrapped->getNameInDocument())) {
             Base::Matrix4D _mat;

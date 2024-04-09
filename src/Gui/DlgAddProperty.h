@@ -24,6 +24,8 @@
 #define GUI_DIALOG_DLGADDPROPERTY_H
 
 #include <unordered_set>
+#include <QDialog>
+#include <FCGlobal.h>
 
 namespace App {
 class PropertyContainer;
@@ -41,9 +43,9 @@ public:
     DlgAddProperty(QWidget *parent,
                    std::unordered_set<App::PropertyContainer*> &&,
                    const std::vector<Base::Type> &filters = {});
-    ~DlgAddProperty();
+    ~DlgAddProperty() override;
 
-    virtual void accept() override;
+    void accept() override;
 
 private:
     std::unordered_set<App::PropertyContainer*> containers;

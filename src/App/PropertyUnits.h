@@ -81,7 +81,7 @@ class AppExport PropertyQuantityConstraint : public PropertyQuantity
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyQuantityConstraint():_ConstStruct(nullptr){}
+    PropertyQuantityConstraint() = default;
     ~PropertyQuantityConstraint() override = default;
 
     /// Constraint methods
@@ -115,8 +115,8 @@ public:
 
     bool isSame(const Property &other) const override;
 
-protected:
-    const Constraints* _ConstStruct;
+private:
+    const Constraints* _ConstStruct{nullptr};
 };
 
 // ------------------------------------------------------
@@ -142,12 +142,11 @@ public:
  */
 class AppExport PropertyAmountOfSubstance: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyAmountOfSubstance(void);
-    virtual ~PropertyAmountOfSubstance()
-    {}
+    PropertyAmountOfSubstance();
+    ~PropertyAmountOfSubstance() override = default;
 };
 
 /** Angle property
@@ -183,12 +182,11 @@ public:
  */
 class AppExport PropertyCompressiveStrength: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyCompressiveStrength(void);
-    virtual ~PropertyCompressiveStrength()
-    {}
+    PropertyCompressiveStrength();
+    ~PropertyCompressiveStrength() override = default;
 };
 
 /** CurrentDensity property
@@ -211,12 +209,11 @@ public:
  */
 class AppExport PropertyDensity: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyDensity(void);
-    virtual ~PropertyDensity()
-    {}
+    PropertyDensity();
+    ~PropertyDensity() override = default;
 };
 
 /** DissipationRate property
@@ -225,12 +222,11 @@ public:
  */
 class AppExport PropertyDissipationRate: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyDissipationRate(void);
-    virtual ~PropertyDissipationRate()
-    {}
+    PropertyDissipationRate();
+    ~PropertyDissipationRate() override = default;
 };
 
 /** Distance property
@@ -252,12 +248,11 @@ public:
  */
 class AppExport PropertyDynamicViscosity: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyDynamicViscosity(void);
-    virtual ~PropertyDynamicViscosity()
-    {}
+    PropertyDynamicViscosity();
+    ~PropertyDynamicViscosity() override = default;
 };
 
 /** ElectricalCapacitance property
@@ -266,12 +261,11 @@ public:
  */
 class AppExport PropertyElectricalCapacitance: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyElectricalCapacitance(void);
-    virtual ~PropertyElectricalCapacitance()
-    {}
+    PropertyElectricalCapacitance();
+    ~PropertyElectricalCapacitance() override = default;
 };
 
 /** ElectricalConductance property
@@ -280,12 +274,11 @@ public:
  */
 class AppExport PropertyElectricalConductance: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyElectricalConductance(void);
-    virtual ~PropertyElectricalConductance()
-    {}
+    PropertyElectricalConductance();
+    ~PropertyElectricalConductance() override = default;
 };
 
 /** ElectricalConductivity property
@@ -294,12 +287,11 @@ public:
  */
 class AppExport PropertyElectricalConductivity: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyElectricalConductivity(void);
-    virtual ~PropertyElectricalConductivity()
-    {}
+    PropertyElectricalConductivity();
+    ~PropertyElectricalConductivity() override = default;
 };
 
 /** ElectricalInductance property
@@ -308,12 +300,11 @@ public:
  */
 class AppExport PropertyElectricalInductance: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyElectricalInductance(void);
-    virtual ~PropertyElectricalInductance()
-    {}
+    PropertyElectricalInductance();
+    ~PropertyElectricalInductance() override = default;
 };
 
 /** ElectricalResistance property
@@ -323,12 +314,11 @@ public:
 
 class AppExport PropertyElectricalResistance: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyElectricalResistance(void);
-    virtual ~PropertyElectricalResistance()
-    {}
+    PropertyElectricalResistance();
+    ~PropertyElectricalResistance() override = default;
 };
 
 /** ElectricCharge property
@@ -337,12 +327,11 @@ public:
  */
 class AppExport PropertyElectricCharge: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyElectricCharge(void);
-    virtual ~PropertyElectricCharge()
-    {}
+    PropertyElectricCharge();
+    ~PropertyElectricCharge() override = default;
 };
 
 /** ElectricCurrent property
@@ -351,12 +340,11 @@ public:
  */
 class AppExport PropertyElectricCurrent: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyElectricCurrent(void);
-    virtual ~PropertyElectricCurrent()
-    {}
+    PropertyElectricCurrent();
+    ~PropertyElectricCurrent() override = default;
 };
 
 /** ElectricPotential property
@@ -404,12 +392,11 @@ public:
  */
 class AppExport PropertyHeatFlux: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyHeatFlux(void);
-    virtual ~PropertyHeatFlux()
-    {}
+    PropertyHeatFlux();
+    ~PropertyHeatFlux() override = default;
 };
 
 /** InverseArea property
@@ -418,12 +405,11 @@ public:
  */
 class AppExport PropertyInverseArea: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyInverseArea(void);
-    virtual ~PropertyInverseArea()
-    {}
+    PropertyInverseArea();
+    ~PropertyInverseArea() override = default;
 };
 
 /** InverseLength property
@@ -432,12 +418,11 @@ public:
  */
 class AppExport PropertyInverseLength: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyInverseLength(void);
-    virtual ~PropertyInverseLength()
-    {}
+    PropertyInverseLength();
+    ~PropertyInverseLength() override = default;
 };
 
 /** InverseVolume property
@@ -446,12 +431,11 @@ public:
  */
 class AppExport PropertyInverseVolume: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyInverseVolume(void);
-    virtual ~PropertyInverseVolume()
-    {}
+    PropertyInverseVolume();
+    ~PropertyInverseVolume() override = default;
 };
 
 /** KinematicViscosity property
@@ -460,12 +444,11 @@ public:
  */
 class AppExport PropertyKinematicViscosity: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyKinematicViscosity(void);
-    virtual ~PropertyKinematicViscosity()
-    {}
+    PropertyKinematicViscosity();
+    ~PropertyKinematicViscosity() override = default;
 };
 
 /** Length property
@@ -487,12 +470,11 @@ public:
  */
 class AppExport PropertyLuminousIntensity: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyLuminousIntensity(void);
-    virtual ~PropertyLuminousIntensity()
-    {}
+    PropertyLuminousIntensity();
+    ~PropertyLuminousIntensity() override = default;
 };
 
 /** MagneticFieldStrength property
@@ -501,12 +483,11 @@ public:
  */
 class AppExport PropertyMagneticFieldStrength: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyMagneticFieldStrength(void);
-    virtual ~PropertyMagneticFieldStrength()
-    {}
+    PropertyMagneticFieldStrength();
+    ~PropertyMagneticFieldStrength() override = default;
 };
 
 /** MagneticFlux property
@@ -515,12 +496,11 @@ public:
  */
 class AppExport PropertyMagneticFlux: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyMagneticFlux(void);
-    virtual ~PropertyMagneticFlux()
-    {}
+    PropertyMagneticFlux();
+    ~PropertyMagneticFlux() override = default;
 };
 
 /** MagneticFluxDensity property
@@ -529,12 +509,11 @@ public:
  */
 class AppExport PropertyMagneticFluxDensity: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyMagneticFluxDensity(void);
-    virtual ~PropertyMagneticFluxDensity()
-    {}
+    PropertyMagneticFluxDensity();
+    ~PropertyMagneticFluxDensity() override = default;
 };
 
  /** Magnetization property
@@ -555,14 +534,13 @@ public:
  * property. On the Gui it has a quantity like kg.
  */
 class AppExport PropertyMass: public PropertyQuantity
-    {
-    TYPESYSTEM_HEADER();
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyMass(void);
-    virtual ~PropertyMass()
-    {}
-    };
+    PropertyMass();
+    ~PropertyMass() override = default;
+};
 
 /** Pressure property
  * This is a property for representing pressure. It basically a float
@@ -583,12 +561,11 @@ public:
  */
 class AppExport PropertyPower: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyPower(void);
-    virtual ~PropertyPower()
-    {}
+    PropertyPower();
+    ~PropertyPower() override = default;
 };
 
 /** ShearModulus property
@@ -597,12 +574,11 @@ public:
  */
 class AppExport PropertyShearModulus: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyShearModulus(void);
-    virtual ~PropertyShearModulus()
-    {}
+    PropertyShearModulus();
+    ~PropertyShearModulus() override = default;
 };
 
 /** SpecificEnergy property
@@ -611,12 +587,11 @@ public:
  */
 class AppExport PropertySpecificEnergy: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertySpecificEnergy(void);
-    virtual ~PropertySpecificEnergy()
-    {}
+    PropertySpecificEnergy();
+    ~PropertySpecificEnergy() override = default;
 };
 
 /** SpecificHeat property
@@ -625,12 +600,11 @@ public:
  */
 class AppExport PropertySpecificHeat: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertySpecificHeat(void);
-    virtual ~PropertySpecificHeat()
-    {}
+    PropertySpecificHeat();
+    ~PropertySpecificHeat() override = default;
 };
 
 /** Speed property
@@ -665,12 +639,11 @@ public:
  */
 class AppExport PropertyStress: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyStress(void);
-    virtual ~PropertyStress()
-    {}
+    PropertyStress();
+    ~PropertyStress() override = default;
 };
 
 /** Temperature property
@@ -679,12 +652,11 @@ public:
  */
 class AppExport PropertyTemperature: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyTemperature(void);
-    virtual ~PropertyTemperature()
-    {}
+    PropertyTemperature();
+    ~PropertyTemperature() override = default;
 };
 
 /** ThermalConductivity property
@@ -693,12 +665,11 @@ public:
  */
 class AppExport PropertyThermalConductivity: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyThermalConductivity(void);
-    virtual ~PropertyThermalConductivity()
-    {}
+    PropertyThermalConductivity();
+    ~PropertyThermalConductivity() override = default;
 };
 
 /** ThermalExpansionCoefficient property
@@ -707,12 +678,11 @@ public:
  */
 class AppExport PropertyThermalExpansionCoefficient: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyThermalExpansionCoefficient(void);
-    virtual ~PropertyThermalExpansionCoefficient()
-    {}
+    PropertyThermalExpansionCoefficient();
+    ~PropertyThermalExpansionCoefficient() override = default;
 };
 
 /** ThermalTransferCoefficient property
@@ -721,12 +691,11 @@ public:
  */
 class AppExport PropertyThermalTransferCoefficient: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyThermalTransferCoefficient(void);
-    virtual ~PropertyThermalTransferCoefficient()
-    {}
+    PropertyThermalTransferCoefficient();
+    ~PropertyThermalTransferCoefficient() override = default;
 };
 
 /** TimeSpan property
@@ -735,11 +704,11 @@ public:
  */
 class AppExport PropertyTime: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyTime(void);
-    virtual ~PropertyTime(){}
+    PropertyTime();
+    ~PropertyTime() override = default;
 };
 
 /** UltimateTensileStrength property
@@ -748,11 +717,11 @@ public:
  */
 class AppExport PropertyUltimateTensileStrength: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyUltimateTensileStrength(void);
-    virtual ~PropertyUltimateTensileStrength(){}
+    PropertyUltimateTensileStrength();
+    ~PropertyUltimateTensileStrength() override = default;
 };
 
 /** VacuumPermittivity property
@@ -774,12 +743,11 @@ public:
  */
 class AppExport PropertyVelocity: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyVelocity(void);
-    virtual ~PropertyVelocity()
-    {}
+    PropertyVelocity();
+    ~PropertyVelocity() override = default;
 };
 
 /** Volume property
@@ -801,12 +769,11 @@ public:
  */
 class AppExport PropertyVolumeFlowRate: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyVolumeFlowRate(void);
-    virtual ~PropertyVolumeFlowRate()
-    {}
+    PropertyVolumeFlowRate();
+    ~PropertyVolumeFlowRate() override = default;
 };
 
 /** VolumetricThermalExpansionCoefficient property
@@ -815,12 +782,11 @@ public:
  */
 class AppExport PropertyVolumetricThermalExpansionCoefficient: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyVolumetricThermalExpansionCoefficient(void);
-    virtual ~PropertyVolumetricThermalExpansionCoefficient()
-    {}
+    PropertyVolumetricThermalExpansionCoefficient();
+    ~PropertyVolumetricThermalExpansionCoefficient() override = default;
 };
 
 /** Work property
@@ -829,11 +795,11 @@ public:
  */
 class AppExport PropertyWork: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyWork(void);
-    virtual ~PropertyWork(){}
+    PropertyWork();
+    ~PropertyWork() override = default;
 };
 
 /** YieldStrength property
@@ -842,12 +808,11 @@ public:
  */
 class AppExport PropertyYieldStrength: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyYieldStrength(void);
-    virtual ~PropertyYieldStrength()
-    {}
+    PropertyYieldStrength();
+    ~PropertyYieldStrength() override = default;
 };
 
 /** YoungsModulus property
@@ -856,12 +821,11 @@ public:
  */
 class AppExport PropertyYoungsModulus: public PropertyQuantity
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyYoungsModulus(void);
-    virtual ~PropertyYoungsModulus()
-    {}
+    PropertyYoungsModulus();
+    ~PropertyYoungsModulus() override = default;
 };
 
 }// namespace App

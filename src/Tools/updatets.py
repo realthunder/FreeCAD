@@ -55,6 +55,7 @@ import pathlib
 
 directories = [
     {"tsname": "App", "workingdir": "./src/App", "tsdir": "Resources/translations"},
+    {"tsname": "Base", "workingdir": "./src/Base", "tsdir": "Resources/translations"},
     {"tsname": "FreeCAD", "workingdir": "./src/Gui", "tsdir": "Language"},
     {
         "tsname": "AddonManager",
@@ -147,7 +148,7 @@ directories = [
         "tsdir": "Gui/Resources/translations",
     },
     {
-        "tsname": "Start",
+        "tsname": "StartPage",
         "workingdir": "./src/Mod/Start/",
         "tsdir": "Gui/Resources/translations",
     },
@@ -170,6 +171,11 @@ directories = [
         "tsname": "Web",
         "workingdir": "./src/Mod/Web/",
         "tsdir": "Gui/Resources/translations",
+    },
+    {
+        "tsname": "Help",
+        "workingdir": "./src/Mod/Help/",
+        "tsdir": "Resources/translations",
     },
 ]
 
@@ -236,10 +242,6 @@ def find_tools(noobsolete=True):
                 PYLUPDATE += " -no-obsolete"
         elif os.system("pylupdate5 -version") == 0:
             PYLUPDATE = "pylupdate5"
-            if noobsolete:
-                PYLUPDATE += " -noobsolete"
-        elif os.system("pylupdate4 -version") == 0:
-            PYLUPDATE = "pylupdate4"
             if noobsolete:
                 PYLUPDATE += " -noobsolete"
         elif os.system("pyside2-lupdate -version") == 0:

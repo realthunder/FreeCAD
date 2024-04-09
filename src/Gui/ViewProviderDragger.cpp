@@ -36,6 +36,7 @@
 #include <App/GeoFeature.h>
 #include <Base/Placement.h>
 #include <Base/Console.h>
+#include "Gui/ViewParams.h"
 
 #include "Application.h"
 #include "BitmapFactory.h"
@@ -56,13 +57,9 @@ using namespace Gui;
 
 PROPERTY_SOURCE(Gui::ViewProviderDragger, Gui::ViewProviderDocumentObject)
 
-ViewProviderDragger::ViewProviderDragger()
-{
-}
+ViewProviderDragger::ViewProviderDragger() = default;
 
-ViewProviderDragger::~ViewProviderDragger()
-{
-}
+ViewProviderDragger::~ViewProviderDragger() = default;
 
 void ViewProviderDragger::updateData(const App::Property* prop)
 {
@@ -260,6 +257,11 @@ bool ViewProviderDragger::setEdit(int ModNum)
 
     assert(!csysDragger);
     csysDragger = new SoFCCSysDragger();
+    csysDragger->setAxisColors(
+      Gui::ViewParams::getAxisXColor(),
+      Gui::ViewParams::getAxisYColor(),
+      Gui::ViewParams::getAxisZColor()
+    );
     csysDragger->draggerSize.setValue(0.05f);
     csysDragger->translation.setValue(tempTransform->translation.getValue());
     csysDragger->rotation.setValue(tempTransform->rotation.getValue());

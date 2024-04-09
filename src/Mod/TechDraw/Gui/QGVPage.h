@@ -85,7 +85,7 @@ public:
     };
 
     QGVPage(ViewProviderPage* vpPage, QGSPage* scenePage, QWidget* parent = nullptr);
-    ~QGVPage();
+    ~QGVPage() override;
 
     void setRenderer(RendererType type = Native);
     void drawBackground(QPainter* painter, const QRectF& rect) override;
@@ -96,8 +96,6 @@ public:
     void cancelBalloonPlacing();
 
     TechDraw::DrawPage* getDrawPage();
-
-    void setExporting(bool enable);
 
     void makeGrid(int width, int height, double step);
     void showGrid(bool state) { m_showGrid = state; }
@@ -123,6 +121,9 @@ public:
     void centerOnPage();
 
     TechDraw::DrawView* getBalloonParent() { return m_balloonParent; }
+
+    void zoomIn();
+    void zoomOut();
 
 public Q_SLOTS:
     void setHighQualityAntialiasing(bool highQualityAntialiasing);
@@ -181,7 +182,6 @@ private:
     TechDraw::DrawView* m_balloonParent;//temp field. used during balloon placing.
 
     QPoint panOrigin;
-    bool panningActive;
 
     bool m_showGrid;
     QPainterPath m_gridPath;

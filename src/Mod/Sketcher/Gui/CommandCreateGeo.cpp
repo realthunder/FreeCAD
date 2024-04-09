@@ -22,11 +22,11 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
-# include <cstdlib>
-# include <memory>
+#include <cstdlib>
+#include <memory>
 
-# include <QApplication>
-# include <QString>
+#include <QApplication>
+#include <QString>
 #endif
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -50,6 +50,7 @@
 #include <Mod/Sketcher/App/Constraint.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
+#include "CircleEllipseConstructionMethod.h"
 #include "GeometryCreationMode.h"
 #include "Utils.h"
 #include "ViewProviderSketch.h"
@@ -68,6 +69,7 @@
 #include "DrawSketchHandlerArcOfEllipse.h"
 #include "DrawSketchHandlerArcOfHyperbola.h"
 #include "DrawSketchHandlerArcOfParabola.h"
+#include "DrawSketchHandlerArcSlot.h"
 #include "DrawSketchHandlerBSpline.h"
 #include "DrawSketchHandlerBSplineByInterpolation.h"
 #include "DrawSketchHandlerCarbonCopy.h"
@@ -89,25 +91,27 @@
 using namespace std;
 using namespace SketcherGui;
 
-#define CONSTRUCTION_UPDATE_ACTION(CLASS, ICON)                                                             \
-    /* This macro creates an updateAction() function that will toggle between normal & construction icon */ \
-    void CLASS::updateAction(int mode)                                                                      \
-    {                                                                                                       \
-        auto act = getAction();                                                                             \
-        if (act) {                                                                                          \
-            switch (mode) {                                                                                 \
-                case Normal:                                                                                \
-                    act->setIcon(Gui::BitmapFactory().iconFromTheme(ICON));                                 \
-                    break;                                                                                  \
-                case Construction:                                                                          \
-                    act->setIcon(Gui::BitmapFactory().iconFromTheme(ICON "_Constr"));                       \
-                    break;                                                                                  \
-            }                                                                                               \
-        }                                                                                                   \
+#define CONSTRUCTION_UPDATE_ACTION(CLASS, ICON)                                                    \
+    /* This macro creates an updateAction() function that will toggle between normal &             \
+     * construction icon */                                                                        \
+    void CLASS::updateAction(int mode)                                                             \
+    {                                                                                              \
+        auto act = getAction();                                                                    \
+        if (act) {                                                                                 \
+            switch (static_cast<GeometryCreationMode>(mode)) {                                     \
+                case GeometryCreationMode::Normal:                                                 \
+                    act->setIcon(Gui::BitmapFactory().iconFromTheme(ICON));                        \
+                    break;                                                                         \
+                case GeometryCreationMode::Construction:                                           \
+                    act->setIcon(Gui::BitmapFactory().iconFromTheme(ICON "_Constr"));              \
+                    break;                                                                         \
+            }                                                                                      \
+        }                                                                                          \
     }
 
-namespace SketcherGui {
-GeometryCreationMode geometryCreationMode=Normal;
+namespace SketcherGui
+{
+GeometryCreationMode geometryCreationMode = GeometryCreationMode::Normal;
 }
 
 /* Sketch commands =======================================================*/
@@ -115,25 +119,25 @@ GeometryCreationMode geometryCreationMode=Normal;
 DEF_STD_CMD_AU(CmdSketcherCreateLine)
 
 CmdSketcherCreateLine::CmdSketcherCreateLine()
-  : Command("Sketcher_CreateLine")
+    : Command("Sketcher_CreateLine")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create line");
-    sToolTipText    = QT_TR_NOOP("Create a line in the sketch");
-    sWhatsThis      = "Sketcher_CreateLine";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateLine";
-    sAccel          = "G, L";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create line");
+    sToolTipText = QT_TR_NOOP("Create a line in the sketch");
+    sWhatsThis = "Sketcher_CreateLine";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateLine";
+    sAccel = "G, L";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateLine,"Sketcher_CreateLine")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateLine, "Sketcher_CreateLine")
 
 void CmdSketcherCreateLine::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerLine() );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerLine());
 }
 
 bool CmdSketcherCreateLine::isActive()
@@ -147,25 +151,27 @@ bool CmdSketcherCreateLine::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateRectangle)
 
 CmdSketcherCreateRectangle::CmdSketcherCreateRectangle()
-  : Command("Sketcher_CreateRectangle")
+    : Command("Sketcher_CreateRectangle")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create rectangle");
-    sToolTipText    = QT_TR_NOOP("Create a rectangle in the sketch");
-    sWhatsThis      = "Sketcher_CreateRectangle";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateRectangle";
-    sAccel          = "G, R";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create rectangle");
+    sToolTipText = QT_TR_NOOP("Create a rectangle in the sketch");
+    sWhatsThis = "Sketcher_CreateRectangle";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateRectangle";
+    sAccel = "G, R";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateRectangle,"Sketcher_CreateRectangle")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateRectangle, "Sketcher_CreateRectangle")
 
 void CmdSketcherCreateRectangle::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerBox(DrawSketchHandlerBox::Diagonal) );
+    ActivateHandler(
+        getActiveGuiDocument(),
+        new DrawSketchHandlerRectangle(ConstructionMethods::RectangleConstructionMethod::Diagonal));
 }
 
 bool CmdSketcherCreateRectangle::isActive()
@@ -176,25 +182,27 @@ bool CmdSketcherCreateRectangle::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateRectangleCenter)
 
 CmdSketcherCreateRectangleCenter::CmdSketcherCreateRectangleCenter()
-  : Command("Sketcher_CreateRectangle_Center")
+    : Command("Sketcher_CreateRectangle_Center")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create centered rectangle");
-    sToolTipText    = QT_TR_NOOP("Create a centered rectangle in the sketch");
-    sWhatsThis      = "Sketcher_CreateRectangle_Center";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateRectangle_Center";
-    sAccel          = "G, V";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create centered rectangle");
+    sToolTipText = QT_TR_NOOP("Create a centered rectangle in the sketch");
+    sWhatsThis = "Sketcher_CreateRectangle_Center";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateRectangle_Center";
+    sAccel = "G, V";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateRectangleCenter,"Sketcher_CreateRectangle_Center")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateRectangleCenter, "Sketcher_CreateRectangle_Center")
 
 void CmdSketcherCreateRectangleCenter::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerBox(DrawSketchHandlerBox::CenterAndCorner) );
+    ActivateHandler(getActiveGuiDocument(),
+                    new DrawSketchHandlerRectangle(
+                        ConstructionMethods::RectangleConstructionMethod::CenterAndCorner));
 }
 
 bool CmdSketcherCreateRectangleCenter::isActive()
@@ -221,12 +229,15 @@ CmdSketcherCreateOblong::CmdSketcherCreateOblong()
     eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateOblong,"Sketcher_CreateOblong")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateOblong, "Sketcher_CreateOblong")
 
 void CmdSketcherCreateOblong::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerOblong());
+    ActivateHandler(
+        getActiveGuiDocument(),
+        new DrawSketchHandlerRectangle(ConstructionMethods::RectangleConstructionMethod::Diagonal,
+                                       true));
 }
 
 bool CmdSketcherCreateOblong::isActive()
@@ -248,7 +259,7 @@ CmdSketcherCompCreateRectangles::CmdSketcherCompCreateRectangles()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Create rectangles");
+    sMenuText = QT_TR_NOOP("Create rectangle");
     sToolTipText = QT_TR_NOOP("Actions for Creating a rectangle in the sketch");
     sWhatsThis = "Sketcher_CompCreateRectangles";
     sStatusTip = sToolTipText;
@@ -264,26 +275,27 @@ CmdSketcherCompCreateRectangles::CmdSketcherCompCreateRectangles()
 DEF_STD_CMD_AU(CmdSketcherCreatePolyline)
 
 CmdSketcherCreatePolyline::CmdSketcherCreatePolyline()
-  : Command("Sketcher_CreatePolyline")
+    : Command("Sketcher_CreatePolyline")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create polyline");
-    sToolTipText    = QT_TR_NOOP("Create a polyline in the sketch.\n"
-                                 "Pressed the button (or shortcut) to cycle behaviour");
-    sWhatsThis      = "Sketcher_CreatePolyline";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreatePolyline";
-    sAccel          = "M";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create polyline");
+    sToolTipText = QT_TR_NOOP("Create a polyline in the sketch. 'M' Key cycles behaviour");
+    sToolTipText = QT_TR_NOOP("Create a polyline in the sketch.\n"
+                              "Pressed the button (or shortcut) to cycle behaviour");
+    sWhatsThis = "Sketcher_CreatePolyline";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreatePolyline";
+    sAccel = "M";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreatePolyline,"Sketcher_CreatePolyline")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreatePolyline, "Sketcher_CreatePolyline")
 
 void CmdSketcherCreatePolyline::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerLineSet() );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerLineSet());
 }
 
 bool CmdSketcherCreatePolyline::isActive()
@@ -297,25 +309,25 @@ bool CmdSketcherCreatePolyline::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateArc)
 
 CmdSketcherCreateArc::CmdSketcherCreateArc()
-  : Command("Sketcher_CreateArc")
+    : Command("Sketcher_CreateArc")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create arc by center");
-    sToolTipText    = QT_TR_NOOP("Create an arc by its center and by its end points");
-    sWhatsThis      = "Sketcher_CreateArc";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateArc";
-    sAccel          = "G, A";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create arc by center");
+    sToolTipText = QT_TR_NOOP("Create an arc by its center and by its end points");
+    sWhatsThis = "Sketcher_CreateArc";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateArc";
+    sAccel = "G, A";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateArc,"Sketcher_CreateArc")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateArc, "Sketcher_CreateArc")
 
 void CmdSketcherCreateArc::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerArc() );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerArc());
 }
 
 bool CmdSketcherCreateArc::isActive()
@@ -329,25 +341,27 @@ bool CmdSketcherCreateArc::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreate3PointArc)
 
 CmdSketcherCreate3PointArc::CmdSketcherCreate3PointArc()
-  : Command("Sketcher_Create3PointArc")
+    : Command("Sketcher_Create3PointArc")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create arc by three points");
-    sToolTipText    = QT_TR_NOOP("Create an arc by its end points and a point along the arc");
-    sWhatsThis      = "Sketcher_Create3PointArc";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_Create3PointArc";
-    sAccel          = "G, 3, A";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create arc by three points");
+    sToolTipText = QT_TR_NOOP("Create an arc by its end points and a point along the arc");
+    sWhatsThis = "Sketcher_Create3PointArc";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_Create3PointArc";
+    sAccel = "G, 3, A";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreate3PointArc,"Sketcher_Create3PointArc")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreate3PointArc, "Sketcher_Create3PointArc")
 
 void CmdSketcherCreate3PointArc::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandler3PointArc() );
+    ActivateHandler(
+        getActiveGuiDocument(),
+        new DrawSketchHandlerArc(ConstructionMethods::CircleEllipseConstructionMethod::ThreeRim));
 }
 
 bool CmdSketcherCreate3PointArc::isActive()
@@ -365,13 +379,13 @@ public:
 CmdSketcherCompCreateArc::CmdSketcherCompCreateArc()
   : GroupCommand("Sketcher_CompCreateArc")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create arc");
-    sToolTipText    = QT_TR_NOOP("Actions for Creating an arc in the sketcher");
-    sWhatsThis      = "Sketcher_CompCreateArc";
-    sStatusTip      = sToolTipText;
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create arc");
+    sToolTipText = QT_TR_NOOP("Actions for Creating an arc in the sketcher");
+    sWhatsThis = "Sketcher_CompCreateArc";
+    sStatusTip = sToolTipText;
+    eType = ForEdit;
     addCommand(new CmdSketcherCreateArc());
     addCommand(new CmdSketcherCreate3PointArc());
 }
@@ -381,25 +395,25 @@ CmdSketcherCompCreateArc::CmdSketcherCompCreateArc()
 DEF_STD_CMD_AU(CmdSketcherCreateCircle)
 
 CmdSketcherCreateCircle::CmdSketcherCreateCircle()
-  : Command("Sketcher_CreateCircle")
+    : Command("Sketcher_CreateCircle")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create circle");
-    sToolTipText    = QT_TR_NOOP("Create a circle in the sketch");
-    sWhatsThis      = "Sketcher_CreateCircle";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateCircle";
-    sAccel          = "G, C";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create circle");
+    sToolTipText = QT_TR_NOOP("Create a circle in the sketch");
+    sWhatsThis = "Sketcher_CreateCircle";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateCircle";
+    sAccel = "G, C";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateCircle,"Sketcher_CreateCircle")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateCircle, "Sketcher_CreateCircle")
 
 void CmdSketcherCreateCircle::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerCircle() );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerCircle());
 }
 
 bool CmdSketcherCreateCircle::isActive()
@@ -416,17 +430,17 @@ DEF_STD_CMD_AU(CmdSketcherCreateEllipseByCenter)
  * @brief ctor
  */
 CmdSketcherCreateEllipseByCenter::CmdSketcherCreateEllipseByCenter()
-  : Command("Sketcher_CreateEllipseByCenter")
+    : Command("Sketcher_CreateEllipseByCenter")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create ellipse by center");
-    sToolTipText    = QT_TR_NOOP("Create an ellipse by center in the sketch");
-    sWhatsThis      = "Sketcher_CreateEllipseByCenter";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateEllipseByCenter";
-    sAccel          = "G, E, E";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create ellipse by center");
+    sToolTipText = QT_TR_NOOP("Create an ellipse by center in the sketch");
+    sWhatsThis = "Sketcher_CreateEllipseByCenter";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateEllipseByCenter";
+    sAccel = "G, E, E";
+    eType = ForEdit;
 }
 
 CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateEllipseByCenter, "Sketcher_CreateEllipseByCenter")
@@ -434,7 +448,7 @@ CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateEllipseByCenter, "Sketcher_CreateEll
 void CmdSketcherCreateEllipseByCenter::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerEllipse(0) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerEllipse());
 }
 
 bool CmdSketcherCreateEllipseByCenter::isActive()
@@ -449,25 +463,27 @@ DEF_STD_CMD_AU(CmdSketcherCreateEllipseBy3Points)
  * @brief ctor
  */
 CmdSketcherCreateEllipseBy3Points::CmdSketcherCreateEllipseBy3Points()
-  : Command("Sketcher_CreateEllipseBy3Points")
+    : Command("Sketcher_CreateEllipseBy3Points")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create ellipse by 3 points");
-    sToolTipText    = QT_TR_NOOP("Create an ellipse by 3 points in the sketch");
-    sWhatsThis      = "Sketcher_CreateEllipseBy3Points";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateEllipse_3points";
-    sAccel          = "G, 3, E";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create ellipse by 3 points");
+    sToolTipText = QT_TR_NOOP("Create an ellipse by 3 points in the sketch");
+    sWhatsThis = "Sketcher_CreateEllipseBy3Points";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateEllipse_3points";
+    sAccel = "G, 3, E";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateEllipseBy3Points,"Sketcher_CreateEllipse_3points")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateEllipseBy3Points, "Sketcher_CreateEllipse_3points")
 
 void CmdSketcherCreateEllipseBy3Points::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerEllipse(1) );
+    ActivateHandler(getActiveGuiDocument(),
+                    new DrawSketchHandlerEllipse(
+                        ConstructionMethods::CircleEllipseConstructionMethod::ThreeRim));
 }
 
 bool CmdSketcherCreateEllipseBy3Points::isActive()
@@ -478,25 +494,25 @@ bool CmdSketcherCreateEllipseBy3Points::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateArcOfEllipse)
 
 CmdSketcherCreateArcOfEllipse::CmdSketcherCreateArcOfEllipse()
-  : Command("Sketcher_CreateArcOfEllipse")
+    : Command("Sketcher_CreateArcOfEllipse")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create an arc of ellipse");
-    sToolTipText    = QT_TR_NOOP("Create an arc of ellipse in the sketch");
-    sWhatsThis      = "Sketcher_CreateArcOfEllipse";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateElliptical_Arc";
-    sAccel          = "G, E, A";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create arc of ellipse");
+    sToolTipText = QT_TR_NOOP("Create an arc of ellipse in the sketch");
+    sWhatsThis = "Sketcher_CreateArcOfEllipse";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateElliptical_Arc";
+    sAccel = "G, E, A";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateArcOfEllipse,"Sketcher_CreateElliptical_Arc")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateArcOfEllipse, "Sketcher_CreateElliptical_Arc")
 
 void CmdSketcherCreateArcOfEllipse::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerArcOfEllipse() );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerArcOfEllipse());
 }
 
 bool CmdSketcherCreateArcOfEllipse::isActive()
@@ -507,24 +523,24 @@ bool CmdSketcherCreateArcOfEllipse::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateArcOfHyperbola)
 
 CmdSketcherCreateArcOfHyperbola::CmdSketcherCreateArcOfHyperbola()
-  : Command("Sketcher_CreateArcOfHyperbola")
+    : Command("Sketcher_CreateArcOfHyperbola")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create an arc of hyperbola");
-    sToolTipText    = QT_TR_NOOP("Create an arc of hyperbola in the sketch");
-    sWhatsThis      = "Sketcher_CreateArcOfHyperbola";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateHyperbolic_Arc";
-    sAccel          = "G, H";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create arc of hyperbola");
+    sToolTipText = QT_TR_NOOP("Create an arc of hyperbola in the sketch");
+    sWhatsThis = "Sketcher_CreateArcOfHyperbola";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateHyperbolic_Arc";
+    sAccel = "G, H";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateArcOfHyperbola,"Sketcher_CreateHyperbolic_Arc")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateArcOfHyperbola, "Sketcher_CreateHyperbolic_Arc")
 
 void CmdSketcherCreateArcOfHyperbola::activated(int /*iMsg*/)
 {
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerArcOfHyperbola() );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerArcOfHyperbola());
 }
 
 bool CmdSketcherCreateArcOfHyperbola::isActive()
@@ -535,24 +551,24 @@ bool CmdSketcherCreateArcOfHyperbola::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateArcOfParabola)
 
 CmdSketcherCreateArcOfParabola::CmdSketcherCreateArcOfParabola()
-  : Command("Sketcher_CreateArcOfParabola")
+    : Command("Sketcher_CreateArcOfParabola")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create an arc of parabola");
-    sToolTipText    = QT_TR_NOOP("Create an arc of parabola in the sketch");
-    sWhatsThis      = "Sketcher_CreateArcOfParabola";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateParabolic_Arc";
-    sAccel          = "G, J";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create arc of parabola");
+    sToolTipText = QT_TR_NOOP("Create an arc of parabola in the sketch");
+    sWhatsThis = "Sketcher_CreateArcOfParabola";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateParabolic_Arc";
+    sAccel = "G, J";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateArcOfParabola,"Sketcher_CreateParabolic_Arc")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateArcOfParabola, "Sketcher_CreateParabolic_Arc")
 
 void CmdSketcherCreateArcOfParabola::activated(int /*iMsg*/)
 {
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerArcOfParabola() );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerArcOfParabola());
 }
 
 bool CmdSketcherCreateArcOfParabola::isActive()
@@ -590,25 +606,25 @@ CmdSketcherCompCreateConic::CmdSketcherCompCreateConic()
 DEF_STD_CMD_AU(CmdSketcherCreateBSpline)
 
 CmdSketcherCreateBSpline::CmdSketcherCreateBSpline()
-  : Command("Sketcher_CreateBSpline")
+    : Command("Sketcher_CreateBSpline")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create B-spline");
-    sToolTipText    = QT_TR_NOOP("Create a B-spline via control points in the sketch.");
-    sWhatsThis      = "Sketcher_CreateBSpline";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateBSpline";
-    sAccel          = "G, B, B";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create B-spline");
+    sToolTipText = QT_TR_NOOP("Create a B-spline by control points in the sketch.");
+    sWhatsThis = "Sketcher_CreateBSpline";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateBSpline";
+    sAccel = "G, B, B";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateBSpline,"Sketcher_CreateBSpline")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateBSpline, "Sketcher_CreateBSpline")
 
 void CmdSketcherCreateBSpline::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerBSpline(0) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerBSpline(0));
 }
 
 bool CmdSketcherCreateBSpline::isActive()
@@ -623,25 +639,25 @@ DEF_STD_CMD_AU(CmdSketcherCreatePeriodicBSpline)
  * @brief ctor
  */
 CmdSketcherCreatePeriodicBSpline::CmdSketcherCreatePeriodicBSpline()
-: Command("Sketcher_CreatePeriodicBSpline")
+    : Command("Sketcher_CreatePeriodicBSpline")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create periodic B-spline");
-    sToolTipText    = QT_TR_NOOP("Create a periodic B-spline via control points in the sketch.");
-    sWhatsThis      = "Sketcher_CreatePeriodicBSpline";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_Create_Periodic_BSpline";
-    sAccel          = "G, B, P";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create periodic B-spline");
+    sToolTipText = QT_TR_NOOP("Create a periodic B-spline by control points in the sketch.");
+    sWhatsThis = "Sketcher_CreatePeriodicBSpline";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_Create_Periodic_BSpline";
+    sAccel = "G, B, P";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreatePeriodicBSpline,"Sketcher_Create_Periodic_BSpline")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreatePeriodicBSpline, "Sketcher_Create_Periodic_BSpline")
 
 void CmdSketcherCreatePeriodicBSpline::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerBSpline(1) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerBSpline(1));
 }
 
 bool CmdSketcherCreatePeriodicBSpline::isActive()
@@ -649,29 +665,31 @@ bool CmdSketcherCreatePeriodicBSpline::isActive()
     return isCommandActive(getActiveGuiDocument());
 }
 
-/// @brief Macro that declares a new sketcher command class 'CmdSketcherCreateBSplineByInterpolation'
+/// @brief Macro that declares a new sketcher command class
+/// 'CmdSketcherCreateBSplineByInterpolation'
 DEF_STD_CMD_AU(CmdSketcherCreateBSplineByInterpolation)
 
 CmdSketcherCreateBSplineByInterpolation::CmdSketcherCreateBSplineByInterpolation()
-: Command("Sketcher_CreateBSplineByInterpolation")
+    : Command("Sketcher_CreateBSplineByInterpolation")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Interpolate B-spline");
-    sToolTipText    = QT_TR_NOOP("Create a B-spline by interpolation, i.e. via knots in the sketch.");
-    sWhatsThis      = "Sketcher_CreateBSplineByInterpolation";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateBSplineByInterpolation";
-    sAccel          = "G, B, I";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create B-spline by knots");
+    sToolTipText = QT_TR_NOOP("Create a B-spline by knots, i.e. by interpolation, in the sketch.");
+    sWhatsThis = "Sketcher_CreateBSplineByInterpolation";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateBSplineByInterpolation";
+    sAccel = "G, B, I";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateBSplineByInterpolation,"Sketcher_CreateBSplineByInterpolation")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateBSplineByInterpolation,
+                           "Sketcher_CreateBSplineByInterpolation")
 
 void CmdSketcherCreateBSplineByInterpolation::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerBSplineByInterpolation(0) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerBSplineByInterpolation(0));
 }
 
 bool CmdSketcherCreateBSplineByInterpolation::isActive()
@@ -679,29 +697,32 @@ bool CmdSketcherCreateBSplineByInterpolation::isActive()
     return isCommandActive(getActiveGuiDocument());
 }
 
-/// @brief Macro that declares a new sketcher command class 'CmdSketcherCreatePeriodicBSplineByInterpolation'
+/// @brief Macro that declares a new sketcher command class
+/// 'CmdSketcherCreatePeriodicBSplineByInterpolation'
 DEF_STD_CMD_AU(CmdSketcherCreatePeriodicBSplineByInterpolation)
 
 CmdSketcherCreatePeriodicBSplineByInterpolation::CmdSketcherCreatePeriodicBSplineByInterpolation()
-: Command("Sketcher_CreatePeriodicBSplineByInterpolation")
+    : Command("Sketcher_CreatePeriodicBSplineByInterpolation")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Interpolate periodic B-spline");
-    sToolTipText    = QT_TR_NOOP("Create a periodic B-spline by interpolation, i.e. via knots in the sketch.");
-    sWhatsThis      = "Sketcher_Create_Periodic_BSplineByInterpolation";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_Create_Periodic_BSplineByInterpolation";
-    sAccel          = "G, B, O";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create periodic B-spline by knots");
+    sToolTipText =
+        QT_TR_NOOP("Create a periodic B-spline by knots, i.e. by interpolation, in the sketch.");
+    sWhatsThis = "Sketcher_Create_Periodic_BSplineByInterpolation";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_Create_Periodic_BSplineByInterpolation";
+    sAccel = "G, B, O";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreatePeriodicBSplineByInterpolation,"Sketcher_CreatePeriodicBSplineByInterpolation")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreatePeriodicBSplineByInterpolation,
+                           "Sketcher_CreatePeriodicBSplineByInterpolation")
 
 void CmdSketcherCreatePeriodicBSplineByInterpolation::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerBSplineByInterpolation(1) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerBSplineByInterpolation(1));
 }
 
 bool CmdSketcherCreatePeriodicBSplineByInterpolation::isActive()
@@ -742,25 +763,27 @@ CmdSketcherCompCreateBSpline::CmdSketcherCompCreateBSpline()
 DEF_STD_CMD_AU(CmdSketcherCreate3PointCircle)
 
 CmdSketcherCreate3PointCircle::CmdSketcherCreate3PointCircle()
-  : Command("Sketcher_Create3PointCircle")
+    : Command("Sketcher_Create3PointCircle")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create circle by three points");
-    sToolTipText    = QT_TR_NOOP("Create a circle by 3 perimeter points");
-    sWhatsThis      = "Sketcher_Create3PointCircle";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_Create3PointCircle";
-    sAccel          = "G, 3, C";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create circle by three points");
+    sToolTipText = QT_TR_NOOP("Create a circle by 3 perimeter points");
+    sWhatsThis = "Sketcher_Create3PointCircle";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_Create3PointCircle";
+    sAccel = "G, 3, C";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreate3PointCircle,"Sketcher_Create3PointCircle")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreate3PointCircle, "Sketcher_Create3PointCircle")
 
 void CmdSketcherCreate3PointCircle::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandler3PointCircle() );
+    ActivateHandler(getActiveGuiDocument(),
+                    new DrawSketchHandlerCircle(
+                        ConstructionMethods::CircleEllipseConstructionMethod::ThreeRim));
 }
 
 bool CmdSketcherCreate3PointCircle::isActive()
@@ -795,17 +818,17 @@ CmdSketcherCompCreateCircle::CmdSketcherCompCreateCircle()
 DEF_STD_CMD_A(CmdSketcherCreatePoint)
 
 CmdSketcherCreatePoint::CmdSketcherCreatePoint()
-  : Command("Sketcher_CreatePoint")
+    : Command("Sketcher_CreatePoint")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create point");
-    sToolTipText    = QT_TR_NOOP("Create a point in the sketch");
-    sWhatsThis      = "Sketcher_CreatePoint";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreatePoint";
-    sAccel          = "G, Y";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create point");
+    sToolTipText = QT_TR_NOOP("Create a point in the sketch");
+    sWhatsThis = "Sketcher_CreatePoint";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreatePoint";
+    sAccel = "G, Y";
+    eType = ForEdit;
 }
 
 void CmdSketcherCreatePoint::activated(int iMsg)
@@ -824,23 +847,24 @@ bool CmdSketcherCreatePoint::isActive()
 DEF_STD_CMD_A(CmdSketcherCreateFillet)
 
 CmdSketcherCreateFillet::CmdSketcherCreateFillet()
-  : Command("Sketcher_CreateFillet")
+    : Command("Sketcher_CreateFillet")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create fillet");
-    sToolTipText    = QT_TR_NOOP("Create a fillet between two lines or at a coincident point");
-    sWhatsThis      = "Sketcher_CreateFillet";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateFillet";
-    sAccel          = "G, F, F";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create fillet");
+    sToolTipText = QT_TR_NOOP("Create a fillet between two lines or at a coincident point");
+    sWhatsThis = "Sketcher_CreateFillet";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateFillet";
+    sAccel = "G, F, F";
+    eType = ForEdit;
 }
 
 void CmdSketcherCreateFillet::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerFillet(DrawSketchHandlerFillet::SimpleFillet));
+    ActivateHandler(getActiveGuiDocument(),
+                    new DrawSketchHandlerFillet(DrawSketchHandlerFillet::SimpleFillet));
 }
 
 bool CmdSketcherCreateFillet::isActive()
@@ -853,23 +877,25 @@ bool CmdSketcherCreateFillet::isActive()
 DEF_STD_CMD_A(CmdSketcherCreatePointFillet)
 
 CmdSketcherCreatePointFillet::CmdSketcherCreatePointFillet()
-  : Command("Sketcher_CreatePointFillet")
+    : Command("Sketcher_CreatePointFillet")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create corner-preserving fillet");
-    sToolTipText    = QT_TR_NOOP("Fillet that preserves intersection point and most constraints");
-    sWhatsThis      = "Sketcher_CreatePointFillet";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreatePointFillet";
-    sAccel          = "G, F, P";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create corner-preserving fillet");
+    sToolTipText = QT_TR_NOOP("Fillet that preserves intersection point and most constraints");
+    sWhatsThis = "Sketcher_CreatePointFillet";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreatePointFillet";
+    sAccel = "G, F, P";
+    eType = ForEdit;
 }
 
 void CmdSketcherCreatePointFillet::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerFillet(DrawSketchHandlerFillet::ConstraintPreservingFillet));
+    ActivateHandler(
+        getActiveGuiDocument(),
+        new DrawSketchHandlerFillet(DrawSketchHandlerFillet::ConstraintPreservingFillet));
 }
 
 bool CmdSketcherCreatePointFillet::isActive()
@@ -904,17 +930,17 @@ CmdSketcherCompCreateFillets::CmdSketcherCompCreateFillets()
 DEF_STD_CMD_A(CmdSketcherTrimming)
 
 CmdSketcherTrimming::CmdSketcherTrimming()
-  : Command("Sketcher_Trimming")
+    : Command("Sketcher_Trimming")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Trim edge");
-    sToolTipText    = QT_TR_NOOP("Trim an edge with respect to the picked position");
-    sWhatsThis      = "Sketcher_Trimming";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_Trimming";
-    sAccel          = "G, T";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Trim edge");
+    sToolTipText = QT_TR_NOOP("Trim an edge with respect to the picked position");
+    sWhatsThis = "Sketcher_Trimming";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_Trimming";
+    sAccel = "G, T";
+    eType = ForEdit;
 }
 
 void CmdSketcherTrimming::activated(int iMsg)
@@ -934,19 +960,19 @@ bool CmdSketcherTrimming::isActive()
 
 DEF_STD_CMD_A(CmdSketcherExtend)
 
-//TODO: fix the translations for this
+// TODO: fix the translations for this
 CmdSketcherExtend::CmdSketcherExtend()
-  : Command("Sketcher_Extend")
+    : Command("Sketcher_Extend")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Extend edge");
-    sToolTipText    = QT_TR_NOOP("Extend an edge with respect to the picked position");
-    sWhatsThis      = "Sketcher_Extend";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_Extend";
-    sAccel          = "G, Q";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Extend edge");
+    sToolTipText = QT_TR_NOOP("Extend an edge with respect to the picked position");
+    sWhatsThis = "Sketcher_Extend";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_Extend";
+    sAccel = "G, Q";
+    eType = ForEdit;
 }
 
 void CmdSketcherExtend::activated(int iMsg)
@@ -965,19 +991,19 @@ bool CmdSketcherExtend::isActive()
 
 DEF_STD_CMD_A(CmdSketcherSplit)
 
-//TODO: fix the translations for this
+// TODO: fix the translations for this
 CmdSketcherSplit::CmdSketcherSplit()
-  : Command("Sketcher_Split")
+    : Command("Sketcher_Split")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Split edge");
-    sToolTipText    = QT_TR_NOOP("Splits an edge into two while preserving constraints");
-    sWhatsThis      = "Sketcher_Split";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_Split";
-    sAccel          = "G, Z";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Split edge");
+    sToolTipText = QT_TR_NOOP("Splits an edge into two while preserving constraints");
+    sWhatsThis = "Sketcher_Split";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_Split";
+    sAccel = "G, Z";
+    eType = ForEdit;
 }
 
 void CmdSketcherSplit::activated(int iMsg)
@@ -991,20 +1017,51 @@ bool CmdSketcherSplit::isActive()
     return isCommandActive(getActiveGuiDocument());
 }
 
+// Comp for curve edition tools =======================================================
+
+class CmdSketcherCompCurveEdition: public Gui::GroupCommand
+{
+public:
+    CmdSketcherCompCurveEdition()
+        : GroupCommand("Sketcher_CompCurveEdition")
+    {
+        sAppModule = "Sketcher";
+        sGroup = "Sketcher";
+        sMenuText = QT_TR_NOOP("Curve Edition");
+        sToolTipText = QT_TR_NOOP("Curve Edition tools.");
+        sWhatsThis = "Sketcher_CompCurveEdition";
+        sStatusTip = sToolTipText;
+        eType = ForEdit;
+
+        setCheckable(false);
+
+        addCommand("Sketcher_Trimming");
+        addCommand("Sketcher_Split");
+        addCommand("Sketcher_Extend");
+    }
+
+    const char* className() const override
+    {
+        return "CmdSketcherCompCurveEdition";
+    }
+};
+
+// ======================================================================================
+
 DEF_STD_CMD_A(CmdSketcherExternal)
 
 CmdSketcherExternal::CmdSketcherExternal()
-  : Command("Sketcher_External")
+    : Command("Sketcher_External")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create an external geometry");
-    sToolTipText    = QT_TR_NOOP("Create an edge linked to an external geometry");
-    sWhatsThis      = "Sketcher_External";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_External";
-    sAccel          = "G, X";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create external geometry");
+    sToolTipText = QT_TR_NOOP("Create an edge linked to an external geometry");
+    sWhatsThis = "Sketcher_External";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_External";
+    sAccel = "G, X";
+    eType = ForEdit;
 }
 
 void CmdSketcherExternal::activated(int iMsg)
@@ -1075,7 +1132,7 @@ void CmdSketcherDefining::activated(int iMsg)
     }
 }
 
-bool CmdSketcherDefining::isActive(void)
+bool CmdSketcherDefining::isActive()
 {
     return isCommandActive(getActiveGuiDocument());
 }
@@ -1113,7 +1170,7 @@ void CmdSketcherIntersection::activated(int iMsg)
     }
 }
 
-bool CmdSketcherIntersection::isActive(void)
+bool CmdSketcherIntersection::isActive()
 {
     return isCommandActive(getActiveGuiDocument());
 }
@@ -1151,7 +1208,7 @@ void CmdSketcherIntersectionDefining::activated(int iMsg)
     }
 }
 
-bool CmdSketcherIntersectionDefining::isActive(void)
+bool CmdSketcherIntersectionDefining::isActive()
 {
     return isCommandActive(getActiveGuiDocument());
 }
@@ -1182,7 +1239,7 @@ void CmdSketcherAttach::activated(int iMsg)
     ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerExternal(std::move(sels)));
 }
 
-bool CmdSketcherAttach::isActive(void)
+bool CmdSketcherAttach::isActive()
 {
     return getExternalSelection()!=0;
 }
@@ -1222,7 +1279,7 @@ void CmdSketcherDetach::activated(int iMsg)
     commitCommand();
 }
 
-bool CmdSketcherDetach::isActive(void)
+bool CmdSketcherDetach::isActive()
 {
     return getExternalSelection()!=0;
 }
@@ -1260,7 +1317,7 @@ void CmdSketcherToggleFreeze::activated(int iMsg)
     commitCommand();
 }
 
-bool CmdSketcherToggleFreeze::isActive(void)
+bool CmdSketcherToggleFreeze::isActive()
 {
     return getExternalSelection(0)!=0;
 }
@@ -1295,7 +1352,7 @@ void CmdSketcherSync::activated(int iMsg)
     commitCommand();
 }
 
-bool CmdSketcherSync::isActive(void)
+bool CmdSketcherSync::isActive()
 {
     return getExternalSelection(0)!=0;
 }
@@ -1335,7 +1392,7 @@ void CmdSketcherFixExternal::activated(int iMsg)
     commitCommand();
 }
 
-bool CmdSketcherFixExternal::isActive(void)
+bool CmdSketcherFixExternal::isActive()
 {
     return getExternalSelection(0)!=0;
 }
@@ -1373,20 +1430,20 @@ public:
 DEF_STD_CMD_AU(CmdSketcherCarbonCopy)
 
 CmdSketcherCarbonCopy::CmdSketcherCarbonCopy()
-: Command("Sketcher_CarbonCopy")
+    : Command("Sketcher_CarbonCopy")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create a carbon copy");
-    sToolTipText    = QT_TR_NOOP("Copy the geometry of another sketch");
-    sWhatsThis      = "Sketcher_CarbonCopy";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CarbonCopy";
-    sAccel          = "G, W";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create carbon copy");
+    sToolTipText = QT_TR_NOOP("Copy the geometry of another sketch");
+    sWhatsThis = "Sketcher_CarbonCopy";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CarbonCopy";
+    sAccel = "G, W";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCarbonCopy,"Sketcher_CarbonCopy")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCarbonCopy, "Sketcher_CarbonCopy")
 
 void CmdSketcherCarbonCopy::activated(int iMsg)
 {
@@ -1399,10 +1456,58 @@ bool CmdSketcherCarbonCopy::isActive()
     return isCommandActive(getActiveGuiDocument());
 }
 
+// Comp for slot tools =============================================
 
-/**
- * Create Slot
- */
+class CmdSketcherCompSlot: public Gui::GroupCommand
+{
+public:
+    CmdSketcherCompSlot()
+        : GroupCommand("Sketcher_CompSlot")
+    {
+        sAppModule = "Sketcher";
+        sGroup = "Sketcher";
+        sMenuText = QT_TR_NOOP("Slots");
+        sToolTipText = QT_TR_NOOP("Slot tools.");
+        sWhatsThis = "Sketcher_CompSlot";
+        sStatusTip = sToolTipText;
+        eType = ForEdit;
+
+        setCheckable(false);
+
+        addCommand("Sketcher_CreateSlot");
+        addCommand("Sketcher_CreateArcSlot");
+    }
+
+    void updateAction(int mode) override
+    {
+        Gui::ActionGroup* pcAction = qobject_cast<Gui::ActionGroup*>(getAction());
+        if (!pcAction) {
+            return;
+        }
+
+        QList<QAction*> al = pcAction->actions();
+        int index = pcAction->property("defaultAction").toInt();
+        switch (static_cast<GeometryCreationMode>(mode)) {
+            case GeometryCreationMode::Normal:
+                al[0]->setIcon(Gui::BitmapFactory().iconFromTheme("Sketcher_CreateSlot"));
+                al[1]->setIcon(Gui::BitmapFactory().iconFromTheme("Sketcher_CreateArcSlot"));
+                getAction()->setIcon(al[index]->icon());
+                break;
+            case GeometryCreationMode::Construction:
+                al[0]->setIcon(Gui::BitmapFactory().iconFromTheme("Sketcher_CreateSlot_Constr"));
+                al[1]->setIcon(Gui::BitmapFactory().iconFromTheme("Sketcher_CreateArcSlot_Constr"));
+                getAction()->setIcon(al[index]->icon());
+                break;
+        }
+    }
+
+    const char* className() const override
+    {
+        return "CmdSketcherCompSlot";
+    }
+};
+
+/* Create Slot =============================================================*/
 
 DEF_STD_CMD_AU(CmdSketcherCreateSlot)
 
@@ -1416,11 +1521,11 @@ CmdSketcherCreateSlot::CmdSketcherCreateSlot()
     sWhatsThis = "Sketcher_CreateSlot";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_CreateSlot";
-    sAccel  = "G, S";
+    sAccel = "G, S";
     eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateSlot,"Sketcher_CreateSlot")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateSlot, "Sketcher_CreateSlot")
 
 void CmdSketcherCreateSlot::activated(int iMsg)
 {
@@ -1433,30 +1538,61 @@ bool CmdSketcherCreateSlot::isActive()
     return isCommandActive(getActiveGuiDocument());
 }
 
+/* Create Arc Slot =========================================================*/
+
+DEF_STD_CMD_AU(CmdSketcherCreateArcSlot)
+
+CmdSketcherCreateArcSlot::CmdSketcherCreateArcSlot()
+    : Command("Sketcher_CreateArcSlot")
+{
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create arc slot");
+    sToolTipText = QT_TR_NOOP("Create an arc slot in the sketch");
+    sWhatsThis = "Sketcher_CreateArcSlot";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateArcSlot";
+    sAccel = "G, S, 2";
+    eType = ForEdit;
+}
+
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateArcSlot, "Sketcher_CreateArcSlot")
+
+void CmdSketcherCreateArcSlot::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerArcSlot());
+}
+
+bool CmdSketcherCreateArcSlot::isActive()
+{
+    return isCommandActive(getActiveGuiDocument());
+}
+
 /* Create Regular Polygon ==============================================*/
 
 DEF_STD_CMD_AU(CmdSketcherCreateTriangle)
 
 CmdSketcherCreateTriangle::CmdSketcherCreateTriangle()
-  : Command("Sketcher_CreateTriangle")
+    : Command("Sketcher_CreateTriangle")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create equilateral triangle");
-    sToolTipText    = QT_TR_NOOP("Create an equilateral triangle in the sketch");
-    sWhatsThis      = "Sketcher_CreateTriangle";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateTriangle";
-    sAccel          = "G, P, 3";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create equilateral triangle");
+    sToolTipText = QT_TR_NOOP("Create an equilateral triangle in the sketch");
+    sWhatsThis = "Sketcher_CreateTriangle";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateTriangle";
+    sAccel = "G, P, 3";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateTriangle,"Sketcher_CreateTriangle")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateTriangle, "Sketcher_CreateTriangle")
 
 void CmdSketcherCreateTriangle::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerRegularPolygon(3) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerPolygon(3));
 }
 
 bool CmdSketcherCreateTriangle::isActive()
@@ -1467,25 +1603,25 @@ bool CmdSketcherCreateTriangle::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateSquare)
 
 CmdSketcherCreateSquare::CmdSketcherCreateSquare()
-  : Command("Sketcher_CreateSquare")
+    : Command("Sketcher_CreateSquare")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create square");
-    sToolTipText    = QT_TR_NOOP("Create a square in the sketch");
-    sWhatsThis      = "Sketcher_CreateSquare";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateSquare";
-    sAccel          = "G, P, 4";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create square");
+    sToolTipText = QT_TR_NOOP("Create a square in the sketch");
+    sWhatsThis = "Sketcher_CreateSquare";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateSquare";
+    sAccel = "G, P, 4";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateSquare,"Sketcher_CreateSquare")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateSquare, "Sketcher_CreateSquare")
 
 void CmdSketcherCreateSquare::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerRegularPolygon(4) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerPolygon(4));
 }
 
 bool CmdSketcherCreateSquare::isActive()
@@ -1496,25 +1632,25 @@ bool CmdSketcherCreateSquare::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreatePentagon)
 
 CmdSketcherCreatePentagon::CmdSketcherCreatePentagon()
-  : Command("Sketcher_CreatePentagon")
+    : Command("Sketcher_CreatePentagon")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create pentagon");
-    sToolTipText    = QT_TR_NOOP("Create a pentagon in the sketch");
-    sWhatsThis      = "Sketcher_CreatePentagon";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreatePentagon";
-    sAccel          = "G, P, 5";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create pentagon");
+    sToolTipText = QT_TR_NOOP("Create a pentagon in the sketch");
+    sWhatsThis = "Sketcher_CreatePentagon";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreatePentagon";
+    sAccel = "G, P, 5";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreatePentagon,"Sketcher_CreatePentagon")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreatePentagon, "Sketcher_CreatePentagon")
 
 void CmdSketcherCreatePentagon::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerRegularPolygon(5) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerPolygon(5));
 }
 
 bool CmdSketcherCreatePentagon::isActive()
@@ -1525,25 +1661,25 @@ bool CmdSketcherCreatePentagon::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateHexagon)
 
 CmdSketcherCreateHexagon::CmdSketcherCreateHexagon()
-  : Command("Sketcher_CreateHexagon")
+    : Command("Sketcher_CreateHexagon")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create hexagon");
-    sToolTipText    = QT_TR_NOOP("Create a hexagon in the sketch");
-    sWhatsThis      = "Sketcher_CreateHexagon";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateHexagon";
-    sAccel          = "G, P, 6";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create hexagon");
+    sToolTipText = QT_TR_NOOP("Create a hexagon in the sketch");
+    sWhatsThis = "Sketcher_CreateHexagon";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateHexagon";
+    sAccel = "G, P, 6";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateHexagon,"Sketcher_CreateHexagon")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateHexagon, "Sketcher_CreateHexagon")
 
 void CmdSketcherCreateHexagon::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerRegularPolygon(6) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerPolygon(6));
 }
 
 bool CmdSketcherCreateHexagon::isActive()
@@ -1554,25 +1690,25 @@ bool CmdSketcherCreateHexagon::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateHeptagon)
 
 CmdSketcherCreateHeptagon::CmdSketcherCreateHeptagon()
-  : Command("Sketcher_CreateHeptagon")
+    : Command("Sketcher_CreateHeptagon")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create heptagon");
-    sToolTipText    = QT_TR_NOOP("Create a heptagon in the sketch");
-    sWhatsThis      = "Sketcher_CreateHeptagon";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateHeptagon";
-    sAccel          = "G, P, 7";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create heptagon");
+    sToolTipText = QT_TR_NOOP("Create a heptagon in the sketch");
+    sWhatsThis = "Sketcher_CreateHeptagon";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateHeptagon";
+    sAccel = "G, P, 7";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateHeptagon,"Sketcher_CreateHeptagon")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateHeptagon, "Sketcher_CreateHeptagon")
 
 void CmdSketcherCreateHeptagon::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerRegularPolygon(7) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerPolygon(7));
 }
 
 bool CmdSketcherCreateHeptagon::isActive()
@@ -1583,25 +1719,25 @@ bool CmdSketcherCreateHeptagon::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateOctagon)
 
 CmdSketcherCreateOctagon::CmdSketcherCreateOctagon()
-  : Command("Sketcher_CreateOctagon")
+    : Command("Sketcher_CreateOctagon")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create octagon");
-    sToolTipText    = QT_TR_NOOP("Create an octagon in the sketch");
-    sWhatsThis      = "Sketcher_CreateOctagon";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateOctagon";
-    sAccel          = "G, P, 8";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create octagon");
+    sToolTipText = QT_TR_NOOP("Create an octagon in the sketch");
+    sWhatsThis = "Sketcher_CreateOctagon";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateOctagon";
+    sAccel = "G, P, 8";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateOctagon,"Sketcher_CreateOctagon")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateOctagon, "Sketcher_CreateOctagon")
 
 void CmdSketcherCreateOctagon::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerRegularPolygon(8) );
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerPolygon(8));
 }
 
 bool CmdSketcherCreateOctagon::isActive()
@@ -1612,20 +1748,20 @@ bool CmdSketcherCreateOctagon::isActive()
 DEF_STD_CMD_AU(CmdSketcherCreateRegularPolygon)
 
 CmdSketcherCreateRegularPolygon::CmdSketcherCreateRegularPolygon()
-: Command("Sketcher_CreateRegularPolygon")
+    : Command("Sketcher_CreateRegularPolygon")
 {
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create regular polygon");
-    sToolTipText    = QT_TR_NOOP("Create a regular polygon in the sketch");
-    sWhatsThis      = "Sketcher_CreateRegularPolygon";
-    sStatusTip      = sToolTipText;
-    sPixmap         = "Sketcher_CreateRegularPolygon";
-    sAccel          = "G, P, R";
-    eType           = ForEdit;
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create regular polygon");
+    sToolTipText = QT_TR_NOOP("Create a regular polygon in the sketch");
+    sWhatsThis = "Sketcher_CreateRegularPolygon";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateRegularPolygon";
+    sAccel = "G, P, R";
+    eType = ForEdit;
 }
 
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateRegularPolygon,"Sketcher_CreateRegularPolygon")
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateRegularPolygon, "Sketcher_CreateRegularPolygon")
 
 void CmdSketcherCreateRegularPolygon::activated(int iMsg)
 {
@@ -1633,8 +1769,9 @@ void CmdSketcherCreateRegularPolygon::activated(int iMsg)
 
     // Pop-up asking for values
     SketcherRegularPolygonDialog srpd;
-    if (srpd.exec() == QDialog::Accepted)
-        ActivateHandler(getActiveGuiDocument(),new DrawSketchHandlerRegularPolygon(srpd.sides));
+    if (srpd.exec() == QDialog::Accepted) {
+        ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerPolygon(srpd.sides));
+    }
 }
 
 bool CmdSketcherCreateRegularPolygon::isActive()
@@ -1670,9 +1807,9 @@ CmdSketcherCompCreateRegularPolygon::CmdSketcherCompCreateRegularPolygon()
 }
 
 
-void CreateSketcherCommandsCreateGeo(void)
+void CreateSketcherCommandsCreateGeo()
 {
-    Gui::CommandManager &rcCmdMgr = Gui::Application::Instance->commandManager();
+    Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
 
     rcCmdMgr.addCommand(new CmdSketcherCreatePoint());
     rcCmdMgr.addCommand(new CmdSketcherCompCreateArc());
@@ -1684,6 +1821,8 @@ void CreateSketcherCommandsCreateGeo(void)
     rcCmdMgr.addCommand(new CmdSketcherCompCreateRegularPolygon());
     rcCmdMgr.addCommand(new CmdSketcherCompCreateRectangles());
     rcCmdMgr.addCommand(new CmdSketcherCreateSlot());
+    rcCmdMgr.addCommand(new CmdSketcherCreateArcSlot());
+    rcCmdMgr.addCommand(new CmdSketcherCompSlot());
     rcCmdMgr.addCommand(new CmdSketcherCompCreateFillets());
     //rcCmdMgr.addCommand(new CmdSketcherCreateText());
     //rcCmdMgr.addCommand(new CmdSketcherCreateDraftLine());
@@ -1691,5 +1830,6 @@ void CreateSketcherCommandsCreateGeo(void)
     rcCmdMgr.addCommand(new CmdSketcherExtend());
     rcCmdMgr.addCommand(new CmdSketcherExternalCmds());
     rcCmdMgr.addCommand(new CmdSketcherSplit());
+    rcCmdMgr.addCommand(new CmdSketcherCompCurveEdition());
     rcCmdMgr.addCommand(new CmdSketcherCarbonCopy());
 }

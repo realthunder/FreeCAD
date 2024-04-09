@@ -45,7 +45,8 @@
 #include "MeshParams.h"
 
 
-namespace Mesh {
+namespace Mesh
+{
 extern PyObject* initModule();
 }
 
@@ -61,6 +62,7 @@ PyMOD_INIT_FUNC(Mesh)
     MeshCore::MeshOutput::SetAsymptoteSize(Mesh::MeshParams::getAsymptoteWidth(),
                                            Mesh::MeshParams::getAsymptoteHeight());
 
+    // clang-format off
     // add mesh elements
     Base::Interpreter().addType(&Mesh::MeshPointPy  ::Type,meshModule,"MeshPoint");
     Base::Interpreter().addType(&Mesh::EdgePy       ::Type,meshModule,"Edge");
@@ -107,6 +109,7 @@ PyMOD_INIT_FUNC(Mesh)
     Mesh::Cone                  ::init();
     Mesh::Torus                 ::init();
     Mesh::Cube                  ::init();
+    // clang-format on
 
     PyMOD_Return(meshModule);
 }

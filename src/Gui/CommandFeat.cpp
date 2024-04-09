@@ -227,18 +227,18 @@ void StdCmdSendToPythonConsole::activated(int iMsg)
         QString cmd = QStringLiteral("doc = App.getDocument(\"%1\")").arg(docname);
         Gui::Command::runCommand(Gui::Command::Gui,cmd.toUtf8());
         //support links
-        if (obj->getLinkedObject() != obj) {
+        auto linked = obj->getLinkedObject();
+        if (linked && linked != obj) {
             cmd = QStringLiteral("lnk = doc.getObject(\"%1\")").arg(objname);
             Gui::Command::runCommand(Gui::Command::Gui,cmd.toUtf8());
             cmd = QStringLiteral("obj = lnk.getLinkedObject()");
             Gui::Command::runCommand(Gui::Command::Gui,cmd.toUtf8());
-            const auto link = static_cast<const App::Link*>(obj);
-            obj = link->getLinkedObject();
+            obj = linked;
         } else {
             cmd = QStringLiteral("obj = doc.getObject(\"%1\")").arg(objname);
             Gui::Command::runCommand(Gui::Command::Gui,cmd.toUtf8());
         }
-        if (obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+        if (obj->isDerivedFrom<App::GeoFeature>()) {
             const auto geoObj = static_cast<const App::GeoFeature*>(obj);
             const App::PropertyGeometry* geo = geoObj->getPropertyOfGeometry();
             if (geo){
@@ -325,7 +325,6 @@ void CreateFeatCommands()
 {
     CommandManager &rcCmdMgr = Application::Instance->commandManager();
 
-    // rcCmdMgr.addCommand(new StdCmdFeatRecompute());
     rcCmdMgr.addCommand(new StdCmdGroupRandomColor());
     rcCmdMgr.addCommand(new StdCmdSendToPythonConsole());
     rcCmdMgr.addCommand(new StdCmdRenameActiveObject());

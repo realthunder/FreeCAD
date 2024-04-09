@@ -93,7 +93,6 @@ TaskMirroredParameters::TaskMirroredParameters(TaskMultiTransformParameters *par
 void TaskMirroredParameters::setupUI()
 {
     setupBaseUI();
-
     this->planeLinks.setCombo(*(ui->comboPlane));
     ui->comboPlane->setEnabled(true);
 

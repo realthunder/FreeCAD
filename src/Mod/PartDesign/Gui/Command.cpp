@@ -53,6 +53,7 @@
 #include <Gui/SelectionObject.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureBoolean.h>
 #include <Mod/PartDesign/App/FeatureGroove.h>
 #include <Mod/PartDesign/App/FeatureSplit.h>
 #include <Mod/PartDesign/App/FeatureRevolution.h>
@@ -87,7 +88,7 @@ FC_LOG_LEVEL_INIT("PartDesign",true,true)
 
 using namespace std;
 using namespace Attacher;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 static bool commandOverride(Gui::Command *cmd, int idx, const char *, int)
 {
@@ -407,7 +408,7 @@ void CmdPartDesignShapeBinder::activated(int iMsg)
 
     bool bEditSelected = false;
     if (support.getSize() == 1 && support.getValue() ){
-        if (support.getValue()->isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId()))
+        if (support.getValue()->isDerivedFrom<PartDesign::ShapeBinder>())
             bEditSelected = true;
     }
 
@@ -466,7 +467,7 @@ CmdPartDesignSubShapeBinder::CmdPartDesignSubShapeBinder()
     sPixmap         = "PartDesign_SubShapeBinder";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_MakeFace");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_MakeFace");
 }
 
 namespace PartGui {
@@ -619,8 +620,8 @@ void CmdPartDesignNewSketch::activated(int iMsg)
     if (!sels.empty() && (obj = sels[0].getSubObject())!=nullptr) {
         reference = sels[0];
         obj = obj->getLinkedObject(true);
-        if (!obj->isDerivedFrom(App::Plane::getClassTypeId())
-                && !obj->isDerivedFrom(PartDesign::Plane::getClassTypeId()))
+        if (!obj->isDerivedFrom<App::Plane>()
+                && !obj->isDerivedFrom<PartDesign::Plane>())
         {
             auto shape = Part::Feature::getTopoShape(reference.getObject(),
                                                      reference.getSubName().c_str(),
@@ -645,7 +646,7 @@ void CmdPartDesignNewSketch::activated(int iMsg)
         // https://forum.freecadweb.org/viewtopic.php?f=3&t=37448
         if (obj && obj == pcActiveBody) {
             App::DocumentObject* tip = pcActiveBody->Tip.getValue();
-            if (tip && tip->isDerivedFrom(Part::Feature::getClassTypeId())) {
+            if (tip && tip->isDerivedFrom<Part::Feature>()) {
                 reference.setSubName(reference.getSubNameNoElement()
                         + tip->getNameInDocument() + "." + reference.getOldElementName());
                 // automatically switch to 'Through' mode
@@ -814,9 +815,9 @@ unsigned validateSketches(std::vector<App::DocumentObject*>& sketches,
         std::vector<App::DocumentObject*>::iterator o = inList.begin();
         while (o != inList.end()) {
             //Base::Console().Error("Inlist: %s\n", (*o)->getNameInDocument());
-            if ((*o)->getTypeId().isDerivedFrom(PartDesign::Body::getClassTypeId()))
+            if ((*o)->isDerivedFrom<PartDesign::Body>())
                 o = inList.erase(o); //ignore bodies
-            else if (!(  (*o)->getTypeId().isDerivedFrom(PartDesign::Feature::getClassTypeId())  ))
+            else if (!(  (*o)->isDerivedFrom<PartDesign::Feature>()  ))
                 o = inList.erase(o); //ignore non-partDesign
             else
                 ++o;
@@ -870,7 +871,7 @@ void prepareProfileBased(PartDesign::Body *pcActiveBody, Gui::Command* cmd, cons
             return;
 
         auto feature = profile.front().getSubObject();
-        if (!feature || !feature->isDerivedFrom(Part::Feature::getClassTypeId()))
+        if (!feature || !feature->isDerivedFrom<Part::Feature>())
             return;
 
         // Related to #0002760: when an operation can't be performed due to a broken
@@ -1088,8 +1089,8 @@ void finishProfileBased(const Gui::Command* cmd, const Part::Feature* sketch, Ap
 {
     (void)sketch;
     for (auto obj : Feat->getOutList()) {
-        if (obj->isDerivedFrom(Part::Part2DObject::getClassTypeId())
-                || obj->isDerivedFrom(Part::SubShapeBinder::getClassTypeId()))
+        if (obj->isDerivedFrom<Part::Part2DObject>()
+                || obj->isDerivedFrom<Part::SubShapeBinder>())
             Gui::cmdAppObjectHide(obj);
     }
     finishFeature(cmd, Feat);
@@ -1145,7 +1146,7 @@ CmdPartDesignPad::CmdPartDesignPad()
     sPixmap       = "PartDesign_Pad";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_Extrude");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Extrude");
 }
 
 void CmdPartDesignPad::activated(int iMsg)
@@ -1279,7 +1280,7 @@ CmdPartDesignRevolution::CmdPartDesignRevolution()
     sPixmap       = "PartDesign_Revolution";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_MakeRevolve");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_MakeRevolve");
 }
 
 void CmdPartDesignRevolution::activated(int iMsg)
@@ -1297,12 +1298,12 @@ void CmdPartDesignRevolution::activated(int iMsg)
     Gui::Command* cmd = this;
     auto worker = [cmd, &pcActiveBody](Part::Feature* sketch, App::DocumentObject *Feat) {
 
-        if (!Feat)
+        auto pcRevolution = Base::freecad_dynamic_cast<PartDesign::Revolution>(Feat);
+        if (!pcRevolution)
             return;
 
-        PartDesign::Revolution* pcRevolution = dynamic_cast<PartDesign::Revolution*>(Feat);
         if (!pcRevolution->ReferenceAxis.getValue()) {
-            if (sketch->isDerivedFrom(Part::Part2DObject::getClassTypeId())) {
+            if (sketch->isDerivedFrom<Part::Part2DObject>()) {
                 Gui::cmdAppObject(Feat, std::ostringstream() <<"ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
             }
             else {
@@ -1357,12 +1358,12 @@ void CmdPartDesignGroove::activated(int iMsg)
     Gui::Command* cmd = this;
     auto worker = [cmd, &pcActiveBody](Part::Feature* sketch, App::DocumentObject *Feat) {
 
-        if (!Feat)
+        auto pcGroove = Base::freecad_dynamic_cast<PartDesign::Groove>(Feat);
+        if (!pcGroove)
             return;
 
-        PartDesign::Groove* pcGroove = dynamic_cast<PartDesign::Groove*>(Feat);
         if (!pcGroove->ReferenceAxis.getValue()) {
-            if (sketch->isDerivedFrom(Part::Part2DObject::getClassTypeId())) {
+            if (sketch->isDerivedFrom<Part::Part2DObject>()) {
                 Gui::cmdAppObject(Feat, std::ostringstream() <<"ReferenceAxis = ("<<getObjectCmd(sketch)<<",['V_Axis'])");
             }
             else {
@@ -1410,7 +1411,7 @@ CmdPartDesignAdditivePipe::CmdPartDesignAdditivePipe()
     sPixmap       = "PartDesign_AdditivePipe";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_Sweep");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Sweep");
 }
 
 void CmdPartDesignAdditivePipe::activated(int iMsg)
@@ -1513,7 +1514,7 @@ CmdPartDesignAdditiveLoft::CmdPartDesignAdditiveLoft()
     sPixmap       = "PartDesign_AdditiveLoft";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_Loft");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Loft");
 }
 
 void CmdPartDesignAdditiveLoft::activated(int iMsg)
@@ -1642,7 +1643,7 @@ void CmdPartDesignAdditiveHelix::activated(int iMsg)
         // specific parameters for helix
         Gui::Command::updateActive();
 
-        if (sketch->isDerivedFrom(Part::Part2DObject::getClassTypeId())) {
+        if (sketch->isDerivedFrom<Part::Part2DObject>()) {
             FCMD_OBJ_CMD(Feat,"ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
         }
         else {
@@ -1708,7 +1709,7 @@ void CmdPartDesignSubtractiveHelix::activated(int iMsg)
         // specific parameters for helix
         Gui::Command::updateActive();
 
-        if (sketch->isDerivedFrom(Part::Part2DObject::getClassTypeId())) {
+        if (sketch->isDerivedFrom<Part::Part2DObject>()) {
             FCMD_OBJ_CMD(Feat,"ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
         }
         else {
@@ -1824,8 +1825,8 @@ void finishDressupFeature(const Gui::Command* cmd, const std::string& which,
 {
     std::ostringstream str;
     str << '(' << Gui::Command::getObjectCmd(base) << ",[";
-    for (std::vector<std::string>::const_iterator it = SubNames.begin();it!=SubNames.end();++it){
-        str << "'" << *it << "',";
+    for (const auto & SubName : SubNames){
+        str << "'" << SubName << "',";
     }
     str << "])";
 
@@ -1894,7 +1895,7 @@ CmdPartDesignFillet::CmdPartDesignFillet()
     sPixmap       = "PartDesign_Fillet";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_Fillet");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Fillet");
 }
 
 void CmdPartDesignFillet::activated(int iMsg)
@@ -1925,7 +1926,7 @@ CmdPartDesignChamfer::CmdPartDesignChamfer()
     sPixmap       = "PartDesign_Chamfer";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_Chamfer");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Chamfer");
 }
 
 void CmdPartDesignChamfer::activated(int iMsg)
@@ -2025,7 +2026,7 @@ CmdPartDesignThickness::CmdPartDesignThickness()
     sPixmap       = "PartDesign_Thickness";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_Thickness");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Thickness");
 }
 
 void CmdPartDesignThickness::activated(int iMsg)
@@ -2086,7 +2087,7 @@ static void setOrigins(App::DocumentObject *feat,
     }
     for (auto it=subfeatures.begin(); it!=subfeatures.end();) {
         auto obj = it->getObject();
-        if (!obj->isDerivedFrom(PartDesign::Feature::getClassTypeId())) {
+        if (!obj->isDerivedFrom<PartDesign::Feature>()) {
             ++it;
             continue;
         }
@@ -2135,7 +2136,7 @@ void prepareTransformed(PartDesign::Body *pcActiveBody,
                             "Or use SubShapeBinder to import it into the body"));
             return;
         }
-        if (sel.getSubName().size() || obj->isDerivedFrom(Part::Datum::getClassTypeId()))
+        if (sel.getSubName().size() || obj->isDerivedFrom<Part::Datum>())
             subfeatures.push_back(sel);
         else
             features.push_back(obj);
@@ -2178,7 +2179,7 @@ CmdPartDesignMirrored::CmdPartDesignMirrored()
     sPixmap       = "PartDesign_Mirrored";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_Mirror");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Mirror");
 }
 
 void CmdPartDesignMirrored::activated(int iMsg)
@@ -2207,7 +2208,7 @@ void CmdPartDesignMirrored::activated(int iMsg)
             direction = true;
         }
         else if (features.size()
-                && features.front()->isDerivedFrom(PartDesign::ProfileBased::getClassTypeId()))
+                && features.front()->isDerivedFrom<PartDesign::ProfileBased>())
         {
             Part::Part2DObject *sketch = (static_cast<PartDesign::ProfileBased*>(features.front()))->getVerifiedSketch(/* silent =*/ true);
             if (sketch) {
@@ -2274,7 +2275,7 @@ void CmdPartDesignLinearPattern::activated(int iMsg)
             direction = true;
         }
         else if (features.size()
-                && features.front()->isDerivedFrom(PartDesign::ProfileBased::getClassTypeId()))
+                && features.front()->isDerivedFrom<PartDesign::ProfileBased>())
         {
             Part::Part2DObject *sketch = (static_cast<PartDesign::ProfileBased*>(features.front()))->getVerifiedSketch(/* silent =*/ true);
             if (sketch) {
@@ -2391,7 +2392,7 @@ void CmdPartDesignPolarPattern::activated(int iMsg)
             direction = true;
         }
         else if (features.size()
-                && features.front()->isDerivedFrom(PartDesign::ProfileBased::getClassTypeId())) {
+                && features.front()->isDerivedFrom<PartDesign::ProfileBased>()) {
             Part::Part2DObject *sketch = (static_cast<PartDesign::ProfileBased*>(features.front()))->getVerifiedSketch(/* silent =*/ true);
             if (sketch) {
                 Gui::cmdAppObject(Feat, std::ostringstream() <<"Axis = ("<<Gui::Command::getObjectCmd(sketch)<<",['N_Axis'])");
@@ -2501,7 +2502,7 @@ void CmdPartDesignMultiTransform::activated(int iMsg)
     PartDesign::Transformed * trFeat = nullptr;
 
     // Check if a Transformed feature has been selected, convert it to MultiTransform
-    for (auto &selT : Gui::Selection().getSelectionT()) {
+    for (const auto &selT : Gui::Selection().getSelectionT()) {
         auto obj = selT.getObject();
         if (PartDesign::Body::findBodyOf(obj) != pcActiveBody) {
             QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Selection is not in Active Body"),
@@ -2509,13 +2510,13 @@ void CmdPartDesignMultiTransform::activated(int iMsg)
             return;
         }
 
-        if (obj->isDerivedFrom(PartDesign::MultiTransform::getClassTypeId())) {
+        if (obj->isDerivedFrom<PartDesign::MultiTransform>()) {
             QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Invalid MultiTransform selection"),
                 QObject::tr("MultiTransform feature cannot be nested."));
             return;
         }
 
-        if (obj->isDerivedFrom(PartDesign::Transformed::getClassTypeId())) {
+        if (obj->isDerivedFrom<PartDesign::Transformed>()) {
             if (trFeat) {
                 QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Invalid MultiTransform selection"),
                     QObject::tr("Please select one and only one pattern feature."));
@@ -2596,22 +2597,22 @@ CmdPartDesignBoolean::CmdPartDesignBoolean()
     sPixmap         = "PartDesign_Boolean";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_Boolean");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Boolean");
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_Fuse");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Fuse");
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 1, bp::_1, bp::_2), "Part_Cut");
+            std::bind(&commandOverride, this, 1, sp::_1, sp::_2), "Part_Cut");
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 2, bp::_1, bp::_2), "Part_Common");
+            std::bind(&commandOverride, this, 2, sp::_1, sp::_2), "Part_Common");
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 3, bp::_1, bp::_2), "Part_Compound");
+            std::bind(&commandOverride, this, 3, sp::_1, sp::_2), "Part_Compound");
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 4, bp::_1, bp::_2), "Part_Section");
+            std::bind(&commandOverride, this, 4, sp::_1, sp::_2), "Part_Section");
 }
 
 Gui::Action * CmdPartDesignBoolean::createAction()
@@ -2716,7 +2717,7 @@ void CmdPartDesignBoolean::activated(int iMsg)
                 continue;
         }
 
-        const char *element = Data::ComplexGeoData::findElementName(linkSub.c_str());
+        const char *element = Data::findElementName(linkSub.c_str());
         if(!element || !element[0]) {
             binderLinks[std::make_pair(link,linkSub)];
             continue;
@@ -2743,6 +2744,7 @@ void CmdPartDesignBoolean::activated(int iMsg)
             << "newObjectAt('PartDesign::Boolean','" << FeatName << "', "
                         <<  "FreeCADGui.Selection.getSelection())");
     auto Feat = pcActiveBody->getDocument()->getObject(FeatName.c_str());
+    static_cast<PartDesign::Boolean*>(Feat)->UsePlacement.setValue(true);
 
     switch(iMsg) {
     case 1:
@@ -2827,16 +2829,16 @@ CmdPartDesignSplit::CmdPartDesignSplit()
     sPixmap         = "PartDesign_Split";
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 1, bp::_1, bp::_2), "Part_BooleanFragments");
+            std::bind(&commandOverride, this, 1, sp::_1, sp::_2), "Part_BooleanFragments");
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_Slice");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Slice");
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_SliceApart");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_SliceApart");
 
     Gui::Application::Instance->commandManager().registerCallback(
-            boost::bind(&commandOverride, this, 0, bp::_1, bp::_2), "Part_ExplodeCompound");
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_ExplodeCompound");
 }
 
 void CmdPartDesignSplit::activated(int iMsg)

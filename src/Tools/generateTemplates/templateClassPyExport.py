@@ -17,6 +17,15 @@ class TemplateClassPyExport(template.ModelTemplate):
         path = self.path
         exportName = self.export.Name
         dirname = self.dirname
+
+        def escapeString(s, indent=4):
+            """Escapes a string for use as literal in C++ code"""
+            s = s.strip()  # This allows UserDocu-tags on their own lines without adding whitespace
+            s = s.replace("\\", "\\\\")
+            s = s.replace('"', '\\"')
+            s = s.replace("\n", f'\\n"\n{" "*indent}"')
+            return s
+
         print("TemplateClassPyExport", path + exportName)
         # Imp.cpp must not exist, neither in path nor in dirname
         if not os.path.exists(path + exportName + "Imp.cpp"):
@@ -57,7 +66,7 @@ namespace @self.export.Namespace.replace("::"," { namespace ")@
 class @self.export.Namespace.replace("::","_")@Export @self.export.Name@ : public @self.export.FatherNamespace@::@self.export.Father@
 {
 protected:
-    ~@self.export.Name@();
+    ~@self.export.Name@() override;
 
 public:
     static PyTypeObject   Type;
@@ -79,12 +88,12 @@ public:
     static int descriptorSetter(PyObject* self, PyObject* obj, PyObject* value);
 -
     static PyGetSetDef    GetterSetter[];
-    virtual PyTypeObject *GetType() {return &Type;}
+    PyTypeObject *GetType() override {return &Type;}
 
 public:
     @self.export.Name@(@self.export.TwinPointer@ *pcObject, PyTypeObject *T = &Type);
-    static PyObject *PyMake(struct _typeobject *, PyObject *, PyObject *);
-    virtual int PyInit(PyObject* args, PyObject*k);
+    static PyObject *PyMake(PyTypeObject *, PyObject *, PyObject *);
+    int PyInit(PyObject* args, PyObject*k) override;
 
 + if (self.export.Initialization):
     int initialization();
@@ -93,7 +102,7 @@ public:
 
     using PointerType = @self.export.TwinPointer@*;
 
-    virtual PyObject *_repr();        // the representation
+    PyObject *_repr() override;        // the representation
     std::string representation() const;
 
     /** @name callbacks and implementers for the python object methods */
@@ -111,6 +120,19 @@ public:
 = else:
     /// implementer for the @i.Name@() method
     PyObject*  @i.Name@(PyObject *args, PyObject *kwd);
+-
+= elif i.NoArgs:
+    /// callback for the @i.Name@() method
+    static PyObject * staticCallback_@i.Name@ (PyObject *self, PyObject *args);
++ if i.Static:
+    /// implementer for the @i.Name@() method
+    static PyObject*  @i.Name@();
+= elif i.Class:
+    /// implementer for the @i.Name@() method
+    static PyObject*  @i.Name@(PyObject *self);
+= else:
+    /// implementer for the @i.Name@() method
+    PyObject*  @i.Name@();
 -
 = else:
     /// callback for the @i.Name@() method
@@ -232,8 +254,8 @@ public:
     /// setter for special attributes (e.g. dynamic ones)
     /// Output: Success=1, Failure=-1, Ignore=0
     int setCustomAttributes(const char* attr, PyObject *obj);
-    PyObject *_getattr(const char *attr);              // __getattr__ function
-    int _setattr(const char *attr, PyObject *value);        // __setattr__ function
+    PyObject *_getattr(const char *attr) override;              // __getattr__ function
+    int _setattr(const char *attr, PyObject *value) override;   // __setattr__ function
 -
 
     /// getter for the object handled by this class
@@ -321,7 +343,7 @@ PyTypeObject @self.export.Name@::Type = {
     nullptr,                                          /* tp_as_buffer */
     /* --- Flags to define presence of optional/expanded features */
     Py_TPFLAGS_BASETYPE|Py_TPFLAGS_DEFAULT,        /*tp_flags */
-    "@self.export.Documentation.UserDocu.replace('\\n','\\\\n\\"\\n    \\"')@",           /*tp_doc */
+    "@escapeString(self.export.Documentation.UserDocu, indent=4)@",           /*tp_doc */
     nullptr,                                          /*tp_traverse */
     nullptr,                                          /*tp_clear */
 + if (self.export.RichCompare):
@@ -376,26 +398,37 @@ PyMethodDef @self.export.Name@::Methods[] = {
     {"@i.Name@",
 + if i.Keyword:
 + if i.Class:
-        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) (void)>( staticCallback_@i.Name@ )),
+        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( staticCallback_@i.Name@ )),
         METH_VARARGS|METH_KEYWORDS|METH_CLASS,
 = elif i.Static:
-        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) (void)>( staticCallback_@i.Name@ )),
+        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( staticCallback_@i.Name@ )),
         METH_VARARGS|METH_KEYWORDS|METH_STATIC,
 = else:
-        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) (void)>( staticCallback_@i.Name@ )),
+        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( staticCallback_@i.Name@ )),
         METH_VARARGS|METH_KEYWORDS,
 -
+= elif i.NoArgs:
++ if i.Class:
+        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( staticCallback_@i.Name@ )),
+        METH_NOARGS|METH_CLASS,
+= elif i.Static:
+        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( staticCallback_@i.Name@ )),
+        METH_NOARGS|METH_STATIC,
+= else:
+        reinterpret_cast<PyCFunction>( staticCallback_@i.Name@ ),
+        METH_NOARGS,
+-
 = elif i.Class:
-        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) (void)>( staticCallback_@i.Name@ )),
+        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( staticCallback_@i.Name@ )),
         METH_VARARGS|METH_CLASS,
 = elif i.Static:
-        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) (void)>( staticCallback_@i.Name@ )),
+        reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( staticCallback_@i.Name@ )),
         METH_VARARGS|METH_STATIC,
 = else:
         reinterpret_cast<PyCFunction>( staticCallback_@i.Name@ ),
         METH_VARARGS,
 -
-        "@i.Documentation.UserDocu.replace('\\n','\\\\n')@"
+        "@escapeString(i.Documentation.UserDocu, indent=8)@"
     },
 -
     {nullptr, nullptr, 0, nullptr}		/* Sentinel */
@@ -437,10 +470,8 @@ PyNumberMethods @self.export.Name@::Number[] = { {
     nullptr,    /*nb_inplace_floor_divide*/
     nullptr,    /*nb_inplace_true_divide*/
     nullptr     /*nb_index*/
-#if PY_VERSION_HEX >= 0x03050000
    ,nullptr     /*nb_matrix_multiply*/
    ,nullptr     /*nb_inplace_matrix_multiply*/
-#endif
 } };
 -
 
@@ -515,7 +546,7 @@ PyGetSetDef @self.export.Name@::GetterSetter[] = {
     {"@i.Name@",
         (getter) staticCallback_get@i.Name@,
         (setter) staticCallback_set@i.Name@,
-        "@i.Documentation.UserDocu.replace('\\n','\\\\n')@",
+        "@escapeString(i.Documentation.UserDocu, indent=8)@",
         nullptr
     },
 -
@@ -528,6 +559,8 @@ PyGetSetDef @self.export.Name@::GetterSetter[] = {
 // has to be implemented in @self.export.Name@Imp.cpp
 + if i.Keyword:
 PyObject * @self.export.Name@::staticCallback_@i.Name@ (PyObject *self, PyObject *args, PyObject * kwd)
+= elif i.NoArgs:
+PyObject * @self.export.Name@::staticCallback_@i.Name@ (PyObject *self, PyObject * Py_UNUSED(args))
 = else:
 PyObject * @self.export.Name@::staticCallback_@i.Name@ (PyObject *self, PyObject *args)
 -
@@ -566,6 +599,15 @@ PyObject * @self.export.Name@::staticCallback_@i.Name@ (PyObject *self, PyObject
 = else:
         PyObject* ret = static_cast<@self.export.Name@*>(self)->@i.Name@(args, kwd);
 -
+= elif i.NoArgs:
++ if i.Static:
+        (void)self;
+        PyObject* ret = @self.export.Name@::@i.Name@();
+= elif i.Class:
+        PyObject* ret = @self.export.Name@::@i.Name@(self);
+= else:
+        PyObject* ret = static_cast<@self.export.Name@*>(self)->@i.Name@();
+-
 = else:
 + if i.Static:
         (void)self;
@@ -578,7 +620,7 @@ PyObject * @self.export.Name@::staticCallback_@i.Name@ (PyObject *self, PyObject
 -
 + if not i.Static and not i.Class:
 +   if (not i.Const):
-        if (ret != 0)
+        if (ret != nullptr)
             static_cast<@self.export.Name@*>(self)->startNotify();
 -
 -
@@ -686,7 +728,7 @@ int @self.export.Name@::staticCallback_set@i.Name@ (PyObject *self, PyObject *va
 }
 
 + if not (self.export.Constructor):
-PyObject *@self.export.Name@::PyMake(struct _typeobject *, PyObject *, PyObject *)  // Python wrapper
+PyObject *@self.export.Name@::PyMake(PyTypeObject* /*type*/, PyObject* /*args*/, PyObject* /*kwds*/)
 {
     // never create such objects with the constructor
     PyErr_SetString(PyExc_RuntimeError, "You cannot create directly an instance of '@self.export.Name@'.");
@@ -827,7 +869,7 @@ int @self.export.Name@::_setattr(const char *attr, PyObject *value) // __setattr
  */
 
 + if (self.export.Constructor):
-PyObject *@self.export.Name@::PyMake(struct _typeobject *, PyObject *, PyObject *)  // Python wrapper
+PyObject *@self.export.Name@::PyMake(PyTypeObject* /*type*/, PyObject* /*args*/, PyObject* /*kwds*/)
 {
     // create a new instance of @self.export.Name@ and the Twin object
     return new @self.export.Name@(new @self.export.TwinPointer@);
@@ -854,7 +896,7 @@ int @self.export.Name@::finalization()
 // returns a string which represents the object e.g. when printed in python
 std::string @self.export.Name@::representation() const
 {
-    return std::string("<@self.export.Twin@ object>");
+    return {"<@self.export.Twin@ object>"};
 }
 + for i in self.export.Methode:
 
@@ -863,6 +905,12 @@ std::string @self.export.Name@::representation() const
 PyObject* @self.export.Name@::@i.Name@(PyObject *self, PyObject *args, PyObject *kwds)
 = else:
 PyObject* @self.export.Name@::@i.Name@(PyObject *args, PyObject *kwds)
+-
+= elif i.NoArgs:
++ if i.Class:
+PyObject* @self.export.Name@::@i.Name@(PyObject *self)
+= else:
+PyObject* @self.export.Name@::@i.Name@()
 -
 = else:
 + if i.Class:
@@ -1168,11 +1216,11 @@ using namespace @self.export.Namespace@;
 // returns a string which represents the object e.g. when printed in python
 std::string @self.export.Name@::representation() const
 {
-    return std::string("<@self.export.Twin@ object>");
+    return {"<@self.export.Twin@ object>"};
 }
 
 + if (self.export.Constructor):
-PyObject *@self.export.Name@::PyMake(struct _typeobject *, PyObject *, PyObject *)  // Python wrapper
+PyObject *@self.export.Name@::PyMake(PyTypeObject* /*type*/, PyObject* /*args*/, PyObject* /*kwds*/)
 {
     // create a new instance of @self.export.Name@ and the Twin object
     return new @self.export.Name@(new @self.export.TwinPointer@);
@@ -1204,6 +1252,12 @@ int @self.export.Name@::finalization()
 PyObject* @self.export.Name@::@i.Name@(PyObject * /*self*/, PyObject * /*args*/, PyObject * /*kwds*/)
 = else:
 PyObject* @self.export.Name@::@i.Name@(PyObject * /*args*/, PyObject * /*kwds*/)
+-
+= elif i.NoArgs:
++ if i.Class:
+PyObject* @self.export.Name@::@i.Name@(PyObject * /*self*/)
+= else:
+PyObject* @self.export.Name@::@i.Name@()
 -
 = else:
 + if i.Class:

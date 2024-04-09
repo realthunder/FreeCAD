@@ -126,8 +126,6 @@ void ColorUpdater::addObject(App::DocumentObject *obj)
 PROPERTY_SOURCE(Gui::ViewProviderDocumentObject, Gui::ViewProvider)
 
 ViewProviderDocumentObject::ViewProviderDocumentObject()
-  : pcObject(nullptr)
-  , pcDocument(nullptr)
 {
     static const char *dogroup = "Display Options";
     static const char *sgroup = "Selection";
@@ -348,7 +346,7 @@ void ViewProviderDocumentObject::onChanged(const App::Property* prop)
 void ViewProviderDocumentObject::hide()
 {
     auto obj = getObject();
-    if(obj && obj->getDocument() && obj->getNameInDocument()
+    if(obj && obj->getDocument() && obj->isAttachedToDocument()
            && !SelectionNoTopParentCheck::enabled())
     {
         Gui::Selection().updateSelection(
@@ -381,7 +379,9 @@ void ViewProviderDocumentObject::addDefaultAction(QMenu* menu, const QString& te
     QAction* act = menu->addAction(text);
     act->setData(QVariant((int)ViewProvider::Default));
     auto func = new Gui::ActionFunction(menu);
-    func->trigger(act, std::bind(&ViewProviderDocumentObject::startDefaultEditMode, this));
+    func->trigger(act, [this](){
+        this->startDefaultEditMode();
+    });
 }
 
 void ViewProviderDocumentObject::setModeSwitch() {
@@ -399,7 +399,7 @@ void ViewProviderDocumentObject::show()
            && !SelectionNoTopParentCheck::enabled())
     {
         auto obj = getObject();
-        if(obj && obj->getDocument() && obj->getNameInDocument())
+        if(obj && obj->getDocument() && obj->isAttachedToDocument())
             Gui::Selection().updateSelection(
                     true, obj->getDocument()->getName(), obj->getNameInDocument(),0);
     }
@@ -443,7 +443,7 @@ void ViewProviderDocumentObject::attachDocumentObject(App::DocumentObject *pcObj
 {
     pcObject = pcObj;
 
-    if(pcObj && pcObj->getNameInDocument()
+    if(pcObj && pcObj->isAttachedToDocument()
              && !testStatus(SecondaryView))
     {
         Base::PyGILStateLocker lock;
@@ -458,7 +458,7 @@ void ViewProviderDocumentObject::attach(App::DocumentObject *pcObj)
     // save Object pointer
     pcObject = pcObj;
 
-    if(pcObj && pcObj->getNameInDocument()
+    if(pcObj && pcObj->isAttachedToDocument()
              && !testStatus(SecondaryView))
     {
         pcObj->setStatus(App::ObjectStatus::ViewProviderAttached,true);
@@ -672,14 +672,14 @@ bool ViewProviderDocumentObject::canDropObjectEx(App::DocumentObject* obj, App::
 int ViewProviderDocumentObject::replaceObject(
         App::DocumentObject *oldObj, App::DocumentObject *newObj)
 {
-    if(!oldObj || !oldObj->getNameInDocument()
-            || !newObj || !newObj->getNameInDocument())
+    if(!oldObj || !oldObj->isAttachedToDocument()
+            || !newObj || !newObj->isAttachedToDocument())
     {
         FC_THROWM(Base::RuntimeError,"Invalid object");
     }
 
     auto obj = getObject();
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         FC_THROWM(Base::RuntimeError,"View provider not attached");
 
     int res = ViewProvider::replaceObject(oldObj,newObj);
@@ -754,7 +754,7 @@ bool ViewProviderDocumentObject::getElementPicked(const SoPickedPoint *pp, std::
         auto vp = getDocument()->getViewProvider(path->getNode(idx+1));
         if(!vp) return false;
         auto obj = vp->getObject();
-        if(!obj || !obj->getNameInDocument())
+        if(!obj || !obj->isAttachedToDocument())
             return false;
         std::ostringstream str;
         str << obj->getNameInDocument() << '.';
@@ -790,16 +790,16 @@ bool ViewProviderDocumentObject::getDetailPath(
         return true;
 
     const char *dot = nullptr;
-    if(Data::ComplexGeoData::isMappedElement(subname) || (dot=strchr(subname,'.')) == 0) {
+    if(Data::isMappedElement(subname) || (dot=strchr(subname,'.')) == 0) {
         det = getDetail(subname);
         return true;
     }
 
     auto obj = getObject();
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         return false;
     auto sobj = obj->getSubObject(std::string(subname,dot-subname+1).c_str());
-    if(!sobj || !sobj->getNameInDocument())
+    if(!sobj || !sobj->isAttachedToDocument())
         return false;
     auto vp = Application::Instance->getViewProvider(sobj);
     if(!vp)
@@ -852,7 +852,7 @@ ViewProviderDocumentObject *ViewProviderDocumentObject::getLinkedViewProvider(
 {
     (void)subname;
     auto self = const_cast<ViewProviderDocumentObject*>(this);
-    if(!pcObject || !pcObject->getNameInDocument())
+    if(!pcObject || !pcObject->isAttachedToDocument())
         return self;
     auto linked = pcObject->getLinkedObject(recursive);
     if(!linked || linked == pcObject)
@@ -952,7 +952,7 @@ Base::BoundBox3d ViewProviderDocumentObject::_getBoundingBox(
     std::string _subname;
     const char *nextsub;
     const char *dot=0;
-    if(Data::ComplexGeoData::isMappedElement(subname)
+    if(Data::isMappedElement(subname)
             || (dot=strchr(subname,'.'))==0)
     {
         return ViewProvider::_getBoundingBox(subname,&smat,false,viewer,depth+1);
@@ -963,7 +963,7 @@ Base::BoundBox3d ViewProviderDocumentObject::_getBoundingBox(
         subname = _subname.c_str();
         nextsub = dot+1;
     } else
-        nextsub = Data::ComplexGeoData::findElementName(dot+1);
+        nextsub = Data::findElementName(dot+1);
 
     auto sobj = getObject()->getSubObject(subname,0,&smat,transform,depth);
     auto vp = Application::Instance->getViewProvider(sobj);
@@ -1001,7 +1001,7 @@ const std::set<App::DocumentObject *>& ViewProviderDocumentObject::claimedBy() c
 
 void ViewProviderDocumentObject::updateChildren(bool propagate) {
     auto obj = getObject();
-    if(!obj || !obj->getNameInDocument())
+    if(!obj || !obj->isAttachedToDocument())
         return;
 
     auto newChildren = claimChildren();

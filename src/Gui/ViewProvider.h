@@ -122,6 +122,8 @@ public:
     virtual SoSeparator* getBackRoot() const;
     ///Indicate whether to be added to scene graph or not
     virtual bool canAddToSceneGraph() const {return true;}
+    // Indicate whether to be added to object group (true) or only to scene graph (false)
+    virtual bool isPartOfPhysicalObject() const {return true;}
 
     /** deliver the children belonging to this object
       * this method is used to deliver the objects to
@@ -147,7 +149,7 @@ public:
     /// return a hit element given the picked point which contains the full node path
     virtual bool getElementPicked(const SoPickedPoint *, std::string &subname) const;
     /// return a hit element to the selection path or 0
-    virtual std::string getElement(const SoDetail *) const { return std::string(); }
+    virtual std::string getElement(const SoDetail *) const { return {}; }
     /// return the coin node detail of the subelement
     virtual SoDetail* getDetail(const char *) const { return nullptr; }
 
@@ -184,7 +186,7 @@ public:
     /// return the highlight lines for a given element or the whole shape
     virtual std::vector<Base::Vector3d> getSelectionShape(const char* Element) const {
         (void)Element;
-        return std::vector<Base::Vector3d>();
+        return {};
     }
 
     /** Return the bound box of this view object
@@ -307,7 +309,7 @@ public:
             const char *subname, const std::vector<std::string> &elements) const;
 
     /// return a subname referencing the sub-object holding the dropped objects
-    virtual std::string getDropPrefix() const { return std::string(); }
+    virtual std::string getDropPrefix() const { return {}; }
 
     /** Add an object with full qualified name to the view provider by drag and drop
      *
@@ -609,8 +611,8 @@ protected:
     /// this is the mode switch, all the different viewing modes are collected here
     SoSwitch    *pcModeSwitch;
     /// The root separator for annotations
-    SoSeparator *pcAnnotation;
-    ViewProviderPy* pyViewObject;
+    SoSeparator *pcAnnotation{nullptr};
+    ViewProviderPy* pyViewObject{nullptr};
     std::string overrideMode;
     std::bitset<32> StatusBits;
 
@@ -618,9 +620,9 @@ protected:
     CoinPtr<SoGroup> pcChildGroup;
 
 private:
-    int _iActualMode;
-    int _iEditMode;
-    int viewOverrideMode;
+    int _iActualMode{-1};
+    int _iEditMode{-1};
+    int viewOverrideMode{-1};
     std::string _sCurrentMode;
     std::map<std::string, int> _sDisplayMaskModes;
 

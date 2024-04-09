@@ -23,42 +23,45 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
-# include <sstream>
+#include <sstream>
 #endif
 
-#include "Utils.h"
 #include "Sheet.h"
+#include "Utils.h"
 
 
 /**
-  * Encode \a col as a string.
-  *
-  * @param col Column given as a 0-based column position.
-  *
-  * @returns String with column position, with "A" being the first column, "B" being the second and so on.
-  *
-  */
+ * Encode \a col as a string.
+ *
+ * @param col Column given as a 0-based column position.
+ *
+ * @returns String with column position, with "A" being the first column, "B" being the second and
+ * so on.
+ *
+ */
 
 std::string Spreadsheet::columnName(int col)
 {
     std::stringstream s;
 
-    if (col < 26)
+    if (col < 26) {
         s << ((char)('A' + col));
-    else
-        s << ((char)('A' + (col - 26) / 26 )) << ((char)('A' + (col - 26) % 26));
+    }
+    else {
+        s << ((char)('A' + (col - 26) / 26)) << ((char)('A' + (col - 26) % 26));
+    }
 
     return s.str();
 }
 
 /**
-  * Encode \a row as a string.
-  *
-  * @param row Row given as a 0-based row position.
-  *
-  * @returns String with row position, with "1" being the first row.
-  *
-  */
+ * Encode \a row as a string.
+ *
+ * @param row Row given as a 0-based row position.
+ *
+ * @returns String with row position, with "1" being the first row.
+ *
+ */
 
 std::string Spreadsheet::rowName(int row)
 {
@@ -70,7 +73,8 @@ std::string Spreadsheet::rowName(int row)
 }
 
 
-void Spreadsheet::createRectangles(std::set<std::pair<int, int> > & cells, std::map<std::pair<int, int>, std::pair<int, int> > & rectangles)
+void Spreadsheet::createRectangles(std::set<std::pair<int, int>>& cells,
+                                   std::map<std::pair<int, int>, std::pair<int, int>>& rectangles)
 {
     while (!cells.empty()) {
         int row, col;
@@ -82,8 +86,9 @@ void Spreadsheet::createRectangles(std::set<std::pair<int, int> > & cells, std::
         col = (*cells.begin()).second;
 
         // Expand right first
-        while (cells.find(std::make_pair(row, col + cols)) != cells.end())
+        while (cells.find(std::make_pair(row, col + cols)) != cells.end()) {
             ++cols;
+        }
 
         // Expand left
         while (cells.find(std::make_pair(row, col + cols)) != cells.end()) {
@@ -91,11 +96,12 @@ void Spreadsheet::createRectangles(std::set<std::pair<int, int> > & cells, std::
             ++cols;
         }
 
-        // Try to expand cell up (the complete row above from [col,col + cols> needs to be in the cells variable)
+        // Try to expand cell up (the complete row above from [col,col + cols> needs to be in the
+        // cells variable)
         bool ok = true;
         while (ok) {
             for (int i = col; i < col + cols; ++i) {
-                if ( cells.find(std::make_pair(row - 1, i)) == cells.end()) {
+                if (cells.find(std::make_pair(row - 1, i)) == cells.end()) {
                     ok = false;
                     break;
                 }
@@ -105,17 +111,19 @@ void Spreadsheet::createRectangles(std::set<std::pair<int, int> > & cells, std::
                 row--;
                 rows++;
             }
-            else
+            else {
                 break;
+            }
         }
 
-        // Try to expand down (the complete row below from [col,col + cols> needs to be in the cells variable)
+        // Try to expand down (the complete row below from [col,col + cols> needs to be in the cells
+        // variable)
         ok = true;
         while (ok) {
             for (int i = col; i < col + cols; ++i) {
-                if ( cells.find(std::make_pair(orgRow + 1, i)) == cells.end()) {
-                   ok = false;
-                   break;
+                if (cells.find(std::make_pair(orgRow + 1, i)) == cells.end()) {
+                    ok = false;
+                    break;
                 }
             }
             if (ok) {
@@ -123,18 +131,20 @@ void Spreadsheet::createRectangles(std::set<std::pair<int, int> > & cells, std::
                 orgRow++;
                 rows++;
             }
-            else
+            else {
                 break;
+            }
         }
 
         // Remove entries from cell set for this rectangle
-        for (int r = row; r < row + rows; ++r)
-            for (int c = col; c < col + cols; ++c)
+        for (int r = row; r < row + rows; ++r) {
+            for (int c = col; c < col + cols; ++c) {
                 cells.erase(std::make_pair(r, c));
+            }
+        }
 
         // Insert into output variable
         rectangles[std::make_pair(row, col)] = std::make_pair(rows, cols);
     }
 }
-
 

@@ -11,12 +11,12 @@
     <message>
       <location filename="../../Command.cpp" line="75"/>
       <source>Inspection...</source>
-      <translation type="unfinished">Inspection...</translation>
+      <translation>検査...</translation>
     </message>
     <message>
       <location filename="../../Command.cpp" line="76"/>
       <source>Get distance information</source>
-      <translation type="unfinished">Get distance information</translation>
+      <translation>距離情報を取得</translation>
     </message>
   </context>
   <context>
@@ -29,21 +29,21 @@
     <message>
       <location filename="../../Command.cpp" line="49"/>
       <source>Visual inspection...</source>
-      <translation type="unfinished">Visual inspection...</translation>
+      <translation>外観検査...</translation>
     </message>
     <message>
       <location filename="../../Command.cpp" line="50"/>
       <location filename="../../Command.cpp" line="51"/>
       <source>Visual inspection</source>
-      <translation type="unfinished">Visual inspection</translation>
+      <translation>外観検査</translation>
     </message>
   </context>
   <context>
     <name>Command</name>
     <message>
-      <location filename="../../VisualInspection.cpp" line="230"/>
+      <location filename="../../VisualInspection.cpp" line="237"/>
       <source>Visual Inspection</source>
-      <translation type="unfinished">Visual Inspection</translation>
+      <translation>外観検査</translation>
     </message>
   </context>
   <context>
@@ -51,7 +51,7 @@
     <message>
       <location filename="../../VisualInspection.ui" line="14"/>
       <source>Visual Inspection</source>
-      <translation type="unfinished">Visual Inspection</translation>
+      <translation>外観検査</translation>
     </message>
     <message>
       <location filename="../../VisualInspection.ui" line="23"/>
@@ -94,40 +94,40 @@
   <context>
     <name>QObject</name>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="455"/>
+      <location filename="../../ViewProviderInspection.cpp" line="482"/>
       <source>Remove annotations</source>
-      <translation type="unfinished">Remove annotations</translation>
+      <translation>注釈を削除</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="456"/>
+      <location filename="../../ViewProviderInspection.cpp" line="483"/>
       <source>Do you want to remove all annotations?</source>
-      <translation type="unfinished">Do you want to remove all annotations?</translation>
+      <translation>すべての注釈を削除しますか?</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="508"/>
+      <location filename="../../ViewProviderInspection.cpp" line="541"/>
       <source>Annotation</source>
       <translation>注釈</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="511"/>
+      <location filename="../../ViewProviderInspection.cpp" line="544"/>
       <source>Leave info mode</source>
       <translation>情報モードを解除</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="632"/>
+      <location filename="../../ViewProviderInspection.cpp" line="675"/>
       <source>Distance: &gt; %1</source>
-      <translation type="unfinished">Distance: &gt; %1</translation>
+      <translation>距離: &gt; %1</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="635"/>
+      <location filename="../../ViewProviderInspection.cpp" line="679"/>
       <source>Distance: &lt; %1</source>
-      <translation type="unfinished">Distance: &lt; %1</translation>
+      <translation>距離: &lt; %1</translation>
     </message>
     <message>
-      <location filename="../../ViewProviderInspection.cpp" line="654"/>
-      <location filename="../../ViewProviderInspection.cpp" line="670"/>
+      <location filename="../../ViewProviderInspection.cpp" line="699"/>
+      <location filename="../../ViewProviderInspection.cpp" line="716"/>
       <source>Distance: %1</source>
-      <translation type="unfinished">Distance: %1</translation>
+      <translation>距離: %1</translation>
     </message>
   </context>
 </TS>

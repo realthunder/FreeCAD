@@ -65,6 +65,7 @@
 #include "View3DInventor.h"
 #include "View3DSettings.h"
 #include "Application.h"
+#include "BitmapFactory.h"
 #include "Camera.h"
 #include "Document.h"
 #include "FileDialog.h"
@@ -136,9 +137,9 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
     // create the inventor widget and set the defaults
     _viewer->setDocument(this->_pcDocument);
     stack->addWidget(_viewer->getWidget());
-    // http://forum.freecad.org/viewtopic.php?f=3&t=6055&sid=150ed90cbefba50f1e2ad4b4e6684eba
+    // https://forum.freecad.org/viewtopic.php?f=3&t=6055&sid=150ed90cbefba50f1e2ad4b4e6684eba
     // describes a minor error but trying to fix it leads to a major issue
-    // http://forum.freecad.org/viewtopic.php?f=3&t=6085&sid=3f4bcab8007b96aaf31928b564190fd7
+    // https://forum.freecad.org/viewtopic.php?f=3&t=6085&sid=3f4bcab8007b96aaf31928b564190fd7
     // so the change is commented out
     // By default, the wheel events are processed by the 3d view AND the mdi area.
     //_viewer->getGLWidget()->setAttribute(Qt::WA_NoMousePropagation);
@@ -169,6 +170,8 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
         auto self = reinterpret_cast<View3DInventor*>(arg);
         self->onCameraChanged(self->boundCamInfo, self->camInfo);
     });
+
+    setWindowIcon(Gui::BitmapFactory().pixmap("Document"));
 }
 
 View3DInventor::~View3DInventor()
@@ -295,6 +298,8 @@ void View3DInventor::printPdf()
     if (!filename.isEmpty()) {
         Gui::WaitCursor wc;
         QPrinter printer(QPrinter::ScreenResolution);
+        // setPdfVersion sets the printied PDF Version to comply with PDF/A-1b, more details under: https://www.kdab.com/creating-pdfa-documents-qt/
+        printer.setPdfVersion(QPagedPaintDevice::PdfVersion_A1b);
         printer.setOutputFormat(QPrinter::PdfFormat);
         printer.setPageOrientation(QPageLayout::Landscape);
         printer.setOutputFileName(filename);
@@ -629,7 +634,7 @@ bool View3DInventor::onHasMsg(const char* pMsg) const
     return MDIView::onHasMsg(pMsg);
 }
 
-bool View3DInventor::setCamera(const char* pCamera, int animateSteps, int animateDuration)
+bool View3DInventor::setCamera(const char* pCamera, int animateDuration)
 {
     SoCamera * CamViewer = _viewer->getSoRenderManager()->getCamera();
     if (!CamViewer) {
@@ -670,10 +675,10 @@ bool View3DInventor::setCamera(const char* pCamera, int animateSteps, int animat
             CamViewerP->nearDistance  = static_cast<SoPerspectiveCamera *>(Cam)->nearDistance;
             CamViewerP->farDistance   = static_cast<SoPerspectiveCamera *>(Cam)->farDistance;
             CamViewerP->focalDistance = static_cast<SoPerspectiveCamera *>(Cam)->focalDistance;
-            if (animateSteps && animateDuration) {
+            if (animateDuration) {
                 _viewer->moveCameraTo(static_cast<SoPerspectiveCamera *>(Cam)->orientation.getValue(),
                                       static_cast<SoPerspectiveCamera *>(Cam)->position.getValue(),
-                                      animateSteps, animateDuration); 
+                                      animateDuration); 
             } else {
                 CamViewerP->position      = static_cast<SoPerspectiveCamera *>(Cam)->position;
                 CamViewerP->orientation   = static_cast<SoPerspectiveCamera *>(Cam)->orientation;
@@ -691,10 +696,10 @@ bool View3DInventor::setCamera(const char* pCamera, int animateSteps, int animat
             CamViewerO->focalDistance    = static_cast<SoOrthographicCamera *>(Cam)->focalDistance;
             CamViewerO->aspectRatio      = static_cast<SoOrthographicCamera *>(Cam)->aspectRatio ;
             CamViewerO->height           = static_cast<SoOrthographicCamera *>(Cam)->height;
-            if (animateSteps && animateDuration) {
+            if (animateDuration) {
                 _viewer->moveCameraTo(static_cast<SoOrthographicCamera *>(Cam)->orientation.getValue(),
                                       static_cast<SoOrthographicCamera *>(Cam)->position.getValue(),
-                                      animateSteps, animateDuration); 
+                                      animateDuration); 
             } else {
                 CamViewerO->position         = static_cast<SoOrthographicCamera *>(Cam)->position;
                 CamViewerO->orientation      = static_cast<SoOrthographicCamera *>(Cam)->orientation;
@@ -1026,7 +1031,7 @@ void View3DInventor::dump(const char* filename, bool onlyVisible)
     _viewer->dump(filename, onlyVisible);
 }
 
-void View3DInventor::windowStateChanged(MDIView* view)
+void View3DInventor::windowStateChanged(QWidget* view)
 {
     bool canStartTimer = false;
     if (this != view) {
@@ -1132,8 +1137,8 @@ void View3DInventor::setCurrentViewMode(ViewMode newmode)
         _viewer->getGLWidget()->setFocusProxy(nullptr);
         qApp->removeEventFilter(this);
         QList<QAction*> acts = this->actions();
-        for (QList<QAction*>::Iterator it = acts.begin(); it != acts.end(); ++it)
-            this->removeAction(*it);
+        for (QAction* it : acts)
+            this->removeAction(it);
 
         // Step two
         auto mdi = qobject_cast<QMdiSubWindow*>(parentWidget());

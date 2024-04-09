@@ -52,7 +52,7 @@ jobs:
       #CCACHE_SLOPPINESS: "pch_defines,time_macros" # Can't get PCH to work on Windows
       CCACHE_LOGFILE: C:/logs/ccache.log
       ## Have to use C:\ because not enough space on workspace drive
-      builddir: C:/FC/build/
+      builddir: C:/FC/build/release/
       libpackdir: C:/FC/libpack/
       ccachebindir: C:/FC/ccache/
       logdir: C:/logs/
@@ -64,6 +64,8 @@ jobs:
     steps:
       - name: Checking out source code
         uses: actions/checkout@v3
+        with:
+          submodules: true
       - name: Make needed directories, files and initializations
         id: Init
         run: |
@@ -102,6 +104,7 @@ jobs:
       - name: Configuring CMake
         run: >
           cmake -B"${{ env.builddir }}" .
+          --preset release
           -DCMAKE_VS_NO_COMPILE_BATCHING=ON
           -DCMAKE_BUILD_TYPE=Release
           -DFREECAD_USE_PCH=OFF
@@ -118,7 +121,7 @@ jobs:
           -DFREECAD_COPY_LIBPACK_BIN_TO_BUILD=OFF
           -DFREECAD_COPY_PLUGINS_BIN_TO_BUILD=ON
       - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v1.1
+        uses: microsoft/setup-msbuild@v1.3
       - name: Compiling sources
         run: |
           cd $env:builddir
@@ -130,10 +133,10 @@ jobs:
         run: |
           Move-Item -Force -Path ${{ env.libpackdir }}bin -Destination ${{ env.builddir }}
       - name: C++ unit tests
-        if: false # Disabled because seems to not exist on Windows build
+        if: false # Disabled because seems to not function on Windows build
         timeout-minutes: 1
         run: |
-          . ${{ env.builddir }}\test\Tests_run --gtest_output=json:${{ env.reportdir }}gtest_results.json # 2>&1 | tee -filepath ${{ env.logdir }}\unitTests.log
+          . ${{ env.builddir }}\tests\Release\Tests_run --gtest_output=json:${{ env.reportdir }}gtest_results.json # 2>&1 | tee -filepath ${{ env.logdir }}\unitTests.log
       - name: FreeCAD CLI tests
         run: |
           . ${{ env.builddir }}\bin\FreeCADCmd -t 0 # 2>&1 | tee -filepath ${{ env.logdir }}\integrationTests.log

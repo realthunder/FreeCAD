@@ -51,16 +51,16 @@ else:
 
 
 
-def makeReference(filepath=None,partname=None,name="External Reference"):
+def makeReference(filepath=None,partname=None,name=None):
 
 
-    "makeReference([filepath,partname]): Creates an Arch Reference object"
+    "makeReference([filepath],[partname],[name]): Creates an Arch Reference object"
 
     if not FreeCAD.ActiveDocument:
         FreeCAD.Console.PrintError("No active document. Aborting\n")
         return
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython","ArchReference")
-    obj.Label = name
+    obj.Label = name if name else translate("Arch","External Reference")
     ArchReference(obj)
     if FreeCAD.GuiUp:
         ViewProviderArchReference(obj.ViewObject)
@@ -113,11 +113,11 @@ class ArchReference:
             if obj.ViewObject and obj.ViewObject.Proxy:
                 obj.ViewObject.Proxy.loadInventor(obj)
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 
@@ -159,6 +159,7 @@ class ArchReference:
                             f = zdoc.open(self.parts[obj.Part][1])
                             shapedata = f.read()
                             f.close()
+                            shapedata = shapedata.decode("utf8")
                             shape = self.cleanShape(shapedata,obj,self.parts[obj.Part][2])
                             obj.Shape = shape
                             if not pl.isIdentity():
@@ -212,6 +213,18 @@ class ArchReference:
                 print(obj.Label,": error removing splitter")
         return shape
 
+    def exists(self,filepath):
+
+        "case-insensitive version of os.path.exists. Returns the actual file path or None"
+
+        if os.path.exists(filepath):
+            return filepath
+        base, ext = os.path.splitext(filepath)
+        for e in [".fcstd",".FCStd",".FCSTD"]:
+            if os.path.exists(base + e):
+                return base + e
+        return None
+
     def getFile(self,obj,filename=None):
 
         "gets a valid file, if possible"
@@ -222,15 +235,15 @@ class ArchReference:
             return None
         if not filename.lower().endswith(".fcstd"):
             return None
-        if not os.path.exists(filename):
+        if not self.exists(filename):
             # search for the file in the current directory if not found
             basename = os.path.basename(filename)
             currentdir = os.path.dirname(obj.Document.FileName)
             altfile = os.path.join(currentdir,basename)
             if altfile == obj.Document.FileName:
                 return None
-            elif os.path.exists(altfile):
-                return altfile
+            elif self.exists(altfile):
+                return self.exists(altfile)
             else:
                 # search for subpaths in current folder
                 altfile = None
@@ -238,10 +251,10 @@ class ArchReference:
                 for i in range(len(subdirs)):
                     subpath = [currentdir]+subdirs[-i:]+[basename]
                     altfile = os.path.join(*subpath)
-                    if os.path.exists(altfile):
-                        return altfile
+                    if self.exists(altfile):
+                        return self.exists(altfile)
                 return None
-        return filename
+        return self.exists(filename)
 
     def getPartsList(self,obj,filename=None):
 
@@ -260,6 +273,7 @@ class ArchReference:
             materials = {}
             writemode = False
             for line in docf:
+                line = line.decode("utf8")
                 if "<Object name=" in line:
                     n = re.findall('name=\"(.*?)\"',line)
                     if n:
@@ -315,6 +329,7 @@ class ArchReference:
             writemode1 = False
             writemode2 = False
             for line in docf:
+                line = line.decode("utf8")
                 if ("<ViewProvider name=" in line) and (part in line):
                     writemode1 = True
                 elif writemode1 and ("<Property name=\"DiffuseColor\"" in line):
@@ -392,11 +407,11 @@ class ViewProviderArchReference:
         s = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Arch").GetInt("ReferenceCheckInterval",60)
         self.timer.start(1000*s)
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 
@@ -619,6 +634,7 @@ class ViewProviderArchReference:
             writemode1 = False
             writemode2 = False
             for line in docf:
+                line = line.decode("utf8")
                 if ("<Object name=" in line) and (part in line):
                     writemode1 = True
                 elif writemode1 and ("<Property name=\"SavedInventor\"" in line):
@@ -635,6 +651,7 @@ class ViewProviderArchReference:
             return None
         f = zdoc.open(ivfile)
         buf = f.read()
+        buf = buf.decode("utf8")
         f.close()
         buf = buf.replace("lineWidth 2","lineWidth "+str(int(obj.ViewObject.LineWidth)))
         return buf
@@ -659,7 +676,7 @@ class ArchReferenceTaskPanel:
         self.openButton.setText("Open")
         if not self.obj.File:
             self.openButton.setEnabled(False)
-        l2 = QtGui.QHBoxLayout(self.form)
+        l2 = QtGui.QHBoxLayout()
         layout.addLayout(l2)
         l2.addWidget(self.fileButton)
         l2.addWidget(self.openButton)
@@ -675,11 +692,12 @@ class ArchReferenceTaskPanel:
             parts = self.obj.Proxy.parts
         else:
             parts = self.obj.Proxy.getPartsList(self.obj)
-        for k in sorted(parts.keys()):
+        sortedkeys = sorted(parts)
+        for k in sortedkeys:
             self.partCombo.addItem(parts[k][0],k)
         if self.obj.Part:
-            if self.obj.Part in parts.keys():
-                self.partCombo.setCurrentIndex(sorted(parts.keys()).index(self.obj.Part))
+            if self.obj.Part in sortedkeys:
+                self.partCombo.setCurrentIndex(sortedkeys.index(self.obj.Part))
         QtCore.QObject.connect(self.fileButton, QtCore.SIGNAL("clicked()"), self.chooseFile)
         QtCore.QObject.connect(self.openButton, QtCore.SIGNAL("clicked()"), self.openFile)
 
@@ -717,11 +735,12 @@ class ArchReferenceTaskPanel:
             parts = self.obj.Proxy.getPartsList(self.obj,self.filename)
             if parts:
                 self.partCombo.clear()
-                for k in sorted(parts.keys()):
+                sortedkeys = sorted(parts)
+                for k in sortedkeys:
                     self.partCombo.addItem(parts[k][0],k)
                 if self.obj.Part:
-                    if self.obj.Part in parts.keys():
-                        self.partCombo.setCurrentIndex(sorted(parts.keys()).index(self.obj.Part))
+                    if self.obj.Part in sortedkeys:
+                        self.partCombo.setCurrentIndex(sortedkeys.index(self.obj.Part))
 
     def openFile(self):
 

@@ -64,6 +64,9 @@ public:
     To draw on other planes, you need to attach a SoTransform to the SoDatumLabel (or parent).*/
     void setPoints(SbVec3f p1, SbVec3f p2);
 
+    /* returns the center point of the text of the label */
+    SbVec3f getLabelTextCenter();
+
     SoMFString string;
     SoSFColor  textColor;
     SoSFEnum   datumtype;
@@ -72,6 +75,8 @@ public:
     SoSFFloat  param1;
     SoSFFloat  param2;
     SoSFFloat  param3;
+    SoSFFloat  param4;
+    SoSFFloat  param5;
     SoMFVec3f  pnts;
     SoSFVec3f  norm;
     SoSFImage  image;
@@ -79,7 +84,7 @@ public:
     bool       useAntialiasing;
 
 protected:
-    ~SoDatumLabel() override {}
+    ~SoDatumLabel() override = default;
     void GLRender(SoGLRenderAction *action) override;
     void computeBBox(SoAction *, SbBox3f &box, SbVec3f &center) override;
     void generatePrimitives(SoAction * action) override;
@@ -91,10 +96,12 @@ private:
     void generateDiameterPrimitives(SoAction * action, const SbVec3f&, const SbVec3f&);
     void generateAnglePrimitives(SoAction * action, const SbVec3f&);
     void generateSymmetricPrimitives(SoAction * action, const SbVec3f&, const SbVec3f&);
+    SbVec3f getLabelTextCenterDistance(const SbVec3f&, const SbVec3f&);
+    SbVec3f getLabelTextCenterDiameter(const SbVec3f&, const SbVec3f&);
+    SbVec3f getLabelTextCenterAngle(const SbVec3f&);
 
 private:
     void drawImage();
-    SbBox3f bbox;
     float imgWidth;
     float imgHeight;
     bool glimagevalid;

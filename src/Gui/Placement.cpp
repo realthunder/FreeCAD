@@ -48,7 +48,7 @@
 
 
 using namespace Gui::Dialog;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 namespace Gui { namespace Dialog {
 class find_placement
@@ -284,7 +284,7 @@ void PlacementHandler::applyPlacement(App::DocumentObject* obj, const QString& d
 QString PlacementHandler::getIncrementalPlacement(App::DocumentObject* obj, const QString& data) const
 {
     return QStringLiteral(
-        "App.getDocument(\"%1\").%2.%3=%4.multiply(App.getDocument(\"%1\").%2.%3)")
+        R"(App.getDocument("%1").%2.%3=%4.multiply(App.getDocument("%1").%2.%3))")
         .arg(QString::fromUtf8(obj->getDocument()->getName()),
              QString::fromUtf8(obj->getNameInDocument()),
              QString::fromUtf8(this->propertyName.c_str()),
@@ -403,8 +403,10 @@ void Placement::setupSignalMapper()
 
 void Placement::setupDocument()
 {
+    //NOLINTBEGIN
     connectAct = Application::Instance->signalActiveDocument.connect
-        (boost::bind(&Placement::slotActiveDocument, this, bp::_1));
+        (std::bind(&Placement::slotActiveDocument, this, sp::_1));
+    //NOLINTEND
     App::Document* activeDoc = App::GetApplication().getActiveDocument();
     if (activeDoc) {
         handler.appendDocument(activeDoc->getName());
@@ -1010,9 +1012,7 @@ DockablePlacement::DockablePlacement(QWidget* parent, Qt::WindowFlags fl) : Plac
     dw->show();
 }
 
-DockablePlacement::~DockablePlacement()
-{
-}
+DockablePlacement::~DockablePlacement() = default;
 
 void DockablePlacement::accept()
 {
@@ -1046,10 +1046,7 @@ TaskPlacement::TaskPlacement()
     connect(widget, &Placement::placementChanged, this, &TaskPlacement::slotPlacementChanged);
 }
 
-TaskPlacement::~TaskPlacement()
-{
-    // automatically deleted in the sub-class
-}
+TaskPlacement::~TaskPlacement() = default;
 
 /*!
  * \brief TaskPlacement::setSelection

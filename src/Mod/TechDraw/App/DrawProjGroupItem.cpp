@@ -183,7 +183,7 @@ DrawProjGroup* DrawProjGroupItem::getPGroup() const
 {
     std::vector<App::DocumentObject*> parent = getInList();
     for (std::vector<App::DocumentObject*>::iterator it = parent.begin(); it != parent.end(); ++it) {
-        if ((*it)->getTypeId().isDerivedFrom(DrawProjGroup::getClassTypeId())) {
+        if ((*it)->isDerivedFrom<DrawProjGroup>()) {
             DrawProjGroup* result = dynamic_cast<TechDraw::DrawProjGroup *>(*it);
             return result;
         }
@@ -227,7 +227,7 @@ gp_Ax2 DrawProjGroupItem::getViewAxis(const Base::Vector3d& pt,
     catch (Standard_Failure& e4) {
         Base::Console().Message("PROBLEM - DPGI (%s) failed to create viewAxis: %s **\n",
                                 getNameInDocument(), e4.GetMessageString());
-        return TechDraw::getViewAxis(pt, axis, false);
+        return ShapeUtils::getViewAxis(pt, axis, false);
     }
 
     return viewAxis;

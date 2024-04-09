@@ -58,8 +58,7 @@ class GuiExport GLOverlayWidget : public QWidget
 public:
     explicit GLOverlayWidget(QWidget* parent=nullptr) : QWidget(parent)
     {}
-    ~GLOverlayWidget() override
-    {}
+    ~GLOverlayWidget() override = default;
     virtual void setImage(const QImage& img)
     { image = img; }
     void paintEvent(QPaintEvent*) override;
@@ -134,7 +133,7 @@ public:
      * GL widget to get all key events in \a TopLevel or \a Fullscreen mode.
      */
     void setCurrentViewMode(ViewMode b) override;
-    bool setCamera(const char* pCamera, int animateSteps=0, int animateDuration=0);
+    bool setCamera(const char* pCamera, int animateDuration=0);
     void toggleClippingPlane();
     bool hasClippingPlane() const;
 
@@ -176,7 +175,7 @@ private:
     void applySettings();
 
 protected:
-    void windowStateChanged(MDIView* ) override;
+    void windowStateChanged(QWidget* view) override;
     void dropEvent        (QDropEvent      * e) override;
     void dragEnterEvent   (QDragEnterEvent * e) override;
     void keyPressEvent    (QKeyEvent       * e) override;

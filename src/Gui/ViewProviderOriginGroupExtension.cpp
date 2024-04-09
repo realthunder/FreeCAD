@@ -47,7 +47,7 @@
 
 
 using namespace Gui;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 EXTENSION_PROPERTY_SOURCE(Gui::ViewProviderOriginGroupExtension, Gui::ViewProviderGeoFeatureGroupExtension)
 
@@ -156,7 +156,7 @@ void ViewProviderOriginGroupExtension::extensionUpdateData( const App::Property*
 
 void ViewProviderOriginGroupExtension::updateOriginSize () {
     auto owner = getExtendedViewProvider()->getObject();
-    if(!owner || !owner->getDocument()
+    if(!owner || !owner->isAttachedToDocument()
               || owner->testStatus(App::ObjectStatus::Remove)
               || owner->getDocument()->isPerformingTransaction())
         return;

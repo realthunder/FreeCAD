@@ -32,6 +32,7 @@
 #include <Inventor/nodes/SoShape.h>
 #include <Inventor/fields/SoSFBool.h>
 #include <Inventor/elements/SoInt32Element.h>
+#include <FCGlobal.h>
 
 
 namespace Gui {
@@ -64,10 +65,10 @@ public:
     SoSFBool skipBoundingBox; /**< If true, skip this node when calculating bounding box */
 
 protected:
-    virtual ~SoFCBoundingBox();
-    virtual void GLRender(SoGLRenderAction *action);
-    virtual void generatePrimitives (SoAction *action);
-    virtual void computeBBox(SoAction *action, SbBox3f &box, SbVec3f &center);
+    ~SoFCBoundingBox() override;
+    void GLRender(SoGLRenderAction *action) override;
+    void generatePrimitives (SoAction *action) override;
+    void computeBBox(SoAction *action, SbBox3f &box, SbVec3f &center) override;
 
 private:
     SoSeparator        *bboxSep, *textSep, *dimSep;
@@ -96,10 +97,10 @@ public:
 
     SoSFEnum mode;
 
-    virtual void getBoundingBox(SoGetBoundingBoxAction *action);
+    void getBoundingBox(SoGetBoundingBoxAction *action) override;
 
 protected:
-    virtual ~SoSkipBoundingGroup();
+    ~SoSkipBoundingGroup() override;
 };
 
 class GuiExport SoSkipBoundingBoxElement: public SoInt32Element {

@@ -26,11 +26,12 @@
 
 #include "StringHasherPy.h"
 #include "StringHasherPy.cpp"
+#include <Base/PyWrapParseTupleAndKeywords.h>
 
 using namespace App;
 
 // returns a string which represent the object e.g. when printed in python
-std::string StringHasherPy::representation(void) const
+std::string StringHasherPy::representation() const
 {
     std::ostringstream str;
     str << "<StringHasher at " << getStringHasherPtr() << ">";
@@ -43,8 +44,13 @@ PyObject *StringHasherPy::PyMake(struct _typeobject *, PyObject *, PyObject *)  
 }
 
 // constructor method
-int StringHasherPy::PyInit(PyObject* , PyObject* )
+int StringHasherPy::PyInit(PyObject* args, PyObject* kwds)
 {
+    static const std::array<const char *, 1> kwlist {nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "", kwlist)) {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -61,38 +67,50 @@ PyObject* StringHasherPy::isSame(PyObject *args)
 
 PyObject* StringHasherPy::getID(PyObject *args)
 {
-    long id = -1;
+    long id;
     int index = 0;
-    PyObject *value = 0;
+    if (PyArg_ParseTuple(args, "l|i", &id, &index)) {
+        if (id > 0) {
+            PY_TRY {
+                auto sid = getStringHasherPtr()->getID(id, index);
+                if (!sid) {
+                    Py_Return;
+                }
+
+                return sid.getPyObject();
+            }
+            PY_CATCH;
+        }
+        else {
+            PyErr_SetString(PyExc_ValueError, "Id must be positive integer");
+            return nullptr;
+        }
+    }
+
+    PyErr_Clear();
+    PyObject *value = nullptr;
     PyObject *base64 = Py_False;
-    if (!PyArg_ParseTuple(args, "l|i",&id,&index)) {
-        PyErr_Clear();
-        if (!PyArg_ParseTuple(args, "O|O",&value,&base64))
-            return NULL;    // NULL triggers exception
-    }
-    if(id>0) {
+    if (PyArg_ParseTuple(args, "O!|O!", &PyUnicode_Type, &value, &PyBool_Type, &base64)) {
         PY_TRY {
-            auto sid = getStringHasherPtr()->getID(id, index);
-            if(!sid) Py_Return;
+            std::string txt = PyUnicode_AsUTF8(value);
+            QByteArray data;
+            StringIDRef sid;
+            if (PyObject_IsTrue(base64)) {
+                data = QByteArray::fromBase64(QByteArray::fromRawData(txt.c_str(),txt.size()));
+                sid = getStringHasherPtr()->getID(data,true);
+            }
+            else {
+                sid = getStringHasherPtr()->getID(txt.c_str(),txt.size());
+            }
+
             return sid.getPyObject();
-        }PY_CATCH;
+        }
+        PY_CATCH;
     }
-    std::string txt;
-    if (PyUnicode_Check(value)) {
-        txt = PyUnicode_AsUTF8(value);
-    }
-    else 
-        throw Py::TypeError("expect argument of type string");
-    PY_TRY {
-        QByteArray data;
-        StringIDRef sid;
-        if(PyObject_IsTrue(base64)) {
-            data = QByteArray::fromBase64(QByteArray::fromRawData(txt.c_str(),txt.size()));
-            sid = getStringHasherPtr()->getID(data,true);
-        }else
-            sid = getStringHasherPtr()->getID(txt.c_str(),txt.size());
-        return sid.getPyObject();
-    }PY_CATCH;
+
+    PyErr_SetString(PyExc_TypeError, "Positive integer and optional integer or "
+        "string and optional boolean is required");
+    return nullptr;
 }
 
 PyObject *StringHasherPy::checkStorageSizes(PyObject *args)
@@ -112,45 +130,51 @@ PyObject *StringHasherPy::checkStorageSizes(PyObject *args)
 }
 
 
-Py::Int StringHasherPy::getCount(void) const {
-    return Py::Int((long)getStringHasherPtr()->count());
+Py::Int StringHasherPy::getCount() const
+{
+    return Py::Long(PyLong_FromSize_t(getStringHasherPtr()->count()), true);
 }
 
-Py::Int StringHasherPy::getSize(void) const {
-    return Py::Int((long)getStringHasherPtr()->size());
+Py::Int StringHasherPy::getSize() const
+{
+    return Py::Long(PyLong_FromSize_t(getStringHasherPtr()->size()), true);
 }
 
-Py::Boolean StringHasherPy::getSaveAll(void) const {
-    return Py::Boolean(getStringHasherPtr()->getSaveAll());
+Py::Boolean StringHasherPy::getSaveAll() const
+{
+    return {getStringHasherPtr()->getSaveAll()};
 }
 
-void StringHasherPy::setSaveAll(Py::Boolean value) {
+void StringHasherPy::setSaveAll(Py::Boolean value)
+{
     getStringHasherPtr()->setSaveAll(value);
 }
 
-Py::Int StringHasherPy::getThreshold(void) const {
-    return Py::Int((long)getStringHasherPtr()->getThreshold());
+Py::Int StringHasherPy::getThreshold() const
+{
+    return Py::Long(getStringHasherPtr()->getThreshold());
 }
 
-void StringHasherPy::setThreshold(Py::Int value) {
+void StringHasherPy::setThreshold(Py::Long value)
+{
     getStringHasherPtr()->setThreshold(value);
 }
 
 Py::Dict StringHasherPy::getTable() const {
     Py::Dict dict;
-    for(auto &v : getStringHasherPtr()->getIDMap())
+    for(const auto &v : getStringHasherPtr()->getIDMap()) {
         dict.setItem(Py::Int(v.first),Py::String(v.second.dataToText()));
+    }
+
     return dict;
 }
 
 PyObject *StringHasherPy::getCustomAttributes(const char* /*attr*/) const
 {
-    return 0;
+    return nullptr;
 }
 
 int StringHasherPy::setCustomAttributes(const char* /*attr*/, PyObject* /*obj*/)
 {
     return 0; 
 }
-
-

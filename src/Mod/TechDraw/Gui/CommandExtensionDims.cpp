@@ -102,7 +102,7 @@ namespace TechDrawGui {
 void execInsertPrefixChar(Gui::Command* cmd, std::string prefixChar) {
     // insert a prefix character into the format specifier
     std::vector<Gui::SelectionObject> selection;
-    if (!_checkSelection(cmd, selection, "TechDraw Insert Prefix")) {
+    if (!_checkSelection(cmd, selection, QT_TRANSLATE_NOOP("Command","TechDraw Insert Prefix"))) {
         return;
     }
 
@@ -189,7 +189,7 @@ bool CmdTechDrawExtensionInsertSquare::isActive()
 void execRemovePrefixChar(Gui::Command* cmd) {
     // remove a prefix character from the format specifier
     std::vector<Gui::SelectionObject> selection;
-    if (!_checkSelection(cmd, selection, "TechDraw Remove Prefix")) {
+    if (!_checkSelection(cmd, selection, QT_TRANSLATE_NOOP("Command","TechDraw Remove Prefix"))) {
         return;
     }
 
@@ -362,7 +362,7 @@ bool CmdTechDrawExtensionInsertPrefixGroup::isActive()
 void execIncreaseDecreaseDecimal(Gui::Command* cmd, int delta) {
     // increase or decrease number of decimal places of a measure
     std::vector<Gui::SelectionObject> selection;
-    if (!_checkSelection(cmd, selection, "TechDraw Increase/Decrease Decimal")) {
+    if (!_checkSelection(cmd, selection, QT_TRANSLATE_NOOP("QObject","TechDraw Increase/Decrease Decimal"))) {
         return;
     }
 
@@ -558,7 +558,7 @@ bool CmdTechDrawExtensionIncreaseDecreaseGroup::isActive()
 void execPosHorizChainDimension(Gui::Command* cmd) {
     // position a horizontal dimension chain
     std::vector<Gui::SelectionObject> selection;
-    if (!_checkSelection(cmd, selection, "TechDraw PosHorizChainDimension")) {
+    if (!_checkSelection(cmd, selection, QT_TRANSLATE_NOOP("QObject","TechDraw PosHorizChainDimension"))) {
         return;
     }
 
@@ -620,7 +620,7 @@ bool CmdTechDrawExtensionPosHorizChainDimension::isActive()
 void execPosVertChainDimension(Gui::Command* cmd) {
     // position a vertical dimension chain
     std::vector<Gui::SelectionObject> selection;
-    if (!_checkSelection(cmd, selection, "TechDraw PosVertChainDimension")) {
+    if (!_checkSelection(cmd, selection, QT_TRANSLATE_NOOP("QObject","TechDraw PosVertChainDimension"))) {
         return;
     }
 
@@ -683,7 +683,7 @@ bool CmdTechDrawExtensionPosVertChainDimension::isActive()
 void execPosObliqueChainDimension(Gui::Command* cmd) {
     // position an oblique dimension chain
     std::vector<Gui::SelectionObject> selection;
-    if (!_checkSelection(cmd, selection, "TechDraw PosObliqueChainDimension")) {
+    if (!_checkSelection(cmd, selection, QT_TRANSLATE_NOOP("QObject","TechDraw PosObliqueChainDimension"))) {
         return;
     }
 
@@ -870,7 +870,7 @@ bool CmdTechDrawExtensionPosChainDimensionGroup::isActive()
 void execCascadeHorizDimension(Gui::Command* cmd) {
     // cascade horizontal dimensions
     std::vector<Gui::SelectionObject> selection;
-    if (!_checkSelection(cmd, selection, "TechDraw CascadeHorizDimension")) {
+    if (!_checkSelection(cmd, selection, QT_TRANSLATE_NOOP("QObject","TechDraw CascadeHorizDimension"))) {
         return;
     }
 
@@ -937,7 +937,7 @@ bool CmdTechDrawExtensionCascadeHorizDimension::isActive()
 void execCascadeVertDimension(Gui::Command* cmd) {
     // cascade vertical dimensions
     std::vector<Gui::SelectionObject> selection;
-    if (!_checkSelection(cmd, selection, "TechDraw CascadeVertDimension")) {
+    if (!_checkSelection(cmd, selection, QT_TRANSLATE_NOOP("QObject","TechDraw CascadeVertDimension"))) {
         return;
     }
 
@@ -1005,7 +1005,7 @@ bool CmdTechDrawExtensionCascadeVertDimension::isActive()
 void execCascadeObliqueDimension(Gui::Command* cmd) {
     // cascade oblique dimensions
     std::vector<Gui::SelectionObject> selection;
-    if (!_checkSelection(cmd, selection, "TechDraw CascadeObliqueDimension")) {
+    if (!_checkSelection(cmd, selection, QT_TRANSLATE_NOOP("QObject","TechDraw CascadeObliqueDimension"))) {
         return;
     }
 
@@ -1205,7 +1205,7 @@ void execCreateHorizChainDimension(Gui::Command* cmd) {
     //create a horizontal chain dimension
     std::vector<Gui::SelectionObject> selection;
     TechDraw::DrawViewPart* objFeat;
-    if (!_checkSelObjAndSubs(cmd, selection, objFeat, "TechDraw Create Horizontal Chain Dimension")) {
+    if (!_checkSelObjAndSubs(cmd, selection, objFeat, QT_TRANSLATE_NOOP("QObject","TechDraw Create Horizontal Chain Dimension"))) {
         return;
     }
 
@@ -1272,7 +1272,7 @@ void execCreateVertChainDimension(Gui::Command* cmd) {
     //create a vertical chain dimension
     std::vector<Gui::SelectionObject> selection;
     TechDraw::DrawViewPart* objFeat;
-    if (!_checkSelObjAndSubs(cmd, selection, objFeat, "TechDraw Create Vertical Chain Dimension")) {
+    if (!_checkSelObjAndSubs(cmd, selection, objFeat, QT_TRANSLATE_NOOP("QObject","TechDraw Create Vertical Chain Dimension"))) {
         return;
     }
 
@@ -1339,7 +1339,7 @@ void execCreateObliqueChainDimension(Gui::Command* cmd) {
     // create an oblique chain dimension
     std::vector<Gui::SelectionObject> selection;
     TechDraw::DrawViewPart* objFeat;
-    if (!_checkSelObjAndSubs(cmd, selection, objFeat, "TechDraw Create Oblique Chain Dimension")){
+    if (!_checkSelObjAndSubs(cmd, selection, objFeat, QT_TRANSLATE_NOOP("QObject","TechDraw Create Oblique Chain Dimension"))){
         return;
     }
 
@@ -1360,7 +1360,8 @@ void execCreateObliqueChainDimension(Gui::Command* cmd) {
             nextPoint.y = -nextPoint.y;
             oldVertex.point.y = -oldVertex.point.y;
             if ((oldVertex.point - nextPoint).Length() > 0.01) {
-                std::string vertTag = objFeat->addCosmeticVertex(nextPoint / scale);
+                Base::Vector3d cvPoint = CosmeticVertex::makeCanonicalPoint(objFeat, nextPoint);
+                std::string vertTag = objFeat->addCosmeticVertex(cvPoint);
                 int vertNumber = objFeat->add1CVToGV(vertTag);
                 std::stringstream ss;
                 ss << "Vertex" << vertNumber;
@@ -1371,6 +1372,7 @@ void execCreateObliqueChainDimension(Gui::Command* cmd) {
                 std::string edgeTag = objFeat->addCosmeticEdge(oldVertex.point / scale, nextPoint / scale);
                 auto edge = objFeat->getCosmeticEdge(edgeTag);
                 edge->m_format.m_style = 1;
+                edge->m_format.m_lineNumber = 1;
                 edge->m_format.m_weight = 0.15;
                 edge->m_format.m_color = App::Color(0.0f, 0.0f, 0.0f);
             }
@@ -1548,7 +1550,7 @@ void execCreateHorizCoordDimension(Gui::Command* cmd) {
     //create horizontal coordinate dimensions
     std::vector<Gui::SelectionObject> selection;
     TechDraw::DrawViewPart* objFeat;
-    if (!_checkSelObjAndSubs(cmd, selection, objFeat, "TechDraw Create Horizontal Coord Dimension")) {
+    if (!_checkSelObjAndSubs(cmd, selection, objFeat, QT_TRANSLATE_NOOP("QObject","TechDraw Create Horizontal Coord Dimension"))) {
         return;
     }
 
@@ -1622,7 +1624,7 @@ void execCreateVertCoordDimension(Gui::Command* cmd) {
     //create vertical coordinate dimensions
     std::vector<Gui::SelectionObject> selection;
     TechDraw::DrawViewPart* objFeat;
-    if (!_checkSelObjAndSubs(cmd, selection, objFeat, "TechDraw Create Vertical Coord Dimension")) {
+    if (!_checkSelObjAndSubs(cmd, selection, objFeat, QT_TRANSLATE_NOOP("QObject","TechDraw Create Vertical Coord Dimension"))) {
         return;
     }
     Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Create Vert Coord Dim"));
@@ -1696,7 +1698,7 @@ void execCreateObliqueCoordDimension(Gui::Command* cmd) {
     //create oblique coordinate dimensions
     std::vector<Gui::SelectionObject> selection;
     TechDraw::DrawViewPart* objFeat;
-    if (!_checkSelObjAndSubs(cmd, selection, objFeat, "TechDraw Create Oblique Coord Dimension")) {
+    if (!_checkSelObjAndSubs(cmd, selection, objFeat, QT_TRANSLATE_NOOP("QObject","TechDraw Create Oblique Coord Dimension"))) {
         return;
     }
 
@@ -1717,7 +1719,8 @@ void execCreateObliqueCoordDimension(Gui::Command* cmd) {
             nextPoint.y = -nextPoint.y;
             oldVertex.point.y = -oldVertex.point.y;
             if ((oldVertex.point - nextPoint).Length() > 0.01) {
-                std::string vertTag = objFeat->addCosmeticVertex(nextPoint / scale);
+                Base::Vector3d cvPoint = CosmeticVertex::makeCanonicalPoint(objFeat, nextPoint);
+                std::string vertTag = objFeat->addCosmeticVertex(cvPoint);
                 int vertNumber = objFeat->add1CVToGV(vertTag);
                 std::stringstream ss;
                 ss << "Vertex" << vertNumber;
@@ -1728,6 +1731,7 @@ void execCreateObliqueCoordDimension(Gui::Command* cmd) {
                 std::string edgeTag = objFeat->addCosmeticEdge(oldVertex.point / scale, nextPoint / scale);
                 auto edge = objFeat->getCosmeticEdge(edgeTag);
                 edge->m_format.m_style = 1;
+                edge->m_format.m_lineNumber = 1;
                 edge->m_format.m_weight = 0.15;
                 edge->m_format.m_color = App::Color(0.0f, 0.0f, 0.0f);
             }
@@ -1920,7 +1924,7 @@ void execCreateHorizChamferDimension(Gui::Command* cmd) {
     //create a horizontal chamfer dimension
     std::vector<Gui::SelectionObject> selection;
     TechDraw::DrawViewPart* objFeat;
-    if (!_checkSelObjAndSubs(cmd, selection, objFeat, "TechDraw Create Horizontal Chamfer Dimension")) {
+    if (!_checkSelObjAndSubs(cmd, selection, objFeat, QT_TRANSLATE_NOOP("QObject","TechDraw Create Horizontal Chamfer Dimension"))) {
         return;
     }
 
@@ -1990,7 +1994,7 @@ void execCreateVertChamferDimension(Gui::Command* cmd) {
     //create a vertical chamfer dimension
     std::vector<Gui::SelectionObject> selection;
     TechDraw::DrawViewPart* objFeat;
-    if (!_checkSelObjAndSubs(cmd, selection, objFeat, "TechDraw Create Vertical Chamfer Dimension")) {
+    if (!_checkSelObjAndSubs(cmd, selection, objFeat, QT_TRANSLATE_NOOP("QObject","TechDraw Create Vertical Chamfer Dimension"))) {
         return;
     }
 
@@ -2177,7 +2181,7 @@ void CmdTechDrawExtensionCreateLengthArc::activated(int iMsg) {
     Q_UNUSED(iMsg);
     std::vector<Gui::SelectionObject> selection;
     TechDraw::DrawViewPart* objFeat;
-    if (!_checkSelObjAndSubs(this, selection, objFeat, "TechDraw Create Arc Length Dimension")) {
+    if (!_checkSelObjAndSubs(this, selection, objFeat, QT_TRANSLATE_NOOP("QObject","TechDraw Create Arc Length Dimension"))) {
         return;
     }
 
@@ -2197,10 +2201,12 @@ void CmdTechDrawExtensionCreateLengthArc::activated(int iMsg) {
         endPt.y = -endPt.y;
         std::stringstream startName, endName, formatSpec;
         double scale = objFeat->getScale();
-        std::string startVertTag = objFeat->addCosmeticVertex(startPt / scale);
+        Base::Vector3d cvPoint = CosmeticVertex::makeCanonicalPoint(objFeat, startPt);
+        std::string startVertTag = objFeat->addCosmeticVertex(cvPoint);
         int startVertNumber = objFeat->add1CVToGV(startVertTag);
         startName << "Vertex" << startVertNumber;
-        std::string endVertTag = objFeat->addCosmeticVertex(endPt / scale);
+        cvPoint = CosmeticVertex::makeCanonicalPoint(objFeat, endPt);
+        std::string endVertTag = objFeat->addCosmeticVertex(cvPoint);
         int endVertNumber = objFeat->add1CVToGV(endVertTag);
         endName << "Vertex" << endVertNumber;
         TechDraw::DrawViewDimension* dim;
@@ -2255,7 +2261,7 @@ void CmdTechDrawExtensionCustomizeFormat::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<Gui::SelectionObject> selected;
-    if (!_checkSelection(this, selected, "TechDraw Customize Format"))
+    if (!_checkSelection(this, selected, QT_TRANSLATE_NOOP("QObject","TechDraw Customize Format")))
         return;
     auto object = selected[0].getObject();
     if (object->isDerivedFrom(TechDraw::DrawViewDimension::getClassTypeId()) ||
@@ -2352,10 +2358,10 @@ namespace TechDrawGui {
             throw Base::TypeError("CmdTechDrawExtensionCreateLinDimension - dim not found\n");
         dim->References2D.setValues(objs, subs);
         cmd->doCommand(cmd->Doc, "App.activeDocument().%s.addView(App.activeDocument().%s)", PageName.c_str(), FeatName.c_str());
+
+        // Touch the parent feature so the dimension in tree view appears as a child
+        objFeat->touch();
         dim->recomputeFeature();
-        //Horrible hack to force Tree update
-        double x = objFeat->X.getValue();
-        objFeat->X.setValue(x);
         return dim;
     }
 

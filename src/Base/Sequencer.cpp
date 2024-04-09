@@ -28,10 +28,6 @@
 # include <QThread>
 #endif
 
-#if QT_VERSION >= QT_VERSION_CHECK(5,14,0)
-# include<QRecursiveMutex>
-#endif
-
 #include "Sequencer.h"
 #include "Mutex.h"
 
@@ -39,72 +35,74 @@
 using namespace Base;
 
 namespace Base {
-    struct SequencerP {
-        // members
-        static QThread *_thread;
-        static std::vector<SequencerBase*> _instances; /**< A vector of all created instances */
-        static std::vector<SequencerLauncher*> _launchers;
-        static SequencerLauncher* _topLauncher; /**< The outermost launcher */
-        static QRecursiveMutex mutex; /**< A mutex-locker for the launcher */
-        /** Sets a global sequencer object.
-         * Access to the last registered object is performed by @see Sequencer().
-         */
-        static void appendInstance (SequencerBase* s)
-        {
-            if (!_thread)
-                _thread = QThread::currentThread();
-            _instances.push_back(s);
+
+struct SequencerP {
+    // members
+    static QThread *_thread;
+    static std::vector<SequencerBase*> _instances; /**< A vector of all created instances */
+    static std::vector<SequencerLauncher*> _launchers;
+    static SequencerLauncher* _topLauncher; /**< The outermost launcher */
+    static QRecursiveMutex mutex; /**< A mutex-locker for the launcher */
+    /** Sets a global sequencer object.
+        * Access to the last registered object is performed by @see Sequencer().
+        */
+    static void appendInstance (SequencerBase* s)
+    {
+        if (!_thread) {
+            _thread = QThread::currentThread();
         }
-        static void removeInstance (SequencerBase* s)
-        {
-            std::vector<SequencerBase*>::iterator it;
-            it = std::find(_instances.begin(), _instances.end(), s);
-            _instances.erase(it);
-        }
-        static SequencerBase& getInstance ()
-        {
-            return *_instances.back();
-        }
-        static void findNextLauncher(SequencerLauncher *exclude=nullptr)
-        {
-            auto laucherSave = _topLauncher;
-            _topLauncher = nullptr;
-            for (int pass = 0; pass < 2; ++pass) {
-                for (size_t i=0; i<_launchers.size(); ++i) {
-                    auto launcher = _launchers[_launchers.size()-1-i];
-                    if (launcher == exclude)
-                        continue;
-                    // First pass, only pick blocking sequencer
-                    if (pass==0 && !launcher->isBlocking())
-                        continue;
-                    if (launcher->start()) {
-                        _topLauncher = launcher;
-                        return;
-                    }
+        _instances.push_back(s);
+    }
+    static void removeInstance (SequencerBase* s)
+    {
+        std::vector<SequencerBase*>::iterator it;
+        it = std::find(_instances.begin(), _instances.end(), s);
+        _instances.erase(it);
+    }
+    static SequencerBase& getInstance ()
+    {
+        return *_instances.back();
+    }
+    static void findNextLauncher(SequencerLauncher *exclude=nullptr)
+    {
+        auto laucherSave = _topLauncher;
+        _topLauncher = nullptr;
+        for (int pass = 0; pass < 2; ++pass) {
+            for (size_t i=0; i<_launchers.size(); ++i) {
+                auto launcher = _launchers[_launchers.size()-1-i];
+                if (launcher == exclude)
+                    continue;
+                // First pass, only pick blocking sequencer
+                if (pass==0 && !launcher->isBlocking())
+                    continue;
+                if (launcher->start()) {
+                    _topLauncher = launcher;
+                    return;
                 }
             }
-            if (std::find(_launchers.begin(), _launchers.end(), laucherSave) != _launchers.end())
-                _topLauncher = laucherSave;
-            else if (!_launchers.empty())
-                _topLauncher = _launchers.back();
         }
-    };
+        if (std::find(_launchers.begin(), _launchers.end(), laucherSave) != _launchers.end())
+            _topLauncher = laucherSave;
+        else if (!_launchers.empty())
+            _topLauncher = _launchers.back();
+    }
+};
 
-    /**
-     * The _instances member just stores the pointer of the
-     * all instantiated SequencerBase objects.
-     */
-    std::vector<SequencerBase*> SequencerP::_instances;
-    std::vector<SequencerLauncher*> SequencerP::_launchers;
-    SequencerLauncher* SequencerP::_topLauncher = nullptr;
-    QRecursiveMutex SequencerP::mutex;
-    QThread *SequencerP::_thread = nullptr;
-}
+/**
+    * The _instances member just stores the pointer of the
+    * all instantiated SequencerBase objects.
+    */
+std::vector<SequencerBase*> SequencerP::_instances;
+std::vector<SequencerLauncher*> SequencerP::_launchers;
+SequencerLauncher* SequencerP::_topLauncher = nullptr;
+QRecursiveMutex SequencerP::mutex;
+QThread *SequencerP::_thread = nullptr;
+}  // namespace Base
 
-SequencerBase& SequencerBase::Instance ()
+SequencerBase& SequencerBase::Instance()
 {
     // not initialized?
-    if (SequencerP::_instances.size() == 0) {
+    if (SequencerP::_instances.empty()) {
         new ConsoleSequencer();
     }
 
@@ -112,7 +110,6 @@ SequencerBase& SequencerBase::Instance ()
 }
 
 SequencerBase::SequencerBase()
-  : nProgress(0), nTotalSteps(0), _bLocked(false), _bCanceled(false), _nLastPercentage(-1)
 {
     SequencerP::appendInstance(this);
 }
@@ -164,28 +161,27 @@ void SequencerBase::startStep(bool)
 bool SequencerBase::next(bool canAbort)
 {
     this->nProgress++;
-    float fDiv = this->nTotalSteps > 0 ? static_cast<float>(this->nTotalSteps) : 1000.0f;
-    int perc = int((float(this->nProgress) * (100.0f / fDiv)));
+    float fDiv = this->nTotalSteps > 0 ? static_cast<float>(this->nTotalSteps) : 1000.0F;
+    int perc = int((float(this->nProgress) * (100.0F / fDiv)));
 
     // do only an update if we have increased by one percent
     if (perc > this->_nLastPercentage) {
         this->_nLastPercentage = perc;
 
         // if not locked
-        if (!this->_bLocked)
+        if (!this->_bLocked) {
             nextStep(canAbort);
+        }
     }
 
     return this->nProgress < this->nTotalSteps;
 }
 
-void SequencerBase::nextStep( bool )
-{
-}
+void SequencerBase::nextStep(bool /*next*/)
+{}
 
-void SequencerBase::setProgress(size_t)
-{
-}
+void SequencerBase::setProgress(size_t /*value*/)
+{}
 
 bool SequencerBase::stop()
 {
@@ -194,12 +190,10 @@ bool SequencerBase::stop()
 }
 
 void SequencerBase::pause()
-{
-}
+{}
 
 void SequencerBase::resume()
-{
-}
+{}
 
 bool SequencerBase::isBlocking() const
 {
@@ -252,15 +246,14 @@ void SequencerBase::resetData()
     this->_bCanceled = false;
 }
 
-void SequencerBase::setText(const char*)
-{
-}
+void SequencerBase::setText(const char* /*text*/)
+{}
 
 // ---------------------------------------------------------
 
 using Base::ConsoleSequencer;
 
-void ConsoleSequencer::setText (const char* pszTxt)
+void ConsoleSequencer::setText(const char* pszTxt)
 {
     printf("%s...\n", pszTxt);
 }
@@ -269,10 +262,11 @@ void ConsoleSequencer::startStep(bool)
 {
 }
 
-void ConsoleSequencer::nextStep( bool )
+void ConsoleSequencer::nextStep(bool /*canAbort*/)
 {
-    if (this->nTotalSteps != 0)
+    if (this->nTotalSteps != 0) {
         printf("\t\t\t\t\t\t(%d %%)\t\r", progressInPercent());
+    }
 }
 
 void ConsoleSequencer::resetData()
@@ -340,7 +334,7 @@ bool SequencerLauncher::stop()
     return false;
 }
 
-void SequencerLauncher::setText (const char* pszTxt)
+void SequencerLauncher::setText(const char* pszTxt)
 {
     QMutexLocker locker(&SequencerP::mutex);
     strText = pszTxt ? pszTxt : "";

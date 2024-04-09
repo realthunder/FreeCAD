@@ -38,7 +38,7 @@
 #include <Base/Writer.h>
 
 #include "Application.h"
-#include "ComplexGeoData.h"
+#include "ElementNamingUtils.h"
 #include "Document.h"
 #include "DocumentParams.h"
 #include "DocumentObject.h"
@@ -71,7 +71,7 @@ DocumentObjectExecReturn *DocumentObject::StdReturn = nullptr;
 //===========================================================================
 
 DocumentObject::DocumentObject()
-    : ExpressionEngine(),_pDoc(nullptr),pcNameInDocument(nullptr),_Id(0),_revision(0)
+    : ExpressionEngine()
 {
     // define Label of type 'Output' to avoid being marked as touched after relabeling
     ADD_PROPERTY_TYPE(Label,("Unnamed"),"Base",Prop_Output,"User name of the object (UTF8)");
@@ -318,7 +318,7 @@ const char* DocumentObject::getStatusString() const
 }
 
 std::string DocumentObject::getFullName(bool python) const {
-    if(!getDocument() || !pcNameInDocument) {
+    if(!getDocument() || !isAttachedToDocument()) {
         if(python)
             return std::string("None");
         return std::string("?") + Base::Tools::getIdentifier(oldLabel);
@@ -360,14 +360,14 @@ const char *DocumentObject::getNameInDocument() const
 }
 
 int DocumentObject::isExporting() const {
-    if(!getDocument() || !getNameInDocument())
+    if(!getDocument() || !isAttachedToDocument())
         return 0;
     return getDocument()->isExporting(this);
 }
 
 std::string DocumentObject::getExportName(bool forced) const {
-    if(!pcNameInDocument)
-        return std::string();
+    if(!isAttachedToDocument())
+        return {};
 
     if(!forced && !isExporting())
         return *pcNameInDocument;
@@ -504,7 +504,7 @@ void DocumentObject::getInListEx(std::set<App::DocumentObject*> &inSet,
     // outLists first here.
     for(auto doc : GetApplication().getDocuments()) {
         for(auto obj : doc->getObjects()) {
-            if(!obj || !obj->getNameInDocument() || obj==this || (filter && filter(obj))
+            if(!obj || !obj->isAttachedToDocument() || obj==this || (filter && filter(obj))
                 continue;
             const auto &outList = obj->getOutList();
             outLists[obj].insert(outList.begin(),outList.end());
@@ -555,7 +555,7 @@ void DocumentObject::getInListEx(std::set<App::DocumentObject*> &inSet,
         auto obj = pendings.top();
         pendings.pop();
         for(auto o : obj->getInList()) {
-            if(o && o->getNameInDocument()
+            if(o && o->isAttachedToDocument()
                  && (!filter || !filter(o))
                  && inSet.insert(o).second)
             {
@@ -903,7 +903,7 @@ DocumentObject *DocumentObject::getSubObject(const char *subname,
         if(outList.size()<=10) {
             CharRange name(subname,dot);
             for(auto obj : outList) {
-                if(obj && obj->getNameInDocument() && boost::equals(name,obj->getNameInDocument())) {
+                if(obj && obj->isAttachedToDocument() && boost::equals(name,obj->getNameInDocument())) {
                     ret = obj;
                     break;
                 }
@@ -945,7 +945,7 @@ DocumentObject::getSubObjectList(const char *subname,
     if (sublist) sublist->push_back(0);
     if(!subname || !subname[0])
         return res;
-    auto element = Data::ComplexGeoData::findElementName(subname);
+    auto element = Data::findElementName(subname);
     std::string sub(subname,element-subname);
     App::DocumentObject *container = nullptr;
 
@@ -963,7 +963,7 @@ DocumentObject::getSubObjectList(const char *subname,
         char c = sub[pos+1];
         sub[pos+1] = 0;
         auto sobj = getSubObject(sub.c_str());
-        if(!sobj || !sobj->getNameInDocument())
+        if(!sobj || !sobj->isAttachedToDocument())
             continue;
 
         if (flatten) {
@@ -1054,7 +1054,7 @@ DocumentObject::expandSubObjectNames(const char *subname, int reason, bool check
         for (auto it=res.begin(); it!=res.end();) {
             std::string &sub = *it;
             int vis = isElementVisibleEx(sub.c_str(), reason);
-            if (vis < 0 && Data::ComplexGeoData::findElementName(sub.c_str()) != sub.c_str()) {
+            if (vis < 0 && Data::findElementName(sub.c_str()) != sub.c_str()) {
                 auto dot = sub.find('.');
                 if (dot != std::string::npos) {
                     tmp.assign(sub.begin(), sub.begin()+dot+1);
@@ -1075,10 +1075,10 @@ DocumentObject::expandSubObjectNames(const char *subname, int reason, bool check
 std::vector<std::pair<App::DocumentObject *,std::string> >
 DocumentObject::getParents(App::DocumentObject *queryParent, int depth) const {
     std::vector<std::pair<App::DocumentObject *,std::string> > ret;
-    if(!getNameInDocument() || !GetApplication().checkLinkDepth(depth))
+    if(!isAttachedToDocument() || !GetApplication().checkLinkDepth(depth))
         return ret;
     for(auto parent : getInList()) {
-        if(!parent || !parent->getNameInDocument())
+        if(!parent || !parent->isAttachedToDocument())
             continue;
         std::string subname;
         for (auto &sub : parent->getSubObjects(GS_SELECT)) {
@@ -1282,12 +1282,12 @@ int DocumentObject::isElementVisibleEx(const char *subname, int reason) const {
         return res;
 
     const char *dot = strchr(subname,'.');
-    if(dot==0 || Data::ComplexGeoData::isMappedElement(subname))
+    if(dot==0 || Data::isMappedElement(subname))
         return res;
 
     std::string sub(subname,dot+1);
     auto sobj = getSubObject(sub.c_str());
-    if(!sobj || !sobj->getNameInDocument())
+    if(!sobj || !sobj->isAttachedToDocument())
         return -1;
 
     ++dot;
@@ -1336,7 +1336,7 @@ DocumentObject *DocumentObject::resolve(const char *subname,
     // following it. So finding the last dot will give us the end of the last
     // object name.
     const char *dot=nullptr;
-    if(Data::ComplexGeoData::isMappedElement(subname) ||
+    if(Data::isMappedElement(subname) ||
        !(dot=strrchr(subname,'.')) ||
        dot == subname) 
     {
@@ -1359,7 +1359,7 @@ DocumentObject *DocumentObject::resolve(const char *subname,
             if(!elementMapChecked) {
                 elementMapChecked = true;
                 const char *sub = dot==subname?dot:dot+1;
-                if(Data::ComplexGeoData::isMappedElement(sub)) {
+                if(Data::isMappedElement(sub)) {
                     lastDot = dot;
                     if(dot==subname) 
                         break;
@@ -1372,7 +1372,7 @@ DocumentObject *DocumentObject::resolve(const char *subname,
             auto sobj = getSubObject(std::string(subname,dot-subname+1).c_str());
             if(sobj!=obj) {
                 if(parent) {
-                    // Link/LinkGroup has special visiblility handling of plain
+                    // Link/LinkGroup has special visibility handling of plain
                     // group, so keep ascending
                     if(!GeoFeatureGroupExtension::isNonGeoGroup(sobj)) {
                         *parent = sobj;
@@ -1409,7 +1409,7 @@ DocumentObject::resolveRelativeLink(std::string &subname,
                                     std::string &linkSub,
                                     RelativeLinkOptions options) const
 {
-    if(!link || !link->getNameInDocument() || !getNameInDocument())
+    if(!link || !link->isAttachedToDocument() || !isAttachedToDocument())
         return nullptr;
 
     bool flatten = options.testFlag(RelativeLinkOption::Flatten);
@@ -1552,7 +1552,7 @@ bool DocumentObject::redirectSubName(std::ostringstream &, DocumentObject *, Doc
 
 void DocumentObject::onPropertyStatusChanged(const Property &prop, unsigned long oldStatus) {
     (void)oldStatus;
-    if(!Document::isAnyRestoring() && getNameInDocument() && getDocument())
+    if(!Document::isAnyRestoring() && isAttachedToDocument() && getDocument())
         getDocument()->signalChangePropertyEditor(*getDocument(),prop);
 }
 

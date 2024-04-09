@@ -30,27 +30,32 @@
 #include <Mod/Spreadsheet/App/Sheet.h>
 
 
-namespace SpreadsheetGui {
+namespace SpreadsheetGui
+{
 
-class SheetViewHeader : public QHeaderView {
+class SheetViewHeader: public QHeaderView
+{
     Q_OBJECT
 public:
-    SheetViewHeader(QTableView *owner, Qt::Orientation o)
-        : QHeaderView(o),owner(owner)
+    SheetViewHeader(QTableView* owner, Qt::Orientation o)
+        : QHeaderView(o)
+        , owner(owner)
     {
         setSectionsClickable(true);
     }
 
 Q_SIGNALS:
     void resizeFinished();
+
 protected:
-    void mouseReleaseEvent(QMouseEvent * event) override;
-    bool viewportEvent(QEvent *e) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    bool viewportEvent(QEvent* e) override;
+
 private:
-    QTableView *owner;
+    QTableView* owner;
 };
 
-class SheetTableView : public QTableView
+class SheetTableView: public QTableView
 {
     Q_OBJECT
 
@@ -58,11 +63,11 @@ class SheetTableView : public QTableView
     Q_PROPERTY(QColor aliasForegroundColor READ aliasForegroundColor WRITE setAliasForegroundColor DESIGNABLE true SCRIPTABLE true)
 
 public:
-    explicit SheetTableView(QWidget *parent = nullptr);
+    explicit SheetTableView(QWidget* parent = nullptr);
     ~SheetTableView() override;
 
-    void edit(const QModelIndex &index);
-    void setSheet(Spreadsheet::Sheet *_sheet);
+    void edit(const QModelIndex& index);
+    void setSheet(Spreadsheet::Sheet* _sheet);
     std::vector<App::Range> selectedRanges() const;
     QModelIndexList selectedIndexesRaw() const;
     QString toHtml() const;
@@ -90,7 +95,7 @@ public Q_SLOTS:
     void ModifyBlockSelection(int targetRow, int targetColumn);
 
 protected Q_SLOTS:
-    void commitData(QWidget *editor) override;
+    void commitData(QWidget* editor) override;
     void updateCellSpan();
     void insertRows();
     void insertRowsAfter();
@@ -113,15 +118,16 @@ protected Q_SLOTS:
     void removeAlias();
 
 protected:
-    bool edit(const QModelIndex &index, EditTrigger trigger, QEvent *event) override;
-    bool event(QEvent *event) override;
-    void closeEditor(QWidget *editor, QAbstractItemDelegate::EndEditHint hint) override;
+    bool edit(const QModelIndex& index, EditTrigger trigger, QEvent* event) override;
+    bool event(QEvent* event) override;
+    void closeEditor(QWidget* editor, QAbstractItemDelegate::EndEditHint hint) override;
     void mousePressEvent(QMouseEvent* event) override;
-    void selectionChanged(const QItemSelection &selected, const QItemSelection &deselected) override;
+    void selectionChanged(const QItemSelection& selected,
+                          const QItemSelection& deselected) override;
 
-    void contextMenuEvent (QContextMenuEvent * e) override;
+    void contextMenuEvent(QContextMenuEvent* e) override;
 
-    void _copySelection(const std::vector<App::Range> &ranges, bool copy);
+    void _copySelection(const std::vector<App::Range>& ranges, bool copy);
 
     void _pasteClipboard(const char *name, int type);
 
@@ -181,6 +187,6 @@ protected:
     std::set<App::CellAddress> spanChanges;
 };
 
-}
+}  // namespace SpreadsheetGui
 
-#endif // SHEETTABLEVIEW_H
+#endif  // SHEETTABLEVIEW_H

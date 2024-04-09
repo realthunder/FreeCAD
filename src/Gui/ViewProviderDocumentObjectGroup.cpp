@@ -46,14 +46,12 @@ ViewProviderDocumentObjectGroup::ViewProviderDocumentObjectGroup()
     sPixmap = "folder";
 }
 
-ViewProviderDocumentObjectGroup::~ViewProviderDocumentObjectGroup()
-{
-}
+ViewProviderDocumentObjectGroup::~ViewProviderDocumentObjectGroup() = default;
 
 std::vector<std::string> ViewProviderDocumentObjectGroup::getDisplayModes() const
 {
     // empty
-    return std::vector<std::string>();
+    return {};
 }
 
 bool ViewProviderDocumentObjectGroup::isShow() const
@@ -73,13 +71,13 @@ QIcon ViewProviderDocumentObjectGroup::getIcon() const
 void ViewProviderDocumentObjectGroup::getViewProviders(std::vector<ViewProviderDocumentObject*>& vp) const
 {
     App::DocumentObject* doc = getObject();
-    if (doc->getTypeId().isDerivedFrom(App::DocumentObjectGroup::getClassTypeId())) {
+    if (doc->isDerivedFrom<App::DocumentObjectGroup>()) {
         Gui::Document* gd = Application::Instance->getDocument(doc->getDocument());
         auto grp = static_cast<App::DocumentObjectGroup*>(doc);
         std::vector<App::DocumentObject*> obj = grp->getObjects();
         for (const auto & it : obj) {
             ViewProvider* v = gd->getViewProvider(it);
-            if (v && v->getTypeId().isDerivedFrom(ViewProviderDocumentObject::getClassTypeId()))
+            if (v && v->isDerivedFrom<ViewProviderDocumentObject>())
                 vp.push_back(static_cast<ViewProviderDocumentObject*>(v));
         }
     }

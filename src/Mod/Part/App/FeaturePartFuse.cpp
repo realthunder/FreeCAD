@@ -46,9 +46,7 @@ using namespace Part;
 PROPERTY_SOURCE(Part::Fuse, Part::Boolean)
 
 
-Fuse::Fuse()
-{
-}
+Fuse::Fuse() = default;
 
 BRepAlgoAPI_BooleanOperation* Fuse::makeOperation(const TopoDS_Shape& base, const TopoDS_Shape& tool) const
 {
@@ -142,8 +140,8 @@ App::DocumentObjectExecReturn *MultiFuse::execute()
                 throw Base::RuntimeError("MultiFusion failed");
 
             TopoDS_Shape resShape = mkFuse.Shape();
-            for (std::vector<TopoDS_Shape>::iterator it = s.begin(); it != s.end(); ++it) {
-                history.emplace_back(mkFuse, TopAbs_FACE, resShape, *it);
+            for (const auto & it : s) {
+                history.emplace_back(mkFuse, TopAbs_FACE, resShape, it);
             }
             if (resShape.IsNull())
                 throw Base::RuntimeError("Resulting shape is null");
@@ -162,8 +160,8 @@ App::DocumentObjectExecReturn *MultiFuse::execute()
                     BRepBuilderAPI_RefineModel mkRefine(oldShape);
                     resShape = mkRefine.Shape();
                     ShapeHistory hist(mkRefine, TopAbs_FACE, resShape, oldShape);
-                    for (std::vector<ShapeHistory>::iterator jt = history.begin(); jt != history.end(); ++jt)
-                        jt->join(hist);
+                    for (auto & jt : history)
+                        jt.join(hist);
                 }
                 catch (Standard_Failure&) {
                     // do nothing

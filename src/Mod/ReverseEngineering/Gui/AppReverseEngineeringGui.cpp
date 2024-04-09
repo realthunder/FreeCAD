@@ -32,7 +32,7 @@
 
 
 // use a different name to CreateCommand()
-void CreateReverseEngineeringCommands(void);
+void CreateReverseEngineeringCommands();
 
 void loadReverseEngineeringResource()
 {
@@ -42,16 +42,16 @@ void loadReverseEngineeringResource()
     Gui::Translator::instance()->refresh();
 }
 
-namespace ReverseEngineeringGui {
-class Module : public Py::ExtensionModule<Module>
+namespace ReverseEngineeringGui
+{
+class Module: public Py::ExtensionModule<Module>
 {
 public:
-    Module() : Py::ExtensionModule<Module>("ReverseEngineeringGui")
+    Module()
+        : Py::ExtensionModule<Module>("ReverseEngineeringGui")
     {
-        initialize("This module is the ReverseEngineeringGui module."); // register with Python
+        initialize("This module is the ReverseEngineeringGui module.");  // register with Python
     }
-
-    ~Module() override {}
 
 private:
 };
@@ -61,7 +61,7 @@ PyObject* initModule()
     return Base::Interpreter().addModule(new Module);
 }
 
-} // namespace ReverseEngineeringGui
+}  // namespace ReverseEngineeringGui
 
 
 /* Python entry */
@@ -76,7 +76,7 @@ PyMOD_INIT_FUNC(ReverseEngineeringGui)
     try {
         Base::Interpreter().loadModule("MeshGui");
     }
-    catch(const Base::Exception& e) {
+    catch (const Base::Exception& e) {
         PyErr_SetString(PyExc_ImportError, e.what());
         PyMOD_Return(nullptr);
     }
@@ -88,7 +88,7 @@ PyMOD_INIT_FUNC(ReverseEngineeringGui)
     CreateReverseEngineeringCommands();
     ReverseEngineeringGui::Workbench::init();
 
-     // add resources and reloads the translators
+    // add resources and reloads the translators
     loadReverseEngineeringResource();
     PyMOD_Return(mod);
 }

@@ -50,11 +50,10 @@ void MultiTransform::positionBySupport()
 {
     PartDesign::Transformed::positionBySupport();
     std::vector<App::DocumentObject*> transFeatures = Transformations.getValues();
-    for (std::vector<App::DocumentObject*>::const_iterator f = transFeatures.begin();
-         f != transFeatures.end(); ++f) {
-        if (!((*f)->getTypeId().isDerivedFrom(PartDesign::Transformed::getClassTypeId())))
+    for (auto f : transFeatures) {
+        if (!(f->isDerivedFrom<PartDesign::Transformed>()))
             throw Base::TypeError("Transformation features must be subclasses of Transformed");
-        PartDesign::Transformed* transFeature = static_cast<PartDesign::Transformed*>(*f);
+        PartDesign::Transformed* transFeature = static_cast<PartDesign::Transformed*>(f);
         transFeature->Placement.setValue(this->Placement.getValue());
 
         // To avoid that a linked transform feature stays touched after a recompute
@@ -100,7 +99,7 @@ std::list<gp_Trsf> MultiTransform::getTransformations(const std::vector<Part::To
     std::vector<App::DocumentObject*>::const_iterator f;
 
     for (f = transFeatures.begin(); f != transFeatures.end(); ++f) {
-        if (!((*f)->getTypeId().isDerivedFrom(PartDesign::Transformed::getClassTypeId())))
+        if (!((*f)->isDerivedFrom<PartDesign::Transformed>()))
             throw Base::TypeError("Transformation features must be subclasses of Transformed");
         PartDesign::Transformed* transFeature = static_cast<PartDesign::Transformed*>(*f);
         std::list<gp_Trsf> newTransformations = transFeature->getTransformations(originals);
@@ -119,7 +118,7 @@ std::list<gp_Trsf> MultiTransform::getTransformations(const std::vector<Part::To
             std::list<gp_Pnt> oldCogs;
             cogs.swap(oldCogs); // empty cogs to receive new cogs
 
-            if ((*f)->getTypeId() == PartDesign::Scaled::getClassTypeId()) {
+            if ((*f)->is<PartDesign::Scaled>()) {
                 // Diagonal method
                 // Multiply every element in the old transformations' slices with the corresponding
                 // element in the newTransformations. Example:

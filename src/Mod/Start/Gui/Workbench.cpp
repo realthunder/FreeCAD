@@ -22,7 +22,7 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
-# include <QCoreApplication>
+#include <QCoreApplication>
 #endif
 
 #include <Base/Console.h>
@@ -31,8 +31,8 @@
 #include <Base/Tools.h>
 #include <Gui/Command.h>
 #include <Gui/DockWindowManager.h>
-#include <Gui/MainWindow.h>
 #include <Gui/MDIView.h>
+#include <Gui/MainWindow.h>
 #include <Gui/ToolBarManager.h>
 
 #include "Workbench.h"
@@ -42,13 +42,9 @@ using namespace StartGui;
 
 TYPESYSTEM_SOURCE(StartGui::Workbench, Gui::StdWorkbench)
 
-StartGui::Workbench::Workbench()
-{
-}
+StartGui::Workbench::Workbench() = default;
 
-StartGui::Workbench::~Workbench()
-{
-}
+StartGui::Workbench::~Workbench() = default;
 
 void StartGui::Workbench::activated()
 {
@@ -65,11 +61,12 @@ void StartGui::Workbench::loadStartPage()
     // Ensure that we don't open the Start page multiple times
     QString title = QCoreApplication::translate("Workbench", "Start page");
     QList<QWidget*> ch = Gui::getMainWindow()->windows();
-    for (QList<QWidget*>::const_iterator c = ch.cbegin(); c != ch.cend(); ++c) {
-        if ((*c)->windowTitle() == title) {
-            Gui::MDIView* mdi = qobject_cast<Gui::MDIView*>((*c));
-            if (mdi)
+    for (auto c : ch) {
+        if (c->windowTitle() == title) {
+            Gui::MDIView* mdi = qobject_cast<Gui::MDIView*>(c);
+            if (mdi) {
                 Gui::getMainWindow()->setActiveWindow(mdi);
+            }
             return;
         }
     }
@@ -78,28 +75,48 @@ void StartGui::Workbench::loadStartPage()
         std::string escapedstr = Base::Tools::escapeEncodeString(title).toUtf8().constData();
         std::stringstream str;
         str << "import WebGui,sys,Start\n"
+            << "from PySide import QtCore, QtGui\n"
             << "from StartPage import StartPage\n\n"
             << "class WebPage(object):\n"
             << "    def __init__(self):\n"
             << "        self.browser=WebGui.openBrowserWindow(u\"" << escapedstr.c_str() << "\")\n"
 #if defined(FC_OS_WIN32)
-            << "        self.browser.setHtml(StartPage.handle(), App.getResourceDir() + 'Mod/Start/StartPage/')\n"
+            << "        self.browser.setHtml(StartPage.handle(), App.getResourceDir() + "
+               "'Mod/Start/StartPage/')\n"
 #else
-            << "        self.browser.setHtml(StartPage.handle(), 'file://' + App.getResourceDir() + 'Mod/Start/StartPage/')\n"
+            << "        self.browser.setHtml(StartPage.handle(), 'file://' + App.getResourceDir() "
+               "+ 'Mod/Start/StartPage/')\n"
 #endif
             << "    def onChange(self, par, reason):\n"
             << "        try:\n"
-            << "            if reason == 'RecentFiles':\n"
-#if defined(FC_OS_WIN32)
-            << "                self.browser.setHtml(StartPage.handle(), App.getResourceDir() + 'Mod/Start/StartPage/')\n\n"
-#else
-            << "                self.browser.setHtml(StartPage.handle(), 'file://' + App.getResourceDir() + 'Mod/Start/StartPage/')\n\n"
-#endif
+            << "            if reason in ('RecentFiles','Language'):\n"
+            << "                QtCore.QTimer.singleShot(100, self.reload)\n"
             << "        except RuntimeError as e:\n"
             << "            pass\n"
+            << "    def reload(self):\n"
+            << "        startOpen = False\n"
+            << "        title = QtGui.QApplication.translate('Workbench', 'Start page')\n"
+            << "        mw = FreeCADGui.getMainWindow()\n"
+            << "        if mw:\n"
+            << "            mdi = mw.findChild(QtGui.QMdiArea)\n"
+            << "            if mdi:\n"
+            << "                for mdichild in mdi.children():\n"
+            << "                    for subw in mdichild.findChildren(QtGui.QMdiSubWindow):\n"
+            << "                        if subw.windowTitle() == title:\n"
+            << "                            startOpen = True\n"
+            << "        if startOpen:\n"  // if the user has closeStart set to True a Runtime Error
+                                          // is raised if a simple Preferences change is made
+#if defined(FC_OS_WIN32)
+            << "            self.browser.setHtml(StartPage.handle(), App.getResourceDir() + "
+               "'Mod/Start/StartPage/')\n\n"
+#else
+            << "            self.browser.setHtml(StartPage.handle(), 'file://' + "
+               "App.getResourceDir() + 'Mod/Start/StartPage/')\n\n"
+#endif
             << "class WebView(object):\n"
             << "    def __init__(self):\n"
-            << "        self.pargrp = FreeCAD.ParamGet('User parameter:BaseApp/Preferences/RecentFiles')\n"
+            << "        self.pargrp = FreeCAD.ParamGet('User "
+               "parameter:BaseApp/Preferences/RecentFiles')\n"
             << "        self.webPage = WebPage()\n"
             << "        self.pargrp.Attach(self.webPage)\n"
             << "    def __del__(self):\n"
@@ -116,8 +133,7 @@ void StartGui::Workbench::loadStartPage()
 
 void StartGui::Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) const
 {
-    Q_UNUSED(recipient);
-    Q_UNUSED(item);
+    Gui::StdWorkbench::setupContextMenu(recipient, item);
 }
 
 Gui::MenuItem* StartGui::Workbench::setupMenuBar() const
@@ -146,7 +162,6 @@ Gui::ToolBarItem* StartGui::Workbench::setupToolBars() const
                 << "Web_BrowserZoomOut";
 
     return root;
-
 }
 
 Gui::ToolBarItem* StartGui::Workbench::setupCommandBars() const
@@ -158,7 +173,8 @@ Gui::ToolBarItem* StartGui::Workbench::setupCommandBars() const
 Gui::DockWindowItems* StartGui::Workbench::setupDockWindows() const
 {
     Gui::DockWindowItems* root = Gui::StdWorkbench::setupDockWindows();
-    root->setVisibility(false); // hide all dock windows by default
-    root->setVisibility("Std_ComboView",true); // except of the combo view
+    root->setVisibility(false);                  // hide all dock windows by default
+    root->setVisibility("Std_ComboView", true);  // except of the combo view
+    root->setVisibility("Std_TaskView", true);   // and the task view
     return root;
 }

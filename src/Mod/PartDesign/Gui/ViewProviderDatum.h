@@ -51,7 +51,7 @@ public:
     /// grouping handling
     void setupContextMenu(QMenu*, QObject*, const char*) override;
 
-    bool doubleClicked(void) override;
+    bool doubleClicked() override;
 
     Base::Vector3d getBasePoint () const override;
 

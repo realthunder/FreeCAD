@@ -31,7 +31,7 @@ if FreeCAD.GuiUp:
 
 __title__="PartDesign InvoluteGearObject management"
 __author__ = "Juergen Riegel"
-__url__ = "http://www.freecad.org"
+__url__ = "https://www.freecad.org"
 
 
 def makeInvoluteGear(name):
@@ -163,10 +163,10 @@ class _ViewProviderInvoluteGear:
         FreeCADGui.Control.closeDialog()
         return
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
 

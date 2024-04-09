@@ -43,7 +43,7 @@ PyObject*  FeaturePathCompoundPy::addObject(PyObject *args)
         return nullptr;
 
     DocumentObjectPy* docObj = static_cast<DocumentObjectPy*>(object);
-    if (!docObj->getDocumentObjectPtr() || !docObj->getDocumentObjectPtr()->getNameInDocument()) {
+    if (!docObj->getDocumentObjectPtr() || !docObj->getDocumentObjectPtr()->isAttachedToDocument()) {
         PyErr_SetString(Base::PyExc_FC_GeneralError, "Cannot add an invalid object");
         return nullptr;
     }
@@ -58,10 +58,10 @@ PyObject*  FeaturePathCompoundPy::addObject(PyObject *args)
 
     FeatureCompound* comp = getFeaturePathCompoundPtr();
 
-    if (comp->getTypeId().isDerivedFrom(Path::FeatureCompoundPython::getClassTypeId())) {
+    if (comp->isDerivedFrom<Path::FeatureCompoundPython>()) {
         FeatureCompoundPython* comppy = static_cast<FeatureCompoundPython*>(comp);
         App::Property* proxy = comppy->getPropertyByName("Proxy");
-        if (proxy && proxy->getTypeId() == App::PropertyPythonObject::getClassTypeId()) {
+        if (proxy && proxy->is<App::PropertyPythonObject>()) {
             Py::Object vp = static_cast<App::PropertyPythonObject*>(proxy)->getValue();
             if (vp.hasAttr(std::string("addObject"))) {
                 Py::Callable method(vp.getAttr(std::string("addObject")));
@@ -88,7 +88,7 @@ PyObject*  FeaturePathCompoundPy::removeObject(PyObject *args)
         return nullptr;
 
     DocumentObjectPy* docObj = static_cast<DocumentObjectPy*>(object);
-    if (!docObj->getDocumentObjectPtr() || !docObj->getDocumentObjectPtr()->getNameInDocument()) {
+    if (!docObj->getDocumentObjectPtr() || !docObj->getDocumentObjectPtr()->isAttachedToDocument()) {
         PyErr_SetString(Base::PyExc_FC_GeneralError, "Cannot remove an invalid object");
         return nullptr;
     }
@@ -99,10 +99,10 @@ PyObject*  FeaturePathCompoundPy::removeObject(PyObject *args)
 
     FeatureCompound* comp = getFeaturePathCompoundPtr();
 
-    if (comp->getTypeId().isDerivedFrom(Path::FeatureCompoundPython::getClassTypeId())) {
+    if (comp->isDerivedFrom<Path::FeatureCompoundPython>()) {
         FeatureCompoundPython* comppy = static_cast<FeatureCompoundPython*>(comp);
         App::Property* proxy = comppy->getPropertyByName("Proxy");
-        if (proxy && proxy->getTypeId() == App::PropertyPythonObject::getClassTypeId()) {
+        if (proxy && proxy->is<App::PropertyPythonObject>()) {
             Py::Object vp = static_cast<App::PropertyPythonObject*>(proxy)->getValue();
             if (vp.hasAttr(std::string("removeObject"))) {
                 Py::Callable method(vp.getAttr(std::string("removeObject")));

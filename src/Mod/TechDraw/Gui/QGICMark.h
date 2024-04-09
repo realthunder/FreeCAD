@@ -34,7 +34,7 @@ class TechDrawGuiExport QGICMark : public QGIVertex
 {
 public:
     explicit QGICMark(int index);
-    ~QGICMark() {}
+    ~QGICMark() override {}
 
     // Overriding type() is necessary unless we want to quick cast the itme
     // using qgraphics_cast. In this case, we must not override it because we
@@ -44,17 +44,17 @@ public:
     // enum {Type = QGraphicsItem::UserType + 171};
     // int type() const override { return Type;}
 
-    virtual void paint(QPainter * painter, const QStyleOptionGraphicsItem * option, QWidget * widget = nullptr ) override;
+    void paint(QPainter * painter, const QStyleOptionGraphicsItem * option, QWidget * widget = nullptr ) override;
 
-    virtual QRectF boundingRect() const override;
-    virtual QPainterPath shape() const override;
+    QRectF boundingRect() const override;
+    QPainterPath shape() const override;
 
     void draw(void);
     float getSize() { return m_size; }
     void setSize(float s);
     float getThick() { return m_width; }
     void setThick(float t);
-    virtual void setPrettyNormal() override;
+    void setPrettyNormal() override;
 
     double getMarkFuzz(void) const;
 

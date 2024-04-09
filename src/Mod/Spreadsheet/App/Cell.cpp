@@ -23,18 +23,17 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
-# include <iomanip>
-# include <sstream>
 # include <QLocale>
 # include <QStringList>
-# include <boost/tokenizer.hpp>
 # include <boost/algorithm/string/predicate.hpp>
+# include <boost/tokenizer.hpp>
+# include <iomanip>
+# include <sstream>
 #endif
 
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
-#include <boost/tokenizer.hpp>
 #include <Base/Reader.h>
 #include <App/Application.h>
 #include <App/ExpressionParser.h>
@@ -65,6 +64,7 @@ using namespace Spreadsheet;
 
 /////////////////////////////////////////////////////////
 
+// clang-format off
 const int Cell::EXPRESSION_SET       = 1;
 const int Cell::ALIGNMENT_SET        = 4;
 const int Cell::STYLE_SET            = 8;
@@ -90,15 +90,16 @@ const int Cell::ALIGNMENT_VCENTER    = 0x20;
 const int Cell::ALIGNMENT_BOTTOM     = 0x40;
 const int Cell::ALIGNMENT_VIMPLIED   = 0x80;
 const int Cell::ALIGNMENT_VERTICAL   = 0xf0;
+// clang-format on
 
 /**
-  * Construct a CellContent object.
-  * @param _address  The address of the cell (i.e. row and column)
-  * @param _owner    The spreadsheet that owns this cell.
-  *
-  */
+ * Construct a CellContent object.
+ * @param _address  The address of the cell (i.e. row and column)
+ * @param _owner    The spreadsheet that owns this cell.
+ *
+ */
 
-Cell::Cell(const CellAddress &_address, PropertySheet *_owner)
+Cell::Cell(const CellAddress& _address, PropertySheet* _owner)
     : address(_address)
     , owner(_owner)
     , used(0)
@@ -118,7 +119,7 @@ Cell::Cell(const CellAddress &_address, PropertySheet *_owner)
     assert(address.isValid());
 }
 
-Cell::Cell(PropertySheet *_owner, const Cell &other)
+Cell::Cell(PropertySheet* _owner, const Cell& other)
     : address(other.address)
     , owner(_owner)
     , used(other.used)
@@ -139,7 +140,7 @@ Cell::Cell(PropertySheet *_owner, const Cell &other)
     setDirty();
 }
 
-Cell &Cell::operator =(const Cell &rhs)
+Cell& Cell::operator=(const Cell& rhs)
 {
     PropertySheet::AtomicPropertyChange signaller(*owner);
 
@@ -165,13 +166,11 @@ Cell &Cell::operator =(const Cell &rhs)
 }
 
 /**
-  * Destroy a CellContent object.
-  *
-  */
+ * Destroy a CellContent object.
+ *
+ */
 
-Cell::~Cell()
-{
-}
+Cell::~Cell() = default;
 
 /**
   * Set the expression tree to \a expr.
@@ -191,9 +190,10 @@ void Cell::setExpression(App::ExpressionPtr &&expr, int type)
         setAlias(func->getName(), true);
 
     if((type & PasteFormat) && expr && !expr->comment.empty()) {
-        if(!boost::starts_with(expr->comment,"<Cell "))
+        if(!boost::starts_with(expr->comment,"<Cell ")) {
             FC_WARN("Unknown style of cell "
                 << owner->sheet()->getFullName() << '.' << address.toString());
+        }
         else {
             const auto &content = expr->comment;
             try {
@@ -235,11 +235,11 @@ void Cell::setExpression(App::ExpressionPtr &&expr, int type)
 }
 
 /**
-  * Get the expression tree.
-  *
-  */
+ * Get the expression tree.
+ *
+ */
 
-const App::Expression *Cell::getExpression(bool withFormat) const
+const App::Expression* Cell::getExpression(bool withFormat) const
 {
     if(withFormat && expression) {
         if(editMode || (used & (ALIGNMENT_SET
@@ -259,11 +259,11 @@ const App::Expression *Cell::getExpression(bool withFormat) const
 }
 
 /**
-  * Get string content.
-  *
-  */
+ * Get string content.
+ *
+ */
 
-bool Cell::getStringContent(std::string & s, bool persistent) const
+bool Cell::getStringContent(std::string& s, bool persistent) const
 {
     if (expression) {
         s.clear();
@@ -280,12 +280,15 @@ bool Cell::getStringContent(std::string & s, bool persistent) const
                 s.insert(s.begin(), '\'');
             }
         }
-        else if (SimpleStatement::cast<App::ConstantExpression>(expression.get()))
+        else if (SimpleStatement::cast<App::ConstantExpression>(expression.get())) {
             s = "=" + expression->toString();
-        else if (SimpleStatement::cast<App::NumberExpression>(expression.get()))
+        }
+        else if (SimpleStatement::cast<App::NumberExpression>(expression.get())) {
             s = expression->toString();
-        else
+        }
+        else {
             s = "=" + expression->toString(persistent);
+        }
 
         return true;
     }
@@ -295,10 +298,12 @@ bool Cell::getStringContent(std::string & s, bool persistent) const
     }
 }
 
-void Cell::afterRestore() {
+void Cell::afterRestore()
+{
     auto expr = SimpleStatement::cast<StringExpression>(expression.get());
-    if(expr)
+    if (expr) {
         setContent(expr->getText().c_str());
+    }
 }
 
 void Cell::setContent(const char * value, bool eval)
@@ -308,9 +313,10 @@ void Cell::setContent(const char * value, bool eval)
 
     clearException();
     if (value) {
-        if(owner->sheet()->isRestoring()) {
-            if (value[0] == '\0' || (value[0] == '\'' && value[1] == '\0'))
+        if (owner->sheet()->isRestoring()) {
+            if (value[0] == '\0' || (value[0] == '\'' && value[1] == '\0')) {
                 return;
+            }
             expression = StringExpression::create(owner->sheet(),value);
             setUsed(EXPRESSION_SET, true);
             return;
@@ -325,16 +331,20 @@ void Cell::setContent(const char * value, bool eval)
             }
         }
         else if (*value == '\'') {
-            if (value[1] == '\0')
+            if (value[1] == '\0') {
                 value = nullptr;
-            else
+            }
+            else {
                 newExpr = App::StringExpression::create(owner->sheet(), value + 1);
+            }
         }
-        else
+        else {
             newExpr = tryParseExpression(value);
+        }
 
-        if(!newExpr && *value != '\0')
+        if(!newExpr && *value != '\0') {
             newExpr = StringExpression::create(owner->sheet(), value);
+        }
     }
 
     try {
@@ -388,11 +398,11 @@ App::ExpressionPtr Cell::tryParseExpression(const char *value) const
 }
 
 /**
-  * Set alignment of this cell. Alignment is the or'ed value of
-  * vertical and horizontal alignment, given by the constants
-  * defined in the class.
-  *
-  */
+ * Set alignment of this cell. Alignment is the or'ed value of
+ * vertical and horizontal alignment, given by the constants
+ * defined in the class.
+ *
+ */
 
 void Cell::setAlignment(int _alignment)
 {
@@ -400,29 +410,32 @@ void Cell::setAlignment(int _alignment)
         PropertySheet::AtomicPropertyChange signaller(*owner);
 
         alignment = _alignment;
-        setUsed(ALIGNMENT_SET, alignment != (ALIGNMENT_HIMPLIED | ALIGNMENT_LEFT | ALIGNMENT_VIMPLIED | ALIGNMENT_VCENTER));
+        setUsed(
+            ALIGNMENT_SET,
+            alignment
+                != (ALIGNMENT_HIMPLIED | ALIGNMENT_LEFT | ALIGNMENT_VIMPLIED | ALIGNMENT_VCENTER));
         setDirty();
         signaller.tryInvoke();
     }
 }
 
 /**
-  * Get alignment.
-  *
-  */
+ * Get alignment.
+ *
+ */
 
-bool Cell::getAlignment(int & _alignment) const
+bool Cell::getAlignment(int& _alignment) const
 {
     _alignment = alignment;
     return isUsed(ALIGNMENT_SET);
 }
 
 /**
-  * Set style to the given set \a _style.
-  *
-  */
+ * Set style to the given set \a _style.
+ *
+ */
 
-void Cell::setStyle(const std::set<std::string> & _style)
+void Cell::setStyle(const std::set<std::string>& _style)
 {
     if (_style != style) {
         PropertySheet::AtomicPropertyChange signaller(*owner);
@@ -436,22 +449,22 @@ void Cell::setStyle(const std::set<std::string> & _style)
 }
 
 /**
-  * Get the style of the cell.
-  *
-  */
+ * Get the style of the cell.
+ *
+ */
 
-bool Cell::getStyle(std::set<std::string> & _style) const
+bool Cell::getStyle(std::set<std::string>& _style) const
 {
     _style = style;
     return isUsed(STYLE_SET);
 }
 
 /**
-  * Set foreground (i.e text) color of the cell to \a color.
-  *
-  */
+ * Set foreground (i.e text) color of the cell to \a color.
+ *
+ */
 
-void Cell::setForeground(const App::Color &color)
+void Cell::setForeground(const App::Color& color)
 {
     if (color != foregroundColor) {
         PropertySheet::AtomicPropertyChange signaller(*owner);
@@ -465,22 +478,22 @@ void Cell::setForeground(const App::Color &color)
 }
 
 /**
-  * Get foreground color of the cell.
-  *
-  */
+ * Get foreground color of the cell.
+ *
+ */
 
-bool Cell::getForeground(App::Color &color) const
+bool Cell::getForeground(App::Color& color) const
 {
     color = foregroundColor;
     return isUsed(FOREGROUND_COLOR_SET);
 }
 
 /**
-  * Set background color of the cell to \a color.
-  *
-  */
+ * Set background color of the cell to \a color.
+ *
+ */
 
-void Cell::setBackground(const App::Color &color)
+void Cell::setBackground(const App::Color& color)
 {
     if (color != backgroundColor) {
         PropertySheet::AtomicPropertyChange signaller(*owner);
@@ -494,31 +507,32 @@ void Cell::setBackground(const App::Color &color)
 }
 
 /**
-  * Get the background color of the cell into \a color.
-  *
-  * @returns true if the background color was previously set.
-  *
-  */
+ * Get the background color of the cell into \a color.
+ *
+ * @returns true if the background color was previously set.
+ *
+ */
 
-bool Cell::getBackground(App::Color &color) const
+bool Cell::getBackground(App::Color& color) const
 {
     color = backgroundColor;
     return isUsed(BACKGROUND_COLOR_SET);
 }
 
 /**
-  * Set the display unit for the cell.
-  *
-  */
+ * Set the display unit for the cell.
+ *
+ */
 
-void Cell::setDisplayUnit(const std::string &unit)
+void Cell::setDisplayUnit(const std::string& unit)
 {
     DisplayUnit newDisplayUnit;
     if (!unit.empty()) {
         auto e = Expression::parseUnit(owner->sheet(), unit.c_str());
 
-        if (!e)
+        if (!e) {
             throw Base::UnitsMismatchError("Invalid unit");
+        }
         UnitExpression *expr = static_cast<UnitExpression*>(e.get());
         newDisplayUnit = DisplayUnit(unit, expr->getUnit(), expr->getScaler());
     }
@@ -535,13 +549,13 @@ void Cell::setDisplayUnit(const std::string &unit)
 }
 
 /**
-  * Get the display unit for the cell into unit.
-  *
-  * @returns true if the display unit was previously set.
-  *
-  */
+ * Get the display unit for the cell into unit.
+ *
+ * @returns true if the display unit was previously set.
+ *
+ */
 
-bool Cell::getDisplayUnit(DisplayUnit &unit) const
+bool Cell::getDisplayUnit(DisplayUnit& unit) const
 {
     unit = displayUnit;
     return isUsed(DISPLAY_UNIT_SET);
@@ -631,7 +645,7 @@ void Cell::_setAlias(const std::string &n)
 
         if (!alias.empty()) {
             // The property may have been added in Sheet::updateAlias
-            auto * docObj = static_cast<App::DocumentObject*>(owner->getContainer());
+            auto* docObj = static_cast<App::DocumentObject*>(owner->getContainer());
             docObj->removeDynamicProperty(alias.c_str());
         }
 
@@ -644,18 +658,18 @@ void Cell::_setAlias(const std::string &n)
     }
 }
 
-bool Cell::getAlias(std::string &n) const
+bool Cell::getAlias(std::string& n) const
 {
     n = alias;
     return isUsed(ALIAS_SET);
 }
 
 /**
-  * Set the computed unit for the cell to \a unit.
-  *
-  */
+ * Set the computed unit for the cell to \a unit.
+ *
+ */
 
-void Cell::setComputedUnit(const Base::Unit &unit)
+void Cell::setComputedUnit(const Base::Unit& unit)
 {
     PropertySheet::AtomicPropertyChange signaller(*owner);
 
@@ -667,23 +681,23 @@ void Cell::setComputedUnit(const Base::Unit &unit)
 }
 
 /**
-  * Get the computed unit into \a unit.
-  *
-  * @returns true if the computed unit was previously set.
-  *
-  */
+ * Get the computed unit into \a unit.
+ *
+ * @returns true if the computed unit was previously set.
+ *
+ */
 
-bool Cell::getComputedUnit(Base::Unit & unit) const
+bool Cell::getComputedUnit(Base::Unit& unit) const
 {
     unit = computedUnit;
     return isUsed(COMPUTED_UNIT_SET);
 }
 
 /**
-  * Set the cell's row and column span to \a rows and \a columns. This
-  * is done when cells are merged.
-  *
-  */
+ * Set the cell's row and column span to \a rows and \a columns. This
+ * is done when cells are merged.
+ *
+ */
 
 void Cell::setSpans(int rows, int columns)
 {
@@ -692,50 +706,47 @@ void Cell::setSpans(int rows, int columns)
 
         rowSpan = (rows == -1 ? 1 : rows);
         colSpan = (columns == -1 ? 1 : columns);
-        setUsed(SPANS_SET, (rowSpan != 1 || colSpan != 1) );
+        setUsed(SPANS_SET, (rowSpan != 1 || colSpan != 1));
         setDirty();
         signaller.tryInvoke();
     }
 }
 
 /**
-  * Get the row and column spans for the cell into \a rows and \a columns.
-  *
-  */
+ * Get the row and column spans for the cell into \a rows and \a columns.
+ *
+ */
 
-bool Cell::getSpans(int &rows, int &columns) const
+bool Cell::getSpans(int& rows, int& columns) const
 {
     rows = rowSpan;
     columns = colSpan;
     return isUsed(SPANS_SET);
 }
 
-void Cell::setException(const std::string &e, bool silent)
+void Cell::setException(const std::string& e, bool silent)
 {
-    if(!silent && !e.empty() && owner && owner->sheet()) {
-        FC_ERR(owner->sheet()->getFullName() << '.'
-                << address.toString() << ": " << e);
+    if (!silent && !e.empty() && owner && owner->sheet()) {
+        FC_ERR(owner->sheet()->getFullName() << '.' << address.toString() << ": " << e);
     }
     exceptionStr = e;
     setUsed(EXCEPTION_SET);
     setDirty();
 }
 
-void Cell::setParseException(const std::string &e)
+void Cell::setParseException(const std::string& e)
 {
-    if(!e.empty() && owner && owner->sheet()) {
-        FC_ERR(owner->sheet()->getFullName() << '.'
-                << address.toString() << ": " << e);
+    if (!e.empty() && owner && owner->sheet()) {
+        FC_ERR(owner->sheet()->getFullName() << '.' << address.toString() << ": " << e);
     }
     exceptionStr = e;
     setUsed(PARSE_EXCEPTION_SET);
 }
 
-void Cell::setResolveException(const std::string &e)
+void Cell::setResolveException(const std::string& e)
 {
-    if(!e.empty() && owner && owner->sheet()) {
-        FC_LOG(owner->sheet()->getFullName() << '.'
-                << address.toString() << ": " << e);
+    if (!e.empty() && owner && owner->sheet()) {
+        FC_LOG(owner->sheet()->getFullName() << '.' << address.toString() << ": " << e);
     }
     exceptionStr = e;
     setUsed(RESOLVE_EXCEPTION_SET);
@@ -756,20 +767,22 @@ void Cell::clearException()
 
 void Cell::clearDirty()
 {
-    if(owner)
+    if (owner) {
         owner->clearDirty(address);
+    }
 }
 
 void Cell::setDirty()
 {
-    if(owner)
+    if (owner) {
         owner->setDirty(address);
+    }
 }
 
 /**
-  * Move the cell to a new position given by \a _row and \a _col.
-  *
-  */
+ * Move the cell to a new position given by \a _row and \a _col.
+ *
+ */
 
 void Cell::moveAbsolute(CellAddress newAddress)
 {
@@ -777,9 +790,9 @@ void Cell::moveAbsolute(CellAddress newAddress)
 }
 
 /**
-  * Restore cell contents from \a reader.
-  *
-  */
+ * Restore cell contents from \a reader.
+ *
+ */
 
 void Cell::restore(Base::XMLReader &reader, bool checkAlias, int restoreType)
 {
@@ -797,7 +810,7 @@ void Cell::restore(Base::XMLReader &reader, bool checkAlias, int restoreType)
         if(!reader.getAttributeAsInteger("cdata",""))
             content = "";
         else {
-            Base::InputStream s(reader.beginCharStream(false),false);
+            Base::InputStream s(reader.beginCharStream(),false);
             s >> _content;
             content = _content.c_str();
             reader.endCharStream();
@@ -809,15 +822,20 @@ void Cell::restore(Base::XMLReader &reader, bool checkAlias, int restoreType)
 void Cell::restoreFormat(Base::XMLReader &reader, bool checkAlias)
 {
     const char* style = reader.hasAttribute("style") ? reader.getAttribute("style") : nullptr;
-    const char* alignment = reader.hasAttribute("alignment") ? reader.getAttribute("alignment") : nullptr;
-    const char* foregroundColor = reader.hasAttribute("foregroundColor") ? reader.getAttribute("foregroundColor") : nullptr;
-    const char* backgroundColor = reader.hasAttribute("backgroundColor") ? reader.getAttribute("backgroundColor") : nullptr;
-    const char* displayUnit = reader.hasAttribute("displayUnit") ? reader.getAttribute("displayUnit") : nullptr;
+    const char* alignment =
+        reader.hasAttribute("alignment") ? reader.getAttribute("alignment") : nullptr;
+    const char* foregroundColor =
+        reader.hasAttribute("foregroundColor") ? reader.getAttribute("foregroundColor") : nullptr;
+    const char* backgroundColor =
+        reader.hasAttribute("backgroundColor") ? reader.getAttribute("backgroundColor") : nullptr;
+    const char* displayUnit =
+        reader.hasAttribute("displayUnit") ? reader.getAttribute("displayUnit") : nullptr;
     const char* alias = reader.hasAttribute("alias") ? reader.getAttribute("alias") : nullptr;
     const char* rowSpan = reader.hasAttribute("rowSpan") ? reader.getAttribute("rowSpan") : nullptr;
     const char* colSpan = reader.hasAttribute("colSpan") ? reader.getAttribute("colSpan") : nullptr;
 
-    // Don't trigger multiple updates below; wait until everything is loaded by calling unfreeze() below.
+    // Don't trigger multiple updates below; wait until everything is loaded by calling unfreeze()
+    // below.
     PropertySheet::AtomicPropertyChange signaller(*owner);
 
     if (style) {
@@ -826,10 +844,12 @@ void Cell::restoreFormat(Base::XMLReader &reader, bool checkAlias)
 
         escaped_list_separator<char> e('\0', '|', '\0');
         std::string line = std::string(style);
-        tokenizer<escaped_list_separator<char> > tok(line, e);
+        tokenizer<escaped_list_separator<char>> tok(line, e);
 
-        for(tokenizer<escaped_list_separator<char> >::iterator i = tok.begin(); i != tok.end();++i)
+        for (tokenizer<escaped_list_separator<char>>::iterator i = tok.begin(); i != tok.end();
+             ++i) {
             styleSet.insert(*i);
+        }
         setStyle(styleSet);
     }
     if (alignment) {
@@ -838,10 +858,12 @@ void Cell::restoreFormat(Base::XMLReader &reader, bool checkAlias)
 
         escaped_list_separator<char> e('\0', '|', '\0');
         std::string line = std::string(alignment);
-        tokenizer<escaped_list_separator<char> > tok(line, e);
+        tokenizer<escaped_list_separator<char>> tok(line, e);
 
-        for(tokenizer<escaped_list_separator<char> >::iterator i = tok.begin(); i != tok.end();++i)
+        for (tokenizer<escaped_list_separator<char>>::iterator i = tok.begin(); i != tok.end();
+             ++i) {
             alignmentCode = decodeAlignment(*i, alignmentCode);
+        }
 
         setAlignment(alignmentCode);
     }
@@ -855,8 +877,9 @@ void Cell::restoreFormat(Base::XMLReader &reader, bool checkAlias)
 
         setBackground(color);
     }
-    if (displayUnit)
+    if (displayUnit) {
         setDisplayUnit(displayUnit);
+    }
     if (alias) {
         if (!checkAlias)
             _setAlias(alias);
@@ -881,13 +904,14 @@ void Cell::restoreFormat(Base::XMLReader &reader, bool checkAlias)
 }
 
 /**
-  * Save cell contents into \a writer.
-  *
-  */
+ * Save cell contents into \a writer.
+ *
+ */
 
 void Cell::save(Base::Writer &writer) const {
-    if (!isUsed())
+    if (!isUsed()) {
         return;
+    }
 
     writer.Stream() << writer.ind();
 
@@ -904,7 +928,7 @@ void Cell::save(Base::Writer &writer) const {
     getStringContent(content,true);
     if(writer.getFileVersion()>1 && content.find('\n') < content.size()) {
         writer.Stream() << "\" cdata=\"1\">";
-        Base::OutputStream s(writer.beginCharStream(false) << '\n', false);
+        Base::OutputStream s(writer.beginCharStream() << '\n', false);
         s << content;
         writer.endCharStream() << "\n</Cell>\n";
     } else {
@@ -915,26 +939,32 @@ void Cell::save(Base::Writer &writer) const {
 void Cell::saveStyle(std::ostream &os, bool endTag) const {
     os << "<Cell ";
 
-    if (isUsed(ALIGNMENT_SET))
+    if (isUsed(ALIGNMENT_SET)) {
         os << "alignment=\"" << encodeAlignment(alignment) << "\" ";
+    }
 
-    if (isUsed(STYLE_SET))
+    if (isUsed(STYLE_SET)) {
         os << "style=\"" << encodeStyle(style) << "\" ";
+    }
 
-    if (isUsed(FOREGROUND_COLOR_SET))
+    if (isUsed(FOREGROUND_COLOR_SET)) {
         os << "foregroundColor=\"" << encodeColor(foregroundColor) << "\" ";
+    }
 
-    if (isUsed(BACKGROUND_COLOR_SET))
+    if (isUsed(BACKGROUND_COLOR_SET)) {
         os << "backgroundColor=\"" << encodeColor(backgroundColor) << "\" ";
+    }
 
-    if (isUsed(DISPLAY_UNIT_SET))
+    if (isUsed(DISPLAY_UNIT_SET)) {
         os << "displayUnit=\"" << App::Property::encodeAttribute(displayUnit.stringRep) << "\" ";
+    }
 
-    if (isUsed(ALIAS_SET))
+    if (isUsed(ALIAS_SET)) {
         os << "alias=\"" << App::Property::encodeAttribute(alias) << "\" ";
+    }
 
     if (isUsed(SPANS_SET)) {
-        os << "rowSpan=\"" << rowSpan<< "\" ";
+        os << "rowSpan=\"" << rowSpan << "\" ";
         os << "colSpan=\"" << colSpan << "\" ";
     }
 
@@ -950,22 +980,24 @@ void Cell::saveStyle(std::ostream &os, bool endTag) const {
 }
 
 /**
-  * Update the \a used member variable with mask (bitwise or'ed).
-  *
-  */
+ * Update the \a used member variable with mask (bitwise or'ed).
+ *
+ */
 
 void Cell::setUsed(int mask, bool state)
 {
-    if (state)
+    if (state) {
         used |= mask;
-    else
+    }
+    else {
         used &= ~mask;
+    }
 }
 
 /**
-  * Determine whether the bits in \a mask are set in the \a used member variable.
-  *
-  */
+ * Determine whether the bits in \a mask are set in the \a used member variable.
+ *
+ */
 
 bool Cell::isUsed(int mask) const
 {
@@ -973,128 +1005,148 @@ bool Cell::isUsed(int mask) const
 }
 
 /**
-  * Determine if the any of the contents of the cell is set a non-default value.
-  *
-  */
+ * Determine if the any of the contents of the cell is set a non-default value.
+ *
+ */
 
 bool Cell::isUsed() const
 {
     return used != 0;
 }
 
-void Cell::visit(App::ExpressionVisitor &v)
+void Cell::visit(App::ExpressionVisitor& v)
 {
-    if (expression)
+    if (expression) {
         expression->visit(v);
+    }
 }
 
 /**
-  * Decode alignment into its internal value.
-  *
-  * @param itemStr   Alignment as a string
-  * @param alignment Current alignment. This is or'ed with the one in \a itemStr.
-  *
-  * @returns New alignment.
-  *
-  */
+ * Decode alignment into its internal value.
+ *
+ * @param itemStr   Alignment as a string
+ * @param alignment Current alignment. This is or'ed with the one in \a itemStr.
+ *
+ * @returns New alignment.
+ *
+ */
 
-int Cell::decodeAlignment(const std::string & itemStr, int alignment)
+int Cell::decodeAlignment(const std::string& itemStr, int alignment)
 {
     if (itemStr == "himplied") {
-        if(!(alignment & ALIGNMENT_HORIZONTAL))
+        if (!(alignment & ALIGNMENT_HORIZONTAL)) {
             alignment |= ALIGNMENT_LEFT;
+        }
         alignment |= Cell::ALIGNMENT_HIMPLIED;
-    } else if (itemStr == "left")
+    }
+    else if (itemStr == "left") {
         alignment = (alignment & ~Cell::ALIGNMENT_HORIZONTAL) | Cell::ALIGNMENT_LEFT;
-    else if (itemStr == "center")
+    }
+    else if (itemStr == "center") {
         alignment = (alignment & ~Cell::ALIGNMENT_HORIZONTAL) | Cell::ALIGNMENT_HCENTER;
-    else if (itemStr == "right")
+    }
+    else if (itemStr == "right") {
         alignment = (alignment & ~Cell::ALIGNMENT_HORIZONTAL) | Cell::ALIGNMENT_RIGHT;
+    }
     else if (itemStr == "vimplied") {
-        if(!(alignment & ALIGNMENT_VERTICAL))
+        if (!(alignment & ALIGNMENT_VERTICAL)) {
             alignment |= ALIGNMENT_VCENTER;
+        }
         alignment |= Cell::ALIGNMENT_VIMPLIED;
-    } else if (itemStr == "top")
+    }
+    else if (itemStr == "top") {
         alignment = (alignment & ~Cell::ALIGNMENT_VERTICAL) | Cell::ALIGNMENT_TOP;
-    else if (itemStr == "vcenter")
+    }
+    else if (itemStr == "vcenter") {
         alignment = (alignment & ~Cell::ALIGNMENT_VERTICAL) | Cell::ALIGNMENT_VCENTER;
-    else if (itemStr == "bottom")
+    }
+    else if (itemStr == "bottom") {
         alignment = (alignment & ~Cell::ALIGNMENT_VERTICAL) | Cell::ALIGNMENT_BOTTOM;
-    else if(!itemStr.empty())
+    }
+    else if (!itemStr.empty()) {
         throw Base::ValueError("Invalid alignment.");
+    }
 
     return alignment;
 }
 
 /**
-  * Encode internal alignment value as a string.
-  *
-  * @param alignment Alignment as a binary value.
-  *
-  * @returns Alignment represented as a string.
-  *
-  */
+ * Encode internal alignment value as a string.
+ *
+ * @param alignment Alignment as a binary value.
+ *
+ * @returns Alignment represented as a string.
+ *
+ */
 
 std::string Cell::encodeAlignment(int alignment)
 {
     std::string s;
 
-    if (alignment & Cell::ALIGNMENT_LEFT)
+    if (alignment & Cell::ALIGNMENT_LEFT) {
         s += "left";
-    if (alignment & Cell::ALIGNMENT_HCENTER)
+    }
+    if (alignment & Cell::ALIGNMENT_HCENTER) {
         s += "center";
-    if (alignment & Cell::ALIGNMENT_RIGHT)
+    }
+    if (alignment & Cell::ALIGNMENT_RIGHT) {
         s += "right";
-    if (alignment & Cell::ALIGNMENT_HIMPLIED)
+    }
+    if (alignment & Cell::ALIGNMENT_HIMPLIED) {
         s += "|himplied";
+    }
 
-    if (alignment & Cell::ALIGNMENT_VERTICAL)
+    if (alignment & Cell::ALIGNMENT_VERTICAL) {
         s += "|";
+    }
 
-    if (alignment & Cell::ALIGNMENT_TOP)
+    if (alignment & Cell::ALIGNMENT_TOP) {
         s += "top";
-    if (alignment & Cell::ALIGNMENT_VCENTER)
+    }
+    if (alignment & Cell::ALIGNMENT_VCENTER) {
         s += "vcenter";
-    if (alignment & Cell::ALIGNMENT_BOTTOM)
+    }
+    if (alignment & Cell::ALIGNMENT_BOTTOM) {
         s += "bottom";
-    if (alignment & Cell::ALIGNMENT_VIMPLIED)
+    }
+    if (alignment & Cell::ALIGNMENT_VIMPLIED) {
         s += "|vimplied";
+    }
 
     return s;
 }
 
 /**
-  * Encode \a color as a \#rrggbbaa string.
-  *
-  * @param color Color to encode.
-  *
-  * @returns String with encoded color.
-  *
-  */
+ * Encode \a color as a \#rrggbbaa string.
+ *
+ * @param color Color to encode.
+ *
+ * @returns String with encoded color.
+ *
+ */
 
-std::string Cell::encodeColor(const App::Color & color)
+std::string Cell::encodeColor(const App::Color& color)
 {
     std::stringstream tmp;
 
-    tmp << "#"
-        << std::hex << std::setw(2) << std::setfill('0') << int(color.r * 255.0)
-        << std::hex << std::setw(2) << std::setfill('0') << int(color.g * 255.0)
-        << std::hex << std::setw(2) << std::setfill('0') << int(color.b * 255.0)
-        << std::hex << std::setw(2) << std::setfill('0') << int(color.a * 255.0);
+    tmp << "#" << std::hex << std::setw(2) << std::setfill('0') << int(color.r * 255.0) << std::hex
+        << std::setw(2) << std::setfill('0') << int(color.g * 255.0) << std::hex << std::setw(2)
+        << std::setfill('0') << int(color.b * 255.0) << std::hex << std::setw(2)
+        << std::setfill('0') << int(color.a * 255.0);
 
     return tmp.str();
 }
 
 /**
-  * Encode set of styles as a string.
-  *
-  * @param style Set of string describing the style.
-  *
-  * @returns Set encoded as a string.
-  *
-  */
+ * Encode set of styles as a string.
+ *
+ * @param style Set of string describing the style.
+ *
+ * @returns Set encoded as a string.
+ *
+ */
 
-std::string Cell::encodeStyle(const std::set<std::string> & style)
+std::string Cell::encodeStyle(const std::set<std::string>& style)
 {
     std::string s;
     std::set<std::string>::const_iterator j = style.begin();
@@ -1103,40 +1155,44 @@ std::string Cell::encodeStyle(const std::set<std::string> & style)
     while (j != j_end) {
         s += *j;
         ++j;
-        if (j != j_end)
+        if (j != j_end) {
             s += "|";
+        }
     }
 
     return s;
 }
 
 /**
-  * Decode a string of the format \#rrggbb or \#rrggbbaa into a Color.
-  *
-  * @param color        The color to decode.
-  * @param defaultColor A default color in case the decoding fails.
-  *
-  * @returns Decoded color.
-  *
-  */
+ * Decode a string of the format \#rrggbb or \#rrggbbaa into a Color.
+ *
+ * @param color        The color to decode.
+ * @param defaultColor A default color in case the decoding fails.
+ *
+ * @returns Decoded color.
+ *
+ */
 
-App::Color Cell::decodeColor(const std::string & color, const App::Color & defaultColor)
+App::Color Cell::decodeColor(const std::string& color, const App::Color& defaultColor)
 {
     if (color.size() == 7 || color.size() == 9) {
         App::Color c;
 
-        if (color[0] != '#')
+        if (color[0] != '#') {
             return defaultColor;
+        }
         unsigned int value = strtoul(color.c_str() + 1, nullptr, 16);
 
-        if (color.size() == 7)
+        if (color.size() == 7) {
             value = (value << 8) | 0xff;
+        }
 
         c.setPackedValue(value);
         return c;
     }
-    else
+    else {
         return defaultColor;
+    }
 }
 
 /*[[[cog
@@ -2026,8 +2082,8 @@ bool Cell::setPersistentEditMode(bool enable) {
     return true;
 }
 
-//roughly based on Spreadsheet/Gui/SheetModel.cpp
-std::string Cell::getFormattedQuantity(void)
+// roughly based on Spreadsheet/Gui/SheetModel.cpp
+std::string Cell::getFormattedQuantity()
 {
     std::string result;
     QString qFormatted;
@@ -2035,36 +2091,38 @@ std::string Cell::getFormattedQuantity(void)
     Property* prop = owner->sheet()->getPropertyByName(thisCell.toString().c_str());
 
     if (prop->isDerivedFrom(App::PropertyString::getClassTypeId())) {
-        const App::PropertyString * stringProp = static_cast<const App::PropertyString*>(prop);
+        const App::PropertyString* stringProp = static_cast<const App::PropertyString*>(prop);
         qFormatted = QString::fromUtf8(stringProp->getValue());
-
-    } else if (prop->isDerivedFrom(App::PropertyQuantity::getClassTypeId())) {
+    }
+    else if (prop->isDerivedFrom(App::PropertyQuantity::getClassTypeId())) {
         double rawVal = static_cast<App::PropertyQuantity*>(prop)->getValue();
-        const App::PropertyQuantity * floatProp = static_cast<const App::PropertyQuantity*>(prop);
+        const App::PropertyQuantity* floatProp = static_cast<const App::PropertyQuantity*>(prop);
         DisplayUnit du;
         bool hasDisplayUnit = getDisplayUnit(du);
         double duScale = du.scaler;
         const Base::Unit& computedUnit = floatProp->getUnit();
-        qFormatted = QLocale().toString(rawVal,'f',Base::UnitsApi::getDecimals());
+        qFormatted = QLocale().toString(rawVal, 'f', Base::UnitsApi::getDecimals());
         if (hasDisplayUnit) {
             if (computedUnit.isEmpty() || computedUnit == du.unit) {
                 QString number =
-                    QLocale().toString(rawVal / duScale,'f',Base::UnitsApi::getDecimals());
+                    QLocale().toString(rawVal / duScale, 'f', Base::UnitsApi::getDecimals());
                 qFormatted = number + Base::Tools::fromStdString(" " + displayUnit.stringRep);
             }
         }
-
-    } else if (prop->isDerivedFrom(App::PropertyFloat::getClassTypeId())){
+    }
+    else if (prop->isDerivedFrom(App::PropertyFloat::getClassTypeId())) {
         double rawVal = static_cast<const App::PropertyFloat*>(prop)->getValue();
         DisplayUnit du;
         bool hasDisplayUnit = getDisplayUnit(du);
         double duScale = du.scaler;
-        qFormatted = QLocale().toString(rawVal,'f',Base::UnitsApi::getDecimals());
+        qFormatted = QLocale().toString(rawVal, 'f', Base::UnitsApi::getDecimals());
         if (hasDisplayUnit) {
-            QString number = QLocale().toString(rawVal / duScale, 'f',Base::UnitsApi::getDecimals());
+            QString number =
+                QLocale().toString(rawVal / duScale, 'f', Base::UnitsApi::getDecimals());
             qFormatted = number + Base::Tools::fromStdString(" " + displayUnit.stringRep);
         }
-    } else if (prop->isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
+    }
+    else if (prop->isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
         double rawVal = static_cast<const App::PropertyInteger*>(prop)->getValue();
         DisplayUnit du;
         bool hasDisplayUnit = getDisplayUnit(du);
@@ -2072,7 +2130,8 @@ std::string Cell::getFormattedQuantity(void)
         int iRawVal = std::round(rawVal);
         qFormatted = QLocale().toString(iRawVal);
         if (hasDisplayUnit) {
-            QString number = QLocale().toString(rawVal / duScale, 'f',Base::UnitsApi::getDecimals());
+            QString number =
+                QLocale().toString(rawVal / duScale, 'f', Base::UnitsApi::getDecimals());
             qFormatted = number + Base::Tools::fromStdString(" " + displayUnit.stringRep);
         }
     }

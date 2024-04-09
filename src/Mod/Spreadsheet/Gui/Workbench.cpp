@@ -24,18 +24,18 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
-# include <qobject.h>
-# include <QToolBar>
+#include <QToolBar>
+#include <qobject.h>
 #endif
 
+#include "Mod/Spreadsheet/App/Sheet.h"
+#include "Mod/Spreadsheet/Gui/SpreadsheetView.h"
 #include <App/Range.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/MainWindow.h>
 #include <Gui/MenuManager.h>
 #include <Gui/ToolBarManager.h>
-#include "Mod/Spreadsheet/App/Sheet.h"
-#include "Mod/Spreadsheet/Gui/SpreadsheetView.h"
 
 #include "Workbench.h"
 #include "qtcolorpicker.h"
@@ -46,7 +46,7 @@ using namespace App;
 using namespace SpreadsheetGui;
 using namespace Spreadsheet;
 
-#if 0 // needed for Qt's lupdate utility
+#if 0  // needed for Qt's lupdate utility
     qApp->translate("Workbench", "Spreadsheet");
     qApp->translate("Workbench", "&Spreadsheet");
     qApp->translate("Workbench", "&Alignment");
@@ -60,12 +60,9 @@ Workbench::Workbench()
     : Gui::StdWorkbench()
     , initialized(false)
     , workbenchHelper(new WorkbenchHelper)
-{
-}
+{}
 
-Workbench::~Workbench()
-{
-}
+Workbench::~Workbench() = default;
 
 void Workbench::activated()
 {
@@ -120,16 +117,17 @@ void Workbench::onToolbarOrientationChange(QToolBar *bar)
     }
 }
 
-void WorkbenchHelper::setForegroundColor(const QColor & color)
+void WorkbenchHelper::setForegroundColor(const QColor& color)
 {
-    Gui::Document * doc = Gui::Application::Instance->activeDocument();
+    Gui::Document* doc = Gui::Application::Instance->activeDocument();
 
     if (doc) {
         Gui::MDIView* activeWindow = Gui::getMainWindow()->activeWindow();
-        SpreadsheetGui::SheetView * sheetView = freecad_dynamic_cast<SpreadsheetGui::SheetView>(activeWindow);
+        SpreadsheetGui::SheetView* sheetView =
+            freecad_dynamic_cast<SpreadsheetGui::SheetView>(activeWindow);
 
         if (sheetView) {
-            Sheet * sheet = sheetView->getSheet();
+            Sheet* sheet = sheetView->getSheet();
             std::vector<Range> ranges = sheetView->selectedRanges();
 
             // Execute mergeCells commands
@@ -137,9 +135,15 @@ void WorkbenchHelper::setForegroundColor(const QColor & color)
                 std::vector<Range>::const_iterator i = ranges.begin();
 
                 Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Set foreground color"));
-                for (; i != ranges.end(); ++i)
-                        Gui::Command::doCommand(Gui::Command::Doc,"App.ActiveDocument.%s.setForeground('%s', (%f,%f,%f))", sheet->getNameInDocument(),
-                                                i->rangeString().c_str(), color.redF(), color.greenF(), color.blueF());
+                for (; i != ranges.end(); ++i) {
+                    Gui::Command::doCommand(Gui::Command::Doc,
+                                            "App.ActiveDocument.%s.setForeground('%s', (%f,%f,%f))",
+                                            sheet->getNameInDocument(),
+                                            i->rangeString().c_str(),
+                                            color.redF(),
+                                            color.greenF(),
+                                            color.blueF());
+                }
                 Gui::Command::commitCommand();
                 Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
             }
@@ -147,16 +151,17 @@ void WorkbenchHelper::setForegroundColor(const QColor & color)
     }
 }
 
-void WorkbenchHelper::setBackgroundColor(const QColor & color)
+void WorkbenchHelper::setBackgroundColor(const QColor& color)
 {
-    Gui::Document * doc = Gui::Application::Instance->activeDocument();
+    Gui::Document* doc = Gui::Application::Instance->activeDocument();
 
     if (doc) {
         Gui::MDIView* activeWindow = Gui::getMainWindow()->activeWindow();
-        SpreadsheetGui::SheetView * sheetView = freecad_dynamic_cast<SpreadsheetGui::SheetView>(activeWindow);
+        SpreadsheetGui::SheetView* sheetView =
+            freecad_dynamic_cast<SpreadsheetGui::SheetView>(activeWindow);
 
         if (sheetView) {
-            Sheet * sheet = sheetView->getSheet();
+            Sheet* sheet = sheetView->getSheet();
             std::vector<Range> ranges = sheetView->selectedRanges();
 
             // Execute mergeCells commands
@@ -164,9 +169,15 @@ void WorkbenchHelper::setBackgroundColor(const QColor & color)
                 std::vector<Range>::const_iterator i = ranges.begin();
 
                 Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Set background color"));
-                for (; i != ranges.end(); ++i)
-                        Gui::Command::doCommand(Gui::Command::Doc,"App.ActiveDocument.%s.setBackground('%s', (%f,%f,%f))", sheet->getNameInDocument(),
-                                                i->rangeString().c_str(), color.redF(), color.greenF(), color.blueF());
+                for (; i != ranges.end(); ++i) {
+                    Gui::Command::doCommand(Gui::Command::Doc,
+                                            "App.ActiveDocument.%s.setBackground('%s', (%f,%f,%f))",
+                                            sheet->getNameInDocument(),
+                                            i->rangeString().c_str(),
+                                            color.redF(),
+                                            color.greenF(),
+                                            color.blueF());
+                }
                 Gui::Command::commitCommand();
                 Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
             }
@@ -174,7 +185,7 @@ void WorkbenchHelper::setBackgroundColor(const QColor & color)
     }
 }
 
-Gui::MenuItem *Workbench::setupMenuBar() const
+Gui::MenuItem* Workbench::setupMenuBar() const
 {
     Gui::MenuItem* root = StdWorkbench::setupMenuBar();
     Gui::MenuItem* item = root->findItem("&Windows");
@@ -185,35 +196,28 @@ Gui::MenuItem *Workbench::setupMenuBar() const
     // utilities
     Gui::MenuItem* alignments = new Gui::MenuItem;
     alignments->setCommand("&Alignment");
-    *alignments
-            << "Spreadsheet_AlignLeft"
-            << "Spreadsheet_AlignCenter"
-            << "Spreadsheet_AlignRight"
-            << "Spreadsheet_AlignTop"
-            << "Spreadsheet_AlignVCenter"
-            << "Spreadsheet_AlignBottom"
-               ;
+    *alignments << "Spreadsheet_AlignLeft"
+                << "Spreadsheet_AlignCenter"
+                << "Spreadsheet_AlignRight"
+                << "Spreadsheet_AlignTop"
+                << "Spreadsheet_AlignVCenter"
+                << "Spreadsheet_AlignBottom";
 
     Gui::MenuItem* styles = new Gui::MenuItem;
     styles->setCommand("&Styles");
-    *styles
-            << "Spreadsheet_StyleBold"
+    *styles << "Spreadsheet_StyleBold"
             << "Spreadsheet_StyleItalic"
-            << "Spreadsheet_StyleUnderline"
-               ;
+            << "Spreadsheet_StyleUnderline";
 
     spreadsheet->setCommand("&Spreadsheet");
     *spreadsheet << "Spreadsheet_CreateSheet"
-          << "Separator"
-          << "Spreadsheet_Import"
-          << "Spreadsheet_Export"
-          << "Separator"
-          << "Spreadsheet_MergeCells"
-          << "Spreadsheet_SplitCell"
-          << "Separator"
-          << alignments
-          << styles
-             ;
+                 << "Separator"
+                 << "Spreadsheet_Import"
+                 << "Spreadsheet_Export"
+                 << "Separator"
+                 << "Spreadsheet_MergeCells"
+                 << "Spreadsheet_SplitCell"
+                 << "Separator" << alignments << styles;
 
     return root;
 }
@@ -243,8 +247,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
           << "Spreadsheet_StyleUnderline"
           << "Separator"
           << "Spreadsheet_SetAlias"
-          << "Separator"
-             ;
+          << "Separator";
 
     return root;
 }

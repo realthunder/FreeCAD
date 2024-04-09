@@ -41,7 +41,8 @@
 #include <Mod/Part/Gui/ViewProviderAttachExtension.h>
 #include <Mod/Part/App/BodyBase.h>
 #include <Mod/Sketcher/App/GeoList.h>
-#include <memory>
+
+#include "PropertyVisualLayerList.h"
 
 #include "ShortcutListener.h"
 
@@ -71,13 +72,13 @@ class SbTime;
 struct EditData;
 
 namespace Gui {
-    class View3DInventorViewer;
+class View3DInventorViewer;
 }
 
 namespace Sketcher {
-    class Constraint;
-    class Sketch;
-    class SketchObject;
+class Constraint;
+class Sketch;
+class SketchObject;
 }
 
 namespace SketcherGui {
@@ -112,11 +113,38 @@ class SketcherGuiExport ViewProviderSketch : public PartGui::ViewProvider2DObjec
     PROPERTY_HEADER_WITH_OVERRIDE(SketcherGui::ViewProviderSketch);
 
 public:
+    /* API to retrieve information about the active DrawSketchHandler. In particular related to how
+     * tool widgets should be handled.
+     */
+    class ToolManager
+    {
+    public:
+        explicit ToolManager(ViewProviderSketch* vp);
+
+        /** @brief Factory function returning a tool widget of the type appropriate for the current
+         * active tool. If no tool is active, expect a nullptr.
+         */
+        std::unique_ptr<QWidget> createToolWidget() const;
+        /** @brief Returns whether the current tool's widget is intended to be visible for the user
+         */
+        bool isWidgetVisible() const;
+        /** @brief Returns the intended icon for a visible tool widget (e.g. for header/title).*/
+        QPixmap getToolIcon() const;
+        /** @brief Returns the intended text for a visible tool widget (e.g. for header/title).*/
+        QString getToolWidgetText() const;
+
+    private:
+        ViewProviderSketch* vp;
+    };
+
+public:
     /// constructor
     ViewProviderSketch();
     /// destructor
     virtual ~ViewProviderSketch();
 
+    /** @name Properties */
+    //@{
     App::PropertyBool Autoconstraints;
     App::PropertyBool AvoidRedundant;
     App::PropertyPythonObject TempoVis;
@@ -127,6 +155,10 @@ public:
     App::PropertyBool ForceOrtho;
     App::PropertyBool SectionView;
     App::PropertyString EditingWorkbench;
+    SketcherGui::PropertyVisualLayerList VisualLayerList;
+    //@}
+
+    const ToolManager toolManager;
 
     /// Draw all constraint icons
     /*! Except maybe the radius and lock ones? */
@@ -145,6 +177,7 @@ public:
     void drawEditMarkers(const std::vector<Base::Vector2d> &EditMarkers, unsigned int augmentationlevel = 0);
 
     void moveCursorToSketchPoint(Base::Vector2d point);
+    void ensureFocus();
 
     void preselectAtPoint(Base::Vector2d point);
 
@@ -176,30 +209,33 @@ public:
     /** @name modus handling */
     //@{
     /// mode table
-    enum SketchMode{
-        STATUS_NONE,              /**< enum value View provider is in neutral. */
-        STATUS_SELECT_Point,      /**< enum value a point was selected. */
-        STATUS_SELECT_Edge,       /**< enum value an edge was selected. */
-        STATUS_SELECT_Constraint, /**< enum value a constraint was selected. */
-        STATUS_SELECT_Cross,      /**< enum value the base coordinate system was selected. */
-        STATUS_SKETCH_DragPoint,  /**< enum value while dragging a point. */
-        STATUS_SKETCH_DragCurve,  /**< enum value while dragging a curve. */
+    enum SketchMode
+    {
+        STATUS_NONE,                   /**< enum value View provider is in neutral. */
+        STATUS_SELECT_Point,           /**< enum value a point was selected. */
+        STATUS_SELECT_Edge,            /**< enum value an edge was selected. */
+        STATUS_SELECT_Constraint,      /**< enum value a constraint was selected. */
+        STATUS_SELECT_Cross,           /**< enum value the base coordinate system was selected. */
+        STATUS_SKETCH_DragPoint,       /**< enum value while dragging a point. */
+        STATUS_SKETCH_DragCurve,       /**< enum value while dragging a curve. */
         STATUS_SKETCH_DragConstraint,  /**< enum value while dragging a compatible constraint. */
-        STATUS_SKETCH_UseHandler, /**< enum value a DrawSketchHandler is in control. */
+        STATUS_SKETCH_UseHandler,      /**< enum value a DrawSketchHandler is in control. */
         STATUS_SKETCH_StartRubberBand, /**< enum value for initiating a rubber band selection */
-        STATUS_SKETCH_UseRubberBand /**< enum value when making a rubber band selection *//**< enum value a DrawSketchHandler is in control. */
+        STATUS_SKETCH_UseRubberBand    /**< enum value when making a rubber band selection */
     };
     /// is called by GuiCommands to set the drawing mode
     void setSketchMode(SketchMode mode);
     /// get the sketch mode
-    SketchMode getSketchMode() const {return _Mode;}
+    SketchMode getSketchMode() const
+    {
+        return _Mode;
+    }
     //@}
 
     /** @name helper functions */
     //@{
     /// give the coordinates of a line on the sketch plane in sketcher (2D) coordinates
-    void getCoordsOnSketchPlane(double &u, double &v, const SbVec3f &point,
-                                const SbVec3f &normal);
+    void getCoordsOnSketchPlane(const SbVec3f& point, const SbVec3f& normal, double& u, double& v) const;
 
     /// give projecting line of position
     void getProjectingLine(const SbVec2s&,
@@ -262,21 +298,27 @@ public:
     void attach(App::DocumentObject *) override;
     void updateData(const App::Property *) override;
 
-    virtual void setupContextMenu(QMenu *menu, QObject *receiver, const char *member) override;
+    void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
     /// is called when the Provider is in edit and a deletion request occurs
-    virtual bool onDelete(const std::vector<std::string> &) override;
+    bool onDelete(const std::vector<std::string>&) override;
     /// Is called by the tree if the user double clicks on the object. It returns the string
     /// for the transaction that will be shown in the undo/redo dialog.
     /// If null is returned then no transaction will be opened.
-    virtual const char* getTransactionText() const override { return nullptr; }
+    const char* getTransactionText() const override
+    {
+        return nullptr;
+    }
     /// is called by the tree if the user double clicks on the object
-    virtual bool doubleClicked() override;
+    bool doubleClicked() override;
     /// is called when the Provider is in edit and the mouse is moved
-    virtual bool mouseMove(const SbVec2s &pos, Gui::View3DInventorViewer *viewer) override;
+    bool mouseMove(const SbVec2s& pos, Gui::View3DInventorViewer* viewer) override;
     /// is called when the Provider is in edit and a key event ocours. Only ESC ends edit.
-    virtual bool keyPressed(bool pressed, int key) override;
+    bool keyPressed(bool pressed, int key) override;
     /// is called when the Provider is in edit and the mouse is clicked
-    virtual bool mouseButtonPressed(int Button, bool pressed, const SbVec2s& cursorPos, const Gui::View3DInventorViewer* viewer) override;
+    bool mouseButtonPressed(int Button,
+                            bool pressed,
+                            const SbVec2s& cursorPos,
+                            const Gui::View3DInventorViewer* viewer) override;
     //@}
 
     void deleteSelected();
@@ -289,10 +331,26 @@ public:
     friend class DrawSketchHandler;
     friend struct ::EditData;
 
+    /** @name Signals for controlling information in Task dialogs */
+    //@{
     /// signals if the constraints list has changed
-    boost::signals2::signal<void ()> signalConstraintsChanged;
+    boost::signals2::signal<void()> signalConstraintsChanged;
     /// signals if the sketch has been set up
-    boost::signals2::signal<void (const QString &state, const QString &msg, const QString &url, const QString &linkText)> signalSetUp;
+    boost::signals2::signal<
+        void(const QString& state, const QString& msg, const QString& url, const QString& linkText)>
+        signalSetUp;
+    /// signals if the elements list has changed
+    boost::signals2::signal<void()> signalElementsChanged;
+    //@}
+
+    /** @name Register slot for signal */
+    //@{
+    template<typename F>
+    boost::signals2::connection registerToolChanged(F&& f)
+    {
+        return signalToolChanged.connect(std::forward<F>(f));
+    }
+    //@}
         
     virtual std::vector<App::DocumentObject*> claimChildren() const;
     void selectElement(const char *element, bool preselect=false) const;
@@ -325,20 +383,27 @@ public:
 protected:
     Base::Matrix4D getEditingPlacement() const;
 
-    virtual bool setEdit(int ModNum) override;
-    virtual void unsetEdit(int ModNum) override;
-    virtual void setEditViewer(Gui::View3DInventorViewer*, int ModNum) override;
-    virtual void unsetEditViewer(Gui::View3DInventorViewer*) override;
-    void deactivateHandler();
+    /** @name enter/exit edit mode */
+    //@{
+    bool setEdit(int ModNum) override;
+    void unsetEdit(int ModNum) override;
+    void setEditViewer(Gui::View3DInventorViewer*, int ModNum) override;
+    void unsetEditViewer(Gui::View3DInventorViewer*) override;
+    //@}
+
     /// update solver information based on last solving at SketchObject
     void UpdateSolverInformation();
     /// helper to detect whether the picked point lies on the sketch
     bool isPointOnSketch(const SoPickedPoint *pp) const;
-    /// get called by the container whenever a property has been changed
-    virtual void onChanged(const App::Property *prop) override;
 
+    /** @name miscelanea editing functions */
+    //@{
+    /// purges the DrawHandler if existing and tidies up
+    void deactivateHandler();
     /// get called if a subelement is double clicked while editing
     void editDoubleClicked();
+    //@}
+
 
     /// set up the edition data structure EditData
     void createEditInventorNodes();
@@ -347,9 +412,17 @@ protected:
     /// build up the visual of the constraints
     void rebuildConstraintsVisual();
 
+    /** @name manage updates during undo/redo operations */
+    //@{
     void slotUndoDocument(const Gui::Document&);
     void slotRedoDocument(const Gui::Document&);
     void slotSolverUpdate();
+
+    /** @name base class implementer */
+    //@{
+    /// get called by the container whenever a property has been changed
+    void onChanged(const App::Property* prop) override;
+    //@}
 
 protected:
     boost::signals2::connection connectUndoDocument;
@@ -372,6 +445,14 @@ protected:
     /// Return display string for constraint including hiding units if
     //requested.
     QString getPresentationString(const Sketcher::Constraint *constraint);
+
+    /** @name signals*/
+    //@{
+    /// signals a tool change
+    boost::signals2::signal<void(const std::string& toolname)> signalToolChanged;
+    //@}
+
+    void slotToolWidgetChanged(QWidget* newwidget);
 
     /** @name Protected helpers for drawing constraint icons*/
     //@{
@@ -545,6 +626,9 @@ protected:
     ShortcutListener* listener;
 
     std::unique_ptr<SnapManager> snapManager;
+
+    using Connection = boost::signals2::connection;
+    Connection connectionToolWidget;
 };
 
 // ---------------------------------------------------------
@@ -557,8 +641,8 @@ public:
     typedef PartGui::ViewProvider2DObject inherited;
 
     ViewProviderSketchExport();
-    virtual bool doubleClicked();
-    virtual void updateData(const App::Property *prop);
+    bool doubleClicked() override;
+    void updateData(const App::Property *prop) override;
 };
 
 } // namespace PartGui

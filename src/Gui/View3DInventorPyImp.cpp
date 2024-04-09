@@ -498,9 +498,8 @@ PyObject* View3DInventorPy::getCameraOrientation(PyObject *args)
 PyObject* View3DInventorPy::viewPosition(PyObject *args)
 {
     PyObject* p=0;
-    int steps = 20;
     int ms = 30;
-    if (!PyArg_ParseTuple(args, "|O!ii",&Base::PlacementPy::Type,&p,&steps,&ms))
+    if (!PyArg_ParseTuple(args, "|O!i",&Base::PlacementPy::Type,&p,&ms))
         return nullptr;
 
     try {
@@ -512,7 +511,7 @@ PyObject* View3DInventorPy::viewPosition(PyObject *args)
             rot.getValue(q0,q1,q2,q3);
             getView3DInventorPtr()->getViewer()->moveCameraTo(
                 SbRotation((float)q0, (float)q1, (float)q2, (float)q3),
-                SbVec3f((float)pos.x, (float)pos.y, (float)pos.z), steps, ms);
+                SbVec3f((float)pos.x, (float)pos.y, (float)pos.z), ms);
         }
 
         SoCamera* cam = getView3DInventorPtr()->getViewer()->getSoRenderManager()->getCamera();
@@ -536,7 +535,7 @@ PyObject* View3DInventorPy::startAnimating(PyObject *args)
     if (!PyArg_ParseTuple(args, "ffff", &x,&y,&z,&velocity))
         return nullptr;
     try {
-        getView3DInventorPtr()->getViewer()->startAnimating(SbVec3f(x,y,z),velocity);
+        getView3DInventorPtr()->getViewer()->startSpinningAnimation(SbVec3f(x,y,z),velocity);
     } PY_CATCH
     Py_Return;
 }

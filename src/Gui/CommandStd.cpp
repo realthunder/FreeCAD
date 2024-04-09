@@ -108,7 +108,7 @@ void StdCmdWorkbench::activated(int i)
         QString msg(QString::fromUtf8(e.what()));
         // ignore '<type 'exceptions.*Error'>' prefixes
         QRegularExpression rx;
-        rx.setPattern(QStringLiteral("^\\s*<type 'exceptions.\\w*'>:\\s*"));
+        rx.setPattern(QStringLiteral(R"(^\s*<type 'exceptions.\w*'>:\s*)"));
         auto match = rx.match(msg);
         if (match.hasMatch())
             msg = msg.mid(match.capturedLength());
@@ -154,7 +154,7 @@ StdCmdRecentFiles::StdCmdRecentFiles()
   :Command("Std_RecentFiles")
 {
     sGroup        = "File";
-    sMenuText     = QT_TR_NOOP("Recent files");
+    sMenuText     = QT_TR_NOOP("Open Recent");
     sToolTipText  = QT_TR_NOOP("Recent file list");
     sWhatsThis    = "Std_RecentFiles";
     sStatusTip    = QT_TR_NOOP("Recent file list");
@@ -1042,7 +1042,7 @@ class StdCmdUserEditMode : public Gui::Command
 {
 public:
     StdCmdUserEditMode();
-    ~StdCmdUserEditMode() override{}
+    ~StdCmdUserEditMode() override = default;
     void languageChange() override;
     const char* className() const override {return "StdCmdUserEditMode";}
     void updateIcon(int mode);
@@ -1063,7 +1063,9 @@ StdCmdUserEditMode::StdCmdUserEditMode()
     sPixmap       = "Std_UserEditModeDefault";
     eType         = ForEdit;
 
-    this->getGuiApplication()->signalUserEditModeChanged.connect(std::bind(&StdCmdUserEditMode::updateIcon, this, sp::_1));
+    this->getGuiApplication()->signalUserEditModeChanged.connect([this](int mode) {
+        this->updateIcon(mode);
+    });
 }
 
 Gui::Action * StdCmdUserEditMode::createAction()

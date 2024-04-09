@@ -7,7 +7,7 @@
 
 # Maintainers:  keep this list of plugins up to date
 # List plugins in %%{_libdir}/%{name}/lib, less '.so' and 'Gui.so', here
-%global plugins Fem FreeCAD PathApp Import Inspection Mesh MeshPart Part Points ReverseEngineering Robot Sketcher Start Web PartDesignGui _PartDesign Path PathGui Spreadsheet SpreadsheetGui area DraftUtils DraftUtils libDriver libDriverDAT libDriverSTL libDriverUNV libE57Format libMEFISTO2 libSMDS libSMESH libSMESHDS libStdMeshers Measure TechDraw TechDrawGui libarea-native Surface SurfaceGui PathSimulator
+%global plugins Fem FreeCAD PathApp Import Inspection Mesh MeshPart Part Points ReverseEngineering Robot Sketcher Start Web PartDesignGui _PartDesign Path PathGui Spreadsheet SpreadsheetGui area DraftUtils DraftUtils libDriver libDriverDAT libDriverSTL libDriverUNV libE57Format libMEFISTO2 libSMDS libSMESH libSMESHDS libStdMeshers Measure TechDraw TechDrawGui libarea-native Surface SurfaceGui AssemblyGui flatmesh QtUnitGui PathSimulator MatGui Material
 
 
 # Some configuration options for other environments
@@ -22,24 +22,24 @@
 # Prevent RPM from doing its magical 'build' directory for now
 %global __cmake_in_source_build 0
 
-# See FreeCAD-master/src/3rdParty/salomesmesh/CMakeLists.txt to find this out.
+# See FreeCAD-main/src/3rdParty/salomesmesh/CMakeLists.txt to find this out.
 %global bundled_smesh_version 7.7.1.0
 
 # Some plugins go in the Mod folder instead of lib. Deal with those here:
 %global mod_plugins Mod/PartDesign
 %define name freecad
 %define github_name FreeCAD
-%define branch master
+%define branch main
 
 Name:           %{name}
 Epoch:          1
-Version:        0.21
+Version:        0.22
 Release:        pre_{{{git_commit_no}}}%{?dist}
 Summary:        A general purpose 3D CAD modeler
 Group:          Applications/Engineering
 
 License:        LGPLv2+
-URL:            http://www.freecad.org/
+URL:            https://www.freecad.org/
 Source0:        https://github.com/%{github_name}/FreeCAD/archive/%{branch}.tar.gz
 
 
@@ -105,6 +105,7 @@ BuildRequires:  libkdtree++-devel
 BuildRequires:  pcl-devel
 BuildRequires:  python3
 BuildRequires:  libglvnd-devel
+BuildRequires:  yaml-cpp-devel
 #BuildRequires:  zlib-devel
 
 # For appdata
@@ -180,6 +181,9 @@ rm -rf src/zipios++
 #    src/Base/Reader.cpp src/Base/Writer.h
 %endif
 
+# Fix encodings
+dos2unix -k src/Mod/Test/unittestgui.py
+
 # Removed bundled libraries
 
 
@@ -230,14 +234,15 @@ LDFLAGS='-Wl,--as-needed -Wl,--no-undefined'; export LDFLAGS
        -DPYCXX_SOURCE_DIR=$(pkg-config --variable=srcdir PyCXX) \
 %endif
        -DPACKAGE_WCREF="%{release} (Git)" \
-       -DPACKAGE_WCURL="git://github.com/%{github_name}/FreeCAD.git master" \
-       -DBUILD_TEST=FALSE \
+       -DPACKAGE_WCURL="git://github.com/%{github_name}/FreeCAD.git main" \
+       -DENABLE_DEVELOPER_TESTS=FALSE \
+	   -DBUILD_GUI=TRUE \
        ../
 
 make fc_version
 for I in src/Build/Version.h src/Build/Version.h.out; do
 	sed -i 's,FCRevision      \"Unknown\",FCRevision      \"%{release} (Git)\",' $I
-	sed -i 's,FCRepositoryURL \"Unknown\",FCRepositoryURL \"git://github.com/FreeCAD/FreeCAD.git master\",' $I
+	sed -i 's,FCRepositoryURL \"Unknown\",FCRepositoryURL \"git://github.com/FreeCAD/FreeCAD.git main\",' $I
 done
 
 %{make_build}
@@ -256,6 +261,7 @@ mv %{buildroot}%{_libdir}/%{name}/share/metainfo/* %{buildroot}%{_metainfodir}/
 
 mkdir %{buildroot}%{_datadir}/applications/
 mv %{buildroot}%{_libdir}/%{name}/share/applications/* %{buildroot}%{_datadir}/applications/
+
 
 mkdir -p %{buildroot}%{_datadir}/thumbnailers/
 mv %{buildroot}%{_libdir}/%{name}/share/thumbnailers/* %{buildroot}%{_datadir}/thumbnailers/
@@ -314,9 +320,9 @@ done
 
 %check
 desktop-file-validate \
-    %{buildroot}%{_datadir}/applications/org.freecadweb.FreeCAD.desktop
+    %{buildroot}%{_datadir}/applications/org.freecad.FreeCAD.desktop
 %{?fedora:appstream-util validate-relax --nonet \
-    %{buildroot}%{_metainfodir}/*.appdata.xml}
+    %{buildroot}%{_metainfodir}/*.metainfo.xml}
 
 
 %post

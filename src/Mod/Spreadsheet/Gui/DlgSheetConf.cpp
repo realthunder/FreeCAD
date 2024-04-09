@@ -39,32 +39,35 @@ using namespace App;
 using namespace Spreadsheet;
 using namespace SpreadsheetGui;
 
-DlgSheetConf::DlgSheetConf(Sheet *sheet, Range range, QWidget *parent)
-    : QDialog(parent), sheet(sheet), ui(new Ui::DlgSheetConf)
+DlgSheetConf::DlgSheetConf(Sheet* sheet, Range range, QWidget* parent)
+    : QDialog(parent)
+    , sheet(sheet)
+    , ui(new Ui::DlgSheetConf)
 {
     ui->setupUi(this);
 
-    if(range.colCount()==1) {
+    if (range.colCount() == 1) {
         auto to = range.to();
-        to.setCol(CellAddress::MAX_COLUMNS-1);
-        range = Range(range.from(),to);
+        to.setCol(CellAddress::MAX_COLUMNS - 1);
+        range = Range(range.from(), to);
     }
 
     ui->lineEditStart->setText(QString::fromUtf8(range.from().toString().c_str()));
     ui->lineEditEnd->setText(QString::fromUtf8(range.to().toString().c_str()));
 
-    ui->lineEditProp->setDocumentObject(sheet,false);
+    ui->lineEditProp->setDocumentObject(sheet, false);
 
     connect(ui->btnDiscard, &QPushButton::clicked, this, &DlgSheetConf::onDiscard);
 
-    CellAddress from,to;
+    CellAddress from, to;
     std::string rangeConf;
     ObjectIdentifier path;
-    auto prop = prepare(from,to,rangeConf,path,true);
-    if(prop) {
+    auto prop = prepare(from, to, rangeConf, path, true);
+    if (prop) {
         ui->lineEditProp->setText(QString::fromUtf8(path.toString().c_str()));
-        if (auto group = prop->getGroup())
+        if (auto group = prop->getGroup()) {
             ui->lineEditGroup->setText(QString::fromUtf8(group));
+        }
     }
 
     ui->lineEditStart->setText(QString::fromUtf8(from.toString().c_str()));
@@ -76,21 +79,23 @@ DlgSheetConf::~DlgSheetConf()
     delete ui;
 }
 
-App::Property *DlgSheetConf::prepare(CellAddress &from, CellAddress &to,
-    std::string &rangeConf, ObjectIdentifier &path, bool init)
+App::Property* DlgSheetConf::prepare(CellAddress& from,
+                                     CellAddress& to,
+                                     std::string& rangeConf,
+                                     ObjectIdentifier& path,
+                                     bool init)
 {
-    from = sheet->getCellAddress(
-            ui->lineEditStart->text().trimmed().toUtf8().constData());
-    to = sheet->getCellAddress(
-            ui->lineEditEnd->text().trimmed().toUtf8().constData());
+    from = sheet->getCellAddress(ui->lineEditStart->text().trimmed().toUtf8().constData());
+    to = sheet->getCellAddress(ui->lineEditEnd->text().trimmed().toUtf8().constData());
 
-    if(from.col()>=to.col())
+    if (from.col() >= to.col()) {
         FC_THROWM(Base::RuntimeError, "Invalid cell range");
+    }
 
     // Setup row as parameters, and column as configurations
     to.setRow(from.row());
 
-    CellAddress confFrom(from.row()+1,from.col());
+    CellAddress confFrom(from.row() + 1, from.col());
     rangeConf = confFrom.toString();
     // rangeConf is supposed to hold the range of string cells, each
     // holding the name of a configuration. The '|' below indicates a
@@ -100,28 +105,33 @@ App::Property *DlgSheetConf::prepare(CellAddress &from, CellAddress &to,
     // configuration.
     rangeConf += ":|";
 
-    if(!init) {
+    if (!init) {
         std::string exprTxt(ui->lineEditProp->text().trimmed().toUtf8().constData());
         ExpressionPtr expr;
         try {
             expr = App::Expression::parse(sheet,exprTxt);
-        } catch (Base::Exception &e) {
+        }
+        catch (Base::Exception& e) {
             e.ReportException();
             FC_THROWM(Base::RuntimeError, "Failed to parse expression for property");
         }
-        if(expr->hasComponent() || !expr->isDerivedFrom(App::VariableExpression::getClassTypeId()))
+        if (expr->hasComponent()
+            || !expr->isDerivedFrom(App::VariableExpression::getClassTypeId())) {
             FC_THROWM(Base::RuntimeError, "Invalid property expression: " << expr->toString());
+        }
 
         path = static_cast<App::VariableExpression*>(expr.get())->getPath();
         auto obj = path.getDocumentObject();
-        if(!obj)
+        if (!obj) {
             FC_THROWM(Base::RuntimeError, "Invalid object referenced in: " << expr->toString());
+        }
 
         int pseudoType;
         auto prop = path.getProperty(&pseudoType);
-        if(pseudoType || (prop && (!prop->isDerivedFrom(App::PropertyEnumeration::getClassTypeId())
-                                    || !prop->testStatus(App::Property::PropDynamic))))
-        {
+        if (pseudoType
+            || (prop
+                && (!prop->isDerivedFrom(App::PropertyEnumeration::getClassTypeId())
+                    || !prop->testStatus(App::Property::PropDynamic)))) {
             FC_THROWM(Base::RuntimeError, "Invalid property referenced in: " << expr->toString());
         }
         return prop;
@@ -160,133 +170,167 @@ void DlgSheetConf::accept()
     bool commandActive = false;
     try {
         std::string rangeConf;
-        CellAddress from,to;
+        CellAddress from, to;
         ObjectIdentifier path;
-        App::Property *prop = prepare(from,to,rangeConf,path,false);
+        App::Property* prop = prepare(from, to, rangeConf, path, false);
 
-        Range range(from,to);
+        Range range(from, to);
 
         // check rangeConf, make sure it is a sequence of string only
         Range r(sheet->getRange(rangeConf.c_str()));
         do {
             auto cell = sheet->getCell(*r);
-            if(cell && cell->getExpression()) {
+            if (cell && cell->getExpression()) {
                 ExpressionPtr expr(cell->getExpression()->eval());
-                if(expr->isDerivedFrom(StringExpression::getClassTypeId()))
+                if (expr->isDerivedFrom(StringExpression::getClassTypeId())) {
                     continue;
+                }
             }
-            FC_THROWM(Base::RuntimeError, "Expects cell "
-                    << r.address() << " evaluates to string.\n"
-                    << rangeConf << " is supposed to contain a list of configuration names");
-        } while(r.next());
+            FC_THROWM(Base::RuntimeError,
+                      "Expects cell " << r.address() << " evaluates to string.\n"
+                                      << rangeConf
+                                      << " is supposed to contain a list of configuration names");
+        } while (r.next());
 
         std::string exprTxt(ui->lineEditProp->text().trimmed().toUtf8().constData());
-        App::ExpressionPtr expr(App::Expression::parse(sheet,exprTxt));
-        if(expr->hasComponent() || !expr->isDerivedFrom(App::VariableExpression::getClassTypeId()))
+        App::ExpressionPtr expr(App::Expression::parse(sheet, exprTxt));
+        if (expr->hasComponent()
+            || !expr->isDerivedFrom(App::VariableExpression::getClassTypeId())) {
             FC_THROWM(Base::RuntimeError, "Invalid property expression: " << expr->toString());
+        }
 
         AutoTransaction guard("Setup conf table");
         commandActive = true;
 
         // unbind any previous binding
         int count = range.rowCount() * range.colCount();
-        for (int i=0; i<count; ++i) {
+        for (int i = 0; i < count; ++i) {
             auto r = range;
             auto binding = sheet->getCellBinding(r);
-            if(!binding)
+            if (!binding) {
                 break;
-            Gui::cmdAppObjectArgs(sheet, "setExpression('.cells.%s.%s.%s', None)",
-                    binding==PropertySheet::BindingNormal?"Bind":"BindHiddenRef",
-                    r.from().toString(), r.to().toString());
+            }
+            Gui::cmdAppObjectArgs(sheet,
+                                  "setExpression('.cells.%s.%s.%s', None)",
+                                  binding == PropertySheet::BindingNormal ? "Bind"
+                                                                          : "BindHiddenRef",
+                                  r.from().toString(),
+                                  r.to().toString());
         }
 
         auto obj = path.getDocumentObject();
-        if(!obj)
+        if (!obj) {
             FC_THROWM(Base::RuntimeError, "Object not found");
+        }
 
         // Add a dynamic PropertyEnumeration for user to switch the configuration
         std::string propName = path.getPropertyName();
         QString groupName = ui->lineEditGroup->text().trimmed();
-        if(!prop) {
-            prop = obj->addDynamicProperty("App::PropertyEnumeration", propName.c_str(),
-                                groupName.toUtf8().constData());
-        } else if (groupName.size())
+        if (!prop) {
+            prop = obj->addDynamicProperty("App::PropertyEnumeration",
+                                           propName.c_str(),
+                                           groupName.toUtf8().constData());
+        }
+        else if (groupName.size()) {
             obj->changeDynamicProperty(prop, groupName.toUtf8().constData(), nullptr);
-        prop->setStatus(App::Property::CopyOnChange,true);
+        }
+        prop->setStatus(App::Property::CopyOnChange, true);
 
         // Bind the enumeration items to the column of configuration names
-        Gui::cmdAppObjectArgs(obj, "setExpression('%s.Enum', '%s.cells[<<%s>>]')",
-                propName, sheet->getFullName(), rangeConf);
+        Gui::cmdAppObjectArgs(obj,
+                              "setExpression('%s.Enum', '%s.cells[<<%s>>]')",
+                              propName,
+                              sheet->getFullName(),
+                              rangeConf);
 
         Gui::cmdAppObjectArgs(obj, "recompute()");
 
         // Adjust the range to skip the first cell
-        range = Range(from.row(),from.col()+1,to.row(),to.col());
+        range = Range(from.row(), from.col() + 1, to.row(), to.col());
 
         // Formulate expression to calculate the row binding using
         // PropertyEnumeration
-        Gui::cmdAppObjectArgs(sheet, "setExpression('.cells.Bind.%s.%s', "
+        Gui::cmdAppObjectArgs(
+            sheet,
+            "setExpression('.cells.Bind.%s.%s', "
             "'tuple(.cells, <<%s>> + str(hiddenref(%s)+%d), <<%s>> + str(hiddenref(%s)+%d))')",
             range.from().toString(CellAddress::Cell::ShowRowColumn),
             range.to().toString(CellAddress::Cell::ShowRowColumn),
-            range.from().toString(CellAddress::Cell::ShowColumn), prop->getFullName(), from.row()+2,
-            range.to().toString(CellAddress::Cell::ShowColumn), prop->getFullName(), from.row()+2);
+            range.from().toString(CellAddress::Cell::ShowColumn),
+            prop->getFullName(),
+            from.row() + 2,
+            range.to().toString(CellAddress::Cell::ShowColumn),
+            prop->getFullName(),
+            from.row() + 2);
 
         Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
         Gui::Command::commitCommand();
         QDialog::accept();
-    } catch(Base::Exception &e) {
+    }
+    catch (Base::Exception& e) {
         e.ReportException();
         QMessageBox::critical(this, tr("Setup configuration table"), QString::fromUtf8(e.what()));
-        if(commandActive)
+        if (commandActive) {
             Gui::Command::abortCommand();
+        }
     }
 }
 
-void DlgSheetConf::onDiscard() {
+void DlgSheetConf::onDiscard()
+{
     bool commandActive = false;
     try {
         std::string rangeConf;
-        CellAddress from,to;
+        CellAddress from, to;
         ObjectIdentifier path;
-        auto prop = prepare(from,to,rangeConf,path,true);
+        auto prop = prepare(from, to, rangeConf, path, true);
 
-        Range range(from,to);
+        Range range(from, to);
 
         AutoTransaction guard("Unsetup conf table");
         commandActive = true;
 
         // unbind any previous binding
         int count = range.rowCount() * range.colCount();
-        for (int i=0; i<count; ++i) {
+        for (int i = 0; i < count; ++i) {
             auto r = range;
             auto binding = sheet->getCellBinding(r);
-            if(!binding)
+            if (!binding) {
                 break;
-            Gui::cmdAppObjectArgs(sheet, "setExpression('.cells.%s.%s.%s', None)",
-                    binding==PropertySheet::BindingNormal?"Bind":"BindHiddenRef",
-                    r.from().toString(), r.to().toString());
+            }
+            Gui::cmdAppObjectArgs(sheet,
+                                  "setExpression('.cells.%s.%s.%s', None)",
+                                  binding == PropertySheet::BindingNormal ? "Bind"
+                                                                          : "BindHiddenRef",
+                                  r.from().toString(),
+                                  r.to().toString());
         }
 
-        Gui::cmdAppObjectArgs(sheet, "clear('%s')", from.toString(CellAddress::Cell::ShowRowColumn));
+        Gui::cmdAppObjectArgs(sheet,
+                              "clear('%s')",
+                              from.toString(CellAddress::Cell::ShowRowColumn));
 
-        if(prop && prop->hasName()) {
+        if (prop && prop->hasName()) {
             auto obj = path.getDocumentObject();
-            if(!obj)
+            if (!obj) {
                 FC_THROWM(Base::RuntimeError, "Object not found");
+            }
             Gui::cmdAppObjectArgs(obj, "setExpression('%s.Enum', None)", prop->getName());
-            if(prop->testStatus(Property::PropDynamic))
+            if (prop->testStatus(Property::PropDynamic)) {
                 Gui::cmdAppObjectArgs(obj, "removeProperty('%s')", prop->getName());
+            }
         }
 
         Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
         Gui::Command::commitCommand();
         QDialog::accept();
-    } catch(Base::Exception &e) {
+    }
+    catch (Base::Exception& e) {
         e.ReportException();
         QMessageBox::critical(this, tr("Unsetup configuration table"), QString::fromUtf8(e.what()));
-        if(commandActive)
+        if (commandActive) {
             Gui::Command::abortCommand();
+        }
     }
 }
 

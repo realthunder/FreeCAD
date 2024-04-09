@@ -53,8 +53,8 @@ class PartExport FaceMaker: public BRepBuilderAPI_MakeShape, public Base::BaseCl
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    FaceMaker() {}
-    ~FaceMaker() override {}
+    FaceMaker() = default;
+    ~FaceMaker() override = default;
 
     void addTopoShape(const TopoShape &s);
     void useTopoCompound(const TopoShape &comp);

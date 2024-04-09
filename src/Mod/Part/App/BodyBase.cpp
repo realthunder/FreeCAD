@@ -44,7 +44,7 @@ BodyBase::BodyBase()
 
 BodyBase* BodyBase::findBodyOf(const App::DocumentObject* f)
 {
-    if(!f || !f->getNameInDocument())
+    if(!f || !f->isAttachedToDocument())
         return nullptr;
 
     auto prop = Base::freecad_dynamic_cast<App::PropertyLink>(f->getPropertyByName("_Body"));

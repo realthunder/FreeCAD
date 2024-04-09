@@ -61,6 +61,7 @@
 #include <Base/FileInfo.h>
 #include <Base/Parameter.h>
 #include <Base/Stream.h>
+#include <Base/Tools.h>
 #include <Base/UnitsApi.h>
 #include <Base/Vector3D.h>
 
@@ -68,6 +69,7 @@
 #include "GeometryObject.h"
 #include "LineGroup.h"
 #include "Preferences.h"
+#include "DrawViewPart.h"
 
 
 using namespace TechDraw;
@@ -170,6 +172,17 @@ double DrawUtil::simpleMinDist(TopoDS_Shape s1, TopoDS_Shape s2)
     } else {
         return -1;
     }
+}
+
+//! returns 2d vector's angle with X axis. result is [0, 2pi].
+double DrawUtil::angleWithX(Base::Vector3d inVec)
+{
+    double result = atan2(inVec.y, inVec.x);
+    if (result < 0) {
+        result += 2.0 * M_PI;
+    }
+
+    return result;
 }
 
 //! assumes 2d on XY
@@ -545,7 +558,7 @@ TopoDS_Shape DrawUtil::vectorToCompound(std::vector<TopoDS_Edge> vecIn, bool inv
         builder.Add(compOut, v);
     }
     if (invert) {
-        return TechDraw::mirrorShape(compOut);
+        return ShapeUtils::mirrorShape(compOut);
     }
     return compOut;
 }
@@ -560,7 +573,25 @@ TopoDS_Shape DrawUtil::vectorToCompound(std::vector<TopoDS_Wire> vecIn, bool inv
         builder.Add(compOut, v);
     }
     if (invert) {
-        return TechDraw::mirrorShape(compOut);
+        return ShapeUtils::mirrorShape(compOut);
+    }
+    return compOut;
+}
+
+// construct a compound shape from a list of shapes
+// this version needs a different name since edges/wires are shapes
+TopoDS_Shape DrawUtil::shapeVectorToCompound(std::vector<TopoDS_Shape> vecIn, bool invert)
+{
+    BRep_Builder builder;
+    TopoDS_Compound compOut;
+    builder.MakeCompound(compOut);
+    for (auto& v : vecIn) {
+        if (!v.IsNull()) {
+            builder.Add(compOut, v);
+        }
+    }
+    if (invert) {
+        return ShapeUtils::mirrorShape(compOut);
     }
     return compOut;
 }
@@ -904,6 +935,34 @@ QPointF DrawUtil::invertY(QPointF v)
     return QPointF(v.x(), -v.y());
 }
 
+//! convert a gui point into its app space equivalent.  this requires us to
+//! perform the invert, scale, rotate operations in the reverse order from
+//! that used to generate the qt point.
+//! Note: the centering operation is not considered here
+Base::Vector3d  DrawUtil::toAppSpace(const DrawViewPart& dvp, const Base::Vector3d &qtPoint)
+{
+//    Base::Console().Message("DGU::toPaperSpace(%s)\n", formatVector(qtPoint).c_str());
+    // From Y+ is down to Y+ is up
+    Base::Vector3d appPoint = invertY(qtPoint);
+
+    // remove the effect of the Rotation property
+    double rotDeg = dvp.Rotation.getValue();
+    double rotRad = rotDeg * M_PI / 180.0;
+    if (rotDeg != 0.0) {
+        // we always rotate around the origin.
+        appPoint.RotateZ(-rotRad);
+    }
+
+    // convert to 1:1 scale
+    appPoint = appPoint / dvp.getScale();
+
+    return appPoint;
+}
+
+Base::Vector3d  DrawUtil::toAppSpace(const DrawViewPart& dvp, const QPointF& qtPoint)
+{
+    return toAppSpace(dvp, toVector3d(qtPoint));
+}
 
 //obs? was used in CSV prototype of Cosmetics
 std::vector<std::string> DrawUtil::split(std::string csvLine)
@@ -1594,6 +1653,50 @@ void DrawUtil::copyFile(std::string inSpec, std::string outSpec)
     }
 }
 
+//! static method that provides a translated std::string for objects that are not derived from DrawView
+std::string DrawUtil::translateArbitrary(std::string context, std::string baseName, std::string uniqueName)
+{
+    std::string suffix("");
+    if (uniqueName.length() > baseName.length()) {
+        suffix = uniqueName.substr(baseName.length(), uniqueName.length() - baseName.length());
+    }
+    QString qTranslated = qApp->translate(context.c_str(), baseName.c_str());
+    std::string ssTranslated = Base::Tools::toStdString(qTranslated);
+    return ssTranslated + suffix;
+}
+
+// true if owner->element is a cosmetic vertex
+bool DrawUtil::isCosmeticVertex(App::DocumentObject* owner, std::string element)
+{
+    auto ownerView = static_cast<TechDraw::DrawViewPart*>(owner);
+    auto vertex = ownerView->getVertex(element);
+    if (vertex) {
+        return vertex->getCosmetic();
+    }
+    return false;
+}
+
+// true if owner->element is a cosmetic edge
+bool DrawUtil::isCosmeticEdge(App::DocumentObject* owner, std::string element)
+{
+    auto ownerView = static_cast<TechDraw::DrawViewPart*>(owner);
+    auto edge = ownerView->getEdge(element);
+    if (edge && edge->source() == 1 && edge->getCosmetic()) {
+        return true;
+    }
+    return false;
+}
+
+// true if owner->element is a center line
+bool DrawUtil::isCenterLine(App::DocumentObject* owner, std::string element)
+{
+    auto ownerView = static_cast<TechDraw::DrawViewPart*>(owner);
+    auto edge = ownerView->getEdge(element);
+    if (edge && edge->source() == 2 && edge->getCosmetic()) {
+        return true;
+    }
+    return false;
+}
 
 //============================
 // various debugging routines.

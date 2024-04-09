@@ -62,9 +62,7 @@ SceneModel::SceneModel(QObject* parent)
 {
 }
 
-SceneModel::~SceneModel()
-{
-}
+SceneModel::~SceneModel() = default;
 
 void SceneModel::setNodeNames(const QHash<SoNode*, QString>& names)
 {
@@ -75,14 +73,14 @@ QVariant SceneModel::headerData (int section, Qt::Orientation orientation, int r
 {
     if (orientation == Qt::Horizontal) {
         if (role != Qt::DisplayRole)
-            return QVariant();
+            return {};
         if (section == 0)
             return tr("Inventor Tree");
         else if (section == 1)
             return tr("Name");
     }
 
-    return QVariant();
+    return {};
 }
 
 bool SceneModel::setHeaderData (int, Qt::Orientation, const QVariant &, int)

@@ -28,6 +28,7 @@
 #include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/ViewProviderPythonFeature.h>
 #include <Mod/Part/Gui/SoBrepEdgeSet.h>
+#include <Mod/Path/PathGlobal.h>
 
 
 class SoCoordinate3;
@@ -45,7 +46,7 @@ class PathSelectionObserver;
 
 class PathGuiExport ViewProviderPath : public Gui::ViewProviderGeometryObject
 {
-    PROPERTY_HEADER(PathGui::ViewProviderPath);
+    PROPERTY_HEADER_WITH_OVERRIDE(PathGui::ViewProviderPath);
     using inherited = ViewProviderGeometryObject;
 
 public:
@@ -53,7 +54,7 @@ public:
     ViewProviderPath();
 
     /// destructor.
-    ~ViewProviderPath();
+    ~ViewProviderPath() override;
 
     // Display properties
     App::PropertyInteger LineWidth;
@@ -67,20 +68,20 @@ public:
     App::PropertyIntegerConstraint ShowCount;
     App::PropertyIntegerConstraint::Constraints  ShowCountConstraints;
 
-    void attach(App::DocumentObject *pcObject);
-    void setDisplayMode(const char* ModeName);
-    std::vector<std::string> getDisplayModes() const;
-    void updateData(const App::Property*);
+    void attach(App::DocumentObject *pcObject) override;
+    void setDisplayMode(const char* ModeName) override;
+    std::vector<std::string> getDisplayModes() const override;
+    void updateData(const App::Property*) override;
 
-    virtual bool useNewSelectionModel(void) const;
-    virtual std::string getElement(const SoDetail *) const;
-    SoDetail* getDetail(const char* subelement) const;
+    bool useNewSelectionModel() const override;
+    std::string getElement(const SoDetail *) const override;
+    SoDetail* getDetail(const char* subelement) const override;
 
     void updateShowConstraints();
     void updateVisual(bool rebuild = false);
     void hideSelection();
 
-    virtual void showBoundingBox(bool show);
+    void showBoundingBox(bool show) override;
 
     virtual void setupContextMenu(QMenu* menu, QObject* receiver, const char* member);
     virtual bool doubleClicked(void);
@@ -92,9 +93,9 @@ protected:
             const char *subname=0, const Base::Matrix4D *mat=0, unsigned transform=true,
             const Gui::View3DInventorViewer *viewer=0, int depth=0) const;
 
-    virtual void onChanged(const App::Property* prop);
-    virtual unsigned long getBoundColor() const;
-    virtual bool setEdit(int ModNum);
+    void onChanged(const App::Property* prop) override;
+    unsigned long getBoundColor() const override;
+    virtual bool setEdit(int ModNum) override;
 
     SoCoordinate3         * pcLineCoords;
     SoCoordinate3         * pcMarkerCoords;

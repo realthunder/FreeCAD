@@ -36,7 +36,7 @@ else:
 
 __title__ = "Arch Material Management"
 __author__ = "Yorik van Havre"
-__url__ = "http://www.freecad.org"
+__url__ = "https://www.freecad.org"
 
 ## @package ArchMaterial
 #  \ingroup ARCH
@@ -45,14 +45,14 @@ __url__ = "http://www.freecad.org"
 #  This module provides tools to add materials to
 #  Arch objects
 
-def makeMaterial(name="Material",color=None,transparency=None):
+def makeMaterial(name=None,color=None,transparency=None):
 
-    '''makeMaterial(name): makes an Material object'''
+    '''makeMaterial([name],[color],[transparency]): makes an Material object'''
     if not FreeCAD.ActiveDocument:
         FreeCAD.Console.PrintError("No active document. Aborting\n")
         return
     obj = FreeCAD.ActiveDocument.addObject("App::MaterialObjectPython","Material")
-    obj.Label = name
+    obj.Label = name if name else translate("Arch","Material")
     _ArchMaterial(obj)
     if FreeCAD.GuiUp:
         _ViewProviderArchMaterial(obj.ViewObject)
@@ -80,11 +80,11 @@ def getMaterialContainer():
     return obj
 
 
-def makeMultiMaterial(name="MultiMaterial"):
+def makeMultiMaterial(name=None):
 
-    '''makeMultiMaterial(name): makes an Material object'''
+    '''makeMultiMaterial([name]): makes an MultiMaterial object'''
     obj = FreeCAD.ActiveDocument.addObject("App::FeaturePython","MultiMaterial")
-    obj.Label = name
+    obj.Label = name if name else translate("Arch","MultiMaterial")
     _ArchMultiMaterial(obj)
     if FreeCAD.GuiUp:
         _ViewProviderArchMultiMaterial(obj.ViewObject)
@@ -186,11 +186,11 @@ class _ArchMaterialContainer:
     def execute(self,obj):
         return
 
-    def __getstate__(self):
+    def dumps(self):
         if hasattr(self,"Type"):
             return self.Type
 
-    def __setstate__(self,state):
+    def loads(self,state):
         if state:
             self.Type = state
 
@@ -266,10 +266,10 @@ class _ViewProviderArchMaterialContainer:
                 self.Object.Group = g
                 FreeCAD.ActiveDocument.recompute()
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
 
@@ -410,11 +410,11 @@ class _ArchMaterial:
                                 p.ViewObject.ShapeColor = c
         return
 
-    def __getstate__(self):
+    def dumps(self):
         if hasattr(self,"Type"):
             return self.Type
 
-    def __setstate__(self,state):
+    def loads(self,state):
         if state:
             self.Type = state
 
@@ -510,10 +510,10 @@ class _ViewProviderArchMaterial:
                     elif hasattr(widget,"setValue"):
                         widget.setText(value)
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
     def claimChildren(self):
@@ -699,7 +699,7 @@ class _ArchMaterialTaskPanel:
                 if e.upper() == ".FCMAT":
                     self.cards[b] = p + os.sep + f
         if self.cards:
-            for k in sorted(self.cards.keys()):
+            for k in sorted(self.cards):
                 self.form.comboBox_MaterialsInDir.addItem(k)
 
     def fillExistingCombo(self):
@@ -744,11 +744,11 @@ class _ArchMultiMaterial:
         obj.addProperty("App::PropertyLinkList","Materials","Arch",QT_TRANSLATE_NOOP("App::Property","The list of layer materials"))
         obj.addProperty("App::PropertyFloatList","Thicknesses","Arch",QT_TRANSLATE_NOOP("App::Property","The list of layer thicknesses"))
 
-    def __getstate__(self):
+    def dumps(self):
         if hasattr(self,"Type"):
             return self.Type
 
-    def __setstate__(self,state):
+    def loads(self,state):
         if state:
             self.Type = state
 
@@ -794,10 +794,10 @@ class _ViewProviderArchMultiMaterial:
     def edit(self):
         FreeCADGui.ActiveDocument.setEdit(self.Object, 0)
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
         return None
 
     def isShow(self):

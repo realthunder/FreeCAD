@@ -426,7 +426,7 @@ void execDistance(Gui::Command* cmd)
     StringVector acceptableGeometry({"Edge", "Vertex"});
     std::vector<int> minimumCounts({1, 2});
     std::vector<DimensionGeometryType> acceptableDimensionGeometrys(
-        {isVertical, isHorizontal, isDiagonal});
+        {isVertical, isHorizontal, isDiagonal, isHybrid});
 
     //what 2d geometry configuration did we receive?
     DimensionGeometryType geometryRefs2d = validateDimSelection(
@@ -518,7 +518,7 @@ void execDistanceX(Gui::Command* cmd)
     //Define the geometric configuration required for a length dimension
     StringVector acceptableGeometry({"Edge", "Vertex"});
     std::vector<int> minimumCounts({1, 2});
-    std::vector<DimensionGeometryType> acceptableDimensionGeometrys({isHorizontal, isDiagonal});
+    std::vector<DimensionGeometryType> acceptableDimensionGeometrys({isHorizontal, isDiagonal, isHybrid});
 
     //what 2d geometry configuration did we receive?
     DimensionGeometryType geometryRefs2d = validateDimSelection(
@@ -609,7 +609,7 @@ void execDistanceY(Gui::Command* cmd)
     //Define the geometric configuration required for a length dimension
     StringVector acceptableGeometry({"Edge", "Vertex"});
     std::vector<int> minimumCounts({1, 2});
-    std::vector<DimensionGeometryType> acceptableDimensionGeometrys({isVertical, isDiagonal});
+    std::vector<DimensionGeometryType> acceptableDimensionGeometrys({isVertical, isDiagonal, isHybrid});
 
     //what 2d geometry configuration did we receive?
     DimensionGeometryType geometryRefs2d = validateDimSelection(
@@ -1269,6 +1269,7 @@ void CmdTechDrawLandmarkDimension::activated(int iMsg)
             "addObject('TechDraw::LandmarkDimension','" << FeatName << "')");
     dim = Base::freecad_dynamic_cast<TechDraw::LandmarkDimension>(
             getDocument()->getObject(FeatName.c_str()));
+    Gui::cmdAppObjectArgs(dim, "translateLabel('LandmarkDimension', 'LandmarkDim', '%s')", FeatName);
 
     if (objects.size() == 2) {
         //what about distanceX and distanceY??
@@ -1350,6 +1351,8 @@ DrawViewDimension* dimensionMaker(TechDraw::DrawViewPart* dvp,
     if (!dim) {
         throw Base::TypeError("CmdTechDrawNewDiameterDimension - dim not found\n");
     }
+
+    Gui::cmdAppObjectArgs(dim, "translateLabel('DrawViewDimension', 'Dimension', '%s')", dimName);
     Gui::cmdAppObjectArgs(dim, "Type = '%s'", dimType); 
     Gui::cmdAppObjectArgs(dim, "MeasureType = '%s'", "Projected");
 
@@ -1363,6 +1366,10 @@ DrawViewDimension* dimensionMaker(TechDraw::DrawViewPart* dvp,
         positionDimText(dim);
     Gui::Command::updateActive();
     Gui::Command::commitCommand();
+
+    // Select only the newly created dimension
+    Gui::Selection().clearSelection();
+    Gui::Selection().addSelection(dvp->getDocument()->getName(), dim->getNameInDocument());
     return dim;
 }
 

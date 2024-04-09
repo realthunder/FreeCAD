@@ -55,9 +55,7 @@ ExpressionSpinBox::ExpressionSpinBox(QAbstractSpinBox* sb)
     });
 }
 
-ExpressionSpinBox::~ExpressionSpinBox()
-{
-}
+ExpressionSpinBox::~ExpressionSpinBox() = default;
 
 void ExpressionSpinBox::setUnit(const Base::Unit &unit)
 {
@@ -230,10 +228,7 @@ UnsignedValidator::UnsignedValidator( uint minimum, uint maximum, QObject * pare
     t = maximum;
 }
 
-UnsignedValidator::~UnsignedValidator()
-{
-
-}
+UnsignedValidator::~UnsignedValidator() = default;
 
 QValidator::State UnsignedValidator::validate( QString & input, int & ) const
 {
@@ -274,11 +269,9 @@ namespace Gui {
 class UIntSpinBoxPrivate
 {
 public:
-    UnsignedValidator * mValidator;
+    UnsignedValidator * mValidator{nullptr};
 
-    UIntSpinBoxPrivate() : mValidator(0)
-    {
-    }
+    UIntSpinBoxPrivate() = default;
     uint mapToUInt( int v ) const
     {
         uint ui;
@@ -324,7 +317,7 @@ UIntSpinBox::UIntSpinBox (QWidget* parent)
 UIntSpinBox::~UIntSpinBox()
 {
     delete d->mValidator;
-    delete d; d = 0;
+    delete d; d = nullptr;
 }
 
 void UIntSpinBox::setRange(uint minVal, uint maxVal)
@@ -443,10 +436,7 @@ IntSpinBox::IntSpinBox(QWidget* parent)
 {
 }
 
-IntSpinBox::~IntSpinBox()
-{
-
-}
+IntSpinBox::~IntSpinBox() = default;
 
 bool IntSpinBox::apply(const std::string& propName)
 {
@@ -484,10 +474,7 @@ DoubleSpinBox::DoubleSpinBox(QWidget* parent)
 {
 }
 
-DoubleSpinBox::~DoubleSpinBox()
-{
-
-}
+DoubleSpinBox::~DoubleSpinBox() = default;
 
 bool DoubleSpinBox::apply(const std::string& propName)
 {

@@ -57,7 +57,7 @@ __title__  = "FreeCAD Arch Floor"
 __author__ = "Yorik van Havre"
 __url__    = "https://www.freecad.org"
 
-def makeFloor(objectslist=None,baseobj=None,name="Floor"):
+def makeFloor(objectslist=None,baseobj=None,name=None):
     """Obsolete, superseded by ArchBuildingPart.makeFloor.
 
     Create a floor.
@@ -84,8 +84,8 @@ def makeFloor(objectslist=None,baseobj=None,name="Floor"):
     if not FreeCAD.ActiveDocument:
         FreeCAD.Console.PrintError("No active document. Aborting\n")
         return
-    obj = FreeCAD.ActiveDocument.addObject("App::DocumentObjectGroupPython",name)
-    obj.Label = translate("Arch",name)
+    obj = FreeCAD.ActiveDocument.addObject("App::DocumentObjectGroupPython","Floor")
+    obj.Label = name if name else translate("Arch","Floor")
     _Floor(obj)
     if FreeCAD.GuiUp:
         _ViewProviderFloor(obj.ViewObject)
@@ -218,11 +218,11 @@ class _Floor(ArchIFC.IfcProduct):
 
         _Floor.setProperties(self,obj)
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 
@@ -372,11 +372,11 @@ class _ViewProviderFloor:
                 return self.Object.Group
         return []
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 

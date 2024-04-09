@@ -407,6 +407,10 @@ void {class_name}::remove{param.name}() {{
 """
         )
 
+def iter(o):
+    if isinstance(o, (tuple, list)):
+        return o
+    return (o,)
 
 def widgets_declare(param_set):
     param_group = param_set.ParamGroup
@@ -420,7 +424,8 @@ def widgets_declare(param_set):
     QGroupBox * group{name} = nullptr;"""
         )
         for param in params:
-            param.declare_widget()
+            for p in iter(param):
+                p.declare_widget()
 
 
 def widgets_init(param_set):
@@ -428,6 +433,7 @@ def widgets_init(param_set):
 
     cog.out(
         f"""
+    QHBoxLayout *layoutRow = nullptr;
     auto layout = new QVBoxLayout(this);"""
     )
     for title, params in param_group:
@@ -440,18 +446,25 @@ def widgets_init(param_set):
     group{name} = new QGroupBox(this);
     layout->addWidget(group{name});
     auto layoutHoriz{name} = new QHBoxLayout(group{name});
-    auto layout{name} = new QGridLayout();
+    auto layout{name} = new QVBoxLayout();
     layoutHoriz{name}->addLayout(layout{name});
     layoutHoriz{name}->addStretch();"""
         )
 
         for row, param in enumerate(params):
-            cog.out(
-                f"""
+            param = iter(param)
+            cog.out(f"""
 
-    {trace_comment()}"""
+    {trace_comment()}
+    layoutRow = new QHBoxLayout();""")
+
+            for p in param:
+                cog.out(f"""
+
+    {trace_comment()}
+    layout{name}->addLayout(layoutRow);"""
             )
-            param.init_widget(row, name)
+                p.init_widget(row, name)
 
     cog.out(
         """
@@ -469,7 +482,8 @@ def widgets_restore(param_set):
     )
     for _, params in param_group:
         for param in params:
-            param.widget_restore()
+            for p in iter(param):
+                p.widget_restore()
 
 
 def widgets_save(param_set):
@@ -481,7 +495,8 @@ def widgets_save(param_set):
     )
     for _, params in param_group:
         for param in params:
-            param.widget_save()
+            for p in iter(param):
+                p.widget_save()
 
 
 def preference_dialog_declare_begin(param_set, header=True):
@@ -595,11 +610,11 @@ def preference_dialog_define(param_set, header=True):
         )
         for _, params in param_group:
             for param in params:
-                for header in param.header_file:
-                    if header not in headers:
-                        headers.add(header)
-                        cog.out(
-                            f"""
+                for p in iter(param):
+                    for header in p.header_file:
+                        if header not in headers:
+                            headers.add(header)
+                            cog.out(f"""
 #include <{header}>"""
                         )
 
@@ -668,7 +683,8 @@ void {class_name}::retranslateUi()
     group{name}->setTitle(QObject::tr("{title}"));"""
         )
         for row, param in enumerate(params):
-            param.retranslate()
+            for p in iter(param):
+                p.retranslate()
     cog.out(
         f"""
 }}
@@ -694,15 +710,24 @@ void {class_name}::changeEvent(QEvent *e)
 
 _ParamPrefix = "User parameter:BaseApp/Preferences/"
 
+def make_title(name):
+    return re.sub(r"(\w)([A-Z])", r"\1 \2", name)
 
 class Param:
     WidgetPrefix = ""
 
     def __init__(self, name, default, doc="", title="",
-                 on_change=False, proxy=None, subpath='', param_name=''):
+                 on_change=False, proxy=None, subpath='',
+                 param_name='', no_label=False):
         self.name = name
         self.param_name = param_name if param_name else name
-        self.title = title if title else name
+        if not title:
+            if doc and '\n' not in doc:
+                title = doc
+            else:
+                title = make_title(name)
+        self.title = title
+        self.no_label = no_label
         self._default = default
         self._doc = doc
         self.on_change = on_change
@@ -715,25 +740,33 @@ class Param:
         return prefix + '->handle'
 
     def _declare_label(self):
+        if self.no_label:
+            return
         cog.out(
             f"""
     QLabel *label{self.name} = nullptr;"""
         )
 
     def declare_label(self):
+        if self.no_label:
+            return
         if self.proxy:
             self.proxy.declare_label(self)
         else:
             self._declare_label()
 
     def _init_label(self, row, group_name):
+        if self.no_label:
+            return
         cog.out(
             f"""
     label{self.name} = new QLabel(this);
-    layout{group_name}->addWidget(label{self.name}, {row}, 0);"""
+    layoutRow->addWidget(label{self.name});"""
         )
 
     def init_label(self, row, group_name):
+        if self.no_label:
+            return
         if self.proxy:
             self.proxy.init_label(self, row, group_name)
         else:
@@ -757,7 +790,7 @@ class Param:
         cog.out(
             f"""
     {self.widget_name} = new {self.widget_type}(this);
-    layout{group_name}->addWidget({self.widget_name}, {row}, {self.widget_column});"""
+    layoutRow->addWidget({self.widget_name});"""
         )
         if self.widget_setter:
             cog.out(
@@ -813,6 +846,8 @@ class Param:
             self._widget_restore()
 
     def _retranslate_label(self):
+        if self.no_label:
+            return
         cog.out(
             f"""
     label{self.name}->setText(QObject::tr("{self.title}"));
@@ -820,6 +855,8 @@ class Param:
         )
 
     def retranslate_label(self):
+        if self.no_label:
+            return
         if self.proxy:
             self.proxy.retranslate_label(self)
         else:
@@ -870,10 +907,6 @@ class Param:
     def widget_name(self):
         return f"{self.widget_prefix}{self.name}"
 
-    @property
-    def widget_column(self):
-        return 1
-
     def getter(self, handle):
         return f'{self.handle(handle)}->Get{self.Type}("{self.param_name}", {self.default})'
 
@@ -899,11 +932,9 @@ class ParamBool(Param):
     def _init_label(self, _row, _group_name):
         pass
 
-    @property
-    def widget_column(self):
-        return 0
-
     def _retranslate_label(self):
+        if self.no_label:
+            return
         cog.out(
             f"""
     {self.widget_name}->setText(QObject::tr("{self.title}"));"""

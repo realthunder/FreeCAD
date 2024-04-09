@@ -93,6 +93,7 @@ include_directories(
     ${QtSvgWidgets_INCLUDE_DIRS}
     ${QtNetwork_INCLUDE_DIRS}
     ${QtUiTools_INCLUDE_DIRS}
+    ${QtXml_INCLUDE_DIRS}
 )
 list(APPEND FreeCADGui_LIBS
     ${QtCore_LIBRARIES}
@@ -312,8 +313,6 @@ SET(Gui_UIC_SRCS
     DlgCreateNewPreferencePack.ui
     DlgCustomizeSpNavSettings.ui
     DlgDisplayProperties.ui
-    DlgEditor.ui
-    DlgGeneral.ui
     DlgInputDialog.ui
     DlgKeyboard.ui
     DlgMacroExecute.ui
@@ -328,21 +327,24 @@ SET(Gui_UIC_SRCS
     DlgProjectInformation.ui
     DlgProjectUtility.ui
     DlgPropertyLink.ui
-    DlgReportView.ui
     DlgRevertToBackupConfig.ui
-    DlgSettings3DView.ui
-    DlgSettingsCacheDirectory.ui
-    DlgSettingsNavigation.ui
-    DlgSettingsSelection.ui
-    DlgSettingsViewColor.ui
+    PreferencePages/DlgSettings3DView.ui
+    PreferencePages/DlgSettingsCacheDirectory.ui
     DlgSettingsColorGradient.ui
-    DlgSettingsDocument.ui
+    PreferencePages/DlgSettingsDocument.ui
+    PreferencePages/DlgSettingsEditor.ui
+    PreferencePages/DlgSettingsGeneral.ui
     DlgSettingsImage.ui
-    DlgSettingsWorkbenches.ui
-    DlgSettingsMacro.ui
-    DlgSettingsNotificationArea.ui
-    DlgSettingsPythonConsole.ui
-    DlgSettingsPreferencePack.ui
+    PreferencePages/DlgSettingsLightSources.ui
+    PreferencePages/DlgSettingsMacro.ui
+    PreferencePages/DlgSettingsNavigation.ui
+    PreferencePages/DlgSettingsNotificationArea.ui
+    PreferencePages/DlgSettingsPythonConsole.ui
+    PreferencePages/DlgSettingsReportView.ui
+    PreferencePages/DlgSettingsTheme.ui
+    PreferencePages/DlgSettingsViewColor.ui
+    PreferencePages/DlgSettingsWorkbenches.ui
+    PreferencePages/DlgSettingsPreferencePack.ui
     DlgCheckableMessageBox.ui
     DlgToolbars.ui
     DlgTreeWidget.ui
@@ -576,72 +578,77 @@ SOURCE_GROUP("Dialog\\Customize" FILES ${Dialog_Customize_SRCS})
 
 # The settings dialog sources
 SET(Dialog_Settings_CPP_SRCS
-    DlgEditorImp.cpp
-    DlgGeneralImp.cpp
     DlgOnlineHelpImp.cpp
     DlgPreferencesImp.cpp
-    DlgReportViewImp.cpp
-    DlgSettings3DViewImp.cpp
-    DlgSettingsCacheDirectory.cpp
-    DlgSettingsNavigation.cpp
-    DlgSettingsSelection.cpp
-    DlgSettingsViewColor.cpp
-    DlgSettingsDrawStyles.cpp
-    DlgSettingsUI.cpp
+    PreferencePages/DlgSettings3DViewImp.cpp
+    PreferencePages/DlgSettingsCacheDirectory.cpp
     DlgSettingsColorGradientImp.cpp
-    DlgSettingsDocumentImp.cpp
+    PreferencePages/DlgSettingsDocumentImp.cpp
+    PreferencePages/DlgSettingsEditor.cpp
+    PreferencePages/DlgSettingsGeneral.cpp
     DlgSettingsImageImp.cpp
-    DlgSettingsWorkbenchesImp.cpp
-    DlgSettingsMacroImp.cpp
-    DlgSettingsObjects.cpp
-    DlgSettingsNotificationArea.cpp
-    DlgSettingsPythonConsole.cpp
-    DlgSettingsPreferencePack.cpp
+    PreferencePages/DlgSettingsLightSources.cpp
+    PreferencePages/DlgSettingsMacroImp.cpp
+    PreferencePages/DlgSettingsNavigation.cpp
+    PreferencePages/DlgSettingsNotificationArea.cpp
+    PreferencePages/DlgSettingsPythonConsole.cpp
+    PreferencePages/DlgSettingsReportView.cpp
+    PreferencePages/DlgSettingsSelection.cpp
+    PreferencePages/DlgSettingsTheme.cpp
+    PreferencePages/DlgSettingsViewColor.cpp
+    PreferencePages/DlgSettingsWorkbenchesImp.cpp
+    PreferencePages/DlgSettingsUI.cpp
+    PreferencePages/DlgSettingsDrawStyles.cpp
+    PreferencePages/DlgSettingsObjects.cpp
+    PreferencePages/DlgSettingsPreferencePack.cpp
 )
 SET(Dialog_Settings_HPP_SRCS
-    DlgEditorImp.h
-    DlgGeneralImp.h
     DlgOnlineHelpImp.h
     DlgPreferencesImp.h
-    DlgReportViewImp.h
-    DlgSettings3DViewImp.h
-    DlgSettingsCacheDirectory.h
-    DlgSettingsNavigation.h
-    DlgSettingsSelection.h
-    DlgSettingsViewColor.h
-    DlgSettingsDrawStyles.h
-    DlgSettingsUI.h
+    PreferencePages/DlgSettings3DViewImp.h
+    PreferencePages/DlgSettingsCacheDirectory.h
     DlgSettingsColorGradientImp.h
-    DlgSettingsDocumentImp.h
+    PreferencePages/DlgSettingsDocumentImp.h
+    PreferencePages/DlgSettingsEditor.h
+    PreferencePages/DlgSettingsGeneral.h
     DlgSettingsImageImp.h
-    DlgSettingsWorkbenchesImp.h
-    DlgSettingsMacroImp.h
-    DlgSettingsObjects.h
-    DlgSettingsNotificationArea.h
-    DlgSettingsPythonConsole.h
-    DlgSettingsPreferencePack.h
+    PreferencePages/DlgSettingsLightSources.h
+    PreferencePages/DlgSettingsMacroImp.h
+    PreferencePages/DlgSettingsNavigation.h
+    PreferencePages/DlgSettingsNotificationArea.h
+    PreferencePages/DlgSettingsPythonConsole.h
+    PreferencePages/DlgSettingsReportView.h
+    PreferencePages/DlgSettingsSelection.h
+    PreferencePages/DlgSettingsTheme.h
+    PreferencePages/DlgSettingsViewColor.h
+    PreferencePages/DlgSettingsWorkbenchesImp.h
+    PreferencePages/DlgSettingsUI.h
+    PreferencePages/DlgSettingsDrawStyles.h
+    PreferencePages/DlgSettingsObjects.h
+    PreferencePages/DlgSettingsPreferencePack.h
 )
 SET(Dialog_Settings_SRCS
     ${Dialog_Settings_CPP_SRCS}
     ${Dialog_Settings_HPP_SRCS}
-    DlgEditor.ui
-    DlgGeneral.ui
     DlgOnlineHelp.ui
     DlgPreferences.ui
-    DlgReportView.ui
-    DlgSettings3DView.ui
-    DlgSettingsCacheDirectory.ui
-    DlgSettingsNavigation.ui
-    DlgSettingsSelection.ui
-    DlgSettingsViewColor.ui
+    PreferencePages/DlgSettings3DView.ui
+    PreferencePages/DlgSettingsCacheDirectory.ui
     DlgSettingsColorGradient.ui
-    DlgSettingsDocument.ui
+    PreferencePages/DlgSettingsDocument.ui
+    PreferencePages/DlgSettingsEditor.ui
+    PreferencePages/DlgSettingsGeneral.ui
     DlgSettingsImage.ui
-    DlgSettingsWorkbenches.ui
-    DlgSettingsMacro.ui
-    DlgSettingsNotificationArea.ui
-    DlgSettingsPythonConsole.ui
-    DlgSettingsPreferencePack.ui
+    PreferencePages/DlgSettingsLightSources.ui
+    PreferencePages/DlgSettingsMacro.ui
+    PreferencePages/DlgSettingsNavigation.ui
+    PreferencePages/DlgSettingsNotificationArea.ui
+    PreferencePages/DlgSettingsPythonConsole.ui
+    PreferencePages/DlgSettingsReportView.ui
+    PreferencePages/DlgSettingsTheme.ui
+    PreferencePages/DlgSettingsViewColor.ui
+    PreferencePages/DlgSettingsWorkbenches.ui
+    PreferencePages/DlgSettingsPreferencePack.ui
 )
 SOURCE_GROUP("Dialog\\Settings" FILES ${Dialog_Settings_SRCS})
 
@@ -694,6 +701,7 @@ SET(Editor_CPP_SRCS
     PythonConsole.cpp
     PythonConsolePy.cpp
     PythonDebugger.cpp
+    PythonTracing.cpp
     PythonEditor.cpp
     SyntaxHighlighter.cpp
     TextEdit.cpp
@@ -705,6 +713,7 @@ SET(Editor_HPP_SRCS
     PythonConsole.h
     PythonConsolePy.h
     PythonDebugger.h
+    PythonTracing.h
     PythonEditor.h
     SyntaxHighlighter.h
     TextEdit.h
@@ -860,6 +869,8 @@ SET(View3D_CPP_SRCS
     AbstractSplitViewPyImp.cpp
     View3DViewerPy.cpp
     NaviCube.cpp
+    NavigationAnimator.cpp
+    NavigationAnimation.cpp
 )
 SET(View3D_SRCS
     ${View3D_CPP_SRCS}
@@ -881,6 +892,8 @@ SET(View3D_SRCS
     CoinRiftWidget.h
     View3DViewerPy.h
     NaviCube.h
+    NavigationAnimator.h
+    NavigationAnimation.h
 )
 SOURCE_GROUP("View3D" FILES ${View3D_SRCS})
 
@@ -1013,6 +1026,7 @@ SET(Inventor_CPP_SRCS
     SoFCDB.cpp
     SoFCInteractiveElement.cpp
     SoFCOffscreenRenderer.cpp
+    SoQtOffscreenRendererPy.cpp
     SoFCSelection.cpp
     SoFCUnifiedSelection.cpp
     SoFCSelectionContext.cpp
@@ -1057,6 +1071,7 @@ SET(Inventor_SRCS
     SoFCDB.h
     SoFCInteractiveElement.h
     SoFCOffscreenRenderer.h
+    SoQtOffscreenRendererPy.h
     SoFCSelection.h
     SoFCUnifiedSelection.h
     SoFCSelectionContext.h
@@ -1129,6 +1144,9 @@ SET(Params_CPP_SRCS
     ReportViewParams.cpp
     OverlayParams.cpp
     TreeParams.cpp
+    OverlayParams.cpp
+    ParamHandler.cpp
+    ViewParams.cpp
 )
 
 SET(Params_HPP_SRCS
@@ -1137,6 +1155,9 @@ SET(Params_HPP_SRCS
     ReportViewParams.h
     OverlayParams.h
     TreeParams.h
+    OverlayParams.h
+    ParamHandler.cpp
+    ViewParams.h
 )
 
 SET(Params_SRCS
@@ -1170,6 +1191,7 @@ SOURCE_GROUP("View" FILES ${View_SRCS})
 # The workbench sources
 SET(Workbench_CPP_SRCS
     DockWindowManager.cpp
+    OverlayManager.cpp
     OverlayWidgets.cpp
     MenuManager.cpp
     PythonWorkbenchPyImp.cpp
@@ -1178,11 +1200,14 @@ SET(Workbench_CPP_SRCS
     Workbench.cpp
     WorkbenchFactory.cpp
     WorkbenchManager.cpp
+    WorkbenchManipulator.cpp
+    WorkbenchManipulatorPython.cpp
     WorkbenchPyImp.cpp
 )
 SET(Workbench_SRCS
     ${Workbench_CPP_SRCS}
     DockWindowManager.h
+    OverlayManager.h
     OverlayWidgets.h
     MenuManager.h
     ToolBarManager.h
@@ -1190,6 +1215,8 @@ SET(Workbench_SRCS
     Workbench.h
     WorkbenchFactory.h
     WorkbenchManager.h
+    WorkbenchManipulator.h
+    WorkbenchManipulatorPython.h
 )
 SOURCE_GROUP("Workbench" FILES ${Workbench_SRCS})
 
@@ -1201,6 +1228,8 @@ SET(Selection_SRCS
     Selection.cpp
     SelectionFilter.h
     SelectionFilter.cpp
+    SelectionFilterPy.h
+    SelectionFilterPy.cpp
     SelectionFilter.y
     SelectionFilter.l
     SelectionObserverPython.cpp
@@ -1219,6 +1248,7 @@ SET(FreeCADGui_CPP_SRCS
     DocumentPyImp.cpp
     DocumentObserver.cpp
     DocumentObserverPython.cpp
+    EditableDatumLabel.cpp
     ExpressionBinding.cpp
     ExpressionBindingPy.cpp
     GraphicsViewZoom.cpp
@@ -1250,6 +1280,7 @@ SET(FreeCADGui_SRCS
     DocumentModel.h
     DocumentObserver.h
     DocumentObserverPython.h
+    EditableDatumLabel.h
     ExpressionBinding.h
     ExpressionBindingPy.h
     ExpressionCompleter.h
@@ -1392,11 +1423,11 @@ else(WIN32)
     #    Icons/freecad-doc.png
     #    DESTINATION ${CMAKE_INSTALL_DATADIR}
     #)
-    INSTALL(FILES Icons/freecad-icon-16.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/16x16/apps RENAME freecad.png)
-    INSTALL(FILES Icons/freecad-icon-32.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/32x32/apps RENAME freecad.png)
-    INSTALL(FILES Icons/freecad-icon-48.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/48x48/apps RENAME freecad.png)
-    INSTALL(FILES Icons/freecad-icon-64.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/64x64/apps RENAME freecad.png)
-    INSTALL(FILES Icons/freecad.svg DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps)
+    INSTALL(FILES Icons/freecad-icon-16.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/16x16/apps RENAME org.freecad.FreeCAD.png)
+    INSTALL(FILES Icons/freecad-icon-32.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/32x32/apps RENAME org.freecad.FreeCAD.png)
+    INSTALL(FILES Icons/freecad-icon-48.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/48x48/apps RENAME org.freecad.FreeCAD.png)
+    INSTALL(FILES Icons/freecad-icon-64.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/64x64/apps RENAME org.freecad.FreeCAD.png)
+    INSTALL(FILES Icons/freecad.svg DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps RENAME org.freecad.FreeCAD.svg)
     INSTALL(FILES Icons/freecad.xpm DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pixmaps)
     INSTALL(FILES Icons/freecad-doc.svg DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/mimetypes RENAME application-x-extension-fcstd.svg)
 endif(WIN32)

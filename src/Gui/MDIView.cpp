@@ -50,7 +50,7 @@
 
 
 using namespace Gui;
-namespace bp = boost::placeholders;
+namespace sp = std::placeholders;
 
 PROPERTY_SOURCE_ABSTRACT(Gui::MDIView,Gui::BaseView)
 
@@ -66,9 +66,11 @@ MDIView::MDIView(Gui::Document* pcDocument,QWidget* parent, Qt::WindowFlags wfla
 
     if (pcDocument)
     {
+      //NOLINTBEGIN
       connectDelObject = pcDocument->signalDeletedObject.connect
-        (boost::bind(&ActiveObjectList::objectDeleted, &ActiveObjects, bp::_1));
+        (std::bind(&ActiveObjectList::objectDeleted, &ActiveObjects, sp::_1));
       assert(connectDelObject.connected());
+      //NOLINTEND
     }
 }
 
@@ -171,13 +173,13 @@ void MDIView::onRelabel(Gui::Document *pDoc)
         // Try to separate document name and view number if there is one
         QString cap = windowTitle();
         // Either with dirty flag ...
-        QRegularExpression rx(QStringLiteral("(\\s\\:\\s\\d+\\[\\*\\])$"));
+        QRegularExpression rx(QStringLiteral(R"((\s\:\s\d+\[\*\])$)"));
         QRegularExpressionMatch match;
         //int pos =
         boost::ignore_unused(cap.lastIndexOf(rx, -1, &match));
         if (!match.hasMatch()) {
             // ... or not
-            rx.setPattern(QStringLiteral("(\\s\\:\\s\\d+)$"));
+            rx.setPattern(QStringLiteral(R"((\s\:\s\d+)$)"));
             //pos =
             boost::ignore_unused(cap.lastIndexOf(rx, -1, &match));
         }
@@ -282,12 +284,14 @@ void MDIView::closeEvent(QCloseEvent *e)
         // because otherwise other parts don't work as they should.
         QMainWindow::closeEvent(e);
     }
-    else
+    else {
         e->ignore();
+    }
 }
 
-void MDIView::windowStateChanged( MDIView* )
+void MDIView::windowStateChanged(QWidget* view)
 {
+    Q_UNUSED(view)
 }
 
 void MDIView::print(QPrinter* printer)
@@ -312,6 +316,8 @@ void MDIView::printPdf()
         QStringLiteral("%1 (*.pdf)").arg(tr("PDF file")));
     if (!filename.isEmpty()) {
         QPrinter printer(QPrinter::ScreenResolution);
+        // setPdfVersion sets the printied PDF Version to comply with PDF/A-1b, more details under: https://www.kdab.com/creating-pdfa-documents-qt/
+        printer.setPdfVersion(QPagedPaintDevice::PdfVersion_A1b);
         printer.setOutputFormat(QPrinter::PdfFormat);
         printer.setOutputFileName(filename);
         print(&printer);
@@ -395,7 +401,7 @@ QStringList MDIView::redoActions() const
 
 QSize MDIView::minimumSizeHint () const
 {
-    return QSize(400, 300);
+    return {400, 300};
 }
 
 void MDIView::changeEvent(QEvent *e)

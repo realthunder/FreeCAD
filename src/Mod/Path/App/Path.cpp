@@ -446,7 +446,7 @@ void Toolpath::Save (Writer &writer) const
         writer.incInd();
         saveCenter(writer, center);
         writer.Stream() << writer.ind() << "<Commands>\n";
-        auto &s = writer.beginCharStream(false) << '\n';
+        auto &s = writer.beginCharStream() << '\n';
         for(auto &cmd : vpcCommands)
             s << cmd->toGCode() << '\n';
         writer.endCharStream() << '\n' << writer.ind() << "</Commands>\n";
@@ -505,7 +505,7 @@ void Toolpath::_Restore(XMLReader &reader, Base::Persistence *owner)
     clear();
     if(count) {
         reader.readElement("Commands");
-        auto &s = reader.beginCharStream(false);
+        auto &s = reader.beginCharStream();
         vpcCommands.resize(count);
         std::string line;
         for(auto &cmd : vpcCommands) {

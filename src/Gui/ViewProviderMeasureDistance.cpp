@@ -120,6 +120,11 @@ ViewProviderMeasureDistance::~ViewProviderMeasureDistance()
     pLines->unref();
 }
 
+bool ViewProviderMeasureDistance::isPartOfPhysicalObject() const
+{
+    return false;
+}
+
 void ViewProviderMeasureDistance::onChanged(const App::Property* prop)
 {
     if (prop == &Mirror || prop == &DistFactor) {
@@ -193,7 +198,7 @@ void ViewProviderMeasureDistance::attach(App::DocumentObject* pcObject)
 
 void ViewProviderMeasureDistance::updateData(const App::Property* prop)
 {
-    if (prop->getTypeId() == App::PropertyVector::getClassTypeId() ||
+    if (prop->is<App::PropertyVector>() ||
         prop == &Mirror || prop == &DistFactor) {
         if (strcmp(prop->getName(),"P1") == 0) {
             Base::Vector3d v = static_cast<const App::PropertyVector*>(prop)->getValue();
@@ -313,6 +318,11 @@ ViewProviderPointMarker::~ViewProviderPointMarker()
 {
     pCoords->unref();
     pMarker->unref();
+}
+
+bool ViewProviderPointMarker::isPartOfPhysicalObject() const
+{
+    return false;
 }
 
 void ViewProviderMeasureDistance::measureDistanceCallback(void * ud, SoEventCallback * n)

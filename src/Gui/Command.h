@@ -113,7 +113,7 @@ class QAction;
  */
 #define _FCMD_OBJ_CMD(_type,_cmd_type,_obj,_cmd) do{\
     auto __obj = _obj;\
-    if(__obj && __obj->getNameInDocument()) {\
+    if(__obj && __obj->isAttachedToDocument()) {\
         std::ostringstream _str;\
         _str << #_type ".getDocument('" << __obj->getDocument()->getName() \
              << "').getObject('" <<  __obj->getNameInDocument() << "')." << _cmd;\
@@ -152,7 +152,7 @@ class QAction;
  */
 #define FCMD_OBJ_CMD2(_cmd,_obj,...) do{\
     auto __obj = _obj;\
-    if(__obj && __obj->getNameInDocument()) {\
+    if(__obj && __obj->isAttachedToDocument()) {\
         Gui::Command::doCommand(Gui::Command::Doc,"App.getDocument('%s').getObject('%s')." _cmd,\
                 __obj->getDocument()->getName(),__obj->getNameInDocument(),## __VA_ARGS__);\
     }\
@@ -165,7 +165,7 @@ class QAction;
  */
 #define FCMD_VOBJ_CMD2(_cmd,_obj,...) do{\
     auto __obj = _obj;\
-    if(__obj && __obj->getNameInDocument()) {\
+    if(__obj && __obj->isAttachedToDocument()) {\
         Gui::Command::doCommand(Gui::Command::Gui,"Gui.getDocument('%s').getObject('%s')." _cmd,\
                 __obj->getDocument()->getName(),__obj->getNameInDocument(),## __VA_ARGS__);\
     }\
@@ -181,7 +181,7 @@ class QAction;
  */
 #define FCMD_SET_EDIT(_obj) do{\
     auto __obj = _obj;\
-    if(__obj && __obj->getNameInDocument()) {\
+    if(__obj && __obj->isAttachedToDocument()) {\
         Gui::Command::doCommand(Gui::Command::Gui,\
             "Gui.ActiveDocument.setEdit(App.getDocument('%s').getObject('%s'), %i)",\
             __obj->getDocument()->getName(), __obj->getNameInDocument(), Gui::Application::Instance->getUserEditMode());\
@@ -613,6 +613,7 @@ public:
         NoDefaultAction  = 32, /**< Do not set as default action if included in a group command */
         NoHistory      = 64, /**< Do not record usage history of this command */
         NoUpdateActions = 128, /**< Do not update actions status */
+        ViewTransaction = 256, /**< Record view object changes in transaction */
     };
 
     /** Obtain a child action of this command
@@ -634,7 +635,7 @@ protected:
     /** @name Attributes
      *  Set by the inherited constructor to set up the most important properties
      *  of the command. In the Command constructor are set default values!
-     *  The real values should be set in the constructor of the inhereting class.
+     *  The real values should be set in the constructor of the inheriting class.
      */
     //@{
     const char* sAppModule;
@@ -687,10 +688,20 @@ public:
     std::vector<Command*> getCommands() const;
 
 protected:
-    Gui::Action * createAction() override;
+    bool isCheckable() const;
+    void setCheckable(bool);
+    bool isExclusive() const;
+    void setExclusive(bool);
+    bool hasDropDownMenu() const;
+    void setDropDownMenu(bool);
+
     void activated(int iMsg) override;
+    Gui::Action * createAction() override;
 
 protected:
+    bool checkable = true;
+    bool exclusive = false;
+    bool dropDownMenu = true;
     std::vector<std::pair<Command*,size_t> > cmds;
     ParameterGrp::handle _hParam;
     std::string _hEntry;

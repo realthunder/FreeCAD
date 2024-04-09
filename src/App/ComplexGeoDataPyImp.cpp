@@ -46,7 +46,7 @@ using namespace Base;
 // returns a string which represent the object e.g. when printed in python
 std::string ComplexGeoDataPy::representation() const
 {
-    return std::string("<ComplexGeoData object>");
+    return {"<ComplexGeoData object>"};
 }
 
 PyObject* ComplexGeoDataPy::getElementTypes(PyObject *args)
@@ -98,17 +98,15 @@ PyObject* ComplexGeoDataPy::getFacesFromSubElement(PyObject *args)
 
     Py::Tuple tuple(2);
     Py::List vertex;
-    for (std::vector<Base::Vector3d>::const_iterator it = points.begin();
-        it != points.end(); ++it)
-        vertex.append(Py::asObject(new Base::VectorPy(*it)));
+    for (const auto & it : points)
+        vertex.append(Py::asObject(new Base::VectorPy(it)));
     tuple.setItem(0, vertex);
     Py::List facet;
-    for (std::vector<Data::ComplexGeoData::Facet>::const_iterator
-        it = facets.begin(); it != facets.end(); ++it) {
+    for (const auto & it : facets) {
         Py::Tuple f(3);
-        f.setItem(0,Py::Int(int(it->I1)));
-        f.setItem(1,Py::Int(int(it->I2)));
-        f.setItem(2,Py::Int(int(it->I3)));
+        f.setItem(0,Py::Int(int(it.I1)));
+        f.setItem(1,Py::Int(int(it.I2)));
+        f.setItem(2,Py::Int(int(it.I3)));
         facet.append(f);
     }
     tuple.setItem(1, facet);
@@ -135,16 +133,14 @@ PyObject* ComplexGeoDataPy::getLinesFromSubElement(PyObject *args)
 
     Py::Tuple tuple(2);
     Py::List vertex;
-    for (std::vector<Base::Vector3d>::const_iterator it = points.begin();
-        it != points.end(); ++it)
-        vertex.append(Py::asObject(new Base::VectorPy(*it)));
+    for (const auto & it : points)
+        vertex.append(Py::asObject(new Base::VectorPy(it)));
     tuple.setItem(0, vertex);
     Py::List line;
-    for (std::vector<Data::ComplexGeoData::Line>::const_iterator
-        it = lines.begin(); it != lines.end(); ++it) {
+    for (const auto & it : lines) {
         Py::Tuple l(2);
-        l.setItem(0,Py::Int((int)it->I1));
-        l.setItem(1,Py::Int((int)it->I2));
+        l.setItem(0,Py::Int((int)it.I1));
+        l.setItem(1,Py::Int((int)it.I2));
         line.append(l);
     }
     tuple.setItem(1, line);
@@ -169,16 +165,14 @@ PyObject* ComplexGeoDataPy::getPoints(PyObject *args)
 
     Py::Tuple tuple(2);
     Py::List vertex;
-    for (std::vector<Base::Vector3d>::const_iterator it = points.begin();
-         it != points.end(); ++it) {
-        vertex.append(Py::asObject(new Base::VectorPy(*it)));
+    for (const auto & it : points) {
+        vertex.append(Py::asObject(new Base::VectorPy(it)));
     }
     tuple.setItem(0, vertex);
 
     Py::List normal;
-    for (std::vector<Base::Vector3d>::const_iterator it = normals.begin();
-         it != normals.end(); ++it) {
-        normal.append(Py::asObject(new Base::VectorPy(*it)));
+    for (const auto & it : normals) {
+        normal.append(Py::asObject(new Base::VectorPy(it)));
     }
     tuple.setItem(1, normal);
     return Py::new_reference_to(tuple);
@@ -202,16 +196,14 @@ PyObject* ComplexGeoDataPy::getLines(PyObject *args)
 
     Py::Tuple tuple(2);
     Py::List vertex;
-    for (std::vector<Base::Vector3d>::const_iterator it = points.begin();
-        it != points.end(); ++it)
-        vertex.append(Py::asObject(new Base::VectorPy(*it)));
+    for (const auto & it : points)
+        vertex.append(Py::asObject(new Base::VectorPy(it)));
     tuple.setItem(0, vertex);
     Py::List line;
-    for (std::vector<Data::ComplexGeoData::Line>::const_iterator
-        it = lines.begin(); it != lines.end(); ++it) {
+    for (const auto & it : lines) {
         Py::Tuple l(2);
-        l.setItem(0,Py::Int((int)it->I1));
-        l.setItem(1,Py::Int((int)it->I2));
+        l.setItem(0,Py::Int((int)it.I1));
+        l.setItem(1,Py::Int((int)it.I2));
         line.append(l);
     }
     tuple.setItem(1, line);
@@ -236,17 +228,15 @@ PyObject* ComplexGeoDataPy::getFaces(PyObject *args)
 
     Py::Tuple tuple(2);
     Py::List vertex;
-    for (std::vector<Base::Vector3d>::const_iterator it = points.begin();
-        it != points.end(); ++it)
-        vertex.append(Py::asObject(new Base::VectorPy(*it)));
+    for (const auto & it : points)
+        vertex.append(Py::asObject(new Base::VectorPy(it)));
     tuple.setItem(0, vertex);
     Py::List facet;
-    for (std::vector<Data::ComplexGeoData::Facet>::const_iterator
-        it = facets.begin(); it != facets.end(); ++it) {
+    for (const auto & it : facets) {
         Py::Tuple f(3);
-        f.setItem(0,Py::Int((int)it->I1));
-        f.setItem(1,Py::Int((int)it->I2));
-        f.setItem(2,Py::Int((int)it->I3));
+        f.setItem(0,Py::Int((int)it.I1));
+        f.setItem(1,Py::Int((int)it.I2));
+        f.setItem(2,Py::Int((int)it.I3));
         facet.append(f);
     }
     tuple.setItem(1, facet);
@@ -263,13 +253,13 @@ PyObject* ComplexGeoDataPy::getElementName(PyObject *args)
     Data::MappedElement res = getComplexGeoDataPtr()->getElementName(input);
     std::string s;
     if (direction == 1)
-        return Py::new_reference_to(Py::String(res.name.toString(s)));
+        return Py::new_reference_to(Py::String(res.name.appendToBuffer(s)));
     else if (direction == 0)
-        return Py::new_reference_to(Py::String(res.index.toString(s)));
+        return Py::new_reference_to(Py::String(res.index.appendToStringBuffer(s)));
     else if (Data::IndexedName(input))
-        return Py::new_reference_to(Py::String(res.name.toString(s)));
+        return Py::new_reference_to(Py::String(res.name.appendToBuffer(s)));
     else
-        return Py::new_reference_to(Py::String(res.index.toString(s)));
+        return Py::new_reference_to(Py::String(res.index.appendToStringBuffer(s)));
 }
 
 PyObject* ComplexGeoDataPy::getElementIndexedName(PyObject *args)
@@ -283,7 +273,7 @@ PyObject* ComplexGeoDataPy::getElementIndexedName(PyObject *args)
     Data::MappedElement res = getComplexGeoDataPtr()->getElementName(
             input, PyObject_IsTrue(returnID)?&ids:nullptr);
     std::string s;
-    Py::String name(res.index.toString(s));
+    Py::String name(res.index.appendToStringBuffer(s));
     if (!PyObject_IsTrue(returnID))
         return Py::new_reference_to(name);
 
@@ -304,7 +294,7 @@ PyObject* ComplexGeoDataPy::getElementMappedName(PyObject *args)
     Data::MappedElement res = getComplexGeoDataPtr()->getElementName(
             input, PyObject_IsTrue(returnID)?&ids:nullptr);
     std::string s;
-    Py::String name(res.name.toString(s));
+    Py::String name(res.name.appendToBuffer(s));
     if (!PyObject_IsTrue(returnID))
         return Py::new_reference_to(name);
 
@@ -366,7 +356,7 @@ Py::Dict ComplexGeoDataPy::getElementMap() const {
     std::string s;
     for(auto &v : getComplexGeoDataPtr()->getElementMap()) {
         s.clear();
-        ret.setItem(v.name.toString(0), Py::String(v.index.toString(s)));
+        ret.setItem(v.name.toString(0), Py::String(v.index.appendToStringBuffer(s)));
     }
     return ret;
 }
@@ -389,20 +379,20 @@ Py::Dict ComplexGeoDataPy::getElementReverseMap() const {
     std::string s;
     for(auto &v : getComplexGeoDataPtr()->getElementMap()) {
         s.clear();
-        auto value = ret[Py::String(v.index.toString(s))];
+        auto value = ret[Py::String(v.index.appendToStringBuffer(s))];
         Py::Object item(value);
         if(item.isNone()) {
             s.clear();
-            value = Py::String(v.name.toString(s));
+            value = Py::String(v.name.appendToBuffer(s));
         } else if(item.isList()) {
             Py::List list(item);
             s.clear();
-            list.append(Py::String(v.name.toString(s)));
+            list.append(Py::String(v.name.appendToBuffer(s)));
         } else {
             Py::List list;
             list.append(item);
             s.clear();
-            list.append(Py::String(v.name.toString(s)));
+            list.append(Py::String(v.name.appendToBuffer(s)));
             value = list;
         }
     }

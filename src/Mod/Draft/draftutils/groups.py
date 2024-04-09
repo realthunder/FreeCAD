@@ -330,7 +330,7 @@ def getGroupContents(objectslist,
                               nobodyfeature)
 
 
-def get_movable_children(objectslist, recursive=True):
+def get_movable_children(objectslist, recursive=True, _donelist=[]):
     """Return a list of objects with child objects that move with a host.
 
     Builds a list of objects with all child objects (`obj.OutList`)
@@ -349,6 +349,9 @@ def get_movable_children(objectslist, recursive=True):
         Otherwise, only direct children of the input objects
         are added to the output list.
 
+    _donelist: list
+        List of object names. Used internally to prevent an endless loop.
+
     Returns
     -------
     list
@@ -360,8 +363,14 @@ def get_movable_children(objectslist, recursive=True):
         objectslist = [objectslist]
 
     for obj in objectslist:
+        if obj.Name in _donelist:
+            continue
+
+        _donelist.append(obj.Name)
+
         # Skips some objects that should never move their children
-        if utils.get_type(obj) not in ("Clone", "SectionPlane",
+        if utils.get_type(obj) not in ("App::Part", "PartDesign::Body",
+                                       "Clone", "SectionPlane",
                                        "Facebinder", "BuildingPart", "App::Link"):
             children = obj.OutList
             if (hasattr(obj, "Proxy") and obj.Proxy
@@ -372,17 +381,14 @@ def get_movable_children(objectslist, recursive=True):
 
             for child in children:
                 if hasattr(child, "MoveWithHost") and child.MoveWithHost:
-                    if hasattr(obj, "CloneOf"):
-                        if obj.CloneOf:
-                            if obj.CloneOf.Name != child.Name:
-                                added.append(child)
-                        else:
+                    if hasattr(obj, "CloneOf") and  obj.CloneOf:
+                        if obj.CloneOf.Name != child.Name:
                             added.append(child)
                     else:
                         added.append(child)
 
             if recursive:
-                added.extend(get_movable_children(children))
+                added.extend(get_movable_children(children, recursive, _donelist))
 
     return added
 

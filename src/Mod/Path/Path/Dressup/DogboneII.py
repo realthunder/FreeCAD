@@ -25,6 +25,7 @@ import FreeCAD
 import Path
 import Path.Base.Generator.dogboneII as dogboneII
 import Path.Base.Language as PathLanguage
+import Path.Dressup.Utils as PathDressup
 import PathScripts.PathUtils as PathUtils
 import math
 
@@ -184,10 +185,10 @@ class BoneState(object):
         return self.bone.tip()
 
     def boneIDs(self):
-        return list(sorted(self.bones.keys()))
+        return sorted(self.bones)
 
     def zLevels(self):
-        return list(sorted([bone.position().z for bone in self.bones.values()]))
+        return sorted([bone.position().z for bone in self.bones.values()])
 
     def length(self):
         return self.bone.length
@@ -264,16 +265,14 @@ class Proxy(object):
         self.obj = obj
         obj.setEditorMode("BoneBlacklist", 2)  # hide
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self, state):
+    def loads(self, state):
         return None
 
     def toolRadius(self, obj):
-        if not hasattr(obj.Base, "ToolController"):
-            return self.toolRadius(obj.Base)
-        return obj.Base.ToolController.Tool.Diameter.Value / 2
+        return PathDressup.toolController(obj.Base).Tool.Diameter.Value / 2
 
     def createBone(self, obj, move0, move1):
         kink = dogboneII.Kink(move0, move1)

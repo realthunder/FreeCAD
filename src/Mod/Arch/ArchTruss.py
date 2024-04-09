@@ -51,17 +51,17 @@ rodmodes = ("/|/|/|",
             "/|\\|/|\\",
            )
 
-def makeTruss(baseobj=None,name="Truss"):
+def makeTruss(baseobj=None,name=None):
 
     """
-    makeTruss([baseobj]): Creates a space object from the given object (a line)
+    makeTruss([baseobj],[name]): Creates a space object from the given object (a line)
     """
 
     if not FreeCAD.ActiveDocument:
         FreeCAD.Console.PrintError("No active document. Aborting\n")
         return
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython","Truss")
-    obj.Label = translate("Arch","Truss")
+    obj.Label = name if name else translate("Arch","Truss")
     Truss(obj)
     if FreeCAD.GuiUp:
         ViewProviderTruss(obj.ViewObject)
@@ -105,8 +105,8 @@ class CommandArchTruss:
         else:
             # interactive line drawing
             self.points = []
-            if hasattr(FreeCAD,"DraftWorkingPlane"):
-                FreeCAD.DraftWorkingPlane.setup()
+            import WorkingPlane
+            WorkingPlane.get_working_plane()
             if hasattr(FreeCADGui,"Snapper"):
                 FreeCADGui.Snapper.getPoint(callback=self.getPoint)
 

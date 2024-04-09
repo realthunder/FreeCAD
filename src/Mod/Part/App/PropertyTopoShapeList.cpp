@@ -47,14 +47,9 @@ TYPESYSTEM_SOURCE(Part::PropertyTopoShapeList, App::PropertyLists)
 //**************************************************************************
 // Construction/Destruction
 
-PropertyTopoShapeList::PropertyTopoShapeList()
-{
+PropertyTopoShapeList::PropertyTopoShapeList() = default;
 
-}
-
-PropertyTopoShapeList::~PropertyTopoShapeList()
-{
-}
+PropertyTopoShapeList::~PropertyTopoShapeList() = default;
 
 void PropertyTopoShapeList::setSize(int newSize)
 {
@@ -180,11 +175,11 @@ void PropertyTopoShapeList::Save(Writer &writer) const
                             << "\"/>\n";
         } else if(binary) {
             writer.Stream() << " binary=\"1\">\n";
-            _lValueList[i].exportBinary(writer.beginCharStream(true));
+            _lValueList[i].exportBinary(writer.beginBase64Stream());
             writer.endCharStream() <<  writer.ind() << "</TopoShape>\n";
         } else {
             writer.Stream() << " brep=\"1\">\n";
-            _lValueList[i].exportBrep(writer.beginCharStream(false)<<'\n');
+            _lValueList[i].exportBrep(writer.beginCharStream()<<'\n');
             writer.endCharStream() << '\n' << writer.ind() << "</TopoShape>\n";
         }
     }
@@ -221,9 +216,9 @@ void PropertyTopoShapeList::Restore(Base::XMLReader &reader)
         if (!file.empty()) {
             reader.addFile(file.c_str(),this);
         } else if(reader.getAttributeAsInteger("binary","")) {
-            newShape->importBinary(reader.beginCharStream(true));
+            newShape->importBinary(reader.beginBase64Stream());
         } else if(reader.getAttributeAsInteger("brep","")) {
-            newShape->importBrep(reader.beginCharStream(false));
+            newShape->importBrep(reader.beginCharStream());
         }
         m_restorePointers.push_back(newShape);
     }
@@ -251,7 +246,7 @@ App::Property *PropertyTopoShapeList::Copy() const
     for (auto& shape : _lValueList) {
         BRepBuilderAPI_Copy copy(shape.getShape());
         TopoDS_Shape* newShape = new TopoDS_Shape(copy.Shape());
-        copiedShapes.push_back(*newShape);
+        copiedShapes.emplace_back(*newShape);
     }
     p->setValues(copiedShapes);
     return p;

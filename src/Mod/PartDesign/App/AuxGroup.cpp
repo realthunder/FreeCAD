@@ -78,7 +78,7 @@ void AuxGroup::attachBody()
         connBody.disconnect();
     else
         connBody = body->Group.signalChanged.connect(
-                boost::bind(&AuxGroup::refresh, this));
+                std::bind(&AuxGroup::refresh, this));
 }
 
 AuxGroup::GroupType AuxGroup::getGroupType() const

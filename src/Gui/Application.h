@@ -131,6 +131,8 @@ public:
     boost::signals2::signal<void (const Gui::ViewProvider&)> signalActivatedObject;
     /// signal on activated workbench
     boost::signals2::signal<void (const char*)> signalActivateWorkbench;
+    /// signal on added/removed workbench
+    boost::signals2::signal<void ()> signalRefreshWorkbenches;
     /// signal on added workbench
     boost::signals2::signal<void (const char*)> signalAddWorkbench;
     /// signal on removed workbench
@@ -218,6 +220,8 @@ public:
 
     /// true when the application shutting down
     bool isClosing();
+
+    void checkForDeprecatedSettings();
     void checkForPreviousCrashes();
 
     /** @name workbench handling */
@@ -235,8 +239,9 @@ public:
 
     /** @name Appearance */
     //@{
-    /// Activate a named workbench
+    /// Activate a stylesheet
     void setStyleSheet(const QString& qssFile, bool tiledBackground);
+    QString replaceVariablesInQss(QString qssText);
     //@}
 
     /** @name User Commands */
@@ -379,6 +384,9 @@ public:
 
     static PyObject* sAddDocObserver           (PyObject *self,PyObject *args);
     static PyObject* sRemoveDocObserver        (PyObject *self,PyObject *args);
+
+    static PyObject* sAddWbManipulator         (PyObject *self,PyObject *args);
+    static PyObject* sRemoveWbManipulator      (PyObject *self,PyObject *args);
 
     static PyObject* sListUserEditModes        (PyObject *self,PyObject *args);
     static PyObject* sGetUserEditMode          (PyObject *self,PyObject *args);

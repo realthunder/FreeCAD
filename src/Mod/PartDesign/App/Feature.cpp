@@ -35,9 +35,9 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/FeaturePythonPyImp.h>
-#include <App/MappedElement.h>
-#include <App/OriginFeature.h>
 #include <Mod/Part/App/PartParams.h>
+#include <App/ElementNamingUtils.h>
+#include "App/OriginFeature.h"
 #include <Base/Console.h>
 
 #include "Feature.h"
@@ -80,7 +80,8 @@ short Feature::mustExecute() const
     return Part::Feature::mustExecute();
 }
 
-bool Feature::allowMultiSolid() const {
+bool Feature::allowMultiSolid() const
+{
     auto body = getFeatureBody();
     return body && !body->SingleSolid.getValue();
 }
@@ -176,7 +177,7 @@ Part::Feature* Feature::getBaseObject(bool silent) const {
     const char *err = nullptr;
 
     if (BaseLink) {
-        if (BaseLink->getTypeId().isDerivedFrom(Part::Feature::getClassTypeId())) {
+        if (BaseLink->isDerivedFrom<Part::Feature>()) {
             BaseObject = static_cast<Part::Feature*>(BaseLink);
         }
         if (!BaseObject) {
@@ -215,8 +216,8 @@ TopoShape Feature::getBaseShape(bool silent, bool force, bool checkSolid) const 
             throw Base::RuntimeError("Missing container body");
         }
         if (body->BaseFeature.getValue() != BaseObject
-                && (BaseObject->isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId())
-                    || BaseObject->isDerivedFrom(Part::SubShapeBinder::getClassTypeId())))
+                && (BaseObject->isDerivedFrom<PartDesign::ShapeBinder>()
+                    || BaseObject->isDerivedFrom<Part::SubShapeBinder>()))
         {
             if(silent)
                 return result;
@@ -244,8 +245,8 @@ const TopoDS_Shape& Feature::getBaseShapeOld() const {
     const Part::Feature* BaseObject = getBaseObject();
 
     if(BaseObject != BaseFeature.getValue()) {
-        if (BaseObject->isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId()) ||
-            BaseObject->isDerivedFrom(Part::SubShapeBinder::getClassTypeId()))
+        if (BaseObject->isDerivedFrom<PartDesign::ShapeBinder>() ||
+            BaseObject->isDerivedFrom<Part::SubShapeBinder>())
         {
             throw Base::ValueError("Base shape of shape binder cannot be used");
         }
@@ -273,8 +274,8 @@ PyObject* Feature::getPyObject()
 
 bool Feature::isDatum(const App::DocumentObject* feature)
 {
-    return feature->getTypeId().isDerivedFrom(App::OriginFeature::getClassTypeId()) ||
-           feature->getTypeId().isDerivedFrom(Part::Datum::getClassTypeId());
+    return feature->isDerivedFrom<App::OriginFeature>() ||
+           feature->isDerivedFrom<Part::Datum>();
 }
 
 gp_Pln Feature::makePlnFromPlane(const App::DocumentObject* obj)
@@ -410,7 +411,7 @@ void Feature::updateSuppressedShape()
 App::DocumentObject *Feature::getSubObject(const char *subname, 
         PyObject **pyObj, Base::Matrix4D *pmat, bool transform, int depth) const
 {
-    if (subname && subname != Data::ComplexGeoData::findElementName(subname)) {
+    if (subname && subname != Data::findElementName(subname)) {
         const char * dot = strchr(subname,'.');
         if (dot) {
             auto body = PartDesign::Body::findBodyOf(this);

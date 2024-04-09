@@ -46,7 +46,7 @@ import draftguitools.gui_base_original as gui_base_original
 import draftguitools.gui_tool_utils as gui_tool_utils
 import draftguitools.gui_trackers as trackers
 
-from draftutils.messages import _msg
+from draftutils.messages import _msg, _toolmsg
 from draftutils.translate import translate
 
 # The module is used to prevent complaints from code checkers (flake8)
@@ -124,7 +124,7 @@ class Stretch(gui_base_original.Modifier):
                                                         swidth=2)
             self.nodetracker = []
             self.displacement = None
-            _msg(translate("draft", "Pick first point of selection rectangle"))
+            _toolmsg(translate("draft", "Pick first point of selection rectangle"))
 
     def action(self, arg):
         """Handle the 3D scene events.
@@ -141,7 +141,6 @@ class Stretch(gui_base_original.Modifier):
             if arg["Key"] == "ESCAPE":
                 self.finish()
         elif arg["Type"] == "SoLocation2Event":  # mouse movement detection
-            # ,mobile=True) #,noTracker=(self.step < 3))
             point, ctrlPoint, info = gui_tool_utils.getPoint(self, arg)
             if self.step == 2:
                 self.rectracker.update(point)
@@ -152,7 +151,6 @@ class Stretch(gui_base_original.Modifier):
                     # clicked twice on the same point
                     self.finish()
                 else:
-                    # ,mobile=True) #,noTracker=(self.step < 3))
                     point, ctrlPoint, info = gui_tool_utils.getPoint(self, arg)
                     self.addPoint(point)
 
@@ -160,9 +158,9 @@ class Stretch(gui_base_original.Modifier):
         """Add point to defined selection rectangle."""
         if self.step == 1:
             # first rctangle point
-            _msg(translate("draft", "Pick opposite point "
+            _toolmsg(translate("draft", "Pick opposite point "
                                     "of selection rectangle"))
-            self.ui.setRelative()
+            self.ui.setRelative(-1)
             self.rectracker.setorigin(point)
             self.rectracker.on()
             if self.planetrack:
@@ -170,7 +168,8 @@ class Stretch(gui_base_original.Modifier):
             self.step = 2
         elif self.step == 2:
             # second rectangle point
-            _msg(translate("draft", "Pick start point of displacement"))
+            _toolmsg(translate("draft", "Pick start point of displacement"))
+            self.ui.setRelative(-2)
             self.rectracker.off()
             nodes = []
             self.ops = []
@@ -233,7 +232,7 @@ class Stretch(gui_base_original.Modifier):
             self.step = 3
         elif self.step == 3:
             # first point of displacement line
-            _msg(translate("draft", "Pick end point of displacement"))
+            _toolmsg(translate("draft", "Pick end point of displacement"))
             self.displacement = point
             # print("first point:", point)
             self.node = [point]

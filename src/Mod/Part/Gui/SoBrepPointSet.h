@@ -51,7 +51,7 @@ public:
     void setSiblings(std::vector<SoNode*> &&);
 
 protected:
-    ~SoBrepPointSet() override {}
+    ~SoBrepPointSet() override = default;
     void GLRender(SoGLRenderAction *action) override;
     void GLRenderInPath(SoGLRenderAction *action) override;
     void GLRenderBelowPath(SoGLRenderAction * action) override;

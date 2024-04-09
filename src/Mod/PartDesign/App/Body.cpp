@@ -132,9 +132,9 @@ App::DocumentObject* Body::getPrevSolidFeature(App::DocumentObject *start)
     }
 
     int index;
-    if (!start || !start->getNameInDocument()
-               || start->isDerivedFrom(PartDesign::Extrusion::getClassTypeId())
-               || start->isDerivedFrom(PartDesign::Solid::getClassTypeId())
+    if (!start || !start->isAttachedToDocument()
+               || start->isDerivedFrom<PartDesign::Extrusion>()
+               || start->isDerivedFrom<PartDesign::Solid>()
                || !this->Group.find(start->getNameInDocument(), &index)) { // No Tip
         return nullptr;
     }
@@ -155,7 +155,7 @@ App::DocumentObject* Body::getNextSolidFeature(App::DocumentObject *start)
     }
 
     int index;
-    if (!start || !start->getNameInDocument()
+    if (!start || !start->isAttachedToDocument()
                || !this->Group.find(start->getNameInDocument(), &index)) { // No Tip
         return nullptr;
     }
@@ -185,11 +185,11 @@ bool Body::isAfterInsertPoint(App::DocumentObject* feature) {
 
 bool Body::isMemberOfMultiTransform(const App::DocumentObject* obj)
 {
-    if (!obj || !obj->isDerivedFrom(PartDesign::Transformed::getClassTypeId()))
+    if (!obj || !obj->isDerivedFrom<PartDesign::Transformed>())
         return false;
 
     for (auto o : obj->getInList()) {
-        if (o->isDerivedFrom(PartDesign::MultiTransform::getClassTypeId()))
+        if (o->isDerivedFrom<PartDesign::MultiTransform>())
             return true;
     }
     return false;
@@ -227,19 +227,13 @@ bool Body::isAllowed(const App::DocumentObject *obj)
 
 bool Body::isAllowed(const Base::Type &type)
 {
-    // TODO: Should we introduce a PartDesign::FeaturePython class? This should then also return true for isSolidFeature()
     return (type.isDerivedFrom(PartDesign::Feature::getClassTypeId()) ||
             type.isDerivedFrom(Part::Datum::getClassTypeId())   ||
             type.isDerivedFrom(PartDesign::Solid::getClassTypeId())   ||
-            // TODO Shouldn't we replace it with Sketcher::SketchObject? (2015-08-13, Fat-Zer)
             type.isDerivedFrom(Part::Part2DObject::getClassTypeId()) ||
             type.isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId()) ||
             type.isDerivedFrom(Part::SubShapeBinder::getClassTypeId()) ||
-            type.isDerivedFrom(PartDesign::AuxGroup::getClassTypeId())
-            // TODO Why this lines was here? why should we allow anything of those? (2015-08-13, Fat-Zer)
-            //type.isDerivedFrom(Part::FeaturePython::getClassTypeId()) // trouble with this line on Windows!? Linker fails to find getClassTypeId() of the Part::FeaturePython...
-            //type.isDerivedFrom(Part::Feature::getClassTypeId())
-            );
+            type.isDerivedFrom(PartDesign::AuxGroup::getClassTypeId()));
 }
 
 
@@ -248,9 +242,9 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
     if(!feature)
         return nullptr;
 
-    if (feature->isDerivedFrom(PartDesign::Feature::getClassTypeId()))
+    if (feature->isDerivedFrom<PartDesign::Feature>())
         return static_cast<const PartDesign::Feature*>(feature)->getFeatureBody();
-    if (feature->isDerivedFrom(PartDesign::AuxGroup::getClassTypeId()))
+    if (feature->isDerivedFrom<PartDesign::AuxGroup>())
         return static_cast<const PartDesign::AuxGroup*>(feature)->getBody();
     
     return Base::freecad_dynamic_cast<Body>(BodyBase::findBodyOf(feature));
@@ -331,7 +325,7 @@ Body::newObjectAt(const char *type,
     if (!obj)
         FC_THROWM(Base::RuntimeError, "Failed to create object");
 
-    if (deps.size() && obj->isDerivedFrom(DressUp::getClassTypeId()))
+    if (deps.size() && obj->isDerivedFrom<DressUp>())
         insertObject(obj, deps.back(), true);
     else
         insertObject(obj, getInsertionPosition(deps));
@@ -395,7 +389,7 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
         Group.setValues (model);
     }
 
-    if(feature->isDerivedFrom(PartDesign::Feature::getClassTypeId()))
+    if(feature->isDerivedFrom<PartDesign::Feature>())
         static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
 
     // Set the BaseFeature property
@@ -418,15 +412,15 @@ void Body::setBaseProperty(App::DocumentObject* feature)
     if (!feature || !this->Group.find(feature->getNameInDocument(), &index))
         throw Base::RuntimeError("Feature not found in body");
 
-    if (feature->isDerivedFrom(Transformed::getClassTypeId())) {
+    if (feature->isDerivedFrom<Transformed>()) {
         for (auto obj : Group.getValues()) {
             if (obj->testStatus(App::ObjectStatus::ObjEditing)
-                    && obj->isDerivedFrom(MultiTransform::getClassTypeId()))
+                    && obj->isDerivedFrom<MultiTransform>())
                 return;
         }
     }
 
-    if (feature->isDerivedFrom(PartDesign::Feature::getClassTypeId())
+    if (feature->isDerivedFrom<PartDesign::Feature>()
         && !static_cast<PartDesign::Feature*>(feature)->NewSolid.getValue()
         && Body::isSolidFeature(feature))
     {
@@ -439,7 +433,7 @@ void Body::setBaseProperty(App::DocumentObject* feature)
         // Set the next feature's base to this feature
         for (int i=index+1, count=Group.getSize(); i<count; ++i) {
             auto obj = Group.getValues()[i];
-            if (!obj || !obj->isDerivedFrom(PartDesign::Feature::getClassTypeId())
+            if (!obj || !obj->isDerivedFrom<PartDesign::Feature>()
                      || !isSolidFeature(obj))
                 continue;
             auto feat = static_cast<PartDesign::Feature*>(obj);
@@ -513,7 +507,7 @@ App::DocumentObjectExecReturn *Body::execute()
     Part::TopoShape tipShape;
     if ( tip ) {
         if ( !isSolidFeature(tip)
-                && !tip->isDerivedFrom ( PartDesign::Feature::getClassTypeId() ) ) {
+                && !tip->isDerivedFrom<PartDesign::Feature>()) {
             return new App::DocumentObjectExecReturn (QT_TRANSLATE_NOOP("Exception", "Linked object is not a PartDesign feature" ));
         }
 
@@ -564,8 +558,8 @@ void Body::onChanged (const App::Property* prop) {
             if (BaseFeature.getValue()
                     && !Group.find(BaseFeature.getValue()->getNameInDocument())) {
                 //setup the FeatureBase if needed
-                if (!first || (!first->isDerivedFrom(FeatureBase::getClassTypeId())
-                                && !first->isDerivedFrom(Part::SubShapeBinder::getClassTypeId())))
+                if (!first || (!first->isDerivedFrom<FeatureBase>()
+                                && !first->isDerivedFrom<Part::SubShapeBinder>()))
                 {
                     bf = static_cast<FeatureBase*>(getDocument()->addObject("PartDesign::FeatureBase", "BaseFeature"));
                     insertObject(bf, first, false);
@@ -585,7 +579,7 @@ void Body::onChanged (const App::Property* prop) {
             //if the FeatureBase was deleted we set the BaseFeature link to nullptr
             if (BaseFeature.getValue() &&
                (Group.getValues().empty() || 
-                (!Group.getValues().front()->isDerivedFrom(FeatureBase::getClassTypeId())
+                (!Group.getValues().front()->isDerivedFrom<FeatureBase>()
                  && Group.getValues().front()!=BaseFeature.getValue())))
             {
                 BaseFeature.setValue(nullptr);
@@ -593,7 +587,7 @@ void Body::onChanged (const App::Property* prop) {
         }
         else if( prop == &SingleSolid ) {
             for(auto obj : Group.getValues()) {
-                if(obj->isDerivedFrom(PartDesign::Feature::getClassTypeId()))
+                if(obj->isDerivedFrom<PartDesign::Feature>())
                     obj->touch();
             }
         }
@@ -647,7 +641,7 @@ App::DocumentObject *Body::getSubObject(const char *subname,
             const char * secondDot = strchr(firstDot+1, '.');
             if (secondDot) {
                 auto firstObj = Group.find(std::string(subname, firstDot).c_str());
-                if (!firstObj || firstObj->isDerivedFrom(PartDesign::Feature::getClassTypeId())) {
+                if (!firstObj || firstObj->isDerivedFrom<PartDesign::Feature>()) {
                     auto secondObj = Group.find(std::string(firstDot+1, secondDot).c_str());
                     if (secondObj) {
                         // we support only one level of sibling grouping, so no
@@ -675,7 +669,7 @@ App::DocumentObject *Body::getSubObject(const char *subname,
     // We return the shape only if there are feature visible inside
     for(auto obj : Group.getValues()) {
         if(obj->Visibility.getValue() &&
-           obj->isDerivedFrom(PartDesign::Feature::getClassTypeId()))
+           obj->isDerivedFrom(PartDesign::Feature>())
         {
             return Part::BodyBase::getSubObject(subname,pyObj,pmat,transform,depth);
         }
@@ -707,7 +701,7 @@ void Body::onDocumentRestored()
 Body::Relation
 Body::getRelation(const App::DocumentObject *obj, const App::DocumentObject *other) const
 {
-    if (!obj || !obj->getNameInDocument() || !other || !other->getNameInDocument())
+    if (!obj || !obj->isAttachedToDocument() || !other || !other->isAttachedToDocument())
         return RelationStranger;
 
     if (obj == other)
@@ -747,8 +741,8 @@ std::deque<App::DocumentObject*>
 Body::getSiblings(App::DocumentObject *obj, bool all, bool reversed) const
 {
     std::deque<App::DocumentObject *> res;
-    if (!obj || !obj->getNameInDocument()
-             || !obj->isDerivedFrom(PartDesign::Feature::getClassTypeId()))
+    if (!obj || !obj->isAttachedToDocument()
+             || !obj->isDerivedFrom<PartDesign::Feature>())
         return res;
 
     int index = -1;
@@ -786,8 +780,8 @@ Body::getSiblings(App::DocumentObject *obj, bool all, bool reversed) const
     const auto & objs = Group.getValues();
     for (int count=Group.getSize(); index<count; ++index) {
         App::DocumentObject * o = objs[index];
-        if(!o || !o->getNameInDocument()
-                || !o->isDerivedFrom(PartDesign::Feature::getClassTypeId())
+        if(!o || !o->isAttachedToDocument()
+                || !o->isDerivedFrom<PartDesign::Feature>()
                 || !isSolidFeature(o))
             continue;
 
@@ -805,7 +799,7 @@ Body::getSiblings(App::DocumentObject *obj, bool all, bool reversed) const
 int Body::isElementVisible(const char *element) const
 {
     auto obj = Group.find(element);
-    if (obj && obj->isDerivedFrom(AuxGroup::getClassTypeId())) {
+    if (obj && obj->isDerivedFrom<AuxGroup>()) {
         auto group = static_cast<AuxGroup*>(obj);
         for (auto child : group->Group.getValues()) {
             if (child->Visibility.getValue())
@@ -819,7 +813,7 @@ int Body::isElementVisible(const char *element) const
 int Body::setElementVisible(const char *element, bool visible)
 {
     auto obj = Group.find(element);
-    if (obj && obj->isDerivedFrom(AuxGroup::getClassTypeId())) {
+    if (obj && obj->isDerivedFrom<AuxGroup>()) {
         auto group = static_cast<AuxGroup*>(obj);
         for (auto child : group->Group.getValues())
             child->Visibility.setValue(visible);
@@ -832,8 +826,8 @@ int Body::setElementVisible(const char *element, bool visible)
 bool Body::isSolid()
 {
     std::vector<App::DocumentObject *> features = getFullModel();
-    for (auto it = features.begin(); it!=features.end(); ++it){
-        if (isSolidFeature((*it)))
+    for (auto feature : features){
+        if (isSolidFeature(feature))
             return true;
     }
     return false;

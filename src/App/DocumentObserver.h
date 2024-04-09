@@ -377,11 +377,11 @@ public:
      */
     App::Document* operator->() const noexcept;
 
-private:
     // disable
-    DocumentWeakPtrT(const DocumentWeakPtrT&);
-    DocumentWeakPtrT& operator=(const DocumentWeakPtrT&);
+    DocumentWeakPtrT(const DocumentWeakPtrT&) = delete;
+    DocumentWeakPtrT& operator=(const DocumentWeakPtrT&) = delete;
 
+private:
     class Private;
     std::unique_ptr<Private> d;
 };
@@ -439,9 +439,11 @@ public:
 
 private:
     App::DocumentObject* _get() const noexcept;
+
+public:
     // disable
-    DocumentObjectWeakPtrT(const DocumentObjectWeakPtrT&);
-    DocumentObjectWeakPtrT& operator=(const DocumentObjectWeakPtrT&);
+    DocumentObjectWeakPtrT(const DocumentObjectWeakPtrT&) = delete;
+    DocumentObjectWeakPtrT& operator=(const DocumentObjectWeakPtrT&) = delete;
 
 private:
     class Private;
@@ -515,17 +517,16 @@ public:
         return ptr.get<T>();
     }
 
-private:
     // disable
-    WeakPtrT(const WeakPtrT&);
-    WeakPtrT& operator=(const WeakPtrT&);
+    WeakPtrT(const WeakPtrT&) = delete;
+    WeakPtrT& operator=(const WeakPtrT&) = delete;
 
 private:
     DocumentObjectWeakPtrT ptr;
 };
 
 /**
- * The DocumentObserver class simplfies the step to write classes that listen
+ * The DocumentObserver class simplifies the step to write classes that listen
  * to what happens inside a document.
  * This is very useful for classes that needs to be notified when an observed
  * object has changed.

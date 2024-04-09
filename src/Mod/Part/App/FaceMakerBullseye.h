@@ -48,8 +48,7 @@ class PartExport FaceMakerBullseye: public FaceMakerPublic
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 public:
-    FaceMakerBullseye()
-        :planeSupplied(false){}
+    FaceMakerBullseye() = default;
     /**
      * @brief setPlane: sets the plane to use when making faces. This is
      * optional. If the plane was set, it is not tested that the wires are
@@ -66,8 +65,8 @@ protected:
 
 protected:
     gp_Pln myPlane; //externally supplied plane (if any)
-    bool planeSupplied;
-    bool reuseInnerWire = false;
+    bool planeSupplied{false};
+    bool reuseInnerWire{false};
 
     struct WireInfo {
         TopoShape wire;

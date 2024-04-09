@@ -63,10 +63,10 @@ TaskSelectLinkProperty::TaskSelectLinkProperty(const char *sFilter,App::Property
     // property have to be set! 
     assert(prop);
     StartObject = nullptr;
-    if (prop->getTypeId().isDerivedFrom(App::PropertyLinkSub::getClassTypeId())) {
+    if (prop->isDerivedFrom<App::PropertyLinkSub>()) {
         LinkSub = dynamic_cast<App::PropertyLinkSub *>(prop);
     }
-    else if (prop->getTypeId().isDerivedFrom(App::PropertyLinkList::getClassTypeId())) {
+    else if (prop->isDerivedFrom<App::PropertyLinkList>()) {
         LinkList = dynamic_cast<App::PropertyLinkList *>(prop);
     }
     else {
@@ -129,9 +129,9 @@ void TaskSelectLinkProperty::activate()
             std::string ObjName = StartObject->getNameInDocument();
             std::string DocName = StartObject->getDocument()->getName();
 
-            for (std::vector<std::string>::const_iterator it = StartValueBuffer.begin();it!=StartValueBuffer.end();++it)
+            for (const auto & it : StartValueBuffer)
             {
-                Gui::Selection().addSelection(DocName.c_str(),ObjName.c_str(),it->c_str());
+                Gui::Selection().addSelection(DocName.c_str(),ObjName.c_str(),it.c_str());
             }
         }
         
@@ -153,7 +153,7 @@ void TaskSelectLinkProperty::activate()
 
 bool TaskSelectLinkProperty::accept()
 {
-    // set the proptery with the selection
+    // set the property with the selection
     sendSelection2Property();
 
     // clear selection and remove gate (return to normal operation)

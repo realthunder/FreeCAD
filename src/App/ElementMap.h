@@ -27,22 +27,35 @@
 #define DATA_ELEMENTMAP_H
 
 #include "FCGlobal.h"
-#include "IndexedName.h"
 
-namespace Data {
+#include "Application.h"
+#include "MappedElement.h"
+#include "StringHasher.h"
 
-static constexpr const char *POSTFIX_TAG = ";:H";
-static constexpr const char *POSTFIX_DECIMAL_TAG = ";:T";
-static constexpr const char *POSTFIX_EXTERNAL_TAG = ";:X";
-static constexpr const char *POSTFIX_CHILD = ";:C";
-static constexpr const char *POSTFIX_INDEX = ";:I";
-static constexpr const char *POSTFIX_UPPER = ";:U";
-static constexpr const char *POSTFIX_LOWER = ";:L";
-static constexpr const char *POSTFIX_MOD = ";:M";
-static constexpr const char *POSTFIX_GEN = ";:G";
-static constexpr const char *POSTFIX_MODGEN = ";:MG";
-static constexpr const char *POSTFIX_DUPLICATE = ";D";
+#include <cstring>
+#include <deque>
+#include <functional>
+#include <map>
+#include <memory>
 
-} // namespace data
 
-#endif // DATA_ELEMENTMAP_H
+namespace Data
+{
+
+class ElementMap;
+using ElementMapPtr = std::shared_ptr<ElementMap>;
+
+struct AppExport MappedChildElements
+{
+    IndexedName indexedName;
+    int count;
+    int offset;
+    long tag;
+    ElementMapPtr elementMap;
+    QByteArray postfix;
+    ElementIDRefs sids;
+};
+
+}// namespace Data
+
+#endif// DATA_ELEMENTMAP_H

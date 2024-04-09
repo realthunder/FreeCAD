@@ -425,9 +425,6 @@ void TaskFilletParameters::changeEvent(QEvent *e)
 
 void TaskFilletParameters::apply()
 {
-    std::string name = getDressUpView()->getObject()->getNameInDocument();
-
-    //Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Fillet changed"));
     ui->filletRadius->apply();
 }
 
@@ -444,10 +441,7 @@ TaskDlgFilletParameters::TaskDlgFilletParameters(ViewProviderFillet *DressUpView
     Content.push_back(parameter);
 }
 
-TaskDlgFilletParameters::~TaskDlgFilletParameters()
-{
-
-}
+TaskDlgFilletParameters::~TaskDlgFilletParameters() = default;
 
 //==== calls from the TaskView ===============================================================
 

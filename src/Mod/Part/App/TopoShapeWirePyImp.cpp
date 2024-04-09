@@ -46,6 +46,7 @@
 #include <BRepOffsetAPI_MakeEvolved.hxx>
 
 #include <Base/GeometryPyCXX.h>
+#include <Base/PyWrapParseTupleAndKeywords.h>
 
 #include "TopoShape.h"
 #include "PartPyCXX.h"
@@ -343,9 +344,10 @@ PyObject* TopoShapeWirePy::approximate(PyObject *args, PyObject *kwds)
     double tol3d = 0.0001;
     int maxseg=10, maxdeg=3;
 
-    static char* kwds_approx[] = {"Tol2d","Tol3d","MaxSegments","MaxDegree",nullptr};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ddii", kwds_approx, &tol2d, &tol3d, &maxseg, &maxdeg))
+    static const std::array<const char *, 5> kwds_approx{"Tol2d", "Tol3d", "MaxSegments", "MaxDegree", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|ddii", kwds_approx, &tol2d, &tol3d, &maxseg, &maxdeg)) {
         return nullptr;
+    }
     try {
         BRepAdaptor_CompCurve adapt(TopoDS::Wire(getTopoShapePtr()->getShape()));
         auto hcurve = adapt.Trim(adapt.FirstParameter(),
@@ -391,16 +393,16 @@ PyObject* TopoShapeWirePy::discretize(PyObject *args, PyObject *kwds)
         }
         else {
             // use Number kwds
-            static char* kwds_numPoints[] = {"Number","First","Last",nullptr};
+            static const std::array<const char *, 4> kwds_numPoints{"Number", "First", "Last", nullptr};
             PyErr_Clear();
-            if (PyArg_ParseTupleAndKeywords(args, kwds, "i|dd", kwds_numPoints, &numPoints, &first, &last)) {
+            if (Base::Wrapped_ParseTupleAndKeywords(args, kwds, "i|dd", kwds_numPoints, &numPoints, &first, &last)) {
                 uniformAbscissaPoints = true;
             }
             else {
                 // use Abscissa kwds
-                static char* kwds_Distance[] = {"Distance","First","Last",nullptr};
+                static const std::array<const char *, 4> kwds_Distance{"Distance", "First", "Last", nullptr};
                 PyErr_Clear();
-                if (PyArg_ParseTupleAndKeywords(args, kwds, "d|dd", kwds_Distance, &distance, &first, &last)) {
+                if (Base::Wrapped_ParseTupleAndKeywords(args, kwds, "d|dd", kwds_Distance, &distance, &first, &last)) {
                     uniformAbscissaDistance = true;
                 }
             }
@@ -430,10 +432,10 @@ PyObject* TopoShapeWirePy::discretize(PyObject *args, PyObject *kwds)
         }
 
         // use Deflection kwds
-        static char* kwds_Deflection[] = {"Deflection","First","Last",nullptr};
+        static const std::array<const char *, 4> kwds_Deflection{"Deflection", "First", "Last", nullptr};
         PyErr_Clear();
         double deflection;
-        if (PyArg_ParseTupleAndKeywords(args, kwds, "d|dd", kwds_Deflection, &deflection, &first, &last)) {
+        if (Base::Wrapped_ParseTupleAndKeywords(args, kwds, "d|dd", kwds_Deflection, &deflection, &first, &last)) {
             GCPnts_UniformDeflection discretizer(adapt, deflection, first, last);
             if (discretizer.IsDone () && discretizer.NbPoints () > 0) {
                 Py::List points;
@@ -452,12 +454,14 @@ PyObject* TopoShapeWirePy::discretize(PyObject *args, PyObject *kwds)
         }
 
         // use TangentialDeflection kwds
-        static char* kwds_TangentialDeflection[] = {"Angular","Curvature","First","Last","Minimum",nullptr};
+        static const std::array<const char *, 6> kwds_TangentialDeflection{"Angular", "Curvature", "First", "Last",
+                                                                           "Minimum", nullptr};
         PyErr_Clear();
         double angular;
         double curvature;
         int minimumPoints = 2;
-        if (PyArg_ParseTupleAndKeywords(args, kwds, "dd|ddi", kwds_TangentialDeflection, &angular, &curvature, &first, &last, &minimumPoints)) {
+        if (Base::Wrapped_ParseTupleAndKeywords(args, kwds, "dd|ddi", kwds_TangentialDeflection,
+                                                &angular, &curvature, &first, &last, &minimumPoints)) {
             GCPnts_TangentialDeflection discretizer(adapt, first, last, angular, curvature, minimumPoints);
             if (discretizer.NbPoints () > 0) {
                 Py::List points;
@@ -476,10 +480,11 @@ PyObject* TopoShapeWirePy::discretize(PyObject *args, PyObject *kwds)
         }
 
         // use QuasiNumber kwds
-        static char* kwds_QuasiNumPoints[] = {"QuasiNumber","First","Last",nullptr};
+        static const std::array<const char *, 4> kwds_QuasiNumPoints{"QuasiNumber", "First", "Last", nullptr};
         PyErr_Clear();
         int quasiNumPoints;
-        if (PyArg_ParseTupleAndKeywords(args, kwds, "i|dd", kwds_QuasiNumPoints, &quasiNumPoints, &first, &last)) {
+        if (Base::Wrapped_ParseTupleAndKeywords(args, kwds, "i|dd", kwds_QuasiNumPoints,
+                                                &quasiNumPoints, &first, &last)) {
             GCPnts_QuasiUniformAbscissa discretizer(adapt, quasiNumPoints, first, last);
             if (discretizer.NbPoints () > 0) {
                 Py::List points;
@@ -498,10 +503,11 @@ PyObject* TopoShapeWirePy::discretize(PyObject *args, PyObject *kwds)
         }
 
         // use QuasiDeflection kwds
-        static char* kwds_QuasiDeflection[] = {"QuasiDeflection","First","Last",nullptr};
+        static const std::array<const char *, 4> kwds_QuasiDeflection{"QuasiDeflection", "First", "Last", nullptr};
         PyErr_Clear();
         double quasiDeflection;
-        if (PyArg_ParseTupleAndKeywords(args, kwds, "d|dd", kwds_QuasiDeflection, &quasiDeflection, &first, &last)) {
+        if (Base::Wrapped_ParseTupleAndKeywords(args, kwds, "d|dd", kwds_QuasiDeflection,
+                                                &quasiDeflection, &first, &last)) {
             GCPnts_QuasiUniformDeflection discretizer(adapt, quasiDeflection, first, last);
             if (discretizer.NbPoints () > 0) {
                 Py::List points;

@@ -24,7 +24,6 @@
 
 #ifndef _PreComp_
 # include <QAction>
-# include <QGenericReturnArgument>
 # include <QMessageBox>
 # include <QMetaObject>
 #endif
@@ -274,7 +273,8 @@ void TaskPipeOrientation::onBinormalChanged(double)
     recomputeFeature();
 }
 
-void TaskPipeOrientation::updateUI(int idx) {
+void TaskPipeOrientation::updateUI(int idx)
+{
     //make sure we resize to the size of the current page
     for (int i=0; i<ui->stackedWidget->count(); ++i)
         ui->stackedWidget->widget(i)->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
@@ -305,7 +305,7 @@ TaskPipeScaling::TaskPipeScaling(ViewProviderPipe* PipeView, bool /*newObj*/, QW
 
     // should be called after panel has become visible
     QMetaObject::invokeMethod(this, "updateUI", Qt::QueuedConnection,
-        QGenericReturnArgument(), Q_ARG(int,pipe->Transformation.getValue()));
+        Q_ARG(int,pipe->Transformation.getValue()));
 
     refresh();
 

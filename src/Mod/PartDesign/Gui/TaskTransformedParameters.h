@@ -111,7 +111,7 @@ public:
      */
     int setCurrentLink(const App::PropertyLinkSub &lnk);
 
-    QComboBox& combo(void) const {assert(_combo); return *_combo;}
+    QComboBox& combo() const {assert(_combo); return *_combo;}
 
     ~ComboLinks() {_combo = nullptr; clear();}
 private:
@@ -246,7 +246,7 @@ protected:
     bool enableTransaction = true;
 
     enum selectionModes { none, reference, placement };
-    selectionModes selectionMode;
+    selectionModes selectionMode = none;
 
     /// The MultiTransform parent task of this task
     TaskMultiTransformParameters* parentTask;
@@ -283,7 +283,7 @@ public:
     TaskDlgTransformedParameters(
             ViewProviderTransformed *TransformedView, TaskTransformedParameters *parameter);
 
-    ~TaskDlgTransformedParameters() override {}
+    ~TaskDlgTransformedParameters() override = default;
 
     ViewProviderTransformed* getTransformedView() const
     { return static_cast<ViewProviderTransformed*>(vp); }

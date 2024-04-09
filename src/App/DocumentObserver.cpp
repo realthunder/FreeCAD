@@ -26,7 +26,7 @@
 #include <Base/Tools.h>
 #include <App/DocumentObjectPy.h>
 #include "Application.h"
-#include "ComplexGeoData.h"
+#include "ElementNamingUtils.h"
 #include "Document.h"
 #include "DocumentObserver.h"
 #include "GeoFeature.h"
@@ -157,7 +157,7 @@ DocumentObjectT &DocumentObjectT::operator=(DocumentObjectT&& obj)
 
 void DocumentObjectT::operator=(const DocumentObject* obj)
 {
-    if(!obj || !obj->getNameInDocument()) {
+    if(!obj || !obj->isAttachedToDocument()) {
         object.clear();
         label.clear();
         document.clear();
@@ -343,10 +343,7 @@ Property *DocumentObjectT::getProperty() const {
 
 SubObjectT::SubObjectT() = default;
 
-SubObjectT::SubObjectT(const SubObjectT &other)
-    :DocumentObjectT(other), subname(other.subname)
-{
-}
+SubObjectT::SubObjectT(const SubObjectT &) = default;
 
 SubObjectT::SubObjectT(SubObjectT &&other)
     :DocumentObjectT(std::move(other)), subname(std::move(other.subname))
@@ -561,21 +558,21 @@ const std::string &SubObjectT::getSubName() const {
 
 std::string SubObjectT::getSubNameNoElement(bool withObjName) const {
     if (!withObjName)
-        return Data::ComplexGeoData::noElementName(subname.c_str());
+        return Data::noElementName(subname.c_str());
     std::string res(getObjectName());
     res += ".";
-    const char * element = Data::ComplexGeoData::findElementName(subname.c_str());
+    const char * element = Data::findElementName(subname.c_str());
     if(element)
         return res.insert(res.size(), subname.c_str(), element - subname.c_str());
     return res;
 }
 
 const char *SubObjectT::getElementName() const {
-    return Data::ComplexGeoData::findElementName(subname.c_str());
+    return Data::findElementName(subname.c_str());
 }
 
 bool SubObjectT::hasSubObject() const {
-    return Data::ComplexGeoData::findElementName(subname.c_str()) != subname.c_str();
+    return Data::findElementName(subname.c_str()) != subname.c_str();
 }
 
 bool SubObjectT::hasSubElement() const {
@@ -584,17 +581,17 @@ bool SubObjectT::hasSubElement() const {
 }
 
 std::string SubObjectT::getNewElementName(bool fallback) const {
-    const char *elementName = Data::ComplexGeoData::findElementName(subname.c_str());
+    const char *elementName = Data::findElementName(subname.c_str());
     if (!elementName || !elementName[0])
-        return std::string();
-    std::string name = Data::ComplexGeoData::newElementName(elementName);
+        return {};
+    std::string name = Data::newElementName(elementName);
     if (name.size())
         return name;
 
     std::pair<std::string, std::string> element;
     auto obj = getObject();
     if(!obj)
-        return std::string();
+        return {};
     GeoFeature::resolveElement(obj,subname.c_str(),element);
     if (!element.first.empty() || !fallback)
         return std::move(element.first);
@@ -602,22 +599,22 @@ std::string SubObjectT::getNewElementName(bool fallback) const {
 }
 
 std::string SubObjectT::getOldElementName(int *index, bool fallback) const {
-    const char *elementName = Data::ComplexGeoData::findElementName(subname.c_str());
+    const char *elementName = Data::findElementName(subname.c_str());
     if (!elementName || !elementName[0])
-        return std::string();
-    std::string name = Data::ComplexGeoData::oldElementName(elementName);
+        return {};
+    std::string name = Data::oldElementName(elementName);
     if (name.empty()) {
         std::pair<std::string, std::string> element;
         auto obj = getObject();
         if(!obj)
-            return std::string();
+            return {};
         GeoFeature::resolveElement(obj,subname.c_str(),element);
         if (!element.second.empty())
             name = std::move(element.second);
         else if (fallback && !element.first.empty())
             name = std::move(element.first);
         else
-            return std::string();
+            return {};
     }
     if(index) {
         std::size_t pos = name.find_first_of("0123456789");
@@ -655,14 +652,14 @@ std::vector<App::DocumentObject*> SubObjectT::getSubObjectList(bool flatten) con
 }
 
 SubObjectT SubObjectT::getParent() const {
-    const char *pos  = Data::ComplexGeoData::findElementName(subname.c_str());
+    const char *pos  = Data::findElementName(subname.c_str());
     if (!pos || pos == subname.c_str())
-        return SubObjectT();
+        return {};
 
     if(*pos != '.')
         --pos;
     if(--pos <= subname.c_str())
-        return SubObjectT();
+        return {};
 
     bool found = false;
     for(;pos!=subname.c_str();--pos) {
@@ -858,8 +855,10 @@ class DocumentWeakPtrT::Private {
 public:
     explicit Private(App::Document* doc) : _document(doc) {
         if (doc) {
+            //NOLINTBEGIN
             connectApplicationDeletedDocument = App::GetApplication().signalDeleteDocument.connect(std::bind
                 (&Private::deletedDocument, this, sp::_1));
+            //NOLINTEND
         }
     }
 
@@ -908,7 +907,7 @@ App::Document* DocumentWeakPtrT::operator->() const noexcept
 
 class DocumentObjectWeakPtrT::Private {
 public:
-    explicit Private(App::DocumentObject* obj) : object(obj), indocument(false) {
+    explicit Private(App::DocumentObject* obj) : object(obj) {
         set(obj);
     }
     void deletedDocument(const App::Document& doc) {
@@ -938,6 +937,7 @@ public:
     void set(App::DocumentObject* obj) {
         object = obj;
         if (obj) {
+            //NOLINTBEGIN
             indocument = true;
             connectApplicationDeletedDocument = App::GetApplication().signalDeleteDocument.connect(std::bind
             (&Private::deletedDocument, this, sp::_1));
@@ -946,6 +946,7 @@ public:
             (&Private::createdObject, this, sp::_1));
             connectDocumentDeletedObject = doc->signalDeletedObject.connect(std::bind
             (&Private::deletedObject, this, sp::_1));
+            //NOLINTEND
         }
     }
     App::DocumentObject* get() const noexcept {
@@ -953,7 +954,7 @@ public:
     }
 
     App::DocumentObject* object;
-    bool indocument;
+    bool indocument{false};
     using Connection = boost::signals2::scoped_connection;
     Connection connectApplicationDeletedDocument;
     Connection connectDocumentCreatedObject;
@@ -1013,12 +1014,14 @@ bool DocumentObjectWeakPtrT::operator!= (const DocumentObjectWeakPtrT& p) const 
 
 DocumentObserver::DocumentObserver() : _document(nullptr)
 {
+    //NOLINTBEGIN
     this->connectApplicationCreatedDocument = App::GetApplication().signalNewDocument.connect(std::bind
         (&DocumentObserver::slotCreatedDocument, this, sp::_1));
     this->connectApplicationDeletedDocument = App::GetApplication().signalDeleteDocument.connect(std::bind
         (&DocumentObserver::slotDeletedDocument, this, sp::_1));
     this->connectApplicationActivateDocument = App::GetApplication().signalActiveDocument.connect(std::bind
         (&DocumentObserver::slotActivateDocument, this, sp::_1));
+    //NOLINTEND
 }
 
 DocumentObserver::DocumentObserver(Document* doc) : DocumentObserver()
@@ -1047,6 +1050,7 @@ void DocumentObserver::attachDocument(Document* doc)
         detachDocument();
         _document = doc;
 
+        //NOLINTBEGIN
         this->connectDocumentCreatedObject = _document->signalNewObject.connect(std::bind
             (&DocumentObserver::slotCreatedObject, this, sp::_1));
         this->connectDocumentDeletedObject = _document->signalDeletedObject.connect(std::bind
@@ -1057,6 +1061,7 @@ void DocumentObserver::attachDocument(Document* doc)
             (&DocumentObserver::slotRecomputedObject, this, sp::_1));
         this->connectDocumentRecomputed = _document->signalRecomputed.connect(std::bind
             (&DocumentObserver::slotRecomputedDocument, this, sp::_1));
+        //NOLINTEND
     }
 }
 

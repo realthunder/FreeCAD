@@ -85,10 +85,7 @@ ViewProviderShapeBinder::ViewProviderShapeBinder()
     LineWidth.setValue(1);
 }
 
-ViewProviderShapeBinder::~ViewProviderShapeBinder()
-{
-
-}
+ViewProviderShapeBinder::~ViewProviderShapeBinder() = default;
 
 bool ViewProviderShapeBinder::setEdit(int ModNum) {
     // TODO Share code with other view providers (2015-09-11, Fat-Zer)
@@ -135,7 +132,7 @@ void ViewProviderShapeBinder::highlightReferences(bool on)
         return;
 
     // stop if not a Part feature was found
-    if (!obj || !obj->getTypeId().isDerivedFrom(Part::Feature::getClassTypeId()))
+    if (!obj || !obj->isDerivedFrom<Part::Feature>())
         return;
 
     PartGui::ViewProviderPart* svp = dynamic_cast<PartGui::ViewProviderPart*>(
@@ -214,6 +211,7 @@ PROPERTY_SOURCE(PartDesignGui::ViewProviderSubShapeBinder, PartGui::ViewProvider
 ViewProviderSubShapeBinder::ViewProviderSubShapeBinder()
 {
 }
+
 ////////////////////////////////////////////////////////////////////////////////////////
 
 namespace Gui {

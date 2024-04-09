@@ -461,13 +461,13 @@ const std::string &ObjectIdentifier::toString() const
 std::string ObjectIdentifier::toPersistentString() const {
 
     if(!owner)
-        return std::string();
+        return {};
 
     std::ostringstream s;
     ResolveResults result(*this);
 
     if(result.propertyIndex >= (int)components.size())
-        return std::string();
+        return {};
 
     auto itComp = components.begin() + result.propertyIndex;
     
@@ -531,7 +531,7 @@ std::size_t ObjectIdentifier::hash() const
 {
     if(_hash && !_cache.empty())
         return _hash;
-    if (!owner || !owner->getNameInDocument())
+    if (!owner || !owner->isAttachedToDocument())
         return 0;
     // To disambiguate local property reference syntax, include the owner's fullname
     const_cast<ObjectIdentifier*>(this)->_hash = boost::hash_value(
@@ -1007,14 +1007,14 @@ App::DocumentObject * ObjectIdentifier::getDocumentObject(const App::Document * 
     }
 
     std::vector<DocumentObject*> docObjects = doc->getObjects();
-    for (std::vector<DocumentObject*>::iterator j = docObjects.begin(); j != docObjects.end(); ++j) {
-        if (strcmp((*j)->Label.getValue(), static_cast<const char*>(name)) == 0) {
+    for (auto docObject : docObjects) {
+        if (strcmp(docObject->Label.getValue(), static_cast<const char*>(name)) == 0) {
             // Found object with matching label
             if (objectByLabel)  {
                 FC_WARN("duplicate object label " << doc->getName() << '#' << static_cast<const char*>(name));
                 return nullptr;
             }
-            objectByLabel = *j;
+            objectByLabel = docObject;
         }
     }
 
@@ -1048,7 +1048,7 @@ App::DocumentObject * ObjectIdentifier::getDocumentObject(const App::Document * 
 
 void ObjectIdentifier::resolve(ResolveResults &results) const
 {
-    if(!owner || !owner->getNameInDocument())
+    if(!owner || !owner->isAttachedToDocument())
         return;
 
     bool docAmbiguous = false;
@@ -1218,14 +1218,14 @@ Document * ObjectIdentifier::getDocument(String name, bool *ambiguous) const
     App::Document * docByLabel = nullptr;
     const std::vector<App::Document*> docs = App::GetApplication().getDocuments();
 
-    for (std::vector<App::Document*>::const_iterator i = docs.begin(); i != docs.end(); ++i) {
-        if ((*i)->Label.getValue() == name.getString()) {
+    for (auto doc : docs) {
+        if (doc->Label.getValue() == name.getString()) {
             /* Multiple hits for same label? */
             if (docByLabel) {
                 if(ambiguous) *ambiguous = true;
                 return nullptr;
             }
-            docByLabel = *i;
+            docByLabel = doc;
         }
     }
 
@@ -1667,7 +1667,7 @@ Property *ObjectIdentifier::resolveProperty(const App::DocumentObject *obj,
     }
 
     auto getSubObject = [](const DocumentObject *obj, const char *s) -> DocumentObject* {
-        if(!obj || !obj->getNameInDocument())
+        if(!obj || !obj->isAttachedToDocument())
             return nullptr;
         if(s && s[0] == '.')
             ++s;
@@ -1755,7 +1755,7 @@ Property *ObjectIdentifier::resolveProperty(const App::DocumentObject *obj,
             sub += ".";
 
         auto ssobj = getSubObject(obj, sub.c_str());
-        if(!ssobj || !ssobj->getNameInDocument()) {
+        if(!ssobj || !ssobj->isAttachedToDocument()) {
             if(foundSobj)
                 ptype = PseudoSubObject;
             return nullptr;
@@ -1891,7 +1891,7 @@ void ObjectIdentifier::setDocumentObjectName(ObjectIdentifier::String &&name, bo
 void ObjectIdentifier::setDocumentObjectName(const App::DocumentObject *obj, bool force,
         ObjectIdentifier::String &&subname, bool checkImport)
 {
-    if(!owner || !obj || !obj->getNameInDocument() || !obj->getDocument())
+    if(!owner || !obj || !obj->isAttachedToDocument() || !obj->getDocument())
         FC_THROWM(Base::RuntimeError,"invalid object");
 
     if(checkImport)
@@ -2327,7 +2327,7 @@ App::any ObjectIdentifier::getValue(bool pathValue, bool *isPseudoProperty) cons
     }catch(Py::Exception &) {
         Base::PyException::ThrowException();
     }
-    return App::any();
+    return {};
 }
 
 Py::Object ObjectIdentifier::getPyValue(bool pathValue, bool *isPseudoProperty, bool *isReadOnly) const
@@ -2497,7 +2497,7 @@ bool ObjectIdentifier::isTouched() const {
 }
 
 void ObjectIdentifier::resolveAmbiguity() {
-    if(!owner || !owner->getNameInDocument())
+    if(!owner || !owner->isAttachedToDocument())
         return;
 
     if(subObjectName.getString().empty() && components.size()==1) {
@@ -2554,15 +2554,7 @@ void ObjectIdentifier::resolveAmbiguity(ResolveResults &result) {
  */
 
 ObjectIdentifier::ResolveResults::ResolveResults(const ObjectIdentifier &oi)
-    : propertyIndex(0)
-    , resolvedDocument(nullptr)
-    , resolvedDocumentName()
-    , resolvedDocumentObject(nullptr)
-    , resolvedDocumentObjectName()
-    , resolvedSubObject(nullptr)
-    , resolvedProperty(nullptr)
-    , propertyName()
-    , propertyType(PseudoNone)
+    : propertyType(PseudoNone)
 {
     oi.resolve(*this);
 }

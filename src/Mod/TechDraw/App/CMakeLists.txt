@@ -1,9 +1,3 @@
-if(MSVC)
-    add_definitions(-DFCAppTechDraw -DHAVE_ACOSH -DHAVE_ASINH -DHAVE_ATANH)
-else(MSVC)
-    add_definitions(-DHAVE_LIMITS_H -DHAVE_CONFIG_H -DHAVE_ACOSH -DHAVE_ATANH -DHAVE_ASINH)
-endif(MSVC)
-
 include_directories(
     ${CMAKE_BINARY_DIR}
     ${CMAKE_BINARY_DIR}/src
@@ -16,7 +10,6 @@ include_directories(
     ${ZLIB_INCLUDE_DIR}
     ${PYTHON_INCLUDE_DIRS}
     ${XercesC_INCLUDE_DIRS}
-    ${QT_QTCORE_INCLUDE_DIR}
 )
 
 set(TechDrawLIBS
@@ -35,10 +28,15 @@ endif()
 
 include_directories(
     ${QtConcurrent_INCLUDE_DIRS}
+    ${QtCore_INCLUDE_DIR}
+    ${QtGui_INCLUDE_DIR}
+    ${QtWidgets_INCLUDE_DIRS}
 )
 set(QtXmlPatternsLib ${QtXmlPatterns_LIBRARIES})
 list(APPEND TechDrawLIBS
     ${QtConcurrent_LIBRARIES}
+    ${QtCore_LIBRARIES}
+    ${QtWidgets_LIBRARIES}
 )
 
 link_directories(${OCC_LIBRARY_DIR})
@@ -165,6 +163,8 @@ SET(TechDraw_SRCS
     DrawProjectSplit.h
     LineGroup.cpp
     LineGroup.h
+    LineNameEnum.cpp
+    LineNameEnum.h
     ArrowPropEnum.cpp
     ArrowPropEnum.h
     Preferences.cpp
@@ -175,6 +175,8 @@ SET(TechDraw_SRCS
     ProjectionAlgos.h
     XMLQuery.cpp
     XMLQuery.h
+    LineGenerator.cpp
+    LineGenerator.h
 )
 
 SET(Geometry_SRCS
@@ -182,6 +184,8 @@ SET(Geometry_SRCS
     Geometry.h
     GeometryObject.cpp
     GeometryObject.h
+    ShapeUtils.cpp
+    ShapeUtils.h
     CenterLine.cpp
     CenterLine.h
     Cosmetic.cpp

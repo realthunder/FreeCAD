@@ -287,9 +287,7 @@ SoSkipBoundingGroup::SoSkipBoundingGroup()
 /*!
   Destructor.
 */
-SoSkipBoundingGroup::~SoSkipBoundingGroup()
-{
-}
+SoSkipBoundingGroup::~SoSkipBoundingGroup() = default;
 
 void
 SoSkipBoundingGroup::initClass()

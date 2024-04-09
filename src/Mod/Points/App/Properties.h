@@ -38,17 +38,12 @@ namespace Points
 
 /** Greyvalue property.
  */
-class PointsExport PropertyGreyValue : public App::PropertyFloat
+class PointsExport PropertyGreyValue: public App::PropertyFloat
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    PropertyGreyValue()
-    {
-    }
-    ~PropertyGreyValue() override
-    {
-    }
+    PropertyGreyValue() = default;
 };
 
 class PointsExport PropertyGreyValueList: public App::_PropertyFloatList
@@ -57,7 +52,7 @@ class PointsExport PropertyGreyValueList: public App::_PropertyFloatList
 public:
     /** @name Modify */
     //@{
-    void removeIndices( const std::vector<unsigned long>& );
+    void removeIndices(const std::vector<unsigned long>&);
     //@}
 };
 
@@ -69,8 +64,8 @@ public:
 
     /** @name Modify */
     //@{
-    void transformGeometry(const Base::Matrix4D &rclMat);
-    void removeIndices( const std::vector<unsigned long>& );
+    void transformGeometry(const Base::Matrix4D& rclMat);
+    void removeIndices(const std::vector<unsigned long>&);
     //@}
 };
 
@@ -96,34 +91,34 @@ class PointsExport PropertyCurvatureList: public App::PropertyListsT<CurvatureIn
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    enum { 
-        MeanCurvature  = 0,  /**< Mean curvature */
-        GaussCurvature = 1,  /**< Gaussian curvature */
-        MaxCurvature   = 2,  /**< Maximum curvature */ 
-        MinCurvature   = 3,  /**< Minimum curvature */
-        AbsCurvature   = 4   /**< Absolute curvature */
+    enum
+    {
+        MeanCurvature = 0,  /**< Mean curvature */
+        GaussCurvature = 1, /**< Gaussian curvature */
+        MaxCurvature = 2,   /**< Maximum curvature */
+        MinCurvature = 3,   /**< Minimum curvature */
+        AbsCurvature = 4    /**< Absolute curvature */
     };
 
 public:
     PropertyCurvatureList();
-    ~PropertyCurvatureList() override;
 
     std::vector<float> getCurvature( int tMode) const;
 
-    PyObject *getPyObject(void) override;
+    PyObject *getPyObject() override;
 
     /** @name Undo/Redo */
     //@{
     /// returns a new copy of the property (mainly for Undo/Redo and transactions)
-    App::Property *Copy(void) const override;
+    App::Property *Copy() const override;
     /// paste the value from the property (mainly for Undo/Redo and transactions)
     void Paste(const App::Property &from) override;
     //@}
 
     /** @name Modify */
     //@{
-    void transformGeometry(const Base::Matrix4D &rclMat);
-    void removeIndices( const std::vector<unsigned long>& );
+    void transformGeometry(const Base::Matrix4D& rclMat);
+    void removeIndices(const std::vector<unsigned long>&);
     //@}
 
 protected:
@@ -136,7 +131,7 @@ protected:
     void saveStream(Base::OutputStream &) const override;
 };
 
-} // namespace Points
+}  // namespace Points
 
 
-#endif // POINTS_POINTPROPERTIES_H 
+#endif  // POINTS_POINTPROPERTIES_H

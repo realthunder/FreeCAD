@@ -168,7 +168,7 @@ public:
     // attribute values, using struct PythonData.
     //
     // The subsequent hierarchy is handled by Level2Data, which is the last
-    // non-physical data, because all both idx fields and the row member are
+    // non-physical data, because both idx fields and the row member are
     // used up. Further hierarchies are represented by various concrete model
     // data such as ObjectData, PropertyData, and PythonData.
 
@@ -195,7 +195,7 @@ public:
 
         Info info32;
         if(info.d.idx1 == -2 && info.d.idx2 > 0xffff) {
-            // For 32 bit machine, and the second index is longer can 16 bits,
+            // For 32 bit machine, and the second index is longer than 16 bits,
             // we'll store the extra bits of idx2 in idx1
             qint32 extra = (info.d.idx2 >> 16);
             assert(extra < 0x7ff0);
@@ -250,7 +250,7 @@ public:
             if(doc)
                 return *this;
 
-            assert(obj && obj->getNameInDocument());
+            assert(obj && obj->isAttachedToDocument());
 
             objID = obj->getID();
             doc = obj->getDocument();
@@ -264,7 +264,7 @@ public:
 
             std::set<App::DocumentObject*> outSet;
             for(auto o : obj->getLinkedObject(true)->getOutList()) {
-                if(o && o->getNameInDocument() && outSet.insert(o).second) {
+                if(o && o->isAttachedToDocument() && outSet.insert(o).second) {
                     std::string sub(o->getNameInDocument());
                     sub += ".";
                     if(obj->getSubObject(sub.c_str()) == o)
@@ -461,7 +461,7 @@ public:
 
         static QString objName(App::DocumentObject *obj, int row, bool sep=true) {
             QString res;
-            if(!obj || !obj->getNameInDocument())
+            if(!obj || !obj->isAttachedToDocument())
                 return res;
             if(sep)
                 res = QStringLiteral(".");
@@ -537,8 +537,8 @@ public:
         QVariant sobjData(App::DocumentObject *obj, App::DocumentObject *sobj,
                 int row, int role, bool local=false) const
         {
-            if(obj && obj->getNameInDocument()
-                    && sobj && sobj->getNameInDocument()
+            if(obj && obj->isAttachedToDocument()
+                    && sobj && sobj->isAttachedToDocument()
                     && !(row & 1))
             {
                 if(role == Qt::EditRole)
@@ -1761,7 +1761,7 @@ public:
 
     void setDocumentObject(const App::DocumentObject *obj, bool checkInList) {
         inList.clear();
-        if(obj && obj->getNameInDocument()) {
+        if(obj && obj->isAttachedToDocument()) {
             currentObj = obj;
             if(!noProperty && checkInList)
                 inList = obj->getInListEx(true);
@@ -1848,7 +1848,7 @@ public:
     }
 
     ObjectData *getObjectData(const Info &info, int row, App::DocumentObject *obj) const {
-        if(!obj || !obj->getNameInDocument())
+        if(!obj || !obj->isAttachedToDocument())
             return nullptr;
         auto r = dataMap.insert(std::make_pair(createIndex(row,0,infoId(info)),-1));
         if(r.first->second<0) {
@@ -1868,7 +1868,7 @@ public:
     }
 
     ElementData *getElementData(const Info &info, int row, App::DocumentObject *obj) const {
-        if(!obj || !obj->getNameInDocument())
+        if(!obj || !obj->isAttachedToDocument())
             return nullptr;
         auto r = dataMap.insert(std::make_pair(createIndex(row,0,infoId(info)),-1));
         if(r.first->second<0) {
@@ -2109,8 +2109,9 @@ void ExpressionCompleter::init() {
     setModel(m);
 }
 
-void ExpressionCompleter::setDocumentObject(const App::DocumentObject *obj, bool _checkInList) {
-    if(!obj || !obj->getNameInDocument())
+void ExpressionCompleter::setDocumentObject(const App::DocumentObject *obj, bool _checkInList)
+{
+    if (!obj || !obj->isAttachedToDocument())
         currentObj = App::DocumentObjectT();
     else
         currentObj = obj;
@@ -2135,8 +2136,8 @@ void ExpressionCompleter::setSearchUnit(bool enabled) {
 QString ExpressionCompleter::pathFromIndex ( const QModelIndex & index ) const
 {
     auto m = model();
-    if(!m || !index.isValid())
-        return QString();
+    if (!m || !index.isValid())
+        return {};
 
     QString res = m->data(index, Qt::UserRole+1).toString();
     if(res.size())

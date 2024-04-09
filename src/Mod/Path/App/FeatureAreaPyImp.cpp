@@ -22,6 +22,7 @@
 
 #include "PreCompiled.h"
 
+#include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Mod/Part/App/TopoShapePy.h>
 
 // inclusion of the generated files (generated out of FeatureAreaPy.xml)

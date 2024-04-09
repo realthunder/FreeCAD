@@ -582,12 +582,12 @@ App::any pyObjectToAny(Py::Object value, bool check) {
     Timing(pyObjectToAny);
 
     if(value.isNone())
-        return App::any();
+        return {};
 
     PyObject *pyvalue = value.ptr();
 
     if(!check)
-        return App::any(pyObjectWrap(pyvalue));
+        return {pyObjectWrap(pyvalue)};
 
     if (PyObject_TypeCheck(pyvalue, &Base::QuantityPy::Type)) {
         Base::QuantityPy * qp = static_cast<Base::QuantityPy*>(pyvalue);
@@ -1186,7 +1186,7 @@ struct EvalFrame {
     Py::Object *getLocalVar(const std::string &name) {
         auto iter = vars.find(name);
         if(iter == vars.end())
-            return 0;
+            return nullptr;
         return &iter->second->obj;
     }
 
@@ -1462,7 +1462,7 @@ std::map<App::ObjectIdentifier,bool> Expression::getIdentifiers()  const {
 class AdjustLinksExpressionVisitor : public ExpressionVisitor {
 public:
     explicit AdjustLinksExpressionVisitor(const std::set<App::DocumentObject*> &inList)
-        :inList(inList),res(false)
+        :inList(inList)
     {}
 
     void visit(Expression &e) override {
@@ -1471,7 +1471,7 @@ public:
     }
 
     const std::set<App::DocumentObject*> &inList;
-    bool res;
+    bool res{false};
 };
 
 bool Expression::adjustLinks(const std::set<App::DocumentObject*> &inList) {
@@ -1543,7 +1543,7 @@ ExpressionPtr Expression::updateLabelReference(
         App::DocumentObject *obj, const std::string &ref, const char *newLabel) const 
 {
     if(ref.size()<=2)
-        return 0;
+        return {};
     std::vector<std::string> labels;
     for(auto &v : getIdentifiers())
         v.first.getDepLabels(labels);
@@ -1556,7 +1556,7 @@ ExpressionPtr Expression::updateLabelReference(
             return expr;
         }
     }
-    return 0;
+    return {};
 }
 
 class ReplaceObjectExpressionVisitor : public ExpressionVisitor {
@@ -1592,7 +1592,7 @@ ExpressionPtr Expression::replaceObject(const DocumentObject *parent,
     const_cast<Expression*>(this)->visit(v);
 
     if(v.paths.empty())
-        return 0;
+        return {};
 
     // Now make a copy and do the actual replacement
     ExpressionPtr expr(copy());
@@ -2842,6 +2842,38 @@ const std::vector<FunctionExpression::FunctionInfo> &FunctionExpression::getFunc
                            "delayed until the callable is invoked.\n"},
         {IMPORT_PY, "import_py", "import_py(string), import the given python module"},
         {PRAGMA, "pragma", "pragma(arg...), expression interpreter behavior control"},
+
+        {VANGLE, "vangle", "vangle(vector, vecotr) -> float \n\n"
+                           "Return the angle (in degree) between two vectors"},
+        {VCROSS, "vcross", "vcross(vector, vector) -> vector \n\n"
+                           "Cross product of two vectors"},
+        {VDOT, "vdot", "vdot(vector, vector) -> float \n\n"
+                       "Dot product of two vectors"},
+        {VLINEDIST, "vlinedist",
+            "vlinedist(point:vector, base:vector, dir:vector) -> float\n\n"
+            "Return the distance from point to a line defined by a base point and direction"},
+        {VLINESEGDIST, "vlinesegdist",
+            "vlinesegdist(p0:vector, p1:vector, p2:vector) -> float\n\n"
+            "Return the distance from point p0 to a line defined by two points p1 and p2"},
+        {VLINEPROJ, "vlineproj", "vlineproj(point:vector, base:vector, dir:vector) -> vector\n\n"
+                                 "Projects the point to a line defined by a base point and direction"},
+        {VNORMALIZE, "vnormalize", "vnormalize(vector) -> vector\n\n"
+                                   "Normalize the vector"},
+        {VPLANEDIST, "VPLANEDIST",
+            "vplanedist(point:vector, base:vector, normal:vector) -> float\n\n"
+            "Returns the distance from a point to a plane defined by a base point and normal direction"},
+        {VPLANEPROJ, "vplaneproj",
+            "vplaneproj(point:vector, base:vector, normal:vector) -> vector\n\n"
+            "Projects a point to a plane defined by a base point and normal direction"},
+        {VSCALE, "vscale", "vscale(vector, float, float, float) -> vector\n\n"
+                           "Scale the vector in all three axes"},
+        {VSCALEX, "vscalex", "vscalex(vector, float) -> vector\n\n"
+                             "Scale the vector in the x axis"},
+        {VSCALEY, "vscaley", "vscaley(vector, float) -> vector\n\n"
+                             "Scale the vector in the y axis"},
+        {VSCALEZ, "vscalez", "vscalez(vector, float) -> vector\n\n"
+                             "Scale the vector in the z axis"},
+
         {MSCALE, "mscale", "mscale(matrix, vector)\n"
                            "mscale(matrix, scalex, scaley, scalez)\n\n"
                            "Scaling of a matrix"},
@@ -2851,9 +2883,9 @@ const std::vector<FunctionExpression::FunctionInfo> &FunctionExpression::getFunc
                              "Rotate a matrix"},
         {MROTATEX, "mrotatex", "mrotatex(matrix, angle)\n"
                               "Rotate the matrix along x axis"},
-        {MROTATEY, "mrotatex", "mrotatey(matrix, angle)\n"
+        {MROTATEY, "mrotatey", "mrotatey(matrix, angle)\n"
                               "Rotate the matrix along y axis"},
-        {MROTATEZ, "mrotatex", "mrotatez(matrix, angle)\n"
+        {MROTATEZ, "mrotatez", "mrotatez(matrix, angle)\n"
                               "Rotate the matrix along z axis"},
         {MTRANSLATE, "mtranslate", "mtranslate(matrix, vector)\n"
                                    "translate a matrix"},
@@ -2940,7 +2972,7 @@ bool FunctionExpression::isTouched() const
 
 class Collector {
 public:
-    Collector() : first(true) { }
+    Collector() = default;
     virtual ~Collector() = default;
     virtual void collect(Quantity value) {
         if (first)
@@ -2961,7 +2993,7 @@ public:
     COLLECTOR_ALLOC(Collector)
 
 protected:
-    bool first;
+    bool first{true};
     Quantity q;
 };
 
@@ -2980,7 +3012,8 @@ public:
 
 class AverageCollector : public Collector {
 public:
-    AverageCollector() : Collector(), n(0) { }
+    AverageCollector() : Collector() { }
+
     COLLECTOR_ALLOC(AverageCollector)
 
     void collect(Quantity value) override {
@@ -2993,12 +3026,13 @@ public:
     Quantity getQuantity() const override { return q/(double)n; }
 
 private:
-    unsigned int n;
+    unsigned int n{0};
 };
 
 class StdDevCollector : public Collector {
 public:
-    StdDevCollector() : Collector(), n(0) { }
+    StdDevCollector() : Collector() { }
+
     COLLECTOR_ALLOC(StdDevCollector)
 
     void collect(Quantity value) override {
@@ -3024,14 +3058,15 @@ public:
     }
 
 private:
-    unsigned int n;
+    unsigned int n{0};
     Quantity mean;
     Quantity M2;
 };
 
 class CountCollector : public Collector {
 public:
-    CountCollector() : Collector(), n(0) { }
+    CountCollector() : Collector() { }
+
     COLLECTOR_ALLOC(CountCollector)
 
     void collect(Quantity value) override {
@@ -3043,12 +3078,13 @@ public:
     Quantity getQuantity() const override { return Quantity(n); }
 
 private:
-    unsigned int n;
+    unsigned int n{0};
 };
 
 class MinCollector : public Collector {
 public:
     MinCollector() : Collector() { }
+
     COLLECTOR_ALLOC(MinCollector)
 
     void collect(Quantity value) override {
@@ -3062,6 +3098,7 @@ public:
 class MaxCollector : public Collector {
 public:
     MaxCollector() : Collector() { }
+
     COLLECTOR_ALLOC(MaxCollector)
 
     void collect(Quantity value) override {
@@ -3079,22 +3116,22 @@ Py::Object FunctionExpression::evalAggregate(
 
     switch (f) {
     case SUM:
-        c.reset(new SumCollector);
+        c = std::make_unique<SumCollector>();
         break;
     case AVERAGE:
-        c.reset(new AverageCollector);
+        c = std::make_unique<AverageCollector>();
         break;
     case STDDEV:
-        c.reset(new StdDevCollector);
+        c = std::make_unique<StdDevCollector>();
         break;
     case COUNT:
-        c.reset(new CountCollector);
+        c = std::make_unique<CountCollector>();
         break;
     case MIN:
-        c.reset(new MinCollector);
+        c = std::make_unique<MinCollector>();
         break;
     case MAX:
-        c.reset(new MaxCollector);
+        c = std::make_unique<MaxCollector>();
         break;
     default:
         assert(false);
@@ -3203,13 +3240,43 @@ Py::Object FunctionExpression::translationMatrix(double x, double y, double z)
     return Py::asObject(new Base::MatrixPy(matrix));
 }
 
+double FunctionExpression::extractLengthValueArgument(
+    const Expression *expression,
+    const ExpressionList &arguments,
+    int argumentIndex
+)
+{
+    Quantity argumentQuantity = pyToQuantity(arguments[argumentIndex]->getPyValue(), expression);
+
+    if (!(argumentQuantity.isDimensionlessOrUnit(Unit::Length))) {
+        _EXPR_THROW("Unit must be either empty or a length.", expression);
+    }
+
+    return argumentQuantity.getValue();
+}
+
+Base::Vector3d FunctionExpression::extractVectorArgument(
+    const Expression *expression,
+    const ExpressionList &arguments,
+    int argumentIndex
+)
+{
+    Py::Object argument = arguments[argumentIndex]->getPyValue();
+
+    if (!PyObject_TypeCheck(argument.ptr(), &Base::VectorPy::Type)) {
+        _EXPR_THROW("Argument must be a vector.", expression);
+    }
+
+    return static_cast<Base::VectorPy*>(argument.ptr())->value();
+}
+
 Py::Object FunctionExpression::evaluate(const Expression *expr, int f, const ExpressionList &args) 
 {
     if(!expr || !expr->getOwner())
         _EXPR_THROW("Invalid owner.", expr);
 
     if(args.empty())
-        _EXPR_THROW("Function requires at least one argument.",expr);
+        _EXPR_THROW("Function requires at least one argument.", expr);
 
     // Handle aggregate functions
     if (f > AGGREGATES)
@@ -3400,6 +3467,76 @@ Py::Object FunctionExpression::evaluate(const Expression *expr, int f, const Exp
     case HREF:
     case DBIND: {
         return args[0]->getPyValue();
+    }
+    case VANGLE:
+    case VCROSS:
+    case VDOT:
+    case VLINEDIST:
+    case VLINESEGDIST:
+    case VLINEPROJ:
+    case VNORMALIZE:
+    case VPLANEDIST:
+    case VPLANEPROJ:
+    case VSCALE:
+    case VSCALEX:
+    case VSCALEY:
+    case VSCALEZ: {
+        Base::Vector3d vector1 = extractVectorArgument(expr, args, 0);
+
+        switch (f) {
+        case VNORMALIZE:
+            return Py::asObject(new Base::VectorPy(vector1.Normalize()));
+        case VSCALE: {
+            double scaleX = extractLengthValueArgument(expr, args, 1);
+            double scaleY = extractLengthValueArgument(expr, args, 2);
+            double scaleZ = extractLengthValueArgument(expr, args, 3);
+            vector1.Scale(scaleX, scaleY, scaleZ);
+            return Py::asObject(new Base::VectorPy(vector1));
+        }
+        case VSCALEX: {
+            double scaleX = extractLengthValueArgument(expr, args, 1);
+            vector1.ScaleX(scaleX);
+            return Py::asObject(new Base::VectorPy(vector1));
+        }
+        case VSCALEY: {
+            double scaleY = extractLengthValueArgument(expr, args, 1);
+            vector1.ScaleY(scaleY);
+            return Py::asObject(new Base::VectorPy(vector1));
+        }
+        case VSCALEZ: {
+            double scaleZ = extractLengthValueArgument(expr, args, 1);
+            vector1.ScaleZ(scaleZ);
+            return Py::asObject(new Base::VectorPy(vector1));
+        }
+        }
+
+        Base::Vector3d vector2 = extractVectorArgument(expr, args, 1);
+
+        switch (f) {
+        case VANGLE:
+            return Py::asObject(new QuantityPy(new Quantity(vector1.GetAngle(vector2) * 180 / M_PI, Unit::Angle)));
+        case VCROSS:
+            return Py::asObject(new Base::VectorPy(vector1.Cross(vector2)));
+        case VDOT:
+            return Py::Float(vector1.Dot(vector2));
+        }
+
+        Base::Vector3d vector3 = extractVectorArgument(expr, args, 2);
+
+        switch (f) {
+        case VLINEDIST:
+            return Py::asObject(new QuantityPy(new Quantity(vector1.DistanceToLine(vector2, vector3), Unit::Length)));
+        case VLINESEGDIST:
+            return Py::asObject(new Base::VectorPy(vector1.DistanceToLineSegment(vector2, vector3)));
+        case VLINEPROJ:
+            vector1.ProjectToLine(vector2, vector3);
+            return Py::asObject(new Base::VectorPy(vector1));
+        case VPLANEDIST:
+            return Py::asObject(new QuantityPy(new Quantity(vector1.DistanceToPlane(vector2, vector3), Unit::Length)));
+        case VPLANEPROJ:
+            vector1.ProjectToPlane(vector2, vector3);
+            return Py::asObject(new Base::VectorPy(vector1));
+        }
     } default:
         break;
     }
@@ -4123,7 +4260,7 @@ void VariableExpression::addComponent(ComponentPtr &&c) {
             var << ObjectIdentifier::RangeComponent(l1,l2,l3);
             return;
         }
-    }while(0);
+    }while(false);
 
     Expression::addComponent(std::move(c));
 }
@@ -4268,17 +4405,28 @@ bool VariableExpression::_updateElementReference(
 }
 
 bool VariableExpression::_renameObjectIdentifier(
-        const std::map<ObjectIdentifier,ObjectIdentifier> &paths,
-        const ObjectIdentifier &path, ExpressionVisitor &v)
+    const std::map<ObjectIdentifier, ObjectIdentifier>& paths,
+    const ObjectIdentifier& path,
+    ExpressionVisitor& visitor)
 {
-    const auto &oldPath = var.canonicalPath();
+    const auto& oldPath = var.canonicalPath();
     auto it = paths.find(oldPath);
     if (it != paths.end()) {
-        v.aboutToChange();
-        if(path.getOwner())
+        visitor.aboutToChange();
+        const bool originalHasDocumentObjectName = var.hasDocumentObjectName();
+        ObjectIdentifier::String originalDocumentObjectName = var.getDocumentObjectName();
+        std::string originalSubObjectName = var.getSubObjectName();
+        if (path.getOwner()) {
             var = it->second.relativeTo(path);
-        else
+        }
+        else {
             var = it->second;
+        }
+        if (originalHasDocumentObjectName) {
+            var.setDocumentObjectName(std::move(originalDocumentObjectName),
+                                      true,
+                                      originalSubObjectName);
+        }
         return true;
     }
     return false;
@@ -6565,7 +6713,7 @@ bool SimpleStatement::isTouched() const {
 const Expression *SimpleStatement::getExpr(std::size_t i) const {
     if(i < exprs.size())
         return exprs[i].get();
-    return 0;
+    return nullptr;
 }
 
 void SimpleStatement::_toString(std::ostream &ss, bool persistent, int) const {
@@ -6620,7 +6768,7 @@ ExpressionPtr SimpleStatement::reduce() const {
             return e->reduce();
         return exprs[0]->copy();
     }
-    return 0;
+    return {};
 }
 
 ////////////////////////////////////////////////////////////////////////////////////

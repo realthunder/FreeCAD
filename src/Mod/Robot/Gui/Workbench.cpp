@@ -22,28 +22,28 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
-# include <QDir>
-# include <qobject.h>
-# include <QFileInfo>
-# include <QMessageBox>
+#include <QDir>
+#include <QFileInfo>
+#include <QMessageBox>
+#include <qobject.h>
 #endif
 
 #include <App/Application.h>
 #include <Gui/Control.h>
 #include <Gui/MainWindow.h>
 #include <Gui/MenuManager.h>
-#include <Gui/ToolBarManager.h>
-#include <Gui/WaitCursor.h>
 #include <Gui/TaskView/TaskView.h>
 #include <Gui/TaskView/TaskWatcher.h>
+#include <Gui/ToolBarManager.h>
+#include <Gui/WaitCursor.h>
 
-#include "Workbench.h"
 #include "TaskWatcher.h"
+#include "Workbench.h"
 
 
 using namespace RobotGui;
 
-#if 0 // needed for Qt's lupdate utility
+#if 0  // needed for Qt's lupdate utility
     qApp->translate("Workbench", "Robot");
     qApp->translate("Workbench", "Insert Robots");
     qApp->translate("Workbench", "&Robot");
@@ -56,19 +56,14 @@ using namespace RobotGui;
 /// @namespace RobotGui @class Workbench
 TYPESYSTEM_SOURCE(RobotGui::Workbench, Gui::StdWorkbench)
 
-Workbench::Workbench()
-{
-}
+Workbench::Workbench() = default;
 
-Workbench::~Workbench()
-{
-}
+Workbench::~Workbench() = default;
 
 void Workbench::activated()
 {
     std::string res = App::Application::getResourceDir();
-    QString dir = QStringLiteral("%1/Mod/Robot/Lib/Kuka")
-                  .arg(QString::fromUtf8(res.c_str()));
+    QString dir = QStringLiteral("%1/Mod/Robot/Lib/Kuka").arg(QString::fromUtf8(res.c_str()));
     QFileInfo fi(dir, QStringLiteral("kr_16.csv"));
 
     if (!fi.exists()) {
@@ -87,72 +82,55 @@ void Workbench::activated()
 
     Gui::Workbench::activated();
 
-    const char* RobotAndTrac[] = {
-        "Robot_InsertWaypoint",
-        "Robot_InsertWaypointPreselect",
-        nullptr};
+    const char* RobotAndTrac[] = {"Robot_InsertWaypoint", "Robot_InsertWaypointPreselect", nullptr};
 
-    const char* Robot[] = {
-        "Robot_AddToolShape",
-        "Robot_SetHomePos",
-        "Robot_RestoreHomePos",
-        nullptr};
+    const char* Robot[] = {"Robot_AddToolShape",
+                           "Robot_SetHomePos",
+                           "Robot_RestoreHomePos",
+                           nullptr};
 
-    const char* Empty[] = {
-        "Robot_InsertKukaIR500",
-        "Robot_InsertKukaIR16",
-        "Robot_InsertKukaIR210",
-        "Robot_InsertKukaIR125",
-        nullptr};
+    const char* Empty[] = {"Robot_InsertKukaIR500",
+                           "Robot_InsertKukaIR16",
+                           "Robot_InsertKukaIR210",
+                           "Robot_InsertKukaIR125",
+                           nullptr};
 
-    const char* TracSingle[] = {
-        "Robot_TrajectoryDressUp",
-        nullptr};
+    const char* TracSingle[] = {"Robot_TrajectoryDressUp", nullptr};
 
-    const char* TracMore[] = {
-        "Robot_TrajectoryCompound",
-        nullptr};
+    const char* TracMore[] = {"Robot_TrajectoryCompound", nullptr};
 
     std::vector<Gui::TaskView::TaskWatcher*> Watcher;
 
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT Robot::TrajectoryObject COUNT 1"
-        "SELECT Robot::RobotObject COUNT 1",
-        RobotAndTrac,
-        "Trajectory tools",
-        "Robot_InsertWaypoint"
-    ));
+    Watcher.push_back(
+        new Gui::TaskView::TaskWatcherCommands("SELECT Robot::TrajectoryObject COUNT 1"
+                                               "SELECT Robot::RobotObject COUNT 1",
+                                               RobotAndTrac,
+                                               "Trajectory tools",
+                                               "Robot_InsertWaypoint"));
 
     Watcher.push_back(new TaskWatcherRobot);
 
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT Robot::RobotObject COUNT 1",
-        Robot,
-        "Robot tools",
-        "Robot_CreateRobot"
-    ));
+    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands("SELECT Robot::RobotObject COUNT 1",
+                                                             Robot,
+                                                             "Robot tools",
+                                                             "Robot_CreateRobot"));
 
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT Robot::TrajectoryObject COUNT 1",
-        TracSingle,
-        "Trajectory tools",
-        "Robot_CreateRobot"
-    ));
+    Watcher.push_back(
+        new Gui::TaskView::TaskWatcherCommands("SELECT Robot::TrajectoryObject COUNT 1",
+                                               TracSingle,
+                                               "Trajectory tools",
+                                               "Robot_CreateRobot"));
 
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT Robot::TrajectoryObject COUNT 2..",
-        TracMore,
-        "Trajectory tools",
-        "Robot_CreateRobot"
-    ));
+    Watcher.push_back(
+        new Gui::TaskView::TaskWatcherCommands("SELECT Robot::TrajectoryObject COUNT 2..",
+                                               TracMore,
+                                               "Trajectory tools",
+                                               "Robot_CreateRobot"));
 
-   Watcher.push_back(new Gui::TaskView::TaskWatcherCommandsEmptyDoc(
-         Empty,
-        "Insert Robot",
-        "Robot_CreateRobot"
-    ));
+    Watcher.push_back(
+        new Gui::TaskView::TaskWatcherCommandsEmptyDoc(Empty, "Insert Robot", "Robot_CreateRobot"));
 
-    
+
     addTaskWatcher(Watcher);
     Gui::Control().showTaskView();
 }
@@ -162,7 +140,6 @@ void Workbench::deactivated()
 {
     Gui::Workbench::deactivated();
     removeTaskWatcher();
-
 }
 
 
@@ -180,7 +157,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
     *part << "Robot_Edge2Trac";
     *part << "Robot_TrajectoryDressUp";
     *part << "Robot_TrajectoryCompound";
-    *part << "Separator"; 
+    *part << "Separator";
     *part << "Robot_SetHomePos";
     *part << "Robot_RestoreHomePos";
     *part << "Separator";
@@ -193,29 +170,26 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     Gui::MenuItem* root = StdWorkbench::setupMenuBar();
     Gui::MenuItem* item = root->findItem("&Windows");
     Gui::MenuItem* robot = new Gui::MenuItem;
-    root->insertItem( item, robot );
+    root->insertItem(item, robot);
 
     // analyze
     Gui::MenuItem* insertRobots = new Gui::MenuItem;
     insertRobots->setCommand("Insert Robots");
-    *insertRobots << "Robot_InsertKukaIR500" 
-                  << "Robot_InsertKukaIR210" 
-                  << "Robot_InsertKukaIR125" 
-                  << "Robot_InsertKukaIR16" 
+    *insertRobots << "Robot_InsertKukaIR500"
+                  << "Robot_InsertKukaIR210"
+                  << "Robot_InsertKukaIR125"
+                  << "Robot_InsertKukaIR16"
                   << "Separator"
-                  << "Robot_AddToolShape"
-                  ;
+                  << "Robot_AddToolShape";
 
     // boolean
     Gui::MenuItem* exportM = new Gui::MenuItem;
     exportM->setCommand("Export trajectory");
-    *exportM << "Robot_ExportKukaCompact" 
-             << "Robot_ExportKukaFull"
-             ;
- 
+    *exportM << "Robot_ExportKukaCompact"
+             << "Robot_ExportKukaFull";
+
     robot->setCommand("&Robot");
-    *robot << insertRobots 
-           << "Robot_CreateTrajectory"
+    *robot << insertRobots << "Robot_CreateTrajectory"
            << "Separator"
            << "Robot_CreateTrajectory"
            << "Robot_InsertWaypoint"
@@ -228,8 +202,6 @@ Gui::MenuItem* Workbench::setupMenuBar() const
            << "Robot_SetDefaultOrientation"
            << "Robot_SetDefaultValues"
            << "Separator"
-           << "Robot_Simulate"
-           << exportM
-           ;
+           << "Robot_Simulate" << exportM;
     return root;
 }

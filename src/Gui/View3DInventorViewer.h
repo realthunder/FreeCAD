@@ -61,11 +61,11 @@ class SoShapeHints;
 class SoMaterial;
 class SoRotationXYZ;
 class SbSphereSheetProjector;
-class SoEventCallback;
+class SoEventCallback;  // NOLINT
 class SbBox2s;
 class SoVectorizeAction;
 class QImage;
-class SoGroup;
+class SoGroup;  // NOLINT
 class SoPickStyle;
 class NaviCube;
 class SoClipPlane;
@@ -122,7 +122,7 @@ public:
     //@{
     enum ViewerMod {
         ShowCoord=1,       /**< Enables the Coordinate system in the corner. */
-        ShowFPS  =2,       /**< Enables the Frams per Second counter. */
+        ShowFPS  =2,       /**< Enables the Frames Per Second counter. */
         SimpleBackground=4,/**< switch to a simple background. */
         DisallowRotation=8,/**< switch off the rotation. */
         DisallowPanning=16,/**< switch off the panning. */
@@ -183,38 +183,42 @@ public:
     const std::set<App::SubObjectT> &getObjectsOnTop() const;
 
     SoDirectionalLight* getBacklight() const;
-    void setBacklight(SbBool on);
-    SbBool isBacklight() const;
+    void setBacklightEnabled(bool on);
+    bool isBacklightEnabled() const;
     void setSceneGraph (SoNode *root) override;
-    SbBool searchNode(SoNode*) const;
+    bool searchNode(SoNode*) const;
 
-    void setAnimationEnabled(const SbBool enable);
-    SbBool isAnimationEnabled() const;
-
-    void setPopupMenuEnabled(const SbBool on);
-    SbBool isPopupMenuEnabled() const;
-
-    void startAnimating(const SbVec3f& axis, float velocity);
+    void setAnimationEnabled(bool enable);
+    void setSpinningAnimationEnabled(bool enable);
+    bool isAnimationEnabled() const;
+    bool isSpinningAnimationEnabled() const;
+    bool isAnimating() const;
+    bool isSpinning() const;
+    void startAnimation(const SbRotation& orientation, const SbVec3f& rotationCenter,
+                        const SbVec3f& translation, int duration = -1, bool wait = false);
+    void startSpinningAnimation(const SbVec3f& axis, float velocity);
     void stopAnimating();
-    SbBool isAnimating() const;
 
-    void setFeedbackVisibility(const SbBool enable);
-    SbBool isFeedbackVisible() const;
+    void setPopupMenuEnabled(bool on);
+    bool isPopupMenuEnabled() const;
 
-    void setFeedbackSize(const int size);
+    void setFeedbackVisibility(bool enable);
+    bool isFeedbackVisible() const;
+
+    void setFeedbackSize(int size);
     int getFeedbackSize() const;
 
     /// Get the preferred samples from the user settings
     static int getNumSamples();
-    void setRenderType(const RenderType type);
+    void setRenderType(RenderType type);
     RenderType getRenderType() const;
     void renderToFramebuffer(QtGLFramebufferObject*);
     QImage grabFramebuffer();
     void imageFromFramebuffer(int width, int height, int samples,
                               const QColor& bgcolor, QImage& img);
 
-    void setViewing(SbBool enable) override;
-    virtual void setCursorEnabled(SbBool enable);
+    void setViewing(bool enable) override;
+    virtual void setCursorEnabled(bool enable);
 
     void addGraphicsItem(GLGraphicsItem*);
     void removeGraphicsItem(GLGraphicsItem*);
@@ -225,11 +229,11 @@ public:
     /** @name Handling of view providers */
     //@{
     /// Checks if the view provider is a top-level object of the scene
-    SbBool hasViewProvider(ViewProvider*) const;
+    bool hasViewProvider(ViewProvider*) const;
     /// Checks if the view provider is part of the scene.
     /// In contrast to hasViewProvider() this method also checks if the view
     /// provider is a child of another view provider
-    SbBool containsViewProvider(const ViewProvider*) const;
+    bool containsViewProvider(const ViewProvider*) const;
     /// adds an ViewProvider to the view, e.g. from a feature
     void addViewProvider(ViewProvider*);
     /// remove a ViewProvider
@@ -242,9 +246,9 @@ public:
     /// get all view providers of given type
     std::vector<ViewProvider*> getViewProvidersOfType(const Base::Type& typeId) const;
     /// set the ViewProvider in special edit mode
-    void setEditingViewProvider(Gui::ViewProvider* p, int ModNum);
+    void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum);
     /// return whether a view provider is edited
-    SbBool isEditingViewProvider() const;
+    bool isEditingViewProvider() const;
     /// reset from edit mode
     void resetEditingViewProvider();
     void setupEditingRoot(SoNode *node=nullptr, const Base::Matrix4D *mat=nullptr);
@@ -269,10 +273,10 @@ public:
     /** @name Making pictures */
     //@{
     /**
-     * Creates an image with width \a w and height \a h of the current scene graph
-     * using a multi-sampling of \a s and exports the rendered scenegraph to an image.
+     * Creates an image with width \a width and height \a height of the current scene graph
+     * using a multi-sampling of \a sample and exports the rendered scenegraph to an image.
      */
-    void savePicture(int w, int h, int s, const QColor&, QImage&) const;
+    void savePicture(int width, int height, int sample, const QColor& bg, QImage& img) const;
     void saveGraphic(int pagesize, const QColor&, SoVectorizeAction* va) const;
     //@}
     /**
@@ -291,8 +295,8 @@ public:
     std::vector<SbVec2f> getGLPolygon(SelectionRole* role=nullptr) const;
     std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>&) const;
     const std::vector<SbVec2s>& getPolygon(SelectionRole* role=nullptr) const;
-    void setSelectionEnabled(const SbBool enable);
-    SbBool isSelectionEnabled() const;
+    void setSelectionEnabled(bool enable);
+    bool isSelectionEnabled() const;
     //@}
 
     /// Returns the screen coordinates of the origin of the path's tail object
@@ -301,14 +305,14 @@ public:
 
     /** @name Edit methods */
     //@{
-    void setEditing(SbBool edit);
-    SbBool isEditing() const { return this->editing; }
+    void setEditing(bool edit);
+    bool isEditing() const { return this->editing; }
     void setEditingCursor (const QCursor& cursor);
     void setComponentCursor(const QCursor& cursor);
-    void setRedirectToSceneGraph(SbBool redirect) { this->redirected = redirect; }
-    SbBool isRedirectedToSceneGraph() const { return this->redirected; }
-    void setRedirectToSceneGraphEnabled(SbBool enable) { this->allowredir = enable; }
-    SbBool isRedirectToSceneGraphEnabled() const { return this->allowredir; }
+    void setRedirectToSceneGraph(bool redirect) { this->redirected = redirect; }
+    bool isRedirectedToSceneGraph() const { return this->redirected; }
+    void setRedirectToSceneGraphEnabled(bool enable) { this->allowredir = enable; }
+    bool isRedirectToSceneGraphEnabled() const { return this->allowredir; }
     //@}
 
     /** @name Pick actions */
@@ -317,7 +321,7 @@ public:
     bool pickPoint(const SbVec2s& pos,SbVec3f &point,SbVec3f &norm) const;
     SoPickedPoint* pickPoint(const SbVec2s& pos) const;
     SoPickedPoint* getPickedPoint(SoEventCallback * n) const;
-    SbBool pubSeekToPoint(const SbVec2s& pos);
+    bool pubSeekToPoint(const SbVec2s& pos);
     void pubSeekToPoint(const SbVec3f& pos);
 
     std::vector<App::SubObjectT> getPickedList(bool singlePick=false) const;
@@ -425,9 +429,9 @@ public:
      * \a true the reorientation is animated, otherwise its directly
      * set.
      */
-    void setCameraOrientation(const SbRotation& rot, SbBool moveTocenter=false);
-    void setCameraType(SoType t) override;
-    void moveCameraTo(const SbRotation& rot, const SbVec3f& pos, int steps, int ms);
+    void setCameraOrientation(const SbRotation& orientation, bool moveToCenter = false);
+    void setCameraType(SoType type) override;
+    void moveCameraTo(const SbRotation& orientation, const SbVec3f& position, int duration = -1);
     /**
      * Zooms the viewport to the size of the bounding box.
      */
@@ -484,15 +488,18 @@ public:
                                     const SbColor& midColor);
     void setNavigationType(Base::Type);
 
-    void setAxisCross(bool b);
+    void setAxisCross(bool on);
     bool hasAxisCross();
 
-    void setEnabledFPSCounter(bool b);
-    void setEnabledNaviCube(bool b);
+    void showRotationCenter(bool show);
+    void changeRotationCenterPosition(const SbVec3f& newCenter);
+
+    void setEnabledFPSCounter(bool on);
+    void setEnabledNaviCube(bool on);
     bool isEnabledNaviCube() const;
     void setNaviCubeCorner(int);
     NaviCube* getNaviCube() const;
-    void setEnabledVBO(bool b);
+    void setEnabledVBO(bool on);
     bool isEnabledVBO() const;
     void setRenderCache(int);
     void setRendererType(const std::string &);
@@ -518,8 +525,6 @@ public:
     bool getSceneBoundBox(SbBox3f &box) const;
     bool getSceneBoundBox(Base::BoundBox3d &box) const;
 
-    void callEventFilter(QEvent *);
-
     void toggleShadowLightManip(int toggle = -1);
 
     void setTransparencyOnTop(float t);
@@ -534,21 +539,21 @@ public:
     friend struct Private;
 
 protected:
-    GLenum getInternalTextureFormat() const;
+    static GLenum getInternalTextureFormat();
     void renderScene();
     void renderFramebuffer();
     void renderGLImage();
     void animatedViewAll(const SbBox3f &bbox, int steps, int ms);
     void actualRedraw() override;
-    void setSeekMode(SbBool enable) override;
+    void setSeekMode(bool on) override;
     void afterRealizeHook() override;
     bool processSoEvent(const SoEvent * ev) override;
-    void dropEvent (QDropEvent * e) override;
-    void dragEnterEvent (QDragEnterEvent * e) override;
-    void dragMoveEvent(QDragMoveEvent *e) override;
-    void dragLeaveEvent(QDragLeaveEvent *e) override;
-    SbBool processSoEventBase(const SoEvent * const ev);
-    void printDimension();
+    void dropEvent (QDropEvent * ev) override;
+    void dragEnterEvent (QDragEnterEvent * ev) override;
+    void dragMoveEvent(QDragMoveEvent* ev) override;
+    void dragLeaveEvent(QDragLeaveEvent* ev) override;
+    bool processSoEventBase(const SoEvent * const ev);
+    void printDimension() const;
     void selectAll();
 
 private:
@@ -561,13 +566,13 @@ private:
     static void interactionLoggerCB(void * ud, SoAction* action);
 
 private:
-    static void selectCB(void * closure, SoPath * p);
-    static void deselectCB(void * closure, SoPath * p);
-    static SoPath * pickFilterCB(void * data, const SoPickedPoint * pick);
+    static void selectCB(void * viewer, SoPath * path);
+    static void deselectCB(void * viewer, SoPath * path);
+    static SoPath * pickFilterCB(void * viewer, const SoPickedPoint * pp);
     void initialize();
     void drawAxisCross();
     static void drawArrow();
-    void drawSingleBackground(const QColor&);
+    static void drawSingleBackground(const QColor&);
     void setCursorRepresentation(int mode);
     void aboutToDestroyGLContext() override;
     void createStandardCursors(double);
@@ -586,7 +591,10 @@ private:
     SoSeparator * foregroundroot;
     SoDirectionalLight* backlight;
 
+    // Scene graph root
     SoSeparator * pcViewProviderRoot;
+    // Child group in the scene graph that contains view providers related to the physical object
+    SoGroup* nonObjectGroup;
 
     mutable std::unique_ptr<Private> _pimpl;
 
@@ -607,25 +615,27 @@ private:
     RenderType renderType;
     QtGLFramebufferObject* framebuffer;
     QImage glImage;
-    SbBool shading;
+    bool shading;
     SoSwitch *dimensionRoot;
 
     // small axis cross in the corner
-    SbBool axiscrossEnabled;
+    bool axiscrossEnabled;
     int axiscrossSize;
     // big one in the middle
     SoShapeScale* axisCross;
     SoGroup* axisGroup;
 
+    SoGroup* rotationCenterGroup;
+
     //stuff needed to draw the fps counter
     bool fpsEnabled;
     bool vboEnabled;
-    SbBool naviCubeEnabled;
+    bool naviCubeEnabled;
 
-    SbBool editing;
+    bool editing;
     QCursor editCursor, zoomCursor, panCursor, spinCursor;
-    SbBool redirected;
-    SbBool allowredir;
+    bool redirected;
+    bool allowredir;
 
     std::string overrideMode;
     uint32_t overrideBGColor = 0;

@@ -31,23 +31,23 @@ namespace PathGui
 
 class PathGuiExport ViewProviderPathCompound: public ViewProviderPath
 {
-    PROPERTY_HEADER(PathGui::ViewProviderPathCompound);
+    PROPERTY_HEADER_WITH_OVERRIDE(PathGui::ViewProviderPathCompound);
 
 public:
     ViewProviderPathCompound();
 
-    std::vector<App::DocumentObject*> claimChildren(void)const;
-    virtual bool canDragObjects() const;
-    virtual void dragObject(App::DocumentObject*);
-    virtual bool canDropObjects() const;
-    virtual bool canDropObject(App::DocumentObject* obj) const;
-    virtual void dropObject(App::DocumentObject*);
-    virtual bool canReorderObject(App::DocumentObject* obj, App::DocumentObject* before);
-    virtual bool reorderObjects(const std::vector<App::DocumentObject*> &objs, App::DocumentObject* before);
+    std::vector<App::DocumentObject*> claimChildren() const override;
+    bool canDragObjects() const override;
+    void dragObject(App::DocumentObject*) override;
+    bool canDropObjects() const override;
+    bool canDropObject(App::DocumentObject* obj) const override;
+    void dropObject(App::DocumentObject*) override;
+    bool canReorderObject(App::DocumentObject* obj, App::DocumentObject* before) override;
+    bool reorderObjects(const std::vector<App::DocumentObject*> &objs, App::DocumentObject* before) override;
 
 protected:
-    virtual bool setEdit(int ModNum);
-    virtual void unsetEdit(int ModNum);
+    bool setEdit(int ModNum) override;
+    void unsetEdit(int ModNum) override;
 
 };
 

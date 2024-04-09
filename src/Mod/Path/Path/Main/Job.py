@@ -133,14 +133,14 @@ class ObjectJob:
             "App::PropertyString",
             "LastPostProcessDate",
             "Output",
-            QT_TRANSLATE_NOOP("App::Property", "Last Time the Job was post-processed"),
+            QT_TRANSLATE_NOOP("App::Property", "Last Time the Job was post processed"),
         )
         obj.setEditorMode("LastPostProcessDate", 2)  # Hide
         obj.addProperty(
             "App::PropertyString",
             "LastPostProcessOutput",
             "Output",
-            QT_TRANSLATE_NOOP("App::Property", "Last Time the Job was post-processed"),
+            QT_TRANSLATE_NOOP("App::Property", "Last Time the Job was post processed"),
         )
         obj.setEditorMode("LastPostProcessOutput", 2)  # Hide
 
@@ -655,10 +655,10 @@ class ObjectJob:
             attrs[JobTemplate.Description] = obj.Description
         return attrs
 
-    def __getstate__(self):
+    def dumps(self):
         return None
 
-    def __setstate__(self, state):
+    def loads(self, state):
         for obj in FreeCAD.ActiveDocument.Objects:
             if hasattr(obj, "Proxy") and obj.Proxy == self:
                 self.obj = obj

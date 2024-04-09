@@ -406,8 +406,8 @@ void PropertyEnumeration::Save(Base::Writer &writer) const
         std::vector<std::string> items = getEnumVector();
         writer.Stream() << writer.ind() << "<CustomEnumList count=\"" <<  items.size() <<"\">\n";
         writer.incInd();
-        for(std::vector<std::string>::iterator it = items.begin(); it != items.end(); ++it) {
-            std::string val = encodeAttribute(*it);
+        for(auto & item : items) {
+            std::string val = encodeAttribute(item);
             writer.Stream() << "<Enum value=\"" <<  val <<"\"/>\n";
         }
         writer.decInd();
@@ -446,8 +446,9 @@ void PropertyEnumeration::Restore(Base::XMLReader &reader)
 
     if (val < 0) {
         // If the enum is empty at this stage do not print a warning
-        if (_enum.hasEnums())
-            Base::Console().Warning("Enumeration index %d is out of range, ignore it\n", val);
+        if (_enum.hasEnums()) {
+            Base::Console().DeveloperWarning(std::string("PropertyEnumeration"), "Enumeration index %d is out of range, ignore it\n", val);
+        }
         val = getValue();
     }
 
@@ -631,12 +632,7 @@ TYPESYSTEM_SOURCE(App::PropertyIntegerConstraint, App::PropertyInteger)
 // Construction/Destruction
 
 
-PropertyIntegerConstraint::PropertyIntegerConstraint()
-  : _ConstStruct(nullptr)
-{
-
-}
-
+PropertyIntegerConstraint::PropertyIntegerConstraint() = default;
 
 PropertyIntegerConstraint::~PropertyIntegerConstraint()
 {
@@ -845,7 +841,7 @@ void PropertyIntegerList::restoreXML(Base::XMLReader &reader)
 
     std::vector<long> values(count);
     if(reader.FileVersion>1) {
-        auto &s = reader.beginCharStream(false);
+        auto &s = reader.beginCharStream();
         for(int i = 0; i < count; i++)
             s >> values[i];
         reader.endCharStream();
@@ -911,8 +907,8 @@ void PropertyIntegerSet::setValues(const std::set<long>& values)
 PyObject *PropertyIntegerSet::getPyObject()
 {
     PyObject* set = PySet_New(nullptr);
-    for(std::set<long>::const_iterator it=_lValueSet.begin();it!=_lValueSet.end();++it)
-        PySet_Add(set,PyLong_FromLong(*it));
+    for(long it : _lValueSet)
+        PySet_Add(set,PyLong_FromLong(it));
     return set;
 }
 
@@ -967,7 +963,7 @@ void PropertyIntegerSet::Restore(Base::XMLReader &reader)
 
     std::set<long> values;
     if(reader.FileVersion > 1) {
-        auto &s = reader.beginCharStream(false);
+        auto &s = reader.beginCharStream();
         for(int i = 0; i < count; i++) {
             long v;
             s >> v;
@@ -1143,11 +1139,7 @@ TYPESYSTEM_SOURCE(App::PropertyFloatConstraint, App::PropertyFloat)
 // Construction/Destruction
 
 
-PropertyFloatConstraint::PropertyFloatConstraint()
-  : _ConstStruct(nullptr)
-{
-
-}
+PropertyFloatConstraint::PropertyFloatConstraint() = default;
 
 PropertyFloatConstraint::~PropertyFloatConstraint()
 {
@@ -1368,7 +1360,7 @@ void PropertyFloatList::restoreXML(Base::XMLReader &reader)
 {
     int count = reader.getAttributeAsInteger("count");
     std::vector<double> values(count);
-    auto &s = reader.beginCharStream(false);
+    auto &s = reader.beginCharStream();
     for(int i=0;i<count;++i)
         s >> values[i];
     setValues(std::move(values));
@@ -1377,13 +1369,13 @@ void PropertyFloatList::restoreXML(Base::XMLReader &reader)
 void PropertyFloatList::saveStream(Base::OutputStream &str) const
 {
     if (!isSinglePrecision()) {
-        for (std::vector<double>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
-            str << *it;
+        for (double it : _lValueList) {
+            str << it;
         }
     }
     else {
-        for (std::vector<double>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
-            float v = (float)*it;
+        for (double it : _lValueList) {
+            float v = static_cast<float>(it);
             str << v;
         }
     }
@@ -1393,15 +1385,15 @@ void PropertyFloatList::restoreStream(Base::InputStream &str, unsigned uCt)
 {
     std::vector<double> values(uCt);
     if (!isSinglePrecision()) {
-        for (std::vector<double>::iterator it = values.begin(); it != values.end(); ++it) {
-            str >> *it;
+        for (double & it : values) {
+            str >> it;
         }
     }
     else {
-        for (std::vector<double>::iterator it = values.begin(); it != values.end(); ++it) {
+        for (double & it : values) {
             float val;
             str >> val;
-            (*it) = val;
+            it = val;
         }
     }
     setValues(std::move(values));
@@ -1456,7 +1448,7 @@ void _PropertyFloatList::restoreXML(Base::XMLReader &reader)
 {
     int count = reader.getAttributeAsInteger("count");
     std::vector<float> values(count);
-    auto &s = reader.beginCharStream(false);
+    auto &s = reader.beginCharStream();
     for(int i=0;i<count;++i)
         s >> values[i];
     setValues(std::move(values));
@@ -1512,7 +1504,7 @@ void PropertyString::setValue(const char* newLabel)
     auto obj = dynamic_cast<DocumentObject*>(getContainer());
     bool commit = false;
 
-    if(obj && obj->getNameInDocument() && this==&obj->Label &&
+    if(obj && obj->isAttachedToDocument() && this==&obj->Label &&
        (!obj->getDocument()->testStatus(App::Document::Restoring)||
         obj->getDocument()->testStatus(App::Document::Importing)) &&
        !obj->getDocument()->isPerformingTransaction())
@@ -1685,7 +1677,7 @@ void PropertyString::Save (Base::Writer &writer) const
     auto obj = dynamic_cast<DocumentObject*>(getContainer());
     writer.Stream() << writer.ind() << "<String ";
     bool exported = false;
-    if(obj && obj->getNameInDocument() &&
+    if(obj && obj->isAttachedToDocument() &&
        obj->isExporting() && &obj->Label==this)
     {
         if(obj->allowDuplicateLabel())
@@ -2140,9 +2132,9 @@ void PropertyMap::setPyObject(PyObject *value)
 unsigned int PropertyMap::getMemSize () const
 {
     size_t size=0;
-    for (std::map<std::string,std::string>::const_iterator it = _lValueList.begin();it!= _lValueList.end(); ++it) {
-        size += it->second.size();
-        size += it->first.size();
+    for (const auto & it : _lValueList) {
+        size += it.second.size();
+        size += it.first.size();
     }
     return size;
 }
@@ -2150,10 +2142,11 @@ unsigned int PropertyMap::getMemSize () const
 void PropertyMap::Save (Base::Writer &writer) const
 {
     writer.Stream() << writer.ind() << "<Map count=\"" <<  getSize() <<"\">\n";
-    for (std::map<std::string,std::string>::const_iterator it = _lValueList.begin();it!= _lValueList.end(); ++it) 
-        writer.Stream() << "<Item key=\"" <<  it->first <<"\" value=\"" <<  encodeAttribute(it->second) <<"\"/>\n";
-
-    writer.Stream() << writer.ind() << "</Map>\n" ;
+    for (const auto & it : _lValueList) {
+        writer.Stream() << "<Item key=\"" << encodeAttribute(it.first)
+                        <<"\" value=\"" << encodeAttribute(it.second) <<"\"/>\n";
+    }
+    writer.Stream() << writer.ind() << "</Map>\n";
 }
 
 void PropertyMap::Restore(Base::XMLReader &reader)
@@ -2624,7 +2617,7 @@ void PropertyColorList::restoreXML(Base::XMLReader &reader)
 {
     int count = reader.getAttributeAsInteger("count");
     std::vector<Color> values(count);
-    auto &s = reader.beginCharStream(false) >> std::hex;
+    auto &s = reader.beginCharStream() >> std::hex;
     for(int i=0;i<count;++i) {
         uint32_t v;
         s >> v;
@@ -2637,8 +2630,8 @@ void PropertyColorList::restoreXML(Base::XMLReader &reader)
 
 void PropertyColorList::saveStream(Base::OutputStream &str) const
 {
-    for (std::vector<App::Color>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
-        str << it->getPackedValue();
+    for (auto it : _lValueList) {
+        str << it.getPackedValue();
     }
 }
 
@@ -2646,9 +2639,9 @@ void PropertyColorList::restoreStream(Base::InputStream &str, unsigned uCt)
 {
     std::vector<Color> values(uCt);
     uint32_t value; // must be 32 bit long
-    for (std::vector<App::Color>::iterator it = values.begin(); it != values.end(); ++it) {
+    for (auto & it : values) {
         str >> value;
-        it->setPackedValue(value);
+        it.setPackedValue(value);
     }
     setValues(std::move(values));
 }
@@ -2865,7 +2858,7 @@ bool PropertyMaterialList::saveXML(Base::Writer &writer) const
 void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
 {
     uint32_t uCt = reader.getAttributeAsUnsigned("count");
-    auto &s = reader.beginCharStream(false) >> std::hex;
+    auto &s = reader.beginCharStream() >> std::hex;
     std::vector<Material> values(uCt);
     for(auto &m : values) {
         uint32_t ambient,diffuse,specular,emissive;
@@ -2882,13 +2875,13 @@ void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
 
 void PropertyMaterialList::saveStream(Base::OutputStream &str) const
 {
-    for (std::vector<App::Material>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
-        str << it->ambientColor.getPackedValue();
-        str << it->diffuseColor.getPackedValue();
-        str << it->specularColor.getPackedValue();
-        str << it->emissiveColor.getPackedValue();
-        str << it->shininess;
-        str << it->transparency;
+    for (const auto & it : _lValueList) {
+        str << it.ambientColor.getPackedValue();
+        str << it.diffuseColor.getPackedValue();
+        str << it.specularColor.getPackedValue();
+        str << it.emissiveColor.getPackedValue();
+        str << it.shininess;
+        str << it.transparency;
     }
 }
 
@@ -2897,19 +2890,19 @@ void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
     std::vector<Material> values(uCt);
     uint32_t value; // must be 32 bit long
     float valueF;
-    for (std::vector<App::Material>::iterator it = values.begin(); it != values.end(); ++it) {
+    for (auto & it : values) {
         str >> value;
-        it->ambientColor.setPackedValue(value);
+        it.ambientColor.setPackedValue(value);
         str >> value;
-        it->diffuseColor.setPackedValue(value);
+        it.diffuseColor.setPackedValue(value);
         str >> value;
-        it->specularColor.setPackedValue(value);
+        it.specularColor.setPackedValue(value);
         str >> value;
-        it->emissiveColor.setPackedValue(value);
+        it.emissiveColor.setPackedValue(value);
         str >> valueF;
-        it->shininess = valueF;
+        it.shininess = valueF;
         str >> valueF;
-        it->transparency = valueF;
+        it.transparency = valueF;
     }
     setValues(std::move(values));
 }

@@ -48,14 +48,14 @@ __url__    = "https://www.freecad.org"
 #  An axis system is a collection of multiple axes
 
 
-def makeAxisSystem(axes,name="Axis System"):
+def makeAxisSystem(axes,name=None):
 
-    '''makeAxisSystem(axes): makes a system from the given list of axes'''
+    '''makeAxisSystem(axes,[name]): makes a system from the given list of axes'''
 
     if not isinstance(axes,list):
         axes = [axes]
     obj = FreeCAD.ActiveDocument.addObject("App::FeaturePython","AxisSystem")
-    obj.Label = translate("Arch",name)
+    obj.Label = name if name else translate("Arch","Axis System")
     _AxisSystem(obj)
     obj.Axes = axes
     if FreeCAD.GuiUp:
@@ -136,11 +136,11 @@ class _AxisSystem:
                 for o in obj.Axes:
                     o.Placement = delta.multiply(o.Placement)
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 
@@ -259,11 +259,11 @@ class _ViewProviderAxisSystem:
     def edit(self):
         FreeCADGui.ActiveDocument.setEdit(self.Object, 0)
 
-    def __getstate__(self):
+    def dumps(self):
 
         return None
 
-    def __setstate__(self,state):
+    def loads(self,state):
 
         return None
 

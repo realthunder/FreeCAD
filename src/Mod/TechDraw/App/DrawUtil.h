@@ -57,7 +57,7 @@
 #define VECTORTOLERANCE (Precision::Confusion())
 
 #define SVG_NS_URI "http://www.w3.org/2000/svg"
-#define FREECAD_SVG_NS_URI "http://www.freecad.org/wiki/index.php?title=Svg_Namespace"
+#define FREECAD_SVG_NS_URI "https://www.freecad.org/wiki/index.php?title=Svg_Namespace"
 
 //some shapes are being passed in where edges that should be connected are in fact
 //separated by more than 2*Precision::Confusion (expected tolerance for 2 TopoDS_Vertex)
@@ -71,6 +71,8 @@
 
 namespace TechDraw
 {
+
+class DrawViewPart;
 
 //used by sort_Edges
 struct EdgePoints
@@ -93,6 +95,7 @@ public:
     static double sensibleScale(double working_scale);
     static double angleWithX(TopoDS_Edge e, bool reverse);
     static double angleWithX(TopoDS_Edge e, TopoDS_Vertex v, double tolerance = VERTEXTOLERANCE);
+    static double angleWithX(Base::Vector3d inVec);
     static double incidenceAngleAtVertex(TopoDS_Edge e, TopoDS_Vertex v, double tolerance);
 
     static bool isFirstVert(TopoDS_Edge e, TopoDS_Vertex v, double tolerance = VERTEXTOLERANCE);
@@ -131,6 +134,7 @@ public:
 
     static TopoDS_Shape vectorToCompound(std::vector<TopoDS_Edge> vecIn, bool invert = true);
     static TopoDS_Shape vectorToCompound(std::vector<TopoDS_Wire> vecIn, bool invert = true);
+    static TopoDS_Shape shapeVectorToCompound(std::vector<TopoDS_Shape> vecIn, bool invert = true);
     static std::vector<TopoDS_Edge> shapeToVector(TopoDS_Shape shapeIn);
 
     static Base::Vector3d toR3(const gp_Ax2& fromSystem, const Base::Vector3d& fromPoint);
@@ -264,6 +268,15 @@ public:
                                                       const Base::BoundBox2d& rectangle,
                                                       std::vector<Base::Vector2d>& intersections);
     static void copyFile(std::string inSpec, std::string outSpec);
+
+    static std::string translateArbitrary(std::string context, std::string baseName, std::string uniqueName);
+
+    static bool isCosmeticVertex(App::DocumentObject* owner, std::string element);
+    static bool isCosmeticEdge(App::DocumentObject* owner, std::string element);
+    static bool isCenterLine(App::DocumentObject* owner, std::string element);
+
+    static Base::Vector3d  toAppSpace(const DrawViewPart& dvp, const Base::Vector3d& inPoint);
+    static Base::Vector3d  toAppSpace(const DrawViewPart& dvp, const QPointF& inPoint);
 
     //debugging routines
     static void dumpVertexes(const char* text, const TopoDS_Shape& s);

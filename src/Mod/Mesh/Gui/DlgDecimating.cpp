@@ -37,20 +37,19 @@ using namespace MeshGui;
 
 DlgDecimating::DlgDecimating(QWidget* parent, Qt::WindowFlags fl)
     : QWidget(parent, fl)
-    , numberOfTriangles(0)
     , ui(new Ui_DlgDecimating)
 {
     ui->setupUi(this);
-    connect(ui->checkAbsoluteNumber, &QCheckBox::toggled,
-            this, &DlgDecimating::onCheckAbsoluteNumberToggled);
+    connect(ui->checkAbsoluteNumber,
+            &QCheckBox::toggled,
+            this,
+            &DlgDecimating::onCheckAbsoluteNumberToggled);
     ui->spinBoxReduction->setMinimumWidth(60);
     ui->checkAbsoluteNumber->setEnabled(false);
     onCheckAbsoluteNumberToggled(false);
 }
 
-DlgDecimating::~DlgDecimating()
-{
-}
+DlgDecimating::~DlgDecimating() = default;
 
 bool DlgDecimating::isAbsoluteNumber() const
 {
@@ -82,20 +81,33 @@ void DlgDecimating::onCheckAbsoluteNumberToggled(bool on)
     ui->groupBoxTolerance->setDisabled(on);
 
     if (on) {
-        disconnect(ui->sliderReduction, qOverload<int>(&QSlider::valueChanged), ui->spinBoxReduction, &QSpinBox::setValue);
-        disconnect(ui->spinBoxReduction, qOverload<int>(&QSpinBox::valueChanged), ui->sliderReduction, &QSlider::setValue);
+        disconnect(ui->sliderReduction,
+                   qOverload<int>(&QSlider::valueChanged),
+                   ui->spinBoxReduction,
+                   &QSpinBox::setValue);
+        disconnect(ui->spinBoxReduction,
+                   qOverload<int>(&QSpinBox::valueChanged),
+                   ui->sliderReduction,
+                   &QSlider::setValue);
         ui->spinBoxReduction->setRange(1, numberOfTriangles);
         ui->spinBoxReduction->setValue(numberOfTriangles * (1.0 - reduction()));
         ui->spinBoxReduction->setSuffix(QString());
-        ui->checkAbsoluteNumber->setText(tr("Absolute number (Maximum: %1)").arg(numberOfTriangles));
+        ui->checkAbsoluteNumber->setText(
+            tr("Absolute number (Maximum: %1)").arg(numberOfTriangles));
     }
     else {
         ui->spinBoxReduction->setRange(0, 100);
         ui->spinBoxReduction->setValue(ui->sliderReduction->value());
         ui->spinBoxReduction->setSuffix(QStringLiteral("%"));
         ui->checkAbsoluteNumber->setText(tr("Absolute number"));
-        connect(ui->sliderReduction, qOverload<int>(&QSlider::valueChanged), ui->spinBoxReduction, &QSpinBox::setValue);
-        connect(ui->spinBoxReduction, qOverload<int>(&QSpinBox::valueChanged), ui->sliderReduction, &QSlider::setValue);
+        connect(ui->sliderReduction,
+                qOverload<int>(&QSlider::valueChanged),
+                ui->spinBoxReduction,
+                &QSpinBox::setValue);
+        connect(ui->spinBoxReduction,
+                qOverload<int>(&QSpinBox::valueChanged),
+                ui->sliderReduction,
+                &QSlider::setValue);
     }
 }
 
@@ -113,7 +125,7 @@ double DlgDecimating::reduction() const
     double max = static_cast<double>(ui->sliderReduction->maximum());
     double min = static_cast<double>(ui->sliderReduction->minimum());
     double val = static_cast<double>(ui->sliderReduction->value());
-    return (val - min)/(max - min);
+    return (val - min) / (max - min);
 }
 
 // ---------------------------------------
@@ -122,9 +134,9 @@ double DlgDecimating::reduction() const
 
 TaskDecimating::TaskDecimating()
 {
-    widget = new DlgDecimating();
-    Gui::TaskView::TaskBox* taskbox = new Gui::TaskView::TaskBox(
-        QPixmap(), widget->windowTitle(), false, nullptr);
+    widget = new DlgDecimating();  // NOLINT
+    Gui::TaskView::TaskBox* taskbox =
+        new Gui::TaskView::TaskBox(QPixmap(), widget->windowTitle(), false, nullptr);
     taskbox->groupLayout()->addWidget(widget);
     Content.push_back(taskbox);
 
@@ -134,11 +146,6 @@ TaskDecimating::TaskDecimating()
         const Mesh::MeshObject& mm = mesh->Mesh.getValue();
         widget->setNumberOfTriangles(static_cast<int>(mm.countFacets()));
     }
-}
-
-TaskDecimating::~TaskDecimating()
-{
-    // automatically deleted in the sub-class
 }
 
 bool TaskDecimating::accept()
@@ -159,8 +166,7 @@ bool TaskDecimating::accept()
     if (absolute) {
         targetSize = widget->targetNumberOfTriangles();
     }
-    for (std::vector<Mesh::Feature*>::const_iterator it = meshes.begin(); it != meshes.end(); ++it) {
-        Mesh::Feature* mesh = *it;
+    for (auto mesh : meshes) {
         Mesh::MeshObject* mm = mesh->Mesh.startEditing();
         if (absolute) {
             mm->decimate(targetSize);

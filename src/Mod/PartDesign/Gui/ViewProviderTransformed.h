@@ -35,12 +35,8 @@ class PartDesignGuiExport ViewProviderTransformed : public ViewProviderAddSub
     PROPERTY_HEADER_WITH_OVERRIDE(PartDesignGui::ViewProviderTransformed);
 
 public:
-    /// constructor
-    ViewProviderTransformed()
-        {}
-    /// destructor
-    ~ViewProviderTransformed() override
-        {}
+    ViewProviderTransformed() = default;
+    ~ViewProviderTransformed() override  = default;
 
     // The feature name of the subclass
     virtual const std::string & featureName() const;

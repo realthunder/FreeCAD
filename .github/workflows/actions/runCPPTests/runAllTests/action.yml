@@ -47,6 +47,34 @@ runs:
           testCommand: ${{ inputs.builddir }}/tests/Tests_run --gtest_output=json:${{ inputs.reportdir }}core_gtest_results.json
           testLogFile: ${{ inputs.reportdir }}core_gtest_test_log.txt
           testName: Core
+      - name: C++ Material tests
+        id: material
+        uses: ./.github/workflows/actions/runCPPTests/runSingleTest
+        with:
+          testCommand: ${{ inputs.builddir }}/tests/Material_tests_run --gtest_output=json:${{ inputs.reportdir }}material_gtest_results.json
+          testLogFile: ${{ inputs.reportdir }}material_gtest_test_log.txt
+          testName: Material
+      - name: C++ Mesh tests
+        id: mesh
+        uses: ./.github/workflows/actions/runCPPTests/runSingleTest
+        with:
+          testCommand: ${{ inputs.builddir }}/tests/Mesh_tests_run --gtest_output=json:${{ inputs.reportdir }}mesh_gtest_results.json
+          testLogFile: ${{ inputs.reportdir }}mesh_gtest_test_log.txt
+          testName: Mesh
+      - name: C++ Part tests
+        id: part
+        uses: ./.github/workflows/actions/runCPPTests/runSingleTest
+        with:
+          testCommand: ${{ inputs.builddir }}/tests/Part_tests_run --gtest_output=json:${{ inputs.reportdir }}part_gtest_results.json
+          testLogFile: ${{ inputs.reportdir }}Part_gtest_test_log.txt
+          testName: Part
+      - name: C++ Points tests
+        id: points
+        uses: ./.github/workflows/actions/runCPPTests/runSingleTest
+        with:
+          testCommand: ${{ inputs.builddir }}/tests/Points_tests_run --gtest_output=json:${{ inputs.reportdir }}points_gtest_results.json
+          testLogFile: ${{ inputs.reportdir }}points_gtest_test_log.txt
+          testName: Points
       - name: C++ Sketcher tests
         id: sketcher
         uses: ./.github/workflows/actions/runCPPTests/runSingleTest
@@ -56,7 +84,7 @@ runs:
           testName: Sketcher
       - name: Compose summary report based on test results
         if: always()
-        shell: bash
+        shell: bash -l {0}
         run: |
           # Print global result
           if [ ${{ job.status }} != "success" ]
@@ -76,4 +104,3 @@ runs:
           echo "</blockquote>" >> ${{ inputs.reportFile }}
           echo "</details>" >> ${{ inputs.reportFile }}
           echo "" >> ${{ inputs.reportFile }}
-

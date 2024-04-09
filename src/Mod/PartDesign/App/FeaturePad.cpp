@@ -31,7 +31,7 @@
 
 using namespace PartDesign;
 
-const char* Pad::TypeEnums[]= {"Length", "UpToLast", "UpToFirst", "UpToFace", "TwoLengths", nullptr};
+const char* Pad::TypeEnums[]= {"Length", "UpToLast", "UpToFirst", "UpToFace", "TwoLengths", "UpToShape", nullptr};
 
 PROPERTY_SOURCE(PartDesign::Pad, PartDesign::FeatureExtrude)
 

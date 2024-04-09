@@ -39,13 +39,9 @@ using namespace PartGui;
 
 PROPERTY_SOURCE(PartGui::ViewProviderBoolean,PartGui::ViewProviderPart)
 
-ViewProviderBoolean::ViewProviderBoolean()
-{
-}
+ViewProviderBoolean::ViewProviderBoolean() = default;
 
-ViewProviderBoolean::~ViewProviderBoolean()
-{
-}
+ViewProviderBoolean::~ViewProviderBoolean() = default;
 
 std::vector<App::DocumentObject*> ViewProviderBoolean::claimChildren()const
 {
@@ -82,7 +78,7 @@ bool ViewProviderBoolean::canReplaceObject(App::DocumentObject*, App::DocumentOb
 void ViewProviderBoolean::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
-    if (prop->getTypeId() == Part::PropertyShapeHistory::getClassTypeId()) {
+    if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
         if (hist.size() != 2)
@@ -142,7 +138,7 @@ void ViewProviderBoolean::updateData(const App::Property* prop)
             }
         }
     }
-    else if (prop->getTypeId().isDerivedFrom(App::PropertyLink::getClassTypeId())) {
+    else if (prop->isDerivedFrom<App::PropertyLink>()) {
         App::DocumentObject *pBase = static_cast<const App::PropertyLink*>(prop)->getValue();
         if (pBase)
             Gui::Application::Instance->hideViewProvider(pBase);
@@ -171,19 +167,17 @@ ViewProviderMultiFuse::ViewProviderMultiFuse()
     sPixmap = "Part_Fuse";
 }
 
-ViewProviderMultiFuse::~ViewProviderMultiFuse()
-{
-}
+ViewProviderMultiFuse::~ViewProviderMultiFuse() = default;
 
 std::vector<App::DocumentObject*> ViewProviderMultiFuse::claimChildren()const
 {
-    return std::vector<App::DocumentObject*>(static_cast<Part::MultiFuse*>(getObject())->Shapes.getValues());
+    return static_cast<Part::MultiFuse*>(getObject())->Shapes.getValues();
 }
 
 void ViewProviderMultiFuse::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
-    if (prop->getTypeId() == Part::PropertyShapeHistory::getClassTypeId()) {
+    if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
         Part::MultiFuse* objBool = static_cast<Part::MultiFuse*>(getObject());
@@ -230,11 +224,12 @@ void ViewProviderMultiFuse::updateData(const App::Property* prop)
 
         this->DiffuseColor.setValues(colBool);
     }
-    else if (prop->getTypeId().isDerivedFrom(App::PropertyLinkList::getClassTypeId())) {
+    else if (prop->isDerivedFrom<App::PropertyLinkList>()) {
         std::vector<App::DocumentObject*> pShapes = static_cast<const App::PropertyLinkList*>(prop)->getValues();
-        for (std::vector<App::DocumentObject*>::iterator it = pShapes.begin(); it != pShapes.end(); ++it) {
-            if (*it)
-                Gui::Application::Instance->hideViewProvider(*it);
+        for (auto it : pShapes) {
+            if (it) {
+                Gui::Application::Instance->hideViewProvider(it);
+            }
         }
     }
 }
@@ -244,9 +239,10 @@ bool ViewProviderMultiFuse::onDelete(const std::vector<std::string> &)
     // get the input shapes
     Part::MultiFuse* pBool = static_cast<Part::MultiFuse*>(getObject());
     std::vector<App::DocumentObject*> pShapes = pBool->Shapes.getValues();
-    for (std::vector<App::DocumentObject*>::iterator it = pShapes.begin(); it != pShapes.end(); ++it) {
-        if (*it)
-            Gui::Application::Instance->showViewProvider(*it);
+    for (auto it : pShapes) {
+        if (it) {
+            Gui::Application::Instance->showViewProvider(it);
+        }
     }
 
     return true;
@@ -304,19 +300,17 @@ ViewProviderMultiCommon::ViewProviderMultiCommon()
     sPixmap = "Part_Common";
 }
 
-ViewProviderMultiCommon::~ViewProviderMultiCommon()
-{
-}
+ViewProviderMultiCommon::~ViewProviderMultiCommon() = default;
 
 std::vector<App::DocumentObject*> ViewProviderMultiCommon::claimChildren()const
 {
-    return std::vector<App::DocumentObject*>(static_cast<Part::MultiCommon*>(getObject())->Shapes.getValues());
+    return static_cast<Part::MultiCommon*>(getObject())->Shapes.getValues();
 }
 
 void ViewProviderMultiCommon::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);
-    if (prop->getTypeId() == Part::PropertyShapeHistory::getClassTypeId()) {
+    if (prop->is<Part::PropertyShapeHistory>()) {
         const std::vector<Part::ShapeHistory>& hist = static_cast<const Part::PropertyShapeHistory*>
             (prop)->getValues();
         Part::MultiCommon* objBool = static_cast<Part::MultiCommon*>(getObject());
@@ -363,11 +357,12 @@ void ViewProviderMultiCommon::updateData(const App::Property* prop)
 
         this->DiffuseColor.setValues(colBool);
     }
-    else if (prop->getTypeId().isDerivedFrom(App::PropertyLinkList::getClassTypeId())) {
+    else if (prop->isDerivedFrom<App::PropertyLinkList>()) {
         std::vector<App::DocumentObject*> pShapes = static_cast<const App::PropertyLinkList*>(prop)->getValues();
-        for (std::vector<App::DocumentObject*>::iterator it = pShapes.begin(); it != pShapes.end(); ++it) {
-            if (*it)
-                Gui::Application::Instance->hideViewProvider(*it);
+        for (auto it : pShapes) {
+            if (it) {
+                Gui::Application::Instance->hideViewProvider(it);
+            }
         }
     }
 }
@@ -377,9 +372,10 @@ bool ViewProviderMultiCommon::onDelete(const std::vector<std::string> &)
     // get the input shapes
     Part::MultiCommon* pBool = static_cast<Part::MultiCommon*>(getObject());
     std::vector<App::DocumentObject*> pShapes = pBool->Shapes.getValues();
-    for (std::vector<App::DocumentObject*>::iterator it = pShapes.begin(); it != pShapes.end(); ++it) {
-        if (*it)
-            Gui::Application::Instance->showViewProvider(*it);
+    for (auto it : pShapes) {
+        if (it) {
+            Gui::Application::Instance->showViewProvider(it);
+        }
     }
 
     return true;

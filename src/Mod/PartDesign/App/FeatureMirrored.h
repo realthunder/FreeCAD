@@ -32,7 +32,7 @@ namespace PartDesign
 
 class PartDesignExport Mirrored : public PartDesign::Transformed
 {
-    PROPERTY_HEADER(PartDesign::Mirrored);
+    PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::Mirrored);
 
 public:
     Mirrored();
@@ -41,10 +41,10 @@ public:
 
    /** @name methods override feature */
     //@{
-    short mustExecute() const;
+    short mustExecute() const override;
 
     /// returns the type name of the view provider
-    const char* getViewProviderName() const {
+    const char* getViewProviderName() const override {
         return "PartDesignGui::ViewProviderMirrored";
     }
     //@}

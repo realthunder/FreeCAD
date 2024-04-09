@@ -101,17 +101,15 @@ protected:
     void changeEvent(QEvent *e) override;
 
 private:
-    int oldTabIndex;
-    int modelIndex = -1;
-    int taskIndex;
-    QTabWidget                         * tabs = nullptr;
-    Gui::PropertyView                  * prop = nullptr;
-    Gui::TreePanel                     * tree = nullptr;
-    Gui::TaskView::TaskView            * taskPanel = nullptr;
+    int oldTabIndex {0};
+    int modelIndex {-1};
+    int taskIndex {0};
+    QTabWidget* tabs {nullptr};
+    Gui::PropertyView* prop {nullptr};
+    Gui::TreePanel* tree {nullptr};
+    Gui::TaskView::TaskView* taskPanel {nullptr};
 
     ParameterGrp::handle hGrp;
-
-  //Gui::ProjectWidget                 * projectView;
 };
 
 } // namespace DockWnd

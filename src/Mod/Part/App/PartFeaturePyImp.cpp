@@ -37,7 +37,7 @@ using namespace Part;
 // returns a string which represent the object e.g. when printed in python
 std::string PartFeaturePy::representation() const
 {
-    return std::string("<Part::PartFeature>");
+    return {"<Part::PartFeature>"};
 }
 
 PyObject *PartFeaturePy::getElementHistory(PyObject *args, PyObject *kwds) {
@@ -66,11 +66,11 @@ PyObject *PartFeaturePy::getElementHistory(PyObject *args, PyObject *kwds) {
             } else
                 ret.setItem(0,Py::Int(history.tag));
             tmp.clear();
-            ret.setItem(1,Py::String(history.element.toString(tmp)));
+            ret.setItem(1,Py::String(history.element.appendToBuffer(tmp)));
             Py::List intermedates;
             for(auto &h : history.intermediates) {
                 tmp.clear();
-                intermedates.append(Py::String(h.toString(tmp)));
+                intermedates.append(Py::String(h.appendToBuffer(tmp)));
             }
             ret.setItem(2,intermedates);
             list.append(ret);

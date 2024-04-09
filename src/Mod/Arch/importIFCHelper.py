@@ -714,9 +714,7 @@ def getRotation(entity):
         w = FreeCAD.Vector(entity.Axis3.DirectionRatios)
     except AttributeError:
         return FreeCAD.Rotation()
-    import WorkingPlane
-    p = WorkingPlane.plane(u=u, v=v, w=w)
-    return p.getRotation().Rotation
+    return FreeCAD.Rotation(u, v, w, "ZYX")
 
 
 def getPlacement(entity,scaling=1000):
@@ -976,8 +974,8 @@ def createFromProperties(propsets,ifcfile,parametrics):
     if appset:
         oname = None
         otype = None
-        if "FreeCADType" in appset.keys():
-            if "FreeCADName" in appset.keys():
+        if "FreeCADType" in appset:
+            if "FreeCADName" in appset:
                 obj = FreeCAD.ActiveDocument.addObject(appset["FreeCADType"],appset["FreeCADName"])
                 if "FreeCADAppObject" in appset:
                     mod,cla = appset["FreeCADAppObject"].split(".")

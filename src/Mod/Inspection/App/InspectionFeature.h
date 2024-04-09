@@ -26,22 +26,32 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectGroup.h>
 
-#include <Mod/Points/App/Points.h>
 #include <Mod/Inspection/InspectionGlobal.h>
+#include <Mod/Points/App/Points.h>
 
 
 class TopoDS_Shape;
 class BRepExtrema_DistShapeShape;
 class gp_Pnt;
 
-namespace MeshCore {
+namespace MeshCore
+{
 class MeshKernel;
 class MeshGrid;
-}
+}  // namespace MeshCore
 
-namespace Mesh   { class MeshObject; }
-namespace Points { class PointsGrid; }
-namespace Part   { class TopoShape;  }
+namespace Mesh
+{
+class MeshObject;
+}
+namespace Points
+{
+class PointsGrid;
+}
+namespace Part
+{
+class TopoShape;
+}
 
 namespace Inspection
 {
@@ -50,14 +60,14 @@ namespace Inspection
 class InspectionExport InspectActualGeometry
 {
 public:
-    InspectActualGeometry() {}
-    virtual ~InspectActualGeometry() {}
+    InspectActualGeometry() = default;
+    virtual ~InspectActualGeometry() = default;
     /// Number of points to be checked
     virtual unsigned long countPoints() const = 0;
     virtual Base::Vector3f getPoint(unsigned long) const = 0;
 };
 
-class InspectionExport InspectActualMesh : public InspectActualGeometry
+class InspectionExport InspectActualMesh: public InspectActualGeometry
 {
 public:
     explicit InspectActualMesh(const Mesh::MeshObject& rMesh);
@@ -71,7 +81,7 @@ private:
     Base::Matrix4D _clTrf;
 };
 
-class InspectionExport InspectActualPoints : public InspectActualGeometry
+class InspectionExport InspectActualPoints: public InspectActualGeometry
 {
 public:
     explicit InspectActualPoints(const Points::PointKernel&);
@@ -82,7 +92,7 @@ private:
     const Points::PointKernel& _rKernel;
 };
 
-class InspectionExport InspectActualShape : public InspectActualGeometry
+class InspectionExport InspectActualShape: public InspectActualGeometry
 {
 public:
     explicit InspectActualShape(const Part::TopoShape&);
@@ -101,12 +111,12 @@ private:
 class InspectionExport InspectNominalGeometry
 {
 public:
-    InspectNominalGeometry() {}
-    virtual ~InspectNominalGeometry() {}
+    InspectNominalGeometry() = default;
+    virtual ~InspectNominalGeometry() = default;
     virtual float getDistance(const Base::Vector3f&) const = 0;
 };
 
-class InspectionExport InspectNominalMesh : public InspectNominalGeometry
+class InspectionExport InspectNominalMesh: public InspectNominalGeometry
 {
 public:
     InspectNominalMesh(const Mesh::MeshObject& rMesh, float offset);
@@ -121,7 +131,7 @@ private:
     Base::Matrix4D _clTrf;
 };
 
-class InspectionExport InspectNominalFastMesh : public InspectNominalGeometry
+class InspectionExport InspectNominalFastMesh: public InspectNominalGeometry
 {
 public:
     InspectNominalFastMesh(const Mesh::MeshObject& rMesh, float offset);
@@ -137,7 +147,7 @@ protected:
     Base::Matrix4D _clTrf;
 };
 
-class InspectionExport InspectNominalPoints : public InspectNominalGeometry
+class InspectionExport InspectNominalPoints: public InspectNominalGeometry
 {
 public:
     InspectNominalPoints(const Points::PointKernel&, float offset);
@@ -149,7 +159,7 @@ private:
     Points::PointsGrid* _pGrid;
 };
 
-class InspectionExport InspectNominalShape : public InspectNominalGeometry
+class InspectionExport InspectNominalShape: public InspectNominalGeometry
 {
 public:
     InspectNominalShape(const TopoDS_Shape&, float offset);
@@ -163,13 +173,12 @@ private:
 private:
     BRepExtrema_DistShapeShape* distss;
     const TopoDS_Shape& _rShape;
-    bool isSolid;
+    bool isSolid {false};
 };
 
 class InspectionExport PropertyDistanceList: public App::_PropertyFloatList
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
-
 };
 
 // ----------------------------------------------------------------
@@ -177,7 +186,7 @@ class InspectionExport PropertyDistanceList: public App::_PropertyFloatList
 /** The inspection feature.
  * \author Werner Mayer
  */
-class InspectionExport Feature : public App::DocumentObject
+class InspectionExport Feature: public App::DocumentObject
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Inspection::Feature);
 
@@ -188,11 +197,11 @@ public:
 
     /** @name Properties */
     //@{
-    App::PropertyFloat     SearchRadius;
-    App::PropertyFloat     Thickness;
-    App::PropertyLink      Actual;
-    App::PropertyLinkList  Nominals;
-    PropertyDistanceList   Distances;
+    App::PropertyFloat SearchRadius;
+    App::PropertyFloat Thickness;
+    App::PropertyLink Actual;
+    App::PropertyLinkList Nominals;
+    PropertyDistanceList Distances;
     //@}
 
     /** @name Actions */
@@ -204,10 +213,12 @@ public:
 
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override
-    { return "InspectionGui::ViewProviderInspection"; }
+    {
+        return "InspectionGui::ViewProviderInspection";
+    }
 };
 
-class InspectionExport Group : public App::DocumentObjectGroup
+class InspectionExport Group: public App::DocumentObjectGroup
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Inspection::Group);
 
@@ -218,10 +229,12 @@ public:
 
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override
-    { return "InspectionGui::ViewProviderInspectionGroup"; }
+    {
+        return "InspectionGui::ViewProviderInspectionGroup";
+    }
 };
 
-} //namespace Inspection
+}  // namespace Inspection
 
 
-#endif // INSPECTION_FEATURE_H
+#endif  // INSPECTION_FEATURE_H

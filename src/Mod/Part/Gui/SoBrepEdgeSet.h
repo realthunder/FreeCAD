@@ -58,6 +58,8 @@ public:
     void initBoundingBoxes(const SbVec3f *coords, int numverts);
 
 protected:
+    ~SoBrepEdgeSet() override = default;
+
     void GLRender(SoGLRenderAction *action) override;
     void GLRenderInPath(SoGLRenderAction *action) override;
     void GLRenderBelowPath(SoGLRenderAction * action) override;
