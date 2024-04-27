@@ -784,6 +784,7 @@ void populateMenu(QMenu *menu, MenuType type, bool popup,
     QString tooltip, ltooltip;
     QMenu *hiddenMenu = nullptr;
     QMenu *lockMenu = nullptr;
+    QMenu *undockMenu = nullptr;
     menu->setToolTipsVisible(true);
 
     if (ViewParams::getEnableMenuBarCheckBox())
@@ -805,6 +806,8 @@ void populateMenu(QMenu *menu, MenuType type, bool popup,
                     !ToolBarManager::getInstance()->isDefaultMovable(), &checkbox);
             QObject::connect(lockAction, &QAction::toggled, cb);
             QObject::connect(checkbox, &QCheckBox::toggled, cb);
+            undockMenu = new QMenu(QObject::tr("Undock toolbars"), menu);
+            ToolBarManager::getInstance()->populateUndockMenu(undockMenu);
         } else {
             lockAction = lockMenu->addAction(QObject::tr("Default"));
             QObject::connect(lockAction, &QAction::toggled, cb);
@@ -958,6 +961,8 @@ void populateMenu(QMenu *menu, MenuType type, bool popup,
         }
     }
 
+    if (undockMenu && !undockMenu->actions().isEmpty())
+        menu->addMenu(undockMenu);
     if (hiddenMenu)
         menu->addMenu(hiddenMenu);
     if (lockMenu)

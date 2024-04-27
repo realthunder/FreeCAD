@@ -34,12 +34,13 @@
 #include <Base/Parameter.h>
 
 class QAction;
+class QMenu;
 class QToolBar;
 class QMouseEvent;
-class ToolBarArea;
 
 namespace Gui {
 
+class ToolBarArea;
 class Workbench;
 
 class GuiExport ToolBarItem
@@ -130,12 +131,13 @@ public:
     static bool isCustomToolBarName(const char *name);
     static QString generateToolBarID(const char *groupName, const char *name);
 
-    static QSize actionsIconSize(const QSize &s, const QList<QAction*> &actions);
+    static QSize actionsIconSize(const QList<QAction*> &actions, QWidget *widget=nullptr);
     void checkToolBarIconSize(QAction *action);
     void checkToolBarIconSize(QToolBar *tb);
 
-    int toolBarIconSize() const;
+    int toolBarIconSize(QWidget *widget=nullptr) const;
     void setupToolBarIconSize();
+    void populateUndockMenu(QMenu *menu, ToolBarArea *area = nullptr);
 
 protected Q_SLOTS:
     void onToggleToolBar(bool);
@@ -158,6 +160,7 @@ protected:
     bool addToolBarToArea(QObject *, QMouseEvent*);
     bool showContextMenu(QObject *);
     void onToggleStatusBarWidget(QWidget *, bool);
+    static void setToolBarIconSize(QToolBar *tb);
 
     ToolBarManager();
     ~ToolBarManager();
@@ -190,6 +193,12 @@ private:
     ToolBarArea *menuBarRightArea = nullptr;
 
     std::map<QToolBar*, QPointer<QToolBar>> resizingToolBars;
+
+    int _toolBarIconSize;
+    int _workbenchTabIconSize;
+    int _workbenchComboIconSize;
+    int _statusBarIconSize;
+    int _menuBarIconSize;
 };
 
 } // namespace Gui

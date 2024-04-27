@@ -810,8 +810,7 @@ void WorkbenchComboBox::populate()
 {
     clear();
     auto actions = group->actions();
-    int s = std::max(16, ToolBarManager::getInstance()->toolBarIconSize()-6);
-    this->setIconSize(ToolBarManager::actionsIconSize(QSize(s, s), actions));
+    this->setIconSize(ToolBarManager::actionsIconSize(actions, this));
 
     if (ViewParams::getAutoSortWBList()) {
         std::sort(actions.begin(), actions.end(),
@@ -909,13 +908,6 @@ public:
         handle->SetBool("TabBarShowText", enable);
     }
 
-    int toolbarIconSize() {
-        int pixel = hGeneral->GetInt("WorkbenchTabIconSize");
-        if (pixel <= 0)
-            pixel = ToolBarManager::getInstance()->toolBarIconSize();
-        return pixel;
-    }
-
     bool showTabBar() {
         return handle->GetBool("ShowTabBar", false);
     }
@@ -955,19 +947,27 @@ QSize WorkbenchTabBar::tabSizeHint(int index) const
     QSize size = QTabBar::tabSizeHint(index);
     if (!tabText(index).isEmpty())
         return size;
+
+    QStyleOptionTab opt;
+    initStyleOption(&opt, index);
     switch (shape()) {
     case QTabBar::RoundedWest:
     case QTabBar::RoundedEast:
     case QTabBar::TriangularWest:
-    case QTabBar::TriangularEast:
-        if (_tabSize <= 0)
-            return QSize(size.width(), std::max(iconSize().width(), size.width()+2));
-        return QSize(size.width(), _tabSize);
-    default:
-        if (_tabSize <= 0)
-            return QSize(std::max(iconSize().width(), size.height()+2), size.height());
-        return QSize(_tabSize, size.height());
+    case QTabBar::TriangularEast: {
+        int hframe = style()->pixelMetric(QStyle::PM_TabBarTabHSpace, &opt, this);
+        size.setWidth(iconSize().width() + hframe);
+        if (_tabSize > 0)
+            size.setHeight(_tabSize);
+        break;
     }
+    default: {
+        int vframe = style()->pixelMetric(QStyle::PM_TabBarTabVSpace, &opt, this);
+        size.setHeight(iconSize().height() + vframe);
+        if (_tabSize > 0)
+            size.setWidth(_tabSize);
+    }}
+    return size;
 }
 
 void WorkbenchTabBar::changeEvent(QEvent *ev)
@@ -1097,10 +1097,10 @@ void WorkbenchTabWidget::updateWorkbenches()
 {
     auto tab = this->tabBar();
 
-    int s = this->group->_pimpl->toolbarIconSize();
-    QSize iconSize = ToolBarManager::actionsIconSize(QSize(s, s), this->group->actions());
-    if (this->iconSize() != iconSize)
+    QSize iconSize = ToolBarManager::actionsIconSize(this->group->actions(), this);
+    if (this->iconSize() != iconSize) {
         this->setIconSize(iconSize);
+    }
 
     auto wb = WorkbenchManager::instance()->active();
     QString current;
@@ -1328,6 +1328,13 @@ void WorkbenchGroup::addTo(QWidget *widget)
                 tabbar, &WorkbenchTabWidget::onChangeOrientation);
         connect(bar, &QToolBar::topLevelChanged,
                 tabbar, &WorkbenchTabWidget::onChangeOrientation);
+
+
+        connect(bar, &QToolBar::iconSizeChanged, this, [=] {
+            auto actions = this->actions();
+            box->setIconSize(ToolBarManager::actionsIconSize(actions, box));
+            tabbar->setIconSize(ToolBarManager::actionsIconSize(actions, tabbar));
+        });
 
         if (_pimpl->showTabBar())
             actBox->setVisible(false);

@@ -199,6 +199,8 @@ void ToolBarManager::destruct()
     _instance = nullptr;
 }
 
+namespace Gui {
+
 class ToolBarArea : public QWidget
 {
     using inherited = QWidget;
@@ -215,7 +217,7 @@ public:
     {
         if (_layout->indexOf(w) < 0) {
             _layout->addWidget(w);
-            adjustParent();
+            adjustParentSize();
         }
     }
 
@@ -227,10 +229,10 @@ public:
         if (index > 0)
             _layout->removeWidget(w);
         _layout->insertWidget(idx, w);
-        adjustParent();
+        adjustParentSize();
     }
 
-    void adjustParent()
+    void adjustParentSize()
     {
         if (_sizingTimer) {
             _sizingTimer->start(10);
@@ -240,7 +242,7 @@ public:
     void removeWidget(QWidget *w)
     {
         _layout->removeWidget(w);
-        adjustParent();
+        adjustParentSize();
     }
 
     QWidget *widgetAt(int index) const
@@ -267,7 +269,7 @@ public:
             if (!toolbar || toolbar->objectName().isEmpty()
                          || toolbar->objectName().startsWith(QStringLiteral("*")))
                 continue;
-            f(toolbar, i);
+            f(toolbar, i, this);
         }
     }
 
@@ -276,7 +278,7 @@ public:
         for (auto &v : hParam->GetIntMap()) {
             hParam->RemoveInt(v.first.c_str());
         }
-        foreachToolBar([hParam](QToolBar *toolbar, int idx) {
+        foreachToolBar([hParam](QToolBar *toolbar, int idx, ToolBarArea*) {
             hParam->SetInt(toolbar->objectName().toUtf8().constData(), idx);
         });
     };
@@ -303,6 +305,8 @@ private:
     QHBoxLayout *_layout;
     QPointer<QTimer> _sizingTimer;
 };
+
+} // namespace Gui
 
 ToolBarManager::ToolBarManager()
 {
@@ -360,9 +364,28 @@ ToolBarManager::ToolBarManager()
 
     hPref = App::GetApplication().GetUserParameter().GetGroup(
             "BaseApp/MainWindow/ToolBars");
+
     hMovable = hPref->GetGroup("Movable");
+
+    auto refreshParams = [this](const char *name) {
+        if (!name || boost::equals(name, "ToolbarIconSize"))
+            _toolBarIconSize = hGeneral->GetInt("ToolbarIconSize", 24);
+        if (!name || boost::equals(name, "StatusBarIconSize"))
+            _statusBarIconSize = hGeneral->GetInt("StatusBarIconSize", 0);
+        if (!name || boost::equals(name, "MenuBarIconSize"))
+            _menuBarIconSize = hGeneral->GetInt("MenuBarIconSize", 0);
+        if (!name || boost::equals(name, "WorkbenchTabIconSize"))
+            _workbenchTabIconSize = hGeneral->GetInt("WorkbenchTabIconSize", 0);
+        if (!name || boost::equals(name, "WorkbenchComboIconSize"))
+            _workbenchComboIconSize = hGeneral->GetInt("WorkbenchComboIconSize", 0);
+    };
+    refreshParams(nullptr);
+
     connParam = App::GetApplication().GetUserParameter().signalParamChanged.connect(
-        [this](ParameterGrp *Param, ParameterGrp::ParamType, const char *Name, const char *) {
+        [this, refreshParams](ParameterGrp *Param, ParameterGrp::ParamType, const char *Name, const char *) {
+            if (Param == hGeneral && Name) {
+                refreshParams(Name);
+            }
             if (Param == hPref
                     || Param == hMovable
                     || Param == hStatusBar
@@ -404,13 +427,10 @@ ToolBarManager::ToolBarManager()
 
     timerResize.setSingleShot(true);
     QObject::connect(&timerResize, &QTimer::timeout, [this]() {
-        int s = toolBarIconSize();
         for (const auto &v : resizingToolBars) {
-            if (!v.second) continue;
-            auto tb = v.first;
-            QSize size = actionsIconSize(QSize(s, s), tb->actions());
-            if (size != tb->iconSize())
-                tb->setIconSize(size);
+            if (v.second) {
+                setToolBarIconSize(v.first);
+            }
         }
         resizingToolBars.clear();
     });
@@ -418,9 +438,48 @@ ToolBarManager::ToolBarManager()
 
 ToolBarManager::~ToolBarManager() = default;
 
-int ToolBarManager::toolBarIconSize() const
+int ToolBarManager::toolBarIconSize(QWidget *widget) const
 {
-    return std::max(hGeneral->GetInt("ToolbarIconSize", 24l), 5l);
+    int s = _toolBarIconSize;
+    if (widget) {
+        if (qobject_cast<WorkbenchTabWidget*>(widget)) {
+            if (_workbenchTabIconSize > 0)
+                s = _workbenchTabIconSize;
+            else
+                s *= 0.8;
+            widget = widget->parentWidget();
+        }
+        else if (qobject_cast<WorkbenchComboBox*>(widget)) {
+            if (_workbenchComboIconSize > 0)
+                s = _workbenchComboIconSize;
+            else
+                s *= 0.8;
+            widget = widget->parentWidget();
+        }
+    }
+
+    if (widget) {
+        if (widget->parentWidget() == statusBarArea) {
+            if (_statusBarIconSize > 0)
+                s = _statusBarIconSize;
+            else
+                s *= 0.6;
+        }
+        else if (widget->parentWidget() == menuBarLeftArea
+                || widget->parentWidget() == menuBarRightArea) {
+            if (_menuBarIconSize > 0)
+                s = _menuBarIconSize;
+            else
+                s *= 0.6;
+        }
+    }
+    return std::max(s, 5);
+}
+
+void ToolBarManager::setToolBarIconSize(QToolBar *toolbar)
+{
+    QSize iconSize = actionsIconSize(toolbar->actions(), toolbar);
+    toolbar->setIconSize(iconSize);
 }
 
 void ToolBarManager::getGlobalToolBarNames()
@@ -624,9 +683,18 @@ void ToolBarManager::connectToolBar(QToolBar *toolbar)
     toolbar->installEventFilter(this);
     connect(toolbar, SIGNAL(visibilityChanged(bool)), this, SLOT(onToggleToolBar(bool)));
     connect(toolbar, SIGNAL(movableChanged(bool)), this, SLOT(onMovableChanged(bool)));
-    connect(toolbar, &QToolBar::topLevelChanged, [this](){
+    connect(toolbar, &QToolBar::topLevelChanged, this, [this, toolbar] {
         if (this->restored)
             getMainWindow()->saveWindowSettings(true);
+        checkToolBarIconSize(toolbar);
+    });
+    connect(toolbar, &QToolBar::iconSizeChanged, this, [this, toolbar] {
+        if (toolbar->parentWidget() == menuBarLeftArea) {
+            menuBarLeftArea->adjustParentSize();
+        }
+        else if (toolbar->parentWidget() == menuBarRightArea) {
+            menuBarRightArea->adjustParentSize();
+        }
     });
     QByteArray name = p->objectName().toUtf8();
     p->setMovable(hMovable->GetBool(name, isDefaultMovable()));
@@ -1079,16 +1147,19 @@ bool ToolBarManager::addToolBarToArea(QObject *o, QMouseEvent *ev)
     static QPointer<OverlayDragFrame> tbPlaceholder;
     static QPointer<ToolBarArea> lastArea;
     static int tbIndex = -1;
-    if (ev->type() == QEvent::MouseMove && ev->buttons() != Qt::LeftButton) {
-        if (tbIndex >= 0) {
-            if (lastArea) {
-                lastArea->removeWidget(tbPlaceholder);
-                lastArea = nullptr;
+    if (ev->type() == QEvent::MouseMove) {
+        if (tb->orientation() != Qt::Horizontal
+            || ev->buttons() != Qt::LeftButton) {
+            if (tbIndex >= 0) {
+                if (lastArea) {
+                    lastArea->removeWidget(tbPlaceholder);
+                    lastArea = nullptr;
+                }
+                tbPlaceholder->hide();
+                tbIndex = -1;
             }
-            tbPlaceholder->hide();
-            tbIndex = -1;
+            return false;
         }
-        return false;
     }
 
     if (ev->type() == QEvent::MouseButtonRelease && ev->button() != Qt::LeftButton)
@@ -1176,6 +1247,51 @@ bool ToolBarManager::addToolBarToArea(QObject *o, QMouseEvent *ev)
     return false;
 }
 
+void ToolBarManager::populateUndockMenu(QMenu *menu, ToolBarArea *area)
+{
+    auto tooltip = QObject::tr("Undock from status bar");
+    auto addMenuUndockItem = [&](QToolBar *toolbar, int, ToolBarArea *area) {
+        auto *action = toolbar->toggleViewAction();
+        QCheckBox *checkbox;
+        auto wa = Action::addCheckBox(menu, action->text(),
+                tooltip, action->icon(), true, &checkbox);
+        QObject::connect(wa, &QAction::toggled, [checkbox](bool checked){
+            QSignalBlocker block(checkbox);
+            checkbox->setChecked(checked);
+        });
+        QObject::connect(wa, &QWidgetAction::toggled, [area, toolbar, this](bool checked) {
+            if (checked) {
+                QSignalBlocker blocker(toolbar);
+                area->addWidget(toolbar);
+            } else if (toolbar->parentWidget() == getMainWindow())
+                return;
+            else {
+                auto pos = toolbar->mapToGlobal(QPoint(0, 0));
+                QSignalBlocker blocker(toolbar);
+                area->removeWidget(toolbar);
+                {
+                    Base::StateLocker guard(adding);
+                    getMainWindow()->addToolBar(toolbar);
+                }
+                toolbar->setWindowFlags(Qt::Tool
+                        | Qt::FramelessWindowHint
+                        | Qt::X11BypassWindowManagerHint);
+                toolbar->move(pos.x(), pos.y()-toolbar->height()-10);
+                toolbar->adjustSize();
+                setToolBarVisible(toolbar, true);
+            }
+            toolbar->topLevelChanged(!checked);
+        });
+    };
+    if (area)
+        area->foreachToolBar(addMenuUndockItem);
+    else {
+        statusBarArea->foreachToolBar(addMenuUndockItem);
+        menuBarLeftArea->foreachToolBar(addMenuUndockItem);
+        menuBarRightArea->foreachToolBar(addMenuUndockItem);
+    }
+}
+
 bool ToolBarManager::showContextMenu(QObject *source)
 {
     QMenu menu;
@@ -1211,10 +1327,9 @@ bool ToolBarManager::showContextMenu(QObject *source)
         return false;
     }
     auto tooltip = QObject::tr("Toggles visibility");
-    auto ltooltip = QObject::tr("Undock from status bar");
     QCheckBox *checkbox;
 
-    auto addMenuItem = [&](QToolBar *toolbar, int) {
+    auto addMenuVisibleItem = [&](QToolBar *toolbar, int, ToolBarArea *) {
         auto action = toolbar->toggleViewAction();
         if ((action->isVisible() || toolbar->isVisible()) && action->text().size()) {
             action->setVisible(true);
@@ -1222,36 +1337,6 @@ bool ToolBarManager::showContextMenu(QObject *source)
                     tooltip, action->icon(), action->isChecked(), &checkbox);
             QObject::connect(checkbox, SIGNAL(toggled(bool)), action, SIGNAL(triggered(bool)));
             QObject::connect(wa, SIGNAL(triggered(bool)), action, SIGNAL(triggered(bool)));
-
-            wa = Action::addCheckBox(&menuUndock, action->text(),
-                    ltooltip, action->icon(), true, &checkbox);
-            QObject::connect(wa, &QAction::toggled, [checkbox](bool checked){
-                QSignalBlocker block(checkbox);
-                checkbox->setChecked(checked);
-            });
-            QObject::connect(wa, &QWidgetAction::toggled, [area, toolbar, this](bool checked) {
-                if (checked) {
-                    QSignalBlocker blocker(toolbar);
-                    area->addWidget(toolbar);
-                } else if (toolbar->parentWidget() == getMainWindow())
-                    return;
-                else {
-                    auto pos = toolbar->mapToGlobal(QPoint(0, 0));
-                    QSignalBlocker blocker(toolbar);
-                    area->removeWidget(toolbar);
-                    {
-                        Base::StateLocker guard(adding);
-                        getMainWindow()->addToolBar(toolbar);
-                    }
-                    toolbar->setWindowFlags(Qt::Tool
-                            | Qt::FramelessWindowHint
-                            | Qt::X11BypassWindowManagerHint);
-                    toolbar->move(pos.x(), pos.y()-toolbar->height()-10);
-                    toolbar->adjustSize();
-                    setToolBarVisible(toolbar, true);
-                }
-                toolbar->topLevelChanged(!checked);
-            });
         }
     };
 
@@ -1278,7 +1363,8 @@ bool ToolBarManager::showContextMenu(QObject *source)
         }
     }
 
-    area->foreachToolBar(addMenuItem);
+    area->foreachToolBar(addMenuVisibleItem);
+    populateUndockMenu(&menuUndock, area);
 
     if (menuUndock.actions().size()) {
         menu.addSeparator();
@@ -1347,9 +1433,10 @@ void ToolBarManager::setToolBarVisibility(bool show, const QList<QString>& names
     }
 }
 
-QSize ToolBarManager::actionsIconSize(const QSize &s, const QList<QAction*> &actions)
+QSize ToolBarManager::actionsIconSize(const QList<QAction*> &actions, QWidget *widget)
 {
-    QSize iconSize = s;
+    int s = getInstance()->toolBarIconSize(widget);
+    QSize iconSize(s, s);
     for (auto action : actions) {
         if (!action->isVisible())
             continue;
@@ -1445,15 +1532,14 @@ void ToolBarManager::setState(const QList<QString>& names, State state)
 
 void ToolBarManager::setupToolBarIconSize()
 {
-    int pixel = toolBarIconSize();
-    QSize size(pixel, pixel);
-    getMainWindow()->setIconSize(size);
-    auto setToolBarSize = [size](QToolBar *tb, int) {
-        tb->setIconSize(size);
-    };
-    statusBarArea->foreachToolBar(setToolBarSize);
-    menuBarLeftArea->foreachToolBar(setToolBarSize);
-    menuBarRightArea->foreachToolBar(setToolBarSize);
+    int s = toolBarIconSize();
+    getMainWindow()->setIconSize(QSize(s, s));
+    // Most of the the toolbar will have explicit icon size, so the above call
+    // to QMainWindow::setIconSize() will have no effect. We need to explicitly
+    // change the icon size.
+    for (auto toolbar : getMainWindow()->findChildren<QToolBar*>()) {
+        setToolBarIconSize(toolbar);
+    }
 }
 
 #include "moc_ToolBarManager.cpp"

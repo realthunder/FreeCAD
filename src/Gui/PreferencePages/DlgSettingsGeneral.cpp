@@ -560,7 +560,7 @@ void applyToolTipIconSize(ParameterGrp *)
     Application::Instance->commandManager().refreshIcons();
 }
 
-void applyToolbarIconSize(const ParamKey *)
+void applyToolbarIconSize(ParameterGrp *)
 {
     ToolBarManager::getInstance()->setupToolBarIconSize();
     if (_Instance)
@@ -656,7 +656,7 @@ void DlgSettingsGeneral::attachObserver()
     handlers.addHandler(hGeneral, "Language", applyLanguage);
     handlers.addHandler(hGeneral, "SubstituteDecimal", applyDecimalPointConversion);
     handlers.addHandler(hGeneral, "EnableCursorBlinking", applyCursorBlinking);
-    handlers.addHandler(hGeneral, "ToolbarIconSize", applyToolbarIconSize);
+    handlers.addDelayedHandler(hGeneral, "ToolbarIconSize", applyToolbarIconSize);
     handlers.addHandler(hGeneral, "PythonWordWrap", applyPythonWordWrap);
 
     ViewParams::init();

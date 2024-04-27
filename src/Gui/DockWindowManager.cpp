@@ -296,7 +296,9 @@ QDockWidget* DockWindowManager::addDockWindow(const char* name, QWidget* widget,
         d->_hPref->SetBool(dockName.constData(), dw->isVisible());
     });
 
-    auto cb = []() {getMainWindow()->saveWindowSettings(true);};
+    auto cb = []() {
+        getMainWindow()->saveWindowSettings(true);
+    };
     connect(dw, &QDockWidget::topLevelChanged, cb);
     connect(dw, &QDockWidget::dockLocationChanged, cb);
     return dw;
