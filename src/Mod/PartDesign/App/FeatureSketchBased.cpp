@@ -486,20 +486,20 @@ TopoShape ProfileBased::getSupportFace() const {
         shape = Part::Feature::getTopoShape(
                 ref, Support.getSubValues().size() ? Support.getSubValues()[0].c_str() : "", true);
     }
-    if (!shape.isNull()) {
-        if (shape.shapeType(true) != TopAbs_FACE) {
-            if (!shape.hasSubShape(TopAbs_FACE))
-                throw Base::ValueError("Null face in SketchBased::getSupportFace()!");
+    if (shape.shapeType(true) != TopAbs_FACE) {
+        if (shape.hasSubShape(TopAbs_FACE))
             shape = shape.getSubTopoShape(TopAbs_FACE, 1);
-        }
+        else
+            shape = TopoShape();
+    }
+    if (!shape.isNull()) {
         gp_Pln pln;
         if (!shape.findPlane(pln))
-            throw Base::TypeError("No planar face in SketchBased::getSupportFace()!");
-
+            throw Base::TypeError("No planar support face");
         return shape;
     }
     if (!sketch)
-        throw Base::RuntimeError("No planar support");
+        throw Base::RuntimeError("No planar support face");
     return Feature::makeShapeFromPlane(sketch);
 }
 
