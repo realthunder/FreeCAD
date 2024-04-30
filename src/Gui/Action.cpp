@@ -947,27 +947,19 @@ QSize WorkbenchTabBar::tabSizeHint(int index) const
     QSize size = QTabBar::tabSizeHint(index);
     if (!tabText(index).isEmpty())
         return size;
-
-    QStyleOptionTab opt;
-    initStyleOption(&opt, index);
     switch (shape()) {
     case QTabBar::RoundedWest:
     case QTabBar::RoundedEast:
     case QTabBar::TriangularWest:
-    case QTabBar::TriangularEast: {
-        int hframe = style()->pixelMetric(QStyle::PM_TabBarTabHSpace, &opt, this);
-        size.setWidth(iconSize().width() + hframe);
-        if (_tabSize > 0)
-            size.setHeight(_tabSize);
-        break;
+    case QTabBar::TriangularEast:
+        if (_tabSize <= 0)
+            return QSize(size.width(), std::max(iconSize().width(), size.width()+2));
+        return QSize(size.width(), _tabSize);
+    default:
+        if (_tabSize <= 0)
+            return QSize(std::max(iconSize().width(), size.height()+2), size.height());
+        return QSize(_tabSize, size.height());
     }
-    default: {
-        int vframe = style()->pixelMetric(QStyle::PM_TabBarTabVSpace, &opt, this);
-        size.setHeight(iconSize().height() + vframe);
-        if (_tabSize > 0)
-            size.setWidth(_tabSize);
-    }}
-    return size;
 }
 
 void WorkbenchTabBar::changeEvent(QEvent *ev)

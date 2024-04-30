@@ -806,7 +806,7 @@ void populateMenu(QMenu *menu, MenuType type, bool popup,
                     !ToolBarManager::getInstance()->isDefaultMovable(), &checkbox);
             QObject::connect(lockAction, &QAction::toggled, cb);
             QObject::connect(checkbox, &QCheckBox::toggled, cb);
-            undockMenu = new QMenu(QObject::tr("Undock toolbars"), menu);
+            undockMenu = new QMenu(menu);
             ToolBarManager::getInstance()->populateUndockMenu(undockMenu);
         } else {
             lockAction = lockMenu->addAction(QObject::tr("Default"));

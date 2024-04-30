@@ -21,6 +21,7 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+#include <boost/signals2/connection.hpp>
 #ifndef _PreComp_
 # include <QAction>
 # include <QApplication>
@@ -205,9 +206,14 @@ class ToolBarArea : public QWidget
 {
     using inherited = QWidget;
 public:
-    ToolBarArea(QWidget *parent, QTimer *timer = nullptr)
+    ToolBarArea(QWidget *parent,
+                ParameterGrp::handle hParam,
+                boost::signals2::scoped_connection &conn,
+                QTimer *timer = nullptr)
         : QWidget(parent)
         , _sizingTimer(timer)
+        , _hParam(hParam)
+        , _conn(conn)
     {
         _layout = new QHBoxLayout(this);
         _layout->setMargin(0);
@@ -218,6 +224,11 @@ public:
         if (_layout->indexOf(w) < 0) {
             _layout->addWidget(w);
             adjustParentSize();
+            QString name = w->objectName();
+            if (!name.isEmpty()) {
+                Base::ConnectionBlocker block(_conn);
+                _hParam->SetInt(w->objectName().toUtf8().constData(), _layout->count()-1);
+            }
         }
     }
 
@@ -230,6 +241,7 @@ public:
             _layout->removeWidget(w);
         _layout->insertWidget(idx, w);
         adjustParentSize();
+        saveState();
     }
 
     void adjustParentSize()
@@ -243,6 +255,11 @@ public:
     {
         _layout->removeWidget(w);
         adjustParentSize();
+        QString name = w->objectName();
+        if (!name.isEmpty()) {
+            Base::ConnectionBlocker block(_conn);
+            _hParam->RemoveInt(name.toUtf8().constData());
+        }
     }
 
     QWidget *widgetAt(int index) const
@@ -273,18 +290,18 @@ public:
         }
     }
 
-    void saveState(ParameterGrp::handle hParam)
+    void saveState()
     {
-        for (auto &v : hParam->GetIntMap()) {
-            hParam->RemoveInt(v.first.c_str());
+        Base::ConnectionBlocker block(_conn);
+        for (auto &v : _hParam->GetIntMap()) {
+            _hParam->RemoveInt(v.first.c_str());
         }
-        foreachToolBar([hParam](QToolBar *toolbar, int idx, ToolBarArea*) {
-            hParam->SetInt(toolbar->objectName().toUtf8().constData(), idx);
+        foreachToolBar([this](QToolBar *toolbar, int idx, ToolBarArea*) {
+            _hParam->SetInt(toolbar->objectName().toUtf8().constData(), idx);
         });
     };
 
-    void restoreState(const std::map<int, QToolBar*> &toolbars,
-                      ParameterGrp::handle hParam)
+    void restoreState(const std::map<int, QToolBar*> &toolbars)
     {
         for (auto &v : toolbars) {
             bool vis = v.second->isVisible();
@@ -294,7 +311,7 @@ public:
             ToolBarManager::getInstance()->setToolBarVisible(v.second, vis);
         }
 
-        for (auto &v : hParam->GetBoolMap()) {
+        for (auto &v : _hParam->GetBoolMap()) {
             auto w = findChild<QWidget*>(QString::fromUtf8(v.first.c_str()));
             if (w)
                 w->setVisible(v.second);
@@ -304,15 +321,37 @@ public:
 private:
     QHBoxLayout *_layout;
     QPointer<QTimer> _sizingTimer;
+    ParameterGrp::handle _hParam;
+    boost::signals2::scoped_connection &_conn;
 };
 
 } // namespace Gui
 
 ToolBarManager::ToolBarManager()
 {
+    hGeneral = App::GetApplication().GetUserParameter().GetGroup(
+            "BaseApp/Preferences/General");
+
+    hGlobal = App::GetApplication().GetUserParameter().GetGroup(
+            "BaseApp/Workbench/Global/ToolBar");
+    getGlobalToolBarNames();
+
+    hStatusBar = App::GetApplication().GetUserParameter().GetGroup(
+            "BaseApp/MainWindow/StatusBar");
+
+    hMenuBarRight = App::GetApplication().GetUserParameter().GetGroup(
+            "BaseApp/MainWindow/MenuBarRight");
+    hMenuBarLeft = App::GetApplication().GetUserParameter().GetGroup(
+            "BaseApp/MainWindow/MenuBarLeft");
+
+    hPref = App::GetApplication().GetUserParameter().GetGroup(
+            "BaseApp/MainWindow/ToolBars");
+
+    hMovable = hPref->GetGroup("Movable");
+
     if (auto sb = getMainWindow()->statusBar()) {
         sb->installEventFilter(this);
-        statusBarArea = new ToolBarArea(sb);
+        statusBarArea = new ToolBarArea(sb, hStatusBar, connParam);
         statusBarArea->setObjectName(QStringLiteral("StatusBarArea"));
         sb->insertPermanentWidget(2, statusBarArea);
         statusBarArea->show();
@@ -320,11 +359,11 @@ ToolBarManager::ToolBarManager()
 
     if (auto mb = getMainWindow()->menuBar()) {
         mb->installEventFilter(this);
-        menuBarLeftArea = new ToolBarArea(mb, &menuBarTimer);
+        menuBarLeftArea = new ToolBarArea(mb, hMenuBarLeft, connParam, &menuBarTimer);
         menuBarLeftArea->setObjectName(QStringLiteral("MenuBarLeftArea"));
         mb->setCornerWidget(menuBarLeftArea, Qt::TopLeftCorner);
         menuBarLeftArea->show();
-        menuBarRightArea = new ToolBarArea(mb, &menuBarTimer);
+        menuBarRightArea = new ToolBarArea(mb, hMenuBarRight, connParam, &menuBarTimer);
         menuBarRightArea->setObjectName(QStringLiteral("MenuBarRightArea"));
         mb->setCornerWidget(menuBarRightArea, Qt::TopRightCorner);
         menuBarRightArea->show();
@@ -346,26 +385,6 @@ ToolBarManager::ToolBarManager()
         globalArea = Qt::LeftToolBarArea;
     else if (defarea == "Right")
         globalArea = Qt::RightToolBarArea;
-
-    hGeneral = App::GetApplication().GetUserParameter().GetGroup(
-            "BaseApp/Preferences/General");
-
-    hGlobal = App::GetApplication().GetUserParameter().GetGroup(
-            "BaseApp/Workbench/Global/ToolBar");
-    getGlobalToolBarNames();
-
-    hStatusBar = App::GetApplication().GetUserParameter().GetGroup(
-            "BaseApp/MainWindow/StatusBar");
-
-    hMenuBarRight = App::GetApplication().GetUserParameter().GetGroup(
-            "BaseApp/MainWindow/MenuBarRight");
-    hMenuBarLeft = App::GetApplication().GetUserParameter().GetGroup(
-            "BaseApp/MainWindow/MenuBarLeft");
-
-    hPref = App::GetApplication().GetUserParameter().GetGroup(
-            "BaseApp/MainWindow/ToolBars");
-
-    hMovable = hPref->GetGroup("Movable");
 
     auto refreshParams = [this](const char *name) {
         if (!name || boost::equals(name, "ToolbarIconSize"))
@@ -393,8 +412,9 @@ ToolBarManager::ToolBarManager()
                     || Param == hMenuBarLeft
                     || (Param == hMainWindow
                         && Name
-                        && boost::equals(Name, "DefaultToolBarArea")))
+                        && boost::equals(Name, "DefaultToolBarArea"))) {
                 timer.start(100);
+            }
             else if (Param == hGlobal)
                 getGlobalToolBarNames();
         });
@@ -478,8 +498,8 @@ int ToolBarManager::toolBarIconSize(QWidget *widget) const
 
 void ToolBarManager::setToolBarIconSize(QToolBar *toolbar)
 {
-    QSize iconSize = actionsIconSize(toolbar->actions(), toolbar);
-    toolbar->setIconSize(iconSize);
+    int s = getInstance()->toolBarIconSize(toolbar);
+    toolbar->setIconSize(QSize(s, s));
 }
 
 void ToolBarManager::getGlobalToolBarNames()
@@ -658,9 +678,9 @@ void ToolBarManager::onTimer()
         mw->saveWindowSettings(true);
     }
 
-    statusBarArea->restoreState(sbToolBars, hStatusBar);
-    menuBarRightArea->restoreState(mbRightToolBars, hMenuBarRight);
-    menuBarLeftArea->restoreState(mbLeftToolBars, hMenuBarLeft);
+    statusBarArea->restoreState(sbToolBars);
+    menuBarRightArea->restoreState(mbRightToolBars);
+    menuBarLeftArea->restoreState(mbLeftToolBars);
 }
 
 QToolBar *ToolBarManager::createToolBar(const QString &name)
@@ -923,11 +943,7 @@ void ToolBarManager::setup(ToolBarItem* item, QToolBar* toolbar) const
 
 void ToolBarManager::saveState() const
 {
-    Base::ConnectionBlocker block(const_cast<ToolBarManager*>(this)->connParam);
-
-    statusBarArea->saveState(hStatusBar);
-    menuBarRightArea->saveState(hMenuBarRight);
-    menuBarLeftArea->saveState(hMenuBarLeft);
+    // Base::ConnectionBlocker block(const_cast<ToolBarManager*>(this)->connParam);
 
     // ToolBar visibility is now synced using Qt signals
 }
@@ -971,9 +987,9 @@ void ToolBarManager::restoreState()
         }
     }
 
-    statusBarArea->restoreState(sbToolBars, hStatusBar);
-    menuBarRightArea->restoreState(mbRightToolBars, hMenuBarRight);
-    menuBarLeftArea->restoreState(mbLeftToolBars, hMenuBarLeft);
+    statusBarArea->restoreState(sbToolBars);
+    menuBarRightArea->restoreState(mbRightToolBars);
+    menuBarLeftArea->restoreState(mbLeftToolBars);
     restored = true;
 }
 
@@ -1249,6 +1265,7 @@ bool ToolBarManager::addToolBarToArea(QObject *o, QMouseEvent *ev)
 
 void ToolBarManager::populateUndockMenu(QMenu *menu, ToolBarArea *area)
 {
+    menu->setTitle(tr("Undock toolbars"));
     auto tooltip = QObject::tr("Undock from status bar");
     auto addMenuUndockItem = [&](QToolBar *toolbar, int, ToolBarArea *area) {
         auto *action = toolbar->toggleViewAction();
@@ -1263,6 +1280,7 @@ void ToolBarManager::populateUndockMenu(QMenu *menu, ToolBarArea *area)
             if (checked) {
                 QSignalBlocker blocker(toolbar);
                 area->addWidget(toolbar);
+                setToolBarVisible(toolbar, true);
             } else if (toolbar->parentWidget() == getMainWindow())
                 return;
             else {
@@ -1295,7 +1313,7 @@ void ToolBarManager::populateUndockMenu(QMenu *menu, ToolBarArea *area)
 bool ToolBarManager::showContextMenu(QObject *source)
 {
     QMenu menu;
-    QMenu menuUndock(tr("Undock toolbars"));
+    QMenu menuUndock;
     QHBoxLayout *layout = nullptr;
     ToolBarArea *area;
     if (getMainWindow()->statusBar() == source) {
