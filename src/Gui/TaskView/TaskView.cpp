@@ -474,19 +474,19 @@ void TaskView::triggerMinimumSizeHint()
 
 void TaskView::adjustMinimumSizeHint()
 {
-    QSize ms = minimumSizeHint();
-    setMinimumWidth(ms.width());
+    QSize ms = scrollarea->minimumSizeHint();
+    scrollarea->setMinimumWidth(ms.width());
 }
 
 QSize TaskView::minimumSizeHint() const
 {
     QSize ms = inherited::minimumSizeHint();
-    int spacing = 0;
-    if (QLayout* layout = taskPanel->layout()) {
-        spacing = 2 * layout->spacing();
-    }
-
-    ms.setWidth(taskPanel->minimumSizeHint().width() + spacing);
+    // int spacing = 0;
+    // if (QLayout* layout = taskPanel->layout()) {
+    //     spacing = 2 * layout->spacing();
+    // }
+    //
+    // ms.setWidth(taskPanel->minimumSizeHint().width() + spacing);
     return ms;
 }
 
