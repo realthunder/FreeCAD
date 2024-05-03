@@ -26,6 +26,7 @@
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QWidget>
 #include <FCGlobal.h>
 
 namespace Gui {
@@ -54,6 +55,22 @@ public:
         uint searchkey = (ke->modifiers() | ke->key()) & ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
         return ks == QKeySequence(searchkey);
     }
+};
+
+class ChildrenSignalBlocker
+{
+public:
+    ChildrenSignalBlocker(QWidget *parent,
+                          const std::vector<QWidget*> &excludes = {})
+    {
+        for (auto widget : parent->findChildren<QWidget*>()) {
+            if (std::find(excludes.begin(), excludes.end(), widget) != excludes.end())
+                continue;
+            children.emplace_back(widget);
+        }
+    }
+private:
+    std::vector<QSignalBlocker> children;
 };
 
 } // namespace Gui
