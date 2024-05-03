@@ -39,7 +39,7 @@
 #include <Gui/Action.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
-#include <Gui/Command.h>
+#include <Gui/CommandT.h>
 #include <Gui/Control.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
@@ -2002,16 +2002,12 @@ std::string _createBalloon(Gui::Command* cmd, TechDraw::DrawViewPart* objFeat)
     ViewProviderPage* pageVP = dynamic_cast<ViewProviderPage*>(guiDoc->getViewProvider(page));
     if (pageVP) {
         QGSPage* scenePage = pageVP->getQGSPage();
-        featName = scenePage->getDrawPage()->getDocument()->getUniqueObjectName("Balloon");
-        std::string pageName = scenePage->getDrawPage()->getNameInDocument();
-        cmd->doCommand(cmd->Doc,
-                       "App.activeDocument().addObject('TechDraw::DrawViewBalloon', '%s')",
-                       featName.c_str());
-        cmd->doCommand(cmd->Doc, "App.activeDocument().%s.SourceView = (App.activeDocument().%s)",
-                       featName.c_str(), objFeat->getNameInDocument());
-
-        cmd->doCommand(cmd->Doc, "App.activeDocument().%s.addView(App.activeDocument().%s)",
-                       pageName.c_str(), featName.c_str());
+        auto page = scenePage->getDrawPage();
+        featName = page->getDocument()->getUniqueObjectName("Balloon");
+        Gui::cmdAppDocumentArgs(page, "addObject('TechDraw::DrawViewBalloon', '%s')", featName);
+        auto feat = page->getDocument()->getObject(featName.c_str());
+        Gui::cmdAppObjectArgs(feat, "SourceView = %s", objFeat->getFullName(/*python*/true));
+        Gui::cmdAppObjectArgs(page, "addView(%s)", feat->getFullName(/*python*/true));
     }
     return featName;
 }

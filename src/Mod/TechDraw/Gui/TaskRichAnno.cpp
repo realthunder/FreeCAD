@@ -288,16 +288,16 @@ void TaskRichAnno::createAnnoFeature()
     std::string PageName = m_basePage->getNameInDocument();
 
     Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Create Anno"));
-    Gui::cmdAppDocument(m_basePage, std::ostringstream() << "addObject('" << annoType << "','" << annoName << "')");
+    Gui::cmdAppDocumentArgs(m_basePage, "addObject('%s', '%s')",  annoType, annoName);
 
     App::DocumentObject* obj = m_basePage->getDocument()->getObject(annoName.c_str());
     if (!obj) {
         throw Base::RuntimeError("TaskRichAnno - new RichAnno object not found");
     }
-    Gui::cmdAppObject(m_basePage, std::ostringstream() << "addView(" << Gui::Command::getObjectCmd(obj) << ")");
+    Gui::cmdAppObjectArgs(m_basePage, "addView(%s)", Gui::Command::getObjectCmd(obj));
 
     if (m_baseFeat) {
-        Gui::cmdAppObject(obj, std::ostringstream() << "AnnoParent = " << Gui::Command::getObjectCmd(m_baseFeat));
+        Gui::cmdAppObjectArgs(obj, "AnnoParent = %s", Gui::Command::getObjectCmd(m_baseFeat));
     }
     if (obj->isDerivedFrom(TechDraw::DrawRichAnno::getClassTypeId())) {
         m_annoFeat = static_cast<TechDraw::DrawRichAnno*>(obj);

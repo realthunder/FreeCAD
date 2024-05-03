@@ -1293,7 +1293,7 @@ void CmdTechDrawLandmarkDimension::activated(int iMsg)
     }
     dim->References2D.setValues(refs2d, subs);
     dim->References3D.setValues(objects, subs);
-    Gui::cmdAppObject(page,std::ostringstream() << "addView(" << getObjectCmd(dim) << ")");
+    Gui::cmdAppObjectArgs(page, "addView(%s)", getObjectCmd(dim));
 
     updateActive();
     commitCommand();
@@ -1360,7 +1360,7 @@ DrawViewDimension* dimensionMaker(TechDraw::DrawViewPart* dvp,
     dim->setReferences2d(references2d);
     dim->setReferences3d(references3d);
 
-    Gui::cmdAppObject(page,std::ostringstream() << "addView(" << dim->getFullName(true) << ")");
+    Gui::cmdAppObjectArgs(page, "addView(%s)", dim->getFullName(/*python*/true));
 
     if (doPosition)
         positionDimText(dim);

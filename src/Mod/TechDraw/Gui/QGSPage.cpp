@@ -35,7 +35,7 @@
 #include <App/Document.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
-#include <Gui/Command.h>
+#include <Gui/CommandT.h>
 #include <Gui/Document.h>
 #include <Gui/Selection.h>
 
@@ -521,24 +521,19 @@ void QGSPage::addBalloonToParent(QGIViewBalloon* balloon, QGIView* parent)
 void QGSPage::createBalloon(QPointF origin, DrawView* parent)
 {
     //    Base::Console().Message("QGSP::createBalloon(%s)\n", DrawUtil::formatVector(origin).c_str());
-    std::string featName = getDrawPage()->getDocument()->getUniqueObjectName("Balloon");
-    std::string pageName = getDrawPage()->getNameInDocument();
+    auto page = getDrawPage();
+    std::string featName = page->getDocument()->getUniqueObjectName("Balloon");
 
     Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Create Balloon"));
-    Command::doCommand(Command::Doc,
-                       "App.activeDocument().addObject('TechDraw::DrawViewBalloon', '%s')",
-                       featName.c_str());
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.translateLabel('DrawViewBalloon', 'Balloon', '%s')",
-              featName.c_str(), featName.c_str());
-
-    TechDraw::DrawViewBalloon* balloon = dynamic_cast<TechDraw::DrawViewBalloon*>(
-        getDrawPage()->getDocument()->getObject(featName.c_str()));
+    Gui::cmdAppDocumentArgs(page, "addObject('TechDraw::DrawViewBalloon', '%s')", featName);
+    TechDraw::DrawViewBalloon* balloon = Base::freecad_dynamic_cast<TechDraw::DrawViewBalloon>(
+        page->getDocument()->getObject(featName.c_str()));
     if (!balloon) {
         throw Base::TypeError("QGSP::createBalloon - balloon not found\n");
     }
-    Command::doCommand(Command::Doc,
-                       "App.activeDocument().%s.SourceView = (App.activeDocument().%s)",
-                       featName.c_str(), parent->getNameInDocument());
+    Gui::cmdAppObjectArgs(balloon, "translateLabel('DrawViewBalloon', 'Balloon', '%s')", featName);
+    Gui::cmdAppObjectArgs(balloon, "SourceView = %s", parent->getFullName(/*python*/true));
+
     QGIView* qgParent = getQGIVByName(parent->getNameInDocument());
     //convert from scene coords to qgParent coords and unscale
     QPointF parentOrigin = qgParent->mapFromScene(origin) / parent->getScale();
@@ -555,8 +550,7 @@ void QGSPage::createBalloon(QPointF origin, DrawView* parent)
     int idx = getDrawPage()->getNextBalloonIndex();
     balloon->Text.setValue(std::to_string(idx).c_str());
 
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.addView(App.activeDocument().%s)",
-                       pageName.c_str(), featName.c_str());
+    Gui::cmdAppObjectArgs(page, "addView(%s)", balloon->getFullName(/*python*/true));
 
     Gui::Command::updateActive();
     Gui::Command::commitCommand();

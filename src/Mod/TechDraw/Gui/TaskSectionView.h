@@ -127,6 +127,8 @@ private:
     ParameterGrp::handle m_param;
 
     bool m_scaleEdited;
+
+    boost::signals2::scoped_connection conn;
 };
 
 class TaskDlgSectionView : public Gui::TaskView::TaskDialog

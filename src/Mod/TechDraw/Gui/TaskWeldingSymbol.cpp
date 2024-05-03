@@ -30,7 +30,7 @@
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Gui/BitmapFactory.h>
-#include <Gui/Command.h>
+#include <Gui/CommandT.h>
 #include <Gui/Document.h>
 
 #include <Mod/TechDraw/App/DrawPage.h>
@@ -461,42 +461,32 @@ TechDraw::DrawWeldSymbol* TaskWeldingSymbol::createWeldingSymbol()
     std::string symbolName = m_leadFeat->getDocument()->getUniqueObjectName(objectName.c_str());
     std::string generatedSuffix {symbolName.substr(objectName.length())};
 
-    std::string symbolType = "TechDraw::DrawWeldSymbol";
+    const char *symbolType = "TechDraw::DrawWeldSymbol";
 
     TechDraw::DrawPage* page = m_leadFeat->findParentPage();
-    std::string pageName = page->getNameInDocument();
 
-    Command::doCommand(Command::Doc, "App.activeDocument().addObject('%s', '%s')",
-                       symbolType.c_str(), symbolName.c_str());
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.addView(App.activeDocument().%s)",
-                       pageName.c_str(), symbolName.c_str());
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.Leader = App.activeDocument().%s",
-                           symbolName.c_str(), m_leadFeat->getNameInDocument());
+    Gui::cmdAppDocumentArgs(page, "addObject('%s', '%s')", symbolType, symbolName);
+
+    App::DocumentObject* newObj = m_leadFeat->getDocument()->getObject(symbolName.c_str());
+    TechDraw::DrawWeldSymbol* newSym = Base::freecad_dynamic_cast<TechDraw::DrawWeldSymbol>(newObj);
+    if (!newObj || !newSym)
+        throw Base::RuntimeError("TaskWeldingSymbol - new symbol object not found");
+
+    Gui::cmdAppObjectArgs(page, "addView(%s)", newSym->getFullName(/*python*/true));
+    Gui::cmdAppObjectArgs(newSym, "Leader = %s", m_leadFeat->getFullName(/*python*/true));
 
     bool allAround = ui->cbAllAround->isChecked();
-    std::string allAroundText = allAround ? "True" : "False";
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.AllAround = %s",
-                           symbolName.c_str(), allAroundText.c_str());
+    Gui::cmdAppObjectArgs(newSym, "AllAround = %s", allAround ? "True" : "False");
 
     bool fieldWeld = ui->cbFieldWeld->isChecked();
-    std::string fieldWeldText = fieldWeld ? "True" : "False";
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.FieldWeld = %s",
-                           symbolName.c_str(), fieldWeldText.c_str());
+    Gui::cmdAppObjectArgs(newSym, "FieldWeld = %s", fieldWeld ? "True" : "False");
 
     bool altWeld = ui->cbAltWeld->isChecked();
-    std::string altWeldText = altWeld ? "True" : "False";
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.AlternatingWeld = %s",
-                           symbolName.c_str(), altWeldText.c_str());
+    Gui::cmdAppObjectArgs(newSym, "AlternatingWeld = %s", altWeld ? "True" : "False");
 
     std::string tailText = ui->leTailText->text().toStdString();
     tailText = Base::Tools::escapeEncodeString(tailText);
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.TailText = '%s'",
-                           symbolName.c_str(), tailText.c_str());
-
-    App::DocumentObject* newObj = m_leadFeat->getDocument()->getObject(symbolName.c_str());
-    TechDraw::DrawWeldSymbol* newSym = dynamic_cast<TechDraw::DrawWeldSymbol*>(newObj);
-    if (!newObj || !newSym)
-        throw Base::RuntimeError("TaskWeldingSymbol - new symbol object not found");
+    Gui::cmdAppObjectArgs(newSym, "TailText = '%s'", tailText);
 
     std::string translatedObjectName{tr(objectName.c_str()).toStdString()};
     newObj->Label.setValue(translatedObjectName + generatedSuffix);
@@ -507,27 +497,18 @@ TechDraw::DrawWeldSymbol* TaskWeldingSymbol::createWeldingSymbol()
 void TaskWeldingSymbol::updateWeldingSymbol()
 {
 //    Base::Console().Message("TWS::updateWeldingSymbol()\n");
-    std::string symbolName = m_weldFeat->getNameInDocument();
-
     bool allAround = ui->cbAllAround->isChecked();
-    std::string allAroundText = allAround ? "True" : "False";
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.AllAround = %s",
-                           symbolName.c_str(), allAroundText.c_str());
+    Gui::cmdAppObjectArgs(m_weldFeat, "AllAround = %s", allAround ? "True" : "False");
 
     bool fieldWeld = ui->cbFieldWeld->isChecked();
-    std::string fieldWeldText = fieldWeld ? "True" : "False";
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.FieldWeld = %s",
-                           symbolName.c_str(), fieldWeldText.c_str());
+    Gui::cmdAppObjectArgs(m_weldFeat, "FieldWeld = %s", fieldWeld ? "True" : "False");
 
     bool altWeld = ui->cbAltWeld->isChecked();
-    std::string altWeldText = altWeld ? "True" : "False";
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.AlternatingWeld = %s",
-                           symbolName.c_str(), altWeldText.c_str());
+    Gui::cmdAppObjectArgs(m_weldFeat, "AlternatingWeld = %s", altWeld ? "True" : "False");
 
     std::string tailText = ui->leTailText->text().toStdString();
     tailText = Base::Tools::escapeEncodeString(tailText);
-    Command::doCommand(Command::Doc, "App.activeDocument().%s.TailText = '%s'",
-                           symbolName.c_str(), tailText.c_str());
+    Gui::cmdAppObjectArgs(m_weldFeat, "TailText = '%s'", tailText);
 }
 
 void TaskWeldingSymbol::updateTiles()
@@ -540,18 +521,13 @@ void TaskWeldingSymbol::updateTiles()
     } else {
         collectArrowData();
         if (m_arrowOut.toBeSaved) {
-            std::string tileName = m_arrowFeat->getNameInDocument();
             std::string leftText = Base::Tools::escapeEncodeString(m_arrowOut.leftText);
             std::string rightText = Base::Tools::escapeEncodeString(m_arrowOut.rightText);
             std::string centerText = Base::Tools::escapeEncodeString(m_arrowOut.centerText);
-            Command::doCommand(Command::Doc, "App.activeDocument().%s.TileColumn = %d",
-                           tileName.c_str(), m_arrowOut.col);
-            Command::doCommand(Command::Doc, "App.activeDocument().%s.LeftText = '%s'",
-                           tileName.c_str(), leftText.c_str());
-            Command::doCommand(Command::Doc, "App.activeDocument().%s.RightText = '%s'",
-                           tileName.c_str(), rightText.c_str());
-            Command::doCommand(Command::Doc, "App.activeDocument().%s.CenterText = '%s'",
-                           tileName.c_str(), centerText.c_str());
+            Gui::cmdAppObjectArgs(m_arrowFeat, "TileColumn = %d", m_arrowOut.col);
+            Gui::cmdAppObjectArgs(m_arrowFeat, "LeftText = '%s'", leftText);
+            Gui::cmdAppObjectArgs(m_arrowFeat, "RightText = '%s'", rightText);
+            Gui::cmdAppObjectArgs(m_arrowFeat, "CenterText = '%s'", centerText);
             if (!m_arrowOut.symbolPath.empty()) {
 //                m_arrowFeat->replaceSymbol(m_arrowOut.symbolPath);
                 m_arrowFeat->SymbolFile.setValue(m_arrowOut.symbolPath);
@@ -565,18 +541,13 @@ void TaskWeldingSymbol::updateTiles()
         if (m_otherDirty) {
             collectOtherData();
             if (m_otherOut.toBeSaved) {
-                std::string tileName = m_otherFeat->getNameInDocument();
                 std::string leftText = Base::Tools::escapeEncodeString(m_otherOut.leftText);
                 std::string rightText = Base::Tools::escapeEncodeString(m_otherOut.rightText);
                 std::string centerText = Base::Tools::escapeEncodeString(m_otherOut.centerText);
-                Command::doCommand(Command::Doc, "App.activeDocument().%s.TileColumn = %d",
-                               tileName.c_str(), m_otherOut.col);
-                Command::doCommand(Command::Doc, "App.activeDocument().%s.LeftText = '%s'",
-                               tileName.c_str(), leftText.c_str());
-                Command::doCommand(Command::Doc, "App.activeDocument().%s.RightText = '%s'",
-                               tileName.c_str(), rightText.c_str());
-                Command::doCommand(Command::Doc, "App.activeDocument().%s.CenterText = '%s'",
-                               tileName.c_str(), centerText.c_str());
+                Gui::cmdAppObjectArgs(m_otherFeat, "TileColumn = %d", m_otherOut.col);
+                Gui::cmdAppObjectArgs(m_otherFeat, "LeftText = '%s'", leftText);
+                Gui::cmdAppObjectArgs(m_otherFeat, "RightText = '%s'", rightText);
+                Gui::cmdAppObjectArgs(m_otherFeat, "CenterText = '%s'", centerText);
 //                m_otherFeat->replaceSymbol(m_otherOut.symbolPath);
                 m_otherFeat->SymbolFile.setValue(m_otherOut.symbolPath);
             }

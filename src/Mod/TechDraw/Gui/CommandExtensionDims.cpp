@@ -34,7 +34,7 @@
 # include <Gui/Action.h>
 # include <Gui/Application.h>
 # include <Gui/BitmapFactory.h>
-# include <Gui/Command.h>
+# include <Gui/CommandT.h>
 # include <Gui/Control.h>
 # include <Gui/MainWindow.h>
 # include <Gui/Selection.h>
@@ -2342,7 +2342,6 @@ namespace TechDrawGui {
         // create a new linear dimension
     {
         TechDraw::DrawPage* page = objFeat->findParentPage();
-        std::string PageName = page->getNameInDocument();
         TechDraw::DrawViewDimension* dim = nullptr;
         std::string FeatName = cmd->getUniqueObjectName("Dimension");
         std::vector<App::DocumentObject*> objs;
@@ -2351,13 +2350,13 @@ namespace TechDrawGui {
         objs.push_back(objFeat);
         subs.push_back(startVertex);
         subs.push_back(endVertex);
-        cmd->doCommand(cmd->Doc, "App.activeDocument().addObject('TechDraw::DrawViewDimension', '%s')", FeatName.c_str());
-        cmd->doCommand(cmd->Doc, "App.activeDocument().%s.Type = '%s'", FeatName.c_str(), dimType.c_str());
-        dim = dynamic_cast<TechDraw::DrawViewDimension*>(cmd->getDocument()->getObject(FeatName.c_str()));
+        Gui::cmdAppDocumentArgs(page, "addObject('TechDraw::DrawViewDimension', '%s')", FeatName);
+        dim = Base::freecad_dynamic_cast<TechDraw::DrawViewDimension>(cmd->getDocument()->getObject(FeatName.c_str()));
         if (!dim)
             throw Base::TypeError("CmdTechDrawExtensionCreateLinDimension - dim not found\n");
+        Gui::cmdAppObjectArgs(dim, "Type = '%s'", dimType);
         dim->References2D.setValues(objs, subs);
-        cmd->doCommand(cmd->Doc, "App.activeDocument().%s.addView(App.activeDocument().%s)", PageName.c_str(), FeatName.c_str());
+        Gui::cmdAppObjectArgs(page, "addView(%s)", dim->getFullName(/*python*/true));
 
         // Touch the parent feature so the dimension in tree view appears as a child
         objFeat->touch();

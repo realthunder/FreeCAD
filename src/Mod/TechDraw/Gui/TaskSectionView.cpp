@@ -38,6 +38,7 @@
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
 #include <Gui/Selection.h>
+#include <Gui/Tools.h>
 #include <Gui/ViewProvider.h>
 #include <Gui/WaitCursor.h>
 #include <Mod/TechDraw/App/DrawPage.h>
@@ -112,6 +113,7 @@ TaskSectionView::TaskSectionView(TechDraw::DrawViewSection* section) :
     ui->setupUi(this);
 
     m_dirName = m_section->SectionDirection.getValueAsString();
+    setUiCommon(m_section->SectionOrigin.getValue());
     setUiEdit();
 
     m_applyDeferred = 0;//setting the direction widgets causes an increment of the deferred count,
@@ -119,6 +121,7 @@ TaskSectionView::TaskSectionView(TechDraw::DrawViewSection* section) :
     ui->lPendingUpdates->setText(QString());
 
     init();
+    conn = m_section->signalChanged.connect(boost::bind(&TaskSectionView::setUiEdit, this));
 }
 
 void TaskSectionView::init()
@@ -162,6 +165,8 @@ void TaskSectionView::setUiPrimary()
 
 void TaskSectionView::setUiEdit()
 {
+    Gui::ChildrenSignalBlocker blocker(this);
+
     //    Base::Console().Message("TSV::setUiEdit()\n");
     setWindowTitle(QObject::tr("Edit Section View"));
     std::string temp = m_section->SectionSymbol.getValue();
@@ -179,7 +184,9 @@ void TaskSectionView::setUiEdit()
     }
 
     Base::Vector3d origin = m_section->SectionOrigin.getValue();
-    setUiCommon(origin);
+    ui->sbOrgX->setValue(origin.x);
+    ui->sbOrgY->setValue(origin.y);
+    ui->sbOrgZ->setValue(origin.z);
 
     // convert section normal to view angle
     Base::Vector3d sectionNormalVec = m_section->SectionNormal.getValue();
@@ -188,7 +195,11 @@ void TaskSectionView::setUiEdit()
     projectedViewDirection.Normalize();
     double viewAngle = atan2(-projectedViewDirection.y, -projectedViewDirection.x);
     m_compass->setDialAngle(viewAngle * 180.0 / M_PI);
-    m_viewDirectionWidget->setValueNoNotify(sectionNormalVec * -1.0);
+
+    double unitX = cos(viewAngle);
+    double unitY = sin(viewAngle);
+    Base::Vector3d localUnit(unitX, unitY, 0.0);
+    m_viewDirectionWidget->setValueNoNotify(localUnit);
 }
 
 void TaskSectionView::setUiCommon(Base::Vector3d origin)
@@ -486,12 +497,17 @@ TechDraw::DrawViewSection* TaskSectionView::createSectionView(void)
 
     setupTransaction();
     if (!m_section) {
+        TechDraw::DrawPage* page = m_base->findParentPage();
+        if (!page) {
+            throw Base::RuntimeError("TaskSectionView - no page found");
+        }
+
         const std::string objectName("SectionView");
         m_sectionName = m_base->getDocument()->getUniqueObjectName(objectName.c_str());
         Gui::cmdAppDocument(m_base, std::ostringstream() 
                 << "addObject('TechDraw::DrawViewSection','" << m_sectionName << "')");
         App::DocumentObject* newObj = m_base->getDocument()->getObject(m_sectionName.c_str());
-        m_section = dynamic_cast<TechDraw::DrawViewSection*>(newObj);
+        m_section = Base::freecad_dynamic_cast<TechDraw::DrawViewSection>(newObj);
         if (!newObj || !m_section) {
             throw Base::RuntimeError("TaskSectionView - new section object not found");
         }
@@ -507,8 +523,7 @@ TechDraw::DrawViewSection* TaskSectionView::createSectionView(void)
         Gui::cmdAppObjectArgs(m_section, "translateLabel('DrawViewSection', 'Section', '%s')", makeSectionLabel(qTemp));
 
 
-        TechDraw::DrawPage* page = m_base->findParentPage();
-        Gui::cmdAppObjectArgs(page, "%s.addView(%s)", Gui::Command::getObjectCmd(m_section));
+        Gui::cmdAppObjectArgs(page, "addView(%s)", Gui::Command::getObjectCmd(m_section));
         Gui::cmdAppObjectArgs(m_section, "BaseView = %s", Gui::Command::getObjectCmd(m_base));
         Gui::cmdAppObjectArgs(m_section, "Source = %s.Source", Gui::Command::getObjectCmd(m_base));
         Gui::cmdAppObjectArgs(m_section, "SectionOrigin = FreeCAD.Vector(%.6f, %.6f, %.6f)",
@@ -545,6 +560,7 @@ TechDraw::DrawViewSection* TaskSectionView::createSectionView(void)
         Gui::cmdAppObjectArgs(m_section, "Rotation = %.6f", rotation);
     }
     Gui::Command::updateActive();
+    conn = m_section->signalChanged.connect(boost::bind(&TaskSectionView::setUiEdit, this));
     return m_section;
 }
 
@@ -558,6 +574,7 @@ void TaskSectionView::updateSectionView()
 
     setupTransaction();
     if (m_section) {
+        Base::ConnectionBlocker blocker(conn);
         Gui::cmdAppObjectArgs(m_section, "SectionDirection = '%s'", m_dirName);
         Gui::cmdAppObjectArgs(m_section, "SectionOrigin = FreeCAD.Vector(%.3f,%.3f,%.3f)",
                            ui->sbOrgX->value().getValue(),
@@ -597,6 +614,7 @@ void TaskSectionView::updateSectionView()
         Gui::cmdAppObjectArgs(m_section, "Rotation = %.6f", rotation);
     }
     Gui::Command::updateActive();
+    setUiEdit();
 }
 
 std::string TaskSectionView::makeSectionLabel(QString symbol)

@@ -21,6 +21,7 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+#include "QGIViewAnnotation.h"
 #ifndef _PreComp_
 # include <QApplication>
 # include <QMessageBox>
@@ -31,7 +32,7 @@
 #include <Gui/Action.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
-#include <Gui/Command.h>
+#include <Gui/CommandT.h>
 #include <Gui/Control.h>
 #include <Gui/MainWindow.h>
 #include <Gui/Selection.h>
@@ -542,15 +543,16 @@ void CmdTechDrawAnnotation::activated(int iMsg)
     if (!page) {
         return;
     }
-    std::string PageName = page->getNameInDocument();
-
-    std::string FeatName = getUniqueObjectName("Annotation");
+    std::string FeatName = getUniqueObjectName("Annotation", page);
     openCommand(QT_TRANSLATE_NOOP("Command", "Create Annotation"));
-    doCommand(Doc, "App.activeDocument().addObject('TechDraw::DrawViewAnnotation', '%s')", FeatName.c_str());
-    doCommand(Doc, "App.activeDocument().%s.translateLabel('DrawViewAnnotation', 'Annotation', '%s')",
-              FeatName.c_str(), FeatName.c_str());
-
-    doCommand(Doc, "App.activeDocument().%s.addView(App.activeDocument().%s)", PageName.c_str(), FeatName.c_str());
+    Gui::cmdAppDocumentArgs(page, "addObject('TechDraw::DrawViewAnnotation', '%s')", FeatName);
+    auto feat = Base::freecad_dynamic_cast<TechDraw::DrawViewAnnotation>(
+            page->getDocument()->getObject(FeatName.c_str()));
+    if (!feat) {
+        throw Base::RuntimeError("Feature not created");
+    }
+    Gui::cmdAppObjectArgs(feat, "translateLabel('DrawViewAnnotation', 'Annotation', '%s')", FeatName);
+    Gui::cmdAppObjectArgs(page, "addView(%s)", feat->getFullName(/*python*/true));
     updateActive();
     commitCommand();
 }

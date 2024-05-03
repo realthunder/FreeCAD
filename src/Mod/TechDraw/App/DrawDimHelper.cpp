@@ -76,24 +76,19 @@ void DrawDimHelper::makeExtentDim(DrawViewPart* dvp, std::vector<std::string> ed
     }
 
     TechDraw::DrawPage* page = dvp->findParentPage();
-    std::string pageName = page->getNameInDocument();
 
     App::Document* doc = dvp->getDocument();
     std::string dimName = doc->getUniqueObjectName("DimExtent");
-    Base::Interpreter().runStringArg(
-        "App.activeDocument().addObject('TechDraw::DrawViewDimExtent', '%s')", dimName.c_str());
-        Base::Interpreter().runStringArg(
-            "App.activeDocument().%s.translateLabel('DrawViewDimExtent', 'DimExtent', '%s')",
-              dimName.c_str(), dimName.c_str());    Base::Interpreter().runStringArg(
-        "App.activeDocument().%s.Type = '%s'", dimName.c_str(), dimType.c_str());
-    Base::Interpreter().runStringArg(
-        "App.activeDocument().%s.DirExtent = %d", dimName.c_str(), dimNum);
-
+    doc->addObject("TechDraw::DrawViewDimExtent", dimName.c_str());
     TechDraw::DrawViewDimExtent* dimExt =
-        dynamic_cast<TechDraw::DrawViewDimExtent*>(doc->getObject(dimName.c_str()));
+        Base::freecad_dynamic_cast<TechDraw::DrawViewDimExtent>(doc->getObject(dimName.c_str()));
     if (!dimExt) {
         throw Base::TypeError("Dim extent not found");
     }
+    dimExt->translateLabel("DrawViewDimExtent", "DimExtent", dimName);
+    dimExt->Type.setValue(dimType.c_str());
+    dimExt->DirExtent.setValue(dimNum);
+
     dimExt->Source.setValue(dvp, edgeNames);
     ReferenceVector newRefs;
     if (edgeNames.empty()) {
@@ -108,9 +103,7 @@ void DrawDimHelper::makeExtentDim(DrawViewPart* dvp, std::vector<std::string> ed
     }
     dimExt->setReferences2d(newRefs);
 
-    Base::Interpreter().runStringArg("App.activeDocument().%s.addView(App.activeDocument().%s)",
-                                     pageName.c_str(),
-                                     dimName.c_str());
+    page->addView(dimExt);
 
     dimExt->recomputeFeature();
 }
@@ -131,24 +124,19 @@ void DrawDimHelper::makeExtentDim3d(DrawViewPart* dvp, ReferenceVector reference
     }
 
     TechDraw::DrawPage* page = dvp->findParentPage();
-    std::string pageName = page->getNameInDocument();
 
     App::Document* doc = dvp->getDocument();
     std::string dimName = doc->getUniqueObjectName("DimExtent");
-    Base::Interpreter().runStringArg(
-        "App.activeDocument().addObject('TechDraw::DrawViewDimExtent', '%s')", dimName.c_str());
-        Base::Interpreter().runStringArg(
-            "App.activeDocument().%s.translateLabel('DrawViewDimExtent', 'DimExtent', '%s')",
-              dimName.c_str(), dimName.c_str());    Base::Interpreter().runStringArg(
-        "App.activeDocument().%s.Type = '%s'", dimName.c_str(), dimType.c_str());
-    Base::Interpreter().runStringArg(
-        "App.activeDocument().%s.DirExtent = %d", dimName.c_str(), dimNum);
-
+    doc->addObject("TechDraw::DrawViewDimExtent", dimName.c_str());
     TechDraw::DrawViewDimExtent* dimExt =
-        dynamic_cast<TechDraw::DrawViewDimExtent*>(doc->getObject(dimName.c_str()));
+        Base::freecad_dynamic_cast<TechDraw::DrawViewDimExtent>(doc->getObject(dimName.c_str()));
     if (!dimExt) {
         throw Base::TypeError("Dim extent not found");
     }
+    dimExt->translateLabel("DrawViewDimExtent", "DimExtent", dimName);
+    dimExt->Type.setValue(dimType.c_str());
+    dimExt->DirExtent.setValue(dimNum);
+
 
     dimExt->Source.setValue(dvp);
 
@@ -167,12 +155,11 @@ void DrawDimHelper::makeExtentDim3d(DrawViewPart* dvp, ReferenceVector reference
 
     dimExt->setReferences3d(references);
 
-    Base::Interpreter().runStringArg("App.activeDocument().%s.addView(App.activeDocument().%s)",
-                                     pageName.c_str(),
-                                     dimName.c_str());
+    page->addView(dimExt);
 
     dimExt->recomputeFeature();
 }
+
 std::pair<Base::Vector3d, Base::Vector3d>
 DrawDimHelper::minMax(DrawViewPart* dvp, std::vector<std::string> edgeNames, int direction)
 {
@@ -391,14 +378,21 @@ DrawDimHelper::makeDistDim(DrawViewPart* dvp, std::string dimType,
     //                            DrawUtil::formatVector(inMin).c_str(),
     //                            DrawUtil::formatVector(inMax).c_str());
     TechDraw::DrawPage* page = dvp->findParentPage();
-    std::string pageName = page->getNameInDocument();
 
     TechDraw::DrawViewDimension* dim = nullptr;
     App::Document* doc = dvp->getDocument();
-    std::string dimName = doc->getUniqueObjectName("Dimension");
+    const char *typeName;
+    const char *baseName;
     if (extent) {
-        dimName = doc->getUniqueObjectName("DimExtent");
+        baseName = "DimExtent";
+        typeName = TechDraw::DrawViewDimExtent::getClassTypeId().getName();
     }
+    else {
+        baseName = "Dimension";
+        typeName = TechDraw::DrawViewDimension::getClassTypeId().getName();
+    }
+    const char *labelContext = strstr(typeName, "::") + 2;
+    std::string dimName = doc->getUniqueObjectName(baseName);
 
     std::vector<TechDraw::VertexPtr> gVerts = dvp->getVertexGeometry();
 
@@ -430,33 +424,17 @@ DrawDimHelper::makeDistDim(DrawViewPart* dvp, std::string dimType,
     subs.push_back(vertexName);
     objs.push_back(dvp);
 
-    if (extent) {
-        Base::Interpreter().runStringArg(
-            "App.activeDocument().addObject('TechDraw::DrawViewDimExtent', '%s')", dimName.c_str());
-        Base::Interpreter().runStringArg(
-            "App.activeDocument().%s.translateLabel('DrawViewDimExtent', 'DimExtent', '%s')",
-              dimName.c_str(), dimName.c_str());
-    }
-    else {
-        Base::Interpreter().runStringArg(
-            "App.activeDocument().addObject('TechDraw::DrawViewDimension', '%s')", dimName.c_str());
-        Base::Interpreter().runStringArg(
-            "App.activeDocument().%s.translateLabel('DrawViewDimimension', 'Dimension', '%s')",
-              dimName.c_str(), dimName.c_str());
-    }
-
-    Base::Interpreter().runStringArg(
-        "App.activeDocument().%s.Type = '%s'", dimName.c_str(), dimType.c_str());
-
-    dim = dynamic_cast<TechDraw::DrawViewDimension*>(doc->getObject(dimName.c_str()));
+    doc->addObject(typeName, dimName.c_str());
+    dim = Base::freecad_dynamic_cast<TechDraw::DrawViewDimension>(doc->getObject(dimName.c_str()));
     if (!dim) {
         throw Base::TypeError("DDH::makeDistDim - dim not found\n");
     }
+    dim->translateLabel(labelContext, baseName, dimName.c_str());
+    dim->Type.setValue(dimType.c_str());
+
     dim->References2D.setValues(objs, subs);
 
-    Base::Interpreter().runStringArg("App.activeDocument().%s.addView(App.activeDocument().%s)",
-                                     pageName.c_str(),
-                                     dimName.c_str());
+    page->addView(dim);
 
     dvp->requestPaint();
     return dim;

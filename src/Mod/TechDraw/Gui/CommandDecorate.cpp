@@ -45,6 +45,7 @@
 #include <Mod/TechDraw/App/DrawUtil.h>
 #include <Mod/TechDraw/App/DrawView.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
+#include <Mod/TechDraw/App/DrawViewImage.h>
 
 #include "DrawGuiUtil.h"
 #include "MDIViewPage.h"
@@ -257,10 +258,13 @@ void CmdTechDrawImage::activated(int iMsg)
     fileName = Base::Tools::escapeEncodeFilename(fileName);
     openCommand(QT_TRANSLATE_NOOP("Command", "Create Image"));
     Gui::cmdAppDocument(page, std::ostringstream() << "addObject('TechDraw::DrawViewImage','" << FeatName << "')");
-    auto feat = page->getDocument()->getObject(FeatName.c_str());
+    auto feat = Base::freecad_dynamic_cast<TechDraw::DrawViewImage>(page->getDocument()->getObject(FeatName.c_str()));
+    if (!feat) {
+        throw Base::TypeError("Feature not found");
+    }
     Gui::cmdAppObjectArgs(page, "translateLabel('DrawViewImage', 'Image', '%s')", FeatName);
     Gui::cmdAppObjectArgs(feat, "ImageFile = '%s'", fileName.toUtf8().constData());
-    Gui::cmdAppObject(page, std::ostringstream() << "addView(" << getObjectCmd(feat) << ")");
+    Gui::cmdAppObjectArgs(page, "addView(%s)", feat->getFullName(/*python*/true));
     updateActive();
     commitCommand();
 }
