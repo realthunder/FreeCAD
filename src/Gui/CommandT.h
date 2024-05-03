@@ -91,12 +91,12 @@ public:
  * @endcode
  */
 template<typename T>
-void _cmdDocument(Gui::Command::DoCmd_Type cmdType, const App::Document* doc, const std::string& mod, T&& cmd) {
+void _cmdDocument(const char *file, int line, Gui::Command::DoCmd_Type cmdType, const App::Document* doc, const std::string& mod, T&& cmd) {
     if (doc && doc->getName()) {
         std::stringstream str;
         str << mod << ".getDocument('" << doc->getName() << "')."
             << FormatString::str(cmd);
-        Gui::Command::runCommand(cmdType, str.str().c_str());
+        Gui::Command::_runCommand(file, line, cmdType, str.str().c_str());
     } else
         throw Base::RuntimeError("Invalid document");
 }
@@ -119,20 +119,20 @@ void _cmdDocument(Gui::Command::DoCmd_Type cmdType, const App::Document* doc, co
  * @endcode
  */
 template<typename T>
-void _cmdDocument(Gui::Command::DoCmd_Type cmdType, const std::string& doc, const std::string& mod, T&& cmd) {
+void _cmdDocument(const char *file, int line, Gui::Command::DoCmd_Type cmdType, const std::string& doc, const std::string& mod, T&& cmd) {
     if (!doc.empty()) {
         std::stringstream str;
         str << mod << ".getDocument('" << doc << "')."
             << FormatString::str(cmd);
-        Gui::Command::runCommand(cmdType, str.str().c_str());
+        Gui::Command::_runCommand(file, line, cmdType, str.str().c_str());
     }
 }
 
 /** Runs a command for accessing App.Document attribute or method
  * This function is an alternative to FCMD_DOC_CMD
  *
- * @param doc: pointer to a document
- * @param cmd: command string, streamable
+ * @param doc : document name or pointer to a document or pointer to object
+ * @param ... : command string, streamable
  * @sa _cmdDocument()
  *
  * Example:
@@ -146,38 +146,13 @@ void _cmdDocument(Gui::Command::DoCmd_Type cmdType, const std::string& doc, cons
  *       App.getDocument('DocName').getObject('ObjName')
  * @endcode
  */
-template<typename T>
-inline void cmdAppDocument(const App::Document* doc, T&& cmd) {
-    _cmdDocument(Gui::Command::Doc, doc, "App", std::forward<T>(cmd));
-}
-
-/** Runs a command for accessing App.Document attribute or method
- * This function is an alternative to FCMD_DOC_CMD
- *
- * @param doc: document name
- * @param cmd: command string, streamable
- * @sa _cmdDocument()
- *
- * Example:
- * @code{.cpp}
- *      cmdAppDocument(doc, std::stringstream() << "getObject('" << objName << "')");
- * @endcode
- *
- * Translates to command (assuming doc's name is 'DocName', and
- * and objName contains value 'ObjName'):
- * @code{.py}
- *       App.getDocument('DocName').getObject('ObjName')
- * @endcode
- */
-template<typename T>
-inline void cmdAppDocument(const std::string& doc, T&& cmd) {
-    _cmdDocument(Gui::Command::Doc, doc, "App", std::forward<T>(cmd));
-}
+#define cmdAppDocument(doc, ...) \
+    _cmdDocument(__FILE__, __LINE__, Gui::Command::Doc, doc, "App", ## __VA_ARGS__)
 
 /** Runs a command for accessing App.Document attribute or method
  *
- * @param doc: pointer to a document
- * @param cmd: command string, streamable
+ * @param doc : document or document name
+ * @param ... : command string, streamable
  * @sa _cmdDocument()
  *
  * Example:
@@ -191,32 +166,8 @@ inline void cmdAppDocument(const std::string& doc, T&& cmd) {
  *       Gui.getDocument('DocName').getObject('ObjName')
  * @endcode
  */
-template<typename T>
-inline void cmdGuiDocument(const App::Document* doc, T&& cmd) {
-    _cmdDocument(Gui::Command::Gui, doc, "Gui", std::forward<T>(cmd));
-}
-
-/** Runs a command for accessing App.Document attribute or method
- *
- * @param doc: document name
- * @param cmd: command string, streamable
- * @sa _cmdDocument()
- *
- * Example:
- * @code{.cpp}
- *      cmdGuiDocument(doc, std::stringstream() << "getObject('" << objName << "')");
- * @endcode
- *
- * Translates to command (assuming doc's name is 'DocName', and
- * and objName contains value 'ObjName'):
- * @code{.py}
- *       Gui.getDocument('DocName').getObject('ObjName')
- * @endcode
- */
-template<typename T>
-inline void cmdGuiDocument(const std::string& doc, T&& cmd) {
-    _cmdDocument(Gui::Command::Gui, doc, "Gui", std::forward<T>(cmd));
-}
+#define cmdGuiDocument(obj, ...) \
+    _cmdDocument(__FILE__, __LINE__, Gui::Command::Gui, obj, "Gui", ## __VA_ARGS__)
 
 /** Runs a command for accessing an object's document attribute or method
  * This function is an alternative to _FCMD_OBJ_DOC_CMD
@@ -225,21 +176,11 @@ inline void cmdGuiDocument(const std::string& doc, T&& cmd) {
  * @param cmd: command string, streamable
  */
 template<typename T>
-inline void _cmdDocument(Gui::Command::DoCmd_Type cmdType, const App::DocumentObject* obj, const std::string& mod, T&& cmd) {
+inline void _cmdDocument(const char *file, int line, Gui::Command::DoCmd_Type cmdType, const App::DocumentObject* obj, const std::string& mod, T&& cmd) {
     if (obj && obj->getDocument())
-        _cmdDocument(cmdType, obj->getDocument(), mod, std::forward<T>(cmd));
+        _cmdDocument(file, line, cmdType, obj->getDocument(), mod, std::forward<T>(cmd));
     else
         throw Base::RuntimeError("Invalid object");
-}
-
-/** Runs a command for accessing an object's App::Document attribute or method
- * This function is an alternative to FCMD_OBJ_DOC_CMD
- * @param obj: pointer to a DocumentObject
- * @param cmd: command string, streamable
- */
-template<typename T>
-inline void cmdAppDocument(const App::DocumentObject* obj, T&& cmd) {
-    _cmdDocument(Gui::Command::Doc, obj, "App", std::forward<T>(cmd));
 }
 
 /** Runs a command for accessing a document's attribute or method
@@ -248,7 +189,7 @@ inline void cmdAppDocument(const App::DocumentObject* obj, T&& cmd) {
  *
  * Example:
  * @code{.cpp}
- *      cmdAppDocumentArgs(obj, "addObject('%s')", "Part::Feature");
+ *      _cmdAppDocumentArgs(obj, "addObject('%s')", "Part::Feature");
  * @endcode
  *
  * Translates to command (assuming obj's document name is 'DocName':
@@ -257,12 +198,12 @@ inline void cmdAppDocument(const App::DocumentObject* obj, T&& cmd) {
  * @endcode
  */
 template<typename...Args>
-void cmdAppDocumentArgs(const App::Document* doc, const std::string& cmd, Args&&... args) {
+void _cmdAppDocumentArgs(const char *file, int line, const App::Document* doc, const std::string& cmd, Args&&... args) {
     std::string _cmd;
     try {
         boost::format fmt(cmd);
         _cmd = FormatString::toStr(fmt, std::forward<Args>(args)...);
-        Gui::Command::doCommand(Gui::Command::Doc,"App.getDocument('%s').%s",
+        Gui::Command::_doCommand(file, line, Gui::Command::Doc,"App.getDocument('%s').%s",
             doc->getName(), _cmd.c_str());
     }
     catch (const std::exception& e) {
@@ -275,15 +216,26 @@ void cmdAppDocumentArgs(const App::Document* doc, const std::string& cmd, Args&&
     }
 }
 
+template<typename...Args>
+void _cmdAppDocumentArgs(const char *file, int line, const App::DocumentObject* obj, const std::string& cmd, Args&&... args) {
+    if (obj && obj->isAttachedToDocument()) {
+        _cmdAppDocumentArgs(file, line, obj->getDocument(), cmd, std::forward<Args>(args)...);
+    }
+    else {
+        throw Base::RuntimeError("Invalid object");
+    }
+}
+
+#define cmdAppDocumentArgs(doc, cmd, ...) \
+    _cmdAppDocumentArgs(__FILE__, __LINE__, doc, cmd, ## __VA_ARGS__)
+
 /** Runs a command for accessing an object's Gui::Document attribute or method
  * This function is an alternative to FCMD_VOBJ_DOC_CMD
- * @param obj: pointer to a DocumentObject
- * @param cmd: command string, streamable
+ * @param obj : pointer to a DocumentObject
+ * @param ... : command string, streamable
  */
-template<typename T>
-inline void cmdGuiDocument(const App::DocumentObject* obj, T&& cmd) {
-    _cmdDocument(Gui::Command::Gui, obj, "Gui", std::forward<T>(cmd));
-}
+#define cmdGuiDocument(obj, ...) \
+    _cmdDocument(__FILE__, __LINE__, Gui::Command::Gui, obj, "Gui", ## __VA_ARGS__)
 
 /** Runs a command for accessing a document/view object's attribute or method
  * This function is an alternative to _FCMD_OBJ_CMD
@@ -304,48 +256,42 @@ inline void cmdGuiDocument(const App::DocumentObject* obj, T&& cmd) {
  * @endcode
  */
 template<typename T>
-void _cmdObject(Gui::Command::DoCmd_Type cmdType, const App::DocumentObject* obj, const std::string& mod, T&& cmd) {
+void _cmdObject(const char *file, int line, Gui::Command::DoCmd_Type cmdType, const App::DocumentObject* obj, const std::string& mod, T&& cmd) {
     if (obj && obj->isAttachedToDocument()) {
         std::ostringstream str;
         str << mod << ".getDocument('" << obj->getDocument()->getName() << "')"
                       ".getObject('" << obj->getNameInDocument() << "')."
                    << FormatString::str(cmd);
-        Gui::Command::runCommand(cmdType, str.str().c_str());
+        Gui::Command::_runCommand(file, line, cmdType, str.str().c_str());
     } else
         throw Base::RuntimeError("Invalid object");
 }
 
 /** Runs a command for accessing an document object's attribute or method
  * This function is an alternative to FCMD_OBJ_CMD
- * @param obj: pointer to a DocumentObject
- * @param cmd: command string, streamable
+ * @param obj : pointer to a DocumentObject
+ * @param ... : command string, streamable
  * @sa _cmdObject()
  */
-template<typename T>
-inline void cmdAppObject(const App::DocumentObject* obj, T&& cmd) {
-    _cmdObject(Gui::Command::Doc, obj, "App", std::forward<T>(cmd));
-}
+#define cmdAppObject(obj, ...) \
+    _cmdObject(__FILE__, __LINE__, Gui::Command::Doc, obj, "App", ## __VA_ARGS__)
 
 /** Runs a command for accessing an view object's attribute or method
  * This function is an alternative to FCMD_VOBJ_CMD
- * @param obj: pointer to a DocumentObject
- * @param cmd: command string, streamable
+ * @param obj : pointer to a DocumentObject
+ * @param ... : command string, streamable
  * @sa _cmdObject()
  */
-template<typename T>
-inline void cmdGuiObject(const App::DocumentObject* obj, T&& cmd) {
-    _cmdObject(Gui::Command::Gui, obj, "Gui", std::forward<T>(cmd));
-}
+#define cmdGuiObject(obj, ...) \
+    _cmdObject(__FILE__, __LINE__, Gui::Command::Gui, obj, "Gui", ## __VA_ARGS__)
 
 /// Hides an object
-inline void cmdAppObjectHide(const App::DocumentObject* obj) {
-    cmdAppObject(obj, "Visibility = False");
-}
+#define cmdAppObjectHide(obj) \
+    cmdAppObject(obj, "Visibility = False")
 
 /// Shows an object
-inline void cmdAppObjectShow(const App::DocumentObject* obj) {
-    cmdAppObject(obj, "Visibility = True");
-}
+#define cmdAppObjectShow(obj) \
+    cmdAppObject(obj, "Visibility = True")
 
 /** Runs a command to start editing a give object
  * This function is an alternative to FCMD_SET_EDIT
@@ -356,14 +302,15 @@ inline void cmdAppObjectShow(const App::DocumentObject* obj) {
  * in-place editing an object, which may be brought in through linking to an
  * external group.
  */
-inline void cmdSetEdit(const App::DocumentObject* obj, int mod = 0) {
+inline void _cmdSetEdit(const char *file, int line, const App::DocumentObject* obj, int mod = 0) {
     if (obj && obj->isAttachedToDocument()) {
-        Gui::Command::doCommand(Gui::Command::Gui,
+        Gui::Command::_doCommand(file, line, Gui::Command::Gui,
             "Gui.ActiveDocument.setEdit(App.getDocument('%s').getObject('%s'), %d)",
             obj->getDocument()->getName(), obj->getNameInDocument(), mod);
     } else
         throw Base::RuntimeError("Invalid object");
 }
+#define cmdSetEdit(obj, ...) _cmdSetEdit(__FILE__, __LINE__, obj, ## __VA_ARGS__)
 
 /** Runs a command for accessing a document object's attribute or method
  * This function is an alternative to FCMD_OBJ_CMD2
@@ -382,14 +329,14 @@ inline void cmdSetEdit(const App::DocumentObject* obj, int mod = 0) {
  * @endcode
  */
 template<typename...Args>
-void cmdAppObjectArgs(const App::DocumentObject* obj, const std::string& cmd, Args&&... args) {
+void _cmdAppObjectArgs(const char *file, int line, const App::DocumentObject* obj, const std::string& cmd, Args&&... args) {
     std::string _cmd;
     if (!obj || !obj->getNameInDocument())
         throw Base::RuntimeError("Invalid object");
     try {
         boost::format fmt(cmd);
         _cmd = FormatString::toStr(fmt, std::forward<Args>(args)...);
-        Gui::Command::doCommand(Gui::Command::Doc,"App.getDocument('%s').getObject('%s').%s",
+        Gui::Command::_doCommand(file, line, Gui::Command::Doc,"App.getDocument('%s').getObject('%s').%s",
             obj->getDocument()->getName(), obj->getNameInDocument(), _cmd.c_str());
     }
     catch (const std::exception& e) {
@@ -402,6 +349,9 @@ void cmdAppObjectArgs(const App::DocumentObject* obj, const std::string& cmd, Ar
     }
 }
 
+#define cmdAppObjectArgs(obj, cmd, ...) \
+    _cmdAppObjectArgs(__FILE__, __LINE__, obj, cmd, ## __VA_ARGS__)
+
 /** Runs a command for accessing a view object's attribute or method
  * This function is an alternative to FCMD_VOBJ_CMD2
  * @param cmd: command string, supporting printf like formatter
@@ -409,14 +359,14 @@ void cmdAppObjectArgs(const App::DocumentObject* obj, const std::string& cmd, Ar
  * @sa cmdAppObjectArgs()
  */
 template<typename...Args>
-void cmdGuiObjectArgs(const App::DocumentObject* obj, const std::string& cmd, Args&&... args) {
+void _cmdGuiObjectArgs(const char *file, int line, const App::DocumentObject* obj, const std::string& cmd, Args&&... args) {
     std::string _cmd;
     if (!obj || !obj->getNameInDocument())
         throw Base::RuntimeError("Invalid object");
     try {
         boost::format fmt(cmd);
         _cmd = FormatString::toStr(fmt, std::forward<Args>(args)...);
-        Gui::Command::doCommand(Gui::Command::Gui,"Gui.getDocument('%s').getObject('%s').%s",
+        Gui::Command::_doCommand(file, line, Gui::Command::Gui,"Gui.getDocument('%s').getObject('%s').%s",
             obj->getDocument()->getName(), obj->getNameInDocument(), _cmd.c_str());
     }
     catch (const std::exception& e) {
@@ -428,6 +378,9 @@ void cmdGuiObjectArgs(const App::DocumentObject* obj, const std::string& cmd, Ar
         throw;
     }
 }
+
+#define cmdGuiObjectArgs(obj, cmd, ...) \
+    _cmdGuiObjectArgs(__FILE__, __LINE__, obj, cmd, ## __VA_ARGS__)
 
 /** Runs a command
  * @param cmdType: command type
@@ -445,12 +398,12 @@ void cmdGuiObjectArgs(const App::DocumentObject* obj, const std::string& cmd, Ar
  * @endcode
  */
 template<typename...Args>
-void doCommandT(Gui::Command::DoCmd_Type cmdType, const std::string& cmd, Args&&... args) {
+void _doCommandT(const char *file, int line, Gui::Command::DoCmd_Type cmdType, const std::string& cmd, Args&&... args) {
     std::string _cmd;
     try {
         boost::format fmt(cmd);
         _cmd = FormatString::toStr(fmt, std::forward<Args>(args)...);
-        Gui::Command::doCommand(cmdType,"%s", _cmd.c_str());
+        Gui::Command::_doCommand(file, line, cmdType,"%s", _cmd.c_str());
     }
     catch (const std::exception& e) {
         Base::Console().DeveloperError("doCommandT","%s: %s\n", e.what(), cmd.c_str());
@@ -461,13 +414,12 @@ void doCommandT(Gui::Command::DoCmd_Type cmdType, const std::string& cmd, Args&&
     }
 }
 
+#define doCommandT(cmdType, cmd, ...) \
+    _doCommandT(__FILE__, __LINE__, cmdType, cmd, ## __VA_ARGS__)
+
 /** Copy visual attributes from a source to a target object
  */
-template<typename...Args>
-void copyVisualT(Args&&... args) {
-    // file and line number is useless here. Check C++'s source location function once available
-    Gui::Command::_copyVisual(__FILE__, __LINE__, std::forward<Args>(args)...);
-}
+#define copyVisualT(...) Command::_copyVisual(__FILE__,__LINE__,__VA_ARGS__)
 
 //@}
 
