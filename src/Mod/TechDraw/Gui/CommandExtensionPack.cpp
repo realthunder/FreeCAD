@@ -1993,7 +1993,7 @@ LineFormat& _getActiveLineAttributes()
     return attributes;
 }
 
-std::string _createBalloon(Gui::Command* cmd, TechDraw::DrawViewPart* objFeat)
+std::string _createBalloon(Gui::Command* /*cmd*/, TechDraw::DrawViewPart* objFeat)
 // create a new balloon, return its name as string
 {
     std::string featName;

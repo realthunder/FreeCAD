@@ -655,10 +655,11 @@ QGISectionLine *MDIViewPage::findSection(const App::DocumentObject *obj)
 }
 
 //!Update QGIView's selection state based on Selection made outside Drawing Interface
-bool MDIViewPage::selectQGIView(App::DocumentObject* obj, const bool isSelected)
+bool MDIViewPage::selectQGIView(const App::DocumentObject *obj, bool isSelected,
+                                const std::vector<std::string> &subNames)
 {
 
-    if (!Base::freecad_dynamic_cast<DrawView>(obj))
+    if (!Base::freecad_dynamic_cast<const DrawView>(obj))
         return false;
 
     blockSceneSelection(true);
@@ -673,7 +674,7 @@ bool MDIViewPage::selectQGIView(App::DocumentObject* obj, const bool isSelected)
 
     QGIView* view = m_scene->findQViewForDocObj(obj);
     if (view) {
-        view->setGroupSelection(isSelected);
+        view->setGroupSelection(isSelected, subNames);
         // view->updateView();
         view->update();
     }
@@ -681,9 +682,9 @@ bool MDIViewPage::selectQGIView(App::DocumentObject* obj, const bool isSelected)
     return true;
 }
 
-bool MDIViewPage::selectTile(App::DocumentObject *obj, bool isSelected)
+bool MDIViewPage::selectTile(const App::DocumentObject *obj, bool isSelected)
 {
-    if (!Base::freecad_dynamic_cast<DrawTile>(obj))
+    if (!Base::freecad_dynamic_cast<const DrawTile>(obj))
         return false;
     for (auto item : m_scene->items()) {
         if (auto tileItem = qgraphicsitem_cast<QGITile*>(item)){
@@ -719,12 +720,12 @@ void MDIViewPage::onSelectionChanged(const Gui::SelectionChanges& msg)
     else if (msg.Type == Gui::SelectionChanges::SetSelection) {//replace entire selection set
         clearSceneSelection();
         blockSceneSelection(true);
-        std::vector<Gui::SelectionSingleton::SelObj> selObjs =
-            Gui::Selection().getSelection(msg.pDocName);
-        for (auto& so : selObjs) {
-            if (selectQGIView(so.pObject, true))
+        auto sels = Gui::Selection().getSelectionEx(msg.pDocName);
+        for (const auto& so : sels) {
+            const App::DocumentObject *docObj = so.getObject();
+            if (selectQGIView(docObj, true, so.getSubNames()))
                 continue;
-            else if (selectTile(so.pObject, true))
+            else if (selectTile(docObj, true))
                 continue;
         }
         blockSceneSelection(false);
@@ -740,10 +741,15 @@ void MDIViewPage::onSelectionChanged(const Gui::SelectionChanges& msg)
             }
             blockSceneSelection(false);
         }
-        else if (selectQGIView(selObj, selected))
-            return;
         else if (selectTile(selObj, selected))
             return;
+        else {
+            std::vector<std::string> subNames;
+            if (msg.pSubName && msg.pSubName[0])
+                subNames.push_back(msg.pSubName);
+            if (selectQGIView(selObj, selected, subNames))
+                return;
+        }
     }
     else if (msg.Type == Gui::SelectionChanges::SetPreselect
             || msg.Type == Gui::SelectionChanges::RmvPreselect) {

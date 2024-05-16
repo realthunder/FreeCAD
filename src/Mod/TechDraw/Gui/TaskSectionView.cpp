@@ -699,20 +699,6 @@ bool TaskSectionView::accept()
 
 bool TaskSectionView::reject()
 {
-    //    Base::Console().Message("TSV::reject()\n");
-    if (!m_section) {//no section created, nothing to undo
-        Gui::Command::doCommand(Gui::Command::Gui, "Gui.ActiveDocument.resetEdit()");
-        return false;
-    }
-
-    if (!isSectionValid()) {//section !exist. nothing to undo
-        if (isBaseValid()) {
-            m_base->requestPaint();
-        }
-        Gui::Command::doCommand(Gui::Command::Gui, "Gui.ActiveDocument.resetEdit()");
-        return false;
-    }
-
     if (m_transactionID) {
         int tid = 0;
         App::GetApplication().getActiveTransaction(&tid);

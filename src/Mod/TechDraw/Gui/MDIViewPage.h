@@ -73,8 +73,8 @@ public:
     void onSelectionChanged(const Gui::SelectionChanges& msg) override;
 
     /// QGraphicsScene selection routines
-    bool selectQGIView(App::DocumentObject *obj, bool isSelected);
-    bool selectTile(App::DocumentObject *obj, bool isSelected);
+    bool selectQGIView(const App::DocumentObject *obj, bool isSelected, const std::vector<std::string> &subNames);
+    bool selectTile(const App::DocumentObject *obj, bool isSelected);
     void clearSceneSelection();
     void blockSceneSelection(bool isBlocked);
 

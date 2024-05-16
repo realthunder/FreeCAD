@@ -101,7 +101,7 @@ public:
     void redrawAllViews();
     void redraw1View(TechDraw::DrawView* dView);
 
-    QGIView* findQViewForDocObj(App::DocumentObject* obj) const;
+    QGIView* findQViewForDocObj(const App::DocumentObject* obj) const;
     QGIView* getQGIVByName(std::string name);
     QGIView* findParent(QGIView*) const;
     void findMissingViews(const std::vector<App::DocumentObject*>& list,

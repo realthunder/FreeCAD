@@ -733,7 +733,7 @@ void QGSPage::setRichAnnoGroups(void)
 }
 
 //! find the graphic for a DocumentObject
-QGIView* QGSPage::findQViewForDocObj(App::DocumentObject* obj) const
+QGIView* QGSPage::findQViewForDocObj(const App::DocumentObject* obj) const
 {
     //    Base::Console().Message("QGSP::findQViewForDocObj(%s)\n", obj->getNameInDocument());
     if (obj) {
