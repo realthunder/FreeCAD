@@ -1373,6 +1373,7 @@ void View3DInventorViewer::setEditingViewProvider(Gui::ViewProvider* vp, int Mod
 {
     this->editViewProvider = vp;
     this->editViewProvider->setEditViewer(this, ModNum);
+    this->navigation->findBoundingSphere();
     addEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,this->editViewProvider);
 }
 
@@ -3948,25 +3949,26 @@ bool View3DInventorViewer::getSceneBoundBox(Base::BoundBox3d &box) const {
         }
     }
 
-    if (!box.IsValid())
-        return false;
+    bool res = box.IsValid() ? true : false;
 
     // Coin3D camera seems stuck if zoomed to close because the boundbox is too
     // small. So, we limit the boundbox size
     const double minLength = 1e-7;
-    if (std::fabs(box.MinX - box.MaxX) < minLength
-            && std::fabs(box.MinY - box.MaxY) < minLength
-            && std::fabs(box.MinZ - box.MaxZ) < minLength)
-    {
-        const double margin = 0.1;
+    const double margin = 0.01;
+    if (std::fabs(box.MinX - box.MaxX) < minLength) {
         box.MinX -= margin;
-        box.MinY -= margin;
-        box.MinZ -= margin;
         box.MaxX += margin;
+    }
+    if (std::fabs(box.MinY - box.MaxY) < minLength) {
+        box.MinY -= margin;
         box.MaxY += margin;
+    }
+    if (std::fabs(box.MinZ - box.MaxZ) < minLength) {
+        box.MinZ -= margin;
         box.MaxZ += margin;
     }
-    return true;
+
+    return res;
 }
 
 SoGroup *View3DInventorViewer::getAuxSceneGraph() const

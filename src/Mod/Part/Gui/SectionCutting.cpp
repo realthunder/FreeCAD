@@ -29,7 +29,6 @@
 # define _USE_MATH_DEFINES  // NOLINT
 # include <cmath>
 
-# include <Inventor/actions/SoGetBoundingBoxAction.h>
 # include <Inventor/nodes/SoCamera.h>
 # include <Inventor/nodes/SoOrthographicCamera.h>
 # include <QDialog>
@@ -2302,14 +2301,8 @@ SbBox3f SectionCut::getViewBoundingBox()
         return Box; // return an empty box
     }
     Gui::View3DInventorViewer* viewer = view->getViewer();
-    SoCamera* camera = viewer->getSoRenderManager()->getCamera();
-    if (!camera) {
-        return Box; // return an empty box
-    }
-    // get scene bounding box
-    SoGetBoundingBoxAction action(viewer->getSoRenderManager()->getViewportRegion());
-    action.apply(viewer->getSceneGraph());
-    return action.getBoundingBox();
+    viewer->getSceneBoundBox(Box);
+    return Box;
 }
 
 void SectionCut::refreshCutRanges(SbBox3f BoundingBox,

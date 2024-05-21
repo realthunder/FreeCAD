@@ -24,7 +24,6 @@
 #ifndef _PreComp_
 # include <Inventor/SbViewportRegion.h>
 # include <Inventor/SoPickedPoint.h>
-# include <Inventor/actions/SoGetBoundingBoxAction.h>
 # include <Inventor/errors/SoDebugError.h>
 # include <Inventor/nodes/SoSeparator.h>
 # include <Inventor/nodes/SoCamera.h>
@@ -370,9 +369,8 @@ void NavigationStyle::setCameraOrientation(const SbRotation& rot, SbBool moveToC
 {
     SbVec3f center;
     if (moveToCenter) {
-        SoGetBoundingBoxAction action(viewer->getSoRenderManager()->getViewportRegion());
-        action.apply(viewer->getSceneGraph());
-        SbBox3f box = action.getBoundingBox();
+        SbBox3f box;
+        viewer->getSceneBoundBox(box);
         if (!isValidBBox(box))
             moveToCenter = false;
         else
@@ -476,9 +474,8 @@ void NavigationStyle::boxZoom(const SbBox2s& box)
 void NavigationStyle::viewAll()
 {
     // Get the bounding box of the scene
-    SoGetBoundingBoxAction action(viewer->getSoRenderManager()->getViewportRegion());
-    action.apply(viewer->getSceneGraph());
-    SbBox3f box = action.getBoundingBox();
+    SbBox3f box;
+    viewer->getSceneBoundBox(box);
     if (!isValidBBox(box))
         return;
 
@@ -516,9 +513,9 @@ void NavigationStyle::viewAll()
 
 void NavigationStyle::findBoundingSphere() {
     // Find a bounding sphere for the scene
-    SoGetBoundingBoxAction action(viewer->getSoRenderManager()->getViewportRegion());
-    action.apply(viewer->getSceneGraph());
-    boundingSphere.circumscribe(action.getBoundingBox());
+    SbBox3f box;
+    viewer->getSceneBoundBox(box);
+    boundingSphere.circumscribe(box);
 }
 
 /** Rotate the camera by the given amount, then reposition it so we're still pointing at the same
@@ -1034,9 +1031,8 @@ void NavigationStyle::saveCursorPosition(const SoEvent * const ev)
             return;
 
         // Get the bounding box center of the physical object group
-        SoGetBoundingBoxAction action(viewer->getSoRenderManager()->getViewportRegion());
-        action.apply(viewer->getSceneGraph());
-        SbBox3f boundingBox = action.getBoundingBox();
+        SbBox3f boundingBox;
+        viewer->getSceneBoundBox(boundingBox);
         SbVec3f boundingBoxCenter = boundingBox.getCenter();
         setRotationCenter(boundingBoxCenter);
 
