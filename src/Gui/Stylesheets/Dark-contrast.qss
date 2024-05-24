@@ -292,6 +292,7 @@ QGroupBox::indicator:unchecked {
 Tooltip
 ==================================================================================================*/
 Gui--TipLabel,
+Gui--NotificationLabel,
 QToolTip {
     color: #ffffff;
     background-color: #801e1e1e;

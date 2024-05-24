@@ -2612,7 +2612,9 @@ Gui--UrlLabel {
   text-decoration : underline;
 }
 
+Gui--TipLabel,
 Gui--NotificationLabel {
+  color: #1e1e1e;
   background-color: #7F7F7F;
   border: 1px solid #696968;
   border-radius: 2px;
