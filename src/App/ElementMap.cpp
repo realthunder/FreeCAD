@@ -1919,3 +1919,9 @@ bool ComplexGeoData::hasChildElementMap() const
     flushElementMap();
     return _elementMap && _elementMap->hasChildElementMap();
 }
+
+ElementMapPtr ComplexGeoData::resetElementMap(ElementMapPtr elementMap)
+{
+    _elementMap.swap(elementMap);
+    return elementMap;
+}
