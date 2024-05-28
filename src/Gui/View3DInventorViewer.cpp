@@ -2328,6 +2328,7 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
     if (!root) {
         _ViewProviderSet.clear();
         editViewProvider = nullptr;
+        return;
     }
 
     SoSearchAction sa;
