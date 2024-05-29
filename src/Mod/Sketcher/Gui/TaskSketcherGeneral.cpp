@@ -43,10 +43,12 @@ SketcherGeneralWidget::SketcherGeneralWidget(QWidget *parent)
   : QWidget(parent), ui(new Ui_TaskSketcherGeneral)
 {
     ui->setupUi(this);
+    loadSettings();
 }
 
 SketcherGeneralWidget::~SketcherGeneralWidget()
 {
+    saveSettings();
 }
 
 void SketcherGeneralWidget::saveSettings()
@@ -80,6 +82,7 @@ TaskSketcherGeneral::TaskSketcherGeneral(ViewProviderSketch *sketchView)
     // we need a separate container widget to add all controls to
     widget = new SketcherGeneralWidget(this);
     this->groupLayout()->addWidget(widget);
+    QSignalBlocker block(widget);
     
     Gui::Selection().Attach(this);
 }
