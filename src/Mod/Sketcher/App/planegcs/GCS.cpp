@@ -2021,7 +2021,7 @@ int System::solve_BFGS(SubSystem* subsys, bool /*isFine*/, bool isRedundantsolvi
     }
 
     double divergingLim = 1e6 * err + 1e12;
-    double h_norm;
+    double h_norm {};
 
     for (int iter = 1; iter < maxIterNumber; iter++) {
         h_norm = h.norm();
@@ -2178,7 +2178,7 @@ int System::solve_LM(SubSystem* subsys, bool isRedundantsolving)
             mu = tau * diag_A.lpNorm<Eigen::Infinity>();
         }
 
-        double h_norm;
+        double h_norm {};
         // determine increment using adaptive damping
         int k = 0;
         while (k < 50) {
