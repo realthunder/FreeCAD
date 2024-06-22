@@ -1301,7 +1301,9 @@ void Feature::onBeforeChange(const App::Property *prop) {
 void Feature::onChanged(const App::Property* prop)
 {
     // if the placement has changed apply the change to the point data as well
-    if (prop == &this->Placement) {
+    if (prop == &this->Placement
+            || prop == &this->FixShape
+            || prop == &this->ValidateShape) {
         // The following code bypasses transaction, which may cause problem to
         // undo/redo
         //
