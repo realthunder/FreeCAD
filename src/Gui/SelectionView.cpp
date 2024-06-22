@@ -561,7 +561,7 @@ void SelectionView::onEnablePickList() {
 
 ////////////////////////////////////////////////////////////////////////
 
-static QString _DefaultStyle = QStringLiteral("QMenu {menu-scrollable:1}");
+static QString _DefaultStyle = QStringLiteral("QMenu {menu-scrollable:0}");
 
 namespace Gui {
 void setupMenuStyle(QWidget *menu)
