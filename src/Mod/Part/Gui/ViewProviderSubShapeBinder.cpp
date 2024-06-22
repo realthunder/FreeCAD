@@ -527,6 +527,8 @@ QString ViewProviderSubShapeBinder::getToolTip(const QByteArray &tag) const
                 }
                 ss << "\n" << App::SubObjectT(obj, sub.c_str()).getSubObjectFullName(doc);
             }
+            if (++count > limit)
+                break;
         }
     }
 
