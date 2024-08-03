@@ -663,11 +663,7 @@ public:
             h -= tabbar->height();
 
         int naviCubeSize = NaviCube::getNaviCubeSize();
-        int naviCorner = OverlayParams::getDockOverlayCheckNaviCube()
-            ? App::GetApplication()
-                  .GetParameterGroupByPath("User parameter:BaseApp/Preferences/NaviCube")
-                  ->GetInt("CornerNaviCube", 1)
-            : -1;
+        int naviCorner = OverlayParams::getDockOverlayCheckNaviCube() ?  OverlayParams::getCornerNaviCube() : -1;
 
         QRect rect;
         QRect rectBottom(0,0,0,0);
