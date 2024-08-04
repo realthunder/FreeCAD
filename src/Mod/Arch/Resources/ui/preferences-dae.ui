@@ -103,10 +103,10 @@ Only supported when using DAE format.</string>
          <string>Export instances</string>
         </property>
         <property name="prefPath" stdset="0">
-         <string>Mod/Arch</string>
+         <cstring>Mod/Arch</cstring>
         </property>
         <property name="prefEntry" stdset="0">
-         <string>ColladaExportInstances</string>
+         <cstring>ColladaExportInstances</cstring>
         </property>
        </widget>
       </item>
@@ -119,10 +119,10 @@ Only supported when using DAE format.</string>
          <string>Export segments</string>
         </property>
         <property name="prefPath" stdset="0">
-         <string>Mod/Arch</string>
+         <cstring>Mod/Arch</cstring>
         </property>
         <property name="prefEntry" stdset="0">
-         <string>ColladaExportSegments</string>
+         <cstring>ColladaExportSegments</cstring>
         </property>
        </widget>
       </item>
@@ -144,10 +144,10 @@ Only supported when using DAE format.</string>
          <string>Import instances</string>
         </property>
         <property name="prefPath" stdset="0">
-         <string>Mod/Arch</string>
+         <cstring>Mod/Arch</cstring>
         </property>
         <property name="prefEntry" stdset="0">
-         <string>ColladaImportInstances</string>
+         <cstring>ColladaImportInstances</cstring>
         </property>
        </widget>
       </item>
