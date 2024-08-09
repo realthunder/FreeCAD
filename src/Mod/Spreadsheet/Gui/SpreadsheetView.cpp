@@ -112,7 +112,7 @@ SheetView::SheetView(Gui::Document* pcDocument, App::DocumentObject* docObj, QWi
             ui->cells,
             &SheetTableView::finishEditWithMove);
     connect(ui->cellContent, &ExpressionLineEdit::returnPressed, this, [this]() {
-        confirmContentChanged(ui->cellContent->text());
+        confirmContentChanged(ui->cellContent->text(), Qt::UserRole);
     });
     connect(ui->cellAlias, &ExpressionLineEdit::returnPressed, this, [this]() {
         confirmAliasChanged(ui->cellAlias->text());
@@ -461,10 +461,10 @@ void SheetView::confirmAliasChanged(const QString& text)
 }
 
 
-void SheetView::confirmContentChanged(const QString& text)
+void SheetView::confirmContentChanged(const QString& text, int role)
 {
     QModelIndex i = ui->cells->currentIndex();
-    ui->cells->model()->setData(i, QVariant(text), Qt::EditRole);
+    ui->cells->model()->setData(i, QVariant(text), role);
     ui->cells->setFocus();
 }
 
