@@ -1417,7 +1417,7 @@ bool Cell::setEditData(const QVariant &d) {
         auto expr = SimpleStatement::cast<ListExpression>(expression.get());
         if(expr && expr->getSize()>=2) {
             auto parent = Base::freecad_dynamic_cast<App::DocumentObject>(owner->getContainer());
-            auto vexpr = VariableExpression::isDoubleBinding(expr->getItems()[0].get());
+            auto vexpr = VariableExpression::isDoubleBinding(expr->getItems()[1].get());
             bool isString = expr->getItems()[1]->eval()->isDerivedFrom(StringExpression::getClassTypeId());
             if (isString) {
                 if(vexpr) {
