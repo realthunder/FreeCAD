@@ -29,7 +29,9 @@
 #include <App/ExpressionParser.h>
 #include <App/Range.h>
 #include <Base/Tools.h>
+#include <Base/ExceptionSafeCall.h>
 #include <Gui/CommandT.h>
+#include <Mod/Spreadsheet/App/SheetParams.h>
 
 #include "DlgSheetConf.h"
 #include "ui_DlgSheetConf.h"
@@ -48,8 +50,18 @@ DlgSheetConf::DlgSheetConf(Sheet* sheet, Range range, QWidget* parent)
 
     if (range.colCount() == 1) {
         auto to = range.to();
-        to.setCol(CellAddress::MAX_COLUMNS - 1);
-        range = Range(range.from(), to);
+        if (SheetParams::getVerticalConfTable()) {
+            to.setRow(CellAddress::MAX_ROWS - 1);
+            ui->checkBoxVertical->setChecked(true);
+        }
+        else {
+            to.setCol(CellAddress::MAX_COLUMNS - 1);
+        }
+        range = Range(range.from(),to);
+        ui->checkBoxDoubleBind->setChecked(SheetParams::getDoubleBindConfTable());
+    }
+    else if (range.from().row() != range.to().row()) {
+        ui->checkBoxVertical->setChecked(true);
     }
 
     ui->lineEditStart->setText(QString::fromUtf8(range.from().toString().c_str()));
@@ -57,7 +69,7 @@ DlgSheetConf::DlgSheetConf(Sheet* sheet, Range range, QWidget* parent)
 
     ui->lineEditProp->setDocumentObject(sheet, false);
 
-    connect(ui->btnDiscard, &QPushButton::clicked, this, &DlgSheetConf::onDiscard);
+    Base::connect(ui->btnDiscard, &QPushButton::clicked, this, &DlgSheetConf::onDiscard);
 
     CellAddress from, to;
     std::string rangeConf;
@@ -72,11 +84,33 @@ DlgSheetConf::DlgSheetConf(Sheet* sheet, Range range, QWidget* parent)
 
     ui->lineEditStart->setText(QString::fromUtf8(from.toString().c_str()));
     ui->lineEditEnd->setText(QString::fromUtf8(to.toString().c_str()));
+
+    Base::connect(ui->checkBoxVertical, &QCheckBox::toggled, this, &DlgSheetConf::onChangeVertical);
 }
 
 DlgSheetConf::~DlgSheetConf()
 {
     delete ui;
+}
+
+void DlgSheetConf::onChangeVertical(bool checked)
+{
+    SheetParams::setVerticalConfTable(checked);
+
+    auto from = sheet->getCellAddress(
+            ui->lineEditStart->text().trimmed().toUtf8().constData());
+    auto to = sheet->getCellAddress(
+            ui->lineEditEnd->text().trimmed().toUtf8().constData());
+    if (checked && to.col() != from.col()) {
+        to.setRow(to.col() == to.MAX_COLUMNS-1 ? to.MAX_ROWS-1 : to.col(), true);
+        to.setCol(from.col(), true);
+        ui->lineEditEnd->setText(QString::fromUtf8(to.toString().c_str()));
+    }
+    else if (!checked && to.row() != from.row()) {
+        to.setCol(to.row() == to.MAX_ROWS-1 ? to.MAX_COLUMNS-1 : to.row(), true);
+        to.setRow(from.row(), true);
+        ui->lineEditEnd->setText(QString::fromUtf8(to.toString().c_str()));
+    }
 }
 
 App::Property* DlgSheetConf::prepare(CellAddress& from,
@@ -88,22 +122,32 @@ App::Property* DlgSheetConf::prepare(CellAddress& from,
     from = sheet->getCellAddress(ui->lineEditStart->text().trimmed().toUtf8().constData());
     to = sheet->getCellAddress(ui->lineEditEnd->text().trimmed().toUtf8().constData());
 
-    if (from.col() >= to.col()) {
-        FC_THROWM(Base::RuntimeError, "Invalid cell range");
+    CellAddress confFrom;
+
+    bool vertical = ui->checkBoxVertical->isChecked();
+    if (!vertical) {
+        // Setup row as parameters, and column as configurations
+        if(from.col()>=to.col())
+            FC_THROWM(Base::RuntimeError, "Invalid cell range");
+        to.setRow(from.row());
+        confFrom = CellAddress(from.row()+1,from.col());
+        rangeConf = confFrom.toString();
+        // rangeConf is supposed to hold the range of string cells, each
+        // holding the name of a configuration. The '|' below indicates a
+        // growing but continuous column, so that we can auto include new
+        // configurations. We'll bind the string list to a
+        // PropertyEnumeration for dynamical switching of the
+        // configuration.
+        rangeConf += ":|";
     }
-
-    // Setup row as parameters, and column as configurations
-    to.setRow(from.row());
-
-    CellAddress confFrom(from.row() + 1, from.col());
-    rangeConf = confFrom.toString();
-    // rangeConf is supposed to hold the range of string cells, each
-    // holding the name of a configuration. The '|' below indicates a
-    // growing but continuous column, so that we can auto include new
-    // configurations. We'll bind the string list to a
-    // PropertyEnumeration for dynamical switching of the
-    // configuration.
-    rangeConf += ":|";
+    else {
+        if(from.row()>=to.row())
+            FC_THROWM(Base::RuntimeError, "Invalid cell range");
+        to.setCol(from.col());
+        confFrom = CellAddress(from.row(),from.col()+1);
+        rangeConf = confFrom.toString();
+        rangeConf += ":-";
+    }
 
     if (!init) {
         std::string exprTxt(ui->lineEditProp->text().trimmed().toUtf8().constData());
@@ -142,14 +186,24 @@ App::Property* DlgSheetConf::prepare(CellAddress& from,
         return nullptr;
     auto vexpr = VariableExpression::isDoubleBinding(cell->getExpression());
     if (!vexpr) {
-        if (auto fexpr = SimpleStatement::cast<FunctionExpression>(cell->getExpression())) {
+        if (auto lexpr = SimpleStatement::cast<ListExpression>(cell->getExpression())) {
+            if (lexpr->getSize() == 2) {
+                vexpr = VariableExpression::isDoubleBinding(lexpr->getItems()[1].get());
+            }
+        }
+        else if (auto fexpr = SimpleStatement::cast<FunctionExpression>(cell->getExpression())) {
             if((fexpr->type()==FunctionExpression::HREF
                         || fexpr->type() == FunctionExpression::HIDDEN_REF)
                     && fexpr->getArgs().size()==1)
                 vexpr = Base::freecad_dynamic_cast<VariableExpression>(fexpr->getArgs().front().get());
         }
     }
+
     if(vexpr) {
+        if (init) {
+            ui->checkBoxDoubleBind->setChecked(true);
+        }
+
         auto prop = Base::freecad_dynamic_cast<PropertyEnumeration>(
                             vexpr->getPath().getProperty());
         if(prop && prop->hasName()) {
@@ -158,6 +212,9 @@ App::Property* DlgSheetConf::prepare(CellAddress& from,
                 path = ObjectIdentifier(sheet);
                 path.setDocumentObjectName(obj,true);
                 path << ObjectIdentifier::SimpleComponent(prop->getName());
+                if (init) {
+                    ui->lineEditProp->setText(QString::fromUtf8(path.toString().c_str()));
+                }
                 return prop;
             }
         }
@@ -173,6 +230,8 @@ void DlgSheetConf::accept()
         CellAddress from, to;
         ObjectIdentifier path;
         App::Property* prop = prepare(from, to, rangeConf, path, false);
+
+        bool vertical = ui->checkBoxVertical->isChecked();
 
         Range range(from, to);
 
@@ -246,22 +305,63 @@ void DlgSheetConf::accept()
         Gui::cmdAppObjectArgs(obj, "recompute()");
 
         // Adjust the range to skip the first cell
-        range = Range(from.row(), from.col() + 1, to.row(), to.col());
+        if (vertical)
+            range = Range(from.row() + 1, from.col(), to.row(), to.col());
+        else
+            range = Range(from.row(), from.col() + 1, to.row(), to.col());
 
         // Formulate expression to calculate the row binding using
         // PropertyEnumeration
-        Gui::cmdAppObjectArgs(
-            sheet,
-            "setExpression('.cells.Bind.%s.%s', "
-            "'tuple(.cells, <<%s>> + str(hiddenref(%s)+%d), <<%s>> + str(hiddenref(%s)+%d))')",
-            range.from().toString(CellAddress::Cell::ShowRowColumn),
-            range.to().toString(CellAddress::Cell::ShowRowColumn),
-            range.from().toString(CellAddress::Cell::ShowColumn),
-            prop->getFullName(),
-            from.row() + 2,
-            range.to().toString(CellAddress::Cell::ShowColumn),
-            prop->getFullName(),
-            from.row() + 2);
+        if (vertical) {
+            Gui::cmdAppObjectArgs(
+                sheet,
+                "setExpression('.cells.Bind.%s.%s', "
+                "'tuple(.cells, (%d, hiddenref(%s)+%d), (%d, hiddenref(%s)+%d))')",
+                range.from().toString(CellAddress::Cell::ShowRowColumn),
+                range.to().toString(CellAddress::Cell::ShowRowColumn),
+                range.from().row(),
+                prop->getFullName(),
+                range.from().col() + 1,
+                range.to().row(),
+                prop->getFullName(),
+                range.to().col() + 1);
+        }
+        else {
+            Gui::cmdAppObjectArgs(
+                sheet,
+                "setExpression('.cells.Bind.%s.%s', "
+                "'tuple(.cells, <<%s>> + str(hiddenref(%s)+%d), <<%s>> + str(hiddenref(%s)+%d))')",
+                range.from().toString(CellAddress::Cell::ShowRowColumn),
+                range.to().toString(CellAddress::Cell::ShowRowColumn),
+                range.from().toString(CellAddress::Cell::ShowColumn),
+                prop->getFullName(),
+                from.row() + 2,
+                range.to().toString(CellAddress::Cell::ShowColumn),
+                prop->getFullName(),
+                from.row() + 2);
+        }
+
+        if (ui->checkBoxDoubleBind->isChecked()) {
+            Gui::cmdAppObjectArgs(sheet,
+                    "setPersistentEdit('%s', False)",
+                    from.toString(CellAddress::Cell::ShowRowColumn));
+            Gui::cmdAppObjectArgs(sheet,
+                    "setEditMode('%s', 'Normal')",
+                    from.toString(CellAddress::Cell::ShowRowColumn));
+            Gui::cmdAppObjectArgs(sheet,
+                    "set('%s', '=(.cells[<<%s>>], dbind(%s))')",
+                    from.toString(CellAddress::Cell::ShowRowColumn),
+                    rangeConf,
+                    prop->getFullName());
+
+            Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
+            Gui::cmdAppObjectArgs(sheet,
+                    "setEditMode('%s', 'Combo')",
+                    from.toString(CellAddress::Cell::ShowRowColumn));
+            Gui::cmdAppObjectArgs(sheet,
+                    "setPersistentEdit('%s', True)",
+                    from.toString(CellAddress::Cell::ShowRowColumn));
+        }
 
         Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
         Gui::Command::commitCommand();

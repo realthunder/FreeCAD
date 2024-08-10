@@ -2168,8 +2168,7 @@ void PropertySheet::setPathValue(const ObjectIdentifier &path, const App::any &v
 
     if (pyValue.isSequence()) {
         Py::Sequence seq(pyValue);
-        if (seq.size() == 3 && PyObject_TypeCheck(seq[0].ptr(), &PropertySheetPy::Type)
-            && Py::Object(seq[1].ptr()).isString() && Py::Object(seq[2].ptr()).isString()) {
+        if (seq.size() == 3 && PyObject_TypeCheck(seq[0].ptr(), &PropertySheetPy::Type)) {
             AtomicPropertyChange signaller(*this, false);
             auto other = static_cast<PropertySheetPy*>(seq[0].ptr())->getPropertySheetPtr();
             auto otherOwner =
@@ -2180,11 +2179,26 @@ void PropertySheet::setPathValue(const ObjectIdentifier &path, const App::any &v
                                                  << getFullName());
             }
 
-            App::CellAddress targetFrom =
-                other->getCellAddress(Py::Object(seq[1].ptr()).as_string().c_str(), false);
+            auto parseCellAddress = [other](const Py::Object &pyObj)
+            {
+                if (pyObj.isString())
+                    return other->getCellAddress(pyObj.as_string().c_str(), false);
 
-            App::CellAddress targetTo =
-                other->getCellAddress(Py::Object(seq[2].ptr()).as_string().c_str(), false);
+                try {
+                    Py::Sequence seq(pyObj);
+                    if (seq.size() == 2) {
+                        App::CellAddress addr;
+                        addr.setRow(Py::Int(seq[0].ptr()), true);
+                        addr.setCol(Py::Int(seq[1].ptr()), true);
+                        return addr;
+                    }
+                } catch (const Py::Exception &) {
+                }
+                FC_THROWM(Base::TypeError, "Invalid cell address. Except address to be text or (int, int)");
+            };
+
+            App::CellAddress targetFrom = parseCellAddress(Py::Object(seq[1].ptr()));
+            App::CellAddress targetTo = parseCellAddress(Py::Object(seq[2].ptr()));
 
             std::string expr(href ? "hiddenref(" : "");
             if (other != this) {

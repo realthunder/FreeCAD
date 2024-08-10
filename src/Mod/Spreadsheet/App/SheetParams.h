@@ -70,7 +70,7 @@ class SpreadsheetExport SheetParams {
 public:
     static ParameterGrp::handle getHandle();
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter showAliasName
     static const bool & getshowAliasName();
@@ -80,7 +80,7 @@ public:
     static const char *docshowAliasName();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DisplayAliasFormatString
     static const std::string & getDisplayAliasFormatString();
@@ -90,7 +90,7 @@ public:
     static const char *docDisplayAliasFormatString();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AliasedCellBackgroundColor
     static const std::string & getAliasedCellBackgroundColor();
@@ -100,7 +100,7 @@ public:
     static const char *docAliasedCellBackgroundColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LockedAliasedCellColor
     static const std::string & getLockedAliasedCellColor();
@@ -110,7 +110,7 @@ public:
     static const char *docLockedAliasedCellColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TextColor
     static const std::string & getTextColor();
@@ -120,7 +120,7 @@ public:
     static const char *docTextColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PositiveNumberColor
     static const std::string & getPositiveNumberColor();
@@ -130,7 +130,7 @@ public:
     static const char *docPositiveNumberColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter NegativeNumberColor
     static const std::string & getNegativeNumberColor();
@@ -140,7 +140,27 @@ public:
     static const char *docNegativeNumberColor();
     //@}
 
-// Auto generated code (Tools/params_utils.py:178)
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter VerticalConfTable
+    static const bool & getVerticalConfTable();
+    static const bool & defaultVerticalConfTable();
+    static void removeVerticalConfTable();
+    static void setVerticalConfTable(const bool &v);
+    static const char *docVerticalConfTable();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DoubleBindConfTable
+    static const bool & getDoubleBindConfTable();
+    static const bool & defaultDoubleBindConfTable();
+    static void removeDoubleBindConfTable();
+    static void setDoubleBindConfTable(const bool &v);
+    static const char *docDoubleBindConfTable();
+    //@}
+
+// Auto generated code (Tools/params_utils.py:179)
 }; // class SheetParams
 } // namespace Spreadsheet
 //[[[end]]]

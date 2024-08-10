@@ -50,8 +50,8 @@ public:
                            App::ObjectIdentifier& path,
                            bool init);
 
-public Q_SLOTS:
     void onDiscard();
+    void onChangeVertical(bool checked);
 
 private:
     Spreadsheet::Sheet* sheet;
