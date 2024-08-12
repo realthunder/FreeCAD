@@ -740,8 +740,17 @@ QVariant PropertyItem::data(int column, int role) const
             return {};
         }
         else if (role == Qt::ToolTipRole) {
-            QString type = QStringLiteral("Type: %1\nName: %2").arg(
-                    QString::fromUtf8(propertyItems[0]->getTypeId().getName()), objectName());
+            QString type = QStringLiteral("Type: %1").arg(
+                        QString::fromUtf8(propertyItems[0]->getTypeId().getName()));
+            if (propertyItems[0]->hasName() && \
+                    objectName().toUtf8() != propertyItems[0]->getName())
+            {
+                type += QStringLiteral("\nName: %1\nAlias: %2").arg(
+                        QString::fromUtf8(propertyItems[0]->getName()), objectName());
+            }
+            else
+                type += QStringLiteral("\nName: %1").arg(objectName());
+
             QString doc = QApplication::translate("App::Property", propertyItems[0]->getDocumentation());
             if (linked && propertyItems[0]->getContainer()
                        && QApplication::queryKeyboardModifiers() == Qt::ControlModifier)

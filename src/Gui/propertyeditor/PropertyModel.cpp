@@ -372,8 +372,15 @@ void PropertyModel::findOrCreateChildren(const PropertyModel::PropertyList& prop
         GroupInfo &groupInfo = getGroupInfo(prop);
         groupInfo.children.push_back(item);
 
-        item->setLinked(boost::ends_with(jt.first,"*"));
-        setPropertyItemName(item, prop->getName(), groupInfo.groupItem->propertyName());
+        const char *propName = jt.first.c_str();
+        std::string _name;
+        if (boost::ends_with(propName,"*")) {
+            item->setLinked(true);
+            _name = propName;
+            _name.resize(_name.size()-1);
+            propName = _name.c_str();
+        }
+        setPropertyItemName(item, propName, groupInfo.groupItem->propertyName());
 
         if (jt.second != item->getPropertyData()) {
             for (auto prop : item->getPropertyData()) {
