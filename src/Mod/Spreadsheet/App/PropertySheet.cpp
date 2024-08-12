@@ -520,6 +520,12 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type)
     int dstRows = dstRange.rowCount();
     int dstCols = dstRange.colCount();
     CellAddress dstFrom = dstRange.from();
+    auto transpose = [dstFrom](CellAddress &dst) {
+        int r = dst.row() - dstFrom.row();
+        int c = dst.col() - dstFrom.col();
+        dst.setRow(dstFrom.row()+c);
+        dst.setCol(dstFrom.col()+r);
+    };
 
     int roffset = 0, coffset = 0;
 
@@ -544,8 +550,17 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type)
             ccount = 1;
         }
         else {
-            rcount = dstRows / range.rowCount();
-            if (rcount == 0) {
+            if (!(type & Cell::PasteTransposed)
+                && dstRows != 0
+                && dstCols != 0
+                && dstRows != dstCols
+                && dstRows == range.colCount()
+                && dstCols == range.rowCount())
+            {
+                type |= Cell::PasteTransposed;
+            }
+            rcount = dstRows/range.rowCount();
+            if(rcount == 0) {
                 rcount = 1;
             }
             ccount = dstCols / range.colCount();
@@ -553,6 +568,9 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type)
                 ccount = 1;
             }
         }
+
+        bool transposed = (type & Cell::PasteTransposed) ? true : false;
+
         for (int ci = 0; ci < cellCount; ++ci) {
             reader.readElement("Cell");
             CellAddress src(reader.getAttribute("address"));
@@ -566,6 +584,9 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type)
                     for (int c = 0; c < ccount; ++c) {
                         CellAddress dst(range.row() + roffset + r * range.rowCount(),
                                         range.column() + coffset + c * range.colCount());
+                        if (transposed) {
+                            transpose(dst);
+                        }
                         if (!dst.isValid()) {
                             continue;
                         }
@@ -580,6 +601,9 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type)
                 for (int c = 0; c < ccount; ++c) {
                     CellAddress dst(src.row() + roffset + r * range.rowCount(),
                                     src.col() + coffset + c * range.colCount());
+                    if (transposed) {
+                        transpose(dst);
+                    }
                     if (!dst.isValid()) {
                         continue;
                     }
@@ -617,10 +641,16 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type)
                         splitCell(dst);
                     }
 
-                    if (roffset_cur || coffset_cur) {
-                        OffsetCellsExpressionVisitor<PropertySheet> visitor(*this,
-                                                                            roffset_cur,
-                                                                            coffset_cur);
+                    if (transposed) {
+                        TransposeCellsExpressionVisitor<PropertySheet> visitor(
+                                *this, from, src, dst);
+                        cell->visit(visitor);
+                        if(visitor.changed())
+                            recomputeDependencies(dst);
+                    }
+                    else if(roffset_cur || coffset_cur) {
+                        OffsetCellsExpressionVisitor<PropertySheet> visitor(
+                                *this, roffset_cur, coffset_cur);
                         cell->visit(visitor);
                         if (visitor.changed()) {
                             recomputeDependencies(dst);
@@ -636,6 +666,9 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type)
                     for (int c = 0; c < ccount; ++c) {
                         CellAddress dst(range.row() + roffset + r * range.rowCount(),
                                         range.column() + coffset + c * range.colCount());
+                        if (transposed) {
+                            transpose(dst);
+                        }
                         if (!dst.isValid()) {
                             continue;
                         }

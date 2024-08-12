@@ -356,6 +356,8 @@ void SheetTableView::buildContextMenu()
     connect(actionPasteValueFormat, &QAction::triggered, this, &SheetTableView::pasteValueFormat);
     actionPasteFormula = pasteMenu->addAction(tr("Paste formula"));
     connect(actionPasteFormula, &QAction::triggered, this, &SheetTableView::pasteFormula);
+    actionPasteTransposed = pasteMenu->addAction(tr("Paste transposed"));
+    connect(actionPasteTransposed, &QAction::triggered, this, &SheetTableView::pasteTransposed);
 }
 
 void SheetTableView::updateHiddenRows() {
@@ -1106,6 +1108,11 @@ void SheetTableView::pasteValueFormat()
 void SheetTableView::pasteFormula()
 {
     _pasteClipboard("Paste cell formula", Cell::PasteFormula);
+}
+
+void SheetTableView::pasteTransposed()
+{
+    _pasteClipboard("Paste value transposed", Cell::PasteAll|Cell::PasteTransposed);
 }
 
 void SheetTableView::_pasteClipboard(const char *name, int type)

@@ -91,6 +91,7 @@ public Q_SLOTS:
     void pasteFormat();
     void pasteFormula();
     void pasteValueFormat();
+    void pasteTransposed();
     void finishEditWithMove(int keyPressed, Qt::KeyboardModifiers modifiers);
     void ModifyBlockSelection(int targetRow, int targetColumn);
 
@@ -175,6 +176,7 @@ protected:
     QAction *actionPasteFormat;
     QAction *actionPasteFormula;
     QAction *actionPasteValueFormat;
+    QAction *actionPasteTransposed;
     QAction *actionCut;
     QAction *actionDel;
     QAction *actionBind;
