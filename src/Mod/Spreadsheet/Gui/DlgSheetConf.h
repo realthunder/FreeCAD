@@ -31,6 +31,11 @@ namespace Ui
 class DlgSheetConf;
 }
 
+namespace Gui
+{
+class PrefWidgetStates;
+}
+
 namespace SpreadsheetGui
 {
 
@@ -56,6 +61,7 @@ public:
 private:
     Spreadsheet::Sheet* sheet;
     Ui::DlgSheetConf* ui;
+    std::unique_ptr<Gui::PrefWidgetStates> widgetStates; /** for managing widget sizes */
 };
 
 }  // namespace SpreadsheetGui

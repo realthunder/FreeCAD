@@ -31,6 +31,7 @@
 #include <Base/Tools.h>
 #include <Base/ExceptionSafeCall.h>
 #include <Gui/CommandT.h>
+#include <Gui/PrefWidgets.h>
 #include <Mod/Spreadsheet/App/SheetParams.h>
 
 #include "DlgSheetConf.h"
@@ -45,6 +46,7 @@ DlgSheetConf::DlgSheetConf(Sheet* sheet, Range range, QWidget* parent)
     : QDialog(parent)
     , sheet(sheet)
     , ui(new Ui::DlgSheetConf)
+    , widgetStates(new Gui::PrefWidgetStates(this))
 {
     ui->setupUi(this);
 

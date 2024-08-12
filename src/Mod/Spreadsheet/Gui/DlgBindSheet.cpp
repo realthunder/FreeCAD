@@ -30,6 +30,7 @@
 #include <App/ExpressionParser.h>
 #include <App/Range.h>
 #include <Gui/CommandT.h>
+#include <Gui/PrefWidgets.h>
 
 #include "DlgBindSheet.h"
 #include "ui_DlgBindSheet.h"
@@ -44,6 +45,7 @@ DlgBindSheet::DlgBindSheet(Sheet* sheet, const std::vector<Range>& ranges, QWidg
     , sheet(sheet)
     , range(ranges.front())
     , ui(new Ui::DlgBindSheet)
+    , widgetStates(new Gui::PrefWidgetStates(this))
 {
     ui->setupUi(this);
     // remove the automatic help button in dialog title since we don't use it
