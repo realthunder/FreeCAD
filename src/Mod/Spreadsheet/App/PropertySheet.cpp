@@ -846,10 +846,14 @@ void PropertySheet::setSpans(CellAddress address, int rows, int columns)
 void PropertySheet::clearAlias(CellAddress address)
 {
     // Remove alias if it exists
-    std::map<CellAddress, std::string>::iterator j = aliasProp.find(address);
-    if (j != aliasProp.end()) {
-        revAliasProp.erase(j->second);
-        aliasProp.erase(j);
+    auto itAlias = aliasProp.find(address);
+    if (itAlias != aliasProp.end()) {
+        auto itAliasAddr = revAliasProp.find(itAlias->second);
+        if (itAliasAddr != revAliasProp.end()
+                && itAliasAddr->second == address) {
+            revAliasProp.erase(itAliasAddr);
+        }
+        aliasProp.erase(itAlias);
     }
 }
 

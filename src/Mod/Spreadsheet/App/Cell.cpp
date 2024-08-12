@@ -632,7 +632,12 @@ void Cell::_setAlias(const std::string &n)
     if (alias != n) {
         PropertySheet::AtomicPropertyChange signaller(*owner);
 
-        owner->revAliasProp.erase(alias);
+        if (!alias.empty()
+                && owner->revAliasProp.count(alias)
+                && owner->revAliasProp[alias] == address)
+        {
+            owner->revAliasProp.erase(alias);
+        }
 
         // Update owner
         if (!n.empty()) {
@@ -641,12 +646,6 @@ void Cell::_setAlias(const std::string &n)
         }
         else {
             owner->aliasProp.erase(address);
-        }
-
-        if (!alias.empty()) {
-            // The property may have been added in Sheet::updateAlias
-            auto* docObj = static_cast<App::DocumentObject*>(owner->getContainer());
-            docObj->removeDynamicProperty(alias.c_str());
         }
 
         alias = n;
