@@ -39,6 +39,7 @@ namespace Part {
     PartExport Py::Object shape2pyshape(const TopoDS_Shape &shape);
     PartExport void getPyShapes(PyObject *obj, std::vector<TopoShape> &shapes);
     PartExport std::vector<TopoShape> getPyShapes(PyObject *obj);
+    PartExport int initOCCTExtension();
 }
 
 #endif //PART_PYCXX_H

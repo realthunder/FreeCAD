@@ -131,7 +131,8 @@ extern const char* BRepBuilderAPI_FaceErrorText(BRepBuilderAPI_FaceError fe);
 #define M_PI_2  1.57079632679489661923 /* pi/2 */
 #endif
 
-namespace Part {
+namespace Part
+{
 
 PartExport void getPyShapes(PyObject *obj, std::vector<TopoShape> &shapes) {
     if(!obj)
@@ -161,9 +162,6 @@ PartExport std::vector<TopoShape> getPyShapes(PyObject *obj) {
     return ret;
 }
 
-}
-
-namespace Part {
 class BRepFeatModule : public Py::ExtensionModule<BRepFeatModule>
 {
 public:
@@ -317,7 +315,7 @@ static std::set<std::string> _OCCTKeys;
 static bool _OCCTShowAll;
 
 typedef Standard_Boolean FuncShowTopoShape(const char *Key, const TopoDS_Shape &s, const char *name);
-typedef void (*FuncSetFuncShowTopoShape)(FuncShowTopoShape *func);
+typedef Standard_Integer (*FuncSetFuncShowTopoShape)(FuncShowTopoShape *func);
 
 // backdoor to be called inside OCC for showing intermediate results
 extern "C" {
@@ -344,6 +342,32 @@ Standard_Boolean showTopoShape(const char *key, const TopoDS_Shape &s, const cha
         obj->Label.setValue(_name);
     }
     return Standard_True;
+}
+
+static FuncSetFuncShowTopoShape setFuncShowTopoShape = nullptr;
+
+PartExport int initOCCTExtension()
+{
+    static int extVersion = 0;
+    if (extVersion == 0) {
+        extVersion = -1;
+#ifdef FC_OS_WIN32
+        HMODULE hModule = LoadLibrary("TKBRep.dll");
+        if (hModule) {
+            setFuncShowTopoShape = (FuncSetFuncShowTopoShape)GetProcAddress(hModule, "SetFuncShowTopoShape");
+        }
+#else
+        void *hModule = dlopen ("libTKBRep.so", RTLD_LAZY);
+        if (hModule) {
+            setFuncShowTopoShape = (FuncSetFuncShowTopoShape)dlsym(hModule, "SetFuncShowTopoShape");
+        }
+#endif
+        if (setFuncShowTopoShape) {
+            extVersion = setFuncShowTopoShape(showTopoShape);
+        }
+    }
+        
+    return extVersion;
 }
 
 class Module : public Py::ExtensionModule<Module>
@@ -2814,26 +2838,8 @@ private:
         PyObject *pyEnable = Py_True;
         if (!PyArg_ParseTuple(args.ptr(), "|OO", &pyKey, &pyEnable))
             return Py::Object();
-        static int inited;
-        static FuncSetFuncShowTopoShape setFuncShowTopoShape;
-        if (!inited) {
-            inited = -1;
-#ifdef FC_OS_WIN32
-            HMODULE hModule = LoadLibrary("TKBRep.dll");
-            if (hModule)
-                setFuncShowTopoShape = (FuncSetFuncShowTopoShape)GetProcAddress(hModule, "SetFuncShowTopoShape");
-#else
-            void *hModule = dlopen ("libTKBRep.so", RTLD_LAZY);
-            if (hModule)
-                setFuncShowTopoShape = (FuncSetFuncShowTopoShape)dlsym(hModule, "SetFuncShowTopoShape");
-#endif
-            if (setFuncShowTopoShape) {
-                setFuncShowTopoShape(showTopoShape);
-                inited = 1;
-            }
-        }
 
-        if (inited < 0)
+        if (initOCCTExtension() < 0)
             throw Py::NotImplementedError("Not implemented");
 
         if (!pyKey) {
