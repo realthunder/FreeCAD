@@ -2559,7 +2559,9 @@ void postMainWindowSetup(MainWindow &mw)
 #endif
 
     //initialize spaceball.
-    qobject_cast<GUIApplicationNativeEventAware*>(qApp)->initSpaceball(&mw);
+    if (auto app = qobject_cast<GUIApplicationNativeEventAware*>(qApp)) {
+        app->initSpaceball(&mw);
+    }
 
 #ifdef FC_DEBUG // redirect Coin messages to FreeCAD
     SoDebugError::setHandlerCallback( messageHandlerCoin, 0 );
