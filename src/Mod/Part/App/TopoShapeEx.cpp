@@ -2255,7 +2255,17 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
             }
         }
 
-        if (remove_limits) {
+        if (!remove_limits) {
+            if (checkLimits && uptoface.shapeType(true) == TopAbs_FACE) {
+                // When using the face with BRepFeat_MakePrism::Perform(const TopoDS_Shape& Until)
+                // then the algorithm expects that the 'NaturalRestriction' flag is set in order
+                // to work as expected.
+                BRep_Builder builder;
+                uptoface = uptoface.makECopy();
+                builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), Standard_True);
+            }
+        }
+        else {
             Handle(Geom_Surface) s = BRep_Tool::Surface(TopoDS::Face(uptoface.getShape()));
             Handle(Standard_Type) styp = s->DynamicType();
             if (styp == STANDARD_TYPE(Geom_RectangularTrimmedSurface)) {
@@ -2291,7 +2301,7 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
                 // surface. We handle other types below by creating face
                 // without bound by ourselves.
                 BRep_Builder builder;
-                builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), Standard_False);
+                builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), initOCCTExtension() < 0);
             }
             else {
                 TopLoc_Location loc = face.Location();
