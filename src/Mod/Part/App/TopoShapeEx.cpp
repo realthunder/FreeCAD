@@ -2316,7 +2316,7 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
                 if (mkFace.IsDone())  {
                     uptoface.setShape(located(mkFace.Shape(),loc), false);
                     BRep_Builder builder;
-                    builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), Standard_False);
+                    builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), initOCCTExtension() < 0);
                 }
             }
         }
