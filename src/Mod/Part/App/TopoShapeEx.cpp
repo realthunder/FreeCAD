@@ -278,6 +278,20 @@ void ShapeMapper::populate(bool generated,
     for(TopTools_ListIteratorOfListOfShape it(dst);it.More();it.Next())
         expand(it.Value(), dstShapes);
     insert(generated, src.getShape(), dstShapes);
+    if (shapeSet.insert(src.getShape()).second)
+        shapes.push_back(src);
+}
+
+void ShapeMapper::populate(bool generated, const TopoShape &src, const std::vector<TopoShape> &dst)
+{
+    if(src.isNull())
+        return;
+    std::vector<TopoDS_Shape> dstShapes;
+    for(auto &d : dst)
+        expand(d.getShape(), dstShapes);
+    insert(generated, src.getShape(), dstShapes);
+    if (shapeSet.insert(src.getShape()).second)
+        shapes.push_back(src);
 }
 
 void ShapeMapper::insert(bool generated, const TopoDS_Shape &s, const TopoDS_Shape &d)
