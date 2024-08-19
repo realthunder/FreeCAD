@@ -2861,9 +2861,6 @@ bool TopoShape::fix()
     ShapeFix_Shape fix(copy._Shape);
     fix.Perform();
 
-    if (fix.Shape().IsSame(copy._Shape))
-        return false;
-
     BRepCheck_Analyzer aChecker(fix.Shape());
     if (!aChecker.IsValid())
         return false;
@@ -2935,7 +2932,7 @@ bool TopoShape::fix(double precision, double mintol, double maxtol)
             result = fix.Shape();
         }
         if (result.IsSame(s.getShape()))
-            return false;
+            return true;
         BRepCheck_Analyzer check(result);
         return check.IsValid();
     };
