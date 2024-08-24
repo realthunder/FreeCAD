@@ -3390,6 +3390,9 @@ int Document::_recomputeFeature(DocumentObject* Feat)
 {
     DocumentObjectExecReturn  *returnCode = DocumentObject::StdReturn;
 
+    // delete recompute log
+    d->clearRecomputeLog(Feat);
+
     try {
         returnCode = Feat->ExpressionEngine.execute(PropertyExpressionEngine::ExecuteNonOutput);
         if (returnCode == DocumentObject::StdReturn) {
@@ -3463,9 +3466,6 @@ int Document::_recomputeFeature(DocumentObject* Feat)
 
 bool Document::recomputeFeature(DocumentObject* Feat, bool recursive)
 {
-    // delete recompute log
-    d->clearRecomputeLog(Feat);
-
     // verify that the feature is (active) part of the document
     if (Feat->isAttachedToDocument()) {
         if(recursive) {

@@ -448,9 +448,11 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                 shapeOwners.emplace_back(sidx, subidx);
                 shapeMats.push_back(&res.first->second);
             } catch(Base::Exception &e) {
-                e.ReportException();
-                FC_ERR(getFullName() << " failed to obtain shape from " 
-                        << obj->getFullName() << '.' << sub);
+                if (isRecomputing()) {
+                    e.ReportException();
+                    FC_ERR(getFullName() << " failed to obtain shape from " 
+                            << obj->getFullName() << '.' << sub);
+                }
                 if(errMsg.empty()) {
                     std::ostringstream ss;
                     ss << "Failed to obtain shape " <<
@@ -477,10 +479,12 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
     if(!init) {
         if(errMsg.size()) {
             // Notify user about restore error
-            // if(!(options & UpdateInit))
-                FC_THROWM(Base::RuntimeError, errMsg);
-            if(!Shape.getValue().IsNull())
+            if (!isRecomputing()) {
+                if (getDocument())
+                    getDocument()->setErrorDescription(this, errMsg.c_str());
                 return;
+            }
+            FC_THROWM(Base::RuntimeError, errMsg);
         }
 
         // If not forced, only rebuild when there is any change in
