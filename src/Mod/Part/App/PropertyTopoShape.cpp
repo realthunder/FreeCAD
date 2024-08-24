@@ -104,6 +104,8 @@ void PropertyPartShape::setValue(const TopoShape& sh)
 {
     aboutToSetValue();
     _Shape = sh;
+    _ShapeNoName.setShape(sh.getShape(), true);
+    _ShapeNoName.Tag = -1;
     auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
     if(obj) {
         auto tag = obj->getID();
@@ -129,6 +131,8 @@ void PropertyPartShape::setValue(const TopoDS_Shape& sh, bool resetElementMap)
     if(obj)
         _Shape.Tag = obj->getID();
     _Shape.setShape(sh,resetElementMap);
+    _ShapeNoName.setShape(sh, true);
+    _ShapeNoName.Tag = -1;
     validateShape(obj);
     hasSetValue();
     _Ver.clear();
@@ -144,7 +148,7 @@ TopoShape PropertyPartShape::getShape() const
     _Shape.initCache(-1);
     auto res = _Shape;
     if (Feature::isElementMappingDisabled(getContainer()))
-        res.Tag = -1;
+        return _ShapeNoName;
     else if (!res.Tag) {
         if (auto parent = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer()))
             res.Tag = parent->getID();
@@ -155,7 +159,9 @@ TopoShape PropertyPartShape::getShape() const
 const Data::ComplexGeoData* PropertyPartShape::getComplexData() const
 {
     _Shape.initCache(-1);
-    return &(this->_Shape);
+    if (Feature::isElementMappingDisabled(getContainer()))
+        return &_ShapeNoName;
+    return &_Shape;
 }
 
 Base::BoundBox3d PropertyPartShape::getBoundingBox() const
