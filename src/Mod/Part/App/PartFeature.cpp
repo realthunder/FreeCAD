@@ -220,7 +220,7 @@ Feature::getExportElementName(TopoShape shape, const char *name) const
                 for (auto &ss : subshape.getSubTopoShapes(lower)) {
                     auto name = ss.getMappedName(idxName);
                     if (!name) continue;
-                    indices.emplace_back(name.size(), shape.findAncestors(ss.getShape(), res.first));
+                    indices.emplace_back(names.size(), shape.findAncestors(ss.getShape(), res.first));
                     names.push_back(name);
                     if (indices.back().second.size() == 1 && ++count >= MinLowerTopoNames)
                         break;
