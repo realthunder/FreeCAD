@@ -7616,15 +7616,24 @@ int SketchObject::addExternal(App::DocumentObject *Obj, const char* SubName, boo
     if (!isExternalAllowed(Obj->getDocument(), Obj))
         return -1;
 
-    auto wholeShape = Part::Feature::getTopoShape(Obj);
-    auto shape = wholeShape.getSubTopoShape(SubName, /*silent*/true);
+    Part::TopoShape wholeShape = Part::Feature::getTopoShape(Obj);
+    Part::TopoShape shape;
     TopAbs_ShapeEnum shapeType = TopAbs_SHAPE;
-    if (shape.shapeType(/*silent*/true) != TopAbs_FACE) {
-        if (shape.hasSubShape(TopAbs_FACE))
-            shapeType = TopAbs_FACE;
-        else if (shape.shapeType(/*silent*/true) != TopAbs_EDGE
-                && shape.hasSubShape(TopAbs_EDGE))
-            shapeType = TopAbs_EDGE;
+    if (!SubName && !SubName[0]) {
+        shape = wholeShape.getSubTopoShape(SubName, /*silent*/true);
+        if (shape.shapeType(/*silent*/true) != TopAbs_FACE
+                && shape.shapeType(/*silent*/true) != TopAbs_WIRE) {
+            if (shape.hasSubShape(TopAbs_FACE)) {
+                shapeType = TopAbs_FACE;
+            }
+            else if (shape.hasSubShape(TopAbs_WIRE)) {
+                shapeType = TopAbs_WIRE;
+            }
+            else if (shape.shapeType(/*silent*/true) != TopAbs_EDGE
+                    && shape.hasSubShape(TopAbs_EDGE)) {
+                shapeType = TopAbs_EDGE;
+            }
+        }
     }
 
     if (shapeType != TopAbs_SHAPE) {
@@ -8543,6 +8552,21 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 FC_WARN("Null shape from geometry reference in " << getFullName() << ": " << key);
                 continue;
             }
+            if (refSubShape.ShapeType() != TopAbs_FACE
+                    && refSubShape.ShapeType() != TopAbs_EDGE
+                    && refSubShape.ShapeType() != TopAbs_VERTEX
+                    && refSubShape.ShapeType() != TopAbs_WIRE)
+            {
+                const std::array<TopAbs_ShapeEnum, 4> types = {
+                    TopAbs_FACE, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX};
+                Part::TopoShape shape(refSubShape);
+                for (auto type : types) {
+                    if (shape.hasSubShape(type)) {
+                        refSubShape = shape.getSubShape(type, 1);
+                        break;
+                    }
+                }
+            }
 
             auto importFace = [&](const TopoDS_Shape &refSubShape) {
                 gp_Pln plane;
@@ -9115,6 +9139,10 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
             case TopAbs_FACE:
                 if (!intersection)
                     importFace(refSubShape);
+                break;
+            case TopAbs_WIRE:
+                for (const auto &s : Part::TopoShape(refSubShape).getSubShapes(TopAbs_EDGE))
+                    importEdge(s);
                 break;
             case TopAbs_EDGE:
                 importEdge(refSubShape);
