@@ -1747,7 +1747,11 @@ QLayoutItem *OverlayTabWidget::prepareTitleWidget(QWidget *widget, const QList<Q
 {
     bool vertical = false;
     QBoxLayout *layout = nullptr;
-    auto tabWidget = qobject_cast<OverlayTabWidget*>(widget->parentWidget());
+    auto parent = widget->parentWidget();
+    auto tabWidget = qobject_cast<OverlayTabWidget*>(parent);
+    if(!tabWidget && parent)
+        tabWidget = qobject_cast<OverlayTabWidget*>(parent->parentWidget());
+
     if(!tabWidget) {
         layout = new QBoxLayout(QBoxLayout::LeftToRight, widget); 
     } else {
