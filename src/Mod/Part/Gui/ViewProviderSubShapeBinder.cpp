@@ -492,11 +492,16 @@ void ViewProviderSubShapeBinder::getExtraIcons(
 
 QString ViewProviderSubShapeBinder::getToolTip(const QByteArray &tag) const
 {
+    if (tag.startsWith("tree:")
+            && tag != Gui::treeMainIconTag()
+            && tag != Gui::treeNoIconTag())
+        return inherited::getToolTip(tag);
+
     generateIcons();
 
     auto self = Base::freecad_dynamic_cast<Part::SubShapeBinder>(getObject());
     if (!self)
-        return QString();
+        return inherited::getToolTip(tag);
 
     std::ostringstream ss;
     auto doc = getObject()->getDocument()->getName();
