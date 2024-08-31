@@ -64,6 +64,7 @@
 #include <Inventor/elements/SoNormalElement.h>
 #include <Inventor/elements/SoGLVBOElement.h>
 #include <Inventor/elements/SoCullElement.h>
+#include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/sensors/SoNodeSensor.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoMarkerSet.h>
@@ -1184,6 +1185,10 @@ SoFCVertexCache::renderTriangles(SoGLRenderAction * action, const int arrays, in
           | GL_POLYGON_BIT);
       glPushMatrix();
       state->push();
+      // Legacy shape with sorted transparency type will delay rendering to be
+      // done by SoGLRenderAction, but we are not using SoGLRenderAction for
+      // rendering, so must disable here.
+      SoShapeStyleElement::setTransparencyType(state, SoGLRenderAction::BLEND);
       PRIVATE(this)->node->GLRender(action);
       state->pop();
       glPopAttrib();
