@@ -535,6 +535,8 @@ public:
 
     const SoPathList *getLatePickPaths() const;
 
+    void appendDetailPath(SoPath *path, ViewProvider *vp);
+
     struct Private;
     friend struct Private;
 

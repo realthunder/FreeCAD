@@ -960,7 +960,7 @@ bool SoFCUnifiedSelection::Private::checkSelection(SelectionChanges::MsgType sel
         if (useRenderer()) {
             if (!pcViewer || !pcViewer->hasViewProvider(vp))
                 return false;
-            detailPath->append(master);
+            pcViewer->appendDetailPath(detailPath, vp);
         }
         if(vp->getDetailPath(objT.getSubName().c_str(),detailPath,true,detail)) {
             SoSelectionElementAction::Type type = SoSelectionElementAction::None;
@@ -986,7 +986,7 @@ bool SoFCUnifiedSelection::Private::checkSelection(SelectionChanges::MsgType sel
                         // on top if any of its sub element is
                         // selected.
                         nodePath = new SoPath(detailPath->getLength());
-                        nodePath->append(master);
+                        pcViewer->appendDetailPath(nodePath, vp);
                         SoDetail *tmp = nullptr;
                         std::string sub = objT.getSubNameNoElement();
                         vp->getDetailPath(sub.c_str(),
@@ -1081,7 +1081,7 @@ bool SoFCUnifiedSelection::Private::doAction(SoAction * action)
                 if (useRenderer()) {
                     if (!pcViewer || !pcViewer->hasViewProvider(vp))
                         return false;
-                    detailPath->append(master);
+                    pcViewer->appendDetailPath(detailPath, vp);
                 }
                 if(vp->getDetailPath(hilaction->SelChange->pSubName,detailPath,true,det)) {
                     setHighlight(detailPath,det,static_cast<ViewProviderDocumentObject*>(vp),
@@ -1232,7 +1232,7 @@ SoFCUnifiedSelection::Private::setHighlight(SoFullPath *path,
                 // to show other accompany nodes (points, lines, and faces) as well. So
                 // we re-obtain the path using getDetailPath() API.
                 detailPath->truncate(0);
-                detailPath->append(master);
+                pcViewer->appendDetailPath(detailPath, vpd);
                 if(vpd->getDetailPath(subname,detailPath,true,_det) && detailPath->getLength()) {
                     path = detailPath;
                     wholeontop = true;
@@ -1400,7 +1400,7 @@ SoFCUnifiedSelection::Private::setSelection(const std::vector<PickedInfo> &infos
             subName = nextsub;
             detailPath->truncate(0);
             if (useRenderer())
-                detailPath->append(master);
+                pcViewer->appendDetailPath(detailPath, vpd);
             if(vpd->getDetailPath(subName.c_str(),detailPath,true,detNext) &&
                detailPath->getLength())
             {
@@ -1421,7 +1421,7 @@ SoFCUnifiedSelection::Private::setSelection(const std::vector<PickedInfo> &infos
                 if (vpd) {
                     detailPath->truncate(0);
                     if (useRenderer())
-                        detailPath->append(master);
+                        pcViewer->appendDetailPath(detailPath, vpd);
                     if(vpd->getDetailPath("", detailPath,true,detNext)) {
                         if (!subSelected || subSelected[0] != 0) {
                             subName.clear();
@@ -1451,7 +1451,7 @@ SoFCUnifiedSelection::Private::setSelection(const std::vector<PickedInfo> &infos
                             std::string sub = treeSub.substr(0, pos + 1);
                             detailPath->truncate(0);
                             if (useRenderer())
-                                detailPath->append(master);
+                                pcViewer->appendDetailPath(detailPath, vpd);
                             if(vpd->getDetailPath(sub.c_str(),detailPath,true,detNext)) {
                                 if (!subSelected || sub != subSelected) {
                                     subName = sub;

@@ -707,6 +707,7 @@ void View3DInventorViewer::init()
 
     // Create group for the non physical object
     nonObjectGroup = new SoGroup();
+    nonObjectGroup->setName("NonObjectGroup");
     nonObjectGroup->ref();
     pcViewProviderRoot->addChild(nonObjectGroup);
 
@@ -1149,17 +1150,28 @@ void View3DInventorViewer::removeViewProvider(ViewProvider* pcProvider)
 }
 
 void View3DInventorViewer::toggleViewProvider(ViewProvider *vp) {
-    if(!_ViewProviderSet.count(vp))
+    if (!_ViewProviderSet.count(vp))
         return;
     SoSeparator* root = vp->getRoot();
-    if(!root || !guiDocument)
+    if (!root || !guiDocument)
         return;
-    int index = pcViewProviderRoot->findChild(root);
-    if(index>=0) {
-        if(guiDocument->isClaimed3D(vp) || !vp->canAddToSceneGraph())
-            pcViewProviderRoot->removeChild(index);
-    } else if(!guiDocument->isClaimed3D(vp) && vp->canAddToSceneGraph())
-        pcViewProviderRoot->addChild(root);
+    if (guiDocument->isClaimed3D(vp) || !vp->canAddToSceneGraph()) {
+        removeViewProvider(vp);
+    }
+    else if (!guiDocument->isClaimed3D(vp) && vp->canAddToSceneGraph()) {
+        addViewProvider(vp);
+    }
+}
+
+void View3DInventorViewer::appendDetailPath(SoPath *path, ViewProvider *vp)
+{
+    if (_ViewProviderSet.count(vp)
+            && !guiDocument->isClaimed3D(vp))
+    {
+        path->append(pcViewProviderRoot);
+        if (!vp->isPartOfPhysicalObject())
+            path->append(nonObjectGroup);
+    }
 }
 
 void View3DInventorViewer::setEditingTransform(const Base::Matrix4D &mat)
