@@ -25,7 +25,7 @@
 #include "PreCompiled.h"
 #ifndef _PreComp_
 #include <unordered_map>
-#ifndef FC_DEBUG
+#ifdef FC_RANDOMIZE_DUPLICATE_INDEX
 #include <random>
 #endif
 #endif
@@ -1459,9 +1459,13 @@ MappedName ComplexGeoData::renameDuplicateElement(int index,
                                                   ElementIDRefs &sids)
 {
     int idx;
-#ifdef FC_DEBUG
+#ifndef FC_RANDOMIZE_DUPLICATE_INDEX
     idx = index;
 #else
+    // WARNING: randomize duplicate element may break topo naming consistency
+    // when recomputing. Element cache may recover the geometry reference if
+    // the recompute does not make any change to the geometry, otherwise it
+    // will break.
     static std::random_device _RD;
     static std::mt19937 _RGEN(_RD());
     static std::uniform_int_distribution<> _RDIST(1,10000);
