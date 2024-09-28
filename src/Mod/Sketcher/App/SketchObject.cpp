@@ -5358,12 +5358,30 @@ int SketchObject::addCopy(const std::vector<int>& geoIdList, const Base::Vector3
         newgeoVals.reserve(geovals.size() + geoIdList.size());
     }
 
-    std::vector<int> newgeoIdList(geoIdList);
+    std::vector<int> newgeoIdList;
 
-    if (newgeoIdList.empty()) {// default option to operate on all the geometry
+    if (geoIdList.empty()) {// default option to operate on all the geometry
         for (int i = 0; i < int(geovals.size()); i++)
             newgeoIdList.push_back(i);
     }
+    else {
+        for (const auto &GeoId : geoIdList) {
+            if ((GeoId >= 0 && GeoId >= static_cast<int>(geovals.size()))
+                  || (GeoId < 0 && -GeoId-1 >= ExternalGeo.getSize())) {
+                FC_ERR("Invalid geometry index");
+                break;
+            }
+            else if (moveonly && GeoId < 0) {
+                FC_ERR("Cannot move external geometry");
+                break;
+            }
+            newgeoIdList.push_back(GeoId);
+        }
+        if (newgeoIdList.size() != geoIdList.size()) {
+            return Geometry.getSize() - 1;
+        }
+    }
+
 
     int cgeoid = getHighestCurveIndex() + 1;
 
@@ -5476,6 +5494,12 @@ int SketchObject::addCopy(const std::vector<int>& geoIdList, const Base::Vector3
                 // moving
                 if (!moveonly) {
                     geocopy = geo->copy();
+                    if (auto egf = ExternalGeometryFacade::getFacade(geo)) {
+                        if(egf->testFlag(ExternalGeometryExtension::Defining)) {
+                            GeometryFacade::setConstruction(geocopy, false);
+                        }
+                        geocopy->deleteExtension(ExternalGeometryExtension::getClassTypeId());
+                    }
                     generateId(geocopy);
                 } else
                     geocopy = newgeoVals[*it];
