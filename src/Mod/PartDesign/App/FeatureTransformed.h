@@ -56,6 +56,7 @@ public:
     App::PropertyBool ParallelTransform;
 
     App::PropertyPlacement TransformOffset;
+    App::PropertyBool OffsetBaseFeature;
     App::PropertyInteger _Version;
 
     /**
