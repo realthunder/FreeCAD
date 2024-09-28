@@ -287,6 +287,11 @@ void TaskTransformedParameters::setupBaseUI() {
     checkBoxNewSolid->setToolTip(tr("Make a new shape using the resulting pattern shape"));
     checkBoxNewSolid->setChecked(getObject()->NewSolid.getValue());
 
+    checkBoxHideBase = new QCheckBox(this);
+    checkBoxHideBase->setText(tr("Hide base feature"));
+    checkBoxHideBase->setToolTip(tr("Hide base feature and leave only the transformed ones"));
+    checkBoxHideBase->setChecked(getObject()->HideBaseFeature.getValue());
+
     auto layout = qobject_cast<QBoxLayout*>(proxy->layout());
     assert(layout);
 
@@ -295,6 +300,7 @@ void TaskTransformedParameters::setupBaseUI() {
     grid->addWidget(checkBoxSubTransform, 2, 1);
     grid->addWidget(checkBoxParallel, 3, 0);
     grid->addWidget(checkBoxOffsetBaseFeature, 3, 1);
+    grid->addWidget(checkBoxHideBase, 4, 0);
 
     splitter = new QSplitter(Qt::Vertical, this);
     splitter->addWidget(labelMessage);
@@ -388,6 +394,7 @@ void TaskTransformedParameters::setupBaseUI() {
     Base::connect(checkBoxOffsetBaseFeature, &QCheckBox::toggled, this, &TaskTransformedParameters::onChangedOffsetBaseFeature);
     Base::connect(checkBoxParallel, &QCheckBox::toggled, this, &TaskTransformedParameters::onChangedParallelTransform);
     Base::connect(checkBoxNewSolid, &QCheckBox::toggled, this, &TaskTransformedParameters::onChangedNewSolid);
+    Base::connect(checkBoxHideBase, &QCheckBox::toggled, this, &TaskTransformedParameters::onChangedHideBase);
     Base::connect(linkEditor, &DlgPropertyLink::linkChanged, this, &TaskTransformedParameters::originalSelectionChanged);
 }
 
@@ -410,6 +417,14 @@ void TaskTransformedParameters::refresh()
         if(linkEditor) {
             QSignalBlocker blocker(linkEditor);
             linkEditor->init(App::DocumentObjectT(&pcTransformed->OriginalSubs),false);
+        }
+        if(checkBoxNewSolid) {
+            QSignalBlocker blocker(checkBoxNewSolid);
+            checkBoxNewSolid->setChecked(getObject()->NewSolid.getValue());
+        }
+        if(checkBoxHideBase) {
+            QSignalBlocker blocker(checkBoxHideBase);
+            checkBoxHideBase->setChecked(getObject()->HideBaseFeature.getValue());
         }
         if(checkBoxSubTransform) {
             QSignalBlocker blocker(checkBoxSubTransform);
@@ -615,6 +630,12 @@ void TaskTransformedParameters::onChangedParallelTransform(bool checked) {
 void TaskTransformedParameters::onChangedNewSolid(bool checked) {
     setupTransaction();
     getObject()->NewSolid.setValue(checked);
+    recomputeFeature();
+}
+
+void TaskTransformedParameters::onChangedHideBase(bool checked) {
+    setupTransaction();
+    getObject()->HideBaseFeature.setValue(checked);
     recomputeFeature();
 }
 

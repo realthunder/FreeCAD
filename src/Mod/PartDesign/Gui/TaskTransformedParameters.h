@@ -194,6 +194,7 @@ protected Q_SLOTS:
     void onChangedOffsetBaseFeature(bool);
     void onChangedParallelTransform(bool);
     void onChangedNewSolid(bool);
+    void onChangedHideBase(bool);
     void originalSelectionChanged();
     void onChangedOffset(const QVariant &, bool, bool);
     void onUpdateViewTimer();
@@ -258,6 +259,7 @@ protected:
     QCheckBox *checkBoxOffsetBaseFeature = nullptr;
     QCheckBox *checkBoxParallel = nullptr;
     QCheckBox *checkBoxNewSolid = nullptr;
+    QCheckBox *checkBoxHideBase = nullptr;
 
     QSplitter *splitter = nullptr;
     int defaultMinimumHeight = 150;
