@@ -809,7 +809,7 @@ void TaskSketcherElements::slotElementsChanged()
 
     int currentRow = -1;
     auto currentIndex = ui->elementsWidget->currentIndex();
-    if (currentIndex.isValid())
+    if (currentIndex.isValid() && ui->elementsWidget->currentItem()->isSelected())
         currentRow = currentIndex.row();
 
     ui->elementsWidget->blockSignals(true);
