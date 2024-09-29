@@ -311,28 +311,47 @@ public:
     }
 };
 
-static std::set<std::string> _OCCTKeys;
-static bool _OCCTShowAll;
+namespace {
 
-typedef Standard_Boolean FuncShowTopoShape(const char *Key, const TopoDS_Shape &s, const char *name);
+struct KeyCompare {
+    bool operator()(const std::string &a, const std::string &b) const {
+        return a < b;
+    }
+    bool operator()(const std::string &a, const char *b) const {
+        return a.compare(b) < 0;
+    }
+    bool operator()(const char *a, const std::string &b) const {
+        return b.compare(a) > 0;
+    }
+};
+
+std::map<std::string, std::set<int>, KeyCompare> _OCCTKeys;
+bool _OCCTShowAll;
+} // anonymous namespace
+
+typedef Standard_Boolean FuncShowTopoShape(const char *Key, int line, const TopoDS_Shape &s, const char *name);
 typedef Standard_Integer (*FuncSetFuncShowTopoShape)(FuncShowTopoShape *func);
 
 // backdoor to be called inside OCC for showing intermediate results
 extern "C" {
- Standard_Boolean showTopoShape(const char *key, const TopoDS_Shape &s, const char *name);
+ Standard_Boolean showTopoShape(const char *key, int line, const TopoDS_Shape &s, const char *name);
 }
 
-Standard_Boolean showTopoShape(const char *key, const TopoDS_Shape &s, const char *name)
+Standard_Boolean showTopoShape(const char *key, int line, const TopoDS_Shape &s, const char *name)
 {
+    (void)line;
     if (!_OCCTShowAll && key) {
 #ifdef FC_OS_WIN32
-        const char *k = strchr(key, '\\');
+        const char *k = strrchr(key, '\\');
 #else
-        const char *k = strchr(key, '/');
+        const char *k = strrchr(key, '/');
 #endif
         if (k)
-            key = k;
-        if (!_OCCTKeys.count(key))
+            key = k+1;
+        auto it = _OCCTKeys.find(key);
+        if (it == _OCCTKeys.end())
+            return Standard_False;
+        if (line != 0 && (*it->second.begin()) != 0 && !it->second.count(line))
             return Standard_False;
     }
     if (!s.IsNull()) {
@@ -2845,7 +2864,16 @@ private:
         if (!pyKey) {
             Py::List list;
             for (const auto &k : _OCCTKeys) {
-                list.append(Py::String(k));
+                if (k.second.size() == 1 && (*k.second.begin()) == 0)
+                    list.append(Py::String(k.first));
+                else {
+                    Py::Tuple tuple(k.second.size());
+                    int i = 0;
+                    for (const auto &l : k.second) {
+                        tuple.setItem(i++, Py::Int(l));
+                    }
+                    list.append(Py::TupleN(Py::String(k.first), tuple));
+                }
             }
             if (_OCCTShowAll)
                 list.append(Py::String("*"));
@@ -2861,30 +2889,46 @@ private:
             return Py::Object();
         }
 
-        std::vector<std::string> keys;
-        if(PySequence_Check(pyKey)) {
+        std::vector<std::pair<std::string,int>> keys;
+        auto readKey = [](const Py::Object &pyObj) {
+            std::string key = pyObj.as_string();
+            size_t pos = key.find(':');
+            if (pos == std::string::npos)
+                return std::make_pair(key, 0);
+            else
+                return std::make_pair(key.substr(0, pos), atoi(key.c_str()+pos+1));
+        };
+
+        if (!PyUnicode_Check(pyKey)) {
             Py::Sequence seq(pyKey);
             for (Py::Sequence::iterator it = seq.begin(); it != seq.end(); ++it) {
-                keys.push_back(Py::Object((*it).ptr()).as_string());
+                keys.push_back(readKey(Py::Object((*it).ptr())));
             }
         }
         else {
-            keys.push_back(Py::Object(pyKey).as_string());
+            keys.push_back(readKey(Py::Object(pyKey)));
         }
         if (!Base::asBoolean(pyEnable)) {
             for (const auto &key : keys) {
-                if (key == "*")
+                if (key.first == "*")  {
+                    _OCCTKeys.clear();
                     _OCCTShowAll = false;
-                else
-                    _OCCTKeys.erase(key);
+                    break;
+                }
+                auto it = _OCCTKeys.find(key.first);
+                if (it != _OCCTKeys.end()) {
+                    it->second.erase(key.second);
+                    if (it->second.empty())
+                        _OCCTKeys.erase(it);
+                }
             }
             return Py::Object();
         }
         for (const auto &key : keys) {
-            if (key == "*")
+            if (key.first== "*")
                 _OCCTShowAll = true;
             else
-                _OCCTKeys.insert(key);
+                _OCCTKeys[key.first].insert(key.second);
         }
         return Py::Object();
     }
