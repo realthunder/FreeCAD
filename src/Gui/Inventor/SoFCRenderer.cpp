@@ -957,7 +957,8 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
       if (!idx)
         continue;
       --idx;
-      PRIVATE(this)->scenebbox.extendBy(PRIVATE(this)->drawentries.back().bbox);
+      if (isValidBBox(PRIVATE(this)->drawentries.back().bbox))
+        PRIVATE(this)->scenebbox.extendBy(PRIVATE(this)->drawentries.back().bbox);
       if (!ventry.skipcount)
         ++mergecount;
       else
@@ -1036,7 +1037,8 @@ SoFCRenderer::setHighlight(VertexCacheMap && caches, bool wholeontop)
       {
         // hide original object because we are doing full object highlight on top
         PRIVATE(this)->highlightkeys.insert(ventry.key);
-        PRIVATE(this)->highlightbbox.extendBy(PRIVATE(this)->hlentries.back().bbox);
+        if (isValidBBox(PRIVATE(this)->hlentries.back().bbox))
+          PRIVATE(this)->highlightbbox.extendBy(PRIVATE(this)->hlentries.back().bbox);
       }
 
       if (ventry.partidx >= 0) {
@@ -1144,7 +1146,8 @@ SoFCRendererP::updateSelection()
       this->slentries.pop_back();
       return 0;
     }
-    this->selectionbbox.extendBy(this->slentries.back().bbox);
+    if (isValidBBox(this->slentries.back().bbox))
+      this->selectionbbox.extendBy(this->slentries.back().bbox);
     return idx;
   };
 
@@ -1697,13 +1700,15 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
     if (setupmatrix)
       setupMatrix(action, draw_entry);
     draw_entry.ventry->cache->renderSolids(action->getState());
-    if (!setupmatrix)
-      bbox.extendBy(draw_entry.bbox);
-    else {
-      auto matrix = SoModelMatrixElement::get(action->getState());
-      auto bb = draw_entry.bbox;
-      bb.transform(matrix);
-      bbox.extendBy(bb);
+    if (isValidBBox(draw_entry.bbox)) {
+      if (!setupmatrix)
+        bbox.extendBy(draw_entry.bbox);
+      else {
+        auto matrix = SoModelMatrixElement::get(action->getState());
+        auto bb = draw_entry.bbox;
+        bb.transform(matrix);
+        bbox.extendBy(bb);
+      }
     }
     ++this->drawcallcount;
   }
@@ -1939,6 +1944,7 @@ SoFCRendererP::renderOpaque(SoGLRenderAction * action,
     while (renderSection(action, draw_entry, n, pushed, false)) {
       if (!ViewParams::getSectionConcave()
           && this->material.clippers.getNum() > 0
+          && isValidBBox(draw_entry.bbox)
           && SoCullElement::cullTest(state, draw_entry.bbox, FALSE))
       {
           continue;
@@ -2086,6 +2092,7 @@ SoFCRendererP::renderTransparency(SoGLRenderAction * action,
         while (renderSection(action, draw_entry, n, pushed, true)) {
           if (!ViewParams::getSectionConcave()
               && this->material.clippers.getNum() > 0
+              && isValidBBox(draw_entry.bbox)
               && SoCullElement::cullTest(state, draw_entry.bbox, FALSE))
           {
             continue;

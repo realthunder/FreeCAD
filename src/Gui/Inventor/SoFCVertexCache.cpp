@@ -74,6 +74,7 @@
 #include <Inventor/fields/SoMFNode.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoCallbackAction.h>
+#include <Inventor/actions/SoGetBoundingBoxAction.h>
 #include <Inventor/lists/SbList.h>
 #include <Inventor/lists/SbPList.h>
 #include <Inventor/system/gl.h>
@@ -1177,6 +1178,12 @@ SoFCVertexCache::renderTriangles(SoGLRenderAction * action, const int arrays, in
 {
   SoState *state = action->getState();
   if (PRIVATE(this)->glrender) {
+    if (PRIVATE(this)->boundbox.isEmpty()) {
+      const SbViewportRegion & vp = SoViewportRegionElement::get(state);
+      SoGetBoundingBoxAction bboxAction(vp);
+      bboxAction.apply(PRIVATE(this)->node);
+      PRIVATE(this)->boundbox.extendBy(bboxAction.getBoundingBox());
+    }
     if (PRIVATE(this)->node) {
       glPushAttrib(GL_ENABLE_BIT
           | GL_DEPTH_BUFFER_BIT
