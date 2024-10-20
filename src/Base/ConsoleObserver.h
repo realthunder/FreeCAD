@@ -157,7 +157,7 @@ protected:
     int sync() override;
 
 private:
-    std::string buffer;
+    static thread_local std::string buffer;
 };
 
 class BaseExport RedirectStdError: public std::streambuf
@@ -170,7 +170,7 @@ protected:
     int sync() override;
 
 private:
-    std::string buffer;
+    static thread_local std::string buffer;
 };
 
 class BaseExport RedirectStdLog: public std::streambuf
@@ -183,7 +183,7 @@ protected:
     int sync() override;
 
 private:
-    std::string buffer;
+    static thread_local std::string buffer;
 };
 
 
