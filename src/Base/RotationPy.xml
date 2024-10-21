@@ -230,7 +230,7 @@ tol : float
             <Documentation>
                 <UserDocu>The rotation angle of the quaternion</UserDocu>
             </Documentation>
-            <Parameter Name="Angle" Type="Float" />
+            <Parameter Name="Angle" Type="Object" />
         </Attribute>
         <Attribute Name="Matrix" ReadOnly="false">
             <Documentation>
