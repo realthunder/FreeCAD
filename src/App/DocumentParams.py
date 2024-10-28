@@ -48,6 +48,7 @@ Params = [
     ParamBool('SplitXML', True),
     ParamBool('PreferBinary', False),
     ParamBool('AutoRemoveFile', True),
+    ParamBool('AutoNameDynamicProperty', False),
     ParamBool('BackupPolicy', True),
     ParamBool('CreateBackupFiles', True),
     ParamBool('UseFCBakExtension', False),

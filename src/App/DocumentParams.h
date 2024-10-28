@@ -71,7 +71,7 @@ public:
     static boost::signals2::signal<void (const char*)> &signalParamChanged();
     static void signalAll();
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter prefAuthor
     static const std::string & getprefAuthor();
@@ -81,7 +81,7 @@ public:
     static const char *docprefAuthor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter prefSetAuthorOnSave
     static const bool & getprefSetAuthorOnSave();
@@ -91,7 +91,7 @@ public:
     static const char *docprefSetAuthorOnSave();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter prefCompany
     static const std::string & getprefCompany();
@@ -101,7 +101,7 @@ public:
     static const char *docprefCompany();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter prefLicenseType
     static const long & getprefLicenseType();
@@ -111,7 +111,7 @@ public:
     static const char *docprefLicenseType();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter prefLicenseUrl
     static const std::string & getprefLicenseUrl();
@@ -121,7 +121,7 @@ public:
     static const char *docprefLicenseUrl();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CompressionLevel
     static const long & getCompressionLevel();
@@ -131,7 +131,7 @@ public:
     static const char *docCompressionLevel();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CheckExtension
     static const bool & getCheckExtension();
@@ -141,7 +141,7 @@ public:
     static const char *docCheckExtension();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ForceXML
     static const long & getForceXML();
@@ -151,7 +151,7 @@ public:
     static const char *docForceXML();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SplitXML
     static const bool & getSplitXML();
@@ -161,7 +161,7 @@ public:
     static const char *docSplitXML();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreferBinary
     static const bool & getPreferBinary();
@@ -171,7 +171,7 @@ public:
     static const char *docPreferBinary();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoRemoveFile
     static const bool & getAutoRemoveFile();
@@ -181,7 +181,17 @@ public:
     static const char *docAutoRemoveFile();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoNameDynamicProperty
+    static const bool & getAutoNameDynamicProperty();
+    static const bool & defaultAutoNameDynamicProperty();
+    static void removeAutoNameDynamicProperty();
+    static void setAutoNameDynamicProperty(const bool &v);
+    static const char *docAutoNameDynamicProperty();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter BackupPolicy
     static const bool & getBackupPolicy();
@@ -191,7 +201,7 @@ public:
     static const char *docBackupPolicy();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CreateBackupFiles
     static const bool & getCreateBackupFiles();
@@ -201,7 +211,7 @@ public:
     static const char *docCreateBackupFiles();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseFCBakExtension
     static const bool & getUseFCBakExtension();
@@ -211,7 +221,7 @@ public:
     static const char *docUseFCBakExtension();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SaveBackupDateFormat
     static const std::string & getSaveBackupDateFormat();
@@ -221,7 +231,7 @@ public:
     static const char *docSaveBackupDateFormat();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CountBackupFiles
     static const long & getCountBackupFiles();
@@ -231,7 +241,7 @@ public:
     static const char *docCountBackupFiles();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter OptimizeRecompute
     static const bool & getOptimizeRecompute();
@@ -241,7 +251,7 @@ public:
     static const char *docOptimizeRecompute();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CanAbortRecompute
     static const bool & getCanAbortRecompute();
@@ -251,7 +261,7 @@ public:
     static const char *docCanAbortRecompute();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter UseHasher
     static const bool & getUseHasher();
@@ -261,7 +271,7 @@ public:
     static const char *docUseHasher();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ViewObjectTransaction
     static const bool & getViewObjectTransaction();
@@ -271,7 +281,7 @@ public:
     static const char *docViewObjectTransaction();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter WarnRecomputeOnRestore
     static const bool & getWarnRecomputeOnRestore();
@@ -281,7 +291,7 @@ public:
     static const char *docWarnRecomputeOnRestore();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter NoPartialLoading
     static const bool & getNoPartialLoading();
@@ -291,7 +301,7 @@ public:
     static const char *docNoPartialLoading();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SaveThumbnail
     static const bool & getSaveThumbnail();
@@ -301,7 +311,7 @@ public:
     static const char *docSaveThumbnail();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ThumbnailNoBackground
     static const bool & getThumbnailNoBackground();
@@ -311,7 +321,7 @@ public:
     static const char *docThumbnailNoBackground();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AddThumbnailLogo
     static const bool & getAddThumbnailLogo();
@@ -321,7 +331,7 @@ public:
     static const char *docAddThumbnailLogo();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ThumbnailSampleSize
     static const long & getThumbnailSampleSize();
@@ -331,7 +341,7 @@ public:
     static const char *docThumbnailSampleSize();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter ThumbnailSize
     static const long & getThumbnailSize();
@@ -341,7 +351,7 @@ public:
     static const char *docThumbnailSize();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DuplicateLabels
     static const bool & getDuplicateLabels();
@@ -351,7 +361,7 @@ public:
     static const char *docDuplicateLabels();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TransactionOnRecompute
     static const bool & getTransactionOnRecompute();
@@ -361,7 +371,7 @@ public:
     static const char *docTransactionOnRecompute();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RelativeStringID
     static const bool & getRelativeStringID();
@@ -371,7 +381,7 @@ public:
     static const char *docRelativeStringID();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter HashIndexedName
     ///
@@ -384,7 +394,7 @@ public:
     static const char *docHashIndexedName();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EnableMaterialEdit
     static const bool & getEnableMaterialEdit();
@@ -394,7 +404,7 @@ public:
     static const char *docEnableMaterialEdit();
     //@}
 
-// Auto generated code (Tools/params_utils.py:178)
+// Auto generated code (Tools/params_utils.py:179)
 }; // class DocumentParams
 } // namespace App
 //[[[end]]]
