@@ -121,8 +121,12 @@ PrefWidget::~PrefWidget()
     m_EntryHandle->Detach(this);
 }
 
-void PrefWidget::initAutoSave(bool enable)
+void PrefWidget::initAutoSave(const QVariant &defValue, bool enable)
 {
+  if (defValue.isValid()) {
+    m_Default = defValue;
+    m_Restored = true;
+  }
   onRestore();
   setAutoSave(enable);
   PrefParam::removeEntry(this);
@@ -686,7 +690,7 @@ void PrefSpinBox::restorePreferences()
   if (!m_Restored)
     m_Default = value();
 
-  int nVal = getWindowParameter()->GetInt( entryName(), m_Default);
+  int nVal = getWindowParameter()->GetInt( entryName(), m_Default.toInt());
   setValue( nVal );
 }
 
@@ -755,7 +759,7 @@ void PrefDoubleSpinBox::restorePreferences()
   if (!m_Restored)
     m_Default = value();
 
-  double fVal = (double)getWindowParameter()->GetFloat( entryName() , m_Default);
+  double fVal = (double)getWindowParameter()->GetFloat( entryName() , m_Default.toDouble());
   setValue(fVal);
 }
 
@@ -798,7 +802,7 @@ void PrefLineEdit::restorePreferences()
     m_Default = this->text();
 
   setText(QString::fromUtf8(getWindowParameter()->GetASCII(
-          entryName(), m_Default.toUtf8()).c_str()));
+          entryName(), m_Default.toString().toUtf8()).c_str()));
 }
 
 void PrefLineEdit::savePreferences()
@@ -842,7 +846,7 @@ void PrefAccelLineEdit::restorePreferences()
     m_Default = this->text();
 
   setText(QString::fromUtf8(getWindowParameter()->GetASCII(
-          entryName(), m_Default.toUtf8()).c_str()));
+          entryName(), m_Default.toString().toUtf8()).c_str()));
 }
 
 void PrefAccelLineEdit::savePreferences()
@@ -886,7 +890,7 @@ void PrefTextEdit::restorePreferences()
     if (!m_Restored)
       m_Default = this->toPlainText();
 
-    QString text = QString::fromUtf8(getWindowParameter()->GetASCII(entryName(), m_Default.toUtf8()).c_str());
+    QString text = QString::fromUtf8(getWindowParameter()->GetASCII(entryName(), m_Default.toString().toUtf8()).c_str());
     setText(text);
 }
 
@@ -927,7 +931,7 @@ void PrefFileChooser::restorePreferences()
   if (!m_Restored)
     m_Default = fileName();
 
-  QString txt = QString::fromUtf8(getWindowParameter()->GetASCII(entryName(), m_Default.toUtf8()).c_str());
+  QString txt = QString::fromUtf8(getWindowParameter()->GetASCII(entryName(), m_Default.toString().toUtf8()).c_str());
   setFileName(txt);
 }
 
@@ -945,7 +949,9 @@ void PrefFileChooser::savePreferences()
 // --------------------------------------------------------------------
 
 PrefComboBox::PrefComboBox ( QWidget * parent )
-  : QComboBox(parent), PrefWidget()
+  : QComboBox(parent)
+  , PrefWidget()
+  , m_DefaultIndex(-1)
 {
     setAutoSave(PrefParam::AutoSave());
 }
@@ -974,6 +980,7 @@ void PrefComboBox::restorePreferences()
     m_DefaultText = currentText();
     m_DefaultIndex = currentIndex();
   }
+
   int index = -1;
   switch(getParamType()) {
   case QMetaType::Int:
@@ -991,6 +998,8 @@ void PrefComboBox::restorePreferences()
     index = findData(getWindowParameter()->GetFloat(entryName(), m_Default.toDouble()));
     break;
   case QMetaType::QString:
+    if (m_DefaultText.isEmpty() && m_Default.canConvert<QString>())
+      m_DefaultText = m_Default.toString();
     index = findText(QString::fromUtf8(
           getWindowParameter()->GetASCII(entryName(), m_DefaultText.toUtf8().constData()).c_str()));
     break;
@@ -999,6 +1008,8 @@ void PrefComboBox::restorePreferences()
           m_Default.toByteArray().constData()).c_str()));
     break;
   default:
+    if (m_DefaultIndex < 0)
+      m_DefaultIndex = m_Default.toInt();
     index = getWindowParameter()->GetInt(entryName(), m_DefaultIndex);
     break;
   }
@@ -1149,7 +1160,7 @@ void PrefCheckBox::restorePreferences()
   if (!m_Restored)
     m_Default = isChecked();
 
-  bool enable = getWindowParameter()->GetBool( entryName(), m_Default);
+  bool enable = getWindowParameter()->GetBool( entryName(), m_Default.toBool());
   setChecked(enable);
 }
 
@@ -1190,7 +1201,7 @@ void PrefRadioButton::restorePreferences()
   if (!m_Restored)
     m_Default = isChecked();
 
-  bool enable = getWindowParameter()->GetBool( entryName(), m_Default );
+  bool enable = getWindowParameter()->GetBool( entryName(), m_Default.toBool() );
   setChecked(enable);
 }
 
@@ -1231,7 +1242,7 @@ void PrefSlider::restorePreferences()
   if (!m_Restored)
     m_Default = value();
 
-  int nVal = getWindowParameter()->GetInt(entryName(), m_Default);
+  int nVal = getWindowParameter()->GetInt(entryName(), m_Default.toInt());
   setValue(nVal);
 }
 
@@ -1272,7 +1283,11 @@ void PrefColorButton::restorePreferences()
   if (!m_Restored)
     m_Default = color();
 
-  unsigned int icol = App::Color::asPackedRGBA<QColor>(m_Default);
+  unsigned int icol;
+  if (m_Default.canConvert<unsigned int>())
+    icol = m_Default.toUInt();
+  else
+    icol = App::Color::asPackedRGBA<QColor>(qvariant_cast<QColor>(m_Default));
 
   unsigned long lcol = static_cast<unsigned long>(icol);
   lcol = getWindowParameter()->GetUnsigned(entryName(), lcol);
@@ -1350,7 +1365,7 @@ void PrefUnitSpinBox::restorePreferences()
     if (!m_Restored)
       m_Default = rawValue();
 
-    double fVal = (double)getWindowParameter()->GetFloat( entryName() ,m_Default );
+    double fVal = (double)getWindowParameter()->GetFloat( entryName() ,m_Default.toUInt() );
     setValue(fVal);
 }
 
@@ -1576,7 +1591,11 @@ void PrefFontBox::restorePreferences()
   if (!m_Restored)
     m_Default = currentFont();
 
-  QFont currFont = m_Default;                         //QFont from selector widget
+  QFont currFont;
+  if (m_Default.canConvert<QString>())
+    currFont = QFont(m_Default.toString());
+  else
+    currFont = qvariant_cast<QFont>(m_Default);
   QString currName = currFont.family();
 
   std::string prefName = getWindowParameter()->GetASCII(entryName(), currName.toUtf8());  //font name from cfg file

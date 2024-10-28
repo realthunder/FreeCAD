@@ -135,13 +135,14 @@ public:
 
   /** Initial auto save
    *
+   * @param defValue: default value
    * @param enable: enable auto save
    *
    * This is a convenience function that calls onRestore(), and then
    * setAutoSave(enable), and finally PrefParam::removeEntry() to detach auto
    * save setting from PrefParam::AutoSave() parameter.
    */
-  void initAutoSave(bool enable = true);
+  void initAutoSave(const QVariant &defValue = QVariant(), bool enable = true);
 
   template<class SignalT, class O>
   void autoSave(bool enable, O *o, SignalT signal, int delay=100) {
@@ -211,6 +212,7 @@ private:
 
 protected:
   bool m_Restored = false;
+  QVariant m_Default;
 };
 
 
@@ -283,9 +285,6 @@ protected:
   void restorePreferences() override;
   void savePreferences() override;
   void contextMenuEvent(QContextMenuEvent *event) override;
-
-private:
-  int m_Default;
 };
 
 /** The PrefDoubleSpinBox class.
@@ -313,8 +312,6 @@ protected:
   void savePreferences() override;
   void contextMenuEvent(QContextMenuEvent *event) override;
 
-private:
-  double m_Default;
 };
 
 /**
@@ -338,8 +335,6 @@ protected:
   void restorePreferences() override;
   void savePreferences() override;
 
-private:
-  QString m_Default;
 };
 
 /**
@@ -362,8 +357,6 @@ protected:
   void restorePreferences() override;
   void savePreferences() override;
 
-private:
-  QString m_Default;
 };
 
 /**
@@ -391,8 +384,6 @@ protected:
     void savePreferences() override;
     void focusOutEvent(QFocusEvent *) override;
 
-private:
-    QString m_Default;
 };
 
 /**
@@ -416,8 +407,6 @@ protected:
   void restorePreferences() override;
   void savePreferences() override;
 
-private:
-  QString m_Default;
 };
 
 /**
@@ -452,7 +441,6 @@ protected:
   virtual QMetaType::Type getParamType() const;
 
 private:
-  QVariant m_Default;
   int m_DefaultIndex;
   QString m_DefaultText;
 };
@@ -493,8 +481,6 @@ protected:
   void restorePreferences() override;
   void savePreferences() override;
 
-private:
-  bool m_Default;
 };
 
 /**
@@ -518,8 +504,6 @@ protected:
   void restorePreferences() override;
   void savePreferences() override;
 
-private:
-  bool m_Default;
 };
 
 /**
@@ -543,8 +527,6 @@ protected:
   void restorePreferences() override;
   void savePreferences() override;
 
-private:
-  int m_Default;
 };
 
 /**
@@ -568,8 +550,6 @@ protected:
   void restorePreferences() override;
   void savePreferences() override;
 
-private:
-  QColor m_Default;
 };
 
 /** The PrefUnitSpinBox class.
@@ -597,8 +577,6 @@ protected:
     void savePreferences() override;
     void contextMenuEvent(QContextMenuEvent *event) override;
 
-private:
-  double m_Default;
 };
 
 class PrefQuantitySpinBoxPrivate;
@@ -664,8 +642,6 @@ protected:
   void restorePreferences() override;
   void savePreferences() override;
 
-private:
-  QFont m_Default;
 };
 
 } // namespace Gui
