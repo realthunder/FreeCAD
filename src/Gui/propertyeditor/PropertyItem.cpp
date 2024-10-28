@@ -626,7 +626,9 @@ void PropertyItem::setPropertyName(const App::Property &prop) {
     if(!group)
         group = "Base";
     QString propName = QString::fromUtf8(name);
-    QString prefix = QString::fromUtf8(group) + QStringLiteral("_");;
+    QString prefix = QString::fromUtf8(group);
+    prefix.replace(QStringLiteral(" "), QString());
+    prefix += QStringLiteral("_");;
     if(propName.size() > prefix.size()) {
         if(propName.startsWith(prefix)) {
             // For property name with format <group_name>_<name>, it will be displayed as <name>

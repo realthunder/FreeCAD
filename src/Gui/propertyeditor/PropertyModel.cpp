@@ -230,6 +230,7 @@ QModelIndex PropertyModel::propertyIndexFromPath(const QStringList& path) const
 static void setPropertyItemName(PropertyItem *item, const char *propName, QString groupName) {
     QString name = QString::fromUtf8(propName);
     QString realName = name;
+    groupName.replace(QStringLiteral(" "), QString());
     QString prefix = groupName + QStringLiteral("_");;
     if(name.size() > prefix.size()) {
         if(name.startsWith(prefix)) {
