@@ -83,6 +83,7 @@
 #include <Base/UnitsApi.h>
 #include <Base/VectorPy.h>
 
+#include "Animation.h"
 #include "Annotation.h"
 #include "Application.h"
 #include "ComplexGeoData.h"
@@ -2258,6 +2259,8 @@ void Application::initTypes()
     App::LinkGroup                 ::init();
     App::LinkGroupPython           ::init();
     App::SavedView                 ::init();
+    App::KeyFrame                  ::init();
+    App::Animation                 ::init();
 
     // Expression classes
     App::Expression                ::init();

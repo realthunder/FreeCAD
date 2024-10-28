@@ -268,6 +268,10 @@ public:
         throw Base::NotImplementedError();
     }
 
+    virtual bool canInterpolate() const {
+        return false;
+    }
+
     /// Called when a child property has changed value
     virtual void hasSetChildValue(Property &) {}
     /// Called before a child property changing value

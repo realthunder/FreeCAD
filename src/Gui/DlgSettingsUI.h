@@ -31,10 +31,10 @@ import DlgSettingsUI
 DlgSettingsUI.declare_begin()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:391)
+// Auto generated code (Tools/params_utils.py:504)
 #include <Gui/PropertyPage.h>
 #include <Gui/PrefWidgets.h>
-// Auto generated code (Tools/params_utils.py:396)
+// Auto generated code (Tools/params_utils.py:511)
 class QLabel;
 class QGroupBox;
 
@@ -71,12 +71,12 @@ protected:
 
 private:
 
-    // Auto generated code (Tools/params_utils.py:327)
+    // Auto generated code (Tools/params_utils.py:422)
     QGroupBox * groupGeneral = nullptr;
     QLabel *labelTextCursorWidth = nullptr;
     Gui::PrefSpinBox *TextCursorWidth = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:327)
+    // Auto generated code (Tools/params_utils.py:422)
     QGroupBox * groupTreeview = nullptr;
     QLabel *labelItemBackground = nullptr;
     Gui::PrefColorButton *ItemBackground = nullptr;
@@ -89,7 +89,7 @@ private:
     Gui::PrefCheckBox *HideHeaderView = nullptr;
     Gui::PrefCheckBox *TreeToolTipIcon = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:327)
+    // Auto generated code (Tools/params_utils.py:422)
     QGroupBox * groupExpression = nullptr;
     Gui::PrefCheckBox *AutoHideEditorIcon = nullptr;
     QLabel *labelEditorTrigger = nullptr;
@@ -98,7 +98,7 @@ private:
     QLabel *labelEditDialogBGAlpha = nullptr;
     Gui::PrefSpinBox *EditDialogBGAlpha = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:327)
+    // Auto generated code (Tools/params_utils.py:422)
     QGroupBox * groupPiemenu = nullptr;
     QLabel *labelPieMenuIconSize = nullptr;
     Gui::PrefSpinBox *PieMenuIconSize = nullptr;
@@ -119,7 +119,7 @@ private:
     Gui::PrefComboBox *PieMenuAnimationCurve = nullptr;
     Gui::PrefCheckBox *PieMenuPopup = nullptr;
 
-    // Auto generated code (Tools/params_utils.py:327)
+    // Auto generated code (Tools/params_utils.py:422)
     QGroupBox * groupOverlay = nullptr;
     Gui::PrefCheckBox *DockOverlayHideTabBar = nullptr;
     Gui::PrefCheckBox *DockOverlayHidePropertyViewScrollBar = nullptr;
@@ -196,7 +196,7 @@ import DlgSettingsUI
 DlgSettingsUI.declare_end()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:441)
+// Auto generated code (Tools/params_utils.py:558)
 };
 } // namespace Dialog
 } // namespace Gui

@@ -305,6 +305,14 @@
         <file>image-open.svg</file>
         <file>image-plane.svg</file>
         <file>image-scaling.svg</file>
+        <file>Animation.svg</file>
+        <file>AnimationKeyFrame.svg</file>
+        <file>AnimationPlay.svg</file>
+        <file>AnimationStop.svg</file>
+        <file>AnimationRecord.svg</file>
+        <file>AnimationPause.svg</file>
+        <file>AnimationNext.svg</file>
+        <file>AnimationPrev.svg</file>
     </qresource>
     <!-- Demonstrating support for an embedded icon theme -->
     <!-- See also http://permalink.gmane.org/gmane.comp.lib.qt.general/26374 -->

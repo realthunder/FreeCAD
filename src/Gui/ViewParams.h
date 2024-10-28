@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:451)
+// Auto generated code (Gui/ViewParams.py:393)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -2007,9 +2007,7 @@ public:
     static const char *docToolTipDisable();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:457)
-    static const std::vector<QString> AnimationCurveTypes;
-
+    // Auto generated code (Gui/ViewParams.py:399)
     static void onViewParamChanged(const char *sReason);
 //[[[end]]]
 
@@ -2035,7 +2033,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:467)
+// Auto generated code (Gui/ViewParams.py:407)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

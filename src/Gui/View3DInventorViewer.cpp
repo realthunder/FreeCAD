@@ -148,6 +148,7 @@
 #include "BitmapFactory.h"
 #include "View3DInventorRiftViewer.h"
 #include "View3DViewerPy.h"
+#include "ViewProviderAnimation.h"
 
 #include "Inventor/SoFCRenderCacheManager.h"
 #include <Inventor/draggers/SoCenterballDragger.h>
@@ -3065,7 +3066,7 @@ void View3DInventorViewer::renderScene()
 #endif
 
     // Immediately reschedule to get continuous spin animation.
-    if (this->isAnimating()) {
+    if (AnimationManager::instance()->nextFrame(_pimpl->view) || this->isAnimating()) {
         this->getSoRenderManager()->scheduleRedraw();
     } else
         _pimpl->onRender();

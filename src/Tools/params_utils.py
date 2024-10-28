@@ -1196,6 +1196,22 @@ class ParamShortcutEdit(ParamProxy):
     WidgetSetter = "setDisplayText"
 
 
+class ParamAnimationCurve(ParamProxy):
+    WidgetType = 'Gui::PrefComboBox'
+
+    def widget_setter(self, _param):
+        return None
+
+    def init_widget(self, param, row, group_name):
+        super().init_widget(param, row, group_name)
+        cog.out(f'''
+    {auto_comment()}
+    for (int i=0; App::KeyFrame::EasingCurveTypes[i]; ++i)
+        {param.widget_name}->addItem(QString::fromUtf8(App::KeyFrame::EasingCurveTypes[i]));''')
+        cog.out(f'''
+    {param.widget_name}->setCurrentIndex({param.namespace}::{param.class_name}::default{param.name}());''')
+
+
 class Property:
     def __init__(self, name, property_type, doc, group=None, prop_flags=None, static=False):
         self.name = name

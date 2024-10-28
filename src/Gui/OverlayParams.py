@@ -31,71 +31,13 @@ import params_utils
 
 from params_utils import ParamBool, ParamInt, ParamString, ParamUInt, ParamHex, \
                          ParamFloat, ParamProxy, ParamLinePattern, ParamFile, \
-                         ParamComboBox, ParamColor, ParamSpinBox, auto_comment
+                         ParamComboBox, ParamColor, ParamSpinBox, \
+                         ParamAnimationCurve, auto_comment
 
 NameSpace = 'Gui'
 ClassName = 'OverlayParams'
 ParamPath = 'User parameter:BaseApp/Preferences/View'
 ClassDoc = 'Convenient class to obtain overlay widgets related parameters'
-
-AnimationCurveTypes = (
-    "Linear",
-    "InQuad",
-    "OutQuad",
-    "InOutQuad",
-    "OutInQuad",
-    "InCubic",
-    "OutCubic",
-    "InOutCubic",
-    "OutInCubic",
-    "InQuart",
-    "OutQuart",
-    "InOutQuart",
-    "OutInQuart",
-    "InQuint",
-    "OutQuint",
-    "InOutQuint",
-    "OutInQuint",
-    "InSine",
-    "OutSine",
-    "InOutSine",
-    "OutInSine",
-    "InExpo",
-    "OutExpo",
-    "InOutExpo",
-    "OutInExpo",
-    "InCirc",
-    "OutCirc",
-    "InOutCirc",
-    "OutInCirc",
-    "InElastic",
-    "OutElastic",
-    "InOutElastic",
-    "OutInElastic",
-    "InBack",
-    "OutBack",
-    "InOutBack",
-    "OutInBack",
-    "InBounce",
-    "OutBounce",
-    "InOutBounce",
-    "OutInBounce",
-)
-
-class ParamAnimationCurve(ParamProxy):
-    WidgetType = 'Gui::PrefComboBox'
-
-    def widget_setter(self, _param):
-        return None
-
-    def init_widget(self, param, row, group_name):
-        super().init_widget(param, row, group_name)
-        cog.out(f'''
-    {auto_comment()}
-    for (const auto &item : OverlayParams::AnimationCurveTypes)
-        {param.widget_name}->addItem(item);''')
-        cog.out(f'''
-    {param.widget_name}->setCurrentIndex({param.namespace}::{param.class_name}::default{param.name}());''')
 
 Params = [
     ParamInt('CornerNaviCube', 1, on_change=True),
@@ -157,23 +99,10 @@ def declare():
 ''')
 
     params_utils.declare_begin(sys.modules[__name__])
-    cog.out(f'''
-    {auto_comment()}
-    static const std::vector<QString> AnimationCurveTypes;
-''')
     params_utils.declare_end(sys.modules[__name__])
 
 def define():
     params_utils.define(sys.modules[__name__])
-    cog.out(f'''
-{auto_comment()}
-const std::vector<QString> OverlayParams::AnimationCurveTypes = {{''')
-    for item in AnimationCurveTypes:
-        cog.out(f'''
-    QStringLiteral("{item}"),''')
-    cog.out(f'''
-}};
-''')
 
 
 params_utils.init_params(Params, NameSpace, ClassName, ParamPath)

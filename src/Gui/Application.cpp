@@ -896,6 +896,19 @@ void Application::exportTo(const char* FileName, const char* DocName, const char
     }
 }
 
+namespace Gui {
+void CreateStdCommands();
+void CreateDocCommands();
+void CreateFeatCommands();
+void CreateMacroCommands();
+void CreateViewStdCommands();
+void CreateWindowStdCommands();
+void CreateStructureCommands();
+void CreateTestCommands();
+void CreateLinkCommands();
+void CreateAnimationCommands();
+}
+
 void Application::createStandardOperations()
 {
     // register the application Standard commands from CommandStd.cpp
@@ -908,6 +921,7 @@ void Application::createStandardOperations()
     Gui::CreateStructureCommands();
     Gui::CreateTestCommands();
     Gui::CreateLinkCommands();
+    Gui::CreateAnimationCommands();
 }
 
 void Application::slotNewDocument(const App::Document& Doc, bool isMainDoc)

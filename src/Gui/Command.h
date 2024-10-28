@@ -220,17 +220,6 @@ class SelectionSingleton;
 class MDIView;
 
 
-void CreateStdCommands();
-void CreateDocCommands();
-void CreateFeatCommands();
-void CreateMacroCommands();
-void CreateViewStdCommands();
-void CreateWindowStdCommands();
-void CreateStructureCommands();
-void CreateTestCommands();
-void CreateLinkCommands();
-
-
 /** The CommandBase class
  * This lightweight class is the base class of all commands in FreeCAD. It represents the link between the FreeCAD
  * command framework and the QAction world of Qt.

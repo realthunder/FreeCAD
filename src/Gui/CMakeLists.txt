@@ -397,6 +397,7 @@ SET(Command_CPP_SRCS
     CommandView.cpp
     CommandStructure.cpp
     CommandLink.cpp
+    CommandAnimation.cpp
     CommandPyImp.cpp
     ShortcutManager.cpp
     CommandCompleter.cpp
@@ -949,6 +950,7 @@ SET(Viewprovider_CPP_SRCS
     AxisOrigin.cpp
     ViewProviderSavedView.cpp
     ViewProviderDatum.cpp
+    ViewProviderAnimation.cpp
 )
 SET(Viewprovider_SRCS
     ${Viewprovider_CPP_SRCS}
@@ -984,6 +986,7 @@ SET(Viewprovider_SRCS
     ViewProviderDatum.h
     AxisOrigin.h
     ViewProviderSavedView.h
+    ViewProviderAnimation.h
 )
 SOURCE_GROUP("View3D\\Viewprovider" FILES ${Viewprovider_SRCS})
 

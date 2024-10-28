@@ -181,6 +181,7 @@ SET(Document_CPP_SRCS
     LinkBaseExtensionPyImp.cpp
     ExpressionPyImp.cpp
     SavedView.cpp
+    Animation.cpp
     License.h
 )
 
@@ -228,6 +229,7 @@ SET(Document_HPP_SRCS
     TextDocument.h
     Link.h
     SavedView.h
+    Animation.h
 )
 SET(Document_SRCS
     ${Document_CPP_SRCS}

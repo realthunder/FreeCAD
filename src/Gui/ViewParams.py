@@ -31,7 +31,8 @@ import params_utils
 
 from params_utils import ParamBool, ParamInt, ParamString, ParamUInt, ParamHex, \
                          ParamFloat, ParamProxy, ParamLinePattern, ParamFile, \
-                         ParamComboBox, ParamColor, ParamSpinBox, auto_comment
+                         ParamAnimationCurve, ParamComboBox, ParamColor, \
+                         ParamSpinBox, auto_comment
 
 NameSpace = 'Gui'
 ClassName = 'ViewParams'
@@ -77,65 +78,6 @@ DrawStyleSync = (
     ("Apply to active document", "Auto apply changed setting to all views of the current active document"),
     ("Apply to all open documents", "Auto apply changed setting to all opened documents"),
 )
-
-AnimationCurveTypes = (
-    "Linear",
-    "InQuad",
-    "OutQuad",
-    "InOutQuad",
-    "OutInQuad",
-    "InCubic",
-    "OutCubic",
-    "InOutCubic",
-    "OutInCubic",
-    "InQuart",
-    "OutQuart",
-    "InOutQuart",
-    "OutInQuart",
-    "InQuint",
-    "OutQuint",
-    "InOutQuint",
-    "OutInQuint",
-    "InSine",
-    "OutSine",
-    "InOutSine",
-    "OutInSine",
-    "InExpo",
-    "OutExpo",
-    "InOutExpo",
-    "OutInExpo",
-    "InCirc",
-    "OutCirc",
-    "InOutCirc",
-    "OutInCirc",
-    "InElastic",
-    "OutElastic",
-    "InOutElastic",
-    "OutInElastic",
-    "InBack",
-    "OutBack",
-    "InOutBack",
-    "OutInBack",
-    "InBounce",
-    "OutBounce",
-    "InOutBounce",
-    "OutInBounce",
-)
-
-class ParamAnimationCurve(ParamProxy):
-    WidgetType = 'Gui::PrefComboBox'
-
-    def widget_setter(self, _param):
-        return None
-
-    def init_widget(self, param, row, group_name):
-        super().init_widget(param, row, group_name)
-        cog.out(f'''
-    {auto_comment()}
-    for (const auto &item : ViewParams::AnimationCurveTypes)
-        {param.widget_name}->addItem(item);''')
-        cog.out(f'''
-    {param.widget_name}->setCurrentIndex({param.namespace}::{param.class_name}::default{param.name}());''')
 
 Params = [
     ParamBool('UseNewSelection', True),
@@ -455,8 +397,6 @@ def declare_begin():
     params_utils.declare_begin(sys.modules[__name__])
     cog.out(f'''
     {auto_comment()}
-    static const std::vector<QString> AnimationCurveTypes;
-
     static void onViewParamChanged(const char *sReason);
 ''')
 
@@ -479,15 +419,8 @@ namespace {NameSpace} {{
 
 def define():
     params_utils.define(sys.modules[__name__])
-    cog.out(f'''
-{auto_comment()}
-const std::vector<QString> ViewParams::AnimationCurveTypes = {{''')
-    for item in AnimationCurveTypes:
-        cog.out(f'''
-    QStringLiteral("{item}"),''')
-    cog.out(f'''
-}};
 
+    cog.out(f'''
 {auto_comment()}
 static const char *DrawStyleNames[] = {{''')
     for item in DrawStyles:

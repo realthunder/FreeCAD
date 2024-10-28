@@ -83,6 +83,9 @@ public:
     Property *copyBeforeChange() const override {return Copy();}
 
     void interpolate(const Property &from, const Property &to, float t) override;
+    bool canInterpolate() const override {
+        return true;
+    }
 
 protected:
     long _lValue;
@@ -370,6 +373,9 @@ public:
     void Paste(const Property &from) override;
 
     void interpolateValue(int index, const long &from, const long &to, float t) override;
+    bool canInterpolate() const override {
+        return true;
+    }
 
 protected:
     long getPyValue(PyObject *item) const override;
@@ -535,6 +541,9 @@ public:
     Property *copyBeforeChange() const override {return Copy();}
 
     void interpolate(const Property &from, const Property &to, float t) override;
+    bool canInterpolate() const override {
+        return true;
+    }
 
 protected:
     double _dValue;
@@ -677,6 +686,9 @@ public:
     void Paste(const Property &from) override;
 
     void interpolateValue(int index, const double &from, const double &to, float t) override;
+    bool canInterpolate() const override {
+        return true;
+    }
 
 protected:
     double getPyValue(PyObject *item) const override;
@@ -702,6 +714,9 @@ public:
     void Paste(const Property &from) override;
 
     void interpolateValue(int index, const float &from, const float &to, float t) override;
+    bool canInterpolate() const override {
+        return true;
+    }
 
 protected:
     float getPyValue(PyObject *item) const override;
@@ -992,6 +1007,9 @@ public:
     unsigned int getMemSize () const override{return sizeof(Color);}
     
     void interpolate(const Property &from, const Property &to, float t) override;
+    bool canInterpolate() const override {
+        return true;
+    }
 
 private:
     Color _cCol;
@@ -1021,6 +1039,9 @@ public:
     void Paste(const Property &from) override;
 
     void interpolateValue(int index, const Color &from, const Color &to, float t) override;
+    bool canInterpolate() const override {
+        return true;
+    }
 
 protected:
     Color getPyValue(PyObject *) const override;
