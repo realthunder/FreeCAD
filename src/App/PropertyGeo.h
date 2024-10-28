@@ -114,6 +114,8 @@ public:
 
     Property *copyBeforeChange() const override {return Copy();}
 
+    void interpolate(const Property &from, const Property &to, float t) override;
+
 private:
     Base::Vector3d _cVec;
 };
@@ -195,6 +197,8 @@ public:
     const char* getEditorName() const override {
         return "Gui::PropertyEditor::PropertyDirectionItem";
     }
+
+    void interpolate(const Property &from, const Property &to, float t) override;
 };
 
 /// Double precision vector list
@@ -230,6 +234,8 @@ public:
         return "Gui::PropertyEditor::PropertyVectorListItem";
     }
 
+    void interpolateValue(int index, const Base::Vector3d &from, const Base::Vector3d &to, float t) override;
+
 protected:
     Base::Vector3d getPyValue(PyObject *) const override;
 
@@ -254,6 +260,8 @@ public:
     void Paste(const Property &from) override;
 
     unsigned int getMemSize (void) const override;
+
+    void interpolateValue(int index, const Base::Vector3f &from, const Base::Vector3f &to, float t) override;
 
 protected:
     Base::Vector3f getPyValue(PyObject *) const override;
@@ -398,6 +406,8 @@ public:
     Property *copyBeforeChange() const override {return Copy();}
     static const Placement Null;
 
+    void interpolate(const Property &from, const Property &to, float t) override;
+
 private:
     Base::Placement _cPos;
 };
@@ -450,6 +460,8 @@ public:
 
     unsigned int getMemSize (void) const override;
 
+    void interpolateValue(int index, const Base::Placement &from, const Base::Placement &to, float t) override;
+    
 protected:
     Base::Placement getPyValue(PyObject *) const override;
 
@@ -560,6 +572,7 @@ public:
     }
     Property *copyBeforeChange() const override {return Copy();}
 
+    void interpolate(const Property &from, const Property &to, float t) override;
 
 private:
     Base::Rotation _rot;
