@@ -27,6 +27,9 @@
 
 #include <Mod/Part/App/TopoShapePy.h>
 
+namespace App {
+class DocumentObjectT;
+}
 
 namespace Py {
     using TopoShape = ExtensionObject<Part::TopoShapePy>;
@@ -37,8 +40,8 @@ namespace Py {
 namespace Part {
     PartExport Py::Object shape2pyshape(const TopoShape &shape);
     PartExport Py::Object shape2pyshape(const TopoDS_Shape &shape);
-    PartExport void getPyShapes(PyObject *obj, std::vector<TopoShape> &shapes);
-    PartExport std::vector<TopoShape> getPyShapes(PyObject *obj);
+    PartExport void getPyShapes(PyObject *obj, std::vector<TopoShape> &shapes, std::vector<App::DocumentObjectT> *objs = nullptr);
+    PartExport std::vector<TopoShape> getPyShapes(PyObject *obj, std::vector<App::DocumentObjectT> *objs = nullptr);
     PartExport int initOCCTExtension();
 }
 

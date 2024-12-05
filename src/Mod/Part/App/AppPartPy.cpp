@@ -83,6 +83,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
+#include <App/DocumentObserver.h>
 #include <App/ExpressionParser.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/Console.h>
@@ -134,16 +135,35 @@ extern const char* BRepBuilderAPI_FaceErrorText(BRepBuilderAPI_FaceError fe);
 namespace Part
 {
 
-PartExport void getPyShapes(PyObject *obj, std::vector<TopoShape> &shapes) {
+PartExport void getPyShapes(PyObject *obj, std::vector<TopoShape> &shapes, std::vector<App::DocumentObjectT> *objs) {
     if(!obj)
         return;
-    if(PyObject_TypeCheck(obj,&Part::TopoShapePy::Type))
+    if (objs && PyObject_TypeCheck(obj, &App::DocumentObjectPy::Type)) {
+        App::DocumentObject *docObj = static_cast<App::DocumentObjectPy*>(obj)->getDocumentObjectPtr();
+        objs->emplace_back(docObj);
+        shapes.push_back(Part::Feature::getTopoShape(docObj));
+    }
+    else if(PyObject_TypeCheck(obj,&Part::TopoShapePy::Type)) {
         shapes.push_back(*static_cast<TopoShapePy*>(obj)->getTopoShapePtr());
-    else if (PyObject_TypeCheck(obj, &GeometryPy::Type))
+        if (objs)
+            objs->emplace_back();
+    }
+    else if (PyObject_TypeCheck(obj, &GeometryPy::Type)) {
         shapes.emplace_back(static_cast<GeometryPy*>(obj)->getGeometryPtr()->toShape());
+        if (objs)
+            objs->emplace_back();
+    }
     else if(PySequence_Check(obj)) {
         Py::Sequence list(obj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
+            if (objs && PyObject_TypeCheck((*it).ptr(), &App::DocumentObjectPy::Type)) {
+                App::DocumentObject *docObj = static_cast<App::DocumentObjectPy*>((*it).ptr())->getDocumentObjectPtr();
+                objs->emplace_back(docObj);
+                shapes.push_back(Part::Feature::getTopoShape(docObj));
+                continue;
+            }
+            if (objs)
+                objs->emplace_back();
             if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type)))
                 shapes.push_back(*static_cast<TopoShapePy*>((*it).ptr())->getTopoShapePtr());
             else if (PyObject_TypeCheck((*it).ptr(), &GeometryPy::Type))
@@ -156,9 +176,9 @@ PartExport void getPyShapes(PyObject *obj, std::vector<TopoShape> &shapes) {
         throw Py::TypeError("expect shape or sequence of shapes");
 }
 
-PartExport std::vector<TopoShape> getPyShapes(PyObject *obj) {
+PartExport std::vector<TopoShape> getPyShapes(PyObject *obj, std::vector<App::DocumentObjectT> *objs) {
     std::vector<TopoShape> ret;
-    getPyShapes(obj,ret);
+    getPyShapes(obj,ret,objs);
     return ret;
 }
 
