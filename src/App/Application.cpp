@@ -35,6 +35,7 @@
 # endif
 # include <boost/program_options.hpp>
 # include <boost/date_time/posix_time/posix_time.hpp>
+# include <boost/scope_exit.hpp>
 #endif
 
 #ifdef FC_OS_WIN32
@@ -2536,11 +2537,6 @@ void processProgramOptions(const variables_map& vm, std::map<std::string,std::st
         throw Base::ProgramInformation(str.str());
     }
 
-    if (vm.count("console")) {
-        mConfig["Console"] = "1";
-        mConfig["RunMode"] = "Cmd";
-    }
-
     if (vm.count("module-path")) {
         vector<string> Mods = vm["module-path"].as< vector<string> >();
         string temp;
@@ -2698,7 +2694,17 @@ void Application::initConfig(int argc, char ** argv)
     }
 
     variables_map vm;
-    parseProgramOptions(argc, argv, mConfig["ExeName"], vm);
+    {
+        BOOST_SCOPE_EXIT_ALL(&) {
+            // console-mode needs to be set (if possible) also in case parseProgramOptions
+            // throws, as it's needed when reporting such exceptions
+            if (vm.count("console")) {
+                mConfig["Console"] = "1";
+                mConfig["RunMode"] = "Cmd";
+            }
+        };
+        parseProgramOptions(argc, argv, mConfig["ExeName"], vm);
+    }
 
     if (vm.count("keep-deprecated-paths")) {
         mConfig["KeepDeprecatedPaths"] = "1";

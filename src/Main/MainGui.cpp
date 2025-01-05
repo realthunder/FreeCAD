@@ -101,6 +101,35 @@ private:
     FILE* file;
 };
 
+static void DisplayInfo(const QString& msg, bool preformatted = true)
+{
+    if (App::Application::Config()["Console"] == "1") {
+        std::cout << msg.toStdString();
+        return;
+    }
+
+    QString appName = QString::fromStdString(App::Application::Config()["ExeName"]);
+    QMessageBox msgBox;
+    msgBox.setIcon(QMessageBox::Information);
+    msgBox.setWindowTitle(appName);
+    msgBox.setDetailedText(msg);
+    msgBox.setText(preformatted ? QStringLiteral("<pre>%1</pre>").arg(msg) : msg);
+    msgBox.exec();
+}
+
+static void DisplayCritical(const QString& msg, bool preformatted = true)
+{
+    if (App::Application::Config()["Console"] == "1") {
+        std::cerr << msg.toStdString();
+        return;
+    }
+
+    QString appName = QString::fromStdString(App::Application::Config()["ExeName"]);
+    QString title = QObject::tr("Initialization of %1 failed").arg(appName);
+    QString text = preformatted ? QStringLiteral("<pre>%1</pre>").arg(msg) : msg;
+    QMessageBox::critical(nullptr, title, text);
+}
+
 int main( int argc, char ** argv )
 {
 #if defined (FC_OS_LINUX) || defined(FC_OS_BSD)
@@ -207,25 +236,15 @@ int main( int argc, char ** argv )
             Base::Interpreter().replaceStdOutput();
     }
     catch (const Base::UnknownProgramOption& e) {
-        QApplication app(argc,argv);
-        QString appName = QString::fromUtf8(App::Application::Config()["ExeName"].c_str());
+        QApplication app(argc, argv);
         QString msg = QString::fromUtf8(e.what());
-        QString s = QStringLiteral("<pre>") + msg + QStringLiteral("</pre>");
-        QMessageBox::critical(nullptr, appName, s);
+        DisplayCritical(msg);
         exit(1);
     }
     catch (const Base::ProgramInformation& e) {
-        QApplication app(argc,argv);
-        QString appName = QString::fromUtf8(App::Application::Config()["ExeName"].c_str());
+        QApplication app(argc, argv);
         QString msg = QString::fromUtf8(e.what());
-        QString s = QStringLiteral("<pre>") + msg + QStringLiteral("</pre>");
-
-        QMessageBox msgBox;
-        msgBox.setIcon(QMessageBox::Information);
-        msgBox.setWindowTitle(appName);
-        msgBox.setDetailedText(msg);
-        msgBox.setText(s);
-        msgBox.exec();
+        DisplayInfo(msg);
         exit(0);
     }
     catch (const Base::Exception& e) {
@@ -248,16 +267,18 @@ int main( int argc, char ** argv )
             msg += QObject::tr("\nPlease contact the application's support team for more information.\n\n");
         }
 
-        QMessageBox::critical(nullptr, QObject::tr("Initialization of %1 failed").arg(appName), msg);
+        DisplayCritical(msg, false);
         exit(100);
     }
     catch (...) {
         // Popup an own dialog box instead of that one of Windows
-        QApplication app(argc,argv);
+        QApplication app(argc, argv);
         QString appName = QString::fromUtf8(App::Application::Config()["ExeName"].c_str());
-        QString msg = QObject::tr("Unknown runtime error occurred while initializing %1.\n\n"
-                                  "Please contact the application's support team for more information.\n\n").arg(appName);
-        QMessageBox::critical(nullptr, QObject::tr("Initialization of %1 failed").arg(appName), msg);
+        QString msg =
+            QObject::tr("Unknown runtime error occurred while initializing %1.\n\n"
+                        "Please contact the application's support team for more information.\n\n")
+                .arg(appName);
+        DisplayCritical(msg, false);
         exit(101);
     }
 
