@@ -173,7 +173,7 @@ def _export(exportSet, filename, colors):
 
     param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Arch")
     # DAE and OBJ format share the same parameters
-    dosegment = param.GetBool("ColladaExportSegments", False)
+    dosegment = param.GetBool("ColladaExportFaceColor", True)
 
     exportList = list(exportSet)
     objectslist = Draft.get_group_contents(exportList, walls=True,
