@@ -469,45 +469,77 @@ def insert(filename,docname):
 def makeMesh(doc,activeobject,verts,facets,material,colortable):
     mfacets = []
     if facets:
-        for facet in facets:
-            if len(facet) > 3:
-                vecs = [FreeCAD.Vector(*verts[i-1]) for i in facet]
-                vecs.append(vecs[0])
-                pol = Part.makePolygon(vecs)
-                try:
-                    face = Part.Face(pol)
-                except Part.OCCError:
-                    print("Skipping non-planar polygon:",vecs)
-                else:
-                    tris = face.tessellate(1)
-                    for tri in tris[1]:
-                        mfacets.append([tris[0][i] for i in tri])
-            else:
+        offset = 0
+        midx = 0
+        for n,facet in enumerate(facets):
+            if len(facet) <= 3:
                 mfacets.append([verts[i-1] for i in facet])
+                continue
+            # polygon facet will be triangulated
+            extra = len(mfacets)
+            vecs = [FreeCAD.Vector(*verts[i-1]) for i in facet]
+            vecs.append(vecs[0])
+            pol = Part.makePolygon(vecs)
+            try:
+                face = Part.Face(pol)
+                tris = face.tessellate(1)
+            except Exception:
+                FreeCAD.Console.PrintWarning(f"Failed to triagulate polygon facet: {vecs}")
+                continue
+            for tri in tris[1]:
+                mfacets.append([tris[0][i] for i in tri])
+            extra = len(mfacets) - extra
+            if extra > 1 and len(material) > 1:
+                # One polygon facet is expaneded into multiple trianglets,
+                # so we must adjust material indices
+                base = n + offset
+                for k in range(midx, len(material)):
+                    _, begin, end = material[k]
+                    if end > base:
+                        if begin <= base:
+                            midx = k
+                        else:
+                            begin += extra
+                        end += extra
+                        material[k][1] = begin
+                        material[k][2] = end
+                offset += extra
     if mfacets:
         mobj = doc.addObject("Mesh::Feature",'Mesh')
         mobj.Label = activeobject
-        mesh = Mesh.Mesh(mfacets)
         segments = False
         if len(material) > 1:
-            err = None
+            # OCC may skip some input facets that are considered invalid. So the
+            # facet indices may not be in sync with those in 'material'. So we
+            # add facets in batches according to 'material'.
+            mesh = Mesh.Mesh()
+            current = 0
             for name, begin, end in material:
+                if current < begin:
+                    FreeCAD.Console.PrintWarning(
+                            f"Facets has no material: {current, begin}\n")
+                    mesh.addFacets(mfacets[current:begin])
+                    current = begin
                 if begin == end:
                     continue
                 try:
-                    mesh.addSegment(range(begin, end), colortable[name][0])
+                    s = mesh.CountFacets
+                    current = end
+                    mesh.addFacets(mfacets[begin:end])
+                    mesh.addSegment(range(s, mesh.CountFacets), colortable[name][0])
                     segments = True
                 except Exception as e:
-                    err = str(e)
-            if err:
-                FreeCAD.Console.PrintError("Failed to set material: %s\n" % err)
+                    FreeCAD.Console.PrintError(
+                            f"Failed to set material for {name}: {str(e)}\n")
 
-        elif material and FreeCAD.GuiUp:
-            mname = material[0][0]
-            if mname in colortable:
-                mobj.ViewObject.ShapeColor = colortable[mname][0]
-                if colortable[mname][1] != None:
-                    mobj.ViewObject.Transparency = colortable[mname][1]
+        else:
+            mesh = Mesh.Mesh(mfacets)
+            if material and FreeCAD.GuiUp:
+                mname = material[0][0]
+                if mname in colortable:
+                    mobj.ViewObject.ShapeColor = colortable[mname][0]
+                    if colortable[mname][1] != None:
+                        mobj.ViewObject.Transparency = colortable[mname][1]
 
         mobj.Mesh = mesh
         if segments and FreeCAD.GuiUp:
