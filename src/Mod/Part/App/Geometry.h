@@ -194,6 +194,7 @@ public:
      * \return a B-spline curve
      */
     GeomBSplineCurve* toBSpline(double first, double last) const;
+    static GeomBSplineCurve* toBSpline(const Handle(Geom_Curve) &c, double first, double last, double tol=0.0);
     /*!
       The default implementation does the same as \ref toBSpline.
       In sub-classes this can be reimplemented to create a real

@@ -790,6 +790,8 @@ public:  // geometry extension functionalities for single element sketch object 
 
 protected:
 
+    bool simplifyBSpline(Part::GeomBSplineCurve *bspline, const std::string &key);
+
     // Only the first flag is toggled, the rest of the flags is set or cleared following the first flag.
     int toggleExternalGeometryFlag(const std::vector<int> &geoIds,
                                    const std::vector<ExternalGeometryExtension::Flag> &flags);
