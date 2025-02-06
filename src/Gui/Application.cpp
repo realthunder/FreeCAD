@@ -858,14 +858,15 @@ void Application::exportTo(const char* FileName, const char* DocName, const char
                 if (unique_objs.insert(*it).second)
                     str << "    __objs__.append(" << (*it)->getFullName(true) << ")\n";
             }
-            str << "if hasattr(" << Module << ", \"exportOptions\"):\n"
-                << "    options = " << Module << ".exportOptions(u\"" << unicodepath << "\")\n"
-                << "    " << Module << ".export(__objs__, u\"" << unicodepath << "\", options)\n"
-                << "else:\n"
-                << "    " << Module << ".export(__objs__, u\"" << unicodepath << "\")\n";
+            str << "    if hasattr(" << Module << ", \"exportOptions\"):\n"
+                << "        options = " << Module << ".exportOptions(u\"" << unicodepath << "\")\n"
+                << "        " << Module << ".export(__objs__, u\"" << unicodepath << "\", options)\n"
+                << "    else:\n"
+                << "        " << Module << ".export(__objs__, u\"" << unicodepath << "\")\n";
 
             std::string code = str.str();
             // the original file name is required
+
             Gui::Command::runCommand(Gui::Command::App, code.c_str());
 
             auto parameterGroup = App::GetApplication().GetParameterGroupByPath(
