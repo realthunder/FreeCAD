@@ -299,10 +299,10 @@ Note that the section filling function when using clip plane only works
 for 'Solid' shape type.</string>
           </property>
           <property name="prefPath" stdset="0">
-           <string>Mod/Mesh</string>
+           <cstring>Mod/Mesh</cstring>
           </property>
           <property name="prefEntry" stdset="0">
-           <string>DefaultShapeType</string>
+           <cstring>DefaultShapeType</cstring>
           </property>
           <item>
            <property name="text">

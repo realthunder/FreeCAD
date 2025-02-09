@@ -213,6 +213,14 @@ def _param_observer_start_view(param_grp = App.ParamGet("User parameter:BaseApp/
     param_grp.AttachManager(ParamObserverView())
 
 
+def _param_get_cstring(elem, attr):
+    res = elem.find('cstring')
+    if res is None:
+        App.Console.PrintWarning(f'Invalid {attr}:\n{ET.tostring(elem, encoding="unicode")}\n')
+        return elem.find("string").text
+    else:
+        return res.text
+
 def _param_from_PrefCheckBox(widget):
     value = False
     for elem in list(widget):
@@ -221,9 +229,9 @@ def _param_from_PrefCheckBox(widget):
             if att_name == "checked":  # Can be missing.
                 value = elem.find("bool").text == "true"
             elif att_name == "prefEntry":
-                entry = elem.find("cstring").text
+                entry = _param_get_cstring(elem, att_name)
             elif att_name == "prefPath":
-                path = elem.find("cstring").text
+                path = _param_get_cstring(elem, att_name)
     return path, entry, value
 
 
@@ -239,9 +247,9 @@ def _param_from_PrefComboBox(widget):
             if att_name == "currentIndex":  # Can be missing.
                 value = int(elem.find("number").text)
             elif att_name == "prefEntry":
-                entry = elem.find("cstring").text
+                entry = _param_get_cstring(elem, att_name)
             elif att_name == "prefPath":
-                path = elem.find("cstring").text
+                path = _param_get_cstring(elem, att_name)
     return path, entry, value
 
 
@@ -253,9 +261,9 @@ def _param_from_PrefSpinBox(widget):
             if att_name == "value":  # Can be missing.
                 value = int(elem.find("number").text)
             elif att_name == "prefEntry":
-                entry = elem.find("cstring").text
+                entry = _param_get_cstring(elem, att_name)
             elif att_name == "prefPath":
-                path = elem.find("cstring").text
+                path = _param_get_cstring(elem, att_name)
     return path, entry, value
 
 
@@ -267,9 +275,9 @@ def _param_from_PrefDoubleSpinBox(widget):
             if att_name == "value":  # Can be missing.
                 value = float(elem.find("double").text)
             elif att_name == "prefEntry":
-                entry = elem.find("cstring").text
+                entry = _param_get_cstring(elem, att_name)
             elif att_name == "prefPath":
-                path = elem.find("cstring").text
+                path = _param_get_cstring(elem, att_name)
     return path, entry, value
 
 
@@ -281,9 +289,9 @@ def _param_from_PrefUnitSpinBox(widget):
             if att_name == "rawValue":  # Can be missing.
                 value = float(elem.find("double").text)
             elif att_name == "prefEntry":
-                entry = elem.find("cstring").text
+                entry = _param_get_cstring(elem, att_name)
             elif att_name == "prefPath":
-                path = elem.find("cstring").text
+                path = _param_get_cstring(elem, att_name)
     return path, entry, value
 
 
@@ -297,9 +305,9 @@ def _param_from_PrefQuantitySpinBox(widget):
             elif att_name == "unit":
                 unit = elem.find("string").text
             elif att_name == "prefEntry":
-                entry = elem.find("cstring").text
+                entry = _param_get_cstring(elem, att_name)
             elif att_name == "prefPath":
-                path = elem.find("cstring").text
+                path = _param_get_cstring(elem, att_name)
     value = value + " " + unit
     return path, entry, value
 
@@ -314,9 +322,9 @@ def _param_from_PrefColorButton(widget):
                 g = int(sub.find("green").text)
                 b = int(sub.find("blue").text)
             elif att_name == "prefEntry":
-                entry = elem.find("cstring").text
+                entry = _param_get_cstring(elem, att_name)
             elif att_name == "prefPath":
-                path = elem.find("cstring").text
+                path = _param_get_cstring(elem, att_name)
     value = (r << 24) + (g << 16) + (b << 8) + 255
     return path, entry, value
 
@@ -329,9 +337,9 @@ def _param_from_PrefLineEdit(widget):
             if att_name == "text":                # Can be missing.
                 value = elem.find("string").text  # If text is missing value will be None here.
             elif att_name == "prefEntry":
-                entry = elem.find("cstring").text
+                entry = _param_get_cstring(elem, att_name)
             elif att_name == "prefPath":
-                path = elem.find("cstring").text
+                path = _param_get_cstring(elem, att_name)
     if value is None:
         value = ""
     return path, entry, value
@@ -342,9 +350,9 @@ def _param_from_PrefFileChooser(widget):
         if "name" in elem.keys():
             att_name = elem.attrib["name"]
             if att_name == "prefEntry":
-                entry = elem.find("cstring").text
+                entry = _param_get_cstring(elem, att_name)
             elif att_name == "prefPath":
-                path = elem.find("cstring").text
+                path = _param_get_cstring(elem, att_name)
     return path, entry, ""
 
 
@@ -470,36 +478,40 @@ def _get_param_dictionary():
                 path = None
                 att_class = widget.attrib["class"]
 
-                if att_class == "Gui::PrefCheckBox":
-                    path, entry, value = _param_from_PrefCheckBox(widget)
-                    typ = "bool"
-                elif att_class == "Gui::PrefRadioButton":
-                    path, entry, value = _param_from_PrefRadioButton(widget)
-                    typ = "bool"
-                elif att_class == "Gui::PrefComboBox":
-                    path, entry, value = _param_from_PrefComboBox(widget)
-                    typ = "int"
-                elif att_class == "Gui::PrefSpinBox":
-                    path, entry, value = _param_from_PrefSpinBox(widget)
-                    typ = "int"
-                elif att_class == "Gui::PrefDoubleSpinBox":
-                    path, entry, value = _param_from_PrefDoubleSpinBox(widget)
-                    typ = "float"
-                elif att_class == "Gui::PrefUnitSpinBox":
-                    path, entry, value = _param_from_PrefUnitSpinBox(widget)
-                    typ = "float"
-                elif att_class == "Gui::PrefQuantitySpinBox":
-                    path, entry, value = _param_from_PrefQuantitySpinBox(widget)
-                    typ = "string"
-                elif att_class == "Gui::PrefColorButton":
-                    path, entry, value = _param_from_PrefColorButton(widget)
-                    typ = "unsigned"
-                elif att_class == "Gui::PrefLineEdit":
-                    path, entry, value = _param_from_PrefLineEdit(widget)
-                    typ = "string"
-                elif att_class == "Gui::PrefFileChooser":
-                    path, entry, value = _param_from_PrefFileChooser(widget)
-                    typ = "string"
+                try:
+                    if att_class == "Gui::PrefCheckBox":
+                        path, entry, value = _param_from_PrefCheckBox(widget)
+                        typ = "bool"
+                    elif att_class == "Gui::PrefRadioButton":
+                        path, entry, value = _param_from_PrefRadioButton(widget)
+                        typ = "bool"
+                    elif att_class == "Gui::PrefComboBox":
+                        path, entry, value = _param_from_PrefComboBox(widget)
+                        typ = "int"
+                    elif att_class == "Gui::PrefSpinBox":
+                        path, entry, value = _param_from_PrefSpinBox(widget)
+                        typ = "int"
+                    elif att_class == "Gui::PrefDoubleSpinBox":
+                        path, entry, value = _param_from_PrefDoubleSpinBox(widget)
+                        typ = "float"
+                    elif att_class == "Gui::PrefUnitSpinBox":
+                        path, entry, value = _param_from_PrefUnitSpinBox(widget)
+                        typ = "float"
+                    elif att_class == "Gui::PrefQuantitySpinBox":
+                        path, entry, value = _param_from_PrefQuantitySpinBox(widget)
+                        typ = "string"
+                    elif att_class == "Gui::PrefColorButton":
+                        path, entry, value = _param_from_PrefColorButton(widget)
+                        typ = "unsigned"
+                    elif att_class == "Gui::PrefLineEdit":
+                        path, entry, value = _param_from_PrefLineEdit(widget)
+                        typ = "string"
+                    elif att_class == "Gui::PrefFileChooser":
+                        path, entry, value = _param_from_PrefFileChooser(widget)
+                        typ = "string"
+                except Exception:
+                    App.Console.PrintError(f'Failed to get parameter {fnm}\n'
+                                           f'{ET.tostring(widget, encoding="unicode")}\n')
 
                 if path is not None:
                     if path in param_dict:

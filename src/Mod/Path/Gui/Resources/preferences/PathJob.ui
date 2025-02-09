@@ -312,10 +312,10 @@ See the file save policy below on how to deal with name conflicts.</string>
              <string>Select one of the post processors as the default.</string>
             </property>
             <property name="prefEntry" stdset="0">
-             <string>DefaultPostProcessor</string>
+             <cstring>DefaultPostProcessor</cstring>
             </property>
             <property name="prefPath" stdset="0">
-             <string>Mod/Path</string>
+             <cstring>Mod/Path</cstring>
             </property>
            </widget>
           </item>

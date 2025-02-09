@@ -122,7 +122,7 @@ Only supported when using DAE format.</string>
          <cstring>Mod/Arch</cstring>
         </property>
         <property name="prefEntry" stdset="0">
-         <string>ColladaExportFaceColor</string>
+         <cstring>ColladaExportFaceColor</cstring>
         </property>
        </widget>
       </item>
