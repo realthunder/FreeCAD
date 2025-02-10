@@ -1811,10 +1811,6 @@ bool SoFCCSysDragger::getMovement(Base::Placement &freshPlacement, bool clear)
   if (numberOfFieldChanged == 0)
     return false;
 
-  // This function is meant to be called in drag finish callback, so it expects
-  // to have only one dragger field changing
-  assert(numberOfFieldChanged == 1);
-
   //helper lambdas.
   auto getVectorX = [&pMatrix]() {return Base::Vector3d(pMatrix[0], pMatrix[4], pMatrix[8]);};
   auto getVectorY = [&pMatrix]() {return Base::Vector3d(pMatrix[1], pMatrix[5], pMatrix[9]);};
@@ -1826,31 +1822,31 @@ bool SoFCCSysDragger::getMovement(Base::Placement &freshPlacement, bool clear)
     movementVector *= (tCountX * translationIncrement);
     freshPlacement.move(movementVector);
   }
-  else if (tCountY)
+  if (tCountY)
   {
     Base::Vector3d movementVector(getVectorY());
     movementVector *= (tCountY * translationIncrement);
     freshPlacement.move(movementVector);
   }
-  else if (tCountZ)
+  if (tCountZ)
   {
     Base::Vector3d movementVector(getVectorZ());
     movementVector *= (tCountZ * translationIncrement);
     freshPlacement.move(movementVector);
   }
-  else if (rCountX)
+  if (rCountX)
   {
     Base::Vector3d rotationVector(getVectorX());
     Base::Rotation rotation(rotationVector, rCountX * rotationIncrement);
     freshPlacement.setRotation(rotation * freshPlacement.getRotation());
   }
-  else if (rCountY)
+  if (rCountY)
   {
     Base::Vector3d rotationVector(getVectorY());
     Base::Rotation rotation(rotationVector, rCountY * rotationIncrement);
     freshPlacement.setRotation(rotation * freshPlacement.getRotation());
   }
-  else if (rCountZ)
+  if (rCountZ)
   {
     Base::Vector3d rotationVector(getVectorZ());
     Base::Rotation rotation(rotationVector, rCountZ * rotationIncrement);

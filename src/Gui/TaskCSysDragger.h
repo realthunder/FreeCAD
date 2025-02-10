@@ -50,6 +50,7 @@ namespace Gui
       void onEndMove();
       void recompute(bool finish);
       bool reject() override;
+      SoFCCSysDragger *getDragger() {return dragger;}
     private Q_SLOTS:
       void onTIncrementSlot(double freshValue);
       void onRIncrementSlot(double freshValue);

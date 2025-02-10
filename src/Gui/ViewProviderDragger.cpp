@@ -61,6 +61,8 @@ ViewProviderDragger::ViewProviderDragger() = default;
 
 ViewProviderDragger::~ViewProviderDragger() = default;
 
+static QPointer<TaskCSysDragger> _TaskDragger;
+
 void ViewProviderDragger::updateData(const App::Property* prop)
 {
     if (prop->isDerivedFrom(App::PropertyPlacement::getClassTypeId()) &&
@@ -75,6 +77,9 @@ void ViewProviderDragger::updateData(const App::Property* prop)
         // This means that the center point must be the origin!
         Base::Placement p = static_cast<const App::PropertyPlacement*>(prop)->getValue();
         updateTransform(p, pcTransform);
+        if (_TaskDragger && !prop->testStatus(App::Property::User1)) {
+            syncPlacementToDragger(p, _TaskDragger->getDragger());
+        }
     }
 
     ViewProviderDocumentObject::updateData(prop);
@@ -226,7 +231,14 @@ Base::Matrix4D ViewProviderDragger::getDragOffset()
     return getDragOffset(this);
 }
 
-static QPointer<TaskCSysDragger> _TaskDragger;
+void ViewProviderDragger::syncPlacementToDragger(const Base::Placement &p, SoFCCSysDragger *csysDragger)
+{
+    Base::Placement placement = p.toMatrix() * this->dragOffset;
+    static SoTransform *tempTransform = new SoTransform;
+    updateTransform(placement, tempTransform);
+    csysDragger->translation.setValue(tempTransform->translation.getValue());
+    csysDragger->rotation.setValue(tempTransform->rotation.getValue());
+}
 
 bool ViewProviderDragger::setEdit(int ModNum)
 {
@@ -247,15 +259,7 @@ bool ViewProviderDragger::setEdit(int ModNum)
         this->dragOffset = getDragOffset();
     } else
         this->dragOffset = Base::Matrix4D();
-    
-    Base::Placement placement =
-        geoFeature->Placement.getValue().toMatrix() * this->dragOffset;
-    this->dragOffset.inverse();
-    auto tempTransform = new SoTransform();
-    tempTransform->ref();
-    updateTransform(placement, tempTransform);
 
-    assert(!csysDragger);
     csysDragger = new SoFCCSysDragger();
     csysDragger->setAxisColors(
       Gui::ViewParams::getAxisXColor(),
@@ -263,10 +267,6 @@ bool ViewProviderDragger::setEdit(int ModNum)
       Gui::ViewParams::getAxisZColor()
     );
     csysDragger->draggerSize.setValue(0.05f);
-    csysDragger->translation.setValue(tempTransform->translation.getValue());
-    csysDragger->rotation.setValue(tempTransform->rotation.getValue());
-
-    tempTransform->unref();
 
     csysDragger->addStartCallback(dragStartCallback, this);
     csysDragger->addFinishCallback(dragFinishCallback, this);
@@ -275,6 +275,8 @@ bool ViewProviderDragger::setEdit(int ModNum)
     // dragger node is added to viewer's editing root in setEditViewer
     // pcRoot->insertChild(csysDragger, 0);
     csysDragger->ref();
+
+    syncPlacementToDragger(geoFeature->Placement.getValue(), csysDragger);
 
     _TaskDragger = new TaskCSysDragger(this, csysDragger);
     Gui::Control().showDialog(_TaskDragger);
@@ -382,7 +384,9 @@ void ViewProviderDragger::onDragMotion(SoDragger *d)
     float q1,q2,q3,q4;
     r.getValue(q1,q2,q3,q4);
     Base::Placement pla(Base::Vector3d(v[0],v[1],v[2]),Base::Rotation(q1,q2,q3,q4));
-    updateTransform(pla * this->dragOffset, this->pcTransform);
+    auto offset = this->dragOffset;
+    offset.inverse();
+    updateTransform(pla * offset, this->pcTransform);
 }
 
 void ViewProviderDragger::updatePlacementFromDragger(SoFCCSysDragger* draggerIn)
@@ -392,11 +396,14 @@ void ViewProviderDragger::updatePlacementFromDragger(SoFCCSysDragger* draggerIn)
     return;
   auto geoFeature = static_cast<App::GeoFeature *>(genericObject);
   Base::Placement originalPlacement = geoFeature->Placement.getValue();
-  auto offset = this->dragOffset;
-  offset.inverse();
-  Base::Placement freshPlacement = originalPlacement.toMatrix() * offset;
-  if (draggerIn->getMovement(freshPlacement))
-    geoFeature->Placement.setValue(freshPlacement * this->dragOffset);
+  Base::Placement freshPlacement = originalPlacement.toMatrix() * this->dragOffset;
+  if (draggerIn->getMovement(freshPlacement)) {
+    Base::ObjectStatusLocker<App::Property::Status,App::Property> guard(
+            App::Property::User1, &geoFeature->Placement);
+    auto offset = this->dragOffset;
+    offset.inverse();
+    geoFeature->Placement.setValue(freshPlacement * offset);
+  }
 }
 
 void ViewProviderDragger::updateTransform(const Base::Placement& from, SoTransform* to)
@@ -408,8 +415,8 @@ void ViewProviderDragger::updateTransform(const Base::Placement& from, SoTransfo
     auto px = (float)from.getPosition().x;
     auto py = (float)from.getPosition().y;
     auto pz = (float)from.getPosition().z;
-  to->rotation.setValue(q0,q1,q2,q3);
-  to->translation.setValue(px,py,pz);
-  to->center.setValue(0.0f,0.0f,0.0f);
-  to->scaleFactor.setValue(1.0f,1.0f,1.0f);
+    to->rotation.setValue(q0,q1,q2,q3);
+    to->translation.setValue(px,py,pz);
+    to->center.setValue(0.0f,0.0f,0.0f);
+    to->scaleFactor.setValue(1.0f,1.0f,1.0f);
 }

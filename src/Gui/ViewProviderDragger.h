@@ -78,6 +78,8 @@ protected:
     virtual void onDragMotion(SoDragger *d);
     virtual Base::Matrix4D getDragOffset();
 
+    void syncPlacementToDragger(const Base::Placement &p, SoFCCSysDragger *dragger);
+
     SoFCCSysDragger *csysDragger = nullptr;
 
 private:
