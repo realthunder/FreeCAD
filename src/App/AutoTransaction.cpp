@@ -170,6 +170,15 @@ const char *Application::getActiveTransaction(int *id) const {
 }
 
 void Application::closeActiveTransaction(bool abort, int id) {
+    if (abort && id) {
+        TransactionSignaller signaller(abort,false);
+        TransactionGuard guard(TransactionGuard::Abort);
+        for(auto &v : DocMap) {
+            v.second->undo(id);
+        }
+        return;
+    }
+
     if(!id) id = _activeTransactionID;
     if(!id)
         return;

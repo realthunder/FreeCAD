@@ -48,7 +48,6 @@
 #include "ViewProviderDragger.h"
 #include "TaskView/TaskView.h"
 
-
 using namespace Gui;
 
 
@@ -67,7 +66,7 @@ TaskCSysDragger::TaskCSysDragger(Gui::ViewProviderDocumentObject* vpObjectIn, Gu
   dragger->ref();
   setupGui();
 
-  transactionId = App::GetApplication().setActiveTransaction("Transform");
+  transactionId = App::GetApplication().setActiveTransaction(QT_TRANSLATE_NOOP("Command", "Transform"));
 
   QTimer::singleShot(0, this, [this]() {
     auto obj = vpObject.getObject();
@@ -96,7 +95,9 @@ TaskCSysDragger::TaskCSysDragger(Gui::ViewProviderDocumentObject* vpObjectIn, Gu
 TaskCSysDragger::~TaskCSysDragger()
 {
   onToggleShowOnTop(false);
+
   dragger->unref();
+
   Gui::Application::Instance->commandManager().getCommandByName("Std_OrthographicCamera")->setEnabled(true);
   Gui::Application::Instance->commandManager().getCommandByName("Std_PerspectiveCamera")->setEnabled(true);
 }
@@ -166,6 +167,9 @@ void TaskCSysDragger::setupGui()
 
   connect(tSpinBox, qOverload<double>(&QuantitySpinBox::valueChanged), this, &TaskCSysDragger::onTIncrementSlot);
   connect(rSpinBox, qOverload<double>(&QuantitySpinBox::valueChanged), this, &TaskCSysDragger::onRIncrementSlot);
+
+  if (checkBoxShowOnTop->isChecked())
+      onToggleShowOnTop(true);
 }
 
 void TaskCSysDragger::onEndMove()
@@ -263,7 +267,8 @@ bool TaskCSysDragger::accept()
 bool TaskCSysDragger::reject()
 {
   App::GetApplication().closeActiveTransaction(/*abort*/true, transactionId);
-  return Gui::TaskView::TaskDialog::reject();
+  Gui::Command::doCommand(Gui::Command::Gui,"Gui.activeDocument().resetEdit()");
+  return true;
 }
 
 #include "moc_TaskCSysDragger.cpp"

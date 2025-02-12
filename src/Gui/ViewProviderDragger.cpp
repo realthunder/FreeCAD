@@ -361,7 +361,8 @@ void ViewProviderDragger::dragMotionCallback(void *data, SoDragger *d)
 
 void ViewProviderDragger::onDragStart(SoDragger *)
 {
-    Gui::Application::Instance->activeDocument()->openCommand(QT_TRANSLATE_NOOP("Command", "Transform"));
+    if (!App::GetApplication().getActiveTransaction())
+        Gui::Application::Instance->activeDocument()->openCommand(QT_TRANSLATE_NOOP("Command", "Transform"));
 }
 
 void ViewProviderDragger::onDragFinish(SoDragger *d)
