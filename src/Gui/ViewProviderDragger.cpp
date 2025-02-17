@@ -32,6 +32,8 @@
 # include <Inventor/nodes/SoTransform.h>
 #endif
 
+#include <boost/algorithm/string/find.hpp>
+
 #include <App/ComplexGeoDataPy.h>
 #include <App/GeoFeature.h>
 #include <Base/Placement.h>
@@ -361,8 +363,7 @@ void ViewProviderDragger::dragMotionCallback(void *data, SoDragger *d)
 
 void ViewProviderDragger::onDragStart(SoDragger *)
 {
-    if (!App::GetApplication().getActiveTransaction())
-        Gui::Application::Instance->activeDocument()->openCommand(QT_TRANSLATE_NOOP("Command", "Transform"));
+    Gui::Application::Instance->activeDocument()->openCommand(QT_TRANSLATE_NOOP("Command", "Transform"));
 }
 
 void ViewProviderDragger::onDragFinish(SoDragger *d)

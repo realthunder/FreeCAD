@@ -2281,6 +2281,10 @@ void ViewProviderLink::updateDataPrivate(App::LinkBaseExtension *ext, const App:
             SbMatrix matrix = convert(ext->getTransform(false));
             linkView->renderDoubleSide(matrix.det3() < 1e-7);
         }
+        if (dragCtx && !dragCtx->updatingPlacement) {
+            initDraggingPlacement(dragCtx->editMode);
+            updateDraggingPlacement(dragCtx->initialPlacement,true);
+        }
     }else if(prop == ext->getMatrixProperty()) {
         if(!prop->testStatus(App::Property::User3)) {
             if (!pcMatrixTransform) {
@@ -2292,6 +2296,10 @@ void ViewProviderLink::updateDataPrivate(App::LinkBaseExtension *ext, const App:
             SbMatrix matrix = convert(ext->getTransform(false));
             linkView->renderDoubleSide(matrix.det3() < 1e-7);
         }
+        if (dragCtx && !dragCtx->updatingPlacement) {
+            initDraggingPlacement(dragCtx->editMode);
+            updateDraggingPlacement(dragCtx->initialPlacement,true);
+        }
     }else if(prop == ext->getPlacementProperty() || prop == ext->getLinkPlacementProperty()) {
         auto propLinkPlacement = ext->getLinkPlacementProperty();
         if(!propLinkPlacement || propLinkPlacement == prop) {
@@ -2302,6 +2310,10 @@ void ViewProviderLink::updateDataPrivate(App::LinkBaseExtension *ext, const App:
                 pcTransform->scaleFactor.setValue(v.x,v.y,v.z);
             SbMatrix matrix = convert(ext->getTransform(false));
             linkView->renderDoubleSide(matrix.det3() < 1e-7);
+        }
+        if (dragCtx && !dragCtx->updatingPlacement) {
+            initDraggingPlacement(dragCtx->editMode);
+            updateDraggingPlacement(dragCtx->initialPlacement,true);
         }
     }else if(prop == ext->getLinkCopyOnChangeGroupProperty()) {
         if (auto group = ext->getLinkCopyOnChangeGroupValue()) {
@@ -2448,6 +2460,10 @@ void ViewProviderLink::updateDataPrivate(App::LinkBaseExtension *ext, const App:
                     }
                 }
             }
+        }
+        if (dragCtx && !dragCtx->updatingPlacement) {
+            initDraggingPlacement(dragCtx->editMode);
+            updateDraggingPlacement(dragCtx->initialPlacement,true);
         }
     }else if(prop == ext->getVisibilityListProperty()) {
         const auto &vis = ext->getVisibilityListValue();
@@ -3148,7 +3164,9 @@ bool ViewProviderLink::initDraggingPlacement(int mode) {
                         FC_ERR("initDraggingPlacement() expects return of type tuple(matrix,placement,boundbox)");
                         return false;
                     }
-                    dragCtx = std::make_unique<DraggerContext>();
+                    if (!dragCtx)
+                        dragCtx = std::make_unique<DraggerContext>();
+                    dragCtx->editMode = mode;
                     dragCtx->initialPlacement = *static_cast<Base::PlacementPy*>(pypla)->getPlacementPtr();
                     dragCtx->preTransform = *static_cast<Base::MatrixPy*>(pymat)->getMatrixPtr();
                     dragCtx->bbox = *static_cast<Base::BoundBoxPy*>(pybbox)->getBoundBoxPtr();
@@ -3178,10 +3196,13 @@ bool ViewProviderLink::initDraggingPlacement(int mode) {
         return false;
     }
 
-    dragCtx = std::make_unique<DraggerContext>();
+    if (!dragCtx) {
+        dragCtx = std::make_unique<DraggerContext>();
+        dragCtx->editMode = mode;
+        doc->setEditingTransform(doc->getEditingTransform());
+    }
 
     dragCtx->preTransform = doc->getEditingTransform();
-    doc->setEditingTransform(dragCtx->preTransform);
 
     const auto &pla = ext->getPlacementProperty()?
         ext->getPlacementValue():ext->getLinkPlacementValue();
@@ -3210,8 +3231,8 @@ bool ViewProviderLink::initDraggingPlacement(int mode) {
     auto modifier = QApplication::queryKeyboardModifiers();
     // Determine the dragger base position
     // if CTRL key is down, force to use bound box center,
-    // if SHIFT key is down, force to use origine,
-    // if not a sub link, use origine,
+    // if SHIFT key is down, force to use origin,
+    // if not a sub link, use origin,
     // else (e.g. group, array, sub link), use bound box center
     if(mode != TransformAt
             && modifier != Qt::ShiftModifier
@@ -3225,7 +3246,8 @@ bool ViewProviderLink::initDraggingPlacement(int mode) {
         }
         if(propPla) {
             dragCtx->initialPlacement = pla * propPla->getValue();
-            dragCtx->mat *= propPla->getValue().inverse().toMatrix();
+            dragCtx->mat = propPla->getValue().toMatrix();
+            dragCtx->mat.inverse();
         } else
             dragCtx->initialPlacement = pla;
 
@@ -3252,7 +3274,6 @@ bool ViewProviderLink::initDraggingPlacement(int mode) {
         }
 
         // dragCtx->mat is to transform the dragger placement to our own placement.
-        // So inverse the transform
         dragCtx->mat = offset;
         dragCtx->mat.inverseGauss();
     }
@@ -3505,6 +3526,7 @@ void ViewProviderLink::updateDraggingPlacement(const Base::Placement &pla, bool 
 bool ViewProviderLink::callDraggerProxy(const char *fname, bool update) {
     if(!pcDragger)
         return false;
+    Base::StateLocker guard(dragCtx->updatingPlacement);
     Base::PyGILStateLocker lock;
     try {
         auto* proxy = getPropertyByName("Proxy");

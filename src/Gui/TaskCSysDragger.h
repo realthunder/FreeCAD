@@ -26,6 +26,7 @@
 
 #include "TaskView/TaskDialog.h"
 #include <App/DocumentObserver.h>
+#include <boost/signals2/connection.hpp>
 
 class QTimer;
 class SoDragger;
@@ -68,6 +69,10 @@ namespace Gui
       PrefCheckBox *checkBoxRecompute = nullptr;
       QTimer *timer = nullptr;
       int transactionId = 0;
+      int lastTransactionId = 0;
+      boost::signals2::scoped_connection connUndo;
+      boost::signals2::scoped_connection connRedo;
+      boost::signals2::scoped_connection connTransaction;
   };
 }
 

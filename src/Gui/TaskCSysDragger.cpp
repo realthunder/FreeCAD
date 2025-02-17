@@ -33,6 +33,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <App/Document.h>
+#include <App/Transactions.h>
 #include "Document.h" // must be before TaskCSysDragger.h
 #include "TaskCSysDragger.h"
 #include "Application.h"
@@ -66,7 +67,34 @@ TaskCSysDragger::TaskCSysDragger(Gui::ViewProviderDocumentObject* vpObjectIn, Gu
   dragger->ref();
   setupGui();
 
-  transactionId = App::GetApplication().setActiveTransaction(QT_TRANSLATE_NOOP("Command", "Transform"));
+  App::GetApplication().setActiveTransaction(QT_TRANSLATE_NOOP("Command", "Transform"));
+
+  connUndo = App::GetApplication().signalUndo.connect([this]() {
+      if (auto gdoc = Application::Instance->editDocument()) {
+          auto doc = gdoc->getDocument();
+          if (transactionId && doc->getTransactionID(/*undo*/false) == transactionId) {
+              lastTransactionId = transactionId;
+              transactionId = 0;
+          }
+      }
+  });
+
+  connRedo = App::GetApplication().signalRedo.connect([this]() {
+      if (auto gdoc = Application::Instance->editDocument()) {
+          auto doc = gdoc->getDocument();
+          if (lastTransactionId && doc->getTransactionID(/*undo*/true) == lastTransactionId) {
+              transactionId = lastTransactionId;
+              lastTransactionId = 0;
+          }
+      }
+  });
+
+  connTransaction = App::GetApplication().signalBeforeCloseTransaction.connect([this](bool abort) {
+      if(!abort && transactionId == 0) {
+          transactionId = App::Transaction::getLastID();
+          lastTransactionId = 0;
+      }
+  });
 
   QTimer::singleShot(0, this, [this]() {
     auto obj = vpObject.getObject();

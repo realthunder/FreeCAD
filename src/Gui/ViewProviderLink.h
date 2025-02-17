@@ -390,7 +390,9 @@ protected:
         Base::Matrix4D plaInverse;
         Base::Matrix4D mat;
         Base::BoundBox3d bbox;
-        bool cmdPending;
+        int editMode;
+        bool cmdPending = false;
+        bool updatingPlacement = false;
     };
     std::unique_ptr<DraggerContext> dragCtx;
     int dragPlacementIndex = -1;
