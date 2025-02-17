@@ -1668,7 +1668,30 @@ void Feature::collapseShapeContents(bool removeProperty)
 }
 
 void Feature::onDocumentRestored() {
-    expandShapeContents();
+    if (!this->Shape.getShape().isNull()) {
+        expandShapeContents();
+    }
+    else if (auto ownerProp = get_ShapeContentOwnerProperty()) {
+        if (auto owner = Base::freecad_dynamic_cast<Feature>(ownerProp->getValue())) {
+            auto propSource = Base::freecad_dynamic_cast<App::PropertyUUID>(
+                    this->getPropertyByName("_SourceUUID"));
+            auto propContents = owner->getShapeContentsProperty();
+            if (propSource && propContents) {
+                for (auto obj : propContents->getValues()) {
+                    if (auto propUUID = Base::freecad_dynamic_cast<App::PropertyUUID>(
+                            obj->getPropertyByName("_ObjectUUID")))
+                    {
+                        if (propUUID->getValue() == propSource->getValue()) {
+                            if (auto feat = Base::freecad_dynamic_cast<Feature>(obj)) {
+                                this->Shape.setValue(feat->Shape.getValue());
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
     App::GeoFeature::onDocumentRestored();
 }
 
