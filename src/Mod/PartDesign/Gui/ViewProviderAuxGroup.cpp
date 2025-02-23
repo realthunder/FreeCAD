@@ -120,10 +120,16 @@ bool ViewProviderAuxGroup::canDragObject(App::DocumentObject * obj) const {
     if (!owner)
         return true;
 
-    if (owner->getGroupType() != PartDesign::AuxGroup::OtherGroup)
-        return false;
+    auto body = PartDesign::Body::findBodyOf(owner);
+    auto vpBody = Gui::Application::Instance->getViewProvider(body);
 
-    if (auto body = PartDesign::Body::findBodyOf(owner)) {
+    if (owner->getGroupType() != PartDesign::AuxGroup::OtherGroup) {
+        if (vpBody)
+            return vpBody->canDragObject(obj);
+        return false;
+    }
+
+    if (body) {
         auto target = Gui::Selection().getContext(1).getSubObject();
         if (body == target)
            return true;
@@ -131,8 +137,8 @@ bool ViewProviderAuxGroup::canDragObject(App::DocumentObject * obj) const {
         if (auto group = Base::freecad_dynamic_cast<PartDesign::AuxGroup>(target))
             return PartDesign::Body::findBodyOf(group) == body;
 
-        if (auto vp = Gui::Application::Instance->getViewProvider(body))
-            return vp->canDragObject(obj);
+        if (vpBody)
+            return vpBody->canDragObject(obj);
     }
     return true;
 }
