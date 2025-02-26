@@ -148,6 +148,7 @@ void TaskExtrudeParameters::setupDialog(bool newObj, const char *historyPath)
         readValuesFromHistory();
 
     connectSlots();
+    ui->lengthEdit->selectAll();
 }
 
 void TaskExtrudeParameters::refresh()
