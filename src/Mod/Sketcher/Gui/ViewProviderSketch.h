@@ -425,6 +425,7 @@ protected:
     //@}
 
 protected:
+    boost::signals2::connection connectAbortTransaction;
     boost::signals2::connection connectUndoDocument;
     boost::signals2::connection connectRedoDocument;
     boost::signals2::connection connectSolverUpdate;

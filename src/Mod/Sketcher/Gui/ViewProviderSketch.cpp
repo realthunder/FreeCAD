@@ -7533,6 +7533,17 @@ bool ViewProviderSketch::setEdit(int ModNum)
 
     connectionToolWidget = sketchDlg->registerToolWidgetChanged(std::bind(&SketcherGui::ViewProviderSketch::slotToolWidgetChanged, this, sp::_1));
 
+    connectAbortTransaction = getDocument()->getDocument()
+        ->signalAbortTransaction.connect([this](const App::Document &) {
+        if (edit) {
+            Gui::Selection().clearSelection();
+            resetPreselectPoint();
+            edit->PreselectCurve = -1;
+            edit->PreselectCross = -1;
+            edit->PreselectConstraintSet.clear();
+        }
+    });
+
     connectUndoDocument = getDocument()
         ->signalUndoDocument.connect(std::bind(&ViewProviderSketch::slotUndoDocument, this, sp::_1));
     connectRedoDocument = getDocument()
@@ -8003,6 +8014,7 @@ void ViewProviderSketch::unsetEdit(int ModNum)
     Gui::Selection().clearSelection();
     Gui::Selection().addSelection(editDocName.c_str(),editObjName.c_str(),editSubName.c_str());
 
+    connectAbortTransaction.disconnect();
     connectionToolWidget.disconnect();
     connectUndoDocument.disconnect();
     connectRedoDocument.disconnect();
