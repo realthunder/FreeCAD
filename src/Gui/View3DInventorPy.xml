@@ -544,6 +544,26 @@ Return all views that are bound to this view.
         <UserDocu>graphicsView(): Access this view as QGraphicsView</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="setCornerCrossVisible">
+      <Documentation>
+       <UserDocu>setCornerCrossVisible(bool): Defines corner axis cross visibility</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="isCornerCrossVisible">
+      <Documentation>
+        <UserDocu>isCornerCrossVisible(): Returns current corner axis cross visibility</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="setCornerCrossSize">
+      <Documentation>
+       <UserDocu>setCornerCrossSize(int): Defines corner axis cross size</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getCornerCrossSize">
+      <Documentation>
+        <UserDocu>getCornerCrossSize(): Returns current corner axis cross size</UserDocu>
+      </Documentation>
+    </Methode>
     <CustomAttributes />
     <ClassDeclarations>
 private:

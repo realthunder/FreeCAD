@@ -2223,3 +2223,45 @@ PyObject* View3DInventorPy::graphicsView(PyObject *args)
         return Py::new_reference_to(wrap.fromQWidget(getView3DInventorPtr()->getViewer(), "QGraphicsView"));
     } PY_CATCH
 }
+
+PyObject* View3DInventorPy::setCornerCrossVisible(PyObject *args)
+{
+    int ok;
+    if (!PyArg_ParseTuple(args, "i", &ok))
+        return nullptr;
+    try {
+        getView3DInventorPtr()->getViewer()->setFeedbackVisibility(ok!=0);
+        getView3DInventorPtr()->getViewer()->redraw(); // added because isViewing() returns False when focus is in Python Console
+    } PY_CATCH
+    Py_Return;
+}
+
+PyObject* View3DInventorPy::isCornerCrossVisible(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    try {
+        SbBool ok = getView3DInventorPtr()->getViewer()->isFeedbackVisible();
+        return Py::new_reference_to(Py::Boolean(ok ? true : false));
+    } PY_CATCH
+}
+
+PyObject* View3DInventorPy::setCornerCrossSize(PyObject *args)
+{
+    int size=0;
+    if (!PyArg_ParseTuple(args, "i", &size))
+        return nullptr;
+    try {
+        getView3DInventorPtr()->getViewer()->setFeedbackSize(size);
+        getView3DInventorPtr()->getViewer()->redraw(); // added because isViewing() returns False when focus is in Python Console
+    } PY_CATCH
+    Py_Return;
+}
+
+PyObject* View3DInventorPy::getCornerCrossSize(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    int size = getView3DInventorPtr()->getViewer()->getFeedbackSize();
+    return Py::new_reference_to(Py::Int(size));
+}
