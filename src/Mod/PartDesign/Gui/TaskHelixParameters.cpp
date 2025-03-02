@@ -67,7 +67,8 @@ TaskHelixParameters::TaskHelixParameters(PartDesignGui::ViewProviderHelix* Helix
     bindProperties();
 
     connectSlots();
-    setFocus();
+    ui->pitch->selectAll();
+    QMetaObject::invokeMethod(ui->pitch, "setFocus", Qt::QueuedConnection);
     showCoordinateAxes();
 }
 

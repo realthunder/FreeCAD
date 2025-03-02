@@ -165,6 +165,7 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
         this, &TaskFilletParameters::onCheckBoxUseAllEdgesToggled);
 
     refresh();
+    ui->filletRadius->selectAll();
 }
 
 void TaskFilletParameters::onRefDeleted() {

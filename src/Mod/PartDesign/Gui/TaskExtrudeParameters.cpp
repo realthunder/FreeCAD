@@ -674,6 +674,7 @@ void TaskExtrudeParameters::onDirectionCBChanged(int num)
     if (num == DirectionModes::Normal || num == DirectionModes::Custom) {
         setupTransaction();
         propReferenceAxis->setValue(nullptr);
+        setDirectionMode(num);
     }
     else if (num == DirectionModes::Select) {
         // enter reference selection mode
