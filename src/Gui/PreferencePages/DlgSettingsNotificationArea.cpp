@@ -44,10 +44,6 @@ DlgSettingsNotificationArea::DlgSettingsNotificationArea(QWidget* parent)
     connect(ui->NotificationAreaEnabled, &QCheckBox::stateChanged, [this](int state) {
         bool enabled = state == Qt::CheckState::Checked;
         this->adaptUiToAreaEnabledState(enabled);
-
-        if (enabled) {
-            this->requireRestart();
-        }
     });
 }
 

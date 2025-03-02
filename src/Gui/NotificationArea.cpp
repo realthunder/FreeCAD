@@ -243,14 +243,23 @@ public:
         return "NotificationAreaObserver";
     }
 
+    void toggle();
+
 private:
     NotificationArea* notificationArea;
+    ParameterGrp::handle hGrp;
+    bool attached = false;
 };
 
 NotificationAreaObserver::NotificationAreaObserver(NotificationArea* notificationarea)
     : notificationArea(notificationarea)
 {
-    Base::Console().AttachObserver(this);
+    hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/NotificationArea");
+    if (hGrp->GetBool("NotificationAreaEnabled", true)) {
+        attached = true;
+        Base::Console().AttachObserver(this);
+    }
     bLog = false;        // ignore log messages
     bMsg = false;        // ignore messages
     bNotification = true;// activate user notifications
@@ -258,7 +267,21 @@ NotificationAreaObserver::NotificationAreaObserver(NotificationArea* notificatio
 
 NotificationAreaObserver::~NotificationAreaObserver()
 {
-    Base::Console().DetachObserver(this);
+    if (attached)
+        Base::Console().DetachObserver(this);
+}
+
+void NotificationAreaObserver::toggle()
+{
+    if (hGrp->GetBool("NotificationAreaEnabled", true)) {
+        if (!attached) {
+            attached = true;
+            Base::Console().AttachObserver(this);
+        }
+    } else if (attached) {
+        attached = false;
+        Base::Console().DetachObserver(this);
+    }
 }
 
 void NotificationAreaObserver::SendLog(const std::string& notifiername, const std::string& msg,
@@ -760,8 +783,8 @@ NotificationArea::ParameterObserver::ParameterObserver(NotificationArea* notific
         {"NotificationAreaEnabled",
          [this](const std::string& string) {
              auto enabled = hGrp->GetBool(string.c_str(), true);
-             if (!enabled)
-                 notificationArea->deleteLater();
+             notificationArea->setVisible(enabled);
+             notificationArea->pImp->observer->toggle();
          }},
         {"NonIntrusiveNotificationsEnabled",
          [this](const std::string& string) {
@@ -923,7 +946,7 @@ NotificationArea::NotificationArea(QWidget* parent)
         qApp->sendEvent(pImp->menu, &re);
 
         // This corrects the position of the menu
-        QTimer::singleShot(0, [&] {
+        QTimer::singleShot(0, this, [&] {
             QWidget* statusbar = static_cast<QWidget*>(this->parent());
             QPoint statusbar_top_right = statusbar->mapToGlobal(statusbar->rect().topRight());
             QSize menusize = pImp->menu->size();
@@ -1199,7 +1222,7 @@ void NotificationArea::showInNotificationArea()
 
                 // start a timer for each of these notifications that was not previously shown
                 if (!item->isShown()) {
-                    QTimer::singleShot(pImp->notificationExpirationTime, [this, item, repetitions = item->getRepetitions()]() {
+                    QTimer::singleShot(pImp->notificationExpirationTime, this, [this, item, repetitions = item->getRepetitions()]() {
                         // guard to avoid modifying the notification
                         // start index while creating the tooltip
                         lock_guard<std::mutex> g(pImp->mutexNotification);

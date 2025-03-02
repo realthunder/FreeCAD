@@ -484,12 +484,12 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
 
     auto notificationAreaEnabled = hGrp->GetBool("NotificationAreaEnabled", true);
 
-    if(notificationAreaEnabled) {
-        NotificationArea* notificationArea = new NotificationArea(statusBar());
-        notificationArea->setObjectName(QStringLiteral("notificationArea"));
-        notificationArea->setStyleSheet(QStringLiteral("text-align:left;"));
-        statusBar()->addPermanentWidget(notificationArea);
-    }
+    NotificationArea* notificationArea = new NotificationArea(statusBar());
+    notificationArea->setObjectName(QStringLiteral("notificationArea"));
+    notificationArea->setStyleSheet(QStringLiteral("text-align:left;"));
+    statusBar()->addPermanentWidget(notificationArea);
+    notificationArea->setVisible(notificationAreaEnabled);
+
     // clears the action label
     d->actionTimer = new QTimer( this );
     d->actionTimer->setObjectName(QStringLiteral("actionTimer"));
