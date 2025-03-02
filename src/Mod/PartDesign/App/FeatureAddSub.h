@@ -59,6 +59,9 @@ public:
     virtual void setPauseRecompute(bool enable);
     bool isRecomputePaused() const;
 
+    Part::TopoShape makeBoolean(const Part::TopoShape &base,
+                                const Part::TopoShape &tool);
+
 protected:
     void initAddSubType(Type t);
 

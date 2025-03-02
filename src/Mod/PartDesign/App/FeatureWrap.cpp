@@ -180,43 +180,10 @@ App::DocumentObjectExecReturn * FeatureWrap::execute(void)
         if (!Frozen.getValue())
             AddSubShape.setValue(shape);
 
-        if(base.isNull()) {
-            Shape.setValue(shape);
-            return App::DocumentObject::StdReturn;
+        if (!isRecomputePaused()) {
+            this->Shape.setValue(makeBoolean(base, shape));
         }
 
-        if (isRecomputePaused())
-            return App::DocumentObject::StdReturn;
-
-        TopoShape boolOp(0,getDocument()->getStringHasher());
-
-        const char *maker;
-        switch(getAddSubType()) {
-        case Additive:
-            maker = Part::OpCodes::Fuse;
-            break;
-        case Subtractive:
-            maker = Part::OpCodes::Cut;
-            break;
-        case Intersecting:
-            maker = Part::OpCodes::Common;
-            break;
-        default:
-            return new App::DocumentObjectExecReturn("Unknown operation type");
-        }
-        try {
-            boolOp.makEBoolean(maker, {base,shape});
-        }catch(Standard_Failure &e) {
-            FC_ERR(getFullName() << ": " << e.GetMessageString());
-            return new App::DocumentObjectExecReturn("Failed to perform boolean operation");
-        }
-        boolOp = this->getSolid(boolOp);
-        // lets check if the result is a solid
-        if (boolOp.isNull())
-            return new App::DocumentObjectExecReturn("Resulting shape is not a solid");
-
-        boolOp = refineShapeIfActive(boolOp);
-        Shape.setValue(getSolid(boolOp));
         return App::DocumentObject::StdReturn;
     }
     catch (Standard_Failure& e) {

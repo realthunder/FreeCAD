@@ -249,42 +249,8 @@ App::DocumentObjectExecReturn *Loft::execute(void)
             result.makEFuse(shapes);
         else
             result = shapes.front();
-            
-        if(base.isNull()) {
-            Shape.setValue(getSolid(result));
-            return App::DocumentObject::StdReturn;
-        }
-
-        result.Tag = -getID();
-        TopoShape boolOp(0,getDocument()->getStringHasher());
-
-        const char *maker;
-        switch(getAddSubType()) {
-        case Additive:
-            maker = Part::OpCodes::Fuse;
-            break;
-        case Subtractive:
-            maker = Part::OpCodes::Cut;
-            break;
-        case Intersecting:
-            maker = Part::OpCodes::Common;
-            break;
-        default:
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Unknown operation type"));
-        }
-        try {
-            boolOp.makEBoolean(maker, {base,result});
-        }
-        catch(Standard_Failure &e) {
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Failed to perform boolean operation"));
-        }
-        boolOp = this->getSolid(boolOp);
-        // lets check if the result is a solid
-        if (boolOp.isNull())
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Resulting shape is not a solid"));
-
-        boolOp = refineShapeIfActive(boolOp);
-        Shape.setValue(getSolid(boolOp));
+    
+        this->Shape.setValue(makeBoolean(base, result));        
         return App::DocumentObject::StdReturn;
     }
     catch (Standard_Failure& e) {

@@ -187,37 +187,7 @@ App::DocumentObjectExecReturn *Groove::execute()
         if (isRecomputePaused())
             return App::DocumentObject::StdReturn;
 
-        if(base.isNull()) {
-            Shape.setValue(getSolid(result));
-            return App::DocumentObject::StdReturn;
-        }
-
-        result.Tag = -getID();
-        TopoShape boolOp(0,getDocument()->getStringHasher());
-
-        try {
-            const char *maker;
-            switch (getAddSubType()) {
-            case Additive:
-                maker = Part::OpCodes::Fuse;
-                break;
-            case Intersecting:
-                maker = Part::OpCodes::Common;
-                break;
-            default:
-                maker = Part::OpCodes::Cut;
-            }
-            this->fixShape(result);
-            boolOp.makEBoolean(maker, {base,result});
-        }catch(Standard_Failure &) {
-            return new App::DocumentObjectExecReturn("Failed to cut base feature");
-        }
-        boolOp = this->getSolid(boolOp);
-        if (boolOp.isNull())
-            return new App::DocumentObjectExecReturn("Resulting shape is not a solid");
-
-        boolOp = refineShapeIfActive(boolOp);
-        Shape.setValue(getSolid(boolOp));
+        this->Shape.setValue(makeBoolean(base, result));
         return App::DocumentObject::StdReturn;
     }
     catch (Standard_Failure& e) {

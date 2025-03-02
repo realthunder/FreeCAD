@@ -285,7 +285,7 @@ void FeatureExtrude::setupObject()
 App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions options)
 {
     bool makeface = options.testFlag(ExtrudeOption::MakeFace);
-    bool fuse = options.testFlag(ExtrudeOption::MakeFuse);
+    // bool fuse = options.testFlag(ExtrudeOption::MakeFuse);
     bool legacyPocket = options.testFlag(ExtrudeOption::LegacyPocket);
     bool inverseDirection = options.testFlag(ExtrudeOption::InverseDirection);
 
@@ -341,7 +341,7 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
     }
 
     // if the Base property has a valid shape, fuse the prism into it
-    TopoShape base = getBaseShape(true);
+    TopoShape base = getBaseShape(/*silent*/true, /*force*/false, /*checkSolid*/!makeface);
 
     // get the normal vector of the sketch
     Base::Vector3d SketchVector = getProfileNormal();
@@ -501,46 +501,7 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
         if (isRecomputePaused())
             return App::DocumentObject::StdReturn;
 
-        if (!base.isNull() && fuse) {
-            prism.Tag = -this->getID();
-
-            // Let's call algorithm computing a fuse operation:
-            TopoShape result(0,getDocument()->getStringHasher());
-            try {
-                const char *maker;
-                switch (getAddSubType()) {
-                case Subtractive:
-                    maker = Part::OpCodes::Cut;
-                    break;
-                case Intersecting:
-                    maker = Part::OpCodes::Common;
-                    break;
-                default:
-                    maker = Part::OpCodes::Fuse;
-                }
-                result.makEBoolean(maker, {base,prism});
-            }catch(Standard_Failure &){
-                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
-                            "Fusion with base feature failed"));
-            }
-            // we have to get the solids (fuse sometimes creates compounds)
-            auto solRes = this->getSolid(result);
-            // lets check if the result is a solid
-            if (solRes.isNull())
-                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
-                            "Resulting shape is not a solid"));
-
-            solRes = refineShapeIfActive(solRes);
-            this->Shape.setValue(getSolid(solRes));
-        } else if (prism.hasSubShape(TopAbs_SOLID)) {
-            if (prism.countSubShapes(TopAbs_SOLID) > 1)
-                prism.makEFuse(prism.getSubTopoShapes(TopAbs_SOLID));
-            prism = refineShapeIfActive(prism);
-            this->Shape.setValue(getSolid(prism));
-        } else {
-            prism = refineShapeIfActive(prism);
-            this->Shape.setValue(prism);
-        }
+        this->Shape.setValue(makeBoolean(base, prism));
 
         // eventually disable some settings that are not valid for the current method
         updateProperties(method);

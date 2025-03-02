@@ -94,18 +94,15 @@ App::DocumentObjectExecReturn *Revolution::execute()
 
     TopoShape sketchshape;
     try {
-        sketchshape = getVerifiedFace();
+        sketchshape = getVerifiedFace(/*silent*/false,
+                                      /*doFit*/true,
+                                      /*allowOpen*/true);
     } catch (const Base::Exception& e) {
         return new App::DocumentObjectExecReturn(e.what());
     }
 
     // if the Base property has a valid shape, fuse the AddShape into it
-    TopoShape base;
-    try {
-        base = getBaseShape();
-    } catch (const Base::Exception&) {
-        // fall back to support (for legacy features)
-    }
+    TopoShape base = getBaseShape(/*silent*/true, /*force*/false, /*checkSolid*/false);
 
     // update Axis from ReferenceAxis
     try {
@@ -183,43 +180,7 @@ App::DocumentObjectExecReturn *Revolution::execute()
         if (isRecomputePaused())
             return App::DocumentObject::StdReturn;
 
-        if(base.isNull()) {
-            result = refineShapeIfActive(result);
-            Shape.setValue(getSolid(result));
-            return App::DocumentObject::StdReturn;
-        }
-
-        result.Tag = -getID();
-
-        TopoShape boolOp(0,getDocument()->getStringHasher());
-
-        const char *maker;
-        switch(getAddSubType()) {
-        case Additive:
-            maker = Part::OpCodes::Fuse;
-            break;
-        case Subtractive:
-            maker = Part::OpCodes::Cut;
-            break;
-        case Intersecting:
-            maker = Part::OpCodes::Common;
-            break;
-        default:
-            return new App::DocumentObjectExecReturn("Unknown operation type");
-        }
-        try {
-            this->fixShape(result);
-            boolOp.makEBoolean(maker, {base,result});
-        }catch(Standard_Failure &e) {
-            return new App::DocumentObjectExecReturn("Failed to perform boolean operation");
-        }
-        boolOp = this->getSolid(boolOp);
-        // lets check if the result is a solid
-        if (boolOp.isNull())
-            return new App::DocumentObjectExecReturn("Resulting shape is not a solid");
-
-        boolOp = refineShapeIfActive(boolOp);
-        Shape.setValue(getSolid(boolOp));
+        this->Shape.setValue(makeBoolean(base, result));
 
         return App::DocumentObject::StdReturn;
     }

@@ -1911,31 +1911,11 @@ App::DocumentObjectExecReturn* Hole::execute()
         if (isRecomputePaused())
             return App::DocumentObject::StdReturn;
 
-        if (base.isNull()) {
-            Shape.setValue(compound);
-            return App::DocumentObject::StdReturn;
-        }
-
         // First try cuting with compound which will be faster as it is done in
         // parallel
         bool retry = true;
-        const char *maker;
-        switch (getAddSubType()) {
-        case Additive:
-            maker = Part::OpCodes::Fuse;
-            break;
-        case Intersecting:
-            maker = Part::OpCodes::Common;
-            break;
-        default:
-            maker = Part::OpCodes::Cut;
-        }
         try {
-            if (base.isNull())
-                result = compound;
-            else
-                result.makEBoolean(maker, {base,compound});
-            result = getSolid(result);
+            this->Shape.setValue(makeBoolean(base, compound));
             retry = false;
         } catch (Standard_Failure & e) {
             FC_WARN(getFullName() << ": boolean operation with compound failed ("
@@ -1947,9 +1927,21 @@ App::DocumentObjectExecReturn* Hole::execute()
 
         if (retry) {
             int i = 0;
+            const char *maker;
+            switch (getAddSubType()) {
+            case Subtractive:
+                maker = Part::OpCodes::Cut;
+                break;
+            case Intersecting:
+                maker = Part::OpCodes::Common;
+                break;
+            default:
+                maker = Part::OpCodes::Fuse;
+            }
             for (auto & hole : holes) {
                 ++i;
                 try {
+                    hole.Tag = -this->getID();
                     result.makEBoolean(maker, {base,hole});
                 } catch (Standard_Failure &) {
                     std::string msg(QT_TRANSLATE_NOOP("Exception", "Boolean operation failed on profile Edge"));

@@ -77,59 +77,19 @@ App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& pri
 
         TopoShape primitiveShape;
         primitiveShape.setShape(primitive);
-        
-        //if we have no base we just add the standard primitive shape
-        TopoShape base;
-        try{
-             //if we have a base shape we need to make sure that it does not get our transformation to
-            base = getBaseShape().moved(getLocation().Inverted());
-            primitiveShape.Tag = -this->getID();
-        }
-        catch (const Base::Exception&) {
-
-             //as we use this for preview we can add it even if useless for subtractive
-             AddSubShape.setValue(primitiveShape);
-
-             if(getAddSubType() == FeatureAddSub::Additive || NewSolid.getValue())
-                 Shape.setValue(getSolid(primitiveShape));
-             else
-                 return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Cannot subtract primitive feature without base feature"));
-
-             return  App::DocumentObject::StdReturn;
-        }
 
         AddSubShape.setValue(primitiveShape);
         if (isRecomputePaused())
             return App::DocumentObject::StdReturn;
          
-        TopoShape boolOp(0,getDocument()->getStringHasher());
+        //if we have no base we just add the standard primitive shape
 
-        const char *maker;
-        switch(getAddSubType()) {
-        case Additive:
-            maker = Part::OpCodes::Fuse;
-            break;
-        case Subtractive:
-            maker = Part::OpCodes::Cut;
-            break;
-        case Intersecting:
-            maker = Part::OpCodes::Common;
-            break;
-        default:
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Unknown operation type"));
-        }
-        try {
-            boolOp.makEBoolean(maker, {base,primitiveShape});
-        }catch(Standard_Failure &e) {
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Failed to perform boolean operation"));
-        }
-        boolOp = this->getSolid(boolOp);
-        // lets check if the result is a solid
-        if (boolOp.isNull())
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Resulting shape is not a solid"));
-
-        boolOp = refineShapeIfActive(boolOp);
-        Shape.setValue(getSolid(boolOp));
+        TopoShape base;
+        //if we have a base shape we need to make sure that it does not get our transformation to
+        base = getBaseShape(/*silent*/true);
+        if (!base.isNull())
+            base.moved(getLocation().Inverted());
+        Shape.setValue(makeBoolean(base, primitiveShape));
     }
     catch (Standard_Failure& e) {
 

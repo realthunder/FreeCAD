@@ -27,9 +27,11 @@
 #endif
 
 #include <App/Application.h>
+#include <App/Document.h>
 #include <App/FeaturePythonPyImp.h>
 #include <Base/Parameter.h>
 #include <Mod/Part/App/modelRefine.h>
+#include <Mod/Part/App/TopoShapeOpCode.h>
 
 #include "FeatureAddSub.h"
 #include "FeaturePy.h"
@@ -94,6 +96,54 @@ void FeatureAddSub::onChanged(const App::Property *prop)
         }
     }
     PartDesign::Feature::onChanged(prop);
+}
+
+Part::TopoShape FeatureAddSub::makeBoolean(const Part::TopoShape &base,
+                                           const Part::TopoShape &_tool)
+{
+    Part::TopoShape tool = _tool;
+    if (!base.isNull() &&
+            ((base.hasSubShape(TopAbs_SOLID) 
+              && tool.hasSubShape(TopAbs_SOLID))
+             || (!base.hasSubShape(TopAbs_SOLID)
+                 && !tool.hasSubShape(TopAbs_SOLID)))) {
+        tool.Tag = -this->getID();
+
+        // Let's call algorithm computing a fuse operation:
+        TopoShape result(0,getDocument()->getStringHasher());
+        try {
+            const char *maker;
+            switch (getAddSubType()) {
+            case Subtractive:
+                maker = Part::OpCodes::Cut;
+                break;
+            case Intersecting:
+                maker = Part::OpCodes::Common;
+                break;
+            default:
+                maker = Part::OpCodes::Fuse;
+            }
+            result.makEBoolean(maker, {base,tool});
+        } catch(Standard_Failure &e) {
+            FC_THROWM(Base::CADKernelError,
+                      QT_TRANSLATE_NOOP("Exception", "Boolean operation with base feature failed: ") <<
+                      e.GetMessageString());
+        }
+        // we have to get the solids (fuse sometimes creates compounds)
+        auto solRes = getSolid(result, /*force*/base.hasSubShape(TopAbs_SOLID));
+        // lets check if the result is a solid
+        if (solRes.isNull()) {
+            FC_THROWM(Base::RuntimeError,
+                      QT_TRANSLATE_NOOP("Exception", "Resulting shape is not a solid"));
+        }
+        return refineShapeIfActive(solRes);
+    } else if (tool.hasSubShape(TopAbs_SOLID)) {
+        if (tool.countSubShapes(TopAbs_SOLID) > 1)
+            tool.makEFuse(tool.getSubTopoShapes(TopAbs_SOLID));
+        return getSolid(refineShapeIfActive(tool));
+    } else {
+        return refineShapeIfActive(tool);
+    }
 }
 
 short FeatureAddSub::mustExecute() const
