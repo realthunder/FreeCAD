@@ -1,5 +1,33 @@
 Tip release (branch [LinkMerge](https://github.com/realthunder/FreeCAD/tree/LinkMerge)) is merged with upstream a662fbb2 2023.12.27
 
+# Tip 2025.03.04
+
+Fix crash on threaded console output redirection
+Disable pre-selection on mouse move with any button down
+Accept quantity with unit in RotationPy.Angle
+Fix property name prefix handling
+Fix clipping UI setting synchronization
+Fix origin visibility on importing STEP file
+Fix calling of export API
+Fix transform tool (dragger) out of sync when undo/redo or manually changing placement
+Fix transform tool cancel behavior (should restore to before editing)
+Do not restart on changing NotificationArea option
+Add missing corner cross API (#1060)
+Part|Import: auto transform object to XY plane when exporting DXF
+Part: fix copy of expanded shape content
+PartDesign: fix hole cut diameter editing
+PartDesign: fix tree item dragging out of auxiliary group
+PartDesign: improve initial entry selection on start editing
+PartDesign: improve support for creating non-solid feature (e.g. revolve an edge to get a face)
+PartDesign: fix pad/pocket axis selection blinking
+Sketcher: fix small external edge handling
+Sketcher: fix crash on abort command
+Arch: fix OBJ import with segments (facet colors)
+Arch: re-wording DAE/OBJ export facet color option
+
+-- 20250304tip --
+
+
 # Tip 2024.10.03
 
 Fix Link copy on change hidden group out of scope problem
@@ -37,8 +65,6 @@ Spreadsheet: fix undo/redo of cut and paste of cells with alias
 Spreadsheet: remember dialog position and size
 OCCT: fix regression in making thrusection (Loft) ([#2](realthunder/OCCT#2))
 OCCT: fix handling of concave face in makeThickSolid ([#1](realthunder/OCCT#1), [#3](realthunder/OCCT#3))
-
--- 20241003tip --
 
 # Tip 2023.12.31
 
