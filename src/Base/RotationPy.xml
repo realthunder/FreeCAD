@@ -188,7 +188,7 @@ tol : float\n    Tolerance used to check for identity.
             <Documentation>
                 <UserDocu>The rotation angle of the quaternion</UserDocu>
             </Documentation>
-            <Parameter Name="Angle" Type="Float" />
+            <Parameter Name="Angle" Type="Object" />
         </Attribute>
         <Attribute Name="Matrix" ReadOnly="false">
             <Documentation>

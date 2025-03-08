@@ -30,6 +30,10 @@ namespace Ui {
 class DlgSheetConf;
 }
 
+namespace Gui {
+class PrefWidgetStates;
+}
+
 namespace SpreadsheetGui {
 
 class DlgSheetConf : public QDialog
@@ -45,12 +49,13 @@ public:
     App::Property *prepare(App::CellAddress &from, App::CellAddress &to,
                 std::string &rangeConf, App::ObjectIdentifier &path, bool init);
 
-public Q_SLOTS:
     void onDiscard();
+    void onChangeVertical(bool checked);
 
 private:
     Spreadsheet::Sheet * sheet;
     Ui::DlgSheetConf *ui;
+    std::unique_ptr<Gui::PrefWidgetStates> widgetStates; /** for managing widget sizes */
 };
 
 }

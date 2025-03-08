@@ -223,7 +223,7 @@ Feature::getExportElementName(TopoShape shape, const char *name) const
                 for (auto &ss : subshape.getSubTopoShapes(lower)) {
                     auto name = ss.getMappedName(idxName);
                     if (!name) continue;
-                    indices.emplace_back(name.size(), shape.findAncestors(ss.getShape(), res.first));
+                    indices.emplace_back(names.size(), shape.findAncestors(ss.getShape(), res.first));
                     names.push_back(name);
                     if (indices.back().second.size() == 1 && ++count >= MinLowerTopoNames)
                         break;
@@ -1301,7 +1301,11 @@ void Feature::onBeforeChange(const App::Property *prop) {
 void Feature::onChanged(const App::Property* prop)
 {
     // if the placement has changed apply the change to the point data as well
-    if (prop == &this->Placement) {
+    if (prop == &this->Placement
+            || (getDocument()
+                && !getDocument()->testStatus(App::Document::Restoring)
+                && ( prop == &this->FixShape 
+                    || prop == &this->ValidateShape))) {
         // The following code bypasses transaction, which may cause problem to
         // undo/redo
         //

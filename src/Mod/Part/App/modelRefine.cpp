@@ -1101,10 +1101,12 @@ bool FaceUniter::process()
                                             << std::setprecision(std::numeric_limits<double>::digits10 + 1)
                                             << tol << " -> " << tbound);
                             }
-                            else if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
-                                FC_WARN("Face refine fix failed because of bounding box mismatch, "
-                                        << std::setprecision(std::numeric_limits<double>::digits10 + 1)
-                                        << tol << " -> " << tbound);
+                            else {
+                                if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+                                    FC_WARN("Face refine output bounding box mismatch, "
+                                            << std::setprecision(std::numeric_limits<double>::digits10 + 1)
+                                            << tol << " -> " << tbound);
+                                }
                                 continue;
                             }
                         }

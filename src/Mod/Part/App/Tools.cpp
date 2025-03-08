@@ -65,6 +65,7 @@
 # endif
 #endif
 
+#include <Base/Exception.h>
 #include <Base/Vector3D.h>
 
 #include "Tools.h"
@@ -230,6 +231,9 @@ Part::Tools::makeSurface(const TColStd_ListOfTransient &theBoundaries,
 bool Part::Tools::getTriangulation(const TopoDS_Face& face, std::vector<gp_Pnt>& points, std::vector<Poly_Triangle>& facets)
 {
     TopLoc_Location loc;
+
+    try {
+
     Handle(Poly_Triangulation) hTria = BRep_Tool::Triangulation(face, loc);
     if (hTria.IsNull())
         return false;
@@ -291,10 +295,16 @@ bool Part::Tools::getTriangulation(const TopoDS_Face& face, std::vector<gp_Pnt>&
     }
 
     return true;
+
+    } catch (Standard_Failure &e) {
+      FC_THROWM(Base::CADKernelError,"Shape triangulation failed: " << e.GetMessageString());
+    }
 }
 
 bool Part::Tools::getPolygonOnTriangulation(const TopoDS_Edge& edge, const TopoDS_Face& face, std::vector<gp_Pnt>& points)
 {
+    try {
+
     TopLoc_Location loc;
     Handle(Poly_Triangulation) hTria = BRep_Tool::Triangulation(face, loc);
     if (hTria.IsNull())
@@ -336,10 +346,16 @@ bool Part::Tools::getPolygonOnTriangulation(const TopoDS_Edge& edge, const TopoD
     }
 
     return true;
+
+    } catch (Standard_Failure &e) {
+      FC_THROWM(Base::CADKernelError,"Shape triangulation failed: " << e.GetMessageString());
+    }
 }
 
 bool Part::Tools::getPolygon3D(const TopoDS_Edge& edge, std::vector<gp_Pnt>& points)
 {
+    try {
+
     TopLoc_Location loc;
     Handle(Poly_Polygon3D) hPoly = BRep_Tool::Polygon3D(edge, loc);
     if (hPoly.IsNull())
@@ -370,6 +386,10 @@ bool Part::Tools::getPolygon3D(const TopoDS_Edge& edge, std::vector<gp_Pnt>& poi
     }
 
     return true;
+
+    } catch (Standard_Failure &e) {
+      FC_THROWM(Base::CADKernelError,"Failed to obtain polygon from shape: " << e.GetMessageString());
+    }
 }
 
 void Part::Tools::getPointNormals(const std::vector<gp_Pnt>& points, const std::vector<Poly_Triangle>& facets, std::vector<gp_Vec>& vertexnormals)
@@ -399,6 +419,8 @@ void Part::Tools::getPointNormals(const std::vector<gp_Pnt>& points, const std::
 
 void Part::Tools::getPointNormals(const std::vector<gp_Pnt>& points, const TopoDS_Face& face, std::vector<gp_Vec>& vertexnormals)
 {
+    try {
+
     if (points.size() != vertexnormals.size())
         return;
 
@@ -427,10 +449,16 @@ void Part::Tools::getPointNormals(const std::vector<gp_Pnt>& points, const TopoD
 
         vertexnormals[i].Normalize();
     }
+
+    } catch (Standard_Failure &e) {
+      FC_THROWM(Base::CADKernelError,"Failed to obtain point normals: " << e.GetMessageString());
+    }
 }
 
 void Part::Tools::getPointNormals(const TopoDS_Face& theFace, Handle(Poly_Triangulation) aPolyTri, TColgp_Array1OfDir& theNormals)
 {
+    try {
+
 #if OCC_VERSION_HEX < 0x070600
     const TColgp_Array1OfPnt& aNodes = aPolyTri->Nodes();
 
@@ -578,16 +606,26 @@ void Part::Tools::getPointNormals(const TopoDS_Face& theFace, Handle(Poly_Triang
         }
     }
 #endif
+
+    } catch (Standard_Failure &e) {
+      FC_THROWM(Base::CADKernelError,"Failed to obtain point normals: " << e.GetMessageString());
+    }
 }
 
 void Part::Tools::getPointNormals(const TopoDS_Face& face, Handle(Poly_Triangulation) aPoly, std::vector<gp_Vec>& normals)
 {
+    try {
+
     TColgp_Array1OfDir dirs (1, aPoly->NbNodes());
     getPointNormals(face, aPoly, dirs);
     normals.reserve(aPoly->NbNodes());
 
     for (int i = dirs.Lower(); i <= dirs.Upper(); ++i) {
         normals.emplace_back(dirs(i).XYZ());
+    }
+
+    } catch (Standard_Failure &e) {
+      FC_THROWM(Base::CADKernelError,"Failed to obtain point normals: " << e.GetMessageString());
     }
 }
 
@@ -607,6 +645,8 @@ Handle (Poly_Triangulation) Part::Tools::triangulationOfFace(const TopoDS_Face& 
                                                              double deflection,
                                                              double angleDeflectionRad)
 {
+    try {
+
     Handle (Poly_Triangulation) mesh = BRep_Tool::Triangulation(face, loc);
     if (!mesh.IsNull())
         return mesh;
@@ -651,6 +691,10 @@ Handle (Poly_Triangulation) Part::Tools::triangulationOfFace(const TopoDS_Face& 
 
     BRepMesh_IncrementalMesh(shape,deflection,Standard_False,angleDeflectionRad,Standard_True);
     return BRep_Tool::Triangulation(TopoDS::Face(shape), loc);
+
+    } catch (Standard_Failure &e) {
+      FC_THROWM(Base::CADKernelError,"Shape triangulation failed: " << e.GetMessageString());
+    }
 }
 
 Handle(Poly_Polygon3D) Part::Tools::polygonOfEdge(const TopoDS_Edge& edge,
@@ -659,6 +703,8 @@ Handle(Poly_Polygon3D) Part::Tools::polygonOfEdge(const TopoDS_Edge& edge,
                                                   double angleDeflectionRad)
 
 {
+    try {
+
     BRepAdaptor_Curve adapt(edge);
     double u = adapt.FirstParameter();
     double v = adapt.LastParameter();
@@ -681,6 +727,10 @@ Handle(Poly_Polygon3D) Part::Tools::polygonOfEdge(const TopoDS_Edge& edge,
 
     BRepMesh_IncrementalMesh(shape,deflection,Standard_False,angleDeflectionRad,Standard_True);
     return BRep_Tool::Polygon3D(TopoDS::Edge(shape), loc);
+
+    } catch (Standard_Failure &e) {
+      FC_THROWM(Base::CADKernelError,"Failed to obtain polygon from edge: " << e.GetMessageString());
+    }
 }
 
 // helper function to use in getNormal, here we pass the local properties
@@ -716,16 +766,24 @@ void getNormalBySLProp(T& prop, double u, double v, Standard_Real lastU, Standar
 void Part::Tools::getNormal(const Handle(Geom_Surface)& surf, double u, double v,
                             const Standard_Real tol, gp_Dir& dir, Standard_Boolean& done)
 {
+    try {
+
     GeomLProp_SLProps prop(surf, u, v, 1, tol);
     Standard_Real u1,u2,v1,v2;
     surf->Bounds(u1,u2,v1,v2);
 
     getNormalBySLProp<GeomLProp_SLProps>(prop, u, v, u2, v2, tol, dir, done);
+
+    } catch (Standard_Failure &e) {
+      FC_THROWM(Base::CADKernelError, "Failed to get surface normal: " << e.GetMessageString());
+    }
 }
 
 void Part::Tools::getNormal(const TopoDS_Face& face, double u, double v,
                             const Standard_Real tol, gp_Dir& dir, Standard_Boolean& done)
 {
+    try {
+
     BRepAdaptor_Surface adapt(face);
     BRepLProp_SLProps prop(adapt, u, v, 1, tol);
     Standard_Real u2 = adapt.LastUParameter();
@@ -735,6 +793,10 @@ void Part::Tools::getNormal(const TopoDS_Face& face, double u, double v,
 
     if (face.Orientation() == TopAbs_REVERSED)
         dir.Reverse();
+
+    } catch (Standard_Failure &e) {
+      FC_THROWM(Base::CADKernelError, "Failed to get face normal: " << e.GetMessageString());
+    }
 }
 
 TopLoc_Location Part::Tools::fromPlacement(const Base::Placement& plm)

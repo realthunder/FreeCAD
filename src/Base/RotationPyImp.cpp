@@ -25,6 +25,7 @@
 
 #include <Base/GeometryPyCXX.h>
 #include <Base/Tools.h>
+#include <Base/QuantityPy.h>
 
 // inclusion of the generated files (generated out of RotationPy.xml)
 #include "RotationPy.h"
@@ -454,18 +455,30 @@ void RotationPy::setAxis(Py::Object arg)
     this->getRotationPtr()->setValue(axis, angle);
 }
 
-Py::Float RotationPy::getAngle() const
+Py::Object RotationPy::getAngle() const
 {
     Base::Vector3d axis; double angle;
     this->getRotationPtr()->getValue(axis, angle);
     return Py::Float(angle);
 }
 
-void RotationPy::setAngle(Py::Float arg)
+void RotationPy::setAngle(Py::Object arg)
 {
-    Base::Vector3d axis; double angle;
+    Base::Vector3d axis;
+    double angle;
     this->getRotationPtr()->getRawValue(axis, angle);
-    angle = static_cast<double>(arg);
+    if(!PyObject_TypeCheck(arg.ptr(),&Base::QuantityPy::Type)) {
+        if (!arg.isNumeric()) {
+            throw Py::TypeError("expect object of type float or quantity");
+        }
+        angle = static_cast<double>(Py::Float(arg));
+    }
+    else {
+        auto q = *static_cast<Base::QuantityPy*>(arg.ptr())->getQuantityPtr();
+        if (q.getUnit() != Base::Unit::Angle)
+            throw Py::TypeError("expect quantity of unit angle");
+        angle = Base::toRadians(q.getValue());
+    }
     this->getRotationPtr()->setValue(axis, angle);
 }
 

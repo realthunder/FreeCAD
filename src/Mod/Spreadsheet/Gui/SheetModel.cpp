@@ -521,7 +521,7 @@ bool SheetModel::setData(const QModelIndex & index, const QVariant & value, int 
     if (role == Qt::DisplayRole) {
         // Nothing to do, it will get updated by the sheet in the application logic
     }
-    else if (role == Qt::EditRole) {
+    else if (role == Qt::EditRole || role == Qt::UserRole) {
         CellAddress address(index.row(), index.column());
         std::ostringstream ss;
         ss << tr("Edit cell").toUtf8().constData() << " " << address.toString();
@@ -532,8 +532,12 @@ bool SheetModel::setData(const QModelIndex & index, const QVariant & value, int 
         }
         App::AutoTransaction guard(ss.str().c_str());
         try {
-            if(sheet->editCell(address, value))
-                Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
+            if (role == Qt::UserRole) {
+                sheet->setCell(address, value.toString().toUtf8().constData());
+            }
+            else if(!sheet->editCell(address, value))
+                return true;
+            Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
         } catch (Base::Exception & e) {
             e.ReportException();
             guard.close(true);

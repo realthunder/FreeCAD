@@ -1970,6 +1970,7 @@ App::DocumentObjectExecReturn* Hole::execute()
             }
             result = base;
         }
+        result = refineShapeIfActive(result);
 
         this->Shape.setValue(result);
 

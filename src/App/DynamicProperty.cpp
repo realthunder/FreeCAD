@@ -28,6 +28,7 @@
 #include <Base/Writer.h>
 
 #include "Document.h"
+#include "DocumentParams.h"
 #include "DynamicProperty.h"
 #include "Application.h"
 #include "Property.h"
@@ -161,9 +162,7 @@ Property* DynamicProperty::_addDynamicProperty(PropertyContainer &pc, const char
 
     std::string _name;
 
-    static ParameterGrp::handle hGrp = GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Document");
-    if(hGrp->GetBool("AutoNameDynamicProperty",false)) {
+    if(DocumentParams::getAutoNameDynamicProperty()) {
         if(!name || !name[0])
             name = type;
         _name = getUniquePropertyName(pc,name);

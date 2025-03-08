@@ -26,9 +26,8 @@
 # include <Inventor/nodes/SoCamera.h>
 # include <Inventor/nodes/SoEventCallback.h>
 
-# include <SMESH_Mesh.hxx>
-# include <SMESHDS_Mesh.hxx>
-# include <Standard_math.hxx>
+#include <SMESHDS_Mesh.hxx>
+#include <SMESH_Mesh.hxx>
 #endif
 
 #include <Base/Console.h>
@@ -148,8 +147,8 @@ void TaskCreateNodeSet::DefineNodesCallback(void* ud, SoEventCallback* n)
     SbViewVolume vv = cam->getViewVolume();
     Gui::ViewVolumeProjection proj(vv);
     Base::Polygon2d polygon;
-    for (std::vector<SbVec2f>::const_iterator it = clPoly.begin(); it != clPoly.end(); ++it)
-        polygon.Add(Base::Vector2d((*it)[0], (*it)[1]));
+    for (auto it : clPoly)
+        polygon.Add(Base::Vector2d(it[0], it[1]));
 
     taskBox->DefineNodes(polygon, proj, role == Gui::SelectionRole::Inner ? true : false);
 }

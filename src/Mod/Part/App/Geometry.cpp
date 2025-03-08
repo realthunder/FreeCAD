@@ -769,14 +769,20 @@ GeomLineSegment* GeomCurve::toLineSegment(bool clone) const
     return res;
 }
 
-GeomBSplineCurve* GeomCurve::toBSpline(double first, double last) const
+GeomBSplineCurve* GeomCurve::toBSpline(const Handle(Geom_Curve) &c, double first, double last, double tol)
 {
     ShapeConstruct_Curve scc;
-    Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(handle());
-    Handle(Geom_BSplineCurve) spline = scc.ConvertToBSpline(c, first, last, Precision::Confusion());
+    if (tol <= 0.0)
+        tol = Precision::Confusion();
+    Handle(Geom_BSplineCurve) spline = scc.ConvertToBSpline(c, first, last, tol);
     if (spline.IsNull())
         THROWM(Base::CADKernelError,"Conversion to B-spline failed")
     return new GeomBSplineCurve(spline);
+}
+
+GeomBSplineCurve* GeomCurve::toBSpline(double first, double last) const
+{
+    return toBSpline(Handle(Geom_Curve)::DownCast(handle()), first, last);
 }
 
 GeomBSplineCurve* GeomCurve::toNurbs(double first, double last) const

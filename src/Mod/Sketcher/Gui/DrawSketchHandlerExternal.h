@@ -23,6 +23,7 @@
 #ifndef SKETCHERGUI_DrawSketchHandlerExternal_H
 #define SKETCHERGUI_DrawSketchHandlerExternal_H
 
+#include <array>
 #include "GeometryCreationMode.h"
 
 
@@ -42,12 +43,51 @@ public:
     bool allow(App::Document *pDoc, App::DocumentObject *pObj, const char *sSubName) override
     {
         Sketcher::SketchObject *sketch = static_cast<Sketcher::SketchObject*>(object);
+        static const std::array<const char *, 4> allowedTypes = {"Face", "Wire", "Edge", "Vertex"};
 
         this->notAllowedReason = "";
 
-        if (!sSubName || sSubName[0] == '\0') {
-            this->notAllowedReason = QT_TR_NOOP("No element. ");
+        bool checkShape = true;
+        if (sSubName && sSubName[0]) {
+            for (auto type : allowedTypes) {
+                if (boost::starts_with(sSubName, type)) {
+                    checkShape = false;
+                    break;
+                }
+            }
+        }
+        else if (!(QApplication::queryKeyboardModifiers() & Qt::AltModifier)) {
+            this->notAllowedReason = QT_TR_NOOP("Hold Alt key to enable whole object selection.");
             return false;
+        }
+        
+        if (checkShape) {
+            auto shape = Part::TopoShape(Part::Feature::getShape(pObj));
+            if (shape.isNull()) {
+                this->notAllowedReason = QT_TR_NOOP("No shape. ");
+                return false;
+            }
+            sSubName = nullptr;
+            for (auto type : allowedTypes) {
+                auto shapeType = Part::TopoShape::shapeType(type);
+                if (shape.shapeType() == shapeType) {
+                    sSubName = type;
+                    break;
+                }
+                int count = shape.countSubShapes(shapeType);
+                if (count == 1) {
+                    sSubName = type;
+                    break;
+                }
+                if (count > 1) {
+                    this->notAllowedReason = QT_TR_NOOP("Multiple elements. ");
+                    return false;
+                }
+            }
+            if (!sSubName) {
+                this->notAllowedReason = QT_TR_NOOP("Unknown element. ");
+                return false;
+            }
         }
 
         if (!ViewProviderSketch::allowFaceExternalPick() && boost::starts_with(sSubName, "Face")) {
@@ -260,10 +300,16 @@ public:
             if (obj == NULL)
                 throw Base::ValueError("Sketcher: External geometry: Invalid object in selection");
 
+            if (msg.Object.getOldElementName().empty()
+                    && !(QApplication::queryKeyboardModifiers() & Qt::AltModifier)) {
+                return false;
+            }
+
             auto indexedName = Data::IndexedName(msg.Object.getOldElementName().c_str());
             if (intersection ||
                 obj->getTypeId().isDerivedFrom(App::Plane::getClassTypeId()) ||
                 obj->getTypeId().isDerivedFrom(Part::Datum::getClassTypeId()) ||
+                msg.Object.getOldElementName().empty() ||
                 boost::iends_with(indexedName.getType(), "edge") ||
                 boost::iends_with(indexedName.getType(), "vertex") ||
                 boost::iends_with(indexedName.getType(), "face") ||

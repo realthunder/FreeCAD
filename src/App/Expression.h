@@ -78,6 +78,10 @@ protected:
             const std::string &ref, const char *newLabel);
     void moveCells(Expression &e, const CellAddress &address, int rowCount, int colCount);
     void offsetCells(Expression &e, int rowOffset, int colOffset);
+    void transposeCells(Expression &e,
+                        const CellAddress &origin,
+                        const CellAddress &src,
+                        const CellAddress &dst);
 };
 
 template<class P> class ExpressionModifier : public ExpressionVisitor {
@@ -290,6 +294,11 @@ protected:
     }
     virtual void _moveCells(const CellAddress &, int, int, ExpressionVisitor &) {}
     virtual void _offsetCells(int, int, ExpressionVisitor &) {}
+    virtual void _transposeCells(const CellAddress & /*origin*/,
+                                 const CellAddress & /*src*/,
+                                 const CellAddress & /*dst*/,
+                                 ExpressionVisitor &)
+    {}
     virtual Py::Object _getPyValue(int *jumpCode=nullptr) const = 0;
     virtual void _visit(ExpressionVisitor &) {}
 

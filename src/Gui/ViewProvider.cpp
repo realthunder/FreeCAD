@@ -93,7 +93,13 @@ bool isValidBBox(const SbBox3f &bbox)
         && !std::isnan(maxPt[2])
         && !std::isnan(minPt[0])
         && !std::isnan(minPt[1])
-        && !std::isnan(minPt[2]);
+        && !std::isnan(minPt[2])
+        && maxPt[0]!=FLT_MAX
+        && maxPt[1]!=FLT_MAX
+        && maxPt[2]!=FLT_MAX
+        && minPt[0]!=FLT_MIN
+        && minPt[1]!=FLT_MIN
+        && minPt[2]!=FLT_MIN;
 }
 
 } // namespace Gui

@@ -537,6 +537,10 @@ void CmdSketcherMapSketch::activated(int iMsg)
             return;
         }
 
+        std::sort(sketches.begin(), sketches.end(), [](App::DocumentObject *a, App::DocumentObject *b) {
+            return strcmp(a->getNameInDocument(), b->getNameInDocument()) > 0;
+        });
+
         bool ok;
         QStringList items;
         for (std::vector<App::DocumentObject*>::iterator it = sketches.begin(); it != sketches.end(); ++it)

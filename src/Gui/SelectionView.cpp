@@ -559,7 +559,7 @@ void SelectionView::onEnablePickList() {
 
 ////////////////////////////////////////////////////////////////////////
 
-static QString _DefaultStyle = QStringLiteral("QMenu {menu-scrollable:1}");
+static QString _DefaultStyle = QStringLiteral("QMenu {menu-scrollable:0}");
 
 namespace Gui {
 void setupMenuStyle(QWidget *menu)
@@ -950,7 +950,7 @@ bool SelectionMenu::eventFilter(QObject *o, QEvent *ev)
 {
     switch(ev->type()) {
     case QEvent::Show: {
-        Gui::Selection().rmvPreselect();
+        // Gui::Selection().rmvPreselect();
         break;
     }
     case QEvent::MouseButtonRelease: {

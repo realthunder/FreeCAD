@@ -518,7 +518,7 @@ void PropertyContainer::onPropertyStatusChanged(const Property &prop, unsigned l
 
 void PropertyData::addProperty(OffsetBase offsetBase,const char* PropName, Property *Prop, const char* PropertyGroup , PropertyType Type, const char* PropertyDocu)
 {
-#ifdef FC_DEBUG
+#ifndef FC_DEBUG
     if(!parentMerged) 
 #endif
     {

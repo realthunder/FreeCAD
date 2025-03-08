@@ -1,5 +1,45 @@
 Stable release (branch [LinkStable](https://github.com/realthunder/FreeCAD/tree/LinkStable)) is merged with upstream aa3b2f39 2023.05.22
 
+# Stable 2024.10.03
+
+Fix Link copy on change hidden group out of scope problem
+Support dragging of toolbar inside status/menu bar
+Fix pre-selection highlight in `Pick geometry` menu
+Support opening directory through command line (#1023)
+Fix alias property display in property view
+Fix FreeCAD freezes when clicking inside spreadsheet (#1018)
+Fix crash crash on showing main window in command line (#1026)
+Fix crash on null topological IndexedName (#1012)
+Fix recursive selection notification (#557, #710)
+Part: disable randomization of duplicate element resolving (#1029)
+Part: do not report error/warning if not recomputing
+Part: fix user script defined topo shape mapping (#1013)
+Part: fix missing recompute on changing property `FixShape` and `ValidateShape`
+Part: fix SubShapeBinder tree item tooltip
+Part: improve shape refine
+Part: fix regression on file loading (#1019)
+Part/PartDesign: fix regression of extrude/pad until face (#989)
+PartDesign: allow non-face support for sketch based feature (#970)
+PartDesign: add `OffsetBaseFeature` property to pattern features (#994)
+PartDesign: add `HideBaseFeature` property to pattern features (#1002)
+Renderer: fix rendering of legacy shape with transparency
+Renderer: fix getting bounding box for legacy shape (#1008)
+Sketcher: fix constraint pre-selection highlight (#992)
+Sketcher: support external reference without subname (#1028)
+Sketcher: fix false selection on dragging element
+Sketcher: allow copying of external geometry (#1006)
+Sketcher: sort sketch names in `Map sketch to face` command (#1004)
+Spreadsheet: fix combo box editing mode
+Spreadsheet: fix editing through expression line editor with edit mode
+Spreadsheet: support vertical configuration table (#1024)
+Spreadsheet: support pasting cells transposed through context menu `Paste special... -> Paste transposed`
+Spreadsheet: fix undo/redo of cut and paste of cells with alias
+Spreadsheet: remember dialog position and size
+OCCT: fix regression in making thrusection (Loft) ([#2](realthunder/OCCT#2))
+OCCT: fix handling of concave face in makeThickSolid ([#1](realthunder/OCCT#1), [#3](realthunder/OCCT#3))
+
+-- 20241003stable --
+
 # Stable 2024.04.07
 
 Fix expression renaming (#974)
@@ -11,8 +51,6 @@ Fix overlay widget eating up Escape key
 Fix crash on variant link copy on change
 Fix `App::GeoFeatureGroupExtension (App::Part)` still touched on recompute after undo
 Part: fix pocket up to face (#985)
-
--- 20240407stable --
 
 # Stable 2024.03.22
 

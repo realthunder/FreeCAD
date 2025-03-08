@@ -61,6 +61,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
+#include <App/DocumentObserver.h>
 #include <Base/Console.h>
 #include "dxf/ImpExpDxf.h"
 #include <Mod/Part/App/encodeFilename.h>
@@ -72,6 +73,7 @@
 #include <Mod/Part/App/PartFeaturePy.h>
 #include <Mod/Part/App/OCAF/ImportExportSettings.h>
 #include <Mod/Part/App/OCCError.h>
+#include <Mod/Part/App/PartPyCXX.h>
 
 #include "ImportOCAF2.h"
 
@@ -111,11 +113,11 @@ public:
          add_keyword_method("readDXF",&Module::readDXF,
             "readDXF(filename,[document,ignore_errors,option_source]): Imports a DXF file into the given document. ignore_errors is True by default."
         );
-        add_varargs_method("writeDXFShape",&Module::writeDXFShape,
-            "writeDXFShape([shape],filename [version,usePolyline,optionSource]): Exports Shape(s) to a DXF file."
+        add_keyword_method("writeDXFShape",&Module::writeDXFShape,
+            "writeDXFShape([shape|objects],filename [version,usePolyline,optionSource]): Exports Shape(s) to a DXF file."
         );
-        add_varargs_method("writeDXFObject",&Module::writeDXFObject,
-            "writeDXFObject([objects],filename [,version,usePolyline,optionSource]): Exports DocumentObject(s) to a DXF file."
+        add_keyword_method("writeDXFObject",&Module::writeDXFObject,
+            "writeDXFObject([objects|objects],filename [,version,usePolyline,optionSource]): Exports DocumentObject(s) to a DXF file."
         );
        initialize("This module is the Import module."); // register with Python       
     }
@@ -445,7 +447,48 @@ private:
         return Py::None();
     }
 
-    Py::Object writeDXFShape(const Py::Tuple& args)
+    static std::vector<std::pair<std::string, Part::TopoShape>> getShapes(const Py::Object &pyObj, bool autoTransform)
+    {
+        std::vector<std::pair<std::string, Part::TopoShape>> res;
+        std::vector<App::DocumentObjectT> objs;
+        Base::BoundBox3d bbox;
+        auto shapes = Part::getPyShapes(pyObj.ptr(), &objs);
+        auto itObj = objs.begin();
+        for (const auto &shape : shapes) {
+            std::string name;
+            if (itObj != objs.end()) {
+                name = itObj->getObjectLabel();
+                ++itObj;
+            }
+            res.emplace_back(name, shape);
+            if (autoTransform && !bbox.IsValid()) {
+                bbox = shape.getBoundBox();
+            }
+        }
+        if (autoTransform && bbox.IsValid()) {
+            auto center = bbox.GetCenter();
+            gp_Vec vcenter(center.x, center.y, center.z);
+            for (auto &item : res) {
+                auto &shape = item.second;
+                gp_Pln pln;
+                if (!shape.findPlane(pln))
+                    continue;
+                if (pln.Axis().IsParallel(gp_Ax1(), Precision::Angular()*10))
+                    continue;
+                gp_Trsf trsf;
+                pln.SetLocation(gp_Pnt());
+                trsf.SetTransformation(gp_Ax3(), pln.Position());
+                trsf.SetTranslationPart(vcenter);
+                gp_Trsf translate;
+                translate.SetTranslation(-vcenter);
+                shape.transformShape(Part::TopoShape::convert(trsf.Multiplied(translate)), false);
+                Part::Feature::create(shape);
+            }
+        }
+        return res;
+    }
+
+    Py::Object writeDXFShape(const Py::Tuple& args, const Py::Dict &kwds)
     {
         PyObject *shapeObj;
         char* fname;
@@ -456,211 +499,61 @@ private:
         int   versionParm = -1;
         bool  versionOverride = false;
         bool  polyOverride = false;
+        PyObject *autoTransform = Py_True;
         PyObject *usePolyline = Py_False;
 
-        //handle list of shapes
-        if (PyArg_ParseTuple(args.ptr(), "O!et|iOs",  &(PyList_Type) ,
-                                                      &shapeObj, 
-                                                      "utf-8",
-                                                      &fname, 
-                                                      &versionParm,
-                                                      &usePolyline,
-                                                      &optionSource)) {
-            filePath = std::string(fname);
-            layerName = "none";
-            PyMem_Free(fname);
-
-            if ((versionParm == 12) ||
-               (versionParm == 14)) {
-               versionOverride = true;
-            }
-            if (usePolyline == Py_True) {
-               polyOverride = true; 
-            }
-            if (optionSource) {
-                defaultOptions = optionSource;
-            }
-
-            try {
-                ImpExpDxfWrite writer(filePath);
-                writer.setOptionSource(defaultOptions);
-                writer.setOptions();
-                if (versionOverride) {
-                    writer.setVersion(versionParm);
-                }
-                writer.setPolyOverride(polyOverride);
-                writer.setLayerName(layerName);
-                writer.init();
-                Py::Sequence list(shapeObj);
-                for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                    if (PyObject_TypeCheck((*it).ptr(), &(Part::TopoShapePy::Type))) {
-                        Part::TopoShape* ts = static_cast<Part::TopoShapePy*>((*it).ptr())->getTopoShapePtr();
-                        TopoDS_Shape shape = ts->getShape();
-                        writer.exportShape(shape);
-                    }
-                }
-                writer.endRun();
-                return Py::None();
-            }
-            _PY_CATCH_OCC(return Py::None());
+        static char* kwd_list[] = {"objs", "file_name","version_param","use_polyline","option_source","auto_transform",nullptr};
+        if(!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "Oet|iOsO", kwd_list,
+                                                       &shapeObj, 
+                                                       "utf-8",
+                                                       &fname, 
+                                                       &versionParm,
+                                                       &usePolyline,
+                                                       &optionSource,
+                                                       &autoTransform)) {
+            throw Py::TypeError("expected ([Shape],path");
         }
 
-        PyErr_Clear();
-        if (PyArg_ParseTuple(args.ptr(), "O!et|iOs", &(Part::TopoShapePy::Type) ,
-                                                     &shapeObj,
-                                                     "utf-8",
-                                                     &fname,
-                                                     &versionParm,
-                                                     &usePolyline,
-                                                     &optionSource)) {
-            filePath = std::string(fname);
-            layerName = "none";
-            PyMem_Free(fname);
+        filePath = std::string(fname);
+        layerName = "none";
+        PyMem_Free(fname);
 
-            if ((versionParm == 12) ||
-               (versionParm == 14)) {
-               versionOverride = true;
-            }
-            if (usePolyline == Py_True) {
-               polyOverride = true; 
-            }
-            if (optionSource) {
-                defaultOptions = optionSource;
-            }
-
-            try {
-                ImpExpDxfWrite writer(filePath);
-                writer.setOptionSource(defaultOptions);
-                writer.setOptions();
-                if (versionOverride) {
-                    writer.setVersion(versionParm);
-                }
-                writer.setPolyOverride(polyOverride);
-                writer.setLayerName(layerName);
-                writer.init();
-                Part::TopoShape* obj = static_cast<Part::TopoShapePy*>(shapeObj)->getTopoShapePtr();
-                TopoDS_Shape shape = obj->getShape();
-                writer.exportShape(shape);
-                writer.endRun();
-                return Py::None();
-            }
-            _PY_CATCH_OCC(return Py::None())
+        if ((versionParm == 12) ||
+            (versionParm == 14)) {
+            versionOverride = true;
         }
+        if (usePolyline == Py_True) {
+            polyOverride = true; 
+        }
+        if (optionSource) {
+            defaultOptions = optionSource;
+        }
+        try {
+            ImpExpDxfWrite writer(filePath);
+            writer.setOptionSource(defaultOptions);
+            writer.setOptions();
+            if (versionOverride) {
+                writer.setVersion(versionParm);
+            }
+            writer.setPolyOverride(polyOverride);
+            writer.setLayerName(layerName);
+            writer.init();
 
-        throw Py::TypeError("expected ([Shape],path");
+            auto shapeInfo = getShapes(Py::Object(shapeObj), PyObject_IsTrue(autoTransform));
+            for (auto &item : shapeInfo) {
+                if (item.first.empty())
+                    item.first = layerName;
+                writer.setLayerName(item.first);
+                writer.exportShape(item.second.getShape());
+            }
+            writer.endRun();
+            return Py::None();
+        } _PY_CATCH_OCC(return Py::None());
     }
 
-    Py::Object writeDXFObject(const Py::Tuple& args)
+    Py::Object writeDXFObject(const Py::Tuple& args, const Py::Dict &kwds)
     {
-        PyObject *docObj;
-        char* fname;
-        std::string filePath;
-        std::string layerName;
-        const char* optionSource = nullptr;
-        std::string defaultOptions = "User parameter:BaseApp/Preferences/Mod/Import";
-        int   versionParm = -1;
-        bool  versionOverride = false;
-        bool  polyOverride = false;
-        PyObject *usePolyline = Py_False;
-
-        if (PyArg_ParseTuple(args.ptr(), "O!et|iOs",  &(PyList_Type) ,
-                                                      &docObj, 
-                                                      "utf-8",
-                                                      &fname, 
-                                                      &versionParm,
-                                                      &usePolyline,
-                                                      &optionSource)) {
-            filePath = std::string(fname);
-            layerName = "none";
-            PyMem_Free(fname);
-
-            if ((versionParm == 12) ||
-               (versionParm == 14)) {
-               versionOverride = true;
-            }
-            if (usePolyline == Py_True) {
-               polyOverride = true; 
-            }
-
-            if (optionSource) {
-                defaultOptions = optionSource;
-            }
-
-            try {
-                ImpExpDxfWrite writer(filePath);
-                writer.setOptionSource(defaultOptions);
-                writer.setOptions();
-                if (versionOverride) {
-                    writer.setVersion(versionParm);
-                }
-                writer.setPolyOverride(polyOverride);
-                writer.setLayerName(layerName);
-                writer.init();
-                Py::Sequence list(docObj);
-                for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                    if (PyObject_TypeCheck((*it).ptr(), &(Part::PartFeaturePy::Type))) {
-                        PyObject* item = (*it).ptr();
-                        App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
-                        Part::Feature* part = static_cast<Part::Feature*>(obj);
-                        layerName = part->getNameInDocument();
-                        writer.setLayerName(layerName);
-                        const TopoDS_Shape& shape = part->Shape.getValue();
-                        writer.exportShape(shape);
-                    }
-                }
-                writer.endRun();
-                return Py::None();
-            }
-            _PY_CATCH_OCC(return Py::None());
-        }
-
-        PyErr_Clear();
-        if (PyArg_ParseTuple(args.ptr(), "O!et|iOs", &(App::DocumentObjectPy::Type) ,
-                                                     &docObj,
-                                                     "utf-8",
-                                                     &fname,
-                                                     &versionParm,
-                                                     &usePolyline,
-                                                     &optionSource)) {
-            filePath = std::string(fname);
-            layerName = "none";
-            PyMem_Free(fname);
-
-            if ((versionParm == 12) ||
-               (versionParm == 14)) {
-               versionOverride = true;
-            }
-            if (usePolyline == Py_True) {
-               polyOverride = true; 
-            }
-
-            if (optionSource) {
-                defaultOptions = optionSource;
-            }
-            
-            try {
-                ImpExpDxfWrite writer(filePath);
-                writer.setOptionSource(defaultOptions);
-                writer.setOptions();
-                if (versionOverride) {
-                    writer.setVersion(versionParm);
-                }
-                writer.setPolyOverride(polyOverride);
-                writer.setLayerName(layerName);
-                writer.init();
-                App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(docObj)->getDocumentObjectPtr();
-                Part::Feature* part = static_cast<Part::Feature*>(obj);
-                layerName = part->getNameInDocument();
-                writer.setLayerName(layerName);
-                const TopoDS_Shape& shape = part->Shape.getValue();
-                writer.exportShape(shape);
-                writer.endRun();
-                return Py::None();
-            }
-            _PY_CATCH_OCC(return Py::None());
-        }
-
-        throw Py::TypeError("expected ([DocObject],path");
+        return writeDXFShape(args, kwds);
     }
 };
 

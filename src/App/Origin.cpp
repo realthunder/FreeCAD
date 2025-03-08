@@ -56,6 +56,7 @@ Origin::Origin() : extension(this) {
 
     setStatus(App::NoAutoExpand,true);
     extension.initExtension(this);
+    Visibility.setValue(false);
 }
 
 Origin::~Origin() = default;

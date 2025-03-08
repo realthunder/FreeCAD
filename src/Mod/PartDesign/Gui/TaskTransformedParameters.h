@@ -191,8 +191,10 @@ protected Q_SLOTS:
     /// Connect the subTask OK button to the MultiTransform task
     virtual void onSubTaskButtonOK() {}
     void onChangedSubTransform(bool);
+    void onChangedOffsetBaseFeature(bool);
     void onChangedParallelTransform(bool);
     void onChangedNewSolid(bool);
+    void onChangedHideBase(bool);
     void originalSelectionChanged();
     void onChangedOffset(const QVariant &, bool, bool);
     void onUpdateViewTimer();
@@ -254,8 +256,10 @@ protected:
     bool insideMultiTransform;
     /// Lock updateUI(), applying changes to the underlying feature and calling recomputeFeature()
     QCheckBox *checkBoxSubTransform = nullptr;
+    QCheckBox *checkBoxOffsetBaseFeature = nullptr;
     QCheckBox *checkBoxParallel = nullptr;
     QCheckBox *checkBoxNewSolid = nullptr;
+    QCheckBox *checkBoxHideBase = nullptr;
 
     QSplitter *splitter = nullptr;
     int defaultMinimumHeight = 150;

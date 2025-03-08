@@ -81,6 +81,11 @@ void IndexedName::set(const char *name,
                       const std::vector<const char*> &types,
                       bool allowOthers)
 {
+    if (!name) {
+        this->type = "";
+        return;
+    }
+
     static std::unordered_set<ByteArray, ByteArrayHasher> NameSet;
 
     if (len < 0)

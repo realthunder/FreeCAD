@@ -30,7 +30,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <TDF_LabelMapHasher.hxx>
 #include <TDocStd_Document.hxx>
 #include <TopoDS_Shape.hxx>
 #include <XCAFDoc_ColorTool.hxx>
@@ -58,13 +57,21 @@ namespace Import {
 
 struct ShapeHasher {
     std::size_t operator()(const TopoDS_Shape &s) const {
+#if OCC_VERSION_HEX >= 0x070800
+        return std::hash<TopoDS_Shape>{}(s);
+#else
         return s.HashCode(INT_MAX);
+#endif
     }
 };
 
 struct LabelHasher {
     std::size_t operator()(const TDF_Label &l) const {
+#if OCC_VERSION_HEX >= 0x070800
+        return std::hash<TDF_Label>{}(l);
+#else
         return TDF_LabelMapHasher::HashCode(l,INT_MAX);
+#endif
     }
 };
 

@@ -260,6 +260,14 @@ public:
     /// Paste the value from the property (mainly for Undo/Redo and transactions)
     virtual void Paste(const Property &from) = 0;
 
+    /// Set value by interpolate between two values
+    virtual void interpolate(const Property &from, const Property &to, float t) {
+        (void)from;
+        (void)to;
+        (void)t;
+        throw Base::NotImplementedError();
+    }
+
     /// Called when a child property has changed value
     virtual void hasSetChildValue(Property &) {}
     /// Called before a child property changing value
@@ -470,13 +478,8 @@ protected:
     virtual void setPyValues(const std::vector<PyObject*> &vals, const std::vector<int> &indices) {
         (void)vals;
         (void)indices;
-        notImplemented();
+        throw Base::NotImplementedError();
     }
-
-    void notImplemented() const {
-        throw Base::NotImplementedError("not implemented");
-    }
-
     void _setPyObject(PyObject *);
 
 protected:
@@ -517,7 +520,7 @@ protected:
 
     /// Called to restore the content from the document XML
     virtual void restoreXML(Base::XMLReader &) {
-        notImplemented();
+        throw Base::NotImplementedError();
     }
     /** Called to save the content from the document XML
      *
@@ -528,7 +531,7 @@ protected:
      * whether to store value as attribute or child elements.
      */
     virtual bool saveXML(Base::Writer &) const {
-        notImplemented();
+        throw Base::NotImplementedError();
         return false;
     }
 
@@ -541,12 +544,12 @@ protected:
     virtual void restoreStream(Base::InputStream &s, unsigned count) {
         (void)s;
         (void)count;
-        notImplemented();
+        throw Base::NotImplementedError();
     }
 
     /// Called to restore the content from a separate (file) stream
     virtual void saveStream(Base::OutputStream &) const {
-        notImplemented();
+        throw Base::NotImplementedError();
     }
 };
 
@@ -639,14 +642,27 @@ public:
         if (index<-1 || index>size)
             throw Base::RuntimeError("index out of bound");
 
-        atomic_change guard(*this);
+        atomic_change guard(*this, false);
         if (index==-1 || index == size) {
+            guard.aboutToChange();
             index = size;
             setSize(index+1,value);
-        } else
+        } else if (value == _lValueList[index]) {
+            return;
+        } else {
+            guard.aboutToChange();
             _lValueList[index] = value;
+        }
         this->_touchList.insert(index);
         guard.tryInvoke();
+    }
+
+    virtual void interpolateValue(int index, const_reference from, const_reference to, float t) {
+        (void)index;
+        (void)from;
+        (void)to;
+        (void)t;
+        throw Base::NotImplementedError();
     }
 
     virtual unsigned int getMemSize (void) const override {
@@ -670,6 +686,18 @@ public:
         if(count)
             setValues(std::move(vals));
         return count;
+    }
+
+    void interpolate(const Property &from, const Property &to, float t) override
+    {
+        const auto &fromList = dynamic_cast<const this_type &>(from);
+        const auto &toList = dynamic_cast<const this_type&>(to);
+        atomic_change guard(*this, false);
+        int count = std::min(getSize(), std::min(fromList.getSize(), toList.getSize()));
+        for (int i=0; i<count; ++i) {
+            interpolateValue(i, fromList[i], toList[i], t);
+        }
+        guard.tryInvoke();
     }
 
 protected:

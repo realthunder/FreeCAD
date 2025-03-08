@@ -159,6 +159,13 @@ void PropertyInteger::setPathValue(const ObjectIdentifier &path, const App::any 
         throw bad_cast();
 }
 
+void PropertyInteger::interpolate(const Property &from, const Property &to, float t)
+{
+    auto fromValue = dynamic_cast<const PropertyInteger&>(from)._lValue;
+    auto toValue = dynamic_cast<const PropertyInteger&>(to)._lValue;
+    if (fromValue != toValue)
+        setValue(boost::math::round((toValue - fromValue) * t + fromValue));
+}
 
 //**************************************************************************
 //**************************************************************************
@@ -871,8 +878,12 @@ void PropertyIntegerList::Paste(const Property &from)
     setValues(dynamic_cast<const PropertyIntegerList&>(from)._lValueList);
 }
 
-
-
+void PropertyIntegerList::interpolateValue(int index, const long &from, const long &to, float t)
+{
+    if (from != to) {
+        set1Value(index, boost::math::round((to - from) * t + from));
+    }
+}
 
 //**************************************************************************
 //**************************************************************************
@@ -1130,6 +1141,14 @@ bool PropertyFloat::isSame(const Property &other) const
         return true;
     return other.isDerivedFrom(PropertyFloat::getClassTypeId())
         && getValue() == static_cast<const PropertyFloat&>(other).getValue();
+}
+
+void PropertyFloat::interpolate(const Property &from, const Property &to, float t)
+{
+    auto fromValue = dynamic_cast<const PropertyFloat&>(from)._dValue;
+    auto toValue = dynamic_cast<const PropertyFloat&>(to)._dValue;
+    if (fromValue != toValue)
+        setValue((toValue - fromValue) * t + fromValue);
 }
 
 //**************************************************************************
@@ -1419,6 +1438,13 @@ void PropertyFloatList::Paste(const Property &from)
     setValues(dynamic_cast<const PropertyFloatList&>(from)._lValueList);
 }
 
+void PropertyFloatList::interpolateValue(int index, const double &from, const double &to, float t)
+{
+    if (from != to) {
+        set1Value(index, (to - from) * t + from);
+    }
+}
+
 //**************************************************************************
 //**************************************************************************
 // _PropertyFloatList (single precision float list)
@@ -1485,6 +1511,13 @@ Property *_PropertyFloatList::Copy(void) const
 void _PropertyFloatList::Paste(const Property &from)
 {
     setValues(dynamic_cast<const _PropertyFloatList&>(from)._lValueList);
+}
+
+void _PropertyFloatList::interpolateValue(int index, const float &from, const float &to, float t)
+{
+    if (from != to) {
+        set1Value(index, (to - from) * t + from);
+    }
 }
 
 //**************************************************************************
@@ -2567,6 +2600,20 @@ bool PropertyColor::isSame(const Property &other) const
         && this->getValue() == static_cast<const PropertyColor&>(other).getValue();
 }
 
+void PropertyColor::interpolate(const Property &from, const Property &to, float t)
+{
+    auto fromValue = dynamic_cast<const PropertyColor&>(from)._cCol;
+    auto toValue = dynamic_cast<const PropertyColor&>(to)._cCol;
+    if (fromValue != toValue) {
+        Color c;
+        c.r = (toValue.r - fromValue.r) * t + fromValue.r;
+        c.g = (toValue.g - fromValue.g) * t + fromValue.g;
+        c.b = (toValue.b - fromValue.b) * t + fromValue.b;
+        c.a = (toValue.a - fromValue.a) * t + fromValue.a;
+        setValue(c);
+    }
+}
+
 //**************************************************************************
 // PropertyColorList
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -2665,6 +2712,17 @@ void PropertyColorList::Paste(const Property &from)
     setValues(dynamic_cast<const PropertyColorList&>(from)._lValueList);
 }
 
+void PropertyColorList::interpolateValue(int index, const Color &from, const Color &to, float t)
+{
+    if (from != to) {
+        Color c;
+        c.r = (to.r - from.r) * t + from.r;
+        c.g = (to.g - from.g) * t + from.g;
+        c.b = (to.b - from.b) * t + from.b;
+        c.a = (to.a - from.a) * t + from.a;
+        set1Value(index, c);
+    }
+}
 
 //**************************************************************************
 //**************************************************************************

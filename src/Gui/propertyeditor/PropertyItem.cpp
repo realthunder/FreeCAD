@@ -627,7 +627,9 @@ void PropertyItem::setPropertyName(const App::Property &prop) {
     if(!group)
         group = "Base";
     QString propName = QString::fromUtf8(name);
-    QString prefix = QString::fromUtf8(group) + QStringLiteral("_");;
+    QString prefix = QString::fromUtf8(group);
+    prefix.replace(QStringLiteral(" "), QString());
+    prefix += QStringLiteral("_");;
     if(propName.size() > prefix.size()) {
         if(propName.startsWith(prefix)) {
             // For property name with format <group_name>_<name>, it will be displayed as <name>
@@ -743,8 +745,17 @@ QVariant PropertyItem::data(int column, int role) const
             return QVariant();
         }
         else if (role == Qt::ToolTipRole) {
-            QString type = QStringLiteral("Type: %1\nName: %2").arg(
-                    QString::fromUtf8(propertyItems[0]->getTypeId().getName()), objectName());
+            QString type = QStringLiteral("Type: %1").arg(
+                        QString::fromUtf8(propertyItems[0]->getTypeId().getName()));
+            if (propertyItems[0]->hasName() && \
+                    objectName().toUtf8() != propertyItems[0]->getName())
+            {
+                type += QStringLiteral("\nName: %1\nAlias: %2").arg(
+                        QString::fromUtf8(propertyItems[0]->getName()), objectName());
+            }
+            else
+                type += QStringLiteral("\nName: %1").arg(objectName());
+
             QString doc = QApplication::translate("App::Property", propertyItems[0]->getDocumentation());
             if (linked && propertyItems[0]->getContainer()
                        && QApplication::queryKeyboardModifiers() == Qt::ControlModifier)

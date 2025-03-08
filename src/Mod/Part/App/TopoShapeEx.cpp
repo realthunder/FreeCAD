@@ -278,6 +278,20 @@ void ShapeMapper::populate(bool generated,
     for(TopTools_ListIteratorOfListOfShape it(dst);it.More();it.Next())
         expand(it.Value(), dstShapes);
     insert(generated, src.getShape(), dstShapes);
+    if (shapeSet.insert(src.getShape()).second)
+        shapes.push_back(src);
+}
+
+void ShapeMapper::populate(bool generated, const TopoShape &src, const std::vector<TopoShape> &dst)
+{
+    if(src.isNull())
+        return;
+    std::vector<TopoDS_Shape> dstShapes;
+    for(auto &d : dst)
+        expand(d.getShape(), dstShapes);
+    insert(generated, src.getShape(), dstShapes);
+    if (shapeSet.insert(src.getShape()).second)
+        shapes.push_back(src);
 }
 
 void ShapeMapper::insert(bool generated, const TopoDS_Shape &s, const TopoDS_Shape &d)
@@ -2133,7 +2147,7 @@ void GenericShapeMapper::init(const TopoShape &src, const TopoDS_Shape &dst)
         if (src.findShape(dstFace))
             continue;
 
-        std::unordered_map<TopoDS_Shape, int> map;
+        std::unordered_map<TopoDS_Shape, int, ShapeHasher> map;
         bool found = false;
 
         // Try to find a face in the src that shares at least two edges (or one
@@ -2188,26 +2202,6 @@ void GenericShapeMapper::init(const TopoShape &src, const TopoDS_Shape &dst)
             }
         }
     }
-}
-
-extern "C" {
-// backdoor to be called inside OCC for showing intermediate results
-void showTopoShape(const TopoDS_Shape &s, const char *name)
-{
-    Part::Feature::create(s, name);
-}
-
-void showTopoShapes(const TopoDS_Shape &s, const char *name, const TopTools_ListOfShape &shapes)
-{
-    if (!s.IsNull())
-        Part::Feature::create(s, name);
-    std::string nn(name);
-    nn+="_list";
-    TopTools_ListIteratorOfListOfShape it(shapes);
-    for (; it.More(); it.Next()) {
-        Part::Feature::create(it.Value(), nn.c_str());
-    }
-}
 }
 
 TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
@@ -2275,7 +2269,17 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
             }
         }
 
-        if (remove_limits) {
+        if (!remove_limits) {
+            if (checkLimits && uptoface.shapeType(true) == TopAbs_FACE) {
+                // When using the face with BRepFeat_MakePrism::Perform(const TopoDS_Shape& Until)
+                // then the algorithm expects that the 'NaturalRestriction' flag is set in order
+                // to work as expected.
+                BRep_Builder builder;
+                uptoface = uptoface.makECopy();
+                builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), Standard_True);
+            }
+        }
+        else {
             Handle(Geom_Surface) s = BRep_Tool::Surface(TopoDS::Face(uptoface.getShape()));
             Handle(Standard_Type) styp = s->DynamicType();
             if (styp == STANDARD_TYPE(Geom_RectangularTrimmedSurface)) {
@@ -2311,7 +2315,7 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
                 // surface. We handle other types below by creating face
                 // without bound by ourselves.
                 BRep_Builder builder;
-                builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), Standard_False);
+                builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), initOCCTExtension() < 0);
             }
             else {
                 TopLoc_Location loc = face.Location();
@@ -2326,7 +2330,7 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
                 if (mkFace.IsDone())  {
                     uptoface.setShape(located(mkFace.Shape(),loc), false);
                     BRep_Builder builder;
-                    builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), Standard_False);
+                    builder.NaturalRestriction(TopoDS::Face(uptoface.getShape()), initOCCTExtension() < 0);
                 }
             }
         }
@@ -5788,7 +5792,7 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
 }
 
 static std::size_t
-TopoShape_RefCountShapes(std::unordered_set<TopoDS_Shape> &shapeSet,
+TopoShape_RefCountShapes(std::unordered_set<TopoDS_Shape, ShapeHasher, ShapeHasher> &shapeSet,
                          const TopoDS_Shape& aShape)
 {
     std::size_t size = sizeof(Base::Placement); // rough estimate of location size
@@ -5814,7 +5818,7 @@ std::size_t TopoShape::Cache::getMemSize()
     if (this->memsize || this->shape.IsNull())
         return this->memsize;
 
-    std::unordered_set<TopoDS_Shape> shapeSet;
+    std::unordered_set<TopoDS_Shape, ShapeHasher, ShapeHasher> shapeSet;
     this->memsize = TopoShape_RefCountShapes(shapeSet, this->shape);
 
     for (const auto & shape : shapeSet) {

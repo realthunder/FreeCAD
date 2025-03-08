@@ -376,18 +376,17 @@ Clipping::Clipping(Gui::View3DInventor* view, QWidget* parent)
     }
 
     d->ui.checkBoxFill->setChecked(ViewParams::getSectionFill() && ViewParams::isUsingRenderer());
-    d->ui.checkBoxInvert->initAutoSave();
-    d->ui.checkBoxConcave->initAutoSave();
-    d->ui.checkBoxInvert->initAutoSave();
-    d->ui.checkBoxOnTop->initAutoSave();
-    d->ui.checkBoxHatch->initAutoSave();
-    d->ui.spinBoxHatchScale->initAutoSave();
-    d->ui.checkBoxGroupRendering->initAutoSave();
-    d->ui.checkBoxBacklight->initAutoSave();
-    d->ui.backlightColor->initAutoSave();
-    d->ui.sliderIntensity->initAutoSave();
-    d->ui.checkBoxShowPlane->initAutoSave();
-    d->ui.spinBoxPlaneSize->initAutoSave();
+    d->ui.checkBoxInvert->initAutoSave(ViewParams::getSectionFillInvert());
+    d->ui.checkBoxConcave->initAutoSave(ViewParams::getSectionConcave());
+    d->ui.checkBoxOnTop->initAutoSave(ViewParams::getNoSectionOnTop());
+    d->ui.checkBoxHatch->initAutoSave(ViewParams::getSectionHatchTextureEnable());
+    d->ui.spinBoxHatchScale->initAutoSave(ViewParams::getSectionHatchTextureScale());
+    d->ui.checkBoxGroupRendering->initAutoSave(ViewParams::getSectionFillGroup());
+    d->ui.checkBoxBacklight->initAutoSave(ViewParams::getEnableBacklight());
+    d->ui.backlightColor->initAutoSave(static_cast<uint>(ViewParams::getBacklightColor()));
+    d->ui.sliderIntensity->initAutoSave(ViewParams::getBacklightIntensity());
+    d->ui.checkBoxShowPlane->initAutoSave(ViewParams::getShowClipPlane());
+    d->ui.spinBoxPlaneSize->initAutoSave(ViewParams::getClipPlaneSize());
     d->ui.editHatchTexture->setFileName(
             QString::fromUtf8(ViewParams::getSectionHatchTexture().c_str()));
 

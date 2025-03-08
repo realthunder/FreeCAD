@@ -30,6 +30,10 @@ namespace Ui {
 class DlgBindSheet;
 }
 
+namespace Gui {
+class PrefWidgetStates;
+}
+
 namespace SpreadsheetGui {
 
 class DlgBindSheet : public QDialog
@@ -49,6 +53,7 @@ private:
     Spreadsheet::Sheet * sheet;
     App::Range range;
     Ui::DlgBindSheet *ui;
+    std::unique_ptr<Gui::PrefWidgetStates> widgetStates; /** for managing widget sizes */
 };
 
 }

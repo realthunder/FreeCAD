@@ -1134,6 +1134,9 @@ void SoFCUnifiedSelection::Private::onPreselectTimer() {
     if(preselTimer.isScheduled())
         preselTimer.unschedule();
 
+    if (QApplication::mouseButtons() != Qt::NoButton)
+        return;
+
     auto infos = getPickedList(preselPos, preselViewport, true);
     if(infos.size())
         setHighlight(std::move(infos[0]));

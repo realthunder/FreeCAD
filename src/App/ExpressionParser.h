@@ -327,6 +327,10 @@ protected:
                     App::DocumentObject *newObj) const override;
     void _moveCells(const CellAddress &, int, int, ExpressionVisitor &) override;
     void _offsetCells(int, int, ExpressionVisitor &) override;
+    void _transposeCells(const CellAddress &,
+                         const CellAddress &,
+                         const CellAddress &,
+                         ExpressionVisitor &) override;
     Py::Object _getPyValue(int *jumpCode=nullptr) const override;
 
 protected:
@@ -747,6 +751,10 @@ protected:
                                          const ObjectIdentifier &, ExpressionVisitor &) override;
     void _moveCells(const CellAddress &, int, int, ExpressionVisitor &) override;
     void _offsetCells(int, int, ExpressionVisitor &) override;
+    void _transposeCells(const CellAddress &,
+                         const CellAddress &,
+                         const CellAddress &,
+                         ExpressionVisitor &) override;
     Py::Object _getPyValue(int *jumpCode=nullptr) const override;
 
 protected:

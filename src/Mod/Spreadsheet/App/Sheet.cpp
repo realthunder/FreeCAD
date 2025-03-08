@@ -528,6 +528,16 @@ void Sheet::setPropertyVisibility(App::Property *prop, App::CellAddress addr)
                                                 && !cells.aliasProp.count(addr)));
 }
 
+bool Sheet::removeDynamicProperty(const char* propName)
+{
+    Property* prop = getDynamicPropertyByName(propName);
+    if (App::DocumentObject::removeDynamicProperty(propName)) {
+        propAddress.erase(prop);
+        return true;
+    }
+    return false;
+}
+
 /**
   * Set the property for cell \p key to a PropertyFloat with the value \a value.
   * If the Property exists, but of wrong type, the previous Property is destroyed and recreated as the correct type.
@@ -553,7 +563,6 @@ Property * Sheet::setFloatProperty(CellAddress key, double value)
               || prop->testStatus(Property::PropReadOnly) != isReadOnly) {
         if (prop) {
             this->removeDynamicProperty(name.c_str());
-            propAddress.erase(prop);
         }
         prop = addDynamicProperty("App::PropertyFloat", name.c_str(), "Cells", nullptr,
                                   (isReadOnly ? Prop_ReadOnly : Prop_None) | Prop_NoPersist);
@@ -586,7 +595,6 @@ Property * Sheet::setIntegerProperty(CellAddress key, long value)
               || prop->testStatus(Property::PropReadOnly) != isReadOnly) {
         if (prop) {
             this->removeDynamicProperty(name.c_str());
-            propAddress.erase(prop);
         }
         prop = addDynamicProperty("App::PropertyInteger", name.c_str(), "Cells", nullptr, 
                                   (isReadOnly ? Prop_ReadOnly : Prop_None) | Prop_NoPersist);
@@ -626,7 +634,6 @@ Property * Sheet::setQuantityProperty(CellAddress key, double value, const Base:
               || prop->testStatus(Property::PropReadOnly) != isReadOnly) {
         if (prop) {
             this->removeDynamicProperty(name.c_str());
-            propAddress.erase(prop);
         }
         prop = addDynamicProperty("Spreadsheet::PropertySpreadsheetQuantity", name.c_str(), "Cells", nullptr,
                                   (isReadOnly ? Prop_ReadOnly : Prop_None) | Prop_NoPersist);
@@ -668,7 +675,6 @@ Property * Sheet::setStringProperty(CellAddress key, const std::string & value)
               || prop->testStatus(Property::PropReadOnly) != isReadOnly) {
         if (prop) {
             this->removeDynamicProperty(name.c_str());
-            propAddress.erase(prop);
         }
         prop = addDynamicProperty("App::PropertyString", name.c_str(), "Cells", nullptr,
                                   (isReadOnly ? Prop_ReadOnly : Prop_None) | Prop_NoPersist);
@@ -698,7 +704,6 @@ Property * Sheet::setBooleanProperty(CellAddress key, bool value)
               || prop->testStatus(Property::PropReadOnly) != isReadOnly) {
         if (prop) {
             this->removeDynamicProperty(name.c_str());
-            propAddress.erase(prop);
         }
         prop = addDynamicProperty("App::PropertyBool", name.c_str(), "Cells", nullptr,
                                   (isReadOnly ? Prop_ReadOnly : Prop_None) | Prop_NoPersist);
@@ -722,7 +727,6 @@ Property * Sheet::setObjectProperty(CellAddress key, Py::Object object)
     if (!pyProp) {
         if (prop) {
             this->removeDynamicProperty(name.c_str());
-            propAddress.erase(prop);
         }
         pyProp = freecad_dynamic_cast<PropertyPythonObject>(
                 addDynamicProperty("App::PropertyPythonObject", name.c_str(), "Cells", nullptr,
@@ -1217,10 +1221,7 @@ void Sheet::clear(CellAddress address, bool /*all*/)
     }
 
     std::string addr = address.toString();
-    if (auto prop = props.getDynamicPropertyByName(addr.c_str())) {
-        propAddress.erase(prop);
-        this->removeDynamicProperty(addr.c_str());
-    }
+    this->removeDynamicProperty(addr.c_str());
 }
 
 /**

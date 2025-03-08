@@ -519,7 +519,8 @@ void SelectionSingleton::notify(SelectionChanges &&Chng)
     Base::FlagToggler<bool> flag(Notifying);
     NotificationQueue.push_back(std::move(Chng));
     while(!NotificationQueue.empty()) {
-        const auto &msg = NotificationQueue.front();
+        auto msg = NotificationQueue.front();
+        NotificationQueue.pop_front();
         bool notify;
         switch(msg.Type) {
         case SelectionChanges::AddSelection:
@@ -548,7 +549,6 @@ void SelectionSingleton::notify(SelectionChanges &&Chng)
                 Base::Console().Warning("notify: Unexpected boost exception\n");
             }
         }
-        NotificationQueue.pop_front();
     }
     NotificationRecursion = 0;
 }

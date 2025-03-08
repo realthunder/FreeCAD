@@ -404,12 +404,22 @@ void ExpressionVisitor::collectReplacement(Expression &e,
     return e._collectReplacement(paths,parent,oldObj,newObj);
 }
 
-void ExpressionVisitor::moveCells(Expression &e, const CellAddress &address, int rowCount, int colCount) {
+void ExpressionVisitor::moveCells(Expression &e, const CellAddress &address, int rowCount, int colCount)
+{
     e._moveCells(address,rowCount,colCount,*this);
 }
 
-void ExpressionVisitor::offsetCells(Expression &e, int rowOffset, int colOffset) {
+void ExpressionVisitor::offsetCells(Expression &e, int rowOffset, int colOffset)
+{
     e._offsetCells(rowOffset,colOffset,*this);
+}
+
+void ExpressionVisitor::transposeCells(Expression &e,
+                                       const CellAddress &origin,
+                                       const CellAddress &src,
+                                       const CellAddress &dst)
+{
+    e._transposeCells(origin, src, dst, *this);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -4341,6 +4351,54 @@ void VariableExpression::_offsetCells(int rowOffset, int colOffset, ExpressionVi
     }
 }
 
+static void transposeCellAddress(CellAddress &addr,
+                                 const CellAddress &origin,
+                                 const CellAddress &src,
+                                 const CellAddress &dst)
+{
+    if(!addr.isValid())
+        return;
+
+    int absRow = origin.row() + src.col() - origin.col();
+    int absCol = origin.col() + src.row() - origin.row();
+    int row = dst.row() + addr.col() - src.col();
+    int col = dst.col() + addr.row() - src.row();
+
+    if (addr.isAbsoluteCol() && addr.isAbsoluteRow())
+        addr = CellAddress(absRow, absCol, /*absRow*/true, /*absCol*/true);
+    else if (addr.isAbsoluteRow())
+        addr = CellAddress(row, absCol, /*absRow*/false, /*absCol*/true);
+    else if (addr.isAbsoluteCol())
+        addr = CellAddress(absRow, col, /*absRow*/true, /*absCol*/false);
+    else
+        addr = CellAddress(row, col);
+}
+
+void VariableExpression::_transposeCells(const CellAddress &origin,
+                                         const CellAddress &src,
+                                         const CellAddress &dst,
+                                         ExpressionVisitor &v)
+{
+    if(var.hasDocumentObjectName(true))
+        return;
+
+    int idx = 0;
+    const auto &comp = var.getPropertyComponent(0,&idx);
+    CellAddress addr = stringToAddress(comp.getName().c_str(),true);
+    if(!addr.isValid())
+        return;
+
+    transposeCellAddress(addr, origin, src, dst);
+
+    if(!addr.isValid()) {
+        FC_WARN("Not changing relative cell reference '"
+                << comp.getName() << "' due to invalid address after transpose");
+    } else {
+        v.aboutToChange();
+        var.setComponent(idx,ObjectIdentifier::SimpleComponent(addr.toString()));
+    }
+}
+
 const VariableExpression *VariableExpression::isDoubleBinding(const Expression *expr)
 {
     auto fexpr = SimpleStatement::cast<FunctionExpression>(expr);
@@ -5526,22 +5584,48 @@ void RangeExpression::_offsetCells(int rowOffset, int colOffset, ExpressionVisit
     if(addr.isValid() && (!addr.isAbsoluteRow() || !addr.isAbsoluteCol())) {
         v.aboutToChange();
         if(!addr.isAbsoluteRow())
-            addr.setRow(addr.row()+rowOffset);
+            addr.setRow(addr.row()+rowOffset, /*clip*/true);
         if(!addr.isAbsoluteCol()) 
-            addr.setCol(addr.col()+colOffset);
+            addr.setCol(addr.col()+colOffset, /*clip*/true);
         begin = addr.toString();
     }
     addr = stringToAddress(end.c_str(),true);
     if(addr.isValid() && (!addr.isAbsoluteRow() || !addr.isAbsoluteCol())) {
         v.aboutToChange();
         if(!addr.isAbsoluteRow())
-            addr.setRow(addr.row()+rowOffset);
+            addr.setRow(addr.row()+rowOffset, /*clip*/true);
         if(!addr.isAbsoluteCol()) 
-            addr.setCol(addr.col()+colOffset);
+            addr.setCol(addr.col()+colOffset, /*clip*/true);
         end = addr.toString();
     }
 }
 
+void RangeExpression::_transposeCells(const CellAddress &origin,
+                                      const CellAddress &src,
+                                      const CellAddress &dst,
+                                      ExpressionVisitor &v)
+{
+    CellAddress beginAddr = stringToAddress(end.c_str(),true);
+    transposeCellAddress(beginAddr, origin, src, dst);
+
+    CellAddress endAddr = stringToAddress(begin.c_str(),true);
+    transposeCellAddress(endAddr, origin, src, dst);
+
+    if (!beginAddr.isValid() || !endAddr.isValid()) {
+        FC_WARN("Not changing relative range reference '"
+                << toString() << "' due to invalid address after transpose");
+        return;
+    }
+
+    Range range(beginAddr, endAddr, /*normalize*/true);
+    std::string newBegin = range.from().toString();
+    std::string newEnd = range.to().toString();
+    if (newBegin != begin || newEnd != end) {
+        v.aboutToChange();
+        begin = std::move(newBegin);
+        end = std::move(newEnd);
+    }
+}
 
 /////////////////////////////////////////////////////////////////////////////////
 

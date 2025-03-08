@@ -220,6 +220,20 @@ bool PropertyVector::getPyPathValue(const ObjectIdentifier &path, Py::Object &re
     return true;
 }
 
+static inline Base::Vector3d _interpolate(const Base::Vector3d &from, const Base::Vector3d &to, float t)
+{
+    return Base::Vector3d((to.x - from.x) * t + from.x,
+                          (to.y - from.y) * t + from.y,
+                          (to.z - from.z) * t + from.z);
+}
+
+void PropertyVector::interpolate(const Property &from, const Property &to, float t)
+{
+    auto fromValue = dynamic_cast<const PropertyVector&>(from).getValue();
+    auto toValue = dynamic_cast<const PropertyVector&>(to).getValue();
+    if (fromValue != toValue)
+        setValue(_interpolate(fromValue, toValue, t));
+}
 
 //**************************************************************************
 // PropertyVectorDistance
@@ -262,6 +276,18 @@ TYPESYSTEM_SOURCE(App::PropertyDirection , App::PropertyVector)
 PropertyDirection::PropertyDirection() = default;
 
 PropertyDirection::~PropertyDirection() = default;
+
+void PropertyDirection::interpolate(const Property &from, const Property &to, float t)
+{
+    auto fromValue = dynamic_cast<const PropertyDirection&>(from).getValue();
+    auto toValue = dynamic_cast<const PropertyDirection&>(to).getValue();
+    Base::Rotation rot(fromValue, toValue);
+    Base::Vector3d axis;
+    double angle;
+    rot.getRawValue(axis,angle);
+    rot.setValue(axis, angle*t);
+    setValue(rot.multVec(fromValue));
+}
 
 //**************************************************************************
 // PropertyVectorList
@@ -371,6 +397,13 @@ unsigned int PropertyVectorList::getMemSize () const
     return static_cast<unsigned int>(_lValueList.size() * sizeof(Base::Vector3d));
 }
 
+void PropertyVectorList::interpolateValue(int index, const Base::Vector3d &from, const Base::Vector3d &to, float t)
+{
+    if (from != to) {
+        set1Value(index, _interpolate(from, to, t));
+    }
+}
+
 //**************************************************************************
 // _PropertyVectorList
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -443,6 +476,16 @@ void _PropertyVectorList::Paste(const Property &from)
 unsigned int _PropertyVectorList::getMemSize (void) const
 {
     return static_cast<unsigned int>(_lValueList.size() * sizeof(Base::Vector3f));
+}
+
+void _PropertyVectorList::interpolateValue(int index, const Base::Vector3f &from, const Base::Vector3f &to, float t)
+{
+    if (from != to) {
+        Base::Vector3f v((to.x - from.x) * t + from.x,
+                         (to.y - from.y) * t + from.y,
+                         (to.z - from.z) * t + from.z);
+        set1Value(index, v);
+    }
 }
 
 //**************************************************************************
@@ -1074,6 +1117,19 @@ void PropertyPlacement::Paste(const Property &from)
     hasSetValue();
 }
 
+static inline Base::Placement _interpolate(const Base::Placement from, const Base::Placement to, float t)
+{
+    return Base::Placement(_interpolate(from.getPosition(), to.getPosition(), t),
+                           Base::Rotation::slerp(from.getRotation(), to.getRotation(), t));
+}
+
+void PropertyPlacement::interpolate(const Property &from, const Property &to, float t)
+{
+    const auto &fromValue = dynamic_cast<const PropertyPlacement&>(from).getValue();
+    const auto &toValue = dynamic_cast<const PropertyPlacement&>(to).getValue();
+    if (fromValue != toValue)
+        setValue(_interpolate(fromValue, toValue, t));
+}
 
 //**************************************************************************
 // PropertyPlacementList
@@ -1206,8 +1262,12 @@ unsigned int PropertyPlacementList::getMemSize () const
     return static_cast<unsigned int>(_lValueList.size() * sizeof(Base::Placement));
 }
 
-
-
+void PropertyPlacementList::interpolateValue(int index, const Base::Placement &from, const Base::Placement &to, float t)
+{
+    if (from != to) {
+        set1Value(index, _interpolate(from, to, t));
+    }
+}
 
 //**************************************************************************
 //**************************************************************************
@@ -1462,6 +1522,13 @@ void PropertyRotation::Paste(const Property &from)
     hasSetValue();
 }
 
+void PropertyRotation::interpolate(const Property &from, const Property &to, float t)
+{
+    const auto &fromValue = dynamic_cast<const PropertyRotation&>(from).getValue();
+    const auto &toValue = dynamic_cast<const PropertyRotation&>(to).getValue();
+    if (fromValue != toValue)
+        setValue(Base::Rotation::slerp(fromValue, toValue, t));
+}
 // ------------------------------------------------------------
 
 TYPESYSTEM_SOURCE_ABSTRACT(App::PropertyGeometry , App::Property)

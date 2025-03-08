@@ -123,6 +123,28 @@ private:
     int colOffset;
 };
 
+template<class P> class TransposeCellsExpressionVisitor : public ExpressionModifier<P> {
+public:
+    TransposeCellsExpressionVisitor(P &prop,
+                                    const CellAddress &origin,
+                                    const CellAddress &src,
+                                    const CellAddress &dst)
+        : ExpressionModifier<P>(prop)
+        , origin(origin)
+        , src(src)
+        , dst(dst)
+    {}
+
+    void visit(Expression &node) {
+        this->transposeCells(node,origin,src,dst);
+    }
+
+private:
+    CellAddress origin;
+    CellAddress src;
+    CellAddress dst;
+};
+
 class GenericExpressionVisitor : public ExpressionVisitor {
 public:
     typedef std::function<void(ExpressionVisitor*, Expression &)> FuncType;

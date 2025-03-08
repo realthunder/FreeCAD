@@ -252,6 +252,8 @@ protected:
 
     void updateProperty(App::CellAddress key);
 
+    bool removeDynamicProperty(const char* prop) override;
+
     App::Property *setStringProperty(App::CellAddress key, const std::string & value) ;
 
     App::Property *setObjectProperty(App::CellAddress key, Py::Object obj) ;

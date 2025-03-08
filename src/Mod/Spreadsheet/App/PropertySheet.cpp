@@ -501,6 +501,12 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type) {
     int dstRows = dstRange.rowCount();
     int dstCols = dstRange.colCount();
     CellAddress dstFrom = dstRange.from();
+    auto transpose = [dstFrom](CellAddress &dst) {
+        int r = dst.row() - dstFrom.row();
+        int c = dst.col() - dstFrom.col();
+        dst.setRow(dstFrom.row()+c);
+        dst.setCol(dstFrom.col()+r);
+    };
 
     int roffset=0,coffset=0;
 
@@ -524,6 +530,15 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type) {
             rcount = 1;
             ccount = 1;
         } else {
+            if (!(type & Cell::PasteTransposed)
+                && dstRows != 0
+                && dstCols != 0
+                && dstRows != dstCols
+                && dstRows == range.colCount()
+                && dstCols == range.rowCount())
+            {
+                type |= Cell::PasteTransposed;
+            }
             rcount = dstRows/range.rowCount();
             if(rcount == 0)
                 rcount = 1;
@@ -531,6 +546,9 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type) {
             if(ccount == 0)
                 ccount = 1;
         }
+
+        bool transposed = (type & Cell::PasteTransposed) ? true : false;
+
         for(int ci=0; ci < cellCount; ++ci) {
             reader.readElement("Cell");
             CellAddress src(reader.getAttribute("address"));
@@ -543,6 +561,8 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type) {
                     for(int c=0; c < ccount; ++c) {
                         CellAddress dst(range.row()+roffset+r*range.rowCount(),
                                         range.column()+coffset+c*range.colCount());
+                        if (transposed)
+                            transpose(dst);
                         if(!dst.isValid())
                             continue;
                         owner->clear(dst);
@@ -556,6 +576,8 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type) {
                 for(int c=0; c < ccount; ++c) {
                     CellAddress dst(src.row()+roffset+r*range.rowCount(),
                                     src.col()+coffset+c*range.colCount());
+                    if (transposed)
+                        transpose(dst);
                     if(!dst.isValid())
                         continue;
 
@@ -588,8 +610,16 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type) {
                     else
                         splitCell(dst);
 
-                    if(roffset_cur || coffset_cur) {
-                        OffsetCellsExpressionVisitor<PropertySheet> visitor(*this, roffset_cur, coffset_cur);
+                    if (transposed) {
+                        TransposeCellsExpressionVisitor<PropertySheet> visitor(
+                                *this, from, src, dst);
+                        cell->visit(visitor);
+                        if(visitor.changed())
+                            recomputeDependencies(dst);
+                    }
+                    else if(roffset_cur || coffset_cur) {
+                        OffsetCellsExpressionVisitor<PropertySheet> visitor(
+                                *this, roffset_cur, coffset_cur);
                         cell->visit(visitor);
                         if(visitor.changed())
                             recomputeDependencies(dst);
@@ -604,6 +634,8 @@ void PropertySheet::pasteCells(XMLReader &reader, Range dstRange, int type) {
                     for(int c=0; c < ccount; ++c) {
                         CellAddress dst(range.row()+roffset+r*range.rowCount(),
                                         range.column()+coffset+c*range.colCount());
+                        if (transposed)
+                            transpose(dst);
                         if(!dst.isValid())
                             continue;
                         owner->clear(dst);
@@ -799,10 +831,14 @@ void PropertySheet::setSpans(CellAddress address, int rows, int columns)
 void PropertySheet::clearAlias(CellAddress address)
 {
     // Remove alias if it exists
-    std::map<CellAddress, std::string>::iterator j = aliasProp.find(address);
-    if (j != aliasProp.end()) {
-        revAliasProp.erase(j->second);
-        aliasProp.erase(j);
+    auto itAlias = aliasProp.find(address);
+    if (itAlias != aliasProp.end()) {
+        auto itAliasAddr = revAliasProp.find(itAlias->second);
+        if (itAliasAddr != revAliasProp.end()
+                && itAliasAddr->second == address) {
+            revAliasProp.erase(itAliasAddr);
+        }
+        aliasProp.erase(itAlias);
     }
 }
 
@@ -1970,11 +2006,7 @@ void PropertySheet::setPathValue(const ObjectIdentifier &path, const App::any &v
 
     if(pyValue.isSequence()) {
         Py::Sequence seq(pyValue);
-        if(seq.size()==3
-                && PyObject_TypeCheck(seq[0].ptr(),&PropertySheetPy::Type)
-                && Py::Object(seq[1].ptr()).isString()
-                && Py::Object(seq[2].ptr()).isString())
-        {
+        if(seq.size()==3 && PyObject_TypeCheck(seq[0].ptr(),&PropertySheetPy::Type)) {
             AtomicPropertyChange signaller(*this,false);
             auto other = static_cast<PropertySheetPy*>(seq[0].ptr())->getPropertySheetPtr();
             auto otherOwner = Base::freecad_dynamic_cast<App::DocumentObject>(other->getContainer());
@@ -1982,11 +2014,26 @@ void PropertySheet::setPathValue(const ObjectIdentifier &path, const App::any &v
                 FC_THROWM(Base::RuntimeError, "Invalid binding of '" << other->getFullName()
                         << " in " << getFullName());
 
-            App::CellAddress targetFrom = other->getCellAddress(
-                Py::Object(seq[1].ptr()).as_string().c_str(), false);
+            auto parseCellAddress = [other](const Py::Object &pyObj)
+            {
+                if (pyObj.isString())
+                    return other->getCellAddress(pyObj.as_string().c_str(), false);
 
-            App::CellAddress targetTo = other->getCellAddress(
-                Py::Object(seq[2].ptr()).as_string().c_str(), false);
+                try {
+                    Py::Sequence seq(pyObj);
+                    if (seq.size() == 2) {
+                        App::CellAddress addr;
+                        addr.setRow(Py::Int(seq[0].ptr()), true);
+                        addr.setCol(Py::Int(seq[1].ptr()), true);
+                        return addr;
+                    }
+                } catch (const Py::Exception &) {
+                }
+                FC_THROWM(Base::TypeError, "Invalid cell address. Except address to be text or (int, int)");
+            };
+
+            App::CellAddress targetFrom = parseCellAddress(Py::Object(seq[1].ptr()));
+            App::CellAddress targetTo = parseCellAddress(Py::Object(seq[2].ptr()));
 
             std::string expr(href?"hiddenref(":"");
             if(other != this) {

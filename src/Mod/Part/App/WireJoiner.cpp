@@ -653,8 +653,13 @@ public:
 
         for (auto vit=vmap.qbegin(bgi::nearest(p1,INT_MAX));vit!=vmap.qend();++vit) {
             auto &vinfo = *vit;
-            if (canShowShape())
+            if (canShowShape()) {
+#if OCC_VERSION_HEX >= 0x070800
+                FC_MSG("addcheck " << std::hash<TopoDS_Edge>{}(vinfo.edge()));
+#else
                 FC_MSG("addcheck " << vinfo.edge().HashCode(INT_MAX));
+#endif
+            }
             double d1 = vinfo.pt().SquareDistance(p1);
             if (d1 >= tol)
                 break;
@@ -2070,8 +2075,13 @@ public:
 
         if (FC_LOG_INSTANCE.level()>FC_LOGLEVEL_TRACE+1) {
             FC_MSG("init:");
-            for (const auto &s : sourceEdges)
+            for (const auto &s : sourceEdges) {
+#if OCC_VERSION_HEX >= 0x070800
+                FC_MSG(s.getShape().TShape().get() << ", " << std::hash<TopoDS_Shape>{}(s.getShape()));
+#else
                 FC_MSG(s.getShape().TShape().get() << ", " << s.getShape().HashCode(INT_MAX));
+#endif
+            }
             printHistory(aHistory, sourceEdges);
             printHistory(newHistory, inputEdges);
         }
@@ -2083,7 +2093,11 @@ public:
             FC_MSG("final:");
             for (int i=1; i<=wireData->NbEdges(); ++i) {
                 auto s = wireData->Edge(i);
+#if OCC_VERSION_HEX >= 0x070800
+                FC_MSG(s.TShape().get() << ", " << std::hash<TopoDS_Shape>{}(s));
+#else
                 FC_MSG(s.TShape().get() << ", " << s.HashCode(INT_MAX));
+#endif
             }
         }
         return result;
@@ -2095,8 +2109,13 @@ public:
         FC_MSG("\nHistory:\n");
         for (const auto &s : input) {
             for(TopTools_ListIteratorOfListOfShape it(hist->Modified(s.getShape())); it.More(); it.Next()) {
+#if OCC_VERSION_HEX >= 0x070800
+                FC_MSG(s.getShape().TShape().get() << ", " << std::hash<TopoDS_Shape>{}(s.getShape())
+                       << " -> " << it.Value().TShape().get() << ", " << std::hash<TopoDS_Shape>{}(it.Value()));
+#else
                 FC_MSG(s.getShape().TShape().get() << ", " << s.getShape().HashCode(INT_MAX)
                         << " -> " << it.Value().TShape().get() << ", " << it.Value().HashCode(INT_MAX));
+#endif
             }
         }
     }

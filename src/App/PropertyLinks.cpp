@@ -436,9 +436,15 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
     };
 
     if(missing) {
-        FC_WARN(propertyName(this) 
+        std::ostringstream ss;
+        ss << propertyName(this) 
                 << " missing element reference " << ret->getFullName() << " "
-                << (elementName.first.size()?elementName.first:elementName.second));
+                << (elementName.first.size()?elementName.first:elementName.second);
+        auto owner = Base::freecad_dynamic_cast<DocumentObject>(getContainer());
+        if (owner && owner->isRecomputing())
+            FC_WARN(ss.str());
+        else
+            FC_LOG(ss.str());
         shadow.second.swap(elementName.second);
     } else {
         FC_TRACE(propertyName(this) 

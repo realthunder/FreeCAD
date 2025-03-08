@@ -27,7 +27,6 @@
 
 // Standard*
 #include <Standard_AbortiveTransaction.hxx>
-#include <Standard_Address.hxx>
 #include <Standard_Boolean.hxx>
 #include <Standard_Byte.hxx>
 #include <Standard_Character.hxx>
@@ -50,7 +49,6 @@
 #include <Standard_LicenseError.hxx>
 #include <Standard_LicenseNotFound.hxx>
 #include <Standard_Macro.hxx>
-#include <Standard_math.hxx>
 #include <Standard_MultiplyDefined.hxx>
 #include <Standard_NegativeValue.hxx>
 #include <Standard_NoMoreObject.hxx>

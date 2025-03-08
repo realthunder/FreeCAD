@@ -113,16 +113,16 @@ Only supported when using DAE format.</string>
       <item>
        <widget class="Gui::PrefCheckBox" name="checkBox_6">
         <property name="toolTip">
-         <string>Export mesh segments. For Part/PartDesign shapes, export segment using faces.</string>
+         <string>Export mesh segments color. For Part/PartDesign shapes, export segment using faces.</string>
         </property>
         <property name="text">
-         <string>Export segments</string>
+         <string>Export facet colors</string>
         </property>
         <property name="prefPath" stdset="0">
          <string>Mod/Arch</string>
         </property>
         <property name="prefEntry" stdset="0">
-         <string>ColladaExportSegments</string>
+         <string>ColladaExportFaceColor</string>
         </property>
        </widget>
       </item>

@@ -82,6 +82,8 @@ public:
     bool isSame(const Property &other) const override;
     Property *copyBeforeChange() const override {return Copy();}
 
+    void interpolate(const Property &from, const Property &to, float t) override;
+
 protected:
     long _lValue;
 };
@@ -367,6 +369,8 @@ public:
     Property *Copy(void) const override;
     void Paste(const Property &from) override;
 
+    void interpolateValue(int index, const long &from, const long &to, float t) override;
+
 protected:
     long getPyValue(PyObject *item) const override;
 
@@ -530,6 +534,8 @@ public:
     bool isSame(const Property &other) const override;
     Property *copyBeforeChange() const override {return Copy();}
 
+    void interpolate(const Property &from, const Property &to, float t) override;
+
 protected:
     double _dValue;
 };
@@ -670,6 +676,8 @@ public:
     Property *Copy(void) const override;
     void Paste(const Property &from) override;
 
+    void interpolateValue(int index, const double &from, const double &to, float t) override;
+
 protected:
     double getPyValue(PyObject *item) const override;
 
@@ -692,6 +700,8 @@ public:
 
     Property *Copy(void) const override;
     void Paste(const Property &from) override;
+
+    void interpolateValue(int index, const float &from, const float &to, float t) override;
 
 protected:
     float getPyValue(PyObject *item) const override;
@@ -981,6 +991,8 @@ public:
 
     unsigned int getMemSize () const override{return sizeof(Color);}
     
+    void interpolate(const Property &from, const Property &to, float t) override;
+
 private:
     Color _cCol;
 };
@@ -1007,6 +1019,8 @@ public:
     
     Property *Copy(void) const override;
     void Paste(const Property &from) override;
+
+    void interpolateValue(int index, const Color &from, const Color &to, float t) override;
 
 protected:
     Color getPyValue(PyObject *) const override;

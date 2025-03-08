@@ -56,6 +56,8 @@ public:
     App::PropertyBool ParallelTransform;
 
     App::PropertyPlacement TransformOffset;
+    App::PropertyBool OffsetBaseFeature;
+    App::PropertyBool HideBaseFeature;
     App::PropertyInteger _Version;
 
     /**
@@ -114,7 +116,6 @@ protected:
 
 protected:
     rejectedMap rejected;
-    bool forceSkipFirst = false;
 };
 
 } //namespace PartDesign

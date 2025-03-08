@@ -148,7 +148,7 @@ def saveIcon(key,data,ext):
     iconbank[key] = name
     return name
 
-_Re_Pattern = "<Property name=\"{}\".*?String value=\"(.*?)\"\/>"
+_Re_Pattern = "<Property name=\"{}\".*?String value=\"(.*?)\"/>"
 _Re_CreatedBy = re.compile(_Re_Pattern.format("CreatedBy"))
 _Re_Company = re.compile(_Re_Pattern.format("Company"))
 _Re_License = re.compile(_Re_Pattern.format("License"))

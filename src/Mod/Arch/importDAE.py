@@ -576,7 +576,7 @@ def _export(exportSet, filename, colors):
     matrix0 = FreeCAD.Matrix()
     instances = []
 
-    dosegment = _param.GetBool("ColladaExportSegments", False)
+    dosegment = _param.GetBool("ColladaExportFaceColor", True)
 
     for parentobj, sub in objectslist:
         path = parentobj.Name + '.' + sub

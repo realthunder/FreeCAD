@@ -46,6 +46,8 @@ Params = [
     ParamString('TextColor', '#000000'),
     ParamString('PositiveNumberColor', ''),
     ParamString('NegativeNumberColor', ''),
+    ParamBool('VerticalConfTable', False),
+    ParamBool('DoubleBindConfTable', False),
 ]
 
 def declare():

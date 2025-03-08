@@ -821,6 +821,8 @@ void TaskHoleParameters::changedObject(const App::Document&, const App::Property
             ui->Diameter->blockSignals(true);
             ui->Diameter->setValue(pcHole->Diameter.getValue());
             ui->Diameter->blockSignals(false);
+            ui->Diameter->setMinimum(pcHole->Diameter.getMinimum());
+            ui->HoleCutDiameter->setMinimum(pcHole->Diameter.getValue() + 0.1);
         }
         ui->Diameter->setDisabled(ro);
     }

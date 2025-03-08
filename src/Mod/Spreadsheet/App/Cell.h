@@ -113,6 +113,7 @@ public:
         PasteValue = 1,
         PasteFormat = 2,
         PasteFormula = 4,
+        PasteTransposed = 8,
         PasteAll = PasteFormat | PasteFormula,
     };
     void restore(Base::XMLReader &reader, bool checkAlias=false, int type=PasteAll);

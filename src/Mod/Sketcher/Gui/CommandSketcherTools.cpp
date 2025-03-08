@@ -910,16 +910,17 @@ void CmdSketcherSymmetry::activated(int iMsg)
 
     for (std::vector<std::string>::const_iterator it = SubNames.begin(); it != SubNames.end();
          ++it) {
+        bool external = false;
         // only handle non-external edges
-        if ((it->size() > 4 && it->substr(0, 4) == "Edge")
-            || (it->size() > 12 && it->substr(0, 12) == "ExternalEdge")) {
+        if (boost::starts_with(*it, "Edge")
+                || (external = boost::starts_with(*it, "ExternalEdge"))) {
 
-            if (it->substr(0, 4) == "Edge") {
-                LastGeoId = std::atoi(it->substr(4, 4000).c_str()) - 1;
+            if (!external) {
+                LastGeoId = std::atoi(it->c_str()+4) - 1;
                 LastPointPos = Sketcher::PointPos::none;
             }
             else {
-                LastGeoId = -std::atoi(it->substr(12, 4000).c_str()) - 2;
+                LastGeoId = -std::atoi(it->c_str()+12) - 2;
                 LastPointPos = Sketcher::PointPos::none;
             }
 
@@ -932,10 +933,8 @@ void CmdSketcherSymmetry::activated(int iMsg)
                 lastgeotype = invalid;
 
             // lines to make symmetric (only non-external)
-            if (LastGeoId >= 0) {
-                geoids++;
-                stream << LastGeoId << ",";
-            }
+            geoids++;
+            stream << LastGeoId << ",";
         }
         else if (it->size() > 6 && it->substr(0, 6) == "Vertex") {
             // only if it is a GeomPoint
@@ -950,10 +949,8 @@ void CmdSketcherSymmetry::activated(int iMsg)
                 lastgeotype = point;
 
                 // points to make symmetric
-                if (LastGeoId >= 0) {
-                    geoids++;
-                    stream << LastGeoId << ",";
-                }
+                geoids++;
+                stream << LastGeoId << ",";
             }
         }
     }
@@ -1288,16 +1285,20 @@ void SketcherCopy::activate(SketcherCopy::Op op)
     int geoids = 0;
     for (std::vector<std::string>::const_iterator it = SubNames.begin(); it != SubNames.end();
          ++it) {
-        // only handle non-external edges
-        if (it->size() > 4 && it->substr(0, 4) == "Edge") {
-            LastGeoId = std::atoi(it->substr(4, 4000).c_str()) - 1;
+        bool external = false;
+        if (boost::starts_with(*it, "Edge")
+                || (external = boost::starts_with(*it, "ExternalEdge"))) {
+            if (!external) {
+                LastGeoId = std::atoi(it->c_str()+4) - 1;
+            }
+            else {
+                LastGeoId = -std::atoi(it->c_str()+12) - 2;
+            }
             LastPointPos = Sketcher::PointPos::none;
             LastGeo = Obj->getGeometry(LastGeoId);
             // lines to copy
-            if (LastGeoId >= 0) {
-                geoids++;
-                stream << LastGeoId << ",";
-            }
+            geoids++;
+            stream << LastGeoId << ",";
         }
         else if (it->size() > 6 && it->substr(0, 6) == "Vertex") {
             // only if it is a GeomPoint
@@ -1309,10 +1310,8 @@ void SketcherCopy::activate(SketcherCopy::Op op)
                 LastGeoId = GeoId;
                 LastPointPos = Sketcher::PointPos::start;
                 // points to copy
-                if (LastGeoId >= 0) {
-                    geoids++;
-                    stream << LastGeoId << ",";
-                }
+                geoids++;
+                stream << LastGeoId << ",";
             }
         }
     }
@@ -1799,17 +1798,21 @@ void CmdSketcherRectangularArray::activated(int iMsg)
 
     for (std::vector<std::string>::const_iterator it = SubNames.begin(); it != SubNames.end();
          ++it) {
-        // only handle non-external edges
-        if (it->size() > 4 && it->substr(0, 4) == "Edge") {
-            LastGeoId = std::atoi(it->substr(4, 4000).c_str()) - 1;
+        bool external = false;
+        if (boost::starts_with(*it, "Edge")
+                || (external = boost::starts_with(*it, "ExternalEdge"))) {
+            if (!external) {
+                LastGeoId = std::atoi(it->c_str()+4) - 1;
+            }
+            else {
+                LastGeoId = -std::atoi(it->c_str()+12) - 2;
+            }
             LastPointPos = Sketcher::PointPos::none;
             LastGeo = Obj->getGeometry(LastGeoId);
 
             // lines to copy
-            if (LastGeoId >= 0) {
-                geoids++;
-                stream << LastGeoId << ",";
-            }
+            geoids++;
+            stream << LastGeoId << ",";
         }
         else if (it->size() > 6 && it->substr(0, 6) == "Vertex") {
             // only if it is a GeomPoint
@@ -1821,10 +1824,8 @@ void CmdSketcherRectangularArray::activated(int iMsg)
                 LastGeoId = GeoId;
                 LastPointPos = Sketcher::PointPos::start;
                 // points to copy
-                if (LastGeoId >= 0) {
-                    geoids++;
-                    stream << LastGeoId << ",";
-                }
+                geoids++;
+                stream << LastGeoId << ",";
             }
         }
     }

@@ -215,9 +215,12 @@ void ConsoleObserverStd::Critical(const char *sCritical)
     }
 }
 
+thread_local std::string RedirectStdOutput::buffer;
+thread_local std::string RedirectStdError::buffer;
+thread_local std::string RedirectStdLog::buffer;
+
 RedirectStdOutput::RedirectStdOutput()
 {
-    buffer.reserve(80);
 }
 
 int RedirectStdOutput::overflow(int c)
@@ -239,7 +242,6 @@ int RedirectStdOutput::sync()
 
 RedirectStdLog::RedirectStdLog()
 {
-    buffer.reserve(80);
 }
 
 int RedirectStdLog::overflow(int c)
@@ -261,7 +263,6 @@ int RedirectStdLog::sync()
 
 RedirectStdError::RedirectStdError()
 {
-    buffer.reserve(80);
 }
 
 int RedirectStdError::overflow(int c)

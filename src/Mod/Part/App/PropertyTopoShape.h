@@ -121,6 +121,7 @@ private:
 
 private:
     TopoShape _Shape;
+    TopoShape _ShapeNoName;
     std::string _Ver;
     mutable int _HasherIndex = 0;
     mutable bool _SaveHasher = false;

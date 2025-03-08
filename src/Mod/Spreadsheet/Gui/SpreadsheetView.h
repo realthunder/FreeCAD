@@ -108,7 +108,7 @@ protected Q_SLOTS:
     void editingFinishedWithKey(int key, Qt::KeyboardModifiers modifiers);
     void confirmAliasChanged(const QString& text);
     void aliasChanged(const QString& text);
-    void confirmContentChanged(const QString& text);
+    void confirmContentChanged(const QString& text, int role = Qt::EditRole);
     void currentChanged( const QModelIndex & current, const QModelIndex & previous );
     void columnResized(int col, int oldSize, int newSize);
     void rowResized(int row, int oldSize, int newSize);

@@ -199,7 +199,7 @@ endif(FREECAD_USE_PCH)
 add_library(Fem SHARED ${Fem_SRCS})
 target_link_libraries(Fem ${Fem_LIBS} ${VTK_LIBRARIES})
 
-find_package(OpenMP)
+find_package(OpenMP 4.0)
 if(OpenMP_CXX_FOUND)
 	target_link_libraries(Fem OpenMP::OpenMP_CXX)
 endif()

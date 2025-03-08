@@ -81,6 +81,10 @@ Transformed::Transformed()
 
     ADD_PROPERTY_TYPE(TransformOffset,(Base::Placement()),"Part Design",(App::PropertyType)(App::Prop_None),
         "Offset placement applied to the source shape before pattern transformation.");
+    ADD_PROPERTY_TYPE(OffsetBaseFeature,(true),"Part Design",(App::PropertyType)(App::Prop_None),
+        "Apply offset to base feature. Note that this only has effect on immediate base feature.");
+    ADD_PROPERTY_TYPE(HideBaseFeature,(false),"Part Design",(App::PropertyType)(App::Prop_None),
+        "Hide the original base feature and leave only the transformed one(s).");
 
     ADD_PROPERTY_TYPE(_Version,(0),"Part Design",(App::PropertyType)(App::Prop_Hidden), 0);
 
@@ -245,20 +249,19 @@ App::DocumentObjectExecReturn *Transformed::execute()
 
     // Get the support
     TopoShape support;
-    bool canSkipFirst = true;
+    bool canSkipFirst = HideBaseFeature.getValue();
     auto baseObj = getBaseObject(true);
-    if (NewSolid.getValue() || !baseObj) 
-        canSkipFirst = forceSkipFirst;
-    else {
+    if (!canSkipFirst && !NewSolid.getValue() && baseObj)  {
         support = getBaseShape(true, false, false);
         if (support.isNull())
             return new App::DocumentObjectExecReturn("Cannot transform invalid support shape");
 
-        // This old behavior of the first instance of pattern. It's kept for
+        // This is the old behavior of the first instance of pattern. It's kept for
         // backward compatibility.
         if (_Version.getValue() > 1
                 && _Version.getValue() <= 2
                 && hasOffset
+                && OffsetBaseFeature.getValue()
                 && SubTransform.getValue()
                 && !Base::freecad_dynamic_cast<Transformed>(baseObj)
                 && Base::freecad_dynamic_cast<FeatureAddSub>(baseObj))
@@ -271,14 +274,13 @@ App::DocumentObjectExecReturn *Transformed::execute()
                     support = feature->getBaseShape(true, false, false);
                     if (baseObj)
                         this->Placement.setValue(baseObj->Placement.getValue());
-                    canSkipFirst = forceSkipFirst;
                 }
                 break;
             }
         } 
         else if (_Version.getValue() > 2
-                && !forceSkipFirst
                 && hasOffset
+                && OffsetBaseFeature.getValue()
                 && SubTransform.getValue())
         {
             // New behavior of first instance of pattern.
@@ -342,8 +344,10 @@ App::DocumentObjectExecReturn *Transformed::execute()
                     if (baseObj)
                         this->Placement.setValue(baseObj->Placement.getValue());
                 }
-                canSkipFirst = forceSkipFirst;
             }
+        }
+        else if (_Version.getValue() > 3 && OffsetBaseFeature.getValue() && !SubTransform.getValue()) {
+            support = TopoShape();
         }
     }
 
@@ -586,7 +590,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
                     return new App::DocumentObjectExecReturn("Transformed: Linked shape object is empty");
                 try {
                     shapeCopy = shapeCopy.makETransform(*t, ss.str().c_str());
-                    if (idx == 0 && canSkipFirst && (_Version.getValue()==0 || !hasOffset)) {
+                    if (idx == 0 && canSkipFirst && (_Version.getValue()==0 || !hasOffset || !OffsetBaseFeature.getValue())) {
                         // Skip first transformation in case we do not transform the
                         // first instance (i.e. original feature belongs to the same
                         // sibling group)
@@ -926,7 +930,7 @@ void Transformed::onChanged(const App::Property *prop) {
 void Transformed::setupObject () {
     FeatureAddSub::setupObject();
     CopyShape.setValue(false);
-    _Version.setValue(3);
+    _Version.setValue(4);
 }
 
 bool Transformed::isElementGenerated(const TopoShape &shape, const Data::MappedName &name) const

@@ -618,7 +618,12 @@ void Cell::_setAlias(const std::string &n)
     if (alias != n) {
         PropertySheet::AtomicPropertyChange signaller(*owner);
 
-        owner->revAliasProp.erase(alias);
+        if (!alias.empty()
+                && owner->revAliasProp.count(alias)
+                && owner->revAliasProp[alias] == address)
+        {
+            owner->revAliasProp.erase(alias);
+        }
 
         // Update owner
         if (!n.empty()) {
@@ -627,12 +632,6 @@ void Cell::_setAlias(const std::string &n)
         }
         else {
             owner->aliasProp.erase(address);
-        }
-
-        if (!alias.empty()) {
-            // The property may have been added in Sheet::updateAlias
-            auto * docObj = static_cast<App::DocumentObject*>(owner->getContainer());
-            docObj->removeDynamicProperty(alias.c_str());
         }
 
         alias = n;
@@ -1361,7 +1360,7 @@ bool Cell::setEditData(const QVariant &d) {
         auto expr = SimpleStatement::cast<ListExpression>(expression.get());
         if(expr && expr->getSize()>=2) {
             auto parent = Base::freecad_dynamic_cast<App::DocumentObject>(owner->getContainer());
-            auto vexpr = VariableExpression::isDoubleBinding(expr->getItems()[0].get());
+            auto vexpr = VariableExpression::isDoubleBinding(expr->getItems()[1].get());
             bool isString = expr->getItems()[1]->eval()->isDerivedFrom(StringExpression::getClassTypeId());
             if (isString) {
                 if(vexpr) {

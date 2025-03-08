@@ -64,6 +64,7 @@
 #include <Inventor/elements/SoNormalElement.h>
 #include <Inventor/elements/SoGLVBOElement.h>
 #include <Inventor/elements/SoCullElement.h>
+#include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/sensors/SoNodeSensor.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoMarkerSet.h>
@@ -73,6 +74,7 @@
 #include <Inventor/fields/SoMFNode.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoCallbackAction.h>
+#include <Inventor/actions/SoGetBoundingBoxAction.h>
 #include <Inventor/lists/SbList.h>
 #include <Inventor/lists/SbPList.h>
 #include <Inventor/system/gl.h>
@@ -1176,6 +1178,12 @@ SoFCVertexCache::renderTriangles(SoGLRenderAction * action, const int arrays, in
 {
   SoState *state = action->getState();
   if (PRIVATE(this)->glrender) {
+    if (PRIVATE(this)->boundbox.isEmpty()) {
+      const SbViewportRegion & vp = SoViewportRegionElement::get(state);
+      SoGetBoundingBoxAction bboxAction(vp);
+      bboxAction.apply(PRIVATE(this)->node);
+      PRIVATE(this)->boundbox.extendBy(bboxAction.getBoundingBox());
+    }
     if (PRIVATE(this)->node) {
       glPushAttrib(GL_ENABLE_BIT
           | GL_DEPTH_BUFFER_BIT
@@ -1184,6 +1192,10 @@ SoFCVertexCache::renderTriangles(SoGLRenderAction * action, const int arrays, in
           | GL_POLYGON_BIT);
       glPushMatrix();
       state->push();
+      // Legacy shape with sorted transparency type will delay rendering to be
+      // done by SoGLRenderAction, but we are not using SoGLRenderAction for
+      // rendering, so must disable here.
+      SoShapeStyleElement::setTransparencyType(state, SoGLRenderAction::BLEND);
       PRIVATE(this)->node->GLRender(action);
       state->pop();
       glPopAttrib();
