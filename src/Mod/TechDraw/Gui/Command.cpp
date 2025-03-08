@@ -1039,7 +1039,8 @@ void CmdTechDrawClipGroup::activated(int iMsg)
     openCommand(QT_TRANSLATE_NOOP("Command", "Create Clip"));
     Gui::cmdAppDocument(page, std::ostringstream() <<
             "addObject('TechDraw::DrawViewClip','" << FeatName << "')");
-    Gui::cmdAppObjectArgs(page, "addView(%s))", getObjectCmd(page));
+    auto feat = page->getDocument()->getObject(FeatName.c_str());
+    Gui::cmdAppObjectArgs(page, "addView(%s))", getObjectCmd(feat));
     updateActive();
     commitCommand();
 }
@@ -1105,7 +1106,7 @@ void CmdTechDrawClipGroupAdd::activated(int iMsg)
 
     openCommand(QT_TRANSLATE_NOOP("Command", "ClipGroupAdd"));
     Gui::cmdAppObjectHide(view);
-    Gui::cmdAppObject(pageClip, std::ostringstream() << "addView(" << getObjectCmd(view) << ")");
+    Gui::cmdAppObject(clip, std::ostringstream() << "addView(" << getObjectCmd(view) << ")");
     Gui::cmdAppObjectShow(view);
     updateActive();
     commitCommand();
