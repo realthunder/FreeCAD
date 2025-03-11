@@ -259,6 +259,7 @@ void FileInfo::setFile(const char* name)
     }
     else {
         std::replace(FileName.begin(), FileName.end(), '\\', '/');
+    }
 #endif
 }
 

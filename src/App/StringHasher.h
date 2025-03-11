@@ -127,18 +127,7 @@ public:
           _flags(Flag::None)
     {}
 
-    StringID(long id, const QByteArray &data, bool binary, bool hashed)
-        : _id(id),
-          _data(data)
-    {
-        if(binary) {
-            _flags.setFlag(Flag::Binary);
-        }
-        if(hashed) {
-            _flags.setFlag(Flag::Hashed);
-        }
-    }
-
+    StringID(long id, const QByteArray &data, bool binary, bool hashed);
     StringID(const StringID& other) = delete;
     StringID(StringID&& other) noexcept = delete;
     StringID& operator=(const StringID& rhs) = delete;
@@ -806,6 +795,17 @@ ENABLE_BITMASK_OPERATORS(App::StringHasher::Option)
 
 namespace App
 {
+inline StringID::StringID(long id, const QByteArray &data, bool binary, bool hashed)
+    : _id(id) ,_data(data)
+{
+    if(binary) {
+        _flags.setFlag(Flag::Binary);
+    }
+    if(hashed) {
+        _flags.setFlag(Flag::Hashed);
+    }
+}
+
 inline bool StringID::isBinary() const
 {
     return _flags.testFlag(Flag::Binary);

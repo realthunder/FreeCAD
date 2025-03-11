@@ -243,9 +243,9 @@ void ConsoleObserverStd::Critical(const char* sCritical)
     }
 }
 
-thread_local std::string RedirectStdOutput::buffer;
-thread_local std::string RedirectStdError::buffer;
-thread_local std::string RedirectStdLog::buffer;
+static thread_local std::string stdoutBuffer;
+static thread_local std::string stderrBuffer;
+static thread_local std::string stdlogBuffer;
 
 RedirectStdOutput::RedirectStdOutput()
 {
@@ -254,7 +254,7 @@ RedirectStdOutput::RedirectStdOutput()
 int RedirectStdOutput::overflow(int ch)
 {
     if (ch != EOF) {
-        buffer.push_back(static_cast<char>(ch));
+        stdoutBuffer.push_back(static_cast<char>(ch));
     }
     return ch;
 }
@@ -262,9 +262,9 @@ int RedirectStdOutput::overflow(int ch)
 int RedirectStdOutput::sync()
 {
     // Print as log as this might be verbose
-    if (!buffer.empty() && buffer.back() == '\n') {
-        Base::Console().Log("%s", buffer.c_str());
-        buffer.clear();
+    if (!stdoutBuffer.empty() && stdoutBuffer.back() == '\n') {
+        Base::Console().Log("%s", stdoutBuffer.c_str());
+        stdoutBuffer.clear();
     }
     return 0;
 }
@@ -276,7 +276,7 @@ RedirectStdLog::RedirectStdLog()
 int RedirectStdLog::overflow(int ch)
 {
     if (ch != EOF) {
-        buffer.push_back(static_cast<char>(ch));
+        stdlogBuffer.push_back(static_cast<char>(ch));
     }
     return ch;
 }
@@ -284,9 +284,9 @@ int RedirectStdLog::overflow(int ch)
 int RedirectStdLog::sync()
 {
     // Print as log as this might be verbose
-    if (!buffer.empty() && buffer.back() == '\n') {
-        Base::Console().Log("%s", buffer.c_str());
-        buffer.clear();
+    if (!stdlogBuffer.empty() && stdlogBuffer.back() == '\n') {
+        Base::Console().Log("%s", stdlogBuffer.c_str());
+        stdlogBuffer.clear();
     }
     return 0;
 }
@@ -298,16 +298,16 @@ RedirectStdError::RedirectStdError()
 int RedirectStdError::overflow(int ch)
 {
     if (ch != EOF) {
-        buffer.push_back(static_cast<char>(ch));
+        stderrBuffer.push_back(static_cast<char>(ch));
     }
     return ch;
 }
 
 int RedirectStdError::sync()
 {
-    if (!buffer.empty() && buffer.back() == '\n') {
-        Base::Console().Error("%s", buffer.c_str());
-        buffer.clear();
+    if (!stderrBuffer.empty() && stderrBuffer.back() == '\n') {
+        Base::Console().Error("%s", stderrBuffer.c_str());
+        stderrBuffer.clear();
     }
     return 0;
 }

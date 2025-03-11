@@ -155,9 +155,6 @@ public:
 protected:
     int overflow(int ch = EOF) override;
     int sync() override;
-
-private:
-    static thread_local std::string buffer;
 };
 
 class BaseExport RedirectStdError: public std::streambuf
@@ -168,9 +165,6 @@ public:
 protected:
     int overflow(int ch = EOF) override;
     int sync() override;
-
-private:
-    static thread_local std::string buffer;
 };
 
 class BaseExport RedirectStdLog: public std::streambuf
@@ -181,9 +175,6 @@ public:
 protected:
     int overflow(int ch = EOF) override;
     int sync() override;
-
-private:
-    static thread_local std::string buffer;
 };
 
 
