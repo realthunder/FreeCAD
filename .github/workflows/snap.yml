@@ -1,9 +1,9 @@
 name: Publish snap
 
 on:
-  push:
-    tags:
-      - "*" # build for any new tag (on all branches)
+  # push:
+  #   tags:
+  #     - "*" # build for any new tag (on all branches)
     
   workflow_dispatch:
 
