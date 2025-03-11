@@ -1,6 +1,6 @@
 Tip release (branch [LinkMerge](https://github.com/realthunder/FreeCAD/tree/LinkMerge)) is merged with upstream a662fbb2 2023.12.27
 
-# Tip 2025.03.08
+# Tip 2025.03.11
 
 Fix crash on threaded console output redirection  
 Disable pre-selection on mouse move with any button down  
@@ -28,7 +28,7 @@ Sketcher: be consistent about square distance vs SquareConfusion for external ge
 Arch: fix OBJ import with segments (facet colors)  
 Arch: re-wording DAE/OBJ export facet color option  
 
--- 20250308tip --
+-- 20250311tip --
 
 
 # Tip 2024.10.03
