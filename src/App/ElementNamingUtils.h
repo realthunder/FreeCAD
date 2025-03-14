@@ -9,28 +9,28 @@ namespace Data
 {
 
 /// Special prefix to mark the beginning of a mapped sub-element name
-const std::string& elementMapPrefix();
+AppExport const std::string& elementMapPrefix();
 
 /// Special prefix to mark a missing element
-const std::string& missingPrefix();
+AppExport const std::string& missingPrefix();
 
-const std::string& mappedChildPrefix();
+AppExport const std::string& mappedChildPrefix();
 
 /// Special postfix to mark the following tag
-const std::string& tagPostfix();
+AppExport const std::string& tagPostfix();
 
-const std::string& decimalTagPostfix();
-const std::string& externalTagPostfix();
-const std::string& childTagPostfix();
+AppExport const std::string& decimalTagPostfix();
+AppExport const std::string& externalTagPostfix();
+AppExport const std::string& childTagPostfix();
 
 /// Special postfix to mark the index of an array element
-const std::string& indexPostfix();
-const std::string& upperPostfix();
-const std::string& lowerPostfix();
-const std::string& modPostfix();
-const std::string& genPostfix();
-const std::string& modgenPostfix();
-const std::string& duplicatePostfix();
+AppExport const std::string& indexPostfix();
+AppExport const std::string& upperPostfix();
+AppExport const std::string& lowerPostfix();
+AppExport const std::string& modPostfix();
+AppExport const std::string& genPostfix();
+AppExport const std::string& modgenPostfix();
+AppExport const std::string& duplicatePostfix();
 
 
 /// Check if a subname contains missing element
