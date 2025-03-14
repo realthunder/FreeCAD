@@ -58,8 +58,8 @@ public:
     void setSize(int newSize) override;
     int getSize() const override;
 
-    virtual bool isSame(const App::Property &other) const;
-    virtual App::Property *copyBeforeChange() const;
+    bool isSame(const App::Property &other) const override;
+    App::Property *copyBeforeChange() const override;
 
     /** Sets the property
      */

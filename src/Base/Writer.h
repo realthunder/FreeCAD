@@ -195,7 +195,7 @@ protected:
     std::vector<std::string> Errors;
     std::set<std::string> Modes;
 
-    int indent {0};;
+    int indent {0};
     short indent_size {2};
     char indBuf[65] {};
 

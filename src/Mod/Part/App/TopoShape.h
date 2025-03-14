@@ -163,7 +163,7 @@ public:
     /// Bound box from the CasCade shape
     Base::BoundBox3d getBoundBox(void)const override;
     bool getCenterOfGravity(Base::Vector3d& center) const override;
-    virtual bool getRotation(Base::Rotation& rot) const;
+    bool getRotation(Base::Rotation& rot) const override;
     static void convertTogpTrsf(const Base::Matrix4D& mtrx, gp_Trsf& trsf);
     static void convertToMatrix(const gp_Trsf& trsf, Base::Matrix4D& mtrx);
     static Base::Matrix4D convert(const gp_Trsf& trsf);
@@ -2418,19 +2418,19 @@ public:
                                   bool sameType,
                                   QVector<Data::MappedElement> &names) const;
 
-    virtual std::string getElementMapVersion() const;
-    virtual bool checkElementMapVersion(const char * ver) const;
+    std::string getElementMapVersion() const override;
+    bool checkElementMapVersion(const char * ver) const override;
 
-    virtual void flushElementMap() const;
+    void flushElementMap() const override;
 
-    virtual Data::ElementMapPtr resetElementMap(
-            Data::ElementMapPtr elementMap=Data::ElementMapPtr());
+    Data::ElementMapPtr resetElementMap(
+            Data::ElementMapPtr elementMap=Data::ElementMapPtr()) override;
 
-    virtual unsigned long getElementMapReserve() const;
+    unsigned long getElementMapReserve() const override;
     bool hasPendingElementMap() const;
 
-    virtual std::vector<Data::IndexedName> getHigherElements(const char *element,
-                                                             bool silent=false) const;
+    std::vector<Data::IndexedName> getHigherElements(const char *element,
+                                                     bool silent=false) const override;
 
     Data::MappedName setElementComboName(const Data::IndexedName & element, 
                                          const std::vector<Data::MappedName> &names,
@@ -2443,7 +2443,7 @@ public:
                                                          const char *marker=nullptr,
                                                          std::string *postfix = nullptr) const;
 
-    virtual void reTagElementMap(long tag, App::StringHasherRef hasher, const char *postfix=nullptr);
+    void reTagElementMap(long tag, App::StringHasherRef hasher, const char *postfix=nullptr) override;
 
     long isElementGenerated(const Data::MappedName &name, int depth=1) const;
     //@}
@@ -2498,11 +2498,11 @@ public:
     friend class Cache;
 
 protected:
-    virtual Data::MappedName renameDuplicateElement(int index,
-                                                    const Data::IndexedName & element, 
-                                                    const Data::IndexedName & element2,
-                                                    const Data::MappedName & name,
-                                                    Data::ElementIDRefs &sids);
+    Data::MappedName renameDuplicateElement(int index,
+                                            const Data::IndexedName & element, 
+                                            const Data::IndexedName & element2,
+                                            const Data::MappedName & name,
+                                            Data::ElementIDRefs &sids) override;
 
 private:
 
@@ -2731,8 +2731,8 @@ struct PartExport MapperMaker: TopoShape::Mapper {
     MapperMaker(BRepBuilderAPI_MakeShape &maker)
         :maker(maker)
     {}
-    virtual const std::vector<TopoDS_Shape> &modified(const TopoDS_Shape &s) const override;
-    virtual const std::vector<TopoDS_Shape> &generated(const TopoDS_Shape &s) const override;
+    const std::vector<TopoDS_Shape> &modified(const TopoDS_Shape &s) const override;
+    const std::vector<TopoDS_Shape> &generated(const TopoDS_Shape &s) const override;
 };
 
 /** Shape mapper for BRepTools_History
@@ -2745,8 +2745,8 @@ struct PartExport MapperHistory: TopoShape::Mapper {
     MapperHistory(const Handle(BRepTools_History) &history);
     MapperHistory(const Handle(BRepTools_ReShape) &reshape);
     MapperHistory(ShapeFix_Root &fix);
-    virtual const std::vector<TopoDS_Shape> &modified(const TopoDS_Shape &s) const override;
-    virtual const std::vector<TopoDS_Shape> &generated(const TopoDS_Shape &s) const override;
+    const std::vector<TopoDS_Shape> &modified(const TopoDS_Shape &s) const override;
+    const std::vector<TopoDS_Shape> &generated(const TopoDS_Shape &s) const override;
 };
 
 /** Shape mapper for user defined shape mapping
@@ -2822,14 +2822,14 @@ struct PartExport ShapeMapper: TopoShape::Mapper {
      */
     void insert(bool generated, const TopoDS_Shape &s, const TopoDS_Shape &d);
 
-    virtual const std::vector<TopoDS_Shape> &generated(const TopoDS_Shape &s) const override {
+    const std::vector<TopoDS_Shape> &generated(const TopoDS_Shape &s) const override {
         auto iter = _generated.find(s);
         if(iter != _generated.end())
             return iter->second.shapes;
         return _res;
     }
 
-    virtual const std::vector<TopoDS_Shape> &modified(const TopoDS_Shape &s) const override {
+    const std::vector<TopoDS_Shape> &modified(const TopoDS_Shape &s) const override {
         auto iter = _modified.find(s);
         if(iter != _modified.end())
             return iter->second.shapes;
@@ -2914,12 +2914,12 @@ struct PartExport TopoShape::BRepFillingParams {
 
 class PartExport ShapeSegment : public Data::Segment
 {
-    TYPESYSTEM_HEADER();
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
-    ShapeSegment(const TopoShape &ShapeIn):Shape(ShapeIn){}
+    explicit ShapeSegment(const TopoShape &ShapeIn):Shape(ShapeIn){}
     ShapeSegment(){}
-    virtual std::string getName() const;
+    std::string getName() const override;
 
     TopoShape Shape;
 };
