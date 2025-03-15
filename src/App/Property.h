@@ -690,6 +690,7 @@ public:
 
     void interpolate(const Property &from, const Property &to, float t) override
     {
+#undef min
         const auto &fromList = dynamic_cast<const this_type &>(from);
         const auto &toList = dynamic_cast<const this_type&>(to);
         atomic_change guard(*this, false);
