@@ -369,12 +369,17 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
         double factor = fabs(dir * gp_Dir(SketchVector.x, SketchVector.y, SketchVector.z));
 
         // factor would be zero if vectors are orthogonal
-        if (factor < Precision::Confusion())
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
-                        "Creation failed because direction is orthogonal to sketch's normal vector"));
-
-        // perform the length correction if not along custom vector
-        if (AlongSketchNormal.getValue()) {
+        if (factor < Precision::Confusion()) {
+            // For non-solid creation (e.g. pad a line to a face), we should
+            // allow orthogonal direction (e.g. the normal of a line is the
+            // line, which should be allowed to be extruded in any direction.)
+            if (makeface) {
+                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
+                            "Creation failed because direction is orthogonal to sketch's normal vector"));
+            }
+        }
+        else if (AlongSketchNormal.getValue()) {
+            // perform the length correction if not along custom vector
             L = L / factor;
             L2 = L2 / factor;
         }
