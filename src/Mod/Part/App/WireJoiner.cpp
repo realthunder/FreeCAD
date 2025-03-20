@@ -906,7 +906,7 @@ public:
         TColgp_SequenceOfPnt points3d;
         TColStd_SequenceOfReal errors;
         TopoDS_Wire wire;
-        int idx;
+        int idx = 0;
         BRepBuilderAPI_MakeWire mkWire(info.edge);
         mkWire.Add(other.edge);
         if (mkWire.IsDone())

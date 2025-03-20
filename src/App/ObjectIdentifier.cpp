@@ -2045,7 +2045,7 @@ public:
 
 public:
     PyObjectBase *pyBase = nullptr;
-    bool shouldNotify;
+    bool shouldNotify = false;
 };
 }
 

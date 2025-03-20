@@ -1225,7 +1225,7 @@ public:
         OverlayTabWidget *dst = nullptr;
         int dstIndex = -1;
         QDockWidget *dstDock = nullptr;
-        Qt::DockWidgetArea dstDockArea;
+        Qt::DockWidgetArea dstDockArea = Qt::LeftDockWidgetArea;
 
         if (!tabWidget) {
             rect = QRect(pos - dragOffset, dragSize);
