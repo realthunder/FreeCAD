@@ -393,6 +393,8 @@ struct EditData {
     SoPickStyle   *pickStyleAxes;
 
     SbVec2s       curCursorPos;
+    SbVec2s       pressCursorPos;
+    int           cursorDragging = -1;
     std::string   lastPreselection;
     std::vector<int> lastCstrPreselections;
     Gui::View3DInventorViewer * viewer = nullptr;
@@ -961,6 +963,21 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
 
     assert(edit);
 
+    int dragging = 0;
+    if (pressed) {
+        edit->cursorDragging = 0;
+        edit->pressCursorPos = cursorPos;
+    }
+    else {
+        if (edit->cursorDragging == 0) {
+            int xx = cursorPos[0] - edit->pressCursorPos[0];
+            int yy = cursorPos[1] - edit->pressCursorPos[1];
+            if (xx*xx + yy*yy > 25)
+                edit->cursorDragging = 1;
+        }
+        dragging = edit->cursorDragging;
+        edit->cursorDragging = -1;
+    }
     edit->curCursorPos = cursorPos;
 
     // Calculate 3d point to the mouse position
@@ -996,6 +1013,11 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
     }
 
     if (_Mode == STATUS_NONE && !pressed && Button == 2) {
+        // dragging == 1 means mouse moved when button is pressed,
+        // dragging == -1 means mouse press event is not captured, i.e. got hijacked by navigation
+        if (dragging == 1)
+            return true;
+
         QMenu menu;
         if (Gui::Selection().hasPreselection()) {
             auto sel = Gui::Selection().getPreselection();
@@ -1587,6 +1609,12 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::View3DInventor
         return false;
 
     edit->curCursorPos = cursorPos;
+    if (edit->cursorDragging == 0) {
+        int xx = cursorPos[0] - edit->pressCursorPos[0];
+        int yy = cursorPos[1] - edit->pressCursorPos[1];
+        if (xx*xx + yy*yy > 25)
+            edit->cursorDragging = 1;
+    }
 
     // ignore small moves after selection
     switch (_Mode) {
