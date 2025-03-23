@@ -250,7 +250,7 @@ void ViewProviderAnnotation::updateData(const App::Property* prop)
                 cs = " "; // empty lines make coin crash, we use a space instead
 #if (COIN_MAJOR_VERSION <= 3)
             QByteArray latin1str;
-            latin1str = (QString::fromUtf8(cs)).toLatin1();
+            latin1str = (QString::fromUtf8(cs)).toUtf8();
             pLabel->string.set1Value(index, SbString(latin1str.constData()));
             pLabel3d->string.set1Value(index, SbString(latin1str.constData()));
 #else

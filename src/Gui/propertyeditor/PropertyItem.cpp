@@ -1193,7 +1193,7 @@ void PropertyFloatItem::setValue(const QVariant& value)
         if (!value.canConvert<double>())
             return;
         double val = value.toDouble();
-        QString data = QString::fromLatin1("%1").arg(val, 0, 'g', 16);
+        QString data = QStringLiteral("%1").arg(val, 0, 'g', 16);
         setPropertyValue(data);
     }
 }
@@ -1372,7 +1372,7 @@ void PropertyFloatConstraintItem::setValue(const QVariant& value)
         if (!value.canConvert<double>())
             return;
         double val = value.toDouble();
-        QString data = QString::fromLatin1("%1").arg(val, 0, 'g', 16);
+        QString data = QStringLiteral("%1").arg(val, 0, 'g', 16);
         setPropertyValue(data);
     }
 }

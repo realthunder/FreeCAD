@@ -299,13 +299,13 @@ std::string Fem::Tools::checkIfBinaryExists(std::string prefSection,
         binaryName = binaryName + ".exe";
 #endif
         // first check the environment paths by QFileInfo
-        if (QFileInfo::exists(QString::fromLatin1(binaryName.c_str()))) {
+        if (QFileInfo::exists(QString::fromUtf8(binaryName.c_str()))) {
             return binaryName;
         }
         // check the folder of the FreeCAD binary
         else {
             auto homePathBinary = App::Application::getHomePath() + "bin/" + binaryName;
-            if (QFileInfo::exists(QString::fromLatin1(homePathBinary.c_str()))) {
+            if (QFileInfo::exists(QString::fromUtf8(homePathBinary.c_str()))) {
                 return binaryName;
             }
         }
@@ -315,8 +315,8 @@ std::string Fem::Tools::checkIfBinaryExists(std::string prefSection,
         ParameterGrp::handle hGrp =
             App::GetApplication().GetParameterGroupByPath(paramPath.c_str());
         auto binaryPath = hGrp->GetASCII(binaryPathString.c_str(), "");
-        QFileInfo::exists(QString::fromLatin1(binaryPath.c_str()));
-        if (QFileInfo::exists(QString::fromLatin1(binaryPath.c_str()))) {
+        QFileInfo::exists(QString::fromUtf8(binaryPath.c_str()));
+        if (QFileInfo::exists(QString::fromUtf8(binaryPath.c_str()))) {
             return binaryPath;
         }
     }

@@ -612,7 +612,7 @@ void TPlanarDragger::drag()
                                  * translationIncrement.getValue(),
                              Base::Unit::Length);
 
-    QString message = QString::fromLatin1("%1 %2, %3")
+    QString message = QStringLiteral("%1 %2, %3")
                           .arg(QObject::tr("Translation XY:"),
                                quantityX.getUserString(),
                                quantityY.getUserString());

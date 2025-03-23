@@ -519,7 +519,7 @@ private:
                             .arg(QString::fromUtf8(controlpoints.c_str()))
                             .arg(ConstrMethod == 0 ? QStringLiteral("False") : QStringLiteral("True"))
                             .arg(myDegree);
-                    Gui::Command::runCommand(Gui::Command::Gui, cmdstr.toLatin1());
+                    Gui::Command::runCommand(Gui::Command::Gui, cmdstr.toUtf8());
                     // Adjust internal knots here (raise multiplicity)
                     // How this contributes to the final B-spline
                     if (controlpoints == controlpointses.front()) {

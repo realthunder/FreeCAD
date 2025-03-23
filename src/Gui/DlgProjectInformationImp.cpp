@@ -167,7 +167,7 @@ void DlgProjectInformationImp::onLicenseTypeChanged(int index)
     const char* url {index >= 0 && index < App::countOfLicenses ? App::licenseItems.at(index).at(App::posnOfUrl)
                                                   : _doc->LicenseURL.getValue()};
 
-    ui->lineEditLicenseURL->setText(QString::fromLatin1(url));
+    ui->lineEditLicenseURL->setText(QString::fromUtf8(url));
 }
 
 /**

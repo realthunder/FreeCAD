@@ -2455,15 +2455,15 @@ void StdViewLoadImage::activated(int iMsg)
     QStringList mimeTypeFilters;
     QList<QByteArray> supportedMimeTypes = QImageReader::supportedMimeTypes();
     for (const auto& mimeTypeName : supportedMimeTypes) {
-        mimeTypeFilters.append(QString::fromLatin1(mimeTypeName));
+        mimeTypeFilters.append(QString::fromUtf8(mimeTypeName));
     }
 
     // Reading an image
     QFileDialog dialog(Gui::getMainWindow());
     dialog.setWindowTitle(QObject::tr("Choose an image file to open"));
     dialog.setMimeTypeFilters(mimeTypeFilters);
-    dialog.selectMimeTypeFilter(QString::fromLatin1("image/png"));
-    dialog.setDefaultSuffix(QString::fromLatin1("png"));
+    dialog.selectMimeTypeFilter(QStringLiteral("image/png"));
+    dialog.setDefaultSuffix(QStringLiteral("png"));
     dialog.setAcceptMode(QFileDialog::AcceptOpen);
     dialog.setOption(QFileDialog::DontUseNativeDialog);
 

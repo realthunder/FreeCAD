@@ -1162,9 +1162,6 @@ void CmdTestRedirectPaint::activated(int)
     label->show();
     label->setWindowTitle(QStringLiteral("QLabel"));
 #endif
-=======
-    label->setWindowTitle(QString::fromLatin1("QLabel"));
->>>>>>> upstream/master
 }
 
 //===========================================================================

@@ -186,8 +186,8 @@ void DlgSettingsLightSources::saveDirection()
         SbVec3f dir(0, 0, -1);
         rotation.multVec(dir, dir);
 
-        QString headlightDir = QString::fromLatin1("(%1,%2,%3)").arg(dir[0]).arg(dir[1]).arg(dir[2]);
-        grp->SetASCII("HeadlightDirection", headlightDir.toLatin1());
+        QString headlightDir = QStringLiteral("(%1,%2,%3)").arg(dir[0]).arg(dir[1]).arg(dir[2]);
+        grp->SetASCII("HeadlightDirection", headlightDir.toUtf8());
     }
 }
 

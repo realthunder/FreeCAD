@@ -189,7 +189,7 @@ void DlgSettingsDocumentImp::onLicenseTypeChanged(int index)
     if (index >= 0 && index < App::countOfLicenses) {
         // existing license
         const char* url {App::licenseItems.at(index).at(App::posnOfUrl)};
-        ui->prefLicenseUrl->setText(QString::fromLatin1(url));
+        ui->prefLicenseUrl->setText(QString::fromUtf8(url));
         ui->prefLicenseUrl->setReadOnly(true);
     }
     else {

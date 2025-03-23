@@ -157,7 +157,7 @@ void MaterialsEditor::getFavorites()
         "User parameter:BaseApp/Preferences/Mod/Material/Favorites");
     int count = param->GetInt("Favorites", 0);
     for (int i = 0; i < count; i++) {
-        QString key = QString::fromLatin1("FAV%1").arg(i);
+        QString key = QStringLiteral("FAV%1").arg(i);
         QString uuid = QString::fromStdString(param->GetASCII(key.toStdString().c_str(), ""));
         _favorites.push_back(uuid);
     }
@@ -171,7 +171,7 @@ void MaterialsEditor::saveFavorites()
     // Clear out the existing favorites
     int count = param->GetInt("Favorites", 0);
     for (int i = 0; i < count; i++) {
-        QString key = QString::fromLatin1("FAV%1").arg(i);
+        QString key = QStringLiteral("FAV%1").arg(i);
         param->RemoveASCII(key.toStdString().c_str());
     }
 
@@ -179,7 +179,7 @@ void MaterialsEditor::saveFavorites()
     param->SetInt("Favorites", _favorites.size());
     int j = 0;
     for (auto& favorite : _favorites) {
-        QString key = QString::fromLatin1("FAV%1").arg(j);
+        QString key = QStringLiteral("FAV%1").arg(j);
         param->SetASCII(key.toStdString().c_str(), favorite.toStdString());
 
         j++;
@@ -233,7 +233,7 @@ void MaterialsEditor::getRecents()
     _recentMax = param->GetInt("RecentMax", 5);
     int count = param->GetInt("Recent", 0);
     for (int i = 0; i < count; i++) {
-        QString key = QString::fromLatin1("MRU%1").arg(i);
+        QString key = QStringLiteral("MRU%1").arg(i);
         QString uuid = QString::fromStdString(param->GetASCII(key.toStdString().c_str(), ""));
         _recents.push_back(uuid);
     }
@@ -247,7 +247,7 @@ void MaterialsEditor::saveRecents()
     // Clear out the existing favorites
     int count = param->GetInt("Recent", 0);
     for (int i = 0; i < count; i++) {
-        QString key = QString::fromLatin1("MRU%1").arg(i);
+        QString key = QStringLiteral("MRU%1").arg(i);
         param->RemoveASCII(key.toStdString().c_str());
     }
 
@@ -259,7 +259,7 @@ void MaterialsEditor::saveRecents()
     param->SetInt("Recent", size);
     int j = 0;
     for (auto& recent : _recents) {
-        QString key = QString::fromLatin1("MRU%1").arg(j);
+        QString key = QStringLiteral("MRU%1").arg(j);
         param->SetASCII(key.toStdString().c_str(), recent.toStdString());
 
         j++;

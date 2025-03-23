@@ -102,7 +102,7 @@ void OCAFBrowser::load(QTreeWidget* theTree)
     root->setIcon(0, myGroupIcon);
     theTree->addTopLevelItem(root);
 
-    load(pDoc->GetData()->Root(), root, QString::fromLatin1("0"));
+    load(pDoc->GetData()->Root(), root, QStringLiteral("0"));
 }
 
 void OCAFBrowser::load(const TDF_Label& label, QTreeWidgetItem* item, const QString& str)
@@ -112,7 +112,7 @@ void OCAFBrowser::load(const TDF_Label& label, QTreeWidgetItem* item, const QStr
     Handle(TDataStd_Name) name;
     if (label.FindAttribute(TDataStd_Name::GetID(), name)) {
         QString text =
-            QString::fromLatin1("%1 %2").arg(str, QString::fromUtf8(toString(name->Get()).c_str()));
+            QStringLiteral("%1 %2").arg(str, QString::fromUtf8(toString(name->Get()).c_str()));
         item->setText(0, text);
     }
 
@@ -167,7 +167,7 @@ void OCAFBrowser::load(const TDF_Label& label, QTreeWidgetItem* item, const QStr
             else if (it.Value() == XCAFDoc_Color::GetID()) {
                 Quantity_ColorRGBA rgba = Handle(XCAFDoc_Color)::DownCast(attr)->GetColorRGBA();
                 Quantity_Color rgb = rgba.GetRGB();
-                QString tuple = QString::fromLatin1("(%1, %2, %3, %4)")
+                QString tuple = QStringLiteral("(%1, %2, %3, %4)")
                                     .arg(rgb.Red())
                                     .arg(rgb.Green())
                                     .arg(rgb.Blue())
@@ -201,7 +201,7 @@ void OCAFBrowser::load(const TDF_Label& label, QTreeWidgetItem* item, const QStr
 
     int index = 1;
     for (TDF_ChildIterator it(label); it.More(); it.Next(), index++) {
-        QString text = QString::fromLatin1("%1:%2").arg(str).arg(index);
+        QString text = QStringLiteral("%1:%2").arg(str).arg(index);
         QTreeWidgetItem* child = new QTreeWidgetItem();
         child->setText(0, text);
         child->setIcon(0, myGroupIcon);
@@ -253,38 +253,36 @@ QString OCAFBrowser::toText(const Handle(TNaming_NamedShape) & namedShape)
 
 QString OCAFBrowser::toText(const Handle(TDataStd_TreeNode) & treeNode)
 {
-    Standard_CString type = "";
+    QString prefix;
     if (treeNode->ID() == XCAFDoc::ShapeRefGUID()) {
-        type = "Shape Instance Link";
+        prefix = QStringLiteral("Shape Instance Link");
     }
     else if (treeNode->ID() == XCAFDoc::ColorRefGUID(XCAFDoc_ColorGen)) {
-        type = "Generic Color Link";
+        prefix = QStringLiteral("Generic Color Link");
     }
     else if (treeNode->ID() == XCAFDoc::ColorRefGUID(XCAFDoc_ColorSurf)) {
-        type = "Surface Color Link";
+        prefix = QStringLiteral("Surface Color Link");
     }
     else if (treeNode->ID() == XCAFDoc::ColorRefGUID(XCAFDoc_ColorCurv)) {
-        type = "Curve Color Link";
+        prefix = QStringLiteral("Curve Color Link");
     }
     else if (treeNode->ID() == XCAFDoc::DimTolRefGUID()) {
-        type = "DGT Link";
+        prefix = QStringLiteral("DGT Link");
     }
     else if (treeNode->ID() == XCAFDoc::DatumRefGUID()) {
-        type = "Datum Link";
+        prefix = QStringLiteral("Datum Link");
     }
     else if (treeNode->ID() == XCAFDoc::MaterialRefGUID()) {
-        type = "Material Link";
+        prefix = QStringLiteral("Material Link");
     }
-
-    QString prefix = QString::fromLatin1(type);
 
     QString display;
     if (treeNode->HasFather()) {
         TDF_Label aLabel = treeNode->Father()->Label();
         TCollection_AsciiString entry;
         TDF_Tool::Entry(aLabel, entry);
-        QString suffix = QString::fromLatin1(entry.ToCString());
-        display = QString::fromLatin1("%1 ==> %2").arg(prefix, suffix);
+        QString suffix = QString::fromUtf8(entry.ToCString());
+        display = QStringLiteral("%1 ==> %2").arg(prefix, suffix);
     }
     else {
         Handle(TDataStd_TreeNode) aFirstChild = treeNode->First();
@@ -293,11 +291,11 @@ QString OCAFBrowser::toText(const Handle(TDataStd_TreeNode) & treeNode)
             TDF_Label aLabel = aFirstChild->Label();
             TCollection_AsciiString entry;
             TDF_Tool::Entry(aLabel, entry);
-            QString suffix = QString::fromLatin1(entry.ToCString());
+            QString suffix = QString::fromUtf8(entry.ToCString());
             aRefs.append(suffix);
             aFirstChild = aFirstChild->Next();
         }
-        display = QString::fromLatin1("%1 <== %2").arg(prefix, aRefs.join(QChar::fromLatin1(',')));
+        display = QStringLiteral("%1 <== %2").arg(prefix, aRefs.join(QChar::fromLatin1(',')));
     }
 
     QString text;
@@ -316,7 +314,7 @@ void OCAFBrowser::showDialog(const QString& title, const Handle(TDocStd_Document
     QDialog* dlg = new QDialog(Gui::getMainWindow());
 
     QTreeWidget* tree = new QTreeWidget();
-    tree->setHeaderLabel(QString::fromLatin1("OCAF Browser"));
+    tree->setHeaderLabel(QStringLiteral("OCAF Browser"));
 
     QVBoxLayout* layout = new QVBoxLayout;
     layout->addWidget(tree);

@@ -147,7 +147,7 @@ void UrlWidget::keyPressEvent(QKeyEvent* keyEvt)
             break;
         case Qt::Key_Return:
         case Qt::Key_Enter:
-            m_view->load(text().toLatin1());
+            m_view->load(text().toUtf8());
             hide();
             break;
         default:

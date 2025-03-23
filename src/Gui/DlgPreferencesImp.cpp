@@ -279,7 +279,7 @@ PreferencesPageItem* DlgPreferencesImp::createGroup(const std::string &groupName
     auto item = new PreferencesPageItem;
 
     item->setData(QVariant(groupNameQString), GroupNameRole);
-    item->setText(QObject::tr(groupNameQString.toLatin1()));
+    item->setText(QObject::tr(groupNameQString.toUtf8()));
     item->setToolTip(tooltip);
     item->setIcon(loadIconForGroup(iconName));
     item->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -678,7 +678,7 @@ void DlgPreferencesImp::applyChanges()
 
                     QMessageBox::warning(this,
                                             tr("Wrong parameter"),
-                                            QString::fromLatin1(e.what()));
+                                            QString::fromUtf8(e.what()));
 
                     this->invalidParameter = true;
 
@@ -896,7 +896,7 @@ void DlgPreferencesImp::changeEvent(QEvent *e)
             auto groupItem = static_cast<PreferencesPageItem*>(root->child(i));
             auto groupName = groupItem->data(GroupNameRole).toString();
 
-            groupItem->setText(QObject::tr(groupName.toLatin1()));
+            groupItem->setText(QObject::tr(groupName.toUtf8()));
 
             for (int j = 0; j < groupItem->rowCount(); j++) {
                 auto pageModelItem = static_cast<PreferencesPageItem*>(groupItem->child(j));

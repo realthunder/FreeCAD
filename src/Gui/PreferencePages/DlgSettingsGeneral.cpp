@@ -486,7 +486,7 @@ void DlgSettingsGeneral::loadThemes()
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
 
-    QString currentTheme = QString::fromLatin1(hGrp->GetASCII("Theme", "").c_str());
+    QString currentTheme = QString::fromUtf8(hGrp->GetASCII("Theme", "").c_str());
 
     Application::Instance->prefPackManager()->rescan();
     auto packs = Application::Instance->prefPackManager()->preferencePacks();

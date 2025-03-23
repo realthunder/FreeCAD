@@ -251,7 +251,7 @@ void ImageView::dragEnterEvent(QDragEnterEvent* event)
 bool ImageView::isImageFormat(const QFileInfo& fileInfo)
 {
     QString ext = fileInfo.suffix().toLower();
-    QByteArray suffix = ext.toLatin1();
+    QByteArray suffix = ext.toUtf8();
     QList<QByteArray> supportedFormats = QImageReader::supportedImageFormats();
     auto it = std::find_if(supportedFormats.begin(), supportedFormats.end(), [suffix](const QByteArray& image) {
         return (image == suffix);

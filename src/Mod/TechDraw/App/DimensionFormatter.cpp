@@ -106,11 +106,11 @@ std::string DimensionFormatter::formatValue(const qreal value,
         // neverheless limited. To keep old drawings, we limit the number of decimals too
         // if the TD preferences option to use the global decimal number is set
         // the formatSpecifier can have a prefix and/or suffix
-        if (m_dimension->useDecimals() && formatSpecifier.contains(QString::fromLatin1("%g"), Qt::CaseInsensitive)) {
+        if (m_dimension->useDecimals() && formatSpecifier.contains(QStringLiteral("%g"), Qt::CaseInsensitive)) {
                 int globalPrecision = Base::UnitsApi::getDecimals();
                 // change formatSpecifier to e.g. "%.2f"
                 QString newSpecifier = QString::fromStdString("%." + std::to_string(globalPrecision) + "f");
-                formatSpecifier.replace(QString::fromLatin1("%g"), newSpecifier, Qt::CaseInsensitive);
+                formatSpecifier.replace(QStringLiteral("%g"), newSpecifier, Qt::CaseInsensitive);
         }
 
         // since we are not using a multiValueSchema, we know that angles are in '°' and for
@@ -129,7 +129,7 @@ std::string DimensionFormatter::formatValue(const qreal value,
             userVal = asQuantity.getValue();
             qBasicUnit = QString::fromUtf8("°");
         } else {
-            double convertValue = Base::Quantity::parse(QString::fromLatin1("1") + qBasicUnit).getValue();
+            double convertValue = Base::Quantity::parse(QStringLiteral("1") + qBasicUnit).getValue();
             userVal = asQuantity.getValue() / convertValue;
         }
 

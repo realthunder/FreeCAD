@@ -181,7 +181,7 @@ void TaskRevolutionParameters::refresh()
         ui->lineFaceName->setProperty("FeatureName", QByteArray(obj->getNameInDocument()));
     }
     else if (obj && faceId >= 0) {
-        ui->lineFaceName->setText(QString::fromLatin1("%1:%2%3")
+        ui->lineFaceName->setText(QStringLiteral("%1:%2%3")
                                   .arg(QString::fromUtf8(obj->Label.getValue()),
                                        tr("Face"),
                                        QString::number(faceId)));
@@ -508,7 +508,7 @@ QString TaskRevolutionParameters::getFaceName(void) const
         return getFaceReference(featureName.toString(), faceName);
     }
 
-    return QString::fromLatin1("None");
+    return QStringLiteral("None");
 }
 
 void TaskRevolutionParameters::clearFaceName()
@@ -746,11 +746,11 @@ void TaskRevolutionParameters::apply()
     FCMD_OBJ_CMD(tobj, "Reversed = " << (getReversed() ? 1 : 0));
     int mode = ui->changeMode->currentIndex();
     FCMD_OBJ_CMD(tobj, "Type = " << mode);
-    QString facename = QString::fromLatin1("None");
+    QString facename = QStringLiteral("None");
     if (static_cast<PartDesign::Revolution::RevolMethod>(mode) == PartDesign::Revolution::RevolMethod::ToFace) {
         facename = getFaceName();
     }
-    FCMD_OBJ_CMD(tobj, "UpToFace = " << facename.toLatin1().data());
+    FCMD_OBJ_CMD(tobj, "UpToFace = " << facename.toUtf8().data());
 }
 
 //**************************************************************************
