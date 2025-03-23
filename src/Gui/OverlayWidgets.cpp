@@ -1116,6 +1116,10 @@ void OverlayTabWidget::_setOverlayMode(QWidget *widget, OverlayOption option)
 
     auto tabbar = qobject_cast<QTabBar*>(widget);
     if(tabbar) {
+
+        // OverlayManager::instance()->getHideTab() will never return true. It
+        // was used for onStylesheet, which has since been removed
+#if 0
         if(!tabbar->autoHide() || tabbar->count()>1) {
             if(!OverlayManager::instance()->getHideTab())
                 tabbar->setVisible(true);
@@ -1124,6 +1128,7 @@ void OverlayTabWidget::_setOverlayMode(QWidget *widget, OverlayOption option)
                         || (option == OverlayOption::ShowTab && tabbar->count()>1));
             return;
         }
+#endif
     }
 
     if (!qobject_cast<QScrollArea*>(widget)
