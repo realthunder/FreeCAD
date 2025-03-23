@@ -230,6 +230,10 @@ public:
     {
         return _Mode;
     }
+
+    // create right click context menu based on selection in the 3D view
+    void generateContextMenu();
+
     //@}
 
     /** @name helper functions */

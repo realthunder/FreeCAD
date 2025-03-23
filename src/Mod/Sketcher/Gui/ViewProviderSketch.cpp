@@ -996,8 +996,9 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
     SbVec3f pos = point;
     if (pp) {
         const SoDetail *detail = pp->getDetail();
-        // if (detail && detail->getTypeId() == SoPointDetail::getClassTypeId()) {
-        if (detail) {
+        // if (detail && detail->getTypeId() == SoPointDetail::getClassTypeId())
+        if (detail)
+        {
             pos = pp->getPoint();
         }
     }
@@ -1010,65 +1011,6 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
     }
     catch (const Base::ZeroDivisionError&) {
         return false;
-    }
-
-    if (_Mode == STATUS_NONE && !pressed && Button == 2) {
-        // dragging == 1 means mouse moved when button is pressed,
-        // dragging == -1 means mouse press event is not captured, i.e. got hijacked by navigation
-        if (dragging == 1)
-            return true;
-
-        QMenu menu;
-        if (Gui::Selection().hasPreselection()) {
-            auto sel = Gui::Selection().getPreselection();
-            if (!Gui::Selection().isSelected(sel.pDocName, sel.pObjectName, sel.pSubName, Gui::ResolveMode::NoResolve)) {
-                if (!(QApplication::queryKeyboardModifiers() & Qt::ShiftModifier))
-                    Gui::Selection().clearSelection();
-                Gui::SelectionNoTopParentCheck guard;
-                Gui::Selection().addSelection(sel.pDocName, sel.pObjectName, sel.pSubName);
-            }
-        }
-        if (!edit->SelConstraintSet.empty()) {
-            if (auto inst = ConstraintView::getInstance())
-                inst->populateMenu(menu);
-        }
-        else if (!Gui::Selection().hasSelection()) {
-            Gui::MenuItem mitems;
-            addSketcherWorkbenchGeometries(mitems);
-            Gui::MenuManager::getInstance()->setupContextMenu(&mitems, menu);
-        } else {
-            Gui::MenuItem mitems;
-            Gui::MenuItem *cstrItems = new Gui::MenuItem;
-            cstrItems->setCommand(QT_TRANSLATE_NOOP("Sketcher", "Add constraint"));
-            addSketcherWorkbenchConstraints(*cstrItems);
-            Gui::MenuItem *toolsItems = new Gui::MenuItem;
-            toolsItems->setCommand(QT_TRANSLATE_NOOP("Sketcher", "Tools"));
-            *toolsItems << "Sketcher_Trimming"
-                       << "Sketcher_Extend"
-                       << "Sketcher_Split"
-                       << "Sketcher_CarbonCopy"
-                       << "Sketcher_ExportGeometry"
-                       << "Sketcher_ExportCompound"
-                       << "Sketcher_SwapGeometryID";
-            Gui::MenuItem *bsplineItems = new Gui::MenuItem;
-            bsplineItems->setCommand(QT_TRANSLATE_NOOP("Sketcher", "BSpline tools"));
-            addSketcherWorkbenchBSplines(*bsplineItems);
-            mitems << cstrItems
-                   << "Separator";
-            if (auto cmd = dynamic_cast<Gui::GroupCommand*>(
-                        Gui::Application::Instance->commandManager().getCommandByName("Sketcher_ExternalCmds"))) {
-                for(auto c : cmd->getCommands())
-                    mitems << c->getName();
-            }
-            mitems << "Separator"
-                   << "Sketcher_ToggleConstruction"
-                   << toolsItems
-                   << bsplineItems
-                   << "Separator";
-            Gui::MenuManager::getInstance()->setupContextMenu(&mitems, menu);
-        }
-        menu.exec(QCursor::pos());
-        return true;
     }
 
     // Both Mouse button is down, cancel current mode to avoid conflict with
@@ -1374,6 +1316,8 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
     }
     // Right mouse button ****************************************************
     else if (Button == 2) {
+        if (dragging == 1)
+            return true;
         if (!pressed) {
             switch (_Mode) {
                 case STATUS_SKETCH_UseHandler:
@@ -1381,100 +1325,10 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                     edit->sketchHandler->quit();
                     return true;
                 case STATUS_NONE:
-                    {
-                        // A right click shouldn't change the Edit Mode
-                        if (edit->PreselectPoint != -1) {
-                            return true;
-                        } else if (edit->PreselectCurve != -1) {
-                            return true;
-                        } else if (edit->PreselectConstraintSet.empty() != true) {
-                            return true;
-                        } else {
-                            Gui::MenuItem geom;
-                            geom.setCommand("Sketcher geoms");
-                            geom << "Sketcher_CreatePoint"
-                                  << "Sketcher_CreateArc"
-                                  << "Sketcher_Create3PointArc"
-                                  << "Sketcher_CreateCircle"
-                                  << "Sketcher_Create3PointCircle"
-                                  << "Sketcher_CreateLine"
-                                  << "Sketcher_CreatePolyline"
-                                  << "Sketcher_CreateRectangle"
-                                  << "Sketcher_CreateHexagon"
-                                  << "Sketcher_CreateFillet"
-                                  << "Sketcher_CreateChamfer"
-                                  << "Sketcher_Trimming"
-                                  << "Sketcher_Extend"
-                                  << "Sketcher_ExternalCmds"
-                                  << "Sketcher_ToggleConstruction"
-                                /*<< "Sketcher_CreateText"*/
-                                /*<< "Sketcher_CreateDraftLine"*/
-                                  << "Separator";
-
-                            Gui::Application::Instance->setupContextMenu("View", &geom);
-                            //Create the Context Menu using the Main View Qt Widget
-                            QMenu contextMenu(viewer->getGLWidget());
-                            Gui::MenuManager::getInstance()->setupContextMenu(&geom, contextMenu);
-                            contextMenu.exec(QCursor::pos());
-
-                            return true;
-                        }
-                    }
                 case STATUS_SELECT_Point:
-                    break;
                 case STATUS_SELECT_Edge:
-                    {
-                        Gui::MenuItem geom;
-                        geom.setCommand("Sketcher constraints");
-                        geom << "Sketcher_ConstrainVertical"
-                        << "Sketcher_ConstrainHorizontal";
-
-                        // Gets a selection vector
-                        std::vector<Gui::SelectionObject> selection = Gui::Selection().getSelectionEx("*");
-
-                        bool rightClickOnSelectedLine = false;
-
-                        /*
-                         * Add Multiple Line Constraints to the menu
-                         */
-                        // only one sketch with its subelements are allowed to be selected
-                        if (selection.size() == 1) {
-                            // get the needed lists and objects
-                            const std::vector<std::string> &SubNames = selection[0].getSubNames();
-
-                            // Two Objects are selected
-                            if (SubNames.size() == 2) {
-                                // go through the selected subelements
-                                for (std::vector<std::string>::const_iterator it=SubNames.begin();
-                                     it!=SubNames.end();++it) {
-
-                                    // If the object selected is of type edge
-                                    if (it->size() > 4 && it->substr(0,4) == "Edge") {
-                                        // Get the index of the object selected
-                                        int GeoId = std::atoi(it->substr(4,4000).c_str()) - 1;
-                                        if (edit->PreselectCurve == GeoId)
-                                            rightClickOnSelectedLine = true;
-                                    } else {
-                                        // The selection is not exclusively edges
-                                        rightClickOnSelectedLine = false;
-                                    }
-                                } // End of Iteration
-                            }
-                        }
-
-                        if (rightClickOnSelectedLine) {
-                            geom << "Sketcher_ConstrainParallel"
-                                  << "Sketcher_ConstrainPerpendicular";
-                        }
-
-                        Gui::Application::Instance->setupContextMenu("View", &geom);
-                        //Create the Context Menu using the Main View Qt Widget
-                        QMenu contextMenu(viewer->getGLWidget());
-                        Gui::MenuManager::getInstance()->setupContextMenu(&geom, contextMenu);
-                        contextMenu.exec(QCursor::pos());
-
-                        return true;
-                    }
+                    generateContextMenu();
+                    return true;
                 case STATUS_SELECT_Cross:
                 case STATUS_SELECT_Constraint:
                 case STATUS_SKETCH_DragPoint:
@@ -8581,6 +8435,280 @@ void ViewProviderSketch::setConstraintSelectability(bool enabled /* = true */)
     else {
         edit->constrGrpSelect->style.setValue(SoPickStyle::UNPICKABLE);
     }
+}
+
+void ViewProviderSketch::generateContextMenu()
+{
+    int selectedExternalEdges = 0;
+    int selectedEdges = 0;
+    int selectedLines = 0;
+    int selectedConics = 0;
+    int selectedPoints = 0;
+    int selectedConstraints = 0;
+    int selectedBsplines = 0;
+    int selectedBsplineKnots = 0;
+    int selectedOrigin = 0;
+    int selectedEndPoints = 0;
+    bool onlyOrigin = false;
+
+    if (Gui::Selection().hasPreselection()) {
+        auto sel = Gui::Selection().getPreselection();
+        if (!Gui::Selection().isSelected(sel.pDocName, sel.pObjectName, sel.pSubName, Gui::ResolveMode::NoResolve)) {
+            if (!(QApplication::queryKeyboardModifiers() & Qt::ShiftModifier))
+                Gui::Selection().clearSelection();
+            Gui::SelectionNoTopParentCheck guard;
+            Gui::Selection().addSelection(sel.pDocName, sel.pObjectName, sel.pSubName);
+        }
+    }
+
+    Gui::MenuItem menu;
+    menu.setCommand("Sketcher context");
+
+    std::vector<Gui::SelectionObject> selection =
+        Gui::Selection().getSelectionEx(0, Sketcher::SketchObject::getClassTypeId());
+
+    // if something is selected, count different elements in the current selection
+    if (selection.size() > 0) {
+        const std::vector<std::string> SubNames = selection[0].getSubNames();
+        const Sketcher::SketchObject* obj;
+        if (selection[0].getObject()->isDerivedFrom<Sketcher::SketchObject>()) {
+            obj = static_cast<Sketcher::SketchObject*>(selection[0].getObject());
+            int geoId;
+            Sketcher::PointPos posId;
+            for (auto& name : SubNames) {
+                bool isExternal = boost::istarts_with(name, "ExternalEdge");
+                if (isExternal || boost::istarts_with(name, "Edge")) {
+                    ++selectedEdges;
+                    if (isExternal) {
+                        ++selectedExternalEdges;
+                    }
+                    else {
+                        getIdsFromName(name, obj, geoId, posId);
+                        const Part::Geometry* geo = getSketchObject()->getGeometry(geoId);
+                        if (isLineSegment(*geo)) {
+                            ++selectedLines;
+                        }
+                        else if (geo->is<Part::GeomBSplineCurve>()) {
+                            ++selectedBsplines;
+                        }
+                        else {
+                            ++selectedConics;
+                        }
+                    }
+                }
+                else if (boost::istarts_with(name, "Vertex")) {
+                    ++selectedPoints;
+                    getIdsFromName(name, obj, geoId, posId);
+                    if (isBsplineKnotOrEndPoint(obj, geoId, posId)) {
+                        ++selectedBsplineKnots;
+                    }
+
+                    ++selectedEndPoints;
+                }
+                else if (boost::starts_with(name, "Cons")) {
+                    ++selectedConstraints;
+                }
+                else if (boost::starts_with(name, "Axis")) {
+                    ++selectedEdges;
+                    ++selectedLines;
+                    ++selectedOrigin;
+                }
+                else if (boost::starts_with(name, "Root")) {
+                    ++selectedPoints;
+                    ++selectedOrigin;
+                }
+            }
+        }
+        if (selectedPoints + selectedEdges == selectedOrigin) {
+            onlyOrigin = true;
+        }
+        // build context menu items depending on the selection
+        if (selectedBsplines > 0 && selectedBsplines == selectedEdges && selectedPoints == 0
+            && !onlyOrigin) {
+            menu << "Sketcher_BSplineInsertKnot"
+                 << "Sketcher_BSplineIncreaseDegree"
+                 << "Sketcher_BSplineDecreaseDegree";
+        }
+        else if (selectedBsplineKnots > 0 && selectedBsplineKnots == selectedPoints
+                 && selectedEdges == 0 && !onlyOrigin) {
+            if (selectedBsplineKnots == 1) {
+                menu << "Sketcher_BSplineIncreaseKnotMultiplicity"
+                     << "Sketcher_BSplineDecreaseKnotMultiplicity";
+            }
+        }
+        if (selectedEdges >= 1 && selectedPoints == 0 && selectedBsplines == 0 && !onlyOrigin) {
+            menu << "Sketcher_Dimension";
+            if (selectedConics == 0) {
+                menu << "Sketcher_ConstrainHorVer"
+                     << "Sketcher_ConstrainHorizontal"
+                     << "Sketcher_ConstrainVertical";
+
+                if (selectedLines > 1) {
+                    menu << "Sketcher_ConstrainParallel";
+
+                    if (selectedLines == 2) {
+                        menu << "Sketcher_ConstrainPerpendicular"
+                             << "Sketcher_ConstrainTangent";
+                    }
+
+                    menu << "Sketcher_ConstrainEqual";
+                }
+                menu << "Sketcher_ConstrainBlock";
+            }
+            else if (selectedConics > 1 && selectedLines == 0) {
+                menu << "Sketcher_ConstrainCoincidentUnified"
+                     << "Sketcher_ConstrainTangent"
+                     << "Sketcher_ConstrainEqual";
+            }
+            else if (selectedConics == 1 && selectedLines == 1) {
+                menu << "Sketcher_ConstrainPerpendicular"
+                     << "Sketcher_ConstrainTangent";
+            }
+        }
+        else if (selectedEdges == 1 && selectedPoints >= 1 && !onlyOrigin) {
+            menu << "Sketcher_Dimension";
+            if (selectedConics == 0 && selectedBsplines == 0) {
+                menu << "Sketcher_ConstrainCoincidentUnified"
+                     << "Sketcher_ConstrainHorVer"
+                     << "Sketcher_ConstrainHorizontal"
+                     << "Sketcher_ConstrainVertical";
+                if (selectedPoints == 2) {
+                    menu << "Sketcher_ConstrainSymmetric";
+                }
+                if (selectedPoints == 1) {
+                    menu << "Sketcher_ConstrainPerpendicular"
+                         << "Sketcher_ConstrainTangent"
+                         << "Sketcher_ConstrainSymmetric";
+                }
+            }
+            else {
+                menu << "Sketcher_ConstrainCoincidentUnified"
+                     << "Sketcher_ConstrainPerpendicular"
+                     << "Sketcher_ConstrainTangent";
+            }
+        }
+        else if (selectedEdges == 0 && selectedPoints >= 1 && !onlyOrigin) {
+            menu << "Sketcher_Dimension";
+
+            if (selectedPoints > 1) {
+                menu << "Sketcher_ConstrainCoincidentUnified"
+                     << "Sketcher_ConstrainHorVer"
+                     << "Sketcher_ConstrainHorizontal"
+                     << "Sketcher_ConstrainVertical";
+            }
+            if (selectedPoints == 2) {
+                menu << "Sketcher_ConstrainPerpendicular"
+                     << "Sketcher_ConstrainTangent";
+                if (selectedEndPoints == 2) {
+                    menu << "Sketcher_JoinCurves";
+                }
+            }
+            if (selectedPoints == 3) {
+                menu << "Sketcher_ConstrainSymmetric";
+            }
+        }
+        else if (selectedLines >= 1 && selectedPoints >= 1 && !onlyOrigin) {
+            menu << "Sketcher_Dimension";
+
+            if (selectedPoints == 1) {
+                menu << "Sketcher_ConstrainCoincidentUnified";
+            }
+
+            menu << "Sketcher_ConstrainHorVer"
+                 << "Sketcher_ConstrainHorizontal"
+                 << "Sketcher_ConstrainVertical";
+
+            if (selectedLines > 1) {
+                menu << "Sketcher_ConstrainParallel";
+            }
+
+            if (selectedLines == 2 && selectedPoints == 1) {
+                menu << "Sketcher_ConstrainPerpendicular"
+                     << "Sketcher_ConstrainTangent";
+            }
+
+            if (selectedLines == 1 && selectedPoints == 1) {
+                menu << "Sketcher_ConstrainSymmetric";
+            }
+        }
+
+        // context menu if only constraints are selected
+        else if (selectedConstraints >= 1) {
+            if (selectedConstraints == 1) {
+                menu << "Sketcher_ChangeDimensionConstraint";
+            }
+            menu << "Sketcher_ToggleDrivingConstraint"
+                 << "Sketcher_ToggleActiveConstraint"
+                 << "Sketcher_SelectElementsAssociatedWithConstraints"
+                 << "Separator"
+                 << "Std_Delete";
+        }
+        // add the rest of the context menu if geometry is selected
+        if (selectedPoints != 0 || selectedEdges != 0) {
+            menu << "Separator"
+                 << "Sketcher_ToggleConstruction"
+                 << "Separator"
+                 << "Sketcher_Translate"
+                 << "Sketcher_Rotate"
+                 << "Sketcher_Scale"
+                 << "Sketcher_Offset"
+                 << "Sketcher_Symmetry"
+                 << "Separator"
+                 << "Sketcher_CompDimensionTools"
+                 << "Sketcher_CompConstrainTools"
+                 << "Separator"
+                 << "Sketcher_SelectConstraints"
+                 << "Separator"
+                 << "Sketcher_CopyClipboard"
+                 << "Sketcher_Cut"
+                 << "Sketcher_Paste"
+                 << "Separator"
+                 << "Std_Delete";
+        }
+        if (selectedExternalEdges != 0) {
+                menu << "Separator"
+                     << "Sketcher_ExternalCmds";
+        }
+    }
+    // context menu without a selection
+    else {
+        menu << "Sketcher_ViewSketch"
+             << "Sketcher_ViewSection"
+             << "Std_ViewFitAll"
+             << "Separator"
+             << "Sketcher_CreatePoint"
+             << "Sketcher_CreatePolyline"
+             << "Sketcher_CreateArc"
+             << "Sketcher_CreateCircle"
+             << "Sketcher_CreateRectangle"
+             << "Sketcher_CreateHexagon"
+             << "Sketcher_CreateBSpline"
+             << "Separator"
+             << "Sketcher_ToggleConstruction"
+             << "Separator"
+             << "Sketcher_CreateFillet"
+             << "Sketcher_CreateChamfer"
+             << "Sketcher_Trimming"
+             << "Sketcher_Extend"
+             << "Separator"
+             << "Sketcher_ExternalCmds"
+             << "Separator"
+             << "Sketcher_CompDimensionTools"
+             << "Sketcher_CompConstrainTools"
+             << "Separator"
+             << "Sketcher_DeleteAllGeometry"
+             << "Sketcher_DeleteAllConstraints"
+             << "Separator"
+             << "Sketcher_Paste"
+             << "Separator"
+             << "Sketcher_LeaveSketch";
+    }
+    // create context menu
+    Gui::Application::Instance->setupContextMenu("Sketch", &menu);
+    QMenu contextMenu(
+        qobject_cast<Gui::View3DInventor*>(this->getActiveView())->getViewer()->getGLWidget());
+    Gui::MenuManager::getInstance()->setupContextMenu(&menu, contextMenu);
+    contextMenu.exec(QCursor::pos());
 }
 
 // ---------------------------------------------------------

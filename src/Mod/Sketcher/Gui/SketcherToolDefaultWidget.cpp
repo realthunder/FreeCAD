@@ -144,7 +144,7 @@ void SketcherToolDefaultWidget::setupConnections()
             &SketcherToolDefaultWidget::comboBox3_currentIndexChanged);
 }
 
-// pre-select the number of the spinbox when it gets the focus.
+// preselect the number of the spinbox when it gets the focus.
 bool SketcherToolDefaultWidget::eventFilter(QObject* object, QEvent* event)
 {
     if (event->type() == QEvent::FocusIn) {
@@ -154,6 +154,17 @@ bool SketcherToolDefaultWidget::eventFilter(QObject* object, QEvent* event)
             if (object == parameterSpinBox) {
                 parameterSpinBox->selectNumber();
                 break;
+            }
+        }
+    }
+    else if (event->type() == QEvent::KeyPress) {
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if (ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Return) {
+            for (int i = 0; i < nParameters; i++) {
+                if (object == getParameterSpinBox(i)) {
+                    signalParameterTabOrEnterPressed(i);
+                    return true;
+                }
             }
         }
     }
@@ -200,10 +211,10 @@ void SketcherToolDefaultWidget::parameterOne_valueChanged(double val)
 {
     if (!blockParameterSlots) {
         isSet[Parameter::First] = true;
-        setParameterFontStyle(Parameter::First, FontStyle::Bold);
+        /*setParameterFontStyle(Parameter::First, FontStyle::Bold);
         if (!blockParameterFocusPassing) {
             setParameterFocus(Parameter::Second);
-        }
+        }*/
         signalParameterValueChanged(Parameter::First, val);
     }
 }
@@ -211,10 +222,6 @@ void SketcherToolDefaultWidget::parameterTwo_valueChanged(double val)
 {
     if (!blockParameterSlots) {
         isSet[Parameter::Second] = true;
-        setParameterFontStyle(Parameter::Second, FontStyle::Bold);
-        if (!blockParameterFocusPassing) {
-            setParameterFocus(Parameter::Third);
-        }
         signalParameterValueChanged(Parameter::Second, val);
     }
 }
@@ -222,10 +229,6 @@ void SketcherToolDefaultWidget::parameterThree_valueChanged(double val)
 {
     if (!blockParameterSlots) {
         isSet[Parameter::Third] = true;
-        setParameterFontStyle(Parameter::Third, FontStyle::Bold);
-        if (!blockParameterFocusPassing) {
-            setParameterFocus(Parameter::Fourth);
-        }
         signalParameterValueChanged(Parameter::Third, val);
     }
 }
@@ -233,10 +236,6 @@ void SketcherToolDefaultWidget::parameterFour_valueChanged(double val)
 {
     if (!blockParameterSlots) {
         isSet[Parameter::Fourth] = true;
-        setParameterFontStyle(Parameter::Fourth, FontStyle::Bold);
-        if (!blockParameterFocusPassing) {
-            setParameterFocus(Parameter::Fifth);
-        }
         signalParameterValueChanged(Parameter::Fourth, val);
     }
 }
@@ -244,10 +243,6 @@ void SketcherToolDefaultWidget::parameterFive_valueChanged(double val)
 {
     if (!blockParameterSlots) {
         isSet[Parameter::Fifth] = true;
-        setParameterFontStyle(Parameter::Fifth, FontStyle::Bold);
-        if (!blockParameterFocusPassing) {
-            setParameterFocus(Parameter::Sixth);
-        }
         signalParameterValueChanged(Parameter::Fifth, val);
     }
 }
@@ -255,10 +250,6 @@ void SketcherToolDefaultWidget::parameterSix_valueChanged(double val)
 {
     if (!blockParameterSlots) {
         isSet[Parameter::Sixth] = true;
-        setParameterFontStyle(Parameter::Sixth, FontStyle::Bold);
-        if (!blockParameterFocusPassing) {
-            setParameterFocus(Parameter::Seventh);
-        }
         signalParameterValueChanged(Parameter::Sixth, val);
     }
 }
@@ -266,10 +257,6 @@ void SketcherToolDefaultWidget::parameterSeven_valueChanged(double val)
 {
     if (!blockParameterSlots) {
         isSet[Parameter::Seventh] = true;
-        setParameterFontStyle(Parameter::Seventh, FontStyle::Bold);
-        if (!blockParameterFocusPassing) {
-            setParameterFocus(Parameter::Eighth);
-        }
         signalParameterValueChanged(Parameter::Seventh, val);
     }
 }
@@ -277,10 +264,6 @@ void SketcherToolDefaultWidget::parameterEight_valueChanged(double val)
 {
     if (!blockParameterSlots) {
         isSet[Parameter::Eighth] = true;
-        setParameterFontStyle(Parameter::Eighth, FontStyle::Bold);
-        if (!blockParameterFocusPassing) {
-            setParameterFocus(Parameter::Ninth);
-        }
         signalParameterValueChanged(Parameter::Eighth, val);
     }
 }
@@ -288,10 +271,6 @@ void SketcherToolDefaultWidget::parameterNine_valueChanged(double val)
 {
     if (!blockParameterSlots) {
         isSet[Parameter::Ninth] = true;
-        setParameterFontStyle(Parameter::Ninth, FontStyle::Bold);
-        if (!blockParameterFocusPassing) {
-            setParameterFocus(Parameter::Tenth);
-        }
         signalParameterValueChanged(Parameter::Ninth, val);
     }
 }
@@ -299,7 +278,6 @@ void SketcherToolDefaultWidget::parameterTen_valueChanged(double val)
 {
     if (!blockParameterSlots) {
         isSet[Parameter::Tenth] = true;
-        setParameterFontStyle(Parameter::Tenth, FontStyle::Bold);
         signalParameterValueChanged(Parameter::Tenth, val);
     }
 }
@@ -316,7 +294,7 @@ void SketcherToolDefaultWidget::initNParameters(int nparameters, QObject* filter
         setParameterVisible(i, (i < nparameters));
         setParameter(i, 0.F);
         setParameterFilteringObject(i, filteringObject);
-        setParameterFontStyle(i, FontStyle::Italic);
+        // setParameterFontStyle(i, FontStyle::Italic);
     }
 
     setParameterFocus(Parameter::First);

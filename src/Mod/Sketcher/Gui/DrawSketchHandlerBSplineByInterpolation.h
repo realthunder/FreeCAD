@@ -393,10 +393,10 @@ private:
     QString getCrosshairCursorSVGName() const override
     {
         if (SketcherGui::DrawSketchHandlerBSplineByInterpolation::ConstrMethod == 1) {
-            return QString::fromLatin1("Sketcher_Pointer_Create_Periodic_BSplineByInterpolation");
+            return QStringLiteral("Sketcher_Pointer_Create_Periodic_BSplineByInterpolation");
         }
         else {
-            return QString::fromLatin1("Sketcher_Pointer_Create_BSplineByInterpolation");
+            return QStringLiteral("Sketcher_Pointer_Create_BSplineByInterpolation");
         }
     }
 
@@ -513,11 +513,11 @@ private:
                 for (auto& controlpoints : controlpointses) {
                     // TODO: variable degrees?
                     QString cmdstr =
-                        QString::fromLatin1("_bsps.append(Part.BSplineCurve())\n"
-                                            "_bsps[-1].interpolate(%1, PeriodicFlag=%2)\n"
-                                            "_bsps[-1].increaseDegree(%3)")
-                            .arg(QString::fromLatin1(controlpoints.c_str()))
-                            .arg(QString::fromLatin1(ConstrMethod == 0 ? "False" : "True"))
+                        QStringLiteral("_bsps.append(Part.BSplineCurve())\n"
+                                       "_bsps[-1].interpolate(%1, PeriodicFlag=%2)\n"
+                                       "_bsps[-1].increaseDegree(%3)")
+                            .arg(QString::fromUtf8(controlpoints.c_str()))
+                            .arg(ConstrMethod == 0 ? QStringLiteral("False") : QStringLiteral("True"))
                             .arg(myDegree);
                     Gui::Command::runCommand(Gui::Command::Gui, cmdstr.toLatin1());
                     // Adjust internal knots here (raise multiplicity)

@@ -157,7 +157,7 @@ private:
 
     QString getCrosshairCursorSVGName() const override
     {
-        return QString::fromLatin1("Sketcher_Pointer_Create_Offset");
+        return QStringLiteral("Sketcher_Pointer_Create_Offset");
     }
 
     std::unique_ptr<QWidget> createWidget() const override
@@ -1028,8 +1028,20 @@ private:
 
     bool areCoincident(int geoId1, int geoId2)
     {
-        CoincidencePointPos ppc = checkForCoincidence(geoId1, geoId2);
-        return ppc.firstPos1 != PointPos::none;
+        // Instead of checking for constraints like so:
+        // CoincidencePointPos ppc = checkForCoincidence(geoId1, geoId2);
+        // return ppc.firstPos1 != PointPos::none;
+        // we are going to check if the points are effectively coincident:
+
+        Base::Vector3d p11, p12, p21, p22;
+        if (!getFirstSecondPoints(geoId1, p11, p12) || !getFirstSecondPoints(geoId2, p21, p22)) {
+            return false;
+        }
+
+        return ((p11 - p21).Length() < Precision::Confusion()
+                || (p11 - p22).Length() < Precision::Confusion()
+                || (p12 - p21).Length() < Precision::Confusion()
+                || (p12 - p22).Length() < Precision::Confusion());
     }
 
     bool areTangentCoincident(int geoId1, int geoId2)
@@ -1081,7 +1093,8 @@ template<>
 void DSHOffsetController::configureToolWidget()
 {
     if (!init) {  // Code to be executed only upon initialisation
-        QStringList names = {QStringLiteral("Arc"), QStringLiteral("Intersection")};
+        QStringList names = {QApplication::translate("Sketcher_CreateOffset", "Arc"),
+                             QApplication::translate("Sketcher_CreateOffset", "Intersection")};
         toolWidget->setComboboxElements(WCombobox::FirstCombo, names);
 
         toolWidget->setComboboxItemIcon(WCombobox::FirstCombo,

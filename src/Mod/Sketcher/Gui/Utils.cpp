@@ -197,24 +197,24 @@ void SketcherGui::getIdsFromName(const std::string& name,
     GeoId = GeoEnum::GeoUndef;
     PosId = Sketcher::PointPos::none;
 
-    if (name.size() > 4 && name.substr(0, 4) == "Edge") {
-        GeoId = std::atoi(name.substr(4, 4000).c_str()) - 1;
+    if (boost::istarts_with(name, "Edge")) {
+        GeoId = std::atoi(name.c_str()+4) - 1;
     }
-    else if (name.size() == 9 && name.substr(0, 9) == "RootPoint") {
+    else if (boost::equals(name, "RootPoint")) {
         GeoId = Sketcher::GeoEnum::RtPnt;
         PosId = Sketcher::PointPos::start;
     }
-    else if (name.size() == 6 && name.substr(0, 6) == "H_Axis") {
+    else if (boost::equals(name, "H_Axis")) {
         GeoId = Sketcher::GeoEnum::HAxis;
     }
-    else if (name.size() == 6 && name.substr(0, 6) == "V_Axis") {
+    else if (boost::equals(name, "V_Axis")) {
         GeoId = Sketcher::GeoEnum::VAxis;
     }
-    else if (name.size() > 12 && name.substr(0, 12) == "ExternalEdge") {
-        GeoId = Sketcher::GeoEnum::RefExt + 1 - std::atoi(name.substr(12, 4000).c_str());
+    else if (boost::istarts_with(name, "EternalEdge")) {
+        GeoId = Sketcher::GeoEnum::RefExt + 1 - std::atoi(name.c_str()+12);
     }
-    else if (name.size() > 6 && name.substr(0, 6) == "Vertex") {
-        int VtId = std::atoi(name.substr(6, 4000).c_str()) - 1;
+    else if (name.size() > 6 && boost::istarts_with(name, "Vertex")) {
+        int VtId = std::atoi(name.c_str() + 6) - 1;
         Obj->getGeoVertexIndex(VtId, GeoId, PosId);
     }
 }
@@ -225,15 +225,15 @@ std::vector<int> SketcherGui::getGeoIdsOfEdgesFromNames(const Sketcher::SketchOb
     std::vector<int> geoids;
 
     for (const auto& name : names) {
-        if (name.size() > 4 && name.substr(0, 4) == "Edge") {
-            geoids.push_back(std::atoi(name.substr(4, 4000).c_str()) - 1);
+        if (boost::istarts_with(name, "Edge")) {
+            geoids.push_back(std::atoi(name.c_str() + 4) - 1);
         }
-        else if (name.size() > 12 && name.substr(0, 12) == "ExternalEdge") {
+        else if (boost::istarts_with(name, "ExternalEdge")) {
             geoids.push_back(Sketcher::GeoEnum::RefExt + 1
-                             - std::atoi(name.substr(12, 4000).c_str()));
+                             - std::atoi(name.c_str() + 12));
         }
-        else if (name.size() > 6 && name.substr(0, 6) == "Vertex") {
-            int VtId = std::atoi(name.substr(6, 4000).c_str()) - 1;
+        else if (boost::istarts_with(name, "Vertex")) {
+            int VtId = std::atoi(name.c_str()+6) - 1;
             int GeoId;
             Sketcher::PointPos PosId;
             Obj->getGeoVertexIndex(VtId, GeoId, PosId);
@@ -859,4 +859,17 @@ bool SketcherGui::areColinear(const Base::Vector2d& p1,
     }
 
     return false;
+}
+
+int SketcherGui::indexOfGeoId(const std::vector<int>& vec, int elem)
+{
+    if (elem == GeoEnum::GeoUndef) {
+        return GeoEnum::GeoUndef;
+    }
+    for (size_t i = 0; i < vec.size(); i++) {
+        if (vec[i] == elem) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
 }
