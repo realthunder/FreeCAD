@@ -328,8 +328,8 @@ Tooltip
 Gui--TipLabel,
 Gui--NotificationLabel,
 QToolTip {
-    color: #1e1e1e;
-    background-color: #80b4b4b4;
+    color: #65A2E5;
+    background-color: #232932;
 }
 
 
