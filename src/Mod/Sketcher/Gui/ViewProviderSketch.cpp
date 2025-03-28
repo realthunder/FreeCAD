@@ -591,33 +591,6 @@ ViewProviderSketch::ViewProviderSketch()
     PointColor.setValue(1,1,1);
     PointSize.setValue(4);
 
-    zCross=0.001f;
-    zEdit=0.001f;
-    zInfo=0.004f;
-    zLowLines=0.005f;
-    //zLines=0.005f;    // ZLines removed in favour of 3 height groups intended for NormalLines, ConstructionLines, ExternalLines
-    zMidLines=0.006f;
-    zHighLines=0.007f;  // Lines that are somehow selected to be in the high position (higher than other line categories)
-    zHighLine=0.008f;   // highlighted line (of any group)
-
-    // Make constraint z higher than lines but lower than points. The rationale
-    // being that user can always zoom in the lines to make it selectable, but
-    // point size (and most constraint sizes) stays the same. So give higher
-    // priority to points, then constraints, and finally edges. In case the
-    // user wants to select constraint but blocked by a point, use 'G, G'
-    // geometry pick command.
-    //
-    zConstr=0.009; // constraint not construction
-    zDatum = 0.010; // datum label
-
-    //zPoints=0.010f;
-    zRootPoint = 0.011;
-    zLowPoints = 0.012f;
-    zHighPoints = 0.013f;
-    zHighlight=0.014f;
-    zText=0.014f;
-
-
     xInit=0;
     yInit=0;
     relative=false;
@@ -4450,6 +4423,7 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "TopRenderGeometryId",
         "MidRenderGeometryId",
         "LowRenderGeometryId",
+        "ZHeight",
 
         "SegmentsPerGeometry",
         "ViewScalingFactor",
@@ -4602,6 +4576,32 @@ void ViewProviderSketch::initParams()
         // -> If a user has a HDPI, he will eventually change the value for the other WBs
         // -> If we correct the value here in addition, we would get two times a resize
         edit->MarkerSize = markersize;
+
+        zCross = edit->hSketchGeneral->GetFloat("ZHeight", 1e-6f);
+        zEdit=zCross;
+        zInfo=4*zCross;
+        zLowLines=5*zCross;
+        //zLines=5*zCross;    // ZLines removed in favour of 3 height groups intended for NormalLines, ConstructionLines, ExternalLines
+        zMidLines=6*zCross;
+        zHighLines=7*zCross;  // Lines that are somehow selected to be in the high position (higher than other line categories)
+        zHighLine=8*zCross;   // highlighted line (of any group)
+
+        // Make constraint z higher than lines but lower than points. The rationale
+        // being that user can always zoom in the lines to make it selectable, but
+        // point size (and most constraint sizes) stays the same. So give higher
+        // priority to points, then constraints, and finally edges. In case the
+        // user wants to select constraint but blocked by a point, use 'G, G'
+        // geometry pick command.
+        //
+        zConstr=9*zCross; // constraint not construction
+        zDatum = 10*zCross; // datum label
+
+        //zPoints=10*zCross;
+        zRootPoint = 11*zCross;
+        zLowPoints = 12*zCross;
+        zHighPoints = 13*zCross;
+        zHighlight=14*zCross;
+        zText=14*zCross;
     }
 
     float transparency;
@@ -4752,7 +4752,7 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     for (int i=0; i<(int)geoIndices.size(); ++i)
         geoIndices[i] = i;
 
-    ParameterGrp::handle hGrpsk = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/General");
+    ParameterGrp::handle hGrpsk = edit->hSketchGeneral;
 
     int topid = hGrpsk->GetInt("TopRenderGeometryId",1);
     int midid = hGrpsk->GetInt("MidRenderGeometryId",2);

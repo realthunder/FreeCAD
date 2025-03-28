@@ -326,6 +326,7 @@ SketcherSettingsDisplay::~SketcherSettingsDisplay()
 
 void SketcherSettingsDisplay::saveSettings()
 {
+    ui->ZHeight->onSave();
     ui->EditSketcherFontSize->onSave();
     ui->viewScalingFactor->onSave();
     ui->SegmentsPerGeometry->onSave();
@@ -349,6 +350,7 @@ void SketcherSettingsDisplay::saveSettings()
 
 void SketcherSettingsDisplay::loadSettings()
 {
+    ui->ZHeight->onRestore();
     ui->EditSketcherFontSize->onRestore();
     ui->viewScalingFactor->onRestore();
     ui->SegmentsPerGeometry->onRestore();
