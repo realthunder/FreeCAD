@@ -78,17 +78,20 @@ App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& pri
         TopoShape primitiveShape;
         primitiveShape.setShape(primitive);
 
-        AddSubShape.setValue(primitiveShape);
-        if (isRecomputePaused())
-            return App::DocumentObject::StdReturn;
-         
         //if we have no base we just add the standard primitive shape
 
         TopoShape base;
         //if we have a base shape we need to make sure that it does not get our transformation to
         base = getBaseShape(/*silent*/true);
-        if (!base.isNull())
-            base.moved(getLocation().Inverted());
+        if (!base.isNull()) {
+            base.move(getLocation().Inverted());
+            primitiveShape.Tag = -this->getID();
+        }
+
+        AddSubShape.setValue(primitiveShape);
+        if (isRecomputePaused())
+            return App::DocumentObject::StdReturn;
+         
         Shape.setValue(makeBoolean(base, primitiveShape));
     }
     catch (Standard_Failure& e) {
