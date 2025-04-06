@@ -566,6 +566,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
           << "PartDesign_Split"
           << "PartDesign_Extrusion"
           << "Separator"
+          << "PartDesign_MoveTip"
           << "PartDesign_Migrate"
           << "PartDesign_Sprocket";
 

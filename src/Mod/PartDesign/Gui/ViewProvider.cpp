@@ -182,8 +182,9 @@ void ViewProvider::setupContextMenu(QMenu* menu, QObject* receiver, const char* 
         }
 
         if (body->Tip.getValue() != feat) {
-            act = menu->addAction(QObject::tr("Set body tip"), receiver, member);
-            act->setData(QVariant((int)EditSetTip));
+            if (Gui::Application::Instance->commandManager().addTo("PartDesign_MoveTip", menu)) {
+                menu->actions().back()->setData(QVariant((int)EditSetTip));
+            }
         }
     }
     QAction* act = menu->addAction(QObject::tr("Set colors..."), receiver, member);
@@ -259,11 +260,6 @@ bool ViewProvider::setEdit(int ModNum)
         return false;
     }
     case EditSetTip: {
-        App::AutoTransaction committer("Set body tip");
-        auto body = PartDesign::Body::findBodyOf(feat);
-        body->Tip.setValue(feat);
-        feat->Visibility.setValue(true);
-        Gui::Command::updateActive();
         return false;
     }
     case EditSelectSiblings: {
@@ -701,7 +697,9 @@ bool ViewProvider::iconMouseEvent(QMouseEvent *ev, const QByteArray &tag)
             }
             return true;
         } else if (tag == _IconTag && !isSetTipIcon) {
-            setEdit(EditSetTip);
+            if (auto cmd = Gui::Application::Instance->commandManager().getCommandByName("PartDesign_MoveTip")) {
+                cmd->invoke(0);
+            }
             return true;
         }
     }
