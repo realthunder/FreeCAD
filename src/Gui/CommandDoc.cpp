@@ -991,7 +991,7 @@ StdCmdPrint::StdCmdPrint()
     sWhatsThis    = "Std_Print";
     sStatusTip    = QT_TR_NOOP("Print the document");
     sPixmap       = "document-print";
-    sAccel        = keySequenceToAccel(QKeySequence::Print);
+    // sAccel        = keySequenceToAccel(QKeySequence::Print);
     eType         = 0;
 }
 
