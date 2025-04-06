@@ -270,9 +270,16 @@ TopoDS_Shape Helix::generateHelixPath(double startOffset0)
     else
         radiusTop = radius + height * tan(Base::toRadians(angle));
 
+    // Upstream changed breakperiod to 0 which break topo naming of older
+    // version. In order to maintain backward compatibility, use
+    // _ProfileBasedVersion to check for older version object. 1 means the
+    // object is created from older Link branch FreeCAD. Assuming object
+    // created in upstream does not have _ProfileBasedVersion (i.e. ==0)
+    int breakperiod = _ProfileBasedVersion.getValue()==1 ? 1 : 0;
+
     //build the helix path
     //TopoShape helix = TopoShape().makeLongHelix(pitch, height, radius, angle, leftHanded);
-    TopoDS_Shape path = TopoShape().makeSpiralHelix(radius, radiusTop, height, turns, 0, leftHanded);
+    TopoDS_Shape path = TopoShape().makeSpiralHelix(radius, radiusTop, height, turns, breakperiod, leftHanded);
 
     /*
      * The helix wire is created with the axis coinciding with z-axis and the start point at (radius, 0, 0)

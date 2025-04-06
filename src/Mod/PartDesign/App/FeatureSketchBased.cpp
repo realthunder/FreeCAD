@@ -112,7 +112,7 @@ void ProfileBased::setupObject()
     FeatureAddSub::setupObject();
     AllowMultiFace.setValue(true);
     Linearize.setValue(Part::PartParams::getLinearizeExtrusionDraft());
-    _ProfileBasedVersion.setValue(1);
+    _ProfileBasedVersion.setValue(2);
 }
 
 TopLoc_Location ProfileBased::positionByPrevious(void)
