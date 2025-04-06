@@ -4215,7 +4215,7 @@ void StdTreeHideSelection::activated(int)
 //======================================================================
 // Std_TreeToggleShowHidden
 //======================================================================
-DEF_STD_CMD(StdTreeToggleShowHidden)
+DEF_STD_CMD_AC(StdTreeToggleShowHidden)
 
 StdTreeToggleShowHidden::StdTreeToggleShowHidden()
 	: Command("Std_TreeToggleShowHidden")
@@ -4225,21 +4225,87 @@ StdTreeToggleShowHidden::StdTreeToggleShowHidden()
 	sToolTipText    = QT_TR_NOOP("Toggles whether or not hidden items are visible in the tree");
 	sStatusTip      = sToolTipText;
 	sWhatsThis      = "Std_TreeToggleShowHidden";
-	sPixmap         = "tree-show-hidden";
-	sAccel          = "Shift+Alt+S";
+	// sPixmap         = "tree-show-hidden";
+	sAccel          = "T, S";
 	eType           = 0;
+}
+
+static App::Document *getShowHiddenDocument()
+{
+    auto sels = Gui::Selection().getSelectionT(nullptr, ResolveMode::NoResolve, /*single*/true);
+    App::Document *doc = nullptr;
+    if (!sels.empty())
+        doc = sels[0].getDocument();
+    if (!doc)
+        doc = App::GetApplication().getActiveDocument();
+    return doc;
 }
 
 void StdTreeToggleShowHidden::activated(int)
 {
-    if (auto doc = App::GetApplication().getActiveDocument()) {
+    if (auto doc = getShowHiddenDocument()) {
         std::ostringstream ss;
         ss << "App.getDocument('" << doc->getName() << "').ShowHidden = not "
               "App.getDocument('" << doc->getName() << "').ShowHidden";
         runCommand(Command::Gui, ss.str().c_str());
+        _pcAction->setChecked(doc->ShowHidden.getValue(), true);
     }
 }
 
+Action * StdTreeToggleShowHidden::createAction() {
+    Action *pcAction = Command::createAction();
+    pcAction->setCheckable(true);
+    _pcAction = pcAction;
+    isActive();
+    return pcAction;
+}
+
+bool StdTreeToggleShowHidden::isActive() {
+    if (auto doc = getShowHiddenDocument()) {
+        bool checked = doc->ShowHidden.getValue();
+        if(_pcAction && _pcAction->isChecked()!=checked)
+            _pcAction->setChecked(checked, true);
+        return true;
+    }
+    return false;
+}
+
+//======================================================================
+// Std_TreeRelabelObject
+//===========================================================================
+//
+DEF_STD_CMD_A(StdCmdTreeRelabelObject)
+
+StdCmdTreeRelabelObject::StdCmdTreeRelabelObject()
+  :Command("Std_TreeRelabelObject")
+{
+    // setting the
+    sGroup        = "Edit";
+    sMenuText     = QT_TR_NOOP("Rename object");
+    sToolTipText  = QT_TR_NOOP("Rename the selected object");
+    sWhatsThis    = "Std_TreeRelabelObject";
+    sStatusTip    = sToolTipText;
+    sAccel        = "F2";
+}
+
+bool StdCmdTreeRelabelObject::isActive(void)
+{
+    if (auto tree = TreeWidget::instance()) {
+        return tree->isVisible() && tree->currentItem() != nullptr;
+    }
+    return false;
+}
+
+void StdCmdTreeRelabelObject::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    if (auto tree = TreeWidget::instance()) {
+        if (tree->isVisible()) {
+            tree->relabelObject();
+        }
+    }
+}
 
 //======================================================================
 // Std_TreeViewActions
@@ -5100,6 +5166,7 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdCloseLinkedView());
     rcCmdMgr.addCommand(new StdCmdItemMenu());
     rcCmdMgr.addCommand(new StdCmdToolTipDisable());
+    rcCmdMgr.addCommand(new StdCmdTreeRelabelObject());
 
     rcCmdMgr.addCommand(new StdCmdDockOverlay());
 

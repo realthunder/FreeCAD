@@ -1080,12 +1080,12 @@ TreeWidget::TreeWidget(const char *name, QWidget* parent)
     this->setColumnCount(2);
     this->setItemDelegate(new TreeWidgetItemDelegate(this));
 
-    this->showHiddenAction = new QAction(this);
-    this->showHiddenAction->setCheckable(true);
-    connect(this->showHiddenAction, &QAction::triggered,
-            this, &TreeWidget::onShowHidden);
-    this->showHiddenAction->setShortcut(QKeySequence(QStringLiteral("T, S")));
-    addAction(this->showHiddenAction);
+    this->showHiddenAction = nullptr;
+    if (auto cmd = Application::Instance->commandManager().getCommandByName("Std_TreeToggleShowHidden")) {
+        cmd->initAction();
+        this->showHiddenAction = cmd->getAction()->action();
+        addAction(this->showHiddenAction);
+    }
 
     this->toggleVisibilityInTreeAction = new QAction(this);
     connect(this->toggleVisibilityInTreeAction, &QAction::triggered,
@@ -1096,12 +1096,12 @@ TreeWidget::TreeWidget(const char *name, QWidget* parent)
     connect(this->showTempDocAction, &QAction::triggered,
             this, &TreeWidget::onShowTempDoc);
 
-    this->relabelObjectAction = new QAction(this);
-#ifndef Q_OS_MAC
-    this->relabelObjectAction->setShortcut(Qt::Key_F2);
-#endif
-    connect(this->relabelObjectAction, &QAction::triggered,
-            this, &TreeWidget::onRelabelObject);
+    this->relabelObjectAction = nullptr;
+    if (auto cmd = Application::Instance->commandManager().getCommandByName("Std_TreeRelabelObject")) {
+        cmd->initAction();
+        this->relabelObjectAction = cmd->getAction()->action();
+        addAction(this->relabelObjectAction);
+    }
 
     this->finishEditingAction = new QAction(this);
     connect(this->finishEditingAction, &QAction::triggered,
@@ -1551,8 +1551,9 @@ void TreeWidget::_setupDocumentMenu(DocumentItem *docitem, QMenu &menu)
     this->contextItem = docitem;
     App::Document* doc = docitem->document()->getDocument();
     App::GetApplication().setActiveDocument(doc);
-    showHiddenAction->setChecked(docitem->showHidden());
-    menu.addAction(this->showHiddenAction);
+    if (this->showHiddenAction) {
+        menu.addAction(this->showHiddenAction);
+    }
     menu.addAction(this->searchObjectsAction);
     menu.addAction(this->closeDocAction);
     Application::Instance->commandManager().addTo("Std_CloseLinkedView", &menu);
@@ -1642,10 +1643,9 @@ void TreeWidget::contextMenuEvent (QContextMenuEvent * e)
 
         Selection().setContext(objitem->getSubObjectT());
 
-        App::Document* doc = objitem->object()->getObject()->getDocument();
-        showHiddenAction->setChecked(doc->ShowHidden.getValue());
-        contextMenu.addAction(this->showHiddenAction);
-
+        if (objitem->object()->getObject()->getDocument() && showHiddenAction) {
+            contextMenu.addAction(this->showHiddenAction);
+        }
         contextMenu.addAction(this->toggleVisibilityInTreeAction);
 
         contextMenu.addSeparator();
@@ -1653,8 +1653,10 @@ void TreeWidget::contextMenuEvent (QContextMenuEvent * e)
         contextMenu.addAction(this->recomputeObjectAction);
 
         if(this->selectedItems().size() > 0) {
-            // relabeling is only possible for a single selected document
-            contextMenu.addAction(this->relabelObjectAction);
+            if (this->relabelObjectAction) {
+                // relabeling is only possible for a single selected document
+                contextMenu.addAction(this->relabelObjectAction);
+            }
 
             if (_setupObjectMenu(objitem, editMenu)) {
                 auto topact = contextMenu.actions().front();
@@ -1750,7 +1752,7 @@ void TreeWidget::showEvent(QShowEvent *ev) {
 }
 
 
-void TreeWidget::onRelabelObject()
+void TreeWidget::relabelObject()
 {
     QTreeWidgetItem* item = currentItem();
     if (item)
@@ -4581,17 +4583,11 @@ void TreeWidget::setupText()
     this->headerItem()->setText(1, tr("Description"));
     this->rootItem->setText(0, tr("Application"));
 
-    this->showHiddenAction->setText(tr("Show hidden items"));
-    this->showHiddenAction->setToolTip(tr("Show hidden tree view items"));
-
     this->showTempDocAction->setText(tr("Show temporary document"));
     this->showTempDocAction->setToolTip(tr("Show hidden temporary document items"));
 
     this->toggleVisibilityInTreeAction->setText(tr("Toggle visibility in tree view"));
     this->toggleVisibilityInTreeAction->setStatusTip(tr("Toggles the visibility of selected items in the tree view"));
-
-    this->relabelObjectAction->setText(tr("Rename"));
-    this->relabelObjectAction->setToolTip(tr("Rename object"));
 
     this->finishEditingAction->setText(tr("Finish editing"));
     this->finishEditingAction->setToolTip(tr("Finish editing object"));
@@ -4617,19 +4613,6 @@ void TreeWidget::setupText()
 
     this->recomputeObjectAction->setText(tr("Recompute object"));
     this->recomputeObjectAction->setToolTip(tr("Recompute the selected object"));
-}
-
-void TreeWidget::onShowHidden()
-{
-    if (!this->contextItem)
-        return;
-    DocumentItem *docItem = nullptr;
-    if(this->contextItem->type() == DocumentType)
-        docItem = static_cast<DocumentItem*>(contextItem);
-    else if(this->contextItem->type() == ObjectType)
-        docItem = static_cast<DocumentObjectItem*>(contextItem)->getOwnerDocument();
-    if(docItem)
-        docItem->setShowHidden(showHiddenAction->isChecked());
 }
 
 void TreeWidget::onShowTempDoc()

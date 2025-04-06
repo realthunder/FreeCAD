@@ -164,6 +164,8 @@ public:
     void startItemSearch(QLineEdit*);
     void itemSearch(const QString &text, bool select);
 
+    void relabelObject();
+
 protected:
     void _selectAllInstances(const ViewProviderDocumentObject &vpd);
     void _selectLinkedObject(App::DocumentObject *linked);
@@ -203,7 +205,6 @@ protected:
     bool onDoubleClickItem(QTreeWidgetItem *);
 
 protected Q_SLOTS:
-    void onRelabelObject();
     void onActivateDocument(QAction*);
     void onStartEditing();
     void onFinishEditing();
@@ -215,7 +216,6 @@ protected Q_SLOTS:
     void onRecomputeObject();
     void onPreSelectTimer();
     void onSelectTimer();
-    void onShowHidden();
     void onShowTempDoc();
     void onToggleVisibilityInTree();
     void onSearchObjects();
