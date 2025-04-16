@@ -1368,8 +1368,18 @@ Feature::searchElementCache(const std::string &element,
             }
         }
         it->second.searched = true;
-        propShape->getShape().searchSubShape(
+        TopoShape newShape = propShape->getShape();
+        newShape.searchSubShape(
                 it->second.shape, &it->second.names, options, tol, atol);
+        if (it->second.names.empty()) {
+            // Can't find any shape with the same geometry. But in case the new
+            // shape has only one sub-shape with the searching shape type, we
+            // can safely choose that sub-shape.
+            TopAbs_ShapeEnum shapeType = it->second.shape.shapeType();
+            if (newShape.countSubShapes(shapeType) == 1) {
+                it->second.names.push_back(newShape.shapeName(shapeType) + "1");
+            }
+        }
         if (prefix) {
             for (auto &name : it->second.names) {
                 if (auto dot = strrchr(name.c_str(), '.'))
