@@ -2147,7 +2147,7 @@ void LinkBaseExtension::onExtendedDocumentRestored() {
                     << " due to conflict subnames");
         else if(xlink->getSubValues().empty()) {
             auto subs = xlink->getSubValues();
-            xlink->setSubValues(std::move(subs));
+            xlink->setSubValuesNoNotify(std::move(subs));
         } else {
             std::set<std::string> subset(mySubElements.begin(),mySubElements.end());
             auto sub = xlink->getSubValues().front();
@@ -2159,7 +2159,7 @@ void LinkBaseExtension::onExtendedDocumentRestored() {
             std::vector<std::string> subs;
             for(const auto &s : subset)
                 subs.push_back(sub + s);
-            xlink->setSubValues(std::move(subs));
+            xlink->setSubValuesNoNotify(std::move(subs));
         }
     }
     if(getScaleVectorProperty()) {

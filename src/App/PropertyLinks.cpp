@@ -1400,8 +1400,25 @@ static bool updateLinkReference(App::PropertyLinkBase *prop,
         App::DocumentObject *link, std::vector<std::string> &subs, std::vector<int> &mapped,
         std::vector<PropertyLinkBase::ShadowSub> &shadows)
 {
+    bool touched = false;
+    int i = 0;
     if(!feature) {
-        shadows.clear();
+        std::vector<PropertyLinkBase::ShadowSub> tmpShadows;
+        for (const auto &sub : subs) {
+            if (GeoFeature::hasMissingElement(sub.c_str())) {
+                for (const auto &shadow : shadows) {
+                    if (shadow.second == sub) {
+                        tmpShadows.resize(subs.size());
+                        tmpShadows[i] = shadow;
+                    }
+                }
+            }
+            ++i;
+        }
+#ifdef FC_DEBUG
+        assert(!notify);
+#endif
+        std::swap(shadows, tmpShadows);
         prop->unregisterElementReference();
     }
     shadows.resize(subs.size());
@@ -1410,8 +1427,7 @@ static bool updateLinkReference(App::PropertyLinkBase *prop,
     auto owner = dynamic_cast<DocumentObject*>(prop->getContainer());
     if(owner && owner->isRestoring())
         return false;
-    int i=0;
-    bool touched = false;
+    i = 0;
     for(auto &sub : subs) {
         if(prop->_updateElementReference(
                     feature,link,sub,shadows[i++],reverse,notify&&!touched))
@@ -2597,16 +2613,37 @@ void PropertyLinkSubList::onContainerRestored() {
 }
 
 void PropertyLinkSubList::updateElementReference(DocumentObject *feature, bool reverse, bool notify) {
+    int i = 0;
+    bool touched = false;
     if(!feature) {
-        _ShadowSubList.clear();
+        std::vector<PropertyLinkBase::ShadowSub> tmpShadows;
+        auto old = this->getOldValue<const PropertyLinkSubList>();
+        if (old && old->_lValueList.size() == old->_ShadowSubList.size()) {
+            for (const auto &sub : _lSubList) {
+                if (GeoFeature::hasMissingElement(sub.c_str())) {
+                    int j=0;
+                    for (const auto &shadow : old->_ShadowSubList) {
+                        const auto oldValue = old->_lValueList[j++];
+                        if (oldValue == this->_lValueList[i] && shadow.second == sub) {
+                            tmpShadows.resize(this->_lSubList.size());
+                            tmpShadows[i] = shadow;
+                        }
+                    }
+                }
+                ++i;
+            }
+        }
+        touched = true;
+        if (notify)
+            aboutToSetValue();
+        std::swap(_ShadowSubList, tmpShadows);
         unregisterElementReference();
     }
     _ShadowSubList.resize(_lSubList.size());
     auto owner = freecad_dynamic_cast<DocumentObject>(getContainer());
     if(owner && owner->isRestoring())
         return;
-    int i=0;
-    bool touched = false;
+    i=0;
     for(auto &sub : _lSubList) {
         auto obj = _lValueList[i];
         if(_updateElementReference(feature,obj,sub,_ShadowSubList[i++],reverse,notify&&!touched))
@@ -3748,6 +3785,12 @@ void PropertyXLink::setSubName(const char *subname)
     aboutToSetValue();
     setSubValues(std::move(subs));
     hasSetValue();
+}
+
+void PropertyXLink::setSubValuesNoNotify(std::vector<std::string> &&subs,
+                                         std::vector<ShadowSub> &&shadows)
+{
+    setSubValues(std::move(subs), std::move(shadows));
 }
 
 void PropertyXLink::setSubValues(std::vector<std::string> &&subs,

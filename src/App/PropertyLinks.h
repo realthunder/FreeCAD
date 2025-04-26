@@ -1151,8 +1151,12 @@ public:
     void setValue(App::DocumentObject *,const std::vector<std::string> &SubList,
             std::vector<ShadowSub > &&ShadowSubList={});
 
-    void setSubValues(std::vector<std::string> &&SubList,
-            std::vector<ShadowSub> &&ShadowSubList = {});
+    /** Set sub values without notify property change
+     *
+     * WARNING: calling this function may break property value restore on undo/redo
+     */
+    void setSubValuesNoNotify(std::vector<std::string> &&SubList,
+                              std::vector<ShadowSub> &&ShadowSubList = {});
 
     const char *getSubName(bool newStyle=true) const;
     void setSubName(const char *subname);
@@ -1264,6 +1268,9 @@ protected:
     void aboutToSetValue() override;
 
     void hasSetValue() override;
+
+    void setSubValues(std::vector<std::string> &&SubList,
+            std::vector<ShadowSub> &&ShadowSubList = {});
 
     friend class PropertyXLinkSubList;
 

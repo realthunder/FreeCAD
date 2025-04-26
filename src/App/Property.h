@@ -329,6 +329,11 @@ protected:
     Property(const Property&) = delete;
     Property& operator = (const Property&) = delete;
 
+    template<class T>
+    const T *getOldValue() const {
+        return static_cast<const T*>(_old.get());
+    }
+
 private:
     // Sync status with Property_Type
     void syncType(unsigned type);
