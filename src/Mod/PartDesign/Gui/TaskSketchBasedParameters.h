@@ -212,6 +212,7 @@ protected:
     AllowSelectionFlags selectionConf;
     boost::signals2::scoped_connection connModeChange;
     bool singleElement = false;
+    bool linkInited = false;
 };
 
 class LinkSubListWidget: public QGroupBox
@@ -268,6 +269,7 @@ protected:
     App::DocumentObjectT linkProp;
     AllowSelectionFlags selectionConf;
     boost::signals2::scoped_connection connModeChange;
+    bool linkInited = false;
 };
 
 

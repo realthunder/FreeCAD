@@ -65,6 +65,8 @@
 #include "ReferenceSelection.h"
 #include "Utils.h"
 
+FC_LOG_LEVEL_INIT("PartDesignGui",true,true)
+
 using namespace PartDesignGui;
 using namespace Gui;
 
@@ -194,6 +196,8 @@ LinkSubWidget::LinkSubWidget(TaskSketchBasedParameters *parent,
     ,linkProp(&prop)
     ,singleElement(singleElement)
 {
+
+
     selectionConf.setFlag(AllowSelection::EDGE);
     selectionConf.setFlag(AllowSelection::FACE);
     selectionConf.setFlag(AllowSelection::PLANAR, false);
@@ -406,8 +410,10 @@ void LinkSubWidget::refresh()
 {
     App::DocumentObject *obj;
     auto prop = getProperty(&obj);
-    if (!prop)
+    if (!prop) {
+        linkInited = true;
         return;
+    }
     QSignalBlocker guard(listWidget);
     listWidget->clear();
     App::ObjectIdentifier path(*prop);
@@ -423,9 +429,42 @@ void LinkSubWidget::refresh()
             item->setData(Qt::ForegroundRole, linkColor);
         item->setData(Qt::UserRole, QVariant::fromValue(linkT));
 
-        const auto &subs = prop->getSubValues(false);
-        if (subs.size() != 1 || !subs.front().empty()) {
+        std::vector<std::string> subnames;
+        for (const auto &sub : prop->getSubValues(false)) {
+            if (linkInited || !App::GeoFeature::hasMissingElement(sub.c_str()))
+                subnames.push_back(sub);
+        }
+        bool touched = false;
+        if (subnames.size() != prop->getSubValues().size()) {
+            subnames.clear();
+            const auto &subs = prop->getShadowSubs();
+            std::set<std::string> subSet;
+            std::string indexedName;
             for (const auto &sub : subs) {
+                subSet.insert(sub.second);
+                subSet.insert(sub.first);
+            }
+            for (const auto &sub : subs) {
+                subnames.push_back(sub.second);
+                if (App::GeoFeature::hasMissingElement(sub.second.c_str())) {
+                    auto related = Part::Feature::getRelatedElements(link, sub.first.c_str());
+                    if (!related.empty()) {
+                        indexedName.clear();
+                        const auto &element = related.front();
+                        element.index.appendToStringBuffer(indexedName);
+                        FC_WARN("guess element reference in " << prop->getFullName() 
+                                << ": " << sub.second << " -> " << indexedName);
+                        if (subSet.insert(indexedName).second)
+                            subnames.back() = indexedName;
+                        else
+                            subnames.pop_back();
+                        touched = true;
+                    }
+                }
+            }
+        }
+        if (subnames.size() != 1 || !subnames.front().empty()) {
+            for (const auto &sub : subnames) {
                 auto item = new QListWidgetItem(QString::fromUtf8(sub.c_str()));
                 listWidget->addItem(item);
                 item->setFlags(item->flags() | Qt::ItemIsEditable);
@@ -433,8 +472,20 @@ void LinkSubWidget::refresh()
                     item->setData(Qt::ForegroundRole, linkColor);
             }
         }
+        if (touched) {
+            try {
+                parentTask->setupTransaction();
+                prop->setValue(link, subnames);
+                parentTask->recomputeFeature();
+            }
+            catch (Base::Exception &e) {
+                e.ReportException();
+            }
+        }
     }
+    linkInited = true;
 }
+
 bool LinkSubWidget::setLinks(const std::vector<App::SubObjectT> &objs)
 {
     App::DocumentObject *obj;
@@ -471,11 +522,18 @@ bool LinkSubWidget::addLink(const App::SubObjectT &objT)
     if (listWidget->count() == 0 || !prop->getValue() || singleElement)
         links.push_back(objT);
     else {
-        auto obj = prop->getValue();
-        for (const auto &sub : prop->getSubValues())
-            links.emplace_back(obj, sub.c_str());
-        if (links.empty())
-            links.emplace_back(obj, "");
+        if (auto linked = prop->getValue()) {
+            if (prop->getSubValues().empty()) {
+                links.emplace_back(linked, "");
+            }
+            else {
+                for (const auto &sub : prop->getSubValues()) {
+                    if (!App::GeoFeature::hasMissingElement(sub.c_str())) {
+                        links.emplace_back(linked, sub.c_str());
+                    }
+                }
+            }
+        }
         links.push_back(objT);
     }
     if (!setLinks(links))
@@ -623,6 +681,22 @@ bool LinkSubListWidget::addLinks(const std::vector<App::SubObjectT> &objs)
         }
         if (!touched)
             return false;
+        for (auto it = links.begin(); it!=links.end(); ) {
+            if (it->second.empty()) {
+                ++it;
+                continue;
+            }
+            for (auto itSub = it->second.begin(); itSub!=it->second.end(); ) {
+                if (App::GeoFeature::hasMissingElement(itSub->c_str()))
+                    itSub = it->second.erase(itSub);
+                else
+                    ++itSub;
+            }
+            if (it->second.empty())
+                it = links.erase(it);
+            else
+                ++it;
+        }
         parentTask->setupTransaction();
         prop->setSubListValues(links);
         parentTask->recomputeFeature();
@@ -799,10 +873,59 @@ void LinkSubListWidget::refresh()
     if (!prop)
         return;
 
+    auto subset = prop->getSubListValues();
+
+    if (!linkInited && prop->getShadowSubs().size() == prop->getValues().size()) {
+        std::map<App::DocumentObject*, std::set<std::string>> resolveMap;
+        size_t i = 0;
+        std::string indexedName;
+        bool hasResolved = false;
+        for (const auto &shadow : prop->getShadowSubs()) {
+            auto link = prop->getValues()[i++];
+
+            if (App::GeoFeature::hasMissingElement(shadow.second.c_str())) {
+                auto related = Part::Feature::getRelatedElements(link, shadow.first.c_str());
+                if (!related.empty()) {
+                    hasResolved = true;
+                    indexedName.clear();
+                    const auto &element = related.front();
+                    element.index.appendToStringBuffer(indexedName);
+                    FC_WARN("guess element reference in " << prop->getFullName()
+                            << ": " << shadow.second << " -> " << element.index);
+                    resolveMap[link].insert(indexedName);
+                    break;
+                }
+            }
+        }
+        if (hasResolved) {
+            for (auto &v : subset) {
+                auto it = resolveMap.find(v.first);
+                if (it == resolveMap.end())
+                    continue;
+                for (auto itSub = v.second.begin(); itSub != v.second.end();) {
+                    if (it->second.count(*itSub))
+                        itSub = v.second.erase(itSub);
+                    else
+                        ++itSub;
+                }
+                v.second.insert(v.second.end(), it->second.begin(), it->second.end());
+            }
+            try {
+                parentTask->setupTransaction();
+                prop->setSubListValues(subset);
+                parentTask->recomputeFeature();
+            } catch (Base::Exception &e) {
+                e.ReportException();
+            }
+        }
+    }
+
     QSignalBlocker guard(listWidget);
     listWidget->clear();
-    for (const auto &v : prop->getSubListValues())
+    for (const auto &v : subset)
         addItem(v.first, v.second);
+
+    linkInited = true;
 }
 
 
