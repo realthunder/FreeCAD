@@ -1,5 +1,26 @@
 Tip release (branch [LinkMerge](https://github.com/realthunder/FreeCAD/tree/LinkMerge)) is merged with upstream a662fbb2 2023.12.27
 
+# Tip 2025.05.03
+
+Fix task bar not showing on editing (#1066)
+Fix overlay tab bar visibility problem (#1067)
+Improve tree view context menu shortcut consistency (#1064)
+Fix import of FreeCAD in Python 3.12 (#1073)
+Remove default print shortcut (#1072)
+Avoid GUI popup when running in console mode.
+Sketcher: do not show context menu if mouse moved before releasing (#1061)
+Sketcher: re-organize context menu
+Sketcher: sync with upstream command Scale, Symmetry and Translate
+Sketcher: add option to control Z-height resolving when editing (#1062)
+Part: improve missing geometry reference auto resolve (#1065)
+PD: allow extrusion direction to be orthogonal to sketch normal (for 2D operation)
+PD: use command for 'Set Tip' in context menu (#1064)
+PD: fix feature primitive placement problem (#1074)
+PD: fix feature helix topo naming backward compatibility problem (#1074)
+PD: auto correcting missing geo-element in sketch based feature on editing
+
+-- 20250503tip --
+
 # Tip 2025.03.11
 
 Fix crash on threaded console output redirection  
@@ -27,8 +48,6 @@ Sketcher: fix crash on abort command
 Sketcher: be consistent about square distance vs SquareConfusion for external geometry (#1011)  
 Arch: fix OBJ import with segments (facet colors)  
 Arch: re-wording DAE/OBJ export facet color option  
-
--- 20250311tip --
 
 
 # Tip 2024.10.03
