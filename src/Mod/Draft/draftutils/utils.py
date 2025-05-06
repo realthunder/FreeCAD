@@ -203,7 +203,7 @@ def get_param_type(param):
                    "LineSpacing", "DefaultAnnoScaleMultiplier"):
         return "float"
     elif param in ("selectBaseObjects", "alwaysSnap", "grid",
-                   "fillmode", "DimShowLine",
+                   "fillmode", "DimShowLine", 'showtray',
                    "SvgLinesBlack", "dxfStdSize", "SnapBarShowOnlyDuringCommands",
                    "alwaysShowGrid", "renderPolylineWidth",
                    "showPlaneTracker", "UsePartPrimitives",
@@ -284,7 +284,7 @@ def get_param(param, default=None):
             return v.GetUnsigned("DefaultShapeLineColor", default)
         return p.GetUnsigned(param, default)
     else:
-        return None
+        return default
 
 
 getParam = get_param
