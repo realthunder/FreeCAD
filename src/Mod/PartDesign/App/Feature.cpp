@@ -117,25 +117,14 @@ void Feature::onChanged(const App::Property *prop)
             && !this->getDocument()->isPerformingTransaction()) {
         if (prop == &NewSolid) 
             onNewSolidChanged();
-        else if (prop == &Visibility || prop == &BaseFeature) {
-            auto body = Body::findBodyOf(this);
-            if (body) {
-                if (prop == &BaseFeature && BaseFeature.getValue()) {
-                    int idx = -1;
-                    body->Group.find(this->getNameInDocument(), &idx);
-                    int baseidx = -1;
-                    body->Group.find(BaseFeature.getValue()->getNameInDocument(), &idx);
-                    if (idx >= 0 && baseidx >= 0 && baseidx+1 != idx)
-                        body->insertObject(BaseFeature.getValue(), this);
+        else if (prop == &Visibility && Visibility.getValue()) {
+            if (auto body = Body::findBodyOf(this)) {
+                auto siblings = body->getSiblings(this);
+                for (auto feat : siblings) {
+                    if (feat != this && feat->Visibility.getValue())
+                        feat->Visibility.setValue(false);
                 }
-                if (Visibility.getValue()) {
-                    auto siblings = body->getSiblings(this);
-                    for (auto feat : siblings) {
-                        if (feat != this && feat->Visibility.getValue())
-                            feat->Visibility.setValue(false);
-                    }
-                    body->signalSiblingVisibilityChanged(siblings);
-                }
+                body->signalSiblingVisibilityChanged(siblings);
             }
         }
     }
