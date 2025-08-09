@@ -101,7 +101,7 @@ protected:
 private:
     SoGroup *pcGroupChildren;
 
-    std::map<Gui::ViewProvider*, bool> tempVisMap;
+    std::map<App::DocumentObject*, bool> tempVisMap;
 };
 
 } // namespace Gui
