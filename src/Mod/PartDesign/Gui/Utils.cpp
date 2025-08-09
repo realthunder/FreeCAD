@@ -1706,11 +1706,11 @@ bool populateGeometryReferences(QTreeWidget *treeWidget, App::PropertyLinkSub &p
     std::string tmp;
     std::string indexedName;
     for(auto &sub : subs) {
-        refs.push_back(sub.second);
+        refs.push_back(sub.second.empty() ? sub.first : sub.second);
         if(refresh || sub.first.empty() || baseShape.isNull()) {
             auto item = new QTreeWidgetItem(treeWidget);
-            item->setText(0, QString::fromStdString(sub.second)), 
-            setGeometryItemText(item, sub.second);
+            item->setText(0, QString::fromStdString(refs.back())), 
+            setGeometryItemText(item, refs.back());
             continue;
         }
         const auto &ref = sub.first;
@@ -1720,8 +1720,8 @@ bool populateGeometryReferences(QTreeWidget *treeWidget, App::PropertyLinkSub &p
         }catch(...) {}
         if(!element.isNull())  {
             auto item = new QTreeWidgetItem(treeWidget);
-            item->setText(0, QString::fromStdString(sub.second));
-            setGeometryItemText(item, sub.second);
+            item->setText(0, QString::fromStdString(refs.back()));
+            setGeometryItemText(item, refs.back());
             continue;
         }
         FC_WARN("missing element reference in " << prop.getFullName() << ": " << ref);
@@ -1753,7 +1753,7 @@ bool populateGeometryReferences(QTreeWidget *treeWidget, App::PropertyLinkSub &p
             auto item = new QTreeWidgetItem(treeWidget);
             item->setText(0, QString::fromStdString(missingSub));
 
-            setGeometryItemText(item, sub.second);
+            setGeometryItemText(item, refs.back());
             setGeometryItemReference(item, Data::newElementName(ref.c_str()));
             item->setForeground(0, Qt::red);
             refs.back() = ref; // use new style name for future guessing
