@@ -1961,10 +1961,9 @@ App::DocumentObjectExecReturn* Hole::execute()
                 }
             }
             result = base;
+            result = refineShapeIfActive(result);
+            this->Shape.setValue(result);
         }
-        result = refineShapeIfActive(result);
-
-        this->Shape.setValue(result);
 
         return App::DocumentObject::StdReturn;
     }
