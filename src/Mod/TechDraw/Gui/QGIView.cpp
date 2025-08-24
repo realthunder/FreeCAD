@@ -34,6 +34,7 @@
 #include <App/DocumentObject.h>
 #include <Base/Console.h>
 #include <Gui/Application.h>
+#include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/Selection.h>
 #include <Gui/Tools.h>
@@ -78,6 +79,7 @@ QGIView::QGIView()
     setCacheMode(QGraphicsItem::NoCache);
     setHandlesChildEvents(false);
     setAcceptHoverEvents(false);
+
     setFlag(QGraphicsItem::ItemIsSelectable, true);
     setFlag(QGraphicsItem::ItemIsMovable, true);
     setFlag(QGraphicsItem::ItemSendsScenePositionChanges, true);
@@ -205,11 +207,59 @@ QVariant QGIView::itemChange(GraphicsItemChange change, const QVariant &value)
         } else {
             m_colCurrent = PreferencesGui::getAccessibleQColor(PreferencesGui::normalQColor());
 //            m_selectState = 0;
+            dragFinished();
+
         }
         drawBorder();
     }
 
     return inherited::itemChange(change, value);
+}
+void QGIView::dragFinished()
+{
+    if (!viewObj) {
+        return;
+    }
+
+    double currX = viewObj->X.getValue();
+    double currY = viewObj->Y.getValue();
+    double candidateX = Rez::appX(pos().x());
+    double candidateY = Rez::appX(-pos().y());
+    bool setX = false;
+    bool setY = false;
+
+    const double tolerance = 0.001;  // mm
+    if (!DrawUtil::fpCompare(currX, candidateX, tolerance)) {
+        setX = true;
+    }
+    if (!DrawUtil::fpCompare(currY, candidateY, tolerance)) {
+        setY = true;
+    }
+
+    if (!setX && !setY) {
+        return;
+    }
+
+    bool ownTransaction = (viewObj->getDocument()->getTransactionID(true) == 0);
+
+    if (ownTransaction) {
+        Gui::Command::openCommand("Drag view");
+    }
+    // tell the feature that we have moved
+    Gui::ViewProvider *vp = getViewProvider(viewObj);
+    if (vp && !vp->isRestoring()) {
+        if (setX) {
+            Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.%s.X = %f",
+                                viewObj->getNameInDocument(), candidateX);
+        }
+        if (setY) {
+            Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.%s.Y = %f",
+                                viewObj->getNameInDocument(), candidateY);
+        }
+    }
+    if (ownTransaction) {
+        Gui::Command::commitCommand();
+    }
 }
 
 void QGIView::mousePressEvent(QGraphicsSceneMouseEvent * event)
@@ -253,6 +303,7 @@ void QGIView::mouseReleaseEvent(QGraphicsSceneMouseEvent * event)
         m_multiselectActivated = false;
     }
 
+    dragFinished();
     inherited::mouseReleaseEvent(event);
 
     event->setModifiers(originalModifiers);
