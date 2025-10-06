@@ -52,7 +52,7 @@
           <FCUInt Name="TreeActiveColor" Value="2812803839"/>
         </FCParamGroup>
         <FCParamGroup Name="MainWindow">
-          <FCText Name="StyleSheet">Light-blue.qss</FCText>
+          <FCText Name="StyleSheet">Light.qss</FCText>
           <FCText Name="OverlayActiveStyleSheet">Light-Outline.qss</FCText>
         </FCParamGroup>
         <FCParamGroup Name="DockWindows">
