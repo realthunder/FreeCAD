@@ -162,6 +162,8 @@ public:
 
     void beforeSave() const override;
 
+    bool removeDynamicProperty(const char* name) override;
+
     void expandShapeContents();
     void mergeShapeContents();
     void collapseShapeContents(bool removeProperty=false);

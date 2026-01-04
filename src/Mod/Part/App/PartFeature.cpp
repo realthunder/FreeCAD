@@ -1449,6 +1449,36 @@ Feature *Feature::create(const TopoShape &s, const char *name, App::Document *do
     return res;
 }
 
+
+bool Feature::removeDynamicProperty(const char* name)
+{
+    if (boost::equals(name, "ShapeContentSuppressed")) {
+        if (auto prop = getShapeContentSuppressedProperty(/*force*/false)) {
+            if (prop->getValue()) {
+                prop->setValue(false);
+                onChanged(prop);
+            }
+        }
+    }
+    else if (boost::equals(name, "ShapeContentReplacement")) {
+        if (auto prop = getShapeContentReplacementProperty(/*force*/false)) {
+            if (prop->getValue()) {
+                prop->setValue(nullptr);
+                onChanged(prop);
+            }
+        }
+    }
+    else if (boost::equals(name, "ShapeContentReplacementSuppressed")) {
+        if (auto prop = getShapeContentReplacementSuppressedProperty(/*force*/false)) {
+            if (prop->getValue()) {
+                prop->setValue(false);
+                onChanged(prop);
+            }
+        }
+    }
+    return inherited::removeDynamicProperty(name);
+}
+
 /*[[[cog
 import PartParams
 PartParams.define_properties()
