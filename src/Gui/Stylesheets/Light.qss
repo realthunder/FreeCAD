@@ -319,10 +319,10 @@ QGroupBox {
 QGroupBox::title {
   subcontrol-origin: margin;
   subcontrol-position: top left;
-  left: 4px;
+  left: 5px;
   padding-left: 2px;
   padding-right: 4px;
-  padding-top: 6px;
+  /* padding-top: 6px; */
 }
 
 QGroupBox::indicator {
