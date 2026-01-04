@@ -1327,21 +1327,21 @@ QToolButton::menu-indicator {
 
 QToolButton::menu-arrow {
   image: url(qss:images_dark-light/more_arrow_light.svg);
-  width: 1.5ex;
-  height: 1.5ex;
+  width: 1ex;
+  height: 1ex;
   subcontrol-position: right bottom;
   background: transparent;
 }
 QToolButton::menu-arrow:open {
   subcontrol-position: right bottom;
   image: url(qss:images_dark-light/more_arrow_light.svg);
-  width: 1.7ex;
-  height: 1.7ex;
+  width: 1.2ex;
+  height: 1.2ex;
 }
 QToolButton::menu-arrow:hover {
   image: url(qss:images_dark-light/more_arrow_light.svg);
-  width: 1.7ex;
-  height: 1.7ex;
+  width: 1.2ex;
+  height: 1.2ex;
 }
 
 /* QCommandLinkButton -----------------------------------------------------
