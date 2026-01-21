@@ -759,8 +759,12 @@ int SelectionSingleton::setContext(const App::SubObjectT &sobj)
 
 const App::SubObjectT &SelectionSingleton::getContext(int pos) const
 {
-    if (pos >= 0 && pos < (int)ContextObjectStack.size())
+    if (pos >= 0 && pos < static_cast<int>(ContextObjectStack.size()))
         return ContextObjectStack[ContextObjectStack.size() - 1 - pos];
+    // -1 refers to the first item
+    pos = -pos - 1;
+    if (pos >= 0 && pos < static_cast<int>(ContextObjectStack.size()))
+        return ContextObjectStack[pos];
     static App::SubObjectT dummy;
     return dummy;
 }

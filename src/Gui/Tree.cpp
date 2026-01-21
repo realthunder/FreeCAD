@@ -1641,6 +1641,7 @@ void TreeWidget::contextMenuEvent (QContextMenuEvent * e)
         auto objitem = static_cast<DocumentObjectItem*>
             (this->contextItem);
 
+        FC_MSG("set context " << objitem->getSubObjectT().getObjectName());
         Selection().setContext(objitem->getSubObjectT());
 
         if (objitem->object()->getObject()->getDocument() && showHiddenAction) {
@@ -2082,7 +2083,6 @@ bool TreeWidget::setupObjectMenu(QMenu &menu,
         if (auto tree = qobject_cast<TreeWidget*>(widget)) {
             auto item = tree->itemAt(tree->viewport()->mapFromGlobal(pos));
             if (item) {
-                contextItem = item;
                 if (item->type() == ObjectType) {
                     if (ctxObj)
                         *ctxObj = static_cast<DocumentObjectItem*>(item)->getSubObjectT();
@@ -2118,7 +2118,6 @@ bool TreeWidget::setupObjectMenu(QMenu &menu,
     auto item = it->second->findItemByObject(true, sobj->getObject(), sobj->getSubName().c_str());
     if(!item)
         return false;
-    contextItem = item;
     if (ctxObj) {
         *ctxObj = item->getSubObjectT();
         // DocumentObjectItem::getSubObjecT/getSubName() has inherent
@@ -2135,6 +2134,7 @@ bool TreeWidget::setupObjectMenu(QMenu &menu,
 
 bool TreeWidget::_setupObjectMenu(DocumentObjectItem *item, QMenu &menu)
 {
+    contextItem = item;
     if(!item)
         return false;
 
@@ -5060,9 +5060,9 @@ static QString getItemStatus(const App::SubObjectT objT)
             sobj && sobj->Label2.getStrValue().size() ?
                 QStringLiteral("\n") + QString::fromUtf8(sobj->Label2.getValue()) : QString(),
             QObject::tr("Left click to select.\n"
-                        "Right click to show children.\n"
+                        "Right click to show the edit menu.\n"
                         "Shift + Left click to edit.\n"
-                        "Shift + Right click show the edit menu."));
+                        "Shift + Right click to lsit child objects."));
 }
 
 void TreeWidget::populateSelUpMenu(QMenu *menu, const App::SubObjectT *pObjT)
@@ -5089,13 +5089,15 @@ void TreeWidget::populateSelUpMenu(QMenu *menu, const App::SubObjectT *pObjT)
             return;
     }
 
+    bool setContext = true;
+
     if (currentItem == nullptr) {
         QPoint pos = QCursor::pos();
         QWidget *widget = qApp->widgetAt(pos);
         if (widget)
             widget = widget->parentWidget();
         auto viewer = qobject_cast<View3DInventorViewer*>(widget);
-        // First try to find the time corresponding to the object under the mouse
+        // First try to find the item corresponding to the object under the mouse
         // cursor in 3D view
         if (viewer) {
             auto selList = viewer->getPickedList(true);
@@ -5103,9 +5105,14 @@ void TreeWidget::populateSelUpMenu(QMenu *menu, const App::SubObjectT *pObjT)
                 const auto &objT = selList.front();
                 docItem = tree->getDocumentItem(Application::Instance->getDocument(
                             objT.getDocumentName().c_str()));
-                if (docItem)
+                if (docItem) {
                     currentItem = docItem->findItemByObject(
                             true, objT.getObject(), objT.getSubName().c_str());
+                    if (setContext) {
+                        setContext = false;
+                        Selection().setContext(objT);
+                    }
+                }
             }
         }
 
@@ -5251,6 +5258,9 @@ void TreeWidget::populateSelUpMenu(QMenu *menu, const App::SubObjectT *pObjT)
         action->setData(QVariant::fromValue(objT));
         action->setToolTip(getItemStatus(objT));
     }
+
+    if (setContext)
+        Selection().setContext(objT);
     return;
 }
 
@@ -5372,14 +5382,15 @@ void TreeWidget::_setupSelUpSubMenu(QMenu *parentMenu,
 
     auto modifier = (QApplication::queryKeyboardModifiers()
             & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier));
-    if(modifier == Qt::ShiftModifier) {
+    if(modifier == Qt::NoModifier) {
         if (item && item->type() == ObjectType) {
             auto oitem = static_cast<DocumentObjectItem*>(item);
+            FC_MSG("set context " << oitem->getSubObjectT().getObjectName());
             Selection().setContext(oitem->getSubObjectT());
             _setupObjectMenu(oitem, menu);
         } else
             _setupDocumentMenu(docItem, menu);
-    } else {
+    } else if(modifier == Qt::ShiftModifier) {
         if (item)
             docItem->forcePopulateItem(item);
         else

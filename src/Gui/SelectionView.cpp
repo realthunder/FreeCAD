@@ -1001,6 +1001,7 @@ void SelectionMenu::onSelUpMenu()
     }
     
     if (!(modifiers & Qt::ControlModifier)) {
+        SelectionContext selctx;
         SelUpMenu menu(currentMenu);
         TreeWidget::populateSelUpMenu(&menu, &sel);
         TreeWidget::execSelUpMenu(&menu, QCursor::pos());

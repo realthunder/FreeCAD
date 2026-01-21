@@ -186,24 +186,51 @@ Base::Matrix4D ViewProviderDragger::getDragOffset(const ViewProviderDocumentObje
     Base::Matrix4D res;
     if (!vp || !vp->getObject())
         return res;
-    auto selctx = Gui::Selection().getExtendedContext(vp->getObject());
-    auto parent = selctx.getObject();
-    if (!parent)
+
+    // Use the first pushed context to determine the referencing object
+    // when the user pops the menu
+    App::SubObjectT firstCtx = Selection().getContext(-1);
+    App::DocumentObject *firstParent = firstCtx.getObject();
+
+    // This gives the context of the editing object
+    App::SubObjectT editCtx = Gui::Selection().getExtendedContext(vp->getObject());
+    App::DocumentObject *editParent = editCtx.getObject();
+
+    if (!editParent)
         return res;
-    std::vector<int> subSizes;
-    auto objs = parent->getSubObjectList(selctx.getSubName().c_str(), &subSizes);
-    auto it = std::find(objs.begin(), objs.end(), vp->getObject());
-    if (it != objs.end() && it != objs.begin()) {
-        int offset = it - objs.begin();
-        selctx = App::SubObjectT(vp->getObject(), selctx.getSubName().c_str() + subSizes[offset]);
+
+    std::string subname;
+    if (editParent == firstParent || !firstParent) {
+        firstParent = editParent;
+        if (!firstParent)
+            subname = editCtx.getSubName();
+        else
+            subname = firstCtx.getSubName();
     }
+    else {
+        std::vector<int> subSizes;
+        auto firstObjs = firstParent->getSubObjectList(firstCtx.getSubName().c_str(), &subSizes);
+        auto editObjs = editParent->getSubObjectList(editCtx.getSubName().c_str());
+        for(std::size_t i=0; i<firstObjs.size() && i<editObjs.size(); ++i) {
+            std::size_t offset = firstObjs.size()-i-1;
+            auto firstObj = firstObjs[offset];
+            if (editObjs[editObjs.size()-i-1] == firstObj) {
+                firstParent = firstObj;
+                subname = editCtx.getSubName().c_str() + subSizes[offset];
+                break;
+            }
+        }
+    }
+
+    if (!firstParent)
+        return res;
 
     Base::Rotation rot;
     Base::BoundBox3d bbox;
 
     PyObject *pyobj = nullptr;
     Base::Matrix4D mat;
-    vp->getObject()->getSubObject(selctx.getSubName().c_str(), &pyobj, &mat, false);
+    firstParent->getSubObject(subname.c_str(), &pyobj, &mat, false);
     if (pyobj) {
         Base::PyGILStateLocker lock;
         Py::Object pyObj(pyobj, true);
@@ -220,8 +247,10 @@ Base::Matrix4D ViewProviderDragger::getDragOffset(const ViewProviderDocumentObje
     }
 
     if (!bbox.IsValid()) {
-        Base::Matrix4D mat;
-        bbox = vp->getBoundingBox(selctx.getSubName().c_str(),&mat,false);
+        if (auto firstVp = Application::Instance->getViewProvider(firstParent)) {
+            Base::Matrix4D mat;
+            bbox = firstVp->getBoundingBox(subname.c_str(),&mat,false);
+        }
     }
     if (bbox.IsValid()) 
         res = Base::Placement(bbox.GetCenter(), rot).toMatrix();

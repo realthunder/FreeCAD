@@ -2219,6 +2219,7 @@ void SelUpAction::onShowMenu()
 
 void SelUpAction::popup(const QPoint &pt)
 {
+    SelectionContext selctx;
     if(_menu->actions().isEmpty()) {
         if (!_emptyAction) {
             _emptyAction = new QAction(tr("<None>"), this);
