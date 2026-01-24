@@ -4578,6 +4578,8 @@ void ViewProviderSketch::initParams()
         edit->MarkerSize = markersize;
 
         zCross = edit->hSketchGeneral->GetFloat("ZHeight", 1e-6f);
+        if (zCross == 0.0f)
+            zCross = 1e-6f;
         zEdit=zCross;
         zInfo=4*zCross;
         zLowLines=5*zCross;
