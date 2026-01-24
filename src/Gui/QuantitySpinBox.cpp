@@ -519,6 +519,11 @@ void QuantitySpinBox::setValue(double value)
     setValue(quantity);
 }
 
+void QuantitySpinBox::setRawValue(double value)
+{
+    setValue(value);
+}
+
 bool QuantitySpinBox::hasValidInput() const
 {
     Q_D(const QuantitySpinBox);
@@ -632,13 +637,22 @@ void QuantitySpinBox::setDisplayUnit(const QString &str, double scaler)
     try {
         Base::Quantity quant = Base::Quantity::parse(str);
         d->userUnitStr = str;
-        d->userScale = scaler==0.0?1.0:scaler;
+        if (scaler != 0.0)
+            d->userScale = scaler;
+        else 
+            d->userScale = quant.getValue() / Base::Quantity(1, d->unit).getValue();
         setUnit(quant.getUnit());
     }
     catch (const Base::Exception &e) {
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
             e.ReportException();
     }
+}
+
+QString QuantitySpinBox::displayUnit()
+{
+    Q_D(QuantitySpinBox);
+    return d->userUnitStr;
 }
 
 QString QuantitySpinBox::unitText()

@@ -41,11 +41,12 @@ class GuiExport QuantitySpinBox : public QAbstractSpinBox, public ExpressionSpin
     Q_OBJECT
 
     Q_PROPERTY(QString unit READ unitText WRITE setUnitText) // clazy:exclude=qproperty-without-notify
+    Q_PROPERTY(QString displayUnit READ displayUnit WRITE setDisplayUnit) // clazy:exclude=qproperty-without-notify
     Q_PROPERTY(int decimals READ decimals WRITE setDecimals) // clazy:exclude=qproperty-without-notify
     Q_PROPERTY(double minimum READ minimum WRITE setMinimum) // clazy:exclude=qproperty-without-notify
     Q_PROPERTY(double maximum READ maximum WRITE setMaximum) // clazy:exclude=qproperty-without-notify
     Q_PROPERTY(double singleStep READ singleStep WRITE setSingleStep) // clazy:exclude=qproperty-without-notify
-    Q_PROPERTY(double rawValue READ rawValue WRITE setValue NOTIFY valueChanged)
+    Q_PROPERTY(double rawValue READ rawValue WRITE setRawValue NOTIFY valueChanged)
     Q_PROPERTY(Base::Quantity value READ value WRITE setValue NOTIFY valueChanged USER true)
     Q_PROPERTY(QString binding READ boundToName WRITE setBoundToByName) // clazy:exclude=qproperty-without-notify
     Q_PROPERTY(QString expression READ expressionText) // clazy:exclude=qproperty-without-notify
@@ -76,7 +77,8 @@ public:
     /// Get the unit property
     QString unitText();
 
-    void setDisplayUnit(const QString &str, double scaler);
+    void setDisplayUnit(const QString &str, double scaler=0.0);
+    QString displayUnit();
 
     /// Get the value of the singleStep property
     double singleStep() const;
@@ -146,6 +148,7 @@ public Q_SLOTS:
     void setValue(const Base::Quantity& val);
     /// Set a numerical value which gets converted to a quantity with the currently set unit type
     void setValue(double);
+    void setRawValue(double v);
 
 protected Q_SLOTS:
     void userInput(const QString & text);
