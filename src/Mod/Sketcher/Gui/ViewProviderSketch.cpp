@@ -3220,8 +3220,13 @@ void ViewProviderSketch::updateColor(void)
 
     ParameterGrp::handle hGrpp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/General");
 
+
     // 1->Normal Geometry, 2->Construction, 3->External
-    int topid = hGrpp->GetInt("TopRenderGeometryId",1);
+    //
+    // Rendering order is the reverse of picking order because of the alway on
+    // top rendering (because of Z buffer works). So LowerRenderGeometryId will
+    // be rendered first.
+    int topid = hGrpp->GetInt("LowRenderGeometryId",1);
     int midid = hGrpp->GetInt("MidRenderGeometryId",2);
 
     float zNormPoint = zdir * (topid==1?zHighPoints:(midid==1 && topid!=2)?zHighPoints:zLowPoints);
