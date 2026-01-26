@@ -369,128 +369,6 @@ bool CmdSketcherCreate3PointArc::isActive()
     return isCommandActive(getActiveGuiDocument());
 }
 
-class CmdSketcherCompCreateArc : public Gui::GroupCommand
-{
-public:
-    CmdSketcherCompCreateArc();
-    virtual const char* className() const {return "CmdSketcherCompCreateArc";}
-};
-
-CmdSketcherCompCreateArc::CmdSketcherCompCreateArc()
-  : GroupCommand("Sketcher_CompCreateArc")
-{
-    sAppModule = "Sketcher";
-    sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Create arc");
-    sToolTipText = QT_TR_NOOP("Actions for Creating an arc in the sketcher");
-    sWhatsThis = "Sketcher_CompCreateArc";
-    sStatusTip = sToolTipText;
-    eType = ForEdit;
-    addCommand(new CmdSketcherCreateArc());
-    addCommand(new CmdSketcherCreate3PointArc());
-}
-
-// ======================================================================================
-
-DEF_STD_CMD_AU(CmdSketcherCreateCircle)
-
-CmdSketcherCreateCircle::CmdSketcherCreateCircle()
-    : Command("Sketcher_CreateCircle")
-{
-    sAppModule = "Sketcher";
-    sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Create circle");
-    sToolTipText = QT_TR_NOOP("Create a circle in the sketch");
-    sWhatsThis = "Sketcher_CreateCircle";
-    sStatusTip = sToolTipText;
-    sPixmap = "Sketcher_CreateCircle";
-    sAccel = "G, C";
-    eType = ForEdit;
-}
-
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateCircle, "Sketcher_CreateCircle")
-
-void CmdSketcherCreateCircle::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerCircle());
-}
-
-bool CmdSketcherCreateCircle::isActive()
-{
-    return isCommandActive(getActiveGuiDocument());
-}
-
-// ======================================================================================
-
-/// @brief Macro that declares a new sketcher command class 'CmdSketcherCreateEllipseByCenter'
-DEF_STD_CMD_AU(CmdSketcherCreateEllipseByCenter)
-
-/**
- * @brief ctor
- */
-CmdSketcherCreateEllipseByCenter::CmdSketcherCreateEllipseByCenter()
-    : Command("Sketcher_CreateEllipseByCenter")
-{
-    sAppModule = "Sketcher";
-    sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Create ellipse by center");
-    sToolTipText = QT_TR_NOOP("Create an ellipse by center in the sketch");
-    sWhatsThis = "Sketcher_CreateEllipseByCenter";
-    sStatusTip = sToolTipText;
-    sPixmap = "Sketcher_CreateEllipseByCenter";
-    sAccel = "G, E, E";
-    eType = ForEdit;
-}
-
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateEllipseByCenter, "Sketcher_CreateEllipseByCenter")
-
-void CmdSketcherCreateEllipseByCenter::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerEllipse());
-}
-
-bool CmdSketcherCreateEllipseByCenter::isActive()
-{
-    return isCommandActive(getActiveGuiDocument());
-}
-
-/// @brief Macro that declares a new sketcher command class 'CmdSketcherCreateEllipseBy3Points'
-DEF_STD_CMD_AU(CmdSketcherCreateEllipseBy3Points)
-
-/**
- * @brief ctor
- */
-CmdSketcherCreateEllipseBy3Points::CmdSketcherCreateEllipseBy3Points()
-    : Command("Sketcher_CreateEllipseBy3Points")
-{
-    sAppModule = "Sketcher";
-    sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Create ellipse by 3 points");
-    sToolTipText = QT_TR_NOOP("Create an ellipse by 3 points in the sketch");
-    sWhatsThis = "Sketcher_CreateEllipseBy3Points";
-    sStatusTip = sToolTipText;
-    sPixmap = "Sketcher_CreateEllipse_3points";
-    sAccel = "G, 3, E";
-    eType = ForEdit;
-}
-
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateEllipseBy3Points, "Sketcher_CreateEllipse_3points")
-
-void CmdSketcherCreateEllipseBy3Points::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),
-                    new DrawSketchHandlerEllipse(
-                        ConstructionMethods::CircleEllipseConstructionMethod::ThreeRim));
-}
-
-bool CmdSketcherCreateEllipseBy3Points::isActive()
-{
-    return isCommandActive(getActiveGuiDocument());
-}
-
 DEF_STD_CMD_AU(CmdSketcherCreateArcOfEllipse)
 
 CmdSketcherCreateArcOfEllipse::CmdSketcherCreateArcOfEllipse()
@@ -577,6 +455,164 @@ bool CmdSketcherCreateArcOfParabola::isActive()
 }
 
 
+class CmdSketcherCompCreateArc : public Gui::GroupCommand
+{
+public:
+    CmdSketcherCompCreateArc();
+    virtual const char* className() const {return "CmdSketcherCompCreateArc";}
+};
+
+CmdSketcherCompCreateArc::CmdSketcherCompCreateArc()
+  : GroupCommand("Sketcher_CompCreateArc")
+{
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create arc");
+    sToolTipText = QT_TR_NOOP("Actions for Creating an arc in the sketcher");
+    sWhatsThis = "Sketcher_CompCreateArc";
+    sStatusTip = sToolTipText;
+    eType = ForEdit;
+    addCommand(new CmdSketcherCreateArc());
+    addCommand(new CmdSketcherCreate3PointArc());
+    addCommand(new CmdSketcherCreateArcOfEllipse());
+    addCommand(new CmdSketcherCreateArcOfHyperbola());
+    addCommand(new CmdSketcherCreateArcOfParabola());
+}
+
+// ======================================================================================
+
+DEF_STD_CMD_AU(CmdSketcherCreateCircle)
+
+CmdSketcherCreateCircle::CmdSketcherCreateCircle()
+    : Command("Sketcher_CreateCircle")
+{
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create circle");
+    sToolTipText = QT_TR_NOOP("Create a circle in the sketch");
+    sWhatsThis = "Sketcher_CreateCircle";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateCircle";
+    sAccel = "G, C";
+    eType = ForEdit;
+}
+
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateCircle, "Sketcher_CreateCircle")
+
+void CmdSketcherCreateCircle::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerCircle());
+}
+
+bool CmdSketcherCreateCircle::isActive()
+{
+    return isCommandActive(getActiveGuiDocument());
+}
+
+// ======================================================================================
+
+DEF_STD_CMD_AU(CmdSketcherCreate3PointCircle)
+
+CmdSketcherCreate3PointCircle::CmdSketcherCreate3PointCircle()
+    : Command("Sketcher_Create3PointCircle")
+{
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create circle by three points");
+    sToolTipText = QT_TR_NOOP("Create a circle by 3 perimeter points");
+    sWhatsThis = "Sketcher_Create3PointCircle";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_Create3PointCircle";
+    sAccel = "G, 3, C";
+    eType = ForEdit;
+}
+
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreate3PointCircle, "Sketcher_Create3PointCircle")
+
+void CmdSketcherCreate3PointCircle::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    ActivateHandler(getActiveGuiDocument(),
+                    new DrawSketchHandlerCircle(
+                        ConstructionMethods::CircleEllipseConstructionMethod::ThreeRim));
+}
+
+bool CmdSketcherCreate3PointCircle::isActive()
+{
+    return isCommandActive(getActiveGuiDocument());
+}
+
+
+// ======================================================================================
+/// @brief Macro that declares a new sketcher command class 'CmdSketcherCreateEllipseByCenter'
+DEF_STD_CMD_AU(CmdSketcherCreateEllipseByCenter)
+
+/**
+ * @brief ctor
+ */
+CmdSketcherCreateEllipseByCenter::CmdSketcherCreateEllipseByCenter()
+    : Command("Sketcher_CreateEllipseByCenter")
+{
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create ellipse by center");
+    sToolTipText = QT_TR_NOOP("Create an ellipse by center in the sketch");
+    sWhatsThis = "Sketcher_CreateEllipseByCenter";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateEllipseByCenter";
+    sAccel = "G, E, E";
+    eType = ForEdit;
+}
+
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateEllipseByCenter, "Sketcher_CreateEllipseByCenter")
+
+void CmdSketcherCreateEllipseByCenter::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerEllipse());
+}
+
+bool CmdSketcherCreateEllipseByCenter::isActive()
+{
+    return isCommandActive(getActiveGuiDocument());
+}
+
+/// @brief Macro that declares a new sketcher command class 'CmdSketcherCreateEllipseBy3Points'
+DEF_STD_CMD_AU(CmdSketcherCreateEllipseBy3Points)
+
+/**
+ * @brief ctor
+ */
+CmdSketcherCreateEllipseBy3Points::CmdSketcherCreateEllipseBy3Points()
+    : Command("Sketcher_CreateEllipseBy3Points")
+{
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Create ellipse by 3 points");
+    sToolTipText = QT_TR_NOOP("Create an ellipse by 3 points in the sketch");
+    sWhatsThis = "Sketcher_CreateEllipseBy3Points";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CreateEllipse_3points";
+    sAccel = "G, 3, E";
+    eType = ForEdit;
+}
+
+CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateEllipseBy3Points, "Sketcher_CreateEllipse_3points")
+
+void CmdSketcherCreateEllipseBy3Points::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    ActivateHandler(getActiveGuiDocument(),
+                    new DrawSketchHandlerEllipse(
+                        ConstructionMethods::CircleEllipseConstructionMethod::ThreeRim));
+}
+
+bool CmdSketcherCreateEllipseBy3Points::isActive()
+{
+    return isCommandActive(getActiveGuiDocument());
+}
+
 class CmdSketcherCompCreateConic : public Gui::GroupCommand
 {
 public:
@@ -594,11 +630,12 @@ CmdSketcherCompCreateConic::CmdSketcherCompCreateConic()
     sWhatsThis      = "Sketcher_CompCreateConic";
     sStatusTip      = sToolTipText;
     eType           = ForEdit;
+
+
+    addCommand(new CmdSketcherCreateCircle());
+    addCommand(new CmdSketcherCreate3PointCircle());
     addCommand(new CmdSketcherCreateEllipseByCenter());
     addCommand(new CmdSketcherCreateEllipseBy3Points());
-    addCommand(new CmdSketcherCreateArcOfEllipse());
-    addCommand(new CmdSketcherCreateArcOfHyperbola());
-    addCommand(new CmdSketcherCreateArcOfParabola());
 }
 
 // ======================================================================================
@@ -760,60 +797,6 @@ CmdSketcherCompCreateBSpline::CmdSketcherCompCreateBSpline()
 
 // ======================================================================================
 
-DEF_STD_CMD_AU(CmdSketcherCreate3PointCircle)
-
-CmdSketcherCreate3PointCircle::CmdSketcherCreate3PointCircle()
-    : Command("Sketcher_Create3PointCircle")
-{
-    sAppModule = "Sketcher";
-    sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Create circle by three points");
-    sToolTipText = QT_TR_NOOP("Create a circle by 3 perimeter points");
-    sWhatsThis = "Sketcher_Create3PointCircle";
-    sStatusTip = sToolTipText;
-    sPixmap = "Sketcher_Create3PointCircle";
-    sAccel = "G, 3, C";
-    eType = ForEdit;
-}
-
-CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreate3PointCircle, "Sketcher_Create3PointCircle")
-
-void CmdSketcherCreate3PointCircle::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(),
-                    new DrawSketchHandlerCircle(
-                        ConstructionMethods::CircleEllipseConstructionMethod::ThreeRim));
-}
-
-bool CmdSketcherCreate3PointCircle::isActive()
-{
-    return isCommandActive(getActiveGuiDocument());
-}
-
-class CmdSketcherCompCreateCircle: public Gui::GroupCommand
-{
-public:
-    CmdSketcherCompCreateCircle();
-    virtual const char* className() const {return "CmdSketcherCompCreateCircle";}
-};
-
-CmdSketcherCompCreateCircle::CmdSketcherCompCreateCircle()
-  : GroupCommand("Sketcher_CompCreateCircle")
-{
-    sAppModule      = "Sketcher";
-    sGroup          = "Sketcher";
-    sMenuText       = QT_TR_NOOP("Create circle");
-    sToolTipText    = QT_TR_NOOP("Create a circle in the sketcher");
-    sWhatsThis      = "Sketcher_CompCreateCircle";
-    sStatusTip      = sToolTipText;
-    eType           = ForEdit;
-    addCommand(new CmdSketcherCreateCircle());
-    addCommand(new CmdSketcherCreate3PointCircle());
-}
-
-
-// ======================================================================================
 
 DEF_STD_CMD_A(CmdSketcherCreatePoint)
 
@@ -1819,7 +1802,6 @@ void CreateSketcherCommandsCreateGeo()
 
     rcCmdMgr.addCommand(new CmdSketcherCreatePoint());
     rcCmdMgr.addCommand(new CmdSketcherCompCreateArc());
-    rcCmdMgr.addCommand(new CmdSketcherCompCreateCircle());
     rcCmdMgr.addCommand(new CmdSketcherCompCreateConic());
     rcCmdMgr.addCommand(new CmdSketcherCompCreateBSpline());
     rcCmdMgr.addCommand(new CmdSketcherCreateLine());
