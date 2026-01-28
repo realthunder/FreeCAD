@@ -129,11 +129,14 @@ App::PropertyBool *GroupExtension::getChildExportProperty(App::DocumentObject *o
 
 bool GroupExtension::toggleChildExport(App::DocumentObject *obj, bool toggleGroup)
 {
+    bool touched = obj->isTouched();
     auto prop = getChildExportProperty(obj, toggleGroup, getChildDefaultExport(obj, DocumentObject::GS_DEFAULT));
     if (!prop)
         return false;
     if (prop->getValue()) {
         prop->setValue(false);
+        if (!touched)
+            obj->purgeTouched();
         if (!toggleGroup)
             return false;
         if (ExportMode.getValue() != ExportDisabled
@@ -142,6 +145,8 @@ bool GroupExtension::toggleChildExport(App::DocumentObject *obj, bool toggleGrou
         return false;
     } else {
         prop->setValue(true);
+        if (!touched)
+            obj->purgeTouched();
         ExportMode.setValue(ExportByChildQuery);
         return true;
     }
