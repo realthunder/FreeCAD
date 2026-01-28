@@ -210,7 +210,7 @@ void SketcherGui::getIdsFromName(const std::string& name,
     else if (boost::equals(name, "V_Axis")) {
         GeoId = Sketcher::GeoEnum::VAxis;
     }
-    else if (boost::istarts_with(name, "EternalEdge")) {
+    else if (boost::istarts_with(name, "ExternalEdge")) {
         GeoId = Sketcher::GeoEnum::RefExt + 1 - std::atoi(name.c_str()+12);
     }
     else if (name.size() > 6 && boost::istarts_with(name, "Vertex")) {
