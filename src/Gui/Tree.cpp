@@ -1641,7 +1641,6 @@ void TreeWidget::contextMenuEvent (QContextMenuEvent * e)
         auto objitem = static_cast<DocumentObjectItem*>
             (this->contextItem);
 
-        FC_MSG("set context " << objitem->getSubObjectT().getObjectName());
         Selection().setContext(objitem->getSubObjectT());
 
         if (objitem->object()->getObject()->getDocument() && showHiddenAction) {
@@ -5385,7 +5384,6 @@ void TreeWidget::_setupSelUpSubMenu(QMenu *parentMenu,
     if(modifier == Qt::NoModifier) {
         if (item && item->type() == ObjectType) {
             auto oitem = static_cast<DocumentObjectItem*>(item);
-            FC_MSG("set context " << oitem->getSubObjectT().getObjectName());
             Selection().setContext(oitem->getSubObjectT());
             _setupObjectMenu(oitem, menu);
         } else
