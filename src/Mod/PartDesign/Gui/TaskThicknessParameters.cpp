@@ -98,9 +98,11 @@ TaskThicknessParameters::TaskThicknessParameters(ViewProviderDressUp *DressUpVie
 
 void TaskThicknessParameters::refresh()
 {
-    TaskDressUpParameters::refresh();
+    auto DressUpView = getDressUpView();
     if (!DressUpView)
         return;
+
+    TaskDressUpParameters::refresh();
 
     PartDesign::Thickness* pcThickness = static_cast<PartDesign::Thickness*>(DressUpView->getObject());
     bool r = pcThickness->Reversed.getValue();
@@ -130,6 +132,10 @@ void TaskThicknessParameters::refresh()
 
 void TaskThicknessParameters::onValueChanged(double angle)
 {
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
+
     clearButtons(none);
     PartDesign::Thickness* pcThickness = static_cast<PartDesign::Thickness*>(DressUpView->getObject());
     setupTransaction();
@@ -137,7 +143,11 @@ void TaskThicknessParameters::onValueChanged(double angle)
     recompute();
 }
 
-void TaskThicknessParameters::onJoinTypeChanged(int join) {
+void TaskThicknessParameters::onJoinTypeChanged(int join)
+{
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
 
     clearButtons(none);
     PartDesign::Thickness* pcThickness = static_cast<PartDesign::Thickness*>(DressUpView->getObject());
@@ -146,7 +156,11 @@ void TaskThicknessParameters::onJoinTypeChanged(int join) {
     recompute();
 }
 
-void TaskThicknessParameters::onModeChanged(int mode) {
+void TaskThicknessParameters::onModeChanged(int mode)
+{
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
 
     clearButtons(none);
     PartDesign::Thickness* pcThickness = static_cast<PartDesign::Thickness*>(DressUpView->getObject());
@@ -160,7 +174,11 @@ double TaskThicknessParameters::getValue() const
     return ui->Value->value().getValue();
 }
 
-void TaskThicknessParameters::onReversedChanged(const bool on) {
+void TaskThicknessParameters::onReversedChanged(const bool on)
+{
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
     clearButtons(none);
     PartDesign::Thickness* pcThickness = static_cast<PartDesign::Thickness*>(DressUpView->getObject());
     setupTransaction();
@@ -173,7 +191,11 @@ bool TaskThicknessParameters::getReversed() const
     return ui->checkReverse->isChecked();
 }
 
-void TaskThicknessParameters::onIntersectionChanged(const bool on) {
+void TaskThicknessParameters::onIntersectionChanged(const bool on)
+{
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
     clearButtons(none);
     PartDesign::Thickness* pcThickness = static_cast<PartDesign::Thickness*>(DressUpView->getObject());
     setupTransaction();
@@ -186,7 +208,11 @@ bool TaskThicknessParameters::getIntersection() const
     return ui->checkIntersection->isChecked();
 }
 
-void TaskThicknessParameters::onMakeOffsetChanged(const bool on) {
+void TaskThicknessParameters::onMakeOffsetChanged(const bool on)
+{
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
     clearButtons(none);
     PartDesign::Thickness* pcThickness = static_cast<PartDesign::Thickness*>(DressUpView->getObject());
     setupTransaction();
@@ -219,6 +245,7 @@ void TaskThicknessParameters::changeEvent(QEvent *e)
     TaskBox::changeEvent(e);
     if (e->type() == QEvent::LanguageChange) {
         ui->retranslateUi(proxy);
+        auto DressUpView = getDressUpView();
         if (DressUpView) {
             PartDesign::Thickness* pcThickness = static_cast<PartDesign::Thickness*>(DressUpView->getObject());
             ui->checkMakeOffset->setToolTip(QApplication::translate("PartDesign", pcThickness->MakeOffset.getDocumentation()));

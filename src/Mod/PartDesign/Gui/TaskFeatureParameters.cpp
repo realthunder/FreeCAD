@@ -194,6 +194,7 @@ void TaskFeatureParameters::recomputeFeature(bool delay)
         setupTransaction();
         App::DocumentObject* obj = vp->getObject ();
         obj->getDocument()->recomputeFeature ( obj );
+        finishedRecomputeFeature();
     }
 }
 

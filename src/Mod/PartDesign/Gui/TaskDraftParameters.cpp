@@ -99,6 +99,7 @@ TaskDraftParameters::TaskDraftParameters(ViewProviderDressUp *DressUpView,QWidge
 }
 
 void TaskDraftParameters::refresh() {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -122,6 +123,7 @@ void TaskDraftParameters::refresh() {
 
 void TaskDraftParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -152,6 +154,7 @@ void TaskDraftParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 
 void TaskDraftParameters::onClear(selectionModes mode)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -196,6 +199,7 @@ void TaskDraftParameters::clearButtons(const selectionModes notThis)
 
 void TaskDraftParameters::onButton(selectionModes mode, bool checked)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -239,6 +243,7 @@ void TaskDraftParameters::onButtonLine(bool checked)
 
 void TaskDraftParameters::getPlane(App::DocumentObject*& obj, std::vector<std::string>& sub) const
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -251,6 +256,7 @@ void TaskDraftParameters::getPlane(App::DocumentObject*& obj, std::vector<std::s
 
 void TaskDraftParameters::getLine(App::DocumentObject*& obj, std::vector<std::string>& sub) const
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -263,6 +269,7 @@ void TaskDraftParameters::getLine(App::DocumentObject*& obj, std::vector<std::st
 
 void TaskDraftParameters::onAngleChanged(double angle)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -279,6 +286,7 @@ double TaskDraftParameters::getAngle() const
 }
 
 void TaskDraftParameters::onReversedChanged(const bool on) {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -324,6 +332,7 @@ bool TaskDraftParameters::eventFilter(QObject *o, QEvent *e)
 
 void TaskDraftParameters::onTimer()
 {
+    auto DressUpView = getDressUpView();
     if(!enteredObject || !DressUpView)
         return;
 

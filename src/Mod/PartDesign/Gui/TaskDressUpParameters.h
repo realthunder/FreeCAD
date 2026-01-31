@@ -42,7 +42,7 @@ namespace Part {
 
 namespace PartDesignGui {
 
-class TaskDressUpParameters : public Gui::TaskView::TaskBox, public Gui::SelectionObserver
+class TaskDressUpParameters : public TaskFeatureParameters, public Gui::SelectionObserver
 {
     Q_OBJECT
 
@@ -53,16 +53,10 @@ public:
     std::vector<std::string> getReferences() const;
     Part::Feature *getBase() const;
 
-    void setupTransaction();
-
     void setup(QLabel *msg, QTreeWidget *widget, QCheckBox *btnAdd, bool touched=false);
 
     /// Apply the changes made to the object to it
-    virtual void apply() {}
-
-    int getTransactionID() const {
-        return transactionID;
-    }
+    virtual void apply() override {}
 
     bool getItemElement(QTreeWidgetItem *item, std::string &subname);
 
@@ -81,9 +75,10 @@ protected:
     bool syncItems(const std::vector<App::SubObjectT> &sels = {});
     void recompute();
     bool populate(bool refresh=false);
-    virtual void refresh();
+    void refresh() override;
     void showMessage(const char *msg=nullptr);
     virtual void onNewItem(QTreeWidgetItem *) {}
+    void finishedRecomputeFeature() override; 
 
     QTreeWidgetItem *getCurrentItem() const;
     void createAddAllEdgesAction(QTreeWidget* parentList);
@@ -99,17 +94,15 @@ protected:
     bool handleEvent(QEvent *e);
 
     ViewProviderDressUp* getDressUpView() const
-    { return DressUpView; }
+    { return static_cast<ViewProviderDressUp*>(vp); }
 
     bool eventFilter(QObject *o, QEvent *e) override;
 
 protected:
     QWidget* proxy;
-    ViewProviderDressUp *DressUpView;
 
     bool allowFaces, allowEdges;
     selectionModes selectionMode;    
-    int transactionID = 0;
 
     QAction* deleteAction = nullptr;
     QAction* addAllEdgesAction = nullptr;
@@ -121,11 +114,6 @@ protected:
     bool busy = false;
 
     std::vector<App::SubObjectT> onTopObjs;
-
-    boost::signals2::scoped_connection connUndo;
-    boost::signals2::scoped_connection connRedo;
-    boost::signals2::scoped_connection connDelete;
-    boost::signals2::scoped_connection connDeleteDoc;
 
     QTimer *timer = nullptr;
     QObject *enteredObject = nullptr;

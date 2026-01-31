@@ -256,6 +256,7 @@ void TaskChamferParameters::setUpUI(PartDesign::Chamfer* pcChamfer)
 void TaskChamferParameters::setBinding(Gui::ExpressionBinding *binding,
                                       const QModelIndex &index)
 {
+    auto DressUpView = getDressUpView();
     if (!DressUpView || !index.isValid())
         return;
     auto item = static_cast<QTreeWidgetItem*>(index.internalPointer());
@@ -272,6 +273,7 @@ void TaskChamferParameters::setBinding(Gui::ExpressionBinding *binding,
 
 void TaskChamferParameters::refresh()
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -318,6 +320,9 @@ void TaskChamferParameters::refresh()
 
 void TaskChamferParameters::onCheckBoxUseAllEdgesToggled(bool checked)
 {
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
     PartDesign::Chamfer* pcChamfer = static_cast<PartDesign::Chamfer*>(DressUpView->getObject());
     ui->buttonRefAdd->setEnabled(!checked);
     ui->treeWidgetReferences->setEnabled(!checked);
@@ -369,6 +374,7 @@ void TaskChamferParameters::onUpdateItem(QTreeWidgetItem *item, int column)
 
 void TaskChamferParameters::updateItem(QTreeWidgetItem *item)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
     setupTransaction();
@@ -388,6 +394,7 @@ void TaskChamferParameters::updateItem(QTreeWidgetItem *item)
 
 void TaskChamferParameters::clearItems()
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
     setupTransaction();
@@ -410,6 +417,7 @@ void TaskChamferParameters::clearItems()
 
 void TaskChamferParameters::setItem(QTreeWidgetItem *item, const Part::TopoShape::ChamferInfo &info)
 {
+    auto DressUpView = getDressUpView();
     if (!DressUpView)
         return;
     PartDesign::Chamfer* pcChamfer = static_cast<PartDesign::Chamfer*>(DressUpView->getObject());
@@ -449,6 +457,9 @@ void TaskChamferParameters::onAddAllEdges()
 
 void TaskChamferParameters::onTypeChanged(int index)
 {
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
     PartDesign::Chamfer* pcChamfer = static_cast<PartDesign::Chamfer*>(DressUpView->getObject());
     pcChamfer->ChamferType.setValue(index);
     ui->stackedWidget->setCurrentIndex(index);
@@ -458,6 +469,7 @@ void TaskChamferParameters::onTypeChanged(int index)
 
 void TaskChamferParameters::onSizeChanged(double len)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -469,6 +481,9 @@ void TaskChamferParameters::onSizeChanged(double len)
 
 void TaskChamferParameters::onSize2Changed(double len)
 {
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
     PartDesign::Chamfer* pcChamfer = static_cast<PartDesign::Chamfer*>(DressUpView->getObject());
     setupTransaction();
     pcChamfer->Size2.setValue(len);
@@ -477,6 +492,9 @@ void TaskChamferParameters::onSize2Changed(double len)
 
 void TaskChamferParameters::onAngleChanged(double angle)
 {
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
     PartDesign::Chamfer* pcChamfer = static_cast<PartDesign::Chamfer*>(DressUpView->getObject());
     setupTransaction();
     pcChamfer->Angle.setValue(angle);
@@ -485,6 +503,9 @@ void TaskChamferParameters::onAngleChanged(double angle)
 
 void TaskChamferParameters::onFlipDirection(bool flip)
 {
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
     PartDesign::Chamfer* pcChamfer = static_cast<PartDesign::Chamfer*>(DressUpView->getObject());
     setupTransaction();
     pcChamfer->FlipDirection.setValue(flip);
@@ -531,6 +552,7 @@ void TaskChamferParameters::changeEvent(QEvent *e)
 
 void TaskChamferParameters::apply()
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 

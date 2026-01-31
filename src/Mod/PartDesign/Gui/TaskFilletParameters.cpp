@@ -109,7 +109,7 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
     ui->setupUi(proxy);
     this->groupLayout()->addWidget(proxy);
 
-    PartDesign::Fillet* pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
+    PartDesign::Fillet* pcFillet = static_cast<PartDesign::Fillet*>(getDressUpView()->getObject());
     bool useAllEdges = pcFillet->UseAllEdges.getValue();
     ui->checkBoxUseAllEdges->setChecked(useAllEdges);
 
@@ -176,6 +176,7 @@ void TaskFilletParameters::onRefDeleted() {
 void TaskFilletParameters::setBinding(Gui::ExpressionBinding *binding,
                                       const QModelIndex &index)
 {
+    auto DressUpView = getDressUpView();
     if (!DressUpView || !index.isValid())
         return;
     auto item = static_cast<QTreeWidgetItem*>(index.internalPointer());
@@ -195,6 +196,7 @@ void TaskFilletParameters::setBinding(Gui::ExpressionBinding *binding,
 
 void TaskFilletParameters::refresh()
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -247,6 +249,7 @@ void TaskFilletParameters::updateSegment(QTreeWidgetItem *item, int column)
 
 void TaskFilletParameters::updateSegments(QTreeWidgetItem *item)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
     setupTransaction();
@@ -267,6 +270,7 @@ void TaskFilletParameters::updateSegments(QTreeWidgetItem *item)
 
 void TaskFilletParameters::clearSegments()
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
     std::set<QTreeWidgetItem*> items;
@@ -287,6 +291,7 @@ void TaskFilletParameters::clearSegments()
 
 void TaskFilletParameters::removeSegments()
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
     setupTransaction();
@@ -305,6 +310,7 @@ void TaskFilletParameters::removeSegments()
 
 void TaskFilletParameters::setSegment(QTreeWidgetItem *item, double param, double radius, double length)
 {
+    auto DressUpView = getDressUpView();
     if (!DressUpView)
         return;
     PartDesign::Fillet* pcFillet = static_cast<PartDesign::Fillet*>(DressUpView->getObject());
@@ -371,6 +377,9 @@ void TaskFilletParameters::newSegment(int editColumn)
 
 void TaskFilletParameters::onCheckBoxUseAllEdgesToggled(bool checked)
 {
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return;
     ui->buttonRefAdd->setEnabled(!checked);
     ui->treeWidgetReferences->setEnabled(!checked);
     try {
@@ -391,6 +400,7 @@ void TaskFilletParameters::onAddAllEdges()
 
 void TaskFilletParameters::onLengthChanged(double len)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 

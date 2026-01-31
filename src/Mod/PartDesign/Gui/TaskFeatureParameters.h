@@ -72,6 +72,10 @@ public:
 
     void setupTransaction();
 
+    int getTransactionID() const {
+        return transactionID;
+    }
+
 protected Q_SLOTS:
     // TODO Add update view to all dialogs (2015-12-05, Fat-Zer)
     void onUpdateView(bool on);
@@ -85,6 +89,8 @@ protected:
     void removeBlinkWidget(QWidget *);
 
     void timerEvent(QTimerEvent *);
+
+    virtual void finishedRecomputeFeature() {}
 
 private:
     /** Notifies when the object is about to be removed. */

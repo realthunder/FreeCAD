@@ -66,38 +66,19 @@ using namespace Gui;
 /* TRANSLATOR PartDesignGui::TaskDressUpParameters */
 
 TaskDressUpParameters::TaskDressUpParameters(ViewProviderDressUp *DressUpView, bool selectEdges, bool selectFaces, QWidget *parent)
-    : TaskBox(Gui::BitmapFactory().pixmap(DressUpView->featureIcon().c_str()),
-              DressUpView->getMenuName(),
-              true,
-              parent)
+    : TaskFeatureParameters(DressUpView,
+                            parent,
+                            DressUpView->featureIcon(),
+                            DressUpView->getMenuName())
     , proxy(nullptr)
-    , DressUpView(DressUpView)
     , allowFaces(selectFaces)
     , allowEdges(selectEdges)
 {
-    // remember initial transaction ID
-    App::GetApplication().getActiveTransaction(&transactionID);
-
     selectionMode = none;
 
     onTopEnabled = Gui::ViewParams::getShowSelectionOnTop();
     if(!onTopEnabled)
         Gui::ViewParams::setShowSelectionOnTop(true);
-
-    connUndo = App::GetApplication().signalUndo.connect(std::bind(&TaskDressUpParameters::refresh, this));
-    connRedo = App::GetApplication().signalRedo.connect(std::bind(&TaskDressUpParameters::refresh, this));
-
-    connDelete = Gui::Application::Instance->signalDeletedObject.connect(
-        [this](const Gui::ViewProvider &Obj) {
-            if(this->DressUpView == &Obj)
-                this->DressUpView = nullptr;
-        });
-
-    connDeleteDoc = Gui::Application::Instance->signalDeleteDocument.connect(
-        [this](const Gui::Document &Doc) {
-            if(this->DressUpView && this->DressUpView->getDocument() == &Doc)
-                this->DressUpView = nullptr;
-        });
 
     timer = new QTimer(this);
     timer->setSingleShot(true);
@@ -118,6 +99,7 @@ TaskDressUpParameters::~TaskDressUpParameters()
 
 QTreeWidgetItem *TaskDressUpParameters::getCurrentItem() const
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return nullptr;
     QTreeWidgetItem *current = nullptr;
@@ -132,26 +114,9 @@ QTreeWidgetItem *TaskDressUpParameters::getCurrentItem() const
     return current;
 }
 
-void TaskDressUpParameters::setupTransaction() {
-    if(!DressUpView)
-        return;
-
-    int tid = 0;
-    const char *name = App::GetApplication().getActiveTransaction(&tid);
-    if(tid && tid == transactionID)
-        return;
-
-    std::string n("Edit ");
-    n += DressUpView->getObject()->getNameInDocument();
-    if(!name || n!=name)
-        tid = App::GetApplication().setActiveTransaction(n.c_str());
-
-    if (!transactionID)
-        transactionID = tid;
-}
-
 void TaskDressUpParameters::setup(QLabel *label, QTreeWidget *widget, QCheckBox *_btnAdd, bool touched)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
     auto* pcDressUp = static_cast<PartDesign::DressUp*>(DressUpView->getObject());
@@ -159,9 +124,8 @@ void TaskDressUpParameters::setup(QLabel *label, QTreeWidget *widget, QCheckBox 
         return;
 
     PartDesignGui::addTaskCheckBox(DressUpView, proxy);
-
-    // Remember the initial transaction ID
-    App::GetApplication().getActiveTransaction(&transactionID);
+    if (auto boxLayout = qobject_cast<QBoxLayout*>(proxy->layout()))
+        addUpdateViewCheckBox(boxLayout);
 
     messageLabel = label;
     messageLabel->hide();
@@ -195,8 +159,7 @@ void TaskDressUpParameters::setup(QLabel *label, QTreeWidget *widget, QCheckBox 
     }
 
     if(populate() || touched) {
-        setupTransaction();
-        recompute();
+        recomputeFeature(false);
     }
 }
 
@@ -207,6 +170,7 @@ void TaskDressUpParameters::refresh()
 
 bool TaskDressUpParameters::populate(bool refresh)
 {
+    auto DressUpView = getDressUpView();
     if(!treeWidget || !DressUpView)
         return false;
 
@@ -266,6 +230,7 @@ bool TaskDressUpParameters::showOnTop(bool enable,
 
 void TaskDressUpParameters::addAllEdges()
 {
+    auto DressUpView = getDressUpView();
     if (!DressUpView)
         return;
 
@@ -303,12 +268,14 @@ void TaskDressUpParameters::clearButtons(const selectionModes notThis)
         btnAdd->setChecked(false);
         showOnTop(false);
     }
+    auto DressUpView = getDressUpView();
     if(DressUpView)
         DressUpView->highlightReferences(false);
 }
 
 void TaskDressUpParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 {
+    auto DressUpView = getDressUpView();
     if(!treeWidget || !DressUpView)
         return;
 
@@ -440,6 +407,7 @@ void TaskDressUpParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 
 void TaskDressUpParameters::onButtonRefAdd(bool checked)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return;
 
@@ -479,6 +447,7 @@ void TaskDressUpParameters::onButtonRefAdd(bool checked)
 }
 
 void TaskDressUpParameters::onRefDeleted() {
+    auto DressUpView = getDressUpView();
     if(!treeWidget || !DressUpView)
         return;
 
@@ -490,6 +459,7 @@ void TaskDressUpParameters::onRefDeleted() {
 }
 
 bool TaskDressUpParameters::syncItems(const std::vector<App::SubObjectT> &sels) {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return false;
 
@@ -540,11 +510,14 @@ bool TaskDressUpParameters::syncItems(const std::vector<App::SubObjectT> &sels) 
     return true;
 }
 
-void TaskDressUpParameters::recompute() {
-    if(DressUpView) {
-        DressUpView->getObject()->recomputeFeature();
-        showMessage();
-    }
+void TaskDressUpParameters::recompute()
+{
+    recomputeFeature();
+}
+
+void TaskDressUpParameters::finishedRecomputeFeature()
+{
+    showMessage();
 }
 
 void TaskDressUpParameters::createAddAllEdgesAction(QTreeWidget* parentList)
@@ -564,6 +537,7 @@ void TaskDressUpParameters::createAddAllEdgesAction(QTreeWidget* parentList)
 }
 
 void TaskDressUpParameters::showMessage(const char *msg) {
+    auto DressUpView = getDressUpView();
     if(!messageLabel || !DressUpView)
         return;
 
@@ -625,6 +599,7 @@ App::SubObjectT TaskDressUpParameters::getInEdit(App::DocumentObject *base, cons
 
 App::DocumentObject *TaskDressUpParameters::getInEdit(std::string &subname, App::DocumentObject *base)
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         return nullptr;
 
@@ -677,6 +652,9 @@ void TaskDressUpParameters::onItemEntered(QTreeWidgetItem *, int)
 
 bool TaskDressUpParameters::getItemElement(QTreeWidgetItem *item, std::string &subname)
 {
+    auto DressUpView = getDressUpView();
+    if (!DressUpView)
+        return false;
     if (auto parent = item->parent())
         item = parent;
     QByteArray _ref = getGeometryItemReference(item);
@@ -743,6 +721,7 @@ void TaskDressUpParameters::onTimer() {
 
 std::vector<std::string> TaskDressUpParameters::getReferences() const
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView) 
         return {};
 
@@ -753,6 +732,7 @@ std::vector<std::string> TaskDressUpParameters::getReferences() const
 
 Part::Feature* TaskDressUpParameters::getBase(void) const
 {
+    auto DressUpView = getDressUpView();
     if(!DressUpView)
         throw Base::RuntimeError("No view object");
 
