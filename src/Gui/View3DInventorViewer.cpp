@@ -1150,16 +1150,13 @@ void View3DInventorViewer::removeViewProvider(ViewProvider* pcProvider)
 }
 
 void View3DInventorViewer::toggleViewProvider(ViewProvider *vp) {
-    if (!_ViewProviderSet.count(vp))
-        return;
     SoSeparator* root = vp->getRoot();
     if (!root || !guiDocument)
         return;
-    if (guiDocument->isClaimed3D(vp) || !vp->canAddToSceneGraph()) {
-        removeViewProvider(vp);
-    }
-    else if (!guiDocument->isClaimed3D(vp) && vp->canAddToSceneGraph()) {
+    if (!_ViewProviderSet.count(vp))
         addViewProvider(vp);
+    else if (guiDocument->isClaimed3D(vp) || !vp->canAddToSceneGraph()) {
+        removeViewProvider(vp);
     }
 }
 
