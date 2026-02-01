@@ -289,6 +289,8 @@ public:
 
     bool selectAll;
 
+    bool skipMouseRelease = false;
+
     // -1 = not handled, 0 = not selected, 1 = selected
     int32_t preSelection;
     SoColorPacker colorpacker;
@@ -1570,15 +1572,28 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
 
     // mouse press events for (de)selection
     if (master->selectionMode.getValue() == SoFCUnifiedSelection::ON) {
-        if (event->isOfType(SoMouseButtonEvent::getClassTypeId()) && 
-                master->selectionMode.getValue() == SoFCUnifiedSelection::ON) {
+
+        if (event->isOfType(SoMouseButtonEvent::getClassTypeId())) {
             const SoMouseButtonEvent* e = static_cast<const SoMouseButtonEvent *>(event);
             if (SoMouseButtonEvent::isButtonReleaseEvent(e,SoMouseButtonEvent::BUTTON1)) {
                 // check to see if the mouse is over a geometry...
                 auto infos = this->getPickedList(action,!Selection().needPickedList());
-                if(setSelection(infos,event->wasCtrlDown(),event->wasShiftDown(),event->wasAltDown()))
+                if(skipMouseRelease || \
+                        setSelection(infos,event->wasCtrlDown(),event->wasShiftDown(),event->wasAltDown()))
                     action->setHandled();
-            } // mouse release
+            }
+            if (!skipMouseRelease) {
+                auto buttons = QApplication::mouseButtons();
+                int buttonCount = 0;
+                if (buttons & Qt::LeftButton)
+                    ++buttonCount;
+                if (buttons & Qt::RightButton)
+                    ++buttonCount;
+                if (buttons & Qt::MiddleButton)
+                    ++buttonCount;
+                if (buttonCount > 1)
+                    skipMouseRelease = true;
+            }
             res = true;
         } else if (event->isOfType(SoMouseWheelEvent::getClassTypeId())) {
             res = true;
@@ -1608,6 +1623,12 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
             }
         }
     }
+
+    if (skipMouseRelease) {
+        if (QApplication::mouseButtons() == Qt::NoButton)
+            skipMouseRelease = false;
+    }
+
 
     // If we don't need to pick for locate highlighting,
     // then just behave as separator and return.
