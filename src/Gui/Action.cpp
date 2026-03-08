@@ -170,13 +170,14 @@ void Action::setCheckable(bool check)
 
 void Action::setChecked(bool check, bool no_signal)
 {
-    bool blocked = false;
-    if (no_signal) {
-        blocked = _action->blockSignals(true);
-    }
-    _action->setChecked(check);
-    if (no_signal) {
-        _action->blockSignals(blocked);
+    if (_action->isChecked() != check) {
+        if (no_signal) {
+            QSignalBlocker blocker(_action);
+            _action->setChecked(check);
+        } else {
+            _action->setChecked(check);
+        }
+        Q_EMIT actionChecked(check);
     }
 }
 
@@ -641,9 +642,17 @@ void ActionGroup::addTo(QWidget *widget)
                 if (!action->isCheckable()) {
                     menu->addAction(action);
                 } else {
+                    QCheckBox *checkbox = nullptr;
                     auto wa = addCheckBox(menu, action->text(), action->toolTip(),
-                            action->icon(), action->isChecked());
+                            action->icon(), action->isChecked(), &checkbox);
                     QObject::connect(wa, &QAction::toggled, action, &QAction::toggled);
+                    if (auto parentAction = qobject_cast<Action*>(action->parent())) {
+                        QObject::connect(parentAction, &Action::actionChecked, checkbox,
+                            [checkbox](bool checked) {
+                                QSignalBlocker blocker(checkbox);
+                                checkbox->setChecked(checked);
+                            });
+                    }
                 }
             }
             tb->setMenu(menu);

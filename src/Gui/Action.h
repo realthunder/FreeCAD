@@ -145,6 +145,9 @@ public Q_SLOTS:
     virtual void onActivated ();
     virtual void onToggled   (bool);
 
+Q_SIGNALS:
+    void actionChecked(bool);
+
 protected:
     QString _tooltip;
 
