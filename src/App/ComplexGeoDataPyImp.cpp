@@ -313,7 +313,7 @@ PyObject *ComplexGeoDataPy::setElementName(PyObject *args, PyObject *kwds) {
     PyObject *overwrite = Py_False;
 
     static char *kwlist[] = {"element", "name", "postfix", "overwrite", "sid", "tag", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|sssOOi", kwlist, 
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|ssOOi", kwlist, 
                 &element,&name,&postfix,&overwrite,&pySid,&tag))
         return NULL;
     ElementIDRefs sids;
