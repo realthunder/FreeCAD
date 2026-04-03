@@ -79,7 +79,9 @@ void ViewProviderDragger::updateData(const App::Property* prop)
         // This means that the center point must be the origin!
         Base::Placement p = static_cast<const App::PropertyPlacement*>(prop)->getValue();
         updateTransform(p, pcTransform);
-        if (_TaskDragger && !prop->testStatus(App::Property::User1)) {
+        if (_TaskDragger
+                && _TaskDragger->getDragger() == csysDragger
+                && !prop->testStatus(App::Property::User1)) {
             syncPlacementToDragger(p, _TaskDragger->getDragger());
         }
     }
