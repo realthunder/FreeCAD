@@ -87,7 +87,8 @@ void setProperty(P &prop, const V &v) {
 
 void ViewProviderSubShapeBinder::onChanged(const App::Property *prop) {
     if(prop == &UseBinderStyle
-            && (!getObject() || !getObject()->isRestoring()))
+            && !isRestoring()
+            && (!getDocument() || !getDocument()->isPerformingTransaction()))
     {
         App::Color shapeColor,lineColor,pointColor;
         int transparency, linewidth;
