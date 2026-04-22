@@ -395,7 +395,7 @@ PartExport int initOCCTExtension()
     if (extVersion == 0) {
         extVersion = -1;
 #ifdef FC_OS_WIN32
-        HMODULE hModule = LoadLibrary("TKBRep.dll");
+        HMODULE hModule = LoadLibrary(L"TKBRep.dll");
         if (hModule) {
             setFuncShowTopoShape = (FuncSetFuncShowTopoShape)GetProcAddress(hModule, "SetFuncShowTopoShape");
         }
