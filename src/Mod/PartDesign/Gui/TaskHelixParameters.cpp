@@ -63,6 +63,8 @@ TaskHelixParameters::TaskHelixParameters(PartDesignGui::ViewProviderHelix* Helix
     assignProperties();
     setValuesFromProperties();
 
+    updateUI();
+
     // enable use of parametric expressions for the numerical fields
     bindProperties();
 
@@ -419,15 +421,16 @@ void TaskHelixParameters::assignToolTipsFromPropertyDocs()
 void TaskHelixParameters::_onSelectionChanged(const Gui::SelectionChanges& msg)
 {
     if (msg.Type == Gui::SelectionChanges::AddSelection) {
-        std::vector<std::string> axis;
-        App::DocumentObject* selObj;
-        if (getReferencedSelection(vp->getObject(), msg, selObj, axis) && selObj) {
+        if (getSelectionMode() == SelectionMode::refAxis) {
+            std::vector<std::string> axis;
+            App::DocumentObject* selObj;
+            if (getReferencedSelection(vp->getObject(), msg, selObj, axis) && selObj) {
+                propReferenceAxis->setValue(selObj, axis);
+                recomputeFeature();
+                updateUI();
+            }
             exitSelectionMode();
-            propReferenceAxis->setValue(selObj, axis);
-            recomputeFeature();
-            updateUI();
         }
-        exitSelectionMode();
     }
 }
 
@@ -483,9 +486,8 @@ void TaskHelixParameters::onAxisChanged(int num)
     if (!lnk.getValue()) {
         // enter reference selection mode
         TaskSketchBasedParameters::onSelectReference(ui->labelAxis,
-            AllowSelection::EDGE |
-            AllowSelection::PLANAR |
-            AllowSelection::CIRCLE);
+            SelectionMode::refAxis,
+            AllowSelection::EDGE | AllowSelection::PLANAR | AllowSelection::CIRCLE);
         return;
     }
     else {
