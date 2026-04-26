@@ -56,7 +56,7 @@ namespace sp = std::placeholders;
 class ElementColors::Private
 {
 public:
-    using Connection = boost::signals2::connection;
+    using Connection = boost::signals2::scoped_connection;
     std::unique_ptr<Ui_TaskElementColors> ui;
     ViewProviderDocumentObject *vp;
     ViewProviderDocumentObject *vpParent;
@@ -411,15 +411,13 @@ public:
             return;
         busy = true;
         std::map<std::string,int> sels;
-        for(auto &sel : Selection().getSelectionEx(
-                    editDoc.c_str(),App::DocumentObject::getClassTypeId(), ResolveMode::NoResolve))
-        {
-            if(sel.getFeatName()!=editObj) continue;
-            for(auto &sub : sel.getSubNames()) {
-                if(boost::starts_with(sub,editSub))
-                    sels[sub.c_str()+editSub.size()] = 1;
+        for(const auto &sel : Selection().getSelectionT(editDoc.c_str(),ResolveMode::NoResolve)) {
+            if(sel.getObjectName()!=editObj)
+                continue;
+            std::string subname = sel.getSubNameNoElement() + sel.getOldElementName();
+            if(boost::starts_with(subname,editSub)) {
+                sels[subname.c_str() + editSub.size()] = 1;
             }
-            break;
         }
         const auto items = ui->elementList->selectedItems();
         for(auto item : items) {
