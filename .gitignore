@@ -47,6 +47,9 @@ tags
 /CMakeUserPresets.json
 Testing
 
+/make.sh
+/src/make.sh
+
 # crowdin file
 src/Tools/freecad.zip
 tsupdate_stderr.log
