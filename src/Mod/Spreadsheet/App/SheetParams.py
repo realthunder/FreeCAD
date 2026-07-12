@@ -42,6 +42,7 @@ Params = [
     ParamBool('showAliasName', False),
     ParamString('DisplayAliasFormatString', '%V = %A'),
     ParamString('AliasedCellBackgroundColor', '#feff9e'),
+    ParamString('AliasedCellForegroundColor', '#242424'),
     ParamString('LockedAliasedCellColor', '#9effff'),
     ParamString('TextColor', '#000000'),
     ParamString('PositiveNumberColor', ''),

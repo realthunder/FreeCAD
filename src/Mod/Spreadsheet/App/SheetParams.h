@@ -102,6 +102,16 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter AliasedCellForegroundColor
+    static const std::string & getAliasedCellForegroundColor();
+    static const std::string & defaultAliasedCellForegroundColor();
+    static void removeAliasedCellForegroundColor();
+    static void setAliasedCellForegroundColor(const std::string &v);
+    static const char *docAliasedCellForegroundColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LockedAliasedCellColor
     static const std::string & getLockedAliasedCellColor();
     static const std::string & defaultLockedAliasedCellColor();

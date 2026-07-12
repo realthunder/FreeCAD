@@ -43,6 +43,7 @@ public:
     bool showAliasName;
     std::string DisplayAliasFormatString;
     std::string AliasedCellBackgroundColor;
+    std::string AliasedCellForegroundColor;
     std::string LockedAliasedCellColor;
     std::string TextColor;
     std::string PositiveNumberColor;
@@ -61,6 +62,8 @@ public:
         funcs["DisplayAliasFormatString"] = &SheetParamsP::updateDisplayAliasFormatString;
         AliasedCellBackgroundColor = this->handle->GetASCII("AliasedCellBackgroundColor", "#feff9e");
         funcs["AliasedCellBackgroundColor"] = &SheetParamsP::updateAliasedCellBackgroundColor;
+        AliasedCellForegroundColor = this->handle->GetASCII("AliasedCellForegroundColor", "#242424");
+        funcs["AliasedCellForegroundColor"] = &SheetParamsP::updateAliasedCellForegroundColor;
         LockedAliasedCellColor = this->handle->GetASCII("LockedAliasedCellColor", "#9effff");
         funcs["LockedAliasedCellColor"] = &SheetParamsP::updateLockedAliasedCellColor;
         TextColor = this->handle->GetASCII("TextColor", "#000000");
@@ -104,6 +107,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAliasedCellBackgroundColor(SheetParamsP *self) {
         self->AliasedCellBackgroundColor = self->handle->GetASCII("AliasedCellBackgroundColor", "#feff9e");
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateAliasedCellForegroundColor(SheetParamsP *self) {
+        self->AliasedCellForegroundColor = self->handle->GetASCII("AliasedCellForegroundColor", "#242424");
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLockedAliasedCellColor(SheetParamsP *self) {
@@ -223,6 +230,33 @@ void SheetParams::setAliasedCellBackgroundColor(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void SheetParams::removeAliasedCellBackgroundColor() {
     instance()->handle->RemoveASCII("AliasedCellBackgroundColor");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *SheetParams::docAliasedCellForegroundColor() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const std::string & SheetParams::getAliasedCellForegroundColor() {
+    return instance()->AliasedCellForegroundColor;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const std::string & SheetParams::defaultAliasedCellForegroundColor() {
+    const static std::string def = "#242424";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void SheetParams::setAliasedCellForegroundColor(const std::string &v) {
+    instance()->handle->SetASCII("AliasedCellForegroundColor",v);
+    instance()->AliasedCellForegroundColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void SheetParams::removeAliasedCellForegroundColor() {
+    instance()->handle->RemoveASCII("AliasedCellForegroundColor");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

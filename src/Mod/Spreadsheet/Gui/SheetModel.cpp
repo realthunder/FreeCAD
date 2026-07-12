@@ -84,8 +84,11 @@ QColor SheetModel::getForeground(const Spreadsheet::Cell *cell, int number) cons
     Color color;
     if (cell->getForeground(color))
         return QColor(255.0 * color.r, 255.0 * color.g, 255.0 * color.b, 255.0 * color.a);
-    else if (cell->hasAlias() && (aliasFgColor.rgb() & 0xff))
-        return aliasFgColor;
+    else if (cell->hasAlias()) {
+        if (aliasFgColor.rgb() & 0xff)
+            return aliasFgColor;
+        return QColor(Base::Tools::fromStdString(SheetParams::getAliasedCellForegroundColor()));
+    }
     else if (number < 0)
         return negativeFgColor;
     else if (number > 0)
