@@ -334,7 +334,7 @@ void SoStringLabel::GLRender(SoGLRenderAction *action)
 
     QFont font;
     font.setStyleStrategy(QFont::NoAntialias);
-    font.setFamily(QString::fromUtf8(this->name.getValue()));
+    font.setFamily(QString::fromUtf8(this->name.getValue().getString()));
     font.setPixelSize(this->size.getValue());
 
     glBlendFunc(GL_ONE,GL_SRC_ALPHA);
@@ -407,7 +407,7 @@ void SoFrameLabel::drawImage()
         return;
     }
 
-    QFont font(QString::fromUtf8(name.getValue()), size.getValue());
+    QFont font(QString::fromUtf8(name.getValue().getString()), size.getValue());
     QFontMetrics fm(font);
     int w = 0;
     int h = fm.height() * num;

@@ -1421,7 +1421,7 @@ void TipLabel::paintEvent(QPaintEvent *ev)
 {
     QStylePainter p(this);
     QStyleOptionFrame opt;
-    opt.init(this);
+    opt.initFrom(this);
     p.setOpacity(0.7); // This seems only effecitve when no stylesheet is set.
     p.drawPrimitive(QStyle::PE_PanelTipLabel, opt);
     p.end();
@@ -1433,7 +1433,7 @@ void TipLabel::resizeEvent(QResizeEvent *e)
 {
     QStyleHintReturnMask frameMask;
     QStyleOption option;
-    option.init(this);
+    option.initFrom(this);
     if (style()->styleHint(QStyle::SH_ToolTip_Mask, &option, this, &frameMask))
         setMask(frameMask.region);
 
@@ -2063,7 +2063,7 @@ ExpLineEdit::ExpLineEdit(QWidget* parent, bool expressionOnly)
 
     QObject::connect(iconLabel, &ExpressionLabel::clicked, this, &ExpLineEdit::openFormulaDialog);
     if (expressionOnly)
-        QMetaObject::invokeMethod(this, "openFormulaDialog", Qt::QueuedConnection, QGenericReturnArgument());
+        QMetaObject::invokeMethod(this, "openFormulaDialog", Qt::QueuedConnection);
 }
 
 bool ExpLineEdit::apply(const std::string& propName) {

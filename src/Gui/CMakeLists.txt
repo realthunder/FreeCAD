@@ -99,6 +99,7 @@ list(APPEND FreeCADGui_LIBS
     ${QtCore_LIBRARIES}
     ${QtWidgets_LIBRARIES}
     ${QtOpenGL_LIBRARIES}
+    ${QtOpenGLWidgets_LIBRARIES}
     ${QtPrintSupport_LIBRARIES}
     ${QtSvg_LIBRARIES}
     ${QtSvgWidgets_LIBRARIES}

@@ -28,6 +28,7 @@
 # include <QPrinter>
 # include <QFileInfo>
 # include <QMessageBox>
+# include <QRegularExpression>
 # include <Inventor/SoInput.h>
 # include <Inventor/actions/SoGetPrimitiveCountAction.h>
 # include <Inventor/nodes/SoSeparator.h>
@@ -1070,11 +1071,10 @@ public:
             e.ReportException();
             QString msg(QString::fromUtf8(e.what()));
             // ignore '<type 'exceptions.*Error'>' prefixes
-            QRegExp rx;
-            rx.setPattern(QStringLiteral("^\\s*<type 'exceptions.\\w*'>:\\s*"));
-            int pos = rx.indexIn(msg);
-            if (pos != -1)
-                msg = msg.mid(rx.matchedLength());
+            QRegularExpression rx(QStringLiteral("^\\s*<type 'exceptions.\\w*'>:\\s*"));
+            auto match = rx.match(msg);
+            if (match.hasMatch())
+                msg = msg.mid(match.capturedEnd());
             QMessageBox::critical(getMainWindow(), QObject::tr("Cannot load workbench"), msg); 
         }
         catch(...) {

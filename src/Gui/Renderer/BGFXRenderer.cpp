@@ -67,7 +67,9 @@
 #include <bx/math.h>
 #include <bgfx_utils.h>
 
-#ifdef FC_OS_LINUX
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#   include <QtGui/qopenglcontext_platform.h>
+#elif defined FC_OS_LINUX
 #   include <QtPlatformHeaders/QGLXNativeContext>
 typedef QGLXNativeContext OpenGLContext;
 #elif defined FC_OS_WIN
@@ -223,8 +225,23 @@ public:
 
             if (currentType == RendererType::OpenGL) {
                 makeCurrent();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#   if defined(FC_OS_LINUX)
+                if (auto *glx = context->nativeInterface<QNativeInterface::QGLXContext>())
+                    init.platformData.context = glx->nativeContext();
+                else if (auto *egl = context->nativeInterface<QNativeInterface::QEGLContext>())
+                    init.platformData.context = egl->nativeContext();
+#   elif defined(FC_OS_WIN)
+                if (auto *wgl = context->nativeInterface<QNativeInterface::QWGLContext>())
+                    init.platformData.context = wgl->nativeContext();
+#   elif defined(FC_OS_MACOSX)
+                if (auto *cocoa = context->nativeInterface<QNativeInterface::QCocoaGLContext>())
+                    init.platformData.context = cocoa->nativeContext();
+#   endif
+#else
                 init.platformData.context = qvariant_cast<OpenGLContext>(
                     context->nativeHandle()).context();
+#endif
             } else {
                 window = new QWindow();
                 window->setObjectName(QStringLiteral("bgfxScreenSurface"));

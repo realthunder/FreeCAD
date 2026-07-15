@@ -2666,7 +2666,7 @@ QStringList loadIconSet(std::set<QString> &files,
     }
 
     static QString keyword(QStringLiteral("#import "));
-    lines = content.split(QRegExp(QStringLiteral("[\r\n]")),Qt::SkipEmptyParts);
+    lines = content.split(QRegularExpression(QStringLiteral("[\r\n]")),Qt::SkipEmptyParts);
     for (auto it = lines.begin(); it != lines.end(); ++it) {
         auto line = it->left(it->size()).trimmed();
         if (!line.startsWith(keyword))

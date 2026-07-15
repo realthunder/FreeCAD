@@ -205,7 +205,7 @@ void SequencerDialog::setTotalSteps(size_t steps)
     QThread *thr = d->dlg->thread(); // this is the main thread
     if (thr != currentThread) {
         QMetaObject::invokeMethod(d->dlg, "setRangeEx", Qt::QueuedConnection,
-            QGenericReturnArgument(), Q_ARG(int, 0), Q_ARG(int, (int)nTotalSteps));
+            Q_ARG(int, 0), Q_ARG(int, (int)nTotalSteps));
     }
     else {
         d->dlg->setRangeEx(0, (int)nTotalSteps);

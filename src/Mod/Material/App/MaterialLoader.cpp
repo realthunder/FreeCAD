@@ -28,6 +28,7 @@
 #include <QFileInfo>
 #include <QList>
 #include <QMetaType>
+#include <QRegularExpression>
 
 #include <App/Application.h>
 #include <Base/Interpreter.h>
@@ -81,7 +82,7 @@ std::shared_ptr<QList<QVariant>> MaterialYamlEntry::readList(const YAML::Node& n
         QVariant nodeValue;
         if (isImageList) {
             nodeValue = QString::fromStdString(it->as<std::string>())
-                            .remove(QRegExp(QString::fromStdString("[\r\n]")));
+                            .remove(QRegularExpression(QStringLiteral("[\r\n]")));
         }
         else {
             nodeValue = QString::fromStdString(it->as<std::string>());
@@ -243,7 +244,7 @@ void MaterialYamlEntry::addToTree(
                                 QString::fromStdString((itp->second).as<std::string>());
                             if (type == MaterialValue::Image) {
                                 propertyValue =
-                                    propertyValue.remove(QRegExp(QString::fromStdString("[\r\n]")));
+                                    propertyValue.remove(QRegularExpression(QStringLiteral("[\r\n]")));
                             }
                             finalModel->setPhysicalValue(QString::fromStdString(propertyName),
                                                          propertyValue);
@@ -310,7 +311,7 @@ void MaterialYamlEntry::addToTree(
                                 QString::fromStdString((itp->second).as<std::string>());
                             if (type == MaterialValue::Image) {
                                 propertyValue =
-                                    propertyValue.remove(QRegExp(QString::fromStdString("[\r\n]")));
+                                    propertyValue.remove(QRegularExpression(QStringLiteral("[\r\n]")));
                             }
                             finalModel->setAppearanceValue(QString::fromStdString(propertyName),
                                                            propertyValue);

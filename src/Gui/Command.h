@@ -199,6 +199,7 @@ class QAction;
 
 class QWidget;
 class QByteArray;
+class QIcon;
 
 using PyObject = struct _object;
 

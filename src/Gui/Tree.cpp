@@ -1925,8 +1925,15 @@ int TreeWidget::iconSize() {
     static int defaultSize;
     if (defaultSize == 0) {
         auto tree = instance();
-        if(tree)
+        if(tree) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            QStyleOptionViewItem option;
+            tree->initViewItemOption(&option);
+            defaultSize = option.decorationSize.width();
+#else
             defaultSize = tree->viewOptions().decorationSize.width();
+#endif
+        }
         else
             defaultSize = QApplication::style()->pixelMetric(QStyle::PM_SmallIconSize);
     }
@@ -4923,7 +4930,7 @@ TreePanel::TreePanel(const char *name, QWidget* parent)
 
     QVBoxLayout* pLayout = new QVBoxLayout(this);
     pLayout->setSpacing(0);
-    pLayout->setMargin (0);
+    pLayout->setContentsMargins(0, 0, 0, 0);
     pLayout->addWidget(this->treeWidget);
     connect(this->treeWidget, &TreeWidget::emitSearchObjects,
             this, &TreePanel::showEditor);
@@ -5014,7 +5021,7 @@ TreeDockWidget::TreeDockWidget(Gui::Document* pcDocument,QWidget *parent)
     // this->treeWidget = new TreePanel("TreeView",this);
     QGridLayout* pLayout = new QGridLayout(this);
     pLayout->setSpacing(0);
-    pLayout->setMargin (0);
+    pLayout->setContentsMargins(0, 0, 0, 0);
     // pLayout->addWidget(this->treeWidget, 0, 0 );
     pLayout->addWidget(panel, 0, 0 );
 }

@@ -8,9 +8,10 @@ set(Renderer_Headers Renderer.h)
 set(Renderer_HPP_SRCS ${Renderer_Headers})
 set(Renderer_CPP_SRCS Renderer.cpp)
 set(Renderer_LIBS FreeCADBase
-                  ${Qt5Core_LIBRARIES}
-                  ${Qt5Widgets_LIBRARIES}
-                  ${Qt5OpenGL_LIBRARIES})
+                  ${QtCore_LIBRARIES}
+                  ${QtWidgets_LIBRARIES}
+                  ${QtOpenGL_LIBRARIES}
+                  ${QtOpenGLWidgets_LIBRARIES})
 
 if(BUILD_BGFX)
     add_definitions(-DHAVE_BGFX)

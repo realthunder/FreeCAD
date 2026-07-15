@@ -237,7 +237,7 @@ static void setPropertyItemName(PropertyItem *item, const char *propName, QStrin
             // For property name with format <group_name>_<name>, it will be displayed as <name>
             name = name.right(name.size()-prefix.size());
         } else if(name.startsWith(QStringLiteral("_"))
-                    && name.midRef(1, prefix.size()) == prefix) {
+                    && QStringView(name).mid(1, prefix.size()) == prefix) {
             // For property name with format _<group_name>_<name>, it will be displayed as _<name>
             name = QStringLiteral("_") + name.right(name.size() - 1 - prefix.size());
         }

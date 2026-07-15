@@ -662,10 +662,14 @@ PieMenu::PieMenu(QMenu *menu, const char *param, QWidget *parent)
         QString key = QStringLiteral("background-color: #");
         int index = stylesheet.indexOf(key);
         QString color;
+        ulong c = 0;
         if (index >= 0) {
             bool ok = false;
-            ulong c = stylesheet.midRef(index+key.size()).toUInt(&ok, 16);
-            if (ok) color = QStringLiteral("#%1").arg(c, 0, 16);
+            c = QStringView(stylesheet).mid(index+key.size()).toUInt(&ok, 16);
+            if (ok)
+                color = QStringLiteral("#%1").arg(c, 0, 16);
+            else
+                c = 0;
         }
         if (color.isEmpty()) {
             auto hGrp = App::GetApplication().GetParameterGroupByPath(
@@ -689,8 +693,8 @@ PieMenu::PieMenu(QMenu *menu, const char *param, QWidget *parent)
                 "Gui--PieButton:disabled {"
                     "color: palette(mid);}")
             .arg(color)
-            .arg(color>0xa0a0a0?QStringLiteral("palette(mid)"):QStringLiteral("palette(shadow)"))
-            .arg(color>0xa0a0a0?QStringLiteral("palette(bright-text)"):QStringLiteral("palette(text)"));
+            .arg(c>0xa0a0a0?QStringLiteral("palette(mid)"):QStringLiteral("palette(shadow)"))
+            .arg(c>0xa0a0a0?QStringLiteral("palette(bright-text)"):QStringLiteral("palette(text)"));
 
         setStyleSheet(stylesheet);
     }

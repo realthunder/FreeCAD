@@ -105,7 +105,7 @@ static inline void checkFilter(QString &filter) {
     static const QString pattern = QStringLiteral("*.FCStd");
     static const QString docxml = QStringLiteral(" Document.xml");
     for(int pos=0;(index=filter.indexOf(QLatin1Char(')'),pos))>0;pos=index+1) {
-        int offset = filter.midRef(pos,index-pos).indexOf(pattern);
+        int offset = QStringView(filter).mid(pos,index-pos).indexOf(pattern);
         if(offset<0)
             continue;
         pos += offset + pattern.size();
@@ -372,7 +372,9 @@ QString FileDialog::getExistingDirectory( QWidget * parent, const QString & capt
 
     QFileDialog dialog(parent, caption, dir);
     new PrefWidgetStates(&dialog, true, "FileDialog", &dialog);
-    dialog.setFileMode((options & ShowDirsOnly) ? DirectoryOnly : Directory);
+    // Directory mode plus the ShowDirsOnly option (applied via setOptions below)
+    // is equivalent to the Qt5-only DirectoryOnly mode
+    dialog.setFileMode(Directory);
     dialog.setOptions(options);
     dialog.setSupportedSchemes(QStringList(QStringLiteral("file")));
     QString path;

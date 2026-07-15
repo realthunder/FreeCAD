@@ -104,8 +104,8 @@
          <property name="lineWrapMode">
           <enum>QPlainTextEdit::NoWrap</enum>
          </property>
-         <property name="tabStopWidth">
-          <number>40</number>
+         <property name="tabStopDistance">
+          <double>40.000000000000000</double>
          </property>
         </widget>
        </item>

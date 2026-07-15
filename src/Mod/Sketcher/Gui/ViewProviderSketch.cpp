@@ -73,6 +73,7 @@
 # include <QMenu>
 # include <QMessageBox>
 # include <QPainter>
+# include <QRegularExpression>
 # include <QTextStream>
 # include <QKeyEvent>
 # include <QScreen>
@@ -3794,7 +3795,7 @@ QString ViewProviderSketch::getPresentationString(const Constraint *constraint)
             if( QString::compare(baseUnitStr, unitStr)==0 )
             {
                 // Example code from: Mod/TechDraw/App/DrawViewDimension.cpp:372
-                QRegExp rxUnits(QString::fromUtf8(" \\D*$"));  //space + any non digits at end of string
+                QRegularExpression rxUnits(QStringLiteral(" \\D*$"));  //space + any non digits at end of string
                 valueStr.remove(rxUnits);                      //getUserString(defaultDecimals) without units
             }
         }

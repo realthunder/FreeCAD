@@ -217,7 +217,7 @@ public:
         , _conn(conn)
     {
         _layout = new QHBoxLayout(this);
-        _layout->setMargin(0);
+        _layout->setContentsMargins(0, 0, 0, 0);
     }
 
     void addWidget(QWidget *w)
@@ -1052,7 +1052,7 @@ void ToolBarManager::setup(ToolBarItem* item, QToolBar* toolbar) const
 
             // We now support single command adding multiple actions
             if (actions.size()) {
-                for (int i=std::min(actions.size()-1, size); i<actions.size(); ++i)
+                for (auto i=std::min<qsizetype>(actions.size()-1, size); i<actions.size(); ++i)
                     actions[i]->setData(cmdName);
             }
         } else {

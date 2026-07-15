@@ -1128,7 +1128,7 @@ QMetaType::Type PrefLinePattern::getParamType() const
 # if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     return static_cast<QMetaType::Type>(res.type());
 # else
-    return res.metaType();
+    return static_cast<QMetaType::Type>(res.typeId());
 # endif
   }
   return QMetaType::Int;

@@ -108,7 +108,7 @@ QVariant SceneModel::data(const QModelIndex & index, int role) const
     auto &item = it.value();
 
     if (index.column() == 0)
-        return QString::fromUtf8(item.node->getTypeId().getName());
+        return QString::fromUtf8(item.node->getTypeId().getName().getString());
 
     SoNode *node = item.node.get();
     auto itName = nodeNames.find(node);
@@ -406,11 +406,11 @@ void DlgInspector::populateFieldView(QTreeWidgetItem *parent, SoNode *n)
         auto field = fields[i];
         SbName name;
         node->getFieldName(field, name);
-        QString sname = QString::fromUtf8(name);
+        QString sname = QString::fromUtf8(name.getString());
         if (field->isIgnored())
             sname += QStringLiteral("*");
         item->setText(0, sname);
-        item->setToolTip(0, QString::fromUtf8(field->getTypeId().getName()));
+        item->setToolTip(0, QString::fromUtf8(field->getTypeId().getName().getString()));
         item->setData(0, Qt::UserRole, QVariant::fromValue(node));
         item->setData(1, Qt::UserRole, i);
 

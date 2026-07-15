@@ -208,8 +208,7 @@ public:
         if (!qw)
             return;
         QMetaObject::invokeMethod(parent(), "aboutToDestroyGLContext",
-            Qt::DirectConnection,
-            QGenericReturnArgument());
+            Qt::DirectConnection);
     }
     bool event(QEvent *e) override
     {

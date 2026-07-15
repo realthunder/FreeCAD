@@ -31,7 +31,6 @@
 # include <QMessageBox>
 # include <QMenu>
 # include <QTreeWidget>
-# include <QDesktopWidget>
 # include <QTimer>
 #endif
 

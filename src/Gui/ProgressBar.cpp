@@ -285,7 +285,7 @@ void SequencerBar::setTotalSteps(size_t steps)
     QThread *thr = d->bar->thread(); // this is the main thread
     if (thr != currentThread) {
         QMetaObject::invokeMethod(d->bar, "setRangeEx", Qt::QueuedConnection,
-            QGenericReturnArgument(), Q_ARG(int, 0), Q_ARG(int, (int)nTotalSteps));
+            Q_ARG(int, 0), Q_ARG(int, (int)nTotalSteps));
     }
     else {
         d->bar->setRangeEx(0, (int)nTotalSteps);

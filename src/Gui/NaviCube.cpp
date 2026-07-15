@@ -43,7 +43,6 @@
 # include <QSpinBox>
 # include <QLineEdit>
 # include <QCheckBox>
-# include <QDesktopWidget>
 # include <QFontDialog>
 # include <QFontMetrics>
 # include <QGridLayout>
@@ -465,6 +464,9 @@ void NaviCubeImplementation::OnChange(ParameterGrp::SubjectType &, ParameterGrp:
 }
 
 auto convertWeights = [](int weight) -> QFont::Weight {
+    // Values above the legacy 0-99 range are already on the Qt6 100-900 scale
+    if (weight > 99)
+        return QFont::Weight(qBound(100, weight, 900));
     if (weight >= 87)
         return QFont::Black;
     if (weight >= 81)
@@ -2439,7 +2441,7 @@ QFont NaviCubeShared::getAxisLabelFont()
     font.setItalic(m_hGrp->GetBool("AxisFontItalic", false));
     int weight = m_hGrp->GetInt("AxisFontWeight", 50);
     if (weight > 0)
-        font.setWeight(weight);
+        font.setWeight(convertWeights(weight));
     return font;
 }
 

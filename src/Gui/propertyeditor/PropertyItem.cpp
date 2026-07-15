@@ -635,7 +635,7 @@ void PropertyItem::setPropertyName(const App::Property &prop) {
             setPropertyName(propName.right(propName.size()-prefix.size()), propName);
             return;
         } else if(propName.startsWith(QStringLiteral("_"))
-                    && propName.midRef(1, prefix.size()) == prefix) {
+                    && QStringView(propName).mid(1, prefix.size()) == prefix) {
             // For property name with format _<group_name>_<name>, it will be displayed as _<name>
             setPropertyName(QStringLiteral("_") + propName.right(propName.size() - 1 - prefix.size()), propName);
             return;

@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <QAction>
+# include <QActionGroup>
 # include <QApplication>
 # include <QClipboard>
 # include <QKeyEvent>

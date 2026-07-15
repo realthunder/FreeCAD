@@ -190,7 +190,7 @@ TaskPipeOrientation::TaskPipeOrientation(ViewProviderPipe* PipeView, bool /*newO
     PartDesign::Pipe* pipe = static_cast<PartDesign::Pipe*>(vp->getObject());
     // should be called after panel has become visible
     QMetaObject::invokeMethod(this, "updateUI", Qt::QueuedConnection,
-        QGenericReturnArgument(), Q_ARG(int,pipe->Mode.getValue()));
+        Q_ARG(int,pipe->Mode.getValue()));
 
     refresh();
 

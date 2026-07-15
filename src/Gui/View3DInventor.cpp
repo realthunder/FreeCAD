@@ -47,7 +47,6 @@
 # include <Inventor/nodes/SoOrthographicCamera.h>
 # include <Inventor/nodes/SoPerspectiveCamera.h>
 # include <Inventor/nodes/SoSeparator.h>
-# include <QDesktopWidget>
 #endif
 
 #include <atomic>
