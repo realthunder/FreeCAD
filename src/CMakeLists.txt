@@ -1,5 +1,9 @@
 
-include_directories(before system ${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/boost_fix)
+# The boost_fix header overlay patches boost::geometry internals of older
+# boost releases; its copies are incompatible with boost >= 1.85
+if(Boost_VERSION_STRING VERSION_LESS 1.85)
+    include_directories(before system ${CMAKE_CURRENT_SOURCE_DIR}/3rdParty/boost_fix)
+endif()
 
 add_subdirectory(Build)
 add_subdirectory(3rdParty)

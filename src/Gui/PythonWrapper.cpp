@@ -125,11 +125,18 @@ PyTypeObject** SbkPySide2_QtUiToolsTypes = nullptr;
 # define HAVE_PYSIDE
 # define HAVE_SHIBOKEN_TYPE_FOR_TYPENAME
 # include <signalmanager.h>
-PyTypeObject** SbkPySide6_QtCoreTypes = nullptr;
-PyTypeObject** SbkPySide6_QtGuiTypes = nullptr;
-PyTypeObject** SbkPySide6_QtWidgetsTypes = nullptr;
-PyTypeObject** SbkPySide6_QtPrintSupportTypes = nullptr;
-PyTypeObject** SbkPySide6_QtUiToolsTypes = nullptr;
+// Shiboken 6.8+ changed Shiboken::Module::getTypes() to return TypeInitStruct*
+# include <sbkversion.h>
+# if QT_VERSION_CHECK(SHIBOKEN_MAJOR_VERSION, SHIBOKEN_MINOR_VERSION, SHIBOKEN_MICRO_VERSION) >= QT_VERSION_CHECK(6, 8, 0)
+using SbkModuleTypes = Shiboken::Module::TypeInitStruct*;
+# else
+using SbkModuleTypes = PyTypeObject**;
+# endif
+SbkModuleTypes SbkPySide6_QtCoreTypes = nullptr;
+SbkModuleTypes SbkPySide6_QtGuiTypes = nullptr;
+SbkModuleTypes SbkPySide6_QtWidgetsTypes = nullptr;
+SbkModuleTypes SbkPySide6_QtPrintSupportTypes = nullptr;
+SbkModuleTypes SbkPySide6_QtUiToolsTypes = nullptr;
 # endif // HAVE_PYSIDE6
 #endif // HAVE_SHIBOKEN6
 
@@ -471,7 +478,8 @@ qttype* qt_getCppType(PyObject* pyobj)
     return nullptr;
 }
 
-bool loadPySideModule(const std::string& moduleName, PyTypeObject**& types)
+template<typename TypesArray>
+bool loadPySideModule(const std::string& moduleName, TypesArray& types)
 {
 #if defined (HAVE_SHIBOKEN) && defined(HAVE_PYSIDE)
     if (!types) {

@@ -4,7 +4,17 @@ macro(SetupEigen)
     # necessary for Sketcher module
     # necessary for Robot module
 
-    find_package(Eigen3)
+    # Prefer Eigen's own CMake config (required for Eigen >= 5, whose version
+    # macros moved and are no longer parsed by the bundled FindEigen3.cmake);
+    # normalize to the legacy EIGEN3_* variables the modules consume.
+    find_package(Eigen3 CONFIG QUIET)
+    if(TARGET Eigen3::Eigen)
+        set(EIGEN3_FOUND ON)
+        set(EIGEN3_VERSION ${Eigen3_VERSION})
+        get_target_property(EIGEN3_INCLUDE_DIR Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
+    else()
+        find_package(Eigen3)
+    endif()
     if(NOT EIGEN3_FOUND)
         message("=================\n"
                 "Eigen3 not found.\n"
