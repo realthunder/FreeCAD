@@ -21,7 +21,6 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
-#include <Inventor/nodes/SoQuadMesh.h>
 
 #ifndef _PreComp_
 # include <Precision.hxx>
