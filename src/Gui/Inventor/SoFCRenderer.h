@@ -32,12 +32,24 @@ class SoFCRenderCache;
 class SoPath;
 class SoFCRendererP;
 
+namespace Render {
+class Renderer;
+}
+
 class GuiExport SoFCRenderer {
 public:
   SoFCRenderer();
   virtual ~SoFCRenderer();
 
   void clear();
+
+  /// Attach an optional external render backend. When set, the scene,
+  /// selection and highlight feeds are mirrored to it in translated
+  /// (backend-neutral) form, and render() skips the internal fixed-function
+  /// GL pass while the backend reports canSkipInternal(). Pass null to
+  /// detach. Set env FC_RENDERER_PARALLEL_GL=1 to keep the GL pass drawing
+  /// on top for comparison.
+  void setExternalRenderer(Render::Renderer * renderer);
 
   void render(SoGLRenderAction * action);
 

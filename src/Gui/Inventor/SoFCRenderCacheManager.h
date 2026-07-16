@@ -34,6 +34,10 @@ class SoFCRenderCacheManagerP;
 class SoPath;
 class SoDetail;
 
+namespace Render {
+class Renderer;
+}
+
 class GuiExport SoFCRenderCacheManager
 {
 public:
@@ -42,6 +46,10 @@ public:
 
   void render(SoGLRenderAction *action);
   void clear();
+
+  /// Attach an optional external render backend (see
+  /// SoFCRenderer::setExternalRenderer()). Pass null to detach.
+  void setExternalRenderer(Render::Renderer *renderer);
 
   SoPath *getHighlightPath() const;
   void setHighlight(SoPath * path,

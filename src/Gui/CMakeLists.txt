@@ -1014,6 +1014,7 @@ SET(Inventor_CPP_SRCS
     Inventor/SoFCRenderCache.cpp
     Inventor/SoFCRenderCacheManager.cpp
     Inventor/SoFCRenderer.cpp
+    Inventor/SoFCRendererBridge.cpp
     Inventor/SoFCDetail.cpp
     Inventor/SoFCSwitch.cpp
     Inventor/SoFCDisplayModeElement.cpp
@@ -1059,6 +1060,7 @@ SET(Inventor_SRCS
     Inventor/SoFCRenderCache.h
     Inventor/SoFCRenderCacheManager.h
     Inventor/SoFCRenderer.h
+    Inventor/SoFCRendererBridge.h
     Inventor/SoFCDetail.h
     Inventor/SoFCSwitch.h
     Inventor/SoFCDisplayModeElement.h

@@ -41,6 +41,8 @@
 # endif
 #endif
 
+#include <map>
+#include <vector>
 #include <unordered_map>
 #include <set>
 
@@ -339,60 +341,130 @@ BGFXRendererLib BGFXLib;
 
 } // namespace Renderer
 
-struct PosColorVertex
+// Interleaved vertex format built from the separate MeshData attribute
+// arrays: position + normal + rgba8 color (white when the cache has no
+// per-vertex colors, zero normal when it has no normals).
+struct SceneVertex
 {
-	float m_x;
-	float m_y;
-	float m_z;
-	uint32_t m_abgr;
+    float px, py, pz;
+    float nx, ny, nz;
+    uint32_t rgba;
 
-	static void init()
-	{
-		ms_layout
-			.begin()
-			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-			.add(bgfx::Attrib::Color0,   4, bgfx::AttribType::Uint8, true)
-			.end();
-	};
+    static void init()
+    {
+        if (ms_initialized)
+            return;
+        ms_initialized = true;
+        ms_layout
+            .begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Normal,   3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Color0,   4, bgfx::AttribType::Uint8, true)
+            .end();
+    };
 
-	static bgfx::VertexLayout ms_layout;
+    static bgfx::VertexLayout ms_layout;
+    static bool ms_initialized;
 };
 
-bgfx::VertexLayout PosColorVertex::ms_layout;
+bgfx::VertexLayout SceneVertex::ms_layout;
+bool SceneVertex::ms_initialized = false;
 
-static PosColorVertex s_cubeVertices[8] =
+// GPU buffers of one MeshData, keyed by MeshData::cacheId. A cache id
+// always refers to identical content, so buffers are immutable and reused
+// until the id disappears from the scene.
+struct GpuMesh
 {
-	{-1.0f,  1.0f,  1.0f, 0xff000000 },
-	{ 1.0f,  1.0f,  1.0f, 0xff0000ff },
-	{-1.0f, -1.0f,  1.0f, 0xff00ff00 },
-	{ 1.0f, -1.0f,  1.0f, 0xff00ffff },
-	{-1.0f,  1.0f, -1.0f, 0xffff0000 },
-	{ 1.0f,  1.0f, -1.0f, 0xffff00ff },
-	{-1.0f, -1.0f, -1.0f, 0xffffff00 },
-	{ 1.0f, -1.0f, -1.0f, 0xffffffff },
+    bgfx::VertexBufferHandle vbh = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle tri = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle line = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle point = BGFX_INVALID_HANDLE;
+    uint64_t lastUsed = 0;
+
+    void destroy()
+    {
+        if (bgfx::isValid(vbh)) {
+            bgfx::destroy(vbh);
+            vbh = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(tri)) {
+            bgfx::destroy(tri);
+            tri = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(line)) {
+            bgfx::destroy(line);
+            line = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(point)) {
+            bgfx::destroy(point);
+            point = BGFX_INVALID_HANDLE;
+        }
+    }
+
+    void upload(const Render::MeshData &mesh)
+    {
+        SceneVertex::init();
+        const bgfx::Memory *vmem =
+            bgfx::alloc(uint32_t(mesh.numVertices) * sizeof(SceneVertex));
+        auto *verts = reinterpret_cast<SceneVertex *>(vmem->data);
+        for (int i = 0; i < mesh.numVertices; ++i) {
+            SceneVertex &v = verts[i];
+            v.px = mesh.positions[i*3];
+            v.py = mesh.positions[i*3 + 1];
+            v.pz = mesh.positions[i*3 + 2];
+            if (mesh.normals) {
+                v.nx = mesh.normals[i*3];
+                v.ny = mesh.normals[i*3 + 1];
+                v.nz = mesh.normals[i*3 + 2];
+            } else {
+                v.nx = v.ny = 0.0f;
+                v.nz = 1.0f;
+            }
+            if (mesh.colors)
+                memcpy(&v.rgba, mesh.colors + i*4, 4);
+            else
+                v.rgba = 0xffffffff;
+        }
+        vbh = bgfx::createVertexBuffer(vmem, SceneVertex::ms_layout);
+
+        if (mesh.numTriangleIndices > 0)
+            tri = bgfx::createIndexBuffer(
+                bgfx::copy(mesh.triangleIndices, mesh.numTriangleIndices * 4),
+                BGFX_BUFFER_INDEX32);
+        if (mesh.numLineIndices > 0)
+            line = bgfx::createIndexBuffer(
+                bgfx::copy(mesh.lineIndices, mesh.numLineIndices * 4),
+                BGFX_BUFFER_INDEX32);
+        if (mesh.numPointIndices > 0)
+            point = bgfx::createIndexBuffer(
+                bgfx::copy(mesh.pointIndices, mesh.numPointIndices * 4),
+                BGFX_BUFFER_INDEX32);
+    }
 };
 
-static const uint16_t s_cubeIndices[36] =
+static inline void unpackColor(uint32_t rgba, float *out)
 {
-	0, 1, 2, // 0
-	1, 3, 2,
-	4, 6, 5, // 2
-	5, 6, 7,
-	0, 2, 4, // 4
-	4, 2, 6,
-	1, 5, 3, // 6
-	5, 7, 3,
-	0, 4, 1, // 8
-	4, 5, 1,
-	2, 3, 6, // 10
-	6, 3, 7,
-};
+    out[0] = ((rgba >> 24) & 0xff) / 255.0f;
+    out[1] = ((rgba >> 16) & 0xff) / 255.0f;
+    out[2] = ((rgba >> 8) & 0xff) / 255.0f;
+    out[3] = (rgba & 0xff) / 255.0f;
+}
 
 ////////////////////////////////////////////////////////
 
 class BGFXView
 {
 public:
+    // Pass sequence reproducing (a simplified subset of) SoFCRenderer's
+    // draw order. Each is a bgfx view sharing the same framebuffer.
+    enum PassView {
+        ViewOpaque = 0,     // clear + opaque triangles, lines, points
+        ViewTransparent,    // blended, depth read-only, back-to-front
+        ViewOnTop,          // scene geometry with on-top materials
+        ViewHighlight,      // selection-on-top and preselection highlight
+        NUM_VIEWS
+    };
+
     ~BGFXView()
     {
         destroy();
@@ -400,25 +472,36 @@ public:
 
     void destroy()
     {
+        for (auto &v : meshes)
+            v.second.destroy();
+        meshes.clear();
         if (bgfx::isValid(bgfxFbo)) {
             bgfx::destroy(bgfxFbo);
             bgfxFbo = BGFX_INVALID_HANDLE;
         }
-        if (bgfx::isValid(m_ibh)) {
-            bgfx::destroy(m_ibh);
-            m_ibh = BGFX_INVALID_HANDLE;
+        if (bgfx::isValid(m_progMesh)) {
+            bgfx::destroy(m_progMesh);
+            m_progMesh = BGFX_INVALID_HANDLE;
         }
-        if (bgfx::isValid(m_vbh)) {
-            bgfx::destroy(m_vbh);
-            m_vbh = BGFX_INVALID_HANDLE;
+        if (bgfx::isValid(m_progFlat)) {
+            bgfx::destroy(m_progFlat);
+            m_progFlat = BGFX_INVALID_HANDLE;
         }
-        if (bgfx::isValid(m_program)) {
-            bgfx::destroy(m_program);
-            m_program = BGFX_INVALID_HANDLE;
+        if (bgfx::isValid(u_matColor)) {
+            bgfx::destroy(u_matColor);
+            u_matColor = BGFX_INVALID_HANDLE;
         }
-        if (bgfx::isValid(m_program_non_instanced)) {
-            bgfx::destroy(m_program_non_instanced);
-            m_program_non_instanced = BGFX_INVALID_HANDLE;
+        if (bgfx::isValid(u_matEmissive)) {
+            bgfx::destroy(u_matEmissive);
+            u_matEmissive = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(u_matSpecular)) {
+            bgfx::destroy(u_matSpecular);
+            u_matSpecular = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(u_params)) {
+            bgfx::destroy(u_params);
+            u_params = BGFX_INVALID_HANDLE;
         }
         if (hasFBO) {
             _BGFXLib.freeFBO(fbo);
@@ -465,108 +548,141 @@ public:
         attachment[1].init(bgfxDepth, bgfx::Access::Write, 0, 1, 0, BGFX_RESOLVE_NONE);
         bgfxFbo = bgfx::createFrameBuffer(2, attachment, true);
 
-        bgfx::setViewFrameBuffer(viewId, bgfxFbo);
+        for (uint16_t i = 0; i < NUM_VIEWS; ++i)
+            bgfx::setViewFrameBuffer(viewId + i, bgfxFbo);
 
-        m_timeOffset = bx::getHPCounter();
+        m_progMesh = loadProgram("vs_fc_mesh", "fs_fc_mesh",
+                                 _BGFXLib.resource().c_str());
+        m_progFlat = loadProgram("vs_fc_flat", "fs_fc_flat",
+                                 _BGFXLib.resource().c_str());
 
-        // Create vertex stream declaration.
-        PosColorVertex::init();
-
-        // Create static vertex buffer.
-        m_vbh = bgfx::createVertexBuffer(
-                    bgfx::makeRef(s_cubeVertices, sizeof(s_cubeVertices) )
-                    , PosColorVertex::ms_layout
-                    );
-
-        // Create static index buffer.
-        m_ibh = bgfx::createIndexBuffer(
-                    bgfx::makeRef(s_cubeIndices, sizeof(s_cubeIndices) )
-                    );
-
-        // Create program from shaders.
-        m_program = loadProgram("vs_instancing", "fs_instancing", _BGFXLib.resource().c_str());
-		m_program_non_instanced = loadProgram("vs_cubes", "fs_cubes", _BGFXLib.resource().c_str());
+        u_matColor = bgfx::createUniform("u_matColor", bgfx::UniformType::Vec4);
+        u_matEmissive = bgfx::createUniform("u_matEmissive", bgfx::UniformType::Vec4);
+        u_matSpecular = bgfx::createUniform("u_matSpecular", bgfx::UniformType::Vec4);
+        u_params = bgfx::createUniform("u_params", bgfx::UniformType::Vec4);
     }
 
-    void render()
+    GpuMesh *getMesh(const Render::MeshData &data)
     {
-		uint32_t m_sideSize = 101;
-        float offset = -int(m_sideSize) * 1.5f;
+        GpuMesh &mesh = meshes[data.cacheId];
+        mesh.lastUsed = frame;
+        if (!bgfx::isValid(mesh.vbh))
+            mesh.upload(data);
+        return &mesh;
+    }
 
-        float time = (float)( (bx::getHPCounter() - m_timeOffset)/double(bx::getHPFrequency() ) );
+    // Drop GPU buffers of caches that no draw call referenced recently.
+    void collectMeshes()
+    {
+        for (auto it = meshes.begin(); it != meshes.end();) {
+            if (it->second.lastUsed + 2 < frame) {
+                it->second.destroy();
+                it = meshes.erase(it);
+            } else
+                ++it;
+        }
+    }
 
-        if (true) {
-            // 80 bytes stride = 64 bytes for 4x4 matrix + 16 bytes for RGBA color.
-            const uint16_t instanceStride = 80;
-            // to total number of instances to draw
-            uint32_t totalCubes = m_sideSize * m_sideSize;
+    void submit(const Render::DrawCall &draw, const float *viewMatrix)
+    {
+        const Render::Material &mat = draw.material;
+        if (!draw.mesh || draw.mesh->numVertices == 0)
+            return;
 
-            // figure out how big of a buffer is available
-            uint32_t drawnCubes = bgfx::getAvailInstanceDataBuffer(totalCubes, instanceStride);
+        // Partial (single face/edge/point) draws need per-part index
+        // ranges that the bridge does not extract yet.
+        if (draw.partIndex >= 0) {
+            ++skippedPartial;
+            return;
+        }
 
-            bgfx::InstanceDataBuffer idb;
-            bgfx::allocInstanceDataBuffer(&idb, drawnCubes, instanceStride);
+        GpuMesh *mesh = getMesh(*draw.mesh);
+        bgfx::IndexBufferHandle ibh = BGFX_INVALID_HANDLE;
+        switch (mat.type) {
+        case Render::Material::Triangle: ibh = mesh->tri; break;
+        case Render::Material::Line: ibh = mesh->line; break;
+        case Render::Material::Point: ibh = mesh->point; break;
+        }
+        if (!bgfx::isValid(ibh))
+            return;
 
-            uint8_t* data = idb.data;
+        bool transparent = mat.transparent
+            || (mat.pervertexcolor && draw.mesh->hasTransparency);
 
-            for (uint32_t ii = 0; ii < drawnCubes; ++ii)
-            {
-                uint32_t yy = ii / m_sideSize;
-                uint32_t xx = ii % m_sideSize;
+        uint16_t pass = ontop ? ViewHighlight
+            : mat.ontop ? ViewOnTop
+            : transparent && mat.type == Render::Material::Triangle
+                ? ViewTransparent
+                : ViewOpaque;
 
-                float* mtx = (float*)data;
-                bx::mtxRotateXY(mtx, time + xx * 0.21f, time + yy * 0.37f);
-                mtx[12] = offset + float(xx) * 3.0f;
-                mtx[13] = offset + float(yy) * 3.0f;
-                mtx[14] = 0.0f;
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                       | BGFX_STATE_MSAA;
+        if (mat.depthtest)
+            state |= depthFuncState(mat.depthfunc);
+        if (mat.depthwrite && !transparent)
+            state |= BGFX_STATE_WRITE_Z;
+        if (transparent)
+            state |= BGFX_STATE_BLEND_ALPHA;
+        if (mat.culling && !mat.twoside
+                        && mat.type == Render::Material::Triangle)
+            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
+        if (mat.type == Render::Material::Line)
+            state |= BGFX_STATE_PT_LINES;
+        else if (mat.type == Render::Material::Point)
+            state |= BGFX_STATE_PT_POINTS
+                | BGFX_STATE_POINT_SIZE(uint32_t(qMax(mat.pointsize, 1.0f)));
 
-                float* color = (float*)&data[64];
-                color[0] = bx::sin(time + float(xx) / 11.0f) * 0.5f + 0.5f;
-                color[1] = bx::cos(time + float(yy) / 11.0f) * 0.5f + 0.5f;
-                color[2] = bx::sin(time * 3.0f) * 0.5f + 0.5f;
-                color[3] = 1.0f;
+        float color[4], emissive[4], specular[4], params[4];
+        unpackColor(mat.diffuse, color);
+        unpackColor(mat.emissive, emissive);
+        unpackColor(mat.specular, specular);
+        specular[3] = mat.shininess;
+        params[0] = mat.pervertexcolor ? 1.0f : 0.0f;
+        params[1] = (mat.lighting
+                     && mat.type == Render::Material::Triangle) ? 1.0f : 0.0f;
+        params[2] = mat.twoside ? 1.0f : 0.0f;
+        params[3] = 0.0f;
+        bgfx::setUniform(u_matColor, color);
+        bgfx::setUniform(u_matEmissive, emissive);
+        bgfx::setUniform(u_matSpecular, specular);
+        bgfx::setUniform(u_params, params);
 
-                data += instanceStride;
-            }
+        if (!draw.identity)
+            bgfx::setTransform(draw.model);
+        bgfx::setVertexBuffer(0, mesh->vbh);
+        bgfx::setIndexBuffer(ibh);
+        bgfx::setState(state);
 
-            // Set vertex and index buffer.
-            bgfx::setVertexBuffer(0, m_vbh);
-            bgfx::setIndexBuffer(m_ibh);
+        uint32_t depth = 0;
+        if (pass == ViewTransparent && draw.bboxMin[0] <= draw.bboxMax[0]) {
+            // Sort key: distance of the world-space bbox center along the
+            // view axis; the view is in DepthDescending mode (far first).
+            float cx = (draw.bboxMin[0] + draw.bboxMax[0]) * 0.5f;
+            float cy = (draw.bboxMin[1] + draw.bboxMax[1]) * 0.5f;
+            float cz = (draw.bboxMin[2] + draw.bboxMax[2]) * 0.5f;
+            const float *m = viewMatrix;
+            float eyez = m[2]*cx + m[6]*cy + m[10]*cz + m[14];
+            depth = bx::floatToBits(bx::max(-eyez, 0.0f));
+        }
 
-            // Set instance data buffer.
-            bgfx::setInstanceDataBuffer(&idb);
+        bgfx::submit(viewId + pass,
+                     mat.type == Render::Material::Triangle
+                         ? m_progMesh : m_progFlat,
+                     depth);
+        ++drawcount;
+    }
 
-            // Set render states.
-            bgfx::setState(BGFX_STATE_DEFAULT);
-
-            // Submit primitive for rendering to view 0.
-            bgfx::submit(viewId, m_program);
-        } else {
-            // non-instanced path
-            for (uint32_t yy = 0; yy < m_sideSize; ++yy)
-            {
-                for (uint32_t xx = 0; xx < m_sideSize; ++xx)
-                {
-                    float mtx[16];
-                    bx::mtxRotateXY(mtx, time + xx * 0.21f, time + yy * 0.37f);
-                    mtx[12] = offset + float(xx) * 3.0f;
-                    mtx[13] = offset + float(yy) * 3.0f;
-                    mtx[14] = 0.0f;
-
-                    // Set model matrix for rendering.
-                    bgfx::setTransform(mtx);
-
-                    // Set vertex and index buffer.
-                    bgfx::setVertexBuffer(0, m_vbh);
-                    bgfx::setIndexBuffer(m_ibh);
-
-                    // Set render states.
-                    bgfx::setState(BGFX_STATE_DEFAULT);
-
-                    // Submit primitive for rendering to view 0.
-                    bgfx::submit(viewId, m_program_non_instanced);
-                }
-            }
+    static uint64_t depthFuncState(uint8_t func)
+    {
+        switch (func) {
+        case Render::Material::Never:    return BGFX_STATE_DEPTH_TEST_NEVER;
+        case Render::Material::Always:   return BGFX_STATE_DEPTH_TEST_ALWAYS;
+        case Render::Material::Less:     return BGFX_STATE_DEPTH_TEST_LESS;
+        case Render::Material::Equal:    return BGFX_STATE_DEPTH_TEST_EQUAL;
+        case Render::Material::GEqual:   return BGFX_STATE_DEPTH_TEST_GEQUAL;
+        case Render::Material::Greater:  return BGFX_STATE_DEPTH_TEST_GREATER;
+        case Render::Material::NotEqual: return BGFX_STATE_DEPTH_TEST_NOTEQUAL;
+        default:                         return BGFX_STATE_DEPTH_TEST_LEQUAL;
         }
     }
 
@@ -600,6 +716,29 @@ public:
                           GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT,
                           GL_NEAREST);
         checkGLError("blit");
+
+        static const bool readback = (getenv("FC_BGFX_DEBUG_READBACK") != nullptr);
+        if (readback) {
+            std::vector<float> depth(width * height);
+            std::vector<unsigned char> color(width * height * 4);
+            glReadPixels(0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT,
+                         depth.data());
+            glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE,
+                         color.data());
+            long n = 0, r = 0, g = 0, b = 0;
+            for (int i = 0; i < width * height; ++i) {
+                if (depth[i] < 0.999f) {
+                    ++n;
+                    r += color[i*4];
+                    g += color[i*4 + 1];
+                    b += color[i*4 + 2];
+                }
+            }
+            fprintf(stderr,
+                    "bgfx fbo %dx%d: %ld geometry pixels, avg color %ld,%ld,%ld\n",
+                    width, height, n,
+                    n ? r/n : -1, n ? g/n : -1, n ? b/n : -1);
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
     }
 
@@ -610,18 +749,22 @@ public:
     bgfx::FrameBufferHandle bgfxFbo = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle bgfxColor = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle bgfxDepth = BGFX_INVALID_HANDLE;
-    int64_t m_timeOffset;
-	bgfx::VertexBufferHandle m_vbh = BGFX_INVALID_HANDLE;
-	bgfx::IndexBufferHandle  m_ibh = BGFX_INVALID_HANDLE;
-	bgfx::ProgramHandle m_program = BGFX_INVALID_HANDLE;
-	bgfx::ProgramHandle m_program_non_instanced = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMesh = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progFlat = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_matColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_matEmissive = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_matSpecular = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_params = BGFX_INVALID_HANDLE;
+    std::unordered_map<uint64_t, GpuMesh> meshes;
+    uint64_t frame = 0;
+    int drawcount = 0;
+    int skippedPartial = 0;
+    bool ontop = false;   // route submits to the highlight pass
     GLuint fbo = 0;
     bool hasFBO = false;
 };
 
-#include <3rdParty/bgfx/bgfx/examples/00-helloworld/logo.h>
-
-class BGFXRenderer::Private 
+class BGFXRenderer::Private
 {
 public:
     Private(QOpenGLWidget *widget)
@@ -646,10 +789,15 @@ public:
                 const void * viewMatrix,
                 const void * projMatrix)
     {
+        // The pending scene data (whatever its age) is consumed by this
+        // frame; needsRedraw() reports false until new data arrives.
+        sceneDirty = false;
+        renderOk = false;
+
         if (_deinit)
             return false;
 
-        auto view = _BGFXLib.getView(widget, type); 
+        auto view = _BGFXLib.getView(widget, type);
         if (!view)
             return false;
 
@@ -662,30 +810,112 @@ public:
             return false;
         }
 
-        int id =  view->viewId;
+        uint16_t base = view->viewId;
         uint16_t width = view->width;
         uint16_t height = view->height;
-		bgfx::setDebug(BGFX_DEBUG_TEXT);
-		bgfx::setViewClear(id, BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH , col.rgba64(), 1.0f , 0);
-        bgfx::setViewRect(id, 0, 0, width, height);
+        uint32_t clearColor = (uint32_t(col.red()) << 24)
+            | (uint32_t(col.green()) << 16)
+            | (uint32_t(col.blue()) << 8)
+            | 0xff;
+        if (getenv("FC_BGFX_DEBUG_CLEAR"))
+            clearColor = 0xff0000ff;
 
-        bgfx::setViewTransform(id, viewMatrix, projMatrix);
-        bgfx::touch(id);
+        for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
+            uint16_t id = base + i;
+            bgfx::setViewClear(id,
+                i == 0 ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH)
+                       : uint16_t(BGFX_CLEAR_NONE),
+                clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0, width, height);
+            bgfx::setViewTransform(id, viewMatrix, projMatrix);
+            bgfx::setViewMode(id, i == BGFXView::ViewTransparent
+                    ? bgfx::ViewMode::DepthDescending
+                    : bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        }
 
-        view->render();
+        ++view->frame;
+        view->drawcount = 0;
+        view->skippedPartial = 0;
+        const float *viewMat = reinterpret_cast<const float *>(viewMatrix);
+
+        view->ontop = false;
+        for (const auto &draw : scene)
+            view->submit(draw, viewMat);
+        for (const auto &sel : selections) {
+            // Positive ids are on-top selections (SoFCRenderer::addSelection)
+            view->ontop = sel.first > 0;
+            for (const auto &draw : sel.second)
+                view->submit(draw, viewMat);
+        }
+        view->ontop = true;
+        for (const auto &draw : highlight)
+            view->submit(draw, viewMat);
+        view->ontop = false;
+
+        view->collectMeshes();
 
         widget->doneCurrent();
         _BGFXLib.makeCurrent();
         bgfx::frame();
         widget->makeCurrent();
         view->blit();
+
+        if (!hasScene && !scene.empty())
+            qDebug() << "bgfx: scene consumed:" << view->drawcount
+                     << "draws," << view->meshes.size() << "meshes,"
+                     << view->skippedPartial << "partial draws skipped";
+
+        if (getenv("FC_BGFX_DEBUG_READBACK"))
+            fprintf(stderr, "bgfx frame %llu: scene=%zu sel=%zu hl=%zu"
+                    " draws=%d partial=%d\n",
+                    (unsigned long long)view->frame, scene.size(),
+                    selections.size(), highlight.size(),
+                    view->drawcount, view->skippedPartial);
+
+        renderOk = true;
+        hasScene = !scene.empty();
         return true;
+    }
+
+    void updateBBox()
+    {
+        bboxValid = false;
+        for (const auto &draw : scene) {
+            if (draw.bboxMin[0] > draw.bboxMax[0])
+                continue;
+            if (!bboxValid) {
+                bboxValid = true;
+                for (int i = 0; i < 3; ++i) {
+                    bboxMin[i] = draw.bboxMin[i];
+                    bboxMax[i] = draw.bboxMax[i];
+                }
+            } else {
+                for (int i = 0; i < 3; ++i) {
+                    bboxMin[i] = qMin(bboxMin[i], draw.bboxMin[i]);
+                    bboxMax[i] = qMax(bboxMax[i], draw.bboxMax[i]);
+                }
+            }
+        }
     }
 
     QOpenGLWidget *widget;
     bool _deinit = false;
     RendererType::Enum type;
     std::string typeName;
+
+    // CPU-side scene data fed through Render::Renderer's scene API. GPU
+    // upload happens lazily during render(), so the feed may arrive before
+    // bgfx is initialized.
+    Render::DrawCallList scene;
+    std::map<int, Render::DrawCallList> selections;
+    Render::DrawCallList highlight;
+    bool hlWholeOnTop = false;
+    bool sceneDirty = false;
+    bool hasScene = false;
+    bool renderOk = false;
+    bool bboxValid = false;
+    float bboxMin[3], bboxMax[3];
 };
 
 BGFXRenderer::BGFXRenderer(QOpenGLWidget *widget)
@@ -707,9 +937,59 @@ bool BGFXRenderer::render(const QColor &col,
 bool BGFXRenderer::boundBox(float &xmin, float &ymin, float &zmin,
                             float &xmax, float &ymax, float &zmax)
 {
-    xmin = ymin = zmin = -1000.f;
-    xmax = ymax = zmax = 1000.f;
+    if (!pimpl->bboxValid)
+        return false;
+    xmin = pimpl->bboxMin[0];
+    ymin = pimpl->bboxMin[1];
+    zmin = pimpl->bboxMin[2];
+    xmax = pimpl->bboxMax[0];
+    ymax = pimpl->bboxMax[1];
+    zmax = pimpl->bboxMax[2];
     return true;
+}
+
+void BGFXRenderer::setScene(DrawCallList &&draws)
+{
+    pimpl->scene = std::move(draws);
+    pimpl->sceneDirty = true;
+    pimpl->updateBBox();
+}
+
+void BGFXRenderer::addSelection(int id, DrawCallList &&draws)
+{
+    pimpl->selections[id] = std::move(draws);
+    pimpl->sceneDirty = true;
+}
+
+void BGFXRenderer::removeSelection(int id)
+{
+    if (pimpl->selections.erase(id))
+        pimpl->sceneDirty = true;
+}
+
+void BGFXRenderer::setHighlight(DrawCallList &&draws, bool wholeOnTop)
+{
+    pimpl->highlight = std::move(draws);
+    pimpl->hlWholeOnTop = wholeOnTop;
+    pimpl->sceneDirty = true;
+}
+
+void BGFXRenderer::clearHighlight()
+{
+    if (!pimpl->highlight.empty())
+        pimpl->sceneDirty = true;
+    pimpl->highlight.clear();
+    pimpl->hlWholeOnTop = false;
+}
+
+bool BGFXRenderer::needsRedraw() const
+{
+    return pimpl->sceneDirty;
+}
+
+bool BGFXRenderer::canSkipInternal() const
+{
+    return pimpl->renderOk && pimpl->hasScene && !pimpl->_deinit;
 }
 
 const std::string &BGFXRenderer::type() const
@@ -778,15 +1058,17 @@ BGFXView *BGFXRendererLibP::getView(QOpenGLWidget *widget, RendererType::Enum ty
     if (!view) {
         view.reset(new BGFXView);
         view->widget = widget;
+        // Each viewer consumes a contiguous block of NUM_VIEWS bgfx view
+        // ids; viewIds stores the block base ids.
         view->viewId = 0;
         for (int id : viewIds) {
             if (view->viewId == id)
-                ++view->viewId;
+                view->viewId += BGFXView::NUM_VIEWS;
             else
                 break;
         }
         viewIds.insert(view->viewId);
-    } 
+    }
     return view.get();
 }
 

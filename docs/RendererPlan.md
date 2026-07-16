@@ -172,26 +172,52 @@ The engine-agnostic core; everything later depends on it.
 2. **Interface growth**: extend `Render::Renderer` from demo-cube signature to
    a scene API mirroring `SoFCRenderer`'s:
    `setScene / addSelection / removeSelection / setHighlight / clearHighlight
-   / render / boundBox`. `SoFCRenderCacheManager` gains an optional
-   `Render::Renderer*`; when set, it feeds both the GL `SoFCRenderer`
-   (unchanged, still used for pick/fallback) and the new backend, or swaps
-   the sink entirely — decide by measurement.
+   / render / boundBox`.
+   *Done (2026-07).* Feed topology decided: the backend hangs off
+   `SoFCRenderer` itself (`setExternalRenderer()`, plumbed viewer →
+   `SoFCUnifiedSelection` → manager → renderer). `SoFCRenderer` keeps
+   building all its structures (fallback + bbox), forwards each feed in
+   translated form, and skips its own GL emission while the backend
+   reports `canSkipInternal()` (`FC_RENDERER_PARALLEL_GL=1` keeps GL
+   drawing on top for A/B). The neutral types (`Render::MeshData` /
+   `Material` / `DrawCall`, Coin-free — FreeCADRenderer cannot link Gui)
+   are produced by the Gui-side bridge
+   `src/Gui/Inventor/SoFCRendererBridge.{h,cpp}`; `MeshData::owner`
+   ref-holds the `SoFCVertexCache` so arrays outlive the feed call.
 3. **Geometry/material translation**: consume `VertexCacheMap` — upload
-   attribute + index arrays keyed by `SoFCVertexCache::getCacheId()` with
-   refcounted GPU buffers; translate `Material` (flags → pipeline state,
-   colors, clip planes, textures); keep per-part offset tables for partial
-   draws. Incremental update driven by cache-id diffing between `setScene`
-   calls, not full re-upload.
-4. **Pass skeleton**: bgfx view sequence reproducing today's ordering —
-   opaque → selection → section → transparent → on-top → line-pattern/solid
-   passes → highlight → outline. Depth+normal G-buffer prepass slot for
-   later AO/outline. Compositing with Coin stays blit-based (already
-   working); keep the Coin overlay (background/foreground/axis/manipulators)
-   rendering on top.
+   attribute + index arrays keyed by `SoFCVertexCache::getCacheId()`;
+   translate `Material` (flags → pipeline state, colors, clip planes,
+   textures); keep per-part offset tables for partial draws.
+   *Basic version done (2026-07):* interleaved pos+normal+rgba8 vertex
+   buffer + INDEX32 tri/line/point buffers per cache id, uploaded lazily at
+   render time and evicted when unreferenced for 2 frames; material →
+   bgfx state (depth func/test/write, cull, blend, PT_LINES/POINTS) +
+   headlight Blinn-Phong shaders (`bgfx/shaders/*.sc`, compiled by
+   `compile.sh` into the runtime assets). Still missing: partial
+   (`partidx >= 0`) draws are skipped (single-face highlight invisible),
+   textures/clip planes/autozoom ignored, per-vertex-transparent caches go
+   wholesale to the transparent bucket, no polygon-offset equivalent yet.
+4. **Pass skeleton**: bgfx view sequence reproducing today's ordering.
+   *First cut done (2026-07):* 4 views — opaque → transparent (bbox-center
+   depth sort via `ViewMode::DepthDescending`) → on-top → selection/
+   highlight. Still to grow toward SoFCRenderer's full ~15-pass loop
+   (line-pattern/solid two-pass, depth-write-only pass, outline, section),
+   plus the depth+normal prepass slot for AO/outline.
+   **Compositing gotcha (fixed)**: the backend blits color+depth *before*
+   the Coin pass, and `View3DInventorViewer::renderScene()` used to call
+   `drawSingleBackground()` afterwards with depth test off — wiping the
+   backend's color and leaving flat-colored silhouettes (the gradient
+   background node is depth-tested at the far plane and only fills empty
+   pixels). The flat background fill is now skipped when the backend
+   rendered the frame.
 5. **Selection/highlight/picking**: reuse the existing
    `buildHighlightCache` products (they arrive as `VertexCacheMap` too);
    picking stays on the Coin side initially (manager `doLatePick`), GPU
    ID-buffer picking later.
+   *Selection/highlight feeds work (2026-07)* — translated like the scene
+   and drawn in the highlight view. Whole-object-on-top selection double
+   draws (the GL renderer's cache-key skip logic is not replicated yet);
+   partial (per-face) highlight doesn't show until partial draws land.
 
 Exit criteria: a real model renders in bgfx visually close to today's mode-3
 output (shaded + edges + selection/highlight + clip planes without caps), GL
@@ -277,13 +303,26 @@ deferred.
   changes; a crash *before* teardown is what matters.
 - `FC_NO_BGFX_QUITHOOK=1` disables the bgfx aboutToQuit cleanup hook for
   teardown debugging.
+- **Phase 0 bridge smoke-tested (2026-07, Wayland/WSLg)**: box+cylinder
+  scene renders through bgfx (shaded faces, black edges, per-object colors,
+  selection tint on top, gradient background composited), GL pass skipped
+  while the backend is live; mode-3 with `RendererType=Default` verified
+  pixel-identical to before. Debug helpers: `FC_RENDERER_PARALLEL_GL=1`
+  (draw GL on top of the backend), `FC_BGFX_DEBUG_CLEAR=1` (red clear
+  color), `FC_BGFX_DEBUG_READBACK=1` (per-frame FBO pixel statistics on
+  stderr).
 
 ## 6. Open questions
 
-- Feed the backend from `SoFCRenderCacheManager` (parallel sink to
-  `SoFCRenderer`) vs. behind `SoFCRenderer` (replace its GL emission)?
-  Parallel sink is safer for the do-not-break rule; measure the cost of
-  keeping both draw-entry structures alive.
+- ~~Feed the backend from `SoFCRenderCacheManager` (parallel sink to
+  `SoFCRenderer`) vs. behind `SoFCRenderer` (replace its GL emission)?~~
+  Resolved (2026-07): behind `SoFCRenderer` — it is the single choke point
+  for all five feeds (the manager calls `addSelection` from ~15 sites), its
+  structures stay alive for fallback/bbox, and its GL emission is skipped
+  per frame based on `canSkipInternal()`. Note the one-frame latency: the
+  backend draws *before* the Coin traversal that rebuilds/feeds the scene,
+  so a scene change shows one frame late; `Renderer::needsRedraw()` +
+  `renderScene()` scheduling converges on the next frame.
 - bgfx shared-context vs. blit: current blit works but costs a full-screen
   copy; investigate rendering directly into the Qt FBO once passes need
   MSAA/HDR targets anyway.

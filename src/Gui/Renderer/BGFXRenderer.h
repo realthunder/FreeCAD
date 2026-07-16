@@ -51,6 +51,14 @@ public:
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) override;
 
+    virtual void setScene(DrawCallList &&draws) override;
+    virtual void addSelection(int id, DrawCallList &&draws) override;
+    virtual void removeSelection(int id) override;
+    virtual void setHighlight(DrawCallList &&draws, bool wholeOnTop) override;
+    virtual void clearHighlight() override;
+    virtual bool needsRedraw() const override;
+    virtual bool canSkipInternal() const override;
+
     friend class BGFXRendererLib;
     friend class BGFXRendererLibP;
 

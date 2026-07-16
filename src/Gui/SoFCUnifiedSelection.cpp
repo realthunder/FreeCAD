@@ -364,6 +364,11 @@ SoFCRenderCacheManager *SoFCUnifiedSelection::getRenderManager()
     return nullptr;
 }
 
+void SoFCUnifiedSelection::setExternalRenderer(Render::Renderer *renderer)
+{
+    pimpl->manager.setExternalRenderer(renderer);
+}
+
 void SoFCUnifiedSelection::getBoundingBox(SoGetBoundingBoxAction * action)
 {
     if (pimpl->pcViewer)

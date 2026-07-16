@@ -58,6 +58,10 @@ class SoFCRenderCacheManager;
 class SoFCRenderCache;
 class SoFCRenderCacheP;
 
+namespace Render {
+class Renderer;
+}
+
 namespace Gui {
 
 class Document;
@@ -136,6 +140,12 @@ public:
                                                      bool singlePick) const;
 
     SoFCRenderCacheManager * getRenderManager();
+
+    /// Attach an optional external render backend to the render cache
+    /// manager (see SoFCRenderer::setExternalRenderer()). Unlike
+    /// getRenderManager(), this works regardless of the current render
+    /// cache mode, so the backend can be (de)attached at any time.
+    void setExternalRenderer(Render::Renderer *renderer);
 
 protected:
     ~SoFCUnifiedSelection() override;

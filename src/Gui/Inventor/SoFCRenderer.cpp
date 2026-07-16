@@ -45,6 +45,7 @@
 # include <Inventor/C/glue/gl.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <unordered_map>
 
 #include <Inventor/actions/SoGLRenderAction.h>
@@ -90,8 +91,10 @@
 #include <Base/Console.h>
 #include "SoFCRenderer.h"
 #include "SoFCRenderCache.h"
+#include "SoFCRendererBridge.h"
 #include "SoFCVertexCache.h"
 #include "SoFCDisplayModeElement.h"
+#include "../Renderer/Renderer.h"
 #include "../ViewParams.h"
 
 FC_LOG_LEVEL_INIT("Renderer", true, true)
@@ -309,6 +312,9 @@ public:
   bool showHiddenLine = false;
 
   HatchTexture *hatchtexture = nullptr;
+
+  // Optional external render backend mirroring the scene/selection feeds.
+  Render::Renderer *external = nullptr;
 
   char stats[512];
   int drawcallcount;
@@ -815,8 +821,40 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
 }
 
 void
+SoFCRenderer::setExternalRenderer(Render::Renderer * renderer)
+{
+  if (PRIVATE(this)->external == renderer)
+    return;
+  PRIVATE(this)->external = renderer;
+  if (!renderer)
+    return;
+  // Feed the current state so a backend attached mid-session (e.g. on a
+  // preference change) does not have to wait for the next scene rebuild.
+  if (PRIVATE(this)->scene)
+    renderer->setScene(RendererBridge::translate(
+          PRIVATE(this)->scene->getVertexCaches(true)));
+  for (auto & sel : PRIVATE(this)->selections)
+    renderer->addSelection(sel.first, RendererBridge::translate(*sel.second));
+  for (auto & sel : PRIVATE(this)->selectionsontop)
+    renderer->addSelection(sel.first, RendererBridge::translate(*sel.second));
+  if (!PRIVATE(this)->highlightcaches.empty())
+    renderer->setHighlight(
+          RendererBridge::translate(PRIVATE(this)->highlightcaches),
+          PRIVATE(this)->hlwholeontop);
+}
+
+void
 SoFCRenderer::clear()
 {
+  if (PRIVATE(this)->external) {
+    for (auto & sel : PRIVATE(this)->selections)
+      PRIVATE(this)->external->removeSelection(sel.first);
+    for (auto & sel : PRIVATE(this)->selectionsontop)
+      PRIVATE(this)->external->removeSelection(sel.first);
+    PRIVATE(this)->external->setScene({});
+    PRIVATE(this)->external->clearHighlight();
+  }
+
   PRIVATE(this)->prevplane = SbPlane();
   PRIVATE(this)->opaquevcache.clear();
   PRIVATE(this)->transpvcache.clear();
@@ -898,6 +936,9 @@ SoFCRenderer::clearHighlight()
   PRIVATE(this)->applyKeys(PRIVATE(this)->highlightkeys, -1);
   PRIVATE(this)->highlightkeys.clear();
   PRIVATE(this)->highlightbbox = SbBox3f();
+
+  if (PRIVATE(this)->external)
+    PRIVATE(this)->external->clearHighlight();
 }
 
 inline std::size_t
@@ -1002,6 +1043,9 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
         << PRIVATE(this)->drawentries.size() << " entries, "
         << mergecount << " after merge");
 
+  if (PRIVATE(this)->external)
+    PRIVATE(this)->external->setScene(RendererBridge::translate(caches));
+
   PRIVATE(this)->applyKeys(PRIVATE(this)->highlightkeys);
   PRIVATE(this)->selectionkeys.clear();
   PRIVATE(this)->updateselection = true;
@@ -1074,6 +1118,11 @@ SoFCRenderer::setHighlight(VertexCacheMap && caches, bool wholeontop)
     }
   }
   PRIVATE(this)->applyKeys(PRIVATE(this)->highlightkeys);
+
+  if (PRIVATE(this)->external)
+    PRIVATE(this)->external->setHighlight(
+          RendererBridge::translate(PRIVATE(this)->highlightcaches),
+          wholeontop);
 }
 
 void
@@ -1081,9 +1130,12 @@ SoFCRenderer::addSelection(int id, const VertexCacheMap & caches)
 {
   if (id > 0)
     PRIVATE(this)->selectionsontop[id] = &caches;
-  else 
+  else
     PRIVATE(this)->selections[id] = &caches;
   PRIVATE(this)->updateselection = true;
+
+  if (PRIVATE(this)->external)
+    PRIVATE(this)->external->addSelection(id, RendererBridge::translate(caches));
 }
 
 void
@@ -1095,6 +1147,9 @@ SoFCRenderer::removeSelection(int id)
   }
   else if (PRIVATE(this)->selections.erase(id))
     PRIVATE(this)->updateselection = true;
+
+  if (PRIVATE(this)->external)
+    PRIVATE(this)->external->removeSelection(id);
 }
 
 void
@@ -2172,6 +2227,16 @@ SoFCRendererP::renderTransparency(SoGLRenderAction * action,
 void
 SoFCRenderer::render(SoGLRenderAction * action)
 {
+  // When an external backend has rendered the current scene (it draws into
+  // the framebuffer before the Coin traversal), skip the internal
+  // fixed-function GL pass entirely. FC_RENDERER_PARALLEL_GL=1 keeps this
+  // pass drawing on top of the backend output for A/B comparison.
+  static const bool parallelgl = (std::getenv("FC_RENDERER_PARALLEL_GL") != nullptr);
+  if (PRIVATE(this)->external
+      && !parallelgl
+      && PRIVATE(this)->external->canSkipInternal())
+    return;
+
   SoState * state = action->getState();
 
   const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);

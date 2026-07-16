@@ -544,6 +544,12 @@ SoFCRenderCacheManager::~SoFCRenderCacheManager()
 }
 
 void
+SoFCRenderCacheManager::setExternalRenderer(Render::Renderer *renderer)
+{
+  PRIVATE(this)->renderer->setExternalRenderer(renderer);
+}
+
+void
 SoFCRenderCacheManager::clear()
 {
   PRIVATE(this)->stack.clear();

@@ -802,6 +802,12 @@ View3DInventorViewer::~View3DInventorViewer()
     this->pcBackGroundSwitch->unref();
     this->pcBackGroundSwitch = nullptr;
 
+    // Detach the external render backend before _pimpl->renderer is
+    // destroyed; the selection root (and its render cache manager) may
+    // outlive this viewer through external references.
+    if (this->selectionRoot)
+        this->selectionRoot->setExternalRenderer(nullptr);
+
     setSceneGraph(nullptr);
     this->pEventCallback->unref();
     this->pEventCallback = nullptr;
@@ -3166,13 +3172,19 @@ void View3DInventorViewer::setRendererType(const std::string &type)
     // RendererFactory::create() also returns null, falling back to plain GL.
     if (type.empty() || type == "Default") {
         if (_pimpl->renderer) {
+            if (selectionRoot)
+                selectionRoot->setExternalRenderer(nullptr);
             _pimpl->renderer.reset();
             getSoRenderManager()->scheduleRedraw();
         }
     }
     else if (!_pimpl->renderer || _pimpl->renderer->type() != type) {
+        if (selectionRoot)
+            selectionRoot->setExternalRenderer(nullptr);
         _pimpl->renderer = RendererFactory::create(
                 type, qobject_cast<QOpenGLWidget*>(getGLWidget()));
+        if (_pimpl->renderer && selectionRoot)
+            selectionRoot->setExternalRenderer(_pimpl->renderer.get());
         getSoRenderManager()->scheduleRedraw();
     }
 }
@@ -3208,14 +3220,22 @@ void View3DInventorViewer::renderScene()
     } else
         col = this->backgroundColor();
 
+    bool externalRendered = false;
     SoCamera* cam = getSoRenderManager()->getCamera();
     if (cam && _pimpl->renderer) {
         SbMatrix viewMat, projMat;
         const SbViewportRegion vp = getSoRenderManager()->getViewportRegion();
         SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
-        if (_pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue()))
-            getSoRenderManager()->scheduleRedraw();
+        externalRendered =
+            _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
+        if (!externalRendered) {
+            // Backend failed this frame. Clear like the plain GL path so the
+            // fixed-function renderer (not skipped in this case) draws on a
+            // clean buffer.
+            glClearColor(col.redF(), col.greenF(), col.blueF(), 0.0F);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        }
     } else {
         glClearColor(col.redF(), col.greenF(), col.blueF(), 0.0F);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -3234,7 +3254,12 @@ void View3DInventorViewer::renderScene()
     SoGLWidgetElement::set(state, qobject_cast<QtGLWidget*>(this->getGLWidget()));
     SoGLRenderActionElement::set(state, glra);
     SoGLVBOActivatedElement::set(state, this->vboEnabled);
-    drawSingleBackground(col);
+    // The external renderer's output (color + depth) is already in the
+    // framebuffer; the flat background fill would erase it. The gradient
+    // background node below is depth-tested at the far plane, so it only
+    // fills pixels the backend left empty.
+    if (!externalRendered)
+        drawSingleBackground(col);
     glra->apply(this->backgroundroot);
 
     SoBoxSelectionRenderAction *glbra = nullptr;
@@ -3276,6 +3301,12 @@ void View3DInventorViewer::renderScene()
     // using the main portion of z-buffer again (for frontbuffer highlighting)
     glDepthRange(0.1,1.0);
 #endif
+
+    // The scene feed to the external renderer happens during the Coin
+    // traversal above; if new data arrived there, render one more frame so
+    // the backend output (drawn before the traversal) catches up.
+    if (_pimpl->renderer && _pimpl->renderer->needsRedraw())
+        this->getSoRenderManager()->scheduleRedraw();
 
     // Immediately reschedule to get continuous animation.
     if (this->isAnimating()) {
