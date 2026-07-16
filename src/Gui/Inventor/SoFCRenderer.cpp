@@ -1121,7 +1121,7 @@ SoFCRenderer::setHighlight(VertexCacheMap && caches, bool wholeontop)
 
   if (PRIVATE(this)->external)
     PRIVATE(this)->external->setHighlight(
-          RendererBridge::translate(PRIVATE(this)->highlightcaches),
+          RendererBridge::translate(PRIVATE(this)->highlightcaches, 0, true),
           wholeontop);
 }
 
@@ -1135,7 +1135,8 @@ SoFCRenderer::addSelection(int id, const VertexCacheMap & caches)
   PRIVATE(this)->updateselection = true;
 
   if (PRIVATE(this)->external)
-    PRIVATE(this)->external->addSelection(id, RendererBridge::translate(caches));
+    PRIVATE(this)->external->addSelection(
+          id, RendererBridge::translate(caches, id));
 }
 
 void

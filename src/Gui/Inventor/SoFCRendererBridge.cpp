@@ -22,6 +22,7 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
 #include <cstring>
 #include <unordered_map>
 
@@ -34,6 +35,7 @@
 #include <Inventor/nodes/SoClipPlane.h>
 
 #include "SoFCRendererBridge.h"
+#include "SoFCRenderer.h"
 #include "SoFCVertexCache.h"
 #include "../ViewParams.h"
 
@@ -81,8 +83,26 @@ translateCache(SoFCVertexCache * cache)
     return mesh;
 }
 
+// Whether a line/point material of this feed renders with GL's
+// RenderPassHighlight (selection thickening). Mirrors the bucket routing
+// in SoFCRendererP::updateSelection: partial-element selections and full
+// (non-partialhighlight) whole-object selections thicken; the mixed
+// "partial highlight" whole-object lines (selsontop) do not. Non-on-top
+// selections (id < 0) and the preselection highlight always thicken.
+bool
+useHighlightPass(const CoinMaterial & m, int selId, bool highlight)
+{
+    if (m.type == CoinMaterial::Triangle)
+        return false;
+    if (highlight || selId < 0)
+        return true;
+    if (selId & SoFCRenderer::SelIdPartial)
+        return true;
+    return (selId & SoFCRenderer::SelIdFull) && !m.partialhighlight;
+}
+
 Render::Material
-translateMaterial(const CoinMaterial & m)
+translateMaterial(const CoinMaterial & m, int selId, bool highlight)
 {
     Render::Material res;
 
@@ -105,6 +125,32 @@ translateMaterial(const CoinMaterial & m)
     res.shininess = m.shininess;
     res.linewidth = m.linewidth;
     res.pointsize = m.pointsize;
+
+    // Selection line/point thickening (GL: applyMaterial ~552 under
+    // RenderPassHighlight). Applied at translate time so backends see the
+    // effective width. Deviation from GL: the dimmed (hidden) pass of
+    // whole-on-top preselect lines thickens too, where GL leaves it thin.
+    if (useHighlightPass(m, selId, highlight)) {
+        float scale = float(ViewParams::getSelectionLineThicken());
+        if (scale < 1.0f)
+            scale = 1.0f;
+        float w = res.linewidth * scale;
+        if (ViewParams::getSelectionLineMaxWidth() > 1.0)
+            w = std::min<float>(w, std::max<float>(
+                    res.linewidth,
+                    float(ViewParams::getSelectionLineMaxWidth())));
+        res.linewidth = w;
+
+        float pscale = float(ViewParams::getSelectionPointScale());
+        if (pscale < 1.0f)
+            pscale = scale;
+        w = res.pointsize * pscale;
+        if (ViewParams::getSelectionPointMaxSize() > 1.0)
+            w = std::min<float>(w, std::max<float>(
+                    res.pointsize,
+                    float(ViewParams::getSelectionPointMaxSize())));
+        res.pointsize = w;
+    }
 
     res.pervertexcolor = m.pervertexcolor;
     res.lighting = m.lightmodel != SoLazyElement::BASE_COLOR;
@@ -181,7 +227,8 @@ translateMaterial(const CoinMaterial & m)
 } // anonymous namespace
 
 Render::DrawCallList
-RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap)
+RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
+                          int selId, bool highlight)
 {
     Render::DrawCallList res;
 
@@ -196,7 +243,7 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap)
         if (material.drawstyle == SoDrawStyleElement::INVISIBLE)
             continue;
 
-        Render::Material rmat = translateMaterial(material);
+        Render::Material rmat = translateMaterial(material, selId, highlight);
 
         for (const VertexCacheEntry & ventry : v.second) {
             if (!ventry.cache)

@@ -372,6 +372,42 @@ struct SceneVertex
 bgfx::VertexLayout SceneVertex::ms_layout;
 bool SceneVertex::ms_initialized = false;
 
+// Corner of the unit quad that vs_fc_line expands into a screen-space
+// thick line segment: x = end of the segment (0/1), y = side (-1/+1).
+struct LineQuadVertex
+{
+    float x, y, z;
+
+    static void init()
+    {
+        if (ms_initialized)
+            return;
+        ms_initialized = true;
+        ms_layout
+            .begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .end();
+        // Per-segment instance data consumed as i_data0-3: endpoint A,
+        // endpoint B, color at A, color at B. Only the stride matters for
+        // instance buffers; the attributes just shape the layout.
+        ms_instLayout
+            .begin()
+            .add(bgfx::Attrib::TexCoord7, 4, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::TexCoord6, 4, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::TexCoord5, 4, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::TexCoord4, 4, bgfx::AttribType::Float)
+            .end();
+    };
+
+    static bgfx::VertexLayout ms_layout;
+    static bgfx::VertexLayout ms_instLayout;
+    static bool ms_initialized;
+};
+
+bgfx::VertexLayout LineQuadVertex::ms_layout;
+bgfx::VertexLayout LineQuadVertex::ms_instLayout;
+bool LineQuadVertex::ms_initialized = false;
+
 // GPU buffers of one MeshData, keyed by MeshData::cacheId. A cache id
 // always refers to identical content, so buffers are immutable and reused
 // until the id disappears from the scene.
@@ -381,6 +417,9 @@ struct GpuMesh
     bgfx::IndexBufferHandle tri = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle line = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle point = BGFX_INVALID_HANDLE;
+    /// Per-segment instance data (endpoints + colors) feeding the
+    /// quad-expanded thick line path; invalid without instancing support.
+    bgfx::VertexBufferHandle lineInst = BGFX_INVALID_HANDLE;
     uint64_t lastUsed = 0;
 
     void destroy()
@@ -400,6 +439,10 @@ struct GpuMesh
         if (bgfx::isValid(point)) {
             bgfx::destroy(point);
             point = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(lineInst)) {
+            bgfx::destroy(lineInst);
+            lineInst = BGFX_INVALID_HANDLE;
         }
     }
 
@@ -441,6 +484,38 @@ struct GpuMesh
             point = bgfx::createIndexBuffer(
                 bgfx::copy(mesh.pointIndices, mesh.numPointIndices * 4),
                 BGFX_BUFFER_INDEX32);
+
+        if (mesh.numLineIndices > 1
+                && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)) {
+            LineQuadVertex::init();
+            int nseg = mesh.numLineIndices / 2;
+            const bgfx::Memory *imem =
+                bgfx::alloc(uint32_t(nseg) * 16 * sizeof(float));
+            float *d = reinterpret_cast<float *>(imem->data);
+            for (int s = 0; s < nseg; ++s, d += 16) {
+                int32_t ia = mesh.lineIndices[s*2];
+                int32_t ib = mesh.lineIndices[s*2 + 1];
+                d[0] = mesh.positions[ia*3];
+                d[1] = mesh.positions[ia*3 + 1];
+                d[2] = mesh.positions[ia*3 + 2];
+                d[3] = 0.0f;
+                d[4] = mesh.positions[ib*3];
+                d[5] = mesh.positions[ib*3 + 1];
+                d[6] = mesh.positions[ib*3 + 2];
+                d[7] = 0.0f;
+                if (mesh.colors) {
+                    for (int i = 0; i < 4; ++i) {
+                        d[8 + i] = mesh.colors[ia*4 + i] / 255.0f;
+                        d[12 + i] = mesh.colors[ib*4 + i] / 255.0f;
+                    }
+                } else {
+                    for (int i = 0; i < 8; ++i)
+                        d[8 + i] = 1.0f;
+                }
+            }
+            lineInst = bgfx::createVertexBuffer(
+                imem, LineQuadVertex::ms_instLayout);
+        }
     }
 };
 
@@ -507,6 +582,22 @@ public:
         if (bgfx::isValid(m_progFlatClip)) {
             bgfx::destroy(m_progFlatClip);
             m_progFlatClip = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progLine)) {
+            bgfx::destroy(m_progLine);
+            m_progLine = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progLineClip)) {
+            bgfx::destroy(m_progLineClip);
+            m_progLineClip = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_lineQuadVb)) {
+            bgfx::destroy(m_lineQuadVb);
+            m_lineQuadVb = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_lineQuadIb)) {
+            bgfx::destroy(m_lineQuadIb);
+            m_lineQuadIb = BGFX_INVALID_HANDLE;
         }
         if (bgfx::isValid(u_matColor)) {
             bgfx::destroy(u_matColor);
@@ -588,6 +679,29 @@ public:
                                      _BGFXLib.resource().c_str());
         m_progFlatClip = loadProgram("vs_fc_flat_clip", "fs_fc_flat_clip",
                                      _BGFXLib.resource().c_str());
+
+        // Thick lines: instanced screen-space quad expansion (there is no
+        // fixed-function line width in modern APIs). Without instancing
+        // support every line falls back to 1px primitives.
+        m_instancing =
+            (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING) != 0;
+        if (m_instancing) {
+            m_progLine = loadProgram("vs_fc_line", "fs_fc_flat",
+                                     _BGFXLib.resource().c_str());
+            m_progLineClip = loadProgram("vs_fc_line_clip", "fs_fc_flat_clip",
+                                         _BGFXLib.resource().c_str());
+            LineQuadVertex::init();
+            static const LineQuadVertex quad[4] = {
+                {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
+                {1.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 0.0f},
+            };
+            static const uint16_t quadIndices[6] = {0, 1, 2, 1, 3, 2};
+            m_lineQuadVb = bgfx::createVertexBuffer(
+                bgfx::makeRef(quad, sizeof(quad)),
+                LineQuadVertex::ms_layout);
+            m_lineQuadIb = bgfx::createIndexBuffer(
+                bgfx::makeRef(quadIndices, sizeof(quadIndices)));
+        }
 
         u_matColor = bgfx::createUniform("u_matColor", bgfx::UniformType::Vec4);
         u_matEmissive = bgfx::createUniform("u_matEmissive", bgfx::UniformType::Vec4);
@@ -754,6 +868,12 @@ public:
         if (!bgfx::isValid(ibh))
             return;
 
+        // Lines wider than 1px render as instanced screen-space quads
+        // (vs_fc_line); plain line primitives have no width in modern APIs.
+        bool thickline = mat.type == Render::Material::Line
+            && mat.linewidth > 1.001f
+            && m_instancing && bgfx::isValid(mesh->lineInst);
+
         bool transparent = mat.transparent
             || (mat.pervertexcolor && draw.mesh->hasTransparency);
 
@@ -807,8 +927,10 @@ public:
         if (mat.culling && !mat.twoside
                         && mat.type == Render::Material::Triangle)
             state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
-        if (mat.type == Render::Material::Line)
-            state |= BGFX_STATE_PT_LINES;
+        if (mat.type == Render::Material::Line) {
+            if (!thickline)
+                state |= BGFX_STATE_PT_LINES;
+        }
         else if (mat.type == Render::Material::Point)
             state |= BGFX_STATE_PT_POINTS
                 | BGFX_STATE_POINT_SIZE(uint32_t(qMax(mat.pointsize, 1.0f)));
@@ -819,8 +941,12 @@ public:
         unpackColor(mat.specular, specular);
         specular[3] = mat.shininess;
         params[0] = mat.pervertexcolor ? 1.0f : 0.0f;
-        params[1] = (mat.lighting
-                     && mat.type == Render::Material::Triangle) ? 1.0f : 0.0f;
+        // u_params.y: mesh program = lighting flag; line program = line
+        // width in pixels (unused by the flat program).
+        params[1] = mat.type == Render::Material::Line
+            ? mat.linewidth
+            : (mat.lighting
+               && mat.type == Render::Material::Triangle) ? 1.0f : 0.0f;
         params[2] = mat.twoside ? 1.0f : 0.0f;
         // u_params.w: mesh program = NDC depth bias (polygon offset
         // approximation, no per-pixel slope term); flat program = alpha
@@ -857,12 +983,27 @@ public:
 
         if (!draw.identity)
             bgfx::setTransform(draw.model);
-        bgfx::setVertexBuffer(0, mesh->vbh);
-        if (draw.indexCount > 0)
-            bgfx::setIndexBuffer(ibh, uint32_t(draw.indexStart),
-                                 uint32_t(draw.indexCount));
-        else
-            bgfx::setIndexBuffer(ibh);
+        if (thickline) {
+            // One quad per line segment; a partial (per-edge) index range
+            // maps 1:1 onto an instance range (two indices per segment).
+            uint32_t startSeg = 0;
+            uint32_t numSeg = uint32_t(draw.mesh->numLineIndices) / 2;
+            if (draw.indexCount > 0) {
+                startSeg = uint32_t(draw.indexStart) / 2;
+                numSeg = uint32_t(draw.indexCount) / 2;
+            }
+            bgfx::setVertexBuffer(0, m_lineQuadVb);
+            bgfx::setIndexBuffer(m_lineQuadIb);
+            bgfx::setInstanceDataBuffer(mesh->lineInst, startSeg, numSeg);
+        }
+        else {
+            bgfx::setVertexBuffer(0, mesh->vbh);
+            if (draw.indexCount > 0)
+                bgfx::setIndexBuffer(ibh, uint32_t(draw.indexStart),
+                                     uint32_t(draw.indexCount));
+            else
+                bgfx::setIndexBuffer(ibh);
+        }
         bgfx::setState(state);
 
         static const bool dbgsubmit =
@@ -894,7 +1035,9 @@ public:
         bgfx::submit(viewId + passView,
                      mat.type == Render::Material::Triangle
                          ? (clipped ? m_progMeshClip : m_progMesh)
-                         : (clipped ? m_progFlatClip : m_progFlat),
+                         : thickline
+                             ? (clipped ? m_progLineClip : m_progLine)
+                             : (clipped ? m_progFlatClip : m_progFlat),
                      depth);
         ++drawcount;
     }
@@ -980,6 +1123,11 @@ public:
     bgfx::ProgramHandle m_progFlat = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMeshClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progFlatClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progLine = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progLineClip = BGFX_INVALID_HANDLE;
+    bgfx::VertexBufferHandle m_lineQuadVb = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle m_lineQuadIb = BGFX_INVALID_HANDLE;
+    bool m_instancing = false;
     bgfx::UniformHandle u_matColor = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matEmissive = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matSpecular = BGFX_INVALID_HANDLE;

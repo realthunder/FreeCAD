@@ -33,8 +33,15 @@ namespace RendererBridge {
 /// format) into backend-neutral draw calls for a Render::Renderer.
 /// The returned draw calls keep the underlying SoFCVertexCache data alive
 /// through MeshData::owner, so they may outlive the input map.
+///
+/// \a selId (a SoFCRenderer::SelIdBits selection id, 0 = scene feed) and
+/// \a highlight (preselection feed) give the feed context needed to apply
+/// the GL renderer's selection line/point thickening
+/// (ViewParams::SelectionLineThicken etc., applyMaterial's
+/// RenderPassHighlight handling) to the translated materials.
 GuiExport Render::DrawCallList translate(
-        const SoFCRenderCache::VertexCacheMap & vcachemap);
+        const SoFCRenderCache::VertexCacheMap & vcachemap,
+        int selId = 0, bool highlight = false);
 
 } // namespace RendererBridge
 } // namespace Gui
