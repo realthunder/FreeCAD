@@ -197,6 +197,26 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight)
     if (res.ontop && res.type != Render::Material::Triangle)
         res.hiddenlinealpha = float(ViewParams::getTransparencyOnTop());
 
+    // Line stipple (glLineStipple encoding, factor << 16 | pattern). The
+    // dimmed pass of on-top lines falls back to the user-configurable
+    // selection pattern when the material has none (GL: applyMaterial
+    // ~539 under RenderPassLinePattern).
+    if (res.type == Render::Material::Line) {
+        res.linepattern = m.linepattern;
+        res.hiddenlinepattern = m.linepattern;
+        if (res.ontop && !m.hasLinePattern()) {
+            uint32_t sellinepattern =
+                uint32_t(ViewParams::getSelectionLinePattern()) & 0xffff;
+            if (sellinepattern) {
+                if (ViewParams::getSelectionLinePatternScale() > 1)
+                    sellinepattern |=
+                        uint32_t(ViewParams::getSelectionLinePatternScale())
+                            << 16;
+                res.hiddenlinepattern = sellinepattern;
+            }
+        }
+    }
+
     // Clip planes (sections), as world-space plane equations. Same on-top
     // exception as SoFCRenderer::applyMaterial: on-top draws are not
     // sectioned when NoSectionOnTop is set (default) or in concave mode.

@@ -591,6 +591,14 @@ public:
             bgfx::destroy(m_progLineClip);
             m_progLineClip = BGFX_INVALID_HANDLE;
         }
+        if (bgfx::isValid(m_progLinePat)) {
+            bgfx::destroy(m_progLinePat);
+            m_progLinePat = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progLinePatClip)) {
+            bgfx::destroy(m_progLinePatClip);
+            m_progLinePatClip = BGFX_INVALID_HANDLE;
+        }
         if (bgfx::isValid(m_lineQuadVb)) {
             bgfx::destroy(m_lineQuadVb);
             m_lineQuadVb = BGFX_INVALID_HANDLE;
@@ -622,6 +630,10 @@ public:
         if (bgfx::isValid(u_clipPlanes)) {
             bgfx::destroy(u_clipPlanes);
             u_clipPlanes = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(u_linePattern)) {
+            bgfx::destroy(u_linePattern);
+            u_linePattern = BGFX_INVALID_HANDLE;
         }
         if (hasFBO) {
             _BGFXLib.freeFBO(fbo);
@@ -690,6 +702,11 @@ public:
                                      _BGFXLib.resource().c_str());
             m_progLineClip = loadProgram("vs_fc_line_clip", "fs_fc_flat_clip",
                                          _BGFXLib.resource().c_str());
+            m_progLinePat = loadProgram("vs_fc_line_pat", "fs_fc_line_pat",
+                                        _BGFXLib.resource().c_str());
+            m_progLinePatClip = loadProgram("vs_fc_line_pat_clip",
+                                            "fs_fc_line_pat_clip",
+                                            _BGFXLib.resource().c_str());
             LineQuadVertex::init();
             static const LineQuadVertex quad[4] = {
                 {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
@@ -710,6 +727,7 @@ public:
         u_clipParams = bgfx::createUniform("u_clipParams", bgfx::UniformType::Vec4);
         u_clipPlanes = bgfx::createUniform("u_clipPlanes", bgfx::UniformType::Vec4,
                                            Render::Material::MaxClipPlanes);
+        u_linePattern = bgfx::createUniform("u_linePattern", bgfx::UniformType::Vec4);
     }
 
     GpuMesh *getMesh(const Render::MeshData &data)
@@ -868,11 +886,24 @@ public:
         if (!bgfx::isValid(ibh))
             return;
 
-        // Lines wider than 1px render as instanced screen-space quads
-        // (vs_fc_line); plain line primitives have no width in modern APIs.
+        // Line stipple: the hidden (dimmed) pass of on-top lines uses the
+        // pattern resolved by the bridge (material's own or the selection
+        // fallback, GL's RenderPassLinePattern); every other pass uses the
+        // material's own pattern.
+        uint32_t linepattern = pass == PassLineHidden
+            ? mat.hiddenlinepattern : mat.linepattern;
+        bool patterned = mat.type == Render::Material::Line
+            && (linepattern & 0xffff) != 0xffff;
+
+        // Lines wider than 1px — and patterned lines of any width, the
+        // stipple lives in the quad fragment shader — render as instanced
+        // screen-space quads (vs_fc_line*); plain line primitives have no
+        // width or pattern in modern APIs. Without instancing support
+        // patterned lines fall back to solid 1px primitives.
         bool thickline = mat.type == Render::Material::Line
-            && mat.linewidth > 1.001f
+            && (mat.linewidth > 1.001f || patterned)
             && m_instancing && bgfx::isValid(mesh->lineInst);
+        patterned = patterned && thickline;
 
         bool transparent = mat.transparent
             || (mat.pervertexcolor && draw.mesh->hasTransparency);
@@ -981,6 +1012,15 @@ public:
                              mat.numclipplanes);
         }
 
+        if (patterned) {
+            // glLineStipple clamps the repeat factor to [1, 256].
+            uint32_t factor = linepattern >> 16;
+            factor = factor < 1 ? 1 : factor > 256 ? 256 : factor;
+            float patParams[4] = {float(linepattern & 0xffff),
+                                  float(factor), 0.0f, 0.0f};
+            bgfx::setUniform(u_linePattern, patParams);
+        }
+
         if (!draw.identity)
             bgfx::setTransform(draw.model);
         if (thickline) {
@@ -1012,12 +1052,13 @@ public:
             fprintf(stderr,
                     "bgfx submit view=%d pass=%d type=%d part=%d state=%llx"
                     " color=%.2f,%.2f,%.2f,%.2f params=%g,%g,%g,%g"
-                    " clip=%d%s\n",
+                    " clip=%d%s lp=%08x\n",
                     passView, pass, mat.type, draw.partIndex,
                     (unsigned long long)state,
                     color[0], color[1], color[2], color[3],
                     params[0], params[1], params[2], params[3],
-                    mat.numclipplanes, mat.clipconcave ? " concave" : "");
+                    mat.numclipplanes, mat.clipconcave ? " concave" : "",
+                    patterned ? linepattern : 0xffffu);
 
         uint32_t depth = 0;
         if (passView == ViewTransparent
@@ -1036,7 +1077,10 @@ public:
                      mat.type == Render::Material::Triangle
                          ? (clipped ? m_progMeshClip : m_progMesh)
                          : thickline
-                             ? (clipped ? m_progLineClip : m_progLine)
+                             ? (patterned
+                                 ? (clipped ? m_progLinePatClip
+                                            : m_progLinePat)
+                                 : (clipped ? m_progLineClip : m_progLine))
                              : (clipped ? m_progFlatClip : m_progFlat),
                      depth);
         ++drawcount;
@@ -1125,6 +1169,8 @@ public:
     bgfx::ProgramHandle m_progFlatClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progLine = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progLineClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progLinePat = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progLinePatClip = BGFX_INVALID_HANDLE;
     bgfx::VertexBufferHandle m_lineQuadVb = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle m_lineQuadIb = BGFX_INVALID_HANDLE;
     bool m_instancing = false;
@@ -1134,6 +1180,7 @@ public:
     bgfx::UniformHandle u_params = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_clipParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_clipPlanes = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_linePattern = BGFX_INVALID_HANDLE;
     std::unordered_map<uint64_t, GpuMesh> meshes;
     uint64_t frame = 0;
     int drawcount = 0;
@@ -1565,13 +1612,13 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
         fprintf(stderr,
                 "  type=%d part=%d range=%d+%d diffuse=%08x emissive=%08x"
                 " pvc=%d light=%d transp=%d ontop=%d dtest=%d dwrite=%d"
-                " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f\n",
+                " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f lp=%08x/%08x\n",
                 m.type, d.partIndex, d.indexStart, d.indexCount,
                 m.diffuse, m.emissive, m.pervertexcolor, m.lighting,
                 m.transparent, m.ontop, m.depthtest, m.depthwrite,
                 m.depthfunc, m.linewidth, m.polygonoffset,
                 m.polygonoffsetfactor, m.polygonoffsetunits,
-                m.hiddenlinealpha);
+                m.hiddenlinealpha, m.linepattern, m.hiddenlinepattern);
         for (int i = 0; i < m.numclipplanes; ++i)
             fprintf(stderr, "  clip%s %d: %g,%g,%g,%g\n",
                     m.clipconcave ? " (concave)" : "", i,

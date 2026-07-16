@@ -109,6 +109,14 @@ struct Material {
     float shininess = 0.0f;
     float linewidth = 1.0f;
     float pointsize = 1.0f;
+    /// Line stipple, glLineStipple encoding: low 16 bits = pattern (LSB
+    /// drawn first), bits 16+ = pixel repeat factor (0/1 = one pixel per
+    /// bit). 0xffff in the low bits = solid.
+    uint32_t linepattern = 0xffff;
+    /// Pattern of the depth-occluded (dimmed) pass of on-top lines; GL
+    /// substitutes ViewParams::SelectionLinePattern there when the
+    /// material has no pattern of its own.
+    uint32_t hiddenlinepattern = 0xffff;
     /// glPolygonOffset(factor, units); positive pushes away from the viewer
     float polygonoffsetfactor = 0.0f;
     float polygonoffsetunits = 0.0f;

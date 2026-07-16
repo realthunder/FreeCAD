@@ -12,6 +12,12 @@
  * i_data2    : per-vertex color at A
  * i_data3    : per-vertex color at B
  * u_params   : y = line width in pixels
+ *
+ * The LINE_PATTERN variant additionally outputs v_dist for the stipple
+ * fragment shader: x = pixel distance along the segment from A times the
+ * vertex clip w, y = clip w. Dividing x/y in the fragment shader undoes
+ * the hardware's perspective correction, i.e. yields the screen-linear
+ * distance glLineStipple counts.
  */
 
 uniform vec4 u_params;
@@ -32,6 +38,9 @@ void main()
 		v_color0 = vec4_splat(0.0);
 #ifdef CLIP_PLANES
 		v_wpos = vec3_splat(0.0);
+#endif
+#ifdef LINE_PATTERN
+		v_dist = vec2(0.0, 1.0);
 #endif
 	}
 	else
@@ -59,6 +68,9 @@ void main()
 #ifdef CLIP_PLANES
 		v_wpos = mix(mul(u_model[0], vec4(i_data0.xyz, 1.0)).xyz,
 		             mul(u_model[0], vec4(i_data1.xyz, 1.0)).xyz, t);
+#endif
+#ifdef LINE_PATTERN
+		v_dist = vec2(t * len * pos.w, pos.w);
 #endif
 	}
 }
