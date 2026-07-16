@@ -6,17 +6,24 @@ because it is the only way to get a matched Qt6 + PySide6 on Ubuntu 24.04.
 
 ## Repositories
 
-| Repo | Path | Branch | Role |
-|---|---|---|---|
-| FreeCAD fork | `~/works/sw/fcad` | `LinkMerge` | main project |
-| OCCT fork | `~/works/sw/occt` | `dev` | geometry kernel (locally patched) |
-| Coin3D fork | `~/works/sw/coin` | `master` | scene graph |
-| pivy 0.6.10 | `~/works/sw/pivy` | tag `0.6.10` (detached) | Python bindings for Coin (locally patched) |
-| feedstocks | `~/works/sw/*-feedstock` | — | conda distribution recipes (still Qt5/PySide2) |
+**`LinkVibe` is the working branch** across every realthunder fork below, each
+tracking `origin/LinkVibe` and pushed. It was branched from the fork's prior tip
+(FreeCAD `LinkMerge`, OCCT `dev`, Coin `master`) and now carries this session's
+Qt6 / toolchain / mcp_console work.
 
-Local patches in dependency checkouts (needed, do not discard):
+| Repo | Path | Branch (→ remote) | Role |
+|---|---|---|---|
+| FreeCAD fork | `~/works/sw/fcad` | `LinkVibe` → `realthunder/FreeCAD` | main project |
+| OCCT fork | `~/works/sw/occt` | `LinkVibe` → `realthunder/OCCT` | geometry kernel (patched) |
+| Coin3D fork | `~/works/sw/coin` | `LinkVibe` → `realthunder/coin` | scene graph |
+| pivy 0.6.10 | `~/works/sw/pivy` | `rt-0.6.10` (local; origin is upstream `coin3d/pivy`) | Coin Python bindings (patched) |
+| freecad-rt-feedstock | `~/works/sw/freecad-rt-feedstock` | `LinkVibe` → `realthunder/...` | FreeCAD conda recipe (Qt6, builds from FreeCAD `LinkVibe`) |
+| pivy-feedstock | `~/works/sw/pivy-feedstock` | `LinkVibe` → `realthunder/...` | pivy conda recipe (carries the rpath patch) |
+
+Fork-local patches, now committed on their `LinkVibe` branches (don't discard):
 - `pivy/interfaces/CMakeLists.txt` — `INSTALL_RPATH` extended with `${CMAKE_INSTALL_RPATH}`
-  so `_coin.so` finds our locally-built libCoin without `LD_LIBRARY_PATH`.
+  so `_coin.so` finds our locally-built libCoin without `LD_LIBRARY_PATH`
+  (pivy commit on `rt-0.6.10`; also shipped as a pivy-feedstock patch).
 - `occt/src/StdPrs/StdPrs_BRepFont.cxx` — `auto` for `FT_Outline::tags` (type changed
   from `char*` to `unsigned char*` in newer freetype).
 
@@ -206,12 +213,13 @@ OpenGLWidgets linkage in `SetupQt.cmake`, …) plus a Qt 6.10 / gcc 15 / boost 1
 eigen 5 / shiboken 6.10 round (`copy_options`, `QIcon` forward decl,
 `QGenericReturnArgument` removal, `PythonWrapper.cpp` TypeInitStruct shim,
 `SetupEigen.cmake` CONFIG-first, `src/CMakeLists.txt` gates the `boost_fix` overlay to
-boost < 1.85). As of writing these are **uncommitted** in the fcad and occt working trees.
+boost < 1.85). **All committed and pushed on the `LinkVibe` branches** (fcad + occt).
 
 Open items:
 - Verify Path workbench Area/Voronoi behavior with vanilla boost ≥ 1.85 geometry
   (the `boost_fix` header overlay that used to patch it is disabled there).
-- The freecad-rt and pivy feedstocks now default to Qt6 (qt6-main/pyside6, jinja
-  `qt` variable, 2026-07), but no Qt6 distribution image has been built yet — the
-  qt6 variant needs a new source tag containing the Qt6/toolchain port commits
-  (the pinned tag predates them).
+- The freecad-rt and pivy feedstocks default to Qt6 (qt6-main/pyside6, jinja `qt`
+  variable); the freecad-rt `LinkVibe` branch builds directly from the FreeCAD
+  `LinkVibe` git branch (`git_rev`), so a Qt6 conda image can be built now. `main`
+  still builds from a pinned tag that predates the Qt6 port.
+- `mcp` was added to the freecad-rt-feedstock run deps (needed by the mcp_console).
