@@ -265,10 +265,9 @@ The engine-agnostic core; everything later depends on it.
    triangle draws are submitted after whole fills and lines, mimicking
    the GL pass order (whole transparent fill → on-top lines →
    `transpselectionsfaceontop`); selected-face color matches GL closely.
-   Known deviation: GL draws the *preselected* face as outline only
-   (`NoPreSelFaceHighlightWithOutline` + `ShowPreSelectedFaceOutline`
-   defaults) while bgfx fills it, since the outline pass is a Phase 2
-   feature. ~~Highlight lines are not thickened~~ *Done (2026-07, see
+   ~~Known deviation: GL draws the *preselected* face as outline only
+   while bgfx fills it.~~ *Closed (2026-07)* by the Phase 2 face
+   outline (see below). ~~Highlight lines are not thickened~~ *Done (2026-07, see
    Phase 1)*. `FC_BGFX_DEBUG_FEED=1` dumps the translated
    selection/highlight draw calls, `FC_BGFX_DEBUG_SUBMIT=1` the per-draw
    view/pass/state words.
@@ -351,7 +350,7 @@ PointSize=7.
 | SSAO (ASSAO) | 1.5–2 | needs depth+normal prepass from Phase 0 |
 | PBR + IBL | 3–4 | BRDF + env prefilter pipeline; matcap fallback; material property plumbing from ViewProvider |
 | Section caps | 2–3 | stencil capping + hatch, port `_renderSection` semantics |
-| Outline/hidden-line | 1.5–2 | screen-space depth/normal pass + existing edge geometry |
+| Outline/hidden-line | 1.5–2 | screen-space depth/normal pass + existing edge geometry. *Selection/preselection face outline done (2026-07)*: ported the GL stencil technique — stencil-mark the face, redraw its triangle edges as instanced thick lines + point-sprite corner caps where the stencil differs (the portable stand-in for `glPolygonMode`); per-outline stencil refs avoid per-part clears; the bridge resolves the Show*/No*WithOutline params and outline width. Verified pixel-identical to GL for preselect (outline-only) and two-face selection. Whole-scene/hidden-line outline still open. |
 
 ### Phase 3 — performance & portability (open-ended)
 
