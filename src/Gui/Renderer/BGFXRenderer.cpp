@@ -1000,6 +1000,138 @@ public:
         ++drawcount;
     }
 
+    // Selected/preselected face outline, porting the GL renderer's
+    // stencil technique (renderOutline): mark the face's pixels in the
+    // stencil buffer, then redraw its triangle edges as thick
+    // screen-space lines (GL uses glPolygonMode(GL_LINE), which modern
+    // APIs lack) plus point-sprite corner caps where the stencil does
+    // not match — only the boundary survives. Each outline uses its own
+    // stencil reference so no per-part stencil clear is needed.
+    void submitOutline(const Render::DrawCall &draw, uint32_t refCounter)
+    {
+        if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
+            return;
+        const Render::MeshData &mesh = *draw.mesh;
+        int start = draw.indexStart;
+        int count = draw.indexCount;
+        if (count <= 0) {
+            start = 0;
+            count = mesh.numTriangleIndices;
+        }
+        if (count < 3)
+            return;
+        GpuMesh *gpu = getMesh(mesh);
+        if (!bgfx::isValid(gpu->tri))
+            return;
+
+        uint32_t ref = ((refCounter - 1) % 255) + 1;
+        int ntri = count / 3;
+        uint32_t nseg = uint32_t(ntri) * 3;
+        LineQuadVertex::init();
+
+        // Pass 1: stencil-mark the face; no color/depth output, no
+        // depth test (the outline draws on top).
+        float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float params[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        bgfx::setUniform(u_matColor, zero);
+        bgfx::setUniform(u_matEmissive, zero);
+        bgfx::setUniform(u_matSpecular, zero);
+        bgfx::setUniform(u_params, params);
+        if (!draw.identity)
+            bgfx::setTransform(draw.model);
+        bgfx::setVertexBuffer(0, gpu->vbh);
+        bgfx::setIndexBuffer(gpu->tri, uint32_t(start), uint32_t(count));
+        bgfx::setState(BGFX_STATE_MSAA);
+        bgfx::setStencil(BGFX_STENCIL_TEST_ALWAYS
+            | BGFX_STENCIL_FUNC_REF(ref) | BGFX_STENCIL_FUNC_RMASK(0xff)
+            | BGFX_STENCIL_OP_FAIL_S_KEEP
+            | BGFX_STENCIL_OP_FAIL_Z_REPLACE
+            | BGFX_STENCIL_OP_PASS_Z_REPLACE);
+        bgfx::submit(viewId + ViewHighlight, m_progFlat);
+        ++drawcount;
+
+        // Shared uniforms of the edge and corner passes: flat outline
+        // color (the material's emissive tint, forced opaque).
+        float color[4];
+        unpackColor((draw.material.emissive & 0xffffff00) | 0xff, color);
+        params[1] = qMax(draw.material.outlinewidth, 1.0f);
+        const uint64_t outlinestate = BGFX_STATE_WRITE_RGB
+            | BGFX_STATE_WRITE_A | BGFX_STATE_MSAA;
+        const uint32_t outlinestencil = BGFX_STENCIL_TEST_NOTEQUAL
+            | BGFX_STENCIL_FUNC_REF(ref) | BGFX_STENCIL_FUNC_RMASK(0xff)
+            | BGFX_STENCIL_OP_FAIL_S_KEEP
+            | BGFX_STENCIL_OP_FAIL_Z_KEEP
+            | BGFX_STENCIL_OP_PASS_Z_KEEP;
+
+        // Pass 2: the face's triangle edges as instanced thick lines
+        // where the stencil differs — the boundary outline.
+        bgfx::InstanceDataBuffer idb;
+        if (bgfx::getAvailInstanceDataBuffer(nseg, 64) < nseg)
+            return;
+        bgfx::allocInstanceDataBuffer(&idb, nseg, 64);
+        float *d = reinterpret_cast<float *>(idb.data);
+        for (int t = 0; t < ntri; ++t) {
+            for (int e = 0; e < 3; ++e, d += 16) {
+                int32_t ia = mesh.triangleIndices[start + t*3 + e];
+                int32_t ib = mesh.triangleIndices[start + t*3 + (e+1)%3];
+                d[0] = mesh.positions[ia*3];
+                d[1] = mesh.positions[ia*3 + 1];
+                d[2] = mesh.positions[ia*3 + 2];
+                d[3] = 0.0f;
+                d[4] = mesh.positions[ib*3];
+                d[5] = mesh.positions[ib*3 + 1];
+                d[6] = mesh.positions[ib*3 + 2];
+                d[7] = 0.0f;
+                for (int c = 8; c < 16; ++c)
+                    d[c] = 1.0f;
+            }
+        }
+        bgfx::setUniform(u_matColor, color);
+        bgfx::setUniform(u_matEmissive, zero);
+        bgfx::setUniform(u_matSpecular, zero);
+        bgfx::setUniform(u_params, params);
+        if (!draw.identity)
+            bgfx::setTransform(draw.model);
+        bgfx::setVertexBuffer(0, m_lineQuadVb);
+        bgfx::setIndexBuffer(m_lineQuadIb);
+        bgfx::setInstanceDataBuffer(&idb, 0, nseg);
+        bgfx::setState(outlinestate);
+        bgfx::setStencil(outlinestencil);
+        bgfx::submit(viewId + ViewHighlight, m_progLine);
+        ++drawcount;
+
+        // Pass 3: point-sprite corner caps (GL's GL_POINT polygon-mode
+        // pass), patching the notches thick quads leave at corners.
+        uint32_t npt = uint32_t(ntri) * 3;
+        bgfx::InstanceDataBuffer pdb;
+        if (bgfx::getAvailInstanceDataBuffer(npt, 32) < npt)
+            return;
+        bgfx::allocInstanceDataBuffer(&pdb, npt, 32);
+        d = reinterpret_cast<float *>(pdb.data);
+        for (int i = 0; i < count; ++i, d += 8) {
+            int32_t ip = mesh.triangleIndices[start + i];
+            d[0] = mesh.positions[ip*3];
+            d[1] = mesh.positions[ip*3 + 1];
+            d[2] = mesh.positions[ip*3 + 2];
+            d[3] = 0.0f;
+            for (int c = 4; c < 8; ++c)
+                d[c] = 1.0f;
+        }
+        bgfx::setUniform(u_matColor, color);
+        bgfx::setUniform(u_matEmissive, zero);
+        bgfx::setUniform(u_matSpecular, zero);
+        bgfx::setUniform(u_params, params);
+        if (!draw.identity)
+            bgfx::setTransform(draw.model);
+        bgfx::setVertexBuffer(0, m_lineQuadVb);
+        bgfx::setIndexBuffer(m_lineQuadIb);
+        bgfx::setInstanceDataBuffer(&pdb, 0, npt);
+        bgfx::setState(outlinestate);
+        bgfx::setStencil(outlinestencil);
+        bgfx::submit(viewId + ViewHighlight, m_progPoint);
+        ++drawcount;
+    }
+
     // Fullscreen WBOIT resolve: average the accumulated premultiplied
     // color and blend it onto the scene by coverage (1 - revealage in
     // the source alpha, blend INV_SRC_ALPHA / SRC_ALPHA).
@@ -1100,6 +1232,15 @@ public:
         bool depthtest = mat.ontop ? false : mat.depthtest;
         bool depthwrite = (!mat.ontop && transparent) ? false : mat.depthwrite;
         uint8_t depthfunc = mat.depthfunc;
+        // GL quirk (renderHighlight ~2187): a selected face drawn with
+        // its outline keeps the depth test at LEQUAL so the outline
+        // remains readable where the fill is hidden.
+        if (mat.faceoutline && !mat.outlineonly && draw.partIndex >= 0
+                && mat.type == Render::Material::Triangle
+                && pass == PassNormal) {
+            depthtest = true;
+            depthfunc = Render::Material::LEqual;
+        }
         bool blend = transparent;
         float dimalpha = 1.0f;
         switch (pass) {
@@ -1503,7 +1644,8 @@ public:
             } else {
                 bgfx::setViewFrameBuffer(id, view->bgfxFbo);
                 bgfx::setViewClear(id,
-                    i == 0 ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH)
+                    i == 0 ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
+                                      |BGFX_CLEAR_STENCIL)
                            : uint16_t(BGFX_CLEAR_NONE),
                     clearColor, 1.0f, 0);
             }
@@ -1614,6 +1756,13 @@ public:
         auto isDup = [this](const Render::DrawCall &d) {
             return !dupDraws.empty() && dupDraws.count(&d);
         };
+        // A partial face whose outline replaces its fill (GL's
+        // NoPreSelFaceHighlightWithOutline / NoSelFaceHighlightWith-
+        // Outline skip in renderHighlight ~2159).
+        auto outlineOnly = [](const Render::DrawCall &d) {
+            return d.material.faceoutline && d.material.outlineonly
+                && d.partIndex >= 0;
+        };
 
         // 1. Normal scene draws, then on-top triangle fills (opaque before
         // transparent), mirroring the GL delayed-pass order. On-top lines
@@ -1655,7 +1804,7 @@ public:
         view->ontop = true;
         if (hlWholeOnTop) {
             for (const auto &draw : highlight) {
-                if (isTriangle(draw))
+                if (isTriangle(draw) && !outlineOnly(draw))
                     view->submit(draw, viewMat);
             }
         }
@@ -1728,7 +1877,8 @@ public:
         for (const auto &sel : selections) {
             view->ontop = sel.first > 0;
             for (const auto &draw : sel.second) {
-                if (isTriangle(draw) && draw.partIndex >= 0)
+                if (isTriangle(draw) && draw.partIndex >= 0
+                        && !outlineOnly(draw))
                     view->submit(draw, viewMat);
             }
         }
@@ -1744,13 +1894,32 @@ public:
             }
         } else {
             for (const auto &draw : highlight) {
-                if (isTriangle(draw))
+                if (isTriangle(draw) && !outlineOnly(draw))
                     view->submit(draw, viewMat);
             }
             for (const auto &draw : highlight) {
                 if (!isTriangle(draw))
                     view->submit(draw, viewMat);
             }
+        }
+
+        // 8. Selected/preselected face outlines, last of all (GL draws
+        // them at the very end of the frame under
+        // RenderPassSelectionOutline; selections before preselection).
+        uint32_t outlineRef = 0;
+        for (const auto &sel : selections) {
+            if (sel.first <= 0)
+                continue;
+            for (const auto &draw : sel.second) {
+                if (isTriangle(draw) && draw.partIndex >= 0
+                        && draw.material.faceoutline)
+                    view->submitOutline(draw, ++outlineRef);
+            }
+        }
+        for (const auto &draw : highlight) {
+            if (isTriangle(draw) && draw.partIndex >= 0
+                    && draw.material.faceoutline)
+                view->submitOutline(draw, ++outlineRef);
         }
         view->ontop = false;
 

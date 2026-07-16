@@ -197,6 +197,34 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight)
     if (res.ontop && res.type != Render::Material::Triangle)
         res.hiddenlinealpha = float(ViewParams::getTransparencyOnTop());
 
+    // Selected/preselected face outline (GL: renderOutline under the
+    // RenderPassSelectionOutline pass, issued for partial triangle
+    // draws of on-top selections and of the preselection highlight).
+    // The width rules mirror renderOutline ~1458: selection thickening
+    // capped by SelectionLineMaxWidth, then max of 1.5x that and
+    // linewidth * OutlineThicken.
+    if (res.type == Render::Material::Triangle && (highlight || selId > 0)) {
+        bool show = highlight
+            ? ViewParams::getShowPreSelectedFaceOutline()
+            : ViewParams::getShowSelectedFaceOutline();
+        if (show) {
+            res.faceoutline = true;
+            res.outlineonly = highlight
+                ? ViewParams::getNoPreSelFaceHighlightWithOutline()
+                : ViewParams::getNoSelFaceHighlightWithOutline();
+            float lw = res.linewidth;
+            float scale = float(ViewParams::getSelectionLineThicken());
+            if (scale < 1.0f)
+                scale = 1.0f;
+            float w = lw * scale;
+            if (ViewParams::getSelectionLineMaxWidth() > 1.0)
+                w = std::min<float>(w, std::max<float>(lw,
+                        float(ViewParams::getSelectionLineMaxWidth())));
+            res.outlinewidth = std::max(w * 1.5f,
+                lw * float(ViewParams::getOutlineThicken()));
+        }
+    }
+
     // Line stipple (glLineStipple encoding, factor << 16 | pattern). The
     // dimmed pass of on-top lines falls back to the user-configurable
     // selection pattern when the material has none (GL: applyMaterial

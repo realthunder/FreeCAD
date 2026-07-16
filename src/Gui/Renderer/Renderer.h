@@ -124,6 +124,15 @@ struct Material {
     /// (ViewParams::TransparencyOnTop); 1 = no dimming.
     float hiddenlinealpha = 1.0f;
 
+    /// Stencil face outline of partial (per-face) triangle draws in the
+    /// selection/highlight feeds (GL: RenderPassSelectionOutline): the
+    /// face is drawn into the stencil buffer, then its triangle edges
+    /// redraw as thick lines where the stencil does not match, leaving
+    /// the boundary. The outline color is the material's emissive.
+    bool faceoutline = false;   ///< outline partial triangle draws
+    bool outlineonly = false;   ///< and skip their face fill
+    float outlinewidth = 1.0f;  ///< outline width in pixels
+
     /// World-space clip plane equations (sections). A fragment survives
     /// when dot(pos, plane.xyz) + plane.w >= 0 holds for every plane, or,
     /// in concave mode, for at least one plane (GL parity: SectionConcave
