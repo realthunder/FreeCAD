@@ -252,17 +252,29 @@ deferred.
 - Prefs wiring verified live: RenderCache=3 + RendererType="bgfx - OpenGL"
   initializes bgfx and renders on first paint, under both xcb and
   `QT_QPA_PLATFORM=wayland`.
-- bgfx's GL path is **GLX-bound** (`glcontext_glx.cpp`), so under Wayland it
-  runs through XWayland. Native Wayland needs bgfx built with Wayland support
-  and the `wl_egl_window`/EGL native handles passed via Qt's native
-  interface — Phase 0/3 work item.
-- Exit-time noise on this box (all pre-existing, not caused by the renderer
-  work): with the renderer active, an X `BadAccess` at teardown makes the
-  process exit 1 (happens with and without the bgfx quit hook — GLX/Qt
-  context teardown ordering); the baseline app without any renderer aborts
-  at exit with a `QOpenGLWidget` assert in the debug Qt build. Do not chase
-  these when verifying renderer changes; a crash *before* teardown is what
-  matters.
+- **bgfx submodule updated to v1.150 (2026-07)**: upstream deleted the Linux
+  GLX glue — desktop GL now always goes through **EGL** (`glcontext_egl.cpp`)
+  with `BGFX_WITH_WAYLAND`/`WL_EGL_PLATFORM` on by default, so native Wayland
+  comes with the update. Fork patches rebased: bgfx carries 5 (getInternal
+  API, renderbuffer check, bgfx_utils `_path` param, framebuffer-format probe
+  workaround, gitignore); bgfx.cmake carries 4 (SHARED default, bgfx-glslang
+  target rename, generated-file fix, fork submodule URL). bx requires C++20
+  (set on `FreeCADRenderer`). Demo shaders recompiled (glsl profile 140 +
+  spirv variants for a future Vulkan backend).
+- **Context sharing now requires Qt-on-EGL** when the renderer is active:
+  automatic under Wayland; on X11 set `QT_XCB_GL_INTEGRATION=xcb_egl`.
+  Coin follows automatically — its glue supports GLX+EGL simultaneously
+  (upstream feature, enabled in the local build) and picks EGL at runtime
+  via `eglGetCurrentContext()` (`COIN_EGL=0/1` overrides). On plain
+  X11/GLX, bgfx boots its own EGL context and does not crash, but blit
+  sharing with Qt's GLX context is unverified — audit the POC's
+  native-context passing during the Phase 0 compositing work. Check
+  `SoOffscreenRenderer` (thumbnails) once EGL is the daily path.
+- Exit-time noise on this box (pre-existing, not caused by the renderer
+  work): the baseline app aborts at exit with a `QOpenGLWidget` assert in
+  the debug Qt build (with the old GLX bgfx there was also an X `BadAccess`,
+  gone since the EGL switch). Do not chase these when verifying renderer
+  changes; a crash *before* teardown is what matters.
 - `FC_NO_BGFX_QUITHOOK=1` disables the bgfx aboutToQuit cleanup hook for
   teardown debugging.
 
