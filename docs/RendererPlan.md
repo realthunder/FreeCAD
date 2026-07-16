@@ -342,6 +342,41 @@ OpenGL backend. Partial (per-vertex) draws map index ranges 1:1 onto
 instance ranges. Verified identical vertex dot extents vs GL at
 PointSize=7.
 
+*Hidden-line draw style done (2026-07)*: the per-frame
+`HiddenLineConfig` is resolved from the traversal state in
+`SoFCRenderer::render` and fed through a new
+`Renderer::setHiddenLineConfig`; the bridge translates
+`Material::outline`/`linecolor` plus, on demand, a materialized
+seam-free line index set (the cache's `noseamindexer` only *filters
+parts at draw time*, so `SoFCVertexCache::getNoSeamLineIndices` builds
+the actual index list) and per-face-part triangle ranges for clipped
+outlines. Backend: hideFace skips fills (and their outlines, like GL),
+hideSeam switches whole-cache line draws to lazily-built seam-free
+GPU buffers, hideVertex skips point draws and enables outline corner
+caps; each outline-material triangle draw gets the GL stencil outline
+(generalized `submitOutline`, now fed from persistent per-mesh
+triangle-edge/corner instance buffers — instance i maps 1:1 onto
+triangle index position i, so face-outline partial ranges share them —
+instead of per-frame transients) in a new Sequential `ViewOutline`
+between the opaque and transparent buckets. Outline edges/caps of
+whole-cache outlines write depth: that stands in for GL's back-to-front
+entry order, keeping nearer outlines crisp while nearer transparent
+fills still dim hidden outlines; line/point quads gained an NDC depth
+bias in `u_params.z` so the owning polygon-offset fill keeps blending
+over its own outline. Line quad widths and point sizes now round to
+the nearest integer like GL's non-AA rasterizer (a 1.5px HL edge
+covers 2 rows in GL). Verified pixel-identical to GL (zero diff) for
+the default hidden-line style (transparent fills + outline + hidden
+seam/vertex), hideFace, and the selection-outline regression.
+Known deviations, clipped (per-face-part) hidden-line outlines only:
+GL's `glPolygonMode(GL_LINE)` also rasterizes the *post-clipping*
+polygon boundary, i.e. draws the section-cut outline, which
+fragment-discard clipping cannot produce (revisit with Phase 2 stencil
+section caps); and per-part outlines skip the depth write, so fills of
+farther objects dim them where GL's ordered draw kept them crisp.
+Still open: the `sceneOutline`/`perFaceOutline` (unclipped) variants
+and the whole-object highlight outline of hidden-line mode.
+
 ### Phase 2 — visual features (7–9 wks)
 
 | Feature | Est. | Notes |
