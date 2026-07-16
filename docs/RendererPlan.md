@@ -215,7 +215,9 @@ The engine-agnostic core; everything later depends on it.
    why the clip variants need their own VS (`v_wpos` varying) and the
    shader bodies are shared via `fc_{mesh,flat}_{vs,fs}.sh` includes.
    Verified GL/bgfx pixel-identical geometry extents for 1-plane and
-   2-plane (intersection) cuts. Still missing: textures/autozoom
+   2-plane (intersection) cuts, and (2026-07) for a 2-plane
+   `SectionConcave` union cut (two `SoClipPlane` nodes, à la
+   Std_Clipping). Still missing: textures/autozoom
    ignored, section caps/fill (stencil capping is Phase 2),
    per-vertex-transparent caches go wholesale to the transparent bucket.
    ~~**Known issue — transparent scene geometry is invisible**~~ *Fixed
@@ -283,8 +285,9 @@ The engine-agnostic core; everything later depends on it.
    (2026-07)*: the same object selected through several ids (e.g. two
    element selections both carrying the object's whole-object on-top
    draws) draws once, replicating GL's `renderkeys` skip on
-   (objectKey, cacheId, primitive type). Not replicated: selection
-   line pattern (`SelectionLinePattern`).
+   (objectKey, cacheId, primitive type). ~~Not replicated: selection
+   line pattern (`SelectionLinePattern`).~~ *Done (2026-07, see Phase 1
+   line patterns).*
 
 Exit criteria: a real model renders in bgfx visually close to today's mode-3
 output (shaded + edges + selection/highlight + clip planes without caps), GL
@@ -310,10 +313,32 @@ with `applyMaterial`'s `RenderPassHighlight` routing rules) at
 translate time, so `RendererBridge::translate` now takes the feed
 context (selection id / highlight). Verified: selection lines and scene
 edges pixel-match GL widths and positions, clipped scenes match
-exactly. Still open here: line *patterns*, point sprites (points still
-use `BGFX_STATE_POINT_SIZE`, a GL-only feature), and the GL quirk that
-the dimmed pass of whole-on-top preselect lines stays thin (bgfx
-thickens both passes).
+exactly. Still open here: the GL quirk that the dimmed pass of
+whole-on-top preselect lines stays thin (bgfx thickens both passes).
+
+*Line patterns done (2026-07)*: glLineStipple semantics on the quad
+path — `vs_fc_line_pat`(`_clip`) outputs the screen-space pixel
+distance along the segment (times clip w; the fragment shader divides
+it back to undo perspective correction), `fs_fc_line_pat`(`_clip`)
+discards unset pattern bits with float-only math (bgfx's GL backend
+may emit version-less GLSL where integer bit ops don't exist). The
+bridge translates `Material::linepattern` (`factor << 16 | pattern`)
+plus a separate hidden-pass pattern implementing GL's
+`SelectionLinePattern` substitution (applies to the dimmed pass of
+on-top lines only when the material has no pattern of its own).
+Patterned lines of any width use the instanced quad path; no
+instancing → solid 1px fallback. Verified pixel-identical dash runs
+vs GL for `DrawStyle=Dashed` scene edges and `SelectionLinePattern=
+0xff00` hidden selection edges.
+
+*Point sprites done (2026-07)*: points > 1px render as instanced
+screen-space quads (`vs_fc_point`(`_clip`)` + flat fragment shaders,
+sharing the line unit-quad geometry and a per-point instance buffer),
+replicating glPointSize's screen-aligned square — the portable
+replacement for `BGFX_STATE_POINT_SIZE`, which only exists on bgfx's
+OpenGL backend. Partial (per-vertex) draws map index ranges 1:1 onto
+instance ranges. Verified identical vertex dot extents vs GL at
+PointSize=7.
 
 ### Phase 2 — visual features (7–9 wks)
 
@@ -375,11 +400,17 @@ deferred.
   automatic under Wayland; on X11 set `QT_XCB_GL_INTEGRATION=xcb_egl`.
   Coin follows automatically — its glue supports GLX+EGL simultaneously
   (upstream feature, enabled in the local build) and picks EGL at runtime
-  via `eglGetCurrentContext()` (`COIN_EGL=0/1` overrides). On plain
+  via `eglGetCurrentContext()` (`COIN_EGL=0/1` overrides). ~~On plain
   X11/GLX, bgfx boots its own EGL context and does not crash, but blit
-  sharing with Qt's GLX context is unverified — audit the POC's
-  native-context passing during the Phase 0 compositing work. Check
-  `SoOffscreenRenderer` (thumbnails) once EGL is the daily path.
+  sharing with Qt's GLX context is unverified.~~ *Audited (2026-07)*:
+  under plain `QT_QPA_PLATFORM=xcb` (no `xcb_egl` forced) the full
+  scene renders and blits correctly on this box. The renderer passes
+  Qt's own context to bgfx as an *external* context
+  (`init.platformData.context`), so bgfx imports GL symbols and renders
+  into whatever context the runtime makes current — the GLX-vs-EGL
+  choice belongs entirely to Qt and the blit shares within one Qt share
+  group either way. Real-hardware X11 still untested (WSLg only).
+  Check `SoOffscreenRenderer` (thumbnails) once EGL is the daily path.
 - Exit-time noise on this box (pre-existing, not caused by the renderer
   work): the baseline app aborts at exit with a `QOpenGLWidget` assert in
   the debug Qt build (with the old GLX bgfx there was also an X `BadAccess`,
