@@ -155,6 +155,33 @@ $RUN build/conda-debug/bin/FreeCADCmd /path/to/smoke.py
 # Draft/Arch/Assembly/AddonManager appear in the workbench selector
 ```
 
+## MCP debug console (AI agent access)
+
+`freecad.mcp_console` (`src/Ext/freecad/mcp_console/`) exposes the running FreeCAD
+process to an AI agent over the Model Context Protocol. It serves a single
+`run_python` tool via FastMCP's Streamable-HTTP transport; each call is marshalled
+onto FreeCAD's Qt main thread (the `Web::AppServer` pattern) so document/OCCT/Coin
+work is safe. The interpreter session is persistent (a REPL), captures
+stdout/stderr, returns the last expression's value, and reports exceptions as text.
+
+Runtime dependency: the `mcp` Python package in the active interpreter
+(`pip install mcp` into the conda env; add to the feedstock host/run deps for
+distribution). Start it from FreeCAD's Python console (main thread):
+
+```python
+from freecad import mcp_console
+mcp_console.start()          # -> http://127.0.0.1:8765/mcp
+```
+
+Point an MCP client (Claude Code, etc.) at that URL. The single tool is
+intentional: the whole FreeCAD API is already Python-reachable, so the tool's
+description teaches the agent the entry points (`App`, `Gui`, `App.ActiveDocument`,
+`dir()`/`help()`) rather than wrapping operations as extra tools.
+
+Conformance is verified end-to-end (initialize / tools list+call with input &
+output schema, structured content, main-thread execution, and driving the live
+GUI to build a `Part::Box` and read its OCCT volume).
+
 ## Fallback stack: system gcc + apt Qt 6.4.2
 
 Kept intact and working, but **PySide6 is impossible here** (see above) — Python
