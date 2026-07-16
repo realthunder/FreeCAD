@@ -160,6 +160,30 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap)
             if (!ventry.cache)
                 continue;
 
+            // Resolve a partial draw (single face/edge/point) into an index
+            // range of the buffer selected by the material type.
+            int indexStart = 0;
+            int indexCount = 0;
+            if (ventry.partidx >= 0) {
+                SbBool ok = FALSE;
+                switch (rmat.type) {
+                case Render::Material::Line:
+                    ok = ventry.cache->getLinePartRange(
+                            ventry.partidx, indexStart, indexCount);
+                    break;
+                case Render::Material::Point:
+                    ok = ventry.cache->getPointPartRange(
+                            ventry.partidx, indexStart, indexCount);
+                    break;
+                default:
+                    ok = ventry.cache->getTrianglePartRange(
+                            ventry.partidx, indexStart, indexCount);
+                    break;
+                }
+                if (!ok)
+                    continue;
+            }
+
             auto & mesh = meshes[ventry.cache];
             if (!mesh)
                 mesh = translateCache(ventry.cache);
@@ -169,6 +193,8 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap)
             draw.material = rmat;
             draw.mesh = mesh;
             draw.partIndex = ventry.partidx;
+            draw.indexStart = indexStart;
+            draw.indexCount = indexCount;
             draw.identity = ventry.identity;
             if (!ventry.identity) {
                 static_assert(sizeof(draw.model) == sizeof(SbMat),

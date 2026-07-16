@@ -273,6 +273,12 @@ public:
 
   uint32_t getColor(const SoFCVertexArrayIndexer * indexer, int part) const;
 
+  SbBool getPartRange(const SoFCVertexArrayIndexer * indexer,
+                      int part,
+                      int unit,
+                      int & start,
+                      int & count) const;
+
   void getBoundingBox(const SbMatrix * matrix,
                       SbBox3f & bbox,
                       const SoFCVertexArrayIndexer *indexer,
@@ -1892,6 +1898,57 @@ SoFCVertexCache::getPointIndices(void) const
 {
   assert(PRIVATE(this)->pointindexer);
   return PRIVATE(this)->pointindexer->getIndices();
+}
+
+SbBool
+SoFCVertexCacheP::getPartRange(const SoFCVertexArrayIndexer * indexer,
+                               int part,
+                               int unit,
+                               int & start,
+                               int & count) const
+{
+  if (!indexer || part < 0)
+    return FALSE;
+
+  // Mirrors the offset computation of render(state, indexer, arrays, part,
+  // unit), except that start/count are kept in index units instead of bytes.
+  if (!indexer->getNumParts()) {
+    if ((part+1) * unit > indexer->getNumIndices())
+      return FALSE;
+    if (part < static_cast<int>(this->sortedindexmap.size()))
+      part = this->sortedindexmap[part];
+    start = part * unit;
+    count = unit;
+    return TRUE;
+  }
+
+  if (part >= indexer->getNumParts())
+    return FALSE;
+  const int * parts = indexer->getPartOffsets();
+  start = part == 0 ? 0 : parts[part-1];
+  count = parts[part] - start;
+  return TRUE;
+}
+
+SbBool
+SoFCVertexCache::getTrianglePartRange(int part, int & start, int & count) const
+{
+  return PRIVATE(this)->getPartRange(
+      PRIVATE(this)->triangleindexer, part, 3, start, count);
+}
+
+SbBool
+SoFCVertexCache::getLinePartRange(int part, int & start, int & count) const
+{
+  return PRIVATE(this)->getPartRange(
+      PRIVATE(this)->lineindexer, part, 2, start, count);
+}
+
+SbBool
+SoFCVertexCache::getPointPartRange(int part, int & start, int & count) const
+{
+  return PRIVATE(this)->getPartRange(
+      PRIVATE(this)->pointindexer, part, 1, start, count);
 }
 
 SbBool

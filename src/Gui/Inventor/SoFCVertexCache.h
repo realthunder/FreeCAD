@@ -144,6 +144,15 @@ public:
   int getNumPointIndices(void) const;
   const GLint * getPointIndices(void) const;
 
+  /** Get the index range of one part (as used for partial rendering, e.g.
+   * a single face/edge/point) inside the respective index array. \a start
+   * and \a count are in index units. Returns FALSE if \a part is out of
+   * range.
+   */
+  SbBool getTrianglePartRange(int part, int & start, int & count) const;
+  SbBool getLinePartRange(int part, int & start, int & count) const;
+  SbBool getPointPartRange(int part, int & start, int & count) const;
+
   SoNode *getNode() const;
   void resetNode();
   SbFCUniqueId getNodeId() const;

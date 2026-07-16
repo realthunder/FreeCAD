@@ -589,13 +589,6 @@ public:
         if (!draw.mesh || draw.mesh->numVertices == 0)
             return;
 
-        // Partial (single face/edge/point) draws need per-part index
-        // ranges that the bridge does not extract yet.
-        if (draw.partIndex >= 0) {
-            ++skippedPartial;
-            return;
-        }
-
         GpuMesh *mesh = getMesh(*draw.mesh);
         bgfx::IndexBufferHandle ibh = BGFX_INVALID_HANDLE;
         switch (mat.type) {
@@ -650,7 +643,11 @@ public:
         if (!draw.identity)
             bgfx::setTransform(draw.model);
         bgfx::setVertexBuffer(0, mesh->vbh);
-        bgfx::setIndexBuffer(ibh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(ibh, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(ibh);
         bgfx::setState(state);
 
         uint32_t depth = 0;
@@ -758,7 +755,6 @@ public:
     std::unordered_map<uint64_t, GpuMesh> meshes;
     uint64_t frame = 0;
     int drawcount = 0;
-    int skippedPartial = 0;
     bool ontop = false;   // route submits to the highlight pass
     GLuint fbo = 0;
     bool hasFBO = false;
@@ -828,25 +824,42 @@ public:
                 clearColor, 1.0f, 0);
             bgfx::setViewRect(id, 0, 0, width, height);
             bgfx::setViewTransform(id, viewMatrix, projMatrix);
+            // On-top and highlight draws are blended painter-style: keep
+            // submission order (GL pass order) instead of state sorting.
             bgfx::setViewMode(id, i == BGFXView::ViewTransparent
                     ? bgfx::ViewMode::DepthDescending
-                    : bgfx::ViewMode::Default);
+                    : i >= BGFXView::ViewOnTop
+                        ? bgfx::ViewMode::Sequential
+                        : bgfx::ViewMode::Default);
             bgfx::touch(id);
         }
 
         ++view->frame;
         view->drawcount = 0;
-        view->skippedPartial = 0;
         const float *viewMat = reinterpret_cast<const float *>(viewMatrix);
 
         view->ontop = false;
         for (const auto &draw : scene)
             view->submit(draw, viewMat);
+        // Mimic SoFCRenderer's selection pass order: whole-object fills and
+        // lines/points first, single-part (e.g. selected face) triangle
+        // draws blended on top of them last.
         for (const auto &sel : selections) {
             // Positive ids are on-top selections (SoFCRenderer::addSelection)
             view->ontop = sel.first > 0;
-            for (const auto &draw : sel.second)
-                view->submit(draw, viewMat);
+            for (const auto &draw : sel.second) {
+                if (draw.material.type != Render::Material::Triangle
+                        || draw.partIndex < 0)
+                    view->submit(draw, viewMat);
+            }
+        }
+        for (const auto &sel : selections) {
+            view->ontop = sel.first > 0;
+            for (const auto &draw : sel.second) {
+                if (draw.material.type == Render::Material::Triangle
+                        && draw.partIndex >= 0)
+                    view->submit(draw, viewMat);
+            }
         }
         view->ontop = true;
         for (const auto &draw : highlight)
@@ -863,15 +876,14 @@ public:
 
         if (!hasScene && !scene.empty())
             qDebug() << "bgfx: scene consumed:" << view->drawcount
-                     << "draws," << view->meshes.size() << "meshes,"
-                     << view->skippedPartial << "partial draws skipped";
+                     << "draws," << view->meshes.size() << "meshes";
 
         if (getenv("FC_BGFX_DEBUG_READBACK"))
             fprintf(stderr, "bgfx frame %llu: scene=%zu sel=%zu hl=%zu"
-                    " draws=%d partial=%d\n",
+                    " draws=%d\n",
                     (unsigned long long)view->frame, scene.size(),
                     selections.size(), highlight.size(),
-                    view->drawcount, view->skippedPartial);
+                    view->drawcount);
 
         renderOk = true;
         hasScene = !scene.empty();
@@ -955,8 +967,27 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
     pimpl->updateBBox();
 }
 
+static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
+{
+    if (!getenv("FC_BGFX_DEBUG_FEED"))
+        return;
+    fprintf(stderr, "bgfx feed %s id=%d: %zu draws\n", tag, id, draws.size());
+    for (const auto &d : draws) {
+        const auto &m = d.material;
+        fprintf(stderr,
+                "  type=%d part=%d range=%d+%d diffuse=%08x emissive=%08x"
+                " pvc=%d light=%d transp=%d ontop=%d dtest=%d dwrite=%d"
+                " dfunc=%d lw=%.1f\n",
+                m.type, d.partIndex, d.indexStart, d.indexCount,
+                m.diffuse, m.emissive, m.pervertexcolor, m.lighting,
+                m.transparent, m.ontop, m.depthtest, m.depthwrite,
+                m.depthfunc, m.linewidth);
+    }
+}
+
 void BGFXRenderer::addSelection(int id, DrawCallList &&draws)
 {
+    dumpFeed("sel", id, draws);
     pimpl->selections[id] = std::move(draws);
     pimpl->sceneDirty = true;
 }
@@ -969,6 +1000,7 @@ void BGFXRenderer::removeSelection(int id)
 
 void BGFXRenderer::setHighlight(DrawCallList &&draws, bool wholeOnTop)
 {
+    dumpFeed("hl", wholeOnTop, draws);
     pimpl->highlight = std::move(draws);
     pimpl->hlWholeOnTop = wholeOnTop;
     pimpl->sceneDirty = true;

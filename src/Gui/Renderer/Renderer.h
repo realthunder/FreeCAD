@@ -103,6 +103,11 @@ struct DrawCall {
     float model[16];        ///< GL-style layout, valid when !identity
     bool identity = true;
     int partIndex = -1;     ///< -1 = whole mesh, >= 0 = single face/edge part
+    /// Index range of the draw inside the index buffer selected by
+    /// material.type. Resolved from partIndex by the producer; count 0
+    /// means the whole buffer.
+    int indexStart = 0;
+    int indexCount = 0;
     float bboxMin[3] = {0.0f, 0.0f, 0.0f};  ///< world space bounds,
     float bboxMax[3] = {0.0f, 0.0f, 0.0f};  ///< empty if min > max
 };

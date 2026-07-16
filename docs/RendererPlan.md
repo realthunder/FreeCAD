@@ -193,10 +193,15 @@ The engine-agnostic core; everything later depends on it.
    render time and evicted when unreferenced for 2 frames; material →
    bgfx state (depth func/test/write, cull, blend, PT_LINES/POINTS) +
    headlight Blinn-Phong shaders (`bgfx/shaders/*.sc`, compiled by
-   `compile.sh` into the runtime assets). Still missing: partial
-   (`partidx >= 0`) draws are skipped (single-face highlight invisible),
-   textures/clip planes/autozoom ignored, per-vertex-transparent caches go
-   wholesale to the transparent bucket, no polygon-offset equivalent yet.
+   `compile.sh` into the runtime assets). *Partial draws done (2026-07)*:
+   `SoFCVertexCache::get{Triangle,Line,Point}PartRange()` exposes the
+   per-part index ranges (parts-table or primitive-unit, mirroring the
+   GL partial render path), the bridge resolves `partidx` into
+   `DrawCall::indexStart/indexCount`, and the backend does ranged
+   `setIndexBuffer` — single-face/edge selection and preselect now
+   render. Still missing: textures/clip planes/autozoom ignored,
+   per-vertex-transparent caches go wholesale to the transparent bucket,
+   no polygon-offset equivalent yet.
 4. **Pass skeleton**: bgfx view sequence reproducing today's ordering.
    *First cut done (2026-07):* 4 views — opaque → transparent (bbox-center
    depth sort via `ViewMode::DepthDescending`) → on-top → selection/
@@ -216,8 +221,19 @@ The engine-agnostic core; everything later depends on it.
    ID-buffer picking later.
    *Selection/highlight feeds work (2026-07)* — translated like the scene
    and drawn in the highlight view. Whole-object-on-top selection double
-   draws (the GL renderer's cache-key skip logic is not replicated yet);
-   partial (per-face) highlight doesn't show until partial draws land.
+   draws (the GL renderer's cache-key skip logic is not replicated yet).
+   *Partial (per-face/edge) selection + preselect render (2026-07)*: the
+   on-top/highlight bgfx views use `ViewMode::Sequential` and partial
+   triangle draws are submitted after whole fills and lines, mimicking
+   the GL pass order (whole transparent fill → on-top lines →
+   `transpselectionsfaceontop`); selected-face color matches GL closely.
+   Known deviation: GL draws the *preselected* face as outline only
+   (`NoPreSelFaceHighlightWithOutline` + `ShowPreSelectedFaceOutline`
+   defaults) while bgfx fills it, since the outline pass is a Phase 2
+   feature; also on-top draws still depth-test (GL disables depth test
+   for on-top materials) and highlight lines are not thickened
+   (`SelectionLineThicken`, Phase 1). `FC_BGFX_DEBUG_FEED=1` dumps the
+   translated selection/highlight draw calls to stderr.
 
 Exit criteria: a real model renders in bgfx visually close to today's mode-3
 output (shaded + edges + selection/highlight + clip planes without caps), GL
