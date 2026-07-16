@@ -263,8 +263,8 @@ The engine-agnostic core; everything later depends on it.
    Known deviation: GL draws the *preselected* face as outline only
    (`NoPreSelFaceHighlightWithOutline` + `ShowPreSelectedFaceOutline`
    defaults) while bgfx fills it, since the outline pass is a Phase 2
-   feature; highlight lines are not thickened (`SelectionLineThicken`,
-   Phase 1). `FC_BGFX_DEBUG_FEED=1` dumps the translated
+   feature. ~~Highlight lines are not thickened~~ *Done (2026-07, see
+   Phase 1)*. `FC_BGFX_DEBUG_FEED=1` dumps the translated
    selection/highlight draw calls, `FC_BGFX_DEBUG_SUBMIT=1` the per-draw
    view/pass/state words.
    *On-top semantics (2026-07)*: GL parity per `applyMaterial` ~520 —
@@ -279,9 +279,12 @@ The engine-agnostic core; everything later depends on it.
    *hide* the object's normal scene draws (GL's selectionkeys/
    highlightkeys skip): the bridge exposes `DrawCall::objectKey` (content
    hash of the `SoFCSelectionRoot::NodeKey` path) + `wholeObject`, and
-   the backend skips matching scene draws. Not replicated: the
-   per-selection dedup (same object in several selection ids draws more
-   than once), selection line pattern (`SelectionLinePattern`).
+   the backend skips matching scene draws. *Per-selection dedup done
+   (2026-07)*: the same object selected through several ids (e.g. two
+   element selections both carrying the object's whole-object on-top
+   draws) draws once, replicating GL's `renderkeys` skip on
+   (objectKey, cacheId, primitive type). Not replicated: selection
+   line pattern (`SelectionLinePattern`).
 
 Exit criteria: a real model renders in bgfx visually close to today's mode-3
 output (shaded + edges + selection/highlight + clip planes without caps), GL
@@ -294,6 +297,23 @@ screen-space quad-expanded lines), point sprites, per-face color, polygon
 offset semantics, hidden-line draw style, on-top/annotation ordering, draw
 styles. This is grind, but semantics are all encoded in
 `SoFCRenderer::applyMaterial` + the pass loop.
+
+*Line width done (2026-07)*: lines wider than 1px render as instanced
+screen-space quads — each cache uploads a per-segment instance buffer
+(endpoints + endpoint colors), `vs_fc_line`(`_clip`) expands a shared
+unit quad to the requested pixel width (`u_viewRect`, near-plane clamp)
+and pairs with the flat fragment shaders; partial per-edge draws map
+their index range onto an instance range; 1px fallback without
+instancing caps. The bridge applies GL's selection thickening
+(`SelectionLineThicken`/`MaxWidth`, `SelectionPointScale`/`MaxSize`,
+with `applyMaterial`'s `RenderPassHighlight` routing rules) at
+translate time, so `RendererBridge::translate` now takes the feed
+context (selection id / highlight). Verified: selection lines and scene
+edges pixel-match GL widths and positions, clipped scenes match
+exactly. Still open here: line *patterns*, point sprites (points still
+use `BGFX_STATE_POINT_SIZE`, a GL-only feature), and the GL quirk that
+the dimmed pass of whole-on-top preselect lines stays thin (bgfx
+thickens both passes).
 
 ### Phase 2 — visual features (7–9 wks)
 
