@@ -231,10 +231,13 @@ The engine-agnostic core; everything later depends on it.
    plain flag so toggling doesn't trigger notification) — it used to
    repaint every far-plane pixel, erasing transparent geometry which
    writes no depth. Verified: linear and radial background pixels match
-   GL exactly; transparent-over-background blends. Remaining transparency
-   parity gap: GL renders noticeably brighter transparent fills (it
-   appears to blend back and front faces as separate layers where bgfx
-   submits one draw) — revisit with the WBOIT work.
+   GL exactly; transparent-over-background blends. ~~Remaining
+   transparency parity gap: GL renders noticeably brighter transparent
+   fills.~~ *Resolved (2026-07)* — two causes: GL forces two-sided
+   lighting for transparent/on-top draws and disables culling for
+   transparent draws (`applyMaterial` ~745), which the backend now
+   replicates (the headlight shader used to render transparent back
+   faces nearly black); and WBOIT (Phase 2, done) blends the layers.
 4. **Pass skeleton**: bgfx view sequence reproducing today's ordering.
    *First cut done (2026-07):* 5 views — background (clear + gradient
    quad) → opaque → transparent (bbox-center depth sort via
@@ -344,7 +347,7 @@ PointSize=7.
 
 | Feature | Est. | Notes |
 |---|---|---|
-| WBOIT | 1.5–2 | replaces bbox-sort for transparent bucket |
+| WBOIT | 1.5–2 | *Done (2026-07), first cut.* RGBA16F accum + R16F revealage MRT sharing the scene depth (test only), weight = McGuire eq. 10, independent per-target blending, fullscreen composite view (`vs/fs_fc_comp`) resolving INV_SRC_ALPHA/SRC_ALPHA onto the scene FBO. Active without MSAA and where independent blend + half-float FB formats exist (WebGL2-compatible set); falls back to the bbox-sorted alpha blend otherwise or when a frame has no transparent scene triangles. Verified: transparent brightness within the general fill-shading tolerance of GL (~-8/255 vs -7 on opaque fills). MSAA resolve chain still open. |
 | SSAO (ASSAO) | 1.5–2 | needs depth+normal prepass from Phase 0 |
 | PBR + IBL | 3–4 | BRDF + env prefilter pipeline; matcap fallback; material property plumbing from ViewProvider |
 | Section caps | 2–3 | stencil capping + hatch, port `_renderSection` semantics |
