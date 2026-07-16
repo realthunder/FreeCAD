@@ -87,6 +87,7 @@ struct Material {
     bool ccw = true;             ///< front face vertex ordering
     bool transparent = false;    ///< uniform-color / texture transparency
     bool ontop = false;          ///< render after (over) the normal scene
+    bool polygonoffset = false;  ///< glPolygonOffset on filled triangles
     uint32_t diffuse = 0xCCCCCCFF;
     uint32_t emissive = 0;
     uint32_t specular = 0;
@@ -94,6 +95,12 @@ struct Material {
     float shininess = 0.0f;
     float linewidth = 1.0f;
     float pointsize = 1.0f;
+    /// glPolygonOffset(factor, units); positive pushes away from the viewer
+    float polygonoffsetfactor = 0.0f;
+    float polygonoffsetunits = 0.0f;
+    /// Alpha used to dim the depth-occluded part of on-top lines/points
+    /// (ViewParams::TransparencyOnTop); 1 = no dimming.
+    float hiddenlinealpha = 1.0f;
 };
 
 /// One draw of (a part of) a mesh with a material and model transform.
@@ -102,6 +109,14 @@ struct DrawCall {
     std::shared_ptr<const MeshData> mesh;
     float model[16];        ///< GL-style layout, valid when !identity
     bool identity = true;
+    /// Content hash of the scene-graph node path that produced this draw;
+    /// the same object yields the same key in the scene and the
+    /// selection/highlight feeds. 0 = unknown.
+    uint64_t objectKey = 0;
+    /// True when this draw covers the object's whole geometry of its
+    /// primitive type (a whole-object on-top selection/highlight draw
+    /// replaces — hides — the object's scene draws with equal objectKey).
+    bool wholeObject = false;
     int partIndex = -1;     ///< -1 = whole mesh, >= 0 = single face/edge part
     /// Index range of the draw inside the index buffer selected by
     /// material.type. Resolved from partIndex by the producer; count 0

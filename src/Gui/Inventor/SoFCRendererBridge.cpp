@@ -29,9 +29,11 @@
 #include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoLazyElement.h>
+#include <Inventor/elements/SoPolygonOffsetElement.h>
 
 #include "SoFCRendererBridge.h"
 #include "SoFCVertexCache.h"
+#include "../ViewParams.h"
 
 using namespace Gui;
 
@@ -133,6 +135,19 @@ translateMaterial(const CoinMaterial & m)
     res.transparent = m.transptexture
         || (!m.pervertexcolor && (m.diffuse & 0xff) != 0xff);
     res.ontop = m.isOnTop();
+
+    // GL polygon offset only affects filled polygons (the LINES/POINTS
+    // styles matter only with glPolygonMode, which the renderer never uses).
+    res.polygonoffset =
+        (m.polygonoffsetstyle & SoPolygonOffsetElement::FILLED)
+        && (m.polygonoffsetfactor != 0.0f || m.polygonoffsetunits != 0.0f);
+    res.polygonoffsetfactor = m.polygonoffsetfactor;
+    res.polygonoffsetunits = m.polygonoffsetunits;
+
+    // Depth-occluded parts of on-top lines/points are dimmed to this alpha
+    // (SoFCRenderer's RenderPassLinePattern pass).
+    if (res.ontop && res.type != Render::Material::Triangle)
+        res.hiddenlinealpha = float(ViewParams::getTransparencyOnTop());
     return res;
 }
 
@@ -192,6 +207,9 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap)
             Render::DrawCall & draw = res.back();
             draw.material = rmat;
             draw.mesh = mesh;
+            draw.objectKey = ventry.key ? ventry.key->hash() : 0;
+            draw.wholeObject = ventry.partidx < 0
+                && ventry.cache == ventry.cache->getWholeCache();
             draw.partIndex = ventry.partidx;
             draw.indexStart = indexStart;
             draw.indexCount = indexCount;

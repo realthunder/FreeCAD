@@ -199,15 +199,28 @@ The engine-agnostic core; everything later depends on it.
    GL partial render path), the bridge resolves `partidx` into
    `DrawCall::indexStart/indexCount`, and the backend does ranged
    `setIndexBuffer` — single-face/edge selection and preselect now
-   render. Still missing: textures/clip planes/autozoom ignored,
-   per-vertex-transparent caches go wholesale to the transparent bucket,
-   no polygon-offset equivalent yet.
+   render. *Polygon offset (2026-07)*: `glPolygonOffset(factor, units)` on
+   filled triangles is bridged and approximated by a constant NDC depth
+   bias in the vertex shader (`u_params.w`; no per-pixel slope term —
+   bgfx has no fixed-function polygon offset). Still missing:
+   textures/clip planes/autozoom ignored, per-vertex-transparent caches
+   go wholesale to the transparent bucket.
+   **Known issue — transparent scene geometry is invisible**: transparent
+   draws don't write depth (GL parity), so after the color+depth blit the
+   Coin gradient background node (depth-tested at the far plane) repaints
+   those pixels; they also blend against the bgfx clear color rather than
+   the real background because bgfx renders before Coin. Fix direction:
+   render the background inside bgfx (gradient quad / clear) and skip
+   Coin's background when the backend rendered — part of the item-5
+   compositing audit.
 4. **Pass skeleton**: bgfx view sequence reproducing today's ordering.
    *First cut done (2026-07):* 4 views — opaque → transparent (bbox-center
    depth sort via `ViewMode::DepthDescending`) → on-top → selection/
-   highlight. Still to grow toward SoFCRenderer's full ~15-pass loop
-   (line-pattern/solid two-pass, depth-write-only pass, outline, section),
-   plus the depth+normal prepass slot for AO/outline.
+   highlight. *Grown (2026-07)*: depth-write-only prepass of on-top fills
+   and the hidden(dimmed)/solid two-pass for on-top lines/points, matching
+   the GL delayed-pass order (see item 5). Still to grow: outline,
+   section, line pattern, plus the depth+normal prepass slot for
+   AO/outline.
    **Compositing gotcha (fixed)**: the backend blits color+depth *before*
    the Coin pass, and `View3DInventorViewer::renderScene()` used to call
    `drawSingleBackground()` afterwards with depth test off — wiping the
@@ -230,10 +243,25 @@ The engine-agnostic core; everything later depends on it.
    Known deviation: GL draws the *preselected* face as outline only
    (`NoPreSelFaceHighlightWithOutline` + `ShowPreSelectedFaceOutline`
    defaults) while bgfx fills it, since the outline pass is a Phase 2
-   feature; also on-top draws still depth-test (GL disables depth test
-   for on-top materials) and highlight lines are not thickened
-   (`SelectionLineThicken`, Phase 1). `FC_BGFX_DEBUG_FEED=1` dumps the
-   translated selection/highlight draw calls to stderr.
+   feature; highlight lines are not thickened (`SelectionLineThicken`,
+   Phase 1). `FC_BGFX_DEBUG_FEED=1` dumps the translated
+   selection/highlight draw calls, `FC_BGFX_DEBUG_SUBMIT=1` the per-draw
+   view/pass/state words.
+   *On-top semantics (2026-07)*: GL parity per `applyMaterial` ~520 —
+   on-top draws render with depth test off (which also disables depth
+   writes), non-on-top transparent draws drop the depth write. The
+   delayed-pass ordering is reproduced: scene on-top fills → selection
+   whole fills → whole-on-top preselect fills → depth-write-only prepass
+   of on-top fills → on-top lines/points twice (hidden pass: no depth
+   test, alpha dimmed to `TransparencyOnTop` via `u_params.w` in the flat
+   shader; solid pass: LEQUAL, no depth write) → single-part selection
+   fills → preselect. Whole-object on-top selection/highlight draws now
+   *hide* the object's normal scene draws (GL's selectionkeys/
+   highlightkeys skip): the bridge exposes `DrawCall::objectKey` (content
+   hash of the `SoFCSelectionRoot::NodeKey` path) + `wholeObject`, and
+   the backend skips matching scene draws. Not replicated: the
+   per-selection dedup (same object in several selection ids draws more
+   than once), selection line pattern (`SelectionLinePattern`).
 
 Exit criteria: a real model renders in bgfx visually close to today's mode-3
 output (shaded + edges + selection/highlight + clip planes without caps), GL

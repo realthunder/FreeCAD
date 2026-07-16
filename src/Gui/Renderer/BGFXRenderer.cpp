@@ -44,6 +44,7 @@
 #include <map>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <set>
 
 #undef GL_GLEXT_VERSION
@@ -583,7 +584,16 @@ public:
         }
     }
 
-    void submit(const Render::DrawCall &draw, const float *viewMatrix)
+    // Submission passes mirroring SoFCRenderer's delayed render loop.
+    enum SubmitPass {
+        PassNormal = 0,
+        PassDepthOnly,   // depth-write-only prepass of on-top fills
+        PassLineHidden,  // on-top lines/points, no depth test, dimmed
+        PassLineSolid,   // on-top lines/points, depth LEQUAL, full color
+    };
+
+    void submit(const Render::DrawCall &draw, const float *viewMatrix,
+                int pass = PassNormal)
     {
         const Render::Material &mat = draw.material;
         if (!draw.mesh || draw.mesh->numVertices == 0)
@@ -602,19 +612,52 @@ public:
         bool transparent = mat.transparent
             || (mat.pervertexcolor && draw.mesh->hasTransparency);
 
-        uint16_t pass = ontop ? ViewHighlight
+        uint16_t passView = ontop ? ViewHighlight
             : mat.ontop ? ViewOnTop
             : transparent && mat.type == Render::Material::Triangle
                 ? ViewTransparent
                 : ViewOpaque;
 
-        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-                       | BGFX_STATE_MSAA;
-        if (mat.depthtest)
-            state |= depthFuncState(mat.depthfunc);
-        if (mat.depthwrite && !transparent)
+        // GL parity (SoFCRenderer::applyMaterial ~520): on-top draws ignore
+        // the depth test, only non-on-top transparent draws drop the depth
+        // write. Disabling the depth test also disables depth writes (in GL
+        // and every bgfx backend alike), which is why on-top fills need the
+        // PassDepthOnly prepass before the line passes.
+        bool depthtest = mat.ontop ? false : mat.depthtest;
+        bool depthwrite = (!mat.ontop && transparent) ? false : mat.depthwrite;
+        uint8_t depthfunc = mat.depthfunc;
+        bool blend = transparent;
+        float dimalpha = 1.0f;
+        switch (pass) {
+        case PassDepthOnly:
+            depthtest = true;
+            depthwrite = true;
+            depthfunc = Render::Material::Less;
+            blend = false;
+            break;
+        case PassLineHidden:
+            depthtest = false;
+            blend = true;
+            dimalpha = mat.hiddenlinealpha;
+            break;
+        case PassLineSolid:
+            depthtest = true;
+            depthfunc = Render::Material::LEqual;
+            depthwrite = false;
+            blend = true;
+            break;
+        default:
+            break;
+        }
+
+        uint64_t state = BGFX_STATE_MSAA;
+        if (pass != PassDepthOnly)
+            state |= BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+        if (depthtest)
+            state |= depthFuncState(depthfunc);
+        if (depthwrite)
             state |= BGFX_STATE_WRITE_Z;
-        if (transparent)
+        if (blend)
             state |= BGFX_STATE_BLEND_ALPHA;
         if (mat.culling && !mat.twoside
                         && mat.type == Render::Material::Triangle)
@@ -634,7 +677,20 @@ public:
         params[1] = (mat.lighting
                      && mat.type == Render::Material::Triangle) ? 1.0f : 0.0f;
         params[2] = mat.twoside ? 1.0f : 0.0f;
-        params[3] = 0.0f;
+        // u_params.w: mesh program = NDC depth bias (polygon offset
+        // approximation, no per-pixel slope term); flat program = alpha
+        // ceiling used to dim depth-occluded on-top lines.
+        if (mat.type == Render::Material::Triangle) {
+            // One glPolygonOffset unit in NDC z: 2 (NDC range) * 16 LSB
+            // headroom for the unevaluated slope factor / 2^24 depth bits.
+            constexpr float kDepthBiasUnit = 2.0f * 16.0f / 16777216.0f;
+            params[3] = mat.polygonoffset
+                ? (mat.polygonoffsetfactor + mat.polygonoffsetunits)
+                    * kDepthBiasUnit
+                : 0.0f;
+        } else {
+            params[3] = dimalpha;
+        }
         bgfx::setUniform(u_matColor, color);
         bgfx::setUniform(u_matEmissive, emissive);
         bgfx::setUniform(u_matSpecular, specular);
@@ -650,8 +706,20 @@ public:
             bgfx::setIndexBuffer(ibh);
         bgfx::setState(state);
 
+        static const bool dbgsubmit =
+            (getenv("FC_BGFX_DEBUG_SUBMIT") != nullptr);
+        if (dbgsubmit)
+            fprintf(stderr,
+                    "bgfx submit view=%d pass=%d type=%d part=%d state=%llx"
+                    " color=%.2f,%.2f,%.2f,%.2f params=%g,%g,%g,%g\n",
+                    passView, pass, mat.type, draw.partIndex,
+                    (unsigned long long)state,
+                    color[0], color[1], color[2], color[3],
+                    params[0], params[1], params[2], params[3]);
+
         uint32_t depth = 0;
-        if (pass == ViewTransparent && draw.bboxMin[0] <= draw.bboxMax[0]) {
+        if (passView == ViewTransparent
+                 && draw.bboxMin[0] <= draw.bboxMax[0]) {
             // Sort key: distance of the world-space bbox center along the
             // view axis; the view is in DepthDescending mode (far first).
             float cx = (draw.bboxMin[0] + draw.bboxMax[0]) * 0.5f;
@@ -662,7 +730,7 @@ public:
             depth = bx::floatToBits(bx::max(-eyez, 0.0f));
         }
 
-        bgfx::submit(viewId + pass,
+        bgfx::submit(viewId + passView,
                      mat.type == Render::Material::Triangle
                          ? m_progMesh : m_progFlat,
                      depth);
@@ -838,32 +906,192 @@ public:
         view->drawcount = 0;
         const float *viewMat = reinterpret_cast<const float *>(viewMatrix);
 
+        auto isTriangle = [](const Render::DrawCall &d) {
+            return d.material.type == Render::Material::Triangle;
+        };
+        auto isTransp = [](const Render::DrawCall &d) {
+            return d.material.transparent
+                || (d.material.pervertexcolor
+                    && d.mesh && d.mesh->hasTransparency);
+        };
+
+        // Decide whether on-top lines/points need the two-pass hidden-line
+        // rendering (SoFCRenderer's hassel/hasontop/hlwholeontop check).
+        bool sceneOnTopTri = false, sceneOnTopLine = false;
+        for (const auto &draw : scene) {
+            if (!draw.material.ontop)
+                continue;
+            (isTriangle(draw) ? sceneOnTopTri : sceneOnTopLine) = true;
+        }
+        bool selOnTopLine = false;
+        for (const auto &sel : selections) {
+            if (sel.first <= 0)
+                continue;
+            for (const auto &draw : sel.second) {
+                if (!isTriangle(draw)) {
+                    selOnTopLine = true;
+                    break;
+                }
+            }
+        }
+        bool sceneTwoPass = sceneOnTopTri && sceneOnTopLine;
+        bool twoPass = sceneTwoPass || selOnTopLine || hlWholeOnTop;
+
+        // Whole-object selection/highlight draws replace the object's
+        // normal rendering (SoFCRenderer's selectionkeys/highlightkeys
+        // skip): collect their object keys and hide matching scene draws.
+        hiddenKeys.clear();
+        for (const auto &sel : selections) {
+            for (const auto &draw : sel.second) {
+                if (draw.wholeObject && draw.objectKey)
+                    hiddenKeys.insert(draw.objectKey);
+            }
+        }
+        if (hlWholeOnTop) {
+            for (const auto &draw : highlight) {
+                if (draw.wholeObject && draw.objectKey)
+                    hiddenKeys.insert(draw.objectKey);
+            }
+        }
+        auto isHidden = [this](const Render::DrawCall &d) {
+            return d.objectKey && !hiddenKeys.empty()
+                && hiddenKeys.count(d.objectKey);
+        };
+
+        // 1. Normal scene draws, then on-top triangle fills (opaque before
+        // transparent), mirroring the GL delayed-pass order. On-top lines
+        // are deferred below so they draw over the selection fills.
         view->ontop = false;
-        for (const auto &draw : scene)
-            view->submit(draw, viewMat);
-        // Mimic SoFCRenderer's selection pass order: whole-object fills and
-        // lines/points first, single-part (e.g. selected face) triangle
-        // draws blended on top of them last.
+        for (const auto &draw : scene) {
+            if (!draw.material.ontop && !isHidden(draw))
+                view->submit(draw, viewMat);
+        }
+        for (const auto &draw : scene) {
+            if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
+                    && !isHidden(draw))
+                view->submit(draw, viewMat);
+        }
+        for (const auto &draw : scene) {
+            if (draw.material.ontop && isTriangle(draw) && isTransp(draw)
+                    && !isHidden(draw))
+                view->submit(draw, viewMat);
+        }
+
+        // 2. Selection whole-object fills; positive ids are on-top
+        // selections (SoFCRenderer::addSelection). Their lines/points are
+        // deferred to the two-pass loop when it runs; single-part (e.g.
+        // selected face) triangle draws come last of all.
         for (const auto &sel : selections) {
-            // Positive ids are on-top selections (SoFCRenderer::addSelection)
             view->ontop = sel.first > 0;
             for (const auto &draw : sel.second) {
-                if (draw.material.type != Render::Material::Triangle
-                        || draw.partIndex < 0)
-                    view->submit(draw, viewMat);
+                if (isTriangle(draw) && draw.partIndex >= 0)
+                    continue;
+                if (twoPass && sel.first > 0 && !isTriangle(draw))
+                    continue;
+                view->submit(draw, viewMat);
             }
         }
-        for (const auto &sel : selections) {
-            view->ontop = sel.first > 0;
-            for (const auto &draw : sel.second) {
-                if (draw.material.type == Render::Material::Triangle
-                        && draw.partIndex >= 0)
-                    view->submit(draw, viewMat);
-            }
-        }
+
+        // 3. Whole-object preselection fills before the depth prepass.
         view->ontop = true;
-        for (const auto &draw : highlight)
-            view->submit(draw, viewMat);
+        if (hlWholeOnTop) {
+            for (const auto &draw : highlight) {
+                if (isTriangle(draw))
+                    view->submit(draw, viewMat);
+            }
+        }
+
+        if (twoPass) {
+            // 4. Depth-write-only prepass of on-top fills: on-top draws
+            // render without depth test and thus never write depth, so the
+            // solid line pass below needs this to tell hidden from visible.
+            if (sceneTwoPass) {
+                for (const auto &draw : scene) {
+                    if (draw.material.ontop && isTriangle(draw)
+                            && !isHidden(draw))
+                        view->submit(draw, viewMat, BGFXView::PassDepthOnly);
+                }
+            }
+            if (selOnTopLine) {
+                for (const auto &sel : selections) {
+                    if (sel.first <= 0)
+                        continue;
+                    for (const auto &draw : sel.second) {
+                        if (isTriangle(draw) && draw.partIndex < 0)
+                            view->submit(draw, viewMat,
+                                         BGFXView::PassDepthOnly);
+                    }
+                }
+            }
+            if (hlWholeOnTop) {
+                for (const auto &draw : highlight) {
+                    if (isTriangle(draw))
+                        view->submit(draw, viewMat, BGFXView::PassDepthOnly);
+                }
+            }
+
+            // 5. On-top lines/points, dimmed where depth-occluded then
+            // solid where visible (GL's RenderPassLinePattern/LineSolid).
+            for (int pass : {int(BGFXView::PassLineHidden),
+                             int(BGFXView::PassLineSolid)}) {
+                for (const auto &draw : scene) {
+                    if (draw.material.ontop && !isTriangle(draw)
+                            && !isHidden(draw))
+                        view->submit(draw, viewMat, pass);
+                }
+                for (const auto &sel : selections) {
+                    if (sel.first <= 0)
+                        continue;
+                    for (const auto &draw : sel.second) {
+                        if (!isTriangle(draw))
+                            view->submit(draw, viewMat, pass);
+                    }
+                }
+                if (hlWholeOnTop) {
+                    for (const auto &draw : highlight) {
+                        if (!isTriangle(draw) && draw.partIndex < 0)
+                            view->submit(draw, viewMat, pass);
+                    }
+                }
+            }
+        } else {
+            // No fills on top: scene on-top lines draw in a single pass.
+            for (const auto &draw : scene) {
+                if (draw.material.ontop && !isTriangle(draw)
+                        && !isHidden(draw))
+                    view->submit(draw, viewMat);
+            }
+        }
+
+        // 6. Single-part selection fills (e.g. the selected face), matching
+        // GL's transpselectionsfaceontop position after the line passes.
+        for (const auto &sel : selections) {
+            view->ontop = sel.first > 0;
+            for (const auto &draw : sel.second) {
+                if (isTriangle(draw) && draw.partIndex >= 0)
+                    view->submit(draw, viewMat);
+            }
+        }
+
+        // 7. Preselection highlight: whole-on-top fills/lines were handled
+        // above, only its single-part lines/points remain; otherwise draw
+        // everything here, fills first.
+        view->ontop = true;
+        if (hlWholeOnTop) {
+            for (const auto &draw : highlight) {
+                if (!isTriangle(draw) && draw.partIndex >= 0)
+                    view->submit(draw, viewMat);
+            }
+        } else {
+            for (const auto &draw : highlight) {
+                if (isTriangle(draw))
+                    view->submit(draw, viewMat);
+            }
+            for (const auto &draw : highlight) {
+                if (!isTriangle(draw))
+                    view->submit(draw, viewMat);
+            }
+        }
         view->ontop = false;
 
         view->collectMeshes();
@@ -922,6 +1150,7 @@ public:
     Render::DrawCallList scene;
     std::map<int, Render::DrawCallList> selections;
     Render::DrawCallList highlight;
+    std::unordered_set<uint64_t> hiddenKeys;
     bool hlWholeOnTop = false;
     bool sceneDirty = false;
     bool hasScene = false;
@@ -977,11 +1206,13 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
         fprintf(stderr,
                 "  type=%d part=%d range=%d+%d diffuse=%08x emissive=%08x"
                 " pvc=%d light=%d transp=%d ontop=%d dtest=%d dwrite=%d"
-                " dfunc=%d lw=%.1f\n",
+                " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f\n",
                 m.type, d.partIndex, d.indexStart, d.indexCount,
                 m.diffuse, m.emissive, m.pervertexcolor, m.lighting,
                 m.transparent, m.ontop, m.depthtest, m.depthwrite,
-                m.depthfunc, m.linewidth);
+                m.depthfunc, m.linewidth, m.polygonoffset,
+                m.polygonoffsetfactor, m.polygonoffsetunits,
+                m.hiddenlinealpha);
     }
 }
 
