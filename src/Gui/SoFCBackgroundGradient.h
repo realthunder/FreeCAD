@@ -56,9 +56,18 @@ public:
     void setColorGradient(const SbColor& fromColor,
                           const SbColor& toColor,
                           const SbColor& midColor);
+    /// Returns false when there is no middle color.
+    bool getColorGradient(SbColor& fromColor,
+                          SbColor& toColor,
+                          SbColor& midColor) const;
+    /// Skip GLRender() while set. Used per frame when an external render
+    /// backend draws the background itself; a plain flag (not a field) so
+    /// toggling it does not trigger scene-graph notification.
+    void setSuppressed(bool on) { suppressed = on; }
 
 private:
     Gradient gradient;
+    bool suppressed = false;
 
 protected:
     ~SoFCBackgroundGradient() override;

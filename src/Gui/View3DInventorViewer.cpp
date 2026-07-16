@@ -3227,6 +3227,27 @@ void View3DInventorViewer::renderScene()
         const SbViewportRegion vp = getSoRenderManager()->getViewportRegion();
         SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
+        // Describe the background so the backend draws it behind the scene;
+        // transparent geometry must blend against the real background, not
+        // the backend's clear color.
+        Render::Background rbg;
+        if (hasGradientBackground()) {
+            SbColor fcol, tcol, mcol;
+            rbg.hasMid = pcBackGround->getColorGradient(fcol, tcol, mcol);
+            rbg.type = getGradientBackground() == Background::LinearGradient
+                ? Render::Background::LinearGradient
+                : Render::Background::RadialGradient;
+            rbg.fromColor = fcol.getPackedValue();
+            rbg.toColor = tcol.getPackedValue();
+            if (rbg.hasMid)
+                rbg.midColor = mcol.getPackedValue();
+        } else {
+            rbg.type = Render::Background::Flat;
+            rbg.fromColor = (uint32_t(col.red()) << 24)
+                | (uint32_t(col.green()) << 16)
+                | (uint32_t(col.blue()) << 8) | 0xff;
+        }
+        _pimpl->renderer->setBackground(rbg);
         externalRendered =
             _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
         if (!externalRendered) {
@@ -3255,12 +3276,17 @@ void View3DInventorViewer::renderScene()
     SoGLRenderActionElement::set(state, glra);
     SoGLVBOActivatedElement::set(state, this->vboEnabled);
     // The external renderer's output (color + depth) is already in the
-    // framebuffer; the flat background fill would erase it. The gradient
-    // background node below is depth-tested at the far plane, so it only
-    // fills pixels the backend left empty.
+    // framebuffer, background included; the flat background fill would
+    // erase it, and the gradient background node would repaint every pixel
+    // still at the far plane — including transparent geometry, which does
+    // not write depth. Suppress both for backend-rendered frames (the
+    // suppress flag is reset right after so offscreen renders sharing the
+    // node keep their background).
     if (!externalRendered)
         drawSingleBackground(col);
+    pcBackGround->setSuppressed(externalRendered);
     glra->apply(this->backgroundroot);
+    pcBackGround->setSuppressed(false);
 
     SoBoxSelectionRenderAction *glbra = nullptr;
     if(glra->isOfType(SoBoxSelectionRenderAction::getClassTypeId())) {

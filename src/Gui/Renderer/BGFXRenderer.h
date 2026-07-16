@@ -52,6 +52,7 @@ public:
                           float &xmax, float &ymax, float &zmax) override;
 
     virtual void setScene(DrawCallList &&draws) override;
+    virtual void setBackground(const Background &bg) override;
     virtual void addSelection(int id, DrawCallList &&draws) override;
     virtual void removeSelection(int id) override;
     virtual void setHighlight(DrawCallList &&draws, bool wholeOnTop) override;

@@ -451,6 +451,16 @@ static inline void unpackColor(uint32_t rgba, float *out)
     out[3] = (rgba & 0xff) / 255.0f;
 }
 
+// 0xRRGGBBAA to the SceneVertex byte order (r,g,b,a in memory, i.e. what
+// GpuMesh::upload memcpy's from MeshData::colors).
+static inline uint32_t vertexColor(uint32_t rgba)
+{
+    return ((rgba >> 24) & 0xff)
+        | (((rgba >> 16) & 0xff) << 8)
+        | (((rgba >> 8) & 0xff) << 16)
+        | ((rgba & 0xff) << 24);
+}
+
 ////////////////////////////////////////////////////////
 
 class BGFXView
@@ -459,7 +469,8 @@ public:
     // Pass sequence reproducing (a simplified subset of) SoFCRenderer's
     // draw order. Each is a bgfx view sharing the same framebuffer.
     enum PassView {
-        ViewOpaque = 0,     // clear + opaque triangles, lines, points
+        ViewBackground = 0, // clear + gradient background quad (clip space)
+        ViewOpaque,         // opaque triangles, lines, points
         ViewTransparent,    // blended, depth read-only, back-to-front
         ViewOnTop,          // scene geometry with on-top materials
         ViewHighlight,      // selection-on-top and preselection highlight
@@ -582,6 +593,116 @@ public:
             } else
                 ++it;
         }
+    }
+
+    // Fullscreen gradient behind the scene, replicating
+    // SoFCBackgroundGradient::GLRender vertex for vertex in clip space
+    // (the background view has identity view/proj, so transparent scene
+    // geometry blends against the real background colors). Depth is
+    // neither tested nor written: the buffer keeps the far-plane clear
+    // value, matching the GL path where the gradient sits at the far
+    // plane.
+    void submitBackground(const Render::Background &bg)
+    {
+        if (bg.type == Render::Background::Flat)
+            return;
+
+        uint32_t fcol = vertexColor(bg.fromColor);
+        uint32_t tcol = vertexColor(bg.toColor);
+        uint32_t mcol = vertexColor(bg.midColor);
+
+        std::vector<SceneVertex> verts;
+        auto vert = [](float x, float y, uint32_t rgba) {
+            SceneVertex v;
+            v.px = x; v.py = y; v.pz = 1.0f;
+            v.nx = v.ny = 0.0f; v.nz = 1.0f;
+            v.rgba = rgba;
+            return v;
+        };
+        // Triangle-list expansion of a strip/fan given as a vertex list;
+        // winding is irrelevant (the background draw does not cull).
+        auto strip = [&verts](const std::vector<SceneVertex> &vs) {
+            for (size_t i = 2; i < vs.size(); ++i) {
+                verts.push_back(vs[i - 2]);
+                verts.push_back(vs[i - 1]);
+                verts.push_back(vs[i]);
+            }
+        };
+        auto fan = [&verts](const std::vector<SceneVertex> &vs) {
+            for (size_t i = 2; i < vs.size(); ++i) {
+                verts.push_back(vs[0]);
+                verts.push_back(vs[i - 1]);
+                verts.push_back(vs[i]);
+            }
+        };
+
+        if (bg.type == Render::Background::LinearGradient) {
+            if (!bg.hasMid)
+                strip({vert(-1.0f, 1.0f, fcol), vert(-1.0f, -1.0f, tcol),
+                       vert(1.0f, 1.0f, fcol), vert(1.0f, -1.0f, tcol)});
+            else {
+                strip({vert(-1.0f, 1.0f, fcol), vert(-1.0f, 0.0f, mcol),
+                       vert(1.0f, 1.0f, fcol), vert(1.0f, 0.0f, mcol)});
+                strip({vert(-1.0f, 0.0f, mcol), vert(-1.0f, -1.0f, tcol),
+                       vert(1.0f, 0.0f, mcol), vert(1.0f, -1.0f, tcol)});
+            }
+        } else {
+            // Same 32-segment circle/oval tessellation as the Coin node.
+            constexpr int kSegments = 32;
+            constexpr float kStep = 2.0f * bx::kPi / kSegments;
+            float circle[kSegments][2], oval[kSegments][2];
+            for (int i = 0; i < kSegments; ++i) {
+                float c = bx::cos(i * kStep), s = bx::sin(i * kStep);
+                circle[i][0] = bx::kSqrt2 * c;
+                circle[i][1] = bx::kSqrt2 * s;
+                oval[i][0] = 0.3f * bx::kSqrt2 * c;
+                oval[i][1] = s / bx::kSqrt2;
+            }
+            if (!bg.hasMid) {
+                std::vector<SceneVertex> vs;
+                vs.push_back(vert(0.0f, 0.0f, fcol));
+                for (auto &p : circle)
+                    vs.push_back(vert(p[0], p[1], tcol));
+                vs.push_back(vs[1]);
+                fan(vs);
+            } else {
+                std::vector<SceneVertex> vs;
+                vs.push_back(vert(0.0f, 0.0f, fcol));
+                for (auto &p : oval)
+                    vs.push_back(vert(p[0], p[1], mcol));
+                vs.push_back(vs[1]);
+                fan(vs);
+                vs.clear();
+                for (int i = 0; i < kSegments; ++i) {
+                    vs.push_back(vert(oval[i][0], oval[i][1], mcol));
+                    vs.push_back(vert(circle[i][0], circle[i][1], tcol));
+                }
+                vs.push_back(vs[0]);
+                vs.push_back(vs[1]);
+                strip(vs);
+            }
+        }
+
+        SceneVertex::init();
+        uint32_t num = uint32_t(verts.size());
+        if (bgfx::getAvailTransientVertexBuffer(num, SceneVertex::ms_layout)
+                < num)
+            return;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, num, SceneVertex::ms_layout);
+        memcpy(tvb.data, verts.data(), num * sizeof(SceneVertex));
+
+        float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float params[4] = {1.0f, 0.0f, 0.0f, 1.0f};  // per-vertex color
+        bgfx::setUniform(u_matColor, zero);
+        bgfx::setUniform(u_matEmissive, zero);
+        bgfx::setUniform(u_matSpecular, zero);
+        bgfx::setUniform(u_params, params);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                       | BGFX_STATE_MSAA);
+        bgfx::submit(viewId + ViewBackground, m_progFlat);
+        ++drawcount;
     }
 
     // Submission passes mirroring SoFCRenderer's delayed render loop.
@@ -891,7 +1012,11 @@ public:
                        : uint16_t(BGFX_CLEAR_NONE),
                 clearColor, 1.0f, 0);
             bgfx::setViewRect(id, 0, 0, width, height);
-            bgfx::setViewTransform(id, viewMatrix, projMatrix);
+            // The background quad is submitted in clip space.
+            if (i == BGFXView::ViewBackground)
+                bgfx::setViewTransform(id, nullptr, nullptr);
+            else
+                bgfx::setViewTransform(id, viewMatrix, projMatrix);
             // On-top and highlight draws are blended painter-style: keep
             // submission order (GL pass order) instead of state sorting.
             bgfx::setViewMode(id, i == BGFXView::ViewTransparent
@@ -904,6 +1029,7 @@ public:
 
         ++view->frame;
         view->drawcount = 0;
+        view->submitBackground(background);
         const float *viewMat = reinterpret_cast<const float *>(viewMatrix);
 
         auto isTriangle = [](const Render::DrawCall &d) {
@@ -1148,6 +1274,7 @@ public:
     // upload happens lazily during render(), so the feed may arrive before
     // bgfx is initialized.
     Render::DrawCallList scene;
+    Render::Background background;
     std::map<int, Render::DrawCallList> selections;
     Render::DrawCallList highlight;
     std::unordered_set<uint64_t> hiddenKeys;
@@ -1194,6 +1321,11 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
     pimpl->scene = std::move(draws);
     pimpl->sceneDirty = true;
     pimpl->updateBBox();
+}
+
+void BGFXRenderer::setBackground(const Background &bg)
+{
+    pimpl->background = bg;
 }
 
 static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)

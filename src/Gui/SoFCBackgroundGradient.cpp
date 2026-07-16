@@ -87,6 +87,8 @@ void SoFCBackgroundGradient::initClass()
 
 void SoFCBackgroundGradient::GLRender (SoGLRenderAction * /*action*/)
 {
+    if (suppressed)
+        return;
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -181,4 +183,14 @@ void SoFCBackgroundGradient::setColorGradient(const SbColor& fromColor,
     fCol = fromColor;
     tCol = toColor;
     mCol = midColor;
+}
+
+bool SoFCBackgroundGradient::getColorGradient(SbColor& fromColor,
+                                              SbColor& toColor,
+                                              SbColor& midColor) const
+{
+    fromColor = fCol;
+    toColor = tCol;
+    midColor = mCol;
+    return mCol[0] >= 0.0f;
 }

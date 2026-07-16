@@ -68,6 +68,20 @@ struct MeshData {
     bool hasOpaqueParts = false;    ///< some per-vertex colors are opaque
 };
 
+/// Window background drawn behind the scene, mirroring the Coin-side
+/// gradient background node. Backends that consume the scene must draw it
+/// themselves so transparent geometry blends against the real background
+/// (and the Coin node is skipped for backend-rendered frames). Colors are
+/// packed 0xRRGGBBAA.
+struct Background {
+    enum Type : uint8_t { Flat, LinearGradient, RadialGradient };
+    uint8_t type = Flat;
+    uint32_t fromColor = 0;  ///< flat color / gradient top / radial center
+    uint32_t toColor = 0;    ///< gradient bottom / radial edge
+    uint32_t midColor = 0;   ///< optional intermediate color
+    bool hasMid = false;
+};
+
 /// Flattened per-draw render state, translated from the Coin-side material
 /// (SoFCRenderCache::Material). Colors are packed 0xRRGGBBAA.
 struct Material {
@@ -147,6 +161,10 @@ public:
     //@{
     /// Replace the whole scene. An empty list clears it.
     virtual void setScene(DrawCallList &&draws) { (void)draws; }
+    /// Describe the window background for the next render(). The bg color
+    /// passed to render() stays the clear-color fallback for backends that
+    /// ignore this.
+    virtual void setBackground(const Background &bg) { (void)bg; }
     /// Add/replace one selection identified by id (SoFCRenderer::SelIdBits).
     virtual void addSelection(int id, DrawCallList &&draws)
     { (void)id; (void)draws; }

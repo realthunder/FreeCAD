@@ -205,18 +205,25 @@ The engine-agnostic core; everything later depends on it.
    bgfx has no fixed-function polygon offset). Still missing:
    textures/clip planes/autozoom ignored, per-vertex-transparent caches
    go wholesale to the transparent bucket.
-   **Known issue — transparent scene geometry is invisible**: transparent
-   draws don't write depth (GL parity), so after the color+depth blit the
-   Coin gradient background node (depth-tested at the far plane) repaints
-   those pixels; they also blend against the bgfx clear color rather than
-   the real background because bgfx renders before Coin. Fix direction:
-   render the background inside bgfx (gradient quad / clear) and skip
-   Coin's background when the backend rendered — part of the item-5
-   compositing audit.
+   ~~**Known issue — transparent scene geometry is invisible**~~ *Fixed
+   (2026-07) by background compositing*: the backend now draws the window
+   background itself (`Render::Background` fed from the viewer,
+   `BGFXView::submitBackground` replicates `SoFCBackgroundGradient`'s
+   linear/radial tessellation as a clip-space quad in a dedicated first
+   bgfx view), so transparent draws blend against the real background;
+   `View3DInventorViewer::renderScene` suppresses Coin's gradient node for
+   backend-rendered frames (`SoFCBackgroundGradient::setSuppressed`, a
+   plain flag so toggling doesn't trigger notification) — it used to
+   repaint every far-plane pixel, erasing transparent geometry which
+   writes no depth. Verified: linear and radial background pixels match
+   GL exactly; transparent-over-background blends. Remaining transparency
+   parity gap: GL renders noticeably brighter transparent fills (it
+   appears to blend back and front faces as separate layers where bgfx
+   submits one draw) — revisit with the WBOIT work.
 4. **Pass skeleton**: bgfx view sequence reproducing today's ordering.
-   *First cut done (2026-07):* 4 views — opaque → transparent (bbox-center
-   depth sort via `ViewMode::DepthDescending`) → on-top → selection/
-   highlight. *Grown (2026-07)*: depth-write-only prepass of on-top fills
+   *First cut done (2026-07):* 5 views — background (clear + gradient
+   quad) → opaque → transparent (bbox-center depth sort via
+   `ViewMode::DepthDescending`) → on-top → selection/highlight. *Grown (2026-07)*: depth-write-only prepass of on-top fills
    and the hidden(dimmed)/solid two-pass for on-top lines/points, matching
    the GL delayed-pass order (see item 5). Still to grow: outline,
    section, line pattern, plus the depth+normal prepass slot for
@@ -347,6 +354,14 @@ deferred.
   changes; a crash *before* teardown is what matters.
 - `FC_NO_BGFX_QUITHOOK=1` disables the bgfx aboutToQuit cleanup hook for
   teardown debugging.
+- **Wayland destination-alpha bleed (fixed 2026-07)**: blended transparent
+  geometry leaves alpha < 1 in the framebuffer; Wayland compositors (WSLg)
+  honor destination alpha and blend the FreeCAD window with windows behind
+  it (X11 ignores it). `renderScene()` now force-clears the alpha channel
+  to 1 at the end of every onscreen frame (color-masked clear), both GL and
+  backend paths. Side effect: `grabFramebuffer()` images are now fully
+  opaque — earlier color checks on transparent pixels were skewed by the
+  premultiplied-alpha unpack in the QImage→PNG save.
 - **Phase 0 bridge smoke-tested (2026-07, Wayland/WSLg)**: box+cylinder
   scene renders through bgfx (shaded faces, black edges, per-object colors,
   selection tint on top, gradient background composited), GL pass skipped
