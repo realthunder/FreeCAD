@@ -43,6 +43,7 @@
 
 #include <map>
 #include <vector>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <set>
@@ -1128,6 +1129,36 @@ public:
                 && hiddenKeys.count(d.objectKey);
         };
 
+        // The same object selected through several ids draws its
+        // whole-object geometry only once (GL's renderkeys dedup in
+        // SoFCRendererP::updateSelection): the first draw of a given
+        // (objectKey, cacheId, primitive type) wins, on-top selections
+        // considered first like the GL loop order.
+        dupDraws.clear();
+        {
+            std::set<std::tuple<uint64_t, uint64_t, uint8_t>> seen;
+            auto dedup = [&](const Render::DrawCallList &draws) {
+                for (const auto &draw : draws) {
+                    if (!draw.wholeObject || !draw.objectKey || !draw.mesh)
+                        continue;
+                    if (!seen.emplace(draw.objectKey, draw.mesh->cacheId,
+                                      draw.material.type).second)
+                        dupDraws.insert(&draw);
+                }
+            };
+            for (const auto &sel : selections) {
+                if (sel.first > 0)
+                    dedup(sel.second);
+            }
+            for (const auto &sel : selections) {
+                if (sel.first <= 0)
+                    dedup(sel.second);
+            }
+        }
+        auto isDup = [this](const Render::DrawCall &d) {
+            return !dupDraws.empty() && dupDraws.count(&d);
+        };
+
         // 1. Normal scene draws, then on-top triangle fills (opaque before
         // transparent), mirroring the GL delayed-pass order. On-top lines
         // are deferred below so they draw over the selection fills.
@@ -1158,6 +1189,8 @@ public:
                     continue;
                 if (twoPass && sel.first > 0 && !isTriangle(draw))
                     continue;
+                if (isDup(draw))
+                    continue;
                 view->submit(draw, viewMat);
             }
         }
@@ -1187,7 +1220,8 @@ public:
                     if (sel.first <= 0)
                         continue;
                     for (const auto &draw : sel.second) {
-                        if (isTriangle(draw) && draw.partIndex < 0)
+                        if (isTriangle(draw) && draw.partIndex < 0
+                                && !isDup(draw))
                             view->submit(draw, viewMat,
                                          BGFXView::PassDepthOnly);
                     }
@@ -1213,7 +1247,7 @@ public:
                     if (sel.first <= 0)
                         continue;
                     for (const auto &draw : sel.second) {
-                        if (!isTriangle(draw))
+                        if (!isTriangle(draw) && !isDup(draw))
                             view->submit(draw, viewMat, pass);
                     }
                 }
@@ -1278,10 +1312,10 @@ public:
 
         if (getenv("FC_BGFX_DEBUG_READBACK"))
             fprintf(stderr, "bgfx frame %llu: scene=%zu sel=%zu hl=%zu"
-                    " draws=%d\n",
+                    " dups=%zu draws=%d\n",
                     (unsigned long long)view->frame, scene.size(),
                     selections.size(), highlight.size(),
-                    view->drawcount);
+                    dupDraws.size(), view->drawcount);
 
         renderOk = true;
         hasScene = !scene.empty();
@@ -1322,6 +1356,7 @@ public:
     std::map<int, Render::DrawCallList> selections;
     Render::DrawCallList highlight;
     std::unordered_set<uint64_t> hiddenKeys;
+    std::unordered_set<const Render::DrawCall *> dupDraws;
     bool hlWholeOnTop = false;
     bool sceneDirty = false;
     bool hasScene = false;
