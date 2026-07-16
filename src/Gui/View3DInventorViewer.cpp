@@ -3162,8 +3162,14 @@ void View3DInventorViewer::onGetBoundingBox(SoGetBoundingBoxAction *action)
 
 void View3DInventorViewer::setRendererType(const std::string &type)
 {
-    if (ViewParams::getRenderCache() != 3)
-        _pimpl->renderer.reset();
+    // An empty or 'Default' type selects the plain GL pipeline. A failed
+    // RendererFactory::create() also returns null, falling back to plain GL.
+    if (type.empty() || type == "Default") {
+        if (_pimpl->renderer) {
+            _pimpl->renderer.reset();
+            getSoRenderManager()->scheduleRedraw();
+        }
+    }
     else if (!_pimpl->renderer || _pimpl->renderer->type() != type) {
         _pimpl->renderer = RendererFactory::create(
                 type, qobject_cast<QOpenGLWidget*>(getGLWidget()));

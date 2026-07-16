@@ -88,6 +88,7 @@ void View3DSettings::applySettings()
     OnChange(*hGrp,"CornerNaviCube");
     OnChange(*hGrp,"UseVBO");
     OnChange(*hGrp,"RenderCache");
+    OnChange(*hGrp,"RendererType");
     OnChange(*hGrp,"Orthographic");
     OnChange(*hGrp,"EnableHeadlight");
     OnChange(*hGrp,"HeadlightColor");
@@ -341,10 +342,18 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::M
             }
         }
     }
-    else if (strcmp(Reason,"RenderCache") == 0) {
+    else if (strcmp(Reason,"RenderCache") == 0
+            || strcmp(Reason,"RendererType") == 0) {
         if (!ignoreRenderCache) {
+            int mode = rGrp.GetInt("RenderCache", 0);
+            // The experimental renderer backend is only used in render cache
+            // mode 3; any other mode keeps the plain GL pipeline.
+            std::string type = mode == 3 ?
+                rGrp.GetASCII("RendererType", "Default") : std::string();
             for (auto _viewer : _viewers) {
-                _viewer->setRenderCache(rGrp.GetInt("RenderCache", 0));
+                if (strcmp(Reason,"RenderCache") == 0)
+                    _viewer->setRenderCache(mode);
+                _viewer->setRendererType(type);
             }
         }
     }
