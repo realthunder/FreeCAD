@@ -184,5 +184,7 @@ boost < 1.85). As of writing these are **uncommitted** in the fcad and occt work
 Open items:
 - Verify Path workbench Area/Voronoi behavior with vanilla boost ≥ 1.85 geometry
   (the `boost_fix` header overlay that used to patch it is disabled there).
-- The distribution feedstocks are still Qt5/PySide2; this environment previews the
-  fork's Qt6 move.
+- The freecad-rt and pivy feedstocks now default to Qt6 (qt6-main/pyside6, jinja
+  `qt` variable, 2026-07), but no Qt6 distribution image has been built yet — the
+  qt6 variant needs a new source tag containing the Qt6/toolchain port commits
+  (the pinned tag predates them).
