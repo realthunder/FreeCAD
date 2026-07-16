@@ -46,6 +46,7 @@
 
 #undef GL_GLEXT_VERSION
 #include <QColor>
+#include <QCoreApplication>
 #include <QVariant>
 #include <QOffscreenSurface>
 #include <QOpenGLFramebufferObject>
@@ -199,6 +200,8 @@ public:
             types.push_back(v.first);
     }
 
+    ~BGFXRendererLibP();
+
     BGFXView *getView(QOpenGLWidget *widget, RendererType::Enum type);
 
     void removeView(QOpenGLWidget *widget);
@@ -214,6 +217,20 @@ public:
             offscreen.reset(new QOffscreenSurface);
             offscreen->setFormat(format);
             offscreen->create();
+            if (!quitHooked && QCoreApplication::instance() && !getenv("FC_NO_BGFX_QUITHOOK")) {
+                quitHooked = true;
+                // Tear down bgfx and its Qt GL objects while Qt is still
+                // alive. This static _BGFXLib is otherwise destroyed at
+                // library unload, after QApplication is gone, where deleting
+                // the QOpenGLContext/QOffscreenSurface crashes.
+                QObject::connect(QCoreApplication::instance(),
+                                 &QCoreApplication::aboutToQuit,
+                                 [this]() {
+                                     views.clear();
+                                     viewIds.clear();
+                                     shutdown();
+                                 });
+            }
         }
 
         if (currentType == RendererType::Noop) {
@@ -315,6 +332,7 @@ public:
     std::string name = "bgfx";
     std::set<BGFXRenderer::Private *> renderers;
     QWindow *window = nullptr;
+    bool quitHooked = false;
 };
 
 BGFXRendererLibP _BGFXLib;
@@ -769,6 +787,19 @@ BGFXView *BGFXRendererLibP::getView(QOpenGLWidget *widget, RendererType::Enum ty
         viewIds.insert(view->viewId);
     } 
     return view.get();
+}
+
+BGFXRendererLibP::~BGFXRendererLibP()
+{
+    // This destructor runs at library unload, when Qt is partially or fully
+    // torn down; deleting the QOpenGLContext/QOffscreenSurface (or views
+    // holding bgfx resources) here crashes inside Qt. If shutdown() ran the
+    // pointers are already null; otherwise leak them, the process is exiting.
+    for (auto &v : views)
+        v.second.release();
+    views.clear();
+    context.release();
+    offscreen.release();
 }
 
 void BGFXRendererLibP::shutdown()
