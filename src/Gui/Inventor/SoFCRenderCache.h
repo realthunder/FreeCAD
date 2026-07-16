@@ -369,17 +369,6 @@ public:
   };
 
   struct Material : _Material {
-    Material() {}
-    Material(const Material &other) {
-      *this = other;
-    }
-    const Material &operator=(const Material &other) {
-      if (other.linecolor)
-        static_cast<_Material&>(*this) = other;
-      else
-        static_cast<_Material&>(*this) = other;
-      return *this;
-    }
   };
 
 

@@ -942,7 +942,7 @@ SoFCVertexCacheP::finalizeTriangleIndexer()
       this->hassolid = 1;
       for (int i=0, c=nodes->getNum(); i<c; ++i) {
         if (!nodes->getNode(i)
-            || nodes->getNode(i)->isOfType(SoFCShapeInstance::getClassTypeId()))
+            || !nodes->getNode(i)->isOfType(SoFCShapeInstance::getClassTypeId()))
           continue;
         auto instance = static_cast<SoFCShapeInstance*>(nodes->getNode(i));
         if (!instance->shapeInfo.getValue()
