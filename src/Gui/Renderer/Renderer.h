@@ -115,6 +115,15 @@ struct Material {
     /// Alpha used to dim the depth-occluded part of on-top lines/points
     /// (ViewParams::TransparencyOnTop); 1 = no dimming.
     float hiddenlinealpha = 1.0f;
+
+    /// World-space clip plane equations (sections). A fragment survives
+    /// when dot(pos, plane.xyz) + plane.w >= 0 holds for every plane, or,
+    /// in concave mode, for at least one plane (GL parity: SectionConcave
+    /// renders one enabled plane per pass, i.e. the union of half-spaces).
+    static constexpr int MaxClipPlanes = 6;
+    uint8_t numclipplanes = 0;
+    bool clipconcave = false;
+    float clipplanes[MaxClipPlanes][4];
 };
 
 /// One draw of (a part of) a mesh with a material and model transform.

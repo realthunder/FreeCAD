@@ -26,10 +26,12 @@
 #include <unordered_map>
 
 #include <Inventor/SbBox3f.h>
+#include <Inventor/SbPlane.h>
 #include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
+#include <Inventor/nodes/SoClipPlane.h>
 
 #include "SoFCRendererBridge.h"
 #include "SoFCVertexCache.h"
@@ -148,6 +150,31 @@ translateMaterial(const CoinMaterial & m)
     // (SoFCRenderer's RenderPassLinePattern pass).
     if (res.ontop && res.type != Render::Material::Triangle)
         res.hiddenlinealpha = float(ViewParams::getTransparencyOnTop());
+
+    // Clip planes (sections), as world-space plane equations. Same on-top
+    // exception as SoFCRenderer::applyMaterial: on-top draws are not
+    // sectioned when NoSectionOnTop is set (default) or in concave mode.
+    if (m.clippers.getNum()) {
+        bool concave =
+            ViewParams::getSectionConcave() && m.clippers.getNum() > 1;
+        if (!((ViewParams::getNoSectionOnTop() || concave) && res.ontop)) {
+            for (const auto & info : m.clippers.getData()) {
+                const SoClipPlane * clipper = info.cast<SoClipPlane>();
+                if (!clipper->on.getValue() || clipper->on.isIgnored())
+                    continue;
+                SbPlane plane = clipper->plane.getValue();
+                if (!info.identity)
+                    plane.transform(info.matrix);
+                // SbPlane: kept points satisfy dot(p, normal) >= distance.
+                float * eq = res.clipplanes[res.numclipplanes];
+                plane.getNormal().getValue(eq[0], eq[1], eq[2]);
+                eq[3] = -plane.getDistanceFromOrigin();
+                if (++res.numclipplanes == Render::Material::MaxClipPlanes)
+                    break;
+            }
+            res.clipconcave = concave && res.numclipplanes > 1;
+        }
+    }
     return res;
 }
 

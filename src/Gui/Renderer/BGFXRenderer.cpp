@@ -499,6 +499,14 @@ public:
             bgfx::destroy(m_progFlat);
             m_progFlat = BGFX_INVALID_HANDLE;
         }
+        if (bgfx::isValid(m_progMeshClip)) {
+            bgfx::destroy(m_progMeshClip);
+            m_progMeshClip = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progFlatClip)) {
+            bgfx::destroy(m_progFlatClip);
+            m_progFlatClip = BGFX_INVALID_HANDLE;
+        }
         if (bgfx::isValid(u_matColor)) {
             bgfx::destroy(u_matColor);
             u_matColor = BGFX_INVALID_HANDLE;
@@ -514,6 +522,14 @@ public:
         if (bgfx::isValid(u_params)) {
             bgfx::destroy(u_params);
             u_params = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(u_clipParams)) {
+            bgfx::destroy(u_clipParams);
+            u_clipParams = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(u_clipPlanes)) {
+            bgfx::destroy(u_clipPlanes);
+            u_clipPlanes = BGFX_INVALID_HANDLE;
         }
         if (hasFBO) {
             _BGFXLib.freeFBO(fbo);
@@ -567,11 +583,18 @@ public:
                                  _BGFXLib.resource().c_str());
         m_progFlat = loadProgram("vs_fc_flat", "fs_fc_flat",
                                  _BGFXLib.resource().c_str());
+        m_progMeshClip = loadProgram("vs_fc_mesh_clip", "fs_fc_mesh_clip",
+                                     _BGFXLib.resource().c_str());
+        m_progFlatClip = loadProgram("vs_fc_flat_clip", "fs_fc_flat_clip",
+                                     _BGFXLib.resource().c_str());
 
         u_matColor = bgfx::createUniform("u_matColor", bgfx::UniformType::Vec4);
         u_matEmissive = bgfx::createUniform("u_matEmissive", bgfx::UniformType::Vec4);
         u_matSpecular = bgfx::createUniform("u_matSpecular", bgfx::UniformType::Vec4);
         u_params = bgfx::createUniform("u_params", bgfx::UniformType::Vec4);
+        u_clipParams = bgfx::createUniform("u_clipParams", bgfx::UniformType::Vec4);
+        u_clipPlanes = bgfx::createUniform("u_clipPlanes", bgfx::UniformType::Vec4,
+                                           Render::Material::MaxClipPlanes);
     }
 
     GpuMesh *getMesh(const Render::MeshData &data)
@@ -817,6 +840,20 @@ public:
         bgfx::setUniform(u_matSpecular, specular);
         bgfx::setUniform(u_params, params);
 
+        // Clipped draws use the discard shader variants; the unclipped
+        // programs contain no discard so the rest of the scene keeps
+        // early-Z. The depth prepass clips too (unlike the stateful GL
+        // path, which leaves whatever planes happen to be enabled).
+        bool clipped = mat.numclipplanes > 0;
+        if (clipped) {
+            float clipParams[4] = {float(mat.numclipplanes),
+                                   mat.clipconcave ? 1.0f : 0.0f,
+                                   0.0f, 0.0f};
+            bgfx::setUniform(u_clipParams, clipParams);
+            bgfx::setUniform(u_clipPlanes, mat.clipplanes,
+                             mat.numclipplanes);
+        }
+
         if (!draw.identity)
             bgfx::setTransform(draw.model);
         bgfx::setVertexBuffer(0, mesh->vbh);
@@ -832,11 +869,13 @@ public:
         if (dbgsubmit)
             fprintf(stderr,
                     "bgfx submit view=%d pass=%d type=%d part=%d state=%llx"
-                    " color=%.2f,%.2f,%.2f,%.2f params=%g,%g,%g,%g\n",
+                    " color=%.2f,%.2f,%.2f,%.2f params=%g,%g,%g,%g"
+                    " clip=%d%s\n",
                     passView, pass, mat.type, draw.partIndex,
                     (unsigned long long)state,
                     color[0], color[1], color[2], color[3],
-                    params[0], params[1], params[2], params[3]);
+                    params[0], params[1], params[2], params[3],
+                    mat.numclipplanes, mat.clipconcave ? " concave" : "");
 
         uint32_t depth = 0;
         if (passView == ViewTransparent
@@ -853,7 +892,8 @@ public:
 
         bgfx::submit(viewId + passView,
                      mat.type == Render::Material::Triangle
-                         ? m_progMesh : m_progFlat,
+                         ? (clipped ? m_progMeshClip : m_progMesh)
+                         : (clipped ? m_progFlatClip : m_progFlat),
                      depth);
         ++drawcount;
     }
@@ -937,10 +977,14 @@ public:
     bgfx::TextureHandle bgfxDepth = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMesh = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progFlat = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progFlatClip = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matColor = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matEmissive = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matSpecular = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_params = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_clipParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_clipPlanes = BGFX_INVALID_HANDLE;
     std::unordered_map<uint64_t, GpuMesh> meshes;
     uint64_t frame = 0;
     int drawcount = 0;
@@ -1345,6 +1389,11 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
                 m.depthfunc, m.linewidth, m.polygonoffset,
                 m.polygonoffsetfactor, m.polygonoffsetunits,
                 m.hiddenlinealpha);
+        for (int i = 0; i < m.numclipplanes; ++i)
+            fprintf(stderr, "  clip%s %d: %g,%g,%g,%g\n",
+                    m.clipconcave ? " (concave)" : "", i,
+                    m.clipplanes[i][0], m.clipplanes[i][1],
+                    m.clipplanes[i][2], m.clipplanes[i][3]);
     }
 }
 

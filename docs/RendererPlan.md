@@ -202,9 +202,22 @@ The engine-agnostic core; everything later depends on it.
    render. *Polygon offset (2026-07)*: `glPolygonOffset(factor, units)` on
    filled triangles is bridged and approximated by a constant NDC depth
    bias in the vertex shader (`u_params.w`; no per-pixel slope term —
-   bgfx has no fixed-function polygon offset). Still missing:
-   textures/clip planes/autozoom ignored, per-vertex-transparent caches
-   go wholesale to the transparent bucket.
+   bgfx has no fixed-function polygon offset). *Clip planes done
+   (2026-07, no caps)*: the bridge resolves `Material::clippers` into
+   world-space plane equations (`Render::Material::clipplanes`, max 6),
+   applying `applyMaterial`'s on-top exception (`NoSectionOnTop` /
+   concave), and the backend renders clipped draws with `*_clip` shader
+   program variants that `discard` (`fc_clip.sh`); concave mode
+   (`SectionConcave`) becomes a union-of-half-spaces test in the same
+   shader instead of GL's one-plane-per-pass loop. The unclipped
+   programs contain no `discard` (keeps early-Z) — and bgfx rejects
+   programs whose VS outputs don't exactly match the FS inputs, which is
+   why the clip variants need their own VS (`v_wpos` varying) and the
+   shader bodies are shared via `fc_{mesh,flat}_{vs,fs}.sh` includes.
+   Verified GL/bgfx pixel-identical geometry extents for 1-plane and
+   2-plane (intersection) cuts. Still missing: textures/autozoom
+   ignored, section caps/fill (stencil capping is Phase 2),
+   per-vertex-transparent caches go wholesale to the transparent bucket.
    ~~**Known issue — transparent scene geometry is invisible**~~ *Fixed
    (2026-07) by background compositing*: the backend now draws the window
    background itself (`Render::Background` fed from the viewer,
