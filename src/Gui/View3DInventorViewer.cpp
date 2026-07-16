@@ -3368,6 +3368,16 @@ void View3DInventorViewer::renderScene()
         naviCube->drawNaviCube();
     }
 
+    // Force the frame fully opaque: blended transparent geometry leaves
+    // alpha < 1 in the framebuffer, and Wayland compositors (e.g. WSLg)
+    // honor destination alpha, blending the window with whatever is behind
+    // it (X11 ignores it, which is why this never showed there).
+    glPushAttrib(GL_COLOR_BUFFER_BIT);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glPopAttrib();
+
     if(restoreGradient) {
         setGradientBackground(grad);
     }
