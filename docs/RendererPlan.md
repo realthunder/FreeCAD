@@ -167,6 +167,8 @@ The engine-agnostic core; everything later depends on it.
 1. **Wiring** (small, do first): call `setRendererType()` from
    `View3DSettings` / viewer setup so the prefs `RendererType` takes effect;
    handle renderer-creation failure by falling back to the GL path.
+   *Done (2026-07), including a fix for the bgfx static-teardown crash at
+   application exit.*
 2. **Interface growth**: extend `Render::Renderer` from demo-cube signature to
    a scene API mirroring `SoFCRenderer`'s:
    `setScene / addSelection / removeSelection / setHighlight / clearHighlight
@@ -245,7 +247,26 @@ deferred.
 - Coin remains the owner of camera, events, manipulators, overlays,
   and picking until explicitly migrated.
 
-## 5. Open questions
+## 5. Verification notes (2026-07, WSLg dev box)
+
+- Prefs wiring verified live: RenderCache=3 + RendererType="bgfx - OpenGL"
+  initializes bgfx and renders on first paint, under both xcb and
+  `QT_QPA_PLATFORM=wayland`.
+- bgfx's GL path is **GLX-bound** (`glcontext_glx.cpp`), so under Wayland it
+  runs through XWayland. Native Wayland needs bgfx built with Wayland support
+  and the `wl_egl_window`/EGL native handles passed via Qt's native
+  interface — Phase 0/3 work item.
+- Exit-time noise on this box (all pre-existing, not caused by the renderer
+  work): with the renderer active, an X `BadAccess` at teardown makes the
+  process exit 1 (happens with and without the bgfx quit hook — GLX/Qt
+  context teardown ordering); the baseline app without any renderer aborts
+  at exit with a `QOpenGLWidget` assert in the debug Qt build. Do not chase
+  these when verifying renderer changes; a crash *before* teardown is what
+  matters.
+- `FC_NO_BGFX_QUITHOOK=1` disables the bgfx aboutToQuit cleanup hook for
+  teardown debugging.
+
+## 6. Open questions
 
 - Feed the backend from `SoFCRenderCacheManager` (parallel sink to
   `SoFCRenderer`) vs. behind `SoFCRenderer` (replace its GL emission)?
@@ -260,7 +281,7 @@ deferred.
 - Where PBR material parameters live (new `ViewProvider` properties vs.
   App-side material model) — coordinate with upstream material work.
 
-## 6. References
+## 7. References
 
 - Research (2026-07): bgfx WebGPU status <https://bkaradzic.github.io/posts/webgpu/>;
   bgfx examples <https://bkaradzic.github.io/bgfx/examples.html>;
