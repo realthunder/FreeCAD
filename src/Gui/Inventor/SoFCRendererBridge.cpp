@@ -35,6 +35,7 @@
 #include <Inventor/nodes/SoClipPlane.h>
 
 #include "SoFCRendererBridge.h"
+#include "SoFCDisplayModeElement.h"
 #include "SoFCRenderer.h"
 #include "SoFCVertexCache.h"
 #include "../ViewParams.h"
@@ -52,7 +53,7 @@ struct CacheMeshData : Render::MeshData {
     Gui::CoinPtr<SoFCVertexCache> holder;
 };
 
-std::shared_ptr<const Render::MeshData>
+std::shared_ptr<CacheMeshData>
 translateCache(SoFCVertexCache * cache)
 {
     auto mesh = std::make_shared<CacheMeshData>();
@@ -122,9 +123,14 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight)
     res.emissive = m.emissive;
     res.specular = m.specular;
     res.ambient = m.ambient;
+    res.linecolor = m.linecolor;
     res.shininess = m.shininess;
     res.linewidth = m.linewidth;
     res.pointsize = m.pointsize;
+
+    // Hidden-line draw style material: the backend outlines whole-cache
+    // triangle draws and applies the per-frame HiddenLineConfig rules.
+    res.outline = m.outline;
 
     // Selection line/point thickening (GL: applyMaterial ~552 under
     // RenderPassHighlight). Applied at translate time so backends see the
@@ -282,7 +288,7 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
 
     // Share one MeshData among all entries referring to the same cache.
     std::unordered_map<SoFCVertexCache *,
-                       std::shared_ptr<const Render::MeshData>> meshes;
+                       std::shared_ptr<CacheMeshData>> meshes;
 
     for (const auto & v : vcachemap) {
         const CoinMaterial & material = v.first;
@@ -325,6 +331,33 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             if (!mesh)
                 mesh = translateCache(ventry.cache);
 
+            // Hidden-line extras, filled on demand: the seam-filtered line
+            // index set (hideSeam), and per-face-part triangle ranges for
+            // outlining clipped geometry part by part (GL: renderOutline
+            // switches to getNumFaceParts() when clip planes are active).
+            if (rmat.outline && ventry.partidx < 0) {
+                if (rmat.type == Render::Material::Line
+                        && !mesh->noSeamLineIndices
+                        && ventry.cache->getNumNoSeamLineIndices() > 0) {
+                    mesh->numNoSeamLineIndices =
+                        ventry.cache->getNumNoSeamLineIndices();
+                    mesh->noSeamLineIndices = reinterpret_cast<const int32_t *>(
+                            ventry.cache->getNoSeamLineIndices());
+                }
+                if (rmat.type == Render::Material::Triangle
+                        && rmat.numclipplanes > 0
+                        && mesh->triangleParts.empty()) {
+                    int numparts = ventry.cache->getNumFaceParts();
+                    mesh->triangleParts.reserve(numparts);
+                    for (int i = 0; i < numparts; ++i) {
+                        int start = 0, count = 0;
+                        if (ventry.cache->getTrianglePartRange(i, start, count)
+                                && count > 0)
+                            mesh->triangleParts.emplace_back(start, count);
+                    }
+                }
+            }
+
             res.emplace_back();
             Render::DrawCall & draw = res.back();
             draw.material = rmat;
@@ -358,6 +391,28 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             }
         }
     }
+    return res;
+}
+
+Render::HiddenLineConfig
+RendererBridge::translateHiddenLineConfig(SoState * state)
+{
+    Render::HiddenLineConfig res;
+    SoFCDisplayModeElement::HiddenLineConfig config;
+    if (!SoFCDisplayModeElement::showHiddenLines(state, &config))
+        return res;
+    res.show = true;
+    res.hideFace = config.hideFace;
+    res.hideSeam = config.hideSeam;
+    res.hideVertex = config.hideVertex;
+    res.perFaceOutline = config.perFaceOutline;
+    res.sceneOutline = config.sceneOutline;
+    res.outlineWidth = config.outlineWidth;
+    res.outlineThicken = float(ViewParams::getOutlineThicken());
+    if (const SbColor * color = SoFCDisplayModeElement::getLineColor(state))
+        res.lineColor = color->getPackedValue(0.0f);
+    else
+        res.lineColor = uint32_t(ViewParams::getHiddenLineColor());
     return res;
 }
 

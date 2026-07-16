@@ -12,6 +12,9 @@
  * i_data2    : per-vertex color at A
  * i_data3    : per-vertex color at B
  * u_params   : y = line width in pixels
+ *              z = NDC depth bias (positive pushes away from the viewer;
+ *                  used by the stencil outline passes so the owning
+ *                  polygon-offset fill still blends over its outline)
  *
  * The LINE_PATTERN variant additionally outputs v_dist for the stipple
  * fragment shader: x = pixel distance along the segment from A times the
@@ -63,6 +66,7 @@ void main()
 
 		vec4 pos = mix(clipA, clipB, t);
 		pos.xy += offset * (2.0 / res) * pos.w;
+		pos.z += u_params.z * pos.w;
 		gl_Position = pos;
 		v_color0 = mix(i_data2, i_data3, t);
 #ifdef CLIP_PLANES

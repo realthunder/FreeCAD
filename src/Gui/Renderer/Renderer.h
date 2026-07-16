@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 class QOpenGLWidget;
@@ -64,6 +65,17 @@ struct MeshData {
     const int32_t *pointIndices = nullptr;
     int numPointIndices = 0;
 
+    /// Line indices with seam lines (e.g. the closing edge of a cylinder
+    /// face) filtered out; null when the cache has no seams. Used by the
+    /// hidden-line draw style's hideSeam option.
+    const int32_t *noSeamLineIndices = nullptr;
+    int numNoSeamLineIndices = 0;
+
+    /// Per-face-part {start, count} ranges into triangleIndices, filled
+    /// only for hidden-line outline materials under clip planes (the GL
+    /// renderer outlines clipped geometry per face part).
+    std::vector<std::pair<int, int>> triangleParts;
+
     bool hasTransparency = false;   ///< some per-vertex colors are transparent
     bool hasOpaqueParts = false;    ///< some per-vertex colors are opaque
 };
@@ -80,6 +92,37 @@ struct Background {
     uint32_t toColor = 0;    ///< gradient bottom / radial edge
     uint32_t midColor = 0;   ///< optional intermediate color
     bool hasMid = false;
+};
+
+/// Per-frame hidden-line draw style configuration, mirroring the Coin-side
+/// SoFCDisplayModeElement::HiddenLineConfig resolved at render time. Only
+/// meaningful while `show` is true; scene materials carry the matching
+/// Material::outline flag.
+struct HiddenLineConfig {
+    bool show = false;           ///< hidden-line draw style active
+    bool hideFace = false;       ///< skip triangle face fills
+    bool hideSeam = false;       ///< skip seam lines (MeshData no-seam set)
+    bool hideVertex = false;     ///< skip point draws; outline corner caps
+    bool perFaceOutline = false; ///< outline each face part separately
+    bool sceneOutline = false;   ///< one silhouette around the whole scene
+    float outlineWidth = 0.0f;   ///< minimum outline width in pixels
+    /// ViewParams::OutlineThicken — outline width is at least
+    /// linewidth * outlineThicken (GL: renderOutline ~1468).
+    float outlineThicken = 4.0f;
+    /// Resolved scene-outline line color (display-mode line color or
+    /// ViewParams::HiddenLineColor), packed 0xRRGGBBAA.
+    uint32_t lineColor = 0;
+
+    bool operator==(const HiddenLineConfig &o) const {
+        return show == o.show && hideFace == o.hideFace
+            && hideSeam == o.hideSeam && hideVertex == o.hideVertex
+            && perFaceOutline == o.perFaceOutline
+            && sceneOutline == o.sceneOutline
+            && outlineWidth == o.outlineWidth
+            && outlineThicken == o.outlineThicken
+            && lineColor == o.lineColor;
+    }
+    bool operator!=(const HiddenLineConfig &o) const { return !(*this == o); }
 };
 
 /// Flattened per-draw render state, translated from the Coin-side material
@@ -106,6 +149,9 @@ struct Material {
     uint32_t emissive = 0;
     uint32_t specular = 0;
     uint32_t ambient = 0;
+    /// Edge color override of a triangle material (hidden-line outline
+    /// color falls back to diffuse when 0, like the GL renderer).
+    uint32_t linecolor = 0;
     float shininess = 0.0f;
     float linewidth = 1.0f;
     float pointsize = 1.0f;
@@ -132,6 +178,11 @@ struct Material {
     bool faceoutline = false;   ///< outline partial triangle draws
     bool outlineonly = false;   ///< and skip their face fill
     float outlinewidth = 1.0f;  ///< outline width in pixels
+
+    /// Hidden-line draw style material (SoFCRenderCache::Material::outline):
+    /// whole-cache triangle draws get a stencil outline, and the active
+    /// HiddenLineConfig's hideFace/hideSeam/hideVertex rules apply.
+    bool outline = false;
 
     /// World-space clip plane equations (sections). A fragment survives
     /// when dot(pos, plane.xyz) + plane.w >= 0 holds for every plane, or,
@@ -199,6 +250,10 @@ public:
     virtual void setHighlight(DrawCallList &&draws, bool wholeOnTop)
     { (void)draws; (void)wholeOnTop; }
     virtual void clearHighlight() {}
+    /// Per-frame hidden-line draw style state (resolved from the traversal
+    /// state each render, like the GL renderer does).
+    virtual void setHiddenLineConfig(const HiddenLineConfig &config)
+    { (void)config; }
     /// True if scene data changed after the last render() and another
     /// frame should be scheduled.
     virtual bool needsRedraw() const { return false; }

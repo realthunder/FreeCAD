@@ -141,6 +141,13 @@ public:
   int getNumLineIndices(void) const;
   const GLint * getLineIndices(void) const;
 
+  /** Line indices excluding seam lines (the set renderLines(.., noseam=true)
+   * draws), built lazily. Returns 0 if the cache has no seam lines, in
+   * which case the full line index set already is the no-seam set.
+   */
+  int getNumNoSeamLineIndices(void) const;
+  const GLint * getNoSeamLineIndices(void) const;
+
   int getNumPointIndices(void) const;
   const GLint * getPointIndices(void) const;
 

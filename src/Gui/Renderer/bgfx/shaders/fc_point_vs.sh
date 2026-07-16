@@ -10,6 +10,8 @@
  * i_data0    : xyz = point position (model space)
  * i_data1    : per-vertex color
  * u_params   : y = point size in pixels
+ *              z = NDC depth bias (positive pushes away from the viewer;
+ *                  see fc_line_vs.sh)
  */
 
 uniform vec4 u_params;
@@ -34,6 +36,7 @@ void main()
 		vec2 offset = vec2(a_position.x - 0.5, a_position.y * 0.5)
 			* max(u_params.y, 1.0);
 		clipP.xy += offset * (2.0 / res) * clipP.w;
+		clipP.z += u_params.z * clipP.w;
 		gl_Position = clipP;
 		v_color0 = i_data1;
 #ifdef CLIP_PLANES

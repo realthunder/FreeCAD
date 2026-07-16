@@ -43,6 +43,10 @@ GuiExport Render::DrawCallList translate(
         const SoFCRenderCache::VertexCacheMap & vcachemap,
         int selId = 0, bool highlight = false);
 
+/// Resolve the hidden-line draw style state from the traversal state
+/// (SoFCDisplayModeElement) into the backend-neutral per-frame config.
+GuiExport Render::HiddenLineConfig translateHiddenLineConfig(SoState * state);
+
 } // namespace RendererBridge
 } // namespace Gui
 

@@ -510,6 +510,10 @@ public:
   SoFCVertexArrayIndexer * noseamindexer;
   SoFCVertexArrayIndexer * pointindexer;
 
+  // Materialized seam-free line index set (getNoSeamLineIndices), built
+  // lazily for the external render backend.
+  SbFCVector<GLint> noseamlineindices;
+
   bool elementselectable;
   bool ontoppattern;
 
@@ -1891,6 +1895,40 @@ SoFCVertexCache::getLineIndices(void) const
 {
   assert(PRIVATE(this)->lineindexer);
   return PRIVATE(this)->lineindexer->getIndices();
+}
+
+int
+SoFCVertexCache::getNumNoSeamLineIndices(void) const
+{
+  // The noseamindexer used by renderLines() shares the full index array
+  // and filters seam parts at draw time (partial multi-draw), so the
+  // seam-free index set has to be materialized here.
+  SoFCVertexArrayIndexer * indexer = PRIVATE(this)->lineindexer;
+  if (!indexer || PRIVATE(this)->seamindices.empty())
+    return 0;
+  auto & storage = PRIVATE(this)->noseamlineindices;
+  if (storage.empty()) {
+    int numparts = indexer->getNumParts();
+    const GLint * indices = indexer->getIndices();
+    if (!numparts || !indices)
+      return 0;
+    const int * offsets = indexer->getPartOffsets();
+    const auto & seams = PRIVATE(this)->seamindices.getData();
+    storage.reserve(indexer->getNumIndices());
+    for (int part = 0, prev = 0; part < numparts; prev = offsets[part++]) {
+      if (std::binary_search(seams.begin(), seams.end(), part))
+        continue;
+      for (int i = prev; i < offsets[part]; ++i)
+        storage.push_back(indices[i]);
+    }
+  }
+  return static_cast<int>(storage.size());
+}
+
+const GLint *
+SoFCVertexCache::getNoSeamLineIndices(void) const
+{
+  return PRIVATE(this)->noseamlineindices.data();
 }
 
 const GLint *

@@ -57,6 +57,7 @@ public:
     virtual void removeSelection(int id) override;
     virtual void setHighlight(DrawCallList &&draws, bool wholeOnTop) override;
     virtual void clearHighlight() override;
+    virtual void setHiddenLineConfig(const HiddenLineConfig &config) override;
     virtual bool needsRedraw() const override;
     virtual bool canSkipInternal() const override;
 

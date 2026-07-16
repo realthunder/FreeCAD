@@ -41,6 +41,7 @@
 # endif
 #endif
 
+#include <cmath>
 #include <map>
 #include <vector>
 #include <tuple>
@@ -432,6 +433,17 @@ struct GpuMesh
     /// Per-point instance data (position + color) feeding the point
     /// sprite path; invalid without instancing support.
     bgfx::VertexBufferHandle pointInst = BGFX_INVALID_HANDLE;
+    /// Seam-filtered variants of line/lineInst (hidden-line hideSeam);
+    /// only created when the mesh carries a no-seam index set.
+    bgfx::IndexBufferHandle lineNoSeam = BGFX_INVALID_HANDLE;
+    bgfx::VertexBufferHandle lineNoSeamInst = BGFX_INVALID_HANDLE;
+    /// Triangle-edge segment / corner instance data feeding the stencil
+    /// outline passes, built lazily on first outline use of the mesh.
+    /// Instance i maps 1:1 onto triangle index position i (the edge
+    /// leaving that corner), so partial index ranges translate directly
+    /// into instance ranges.
+    bgfx::VertexBufferHandle triEdgeInst = BGFX_INVALID_HANDLE;
+    bgfx::VertexBufferHandle triCornerInst = BGFX_INVALID_HANDLE;
     uint64_t lastUsed = 0;
 
     void destroy()
@@ -459,6 +471,22 @@ struct GpuMesh
         if (bgfx::isValid(pointInst)) {
             bgfx::destroy(pointInst);
             pointInst = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(lineNoSeam)) {
+            bgfx::destroy(lineNoSeam);
+            lineNoSeam = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(lineNoSeamInst)) {
+            bgfx::destroy(lineNoSeamInst);
+            lineNoSeamInst = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(triEdgeInst)) {
+            bgfx::destroy(triEdgeInst);
+            triEdgeInst = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(triCornerInst)) {
+            bgfx::destroy(triCornerInst);
+            triCornerInst = BGFX_INVALID_HANDLE;
         }
     }
 
@@ -502,36 +530,9 @@ struct GpuMesh
                 BGFX_BUFFER_INDEX32);
 
         if (mesh.numLineIndices > 1
-                && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)) {
-            LineQuadVertex::init();
-            int nseg = mesh.numLineIndices / 2;
-            const bgfx::Memory *imem =
-                bgfx::alloc(uint32_t(nseg) * 16 * sizeof(float));
-            float *d = reinterpret_cast<float *>(imem->data);
-            for (int s = 0; s < nseg; ++s, d += 16) {
-                int32_t ia = mesh.lineIndices[s*2];
-                int32_t ib = mesh.lineIndices[s*2 + 1];
-                d[0] = mesh.positions[ia*3];
-                d[1] = mesh.positions[ia*3 + 1];
-                d[2] = mesh.positions[ia*3 + 2];
-                d[3] = 0.0f;
-                d[4] = mesh.positions[ib*3];
-                d[5] = mesh.positions[ib*3 + 1];
-                d[6] = mesh.positions[ib*3 + 2];
-                d[7] = 0.0f;
-                if (mesh.colors) {
-                    for (int i = 0; i < 4; ++i) {
-                        d[8 + i] = mesh.colors[ia*4 + i] / 255.0f;
-                        d[12 + i] = mesh.colors[ib*4 + i] / 255.0f;
-                    }
-                } else {
-                    for (int i = 0; i < 8; ++i)
-                        d[8 + i] = 1.0f;
-                }
-            }
-            lineInst = bgfx::createVertexBuffer(
-                imem, LineQuadVertex::ms_instLayout);
-        }
+                && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING))
+            lineInst = makeSegmentInstances(
+                mesh, mesh.lineIndices, mesh.numLineIndices);
 
         if (mesh.numPointIndices > 0
                 && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)) {
@@ -556,6 +557,106 @@ struct GpuMesh
             pointInst = bgfx::createVertexBuffer(
                 imem, LineQuadVertex::ms_pointInstLayout);
         }
+    }
+
+    /// One quad-expansion instance per line segment (endpoints + endpoint
+    /// colors), from any GL_LINES style index set of the mesh.
+    static bgfx::VertexBufferHandle makeSegmentInstances(
+            const Render::MeshData &mesh, const int32_t *indices, int num)
+    {
+        LineQuadVertex::init();
+        int nseg = num / 2;
+        const bgfx::Memory *imem =
+            bgfx::alloc(uint32_t(nseg) * 16 * sizeof(float));
+        float *d = reinterpret_cast<float *>(imem->data);
+        for (int s = 0; s < nseg; ++s, d += 16) {
+            int32_t ia = indices[s*2];
+            int32_t ib = indices[s*2 + 1];
+            d[0] = mesh.positions[ia*3];
+            d[1] = mesh.positions[ia*3 + 1];
+            d[2] = mesh.positions[ia*3 + 2];
+            d[3] = 0.0f;
+            d[4] = mesh.positions[ib*3];
+            d[5] = mesh.positions[ib*3 + 1];
+            d[6] = mesh.positions[ib*3 + 2];
+            d[7] = 0.0f;
+            if (mesh.colors) {
+                for (int i = 0; i < 4; ++i) {
+                    d[8 + i] = mesh.colors[ia*4 + i] / 255.0f;
+                    d[12 + i] = mesh.colors[ib*4 + i] / 255.0f;
+                }
+            } else {
+                for (int i = 0; i < 8; ++i)
+                    d[8 + i] = 1.0f;
+            }
+        }
+        return bgfx::createVertexBuffer(imem, LineQuadVertex::ms_instLayout);
+    }
+
+    /// Seam-filtered line buffers (hidden-line hideSeam), built on first
+    /// use: a mesh may be uploaded before the hidden-line feed arrives
+    /// (GpuMesh is keyed by cacheId), so upload() cannot see this data.
+    void ensureNoSeam(const Render::MeshData &mesh)
+    {
+        if (bgfx::isValid(lineNoSeam) || mesh.numNoSeamLineIndices <= 1)
+            return;
+        lineNoSeam = bgfx::createIndexBuffer(
+            bgfx::copy(mesh.noSeamLineIndices,
+                       mesh.numNoSeamLineIndices * 4),
+            BGFX_BUFFER_INDEX32);
+        if (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)
+            lineNoSeamInst = makeSegmentInstances(
+                mesh, mesh.noSeamLineIndices, mesh.numNoSeamLineIndices);
+    }
+
+    /// Triangle-edge segment + corner instance buffers for the stencil
+    /// outline passes, one instance per triangle index position. Built on
+    /// first use: whole-scene hidden-line outlines would otherwise
+    /// re-upload mesh-sized transient buffers every frame.
+    void ensureOutline(const Render::MeshData &mesh)
+    {
+        if (bgfx::isValid(triEdgeInst)
+                || mesh.numTriangleIndices < 3
+                || !(bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING))
+            return;
+        LineQuadVertex::init();
+        int n = mesh.numTriangleIndices;
+
+        const bgfx::Memory *emem =
+            bgfx::alloc(uint32_t(n) * 16 * sizeof(float));
+        float *d = reinterpret_cast<float *>(emem->data);
+        for (int i = 0; i < n; ++i, d += 16) {
+            int t = i / 3, e = i % 3;
+            int32_t ia = mesh.triangleIndices[i];
+            int32_t ib = mesh.triangleIndices[t*3 + (e + 1) % 3];
+            d[0] = mesh.positions[ia*3];
+            d[1] = mesh.positions[ia*3 + 1];
+            d[2] = mesh.positions[ia*3 + 2];
+            d[3] = 0.0f;
+            d[4] = mesh.positions[ib*3];
+            d[5] = mesh.positions[ib*3 + 1];
+            d[6] = mesh.positions[ib*3 + 2];
+            d[7] = 0.0f;
+            for (int c = 8; c < 16; ++c)
+                d[c] = 1.0f;
+        }
+        triEdgeInst = bgfx::createVertexBuffer(
+            emem, LineQuadVertex::ms_instLayout);
+
+        const bgfx::Memory *cmem =
+            bgfx::alloc(uint32_t(n) * 8 * sizeof(float));
+        d = reinterpret_cast<float *>(cmem->data);
+        for (int i = 0; i < n; ++i, d += 8) {
+            int32_t ip = mesh.triangleIndices[i];
+            d[0] = mesh.positions[ip*3];
+            d[1] = mesh.positions[ip*3 + 1];
+            d[2] = mesh.positions[ip*3 + 2];
+            d[3] = 0.0f;
+            for (int c = 4; c < 8; ++c)
+                d[c] = 1.0f;
+        }
+        triCornerInst = bgfx::createVertexBuffer(
+            cmem, LineQuadVertex::ms_pointInstLayout);
     }
 };
 
@@ -587,6 +688,10 @@ public:
     enum PassView {
         ViewBackground = 0, // clear + gradient background quad (clip space)
         ViewOpaque,         // opaque triangles, lines, points
+        ViewOutline,        // hidden-line stencil outlines of scene draws
+                            // (after all opaque geometry so the depth
+                            // test sees the whole scene, before the
+                            // transparent bucket blends over them)
         ViewTransparent,    // transparent triangles: WBOIT accumulation
                             // into the OIT targets, or blended
                             // back-to-front into the scene FBO when OIT
@@ -1000,20 +1105,59 @@ public:
         ++drawcount;
     }
 
-    // Selected/preselected face outline, porting the GL renderer's
-    // stencil technique (renderOutline): mark the face's pixels in the
-    // stencil buffer, then redraw its triangle edges as thick
-    // screen-space lines (GL uses glPolygonMode(GL_LINE), which modern
-    // APIs lack) plus point-sprite corner caps where the stencil does
-    // not match — only the boundary survives. Each outline uses its own
-    // stencil reference so no per-part stencil clear is needed.
-    void submitOutline(const Render::DrawCall &draw, uint32_t refCounter)
+    /// glPolygonOffset(factor, units) approximated as a constant NDC
+    /// depth bias (no per-pixel slope term): one offset unit is 2 (NDC
+    /// range) * 16 LSB headroom for the unevaluated slope factor / 2^24
+    /// depth bits. Positive pushes away from the viewer.
+    static float polygonOffsetBias(const Render::Material &mat)
+    {
+        constexpr float kDepthBiasUnit = 2.0f * 16.0f / 16777216.0f;
+        return mat.polygonoffset
+            ? (mat.polygonoffsetfactor + mat.polygonoffsetunits)
+                * kDepthBiasUnit
+            : 0.0f;
+    }
+
+    /// Appearance/placement of one stencil outline.
+    struct OutlineSpec {
+        uint16_t view = ViewHighlight;  ///< target bgfx view
+        uint32_t color = 0x000000ff;    ///< packed RGBA, forced opaque
+        float width = 1.0f;             ///< edge/cap width in pixels
+        /// LEQUAL depth test, like GL's renderOutline for scene
+        /// (hidden-line) entries; false = draw on top (highlight).
+        bool depthTest = false;
+        /// Depth writes of the edge/cap passes (the stencil mark pass
+        /// never writes depth — it must not depth-kill farther outlines
+        /// or the transparent fills that dim them). Writing the edge
+        /// depth stands in for GL's back-to-front entry order: a
+        /// *farther* transparent fill drawn later depth-fails on a
+        /// nearer outline instead of dimming it, while nearer fills
+        /// still blend over hidden outlines.
+        bool depthWrite = false;
+        bool caps = true;               ///< corner point caps
+        int start = 0;                  ///< triangle index range;
+        int count = 0;                  ///< count 0 = the whole buffer
+    };
+
+    // Stencil outline of (part of) a triangle draw, porting the GL
+    // renderer's renderOutline: mark the pixels in the stencil buffer,
+    // then redraw the triangle edges as thick screen-space lines (GL
+    // uses glPolygonMode(GL_LINE), which modern APIs lack) plus
+    // point-sprite corner caps where the stencil does not match — only
+    // the boundary survives. Each outline uses its own stencil
+    // reference so no per-part stencil clear is needed (refs wrap at
+    // 255; collisions between outlines that far apart are accepted).
+    // Serves both the selection/preselection face outline and the
+    // hidden-line draw style's per-object/per-part outlines; clipped
+    // materials clip all three passes like the GL state machine does.
+    void submitOutline(const Render::DrawCall &draw, uint32_t refCounter,
+                       const OutlineSpec &spec)
     {
         if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
             return;
         const Render::MeshData &mesh = *draw.mesh;
-        int start = draw.indexStart;
-        int count = draw.indexCount;
+        int start = spec.start;
+        int count = spec.count;
         if (count <= 0) {
             start = 0;
             count = mesh.numTriangleIndices;
@@ -1023,112 +1167,113 @@ public:
         GpuMesh *gpu = getMesh(mesh);
         if (!bgfx::isValid(gpu->tri))
             return;
+        gpu->ensureOutline(mesh);
+        if (!bgfx::isValid(gpu->triEdgeInst))
+            return;
+
+        const Render::Material &mat = draw.material;
+        bool clipped = mat.numclipplanes > 0;
+        auto setClip = [&]() {
+            if (!clipped)
+                return;
+            float clipParams[4] = {float(mat.numclipplanes),
+                                   mat.clipconcave ? 1.0f : 0.0f,
+                                   0.0f, 0.0f};
+            bgfx::setUniform(u_clipParams, clipParams);
+            bgfx::setUniform(u_clipPlanes, mat.clipplanes,
+                             mat.numclipplanes);
+        };
 
         uint32_t ref = ((refCounter - 1) % 255) + 1;
-        int ntri = count / 3;
-        uint32_t nseg = uint32_t(ntri) * 3;
-        LineQuadVertex::init();
+        const uint64_t depthtest =
+            spec.depthTest ? BGFX_STATE_DEPTH_TEST_LEQUAL : 0;
+        const uint64_t depthstate = depthtest
+            | (spec.depthWrite ? BGFX_STATE_WRITE_Z : 0);
 
-        // Pass 1: stencil-mark the face; no color/depth output, no
-        // depth test (the outline draws on top).
+        // Pass 1: stencil-mark the face(s); no color output. Scene
+        // outlines keep the depth test and write (matching GL's
+        // color-masked fill pass); highlight outlines draw on top.
         float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float params[4] = {0.0f, 0.0f, 0.0f, 1.0f};
         bgfx::setUniform(u_matColor, zero);
         bgfx::setUniform(u_matEmissive, zero);
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
+        setClip();
         if (!draw.identity)
             bgfx::setTransform(draw.model);
         bgfx::setVertexBuffer(0, gpu->vbh);
         bgfx::setIndexBuffer(gpu->tri, uint32_t(start), uint32_t(count));
-        bgfx::setState(BGFX_STATE_MSAA);
+        bgfx::setState(BGFX_STATE_MSAA | depthtest);
         bgfx::setStencil(BGFX_STENCIL_TEST_ALWAYS
             | BGFX_STENCIL_FUNC_REF(ref) | BGFX_STENCIL_FUNC_RMASK(0xff)
             | BGFX_STENCIL_OP_FAIL_S_KEEP
             | BGFX_STENCIL_OP_FAIL_Z_REPLACE
             | BGFX_STENCIL_OP_PASS_Z_REPLACE);
-        bgfx::submit(viewId + ViewHighlight, m_progFlat);
+        bgfx::submit(viewId + spec.view,
+                     clipped ? m_progFlatClip : m_progFlat);
         ++drawcount;
 
         // Shared uniforms of the edge and corner passes: flat outline
-        // color (the material's emissive tint, forced opaque).
+        // color, forced opaque. When the edges write depth, they get
+        // twice the fill's polygon-offset bias so the owning fill
+        // (biased away from the viewer) still passes LEQUAL and blends
+        // over its outline like GL's ordered draw does, while fills of
+        // objects genuinely behind the outline stay depth-killed.
         float color[4];
-        unpackColor((draw.material.emissive & 0xffffff00) | 0xff, color);
-        params[1] = qMax(draw.material.outlinewidth, 1.0f);
+        unpackColor((spec.color & 0xffffff00) | 0xff, color);
+        params[1] = qMax(1.0f, std::floor(spec.width + 0.5f));
+        params[2] = spec.depthWrite
+            ? 2.0f * polygonOffsetBias(draw.material) : 0.0f;
         const uint64_t outlinestate = BGFX_STATE_WRITE_RGB
-            | BGFX_STATE_WRITE_A | BGFX_STATE_MSAA;
+            | BGFX_STATE_WRITE_A | BGFX_STATE_MSAA | depthstate;
         const uint32_t outlinestencil = BGFX_STENCIL_TEST_NOTEQUAL
             | BGFX_STENCIL_FUNC_REF(ref) | BGFX_STENCIL_FUNC_RMASK(0xff)
             | BGFX_STENCIL_OP_FAIL_S_KEEP
             | BGFX_STENCIL_OP_FAIL_Z_KEEP
             | BGFX_STENCIL_OP_PASS_Z_KEEP;
+        LineQuadVertex::init();
 
-        // Pass 2: the face's triangle edges as instanced thick lines
-        // where the stencil differs — the boundary outline.
-        bgfx::InstanceDataBuffer idb;
-        if (bgfx::getAvailInstanceDataBuffer(nseg, 64) < nseg)
-            return;
-        bgfx::allocInstanceDataBuffer(&idb, nseg, 64);
-        float *d = reinterpret_cast<float *>(idb.data);
-        for (int t = 0; t < ntri; ++t) {
-            for (int e = 0; e < 3; ++e, d += 16) {
-                int32_t ia = mesh.triangleIndices[start + t*3 + e];
-                int32_t ib = mesh.triangleIndices[start + t*3 + (e+1)%3];
-                d[0] = mesh.positions[ia*3];
-                d[1] = mesh.positions[ia*3 + 1];
-                d[2] = mesh.positions[ia*3 + 2];
-                d[3] = 0.0f;
-                d[4] = mesh.positions[ib*3];
-                d[5] = mesh.positions[ib*3 + 1];
-                d[6] = mesh.positions[ib*3 + 2];
-                d[7] = 0.0f;
-                for (int c = 8; c < 16; ++c)
-                    d[c] = 1.0f;
-            }
-        }
+        // Pass 2: the triangle edges as instanced thick lines where the
+        // stencil differs — the boundary outline. Instances map 1:1 onto
+        // triangle index positions, so the index range is the instance
+        // range.
         bgfx::setUniform(u_matColor, color);
         bgfx::setUniform(u_matEmissive, zero);
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
+        setClip();
         if (!draw.identity)
             bgfx::setTransform(draw.model);
         bgfx::setVertexBuffer(0, m_lineQuadVb);
         bgfx::setIndexBuffer(m_lineQuadIb);
-        bgfx::setInstanceDataBuffer(&idb, 0, nseg);
+        bgfx::setInstanceDataBuffer(gpu->triEdgeInst, uint32_t(start),
+                                    uint32_t(count));
         bgfx::setState(outlinestate);
         bgfx::setStencil(outlinestencil);
-        bgfx::submit(viewId + ViewHighlight, m_progLine);
+        bgfx::submit(viewId + spec.view,
+                     clipped ? m_progLineClip : m_progLine);
         ++drawcount;
 
         // Pass 3: point-sprite corner caps (GL's GL_POINT polygon-mode
         // pass), patching the notches thick quads leave at corners.
-        uint32_t npt = uint32_t(ntri) * 3;
-        bgfx::InstanceDataBuffer pdb;
-        if (bgfx::getAvailInstanceDataBuffer(npt, 32) < npt)
+        if (!spec.caps)
             return;
-        bgfx::allocInstanceDataBuffer(&pdb, npt, 32);
-        d = reinterpret_cast<float *>(pdb.data);
-        for (int i = 0; i < count; ++i, d += 8) {
-            int32_t ip = mesh.triangleIndices[start + i];
-            d[0] = mesh.positions[ip*3];
-            d[1] = mesh.positions[ip*3 + 1];
-            d[2] = mesh.positions[ip*3 + 2];
-            d[3] = 0.0f;
-            for (int c = 4; c < 8; ++c)
-                d[c] = 1.0f;
-        }
         bgfx::setUniform(u_matColor, color);
         bgfx::setUniform(u_matEmissive, zero);
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
+        setClip();
         if (!draw.identity)
             bgfx::setTransform(draw.model);
         bgfx::setVertexBuffer(0, m_lineQuadVb);
         bgfx::setIndexBuffer(m_lineQuadIb);
-        bgfx::setInstanceDataBuffer(&pdb, 0, npt);
+        bgfx::setInstanceDataBuffer(gpu->triCornerInst, uint32_t(start),
+                                    uint32_t(count));
         bgfx::setState(outlinestate);
         bgfx::setStencil(outlinestencil);
-        bgfx::submit(viewId + ViewHighlight, m_progPoint);
+        bgfx::submit(viewId + spec.view,
+                     clipped ? m_progPointClip : m_progPoint);
         ++drawcount;
     }
 
@@ -1167,17 +1312,31 @@ public:
     };
 
     void submit(const Render::DrawCall &draw, const float *viewMatrix,
-                int pass = PassNormal)
+                int pass = PassNormal, bool noseam = false)
     {
         const Render::Material &mat = draw.material;
         if (!draw.mesh || draw.mesh->numVertices == 0)
             return;
 
         GpuMesh *mesh = getMesh(*draw.mesh);
+        // Hidden-line hideSeam: whole-cache line draws switch to the
+        // seam-filtered index set (GL: renderLines' noseam argument).
+        if (noseam && mat.type == Render::Material::Line)
+            mesh->ensureNoSeam(*draw.mesh);
+        if (noseam && mat.type == Render::Material::Line
+                && getenv("FC_BGFX_DEBUG_SUBMIT"))
+            fprintf(stderr, "bgfx noseam cache=%llx num=%d valid=%d\n",
+                    (unsigned long long)draw.mesh->cacheId,
+                    draw.mesh->numNoSeamLineIndices,
+                    bgfx::isValid(mesh->lineNoSeam));
+        noseam = noseam && mat.type == Render::Material::Line
+            && bgfx::isValid(mesh->lineNoSeam);
         bgfx::IndexBufferHandle ibh = BGFX_INVALID_HANDLE;
         switch (mat.type) {
         case Render::Material::Triangle: ibh = mesh->tri; break;
-        case Render::Material::Line: ibh = mesh->line; break;
+        case Render::Material::Line:
+            ibh = noseam ? mesh->lineNoSeam : mesh->line;
+            break;
         case Render::Material::Point: ibh = mesh->point; break;
         }
         if (!bgfx::isValid(ibh))
@@ -1199,7 +1358,9 @@ public:
         // patterned lines fall back to solid 1px primitives.
         bool thickline = mat.type == Render::Material::Line
             && (mat.linewidth > 1.001f || patterned)
-            && m_instancing && bgfx::isValid(mesh->lineInst);
+            && m_instancing
+            && bgfx::isValid(noseam ? mesh->lineNoSeamInst
+                                    : mesh->lineInst);
         patterned = patterned && thickline;
 
         // Points larger than 1px render as instanced screen-space quads
@@ -1310,24 +1471,24 @@ public:
         params[0] = mat.pervertexcolor ? 1.0f : 0.0f;
         // u_params.y: mesh program = lighting flag; line program = line
         // width in pixels; point program = point size in pixels (unused
-        // by the flat program).
+        // by the flat program). Widths/sizes round to the nearest integer
+        // like GL's non-antialiased line/point rasterization does (a
+        // 1.5px quad would otherwise cover its second pixel row only
+        // partially and drop it without MSAA).
         params[1] = mat.type == Render::Material::Line
-            ? mat.linewidth
+            ? qMax(1.0f, std::floor(mat.linewidth + 0.5f))
             : mat.type == Render::Material::Point
-                ? mat.pointsize
+                ? qMax(1.0f, std::floor(mat.pointsize + 0.5f))
                 : mat.lighting ? 1.0f : 0.0f;
-        params[2] = twoside ? 1.0f : 0.0f;
+        // u_params.z: mesh program = two-sided lighting; line/point
+        // programs = NDC depth bias (only the outline passes bias).
+        params[2] = mat.type == Render::Material::Triangle && twoside
+            ? 1.0f : 0.0f;
         // u_params.w: mesh program = NDC depth bias (polygon offset
         // approximation, no per-pixel slope term); flat program = alpha
         // ceiling used to dim depth-occluded on-top lines.
         if (mat.type == Render::Material::Triangle) {
-            // One glPolygonOffset unit in NDC z: 2 (NDC range) * 16 LSB
-            // headroom for the unevaluated slope factor / 2^24 depth bits.
-            constexpr float kDepthBiasUnit = 2.0f * 16.0f / 16777216.0f;
-            params[3] = mat.polygonoffset
-                ? (mat.polygonoffsetfactor + mat.polygonoffsetunits)
-                    * kDepthBiasUnit
-                : 0.0f;
+            params[3] = polygonOffsetBias(mat);
         } else {
             params[3] = dimalpha;
         }
@@ -1365,14 +1526,18 @@ public:
             // One quad per line segment; a partial (per-edge) index range
             // maps 1:1 onto an instance range (two indices per segment).
             uint32_t startSeg = 0;
-            uint32_t numSeg = uint32_t(draw.mesh->numLineIndices) / 2;
+            uint32_t numSeg = uint32_t(noseam
+                ? draw.mesh->numNoSeamLineIndices
+                : draw.mesh->numLineIndices) / 2;
             if (draw.indexCount > 0) {
                 startSeg = uint32_t(draw.indexStart) / 2;
                 numSeg = uint32_t(draw.indexCount) / 2;
             }
             bgfx::setVertexBuffer(0, m_lineQuadVb);
             bgfx::setIndexBuffer(m_lineQuadIb);
-            bgfx::setInstanceDataBuffer(mesh->lineInst, startSeg, numSeg);
+            bgfx::setInstanceDataBuffer(
+                noseam ? mesh->lineNoSeamInst : mesh->lineInst,
+                startSeg, numSeg);
         }
         else if (thickpoint) {
             // One quad per point; a partial index range maps 1:1 onto an
@@ -1660,11 +1825,13 @@ public:
             // On-top and highlight draws are blended painter-style: keep
             // submission order (GL pass order) instead of state sorting.
             // With OIT the transparent blend is commutative, so no
-            // depth sorting is needed there either.
+            // depth sorting is needed there either. The outline view
+            // interleaves stencil mark/edge/cap passes per entry, so it
+            // must keep submission order too.
             bgfx::setViewMode(id,
                 i == BGFXView::ViewTransparent && !oitActive
                     ? bgfx::ViewMode::DepthDescending
-                    : i >= BGFXView::ViewOnTop
+                    : i >= BGFXView::ViewOnTop || i == BGFXView::ViewOutline
                         ? bgfx::ViewMode::Sequential
                         : bgfx::ViewMode::Default);
             bgfx::touch(id);
@@ -1764,23 +1931,99 @@ public:
                 && d.partIndex >= 0;
         };
 
+        // Hidden-line draw style rules for scene draws (GL: renderOpaque
+        // ~2012 / renderTransparency's notriangle + renderLines/
+        // renderPoints + renderOutline with highlight=false). The
+        // materials carry the outline flag; the per-frame config decides
+        // face/seam/vertex hiding and the outline shape.
+        const Render::HiddenLineConfig &hl = hlconfig;
+        uint32_t outlineRef = 0;
+        auto hideFill = [&](const Render::DrawCall &d) {
+            // GL skips opaque fills of outline materials and, with the
+            // transparency override, every transparent scene fill — and
+            // with them their outlines.
+            return hl.show && hl.hideFace && isTriangle(d)
+                && (d.material.outline || isTransp(d));
+        };
+        auto hidePoints = [&](const Render::DrawCall &d) {
+            return hl.hideVertex && d.material.outline
+                && d.material.type == Render::Material::Point
+                && d.partIndex < 0;
+        };
+        auto sceneNoSeam = [&](const Render::DrawCall &d) {
+            return hl.hideSeam && d.material.outline
+                && d.material.type == Render::Material::Line
+                && d.partIndex < 0;
+        };
+        auto submitSceneOutline = [&](const Render::DrawCall &d) {
+            // Per-entry stencil outline of a whole-cache triangle draw.
+            // The whole-scene outline mode (sceneOutline without
+            // perFaceOutline) suppresses per-entry outlines in GL; its
+            // single-silhouette pass is not implemented yet.
+            if (!hl.show || !d.material.outline || !isTriangle(d)
+                    || d.partIndex >= 0
+                    || (hl.sceneOutline && !hl.perFaceOutline))
+                return;
+            BGFXView::OutlineSpec spec;
+            spec.view = d.material.ontop ? BGFXView::ViewOnTop
+                                         : BGFXView::ViewOutline;
+            spec.depthTest = !d.material.ontop;
+            spec.depthWrite = spec.depthTest;
+            spec.caps = hl.hideVertex;
+            spec.color = d.material.linecolor ? d.material.linecolor
+                                              : d.material.diffuse;
+            // GL renderOutline ~1458: raise the line width to the
+            // configured outline width, then thicken.
+            float lw = qMax(d.material.linewidth, hl.outlineWidth);
+            spec.width = qMax(lw * 1.5f,
+                              d.material.linewidth * hl.outlineThicken);
+            if (d.material.numclipplanes > 0 && d.mesh
+                    && !d.mesh->triangleParts.empty()) {
+                // Clipped geometry outlines per face part (GL:
+                // renderOutline switches to getNumFaceParts() under
+                // active clip planes). Per-part outlines overlap their
+                // own object's fills (only the part's interior is
+                // stencil-killed), so they skip the depth write to let
+                // those fills dim them like GL's ordered draw does.
+                spec.depthWrite = false;
+                for (const auto &part : d.mesh->triangleParts) {
+                    spec.start = part.first;
+                    spec.count = part.second;
+                    view->submitOutline(d, ++outlineRef, spec);
+                }
+            } else {
+                view->submitOutline(d, ++outlineRef, spec);
+            }
+        };
+
         // 1. Normal scene draws, then on-top triangle fills (opaque before
         // transparent), mirroring the GL delayed-pass order. On-top lines
         // are deferred below so they draw over the selection fills.
+        // Hidden-line entries get their stencil outline right after the
+        // fill and honor the face/seam/vertex hiding rules.
         view->ontop = false;
         for (const auto &draw : scene) {
-            if (!draw.material.ontop && !isHidden(draw))
-                view->submit(draw, viewMat);
+            if (draw.material.ontop || isHidden(draw))
+                continue;
+            if (hideFill(draw) || hidePoints(draw))
+                continue;
+            view->submit(draw, viewMat, BGFXView::PassNormal,
+                         sceneNoSeam(draw));
+            submitSceneOutline(draw);
         }
         for (const auto &draw : scene) {
             if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
-                    && !isHidden(draw))
+                    && !isHidden(draw) && !hideFill(draw)) {
                 view->submit(draw, viewMat);
+                submitSceneOutline(draw);
+            }
         }
         for (const auto &draw : scene) {
             if (draw.material.ontop && isTriangle(draw) && isTransp(draw)
-                    && !isHidden(draw))
+                    && !isHidden(draw) && !hideFill(draw)) {
                 view->submit(draw, viewMat);
+                submitSceneOutline(draw);
+            }
         }
 
         // 2. Selection whole-object fills; positive ids are on-top
@@ -1816,7 +2059,7 @@ public:
             if (sceneTwoPass) {
                 for (const auto &draw : scene) {
                     if (draw.material.ontop && isTriangle(draw)
-                            && !isHidden(draw))
+                            && !isHidden(draw) && !hideFill(draw))
                         view->submit(draw, viewMat, BGFXView::PassDepthOnly);
                 }
             }
@@ -1845,8 +2088,9 @@ public:
                              int(BGFXView::PassLineSolid)}) {
                 for (const auto &draw : scene) {
                     if (draw.material.ontop && !isTriangle(draw)
-                            && !isHidden(draw))
-                        view->submit(draw, viewMat, pass);
+                            && !isHidden(draw) && !hidePoints(draw))
+                        view->submit(draw, viewMat, pass,
+                                     sceneNoSeam(draw));
                 }
                 for (const auto &sel : selections) {
                     if (sel.first <= 0)
@@ -1867,8 +2111,9 @@ public:
             // No fills on top: scene on-top lines draw in a single pass.
             for (const auto &draw : scene) {
                 if (draw.material.ontop && !isTriangle(draw)
-                        && !isHidden(draw))
-                    view->submit(draw, viewMat);
+                        && !isHidden(draw) && !hidePoints(draw))
+                    view->submit(draw, viewMat, BGFXView::PassNormal,
+                                 sceneNoSeam(draw));
             }
         }
 
@@ -1906,20 +2151,32 @@ public:
         // 8. Selected/preselected face outlines, last of all (GL draws
         // them at the very end of the frame under
         // RenderPassSelectionOutline; selections before preselection).
-        uint32_t outlineRef = 0;
+        auto faceOutlineSpec = [](const Render::DrawCall &draw) {
+            BGFXView::OutlineSpec spec;
+            spec.view = BGFXView::ViewHighlight;
+            spec.color = draw.material.emissive;
+            spec.width = draw.material.outlinewidth;
+            spec.depthTest = false;
+            spec.caps = true;
+            spec.start = draw.indexStart;
+            spec.count = draw.indexCount;
+            return spec;
+        };
         for (const auto &sel : selections) {
             if (sel.first <= 0)
                 continue;
             for (const auto &draw : sel.second) {
                 if (isTriangle(draw) && draw.partIndex >= 0
                         && draw.material.faceoutline)
-                    view->submitOutline(draw, ++outlineRef);
+                    view->submitOutline(draw, ++outlineRef,
+                                        faceOutlineSpec(draw));
             }
         }
         for (const auto &draw : highlight) {
             if (isTriangle(draw) && draw.partIndex >= 0
                     && draw.material.faceoutline)
-                view->submitOutline(draw, ++outlineRef);
+                view->submitOutline(draw, ++outlineRef,
+                                    faceOutlineSpec(draw));
         }
         view->ontop = false;
 
@@ -1985,6 +2242,7 @@ public:
     Render::DrawCallList highlight;
     std::unordered_set<uint64_t> hiddenKeys;
     std::unordered_set<const Render::DrawCall *> dupDraws;
+    Render::HiddenLineConfig hlconfig;
     bool hlWholeOnTop = false;
     bool sceneDirty = false;
     bool hasScene = false;
@@ -2023,8 +2281,12 @@ bool BGFXRenderer::boundBox(float &xmin, float &ymin, float &zmin,
     return true;
 }
 
+static void dumpFeed(const char *tag, int id,
+                     const Render::DrawCallList &draws);
+
 void BGFXRenderer::setScene(DrawCallList &&draws)
 {
+    dumpFeed("scene", 0, draws);
     pimpl->scene = std::move(draws);
     pimpl->sceneDirty = true;
     pimpl->updateBBox();
@@ -2045,13 +2307,15 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
         fprintf(stderr,
                 "  type=%d part=%d range=%d+%d diffuse=%08x emissive=%08x"
                 " pvc=%d light=%d transp=%d ontop=%d dtest=%d dwrite=%d"
-                " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f lp=%08x/%08x\n",
+                " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f lp=%08x/%08x"
+                " ol=%d lc=%08x\n",
                 m.type, d.partIndex, d.indexStart, d.indexCount,
                 m.diffuse, m.emissive, m.pervertexcolor, m.lighting,
                 m.transparent, m.ontop, m.depthtest, m.depthwrite,
                 m.depthfunc, m.linewidth, m.polygonoffset,
                 m.polygonoffsetfactor, m.polygonoffsetunits,
-                m.hiddenlinealpha, m.linepattern, m.hiddenlinepattern);
+                m.hiddenlinealpha, m.linepattern, m.hiddenlinepattern,
+                m.outline, m.linecolor);
         for (int i = 0; i < m.numclipplanes; ++i)
             fprintf(stderr, "  clip%s %d: %g,%g,%g,%g\n",
                     m.clipconcave ? " (concave)" : "", i,
@@ -2087,6 +2351,14 @@ void BGFXRenderer::clearHighlight()
         pimpl->sceneDirty = true;
     pimpl->highlight.clear();
     pimpl->hlWholeOnTop = false;
+}
+
+void BGFXRenderer::setHiddenLineConfig(const HiddenLineConfig &config)
+{
+    if (pimpl->hlconfig != config) {
+        pimpl->hlconfig = config;
+        pimpl->sceneDirty = true;
+    }
 }
 
 bool BGFXRenderer::needsRedraw() const

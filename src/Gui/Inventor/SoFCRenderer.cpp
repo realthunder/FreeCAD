@@ -2228,6 +2228,14 @@ SoFCRendererP::renderTransparency(SoGLRenderAction * action,
 void
 SoFCRenderer::render(SoGLRenderAction * action)
 {
+  // The hidden-line draw style configuration lives in the traversal state
+  // and is resolved per render; mirror it to the external backend (which
+  // draws before this traversal, so it applies one frame late like the
+  // scene feed).
+  if (PRIVATE(this)->external)
+    PRIVATE(this)->external->setHiddenLineConfig(
+        RendererBridge::translateHiddenLineConfig(action->getState()));
+
   // When an external backend has rendered the current scene (it draws into
   // the framebuffer before the Coin traversal), skip the internal
   // fixed-function GL pass entirely. FC_RENDERER_PARALLEL_GL=1 keeps this
