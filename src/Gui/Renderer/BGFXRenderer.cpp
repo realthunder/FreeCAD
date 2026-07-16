@@ -63,7 +63,6 @@
 // #endif
 
 #include <bgfx/bgfx.h>
-#include <bgfx/platform.h>
 #include <bx/timer.h>
 #include <bx/math.h>
 #include <bgfx_utils.h>
@@ -458,10 +457,12 @@ public:
 
         bgfxColor = createTexture(bgfx::TextureFormat::RGBA8, flags);
         //GL_DEPTH24_STENCIL8
-        bgfxDepth = createTexture(bgfx::TextureFormat::D24S8);
+        bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags & ~BGFX_TEXTURE_RT);
         bgfx::Attachment attachment[2];
-        attachment[0].init(bgfxColor);
-        attachment[1].init(bgfxDepth);
+        // No mip chain on these render targets; the default resolve flag
+        // (BGFX_RESOLVE_AUTO_GEN_MIPS) is also rejected for depth attachments.
+        attachment[0].init(bgfxColor, bgfx::Access::Write, 0, 1, 0, BGFX_RESOLVE_NONE);
+        attachment[1].init(bgfxDepth, bgfx::Access::Write, 0, 1, 0, BGFX_RESOLVE_NONE);
         bgfxFbo = bgfx::createFrameBuffer(2, attachment, true);
 
         bgfx::setViewFrameBuffer(viewId, bgfxFbo);

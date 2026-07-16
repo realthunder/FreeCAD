@@ -63,6 +63,11 @@ ELSE(Renderer_BUILD_STATIC_LIBRARY)
     target_link_libraries(${Library} ${Renderer_LIBS})
 ENDIF(Renderer_BUILD_STATIC_LIBRARY)
 
+if(BUILD_BGFX)
+    # bx (bgfx base library) requires C++20 since bgfx 1.150
+    set_target_properties(${Library} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+endif()
+
 source_group("source" FILES ${Renderer_CPP_SRCS})
 source_group("include" FILES ${Renderer_HPP_SRCS})
 source_group("interface" FILES ${Renderer_Headers})

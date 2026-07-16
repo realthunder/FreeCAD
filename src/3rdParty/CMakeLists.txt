@@ -5,6 +5,9 @@ endif()
 
 if (BUILD_BGFX)
     set(BGFX_LIBRARY_TYPE "SHARED")
+    # example-common (bgfx_utils/entry, used by the renderer) is still built
+    # via BGFX_BUILD_TOOLS; skip the ~50 example executables.
+    set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "")
     add_subdirectory(bgfx)
 endif()
 
