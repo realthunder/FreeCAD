@@ -7,6 +7,11 @@
  * u_matEmissive : rgb emissive add
  * u_matSpecular : rgb specular, w = shininess (0..1 Coin convention)
  * u_params      : x = per-vertex color, y = lighting on, z = two-sided
+ *
+ * The OIT variant (fs_fc_mesh_oit*) is the weighted-blended OIT
+ * accumulation pass (McGuire/Bavoil 2013): RT0 accumulates the
+ * depth-weighted premultiplied color (blend ONE, ONE), RT1 the
+ * revealage product (blend ZERO, INV_SRC_COLOR).
  */
 
 uniform vec4 u_matColor;
@@ -41,5 +46,15 @@ void main()
 	}
 
 	color += u_matEmissive.rgb;
+#ifdef OIT
+	// Depth weight, McGuire's eq. (10): near fragments dominate. The
+	// composite pass divides the accumulated premultiplied color by the
+	// accumulated weighted alpha, so the weight cancels per-surface.
+	float w = base.a
+		* max(1.0e-2, 3.0e3 * pow(1.0 - gl_FragCoord.z, 3.0));
+	gl_FragData[0] = vec4(color * base.a, base.a) * w;
+	gl_FragData[1] = vec4_splat(base.a);
+#else
 	gl_FragColor = vec4(color, base.a);
+#endif
 }

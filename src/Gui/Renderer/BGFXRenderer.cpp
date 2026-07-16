@@ -587,7 +587,11 @@ public:
     enum PassView {
         ViewBackground = 0, // clear + gradient background quad (clip space)
         ViewOpaque,         // opaque triangles, lines, points
-        ViewTransparent,    // blended, depth read-only, back-to-front
+        ViewTransparent,    // transparent triangles: WBOIT accumulation
+                            // into the OIT targets, or blended
+                            // back-to-front into the scene FBO when OIT
+                            // is unavailable
+        ViewOITComposite,   // fullscreen WBOIT resolve onto the scene FBO
         ViewOnTop,          // scene geometry with on-top materials
         ViewHighlight,      // selection-on-top and preselection highlight
         NUM_VIEWS
@@ -603,6 +607,20 @@ public:
         for (auto &v : meshes)
             v.second.destroy();
         meshes.clear();
+        // The OIT framebuffer references bgfxDepth (owned by bgfxFbo),
+        // so it goes first.
+        if (bgfx::isValid(oitFbo)) {
+            bgfx::destroy(oitFbo);
+            oitFbo = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(oitAccum)) {
+            bgfx::destroy(oitAccum);
+            oitAccum = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(oitReveal)) {
+            bgfx::destroy(oitReveal);
+            oitReveal = BGFX_INVALID_HANDLE;
+        }
         if (bgfx::isValid(bgfxFbo)) {
             bgfx::destroy(bgfxFbo);
             bgfxFbo = BGFX_INVALID_HANDLE;
@@ -646,6 +664,26 @@ public:
         if (bgfx::isValid(m_progPointClip)) {
             bgfx::destroy(m_progPointClip);
             m_progPointClip = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progMeshOit)) {
+            bgfx::destroy(m_progMeshOit);
+            m_progMeshOit = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progMeshOitClip)) {
+            bgfx::destroy(m_progMeshOitClip);
+            m_progMeshOitClip = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progComp)) {
+            bgfx::destroy(m_progComp);
+            m_progComp = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(s_texAccum)) {
+            bgfx::destroy(s_texAccum);
+            s_texAccum = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(s_texReveal)) {
+            bgfx::destroy(s_texReveal);
+            s_texReveal = BGFX_INVALID_HANDLE;
         }
         if (bgfx::isValid(m_lineQuadVb)) {
             bgfx::destroy(m_lineQuadVb);
@@ -781,6 +819,54 @@ public:
         u_clipPlanes = bgfx::createUniform("u_clipPlanes", bgfx::UniformType::Vec4,
                                            Render::Material::MaxClipPlanes);
         u_linePattern = bgfx::createUniform("u_linePattern", bgfx::UniformType::Vec4);
+
+        // Weighted-blended OIT for the transparent bucket. First cut:
+        // without MSAA only (sampling multisampled float targets needs a
+        // resolve chain) and where independent per-target blending and
+        // half-float render targets exist (the WebGL2-compatible set).
+        // Unavailable -> the transparent view falls back to bbox-sorted
+        // alpha blending as before.
+        const auto *caps = bgfx::getCaps();
+        m_oit = samples <= 1
+            && (caps->supported & BGFX_CAPS_BLEND_INDEPENDENT)
+            && (caps->formats[bgfx::TextureFormat::RGBA16F]
+                & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER)
+            && (caps->formats[bgfx::TextureFormat::R16F]
+                & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        if (m_oit) {
+            const uint64_t oitFlags = 0
+                | BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_MIN_POINT
+                | BGFX_SAMPLER_MAG_POINT
+                | BGFX_SAMPLER_MIP_POINT
+                | BGFX_SAMPLER_U_CLAMP
+                | BGFX_SAMPLER_V_CLAMP;
+            oitAccum = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::RGBA16F, oitFlags);
+            oitReveal = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::R16F, oitFlags);
+            // Accumulation renders against the scene depth (test only,
+            // no write), so the OIT framebuffer shares bgfxDepth.
+            bgfx::Attachment att[3];
+            att[0].init(oitAccum, bgfx::Access::Write, 0, 1, 0,
+                        BGFX_RESOLVE_NONE);
+            att[1].init(oitReveal, bgfx::Access::Write, 0, 1, 0,
+                        BGFX_RESOLVE_NONE);
+            att[2].init(bgfxDepth, bgfx::Access::Write, 0, 1, 0,
+                        BGFX_RESOLVE_NONE);
+            oitFbo = bgfx::createFrameBuffer(3, att, false);
+            m_progMeshOit = loadProgram("vs_fc_mesh", "fs_fc_mesh_oit",
+                                        _BGFXLib.resource().c_str());
+            m_progMeshOitClip = loadProgram("vs_fc_mesh_clip",
+                                            "fs_fc_mesh_oit_clip",
+                                            _BGFXLib.resource().c_str());
+            m_progComp = loadProgram("vs_fc_comp", "fs_fc_comp",
+                                     _BGFXLib.resource().c_str());
+            s_texAccum = bgfx::createUniform("s_texAccum",
+                                             bgfx::UniformType::Sampler);
+            s_texReveal = bgfx::createUniform("s_texReveal",
+                                              bgfx::UniformType::Sampler);
+        }
     }
 
     GpuMesh *getMesh(const Render::MeshData &data)
@@ -914,6 +1000,32 @@ public:
         ++drawcount;
     }
 
+    // Fullscreen WBOIT resolve: average the accumulated premultiplied
+    // color and blend it onto the scene by coverage (1 - revealage in
+    // the source alpha, blend INV_SRC_ALPHA / SRC_ALPHA).
+    void submitComposite()
+    {
+        SceneVertex::init();
+        if (bgfx::getAvailTransientVertexBuffer(3, SceneVertex::ms_layout)
+                < 3)
+            return;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, 3, SceneVertex::ms_layout);
+        auto *v = reinterpret_cast<SceneVertex *>(tvb.data);
+        // Clip-space triangle covering the viewport.
+        v[0] = {-1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        bgfx::setTexture(0, s_texAccum, oitAccum);
+        bgfx::setTexture(1, s_texReveal, oitReveal);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+            | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_INV_SRC_ALPHA,
+                                    BGFX_STATE_BLEND_SRC_ALPHA));
+        bgfx::submit(viewId + ViewOITComposite, m_progComp);
+        ++drawcount;
+    }
+
     // Submission passes mirroring SoFCRenderer's delayed render loop.
     enum SubmitPass {
         PassNormal = 0,
@@ -968,6 +1080,12 @@ public:
         bool transparent = mat.transparent
             || (mat.pervertexcolor && draw.mesh->hasTransparency);
 
+        // GL parity (applyMaterial ~745): transparent and on-top draws
+        // are lit on both faces, transparent draws are never culled —
+        // back faces are visible layers of a transparent solid.
+        bool twoside = mat.twoside || transparent || mat.ontop;
+        bool culling = mat.culling && !transparent;
+
         uint16_t passView = ontop ? ViewHighlight
             : mat.ontop ? ViewOnTop
             : transparent && mat.type == Render::Material::Triangle
@@ -1006,16 +1124,30 @@ public:
             break;
         }
 
+        // Weighted-blended OIT accumulation: RT0 sums the depth-weighted
+        // premultiplied color, RT1 multiplies up the revealage. Draw
+        // order becomes irrelevant (commutative blending).
+        bool oitDraw = oitFrame && passView == ViewTransparent;
+
         uint64_t state = BGFX_STATE_MSAA;
+        uint32_t blendRt = 0;
         if (pass != PassDepthOnly)
             state |= BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
         if (depthtest)
             state |= depthFuncState(depthfunc);
         if (depthwrite)
             state |= BGFX_STATE_WRITE_Z;
-        if (blend)
+        if (oitDraw) {
+            state |= BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
+                                           BGFX_STATE_BLEND_ONE)
+                | BGFX_STATE_BLEND_INDEPENDENT;
+            blendRt = uint32_t(
+                BGFX_STATE_BLEND_FUNC_RT_1(BGFX_STATE_BLEND_ZERO,
+                                           BGFX_STATE_BLEND_INV_SRC_COLOR));
+        }
+        else if (blend)
             state |= BGFX_STATE_BLEND_ALPHA;
-        if (mat.culling && !mat.twoside
+        if (culling && !twoside
                         && mat.type == Render::Material::Triangle)
             state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
         if (mat.type == Render::Material::Line) {
@@ -1043,7 +1175,7 @@ public:
             : mat.type == Render::Material::Point
                 ? mat.pointsize
                 : mat.lighting ? 1.0f : 0.0f;
-        params[2] = mat.twoside ? 1.0f : 0.0f;
+        params[2] = twoside ? 1.0f : 0.0f;
         // u_params.w: mesh program = NDC depth bias (polygon offset
         // approximation, no per-pixel slope term); flat program = alpha
         // ceiling used to dim depth-occluded on-top lines.
@@ -1122,7 +1254,7 @@ public:
             else
                 bgfx::setIndexBuffer(ibh);
         }
-        bgfx::setState(state);
+        bgfx::setState(state, blendRt);
 
         static const bool dbgsubmit =
             (getenv("FC_BGFX_DEBUG_SUBMIT") != nullptr);
@@ -1139,7 +1271,7 @@ public:
                     patterned ? linepattern : 0xffffu);
 
         uint32_t depth = 0;
-        if (passView == ViewTransparent
+        if (passView == ViewTransparent && !oitDraw
                  && draw.bboxMin[0] <= draw.bboxMax[0]) {
             // Sort key: distance of the world-space bbox center along the
             // view axis; the view is in DepthDescending mode (far first).
@@ -1153,7 +1285,9 @@ public:
 
         bgfx::submit(viewId + passView,
                      mat.type == Render::Material::Triangle
-                         ? (clipped ? m_progMeshClip : m_progMesh)
+                         ? (oitDraw
+                             ? (clipped ? m_progMeshOitClip : m_progMeshOit)
+                             : (clipped ? m_progMeshClip : m_progMesh))
                          : thickline
                              ? (patterned
                                  ? (clipped ? m_progLinePatClip
@@ -1263,6 +1397,16 @@ public:
     bgfx::UniformHandle u_clipParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_clipPlanes = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_linePattern = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle oitAccum = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle oitReveal = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle oitFbo = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshOit = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshOitClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progComp = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texAccum = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texReveal = BGFX_INVALID_HANDLE;
+    bool m_oit = false;      // OIT resources exist (caps + no MSAA)
+    bool oitFrame = false;   // OIT active for the frame being submitted
     std::unordered_map<uint64_t, GpuMesh> meshes;
     uint64_t frame = 0;
     int drawcount = 0;
@@ -1327,21 +1471,56 @@ public:
         if (getenv("FC_BGFX_DEBUG_CLEAR"))
             clearColor = 0xff0000ff;
 
+        // WBOIT runs when the resources exist and the scene has any
+        // transparent (non-on-top) triangles this frame; otherwise the
+        // transparent view stays a bbox-sorted alpha blend into the
+        // scene framebuffer.
+        bool oitActive = false;
+        if (view->m_oit) {
+            for (const auto &draw : scene) {
+                if (!draw.material.ontop
+                        && draw.material.type == Render::Material::Triangle
+                        && (draw.material.transparent
+                            || (draw.material.pervertexcolor && draw.mesh
+                                && draw.mesh->hasTransparency))) {
+                    oitActive = true;
+                    break;
+                }
+            }
+        }
+        view->oitFrame = oitActive;
+
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
             uint16_t id = base + i;
-            bgfx::setViewClear(id,
-                i == 0 ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH)
-                       : uint16_t(BGFX_CLEAR_NONE),
-                clearColor, 1.0f, 0);
+            if (i == BGFXView::ViewTransparent && oitActive) {
+                // Accumulation targets: accum clears to 0, revealage
+                // to 1; the shared depth attachment is not cleared.
+                bgfx::setViewFrameBuffer(id, view->oitFbo);
+                bgfx::setPaletteColor(0, 0.0f, 0.0f, 0.0f, 0.0f);
+                bgfx::setPaletteColor(1, 1.0f, 1.0f, 1.0f, 1.0f);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_COLOR),
+                                   1.0f, 0, 0, 1);
+            } else {
+                bgfx::setViewFrameBuffer(id, view->bgfxFbo);
+                bgfx::setViewClear(id,
+                    i == 0 ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH)
+                           : uint16_t(BGFX_CLEAR_NONE),
+                    clearColor, 1.0f, 0);
+            }
             bgfx::setViewRect(id, 0, 0, width, height);
-            // The background quad is submitted in clip space.
-            if (i == BGFXView::ViewBackground)
+            // The background quad and the OIT composite triangle are
+            // submitted in clip space.
+            if (i == BGFXView::ViewBackground
+                    || i == BGFXView::ViewOITComposite)
                 bgfx::setViewTransform(id, nullptr, nullptr);
             else
                 bgfx::setViewTransform(id, viewMatrix, projMatrix);
             // On-top and highlight draws are blended painter-style: keep
             // submission order (GL pass order) instead of state sorting.
-            bgfx::setViewMode(id, i == BGFXView::ViewTransparent
+            // With OIT the transparent blend is commutative, so no
+            // depth sorting is needed there either.
+            bgfx::setViewMode(id,
+                i == BGFXView::ViewTransparent && !oitActive
                     ? bgfx::ViewMode::DepthDescending
                     : i >= BGFXView::ViewOnTop
                         ? bgfx::ViewMode::Sequential
@@ -1574,6 +1753,9 @@ public:
             }
         }
         view->ontop = false;
+
+        if (oitActive)
+            view->submitComposite();
 
         view->collectMeshes();
 
