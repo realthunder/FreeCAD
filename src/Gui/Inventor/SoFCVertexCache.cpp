@@ -1897,7 +1897,6 @@ SoFCVertexCache::getPointIndices(void) const
 SbBool
 SoFCVertexCacheP::depthSortTriangles(SoState * state, bool fullsort, const SbPlane *plane)
 {
-  return FALSE;
   if (!this->vertexarray) return FALSE;
   int numv = this->vertexarray.getLength();
   int numtri = PUBLIC(this)->getNumTriangleIndices() / 3;
@@ -2009,6 +2008,12 @@ SoFCVertexCacheP::depthSortTriangles(SoState * state, bool fullsort, const SbPla
     }
     return TRUE;
   }
+
+  // Triangle-level sorting (below) permutes the shared index buffer in
+  // place, which invalidates part-relative partial rendering (e.g. element
+  // highlight, see 8c96674289). Keep it disabled; only the non-destructive
+  // part-level sorting above is active.
+  return FALSE;
 
   // normal sorting without parts
   if (numtri == this->prevsorted
