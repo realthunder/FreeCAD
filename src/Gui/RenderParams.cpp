@@ -493,51 +493,18 @@ void RenderParams::onRenderParamChanged(const char *sReason)
 
 void RenderParams::migrate()
 {
-    // One-time migration of the pre-split parameter keys: they lived in
-    // the parent Preferences/View group with a 'Renderer' name prefix
-    // before this child group existed. Each present old key is copied to
-    // its new name and removed from the old group, so the migration never
-    // repeats (and never overrides later changes made here).
+    // One-time migration of the pre-split RendererType key: it lived in
+    // the parent Preferences/View group (saved by the 3D view preference
+    // page) before this child group existed. The other render engine
+    // parameters never shipped outside this group, so only this one key
+    // needs to move. It is copied to its new name and removed from the
+    // old group, so the migration never repeats (and never overrides
+    // later changes made here).
     auto hView = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/View");
-    auto hGrp = getHandle();
-
-    static const std::pair<const char *, const char *> boolKeys[] = {
-        {"RendererSSAO", "SSAO"},
-        {"RendererPBR", "PBR"},
-        {"RendererParallax", "Parallax"},
-    };
-    for (const auto &v : hView->GetBoolMap()) {
-        for (const auto &key : boolKeys) {
-            if (v.first == key.first) {
-                hGrp->SetBool(key.second, v.second);
-                hView->RemoveBool(key.first);
-                break;
-            }
-        }
-    }
-
-    static const std::pair<const char *, const char *> floatKeys[] = {
-        {"RendererSSAORadius", "SSAORadius"},
-        {"RendererSSAOIntensity", "SSAOIntensity"},
-        {"RendererPBRMetallic", "PBRMetallic"},
-        {"RendererPBRRoughness", "PBRRoughness"},
-        {"RendererPBREnvIntensity", "PBREnvIntensity"},
-        {"RendererBumpScale", "BumpScale"},
-    };
-    for (const auto &v : hView->GetFloatMap()) {
-        for (const auto &key : floatKeys) {
-            if (v.first == key.first) {
-                hGrp->SetFloat(key.second, v.second);
-                hView->RemoveFloat(key.first);
-                break;
-            }
-        }
-    }
-
     for (const auto &v : hView->GetASCIIMap()) {
         if (v.first == "RendererType") {
-            hGrp->SetASCII("Type", v.second.c_str());
+            getHandle()->SetASCII("Type", v.second);
             hView->RemoveASCII("RendererType");
             break;
         }
