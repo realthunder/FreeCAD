@@ -1030,7 +1030,7 @@ public:
         }
         for (auto uni : {&s_texShadow, &u_shadowParams, &u_lightDir,
                          &u_lightPos, &u_lightColor, &u_shadowMatrix,
-                         &u_shadowBlur}) {
+                         &u_shadowBlur, &u_evsm}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1376,11 +1376,22 @@ public:
                                            bgfx::UniformType::Vec4);
         u_shadowMatrix = bgfx::createUniform("u_shadowMatrix",
                                              bgfx::UniformType::Mat4);
-        auto shadowFormat = bgfx::TextureFormat::RG16F;
+        u_evsm = bgfx::createUniform("u_evsm", bgfx::UniformType::Vec4);
+        // EVSM: the moments store an exponential warp of the light
+        // window depth (exp(c z), exp(c z)^2), which curbs VSM's light
+        // bleeding at overlapping occluders. RG32F carries the classic
+        // c = 42 warp; the RG16F fallback must keep exp(2 c) inside
+        // half-float range, so its warp is much weaker (c = 5 — better
+        // than plain VSM, worse than fp32). Float-linear filtering of
+        // 32-bit targets is not guaranteed on WebGL2 — revisit the
+        // preference when the WASM build lands.
+        auto shadowFormat = bgfx::TextureFormat::RG32F;
+        shadowWarp = 42.0f;
         m_shadow = (bgfx::getCaps()->formats[shadowFormat]
                     & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER) != 0;
         if (!m_shadow) {
-            shadowFormat = bgfx::TextureFormat::RG32F;
+            shadowFormat = bgfx::TextureFormat::RG16F;
+            shadowWarp = 5.0f;
             m_shadow = (bgfx::getCaps()->formats[shadowFormat]
                         & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER) != 0;
         }
@@ -2455,6 +2466,8 @@ public:
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2], 1.0f};
         bgfx::setUniform(u_shadowParams, shadowParams);
+        float evsm[4] = {shadowWarp, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_evsm, evsm);
         bgfx::setUniform(u_lightDir, lightDir);
         bgfx::setUniform(u_lightPos, lightPosView);
         bgfx::setUniform(u_lightColor, lightColorI);
@@ -2509,6 +2522,8 @@ public:
             bgfx::setIndexBuffer(gpu->tri);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_Z
                        | BGFX_STATE_DEPTH_TEST_LESS);
+        float evsm[4] = {shadowWarp, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_evsm, evsm);
         bgfx::submit(viewId + ViewShadow,
                      clipped ? m_progShadowClip : m_progShadow);
         ++drawcount;
@@ -2696,6 +2711,8 @@ public:
                              lightDirView[2], 1.0f};
         bgfx::setUniform(u_lightDir, lightDir);
         bgfx::setUniform(u_lightPos, lightPosView);
+        float evsm[4] = {shadowWarp, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_evsm, evsm);
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         bgfx::setTexture(1, s_texShadow, shadowTex);
@@ -3006,6 +3023,8 @@ public:
                     shadow = shadowTex;
                 }
             }
+            float evsm[4] = {shadowWarp, 0.0f, 0.0f, 0.0f};
+            bgfx::setUniform(u_evsm, evsm);
             bgfx::setUniform(u_lightDir, lightDir);
             static const float noSpot[4] = {0.0f, 0.0f, 0.0f, -1.0f};
             bgfx::setUniform(u_lightPos,
@@ -3342,6 +3361,7 @@ public:
     // Variance shadow map of the Shadow draw style's scene light.
     static constexpr uint16_t kShadowSize = 1024;
     bool m_shadow = false;     // shadow resources exist (caps allow it)
+    float shadowWarp = 42.0f;  // EVSM exponent (by moments format)
     bool shadowFrame = false;  // shadows active this frame
     bgfx::TextureHandle shadowTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle shadowDepth = BGFX_INVALID_HANDLE;
@@ -3362,6 +3382,7 @@ public:
     bgfx::UniformHandle u_lightPos = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_lightColor = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_shadowMatrix = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_evsm = BGFX_INVALID_HANDLE;
     float lightDirView[3] = {0.0f, 0.0f, -1.0f}; // view space
     // rgb = color * intensity; w = the spot falloff exponent
     // (dropOffRate * 128; 0 for directional lights, pow(x, 0) = 1).
@@ -3868,13 +3889,19 @@ public:
                 bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_COLOR),
                                    1.0f, 0, 0, 1);
             } else if (shadowRender && i == BGFXView::ViewShadow) {
-                // Moments clear to (1, 1) = far plane, own depth; the
-                // caster pass renders under the light camera at the
-                // shadow map size.
+                // Moments clear to the warped far plane
+                // (exp(c), exp(2c)) through the palette (the packed
+                // clear color cannot exceed 1), own depth; the caster
+                // pass renders under the light camera at the shadow
+                // map size.
+                float evsmClear[4] = {std::exp(view->shadowWarp),
+                                      std::exp(2.0f * view->shadowWarp),
+                                      0.0f, 0.0f};
+                bgfx::setPaletteColor(2, evsmClear);
                 bgfx::setViewFrameBuffer(id, view->shadowFbo);
                 bgfx::setViewClear(id,
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
-                    0xffffffffu, 1.0f, 0);
+                    1.0f, 0, 2);
                 bgfx::setViewRect(id, 0, 0, BGFXView::kShadowSize,
                                   BGFXView::kShadowSize);
                 bgfx::setViewTransform(id, lightViewMtx, lightProjMtx);

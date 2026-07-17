@@ -45,6 +45,9 @@ uniform vec4 u_lightDir;
 // (dropOffRate * 128) rides u_lightColor.w.
 uniform vec4 u_lightPos;
 uniform vec4 u_lightColor;
+// EVSM warp exponent (x): the moments store exp(c z), exp(c z)^2 of
+// the light window depth.
+uniform vec4 u_evsm;
 uniform mat4 u_shadowMatrix;
 #ifdef TEXTURE
 SAMPLER2D(s_texColor, 0);
@@ -173,10 +176,13 @@ void main()
 		if (u_shadowParams.w > 0.5)
 		{
 			// debug (FC_BGFX_DEBUG_SHADOW_VIS): red = stored
-			// depth moment, green = stored depth^2, blue =
-			// receiver light depth
+			// depth (unwarped), green = stored depth^2 moment
+			// (unwarped), blue = receiver light depth
 			vec2 dm = texture2D(s_texShadow, sp.xy).xy;
-			gl_FragColor = vec4(dm.xy, sp.z, 1.0);
+			gl_FragColor = vec4(
+				log(max(dm.x, 1.0e-12)) / u_evsm.x,
+				log(max(dm.y, 1.0e-12)) / (2.0 * u_evsm.x),
+				sp.z, 1.0);
 			return;
 		}
 #endif
@@ -184,11 +190,14 @@ void main()
 		    && sp.z > 0.0 && sp.z < 1.0)
 		{
 			vec2 mo = texture2D(s_texShadow, sp.xy).xy;
-			float p = sp.z - u_shadowParams.z;
+			// Warp the (biased) receiver depth like the caster;
+			// the variance floor scales with the warped moment.
+			float p = exp(u_evsm.x * (sp.z - u_shadowParams.z));
 			if (p > mo.x)
 			{
 				float va = max(mo.y - mo.x * mo.x,
-				               u_shadowParams.y);
+				               u_shadowParams.y
+				                   * mo.x * mo.x);
 				float dd = p - mo.x;
 				float pmax = va / (va + dd * dd);
 				shadow = clamp((pmax - 0.3) / 0.7, 0.0, 1.0);
