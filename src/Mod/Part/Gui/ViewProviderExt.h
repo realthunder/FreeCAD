@@ -50,6 +50,7 @@ class SoCoordinate3;
 class SoIndexedFaceSet;
 class SoNormal;
 class SoNormalBinding;
+class SoTextureCoordinate2;
 class SoMaterialBinding;
 class SoIndexedLineSet;
 
@@ -210,6 +211,7 @@ protected:
     SoBrepFaceSet     * faceset;
     SoNormal          * norm;
     SoNormalBinding   * normb;
+    SoTextureCoordinate2 * texcoords;
     SoBrepEdgeSet     * lineset;
     SoBrepPointSet    * nodeset;
     

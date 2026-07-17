@@ -68,6 +68,7 @@
 # include <Inventor/nodes/SoPolygonOffset.h>
 # include <Inventor/nodes/SoSeparator.h>
 # include <Inventor/nodes/SoShapeHints.h>
+# include <Inventor/nodes/SoTextureCoordinate2.h>
 # include <QAction>
 # include <QMenu>
 
@@ -237,6 +238,9 @@ ViewProviderPartExt::ViewProviderPartExt()
     faceset->ref();
     norm = new SoNormal;
     norm->ref();
+    texcoords = new SoTextureCoordinate2;
+    texcoords->point.setNum(0);
+    texcoords->ref();
     normb = new SoNormalBinding;
     normb->value = SoNormalBinding::PER_VERTEX_INDEXED;
     normb->ref();
@@ -298,6 +302,7 @@ ViewProviderPartExt::~ViewProviderPartExt()
     pcoords->unref();
     faceset->unref();
     norm->unref();
+    texcoords->unref();
     normb->unref();
     lineset->unref();
     nodeset->unref();
@@ -562,6 +567,7 @@ void ViewProviderPartExt::attach(App::DocumentObject *pcFeat)
     pcFlatRoot->addChild(pcFaceStyle);
     pcFlatRoot->addChild(norm);
     pcFlatRoot->addChild(normb);
+    pcFlatRoot->addChild(texcoords);
     pcFlatRoot->addChild(faceset);
 
     // edges and points
@@ -1844,6 +1850,7 @@ void ViewProviderPartExt::updateVisual()
         coords  ->point      .setNum(0);
         pcoords ->point      .setNum(0);
         norm    ->vector     .setNum(0);
+        texcoords->point     .setNum(0);
         faceset ->coordIndex .setNum(0);
         faceset ->partIndex  .setNum(0);
         faceset ->shapeInfo  .setNum(0);
@@ -1937,6 +1944,15 @@ void ViewProviderPartExt::updateVisual()
 #endif
 
 
+        // A face without a geometric surface is a purely triangulated one
+        // (e.g. a glTF import); its stored UV nodes are real texture
+        // coordinates, unlike the parametric UV nodes of a regular face.
+        auto isMeshOnlyFace = [](const TopoDS_Face &face) {
+            TopLoc_Location loc;
+            return BRep_Tool::Surface(face, loc).IsNull();
+        };
+        bool hasTexCoords = false;
+
         // count triangles and nodes in the mesh
         TopTools_IndexedMapOfShape faceMap;
         TopExp::MapShapes(cShape, TopAbs_FACE, faceMap);
@@ -1948,6 +1964,8 @@ void ViewProviderPartExt::updateVisual()
                 numTriangles += mesh->NbTriangles();
                 numNodes     += mesh->NbNodes();
                 numNorms     += mesh->NbNodes();
+                if (mesh->HasUVNodes() && isMeshOnlyFace(face))
+                    hasTexCoords = true;
             }
 
             TopExp_Explorer xp;
@@ -1997,17 +2015,21 @@ void ViewProviderPartExt::updateVisual()
         // create memory for the nodes and indexes
         coords  ->point      .setNum(numNodes);
         norm    ->vector     .setNum(numNorms);
+        texcoords->point     .setNum(hasTexCoords ? numNodes : 0);
         faceset ->coordIndex .setNum(numTriangles*4);
         faceset ->partIndex  .setNum(numFaces);
         // get the raw memory for fast fill up
         SbVec3f* verts = coords  ->point       .startEditing();
         SbVec3f* norms = norm    ->vector      .startEditing();
+        SbVec2f* texcoordArr = hasTexCoords ? texcoords->point.startEditing() : nullptr;
         int32_t* index = faceset ->coordIndex  .startEditing();
         int32_t* parts = faceset ->partIndex   .startEditing();
 
         // preset the normal vector with null vector
         for (int i=0;i < numNorms;i++)
             norms[i]= SbVec3f(0.0,0.0,0.0);
+        for (int i=0; texcoordArr && i < numNodes; i++)
+            texcoordArr[i] = SbVec2f(0.0f, 0.0f);
 
         int ii = 0,faceNodeOffset=0,faceTriaOffset=0;
         for (int i=1; i <= faceMap.Extent(); i++, ii++) {
@@ -2034,6 +2056,21 @@ void ViewProviderPartExt::updateVisual()
             // check orientation
             TopAbs_Orientation orient = actFace.Orientation();
 
+            // purely triangulated faces carry authored texture coordinates
+            // and normals in the stored mesh — use both as-is
+            bool meshOnly = isMeshOnlyFace(actFace);
+            if (texcoordArr && meshOnly && mesh->HasUVNodes()) {
+                for (int n = 1; n <= nbNodesInFace; n++) {
+#if OCC_VERSION_HEX < 0x070600
+                    const gp_Pnt2d uv = mesh->UVNodes()(n);
+#else
+                    const gp_Pnt2d uv = mesh->UVNode(n);
+#endif
+                    texcoordArr[faceNodeOffset+n-1].setValue((float)uv.X(), (float)uv.Y());
+                }
+            }
+            bool normalsFromUV = NormalsFromUV || (meshOnly && mesh->HasNormals());
+
 
             // cycling through the poly mesh
 #if OCC_VERSION_HEX < 0x070600
@@ -2044,7 +2081,7 @@ void ViewProviderPartExt::updateVisual()
             int numNodes =  mesh->NbNodes();
             TColgp_Array1OfDir Normals (1, numNodes);
 #endif
-            if (NormalsFromUV)
+            if (normalsFromUV)
                 Part::Tools::getPointNormals(actFace, mesh, Normals);
 
             for (int g=1;g<=nbTriInFace;g++) {
@@ -2072,7 +2109,7 @@ void ViewProviderPartExt::updateVisual()
 
                 // get the 3 normals of this triangle
                 gp_Vec NV1, NV2, NV3;
-                if (NormalsFromUV) {
+                if (normalsFromUV) {
                     NV1.SetXYZ(Normals(N1).XYZ());
                     NV2.SetXYZ(Normals(N2).XYZ());
                     NV3.SetXYZ(Normals(N3).XYZ());
@@ -2092,7 +2129,7 @@ void ViewProviderPartExt::updateVisual()
                     V1.Transform(myTransf);
                     V2.Transform(myTransf);
                     V3.Transform(myTransf);
-                    if (NormalsFromUV) {
+                    if (normalsFromUV) {
                         NV1.Transform(myTransf);
                         NV2.Transform(myTransf);
                         NV3.Transform(myTransf);
@@ -2238,6 +2275,8 @@ void ViewProviderPartExt::updateVisual()
         coords  ->point       .finishEditing();
         pcoords ->point       .finishEditing();
         norm    ->vector      .finishEditing();
+        if (texcoordArr)
+            texcoords->point  .finishEditing();
         faceset ->coordIndex  .finishEditing();
         faceset ->partIndex   .finishEditing();
         lineset ->coordIndex  .finishEditing();
