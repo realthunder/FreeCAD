@@ -858,6 +858,16 @@ static inline void unpackColor(uint32_t rgba, float *out)
     out[3] = (rgba & 0xff) / 255.0f;
 }
 
+// FNV-1a accumulation for the shadow-map caster-set hash.
+static inline void hashBytes(uint64_t &h, const void *data, size_t len)
+{
+    auto p = static_cast<const uint8_t *>(data);
+    for (size_t i = 0; i < len; ++i) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+}
+
 // 0xRRGGBBAA to the SceneVertex byte order (r,g,b,a in memory, i.e. what
 // GpuMesh::upload memcpy's from MeshData::colors).
 static inline uint32_t vertexColor(uint32_t rgba)
@@ -995,7 +1005,10 @@ public:
                 *prog = BGFX_INVALID_HANDLE;
             }
         }
-        // Shadow resources: the framebuffers before their textures.
+        // Shadow resources: the framebuffers before their textures. The
+        // recreated moments texture starts empty, so the cached-map hash
+        // resets with it.
+        shadowMapHash = 0;
         for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo}) {
             if (bgfx::isValid(*fb)) {
                 bgfx::destroy(*fb);
@@ -3340,6 +3353,10 @@ public:
     float lightDirView[3] = {0.0f, 0.0f, -1.0f}; // view space
     float lightColorI[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // rgb * intensity
     float shadowMtx[16];       // camera view space -> shadow uv/depth
+    // Cached shadow map: hash of the light camera + caster set of the
+    // moments currently in shadowTex; the caster pass (and blur) only
+    // re-runs when it changes. 0 = nothing rendered yet.
+    uint64_t shadowMapHash = 0;
     bool m_ssao = false;     // SSAO resources exist (caps allow it)
     // Volumetric light shafts: half-res raymarch of the shadow map
     // bounded by the prepass depth, so both resource sets must exist.
@@ -3485,6 +3502,29 @@ public:
         view->bumpScale = bumpconf.scale;
         view->bumpParallax = bumpconf.parallax;
 
+        // Whole-object selection/highlight draws replace the object's
+        // normal rendering (SoFCRenderer's selectionkeys/highlightkeys
+        // skip): collect their object keys and hide matching scene draws.
+        // Computed before the shadow setup — hidden draws don't cast, so
+        // the cached-map caster hash needs them.
+        hiddenKeys.clear();
+        for (const auto &sel : selections) {
+            for (const auto &draw : sel.second) {
+                if (draw.wholeObject && draw.objectKey)
+                    hiddenKeys.insert(draw.objectKey);
+            }
+        }
+        if (hlWholeOnTop) {
+            for (const auto &draw : highlight) {
+                if (draw.wholeObject && draw.objectKey)
+                    hiddenKeys.insert(draw.objectKey);
+            }
+        }
+        auto isHidden = [this](const Render::DrawCall &d) {
+            return d.objectKey && !hiddenKeys.empty()
+                && hiddenKeys.count(d.objectKey);
+        };
+
         // Shadow draw style: a light in the scene feed activates the
         // variance shadow map pass (only that style traverses one — the
         // viewer headlight lives outside the captured graph). The light
@@ -3558,11 +3598,6 @@ public:
             }
         }
         view->shadowFrame = shadowActive;
-        // ShadowSmoothBorder > 0 runs the separable blur over the fresh
-        // moments right after the caster pass.
-        bool shadowBlurActive = shadowActive
-            && lightconf.smoothBorder > 0.0f
-            && bgfx::isValid(view->shadowBlurFbo);
         static const bool dbgshadow =
             (getenv("FC_BGFX_DEBUG_SHADOW") != nullptr);
         if (dbgshadow)
@@ -3697,6 +3732,66 @@ public:
                 break;
             }
         }
+        // Cached shadow map: the moments in shadowTex stay valid while
+        // the light camera, the smoothing, and the caster set (mesh
+        // content, transforms, ranges, clipping) are unchanged — camera
+        // moves don't touch them, so the caster pass and blur only
+        // re-run on scene/light edits (the large-assembly policy of the
+        // GL Shadow style's cached SoShadowGroup map). The hash loop
+        // mirrors the caster predicate of the submit loop below; the
+        // hidden-line style adds fill-hiding rules resolved later, so
+        // it just disables the caching.
+        static const bool shadowNoCache =
+            (getenv("FC_BGFX_SHADOW_NOCACHE") != nullptr);
+        bool shadowRender = shadowActive;
+        if (shadowActive && !hlconfig.show && !shadowNoCache) {
+            uint64_t h = 1469598103934665603ULL;
+            hashBytes(h, lightViewMtx, sizeof(float) * 16);
+            hashBytes(h, lightProjMtx, sizeof(float) * 16);
+            hashBytes(h, &lightconf.smoothBorder,
+                      sizeof(lightconf.smoothBorder));
+            for (const auto &draw : scene) {
+                const auto &mat = draw.material;
+                if (mat.ontop || mat.type != Render::Material::Triangle
+                        || mat.transparent
+                        || (mat.pervertexcolor && draw.mesh
+                            && draw.mesh->hasTransparency)
+                        || !(mat.shadowstyle & 1)
+                        || (waterActive && mat.water)
+                        || !draw.mesh || isHidden(draw))
+                    continue;
+                hashBytes(h, &draw.mesh->cacheId,
+                          sizeof(draw.mesh->cacheId));
+                if (!draw.identity)
+                    hashBytes(h, draw.model, sizeof(float) * 16);
+                hashBytes(h, &draw.indexStart, sizeof(draw.indexStart));
+                hashBytes(h, &draw.indexCount, sizeof(draw.indexCount));
+                if (mat.numclipplanes) {
+                    hashBytes(h, &mat.numclipplanes, 1);
+                    hashBytes(h, &mat.clipconcave, 1);
+                    hashBytes(h, mat.clipplanes,
+                              sizeof(float) * 4 * mat.numclipplanes);
+                }
+                // Autozoom casters rebuild their transform from the
+                // per-frame world-to-screen scale.
+                if (!mat.autozoom.empty())
+                    hashBytes(h, &autozoomScale, sizeof(autozoomScale));
+            }
+            shadowRender = h != view->shadowMapHash;
+            if (shadowRender)
+                view->shadowMapHash = h;
+            if (dbgshadow && !shadowRender)
+                fprintf(stderr, "bgfx shadow map cached (%llx)\n",
+                        (unsigned long long)h);
+        } else if (shadowActive) {
+            view->shadowMapHash = 0;
+        }
+        // ShadowSmoothBorder > 0 runs the separable blur over the fresh
+        // moments right after the caster pass.
+        bool shadowBlurActive = shadowRender
+            && lightconf.smoothBorder > 0.0f
+            && bgfx::isValid(view->shadowBlurFbo);
+
         // The prepass rasterizes for SSAO and/or the volumetric ray
         // ends; the AO resolve chain itself stays SSAO-gated.
         bool prepassActive = ssaoActive || volActive;
@@ -3711,7 +3806,7 @@ public:
                 bgfx::setPaletteColor(1, 1.0f, 1.0f, 1.0f, 1.0f);
                 bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_COLOR),
                                    1.0f, 0, 0, 1);
-            } else if (shadowActive && i == BGFXView::ViewShadow) {
+            } else if (shadowRender && i == BGFXView::ViewShadow) {
                 // Moments clear to (1, 1) = far plane, own depth; the
                 // caster pass renders under the light camera at the
                 // shadow map size.
@@ -3874,26 +3969,6 @@ public:
         bool sceneTwoPass = sceneOnTopTri && sceneOnTopLine;
         bool twoPass = sceneTwoPass || selOnTopLine || hlWholeOnTop;
 
-        // Whole-object selection/highlight draws replace the object's
-        // normal rendering (SoFCRenderer's selectionkeys/highlightkeys
-        // skip): collect their object keys and hide matching scene draws.
-        hiddenKeys.clear();
-        for (const auto &sel : selections) {
-            for (const auto &draw : sel.second) {
-                if (draw.wholeObject && draw.objectKey)
-                    hiddenKeys.insert(draw.objectKey);
-            }
-        }
-        if (hlWholeOnTop) {
-            for (const auto &draw : highlight) {
-                if (draw.wholeObject && draw.objectKey)
-                    hiddenKeys.insert(draw.objectKey);
-            }
-        }
-        auto isHidden = [this](const Render::DrawCall &d) {
-            return d.objectKey && !hiddenKeys.empty()
-                && hiddenKeys.count(d.objectKey);
-        };
 
         // The same object selected through several ids draws its
         // whole-object geometry only once (GL's renderkeys dedup in
@@ -4080,8 +4155,8 @@ public:
                     && !isWater)
                 view->submitPrepass(draw);
             // Shadow casters (like the GL default, transparent geometry
-            // does not cast).
-            if (shadowActive && isTriangle(draw) && !isTransp(draw)
+            // does not cast); skipped while the cached map is valid.
+            if (shadowRender && isTriangle(draw) && !isTransp(draw)
                     && (draw.material.shadowstyle & 1) && !isWater)
                 view->submitShadowCaster(draw);
             submitSceneOutline(draw);
