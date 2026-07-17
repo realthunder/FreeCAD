@@ -605,9 +605,32 @@ independent of each other; item 4 builds on item 3's property model.
    plumbing — both renderers read the same cached UVs): the bgfx texture
    path renders a cylinder's *cap* face differently from GL (dim
    continued checker vs GL's stripes) — investigate with the texture
-   rows' minification work. Remaining in this item: texture transform
-   property, shadow cast/receive flags, and a UI beyond the property
-   editor's add-property dialog.
+   rows' minification work.
+   *Texture transform + shadow flags done (2026-07)*: optional
+   `Render_TextureScale` / `Render_TextureOffset` (`PropertyVector`,
+   x/y) and `Render_TextureRotation` (`PropertyAngle`) build an
+   `SoTexture2Transform` node beside the texture nodes — the render
+   cache's existing texture-matrix capture carries it, verified
+   pixel-matching between mode-3 GL and bgfx (edge-AA class only).
+   `Render_CastShadow` / `Render_ReceiveShadow` map onto an
+   `SoShadowStyle` node consumed through `Material::shadowstyle` by
+   both the GL Shadow style and the backend shadow pass (verified in
+   bgfx: cast-off removes exactly the object's shadow, receive-off
+   lights exactly its shadowed pixels). Two integration facts: a
+   freshly added Render_* property must be applied from a new
+   `ViewProviderGeometryObject::addDynamicProperty` override — this
+   fork's `Property::hasSetValue` skips same-value writes, so e.g.
+   adding `Render_CastShadow` (default false = "don't cast") would
+   stay inert until toggled; and derived view providers' *vtables live
+   in their module libs* — a Gui-only rebuild leaves e.g. PartGui
+   dispatching to the old base (symptom: the override never runs).
+   *Prefs page done (2026-07)*: cog-generated Display > Render engine
+   page (`DlgSettingsRender`, the params_utils preference-dialog
+   pattern) exposing the RenderParams globals — closes the item-1
+   leftover "prefs-page UI". Remaining in this item: per-object UI
+   beyond the property editor's add-property dialog (e.g. a task panel
+   or context-menu command creating/editing the Render_* set);
+   `EmissiveMap`/`OcclusionMap` texture slots.
 
 4. **glTF import/export with materials & textures (2–3 wks)** — round-trip
    the renderer's material model (deliberately chosen as glTF
