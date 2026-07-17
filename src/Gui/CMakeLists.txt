@@ -454,6 +454,7 @@ SET(Dialog_CPP_SRCS
     DownloadManager.cpp
     DocumentRecovery.cpp
     TaskElementColors.cpp
+    TaskRenderSettings.cpp
     DlgObjectSelection.cpp
     DlgAddProperty.cpp
     VectorListEditor.cpp
@@ -495,6 +496,7 @@ SET(Dialog_HPP_SRCS
     DownloadManager.h
     DocumentRecovery.h
     TaskElementColors.h
+    TaskRenderSettings.h
     DlgObjectSelection.h
     DlgAddProperty.h
     VectorListEditor.h

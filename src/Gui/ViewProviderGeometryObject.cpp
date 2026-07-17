@@ -45,6 +45,7 @@
 #include <Inventor/annex/FXViz/nodes/SoShadowStyle.h>
 
 #include <QImage>
+#include <QMenu>
 
 #include <App/PropertyFile.h>
 
@@ -53,8 +54,11 @@
 #include <App/PropertyUnits.h>
 
 #include "ViewProviderGeometryObject.h"
+#include "ActionFunction.h"
 #include "Application.h"
+#include "Control.h"
 #include "Document.h"
+#include "TaskRenderSettings.h"
 #include "ViewParams.h"
 
 #include "SoFCBoundingBox.h"
@@ -404,6 +408,32 @@ App::Property* ViewProviderGeometryObject::addDynamicProperty(
             && strncmp(prop->getName(), "Render_", 7) == 0)
         updateRenderProperty(prop->getName());
     return prop;
+}
+
+bool ViewProviderGeometryObject::removeDynamicProperty(const char* name)
+{
+    // Like addDynamicProperty above: removal does not notify onChanged,
+    // so reverting a Render_* setting (property editor or the render
+    // settings panel) must resync the scene graph nodes itself.
+    std::string n = name ? name : "";
+    bool res = inherited::removeDynamicProperty(name);
+    if (res && strncmp(n.c_str(), "Render_", 7) == 0 && !isRestoring())
+        updateRenderProperty(n.c_str());
+    return res;
+}
+
+void ViewProviderGeometryObject::setupContextMenu(QMenu* menu,
+                                                  QObject* receiver,
+                                                  const char* member)
+{
+    inherited::setupContextMenu(menu, receiver, member);
+    // Per-object render engine settings (the optional Render_* dynamic
+    // property set) via a task panel.
+    auto func = new Gui::ActionFunction(menu);
+    QAction *act = menu->addAction(QObject::tr("Render settings..."));
+    func->trigger(act, []() {
+        Gui::Control().showDialog(new TaskRenderSettings());
+    });
 }
 
 void ViewProviderGeometryObject::updateRenderShadowStyle()

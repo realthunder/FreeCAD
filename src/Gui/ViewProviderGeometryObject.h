@@ -83,6 +83,14 @@ public:
             const char* group = nullptr, const char* doc = nullptr,
             short attr = 0, bool ro = false, bool hidden = false) override;
 
+    /// Removing a Render_* dynamic property reverts its effect right
+    /// away (removal does not notify onChanged).
+    bool removeDynamicProperty(const char* name) override;
+
+    /// Adds "Render settings..." (the Render_* task panel).
+    void setupContextMenu(QMenu* menu, QObject* receiver,
+                          const char* member) override;
+
     void finishRestoring() override;
 
     /**

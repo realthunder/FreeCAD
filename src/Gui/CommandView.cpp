@@ -94,6 +94,7 @@
 #include "SoAxisCrossKit.h"
 #include "SoFCOffscreenRenderer.h"
 #include "SoFCUnifiedSelection.h"
+#include "TaskRenderSettings.h"
 #include "TextureMapping.h"
 #include "Tools.h"
 #include "Tree.h"
@@ -1430,6 +1431,36 @@ bool StdCmdSetAppearance::isActive()
     return (Gui::Control().activeDialog() == nullptr) &&
            (Gui::Selection().size() != 0);
 #endif
+}
+
+//===========================================================================
+// Std_RenderSettings
+//===========================================================================
+DEF_STD_CMD_A(StdCmdRenderSettings)
+
+StdCmdRenderSettings::StdCmdRenderSettings()
+  : Command("Std_RenderSettings")
+{
+    sGroup        = "Standard-View";
+    sMenuText     = QT_TR_NOOP("Render settings...");
+    sToolTipText  = QT_TR_NOOP("Edit the per-object render engine settings "
+                               "(PBR material, textures, shadow flags) of "
+                               "the selected objects");
+    sWhatsThis    = "Std_RenderSettings";
+    sStatusTip    = sToolTipText;
+    eType         = Alter3DView;
+}
+
+void StdCmdRenderSettings::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Gui::Control().showDialog(new Gui::TaskRenderSettings());
+}
+
+bool StdCmdRenderSettings::isActive()
+{
+    return (Gui::Control().activeDialog() == nullptr)
+        && !Gui::TaskRenderSettings::selectedViewProviders().empty();
 }
 
 //===========================================================================
@@ -5117,6 +5148,7 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdMainFullscreen());
     rcCmdMgr.addCommand(new StdViewDockUndockFullscreen());
     rcCmdMgr.addCommand(new StdCmdSetAppearance());
+    rcCmdMgr.addCommand(new StdCmdRenderSettings());
     rcCmdMgr.addCommand(new StdCmdToggleVisibility());
     rcCmdMgr.addCommand(new StdCmdToggleGroupVisibility());
     rcCmdMgr.addCommand(new StdCmdToggleShowOnTop());
