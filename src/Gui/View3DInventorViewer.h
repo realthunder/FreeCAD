@@ -503,6 +503,10 @@ public:
     bool isEnabledVBO() const;
     void setRenderCache(int);
     void setRendererType(const std::string &);
+    /// Materialize the per-view Render_* dynamic properties on the view
+    /// object (RenderParams defaults), called when a renderer backend is
+    /// selected.
+    void initRenderProperties();
 
     void updateHatchTexture();
     void refreshRenderCache();

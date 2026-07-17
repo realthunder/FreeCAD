@@ -160,6 +160,7 @@
 #include <Inventor/elements/SoLightModelElement.h>
 
 #include "ViewParams.h"
+#include "RenderParams.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderLink.h"
 #include "Renderer/Renderer.h"
@@ -376,6 +377,21 @@ static void _shadowSetParam(View3DInventor *view, const char *_name, const Value
             Base::ObjectStatusLocker<App::Property::Status,App::Property> guard(App::Property::User3, &prop);
             prop.setValue(def);
         });
+}
+
+template<class PropT, class ValueT>
+static ValueT _renderParam(View3DInventor *view, const char *_name, const char *_docu, const ValueT &def) {
+    if (!view)
+        return def;
+    auto cb = [](PropT &){};
+    return view->getProperty<PropT, ValueT>(_name, _docu, "Render", def, cb);
+}
+
+template<class PropT, class ValueT, class CallbackT>
+static ValueT _renderParam(View3DInventor *view, const char *_name, const char *_docu, const ValueT &def, CallbackT cb) {
+    if (!view)
+        return def;
+    return view->getProperty<PropT, ValueT>(_name, _docu, "Render", def, cb);
 }
 
 template<class PropT, class ValueT, class CallbackT>
@@ -954,6 +970,11 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
         {
             Base::StateLocker guard(_applyingOverride);
             applyOverrideMode();
+        }
+        else if (boost::starts_with(prop.getName(),"Render_")) {
+            // Per-view render engine settings; the per-frame config feed
+            // re-reads them, so a redraw is enough.
+            getSoRenderManager()->scheduleRedraw();
         }
     }
 }
@@ -3183,10 +3204,51 @@ void View3DInventorViewer::setRendererType(const std::string &type)
             selectionRoot->setExternalRenderer(nullptr);
         _pimpl->renderer = RendererFactory::create(
                 type, qobject_cast<QOpenGLWidget*>(getGLWidget()));
-        if (_pimpl->renderer && selectionRoot)
-            selectionRoot->setExternalRenderer(_pimpl->renderer.get());
+        if (_pimpl->renderer && selectionRoot) {
+            selectionRoot->setExternalRenderer(_pimpl->renderer.get(), _pimpl->view);
+            initRenderProperties();
+        }
         getSoRenderManager()->scheduleRedraw();
     }
+}
+
+void View3DInventorViewer::initRenderProperties()
+{
+    // Materialize the per-view render engine settings as Render_* dynamic
+    // properties on the view object, like the Shadow draw style's Shadow_*
+    // properties, so the user can override the global RenderParams
+    // preferences per view/document. They are created here - when a
+    // renderer backend is selected - not lazily by the per-frame config
+    // feed, which only reads existing properties
+    // (SoFCRendererBridge::translateAOConfig() etc.).
+    auto view = _pimpl->view;
+    if (!view)
+        return;
+    _renderParam<App::PropertyBool>(view, "SSAO",
+            RenderParams::docSSAO(), RenderParams::getSSAO());
+    _renderParam<App::PropertyFloat>(view, "SSAORadius",
+            RenderParams::docSSAORadius(), RenderParams::getSSAORadius());
+    _renderParam<App::PropertyFloat>(view, "SSAOIntensity",
+            RenderParams::docSSAOIntensity(), RenderParams::getSSAOIntensity());
+    _renderParam<App::PropertyBool>(view, "PBR",
+            RenderParams::docPBR(), RenderParams::getPBR());
+    static const App::PropertyFloatConstraint::Constraints _unit_cstr(0.0,1.0,0.1);
+    auto applyUnitConstraint = [](App::PropertyFloatConstraint &prop) {
+        if (!prop.getConstraints())
+            prop.setConstraints(&_unit_cstr);
+    };
+    _renderParam<App::PropertyFloatConstraint>(view, "PBRMetallic",
+            RenderParams::docPBRMetallic(), RenderParams::getPBRMetallic(),
+            applyUnitConstraint);
+    _renderParam<App::PropertyFloatConstraint>(view, "PBRRoughness",
+            RenderParams::docPBRRoughness(), RenderParams::getPBRRoughness(),
+            applyUnitConstraint);
+    _renderParam<App::PropertyFloat>(view, "PBREnvIntensity",
+            RenderParams::docPBREnvIntensity(), RenderParams::getPBREnvIntensity());
+    _renderParam<App::PropertyFloat>(view, "BumpScale",
+            RenderParams::docBumpScale(), RenderParams::getBumpScale());
+    _renderParam<App::PropertyBool>(view, "Parallax",
+            RenderParams::docParallax(), RenderParams::getParallax());
 }
 
 // #define ENABLE_GL_DEPTH_RANGE

@@ -36,6 +36,10 @@ namespace Render {
 class Renderer;
 }
 
+namespace Gui {
+class View3DInventor;
+}
+
 class GuiExport SoFCRenderer {
 public:
   SoFCRenderer();
@@ -48,8 +52,11 @@ public:
   /// (backend-neutral) form, and render() skips the internal fixed-function
   /// GL pass while the backend reports canSkipInternal(). Pass null to
   /// detach. Set env FC_RENDERER_PARALLEL_GL=1 to keep the GL pass drawing
-  /// on top for comparison.
-  void setExternalRenderer(Render::Renderer * renderer);
+  /// on top for comparison. The optional \a view identifies the owning 3D
+  /// view object so per-frame configs can honor its Render_*/Shadow_*
+  /// dynamic property overrides.
+  void setExternalRenderer(Render::Renderer * renderer,
+                           Gui::View3DInventor * view = nullptr);
 
   void render(SoGLRenderAction * action);
 

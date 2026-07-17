@@ -549,9 +549,10 @@ SoFCRenderCacheManager::~SoFCRenderCacheManager()
 }
 
 void
-SoFCRenderCacheManager::setExternalRenderer(Render::Renderer *renderer)
+SoFCRenderCacheManager::setExternalRenderer(Render::Renderer *renderer,
+                                            Gui::View3DInventor *view)
 {
-  PRIVATE(this)->renderer->setExternalRenderer(renderer);
+  PRIVATE(this)->renderer->setExternalRenderer(renderer, view);
 }
 
 void

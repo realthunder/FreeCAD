@@ -315,6 +315,9 @@ public:
 
   // Optional external render backend mirroring the scene/selection feeds.
   Render::Renderer *external = nullptr;
+  // Owning 3D view of the external backend, for per-view dynamic property
+  // overrides (Render_*/Shadow_*) in the per-frame config feed.
+  Gui::View3DInventor *externalview = nullptr;
 
   char stats[512];
   int drawcallcount;
@@ -824,8 +827,10 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
 }
 
 void
-SoFCRenderer::setExternalRenderer(Render::Renderer * renderer)
+SoFCRenderer::setExternalRenderer(Render::Renderer * renderer,
+                                  Gui::View3DInventor * view)
 {
+  PRIVATE(this)->externalview = renderer ? view : nullptr;
   if (PRIVATE(this)->external == renderer)
     return;
   PRIVATE(this)->external = renderer;
@@ -2239,13 +2244,14 @@ SoFCRenderer::render(SoGLRenderAction * action)
     PRIVATE(this)->external->setSectionConfig(
         RendererBridge::translateSectionConfig());
     PRIVATE(this)->external->setAOConfig(
-        RendererBridge::translateAOConfig());
+        RendererBridge::translateAOConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setPBRConfig(
-        RendererBridge::translatePBRConfig());
+        RendererBridge::translatePBRConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setBumpConfig(
-        RendererBridge::translateBumpConfig());
+        RendererBridge::translateBumpConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setLightConfig(
-        RendererBridge::translateLightConfig(action->getState()));
+        RendererBridge::translateLightConfig(action->getState(),
+                                             PRIVATE(this)->externalview));
     PRIVATE(this)->external->setAutoZoomScale(
         RendererBridge::translateAutoZoomScale(action->getState()));
   }

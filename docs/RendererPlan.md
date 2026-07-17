@@ -521,25 +521,37 @@ independent of each other; item 4 builds on item 3's property model.
    engine settings as `Render_*` dynamic properties on the `View3DInventor`
    view object, exactly like the Shadow draw style's 31 `Shadow_*`
    properties: a `_renderParam` helper mirroring `_shadowParam`
-   (View3DInventorViewer.cpp:356) materializes each property on first use in
-   property group "Render", default-initialized from `RenderParams`, so
-   users can override per view/document what the preferences set globally.
-   `onViewPropertyChanged` (View3DInventorViewer.cpp:950) learns the
-   `Render_` prefix and re-resolves the per-frame configs
-   (`Render::AOConfig` / `PBRConfig` / `BumpConfig` / shadow + env config)
-   on edit — the feed path stays the existing once-per-frame
-   `Renderer::set*Config` calls, now reading view properties with
-   `RenderParams` fallback instead of `ViewParams` directly. Covered
-   settings: SSAO (enable/radius/intensity), PBR (enable/metallic/roughness
-   default, env intensity, later HDRI env file as
-   `App::PropertyFileIncluded`), bump (scale/parallax), plus renderer-
-   specific shadow knobs; the bgfx shadow path additionally starts honoring
-   the *existing* `Shadow_*` view properties (light direction/color/
-   intensity, ground show/scale/color/texture/bump, `ShadowSync`) — closing
-   the "per-document Shadow_* overrides ignored" gap in the Phase 2 Shadows
-   row. Unlike Shadow these settings are not tied to one draw style: they
-   apply whenever the backend renders (render cache 3 + renderer type
-   selected).
+   (View3DInventorViewer.cpp:356) materializes each property in property
+   group "Render", default-initialized from `RenderParams`, so users can
+   override per view/document what the preferences set globally.
+   *Done (2026-07), first cut.* The properties materialize when a renderer
+   backend is selected (`View3DInventorViewer::initRenderProperties`, from
+   `setRendererType`), NOT lazily from the render loop — the per-frame
+   config feed must not mutate the view. The view object rides the
+   existing external-renderer plumbing (`setExternalRenderer(renderer,
+   view)` through `SoFCUnifiedSelection` → cache manager → `SoFCRenderer`),
+   and the bridge's config translators (`translateAOConfig` /
+   `translatePBRConfig` / `translateBumpConfig` / `translateLightConfig`)
+   take the view and do a read-only property lookup with `RenderParams`
+   fallback. `onViewPropertyChanged` reacts to the `Render_` prefix with a
+   redraw (configs are re-read every frame). Covered: SSAO
+   (enable/radius/intensity), PBR (enable/metallic/roughness with 0-1
+   constraints, env intensity), bump (scale/parallax); the bgfx shadow
+   ground now honors the *existing* `Shadow_ShowGround` /
+   `Shadow_GroundSizeScale` / `Shadow_GroundColor` view properties —
+   closing the ground part of the "per-document Shadow_* overrides
+   ignored" gap in the Phase 2 Shadows row (light direction/color/
+   intensity were already per-view through the Coin light node).
+   Unlike Shadow these settings are not tied to one draw style: they apply
+   whenever the backend renders (render cache 3 + renderer type selected).
+   Verified on llvmpipe: per-view `Render_PBR`/`Render_PBRMetallic` render
+   metallic with the global param off; per-view `Shadow_GroundColor`
+   recolors the bgfx shadow ground; control run bit-identical to
+   pre-change bgfx output. Remaining: HDRI env file property
+   (`App::PropertyFileIncluded`, waits for user-HDRI support in the
+   backend); `Shadow_GroundSizeAuto=false` explicit ground extents;
+   prefs-page UI for the new RenderParams entries (SSAO/PBR/bump are still
+   parameter-editor-only globals).
 
 3. **ViewProvider material / texture / render settings (2–3 wks)** —
    per-object appearance beyond today's fixed-function `ShapeMaterial`.

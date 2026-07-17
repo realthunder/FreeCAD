@@ -52,6 +52,7 @@
 #include "SoFCVertexCache.h"
 #include "../ViewParams.h"
 #include "../RenderParams.h"
+#include "../View3DInventor.h"
 
 using namespace Gui;
 
@@ -59,6 +60,39 @@ typedef SoFCRenderCache::Material CoinMaterial;
 typedef SoFCRenderCache::VertexCacheEntry VertexCacheEntry;
 
 namespace {
+
+// Read-only lookup of a per-view dynamic property override
+// (<group>_<name>, e.g. Render_SSAO or Shadow_ShowGround). Unlike
+// View3DInventor::getProperty this never creates the property - the
+// per-frame config feed must not mutate the view; the Render_* properties
+// are materialized when the renderer is selected
+// (View3DInventorViewer::setRendererType) and the Shadow_* ones by the
+// Shadow draw style.
+template<class PropT>
+const PropT * viewPropOverride(View3DInventor * view,
+                               const char * group,
+                               const char * name)
+{
+    if (!view)
+        return nullptr;
+    char propname[128];
+    snprintf(propname, sizeof(propname)-1, "%s_%s", group, name);
+    auto prop = view->getPropertyByName(propname);
+    if (!prop || !prop->isDerivedFrom(PropT::getClassTypeId()))
+        return nullptr;
+    return static_cast<const PropT*>(prop);
+}
+
+template<class PropT, class ValueT>
+ValueT viewParamOverride(View3DInventor * view,
+                         const char * group,
+                         const char * name,
+                         const ValueT & def)
+{
+    if (auto prop = viewPropOverride<PropT>(view, group, name))
+        return ValueT(prop->getValue());
+    return def;
+}
 
 // MeshData that keeps its SoFCVertexCache (and thus all the exposed CPU
 // arrays, which are ref-counted and shared across cache generations) alive.
@@ -625,17 +659,20 @@ RendererBridge::translateSectionConfig()
 }
 
 Render::AOConfig
-RendererBridge::translateAOConfig()
+RendererBridge::translateAOConfig(View3DInventor * view)
 {
     Render::AOConfig res;
-    res.enabled = RenderParams::getSSAO();
-    res.radius = float(RenderParams::getSSAORadius());
-    res.intensity = float(RenderParams::getSSAOIntensity());
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "SSAO", RenderParams::getSSAO());
+    res.radius = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "SSAORadius", RenderParams::getSSAORadius()));
+    res.intensity = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "SSAOIntensity", RenderParams::getSSAOIntensity()));
     return res;
 }
 
 Render::LightConfig
-RendererBridge::translateLightConfig(SoState * state)
+RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
 {
     // The Shadow draw style's light lives above the render-cache
     // traversal root, so it is resolved from the state's accumulated
@@ -686,32 +723,49 @@ RendererBridge::translateLightConfig(SoState * state)
         break;
     }
     if (res.valid) {
-        // Global ViewParams only; the per-document Shadow_* overrides
-        // are a known deviation of the external backends.
-        res.ground = ViewParams::getShadowShowGround();
-        res.groundScale = float(ViewParams::getShadowGroundScale());
-        res.groundColor = uint32_t(ViewParams::getShadowGroundColor());
+        // The ground receiver settings honor the per-view Shadow_*
+        // dynamic properties (created by the Shadow draw style, which is
+        // the only way a shadow light gets here) with ViewParams
+        // fallback. The light itself is per-view already: it comes from
+        // the Shadow style's Coin light node built from the same
+        // properties. Not honored: Shadow_GroundSizeAuto=false explicit
+        // ground extents (the backend sizes its ground from the scene
+        // bounding box only).
+        res.ground = viewParamOverride<App::PropertyBool>(
+                view, "Shadow", "ShowGround", ViewParams::getShadowShowGround());
+        res.groundScale = float(viewParamOverride<App::PropertyFloat>(
+                view, "Shadow", "GroundSizeScale", ViewParams::getShadowGroundScale()));
+        if (auto prop = viewPropOverride<App::PropertyColor>(view, "Shadow", "GroundColor"))
+            res.groundColor = prop->getValue().getPackedValue();
+        else
+            res.groundColor = uint32_t(ViewParams::getShadowGroundColor());
     }
     return res;
 }
 
 Render::BumpConfig
-RendererBridge::translateBumpConfig()
+RendererBridge::translateBumpConfig(View3DInventor * view)
 {
     Render::BumpConfig res;
-    res.scale = float(RenderParams::getBumpScale());
-    res.parallax = RenderParams::getParallax();
+    res.scale = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "BumpScale", RenderParams::getBumpScale()));
+    res.parallax = viewParamOverride<App::PropertyBool>(
+            view, "Render", "Parallax", RenderParams::getParallax());
     return res;
 }
 
 Render::PBRConfig
-RendererBridge::translatePBRConfig()
+RendererBridge::translatePBRConfig(View3DInventor * view)
 {
     Render::PBRConfig res;
-    res.enabled = RenderParams::getPBR();
-    res.metallic = float(RenderParams::getPBRMetallic());
-    res.roughness = float(RenderParams::getPBRRoughness());
-    res.envIntensity = float(RenderParams::getPBREnvIntensity());
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "PBR", RenderParams::getPBR());
+    res.metallic = float(viewParamOverride<App::PropertyFloatConstraint>(
+            view, "Render", "PBRMetallic", RenderParams::getPBRMetallic()));
+    res.roughness = float(viewParamOverride<App::PropertyFloatConstraint>(
+            view, "Render", "PBRRoughness", RenderParams::getPBRRoughness()));
+    res.envIntensity = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "PBREnvIntensity", RenderParams::getPBREnvIntensity()));
     return res;
 }
 

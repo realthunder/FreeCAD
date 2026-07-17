@@ -67,6 +67,7 @@ namespace Gui {
 class Document;
 class ViewProviderDocumentObject;
 class SoFCRayPickAction;
+class View3DInventor;
 
 /**  Unified Selection node
  *  This is the new selection node for the 3D Viewer which will
@@ -144,8 +145,11 @@ public:
     /// Attach an optional external render backend to the render cache
     /// manager (see SoFCRenderer::setExternalRenderer()). Unlike
     /// getRenderManager(), this works regardless of the current render
-    /// cache mode, so the backend can be (de)attached at any time.
-    void setExternalRenderer(Render::Renderer *renderer);
+    /// cache mode, so the backend can be (de)attached at any time. \a view
+    /// optionally identifies the owning 3D view for per-view dynamic
+    /// property overrides.
+    void setExternalRenderer(Render::Renderer *renderer,
+                             View3DInventor *view = nullptr);
 
 protected:
     ~SoFCUnifiedSelection() override;

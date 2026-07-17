@@ -27,6 +27,9 @@
 #include "../Renderer/Renderer.h"
 
 namespace Gui {
+
+class View3DInventor;
+
 namespace RendererBridge {
 
 /// Translate a flattened Coin vertex cache map (the SoFCRenderer feed
@@ -51,21 +54,29 @@ GuiExport Render::HiddenLineConfig translateHiddenLineConfig(SoState * state);
 /// per-frame config.
 GuiExport Render::SectionConfig translateSectionConfig();
 
-/// Resolve the ambient occlusion ViewParams (RendererSSAO*) into the
-/// backend-neutral per-frame config.
-GuiExport Render::AOConfig translateAOConfig();
+/// Resolve the ambient occlusion settings into the backend-neutral
+/// per-frame config: the view's Render_SSAO* dynamic properties when
+/// present (see View3DInventorViewer::setRendererType, which materializes
+/// them like the Shadow draw style's Shadow_* properties), with the
+/// global RenderParams as fallback.
+GuiExport Render::AOConfig translateAOConfig(View3DInventor * view);
 
-/// Resolve the physically based shading ViewParams (RendererPBR*) into
-/// the backend-neutral per-frame config.
-GuiExport Render::PBRConfig translatePBRConfig();
+/// Resolve the physically based shading settings (Render_PBR* view
+/// properties, RenderParams fallback) into the backend-neutral per-frame
+/// config.
+GuiExport Render::PBRConfig translatePBRConfig(View3DInventor * view);
 
-/// Resolve the bump mapping ViewParams (RendererBumpScale,
-/// RendererParallax) into the backend-neutral per-frame config.
-GuiExport Render::BumpConfig translateBumpConfig();
+/// Resolve the bump mapping settings (Render_BumpScale/Render_Parallax
+/// view properties, RenderParams fallback) into the backend-neutral
+/// per-frame config.
+GuiExport Render::BumpConfig translateBumpConfig(View3DInventor * view);
 
 /// Resolve the scene (shadow) light from the traversal state's light
-/// element; the viewer headlight is filtered out by node type.
-GuiExport Render::LightConfig translateLightConfig(SoState * state);
+/// element; the viewer headlight is filtered out by node type. The
+/// ground receiver settings honor the view's Shadow_* dynamic properties
+/// (the Shadow draw style creates them) with ViewParams fallback.
+GuiExport Render::LightConfig translateLightConfig(SoState * state,
+                                                   View3DInventor * view);
 
 /// Resolve the per-frame autozoom scale from the traversal state's view
 /// volume (the exact SoAutoZoomTranslation::getScaleFactor math with a

@@ -38,6 +38,10 @@ namespace Render {
 class Renderer;
 }
 
+namespace Gui {
+class View3DInventor;
+}
+
 class GuiExport SoFCRenderCacheManager
 {
 public:
@@ -48,8 +52,11 @@ public:
   void clear();
 
   /// Attach an optional external render backend (see
-  /// SoFCRenderer::setExternalRenderer()). Pass null to detach.
-  void setExternalRenderer(Render::Renderer *renderer);
+  /// SoFCRenderer::setExternalRenderer()). Pass null to detach. \a view
+  /// optionally identifies the owning 3D view for per-view dynamic
+  /// property overrides.
+  void setExternalRenderer(Render::Renderer *renderer,
+                           Gui::View3DInventor *view = nullptr);
 
   SoPath *getHighlightPath() const;
   void setHighlight(SoPath * path,
