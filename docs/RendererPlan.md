@@ -4,9 +4,10 @@ Status: draft, 2026-07-16. Companion to `RoadMap.md` (renderer workstream) and
 `ComputeBoundaries.md`.
 
 Goal: a modern render engine for FreeCAD with PBR materials + IBL, SSAO,
-order-independent transparency, capped section views, outline rendering, and
-conventional CAD shaded/wireframe display — portable across desktop GL/Vulkan/
-Metal/D3D, browser (WASM), and mobile via bgfx's runtime backend selection.
+shadows with volumetric lighting, order-independent transparency, capped
+section views, outline rendering, and conventional CAD shaded/wireframe
+display — portable across desktop GL/Vulkan/Metal/D3D, browser (WASM), and
+mobile via bgfx's runtime backend selection.
 
 **Hard constraint: the existing plain-GL pipeline must keep working unchanged.**
 That means render cache modes 0–2 (pure Coin) and mode 3's `SoFCRenderer`
@@ -158,6 +159,35 @@ Feature-technique choices (what shipping CAD viewers actually do):
   technique (it's a draw-call multiplier).
 - **PBR: glTF metallic-roughness** with matcap/Phong fallback sharing the
   same vertex pipeline.
+- **Shadows: cached variance shadow map (VSM), EVSM upgrade.** The scheme
+  that fits CAD: one dominant directional (or spot) light, and a scene that
+  is *static between edits* — so the shadow map is rendered once and reused
+  until geometry/light changes, not every frame (large-assembly friendly;
+  the existing `ShadowSync`/`ShadowExtraRedraw` params already model this).
+  VSM specifically because (a) it is what Coin's `SoShadowGroup` implements,
+  so the fork's existing GL "Shadow" draw style (31 `Shadow*` ViewParams:
+  spot/directional, ground plane + texture/bump, per-object casting flags)
+  has directly portable semantics and a pixel-comparable reference; (b) its
+  pre-blurred softness gives the soft, stable shadows CAD viewers want with
+  a single filterable texture — no per-pixel kernel like PCF, which shimmer
+  on the razor-straight edges CAD tessellation produces; (c) it is plain
+  fragment-shader + linear filtering on an RG16F/RG32F target — WebGL2-safe,
+  no compute. Light bleeding at overlapping occluders is VSM's known flaw;
+  the EVSM (exponential VSM) upgrade fixes most of it in the same pipeline.
+  Rejected: stencil shadow volumes (per-silhouette draw-call and fill-rate
+  multiplier — exactly wrong for large assemblies; hard shadows only);
+  cascaded maps (deferred until warranted — CAD frames one model, not an
+  open world; a single well-fit cascade + the cached-map policy suffices);
+  ray-traced shadows (no WebGL/mobile story).
+- **Volumetric lighting: shadow-map-raymarched light shafts** as a post
+  pass — march the view ray per pixel at half resolution (~32-48 steps,
+  dithered start offset), accumulating inscatter where the shadow map says
+  the light reaches, then bilateral-upsample and composite before the
+  transparent bucket. Pure fragment-shader work over the same VSM/EVSM
+  texture (WebGL2-safe), and it inherits the cached-map economics. This is
+  the presentation-quality \"studio\" effect (dusty workshop shafts), not a
+  physical fog model — froxel/compute volumetrics (Frostbite-style) stay a
+  much later native/WebGPU option, same policy as GTAO vs the SSAO cut.
 
 ---
 
@@ -445,13 +475,15 @@ two-object per-face-selection HL scene shows a pre-existing ~2k px
 ordering deviation (green face fill vs on-top black lines) that
 predates this work — verified bit-identical before/after.
 
-### Phase 2 — visual features (7–9 wks)
+### Phase 2 — visual features (10–13.5 wks)
 
 | Feature | Est. | Notes |
 |---|---|---|
 | WBOIT | 1.5–2 | *Done (2026-07), first cut.* RGBA16F accum + R16F revealage MRT sharing the scene depth (test only), weight = McGuire eq. 10, independent per-target blending, fullscreen composite view (`vs/fs_fc_comp`) resolving INV_SRC_ALPHA/SRC_ALPHA onto the scene FBO. Active where independent blend + half-float FB formats exist (WebGL2-compatible set); falls back to the bbox-sorted alpha blend otherwise or when a frame has no transparent scene triangles. Verified: transparent brightness within the general fill-shading tolerance of GL (~-8/255 vs -7 on opaque fills). *MSAA resolve chain done (2026-07)*: the accum/reveal targets carry the scene's sample count and are created without `BGFX_TEXTURE_RT_WRITE_ONLY`, so bgfx pairs each with a single-sample resolve texture and blit-resolves automatically when the transparent view's framebuffer is switched away — the composite pass then samples the resolved images (formats gated on `BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER_MSAA` under MSAA). Resolve-then-composite averages accum/revealage per pixel before the WBOIT formula (the standard approximation; transparent silhouettes get coverage-weighted edges rather than per-sample compositing). Fixed on the way: the scene depth target was created with `flags & ~BGFX_TEXTURE_RT`, but the MSAA levels are an *enum* in that flag nibble — under MSAA4x this silently degraded the depth renderbuffer to 2 samples, desyncing it from the color attachment. Verified vs GL at MSAA4x (threshold 30, all within the fill/AA-edge tolerance of the same scenes): transparent WBOIT 1039 px, opaque 669 px, clip+transparent caps 408 px; non-MSAA transparent regression 324 px. |
 | SSAO (ASSAO) | 1.5–2 | needs depth+normal prepass from Phase 0. *First cut done (2026-07), hemisphere-kernel pixel-shader SSAO (not yet the ASSAO port — bgfx ex.39 is compute-only, which WebGL2 lacks; this cut is the WebGL2-portable baseline and builds the prepass infrastructure ASSAO/GTAO need).* Three new views before the opaque pass render a depth+normal prepass of the opaque scene triangles (own non-MSAA RGBA16F target + D24S8 depth: octahedral-encoded viewer-facing view normal + linear view depth, fp16 — models beyond ~65k units will wrap) and resolve AO from it (16-sample rotated-hemisphere kernel with 4x4 tiled noise, range-checked with smoothstep falloff, 4x4 box blur), and a fourth view multiplies the blurred AO onto the scene color between the section caps and the outline/transparent passes — transparent geometry neither receives nor casts AO, and the on-top/highlight buckets stay clean. Position reconstruction and the prepass front-facing flip handle orthographic and perspective projections separately (u_proj[2][3] decides; the naive dot(n, viewpos) facing test mis-flips near-eye-plane faces under ortho — found as a black cylinder cap in testing). Configured per frame via `Render::AOConfig` from new ViewParams (`RendererSSAO`, `RendererSSAORadius` — 0 = auto, 5% of the scene bbox diagonal — `RendererSSAOIntensity`); disabled in hidden-line mode and gated on renderable RGBA16F+R8 (the WebGL2 float-buffer set, like WBOIT). Verified on llvmpipe: SSAO-off bit-compatible with GL (0 px > 30); SSAO-on front view of unoccluded geometry stays within the same tolerance; iso/perspective/clip/MSAA4x/WBOIT scenes show correct contact darkening at a box-slot/cylinder junction only. Known gaps: caps and on-top draws are not prepass sources; AO under a clip plane comes from the clipped interior back faces; no mip/half-res path yet (full-res generate). |
 | PBR + IBL | 3–4 | BRDF + env prefilter pipeline; matcap fallback; material property plumbing from ViewProvider |
+| Shadows (VSM) | 2–3 | cached single-light variance shadow map, semantics ported from the GL Shadow draw style (Coin `SoShadowGroup`): directional/spot per `ShadowSpotLight`, ground-plane receiver with texture/bump (`ShadowShowGround`\*), per-object casting flags; depth-from-light pass reuses the prepass shader family; re-render only on scene/light change (`ShadowSync`); EVSM variant where RG32F is renderable to curb light bleeding |
+| Volumetric light shafts | 1–1.5 | after shadows: half-res per-pixel raymarch of the shadow map (~32-48 dithered steps) + bilateral upsample, composited before the transparent bucket; intensity/density params; skip when shadows are off |
 | Section caps | 2–3 | stencil capping + hatch, port `_renderSection` semantics. *Done (2026-07).* Two new sequential bgfx views (opaque caps between the opaque and outline passes, transparent caps after the OIT composite — GL's grouped-pass order). Per section plane: depth-independent stencil INVERT parity mark of the solid triangle ranges (`renderSolids` ported via new `SoFCVertexCache::getSolidPartRange` → `MeshData::solidParts`/`hasSolid`, plus `Material::solidshape` from the shape hints) clipped by that plane alone; then a world-space cap quad (`vs/fs_fc_cap(_clip)`, hatch texture modulate, depth LESS + write so the fill keeps the rim like GL's cap-before-fill order, clipped by the remaining planes, unclipped in concave mode) where the parity is odd; then a stencil-cleanup quad standing in for GL's per-pass stencil clear (the cap views also stencil-clear at view start — the outline passes leave marks behind). The bridge feeds a per-frame `Render::SectionConfig` (fill/invert/group/concave/hatch ViewParams) and the hatch image (`Renderer::setHatchImage`, forwarded from `SoFCRenderer` including on late attach); the fill-invert color transform, Coin's z→normal rotation (quad/hatch orientation), and the mid-depth world-to-pixel hatch scale are ported. Verified vs GL (threshold 30; deviations at or below the no-clip fill/edge baseline of the same scene): 1-plane, 2-plane intersection, 2-plane concave union, hatch off, invert off, transparent solids (WBOIT active), SectionFillGroup, and hidden-line+clip (caps match; the missing section-cut *outline* of clipped per-part HL outlines remains — the Phase 1 deviation, not closed by caps). Known deviations: cap sources are scene + whole-object selection draws only (GL also sections on-top buckets when `NoSectionOnTop` is off); transparent caps always follow GL's *grouped* order (after the whole transparent bucket); the grouping key ignores autozoom. |
 | Outline/hidden-line | 1.5–2 | screen-space depth/normal pass + existing edge geometry. *Selection/preselection face outline done (2026-07)*: ported the GL stencil technique — stencil-mark the face, redraw its triangle edges as instanced thick lines + point-sprite corner caps where the stencil differs (the portable stand-in for `glPolygonMode`); per-outline stencil refs avoid per-part clears; the bridge resolves the Show*/No*WithOutline params and outline width. Verified pixel-identical to GL for preselect (outline-only) and two-face selection. *Whole-scene + hidden-line outline variants done (2026-07, see Phase 1).* |
 
@@ -468,7 +500,7 @@ predates this work — verified bit-identical before/after.
   camera motion, refine on idle — the Fusion 360 pattern).
 - SSR (optional), GTAO, TAA where compute is available.
 
-Total to full feature list: **~26–33 wks** (bgfx) — ~5.5–6.5 months with SSR
+Total to full feature list: **~29–37 wks** (bgfx) — ~6–7.5 months with SSR
 deferred.
 
 ---
