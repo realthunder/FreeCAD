@@ -2,17 +2,17 @@ $input v_texcoord0
 
 /*
  * Volumetric lighting raymarch (half resolution): marches the view ray
- * of each pixel through the bounded scattering medium (fc_volume.sh),
+ * of each pixel through the bounded scattering media (fc_volume.sh),
  * accumulating light inscattered where the variance shadow map says the
  * scene light reaches. Runs with the scene view/projection bound so the
  * predefined u_proj reconstructs view-space positions like the SSAO
  * pass; the march is clipped to the medium sphere and ends at the
- * opaque scene depth from the prepass target.
+ * opaque scene depth from the prepass target. Within the water body
+ * interval the per-channel water extinction/scattering replaces the
+ * air density, so deep shafts tint toward the water color.
  *
- * Output: rgb = inscattered radiance (integral of density * lit
- * transmittance, scaled by the light color and intensity), a = the
- * pixel's surface ray length (consumed by the bilateral upsample of the
- * apply pass).
+ * Output: rgb = inscattered radiance, a = the pixel's surface ray
+ * length (consumed by the bilateral upsample of the apply pass).
  *
  * u_lightColor: rgb = scene light color * light intensity
  */
@@ -24,6 +24,8 @@ $input v_texcoord0
 
 SAMPLER2D(s_texNormalZ, 0);
 SAMPLER2D(s_texShadow, 1);
+SAMPLER2D(s_texWaterFront, 2);
+SAMPLER2D(s_texWaterBack, 3);
 
 uniform vec4 u_lightColor;
 uniform mat4 u_shadowMatrix;
@@ -58,7 +60,10 @@ void main()
 	vec2 med = volMedium(origin, dir);
 	float t0 = med.x;
 	float t1 = min(med.y, tEnd);
-	float scatter = 0.0;
+	vec2 water = volWaterSpan(texture2D(s_texWaterFront, v_texcoord0),
+	                          texture2D(s_texWaterBack, v_texcoord0),
+	                          dir);
+	vec3 scatter = vec3_splat(0.0);
 	if (t1 > t0)
 	{
 		// Dithered start offset (interleaved gradient noise)
@@ -69,17 +74,22 @@ void main()
 			            vec2(0.06711056, 0.00583715))));
 		float density = u_volParams.x;
 		float dt = (t1 - t0) / float(VOL_STEPS);
+		// Per-channel eye-ward transmittance over the in-medium
+		// path (Beer-Lambert), iterated with the march.
+		vec3 T = vec3_splat(1.0);
 		for (int i = 0; i < VOL_STEPS; ++i)
 		{
 			float t = t0 + (float(i) + jitter) * dt;
-			// Inscatter where the light reaches, attenuated by
-			// the medium between the sample and the eye
-			// (Beer-Lambert over the in-medium path).
+			bool inWater = t > water.x && t < water.y;
+			vec3 sigT = inWater ? u_waterSigma.xyz
+			                    : vec3_splat(density);
+			float sigS = inWater ? u_waterSigma.w : density;
 			scatter += shadowVis(origin + dir * t)
-				* exp(-density * (t - t0)) * density * dt;
+				* (sigS * dt) * T;
+			T *= exp(-sigT * dt);
 		}
 	}
 
-	gl_FragColor = vec4(u_lightColor.rgb * (scatter * u_volParams.y),
+	gl_FragColor = vec4(u_lightColor.rgb * scatter * u_volParams.y,
 	                    tEnd);
 }

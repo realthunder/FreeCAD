@@ -239,6 +239,11 @@ public:
     /// (< 0 = unset); only external backends consume them.
     float metallic;
     float roughness;
+    /// Water body flag/density captured from SoFCRenderMaterial: the
+    /// shapes' closed volume becomes a scattering medium of the
+    /// volumetric lighting pass (only external backends consume this).
+    bool water;
+    float waterdensity;
     float polygonoffsetunits;
     float polygonoffsetfactor;
     int16_t annotation;
@@ -336,6 +341,10 @@ public:
         if (metallic > other.metallic) return false;
         if (roughness < other.roughness) return true;
         if (roughness > other.roughness) return false;
+        if (water < other.water) return true;
+        if (water > other.water) return false;
+        if (waterdensity < other.waterdensity) return true;
+        if (waterdensity > other.waterdensity) return false;
         if (lightmodel < other.lightmodel) return true;
         if (lightmodel > other.lightmodel) return false;
         if (vertexordering < other.vertexordering) return true;

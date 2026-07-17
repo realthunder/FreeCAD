@@ -883,6 +883,14 @@ public:
         ViewAOPrepass,      // SSAO depth+normal prepass of opaque scene
                             // triangles into a non-MSAA RGBA16F target
                             // (own framebuffer, own depth)
+        ViewWaterFront,     // nearest front-face depths of water body
+                            // draws (prepass shader family, own
+                            // framebuffer): per-pixel entry of the
+                            // volumetric water medium
+        ViewWaterBack,      // farthest back-face depths of water body
+                            // draws (depth GREATER, cleared to 0): the
+                            // medium exit; no front but a back face
+                            // means the camera is under water
         ViewAOGen,          // fullscreen SSAO generation into the R8 AO
                             // target (hemisphere kernel over the prepass)
         ViewAOBlur,         // fullscreen 4x4 AO blur into a second R8
@@ -951,17 +959,23 @@ public:
                 *tex = BGFX_INVALID_HANDLE;
             }
         }
-        // Volumetric resources: the framebuffer before its texture.
-        if (bgfx::isValid(volFbo)) {
-            bgfx::destroy(volFbo);
-            volFbo = BGFX_INVALID_HANDLE;
+        // Volumetric resources: the framebuffers before their textures.
+        for (auto fb : {&volFbo, &waterFrontFbo, &waterBackFbo}) {
+            if (bgfx::isValid(*fb)) {
+                bgfx::destroy(*fb);
+                *fb = BGFX_INVALID_HANDLE;
+            }
         }
-        if (bgfx::isValid(volTex)) {
-            bgfx::destroy(volTex);
-            volTex = BGFX_INVALID_HANDLE;
+        for (auto tex : {&volTex, &waterFrontTex, &waterBackTex,
+                         &waterFrontDepth, &waterBackDepth}) {
+            if (bgfx::isValid(*tex)) {
+                bgfx::destroy(*tex);
+                *tex = BGFX_INVALID_HANDLE;
+            }
         }
         for (auto uni : {&s_texVol, &u_volParams, &u_volMedium,
-                         &u_volTexel}) {
+                         &u_volTexel, &s_texWaterFront, &s_texWaterBack,
+                         &u_waterSigma}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -969,7 +983,7 @@ public:
         }
         for (auto prog : {&m_progPrepass, &m_progPrepassClip, &m_progSsao,
                           &m_progSsaoBlur, &m_progSsaoApply,
-                          &m_progVol, &m_progVolApply}) {
+                          &m_progVol, &m_progVolApply, &m_progVolExt}) {
             if (bgfx::isValid(*prog)) {
                 bgfx::destroy(*prog);
                 *prog = BGFX_INVALID_HANDLE;
@@ -1537,6 +1551,37 @@ public:
                                               bgfx::UniformType::Vec4);
             u_volTexel = bgfx::createUniform("u_volTexel",
                                              bgfx::UniformType::Vec4);
+
+            // Water medium: full-res front/back depths of water body
+            // draws, written by the prepass programs (only .z viewZ and
+            // .w validity are consumed).
+            const uint64_t waterFlags = 0
+                | BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+                | BGFX_SAMPLER_MIP_POINT
+                | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+            waterFrontTex = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::RGBA16F, waterFlags);
+            waterBackTex = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::RGBA16F, waterFlags);
+            waterFrontDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            waterBackDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            bgfx::TextureHandle fatt[2] = {waterFrontTex, waterFrontDepth};
+            waterFrontFbo = bgfx::createFrameBuffer(2, fatt, false);
+            bgfx::TextureHandle batt[2] = {waterBackTex, waterBackDepth};
+            waterBackFbo = bgfx::createFrameBuffer(2, batt, false);
+            m_progVolExt = loadProgram("vs_fc_comp", "fs_fc_volume_ext",
+                                       _BGFXLib.resource().c_str());
+            s_texWaterFront = bgfx::createUniform(
+                "s_texWaterFront", bgfx::UniformType::Sampler);
+            s_texWaterBack = bgfx::createUniform(
+                "s_texWaterBack", bgfx::UniformType::Sampler);
+            u_waterSigma = bgfx::createUniform("u_waterSigma",
+                                               bgfx::UniformType::Vec4);
         }
     }
 
@@ -2454,6 +2499,44 @@ public:
         ++drawcount;
     }
 
+    /// Rasterize a water body draw into one of the water depth targets
+    /// (the prepass programs write the linear view depth in .z): front
+    /// faces with the nearest depth = medium entry, back faces with the
+    /// farthest = medium exit. Culling is forced by face side whatever
+    /// the material's two-sidedness.
+    void submitWaterDepth(const Render::DrawCall &draw, bool back)
+    {
+        if (!draw.mesh || !draw.mesh->triangleIndices)
+            return;
+        GpuMesh *gpu = getMesh(*draw.mesh);
+        if (!bgfx::isValid(gpu->vbh) || !bgfx::isValid(gpu->tri))
+            return;
+
+        const Render::Material &mat = draw.material;
+        bool clipped = mat.numclipplanes > 0;
+        setClipUniforms(mat);
+        setDrawTransform(draw, autozoomScale);
+        bgfx::setVertexBuffer(0, gpu->vbh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->tri);
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+            | BGFX_STATE_WRITE_Z;
+        if (back) {
+            state |= BGFX_STATE_DEPTH_TEST_GREATER
+                | (mat.ccw ? BGFX_STATE_CULL_CCW : BGFX_STATE_CULL_CW);
+        } else {
+            state |= BGFX_STATE_DEPTH_TEST_LESS
+                | (mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW);
+        }
+        bgfx::setState(state);
+        bgfx::submit(viewId + (back ? ViewWaterBack : ViewWaterFront),
+                     clipped ? m_progPrepassClip : m_progPrepass);
+        ++drawcount;
+    }
+
     /// One clip-space triangle covering the viewport, submitted to a
     /// fullscreen resolve pass (uniforms/textures are set by the caller).
     void fullscreen(uint16_t pass, bgfx::ProgramHandle prog,
@@ -2522,22 +2605,44 @@ public:
     }
 
     /// Volumetric light shaft resolve: raymarch the shadow map through
-    /// the medium at half resolution (ray ends at the prepass depth),
-    /// then bilateral-upsample and composite onto the opaque scene with
-    /// premultiplied-alpha blending (the alpha carries the medium
-    /// extinction: dst = inscatter + transmittance * scene).
-    void submitVolumetric(float density, float intensity,
-                          float maxDist, const float medium[4])
+    /// the media at half resolution (ray ends at the prepass depth; a
+    /// water body interval carries its own per-channel extinction and
+    /// scattering), then composite onto the opaque scene in the
+    /// sequential apply view — first the analytic per-channel
+    /// transmittance multiply, then the bilateral-upsampled inscatter
+    /// add: dst = inscatter + transmittance * scene.
+    void submitVolumetric(float density, float intensity, float maxDist,
+                          const float medium[4], bool water,
+                          const float waterSigma[4])
     {
-        float params[4] = {density, intensity, maxDist, 0.0f};
+        static const float noSigma[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float params[4] = {density, intensity, maxDist,
+                           water ? 1.0f : 0.0f};
         bgfx::setUniform(u_volParams, params);
         bgfx::setUniform(u_volMedium, medium);
+        bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma);
         bgfx::setUniform(u_lightColor, lightColorI);
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         bgfx::setTexture(1, s_texShadow, shadowTex);
+        bgfx::setTexture(2, s_texWaterFront, waterFrontTex);
+        bgfx::setTexture(3, s_texWaterBack, waterBackTex);
         fullscreen(ViewVolGen, m_progVol,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+
+        // Analytic per-channel surface extinction (multiply; the
+        // sequential apply view keeps it before the inscatter add).
+        bgfx::setUniform(u_volParams, params);
+        bgfx::setUniform(u_volMedium, medium);
+        bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma);
+        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
+        bgfx::setTexture(1, s_texWaterFront, waterFrontTex);
+        bgfx::setTexture(2, s_texWaterBack, waterBackTex);
+        fullscreen(ViewVolApply, m_progVolExt,
+                   BGFX_STATE_WRITE_RGB
+                   | BGFX_STATE_BLEND_FUNC_SEPARATE(
+                       BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_SRC_COLOR,
+                       BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_ONE));
 
         float hw = std::max(1.0f, std::floor(width / 2.0f));
         float hh = std::max(1.0f, std::floor(height / 2.0f));
@@ -2550,7 +2655,7 @@ public:
         fullscreen(ViewVolApply, m_progVolApply,
                    BGFX_STATE_WRITE_RGB
                    | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
-                                           BGFX_STATE_BLEND_INV_SRC_ALPHA));
+                                           BGFX_STATE_BLEND_ONE));
     }
 
     // Submission passes mirroring SoFCRenderer's delayed render loop.
@@ -3182,10 +3287,22 @@ public:
     bgfx::FrameBufferHandle volFbo = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVol = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolApply = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progVolExt = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texVol = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_volParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_volMedium = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_volTexel = BGFX_INVALID_HANDLE;
+    // Water medium: front/back depth targets of water body draws
+    // (prepass shader family) bounding the underwater ray stretch.
+    bgfx::TextureHandle waterFrontTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle waterBackTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle waterFrontDepth = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle waterBackDepth = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle waterFrontFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle waterBackFbo = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texWaterFront = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texWaterBack = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_waterSigma = BGFX_INVALID_HANDLE;
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
     std::unordered_map<uint64_t, GpuMesh> meshes;
@@ -3474,6 +3591,46 @@ public:
                         volDensity, volMaxDist, volMedium[0],
                         volMedium[1], volMedium[2], volMedium[3]);
         }
+        // Water medium: scene draws flagged Material::water become the
+        // water body of the volumetric pass. The first flagged draw
+        // supplies the shared appearance — extinction sigma from its
+        // diffuse color (absorption of the complement) plus a
+        // wavelength-independent scattering term, density auto = from
+        // its bounds (a known single-appearance limitation for multiple
+        // differing bodies).
+        bool waterActive = false;
+        float waterSigma[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        if (volActive) {
+            for (const auto &draw : scene) {
+                const auto &mat = draw.material;
+                if (!mat.water || mat.ontop
+                        || mat.type != Render::Material::Triangle)
+                    continue;
+                float dens = mat.waterdensity;
+                if (dens <= 0.0f) {
+                    float dx = draw.bboxMax[0] - draw.bboxMin[0];
+                    float dy = draw.bboxMax[1] - draw.bboxMin[1];
+                    float dz = draw.bboxMax[2] - draw.bboxMin[2];
+                    float diag = std::sqrt(dx*dx + dy*dy + dz*dz);
+                    if (diag <= 0.0f)
+                        continue;
+                    dens = 3.0f / diag;
+                }
+                float color[4];
+                unpackColor(mat.diffuse, color);
+                float sigmaS = 0.35f * dens;
+                for (int j = 0; j < 3; ++j)
+                    waterSigma[j] = sigmaS + dens * (1.0f - color[j]);
+                waterSigma[3] = sigmaS;
+                waterActive = true;
+                if (getenv("FC_BGFX_DEBUG_VOL"))
+                    fprintf(stderr,
+                            "bgfx water dens=%g sigma=%g,%g,%g s=%g\n",
+                            dens, waterSigma[0], waterSigma[1],
+                            waterSigma[2], waterSigma[3]);
+                break;
+            }
+        }
         // The prepass rasterizes for SSAO and/or the volumetric ray
         // ends; the AO resolve chain itself stays SSAO-gated.
         bool prepassActive = ssaoActive || volActive;
@@ -3513,6 +3670,23 @@ public:
                 bgfx::setViewRect(id, 0, 0,
                     uint16_t(std::max(1, int(width) / 2)),
                     uint16_t(std::max(1, int(height) / 2)));
+                bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (waterActive && (i == BGFXView::ViewWaterFront
+                                       || i == BGFXView::ViewWaterBack)) {
+                // Water body depth targets: color clears to 0 (.w = 0 =
+                // no water on this pixel); the back-face view keeps the
+                // farthest depth, so its depth buffer clears to 0 and
+                // tests GREATER.
+                bool back = i == BGFXView::ViewWaterBack;
+                bgfx::setViewFrameBuffer(id, back ? view->waterBackFbo
+                                                  : view->waterFrontFbo);
+                bgfx::setViewClear(id,
+                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                    0x00000000u, back ? 0.0f : 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
                 bgfx::setViewTransform(id, viewMatrix, projMatrix);
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
@@ -3565,6 +3739,9 @@ public:
             // depth sorting is needed there either. The outline and
             // section-cap views interleave stencil mark/fill/cleanup
             // passes per entry, so they must keep submission order too.
+            // The volumetric apply view is sequential too: the
+            // per-channel extinction multiply must land before the
+            // inscatter add.
             bgfx::setViewMode(id,
                 i == BGFXView::ViewTransparent && !oitActive
                     ? bgfx::ViewMode::DepthDescending
@@ -3572,6 +3749,7 @@ public:
                             || i == BGFXView::ViewOutline
                             || i == BGFXView::ViewSectionCap
                             || i == BGFXView::ViewSectionCapTransp
+                            || i == BGFXView::ViewVolApply
                         ? bgfx::ViewMode::Sequential
                         : bgfx::ViewMode::Default);
             bgfx::touch(id);
@@ -3800,17 +3978,29 @@ public:
                 continue;
             view->submit(draw, viewMat, BGFXView::PassNormal,
                          sceneNoSeam(draw));
+            // Water body draws bound the medium instead of acting as
+            // ordinary surfaces: their front/back depths rasterize into
+            // the water targets (whatever their transparency), and they
+            // are excluded from the volumetric ray ends and from shadow
+            // casting so light and shafts enter the water.
+            bool isWater = waterActive && isTriangle(draw)
+                && draw.material.water;
+            if (isWater) {
+                view->submitWaterDepth(draw, false);
+                view->submitWaterDepth(draw, true);
+            }
             // The SSAO prepass re-rasterizes the opaque fills into the
             // depth+normal target (transparent geometry neither occludes
             // nor receives AO; the multiply pass runs before the
             // transparent bucket). The volumetric raymarch shares it as
             // its ray-end depth source.
-            if (prepassActive && isTriangle(draw) && !isTransp(draw))
+            if (prepassActive && isTriangle(draw) && !isTransp(draw)
+                    && !isWater)
                 view->submitPrepass(draw);
             // Shadow casters (like the GL default, transparent geometry
             // does not cast).
             if (shadowActive && isTriangle(draw) && !isTransp(draw)
-                    && (draw.material.shadowstyle & 1))
+                    && (draw.material.shadowstyle & 1) && !isWater)
                 view->submitShadowCaster(draw);
             submitSceneOutline(draw);
         }
@@ -3856,7 +4046,8 @@ public:
         // after the outlines, before the transparent bucket.
         if (volActive)
             view->submitVolumetric(volDensity, volconf.intensity,
-                                   volMaxDist, volMedium);
+                                   volMaxDist, volMedium,
+                                   waterActive, waterSigma);
 
         // 2. Selection whole-object fills; positive ids are on-top
         // selections (SoFCRenderer::addSelection). Their lines/points are

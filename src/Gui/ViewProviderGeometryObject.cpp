@@ -292,8 +292,15 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     };
     float metallic = floatProp("Render_Metallic");
     float roughness = floatProp("Render_Roughness");
+    // Render_Water turns the object's closed shape into a water body of
+    // the render engine's volumetric lighting pass (tinted by the shape
+    // color); Render_WaterDensity <= 0 = automatic.
+    auto boolProp = Base::freecad_dynamic_cast<App::PropertyBool>(
+            getPropertyByName("Render_Water"));
+    bool water = boolProp && boolProp->getValue();
+    float waterDensity = water ? floatProp("Render_WaterDensity") : 0.0f;
 
-    if (metallic < 0.0f && roughness < 0.0f) {
+    if (metallic < 0.0f && roughness < 0.0f && !water) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);
             if (idx >= 0)
@@ -310,6 +317,9 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     }
     pcRenderMaterial->metallic = metallic;
     pcRenderMaterial->roughness = roughness;
+    pcRenderMaterial->water = water;
+    pcRenderMaterial->waterDensity = waterDensity < 0.0f ? 0.0f
+                                                         : waterDensity;
 }
 
 void ViewProviderGeometryObject::attach(App::DocumentObject *pcObj)

@@ -4,13 +4,12 @@ $input v_texcoord0
  * Volumetric lighting apply pass (full resolution): bilateral upsample
  * of the half-resolution inscatter target — the four nearest half-res
  * texels are blended with bilinear weights modulated by the similarity
- * of their surface ray length to this pixel's own — composited onto the
- * scene with premultiplied-alpha blending (ONE / INV_SRC_ALPHA): the
- * alpha carries the medium extinction over the in-medium path in front
- * of the surface, so dst = inscatter + transmittance * scene, a
- * physically consistent lerp toward the light color as the optical
- * depth grows. Runs with the scene view/projection bound (fc_volume.sh
- * reconstructs the ray like the raymarch pass).
+ * of their surface ray length to this pixel's own — added onto the
+ * scene (blend ONE / ONE). The extinction pass has already multiplied
+ * the per-channel transmittance onto the scene in the same sequential
+ * view, so dst = inscatter + transmittance * scene. Runs with the
+ * scene view/projection bound (fc_volume.sh reconstructs the ray like
+ * the raymarch pass).
  *
  * u_volTexel : xy = half-res texel size, zw = half-res target size
  */
@@ -52,9 +51,5 @@ void main()
 	}
 	inscatter /= max(wsum, 1.0e-6);
 
-	// Extinction over the in-medium path in front of the surface.
-	vec2 med = volMedium(origin, dir);
-	float pathLen = max(0.0, min(med.y, tEnd) - med.x);
-	float extinction = 1.0 - exp(-u_volParams.x * pathLen);
-	gl_FragColor = vec4(inscatter, extinction);
+	gl_FragColor = vec4(inscatter, 1.0);
 }

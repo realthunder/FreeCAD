@@ -371,6 +371,17 @@ struct Material {
     float metallic = -1.0f;
     float roughness = -1.0f;
 
+    /// Water body flag of a triangle draw (SoFCRenderMaterial, typically
+    /// fed from a ViewProvider Render_Water property): while the
+    /// volumetric lighting pass is active, the draw's closed volume
+    /// becomes a scattering medium tinted by the diffuse color instead
+    /// of an ordinary surface — it neither ends volumetric rays nor
+    /// casts shadows, and its front/back depths bound the underwater
+    /// stretch of each view ray. waterdensity is the extinction density
+    /// in inverse world units, <= 0 = automatic (from the draw bounds).
+    bool water = false;
+    float waterdensity = 0.0f;
+
     /// Texture of a triangle draw (unit 0 only; GL applies further units
     /// on top, a known deviation) with its texture matrix, applied to
     /// MeshData::texCoords. Only sampled when the mesh carries texture

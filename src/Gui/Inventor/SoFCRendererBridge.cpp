@@ -422,6 +422,8 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     if (res.type == Render::Material::Triangle) {
         res.metallic = m.metallic;
         res.roughness = m.roughness;
+        res.water = m.water;
+        res.waterdensity = m.waterdensity;
     }
 
     // Bump map of triangle draws, unit 0 only like textures (the GL

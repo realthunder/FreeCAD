@@ -38,4 +38,6 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_CONSTRUCTOR(SoFCRenderMaterial);
     SO_NODE_ADD_FIELD(metallic, (-1.0f));
     SO_NODE_ADD_FIELD(roughness, (-1.0f));
+    SO_NODE_ADD_FIELD(water, (false));
+    SO_NODE_ADD_FIELD(waterDensity, (0.0f));
 }

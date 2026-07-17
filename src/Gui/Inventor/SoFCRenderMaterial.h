@@ -23,6 +23,7 @@
 #ifndef GUI_SOFCRENDERMATERIAL_H
 #define GUI_SOFCRENDERMATERIAL_H
 
+#include <Inventor/fields/SoSFBool.h>
 #include <Inventor/fields/SoSFFloat.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoSubNode.h>
@@ -48,6 +49,14 @@ public:
 
     SoSFFloat metallic;   ///< 0..1 metalness, < 0 = unset
     SoSFFloat roughness;  ///< 0..1 roughness, < 0 = unset (derive from shininess)
+    /// The shapes form a water body: their closed volume becomes a
+    /// scattering medium of the render engine's volumetric lighting
+    /// pass (tinted by the material diffuse color), instead of an
+    /// ordinary surface. Only external backends consume this.
+    SoSFBool water;
+    /// Water extinction density in inverse world units; <= 0 = automatic
+    /// (from the body extent).
+    SoSFFloat waterDensity;
 
 protected:
     ~SoFCRenderMaterial() override = default;

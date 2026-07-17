@@ -8,13 +8,21 @@
  * the whole scene) and is the same entry/exit-bounds core the planned
  * water medium extends.
  *
- * u_volParams : x = medium density (1/world units), y = intensity,
- *               z = maximum march distance, w = unused
+ * The optional water body (scene draws flagged Material::water) is a
+ * second, per-channel medium: its front/back depth targets bound the
+ * underwater stretch of each ray, with extinction/scattering from
+ * u_waterSigma instead of the air density.
+ *
+ * u_volParams : x = air medium density (1/world units), y = intensity,
+ *               z = maximum march distance, w = water body active
  * u_volMedium : xyz = medium sphere center (view space), w = radius
+ * u_waterSigma: xyz = water extinction per channel, w = water
+ *               scattering coefficient
  */
 
 uniform vec4 u_volParams;
 uniform vec4 u_volMedium;
+uniform vec4 u_waterSigma;
 
 // View-space ray of a screen pixel (uv in [0,1]). GL projection:
 // perspective has u_proj[2][3] == -1 (w = viewZ), orthographic has 0
@@ -38,6 +46,13 @@ void volRay(vec2 uv, out vec3 origin, out vec3 dir)
 	}
 }
 
+// Ray parameter of a positive linear view depth (perspective rays are
+// not parallel to the view axis).
+float volT(float viewZ, vec3 dir)
+{
+	return u_proj[2][3] != 0.0 ? viewZ / max(1.0e-6, -dir.z) : viewZ;
+}
+
 // Ray length to the opaque surface behind the pixel (prepass linear
 // view depth in nz, .w = 0 marks background), capped at the frame's
 // maximum march distance.
@@ -45,8 +60,19 @@ float volSurface(vec4 nz, vec3 dir)
 {
 	float tEnd = u_volParams.z;
 	if (nz.w > 0.5)
-		tEnd = min(tEnd, nz.z / max(1.0e-6, -dir.z));
+		tEnd = min(tEnd, volT(nz.z, dir));
 	return tEnd;
+}
+
+// Underwater interval of the ray from the water depth samples;
+// (0, -1) when the pixel has no water body. A back face without a
+// front face means the camera is inside the water.
+vec2 volWaterSpan(vec4 wf, vec4 wb, vec3 dir)
+{
+	if (u_volParams.w < 0.5 || wb.w < 0.5)
+		return vec2(0.0, -1.0);
+	return vec2(wf.w > 0.5 ? volT(wf.z, dir) : 0.0,
+	            volT(wb.z, dir));
 }
 
 // Entry/exit distances of the ray through the medium sphere, entry

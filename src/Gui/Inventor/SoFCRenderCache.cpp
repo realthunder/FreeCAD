@@ -313,6 +313,8 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->shininess = 0.f;
   this->metallic = -1.f;
   this->roughness = -1.f;
+  this->water = false;
+  this->waterdensity = 0.f;
   this->polygonoffsetstyle = 0;
   this->polygonoffsetunits = 0.f;
   this->polygonoffsetfactor = 0.f;
@@ -1218,6 +1220,8 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
   auto material = static_cast<const Gui::SoFCRenderMaterial *>(node);
   PRIVATE(this)->material.metallic = material->metallic.getValue();
   PRIVATE(this)->material.roughness = material->roughness.getValue();
+  PRIVATE(this)->material.water = material->water.getValue();
+  PRIVATE(this)->material.waterdensity = material->waterDensity.getValue();
 }
 
 void
