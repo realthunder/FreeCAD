@@ -203,6 +203,23 @@ struct AOConfig {
     bool operator!=(const AOConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame bump/normal mapping configuration (like AOConfig there is
+/// no GL-renderer counterpart; the GL renderer never draws scene bump
+/// maps). Applies to triangle draws carrying a Material::bumpmap.
+struct BumpConfig {
+    /// Strength multiplier: scales the slope of normal maps and the
+    /// height amplitude of grayscale bump maps.
+    float scale = 1.0f;
+    /// Parallax-occlusion map grayscale height maps (UV offset along
+    /// the view ray) instead of plain height-to-normal shading.
+    bool parallax = true;
+
+    bool operator==(const BumpConfig &o) const {
+        return scale == o.scale && parallax == o.parallax;
+    }
+    bool operator!=(const BumpConfig &o) const { return !(*this == o); }
+};
+
 /// Per-frame physically based shading configuration (like AOConfig there
 /// is no GL-renderer counterpart). While enabled, lit triangle surfaces
 /// use a metallic/roughness BRDF with image based lighting from a
@@ -293,6 +310,17 @@ struct Material {
     std::shared_ptr<const TextureImage> texture;
     float texmatrix[16];        ///< GL-layout, valid when !texidentity
     bool texidentity = true;
+
+    /// Bump map of a triangle draw (unit-0 SoBumpMap): 1/2-component
+    /// images perturb as grayscale height maps (parallax-occlusion
+    /// mapped when BumpConfig::parallax), 3/4-component images are
+    /// tangent-space normal maps (Coin's convention). The tangent frame
+    /// comes from screen-space derivatives, so any UV source works —
+    /// but the mesh must carry MeshData::texCoords, which only an
+    /// enabled texture unit provides (pair bump-only scenes with a
+    /// plain white texture). The wrap fields apply; model/blendColor
+    /// are ignored.
+    std::shared_ptr<const TextureImage> bumpmap;
 
     /// Autozoom transforms (SoAutoZoomTranslation): the draw's model
     /// matrix is rebuilt every frame by replaying these entries like the
@@ -387,6 +415,8 @@ public:
     virtual void setAOConfig(const AOConfig &config) { (void)config; }
     /// Per-frame physically based shading configuration.
     virtual void setPBRConfig(const PBRConfig &config) { (void)config; }
+    /// Per-frame bump/normal mapping configuration.
+    virtual void setBumpConfig(const BumpConfig &config) { (void)config; }
     /// Per-frame world-to-screen scale at the world origin consumed by
     /// Material::autozoom draws (Coin: SoAutoZoomTranslation's
     /// getWorldToScreenScale((0,0,0), 0.1) / (5 * viewport aspect)).

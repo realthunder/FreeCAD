@@ -473,6 +473,14 @@ Params = [
         "Zero means automatic (derived from each material's shininess)."),
     ParamFloat('RendererPBREnvIntensity',  1.0,
         "Brightness of the image based lighting environment."),
+    ParamFloat('RendererBumpScale',  1.0,
+        "Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
+        "experimental render engine: scales the slope of normal maps and\n"
+        "the height amplitude of grayscale bump maps."),
+    ParamBool('RendererParallax',  True,
+        "Parallax-occlusion map grayscale bump maps (SoBumpMap) of the\n"
+        "experimental render engine, shifting the texture with the view\n"
+        "angle for a strong relief impression."),
     ParamFloat('RenderHighlightPolygonOffsetFactor', 1),
     ParamFloat('RenderHighlightPolygonOffsetUnits', 1),
     ParamBool('ForceSolidSingleSideLighting',  True, on_change=True, title='Force single side lighting on solid',

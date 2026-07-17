@@ -219,6 +219,8 @@ public:
     double RendererPBRMetallic;
     double RendererPBRRoughness;
     double RendererPBREnvIntensity;
+    double RendererBumpScale;
+    bool RendererParallax;
     double RenderHighlightPolygonOffsetFactor;
     double RenderHighlightPolygonOffsetUnits;
     bool ForceSolidSingleSideLighting;
@@ -564,6 +566,10 @@ public:
         funcs["RendererPBRRoughness"] = &ViewParamsP::updateRendererPBRRoughness;
         RendererPBREnvIntensity = this->handle->GetFloat("RendererPBREnvIntensity", 1.0);
         funcs["RendererPBREnvIntensity"] = &ViewParamsP::updateRendererPBREnvIntensity;
+        RendererBumpScale = this->handle->GetFloat("RendererBumpScale", 1.0);
+        funcs["RendererBumpScale"] = &ViewParamsP::updateRendererBumpScale;
+        RendererParallax = this->handle->GetBool("RendererParallax", true);
+        funcs["RendererParallax"] = &ViewParamsP::updateRendererParallax;
         RenderHighlightPolygonOffsetFactor = this->handle->GetFloat("RenderHighlightPolygonOffsetFactor", 1);
         funcs["RenderHighlightPolygonOffsetFactor"] = &ViewParamsP::updateRenderHighlightPolygonOffsetFactor;
         RenderHighlightPolygonOffsetUnits = this->handle->GetFloat("RenderHighlightPolygonOffsetUnits", 1);
@@ -1281,6 +1287,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRendererPBREnvIntensity(ViewParamsP *self) {
         self->RendererPBREnvIntensity = self->handle->GetFloat("RendererPBREnvIntensity", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRendererBumpScale(ViewParamsP *self) {
+        self->RendererBumpScale = self->handle->GetFloat("RendererBumpScale", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRendererParallax(ViewParamsP *self) {
+        self->RendererParallax = self->handle->GetBool("RendererParallax", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderHighlightPolygonOffsetFactor(ViewParamsP *self) {
@@ -5875,6 +5889,66 @@ void ViewParams::removeRendererPBREnvIntensity() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRendererBumpScale() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
+"experimental render engine: scales the slope of normal maps and\n"
+"the height amplitude of grayscale bump maps.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & ViewParams::getRendererBumpScale() {
+    return instance()->RendererBumpScale;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & ViewParams::defaultRendererBumpScale() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRendererBumpScale(const double &v) {
+    instance()->handle->SetFloat("RendererBumpScale",v);
+    instance()->RendererBumpScale = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRendererBumpScale() {
+    instance()->handle->RemoveFloat("RendererBumpScale");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRendererParallax() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Parallax-occlusion map grayscale bump maps (SoBumpMap) of the\n"
+"experimental render engine, shifting the texture with the view\n"
+"angle for a strong relief impression.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & ViewParams::getRendererParallax() {
+    return instance()->RendererParallax;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & ViewParams::defaultRendererParallax() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRendererParallax(const bool &v) {
+    instance()->handle->SetBool("RendererParallax",v);
+    instance()->RendererParallax = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRendererParallax() {
+    instance()->handle->RemoveBool("RendererParallax");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docRenderHighlightPolygonOffsetFactor() {
     return "";
 }
@@ -6341,7 +6415,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:538)
+// Auto generated code (Gui/ViewParams.py:546)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6386,7 +6460,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:546)
+// Auto generated code (Gui/ViewParams.py:554)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6400,7 +6474,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:556)
+// Auto generated code (Gui/ViewParams.py:564)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -6414,13 +6488,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:566)
+// Auto generated code (Gui/ViewParams.py:574)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:573)
+// Auto generated code (Gui/ViewParams.py:581)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6428,7 +6502,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:582)
+// Auto generated code (Gui/ViewParams.py:590)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6440,7 +6514,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:595)
+// Auto generated code (Gui/ViewParams.py:603)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)

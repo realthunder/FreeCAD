@@ -955,7 +955,8 @@ public:
         m_envBuilt = false;
         for (auto uni : {&s_texNormalZ, &s_texAONoise, &s_texAO,
                          &u_aoParams, &u_aoKernel,
-                         &s_texEnv, &u_pbrParams, &u_envSH}) {
+                         &s_texEnv, &u_pbrParams, &u_envSH,
+                         &s_texBump, &u_bumpParams}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1261,6 +1262,12 @@ public:
                                           bgfx::UniformType::Vec4);
         u_envSH = bgfx::createUniform("u_envSH",
                                       bgfx::UniformType::Vec4, kEnvSH);
+        // Bump mapping of the textured mesh programs (unit 2; the 1x1
+        // white cap texture stands in when a draw has no bump map).
+        s_texBump = bgfx::createUniform("s_texBump",
+                                        bgfx::UniformType::Sampler);
+        u_bumpParams = bgfx::createUniform("u_bumpParams",
+                                           bgfx::UniformType::Vec4);
         static const uint32_t blackCube[6] = {0, 0, 0, 0, 0, 0};
         m_dummyEnvTex = bgfx::createTextureCube(1, false, 1,
             bgfx::TextureFormat::RGBA8, 0,
@@ -2320,12 +2327,20 @@ public:
         // Textured triangle fill (unit-0 SoTexture2 fed by the bridge):
         // sampled only when the mesh carries texture coordinates; the
         // depth prepass stays untextured like GL's depthwriteonly path.
-        bool textured = mat.type == Render::Material::Triangle
-            && mat.texture && draw.mesh->texCoords
+        // A bump map routes the draw through the textured programs too
+        // (they carry the texcoord stream and the bump sampler); a 1x1
+        // white texture stands in at unit 0 when there is no color
+        // texture (modulate by white = unchanged).
+        bool bumped = mat.type == Render::Material::Triangle
+            && mat.bumpmap && mat.lighting && draw.mesh->texCoords
             && pass != PassDepthOnly;
+        bool textured = (mat.type == Render::Material::Triangle
+            && mat.texture && draw.mesh->texCoords
+            && pass != PassDepthOnly) || bumped;
         if (textured) {
             mesh->ensureTexCoord(*draw.mesh);
             textured = bgfx::isValid(mesh->texcoord);
+            bumped = bumped && textured;
         }
 
         // Line stipple: the hidden (dimmed) pass of on-top lines uses the
@@ -2525,21 +2540,24 @@ public:
         }
 
         if (textured) {
-            GpuTexture *tex = getTexture(*mat.texture);
-            bgfx::setTexture(0, s_texColor, tex->handle);
             // u_texParams: x = texture environment (TextureImage::Model),
             // y = the source format carries alpha (GL's REPLACE keeps the
             // fragment alpha for alpha-less formats; the RGBA8 expansion
-            // hides that distinction from the sampler).
-            float texParams[4] = {
-                float(mat.texture->model),
-                mat.texture->numComponents == 2
+            // hides that distinction from the sampler). The bump-only
+            // stand-in modulates by opaque white.
+            float texParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float blend[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            bgfx::TextureHandle color = m_whiteTex;
+            if (mat.texture) {
+                color = getTexture(*mat.texture)->handle;
+                texParams[0] = float(mat.texture->model);
+                texParams[1] = mat.texture->numComponents == 2
                         || mat.texture->numComponents == 4
-                    ? 1.0f : 0.0f,
-                0.0f, 0.0f};
+                    ? 1.0f : 0.0f;
+                unpackColor(mat.texture->blendColor, blend);
+            }
+            bgfx::setTexture(0, s_texColor, color);
             bgfx::setUniform(u_texParams, texParams);
-            float blend[4];
-            unpackColor(mat.texture->blendColor, blend);
             bgfx::setUniform(u_texBlendColor, blend);
             float texmat[16];
             if (mat.texidentity)
@@ -2547,6 +2565,26 @@ public:
             else
                 std::memcpy(texmat, mat.texmatrix, sizeof(texmat));
             bgfx::setUniform(u_texMatrix, texmat);
+
+            // Bump map at unit 2: x = mode (1 normal map, 2 height,
+            // 3 height + parallax), y = strength (normal-map slope
+            // multiplier / height amplitude in UV units), zw = one
+            // texel in UV. White stand-in when off (branch not taken).
+            float bumpParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            bgfx::TextureHandle bump = m_whiteTex;
+            if (bumped) {
+                const auto &bm = *mat.bumpmap;
+                bool heightmap = bm.numComponents <= 2;
+                bumpParams[0] = heightmap
+                    ? (bumpParallax ? 3.0f : 2.0f) : 1.0f;
+                bumpParams[1] = heightmap
+                    ? 0.04f * bumpScale : bumpScale;
+                bumpParams[2] = 1.0f / float(bm.width);
+                bumpParams[3] = 1.0f / float(bm.height);
+                bump = getTexture(bm)->handle;
+            }
+            bgfx::setUniform(u_bumpParams, bumpParams);
+            bgfx::setTexture(2, s_texBump, bump);
         }
 
         if (patterned) {
@@ -2808,6 +2846,10 @@ public:
     float pbrMetallic = 0.0f;
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
     float pbrEnvIntensity = 1.0f;
+    bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_bumpParams = BGFX_INVALID_HANDLE;
+    float bumpScale = 1.0f;    // bump/normal map strength (BumpConfig)
+    bool bumpParallax = true;  // parallax-occlusion map height maps
     bool m_ssao = false;     // SSAO resources exist (caps allow it)
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
@@ -2927,6 +2969,8 @@ public:
         view->pbrMetallic = pbrconf.metallic;
         view->pbrRoughness = pbrconf.roughness;
         view->pbrEnvIntensity = pbrconf.envIntensity;
+        view->bumpScale = bumpconf.scale;
+        view->bumpParallax = bumpconf.parallax;
 
         // Zero radius = automatic: a fraction of the scene bounding
         // sphere, the scale-free default.
@@ -3799,6 +3843,7 @@ public:
     Render::SectionConfig secconf;
     Render::AOConfig aoconf;
     Render::PBRConfig pbrconf;
+    Render::BumpConfig bumpconf;
     float autozoomScale = 1.0f;
     // CPU copy of the section hatch texture, expanded to RGBA8; the
     // version stamps GPU re-uploads (0 = no image).
@@ -3872,14 +3917,17 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
                 "  type=%d part=%d range=%d+%d diffuse=%08x emissive=%08x"
                 " pvc=%d light=%d transp=%d ontop=%d dtest=%d dwrite=%d"
                 " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f lp=%08x/%08x"
-                " ol=%d lc=%08x\n",
+                " ol=%d lc=%08x tex=%d bump=%d uv=%d\n",
                 m.type, d.partIndex, d.indexStart, d.indexCount,
                 m.diffuse, m.emissive, m.pervertexcolor, m.lighting,
                 m.transparent, m.ontop, m.depthtest, m.depthwrite,
                 m.depthfunc, m.linewidth, m.polygonoffset,
                 m.polygonoffsetfactor, m.polygonoffsetunits,
                 m.hiddenlinealpha, m.linepattern, m.hiddenlinepattern,
-                m.outline, m.linecolor);
+                m.outline, m.linecolor,
+                m.texture ? m.texture->numComponents : 0,
+                m.bumpmap ? m.bumpmap->numComponents : 0,
+                d.mesh && d.mesh->texCoords ? 1 : 0);
         for (int i = 0; i < m.numclipplanes; ++i)
             fprintf(stderr, "  clip%s %d: %g,%g,%g,%g\n",
                     m.clipconcave ? " (concave)" : "", i,
@@ -3945,6 +3993,14 @@ void BGFXRenderer::setPBRConfig(const PBRConfig &config)
 {
     if (pimpl->pbrconf != config) {
         pimpl->pbrconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setBumpConfig(const BumpConfig &config)
+{
+    if (pimpl->bumpconf != config) {
+        pimpl->bumpconf = config;
         pimpl->sceneDirty = true;
     }
 }

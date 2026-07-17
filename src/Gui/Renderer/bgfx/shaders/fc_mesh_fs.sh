@@ -37,6 +37,15 @@ SAMPLER2D(s_texColor, 0);
 //     for alpha-less formats, invisible to the RGBA8-expanded sampler)
 uniform vec4 u_texParams;
 uniform vec4 u_texBlendColor;
+// Bump mapping (SoBumpMap, only ever active in the TEXTURE variants —
+// the mesh must carry texcoords). x = mode (0 off, 1 tangent-space
+// normal map, 2 grayscale height, 3 height + parallax-occlusion),
+// y = strength (normal map slope multiplier, or the height amplitude
+// in UV units), zw = one texel in UV. The tangent frame comes from
+// screen-space derivatives of v_vpos and the UV (the cotangent-frame
+// trick) — no vertex tangents, any UV source works.
+SAMPLER2D(s_texBump, 2);
+uniform vec4 u_bumpParams;
 #endif
 
 void main()
@@ -48,9 +57,95 @@ void main()
 	vec4 base = mix(u_matColor, v_color0, u_params.x);
 	vec3 color = base.rgb;
 
+	vec3 n = normalize(v_normal);
+#ifdef TEXTURE
+	vec2 uv = v_texcoord0;
+	if (u_bumpParams.x > 0.5)
+	{
+		vec3 dp1 = dFdx(v_vpos);
+		vec3 dp2 = dFdy(v_vpos);
+		vec2 duv1 = dFdx(uv);
+		vec2 duv2 = dFdy(uv);
+		vec3 dp2perp = cross(dp2, n);
+		vec3 dp1perp = cross(n, dp1);
+		vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+		vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+		float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
+
+		if (u_bumpParams.x > 2.5)
+		{
+			// Parallax-occlusion: march the tangent-space view
+			// ray until it dips below the height field, then
+			// refine linearly between the last two samples.
+			vec3 vdir = u_proj[2][3] != 0.0
+				? normalize(-v_vpos) : vec3(0.0, 0.0, 1.0);
+			vec3 vts = vec3(dot(vdir, normalize(T)),
+			                dot(vdir, normalize(B)),
+			                dot(vdir, n));
+			if (vts.z > 0.1)
+			{
+				vec2 shift = -vts.xy / vts.z
+					* u_bumpParams.y / 16.0;
+				float layer = 1.0 / 16.0;
+				float cur = 0.0;
+				vec2 tuv = uv;
+				float depth = 1.0
+					- texture2D(s_texBump, tuv).x;
+				float pdepth = depth;
+				vec2 puv = tuv;
+				for (int i = 0; i < 16; ++i)
+				{
+					if (cur >= depth)
+						break;
+					puv = tuv;
+					pdepth = depth;
+					tuv += shift;
+					cur += layer;
+					depth = 1.0
+						- texture2D(s_texBump, tuv).x;
+				}
+				float after = depth - cur;
+				float before = pdepth - (cur - layer);
+				uv = mix(puv, tuv,
+				         clamp(before
+				                   / max(before - after,
+				                         1.0e-4),
+				               0.0, 1.0));
+			}
+		}
+
+		vec3 nts;
+		if (u_bumpParams.x > 1.5)
+		{
+			// Grayscale height to normal, central differences.
+			float hx1 = texture2D(s_texBump,
+				uv + vec2(u_bumpParams.z, 0.0)).x;
+			float hx0 = texture2D(s_texBump,
+				uv - vec2(u_bumpParams.z, 0.0)).x;
+			float hy1 = texture2D(s_texBump,
+				uv + vec2(0.0, u_bumpParams.w)).x;
+			float hy0 = texture2D(s_texBump,
+				uv - vec2(0.0, u_bumpParams.w)).x;
+			nts = vec3((hx0 - hx1) * u_bumpParams.y
+			               / (2.0 * u_bumpParams.z),
+			           (hy0 - hy1) * u_bumpParams.y
+			               / (2.0 * u_bumpParams.w),
+			           1.0);
+		}
+		else
+		{
+			// Tangent-space normal map (RGB, Coin convention).
+			nts = texture2D(s_texBump, uv).xyz * 2.0
+				- vec3_splat(1.0);
+			nts.xy *= u_bumpParams.y;
+		}
+		n = normalize((T * nts.x + B * nts.y) * invmax
+		              + n * nts.z);
+	}
+#endif
+
 	if (u_params.y > 0.5)
 	{
-		vec3 n = normalize(v_normal);
 		if (u_pbrParams.x > 0.5)
 		{
 			// Metallic/roughness BRDF: a white headlight down the
@@ -132,8 +227,9 @@ void main()
 
 #ifdef TEXTURE
 	// GL fixed-function texture environment, applied to the lit color
-	// like GL textures the rasterized fragment.
-	vec4 texel = texture2D(s_texColor, v_texcoord0);
+	// like GL textures the rasterized fragment (uv carries the
+	// parallax offset when active).
+	vec4 texel = texture2D(s_texColor, uv);
 	float texmodel = u_texParams.x;
 	if (texmodel < 0.5) {        // modulate
 		color *= texel.rgb;

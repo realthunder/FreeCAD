@@ -1,4 +1,4 @@
-$input v_normal, v_color0, v_texcoord0
+$input v_normal, v_color0, v_texcoord0, v_vpos
 
 /*
  * Textured variant of the CAD-mesh fragment shader: applies the GL

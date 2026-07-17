@@ -326,6 +326,7 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->shadowstyle = SoShadowStyleElement::CASTS_SHADOW_AND_SHADOWED; 
   this->texturematrices.clear();
   this->textures.clear();
+  this->bumpmaps.clear();
   this->lights.clear();
   this->partialhighlight = 0;
   this->selectstyle = Material::Full;
@@ -811,6 +812,7 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
       || parent.overrideflags.test(Material::FLAG_NO_TEXTURE)) {
     res.overrideflags.set(Material::FLAG_NO_TEXTURE);
     res.textures.clear();
+    res.bumpmaps.clear();
     res.texturematrices.clear();
   } else {
     res.texturematrices.combine(parent.texturematrices);
@@ -828,6 +830,7 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
       }
     }
     res.textures.add(parent.textures, false);
+    res.bumpmaps.add(parent.bumpmaps, false);
   }
 
   res.lights = parent.lights;
@@ -1181,7 +1184,25 @@ SoFCRenderCache::addTexture(SoState * state, const SoNode * texture)
     }
   }
 
-  PRIVATE(this)->material.textures.set(unit, info);  
+  PRIVATE(this)->material.textures.set(unit, info);
+}
+
+void
+SoFCRenderCache::addBumpMap(SoState * state, const SoNode * bumpmap)
+{
+  PRIVATE(this)->checkState(state);
+
+  // SoBumpMap sets its element only during GL rendering, so the node is
+  // captured directly (the external backends read its fields); like GL
+  // bump mapping it lives on the current texture unit, in practice 0.
+  int unit = SoTextureUnitElement::get(state);
+
+  TextureInfo info;
+  info.texture = const_cast<SoNode*>(bumpmap);
+  info.transparent = false;
+  info.identity = true;
+
+  PRIVATE(this)->material.bumpmaps.set(unit, info);
 }
 
 void
@@ -2169,6 +2190,7 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
     bboxmaterial.depthclamp = true;
     bboxmaterial.overrideflags.set(Material::FLAG_NO_TEXTURE);
     bboxmaterial.textures.clear();
+    bboxmaterial.bumpmaps.clear();
     bboxmaterial.texturematrices.clear();
 
     res[bboxmaterial].emplace_back(cache, matrix, false, false, CacheKeyPtr());

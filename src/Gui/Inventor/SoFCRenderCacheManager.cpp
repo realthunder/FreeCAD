@@ -33,6 +33,7 @@
 #include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoShape.h>
 #include <Inventor/nodes/SoResetTransform.h>
+#include <Inventor/nodes/SoBumpMap.h>
 #include <Inventor/nodes/SoTexture2Transform.h>
 #include <Inventor/nodes/SoTexture3Transform.h>
 #include <Inventor/nodes/SoTextureMatrixTransform.h>
@@ -238,6 +239,7 @@ public:
   static SoCallbackAction::Response postResetTransform(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postTextureTransform(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postTexture(void *, SoCallbackAction *action, const SoNode * node);
+  static SoCallbackAction::Response postBumpMap(void *, SoCallbackAction *action, const SoNode * node);
   static void addTriangle(void *,
                           SoCallbackAction * action,
                           const SoPrimitiveVertex * v0,
@@ -498,6 +500,9 @@ void SoFCRenderCacheManagerP::initAction()
   this->action->addPostCallback(SoShape::getClassTypeId(), &postShape, this);
   this->action->addPostCallback(SoTexture::getClassTypeId(), &postTexture, this);
   this->action->addPostCallback(SoVRMLTexture::getClassTypeId(), &postTexture, this);
+  // SoBumpMap::callback() is a no-op (its element only exists during GL
+  // rendering), so the node is captured directly for external backends.
+  this->action->addPostCallback(SoBumpMap::getClassTypeId(), &postBumpMap, this);
   this->action->addPostCallback(SoResetTransform::getClassTypeId(), &postResetTransform, this);
   this->action->addPostCallback(SoTextureMatrixTransform::getClassTypeId(), &postTextureTransform, this);
   this->action->addPostCallback(SoTexture2Transform::getClassTypeId(), &postTextureTransform, this);
@@ -1353,6 +1358,20 @@ SoFCRenderCacheManagerP::postTexture(void *userdata,
 
   assert(node);
   self->stack.back()->addTexture(action->getState(), node);
+  return SoCallbackAction::CONTINUE;
+}
+
+SoCallbackAction::Response
+SoFCRenderCacheManagerP::postBumpMap(void *userdata,
+                                     SoCallbackAction *action,
+                                     const SoNode * node)
+{
+  SoFCRenderCacheManagerP *self = reinterpret_cast<SoFCRenderCacheManagerP*>(userdata);
+  if (self->stack.empty())
+      return SoCallbackAction::CONTINUE;
+
+  assert(node);
+  self->stack.back()->addBumpMap(action->getState(), node);
   return SoCallbackAction::CONTINUE;
 }
 

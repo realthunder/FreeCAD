@@ -37,6 +37,7 @@
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/nodes/SoClipPlane.h>
+#include <Inventor/nodes/SoBumpMap.h>
 #include <Inventor/nodes/SoTexture2.h>
 
 #include "SoAutoZoomTranslation.h"
@@ -142,6 +143,40 @@ translateTexture(const SoFCRenderCache::TextureInfo & info,
         tex->model = Render::TextureImage::Modulate; break;
     }
     tex->blendColor = node->blendColor.getValue().getPackedValue(0.0f);
+    res = tex;
+    return res;
+}
+
+std::shared_ptr<const Render::TextureImage>
+translateBumpMap(const SoFCRenderCache::TextureInfo & info,
+                 TextureImageMap & texmap)
+{
+    if (!info.texture
+            || !info.texture->isOfType(SoBumpMap::getClassTypeId()))
+        return nullptr;
+
+    auto & res = texmap[info.texture.get()];
+    if (res)
+        return res;
+
+    auto node = static_cast<const SoBumpMap *>(info.texture.get());
+    SbVec2s size;
+    int nc = 0;
+    const unsigned char * pixels = node->image.getValue(size, nc);
+    if (!pixels || size[0] <= 0 || size[1] <= 0 || nc <= 0 || nc > 4)
+        return nullptr;
+
+    auto tex = std::make_shared<Render::TextureImage>();
+    tex->textureId = node->getNodeId();
+    tex->width = size[0];
+    tex->height = size[1];
+    tex->numComponents = nc;
+    tex->pixels.assign(pixels,
+                       pixels + size_t(size[0]) * size[1] * nc);
+    tex->wrapS = node->wrapS.getValue() == SoBumpMap::CLAMP
+        ? Render::TextureImage::Clamp : Render::TextureImage::Repeat;
+    tex->wrapT = node->wrapT.getValue() == SoBumpMap::CLAMP
+        ? Render::TextureImage::Clamp : Render::TextureImage::Repeat;
     res = tex;
     return res;
 }
@@ -336,6 +371,14 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
                             sizeof(res.texmatrix));
             }
         }
+    }
+
+    // Bump map of triangle draws, unit 0 only like textures (the GL
+    // renderer never draws these; SoBumpMap only acts during Coin GL
+    // shape rendering, which the cached pipeline bypasses).
+    if (res.type == Render::Material::Triangle && m.bumpmaps.getNum()) {
+        if (const auto * info = m.bumpmaps.get(0))
+            res.bumpmap = translateBumpMap(*info, texmap);
     }
 
     // Autozoom transforms: mirror the material's node list; the backend
@@ -577,6 +620,15 @@ RendererBridge::translateAOConfig()
     res.enabled = ViewParams::getRendererSSAO();
     res.radius = float(ViewParams::getRendererSSAORadius());
     res.intensity = float(ViewParams::getRendererSSAOIntensity());
+    return res;
+}
+
+Render::BumpConfig
+RendererBridge::translateBumpConfig()
+{
+    Render::BumpConfig res;
+    res.scale = float(ViewParams::getRendererBumpScale());
+    res.parallax = ViewParams::getRendererParallax();
     return res;
 }
 

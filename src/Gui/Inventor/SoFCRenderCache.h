@@ -261,6 +261,11 @@ public:
 
     TextureMatrixMap texturematrices;
     TextureMap textures;
+    /// Unit-0 SoBumpMap of triangle draws, kept out of `textures`: the
+    /// GL renderer GLRenders every `textures` entry with its unit set,
+    /// which is wrong for a bump map node (only external backends
+    /// consume this).
+    TextureMap bumpmaps;
     NodeInfoArray lights;
     NodeInfoArray clippers;
     NodeInfoArray autozoom;
@@ -303,6 +308,8 @@ public:
         if (lights > other.lights) return false;
         if (textures < other.textures) return true;
         if (textures > other.textures) return false;
+        if (bumpmaps < other.bumpmaps) return true;
+        if (bumpmaps > other.bumpmaps) return false;
         if (shadowstyle < other.shadowstyle) return true;
         if (shadowstyle > other.shadowstyle) return false;
         if (diffuse < other.diffuse) return true;
@@ -484,6 +491,7 @@ public:
 
   void addTexture(SoState * state, const SoNode * texture);
   void addTextureTransform(SoState * state, const SoNode *);
+  void addBumpMap(SoState * state, const SoNode * bumpmap);
 
   void addClipPlane(SoState * state, const SoClipPlane * light);
 
