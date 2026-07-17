@@ -25,8 +25,11 @@
 #define WNT  // avoid conflict with GUID
 #endif
 #ifndef _PreComp_
+#include <BRep_Tool.hxx>
 #include <Quantity_ColorRGBA.hxx>
 #include <Standard_Failure.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
 #include <Standard_Version.hxx>
 #include <TDF_AttributeSequence.hxx>
 #include <TDF_Label.hxx>
@@ -514,8 +517,23 @@ TDF_Label ExportOCAF2::exportObject(App::DocumentObject* parentObj,
             // not call setupObject() on a non-located baseshape like above,
             // because OCCT does not respect shape style sharing when not
             // exporting assembly
+            // A purely triangulated face (e.g. a textured glTF mesh) has no
+            // B-Rep geometry the bake-in transform below could move.
+            auto hasMeshOnlyFace = [](const TopoDS_Shape& s) {
+                for (TopExp_Explorer exp(s, TopAbs_FACE); exp.More(); exp.Next()) {
+                    TopLoc_Location l;
+                    if (BRep_Tool::Surface(TopoDS::Face(exp.Current()), l).IsNull()) {
+                        return true;
+                    }
+                }
+                return false;
+            };
             if (!options.keepPlacement || shape.getPlacement() == Base::Placement()) {
                 shape.setShape(shape.getShape().Located(TopLoc_Location()));
+            }
+            else if (hasMeshOnlyFace(shape.getShape())) {
+                // keep the location; the writer emits it as the free
+                // shape's node placement
             }
             else {
                 Base::Matrix4D mat = shape.getTransform();

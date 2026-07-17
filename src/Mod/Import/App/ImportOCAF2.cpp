@@ -376,7 +376,11 @@ bool ImportOCAF2::createObject(App::Document* doc,
                                Info& info,
                                bool newDoc)
 {
-    if (shape.IsNull() || !TopExp_Explorer(shape, TopAbs_VERTEX).More()) {
+    // a purely triangulated face (e.g. a textured glTF mesh kept as-is to
+    // preserve its UV nodes) has no vertices — check for faces too
+    if (shape.IsNull()
+        || (!TopExp_Explorer(shape, TopAbs_VERTEX).More()
+            && !TopExp_Explorer(shape, TopAbs_FACE).More())) {
         FC_WARN(Tools::labelName(label) << " has empty shape");
         return false;
     }

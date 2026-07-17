@@ -79,11 +79,40 @@ void ReaderGltf::read(Handle(TDocStd_Document) hDoc)
 #endif
 }
 
+#if OCC_VERSION_HEX >= 0x070500
+// Whether the label's visualization material references any texture map.
+// A textured mesh must keep its stored triangulation (with the UV nodes
+// the textures map through) — rebuilding B-Rep geometry from the facets
+// would discard them.
+static bool hasTexturedMaterial(const Handle(XCAFDoc_VisMaterialTool)& aVisTool,
+                                const TDF_Label& label)
+{
+    Handle(XCAFDoc_VisMaterial) aVisMat = aVisTool->GetShapeMaterial(label);
+    if (aVisMat.IsNull()) {
+        return false;
+    }
+    if (aVisMat->HasPbrMaterial()) {
+        const XCAFDoc_VisMaterialPBR& pbr = aVisMat->PbrMaterial();
+        if (!pbr.BaseColorTexture.IsNull() || !pbr.MetallicRoughnessTexture.IsNull()
+            || !pbr.NormalTexture.IsNull() || !pbr.EmissiveTexture.IsNull()
+            || !pbr.OcclusionTexture.IsNull()) {
+            return true;
+        }
+    }
+    if (aVisMat->HasCommonMaterial() && !aVisMat->CommonMaterial().DiffuseTexture.IsNull()) {
+        return true;
+    }
+    return false;
+}
+#endif
+
 // NOLINTNEXTLINE
 void ReaderGltf::processDocument(Handle(TDocStd_Document) hDoc)
 {
 #if OCC_VERSION_HEX >= 0x070500
     Handle(XCAFDoc_ShapeTool) aShapeTool = XCAFDoc_DocumentTool::ShapeTool(hDoc->Main());
+    Handle(XCAFDoc_ColorTool) aColorTool = XCAFDoc_DocumentTool::ColorTool(hDoc->Main());
+    Handle(XCAFDoc_VisMaterialTool) aVisTool = XCAFDoc_DocumentTool::VisMaterialTool(hDoc->Main());
 
     TDF_LabelSequence shapeLabels;
     aShapeTool->GetShapes(shapeLabels);
@@ -97,7 +126,18 @@ void ReaderGltf::processDocument(Handle(TDocStd_Document) hDoc)
                 aShapeTool->SetShape(topLevelshape, compound);
             }
             else {
-                aShapeTool->SetShape(topLevelshape, fixShape(shape));
+                if (!hasTexturedMaterial(aVisTool, topLevelshape)) {
+                    aShapeTool->SetShape(topLevelshape, fixShape(shape));
+                }
+                // like processSubShapes: ImportOCAF2 reads color labels,
+                // not material labels
+                Handle(XCAFDoc_VisMaterial) aVisMat =
+                    aVisTool->GetShapeMaterial(topLevelshape);
+                if (!aVisMat.IsNull()) {
+                    aColorTool->SetColor(topLevelshape,
+                                         aVisMat->BaseColor(),
+                                         XCAFDoc_ColorSurf);
+                }
             }
         }
     }
@@ -139,9 +179,12 @@ TopoDS_Shape ReaderGltf::processSubShapes(Handle(TDocStd_Document) hDoc,
         }
 
         TopoDS_Shape face = aShapeTool->GetShape(faceLabel);
-        TopoDS_Shape fixed = fixShape(face);
-        builder.Add(compound, fixed);
-        aShapeTool->SetShape(faceLabel, fixed);
+        if (!hasTexturedMaterial(aVisTool, faceLabel)) {
+            TopoDS_Shape fixed = fixShape(face);
+            aShapeTool->SetShape(faceLabel, fixed);
+            face = fixed;
+        }
+        builder.Add(compound, face);
 
         if (hasVisMat) {
             aColorTool->SetColor(faceLabel, rgba, XCAFDoc_ColorSurf);
