@@ -96,6 +96,12 @@ Key facts for the bridge design:
   `solidpartindices`.~~ Fixed.
 - ~~`SoFCRenderCache.h:376` — `Material::operator=` had identical then/else
   branches (dead conditional).~~ Fixed (removed the redundant special members).
+- ~~`_renderSection` (grouped section fill, `setupmatrix=true`) transformed
+  `DrawEntry::bbox` by the entry's model matrix even though the DrawEntry
+  constructor already applies it — doubly transformed bounds of non-identity
+  entries inflated the grouped cap quad and shifted its hatch phase.~~ Fixed
+  (2026-07, found while verifying the bgfx section caps); the ungrouped
+  default path is bit-identical before/after.
 - Per-cache transparent sorting hard-disabled: `depthSortTriangles` starts
   with an unconditional `return FALSE;` added by 8c96674289 (2023-11) while
   fixing partial rendering for face sets without part numbers — the
@@ -214,11 +220,12 @@ The engine-agnostic core; everything later depends on it.
    programs whose VS outputs don't exactly match the FS inputs, which is
    why the clip variants need their own VS (`v_wpos` varying) and the
    shader bodies are shared via `fc_{mesh,flat}_{vs,fs}.sh` includes.
+   *Section caps/fill done (2026-07, Phase 2 — see there).*
    Verified GL/bgfx pixel-identical geometry extents for 1-plane and
    2-plane (intersection) cuts, and (2026-07) for a 2-plane
    `SectionConcave` union cut (two `SoClipPlane` nodes, à la
    Std_Clipping). Still missing: textures/autozoom
-   ignored, section caps/fill (stencil capping is Phase 2),
+   ignored (the section-hatch texture is in, Phase 2),
    per-vertex-transparent caches go wholesale to the transparent bucket.
    ~~**Known issue — transparent scene geometry is invisible**~~ *Fixed
    (2026-07) by background compositing*: the backend now draws the window
@@ -422,7 +429,7 @@ predates this work — verified bit-identical before/after.
 | WBOIT | 1.5–2 | *Done (2026-07), first cut.* RGBA16F accum + R16F revealage MRT sharing the scene depth (test only), weight = McGuire eq. 10, independent per-target blending, fullscreen composite view (`vs/fs_fc_comp`) resolving INV_SRC_ALPHA/SRC_ALPHA onto the scene FBO. Active without MSAA and where independent blend + half-float FB formats exist (WebGL2-compatible set); falls back to the bbox-sorted alpha blend otherwise or when a frame has no transparent scene triangles. Verified: transparent brightness within the general fill-shading tolerance of GL (~-8/255 vs -7 on opaque fills). MSAA resolve chain still open. |
 | SSAO (ASSAO) | 1.5–2 | needs depth+normal prepass from Phase 0 |
 | PBR + IBL | 3–4 | BRDF + env prefilter pipeline; matcap fallback; material property plumbing from ViewProvider |
-| Section caps | 2–3 | stencil capping + hatch, port `_renderSection` semantics |
+| Section caps | 2–3 | stencil capping + hatch, port `_renderSection` semantics. *Done (2026-07).* Two new sequential bgfx views (opaque caps between the opaque and outline passes, transparent caps after the OIT composite — GL's grouped-pass order). Per section plane: depth-independent stencil INVERT parity mark of the solid triangle ranges (`renderSolids` ported via new `SoFCVertexCache::getSolidPartRange` → `MeshData::solidParts`/`hasSolid`, plus `Material::solidshape` from the shape hints) clipped by that plane alone; then a world-space cap quad (`vs/fs_fc_cap(_clip)`, hatch texture modulate, depth LESS + write so the fill keeps the rim like GL's cap-before-fill order, clipped by the remaining planes, unclipped in concave mode) where the parity is odd; then a stencil-cleanup quad standing in for GL's per-pass stencil clear (the cap views also stencil-clear at view start — the outline passes leave marks behind). The bridge feeds a per-frame `Render::SectionConfig` (fill/invert/group/concave/hatch ViewParams) and the hatch image (`Renderer::setHatchImage`, forwarded from `SoFCRenderer` including on late attach); the fill-invert color transform, Coin's z→normal rotation (quad/hatch orientation), and the mid-depth world-to-pixel hatch scale are ported. Verified vs GL (threshold 30; deviations at or below the no-clip fill/edge baseline of the same scene): 1-plane, 2-plane intersection, 2-plane concave union, hatch off, invert off, transparent solids (WBOIT active), SectionFillGroup, and hidden-line+clip (caps match; the missing section-cut *outline* of clipped per-part HL outlines remains — the Phase 1 deviation, not closed by caps). Known deviations: cap sources are scene + whole-object selection draws only (GL also sections on-top buckets when `NoSectionOnTop` is off); transparent caps always follow GL's *grouped* order (after the whole transparent bucket); the grouping key ignores autozoom. |
 | Outline/hidden-line | 1.5–2 | screen-space depth/normal pass + existing edge geometry. *Selection/preselection face outline done (2026-07)*: ported the GL stencil technique — stencil-mark the face, redraw its triangle edges as instanced thick lines + point-sprite corner caps where the stencil differs (the portable stand-in for `glPolygonMode`); per-outline stencil refs avoid per-part clears; the bridge resolves the Show*/No*WithOutline params and outline width. Verified pixel-identical to GL for preselect (outline-only) and two-face selection. *Whole-scene + hidden-line outline variants done (2026-07, see Phase 1).* |
 
 ### Phase 3 — performance & portability (open-ended)
