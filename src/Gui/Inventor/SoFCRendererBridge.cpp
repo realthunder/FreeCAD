@@ -749,6 +749,21 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
     return res;
 }
 
+Render::VolumetricConfig
+RendererBridge::translateVolumetricConfig(View3DInventor * view)
+{
+    Render::VolumetricConfig res;
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "Volumetric", RenderParams::getVolumetric());
+    res.intensity = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "VolumetricIntensity",
+            RenderParams::getVolumetricIntensity()));
+    res.density = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "VolumetricDensity",
+            RenderParams::getVolumetricDensity()));
+    return res;
+}
+
 Render::BumpConfig
 RendererBridge::translateBumpConfig(View3DInventor * view)
 {

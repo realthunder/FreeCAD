@@ -59,6 +59,9 @@ public:
     double PBREnvIntensity;
     double BumpScale;
     bool Parallax;
+    bool Volumetric;
+    double VolumetricIntensity;
+    double VolumetricDensity;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -85,6 +88,12 @@ public:
         funcs["BumpScale"] = &RenderParamsP::updateBumpScale;
         Parallax = this->handle->GetBool("Parallax", true);
         funcs["Parallax"] = &RenderParamsP::updateParallax;
+        Volumetric = this->handle->GetBool("Volumetric", false);
+        funcs["Volumetric"] = &RenderParamsP::updateVolumetric;
+        VolumetricIntensity = this->handle->GetFloat("VolumetricIntensity", 1.0);
+        funcs["VolumetricIntensity"] = &RenderParamsP::updateVolumetricIntensity;
+        VolumetricDensity = this->handle->GetFloat("VolumetricDensity", 0.0);
+        funcs["VolumetricDensity"] = &RenderParamsP::updateVolumetricDensity;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -144,6 +153,18 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateParallax(RenderParamsP *self) {
         self->Parallax = self->handle->GetBool("Parallax", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateVolumetric(RenderParamsP *self) {
+        self->Volumetric = self->handle->GetBool("Volumetric", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateVolumetricIntensity(RenderParamsP *self) {
+        self->VolumetricIntensity = self->handle->GetFloat("VolumetricIntensity", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateVolumetricDensity(RenderParamsP *self) {
+        self->VolumetricDensity = self->handle->GetFloat("VolumetricDensity", 0.0);
     }
 };
 
@@ -450,6 +471,94 @@ void RenderParams::setParallax(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeParallax() {
     instance()->handle->RemoveBool("Parallax");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docVolumetric() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Enable volumetric lighting (light shafts) of the experimental\n"
+"render engine: raymarch the shadow map of the Shadow draw style\n"
+"through a homogeneous scattering medium. Only effective while\n"
+"the Shadow draw style provides a scene light.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getVolumetric() {
+    return instance()->Volumetric;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultVolumetric() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setVolumetric(const bool &v) {
+    instance()->handle->SetBool("Volumetric",v);
+    instance()->Volumetric = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeVolumetric() {
+    instance()->handle->RemoveBool("Volumetric");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docVolumetricIntensity() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Brightness of the inscattered (light shaft) light.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getVolumetricIntensity() {
+    return instance()->VolumetricIntensity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultVolumetricIntensity() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setVolumetricIntensity(const double &v) {
+    instance()->handle->SetFloat("VolumetricIntensity",v);
+    instance()->VolumetricIntensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeVolumetricIntensity() {
+    instance()->handle->RemoveFloat("VolumetricIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docVolumetricDensity() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Scattering medium density in inverse world units.\n"
+"Zero means automatic (a fraction of the scene size).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getVolumetricDensity() {
+    return instance()->VolumetricDensity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultVolumetricDensity() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setVolumetricDensity(const double &v) {
+    instance()->handle->SetFloat("VolumetricDensity",v);
+    instance()->VolumetricDensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeVolumetricDensity() {
+    instance()->handle->RemoveFloat("VolumetricDensity");
 }
 //[[[end]]]
 

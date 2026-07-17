@@ -3249,6 +3249,14 @@ void View3DInventorViewer::initRenderProperties()
             RenderParams::docBumpScale(), RenderParams::getBumpScale());
     _renderParam<App::PropertyBool>(view, "Parallax",
             RenderParams::docParallax(), RenderParams::getParallax());
+    _renderParam<App::PropertyBool>(view, "Volumetric",
+            RenderParams::docVolumetric(), RenderParams::getVolumetric());
+    _renderParam<App::PropertyFloat>(view, "VolumetricIntensity",
+            RenderParams::docVolumetricIntensity(),
+            RenderParams::getVolumetricIntensity());
+    _renderParam<App::PropertyFloat>(view, "VolumetricDensity",
+            RenderParams::docVolumetricDensity(),
+            RenderParams::getVolumetricDensity());
 }
 
 // #define ENABLE_GL_DEPTH_RANGE

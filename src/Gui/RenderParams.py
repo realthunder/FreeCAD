@@ -75,6 +75,16 @@ Params = [
         "Parallax-occlusion map grayscale bump maps (SoBumpMap) of the\n"
         "experimental render engine, shifting the texture with the view\n"
         "angle for a strong relief impression."),
+    ParamBool('Volumetric',  False,
+        "Enable volumetric lighting (light shafts) of the experimental\n"
+        "render engine: raymarch the shadow map of the Shadow draw style\n"
+        "through a homogeneous scattering medium. Only effective while\n"
+        "the Shadow draw style provides a scene light."),
+    ParamFloat('VolumetricIntensity',  1.0,
+        "Brightness of the inscattered (light shaft) light."),
+    ParamFloat('VolumetricDensity',  0.0,
+        "Scattering medium density in inverse world units.\n"
+        "Zero means automatic (a fraction of the scene size)."),
 ]
 
 def declare_begin():

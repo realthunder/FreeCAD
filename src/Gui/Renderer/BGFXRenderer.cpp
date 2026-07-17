@@ -886,6 +886,11 @@ public:
         ViewAOGen,          // fullscreen SSAO generation into the R8 AO
                             // target (hemisphere kernel over the prepass)
         ViewAOBlur,         // fullscreen 4x4 AO blur into a second R8
+        ViewVolGen,         // volumetric light shafts: half-res raymarch
+                            // of the shadow map through the scattering
+                            // medium, bounded by the prepass depth (own
+                            // half-res framebuffer, scene transforms for
+                            // position reconstruction)
         ViewOpaque,         // opaque triangles, lines, points
         ViewSectionCap,     // stencil section caps of clipped opaque
                             // solids (GL: _renderSection; before the
@@ -900,6 +905,11 @@ public:
                             // (after all opaque geometry so the depth
                             // test sees the whole scene, before the
                             // transparent bucket blends over them)
+        ViewVolApply,       // fullscreen bilateral upsample of the
+                            // half-res inscatter, composited onto the
+                            // opaque scene before the transparent bucket
+                            // (after the outlines so edges are fogged
+                            // like the fills)
         ViewTransparent,    // transparent triangles: WBOIT accumulation
                             // into the OIT targets, or blended
                             // back-to-front into the scene FBO when OIT
@@ -941,8 +951,25 @@ public:
                 *tex = BGFX_INVALID_HANDLE;
             }
         }
+        // Volumetric resources: the framebuffer before its texture.
+        if (bgfx::isValid(volFbo)) {
+            bgfx::destroy(volFbo);
+            volFbo = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(volTex)) {
+            bgfx::destroy(volTex);
+            volTex = BGFX_INVALID_HANDLE;
+        }
+        for (auto uni : {&s_texVol, &u_volParams, &u_volMedium,
+                         &u_volTexel}) {
+            if (bgfx::isValid(*uni)) {
+                bgfx::destroy(*uni);
+                *uni = BGFX_INVALID_HANDLE;
+            }
+        }
         for (auto prog : {&m_progPrepass, &m_progPrepassClip, &m_progSsao,
-                          &m_progSsaoBlur, &m_progSsaoApply}) {
+                          &m_progSsaoBlur, &m_progSsaoApply,
+                          &m_progVol, &m_progVolApply}) {
             if (bgfx::isValid(*prog)) {
                 bgfx::destroy(*prog);
                 *prog = BGFX_INVALID_HANDLE;
@@ -1480,6 +1507,36 @@ public:
                 BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
                 | BGFX_SAMPLER_MIP_POINT,
                 bgfx::copy(noise, sizeof(noise)));
+        }
+
+        // Volumetric light shafts: the half-res raymarch reads the SSAO
+        // prepass depth (ray end) and the shadow moments (light
+        // visibility), so it needs both resource sets. Point-sampled —
+        // the apply pass does its own bilateral 4-tap upsample.
+        m_vol = m_ssao && m_shadow;
+        if (m_vol) {
+            uint16_t hw = std::max<uint16_t>(1, width / 2);
+            uint16_t hh = std::max<uint16_t>(1, height / 2);
+            volTex = bgfx::createTexture2D(hw, hh, false, 1,
+                bgfx::TextureFormat::RGBA16F,
+                BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+                | BGFX_SAMPLER_MIP_POINT
+                | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            volFbo = bgfx::createFrameBuffer(1, &volTex, false);
+            m_progVol = loadProgram("vs_fc_comp", "fs_fc_volume",
+                                    _BGFXLib.resource().c_str());
+            m_progVolApply = loadProgram("vs_fc_comp",
+                                         "fs_fc_volume_apply",
+                                         _BGFXLib.resource().c_str());
+            s_texVol = bgfx::createUniform("s_texVol",
+                                           bgfx::UniformType::Sampler);
+            u_volParams = bgfx::createUniform("u_volParams",
+                                              bgfx::UniformType::Vec4);
+            u_volMedium = bgfx::createUniform("u_volMedium",
+                                              bgfx::UniformType::Vec4);
+            u_volTexel = bgfx::createUniform("u_volTexel",
+                                             bgfx::UniformType::Vec4);
         }
     }
 
@@ -2264,7 +2321,8 @@ public:
     // graph, so the backend draws its own). Lit by the scene light like
     // any receiver, classic shading regardless of the PBR mode.
     void submitShadowGround(const float bmin[3], const float bmax[3],
-                            uint32_t colorPacked, float scale)
+                            uint32_t colorPacked, float scale,
+                            bool prepass = false)
     {
         float cx = (bmin[0] + bmax[0]) * 0.5f;
         float cy = (bmin[1] + bmax[1]) * 0.5f;
@@ -2324,6 +2382,20 @@ public:
                        | BGFX_STATE_MSAA);
         bgfx::submit(viewId + ViewOpaque, m_progMesh);
         ++drawcount;
+
+        // The volumetric raymarch ends rays at the prepass depth, so the
+        // ground must be a prepass source too or shafts would continue
+        // through it (SSAO alone keeps the ground out of the prepass —
+        // it neither receives nor casts AO, preserved behavior).
+        if (prepass && bgfx::isValid(m_progPrepass)) {
+            bgfx::setTransform(identity);
+            bgfx::setVertexBuffer(0, &tvb);
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                           | BGFX_STATE_WRITE_Z
+                           | BGFX_STATE_DEPTH_TEST_LESS);
+            bgfx::submit(viewId + ViewAOPrepass, m_progPrepass);
+            ++drawcount;
+        }
     }
 
     // Rasterize a shadow casting triangle draw into the variance shadow
@@ -2382,30 +2454,33 @@ public:
         ++drawcount;
     }
 
+    /// One clip-space triangle covering the viewport, submitted to a
+    /// fullscreen resolve pass (uniforms/textures are set by the caller).
+    void fullscreen(uint16_t pass, bgfx::ProgramHandle prog,
+                    uint64_t state)
+    {
+        SceneVertex::init();
+        if (bgfx::getAvailTransientVertexBuffer(
+                    3, SceneVertex::ms_layout) < 3)
+            return;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, 3,
+                                         SceneVertex::ms_layout);
+        auto *v = reinterpret_cast<SceneVertex *>(tvb.data);
+        v[0] = {-1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(state);
+        bgfx::submit(viewId + pass, prog);
+        ++drawcount;
+    }
+
     /// Fullscreen SSAO resolve chain: hemisphere-kernel AO from the
     /// prepass into the R8 target, a 4x4 box blur, then the multiply
     /// onto the opaque scene color (dst *= src, alpha kept).
     void submitAOResolve(float radius, float intensity)
     {
-        SceneVertex::init();
-        auto fullscreen = [this](uint16_t pass, bgfx::ProgramHandle prog,
-                                 uint64_t state) {
-            if (bgfx::getAvailTransientVertexBuffer(
-                        3, SceneVertex::ms_layout) < 3)
-                return;
-            bgfx::TransientVertexBuffer tvb;
-            bgfx::allocTransientVertexBuffer(&tvb, 3,
-                                             SceneVertex::ms_layout);
-            auto *v = reinterpret_cast<SceneVertex *>(tvb.data);
-            v[0] = {-1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
-            v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
-            v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
-            bgfx::setVertexBuffer(0, &tvb);
-            bgfx::setState(state);
-            bgfx::submit(viewId + pass, prog);
-            ++drawcount;
-        };
-
         // Fixed hemisphere kernel (unit radius, z >= 0, clustered near
         // the origin), deterministic across frames like the noise.
         static const float kernel[kAOSamples][4] = {
@@ -2444,6 +2519,38 @@ public:
                    | BGFX_STATE_BLEND_FUNC_SEPARATE(
                        BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_SRC_COLOR,
                        BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_ONE));
+    }
+
+    /// Volumetric light shaft resolve: raymarch the shadow map through
+    /// the medium at half resolution (ray ends at the prepass depth),
+    /// then bilateral-upsample and composite onto the opaque scene with
+    /// premultiplied-alpha blending (the alpha carries the medium
+    /// extinction: dst = inscatter + transmittance * scene).
+    void submitVolumetric(float density, float intensity,
+                          float maxDist, const float medium[4])
+    {
+        float params[4] = {density, intensity, maxDist, 0.0f};
+        bgfx::setUniform(u_volParams, params);
+        bgfx::setUniform(u_volMedium, medium);
+        bgfx::setUniform(u_lightColor, lightColorI);
+        bgfx::setUniform(u_shadowMatrix, shadowMtx);
+        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
+        bgfx::setTexture(1, s_texShadow, shadowTex);
+        fullscreen(ViewVolGen, m_progVol,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+
+        float hw = std::max(1.0f, std::floor(width / 2.0f));
+        float hh = std::max(1.0f, std::floor(height / 2.0f));
+        float texel[4] = {1.0f / hw, 1.0f / hh, hw, hh};
+        bgfx::setUniform(u_volParams, params);
+        bgfx::setUniform(u_volMedium, medium);
+        bgfx::setUniform(u_volTexel, texel);
+        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
+        bgfx::setTexture(1, s_texVol, volTex);
+        fullscreen(ViewVolApply, m_progVolApply,
+                   BGFX_STATE_WRITE_RGB
+                   | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
+                                           BGFX_STATE_BLEND_INV_SRC_ALPHA));
     }
 
     // Submission passes mirroring SoFCRenderer's delayed render loop.
@@ -3068,6 +3175,17 @@ public:
     float lightColorI[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // rgb * intensity
     float shadowMtx[16];       // camera view space -> shadow uv/depth
     bool m_ssao = false;     // SSAO resources exist (caps allow it)
+    // Volumetric light shafts: half-res raymarch of the shadow map
+    // bounded by the prepass depth, so both resource sets must exist.
+    bool m_vol = false;      // volumetric resources exist
+    bgfx::TextureHandle volTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle volFbo = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progVol = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progVolApply = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texVol = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_volParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_volMedium = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_volTexel = BGFX_INVALID_HANDLE;
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
     std::unordered_map<uint64_t, GpuMesh> meshes;
@@ -3315,6 +3433,51 @@ public:
                 ssaoActive = false;
         }
 
+        // Volumetric light shafts raymarch the shadow map with ray ends
+        // from the SSAO prepass, so they need the shadow pass active
+        // this frame; hidden-line mode disables them like the other
+        // shading effects. The medium is a sphere around the scene
+        // bounds — bounding it keeps the camera's stand-off distance
+        // out of the optical depth.
+        bool volActive = view->m_vol && volconf.enabled && shadowActive
+            && !hlconfig.show;
+        float volDensity = volconf.density;
+        float volMaxDist = 0.0f;
+        float volMedium[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        if (volActive) {
+            float dx = bboxMax[0] - bboxMin[0];
+            float dy = bboxMax[1] - bboxMin[1];
+            float dz = bboxMax[2] - bboxMin[2];
+            float diag = std::sqrt(dx*dx + dy*dy + dz*dz);
+            // Medium sphere: the scene bounding sphere with a margin
+            // (shafts reach a bit of the surrounding ground plane).
+            float r = 0.75f * diag;
+            const float *vm = reinterpret_cast<const float *>(viewMatrix);
+            float c[3] = {(bboxMin[0] + bboxMax[0]) * 0.5f,
+                          (bboxMin[1] + bboxMax[1]) * 0.5f,
+                          (bboxMin[2] + bboxMax[2]) * 0.5f};
+            for (int j = 0; j < 3; ++j)
+                volMedium[j] = c[0] * vm[j] + c[1] * vm[4 + j]
+                    + c[2] * vm[8 + j] + vm[12 + j];
+            volMedium[3] = r;
+            volMaxDist = std::sqrt(volMedium[0] * volMedium[0]
+                                   + volMedium[1] * volMedium[1]
+                                   + volMedium[2] * volMedium[2]) + r;
+            // Zero density = automatic: unit optical depth over the
+            // medium radius, the scale-free default.
+            if (volDensity <= 0.0f)
+                volDensity = 1.0f / r;
+            if (getenv("FC_BGFX_DEBUG_VOL"))
+                fprintf(stderr,
+                        "bgfx vol density=%g maxdist=%g medium="
+                        "%g,%g,%g r=%g\n",
+                        volDensity, volMaxDist, volMedium[0],
+                        volMedium[1], volMedium[2], volMedium[3]);
+        }
+        // The prepass rasterizes for SSAO and/or the volumetric ray
+        // ends; the AO resolve chain itself stays SSAO-gated.
+        bool prepassActive = ssaoActive || volActive;
+
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
             uint16_t id = base + i;
             if (i == BGFXView::ViewTransparent && oitActive) {
@@ -3339,7 +3502,22 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if (ssaoActive && i == BGFXView::ViewAOPrepass) {
+            } else if (volActive && i == BGFXView::ViewVolGen) {
+                // Half-res raymarch target; the fullscreen triangle
+                // overwrites every pixel, and the scene transforms stay
+                // bound for the predefined u_proj (ray reconstruction,
+                // like the AO generation pass).
+                bgfx::setViewFrameBuffer(id, view->volFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0,
+                    uint16_t(std::max(1, int(width) / 2)),
+                    uint16_t(std::max(1, int(height) / 2)));
+                bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (prepassActive && i == BGFXView::ViewAOPrepass) {
                 // Prepass target clears to 0 (.w = 0 marks background
                 // in the AO pass), with its own depth buffer.
                 bgfx::setViewFrameBuffer(id, view->aoPrepassFbo);
@@ -3625,8 +3803,9 @@ public:
             // The SSAO prepass re-rasterizes the opaque fills into the
             // depth+normal target (transparent geometry neither occludes
             // nor receives AO; the multiply pass runs before the
-            // transparent bucket).
-            if (ssaoActive && isTriangle(draw) && !isTransp(draw))
+            // transparent bucket). The volumetric raymarch shares it as
+            // its ray-end depth source.
+            if (prepassActive && isTriangle(draw) && !isTransp(draw))
                 view->submitPrepass(draw);
             // Shadow casters (like the GL default, transparent geometry
             // does not cast).
@@ -3638,7 +3817,8 @@ public:
         if (shadowActive && lightconf.ground && bboxValid) {
             view->submitShadowGround(bboxMin, bboxMax,
                                      lightconf.groundColor,
-                                     lightconf.groundScale);
+                                     lightconf.groundScale,
+                                     volActive);
         }
         for (const auto &draw : scene) {
             if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
@@ -3670,6 +3850,13 @@ public:
         // outline/transparent passes).
         if (ssaoActive)
             view->submitAOResolve(aoRadius, aoconf.intensity);
+
+        // 1d. Volumetric light shafts: half-res raymarch of the shadow
+        // map, bilateral-upsampled and composited onto the opaque scene
+        // after the outlines, before the transparent bucket.
+        if (volActive)
+            view->submitVolumetric(volDensity, volconf.intensity,
+                                   volMaxDist, volMedium);
 
         // 2. Selection whole-object fills; positive ids are on-top
         // selections (SoFCRenderer::addSelection). Their lines/points are
@@ -4198,6 +4385,7 @@ public:
     Render::PBRConfig pbrconf;
     Render::BumpConfig bumpconf;
     Render::LightConfig lightconf;
+    Render::VolumetricConfig volconf;
     float autozoomScale = 1.0f;
     // CPU copy of the section hatch texture, expanded to RGBA8; the
     // version stamps GPU re-uploads (0 = no image).
@@ -4364,6 +4552,14 @@ void BGFXRenderer::setLightConfig(const LightConfig &config)
 {
     if (pimpl->lightconf != config) {
         pimpl->lightconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setVolumetricConfig(const VolumetricConfig &config)
+{
+    if (pimpl->volconf != config) {
+        pimpl->volconf = config;
         pimpl->sceneDirty = true;
     }
 }

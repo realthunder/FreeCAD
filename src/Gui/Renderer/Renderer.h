@@ -255,6 +255,26 @@ struct LightConfig {
     bool operator!=(const LightConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame volumetric lighting (light shaft) configuration (like
+/// AOConfig there is no GL-renderer counterpart). While enabled and a
+/// scene light with a shadow map is active (LightConfig::valid), the
+/// backend raymarches the shadow map through a homogeneous scattering
+/// medium and composites the inscattered light over the opaque scene.
+struct VolumetricConfig {
+    bool enabled = false;
+    float intensity = 1.0f;  ///< inscattered light brightness
+    /// Medium density (extinction coefficient) in inverse world units;
+    /// 0 = automatic (a fraction of the scene size, resolved by the
+    /// backend).
+    float density = 0.0f;
+
+    bool operator==(const VolumetricConfig &o) const {
+        return enabled == o.enabled && intensity == o.intensity
+            && density == o.density;
+    }
+    bool operator!=(const VolumetricConfig &o) const { return !(*this == o); }
+};
+
 /// Per-frame physically based shading configuration (like AOConfig there
 /// is no GL-renderer counterpart). While enabled, lit triangle surfaces
 /// use a metallic/roughness BRDF with image based lighting from a
@@ -467,6 +487,9 @@ public:
     virtual void setBumpConfig(const BumpConfig &config) { (void)config; }
     /// Per-frame scene light (Shadow draw style).
     virtual void setLightConfig(const LightConfig &config) { (void)config; }
+    /// Per-frame volumetric lighting (light shaft) configuration.
+    virtual void setVolumetricConfig(const VolumetricConfig &config)
+    { (void)config; }
     /// Per-frame world-to-screen scale at the world origin consumed by
     /// Material::autozoom draws (Coin: SoAutoZoomTranslation's
     /// getWorldToScreenScale((0,0,0), 0.1) / (5 * viewport aspect)).

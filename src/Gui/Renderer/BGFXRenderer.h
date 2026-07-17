@@ -63,6 +63,7 @@ public:
     virtual void setPBRConfig(const PBRConfig &config) override;
     virtual void setBumpConfig(const BumpConfig &config) override;
     virtual void setLightConfig(const LightConfig &config) override;
+    virtual void setVolumetricConfig(const VolumetricConfig &config) override;
     virtual void setAutoZoomScale(float scale) override;
     virtual void setHatchImage(const void *data, int nc,
                                int width, int height) override;

@@ -199,6 +199,46 @@ public:
     static void setParallax(const bool &v);
     static const char *docParallax();
     //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Volumetric
+    ///
+    /// Enable volumetric lighting (light shafts) of the experimental
+    /// render engine: raymarch the shadow map of the Shadow draw style
+    /// through a homogeneous scattering medium. Only effective while
+    /// the Shadow draw style provides a scene light.
+    static const bool & getVolumetric();
+    static const bool & defaultVolumetric();
+    static void removeVolumetric();
+    static void setVolumetric(const bool &v);
+    static const char *docVolumetric();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter VolumetricIntensity
+    ///
+    /// Brightness of the inscattered (light shaft) light.
+    static const double & getVolumetricIntensity();
+    static const double & defaultVolumetricIntensity();
+    static void removeVolumetricIntensity();
+    static void setVolumetricIntensity(const double &v);
+    static const char *docVolumetricIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter VolumetricDensity
+    ///
+    /// Scattering medium density in inverse world units.
+    /// Zero means automatic (a fraction of the scene size).
+    static const double & getVolumetricDensity();
+    static const double & defaultVolumetricDensity();
+    static void removeVolumetricDensity();
+    static void setVolumetricDensity(const double &v);
+    static const char *docVolumetricDensity();
+    //@}
 //[[[end]]]
 
     /// Called on any parameter change: re-selects the renderer backend on

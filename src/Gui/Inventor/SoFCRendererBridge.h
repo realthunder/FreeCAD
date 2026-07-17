@@ -66,6 +66,12 @@ GuiExport Render::AOConfig translateAOConfig(View3DInventor * view);
 /// config.
 GuiExport Render::PBRConfig translatePBRConfig(View3DInventor * view);
 
+/// Resolve the volumetric lighting settings (Render_Volumetric* view
+/// properties, RenderParams fallback) into the backend-neutral per-frame
+/// config.
+GuiExport Render::VolumetricConfig translateVolumetricConfig(
+        View3DInventor * view);
+
 /// Resolve the bump mapping settings (Render_BumpScale/Render_Parallax
 /// view properties, RenderParams fallback) into the backend-neutral
 /// per-frame config.

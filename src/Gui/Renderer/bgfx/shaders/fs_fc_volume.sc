@@ -1,0 +1,85 @@
+$input v_texcoord0
+
+/*
+ * Volumetric lighting raymarch (half resolution): marches the view ray
+ * of each pixel through the bounded scattering medium (fc_volume.sh),
+ * accumulating light inscattered where the variance shadow map says the
+ * scene light reaches. Runs with the scene view/projection bound so the
+ * predefined u_proj reconstructs view-space positions like the SSAO
+ * pass; the march is clipped to the medium sphere and ends at the
+ * opaque scene depth from the prepass target.
+ *
+ * Output: rgb = inscattered radiance (integral of density * lit
+ * transmittance, scaled by the light color and intensity), a = the
+ * pixel's surface ray length (consumed by the bilateral upsample of the
+ * apply pass).
+ *
+ * u_lightColor: rgb = scene light color * light intensity
+ */
+
+#include <bgfx_shader.sh>
+#include "fc_volume.sh"
+
+#define VOL_STEPS 32
+
+SAMPLER2D(s_texNormalZ, 0);
+SAMPLER2D(s_texShadow, 1);
+
+uniform vec4 u_lightColor;
+uniform mat4 u_shadowMatrix;
+
+// Variance shadow visibility of a view-space position (the mesh
+// receiver's Chebyshev bound with the same bias/variance floor and
+// light-bleed linstep); outside the map = lit.
+float shadowVis(vec3 p)
+{
+	vec4 sp = mul(u_shadowMatrix, vec4(p, 1.0));
+	if (sp.x <= 0.0 || sp.x >= 1.0 || sp.y <= 0.0 || sp.y >= 1.0
+	    || sp.z <= 0.0 || sp.z >= 1.0)
+		return 1.0;
+	vec2 mo = texture2DLod(s_texShadow, sp.xy, 0.0).xy;
+	float d = sp.z - 0.003;
+	if (d <= mo.x)
+		return 1.0;
+	float va = max(mo.y - mo.x * mo.x, 1.0e-5);
+	float dd = d - mo.x;
+	float pmax = va / (va + dd * dd);
+	return clamp((pmax - 0.3) / 0.7, 0.0, 1.0);
+}
+
+void main()
+{
+	vec3 origin, dir;
+	volRay(v_texcoord0, origin, dir);
+	float tEnd = volSurface(texture2D(s_texNormalZ, v_texcoord0), dir);
+
+	// March only the stretch of ray inside the medium and in front of
+	// the surface.
+	vec2 med = volMedium(origin, dir);
+	float t0 = med.x;
+	float t1 = min(med.y, tEnd);
+	float scatter = 0.0;
+	if (t1 > t0)
+	{
+		// Dithered start offset (interleaved gradient noise)
+		// decorrelates the banding of the fixed step count between
+		// neighboring pixels; deterministic across frames.
+		float jitter = fract(52.9829189
+			* fract(dot(gl_FragCoord.xy,
+			            vec2(0.06711056, 0.00583715))));
+		float density = u_volParams.x;
+		float dt = (t1 - t0) / float(VOL_STEPS);
+		for (int i = 0; i < VOL_STEPS; ++i)
+		{
+			float t = t0 + (float(i) + jitter) * dt;
+			// Inscatter where the light reaches, attenuated by
+			// the medium between the sample and the eye
+			// (Beer-Lambert over the in-medium path).
+			scatter += shadowVis(origin + dir * t)
+				* exp(-density * (t - t0)) * density * dt;
+		}
+	}
+
+	gl_FragColor = vec4(u_lightColor.rgb * (scatter * u_volParams.y),
+	                    tEnd);
+}
