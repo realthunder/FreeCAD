@@ -35,6 +35,9 @@
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_GraphNode.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
+#include <XCAFDoc_VisMaterial.hxx>
+#include <XCAFDoc_VisMaterialTool.hxx>
+#include <Image_Texture.hxx>
 #endif
 
 #include <XCAFDoc_ShapeMapTool.hxx>
@@ -230,6 +233,39 @@ void ExportOCAF2::setupObject(TDF_Label label,
 
     if (!getShapeColors || (!force && !mySetups.emplace(obj, name ? name : "").second)) {
         return;
+    }
+
+    // Per-object render (PBR) material: written as XCAFDoc_VisMaterial so
+    // mesh formats (glTF) carry it; the factors/textures come from the
+    // view provider's Render_* dynamic properties.
+    if (getRenderMaterial) {
+        RenderMaterial rmat;
+        if (getRenderMaterial(obj, rmat) && rmat.valid) {
+            Handle(XCAFDoc_VisMaterialTool) aMatTool =
+                XCAFDoc_DocumentTool::VisMaterialTool(pDoc->Main());
+            Handle(XCAFDoc_VisMaterial) visMat = new XCAFDoc_VisMaterial;
+            XCAFDoc_VisMaterialPBR pbr;
+            pbr.IsDefined = Standard_True;
+            // glTF defaults are metallic 1 / roughness 1; unset factors
+            // export as a plain dielectric instead.
+            pbr.Metallic = rmat.metallic >= 0.0 ? float(rmat.metallic) : 0.0f;
+            pbr.Roughness = rmat.roughness >= 0.0 ? float(rmat.roughness) : 1.0f;
+            if (rmat.hasBaseColor) {
+                pbr.BaseColor = Tools::convertColor(rmat.baseColor);
+            }
+            if (!rmat.baseColorTexture.empty()) {
+                pbr.BaseColorTexture =
+                    new Image_Texture(rmat.baseColorTexture.c_str());
+            }
+            if (!rmat.normalMapTexture.empty()) {
+                pbr.NormalTexture =
+                    new Image_Texture(rmat.normalMapTexture.c_str());
+            }
+            visMat->SetPbrMaterial(pbr);
+            TDF_Label matLabel = aMatTool->AddMaterial(
+                visMat, TCollection_AsciiString(obj->getNameInDocument()));
+            aMatTool->SetShapeMaterial(label, matLabel);
+        }
     }
 
     std::map<std::string, std::map<std::string, App::Color>> colors;

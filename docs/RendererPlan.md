@@ -632,6 +632,39 @@ independent of each other; item 4 builds on item 3's property model.
    in both bgfx and the Coin GL modes; export → re-import is visually
    stable; a FreeCAD model with per-object metallic/roughness survives the
    round trip.
+   *First cut done (2026-07)*: neutral `Import::RenderMaterial` struct
+   carried both ways. Import: `ImportOCAF2::getRenderMaterial` resolves
+   the label's `XCAFDoc_VisMaterial` (sub-shape labels and referred
+   labels included; per-face materials collapse to whole-object),
+   extracts embedded textures via `Image_Texture::WriteImage` to temp
+   files, and the new `applyRenderMaterial` hook (`ImportOCAFGui`) sets
+   the Render_* dynamic properties on the view provider. A material at
+   the glTF defaults (metallic=roughness=1, no textures) is skipped —
+   that is what a color-only export reads back as. Fixed on the way:
+   `ReaderGltf::processDocument` now calls
+   `XCAFDoc_ShapeTool::UpdateAssemblies()` after its fixShape
+   replacements — without it assembly traversal yielded shapes whose
+   labels `FindShape` could not resolve (imports also lost their proper
+   names). Export: `ExportOCAF2::setGetRenderMaterial` hook (fed from
+   the Gui module reading the Render_* properties + ShapeColor) writes
+   an `XCAFDoc_VisMaterialPBR` per object label; unset factors export
+   as dielectric (metallic 0, roughness 1) instead of the glTF metallic
+   defaults. **Instancing through App::Link preserved** (companion OCCT
+   fork commit d997dd346): `RWGltf_CafWriter` used to emit one glTF
+   mesh per scene node, duplicating instanced meshes; it now shares one
+   mesh entry among instance nodes of the same shape label (equal
+   style) via a thread-local node→mesh-index map (no class layout
+   change, binary compatible), and on import repeated shapes already
+   become `App::Link`s.
+   Verified live (GUI round trips on this box): metallic/roughness +
+   base-color texture survive export→import on exactly the objects that
+   carry them; base + two `App::Link`s export as 1 glTF mesh / 3 nodes
+   and re-import as 1 `Part::Feature` + 2 `App::Link`s. Remaining:
+   normal-map round-trip untested (plumbed, same path as base color);
+   mesh UVs are not preserved into Coin texcoords on import (textures
+   map through Coin's default texgen — the plan's UV-preservation
+   requirement stands); per-face materials; Khronos sample import
+   smoke; metallic-roughness/emissive/occlusion texture slots.
 
 ### Phase 3 — performance & portability (open-ended)
 

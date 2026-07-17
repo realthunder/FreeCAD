@@ -34,12 +34,14 @@
 #include <TopoDS_Shape.hxx>
 #include <XCAFDoc_ColorTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
+#include <XCAFDoc_VisMaterialTool.hxx>
 
 #include <Base/Sequencer.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include "ExportOCAF.h"
 #include "ImportOCAF.h"
+#include "RenderMaterial.h"
 #include "Tools.h"
 
 
@@ -178,6 +180,17 @@ private:
     {}
     virtual void applyLinkColor(App::DocumentObject*, int /*index*/, App::Color)
     {}
+    /// Per-object render (PBR) material resolved from XCAFDoc_VisMaterial
+    /// (glTF import); the Gui importer mirrors it into the view provider's
+    /// Render_* dynamic properties.
+    virtual void applyRenderMaterial(Part::Feature*, const RenderMaterial&)
+    {}
+
+    /// Resolve the label's XCAFDoc_VisMaterial (checking the sub shape
+    /// labels when the label itself carries none) into a neutral
+    /// RenderMaterial, extracting embedded texture images to temporary
+    /// files. Returns false when there is no PBR material.
+    bool getRenderMaterial(TDF_Label label, RenderMaterial& mat);
 
 private:
     class ImportLegacy: public ImportOCAF
@@ -202,6 +215,7 @@ private:
     App::Document* pDocument;
     Handle(XCAFDoc_ShapeTool) aShapeTool;
     Handle(XCAFDoc_ColorTool) aColorTool;
+    Handle(XCAFDoc_VisMaterialTool) aMaterialTool;
     std::string default_name;
 
     ImportOCAFOptions options;

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 /***************************************************************************
- *   Copyright (c) 2023 Zheng Lei <realthunder.dev@gmail.com>              *
- *   Copyright (c) 2023 Werner Mayer <wmayer[at]users.sourceforge.net>     *
+ *   Copyright (c) 2026 Zheng Lei (realthunder) <realthunder.dev@gmail.com>*
  *                                                                         *
  *   This file is part of FreeCAD.                                         *
  *                                                                         *
@@ -22,29 +21,34 @@
  *                                                                         *
  **************************************************************************/
 
-#ifndef IMPORT_IMPORTOCAFGUI_H
-#define IMPORT_IMPORTOCAFGUI_H
+#ifndef IMPORT_RENDERMATERIAL_H
+#define IMPORT_RENDERMATERIAL_H
 
-#include <Mod/Import/App/ImportOCAF2.h>
+#include <string>
+#include <App/Color.h>
 
-namespace ImportGui
+namespace Import
 {
 
-class ImportOCAFGui: public Import::ImportOCAF2
+/// Neutral per-object render (PBR metallic-roughness) material carried
+/// between the OCAF XCAFDoc_VisMaterial layer and the ViewProvider
+/// Render_* dynamic properties (see the renderer plan, Phase 2b).
+struct RenderMaterial
 {
-public:
-    ImportOCAFGui(Handle(TDocStd_Document) hDoc, App::Document* pDoc, const std::string& name);
-
-private:
-    void applyFaceColors(Part::Feature* part, const std::vector<App::Color>& colors) override;
-    void applyEdgeColors(Part::Feature* part, const std::vector<App::Color>& colors) override;
-    void applyLinkColor(App::DocumentObject* obj, int index, App::Color color) override;
-    void applyElementColors(App::DocumentObject* obj,
-                            const std::map<std::string, App::Color>& colors) override;
-    void applyRenderMaterial(Part::Feature* part,
-                             const Import::RenderMaterial& mat) override;
+    bool valid = false;
+    /// Metalness / roughness factors, 0..1; < 0 = unset.
+    double metallic = -1.0;
+    double roughness = -1.0;
+    /// Base color factor (import: XCAFDoc_VisMaterialPBR::BaseColor;
+    /// export: the view provider's ShapeColor/Transparency).
+    bool hasBaseColor = false;
+    App::Color baseColor;
+    /// Absolute paths of texture image files: extracted embedded images
+    /// on import, PropertyFileIncluded storage on export. Empty = none.
+    std::string baseColorTexture;
+    std::string normalMapTexture;
 };
 
-}  // namespace ImportGui
+}  // namespace Import
 
-#endif  // IMPORT_IMPORTOCAFGUI_H
+#endif  // IMPORT_RENDERMATERIAL_H

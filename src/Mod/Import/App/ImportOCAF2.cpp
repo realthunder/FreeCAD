@@ -43,6 +43,9 @@
 # include <XCAFDoc_DocumentTool.hxx>
 # include <XCAFDoc_GraphNode.hxx>
 # include <XCAFDoc_ShapeTool.hxx>
+# include <XCAFDoc_VisMaterial.hxx>
+# include <XCAFDoc_VisMaterialTool.hxx>
+# include <Image_Texture.hxx>
 #endif
 
 #include <boost/algorithm/string.hpp>
@@ -94,6 +97,7 @@ ImportOCAF2::ImportOCAF2(Handle(TDocStd_Document) hDoc, App::Document* doc, cons
 {
     aShapeTool = XCAFDoc_DocumentTool::ShapeTool(pDoc->Main());
     aColorTool = XCAFDoc_DocumentTool::ColorTool(pDoc->Main());
+    aMaterialTool = XCAFDoc_DocumentTool::VisMaterialTool(pDoc->Main());
 
     if (pDocument->isSaved()) {
         Base::FileInfo fi(pDocument->FileName.getValue());
@@ -286,6 +290,86 @@ static void mergeColor(bool &hasColors, App::Color &color, std::vector<App::Colo
     colors.clear();
 }
 
+bool ImportOCAF2::getRenderMaterial(TDF_Label label, RenderMaterial& mat)
+{
+    if (label.IsNull() || aMaterialTool.IsNull()) {
+        return false;
+    }
+
+    // The label itself first; glTF meshes usually carry the material on
+    // the (face) sub shape labels instead, and a component label refers
+    // to the actual shape label. First found wins - per-face materials
+    // collapse to one whole-object material for now.
+    auto lookup = [this](TDF_Label l) -> Handle(XCAFDoc_VisMaterial) {
+        Handle(XCAFDoc_VisMaterial) m = aMaterialTool->GetShapeMaterial(l);
+        if (!m.IsNull() && m->HasPbrMaterial()) {
+            return m;
+        }
+        TDF_LabelSequence seq;
+        if (aShapeTool->GetSubShapes(l, seq)) {
+            for (Standard_Integer i = 1; i <= seq.Length(); ++i) {
+                m = aMaterialTool->GetShapeMaterial(seq.Value(i));
+                if (!m.IsNull() && m->HasPbrMaterial()) {
+                    return m;
+                }
+            }
+        }
+        return nullptr;
+    };
+    Handle(XCAFDoc_VisMaterial) visMat = lookup(label);
+    if (visMat.IsNull()) {
+        TDF_Label ref;
+        if (XCAFDoc_ShapeTool::IsReference(label)
+            && XCAFDoc_ShapeTool::GetReferredShape(label, ref)) {
+            visMat = lookup(ref);
+        }
+    }
+    if (visMat.IsNull()) {
+        return false;
+    }
+
+    const XCAFDoc_VisMaterialPBR& pbr = visMat->PbrMaterial();
+    // Both factors at the glTF defaults (1.0) with no textures is what a
+    // color-only material reads back as - glTF has no way to say "no PBR".
+    // Skip it so plain colored exports do not grow render properties (and
+    // turn fully metallic) on re-import.
+    if (pbr.BaseColorTexture.IsNull() && pbr.NormalTexture.IsNull()
+        && pbr.Metallic >= 1.0f && pbr.Roughness >= 1.0f) {
+        return false;
+    }
+    mat.metallic = pbr.Metallic;
+    mat.roughness = pbr.Roughness;
+    mat.hasBaseColor = true;
+    mat.baseColor = Tools::convertColor(pbr.BaseColor);
+
+    // Extract texture images (embedded in a .glb, or referenced files) to
+    // temporary files; PropertyFileIncluded copies them into the document.
+    auto extract = [](const Handle(Image_Texture)& tex,
+                      const char* tag) -> std::string {
+        if (tex.IsNull()) {
+            return {};
+        }
+        std::string ext = tex->ProbeImageFileFormat().ToCString();
+        if (ext.empty()) {
+            ext = "png";
+        }
+        // getTempFileName appends the unique part after the given name,
+        // so the extension goes on afterwards (image loaders sniff the
+        // content anyway; the extension is for the user's benefit).
+        std::string path =
+            Base::FileInfo::getTempFileName(tag) + "." + ext;
+        if (!tex->WriteImage(path.c_str())) {
+            return {};
+        }
+        return path;
+    };
+    mat.baseColorTexture = extract(pbr.BaseColorTexture, "gltf_basecolor");
+    mat.normalMapTexture = extract(pbr.NormalTexture, "gltf_normal");
+
+    mat.valid = true;
+    return true;
+}
+
 bool ImportOCAF2::createObject(App::Document* doc,
                                TDF_Label label,
                                const TopoDS_Shape& shape,
@@ -400,6 +484,10 @@ bool ImportOCAF2::createObject(App::Document* doc,
         applyFaceColors(feature,colors.faceColors);
     if(colors.edgeColors.size())
         applyEdgeColors(feature,colors.edgeColors);
+
+    RenderMaterial rmat;
+    if (getRenderMaterial(label, rmat))
+        applyRenderMaterial(feature, rmat);
 
     info.propPlacement = &feature->Placement;
     info.obj = feature;

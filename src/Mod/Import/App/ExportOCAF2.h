@@ -33,6 +33,7 @@
 #include <TDocStd_Document.hxx>
 
 #include <Mod/Import/ImportGlobal.h>
+#include "RenderMaterial.h"
 #include "Tools.h"
 
 namespace App
@@ -61,8 +62,17 @@ class ImportExport ExportOCAF2
 public:
     using GetShapeColorsFunc =
         std::function<std::map<std::string, App::Color>(App::DocumentObject*, const char*)>;
+    /// Resolve an object's per-object render (PBR) material, typically
+    /// from the view provider's Render_* dynamic properties. Return false
+    /// when the object has none (no material is written then).
+    using GetRenderMaterialFunc = std::function<bool(App::DocumentObject*, RenderMaterial&)>;
     explicit ExportOCAF2(Handle(TDocStd_Document) hDoc,
                          GetShapeColorsFunc func = GetShapeColorsFunc());
+
+    void setGetRenderMaterial(GetRenderMaterialFunc func)
+    {
+        getRenderMaterial = std::move(func);
+    }
 
     static ExportOCAFOptions customExportOptions();
     void setExportOptions(ExportOCAFOptions opts)
@@ -108,6 +118,7 @@ private:
     std::vector<App::DocumentObject*> groupLinks;
 
     GetShapeColorsFunc getShapeColors;
+    GetRenderMaterialFunc getRenderMaterial;
 
     ExportOCAFOptions options;
 };

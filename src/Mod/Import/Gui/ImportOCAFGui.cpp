@@ -26,7 +26,9 @@
 #include "PreCompiled.h"
 
 #include "ImportOCAFGui.h"
+#include <App/PropertyFile.h>
 #include <Gui/Application.h>
+#include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/ViewProviderLink.h>
 #include <Mod/Part/Gui/ViewProvider.h>
 
@@ -105,4 +107,52 @@ void ImportOCAFGui::applyElementColors(App::DocumentObject* obj,
         return;
     }
     (void)colors;
+}
+
+void ImportOCAFGui::applyRenderMaterial(Part::Feature* part,
+                                        const Import::RenderMaterial& mat)
+{
+    // Mirror the imported PBR material into the view provider's Render_*
+    // dynamic properties (see ViewProviderGeometryObject, which builds the
+    // render engine scene graph nodes from them). The base color factor is
+    // already applied through the color labels.
+    auto vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(
+        Gui::Application::Instance->getViewProvider(part));
+    if (!vp || !mat.valid) {
+        return;
+    }
+
+    auto setFloat = [vp](const char* name, double value, const char* doc) {
+        if (value < 0.0) {
+            return;
+        }
+        auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            vp->getPropertyByName(name));
+        if (!prop) {
+            prop = static_cast<App::PropertyFloat*>(vp->addDynamicProperty(
+                "App::PropertyFloatConstraint", name, "Render", doc));
+        }
+        prop->setValue(value);
+    };
+    setFloat("Render_Metallic", mat.metallic,
+             "Metalness of the render engine PBR shading, 0 to 1");
+    setFloat("Render_Roughness", mat.roughness,
+             "Roughness of the render engine PBR shading, 0 to 1");
+
+    auto setFile = [vp](const char* name, const std::string& path, const char* doc) {
+        if (path.empty()) {
+            return;
+        }
+        auto prop = Base::freecad_dynamic_cast<App::PropertyFileIncluded>(
+            vp->getPropertyByName(name));
+        if (!prop) {
+            prop = static_cast<App::PropertyFileIncluded*>(vp->addDynamicProperty(
+                "App::PropertyFileIncluded", name, "Render", doc));
+        }
+        prop->setValue(path.c_str());
+    };
+    setFile("Render_BaseColorTexture", mat.baseColorTexture,
+            "Base color texture image of the object");
+    setFile("Render_NormalMap", mat.normalMapTexture,
+            "Tangent space normal map (or grayscale height map) of the object");
 }

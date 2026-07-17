@@ -54,12 +54,14 @@
 #include "dxf/ImpExpDxfGui.h"
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
+#include <App/PropertyFile.h>
 #include <Base/Console.h>
 #include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/ViewProviderLink.h>
 #include <Mod/Import/App/ExportOCAF2.h>
 #include <Mod/Import/App/ImportOCAF2.h>
@@ -265,6 +267,45 @@ private:
         return {};
     }
 
+    static bool getRenderMaterial(App::DocumentObject* obj, Import::RenderMaterial& mat)
+    {
+        // Per-object render engine settings (Render_* dynamic properties,
+        // see ViewProviderGeometryObject) become a glTF PBR material. An
+        // object without any of them exports color-only, as before.
+        auto vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(
+            Gui::Application::Instance->getViewProvider(obj));
+        if (!vp) {
+            return false;
+        }
+        auto getFloat = [vp](const char* name) -> double {
+            auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
+                vp->getPropertyByName(name));
+            return prop ? prop->getValue() : -1.0;
+        };
+        auto getFile = [vp](const char* name) -> std::string {
+            auto prop = Base::freecad_dynamic_cast<App::PropertyFileIncluded>(
+                vp->getPropertyByName(name));
+            if (prop && prop->getValue()) {
+                return prop->getValue();
+            }
+            return {};
+        };
+        mat.metallic = getFloat("Render_Metallic");
+        mat.roughness = getFloat("Render_Roughness");
+        mat.baseColorTexture = getFile("Render_BaseColorTexture");
+        mat.normalMapTexture = getFile("Render_NormalMap");
+        mat.valid = mat.metallic >= 0.0 || mat.roughness >= 0.0
+            || !mat.baseColorTexture.empty() || !mat.normalMapTexture.empty();
+        if (mat.valid) {
+            mat.hasBaseColor = true;
+            mat.baseColor = vp->ShapeColor.getValue();
+            // App::Color::a carries *transparency* in the importer color
+            // convention (Tools::convertColor inverts it to alpha).
+            mat.baseColor.a = float(vp->Transparency.getValue()) / 100.0f;
+        }
+        return mat.valid;
+    }
+
     // This readDXF method is an almost exact duplicate of the one in Import::Module.
     // The only difference is the CDxfRead class derivation that is created.
     // It would seem desirable to have most of this code in just one place, passing it
@@ -430,6 +471,7 @@ private:
             hApp->NewDocument(TCollection_ExtendedString("MDTV-CAF"), hDoc);
 
             Import::ExportOCAF2 ocaf(hDoc, &getShapeColors);
+            ocaf.setGetRenderMaterial(&getRenderMaterial);
             if (!legacyExport || !ocaf.canFallback(objs)) {
                 ocaf.setExportOptions(Import::ExportOCAF2::customExportOptions());
                 ocaf.setExportHiddenObject(exportHidden);

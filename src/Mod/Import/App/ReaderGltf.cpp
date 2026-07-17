@@ -90,7 +90,7 @@ void ReaderGltf::processDocument(Handle(TDocStd_Document) hDoc)
     for (Standard_Integer i = 1; i <= shapeLabels.Length(); i++) {
         auto topLevelshape = shapeLabels.Value(i);
         TopoDS_Shape shape = aShapeTool->GetShape(topLevelshape);
-        if (!shape.IsNull()) {
+        if (!shape.IsNull() && !aShapeTool->IsAssembly(topLevelshape)) {
             TDF_LabelSequence subShapeLabels;
             if (XCAFDoc_ShapeTool::GetSubShapes(topLevelshape, subShapeLabels)) {
                 TopoDS_Shape compound = processSubShapes(hDoc, subShapeLabels);
@@ -101,6 +101,12 @@ void ReaderGltf::processDocument(Handle(TDocStd_Document) hDoc)
             }
         }
     }
+    // The shape labels now hold the fixed replacements; rebuild the
+    // assembly compounds from their components so that traversing an
+    // assembly yields shapes that can be mapped back to their labels
+    // (ImportOCAF2 relies on XCAFDoc_ShapeTool::FindShape for material
+    // and name lookups).
+    aShapeTool->UpdateAssemblies();
 #else
     boost::ignore_unused(hDoc);
 #endif
