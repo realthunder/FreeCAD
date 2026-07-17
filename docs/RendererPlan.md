@@ -368,14 +368,52 @@ the nearest integer like GL's non-AA rasterizer (a 1.5px HL edge
 covers 2 rows in GL). Verified pixel-identical to GL (zero diff) for
 the default hidden-line style (transparent fills + outline + hidden
 seam/vertex), hideFace, and the selection-outline regression.
-Known deviations, clipped (per-face-part) hidden-line outlines only:
-GL's `glPolygonMode(GL_LINE)` also rasterizes the *post-clipping*
-polygon boundary, i.e. draws the section-cut outline, which
-fragment-discard clipping cannot produce (revisit with Phase 2 stencil
-section caps); and per-part outlines skip the depth write, so fills of
-farther objects dim them where GL's ordered draw kept them crisp.
-Still open: the `sceneOutline`/`perFaceOutline` (unclipped) variants
-and the whole-object highlight outline of hidden-line mode.
+Known deviations, per-face-part hidden-line outlines only (clipped or
+`perFaceOutline`): GL's `glPolygonMode(GL_LINE)` also rasterizes the
+*post-clipping* polygon boundary, i.e. draws the section-cut outline,
+which fragment-discard clipping cannot produce (revisit with Phase 2
+stencil section caps); and per-part outlines skip the depth write, so
+fills of farther objects dim them where GL's ordered draw kept them
+crisp (writing depth was retried for the unclipped per-face variant
+and still came out worse — the self-fill z-failed like in the clipped
+case).
+
+*Hidden-line outline variants done (2026-07)*: the `sceneOutline`
+mode renders GL's `renderSceneOutline` — every scene triangle draw
+stencil-marks under one shared reference (depth-independent, matching
+GL's replace-on-depth-fail), then each one's edges/caps redraw where
+the stencil differs, leaving a single silhouette around the union of
+the scene; it runs at GL's position (after all line/highlight passes,
+before the face outlines) at the head of the highlight view, edges
+1.5x the configured outline width, caps unscaled (`OutlineSpec::
+capWidth`), colored by the resolved hidden-line color, and suppresses
+the per-entry outlines unless `perFaceOutline` is also set. The
+`perFaceOutline` mode outlines each face part separately —
+`MeshData::triangleParts` is now filled for every outline mesh and a
+new `nonFlatParts` subset carries the curved faces, which are the
+only ones outlined when combined with `sceneOutline` or a zero
+outline width (GL: `getNonFlatParts()`); an outline-less part table
+now also outlines nothing under clip planes, like GL's
+zero-iteration loop. Whole-object selection draws get their
+hidden-line outline too (GL: renderOutline from the slentries
+passes), routed into the highlight view for on-top selections; and
+the whole-object *preselection highlight* outline renders on top with
+the bridge-resolved selection-thickened width
+(`Material::outlinewidth`, now computed independently of the
+face-outline params) raised by the configured outline width.
+`submitOutline` split into `submitOutlineMark`/`submitOutlineEdges`
+to share the passes with the silhouette. Verified pixel-identical to
+GL (zero diff): sceneOutline, perFaceOutline (non-flat variant),
+sceneOutline+perFaceOutline, and the default-HL regression; the
+whole-object selection outline matches within the fill-shading
+tolerance (max 16/255), the preselect outline leaves 4 corner-cap
+pixels above threshold. Deviations: perFaceOutline with an outline
+width dims per-part outlines (the depth-write class above); the
+silhouette edge passes apply each entry's own clip planes where GL
+reuses whatever clip state its mark loop left behind. Note: the
+two-object per-face-selection HL scene shows a pre-existing ~2k px
+ordering deviation (green face fill vs on-top black lines) that
+predates this work — verified bit-identical before/after.
 
 ### Phase 2 — visual features (7–9 wks)
 
@@ -385,7 +423,7 @@ and the whole-object highlight outline of hidden-line mode.
 | SSAO (ASSAO) | 1.5–2 | needs depth+normal prepass from Phase 0 |
 | PBR + IBL | 3–4 | BRDF + env prefilter pipeline; matcap fallback; material property plumbing from ViewProvider |
 | Section caps | 2–3 | stencil capping + hatch, port `_renderSection` semantics |
-| Outline/hidden-line | 1.5–2 | screen-space depth/normal pass + existing edge geometry. *Selection/preselection face outline done (2026-07)*: ported the GL stencil technique — stencil-mark the face, redraw its triangle edges as instanced thick lines + point-sprite corner caps where the stencil differs (the portable stand-in for `glPolygonMode`); per-outline stencil refs avoid per-part clears; the bridge resolves the Show*/No*WithOutline params and outline width. Verified pixel-identical to GL for preselect (outline-only) and two-face selection. Whole-scene/hidden-line outline still open. |
+| Outline/hidden-line | 1.5–2 | screen-space depth/normal pass + existing edge geometry. *Selection/preselection face outline done (2026-07)*: ported the GL stencil technique — stencil-mark the face, redraw its triangle edges as instanced thick lines + point-sprite corner caps where the stencil differs (the portable stand-in for `glPolygonMode`); per-outline stencil refs avoid per-part clears; the bridge resolves the Show*/No*WithOutline params and outline width. Verified pixel-identical to GL for preselect (outline-only) and two-face selection. *Whole-scene + hidden-line outline variants done (2026-07, see Phase 1).* |
 
 ### Phase 3 — performance & portability (open-ended)
 
