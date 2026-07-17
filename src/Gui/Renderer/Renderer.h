@@ -91,6 +91,35 @@ struct MeshData {
 
     bool hasTransparency = false;   ///< some per-vertex colors are transparent
     bool hasOpaqueParts = false;    ///< some per-vertex colors are opaque
+
+    /// Texture coordinates, xyzw per vertex (Coin's SbVec4f layout; the
+    /// default texgen and 2D texcoord nodes produce (s, t, 0, 1)). Null
+    /// when the cache was built without an active texture.
+    const float *texCoords = nullptr;
+};
+
+/// CPU-side snapshot of a texture image applied to triangle draws
+/// (unit-0 SoTexture2 on the Gui side). Pixels are copied at translate
+/// time; backends key GPU uploads on `textureId`: the same id always
+/// refers to identical content.
+struct TextureImage {
+    uint64_t textureId = 0;
+    int width = 0;
+    int height = 0;
+    /// 1 = luminance, 2 = luminance+alpha, 3 = rgb, 4 = rgba; rows are
+    /// tightly packed, bottom-up like GL.
+    int numComponents = 0;
+    std::vector<uint8_t> pixels;
+
+    enum Wrap : uint8_t { Repeat, Clamp };
+    uint8_t wrapS = Repeat;
+    uint8_t wrapT = Repeat;
+
+    /// GL texture environment (SoTexture2::model).
+    enum Model : uint8_t { Modulate, Decal, Blend, Replace };
+    uint8_t model = Modulate;
+    /// rgb used by the Blend model, packed 0xRRGGBBAA.
+    uint32_t blendColor = 0;
 };
 
 /// Window background drawn behind the scene, mirroring the Coin-side
@@ -220,6 +249,14 @@ struct Material {
     /// (SoShapeHintsElement::SOLID); together with MeshData::hasSolid this
     /// gates the stencil section cap of clipped draws.
     bool solidshape = false;
+
+    /// Texture of a triangle draw (unit 0 only; GL applies further units
+    /// on top, a known deviation) with its texture matrix, applied to
+    /// MeshData::texCoords. Only sampled when the mesh carries texture
+    /// coordinates.
+    std::shared_ptr<const TextureImage> texture;
+    float texmatrix[16];        ///< GL-layout, valid when !texidentity
+    bool texidentity = true;
 
     /// Autozoom transforms (SoAutoZoomTranslation): the draw's model
     /// matrix is rebuilt every frame by replaying these entries like the

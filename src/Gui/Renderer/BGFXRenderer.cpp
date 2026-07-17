@@ -374,6 +374,31 @@ struct SceneVertex
 bgfx::VertexLayout SceneVertex::ms_layout;
 bool SceneVertex::ms_initialized = false;
 
+// Second vertex stream of textured meshes: 2D texture coordinates,
+// bound only by the textured mesh programs (texcoords live outside
+// SceneVertex so untextured scenes don't pay for them).
+struct TexCoordVertex
+{
+    float u, v;
+
+    static void init()
+    {
+        if (ms_initialized)
+            return;
+        ms_initialized = true;
+        ms_layout
+            .begin()
+            .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+            .end();
+    };
+
+    static bgfx::VertexLayout ms_layout;
+    static bool ms_initialized;
+};
+
+bgfx::VertexLayout TexCoordVertex::ms_layout;
+bool TexCoordVertex::ms_initialized = false;
+
 // Corner of the unit quad that vs_fc_line expands into a screen-space
 // thick line segment: x = end of the segment (0/1), y = side (-1/+1).
 struct LineQuadVertex
@@ -471,6 +496,9 @@ struct GpuMesh
     /// into instance ranges.
     bgfx::VertexBufferHandle triEdgeInst = BGFX_INVALID_HANDLE;
     bgfx::VertexBufferHandle triCornerInst = BGFX_INVALID_HANDLE;
+    /// Texture-coordinate stream of textured draws (second vertex
+    /// stream), built lazily on first textured use.
+    bgfx::VertexBufferHandle texcoord = BGFX_INVALID_HANDLE;
     uint64_t lastUsed = 0;
 
     void destroy()
@@ -514,6 +542,10 @@ struct GpuMesh
         if (bgfx::isValid(triCornerInst)) {
             bgfx::destroy(triCornerInst);
             triCornerInst = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(texcoord)) {
+            bgfx::destroy(texcoord);
+            texcoord = BGFX_INVALID_HANDLE;
         }
     }
 
@@ -636,6 +668,29 @@ struct GpuMesh
                 mesh, mesh.noSeamLineIndices, mesh.numNoSeamLineIndices);
     }
 
+    /// Texture-coordinate stream (Coin xyzw texcoords collapsed to 2D,
+    /// projective coordinates divided per vertex), built on first
+    /// textured use of the mesh; bound only by the textured programs so
+    /// untextured scenes don't pay for it.
+    void ensureTexCoord(const Render::MeshData &mesh)
+    {
+        if (bgfx::isValid(texcoord) || !mesh.texCoords
+                || mesh.numVertices == 0)
+            return;
+        TexCoordVertex::init();
+        const bgfx::Memory *tmem = bgfx::alloc(
+            uint32_t(mesh.numVertices) * sizeof(TexCoordVertex));
+        auto *tc = reinterpret_cast<TexCoordVertex *>(tmem->data);
+        for (int i = 0; i < mesh.numVertices; ++i) {
+            const float *t = mesh.texCoords + i*4;
+            float q = t[3] != 0.0f ? t[3] : 1.0f;
+            tc[i].u = t[0] / q;
+            tc[i].v = t[1] / q;
+        }
+        texcoord = bgfx::createVertexBuffer(tmem,
+                                            TexCoordVertex::ms_layout);
+    }
+
     /// Triangle-edge segment + corner instance buffers for the stencil
     /// outline passes, one instance per triangle index position. Built on
     /// first use: whole-scene hidden-line outlines would otherwise
@@ -684,6 +739,56 @@ struct GpuMesh
         }
         triCornerInst = bgfx::createVertexBuffer(
             cmem, LineQuadVertex::ms_pointInstLayout);
+    }
+};
+
+// GPU texture of one Render::TextureImage, keyed by
+// TextureImage::textureId (a texture id always refers to identical
+// content, so textures are immutable and reused until unreferenced).
+struct GpuTexture
+{
+    bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
+    uint64_t lastUsed = 0;
+
+    void destroy()
+    {
+        if (bgfx::isValid(handle)) {
+            bgfx::destroy(handle);
+            handle = BGFX_INVALID_HANDLE;
+        }
+    }
+
+    void upload(const Render::TextureImage &tex)
+    {
+        // Expand to RGBA8 (1/2 components are luminance(+alpha), the GL
+        // fixed-function texel expansion). Rows are uploaded in the
+        // GL bottom-up order the Coin image comes in, matching the GL
+        // renderer on the OpenGL backend (other backends may see the
+        // image v-flipped, a known deviation until needed).
+        const size_t n = size_t(tex.width) * tex.height;
+        const bgfx::Memory *mem = bgfx::alloc(uint32_t(n * 4));
+        const uint8_t *src = tex.pixels.data();
+        uint8_t *dst = mem->data;
+        for (size_t i = 0; i < n; ++i) {
+            const uint8_t *p = src + i * tex.numComponents;
+            switch (tex.numComponents) {
+            case 1: dst[0] = dst[1] = dst[2] = p[0]; dst[3] = 255; break;
+            case 2: dst[0] = dst[1] = dst[2] = p[0]; dst[3] = p[1]; break;
+            case 3: dst[0] = p[0]; dst[1] = p[1]; dst[2] = p[2];
+                    dst[3] = 255; break;
+            default: dst[0] = p[0]; dst[1] = p[1]; dst[2] = p[2];
+                     dst[3] = p[3]; break;
+            }
+            dst += 4;
+        }
+        uint64_t flags = 0;
+        if (tex.wrapS == Render::TextureImage::Clamp)
+            flags |= BGFX_SAMPLER_U_CLAMP;
+        if (tex.wrapT == Render::TextureImage::Clamp)
+            flags |= BGFX_SAMPLER_V_CLAMP;
+        handle = bgfx::createTexture2D(
+            uint16_t(tex.width), uint16_t(tex.height), false, 1,
+            bgfx::TextureFormat::RGBA8, flags, mem);
     }
 };
 
@@ -807,6 +912,9 @@ public:
         for (auto &v : meshes)
             v.second.destroy();
         meshes.clear();
+        for (auto &v : textures)
+            v.second.destroy();
+        textures.clear();
         // The OIT framebuffer references bgfxDepth (owned by bgfxFbo),
         // so it goes first.
         if (bgfx::isValid(oitFbo)) {
@@ -864,6 +972,38 @@ public:
         if (bgfx::isValid(m_progPointClip)) {
             bgfx::destroy(m_progPointClip);
             m_progPointClip = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progMeshTex)) {
+            bgfx::destroy(m_progMeshTex);
+            m_progMeshTex = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progMeshTexClip)) {
+            bgfx::destroy(m_progMeshTexClip);
+            m_progMeshTexClip = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progMeshOitTex)) {
+            bgfx::destroy(m_progMeshOitTex);
+            m_progMeshOitTex = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progMeshOitTexClip)) {
+            bgfx::destroy(m_progMeshOitTexClip);
+            m_progMeshOitTexClip = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(s_texColor)) {
+            bgfx::destroy(s_texColor);
+            s_texColor = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(u_texMatrix)) {
+            bgfx::destroy(u_texMatrix);
+            u_texMatrix = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(u_texParams)) {
+            bgfx::destroy(u_texParams);
+            u_texParams = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(u_texBlendColor)) {
+            bgfx::destroy(u_texBlendColor);
+            u_texBlendColor = BGFX_INVALID_HANDLE;
         }
         if (bgfx::isValid(m_progMeshOit)) {
             bgfx::destroy(m_progMeshOit);
@@ -1002,6 +1142,19 @@ public:
                                      _BGFXLib.resource().c_str());
         m_progFlatClip = loadProgram("vs_fc_flat_clip", "fs_fc_flat_clip",
                                      _BGFXLib.resource().c_str());
+        m_progMeshTex = loadProgram("vs_fc_mesh_tex", "fs_fc_mesh_tex",
+                                    _BGFXLib.resource().c_str());
+        m_progMeshTexClip = loadProgram("vs_fc_mesh_tex_clip",
+                                        "fs_fc_mesh_tex_clip",
+                                        _BGFXLib.resource().c_str());
+        s_texColor = bgfx::createUniform("s_texColor",
+                                         bgfx::UniformType::Sampler);
+        u_texMatrix = bgfx::createUniform("u_texMatrix",
+                                          bgfx::UniformType::Mat4);
+        u_texParams = bgfx::createUniform("u_texParams",
+                                          bgfx::UniformType::Vec4);
+        u_texBlendColor = bgfx::createUniform("u_texBlendColor",
+                                              bgfx::UniformType::Vec4);
 
         // Thick lines: instanced screen-space quad expansion (there is no
         // fixed-function line width in modern APIs). Without instancing
@@ -1073,7 +1226,8 @@ public:
             : BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER;
         m_oit = (caps->supported & BGFX_CAPS_BLEND_INDEPENDENT)
             && (caps->formats[bgfx::TextureFormat::RGBA16F] & oitFmtCaps)
-            && (caps->formats[bgfx::TextureFormat::R16F] & oitFmtCaps);
+            && (caps->formats[bgfx::TextureFormat::R16F] & oitFmtCaps)
+            && !getenv("FC_BGFX_DEBUG_NO_OIT");
         if (m_oit) {
             // With MSAA the accum/reveal targets carry the scene's
             // sample count (all attachments of the OIT framebuffer must
@@ -1109,6 +1263,12 @@ public:
             m_progMeshOitClip = loadProgram("vs_fc_mesh_clip",
                                             "fs_fc_mesh_oit_clip",
                                             _BGFXLib.resource().c_str());
+            m_progMeshOitTex = loadProgram("vs_fc_mesh_tex",
+                                           "fs_fc_mesh_oit_tex",
+                                           _BGFXLib.resource().c_str());
+            m_progMeshOitTexClip = loadProgram("vs_fc_mesh_tex_clip",
+                                               "fs_fc_mesh_oit_tex_clip",
+                                               _BGFXLib.resource().c_str());
             m_progComp = loadProgram("vs_fc_comp", "fs_fc_comp",
                                      _BGFXLib.resource().c_str());
             s_texAccum = bgfx::createUniform("s_texAccum",
@@ -1127,13 +1287,30 @@ public:
         return &mesh;
     }
 
-    // Drop GPU buffers of caches that no draw call referenced recently.
+    GpuTexture *getTexture(const Render::TextureImage &data)
+    {
+        GpuTexture &tex = textures[data.textureId];
+        tex.lastUsed = frame;
+        if (!bgfx::isValid(tex.handle))
+            tex.upload(data);
+        return &tex;
+    }
+
+    // Drop GPU buffers of caches/textures that no draw call referenced
+    // recently.
     void collectMeshes()
     {
         for (auto it = meshes.begin(); it != meshes.end();) {
             if (it->second.lastUsed + 2 < frame) {
                 it->second.destroy();
                 it = meshes.erase(it);
+            } else
+                ++it;
+        }
+        for (auto it = textures.begin(); it != textures.end();) {
+            if (it->second.lastUsed + 2 < frame) {
+                it->second.destroy();
+                it = textures.erase(it);
             } else
                 ++it;
         }
@@ -1691,6 +1868,17 @@ public:
         if (!bgfx::isValid(ibh))
             return;
 
+        // Textured triangle fill (unit-0 SoTexture2 fed by the bridge):
+        // sampled only when the mesh carries texture coordinates; the
+        // depth prepass stays untextured like GL's depthwriteonly path.
+        bool textured = mat.type == Render::Material::Triangle
+            && mat.texture && draw.mesh->texCoords
+            && pass != PassDepthOnly;
+        if (textured) {
+            mesh->ensureTexCoord(*draw.mesh);
+            textured = bgfx::isValid(mesh->texcoord);
+        }
+
         // Line stipple: the hidden (dimmed) pass of on-top lines uses the
         // pattern resolved by the bridge (material's own or the selection
         // fallback, GL's RenderPassLinePattern); every other pass uses the
@@ -1860,6 +2048,31 @@ public:
                              mat.numclipplanes);
         }
 
+        if (textured) {
+            GpuTexture *tex = getTexture(*mat.texture);
+            bgfx::setTexture(0, s_texColor, tex->handle);
+            // u_texParams: x = texture environment (TextureImage::Model),
+            // y = the source format carries alpha (GL's REPLACE keeps the
+            // fragment alpha for alpha-less formats; the RGBA8 expansion
+            // hides that distinction from the sampler).
+            float texParams[4] = {
+                float(mat.texture->model),
+                mat.texture->numComponents == 2
+                        || mat.texture->numComponents == 4
+                    ? 1.0f : 0.0f,
+                0.0f, 0.0f};
+            bgfx::setUniform(u_texParams, texParams);
+            float blend[4];
+            unpackColor(mat.texture->blendColor, blend);
+            bgfx::setUniform(u_texBlendColor, blend);
+            float texmat[16];
+            if (mat.texidentity)
+                bx::mtxIdentity(texmat);
+            else
+                std::memcpy(texmat, mat.texmatrix, sizeof(texmat));
+            bgfx::setUniform(u_texMatrix, texmat);
+        }
+
         if (patterned) {
             // glLineStipple clamps the repeat factor to [1, 256].
             uint32_t factor = linepattern >> 16;
@@ -1902,6 +2115,8 @@ public:
         }
         else {
             bgfx::setVertexBuffer(0, mesh->vbh);
+            if (textured)
+                bgfx::setVertexBuffer(1, mesh->texcoord);
             if (draw.indexCount > 0)
                 bgfx::setIndexBuffer(ibh, uint32_t(draw.indexStart),
                                      uint32_t(draw.indexCount));
@@ -1940,8 +2155,16 @@ public:
         bgfx::submit(viewId + passView,
                      mat.type == Render::Material::Triangle
                          ? (oitDraw
-                             ? (clipped ? m_progMeshOitClip : m_progMeshOit)
-                             : (clipped ? m_progMeshClip : m_progMesh))
+                             ? (clipped
+                                 ? (textured ? m_progMeshOitTexClip
+                                             : m_progMeshOitClip)
+                                 : (textured ? m_progMeshOitTex
+                                             : m_progMeshOit))
+                             : (clipped
+                                 ? (textured ? m_progMeshTexClip
+                                             : m_progMeshClip)
+                                 : (textured ? m_progMeshTex
+                                             : m_progMesh)))
                          : thickline
                              ? (patterned
                                  ? (clipped ? m_progLinePatClip
@@ -2041,6 +2264,14 @@ public:
     bgfx::ProgramHandle m_progLinePatClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPoint = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPointClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshTex = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshTexClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshOitTex = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshOitTexClip = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_texMatrix = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_texParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_texBlendColor = BGFX_INVALID_HANDLE;
     bgfx::VertexBufferHandle m_lineQuadVb = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle m_lineQuadIb = BGFX_INVALID_HANDLE;
     bool m_instancing = false;
@@ -2068,6 +2299,7 @@ public:
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
     std::unordered_map<uint64_t, GpuMesh> meshes;
+    std::unordered_map<uint64_t, GpuTexture> textures;
     uint64_t frame = 0;
     int drawcount = 0;
     bool ontop = false;   // route submits to the highlight pass
@@ -2937,6 +3169,7 @@ public:
 
     void updateBBox()
     {
+        static const bool dbg = getenv("FC_BGFX_DEBUG_BBOX") != nullptr;
         bboxValid = false;
         for (const auto &draw : scene) {
             if (draw.bboxMin[0] > draw.bboxMax[0])
@@ -2954,6 +3187,10 @@ public:
                 }
             }
         }
+        if (dbg && bboxValid)
+            fprintf(stderr, "bgfx bbox: %g,%g,%g - %g,%g,%g\n",
+                    bboxMin[0], bboxMin[1], bboxMin[2],
+                    bboxMax[0], bboxMax[1], bboxMax[2]);
     }
 
     QOpenGLWidget *widget;

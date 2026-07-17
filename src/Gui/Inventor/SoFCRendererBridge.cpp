@@ -37,6 +37,7 @@
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/nodes/SoClipPlane.h>
+#include <Inventor/nodes/SoTexture2.h>
 
 #include "SoAutoZoomTranslation.h"
 #include "SoFCRendererBridge.h"
@@ -86,7 +87,63 @@ translateCache(SoFCVertexCache * cache)
 
     mesh->hasTransparency = cache->hasTransparency();
     mesh->hasOpaqueParts = cache->hasOpaqueParts();
+
+    mesh->texCoords =
+        reinterpret_cast<const float *>(cache->getTexCoordArray());
     return mesh;
+}
+
+// Shares one TextureImage among all materials referring to the same
+// texture node within a translate() call; the pixel copy dedups across
+// feeds through the backend's textureId keying (Coin node ids are unique
+// per node content revision).
+typedef std::unordered_map<const SoNode *,
+                           std::shared_ptr<const Render::TextureImage>>
+    TextureImageMap;
+
+std::shared_ptr<const Render::TextureImage>
+translateTexture(const SoFCRenderCache::TextureInfo & info,
+                 TextureImageMap & texmap)
+{
+    if (!info.texture
+            || !info.texture->isOfType(SoTexture2::getClassTypeId()))
+        return nullptr;
+
+    auto & res = texmap[info.texture.get()];
+    if (res)
+        return res;
+
+    auto node = static_cast<const SoTexture2 *>(info.texture.get());
+    SbVec2s size;
+    int nc = 0;
+    const unsigned char * pixels = node->image.getValue(size, nc);
+    if (!pixels || size[0] <= 0 || size[1] <= 0 || nc <= 0 || nc > 4)
+        return nullptr;
+
+    auto tex = std::make_shared<Render::TextureImage>();
+    tex->textureId = node->getNodeId();
+    tex->width = size[0];
+    tex->height = size[1];
+    tex->numComponents = nc;
+    tex->pixels.assign(pixels,
+                       pixels + size_t(size[0]) * size[1] * nc);
+    tex->wrapS = node->wrapS.getValue() == SoTexture2::CLAMP
+        ? Render::TextureImage::Clamp : Render::TextureImage::Repeat;
+    tex->wrapT = node->wrapT.getValue() == SoTexture2::CLAMP
+        ? Render::TextureImage::Clamp : Render::TextureImage::Repeat;
+    switch (node->model.getValue()) {
+    case SoTexture2::DECAL:
+        tex->model = Render::TextureImage::Decal; break;
+    case SoTexture2::BLEND:
+        tex->model = Render::TextureImage::Blend; break;
+    case SoTexture2::REPLACE:
+        tex->model = Render::TextureImage::Replace; break;
+    default:
+        tex->model = Render::TextureImage::Modulate; break;
+    }
+    tex->blendColor = node->blendColor.getValue().getPackedValue(0.0f);
+    res = tex;
+    return res;
 }
 
 // Whether a line/point material of this feed renders with GL's
@@ -108,7 +165,8 @@ useHighlightPass(const CoinMaterial & m, int selId, bool highlight)
 }
 
 Render::Material
-translateMaterial(const CoinMaterial & m, int selId, bool highlight)
+translateMaterial(const CoinMaterial & m, int selId, bool highlight,
+                  TextureImageMap & texmap)
 {
     Render::Material res;
 
@@ -263,6 +321,23 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight)
         }
     }
 
+    // Texture of triangle draws: unit 0 only (GL applies further units
+    // on top of it, a known deviation). The texture matrix already
+    // carries the merged SoTexture2Transform/SoTextureMatrixTransform
+    // state (SoFCRenderCache::addTexture).
+    if (res.type == Render::Material::Triangle && m.textures.getNum()) {
+        if (const auto * info = m.textures.get(0)) {
+            res.texture = translateTexture(*info, texmap);
+            if (res.texture && !info->identity) {
+                static_assert(sizeof(res.texmatrix) == sizeof(SbMat),
+                              "matrix size mismatch");
+                res.texidentity = false;
+                std::memcpy(res.texmatrix, info->matrix.getValue(),
+                            sizeof(res.texmatrix));
+            }
+        }
+    }
+
     // Autozoom transforms: mirror the material's node list; the backend
     // replays them per frame (GL: setupMatrix runs the nodes' GLRender).
     if (m.autozoom.getNum()) {
@@ -318,9 +393,11 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
 {
     Render::DrawCallList res;
 
-    // Share one MeshData among all entries referring to the same cache.
+    // Share one MeshData among all entries referring to the same cache,
+    // and one TextureImage among all materials with the same texture node.
     std::unordered_map<SoFCVertexCache *,
                        std::shared_ptr<CacheMeshData>> meshes;
+    TextureImageMap textures;
 
     for (const auto & v : vcachemap) {
         const CoinMaterial & material = v.first;
@@ -329,7 +406,8 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
         if (material.drawstyle == SoDrawStyleElement::INVISIBLE)
             continue;
 
-        Render::Material rmat = translateMaterial(material, selId, highlight);
+        Render::Material rmat =
+            translateMaterial(material, selId, highlight, textures);
 
         for (const VertexCacheEntry & ventry : v.second) {
             if (!ventry.cache)

@@ -18,6 +18,14 @@ uniform vec4 u_matColor;
 uniform vec4 u_matEmissive;
 uniform vec4 u_matSpecular;
 uniform vec4 u_params;
+#ifdef TEXTURE
+SAMPLER2D(s_texColor, 0);
+// x = texture environment (0 modulate, 1 decal, 2 blend, 3 replace),
+// y = the source format carries alpha (REPLACE keeps the fragment alpha
+//     for alpha-less formats, invisible to the RGBA8-expanded sampler)
+uniform vec4 u_texParams;
+uniform vec4 u_texBlendColor;
+#endif
 
 void main()
 {
@@ -46,15 +54,37 @@ void main()
 	}
 
 	color += u_matEmissive.rgb;
+	float alpha = base.a;
+
+#ifdef TEXTURE
+	// GL fixed-function texture environment, applied to the lit color
+	// like GL textures the rasterized fragment.
+	vec4 texel = texture2D(s_texColor, v_texcoord0);
+	float texmodel = u_texParams.x;
+	if (texmodel < 0.5) {        // modulate
+		color *= texel.rgb;
+		alpha *= texel.a;
+	} else if (texmodel < 1.5) { // decal
+		color = mix(color, texel.rgb, texel.a);
+	} else if (texmodel < 2.5) { // blend
+		color = mix(color, u_texBlendColor.rgb, texel.rgb);
+		alpha *= texel.a;
+	} else {                     // replace
+		color = texel.rgb;
+		if (u_texParams.y > 0.5)
+			alpha = texel.a;
+	}
+#endif
+
 #ifdef OIT
 	// Depth weight, McGuire's eq. (10): near fragments dominate. The
 	// composite pass divides the accumulated premultiplied color by the
 	// accumulated weighted alpha, so the weight cancels per-surface.
-	float w = base.a
+	float w = alpha
 		* max(1.0e-2, 3.0e3 * pow(1.0 - gl_FragCoord.z, 3.0));
-	gl_FragData[0] = vec4(color * base.a, base.a) * w;
-	gl_FragData[1] = vec4_splat(base.a);
+	gl_FragData[0] = vec4(color * alpha, alpha) * w;
+	gl_FragData[1] = vec4_splat(alpha);
 #else
-	gl_FragColor = vec4(color, base.a);
+	gl_FragColor = vec4(color, alpha);
 #endif
 }
