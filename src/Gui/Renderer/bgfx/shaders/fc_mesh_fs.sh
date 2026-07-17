@@ -30,6 +30,18 @@ uniform vec4 u_params;
 uniform vec4 u_pbrParams;
 uniform vec4 u_envSH[9];
 SAMPLERCUBE(s_texEnv, 1);
+// Shadow draw style: a directional scene light replaces the headlight
+// (u_lightDir.w > 0.5; xyz = light direction in view space, the way the
+// light travels) and a variance shadow map attenuates its contribution.
+// u_shadowParams: x = this draw receives shadows, y = minimum variance,
+// z = depth bias, w unused. u_shadowMatrix maps view space to shadow
+// map uv (xy) + light window depth (z). u_lightColor.rgb carries the
+// light color premultiplied by its intensity.
+SAMPLER2D(s_texShadow, 3);
+uniform vec4 u_shadowParams;
+uniform vec4 u_lightDir;
+uniform vec4 u_lightColor;
+uniform mat4 u_shadowMatrix;
 #ifdef TEXTURE
 SAMPLER2D(s_texColor, 0);
 // x = texture environment (0 modulate, 1 decal, 2 blend, 3 replace),
@@ -144,6 +156,40 @@ void main()
 	}
 #endif
 
+	// Variance shadow map factor of the scene light (Chebyshev upper
+	// bound with light-bleed reduction); fragments outside the map stay
+	// lit. Only attenuates the direct light term below.
+	float shadow = 1.0;
+	if (u_shadowParams.x > 0.5)
+	{
+		vec4 sp = mul(u_shadowMatrix, vec4(v_vpos, 1.0));
+#ifndef OIT
+		if (u_shadowParams.w > 0.5)
+		{
+			// debug (FC_BGFX_DEBUG_SHADOW_VIS): red = stored
+			// depth moment, green = stored depth^2, blue =
+			// receiver light depth
+			vec2 dm = texture2D(s_texShadow, sp.xy).xy;
+			gl_FragColor = vec4(dm.xy, sp.z, 1.0);
+			return;
+		}
+#endif
+		if (sp.x > 0.0 && sp.x < 1.0 && sp.y > 0.0 && sp.y < 1.0
+		    && sp.z > 0.0 && sp.z < 1.0)
+		{
+			vec2 mo = texture2D(s_texShadow, sp.xy).xy;
+			float p = sp.z - u_shadowParams.z;
+			if (p > mo.x)
+			{
+				float va = max(mo.y - mo.x * mo.x,
+				               u_shadowParams.y);
+				float dd = p - mo.x;
+				float pmax = va / (va + dd * dd);
+				shadow = clamp((pmax - 0.3) / 0.7, 0.0, 1.0);
+			}
+		}
+	}
+
 	if (u_params.y > 0.5)
 	{
 		if (u_pbrParams.x > 0.5)
@@ -161,20 +207,51 @@ void main()
 			vec3 f0 = mix(vec3_splat(0.04), base.rgb, metal);
 			vec3 kd = base.rgb * (1.0 - metal);
 
-			// Headlight, L = V = +z: ndl = ndh = ndv and vdh = 1,
-			// so the Fresnel term collapses to f0. GGX distribution
-			// with Karis' fast Smith-joint visibility.
-			// The specular term is clamped: with a headlight every
-			// facing plane sits exactly on the GGX peak (1 / pi a^2),
-			// which would flash whole faces white at low roughness.
+			// Direct light: the headlight (L = V = +z: ndl = ndh =
+			// ndv and vdh = 1, so Fresnel collapses to f0), or the
+			// directional scene light of the Shadow draw style,
+			// shadowed, with Schlick Fresnel. GGX distribution with
+			// Karis' fast Smith-joint visibility; the specular term
+			// is clamped — facing planes sit exactly on the GGX
+			// peak (1 / pi a^2) under a headlight, which would
+			// flash whole faces white at low roughness.
 			float a = rough * rough;
-			float d = ndv * ndv * (a * a - 1.0) + 1.0;
-			float D = a * a / (3.14159265 * d * d);
-			float vis = 0.25
-				/ max(ndv * (ndv * (1.0 - a) + a), 1.0e-4);
-			vec3 direct = (kd * 0.31830989
-				+ f0 * min(D * vis, 4.0))
-				* (ndv * 1.2);
+			vec3 direct;
+			if (u_lightDir.w > 0.5)
+			{
+				vec3 l = -u_lightDir.xyz;
+				float ndl = dot(n, l);
+				if (u_params.z > 0.5)
+					ndl = abs(ndl);
+				ndl = max(ndl, 0.0);
+				vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
+				float ndh = max(dot(n, h), 0.0);
+				float vdh = max(h.z, 0.0);
+				float d = ndh * ndh * (a * a - 1.0) + 1.0;
+				float D = a * a / (3.14159265 * d * d);
+				float vis = 0.5
+					/ max(mix(2.0 * ndl * ndv, ndl + ndv,
+					          a),
+					      1.0e-4);
+				vec3 F = f0 + (vec3_splat(1.0) - f0)
+					* exp2((-5.55473 * vdh - 6.98316)
+					       * vdh);
+				direct = (kd * 0.31830989
+						+ F * min(D * vis, 4.0))
+					* u_lightColor.rgb
+					* (ndl * 1.2 * shadow);
+			}
+			else
+			{
+				float d = ndv * ndv * (a * a - 1.0) + 1.0;
+				float D = a * a / (3.14159265 * d * d);
+				float vis = 0.25
+					/ max(ndv * (ndv * (1.0 - a) + a),
+					      1.0e-4);
+				direct = (kd * 0.31830989
+						+ f0 * min(D * vis, 4.0))
+					* (ndv * 1.2);
+			}
 
 			// IBL in world space (the environment does not follow
 			// the camera): SH irradiance for the diffuse part, the
@@ -204,6 +281,27 @@ void main()
 			color = (kd * max(irr, vec3_splat(0.0))
 				+ pref * (f0 * ab.x + vec3_splat(ab.y)))
 				* u_pbrParams.w + direct;
+		}
+		else if (u_lightDir.w > 0.5)
+		{
+			// Directional scene light (Shadow draw style),
+			// shadowed; same 0.2 ambient + 0.8 diffuse split and
+			// specular weight as the headlight below.
+			vec3 l = -u_lightDir.xyz;
+			float ndl = dot(n, l);
+			if (u_params.z > 0.5)
+				ndl = abs(ndl);
+			else
+				ndl = max(ndl, 0.0);
+
+			vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
+			float shininess = max(u_matSpecular.w * 128.0, 1.0);
+			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
+
+			color = base.rgb * (vec3_splat(0.2)
+					+ u_lightColor.rgb * (ndl * shadow))
+				+ u_matSpecular.rgb * u_lightColor.rgb
+					* (spec * 0.75 * shadow);
 		}
 		else
 		{

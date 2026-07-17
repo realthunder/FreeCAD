@@ -1,5 +1,5 @@
 $input a_position, a_normal, a_color0
-$output v_normal, v_color0, v_wpos
+$output v_normal, v_color0, v_vpos, v_wpos
 
 /*
  * Clip-plane (section) variant of the CAD-mesh vertex shader: adds the

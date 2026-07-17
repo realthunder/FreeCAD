@@ -220,6 +220,41 @@ struct BumpConfig {
     bool operator!=(const BumpConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame scene light, resolved from the traversal state's light
+/// element. Only the Shadow draw style places a shadow light into the
+/// scene graph (the viewer headlight is filtered out); while valid,
+/// backends replace their headlight with this light and render a shadow
+/// map from it, honoring each draw's Material::shadowstyle.
+struct LightConfig {
+    bool valid = false;
+    bool spot = false;       ///< spot light; directional otherwise
+    float direction[3] = {0.0f, 0.0f, -1.0f};  ///< world, normalized
+    float position[3] = {0.0f, 0.0f, 0.0f};    ///< world, spot only
+    uint32_t color = 0xffffffff;               ///< packed 0xRRGGBBAA
+    float intensity = 1.0f;
+
+    /// Shadow ground plane (ShadowShowGround*): the Coin-side ground
+    /// lives outside the captured scene graph, so backends draw their
+    /// own — a receiving quad under the scene bounds.
+    bool ground = false;
+    float groundScale = 2.0f;    ///< times the scene extent
+    uint32_t groundColor = 0x7d7d7dff;
+
+    bool operator==(const LightConfig &o) const {
+        return valid == o.valid && spot == o.spot
+            && direction[0] == o.direction[0]
+            && direction[1] == o.direction[1]
+            && direction[2] == o.direction[2]
+            && position[0] == o.position[0]
+            && position[1] == o.position[1]
+            && position[2] == o.position[2]
+            && color == o.color && intensity == o.intensity
+            && ground == o.ground && groundScale == o.groundScale
+            && groundColor == o.groundColor;
+    }
+    bool operator!=(const LightConfig &o) const { return !(*this == o); }
+};
+
 /// Per-frame physically based shading configuration (like AOConfig there
 /// is no GL-renderer counterpart). While enabled, lit triangle surfaces
 /// use a metallic/roughness BRDF with image based lighting from a
@@ -297,6 +332,12 @@ struct Material {
     /// whole-cache triangle draws get a stencil outline, and the active
     /// HiddenLineConfig's hideFace/hideSeam/hideVertex rules apply.
     bool outline = false;
+
+    /// Shadow participation of a triangle draw, the Coin
+    /// SoShadowStyleElement bitmask: 1 = casts shadows, 2 = receives
+    /// (is shadowed). Only meaningful while a scene light is fed
+    /// (LightConfig::valid).
+    uint8_t shadowstyle = 3;
 
     /// Coin shape hints declare the geometry a closed solid
     /// (SoShapeHintsElement::SOLID); together with MeshData::hasSolid this
@@ -417,6 +458,8 @@ public:
     virtual void setPBRConfig(const PBRConfig &config) { (void)config; }
     /// Per-frame bump/normal mapping configuration.
     virtual void setBumpConfig(const BumpConfig &config) { (void)config; }
+    /// Per-frame scene light (Shadow draw style).
+    virtual void setLightConfig(const LightConfig &config) { (void)config; }
     /// Per-frame world-to-screen scale at the world origin consumed by
     /// Material::autozoom draws (Coin: SoAutoZoomTranslation's
     /// getWorldToScreenScale((0,0,0), 0.1) / (5 * viewport aspect)).

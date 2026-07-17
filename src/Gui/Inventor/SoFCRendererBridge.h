@@ -63,6 +63,10 @@ GuiExport Render::PBRConfig translatePBRConfig();
 /// RendererParallax) into the backend-neutral per-frame config.
 GuiExport Render::BumpConfig translateBumpConfig();
 
+/// Resolve the scene (shadow) light from the traversal state's light
+/// element; the viewer headlight is filtered out by node type.
+GuiExport Render::LightConfig translateLightConfig(SoState * state);
+
 /// Resolve the per-frame autozoom scale from the traversal state's view
 /// volume (the exact SoAutoZoomTranslation::getScaleFactor math with a
 /// node scaleFactor of 1); Material::autozoom entries multiply their own

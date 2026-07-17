@@ -1,4 +1,4 @@
-$input v_normal, v_color0
+$input v_normal, v_color0, v_vpos
 
 /*
  * FreeCAD CAD-mesh fragment shader, unclipped variant (no discard, keeps

@@ -877,6 +877,9 @@ public:
     // draw order. Each is a bgfx view sharing the same framebuffer.
     enum PassView {
         ViewBackground = 0, // clear + gradient background quad (clip space)
+        ViewShadow,         // variance shadow map moments of shadow
+                            // casting scene triangles, rendered from the
+                            // scene light (own framebuffer, light camera)
         ViewAOPrepass,      // SSAO depth+normal prepass of opaque scene
                             // triangles into a non-MSAA RGBA16F target
                             // (own framebuffer, own depth)
@@ -943,6 +946,30 @@ public:
             if (bgfx::isValid(*prog)) {
                 bgfx::destroy(*prog);
                 *prog = BGFX_INVALID_HANDLE;
+            }
+        }
+        // Shadow resources: the framebuffer before its textures.
+        if (bgfx::isValid(shadowFbo)) {
+            bgfx::destroy(shadowFbo);
+            shadowFbo = BGFX_INVALID_HANDLE;
+        }
+        for (auto tex : {&shadowTex, &shadowDepth}) {
+            if (bgfx::isValid(*tex)) {
+                bgfx::destroy(*tex);
+                *tex = BGFX_INVALID_HANDLE;
+            }
+        }
+        for (auto prog : {&m_progShadow, &m_progShadowClip}) {
+            if (bgfx::isValid(*prog)) {
+                bgfx::destroy(*prog);
+                *prog = BGFX_INVALID_HANDLE;
+            }
+        }
+        for (auto uni : {&s_texShadow, &u_shadowParams, &u_lightDir,
+                         &u_lightColor, &u_shadowMatrix}) {
+            if (bgfx::isValid(*uni)) {
+                bgfx::destroy(*uni);
+                *uni = BGFX_INVALID_HANDLE;
             }
         }
         // PBR environment resources.
@@ -1268,6 +1295,45 @@ public:
                                         bgfx::UniformType::Sampler);
         u_bumpParams = bgfx::createUniform("u_bumpParams",
                                            bgfx::UniformType::Vec4);
+
+        // Shadows: variance moments rendered from the scene light of the
+        // Shadow draw style (unit 3 of the mesh programs; the white
+        // stand-in reads as fully lit). Needs a renderable two-channel
+        // float format.
+        s_texShadow = bgfx::createUniform("s_texShadow",
+                                          bgfx::UniformType::Sampler);
+        u_shadowParams = bgfx::createUniform("u_shadowParams",
+                                             bgfx::UniformType::Vec4);
+        u_lightDir = bgfx::createUniform("u_lightDir",
+                                         bgfx::UniformType::Vec4);
+        u_lightColor = bgfx::createUniform("u_lightColor",
+                                           bgfx::UniformType::Vec4);
+        u_shadowMatrix = bgfx::createUniform("u_shadowMatrix",
+                                             bgfx::UniformType::Mat4);
+        auto shadowFormat = bgfx::TextureFormat::RG16F;
+        m_shadow = (bgfx::getCaps()->formats[shadowFormat]
+                    & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER) != 0;
+        if (!m_shadow) {
+            shadowFormat = bgfx::TextureFormat::RG32F;
+            m_shadow = (bgfx::getCaps()->formats[shadowFormat]
+                        & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER) != 0;
+        }
+        if (m_shadow) {
+            shadowTex = bgfx::createTexture2D(kShadowSize, kShadowSize,
+                false, 1, shadowFormat,
+                BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP
+                | BGFX_SAMPLER_V_CLAMP);
+            shadowDepth = bgfx::createTexture2D(kShadowSize, kShadowSize,
+                false, 1, bgfx::TextureFormat::D24S8,
+                BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
+            bgfx::TextureHandle att[2] = {shadowTex, shadowDepth};
+            shadowFbo = bgfx::createFrameBuffer(2, att, false);
+            m_progShadow = loadProgram("vs_fc_shadow", "fs_fc_shadow",
+                                       _BGFXLib.resource().c_str());
+            m_progShadowClip = loadProgram("vs_fc_shadow_clip",
+                                           "fs_fc_shadow_clip",
+                                           _BGFXLib.resource().c_str());
+        }
         static const uint32_t blackCube[6] = {0, 0, 0, 0, 0, 0};
         m_dummyEnvTex = bgfx::createTextureCube(1, false, 1,
             bgfx::TextureFormat::RGBA8, 0,
@@ -2193,6 +2259,101 @@ public:
     /// re-rasterize it into the non-MSAA prepass target with the
     /// encoding fragment shader, replicating the fill's transform, clip
     /// planes and culling so the AO sees exactly the visible geometry.
+    // The shadow ground plane: a shadow receiving quad at the bottom of
+    // the scene bounds (the Coin-side ground lives outside the captured
+    // graph, so the backend draws its own). Lit by the scene light like
+    // any receiver, classic shading regardless of the PBR mode.
+    void submitShadowGround(const float bmin[3], const float bmax[3],
+                            uint32_t colorPacked, float scale)
+    {
+        float cx = (bmin[0] + bmax[0]) * 0.5f;
+        float cy = (bmin[1] + bmax[1]) * 0.5f;
+        float z = bmin[2];
+        float half = 0.5f * scale
+            * std::max(bmax[0] - bmin[0], bmax[1] - bmin[1]);
+        if (half <= 0.0f)
+            return;
+
+        SceneVertex::init();
+        if (bgfx::getAvailTransientVertexBuffer(6, SceneVertex::ms_layout)
+                < 6)
+            return;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, 6, SceneVertex::ms_layout);
+        auto verts = reinterpret_cast<SceneVertex *>(tvb.data);
+        const float xs[6] = {-1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f};
+        const float ys[6] = {-1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f};
+        for (int i = 0; i < 6; ++i) {
+            verts[i].px = cx + xs[i] * half;
+            verts[i].py = cy + ys[i] * half;
+            verts[i].pz = z;
+            verts[i].nx = verts[i].ny = 0.0f;
+            verts[i].nz = 1.0f;
+            verts[i].rgba = 0xffffffffu;
+        }
+
+        float color[4], zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        unpackColor(colorPacked, color);
+        color[3] = 1.0f;
+        float params[4] = {0.0f, 1.0f, 1.0f, 0.0f};  // lit, two-sided
+        bgfx::setUniform(u_matColor, color);
+        bgfx::setUniform(u_matEmissive, zero);
+        bgfx::setUniform(u_matSpecular, zero);
+        bgfx::setUniform(u_params, params);
+        float pbrOff[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_pbrParams, pbrOff);
+        bgfx::setTexture(1, s_texEnv, m_dummyEnvTex);
+        static const bool dbgvis =
+            getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
+        float shadowParams[4] = {1.0f, 1.0e-5f, 0.003f,
+                                 dbgvis ? 1.0f : 0.0f};
+        float lightDir[4] = {lightDirView[0], lightDirView[1],
+                             lightDirView[2], 1.0f};
+        bgfx::setUniform(u_shadowParams, shadowParams);
+        bgfx::setUniform(u_lightDir, lightDir);
+        bgfx::setUniform(u_lightColor, lightColorI);
+        bgfx::setUniform(u_shadowMatrix, shadowMtx);
+        bgfx::setTexture(3, s_texShadow, shadowTex);
+
+        float identity[16];
+        bx::mtxIdentity(identity);
+        bgfx::setTransform(identity);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                       | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS
+                       | BGFX_STATE_MSAA);
+        bgfx::submit(viewId + ViewOpaque, m_progMesh);
+        ++drawcount;
+    }
+
+    // Rasterize a shadow casting triangle draw into the variance shadow
+    // map under the light camera (the ViewShadow transform). Both faces
+    // cast; section-clipped parts do not (clip shader variant).
+    void submitShadowCaster(const Render::DrawCall &draw)
+    {
+        if (!draw.mesh || !draw.mesh->triangleIndices)
+            return;
+        GpuMesh *gpu = getMesh(*draw.mesh);
+        if (!bgfx::isValid(gpu->vbh) || !bgfx::isValid(gpu->tri))
+            return;
+
+        const Render::Material &mat = draw.material;
+        bool clipped = mat.numclipplanes > 0;
+        setClipUniforms(mat);
+        setDrawTransform(draw, autozoomScale);
+        bgfx::setVertexBuffer(0, gpu->vbh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->tri);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_Z
+                       | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(viewId + ViewShadow,
+                     clipped ? m_progShadowClip : m_progShadow);
+        ++drawcount;
+    }
+
     void submitPrepass(const Render::DrawCall &draw)
     {
         if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -2476,11 +2637,17 @@ public:
         // like GL's non-antialiased line/point rasterization does (a
         // 1.5px quad would otherwise cover its second pixel row only
         // partially and drop it without MSAA).
+        // While the scene light is on, unlit receivers (the Shadow draw
+        // style's BASE_COLOR ground) light up too — Coin's SoShadowGroup
+        // shades and shadows the ground with its own shaders regardless
+        // of the light model.
+        bool shaded = mat.lighting
+            || (shadowFrame && (mat.shadowstyle & 2));
         params[1] = mat.type == Render::Material::Line
             ? qMax(1.0f, std::floor(mat.linewidth + 0.5f))
             : mat.type == Render::Material::Point
                 ? qMax(1.0f, std::floor(mat.pointsize + 0.5f))
-                : mat.lighting ? 1.0f : 0.0f;
+                : shaded ? 1.0f : 0.0f;
         // u_params.z: mesh program = two-sided lighting; line/point
         // programs = NDC depth bias (only the outline passes bias).
         params[2] = mat.type == Render::Material::Triangle && twoside
@@ -2523,6 +2690,34 @@ public:
             }
             bgfx::setUniform(u_pbrParams, pbrParams);
             bgfx::setTexture(1, s_texEnv, env);
+
+            // Shadow draw style: the scene light replaces the headlight
+            // for every lit draw of the frame; the VSM lookup runs only
+            // on receivers (the white stand-in reads as fully lit).
+            float shadowParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float lightDir[4] = {0.0f, 0.0f, -1.0f, 0.0f};
+            bgfx::TextureHandle shadow = m_whiteTex;
+            if (shadowFrame) {
+                lightDir[0] = lightDirView[0];
+                lightDir[1] = lightDirView[1];
+                lightDir[2] = lightDirView[2];
+                lightDir[3] = 1.0f;
+                bgfx::setUniform(u_lightColor, lightColorI);
+                bgfx::setUniform(u_shadowMatrix, shadowMtx);
+                if ((mat.shadowstyle & 2) && pass != PassDepthOnly) {
+                    shadowParams[0] = 1.0f;
+                    shadowParams[1] = 1.0e-5f;  // minimum variance
+                    shadowParams[2] = 0.003f;   // depth bias
+                    static const bool dbgvis =
+                        getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
+                    if (dbgvis)
+                        shadowParams[3] = 1.0f;
+                    shadow = shadowTex;
+                }
+            }
+            bgfx::setUniform(u_lightDir, lightDir);
+            bgfx::setUniform(u_shadowParams, shadowParams);
+            bgfx::setTexture(3, s_texShadow, shadow);
         }
 
         // Clipped draws use the discard shader variants; the unclipped
@@ -2850,6 +3045,23 @@ public:
     bgfx::UniformHandle u_bumpParams = BGFX_INVALID_HANDLE;
     float bumpScale = 1.0f;    // bump/normal map strength (BumpConfig)
     bool bumpParallax = true;  // parallax-occlusion map height maps
+    // Variance shadow map of the Shadow draw style's scene light.
+    static constexpr uint16_t kShadowSize = 1024;
+    bool m_shadow = false;     // shadow resources exist (caps allow it)
+    bool shadowFrame = false;  // shadows active this frame
+    bgfx::TextureHandle shadowTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle shadowDepth = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle shadowFbo = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progShadow = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progShadowClip = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texShadow = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_shadowParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_lightDir = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_lightColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_shadowMatrix = BGFX_INVALID_HANDLE;
+    float lightDirView[3] = {0.0f, 0.0f, -1.0f}; // view space
+    float lightColorI[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // rgb * intensity
+    float shadowMtx[16];       // camera view space -> shadow uv/depth
     bool m_ssao = false;     // SSAO resources exist (caps allow it)
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
@@ -2972,6 +3184,118 @@ public:
         view->bumpScale = bumpconf.scale;
         view->bumpParallax = bumpconf.parallax;
 
+        // Shadow draw style: a light in the scene feed activates the
+        // variance shadow map pass (only that style traverses one — the
+        // viewer headlight lives outside the captured graph). The light
+        // camera is an orthographic fit of the scene bounds along the
+        // light direction; spot lights fall back to their direction
+        // (a known first-cut deviation).
+        bool shadowActive = false;
+        float lightViewMtx[16], lightProjMtx[16];
+        if (view->m_shadow && bboxValid && lightconf.valid) {
+            const Render::LightConfig &light = lightconf;
+            shadowActive = true;
+            {
+                float dx = bboxMax[0] - bboxMin[0];
+                float dy = bboxMax[1] - bboxMin[1];
+                float dz = bboxMax[2] - bboxMin[2];
+                float diag = std::sqrt(dx*dx + dy*dy + dz*dz);
+                if (diag <= 0.0f) {
+                    shadowActive = false;
+                } else {
+                    // Half diagonal with the GL ShadowBoundBoxScale-like
+                    // margin.
+                    float r = 0.6f * diag;
+                    bx::Vec3 dir = bx::normalize(
+                        bx::Vec3(light.direction[0], light.direction[1],
+                                 light.direction[2]));
+                    bx::Vec3 center((bboxMin[0] + bboxMax[0]) * 0.5f,
+                                    (bboxMin[1] + bboxMax[1]) * 0.5f,
+                                    (bboxMin[2] + bboxMax[2]) * 0.5f);
+                    bx::Vec3 eye = bx::sub(center, bx::mul(dir, 2.0f * r));
+                    bx::Vec3 up = bx::abs(dir.z) > 0.99f
+                        ? bx::Vec3(1.0f, 0.0f, 0.0f)
+                        : bx::Vec3(0.0f, 0.0f, 1.0f);
+                    bx::mtxLookAt(lightViewMtx, eye, center, up);
+                    const auto *caps = bgfx::getCaps();
+                    bx::mtxOrtho(lightProjMtx, -r, r, -r, r,
+                                 0.0f, 4.0f * r, 0.0f,
+                                 caps->homogeneousDepth);
+                    // Camera view space -> shadow map uv (xy) and light
+                    // window depth (z), the matrix the mesh shaders use.
+                    float invV[16], tmp[16], tmp2[16];
+                    bx::mtxInverse(invV,
+                        reinterpret_cast<const float *>(viewMatrix));
+                    bx::mtxMul(tmp, invV, lightViewMtx);
+                    bx::mtxMul(tmp2, tmp, lightProjMtx);
+                    const float sy = caps->originBottomLeft ? 0.5f : -0.5f;
+                    const float sz = caps->homogeneousDepth ? 0.5f : 1.0f;
+                    const float tz = caps->homogeneousDepth ? 0.5f : 0.0f;
+                    const float crop[16] = {
+                        0.5f, 0.0f, 0.0f, 0.0f,
+                        0.0f, sy,   0.0f, 0.0f,
+                        0.0f, 0.0f, sz,   0.0f,
+                        0.5f, 0.5f, tz,   1.0f,
+                    };
+                    bx::mtxMul(view->shadowMtx, tmp2, crop);
+                    // Light direction and color in camera view space.
+                    const float *vm =
+                        reinterpret_cast<const float *>(viewMatrix);
+                    float lv[3];
+                    for (int j = 0; j < 3; ++j)
+                        lv[j] = dir.x * vm[j] + dir.y * vm[4 + j]
+                            + dir.z * vm[8 + j];
+                    float ll = std::sqrt(lv[0]*lv[0] + lv[1]*lv[1]
+                                         + lv[2]*lv[2]);
+                    for (int j = 0; j < 3; ++j)
+                        view->lightDirView[j] = ll > 0.0f ? lv[j] / ll
+                                                          : lv[j];
+                    unpackColor(light.color, view->lightColorI);
+                    for (int j = 0; j < 3; ++j)
+                        view->lightColorI[j] *= light.intensity;
+                }
+            }
+        }
+        view->shadowFrame = shadowActive;
+        static const bool dbgshadow =
+            (getenv("FC_BGFX_DEBUG_SHADOW") != nullptr);
+        if (dbgshadow)
+            fprintf(stderr,
+                    "bgfx shadow active=%d valid=%d dir=%g,%g,%g"
+                    " ldirview=%g,%g,%g bbox=%d hd=%d obl=%d\n",
+                    shadowActive, lightconf.valid,
+                    lightconf.direction[0], lightconf.direction[1],
+                    lightconf.direction[2],
+                    view->lightDirView[0], view->lightDirView[1],
+                    view->lightDirView[2], bboxValid,
+                    bgfx::getCaps()->homogeneousDepth,
+                    bgfx::getCaps()->originBottomLeft);
+        if (dbgshadow && shadowActive) {
+            // Cross-check the receiver chain on the scene bbox center:
+            // world -> camera view -> shadowMtx should equal
+            // world -> lightView -> lightProj -> crop.
+            const float *vm = reinterpret_cast<const float *>(viewMatrix);
+            float w[4] = {(bboxMin[0] + bboxMax[0]) * 0.5f,
+                          (bboxMin[1] + bboxMax[1]) * 0.5f,
+                          (bboxMin[2] + bboxMax[2]) * 0.5f, 1.0f};
+            auto xform = [](const float *m, const float *v, float *o) {
+                for (int j = 0; j < 4; ++j)
+                    o[j] = v[0]*m[j] + v[1]*m[4+j] + v[2]*m[8+j]
+                        + v[3]*m[12+j];
+            };
+            float vv[4], sp[4], lv[4], lp[4];
+            xform(vm, w, vv);
+            xform(view->shadowMtx, vv, sp);
+            xform(lightViewMtx, w, lv);
+            xform(lightProjMtx, lv, lp);
+            fprintf(stderr,
+                    "bgfx shadow chk sp=%g,%g,%g,%g direct ndc=%g,%g,%g"
+                    " -> uvz=%g,%g,%g\n",
+                    sp[0], sp[1], sp[2], sp[3], lp[0], lp[1], lp[2],
+                    lp[0]*0.5f + 0.5f, lp[1]*0.5f + 0.5f,
+                    lp[2]*0.5f + 0.5f);
+        }
+
         // Zero radius = automatic: a fraction of the scene bounding
         // sphere, the scale-free default.
         float aoRadius = aoconf.radius;
@@ -2996,6 +3320,20 @@ public:
                 bgfx::setPaletteColor(1, 1.0f, 1.0f, 1.0f, 1.0f);
                 bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_COLOR),
                                    1.0f, 0, 0, 1);
+            } else if (shadowActive && i == BGFXView::ViewShadow) {
+                // Moments clear to (1, 1) = far plane, own depth; the
+                // caster pass renders under the light camera at the
+                // shadow map size.
+                bgfx::setViewFrameBuffer(id, view->shadowFbo);
+                bgfx::setViewClear(id,
+                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                    0xffffffffu, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, BGFXView::kShadowSize,
+                                  BGFXView::kShadowSize);
+                bgfx::setViewTransform(id, lightViewMtx, lightProjMtx);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
             } else if (ssaoActive && i == BGFXView::ViewAOPrepass) {
                 // Prepass target clears to 0 (.w = 0 marks background
                 // in the AO pass), with its own depth buffer.
@@ -3285,7 +3623,17 @@ public:
             // transparent bucket).
             if (ssaoActive && isTriangle(draw) && !isTransp(draw))
                 view->submitPrepass(draw);
+            // Shadow casters (like the GL default, transparent geometry
+            // does not cast).
+            if (shadowActive && isTriangle(draw) && !isTransp(draw)
+                    && (draw.material.shadowstyle & 1))
+                view->submitShadowCaster(draw);
             submitSceneOutline(draw);
+        }
+        if (shadowActive && lightconf.ground && bboxValid) {
+            view->submitShadowGround(bboxMin, bboxMax,
+                                     lightconf.groundColor,
+                                     lightconf.groundScale);
         }
         for (const auto &draw : scene) {
             if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
@@ -3844,6 +4192,7 @@ public:
     Render::AOConfig aoconf;
     Render::PBRConfig pbrconf;
     Render::BumpConfig bumpconf;
+    Render::LightConfig lightconf;
     float autozoomScale = 1.0f;
     // CPU copy of the section hatch texture, expanded to RGBA8; the
     // version stamps GPU re-uploads (0 = no image).
@@ -3917,7 +4266,7 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
                 "  type=%d part=%d range=%d+%d diffuse=%08x emissive=%08x"
                 " pvc=%d light=%d transp=%d ontop=%d dtest=%d dwrite=%d"
                 " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f lp=%08x/%08x"
-                " ol=%d lc=%08x tex=%d bump=%d uv=%d\n",
+                " ol=%d lc=%08x tex=%d bump=%d uv=%d ss=%d\n",
                 m.type, d.partIndex, d.indexStart, d.indexCount,
                 m.diffuse, m.emissive, m.pervertexcolor, m.lighting,
                 m.transparent, m.ontop, m.depthtest, m.depthwrite,
@@ -3927,7 +4276,8 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
                 m.outline, m.linecolor,
                 m.texture ? m.texture->numComponents : 0,
                 m.bumpmap ? m.bumpmap->numComponents : 0,
-                d.mesh && d.mesh->texCoords ? 1 : 0);
+                d.mesh && d.mesh->texCoords ? 1 : 0,
+                m.shadowstyle);
         for (int i = 0; i < m.numclipplanes; ++i)
             fprintf(stderr, "  clip%s %d: %g,%g,%g,%g\n",
                     m.clipconcave ? " (concave)" : "", i,
@@ -4001,6 +4351,14 @@ void BGFXRenderer::setBumpConfig(const BumpConfig &config)
 {
     if (pimpl->bumpconf != config) {
         pimpl->bumpconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setLightConfig(const LightConfig &config)
+{
+    if (pimpl->lightconf != config) {
+        pimpl->lightconf = config;
         pimpl->sceneDirty = true;
     }
 }

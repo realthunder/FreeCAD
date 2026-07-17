@@ -38,6 +38,11 @@
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/nodes/SoClipPlane.h>
 #include <Inventor/nodes/SoBumpMap.h>
+#include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoSpotLight.h>
+#include <Inventor/annex/FXViz/nodes/SoShadowDirectionalLight.h>
+#include <Inventor/elements/SoLightElement.h>
+#include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/nodes/SoTexture2.h>
 
 #include "SoAutoZoomTranslation.h"
@@ -373,6 +378,11 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         }
     }
 
+    // Shadow participation flags for the backend's shadow caster and
+    // receiver routing (only consulted while a scene light is fed).
+    if (res.type == Render::Material::Triangle)
+        res.shadowstyle = uint8_t(m.shadowstyle);
+
     // Bump map of triangle draws, unit 0 only like textures (the GL
     // renderer never draws these; SoBumpMap only acts during Coin GL
     // shape rendering, which the cached pipeline bypasses).
@@ -620,6 +630,67 @@ RendererBridge::translateAOConfig()
     res.enabled = ViewParams::getRendererSSAO();
     res.radius = float(ViewParams::getRendererSSAORadius());
     res.intensity = float(ViewParams::getRendererSSAOIntensity());
+    return res;
+}
+
+Render::LightConfig
+RendererBridge::translateLightConfig(SoState * state)
+{
+    // The Shadow draw style's light lives above the render-cache
+    // traversal root, so it is resolved from the state's accumulated
+    // light element instead of the material feed. The viewer headlight
+    // is filtered by type: only Coin's shadow directional light and
+    // spot lights qualify.
+    Render::LightConfig res;
+    const SoNodeList & lights = SoLightElement::getLights(state);
+    for (int i = 0; i < lights.getLength(); ++i) {
+        SoNode * node = lights[i];
+        if (!node || !node->isOfType(SoLight::getClassTypeId()))
+            continue;
+        auto light = static_cast<const SoLight *>(node);
+        if (!light->on.getValue())
+            continue;
+        SbVec3f dir(0.0f, 0.0f, -1.0f);
+        SbVec3f pos(0.0f, 0.0f, 0.0f);
+        if (node->isOfType(SoShadowDirectionalLight::getClassTypeId())) {
+            res.spot = false;
+            dir = static_cast<const SoDirectionalLight *>(light)
+                ->direction.getValue();
+        } else if (node->isOfType(SoSpotLight::getClassTypeId())) {
+            auto spot = static_cast<const SoSpotLight *>(light);
+            res.spot = true;
+            dir = spot->direction.getValue();
+            pos = spot->location.getValue();
+        } else {
+            continue;
+        }
+        // SoLightElement matrices map to *view reference* coordinates
+        // (model * viewing); the backend expects world space (it
+        // re-applies its own per-frame view matrix), so multiply the
+        // inverse viewing matrix back in.
+        SbMatrix mat = SoLightElement::getMatrix(state, i);
+        mat.multRight(SoViewingMatrixElement::get(state).inverse());
+        mat.multDirMatrix(dir, dir);
+        mat.multVecMatrix(pos, pos);
+        dir.normalize();
+        res.direction[0] = dir[0];
+        res.direction[1] = dir[1];
+        res.direction[2] = dir[2];
+        res.position[0] = pos[0];
+        res.position[1] = pos[1];
+        res.position[2] = pos[2];
+        res.color = light->color.getValue().getPackedValue(0.0f);
+        res.intensity = light->intensity.getValue();
+        res.valid = true;
+        break;
+    }
+    if (res.valid) {
+        // Global ViewParams only; the per-document Shadow_* overrides
+        // are a known deviation of the external backends.
+        res.ground = ViewParams::getShadowShowGround();
+        res.groundScale = float(ViewParams::getShadowGroundScale());
+        res.groundColor = uint32_t(ViewParams::getShadowGroundColor());
+    }
     return res;
 }
 

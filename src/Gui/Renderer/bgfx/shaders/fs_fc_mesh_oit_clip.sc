@@ -1,4 +1,4 @@
-$input v_normal, v_color0, v_wpos
+$input v_normal, v_color0, v_vpos, v_wpos
 
 /*
  * Weighted-blended OIT accumulation + clip-plane variant of the
