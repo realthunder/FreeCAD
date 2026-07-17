@@ -34,7 +34,9 @@ class SbVec2s;
 class SoBaseColor;
 class SoNodeSensor;
 class SoTexture2;
+class SoTexture2Transform;
 class SoBumpMap;
+class SoShadowStyle;
 
 namespace Gui {
 
@@ -72,6 +74,15 @@ public:
     void attach(App::DocumentObject *pcObject) override;
     void updateData(const App::Property*) override;
 
+    /// Adding a Render_* dynamic property takes effect immediately:
+    /// same-value property writes do not notify (Property::hasSetValue
+    /// skips them), so e.g. a freshly added default-false
+    /// Render_CastShadow would otherwise stay inert until toggled.
+    App::Property* addDynamicProperty(
+            const char* type, const char* name = nullptr,
+            const char* group = nullptr, const char* doc = nullptr,
+            short attr = 0, bool ro = false, bool hidden = false) override;
+
     void finishRestoring() override;
 
     /**
@@ -102,15 +113,23 @@ protected:
     /// Sync the optional SoFCRenderMaterial node (render engine per-object
     /// PBR parameters) with the Render_* dynamic properties.
     void updateRenderMaterial();
-    /// Sync the optional SoTexture2/SoBumpMap nodes with the
-    /// Render_BaseColorTexture / Render_NormalMap dynamic properties.
+    /// Sync the optional SoTexture2/SoTexture2Transform/SoBumpMap nodes
+    /// with the Render_BaseColorTexture / Render_Texture* /
+    /// Render_NormalMap dynamic properties.
     void updateRenderTexture();
+    /// Sync the optional SoShadowStyle node with the Render_CastShadow /
+    /// Render_ReceiveShadow dynamic properties.
+    void updateRenderShadowStyle();
+    /// Dispatch a Render_* property (name) change to the update above.
+    void updateRenderProperty(const char *name);
 
 protected:
     SoMaterial       * pcShapeMaterial{nullptr};
     SoFCRenderMaterial * pcRenderMaterial{nullptr};
     SoTexture2       * pcRenderTexture{nullptr};
+    SoTexture2Transform * pcRenderTexTransform{nullptr};
     SoBumpMap        * pcRenderBumpMap{nullptr};
+    SoShadowStyle    * pcRenderShadowStyle{nullptr};
 
 private:
     SoFCBoundingBox  * pcBoundingBox{nullptr};

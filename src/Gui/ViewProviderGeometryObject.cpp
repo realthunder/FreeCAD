@@ -40,7 +40,9 @@
 
 #include <Inventor/nodes/SoResetTransform.h>
 #include <Inventor/nodes/SoTexture2.h>
+#include <Inventor/nodes/SoTexture2Transform.h>
 #include <Inventor/nodes/SoBumpMap.h>
+#include <Inventor/annex/FXViz/nodes/SoShadowStyle.h>
 
 #include <QImage>
 
@@ -48,6 +50,7 @@
 
 #include <App/GeoFeature.h>
 #include <App/PropertyGeo.h>
+#include <App/PropertyUnits.h>
 
 #include "ViewProviderGeometryObject.h"
 #include "Application.h"
@@ -116,8 +119,12 @@ ViewProviderGeometryObject::~ViewProviderGeometryObject()
         pcRenderMaterial->unref();
     if (pcRenderTexture)
         pcRenderTexture->unref();
+    if (pcRenderTexTransform)
+        pcRenderTexTransform->unref();
     if (pcRenderBumpMap)
         pcRenderBumpMap->unref();
+    if (pcRenderShadowStyle)
+        pcRenderShadowStyle->unref();
     if(pcBoundingBox)
         pcBoundingBox->unref();
     if(pcBoundSwitch)
@@ -173,12 +180,9 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
     else if (prop->getName()
              && strncmp(prop->getName(), "Render_", 7) == 0) {
         // Render engine per-object settings (dynamic properties, group
-        // "Render"), mirrored into SoFCRenderMaterial / texture nodes.
-        if (strcmp(prop->getName(), "Render_BaseColorTexture") == 0
-                || strcmp(prop->getName(), "Render_NormalMap") == 0)
-            updateRenderTexture();
-        else
-            updateRenderMaterial();
+        // "Render"), mirrored into SoFCRenderMaterial / texture /
+        // shadow style nodes.
+        updateRenderProperty(prop->getName());
     }
 
     ViewProviderDragger::onChanged(prop);
@@ -257,6 +261,56 @@ void ViewProviderGeometryObject::updateRenderTexture()
         }
     }
 
+    // Texture transform (Render_TextureScale/Offset/Rotation): an
+    // SoTexture2Transform node feeding both Coin's own GL texturing and
+    // the render cache's texture matrix capture. Only kept while a
+    // texture (or bump map) is active and any value is non-default.
+    auto vectorProp = [this](const char *name, float def,
+                             float out[2]) -> bool {
+        out[0] = out[1] = def;
+        auto prop = Base::freecad_dynamic_cast<App::PropertyVector>(
+                getPropertyByName(name));
+        if (!prop)
+            return false;
+        out[0] = float(prop->getValue().x);
+        out[1] = float(prop->getValue().y);
+        return out[0] != def || out[1] != def;
+    };
+    float texScale[2], texOffset[2], texRotation = 0.0f;
+    bool wantTransform = false;
+    if (wantTexture) {
+        wantTransform |= vectorProp("Render_TextureScale", 1.0f, texScale);
+        wantTransform |= vectorProp("Render_TextureOffset", 0.0f,
+                                    texOffset);
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyAngle>(
+                    getPropertyByName("Render_TextureRotation"))) {
+            texRotation = float(prop->getValue());
+            wantTransform |= texRotation != 0.0f;
+        }
+    }
+    if (!wantTransform) {
+        if (pcRenderTexTransform) {
+            int idx = pcRoot->findChild(pcRenderTexTransform);
+            if (idx >= 0)
+                pcRoot->removeChild(idx);
+            pcRenderTexTransform->unref();
+            pcRenderTexTransform = nullptr;
+        }
+    }
+    else {
+        if (!pcRenderTexTransform) {
+            pcRenderTexTransform = new SoTexture2Transform;
+            pcRenderTexTransform->ref();
+            pcRoot->insertChild(pcRenderTexTransform, 0);
+        }
+        pcRenderTexTransform->scaleFactor.setValue(texScale[0],
+                                                   texScale[1]);
+        pcRenderTexTransform->translation.setValue(texOffset[0],
+                                                   texOffset[1]);
+        pcRenderTexTransform->rotation
+            = texRotation * float(M_PI) / 180.0f;
+    }
+
     // Tangent-space normal map / grayscale height map (SoBumpMap; only
     // the external render backends draw it).
     if (!(bump && bump[0])) {
@@ -322,6 +376,70 @@ void ViewProviderGeometryObject::updateRenderMaterial()
                                                          : waterDensity;
 }
 
+void ViewProviderGeometryObject::updateRenderProperty(const char *name)
+{
+    if (strcmp(name, "Render_BaseColorTexture") == 0
+            || strcmp(name, "Render_NormalMap") == 0
+            || strncmp(name, "Render_Texture", 14) == 0)
+        updateRenderTexture();
+    else if (strcmp(name, "Render_CastShadow") == 0
+            || strcmp(name, "Render_ReceiveShadow") == 0)
+        updateRenderShadowStyle();
+    else
+        updateRenderMaterial();
+}
+
+App::Property* ViewProviderGeometryObject::addDynamicProperty(
+        const char* type, const char* name, const char* group,
+        const char* doc, short attr, bool ro, bool hidden)
+{
+    auto prop = inherited::addDynamicProperty(type, name, group, doc,
+                                              attr, ro, hidden);
+    // A freshly added Render_* property applies right away: writes of
+    // the (unchanged) default value do not notify onChanged, so e.g.
+    // adding Render_CastShadow (default false) must not stay inert
+    // until its value is toggled. Restore resyncs in finishRestoring
+    // once all values are loaded.
+    if (prop && prop->getName() && !isRestoring()
+            && strncmp(prop->getName(), "Render_", 7) == 0)
+        updateRenderProperty(prop->getName());
+    return prop;
+}
+
+void ViewProviderGeometryObject::updateRenderShadowStyle()
+{
+    // Render_CastShadow / Render_ReceiveShadow map onto Coin's
+    // SoShadowStyle bitmask, honored by the GL Shadow draw style and by
+    // the render engine's shadow pass alike (Material::shadowstyle).
+    // The node only exists while a flag is off - both true is Coin's
+    // default state.
+    auto boolProp = [this](const char *name) -> bool {
+        auto prop = Base::freecad_dynamic_cast<App::PropertyBool>(
+                getPropertyByName(name));
+        return !prop || prop->getValue();
+    };
+    bool casts = boolProp("Render_CastShadow");
+    bool receives = boolProp("Render_ReceiveShadow");
+
+    if (casts && receives) {
+        if (pcRenderShadowStyle) {
+            int idx = pcRoot->findChild(pcRenderShadowStyle);
+            if (idx >= 0)
+                pcRoot->removeChild(idx);
+            pcRenderShadowStyle->unref();
+            pcRenderShadowStyle = nullptr;
+        }
+        return;
+    }
+    if (!pcRenderShadowStyle) {
+        pcRenderShadowStyle = new SoShadowStyle;
+        pcRenderShadowStyle->ref();
+        pcRoot->insertChild(pcRenderShadowStyle, 0);
+    }
+    pcRenderShadowStyle->style = (casts ? SoShadowStyle::CASTS_SHADOW : 0)
+        | (receives ? SoShadowStyle::SHADOWED : 0);
+}
+
 void ViewProviderGeometryObject::attach(App::DocumentObject *pcObj)
 {
     ViewProviderDragger::attach(pcObj);
@@ -352,6 +470,7 @@ void ViewProviderGeometryObject::finishRestoring()
     // settings) need their scene graph nodes rebuilt.
     updateRenderMaterial();
     updateRenderTexture();
+    updateRenderShadowStyle();
     inherited::finishRestoring();
 }
 
