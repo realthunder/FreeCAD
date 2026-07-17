@@ -945,8 +945,17 @@ public:
                 *prog = BGFX_INVALID_HANDLE;
             }
         }
+        // PBR environment resources.
+        for (auto tex : {&m_envTex, &m_dummyEnvTex}) {
+            if (bgfx::isValid(*tex)) {
+                bgfx::destroy(*tex);
+                *tex = BGFX_INVALID_HANDLE;
+            }
+        }
+        m_envBuilt = false;
         for (auto uni : {&s_texNormalZ, &s_texAONoise, &s_texAO,
-                         &u_aoParams, &u_aoKernel}) {
+                         &u_aoParams, &u_aoKernel,
+                         &s_texEnv, &u_pbrParams, &u_envSH}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1242,6 +1251,21 @@ public:
             bgfx::copy(&white, sizeof(white)));
         CapVertex::init();
 
+        // PBR: the mesh programs always carry the environment sampler
+        // (the branch is uniform-selected); a 1x1 black cube stands in
+        // while PBR is off or unavailable. The real environment is built
+        // on demand (ensureEnvironment).
+        s_texEnv = bgfx::createUniform("s_texEnv",
+                                       bgfx::UniformType::Sampler);
+        u_pbrParams = bgfx::createUniform("u_pbrParams",
+                                          bgfx::UniformType::Vec4);
+        u_envSH = bgfx::createUniform("u_envSH",
+                                      bgfx::UniformType::Vec4, kEnvSH);
+        static const uint32_t blackCube[6] = {0, 0, 0, 0, 0, 0};
+        m_dummyEnvTex = bgfx::createTextureCube(1, false, 1,
+            bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(blackCube, sizeof(blackCube)));
+
         u_matColor = bgfx::createUniform("u_matColor", bgfx::UniformType::Vec4);
         u_matEmissive = bgfx::createUniform("u_matEmissive", bgfx::UniformType::Vec4);
         u_matSpecular = bgfx::createUniform("u_matSpecular", bgfx::UniformType::Vec4);
@@ -1383,6 +1407,227 @@ public:
                 BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
                 | BGFX_SAMPLER_MIP_POINT,
                 bgfx::copy(noise, sizeof(noise)));
+        }
+    }
+
+    // Radiance of the fixed procedural studio environment for a world
+    // direction (Z up, unit length): a vertical ground/horizon/sky
+    // gradient plus three broad light lobes (key/fill/rim). All values
+    // are fixed — frames stay deterministic. Modest HDR range.
+    static void envRadiance(const float d[3], float out[3])
+    {
+        // The ground stays fairly bright: metals reflect the lower
+        // hemisphere over most of a model's side faces, and a dark
+        // floor reads as black plastic in a CAD view.
+        static const float ground[3] = {0.30f, 0.30f, 0.32f};
+        static const float horizon[3] = {0.45f, 0.46f, 0.48f};
+        static const float sky[3] = {0.60f, 0.66f, 0.76f};
+        float z = d[2];
+        float t = std::sqrt(std::fabs(z));
+        for (int i = 0; i < 3; ++i)
+            out[i] = z < 0.0f ? horizon[i] + (ground[i] - horizon[i]) * t
+                              : horizon[i] + (sky[i] - horizon[i]) * t;
+
+        struct Lobe {
+            float dir[3];       // not normalized
+            float power;
+            float intensity;
+            float color[3];
+        };
+        static const Lobe lobes[3] = {
+            {{0.45f, -0.35f, 0.82f}, 40.0f, 3.0f, {1.0f, 0.98f, 0.92f}},
+            {{-0.75f, -0.25f, 0.35f}, 12.0f, 1.0f, {0.75f, 0.8f, 0.9f}},
+            {{0.15f, 0.85f, 0.25f}, 25.0f, 1.5f, {0.9f, 0.93f, 1.0f}},
+        };
+        for (const auto &lobe : lobes) {
+            float len = std::sqrt(lobe.dir[0]*lobe.dir[0]
+                                  + lobe.dir[1]*lobe.dir[1]
+                                  + lobe.dir[2]*lobe.dir[2]);
+            float dot = (d[0]*lobe.dir[0] + d[1]*lobe.dir[1]
+                         + d[2]*lobe.dir[2]) / len;
+            if (dot <= 0.0f)
+                continue;
+            float s = std::pow(dot, lobe.power) * lobe.intensity;
+            for (int i = 0; i < 3; ++i)
+                out[i] += lobe.color[i] * s;
+        }
+    }
+
+    // World direction of a cube face texel; standard GL/D3D face order
+    // and orientation (+x, -x, +y, -y, +z, -z), u/v in [-1, 1].
+    static void cubeDir(int face, float u, float v, float d[3])
+    {
+        switch (face) {
+        case 0:  d[0] =  1.0f; d[1] = -v; d[2] = -u; break;
+        case 1:  d[0] = -1.0f; d[1] = -v; d[2] =  u; break;
+        case 2:  d[0] =  u; d[1] =  1.0f; d[2] =  v; break;
+        case 3:  d[0] =  u; d[1] = -1.0f; d[2] = -v; break;
+        case 4:  d[0] =  u; d[1] = -v; d[2] =  1.0f; break;
+        default: d[0] = -u; d[1] = -v; d[2] = -1.0f; break;
+        }
+        float len = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+        d[0] /= len; d[1] /= len; d[2] /= len;
+    }
+
+    // Build the image based lighting data once per view: a
+    // GGX-prefiltered RGBA16F cubemap (shader lod = roughness * 5, the
+    // 1-2 px tail mips stay at full roughness) and the cosine-convolved
+    // irradiance SH of the same environment in Ramamoorthi's polynomial
+    // form, basis and 1/pi constants folded so the shader evaluates
+    // plain dot products. CPU cost is a one-off ~2M radiance samples.
+    void ensureEnvironment()
+    {
+        if (m_envBuilt)
+            return;
+        m_envBuilt = true;
+        const auto *caps = bgfx::getCaps();
+        if (!(caps->formats[bgfx::TextureFormat::RGBA16F]
+                & BGFX_CAPS_FORMAT_TEXTURE_CUBE))
+            return;
+        m_envTex = bgfx::createTextureCube(kEnvSize, true, 1,
+            bgfx::TextureFormat::RGBA16F, 0, nullptr);
+        if (!bgfx::isValid(m_envTex))
+            return;
+
+        int numMips = 1;
+        while (kEnvSize >> numMips)
+            ++numMips;
+        const uint16_t halfOne = bx::halfFromFloat(1.0f);
+        std::vector<uint16_t> texels;
+        for (int mip = 0; mip < numMips; ++mip) {
+            int size = int(kEnvSize) >> mip;
+            float rough = std::min(1.0f, float(mip) / 5.0f);
+            float a = rough * rough;
+            for (int face = 0; face < 6; ++face) {
+                texels.assign(size_t(size) * size * 4, halfOne);
+                for (int y = 0; y < size; ++y) {
+                    for (int x = 0; x < size; ++x) {
+                        float u = 2.0f * (x + 0.5f) / size - 1.0f;
+                        float v = 2.0f * (y + 0.5f) / size - 1.0f;
+                        float d[3];
+                        cubeDir(face, u, v, d);
+                        float col[3];
+                        if (mip == 0) {
+                            envRadiance(d, col);
+                        } else {
+                            // GGX importance sampling with the usual
+                            // N = V = R approximation; Hammersley set.
+                            float up[3] = {0.0f, 0.0f, 1.0f};
+                            if (std::fabs(d[2]) > 0.999f) {
+                                up[0] = 1.0f; up[2] = 0.0f;
+                            }
+                            float tx[3] = {
+                                up[1]*d[2] - up[2]*d[1],
+                                up[2]*d[0] - up[0]*d[2],
+                                up[0]*d[1] - up[1]*d[0]};
+                            float tl = std::sqrt(tx[0]*tx[0]
+                                + tx[1]*tx[1] + tx[2]*tx[2]);
+                            tx[0] /= tl; tx[1] /= tl; tx[2] /= tl;
+                            float bt[3] = {
+                                d[1]*tx[2] - d[2]*tx[1],
+                                d[2]*tx[0] - d[0]*tx[2],
+                                d[0]*tx[1] - d[1]*tx[0]};
+                            constexpr int kSamples = 64;
+                            float sum[3] = {0.0f, 0.0f, 0.0f};
+                            float wsum = 0.0f;
+                            for (int i = 0; i < kSamples; ++i) {
+                                float u1 = (i + 0.5f) / kSamples;
+                                uint32_t bits = uint32_t(i);
+                                bits = (bits << 16) | (bits >> 16);
+                                bits = ((bits & 0x55555555u) << 1)
+                                    | ((bits & 0xAAAAAAAAu) >> 1);
+                                bits = ((bits & 0x33333333u) << 2)
+                                    | ((bits & 0xCCCCCCCCu) >> 2);
+                                bits = ((bits & 0x0F0F0F0Fu) << 4)
+                                    | ((bits & 0xF0F0F0F0u) >> 4);
+                                bits = ((bits & 0x00FF00FFu) << 8)
+                                    | ((bits & 0xFF00FF00u) >> 8);
+                                float u2 = float(bits)
+                                    * 2.3283064365386963e-10f;
+                                float phi = 2.0f * bx::kPi * u1;
+                                float ct = std::sqrt((1.0f - u2)
+                                    / (1.0f + (a*a - 1.0f) * u2));
+                                float st = std::sqrt(
+                                    std::max(0.0f, 1.0f - ct*ct));
+                                float cp = std::cos(phi) * st;
+                                float sp = std::sin(phi) * st;
+                                float h[3], l[3];
+                                for (int k = 0; k < 3; ++k)
+                                    h[k] = tx[k]*cp + bt[k]*sp + d[k]*ct;
+                                for (int k = 0; k < 3; ++k)
+                                    l[k] = 2.0f*ct*h[k] - d[k];
+                                float ndl = d[0]*l[0] + d[1]*l[1]
+                                    + d[2]*l[2];
+                                if (ndl <= 0.0f)
+                                    continue;
+                                float r[3];
+                                envRadiance(l, r);
+                                for (int k = 0; k < 3; ++k)
+                                    sum[k] += r[k] * ndl;
+                                wsum += ndl;
+                            }
+                            for (int k = 0; k < 3; ++k)
+                                col[k] = sum[k]
+                                    / std::max(wsum, 1.0e-4f);
+                        }
+                        uint16_t *t = &texels[(size_t(y)*size + x) * 4];
+                        t[0] = bx::halfFromFloat(col[0]);
+                        t[1] = bx::halfFromFloat(col[1]);
+                        t[2] = bx::halfFromFloat(col[2]);
+                    }
+                }
+                bgfx::updateTextureCube(m_envTex, 0, uint8_t(face),
+                    uint8_t(mip), 0, 0, uint16_t(size), uint16_t(size),
+                    bgfx::copy(texels.data(),
+                        uint32_t(texels.size() * sizeof(uint16_t))));
+            }
+        }
+
+        // Project the base environment onto the SH basis (per-texel
+        // solid-angle weights), then fold the cosine convolution,
+        // polynomial constants and the Lambertian 1/pi (Ramamoorthi:
+        // the constant L20 terms c3/3 and -c5 cancel).
+        double L[kEnvSH][3] = {};
+        for (int face = 0; face < 6; ++face) {
+            for (int y = 0; y < kEnvSize; ++y) {
+                for (int x = 0; x < kEnvSize; ++x) {
+                    float u = 2.0f * (x + 0.5f) / kEnvSize - 1.0f;
+                    float v = 2.0f * (y + 0.5f) / kEnvSize - 1.0f;
+                    float d[3];
+                    cubeDir(face, u, v, d);
+                    double r2 = 1.0 + double(u)*u + double(v)*v;
+                    double w = 4.0 / (kEnvSize * double(kEnvSize)
+                                      * r2 * std::sqrt(r2));
+                    float col[3];
+                    envRadiance(d, col);
+                    double Y[kEnvSH] = {
+                        0.282095,
+                        0.488603 * d[1],
+                        0.488603 * d[2],
+                        0.488603 * d[0],
+                        1.092548 * d[0] * d[1],
+                        1.092548 * d[1] * d[2],
+                        0.315392 * (3.0 * d[2] * d[2] - 1.0),
+                        1.092548 * d[0] * d[2],
+                        0.546274 * (d[0] * d[0] - d[1] * d[1]),
+                    };
+                    for (int k = 0; k < kEnvSH; ++k)
+                        for (int c = 0; c < 3; ++c)
+                            L[k][c] += col[c] * Y[k] * w;
+                }
+            }
+        }
+        constexpr double c1 = 0.429043, c2 = 0.511664;
+        constexpr double c3 = 0.743125, c4 = 0.886227;
+        constexpr double invPi = 0.3183098861837907;
+        const double fold[kEnvSH] = {
+            c4, 2.0*c2, 2.0*c2, 2.0*c2,
+            2.0*c1, 2.0*c1, c3/3.0, 2.0*c1, c1,
+        };
+        for (int k = 0; k < kEnvSH; ++k) {
+            for (int c = 0; c < 3; ++c)
+                envSH[k][c] = float(L[k][c] * fold[k] * invPi);
+            envSH[k][3] = 0.0f;
         }
     }
 
@@ -2238,6 +2483,33 @@ public:
         bgfx::setUniform(u_matSpecular, specular);
         bgfx::setUniform(u_params, params);
 
+        // PBR branch of the mesh programs: every one of them carries the
+        // environment sampler (the branch is uniform-selected), so bind
+        // the dummy cube whenever the branch is off for this draw.
+        if (mat.type == Render::Material::Triangle) {
+            float pbrParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            bgfx::TextureHandle env = m_dummyEnvTex;
+            if (pbrFrame && mat.lighting && pass != PassDepthOnly) {
+                pbrParams[0] = 1.0f;
+                pbrParams[1] = bx::clamp(pbrMetallic, 0.0f, 1.0f);
+                float rough = pbrRoughness;
+                if (rough <= 0.0f) {
+                    // Derive from the material shininess (Coin's 0..1
+                    // convention maps to a GL exponent of s * 128) with
+                    // the usual Blinn-Phong-to-GGX conversion.
+                    float exponent =
+                        std::max(mat.shininess, 0.0f) * 128.0f;
+                    rough = std::sqrt(2.0f / (exponent + 2.0f));
+                }
+                pbrParams[2] = bx::clamp(rough, 0.02f, 1.0f);
+                pbrParams[3] = std::max(pbrEnvIntensity, 0.0f);
+                env = m_envTex;
+                bgfx::setUniform(u_envSH, envSH, kEnvSH);
+            }
+            bgfx::setUniform(u_pbrParams, pbrParams);
+            bgfx::setTexture(1, s_texEnv, env);
+        }
+
         // Clipped draws use the discard shader variants; the unclipped
         // programs contain no discard so the rest of the scene keeps
         // early-Z. The depth prepass clips too (unlike the stateful GL
@@ -2519,6 +2791,23 @@ public:
     bgfx::UniformHandle s_texAO = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_aoParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_aoKernel = BGFX_INVALID_HANDLE;
+    // PBR image based lighting: a fixed procedural studio environment
+    // built once on demand — a GGX-prefiltered cubemap mip chain for the
+    // specular part and its irradiance SH for the diffuse part.
+    static constexpr int kEnvSH = 9;
+    static constexpr uint16_t kEnvSize = 64;
+    bgfx::TextureHandle m_envTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_dummyEnvTex = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texEnv = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_pbrParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_envSH = BGFX_INVALID_HANDLE;
+    float envSH[kEnvSH][4];
+    bool m_envBuilt = false;   // build attempted (m_envTex may still be
+                               // invalid when the caps disallow it)
+    bool pbrFrame = false;     // PBR active for the frame being submitted
+    float pbrMetallic = 0.0f;
+    float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
+    float pbrEnvIntensity = 1.0f;
     bool m_ssao = false;     // SSAO resources exist (caps allow it)
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
@@ -2626,6 +2915,19 @@ public:
                 }
             }
         }
+        // PBR runs when the per-frame config asks for it and the
+        // environment could be built (caps). The hidden-line draw style
+        // disables it like SSAO (a technical drawing mode).
+        bool pbrActive = false;
+        if (pbrconf.enabled && !hlconfig.show) {
+            view->ensureEnvironment();
+            pbrActive = bgfx::isValid(view->m_envTex);
+        }
+        view->pbrFrame = pbrActive;
+        view->pbrMetallic = pbrconf.metallic;
+        view->pbrRoughness = pbrconf.roughness;
+        view->pbrEnvIntensity = pbrconf.envIntensity;
+
         // Zero radius = automatic: a fraction of the scene bounding
         // sphere, the scale-free default.
         float aoRadius = aoconf.radius;
@@ -3496,6 +3798,7 @@ public:
     Render::HiddenLineConfig hlconfig;
     Render::SectionConfig secconf;
     Render::AOConfig aoconf;
+    Render::PBRConfig pbrconf;
     float autozoomScale = 1.0f;
     // CPU copy of the section hatch texture, expanded to RGBA8; the
     // version stamps GPU re-uploads (0 = no image).
@@ -3634,6 +3937,14 @@ void BGFXRenderer::setAOConfig(const AOConfig &config)
 {
     if (pimpl->aoconf != config) {
         pimpl->aoconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setPBRConfig(const PBRConfig &config)
+{
+    if (pimpl->pbrconf != config) {
+        pimpl->pbrconf = config;
         pimpl->sceneDirty = true;
     }
 }

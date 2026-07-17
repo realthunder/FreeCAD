@@ -215,6 +215,10 @@ public:
     bool RendererSSAO;
     double RendererSSAORadius;
     double RendererSSAOIntensity;
+    bool RendererPBR;
+    double RendererPBRMetallic;
+    double RendererPBRRoughness;
+    double RendererPBREnvIntensity;
     double RenderHighlightPolygonOffsetFactor;
     double RenderHighlightPolygonOffsetUnits;
     bool ForceSolidSingleSideLighting;
@@ -552,6 +556,14 @@ public:
         funcs["RendererSSAORadius"] = &ViewParamsP::updateRendererSSAORadius;
         RendererSSAOIntensity = this->handle->GetFloat("RendererSSAOIntensity", 1.0);
         funcs["RendererSSAOIntensity"] = &ViewParamsP::updateRendererSSAOIntensity;
+        RendererPBR = this->handle->GetBool("RendererPBR", false);
+        funcs["RendererPBR"] = &ViewParamsP::updateRendererPBR;
+        RendererPBRMetallic = this->handle->GetFloat("RendererPBRMetallic", 0.0);
+        funcs["RendererPBRMetallic"] = &ViewParamsP::updateRendererPBRMetallic;
+        RendererPBRRoughness = this->handle->GetFloat("RendererPBRRoughness", 0.0);
+        funcs["RendererPBRRoughness"] = &ViewParamsP::updateRendererPBRRoughness;
+        RendererPBREnvIntensity = this->handle->GetFloat("RendererPBREnvIntensity", 1.0);
+        funcs["RendererPBREnvIntensity"] = &ViewParamsP::updateRendererPBREnvIntensity;
         RenderHighlightPolygonOffsetFactor = this->handle->GetFloat("RenderHighlightPolygonOffsetFactor", 1);
         funcs["RenderHighlightPolygonOffsetFactor"] = &ViewParamsP::updateRenderHighlightPolygonOffsetFactor;
         RenderHighlightPolygonOffsetUnits = this->handle->GetFloat("RenderHighlightPolygonOffsetUnits", 1);
@@ -1253,6 +1265,22 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRendererSSAOIntensity(ViewParamsP *self) {
         self->RendererSSAOIntensity = self->handle->GetFloat("RendererSSAOIntensity", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRendererPBR(ViewParamsP *self) {
+        self->RendererPBR = self->handle->GetBool("RendererPBR", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRendererPBRMetallic(ViewParamsP *self) {
+        self->RendererPBRMetallic = self->handle->GetFloat("RendererPBRMetallic", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRendererPBRRoughness(ViewParamsP *self) {
+        self->RendererPBRRoughness = self->handle->GetFloat("RendererPBRRoughness", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRendererPBREnvIntensity(ViewParamsP *self) {
+        self->RendererPBREnvIntensity = self->handle->GetFloat("RendererPBREnvIntensity", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderHighlightPolygonOffsetFactor(ViewParamsP *self) {
@@ -5730,6 +5758,123 @@ void ViewParams::removeRendererSSAOIntensity() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRendererPBR() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Enable physically based shading with image based lighting of\n"
+"the experimental render engine (RendererType, with render cache\n"
+"mode 3). Replaces the default headlight shading of lit surfaces\n"
+"with a metallic/roughness material lit by a built-in studio\n"
+"environment.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & ViewParams::getRendererPBR() {
+    return instance()->RendererPBR;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & ViewParams::defaultRendererPBR() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRendererPBR(const bool &v) {
+    instance()->handle->SetBool("RendererPBR",v);
+    instance()->RendererPBR = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRendererPBR() {
+    instance()->handle->RemoveBool("RendererPBR");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRendererPBRMetallic() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Metalness of physically based shaded surfaces, 0 to 1.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & ViewParams::getRendererPBRMetallic() {
+    return instance()->RendererPBRMetallic;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & ViewParams::defaultRendererPBRMetallic() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRendererPBRMetallic(const double &v) {
+    instance()->handle->SetFloat("RendererPBRMetallic",v);
+    instance()->RendererPBRMetallic = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRendererPBRMetallic() {
+    instance()->handle->RemoveFloat("RendererPBRMetallic");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRendererPBRRoughness() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Roughness of physically based shaded surfaces, 0 to 1.\n"
+"Zero means automatic (derived from each material's shininess).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & ViewParams::getRendererPBRRoughness() {
+    return instance()->RendererPBRRoughness;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & ViewParams::defaultRendererPBRRoughness() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRendererPBRRoughness(const double &v) {
+    instance()->handle->SetFloat("RendererPBRRoughness",v);
+    instance()->RendererPBRRoughness = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRendererPBRRoughness() {
+    instance()->handle->RemoveFloat("RendererPBRRoughness");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRendererPBREnvIntensity() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Brightness of the image based lighting environment.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & ViewParams::getRendererPBREnvIntensity() {
+    return instance()->RendererPBREnvIntensity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & ViewParams::defaultRendererPBREnvIntensity() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRendererPBREnvIntensity(const double &v) {
+    instance()->handle->SetFloat("RendererPBREnvIntensity",v);
+    instance()->RendererPBREnvIntensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRendererPBREnvIntensity() {
+    instance()->handle->RemoveFloat("RendererPBREnvIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docRenderHighlightPolygonOffsetFactor() {
     return "";
 }
@@ -6196,7 +6341,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:525)
+// Auto generated code (Gui/ViewParams.py:538)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6241,7 +6386,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:533)
+// Auto generated code (Gui/ViewParams.py:546)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6255,7 +6400,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:543)
+// Auto generated code (Gui/ViewParams.py:556)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -6269,13 +6414,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:553)
+// Auto generated code (Gui/ViewParams.py:566)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:560)
+// Auto generated code (Gui/ViewParams.py:573)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6283,7 +6428,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:569)
+// Auto generated code (Gui/ViewParams.py:582)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6295,7 +6440,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:582)
+// Auto generated code (Gui/ViewParams.py:595)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)

@@ -55,6 +55,10 @@ GuiExport Render::SectionConfig translateSectionConfig();
 /// backend-neutral per-frame config.
 GuiExport Render::AOConfig translateAOConfig();
 
+/// Resolve the physically based shading ViewParams (RendererPBR*) into
+/// the backend-neutral per-frame config.
+GuiExport Render::PBRConfig translatePBRConfig();
+
 /// Resolve the per-frame autozoom scale from the traversal state's view
 /// volume (the exact SoAutoZoomTranslation::getScaleFactor math with a
 /// node scaleFactor of 1); Material::autozoom entries multiply their own

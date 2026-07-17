@@ -460,6 +460,19 @@ Params = [
         "Zero means automatic (a fraction of the scene size)."),
     ParamFloat('RendererSSAOIntensity',  1.0,
         "Ambient occlusion darkening strength."),
+    ParamBool('RendererPBR',  False,
+        "Enable physically based shading with image based lighting of\n"
+        "the experimental render engine (RendererType, with render cache\n"
+        "mode 3). Replaces the default headlight shading of lit surfaces\n"
+        "with a metallic/roughness material lit by a built-in studio\n"
+        "environment."),
+    ParamFloat('RendererPBRMetallic',  0.0,
+        "Metalness of physically based shaded surfaces, 0 to 1."),
+    ParamFloat('RendererPBRRoughness',  0.0,
+        "Roughness of physically based shaded surfaces, 0 to 1.\n"
+        "Zero means automatic (derived from each material's shininess)."),
+    ParamFloat('RendererPBREnvIntensity',  1.0,
+        "Brightness of the image based lighting environment."),
     ParamFloat('RenderHighlightPolygonOffsetFactor', 1),
     ParamFloat('RenderHighlightPolygonOffsetUnits', 1),
     ParamBool('ForceSolidSingleSideLighting',  True, on_change=True, title='Force single side lighting on solid',

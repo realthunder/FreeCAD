@@ -203,6 +203,25 @@ struct AOConfig {
     bool operator!=(const AOConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame physically based shading configuration (like AOConfig there
+/// is no GL-renderer counterpart). While enabled, lit triangle surfaces
+/// use a metallic/roughness BRDF with image based lighting from a
+/// backend-built environment instead of the default headlight shading.
+struct PBRConfig {
+    bool enabled = false;
+    float metallic = 0.0f;      ///< surface metalness, 0..1
+    /// Surface roughness, 0..1; 0 = automatic (derived per draw from the
+    /// material's shininess).
+    float roughness = 0.0f;
+    float envIntensity = 1.0f;  ///< environment lighting brightness
+
+    bool operator==(const PBRConfig &o) const {
+        return enabled == o.enabled && metallic == o.metallic
+            && roughness == o.roughness && envIntensity == o.envIntensity;
+    }
+    bool operator!=(const PBRConfig &o) const { return !(*this == o); }
+};
+
 /// Flattened per-draw render state, translated from the Coin-side material
 /// (SoFCRenderCache::Material). Colors are packed 0xRRGGBBAA.
 struct Material {
@@ -366,6 +385,8 @@ public:
     { (void)config; }
     /// Per-frame ambient occlusion configuration.
     virtual void setAOConfig(const AOConfig &config) { (void)config; }
+    /// Per-frame physically based shading configuration.
+    virtual void setPBRConfig(const PBRConfig &config) { (void)config; }
     /// Per-frame world-to-screen scale at the world origin consumed by
     /// Material::autozoom draws (Coin: SoAutoZoomTranslation's
     /// getWorldToScreenScale((0,0,0), 0.1) / (5 * viewport aspect)).

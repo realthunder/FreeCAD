@@ -2240,6 +2240,8 @@ SoFCRenderer::render(SoGLRenderAction * action)
         RendererBridge::translateSectionConfig());
     PRIVATE(this)->external->setAOConfig(
         RendererBridge::translateAOConfig());
+    PRIVATE(this)->external->setPBRConfig(
+        RendererBridge::translatePBRConfig());
     PRIVATE(this)->external->setAutoZoomScale(
         RendererBridge::translateAutoZoomScale(action->getState()));
   }

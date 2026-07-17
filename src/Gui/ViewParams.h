@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:493)
+// Auto generated code (Gui/ViewParams.py:506)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -1902,6 +1902,59 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter RendererPBR
+    ///
+    /// Enable physically based shading with image based lighting of
+    /// the experimental render engine (RendererType, with render cache
+    /// mode 3). Replaces the default headlight shading of lit surfaces
+    /// with a metallic/roughness material lit by a built-in studio
+    /// environment.
+    static const bool & getRendererPBR();
+    static const bool & defaultRendererPBR();
+    static void removeRendererPBR();
+    static void setRendererPBR(const bool &v);
+    static const char *docRendererPBR();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RendererPBRMetallic
+    ///
+    /// Metalness of physically based shaded surfaces, 0 to 1.
+    static const double & getRendererPBRMetallic();
+    static const double & defaultRendererPBRMetallic();
+    static void removeRendererPBRMetallic();
+    static void setRendererPBRMetallic(const double &v);
+    static const char *docRendererPBRMetallic();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RendererPBRRoughness
+    ///
+    /// Roughness of physically based shaded surfaces, 0 to 1.
+    /// Zero means automatic (derived from each material's shininess).
+    static const double & getRendererPBRRoughness();
+    static const double & defaultRendererPBRRoughness();
+    static void removeRendererPBRRoughness();
+    static void setRendererPBRRoughness(const double &v);
+    static const char *docRendererPBRRoughness();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RendererPBREnvIntensity
+    ///
+    /// Brightness of the image based lighting environment.
+    static const double & getRendererPBREnvIntensity();
+    static const double & defaultRendererPBREnvIntensity();
+    static void removeRendererPBREnvIntensity();
+    static void setRendererPBREnvIntensity(const double &v);
+    static const char *docRendererPBREnvIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter RenderHighlightPolygonOffsetFactor
     static const double & getRenderHighlightPolygonOffsetFactor();
     static const double & defaultRenderHighlightPolygonOffsetFactor();
@@ -2086,7 +2139,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:499)
+    // Auto generated code (Gui/ViewParams.py:512)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2114,7 +2167,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:509)
+// Auto generated code (Gui/ViewParams.py:522)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

@@ -580,6 +580,17 @@ RendererBridge::translateAOConfig()
     return res;
 }
 
+Render::PBRConfig
+RendererBridge::translatePBRConfig()
+{
+    Render::PBRConfig res;
+    res.enabled = ViewParams::getRendererPBR();
+    res.metallic = float(ViewParams::getRendererPBRMetallic());
+    res.roughness = float(ViewParams::getRendererPBRRoughness());
+    res.envIntensity = float(ViewParams::getRendererPBREnvIntensity());
+    return res;
+}
+
 float
 RendererBridge::translateAutoZoomScale(SoState * state)
 {
