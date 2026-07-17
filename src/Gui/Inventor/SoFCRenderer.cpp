@@ -1756,16 +1756,11 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
     if (setupmatrix)
       setupMatrix(action, draw_entry);
     draw_entry.ventry->cache->renderSolids(action->getState());
-    if (isValidBBox(draw_entry.bbox)) {
-      if (!setupmatrix)
-        bbox.extendBy(draw_entry.bbox);
-      else {
-        auto matrix = SoModelMatrixElement::get(action->getState());
-        auto bb = draw_entry.bbox;
-        bb.transform(matrix);
-        bbox.extendBy(bb);
-      }
-    }
+    // DrawEntry::bbox already has the entry's matrix applied (see the
+    // DrawEntry constructor); transforming it again here used to inflate
+    // the grouped section bounds of transformed entries.
+    if (isValidBBox(draw_entry.bbox))
+      bbox.extendBy(draw_entry.bbox);
     ++this->drawcallcount;
   }
 
