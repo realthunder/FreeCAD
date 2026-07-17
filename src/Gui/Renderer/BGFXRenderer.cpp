@@ -766,20 +766,65 @@ struct GpuTexture
         // renderer on the OpenGL backend (other backends may see the
         // image v-flipped, a known deviation until needed).
         const size_t n = size_t(tex.width) * tex.height;
-        const bgfx::Memory *mem = bgfx::alloc(uint32_t(n * 4));
-        const uint8_t *src = tex.pixels.data();
-        uint8_t *dst = mem->data;
-        for (size_t i = 0; i < n; ++i) {
-            const uint8_t *p = src + i * tex.numComponents;
-            switch (tex.numComponents) {
-            case 1: dst[0] = dst[1] = dst[2] = p[0]; dst[3] = 255; break;
-            case 2: dst[0] = dst[1] = dst[2] = p[0]; dst[3] = p[1]; break;
-            case 3: dst[0] = p[0]; dst[1] = p[1]; dst[2] = p[2];
-                    dst[3] = 255; break;
-            default: dst[0] = p[0]; dst[1] = p[1]; dst[2] = p[2];
-                     dst[3] = p[3]; break;
+        std::vector<std::vector<uint8_t>> levels;
+        levels.emplace_back(n * 4);
+        {
+            const uint8_t *src = tex.pixels.data();
+            uint8_t *dst = levels.back().data();
+            for (size_t i = 0; i < n; ++i) {
+                const uint8_t *p = src + i * tex.numComponents;
+                switch (tex.numComponents) {
+                case 1: dst[0] = dst[1] = dst[2] = p[0]; dst[3] = 255;
+                        break;
+                case 2: dst[0] = dst[1] = dst[2] = p[0]; dst[3] = p[1];
+                        break;
+                case 3: dst[0] = p[0]; dst[1] = p[1]; dst[2] = p[2];
+                        dst[3] = 255; break;
+                default: dst[0] = p[0]; dst[1] = p[1]; dst[2] = p[2];
+                         dst[3] = p[3]; break;
+                }
+                dst += 4;
             }
-            dst += 4;
+        }
+        // Full mip chain, CPU 2x2 box filter (bgfx has no runtime mip
+        // generation): closes the minification-speckle gap of the
+        // texture rows — the GL renderer's fixed-function path stays
+        // non-mipped, a known comparison-tolerance difference under
+        // strong minification.
+        int lw = tex.width, lh = tex.height;
+        size_t total = levels.back().size();
+        while (lw > 1 || lh > 1) {
+            int nw = std::max(1, lw >> 1), nh = std::max(1, lh >> 1);
+            const uint8_t *sp = levels.back().data();
+            std::vector<uint8_t> lvl(size_t(nw) * nh * 4);
+            for (int y = 0; y < nh; ++y) {
+                int y0 = std::min(2 * y, lh - 1);
+                int y1 = std::min(2 * y + 1, lh - 1);
+                for (int x = 0; x < nw; ++x) {
+                    int x0 = std::min(2 * x, lw - 1);
+                    int x1 = std::min(2 * x + 1, lw - 1);
+                    for (int c = 0; c < 4; ++c) {
+                        int s = sp[(size_t(y0) * lw + x0) * 4 + c]
+                            + sp[(size_t(y0) * lw + x1) * 4 + c]
+                            + sp[(size_t(y1) * lw + x0) * 4 + c]
+                            + sp[(size_t(y1) * lw + x1) * 4 + c];
+                        lvl[(size_t(y) * nw + x) * 4 + c] =
+                            uint8_t((s + 2) / 4);
+                    }
+                }
+            }
+            total += lvl.size();
+            levels.push_back(std::move(lvl));
+            lw = nw;
+            lh = nh;
+        }
+        const bgfx::Memory *mem = bgfx::alloc(uint32_t(total));
+        {
+            uint8_t *dst = mem->data;
+            for (const auto &lvl : levels) {
+                std::memcpy(dst, lvl.data(), lvl.size());
+                dst += lvl.size();
+            }
         }
         uint64_t flags = 0;
         if (tex.wrapS == Render::TextureImage::Clamp)
@@ -787,7 +832,7 @@ struct GpuTexture
         if (tex.wrapT == Render::TextureImage::Clamp)
             flags |= BGFX_SAMPLER_V_CLAMP;
         handle = bgfx::createTexture2D(
-            uint16_t(tex.width), uint16_t(tex.height), false, 1,
+            uint16_t(tex.width), uint16_t(tex.height), true, 1,
             bgfx::TextureFormat::RGBA8, flags, mem);
     }
 };
