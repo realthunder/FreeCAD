@@ -160,6 +160,13 @@ public:
   SbBool getLinePartRange(int part, int & start, int & count) const;
   SbBool getPointPartRange(int part, int & start, int & count) const;
 
+  /** The triangle index ranges renderSolids() draws when only some face
+   * parts belong to solids (hasSolid() == 1); 0 when renderSolids() draws
+   * the whole triangle set. \a start and \a count are in index units.
+   */
+  int getNumSolidParts(void) const;
+  SbBool getSolidPartRange(int part, int & start, int & count) const;
+
   SoNode *getNode() const;
   void resetNode();
   SbFCUniqueId getNodeId() const;

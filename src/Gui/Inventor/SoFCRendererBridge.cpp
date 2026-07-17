@@ -32,6 +32,7 @@
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
+#include <Inventor/elements/SoShapeHintsElement.h>
 #include <Inventor/nodes/SoClipPlane.h>
 
 #include "SoFCRendererBridge.h"
@@ -131,6 +132,10 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight)
     // Hidden-line draw style material: the backend outlines whole-cache
     // triangle draws and applies the per-frame HiddenLineConfig rules.
     res.outline = m.outline;
+
+    // Solid shape hint, one half of the section-cap eligibility test
+    // (GL: renderSection checks shapetype and cache->hasSolid()).
+    res.solidshape = m.shapetype == SoShapeHintsElement::SOLID;
 
     // Selection line/point thickening (GL: applyMaterial ~552 under
     // RenderPassHighlight). Applied at translate time so backends see the
@@ -373,6 +378,25 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                 }
             }
 
+            // Section-cap solids, filled on demand for clipped whole
+            // triangle draws: which triangle ranges the stencil cap pass
+            // marks (GL: renderSolids from _renderSection).
+            if (rmat.type == Render::Material::Triangle
+                    && rmat.numclipplanes > 0 && ventry.partidx < 0
+                    && mesh->hasSolid == 0) {
+                mesh->hasSolid = ventry.cache->hasSolid();
+                if (mesh->hasSolid == 1 && mesh->solidParts.empty()) {
+                    int numparts = ventry.cache->getNumSolidParts();
+                    mesh->solidParts.reserve(numparts);
+                    for (int i = 0; i < numparts; ++i) {
+                        int start = 0, count = 0;
+                        if (ventry.cache->getSolidPartRange(i, start, count)
+                                && count > 0)
+                            mesh->solidParts.emplace_back(start, count);
+                    }
+                }
+            }
+
             res.emplace_back();
             Render::DrawCall & draw = res.back();
             draw.material = rmat;
@@ -428,6 +452,19 @@ RendererBridge::translateHiddenLineConfig(SoState * state)
         res.lineColor = color->getPackedValue(0.0f);
     else
         res.lineColor = uint32_t(ViewParams::getHiddenLineColor());
+    return res;
+}
+
+Render::SectionConfig
+RendererBridge::translateSectionConfig()
+{
+    Render::SectionConfig res;
+    res.fill = ViewParams::getSectionFill();
+    res.fillInvert = ViewParams::getSectionFillInvert();
+    res.fillGroup = ViewParams::getSectionFillGroup();
+    res.concave = ViewParams::getSectionConcave();
+    res.hatchEnable = ViewParams::getSectionHatchTextureEnable();
+    res.hatchScale = float(ViewParams::getSectionHatchTextureScale());
     return res;
 }
 

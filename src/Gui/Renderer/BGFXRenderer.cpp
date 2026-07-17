@@ -42,6 +42,7 @@
 #endif
 
 #include <cmath>
+#include <cstring>
 #include <map>
 #include <vector>
 #include <tuple>
@@ -418,6 +419,32 @@ bgfx::VertexLayout LineQuadVertex::ms_instLayout;
 bgfx::VertexLayout LineQuadVertex::ms_pointInstLayout;
 bool LineQuadVertex::ms_initialized = false;
 
+// Section-cap quad vertex: a world-space position on the clip plane plus
+// hatch texture coordinates (vs_fc_cap).
+struct CapVertex
+{
+    float px, py, pz;
+    float u, v;
+
+    static void init()
+    {
+        if (ms_initialized)
+            return;
+        ms_initialized = true;
+        ms_layout
+            .begin()
+            .add(bgfx::Attrib::Position,  3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+            .end();
+    };
+
+    static bgfx::VertexLayout ms_layout;
+    static bool ms_initialized;
+};
+
+bgfx::VertexLayout CapVertex::ms_layout;
+bool CapVertex::ms_initialized = false;
+
 // GPU buffers of one MeshData, keyed by MeshData::cacheId. A cache id
 // always refers to identical content, so buffers are immutable and reused
 // until the id disappears from the scene.
@@ -688,6 +715,12 @@ public:
     enum PassView {
         ViewBackground = 0, // clear + gradient background quad (clip space)
         ViewOpaque,         // opaque triangles, lines, points
+        ViewSectionCap,     // stencil section caps of clipped opaque
+                            // solids (GL: _renderSection; before the
+                            // outline/transparent passes like the GL
+                            // opaque-loop caps, and the cap parity
+                            // marking needs the stencil buffer before
+                            // the outline passes leave their marks)
         ViewOutline,        // hidden-line stencil outlines of scene draws
                             // (after all opaque geometry so the depth
                             // test sees the whole scene, before the
@@ -697,6 +730,10 @@ public:
                             // back-to-front into the scene FBO when OIT
                             // is unavailable
         ViewOITComposite,   // fullscreen WBOIT resolve onto the scene FBO
+        ViewSectionCapTransp, // section caps of clipped transparent
+                            // solids, after the transparent bucket like
+                            // GL's grouped section pass; stencil-cleared
+                            // because the outline views left marks
         ViewOnTop,          // scene geometry with on-top materials
         ViewHighlight,      // selection-on-top and preselection highlight
         NUM_VIEWS
@@ -782,6 +819,27 @@ public:
             bgfx::destroy(m_progComp);
             m_progComp = BGFX_INVALID_HANDLE;
         }
+        if (bgfx::isValid(m_progCap)) {
+            bgfx::destroy(m_progCap);
+            m_progCap = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progCapClip)) {
+            bgfx::destroy(m_progCapClip);
+            m_progCapClip = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(s_texHatch)) {
+            bgfx::destroy(s_texHatch);
+            s_texHatch = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_whiteTex)) {
+            bgfx::destroy(m_whiteTex);
+            m_whiteTex = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_hatchTex)) {
+            bgfx::destroy(m_hatchTex);
+            m_hatchTex = BGFX_INVALID_HANDLE;
+        }
+        m_hatchVersion = 0;
         if (bgfx::isValid(s_texAccum)) {
             bgfx::destroy(s_texAccum);
             s_texAccum = BGFX_INVALID_HANDLE;
@@ -915,6 +973,22 @@ public:
             m_lineQuadIb = bgfx::createIndexBuffer(
                 bgfx::makeRef(quadIndices, sizeof(quadIndices)));
         }
+
+        // Section caps: the cap quad fill with hatch texture modulation.
+        // The stencil mark and cleanup passes reuse the flat programs.
+        m_progCap = loadProgram("vs_fc_cap", "fs_fc_cap",
+                                _BGFXLib.resource().c_str());
+        m_progCapClip = loadProgram("vs_fc_cap_clip", "fs_fc_cap_clip",
+                                    _BGFXLib.resource().c_str());
+        s_texHatch = bgfx::createUniform("s_texHatch",
+                                         bgfx::UniformType::Sampler);
+        // 1x1 white stand-in so the cap program samples neutrally when
+        // hatching is disabled (and for the stencil cleanup pass).
+        static const uint32_t white = 0xffffffff;
+        m_whiteTex = bgfx::createTexture2D(1, 1, false, 1,
+            bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(&white, sizeof(white)));
+        CapVertex::init();
 
         u_matColor = bgfx::createUniform("u_matColor", bgfx::UniformType::Vec4);
         u_matEmissive = bgfx::createUniform("u_matEmissive", bgfx::UniformType::Vec4);
@@ -1333,6 +1407,156 @@ public:
         bgfx::setStencil(outlinestencil);
         bgfx::submit(viewId + spec.view,
                      clipped ? m_progPointClip : m_progPoint);
+        ++drawcount;
+    }
+
+    // Upload the section hatch texture when the CPU-side pixels changed
+    // (version 0 = no hatch image).
+    void updateHatchTexture(uint64_t version, const uint8_t *rgba,
+                            int width, int height)
+    {
+        if (version == m_hatchVersion)
+            return;
+        m_hatchVersion = version;
+        if (bgfx::isValid(m_hatchTex)) {
+            bgfx::destroy(m_hatchTex);
+            m_hatchTex = BGFX_INVALID_HANDLE;
+        }
+        if (!rgba || width <= 0 || height <= 0)
+            return;
+        m_hatchTex = bgfx::createTexture2D(uint16_t(width), uint16_t(height),
+            false, 1, bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(rgba, uint32_t(width) * uint32_t(height) * 4));
+    }
+
+    /// Stencil parity mark of one section-cap pass (GL: _renderSection's
+    /// color-masked renderSolids loop): rasterize the solid triangle
+    /// ranges clipped by the single active section plane with a
+    /// depth-independent stencil INVERT — pixels looking through the
+    /// cut opening end up with an odd (non-zero) parity. Assumes the
+    /// stencil is zero where the draw rasterizes (the cap view is
+    /// stencil-cleared and every cap pass cleans up after itself).
+    bool submitCapMark(const Render::DrawCall &draw,
+                       const float plane[4], uint16_t view)
+    {
+        if (!draw.mesh || !draw.mesh->triangleIndices)
+            return false;
+        const Render::MeshData &mesh = *draw.mesh;
+        GpuMesh *gpu = getMesh(mesh);
+        if (!bgfx::isValid(gpu->vbh) || !bgfx::isValid(gpu->tri))
+            return false;
+
+        float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float params[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        float clipParams[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+        const uint32_t markstencil = BGFX_STENCIL_TEST_ALWAYS
+            | BGFX_STENCIL_FUNC_REF(1) | BGFX_STENCIL_FUNC_RMASK(0xff)
+            | BGFX_STENCIL_OP_FAIL_S_KEEP
+            | BGFX_STENCIL_OP_FAIL_Z_KEEP
+            | BGFX_STENCIL_OP_PASS_Z_INVERT;
+
+        auto submitRange = [&](int start, int count) {
+            bgfx::setUniform(u_matColor, zero);
+            bgfx::setUniform(u_matEmissive, zero);
+            bgfx::setUniform(u_matSpecular, zero);
+            bgfx::setUniform(u_params, params);
+            bgfx::setUniform(u_clipParams, clipParams);
+            bgfx::setUniform(u_clipPlanes, plane, 1);
+            if (!draw.identity)
+                bgfx::setTransform(draw.model);
+            bgfx::setVertexBuffer(0, gpu->vbh);
+            if (count > 0)
+                bgfx::setIndexBuffer(gpu->tri, uint32_t(start),
+                                     uint32_t(count));
+            else
+                bgfx::setIndexBuffer(gpu->tri);
+            bgfx::setState(BGFX_STATE_MSAA);
+            bgfx::setStencil(markstencil);
+            bgfx::submit(viewId + view, m_progFlatClip);
+            ++drawcount;
+        };
+
+        if (mesh.solidParts.empty())
+            submitRange(0, 0);
+        else
+            for (const auto &part : mesh.solidParts)
+                submitRange(part.first, part.second);
+        return true;
+    }
+
+    /// Cap fill of one section-cap pass: a world-space quad in the
+    /// section plane, drawn where the stencil parity is odd — the cross
+    /// section of the marked solids — with depth LESS + write like GL's
+    /// cap (LESS so the already-drawn fill keeps the shared rim pixels
+    /// that GL's cap-before-fill order gives to the fill). Clipped by
+    /// the remaining planes when there are any (never in concave mode,
+    /// matching the GL clip state there).
+    void submitCapQuad(const CapVertex verts[4], uint32_t color,
+                       const float (*otherPlanes)[4], int numOther,
+                       bool hatch, bool blend, uint16_t view)
+    {
+        if (bgfx::getAvailTransientVertexBuffer(6, CapVertex::ms_layout) < 6)
+            return;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, 6, CapVertex::ms_layout);
+        auto *v = reinterpret_cast<CapVertex *>(tvb.data);
+        v[0] = verts[0]; v[1] = verts[1]; v[2] = verts[2];
+        v[3] = verts[0]; v[4] = verts[2]; v[5] = verts[3];
+
+        float col[4];
+        unpackColor(color, col);
+        bgfx::setUniform(u_matColor, col);
+        if (numOther > 0) {
+            float clipParams[4] = {float(numOther), 0.0f, 0.0f, 0.0f};
+            bgfx::setUniform(u_clipParams, clipParams);
+            bgfx::setUniform(u_clipPlanes, otherPlanes, numOther);
+        }
+        // GL only textures the cap when hatching is enabled; the white
+        // stand-in keeps the shader uniform otherwise.
+        bgfx::setTexture(0, s_texHatch,
+            hatch && bgfx::isValid(m_hatchTex) ? m_hatchTex : m_whiteTex);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+            | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS
+            | BGFX_STATE_MSAA
+            | (blend ? BGFX_STATE_BLEND_ALPHA : 0));
+        bgfx::setStencil(BGFX_STENCIL_TEST_EQUAL
+            | BGFX_STENCIL_FUNC_REF(1) | BGFX_STENCIL_FUNC_RMASK(0x01)
+            | BGFX_STENCIL_OP_FAIL_S_KEEP
+            | BGFX_STENCIL_OP_FAIL_Z_KEEP
+            | BGFX_STENCIL_OP_PASS_Z_KEEP);
+        bgfx::submit(viewId + view,
+                     numOther > 0 ? m_progCapClip : m_progCap);
+        ++drawcount;
+    }
+
+    /// Stencil cleanup of one section-cap pass (the stand-in for GL's
+    /// per-pass glClear(GL_STENCIL_BUFFER_BIT)): zero the stencil over
+    /// the cap quad, which covers every pixel the parity mark can have
+    /// touched (the cut cross section lies inside the plane/circumsphere
+    /// intersection), unclipped so marks outside the other planes are
+    /// cleaned too. No color or depth output.
+    void submitCapCleanup(const CapVertex verts[4], uint16_t view)
+    {
+        if (bgfx::getAvailTransientVertexBuffer(6, CapVertex::ms_layout) < 6)
+            return;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, 6, CapVertex::ms_layout);
+        auto *v = reinterpret_cast<CapVertex *>(tvb.data);
+        v[0] = verts[0]; v[1] = verts[1]; v[2] = verts[2];
+        v[3] = verts[0]; v[4] = verts[2]; v[5] = verts[3];
+
+        float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_matColor, zero);
+        bgfx::setTexture(0, s_texHatch, m_whiteTex);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(BGFX_STATE_MSAA);
+        bgfx::setStencil(BGFX_STENCIL_TEST_ALWAYS
+            | BGFX_STENCIL_FUNC_REF(0) | BGFX_STENCIL_FUNC_RMASK(0xff)
+            | BGFX_STENCIL_OP_FAIL_S_KEEP
+            | BGFX_STENCIL_OP_FAIL_Z_REPLACE
+            | BGFX_STENCIL_OP_PASS_Z_REPLACE);
+        bgfx::submit(viewId + view, m_progCap);
         ++drawcount;
     }
 
@@ -1770,6 +1994,12 @@ public:
     bgfx::ProgramHandle m_progComp = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texAccum = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texReveal = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progCap = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progCapClip = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texHatch = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_whiteTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_hatchTex = BGFX_INVALID_HANDLE;
+    uint64_t m_hatchVersion = 0;   // Private's hatch pixel generation
     bool m_oit = false;      // OIT resources exist (caps + no MSAA)
     bool oitFrame = false;   // OIT active for the frame being submitted
     std::unordered_map<uint64_t, GpuMesh> meshes;
@@ -1867,10 +2097,17 @@ public:
                                    1.0f, 0, 0, 1);
             } else {
                 bgfx::setViewFrameBuffer(id, view->bgfxFbo);
+                // The section-cap views clear the stencil: their parity
+                // marking (INVERT) needs a zeroed base, and earlier
+                // outline passes leave stale marks behind (relevant for
+                // the transparent cap view, which runs after ViewOutline).
                 bgfx::setViewClear(id,
                     i == 0 ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
                                       |BGFX_CLEAR_STENCIL)
-                           : uint16_t(BGFX_CLEAR_NONE),
+                    : (i == BGFXView::ViewSectionCap
+                       || i == BGFXView::ViewSectionCapTransp)
+                        ? uint16_t(BGFX_CLEAR_STENCIL)
+                        : uint16_t(BGFX_CLEAR_NONE),
                     clearColor, 1.0f, 0);
             }
             bgfx::setViewRect(id, 0, 0, width, height);
@@ -1884,13 +2121,16 @@ public:
             // On-top and highlight draws are blended painter-style: keep
             // submission order (GL pass order) instead of state sorting.
             // With OIT the transparent blend is commutative, so no
-            // depth sorting is needed there either. The outline view
-            // interleaves stencil mark/edge/cap passes per entry, so it
-            // must keep submission order too.
+            // depth sorting is needed there either. The outline and
+            // section-cap views interleave stencil mark/fill/cleanup
+            // passes per entry, so they must keep submission order too.
             bgfx::setViewMode(id,
                 i == BGFXView::ViewTransparent && !oitActive
                     ? bgfx::ViewMode::DepthDescending
-                    : i >= BGFXView::ViewOnTop || i == BGFXView::ViewOutline
+                    : i >= BGFXView::ViewOnTop
+                            || i == BGFXView::ViewOutline
+                            || i == BGFXView::ViewSectionCap
+                            || i == BGFXView::ViewSectionCapTransp
                         ? bgfx::ViewMode::Sequential
                         : bgfx::ViewMode::Default);
             bgfx::touch(id);
@@ -2135,6 +2375,16 @@ public:
             }
         }
 
+        // 1b. Stencil section caps of clipped solids, in their own
+        // sequential views (opaque caps between the opaque and outline
+        // passes, transparent caps after the OIT composite — GL's
+        // grouped section pass order).
+        view->updateHatchTexture(hatchVersion,
+                                 hatchRGBA.empty() ? nullptr
+                                                   : hatchRGBA.data(),
+                                 hatchWidth, hatchHeight);
+        submitSectionCaps(view, reinterpret_cast<const float *>(projMatrix));
+
         // 2. Selection whole-object fills; positive ids are on-top
         // selections (SoFCRenderer::addSelection). Their lines/points are
         // deferred to the two-pass loop when it runs; single-part (e.g.
@@ -2363,6 +2613,259 @@ public:
         return true;
     }
 
+    /// GL's SectionFillInvert color transform (_renderSection ~1838):
+    /// invert each channel, mapping the mid-gray band to 180 and
+    /// near-black results to 50; the alpha stays.
+    static uint32_t invertCapColor(uint32_t col)
+    {
+        auto inv = [](uint32_t c) -> uint32_t {
+            return (c > 120 && c < 140) ? 180 : 255 - c;
+        };
+        uint32_t r = inv((col >> 24) & 0xff);
+        uint32_t g = inv((col >> 16) & 0xff);
+        uint32_t b = inv((col >> 8) & 0xff);
+        if (r + g + b < 10)
+            r = g = b = 50;
+        return (r << 24) | (g << 16) | (b << 8) | (col & 0xff);
+    }
+
+    /// Build the world-space cap quad of one section plane over the
+    /// given bounds, replicating _renderSection's geometry: a square of
+    /// the bounding sphere's radius centered on the bbox center
+    /// projected onto the plane, oriented by Coin's z-to-normal
+    /// rotation, with the hatch texture coordinates scaled from the
+    /// world-to-pixel ratio at mid view depth.
+    void buildCapQuad(const float plane[4], const float bmin[3],
+                      const float bmax[3], const float *projMat,
+                      int vpWidth, CapVertex verts[4]) const
+    {
+        float n[3] = {plane[0], plane[1], plane[2]};
+        float nlen = std::sqrt(n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
+        if (nlen < 1e-12f)
+            nlen = 1.0f;
+        n[0] /= nlen; n[1] /= nlen; n[2] /= nlen;
+
+        float center[3], ext[3];
+        for (int i = 0; i < 3; ++i) {
+            center[i] = 0.5f * (bmin[i] + bmax[i]);
+            ext[i] = bmax[i] - bmin[i];
+        }
+        float radius = 0.5f * std::sqrt(
+            ext[0]*ext[0] + ext[1]*ext[1] + ext[2]*ext[2]);
+
+        // Project the center onto the plane (GL: center += -normal *
+        // plane.getDistance(center)).
+        float dist = center[0]*n[0] + center[1]*n[1] + center[2]*n[2]
+            + plane[3] / nlen;
+        for (int i = 0; i < 3; ++i)
+            center[i] -= n[i] * dist;
+
+        // Coin SbRotation(z-axis -> normal): quaternion from the cross
+        // product, with the antiparallel fallback about the y axis.
+        float q[4];  // x, y, z, w
+        float dot = n[2];
+        float cx = -n[1], cy = n[0], cz = 0.0f;  // cross(z, n)
+        float crosslen = std::sqrt(cx*cx + cy*cy);
+        if (crosslen < 1e-12f) {
+            if (dot > 0.0f) {
+                q[0] = q[1] = q[2] = 0.0f; q[3] = 1.0f;
+            } else {
+                q[0] = 0.0f; q[1] = 1.0f; q[2] = 0.0f; q[3] = 0.0f;
+            }
+        } else {
+            float s = std::sqrt(0.5f * std::fabs(1.0f - dot)) / crosslen;
+            q[0] = cx * s; q[1] = cy * s; q[2] = cz * s;
+            q[3] = std::sqrt(0.5f * std::fabs(1.0f + dot));
+        }
+        // u = q * x-axis * radius, v = q * y-axis * radius.
+        auto rotate = [&q](const float in[3], float out[3]) {
+            // v' = v + 2 * cross(q.xyz, cross(q.xyz, v) + w * v)
+            float t[3] = {
+                q[1]*in[2] - q[2]*in[1] + q[3]*in[0],
+                q[2]*in[0] - q[0]*in[2] + q[3]*in[1],
+                q[0]*in[1] - q[1]*in[0] + q[3]*in[2],
+            };
+            out[0] = in[0] + 2.0f * (q[1]*t[2] - q[2]*t[1]);
+            out[1] = in[1] + 2.0f * (q[2]*t[0] - q[0]*t[2]);
+            out[2] = in[2] + 2.0f * (q[0]*t[1] - q[1]*t[0]);
+        };
+        static const float xaxis[3] = {1.0f, 0.0f, 0.0f};
+        static const float yaxis[3] = {0.0f, 1.0f, 0.0f};
+        float u[3], v[3];
+        rotate(xaxis, u);
+        rotate(yaxis, v);
+        for (int i = 0; i < 3; ++i) {
+            u[i] *= radius;
+            v[i] *= radius;
+        }
+
+        // Hatch texture scale (GL: _renderSection ~1852): pixels per
+        // world unit at mid view depth from the projection matrix (the
+        // stand-in for Coin's getWorldToScreenScale at the sight point),
+        // times the bounding radius, over the texture width.
+        float texscale = 0.0f;
+        if (secconf.hatchEnable && hatchWidth > 0) {
+            float hs = std::max(1e-4f, 0.3f * secconf.hatchScale);
+            float worldPerVp;
+            if (projMat[15] == 1.0f) {  // orthographic
+                worldPerVp = 2.0f / projMat[0];
+            } else {
+                float near_ = projMat[14] / (projMat[10] - 1.0f);
+                float far_ = projMat[14] / (projMat[10] + 1.0f);
+                float wmid = near_ + 0.5f * (far_ - near_);
+                worldPerVp = 2.0f * wmid / projMat[0];
+            }
+            float pixelsize = float(vpWidth) / (hs * worldPerVp);
+            texscale = std::max(1e-3f, radius * pixelsize
+                                           / float(hatchWidth));
+        }
+
+        // GL vertex/texcoord assignment: v1=(0,s) v2=(0,0) v3=(s,0)
+        // v4=(s,s) around center +/- u/v.
+        auto set = [&](CapVertex &vert, float su, float sv,
+                       float tu, float tv) {
+            vert.px = center[0] + sv*v[0] + su*u[0];
+            vert.py = center[1] + sv*v[1] + su*u[1];
+            vert.pz = center[2] + sv*v[2] + su*u[2];
+            vert.u = tu;
+            vert.v = tv;
+        };
+        set(verts[0], -1.0f,  1.0f, 0.0f, texscale);
+        set(verts[1],  1.0f,  1.0f, 0.0f, 0.0f);
+        set(verts[2],  1.0f, -1.0f, texscale, 0.0f);
+        set(verts[3], -1.0f, -1.0f, texscale, texscale);
+    }
+
+    /// Stencil section caps of clipped solids (GL: renderSection /
+    /// renderSectionGrouped / _renderSection). For every eligible draw
+    /// (whole solid triangle geometry with clip planes) and every one of
+    /// its section planes: parity-mark the solid clipped by that plane
+    /// alone, fill the cap quad where marked (clipped by the remaining
+    /// planes outside concave mode), and clean the stencil up again.
+    /// SectionFillGroup caps runs of same-colored draws together like
+    /// GL, turning intersecting same-material solids into one boolean
+    /// cut.
+    void submitSectionCaps(BGFXView *view, const float *projMat)
+    {
+        auto isTransp = [](const Render::DrawCall &d) {
+            return d.material.transparent
+                || (d.material.pervertexcolor
+                    && d.mesh && d.mesh->hasTransparency);
+        };
+        auto eligible = [this](const Render::DrawCall &d) {
+            return d.material.type == Render::Material::Triangle
+                && d.partIndex < 0
+                && d.material.numclipplanes > 0
+                && !d.material.ontop
+                && d.mesh
+                && (d.material.solidshape || d.mesh->hasSolid)
+                && (secconf.fill || d.material.clipconcave);
+        };
+
+        // Opaque and transparent cap sources, following the buckets the
+        // fills render in (GL collects section entries in renderOpaque
+        // and renderTransparency): the scene minus draws replaced by
+        // whole-object selections, plus the (deduplicated) whole-object
+        // selection draws themselves.
+        std::vector<const Render::DrawCall *> items[2];
+        for (const auto &draw : scene) {
+            if (eligible(draw)
+                    && !(draw.objectKey && !hiddenKeys.empty()
+                         && hiddenKeys.count(draw.objectKey)))
+                items[isTransp(draw) ? 1 : 0].push_back(&draw);
+        }
+        for (const auto &sel : selections) {
+            for (const auto &draw : sel.second) {
+                if (eligible(draw)
+                        && !(!dupDraws.empty() && dupDraws.count(&draw)))
+                    items[isTransp(draw) ? 1 : 0].push_back(&draw);
+            }
+        }
+
+        auto samePlanes = [](const Render::Material &a,
+                             const Render::Material &b) {
+            if (a.numclipplanes != b.numclipplanes)
+                return false;
+            return std::memcmp(a.clipplanes, b.clipplanes,
+                    sizeof(a.clipplanes[0]) * a.numclipplanes) == 0;
+        };
+
+        for (int bucket = 0; bucket < 2; ++bucket) {
+            const auto &list = items[bucket];
+            uint16_t capView = bucket ? BGFXView::ViewSectionCapTransp
+                                      : BGFXView::ViewSectionCap;
+            for (size_t head = 0; head < list.size();) {
+                const Render::Material &mat = list[head]->material;
+                // Consecutive same-color same-planes run (GL groups on
+                // diffuse + clippers; autozoom is not translated).
+                size_t tail = head + 1;
+                if (secconf.fillGroup && !mat.clipconcave) {
+                    while (tail < list.size()
+                            && list[tail]->material.diffuse == mat.diffuse
+                            && samePlanes(list[tail]->material, mat))
+                        ++tail;
+                }
+
+                // Union world bbox -> cap quad placement.
+                float bmin[3], bmax[3];
+                bool bvalid = false;
+                for (size_t k = head; k < tail; ++k) {
+                    const auto &d = *list[k];
+                    if (d.bboxMin[0] > d.bboxMax[0])
+                        continue;
+                    if (!bvalid) {
+                        bvalid = true;
+                        for (int i = 0; i < 3; ++i) {
+                            bmin[i] = d.bboxMin[i];
+                            bmax[i] = d.bboxMax[i];
+                        }
+                    } else {
+                        for (int i = 0; i < 3; ++i) {
+                            bmin[i] = qMin(bmin[i], d.bboxMin[i]);
+                            bmax[i] = qMax(bmax[i], d.bboxMax[i]);
+                        }
+                    }
+                }
+                if (!bvalid) {
+                    head = tail;
+                    continue;
+                }
+
+                uint32_t color = secconf.fillInvert
+                    ? invertCapColor(mat.diffuse) : mat.diffuse;
+                for (int i = 0; i < mat.numclipplanes; ++i) {
+                    bool marked = false;
+                    for (size_t k = head; k < tail; ++k)
+                        marked |= view->submitCapMark(
+                            *list[k], mat.clipplanes[i], capView);
+                    if (!marked)
+                        continue;
+                    CapVertex verts[4];
+                    buildCapQuad(mat.clipplanes[i], bmin, bmax, projMat,
+                                 view->width, verts);
+                    // The cap of one plane is clipped by the remaining
+                    // planes; concave mode leaves it unclipped (GL's
+                    // clip state there).
+                    float others[Render::Material::MaxClipPlanes][4];
+                    int numother = 0;
+                    if (!mat.clipconcave) {
+                        for (int j = 0; j < mat.numclipplanes; ++j) {
+                            if (j != i)
+                                std::memcpy(others[numother++],
+                                            mat.clipplanes[j],
+                                            sizeof(others[0]));
+                        }
+                    }
+                    view->submitCapQuad(verts, color, others, numother,
+                                        secconf.hatchEnable && hatchWidth > 0,
+                                        bucket == 1, capView);
+                    view->submitCapCleanup(verts, capView);
+                }
+                head = tail;
+            }
+        }
+    }
+
     void updateBBox()
     {
         bboxValid = false;
@@ -2399,6 +2902,14 @@ public:
     std::unordered_set<uint64_t> hiddenKeys;
     std::unordered_set<const Render::DrawCall *> dupDraws;
     Render::HiddenLineConfig hlconfig;
+    Render::SectionConfig secconf;
+    // CPU copy of the section hatch texture, expanded to RGBA8; the
+    // version stamps GPU re-uploads (0 = no image).
+    std::vector<uint8_t> hatchRGBA;
+    int hatchWidth = 0;
+    int hatchHeight = 0;
+    const void *hatchKey = nullptr;
+    uint64_t hatchVersion = 0;
     bool hlWholeOnTop = false;
     bool sceneDirty = false;
     bool hasScene = false;
@@ -2515,6 +3026,49 @@ void BGFXRenderer::setHiddenLineConfig(const HiddenLineConfig &config)
         pimpl->hlconfig = config;
         pimpl->sceneDirty = true;
     }
+}
+
+void BGFXRenderer::setSectionConfig(const SectionConfig &config)
+{
+    if (pimpl->secconf != config) {
+        pimpl->secconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setHatchImage(const void *data, int nc,
+                                 int width, int height)
+{
+    if (data == pimpl->hatchKey && width == pimpl->hatchWidth
+            && height == pimpl->hatchHeight)
+        return;
+    pimpl->hatchKey = data;
+    pimpl->hatchRGBA.clear();
+    pimpl->hatchWidth = 0;
+    pimpl->hatchHeight = 0;
+    if (data && nc > 0 && width > 0 && height > 0) {
+        // Expand to RGBA8 (the image comes as tightly packed
+        // nc-component rows; 1/2 components are luminance(+alpha)).
+        const uint8_t *src = static_cast<const uint8_t *>(data);
+        pimpl->hatchRGBA.resize(size_t(width) * height * 4);
+        uint8_t *dst = pimpl->hatchRGBA.data();
+        for (size_t i = 0, n = size_t(width) * height; i < n; ++i) {
+            const uint8_t *p = src + i * nc;
+            switch (nc) {
+            case 1: dst[0] = dst[1] = dst[2] = p[0]; dst[3] = 255; break;
+            case 2: dst[0] = dst[1] = dst[2] = p[0]; dst[3] = p[1]; break;
+            case 3: dst[0] = p[0]; dst[1] = p[1]; dst[2] = p[2];
+                    dst[3] = 255; break;
+            default: dst[0] = p[0]; dst[1] = p[1]; dst[2] = p[2];
+                     dst[3] = p[3]; break;
+            }
+            dst += 4;
+        }
+        pimpl->hatchWidth = width;
+        pimpl->hatchHeight = height;
+    }
+    ++pimpl->hatchVersion;
+    pimpl->sceneDirty = true;
 }
 
 bool BGFXRenderer::needsRedraw() const

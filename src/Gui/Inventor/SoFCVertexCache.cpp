@@ -1253,6 +1253,26 @@ SoFCVertexCache::renderSolids(SoState * state)
   PRIVATE(this)->render(state, PRIVATE(this)->triangleindexer, arrays, offsets, counts, drawcount);
 }
 
+int
+SoFCVertexCache::getNumSolidParts(void) const
+{
+  return (int)PRIVATE(this)->solidpartarray.size();
+}
+
+SbBool
+SoFCVertexCache::getSolidPartRange(int part, int & start, int & count) const
+{
+  if (part < 0 || part >= (int)PRIVATE(this)->solidpartarray.size())
+    return FALSE;
+  if (!PRIVATE(this)->triangleindexer)
+    return FALSE;
+  // solidpartarray keeps glMultiDrawElements byte offsets.
+  int typesize = PRIVATE(this)->triangleindexer->useShorts() ? 2 : 4;
+  start = (int)(PRIVATE(this)->solidpartarray[part] / typesize);
+  count = PRIVATE(this)->solidpartcounts[part];
+  return TRUE;
+}
+
 void
 SoFCVertexCache::renderLines(SoState * state, const int arrays, int part, bool noseam)
 {

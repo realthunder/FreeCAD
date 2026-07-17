@@ -58,6 +58,9 @@ public:
     virtual void setHighlight(DrawCallList &&draws, bool wholeOnTop) override;
     virtual void clearHighlight() override;
     virtual void setHiddenLineConfig(const HiddenLineConfig &config) override;
+    virtual void setSectionConfig(const SectionConfig &config) override;
+    virtual void setHatchImage(const void *data, int nc,
+                               int width, int height) override;
     virtual bool needsRedraw() const override;
     virtual bool canSkipInternal() const override;
 

@@ -47,6 +47,10 @@ GuiExport Render::DrawCallList translate(
 /// (SoFCDisplayModeElement) into the backend-neutral per-frame config.
 GuiExport Render::HiddenLineConfig translateHiddenLineConfig(SoState * state);
 
+/// Resolve the section fill (cap) ViewParams into the backend-neutral
+/// per-frame config.
+GuiExport Render::SectionConfig translateSectionConfig();
+
 } // namespace RendererBridge
 } // namespace Gui
 

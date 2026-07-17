@@ -82,6 +82,13 @@ struct MeshData {
     /// sceneOutline or a zero outline width (GL: getNonFlatParts()).
     std::vector<std::pair<int, int>> nonFlatParts;
 
+    /// Solid-geometry knowledge for section capping (SoFCShapeInfo):
+    /// 0 = none, 1 = some face parts belong to solids (solidParts holds
+    /// their {start, count} ranges into triangleIndices), 2 = the whole
+    /// triangle set is solid. Filled for clipped triangle materials.
+    int hasSolid = 0;
+    std::vector<std::pair<int, int>> solidParts;
+
     bool hasTransparency = false;   ///< some per-vertex colors are transparent
     bool hasOpaqueParts = false;    ///< some per-vertex colors are opaque
 };
@@ -129,6 +136,25 @@ struct HiddenLineConfig {
             && lineColor == o.lineColor;
     }
     bool operator!=(const HiddenLineConfig &o) const { return !(*this == o); }
+};
+
+/// Per-frame section (clip plane) fill configuration, mirroring the
+/// ViewParams the GL renderer reads in renderSection/_renderSection.
+/// Resolved by the bridge each render like HiddenLineConfig.
+struct SectionConfig {
+    bool fill = true;        ///< cap the cross section of clipped solids
+    bool fillInvert = true;  ///< invert the cap fill color
+    bool fillGroup = false;  ///< cap same-material solids together
+    bool concave = false;    ///< SectionConcave (union of half-spaces)
+    bool hatchEnable = true; ///< modulate the cap with the hatch texture
+    float hatchScale = 1.0f; ///< hatch texture scale
+
+    bool operator==(const SectionConfig &o) const {
+        return fill == o.fill && fillInvert == o.fillInvert
+            && fillGroup == o.fillGroup && concave == o.concave
+            && hatchEnable == o.hatchEnable && hatchScale == o.hatchScale;
+    }
+    bool operator!=(const SectionConfig &o) const { return !(*this == o); }
 };
 
 /// Flattened per-draw render state, translated from the Coin-side material
@@ -189,6 +215,11 @@ struct Material {
     /// whole-cache triangle draws get a stencil outline, and the active
     /// HiddenLineConfig's hideFace/hideSeam/hideVertex rules apply.
     bool outline = false;
+
+    /// Coin shape hints declare the geometry a closed solid
+    /// (SoShapeHintsElement::SOLID); together with MeshData::hasSolid this
+    /// gates the stencil section cap of clipped draws.
+    bool solidshape = false;
 
     /// World-space clip plane equations (sections). A fragment survives
     /// when dot(pos, plane.xyz) + plane.w >= 0 holds for every plane, or,
@@ -260,6 +291,14 @@ public:
     /// state each render, like the GL renderer does).
     virtual void setHiddenLineConfig(const HiddenLineConfig &config)
     { (void)config; }
+    /// Per-frame section fill (cap) configuration.
+    virtual void setSectionConfig(const SectionConfig &config)
+    { (void)config; }
+    /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
+    /// tightly packed. Null data clears the texture. The pixels are copied.
+    virtual void setHatchImage(const void *data, int nc,
+                               int width, int height)
+    { (void)data; (void)nc; (void)width; (void)height; }
     /// True if scene data changed after the last render() and another
     /// frame should be scheduled.
     virtual bool needsRedraw() const { return false; }

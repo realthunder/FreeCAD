@@ -357,6 +357,9 @@ SoFCRendererP::deleteHatchTexture()
 void
 SoFCRenderer::setHatchImage(const void *dataptr, int nc, int width, int height)
 {
+  if (PRIVATE(this)->external)
+    PRIVATE(this)->external->setHatchImage(dataptr, nc, width, height);
+
   if (!dataptr) {
     PRIVATE(this)->deleteHatchTexture();
     return;
@@ -841,6 +844,9 @@ SoFCRenderer::setExternalRenderer(Render::Renderer * renderer)
     renderer->setHighlight(
           RendererBridge::translate(PRIVATE(this)->highlightcaches),
           PRIVATE(this)->hlwholeontop);
+  if (auto hatch = PRIVATE(this)->hatchtexture)
+    renderer->setHatchImage(hatch->data.data(), hatch->nc,
+                            hatch->width, hatch->height);
 }
 
 void
@@ -2227,9 +2233,12 @@ SoFCRenderer::render(SoGLRenderAction * action)
   // and is resolved per render; mirror it to the external backend (which
   // draws before this traversal, so it applies one frame late like the
   // scene feed).
-  if (PRIVATE(this)->external)
+  if (PRIVATE(this)->external) {
     PRIVATE(this)->external->setHiddenLineConfig(
         RendererBridge::translateHiddenLineConfig(action->getState()));
+    PRIVATE(this)->external->setSectionConfig(
+        RendererBridge::translateSectionConfig());
+  }
 
   // When an external backend has rendered the current scene (it draws into
   // the framebuffer before the Coin traversal), skip the internal
