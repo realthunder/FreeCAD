@@ -591,11 +591,23 @@ independent of each other; item 4 builds on item 3's property model.
    resynced in `finishRestoring`). Verified on llvmpipe: per-object
    metallic/roughness on one of two objects changes exactly that
    object's pixels under global PBR; default render bit-identical to
-   before. Remaining in this item: texture properties
-   (BaseColorTexture/NormalMap as `PropertyFileIncluded` building
-   `SoTexture2`/`SoBumpMap` nodes), texture transform, shadow
-   cast/receive flags, and a UI beyond the property editor's
-   add-property dialog.
+   before.
+   *Texture properties done (2026-07)*: optional
+   `Render_BaseColorTexture` / `Render_NormalMap` dynamic properties
+   (`App::PropertyFileIncluded` — images embed in the `.FCStd`) build
+   unit-0 `SoTexture2` / `SoBumpMap` nodes with the pixels decoded by Qt
+   into the node's `image` field (no Coin/simage dependency; also feeds
+   the render-cache texture capture directly). A normal map alone still
+   inserts a 1x1 white color texture — an enabled texture unit is what
+   makes shapes generate texture coordinates. Verified: per-object
+   checkerboard textures exactly one of two objects in both bgfx and
+   mode-3 GL. Deviation noted while testing (pre-existing, not from this
+   plumbing — both renderers read the same cached UVs): the bgfx texture
+   path renders a cylinder's *cap* face differently from GL (dim
+   continued checker vs GL's stripes) — investigate with the texture
+   rows' minification work. Remaining in this item: texture transform
+   property, shadow cast/receive flags, and a UI beyond the property
+   editor's add-property dialog.
 
 4. **glTF import/export with materials & textures (2–3 wks)** — round-trip
    the renderer's material model (deliberately chosen as glTF

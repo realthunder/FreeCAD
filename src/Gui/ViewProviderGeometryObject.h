@@ -33,6 +33,8 @@ class SoSensor;
 class SbVec2s;
 class SoBaseColor;
 class SoNodeSensor;
+class SoTexture2;
+class SoBumpMap;
 
 namespace Gui {
 
@@ -100,10 +102,15 @@ protected:
     /// Sync the optional SoFCRenderMaterial node (render engine per-object
     /// PBR parameters) with the Render_* dynamic properties.
     void updateRenderMaterial();
+    /// Sync the optional SoTexture2/SoBumpMap nodes with the
+    /// Render_BaseColorTexture / Render_NormalMap dynamic properties.
+    void updateRenderTexture();
 
 protected:
     SoMaterial       * pcShapeMaterial{nullptr};
     SoFCRenderMaterial * pcRenderMaterial{nullptr};
+    SoTexture2       * pcRenderTexture{nullptr};
+    SoBumpMap        * pcRenderBumpMap{nullptr};
 
 private:
     SoFCBoundingBox  * pcBoundingBox{nullptr};

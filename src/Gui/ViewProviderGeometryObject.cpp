@@ -39,6 +39,12 @@
 #endif
 
 #include <Inventor/nodes/SoResetTransform.h>
+#include <Inventor/nodes/SoTexture2.h>
+#include <Inventor/nodes/SoBumpMap.h>
+
+#include <QImage>
+
+#include <App/PropertyFile.h>
 
 #include <App/GeoFeature.h>
 #include <App/PropertyGeo.h>
@@ -108,6 +114,10 @@ ViewProviderGeometryObject::~ViewProviderGeometryObject()
     pcShapeMaterial->unref();
     if (pcRenderMaterial)
         pcRenderMaterial->unref();
+    if (pcRenderTexture)
+        pcRenderTexture->unref();
+    if (pcRenderBumpMap)
+        pcRenderBumpMap->unref();
     if(pcBoundingBox)
         pcBoundingBox->unref();
     if(pcBoundSwitch)
@@ -163,11 +173,92 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
     else if (prop->getName()
              && strncmp(prop->getName(), "Render_", 7) == 0) {
         // Render engine per-object settings (dynamic properties, group
-        // "Render"), mirrored into a SoFCRenderMaterial node.
-        updateRenderMaterial();
+        // "Render"), mirrored into SoFCRenderMaterial / texture nodes.
+        if (strcmp(prop->getName(), "Render_BaseColorTexture") == 0
+                || strcmp(prop->getName(), "Render_NormalMap") == 0)
+            updateRenderTexture();
+        else
+            updateRenderMaterial();
     }
 
     ViewProviderDragger::onChanged(prop);
+}
+
+namespace {
+
+// Load an image file into a SoSFImage field (RGBA8). Qt does the decoding
+// so no optional Coin/simage image support is needed; the pixels embed in
+// the node, which also feeds the mode-3 render cache texture capture.
+bool loadTextureImage(const char *path, SoSFImage &field)
+{
+    QImage img;
+    if (!path || !path[0] || !img.load(QString::fromUtf8(path)))
+        return false;
+    img = img.convertToFormat(QImage::Format_RGBA8888);
+    // Coin images are bottom-up.
+    img = img.mirrored(false, true);
+    field.setValue(SbVec2s(short(img.width()), short(img.height())), 4,
+                   img.constBits());
+    return true;
+}
+
+} // anonymous namespace
+
+void ViewProviderGeometryObject::updateRenderTexture()
+{
+    auto fileProp = [this](const char *name) -> const char * {
+        auto prop = Base::freecad_dynamic_cast<App::PropertyFileIncluded>(
+                getPropertyByName(name));
+        return prop ? prop->getValue() : nullptr;
+    };
+    const char *color = fileProp("Render_BaseColorTexture");
+    const char *bump = fileProp("Render_NormalMap");
+
+    // Base color texture (unit-0 SoTexture2, modulate). When only a bump
+    // map is set, a 1x1 white stand-in still goes in: an enabled texture
+    // unit is what makes the shapes generate texture coordinates (both in
+    // Coin GL and in the render cache capture).
+    bool wantTexture = (color && color[0]) || (bump && bump[0]);
+    if (!wantTexture) {
+        if (pcRenderTexture) {
+            int idx = pcRoot->findChild(pcRenderTexture);
+            if (idx >= 0)
+                pcRoot->removeChild(idx);
+            pcRenderTexture->unref();
+            pcRenderTexture = nullptr;
+        }
+    }
+    else {
+        if (!pcRenderTexture) {
+            pcRenderTexture = new SoTexture2;
+            pcRenderTexture->ref();
+            pcRoot->insertChild(pcRenderTexture, 0);
+        }
+        if (!loadTextureImage(color, pcRenderTexture->image)) {
+            static const unsigned char white[4] = {255, 255, 255, 255};
+            pcRenderTexture->image.setValue(SbVec2s(1, 1), 4, white);
+        }
+    }
+
+    // Tangent-space normal map / grayscale height map (SoBumpMap; only
+    // the external render backends draw it).
+    if (!(bump && bump[0])) {
+        if (pcRenderBumpMap) {
+            int idx = pcRoot->findChild(pcRenderBumpMap);
+            if (idx >= 0)
+                pcRoot->removeChild(idx);
+            pcRenderBumpMap->unref();
+            pcRenderBumpMap = nullptr;
+        }
+    }
+    else {
+        if (!pcRenderBumpMap) {
+            pcRenderBumpMap = new SoBumpMap;
+            pcRenderBumpMap->ref();
+            pcRoot->insertChild(pcRenderBumpMap, 0);
+        }
+        loadTextureImage(bump, pcRenderBumpMap->image);
+    }
 }
 
 void ViewProviderGeometryObject::updateRenderMaterial()
@@ -231,8 +322,9 @@ void ViewProviderGeometryObject::finishRestoring()
 {
     updateBoundingBox();
     // Restored Render_* dynamic properties (per-object render engine
-    // settings) need their scene graph node rebuilt.
+    // settings) need their scene graph nodes rebuilt.
     updateRenderMaterial();
+    updateRenderTexture();
     inherited::finishRestoring();
 }
 
