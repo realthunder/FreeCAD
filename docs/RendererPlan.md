@@ -1,7 +1,8 @@
 # Renderer Plan: bgfx-based Render Engine
 
-Status: draft, 2026-07-16. Companion to `RoadMap.md` (renderer workstream) and
-`ComputeBoundaries.md`.
+Status: draft, 2026-07-16; amended 2026-07-17 (Phase 2b: material/settings
+plumbing + glTF interchange). Companion to `RoadMap.md` (renderer workstream)
+and `ComputeBoundaries.md`.
 
 Goal: a modern render engine for FreeCAD with PBR materials + IBL, SSAO,
 shadows with volumetric lighting, order-independent transparency, capped
@@ -481,12 +482,114 @@ predates this work — verified bit-identical before/after.
 |---|---|---|
 | WBOIT | 1.5–2 | *Done (2026-07), first cut.* RGBA16F accum + R16F revealage MRT sharing the scene depth (test only), weight = McGuire eq. 10, independent per-target blending, fullscreen composite view (`vs/fs_fc_comp`) resolving INV_SRC_ALPHA/SRC_ALPHA onto the scene FBO. Active where independent blend + half-float FB formats exist (WebGL2-compatible set); falls back to the bbox-sorted alpha blend otherwise or when a frame has no transparent scene triangles. Verified: transparent brightness within the general fill-shading tolerance of GL (~-8/255 vs -7 on opaque fills). *MSAA resolve chain done (2026-07)*: the accum/reveal targets carry the scene's sample count and are created without `BGFX_TEXTURE_RT_WRITE_ONLY`, so bgfx pairs each with a single-sample resolve texture and blit-resolves automatically when the transparent view's framebuffer is switched away — the composite pass then samples the resolved images (formats gated on `BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER_MSAA` under MSAA). Resolve-then-composite averages accum/revealage per pixel before the WBOIT formula (the standard approximation; transparent silhouettes get coverage-weighted edges rather than per-sample compositing). Fixed on the way: the scene depth target was created with `flags & ~BGFX_TEXTURE_RT`, but the MSAA levels are an *enum* in that flag nibble — under MSAA4x this silently degraded the depth renderbuffer to 2 samples, desyncing it from the color attachment. Verified vs GL at MSAA4x (threshold 30, all within the fill/AA-edge tolerance of the same scenes): transparent WBOIT 1039 px, opaque 669 px, clip+transparent caps 408 px; non-MSAA transparent regression 324 px. |
 | SSAO (ASSAO) | 1.5–2 | needs depth+normal prepass from Phase 0. *First cut done (2026-07), hemisphere-kernel pixel-shader SSAO (not yet the ASSAO port — bgfx ex.39 is compute-only, which WebGL2 lacks; this cut is the WebGL2-portable baseline and builds the prepass infrastructure ASSAO/GTAO need).* Three new views before the opaque pass render a depth+normal prepass of the opaque scene triangles (own non-MSAA RGBA16F target + D24S8 depth: octahedral-encoded viewer-facing view normal + linear view depth, fp16 — models beyond ~65k units will wrap) and resolve AO from it (16-sample rotated-hemisphere kernel with 4x4 tiled noise, range-checked with smoothstep falloff, 4x4 box blur), and a fourth view multiplies the blurred AO onto the scene color between the section caps and the outline/transparent passes — transparent geometry neither receives nor casts AO, and the on-top/highlight buckets stay clean. Position reconstruction and the prepass front-facing flip handle orthographic and perspective projections separately (u_proj[2][3] decides; the naive dot(n, viewpos) facing test mis-flips near-eye-plane faces under ortho — found as a black cylinder cap in testing). Configured per frame via `Render::AOConfig` from new ViewParams (`RendererSSAO`, `RendererSSAORadius` — 0 = auto, 5% of the scene bbox diagonal — `RendererSSAOIntensity`); disabled in hidden-line mode and gated on renderable RGBA16F+R8 (the WebGL2 float-buffer set, like WBOIT). Verified on llvmpipe: SSAO-off bit-compatible with GL (0 px > 30); SSAO-on front view of unoccluded geometry stays within the same tolerance; iso/perspective/clip/MSAA4x/WBOIT scenes show correct contact darkening at a box-slot/cylinder junction only. Known gaps: caps and on-top draws are not prepass sources; AO under a clip plane comes from the clipped interior back faces; no mip/half-res path yet (full-res generate). |
-| PBR + IBL | 3–4 | BRDF + env prefilter pipeline; matcap fallback; material property plumbing from ViewProvider. *First cut done (2026-07).* Uniform-selected branch of the shared mesh fragment shader (all 8 mesh programs, no new variants): metallic/roughness GGX with a white headlight (L=V; the direct specular term is clamped — with a headlight every facing plane sits exactly on the GGX peak 1/πa², which would flash whole faces white at low roughness) plus IBL from a fixed procedural Z-up studio environment (ground/horizon/sky gradient + 3 light lobes; the ground stays fairly bright — metals reflect the lower hemisphere over most side faces) built once per view on the CPU, deterministic: GGX-prefiltered RGBA16F cubemap mip chain (64px, N=V=R Hammersley importance sampling, shader lod = roughness×5) with Lazarov's analytic env BRDF (no LUT texture) for specular, cosine-convolved SH9 irradiance (Ramamoorthi polynomial, basis/cosine/1/π constants folded into 9 vec4 uniforms) for diffuse — all fragment-shader-only, WebGL2-safe. Per-frame `Render::PBRConfig` from new ViewParams (`RendererPBR`, `RendererPBRMetallic`, `RendererPBRRoughness` — 0 = derive per draw from the material shininess via √(2/(exp+2)) — `RendererPBREnvIntensity`); baseColor = material diffuse / per-vertex color; disabled in hidden-line mode like SSAO; gated on cube-samplable RGBA16F; a dummy black cube keeps the always-present sampler valid when off. Verified on llvmpipe: PBR-off bit-compatible with GL (0 px > 30); dielectric/metal/WBOIT-transparent/SSAO-combined renders show the expected environment response (sky-tinted tops, floor reflections on metal sides, contact AO composes). Known gaps: per-object material plumbing from ViewProvider not started (global metallic/roughness only); no matcap fallback; environment is fixed (no user HDRI); textures still apply through the fixed-function texenv replay on top of the PBR result (no albedo-map semantics); no specular occlusion from SSAO. |
+| PBR + IBL | 3–4 | BRDF + env prefilter pipeline; matcap fallback; material property plumbing from ViewProvider. *First cut done (2026-07).* Uniform-selected branch of the shared mesh fragment shader (all 8 mesh programs, no new variants): metallic/roughness GGX with a white headlight (L=V; the direct specular term is clamped — with a headlight every facing plane sits exactly on the GGX peak 1/πa², which would flash whole faces white at low roughness) plus IBL from a fixed procedural Z-up studio environment (ground/horizon/sky gradient + 3 light lobes; the ground stays fairly bright — metals reflect the lower hemisphere over most side faces) built once per view on the CPU, deterministic: GGX-prefiltered RGBA16F cubemap mip chain (64px, N=V=R Hammersley importance sampling, shader lod = roughness×5) with Lazarov's analytic env BRDF (no LUT texture) for specular, cosine-convolved SH9 irradiance (Ramamoorthi polynomial, basis/cosine/1/π constants folded into 9 vec4 uniforms) for diffuse — all fragment-shader-only, WebGL2-safe. Per-frame `Render::PBRConfig` from new ViewParams (`RendererPBR`, `RendererPBRMetallic`, `RendererPBRRoughness` — 0 = derive per draw from the material shininess via √(2/(exp+2)) — `RendererPBREnvIntensity`); baseColor = material diffuse / per-vertex color; disabled in hidden-line mode like SSAO; gated on cube-samplable RGBA16F; a dummy black cube keeps the always-present sampler valid when off. Verified on llvmpipe: PBR-off bit-compatible with GL (0 px > 30); dielectric/metal/WBOIT-transparent/SSAO-combined renders show the expected environment response (sky-tinted tops, floor reflections on metal sides, contact AO composes). Known gaps: per-object material plumbing from ViewProvider not started (global metallic/roughness only — planned, Phase 2b item 3); no matcap fallback; environment is fixed (no user HDRI — Phase 2b item 2); textures still apply through the fixed-function texenv replay on top of the PBR result (no albedo-map semantics); no specular occlusion from SSAO. |
 | Bump/normal/parallax mapping | 1–1.5 | with (or right after) PBR, sharing its texture plumbing: tangent-space normal maps plus classic grayscale bump (height-to-normal in the sampler), and parallax-occlusion mapping (bgfx ex.33) for strong relief — all fragment-shader-only, WebGL2-safe. The tangent frame comes from screen-space derivatives (the cotangent-frame/surface-gradient trick: ddx/ddy of position and UV), NOT from authored vertex tangents — OCCT tessellation has no canonical UVs, Coin texcoords may be texgen'd, and the vertex caches carry no tangent attribute; the derivative frame works for any UV source and needs no cache format change. Reuses/extends the existing unit-0 texture bridge with additional material texture slots (normal/height), and gives the GL Shadow ground's `ShadowGroundBumpMap` a bgfx equivalent. True *displacement* is deferred to Phase 3. *First cut done (2026-07).* Unit-0 SoBumpMap captured by a dedicated cache-manager post callback (SoBumpMap::callback() is a no-op — the element only exists in GL rendering) into a new `Material::bumpmaps` map, kept out of `textures` (the GL renderer GLRenders those with their unit set); bridged as `Render::Material::bumpmap` (1/2-component = grayscale height, 3/4 = tangent-space normal map). In the backend the bump map rides the textured mesh programs (a white 1x1 stands in at unit 0 when there is no color texture — no new program variants; bump sampler at unit 2, new v_vpos varying in the tex family), derivative cotangent frame as planned, central-difference height-to-normal, 16-step POM with linear refinement that also offsets the color texture lookup; the perturbed normal feeds both the Blinn-Phong and PBR paths. New ViewParams `RendererBumpScale`, `RendererParallax` → per-frame `Render::BumpConfig`. Verified on llvmpipe: bump-off 0 px vs GL; height/normal relief correct on box+cylinder, with/without POM, composes with PBR; textured scene stays in the minification-speckle class. Known limits: needs mesh texcoords (only an enabled texture unit provides them — pair bump-only scenes with a plain white texture); SoBumpMapCoordinate/SoBumpMapMatrixElement unhandled; `ShadowGroundBumpMap` waits for the Shadows row; SSAO prepass keeps geometric normals. |
-| Shadows (VSM) | 2–3 | cached single-light variance shadow map, semantics ported from the GL Shadow draw style (Coin `SoShadowGroup`): directional/spot per `ShadowSpotLight`, ground-plane receiver with texture/bump (`ShadowShowGround`\*), per-object casting flags; depth-from-light pass reuses the prepass shader family; re-render only on scene/light change (`ShadowSync`); EVSM variant where RG32F is renderable to curb light bleeding. *First cut done (2026-07), directional light.* Key integration fact: the Shadow style's `SoShadowGroup` (light + ground) sits *above* the render-cache traversal root, so neither reaches the material feed — the light resolves per frame from the state's `SoLightElement` (`Render::LightConfig`; headlight filtered by node type; **the element's matrices map to view-reference coordinates**, the inverse viewing matrix multiplies back in), and the backend draws its own ground receiver quad (ShadowShowGround/Scale/Color). `Material::shadowstyle` (SoShadowStyleElement bitmask, captured by the existing manager callback) routes casters/receivers. New ViewShadow pass: 1024² RG16F(+D24S8; RG32F fallback) moments from `gl_FragCoord.z` under an ortho light camera fit to the scene bbox; position-only caster shaders + clip variant. Receivers sample via a view-space→shadow-uv matrix (crop per `homogeneousDepth`/`originBottomLeft`; new `v_vpos` varying in *all* mesh variants) with Chebyshev + light-bleed linstep; outside-map = lit. The light replaces the headlight in both lighting models (Blinn-Phong keeps the 0.2/diffuse split; PBR runs full GGX + Schlick Fresnel), and unlit receivers are force-lit like Coin's ground shaders. Debug: `FC_BGFX_DEBUG_SHADOW` (state + CPU matrix cross-check), `FC_BGFX_DEBUG_SHADOW_VIS` (moments/receiver-depth as color). Verified on llvmpipe: correct ground + self shadows (default light), composes with PBR+IBL; shadow-off 0 px vs GL. Known gaps: per-document Shadow_* overrides ignored (global ViewParams); spot light falls back to a directional fit; re-renders every frame (no ShadowSync caching); no VSM blur (`ShadowSmoothBorder`), no EVSM; ground texture/bump/transparency missing; darker overall than Coin's SoShadowGroup gain; on-top/transparent draws neither cast nor receive. |
+| Shadows (VSM) | 2–3 | cached single-light variance shadow map, semantics ported from the GL Shadow draw style (Coin `SoShadowGroup`): directional/spot per `ShadowSpotLight`, ground-plane receiver with texture/bump (`ShadowShowGround`\*), per-object casting flags; depth-from-light pass reuses the prepass shader family; re-render only on scene/light change (`ShadowSync`); EVSM variant where RG32F is renderable to curb light bleeding. *First cut done (2026-07), directional light.* Key integration fact: the Shadow style's `SoShadowGroup` (light + ground) sits *above* the render-cache traversal root, so neither reaches the material feed — the light resolves per frame from the state's `SoLightElement` (`Render::LightConfig`; headlight filtered by node type; **the element's matrices map to view-reference coordinates**, the inverse viewing matrix multiplies back in), and the backend draws its own ground receiver quad (ShadowShowGround/Scale/Color). `Material::shadowstyle` (SoShadowStyleElement bitmask, captured by the existing manager callback) routes casters/receivers. New ViewShadow pass: 1024² RG16F(+D24S8; RG32F fallback) moments from `gl_FragCoord.z` under an ortho light camera fit to the scene bbox; position-only caster shaders + clip variant. Receivers sample via a view-space→shadow-uv matrix (crop per `homogeneousDepth`/`originBottomLeft`; new `v_vpos` varying in *all* mesh variants) with Chebyshev + light-bleed linstep; outside-map = lit. The light replaces the headlight in both lighting models (Blinn-Phong keeps the 0.2/diffuse split; PBR runs full GGX + Schlick Fresnel), and unlit receivers are force-lit like Coin's ground shaders. Debug: `FC_BGFX_DEBUG_SHADOW` (state + CPU matrix cross-check), `FC_BGFX_DEBUG_SHADOW_VIS` (moments/receiver-depth as color). Verified on llvmpipe: correct ground + self shadows (default light), composes with PBR+IBL; shadow-off 0 px vs GL. Known gaps: per-document Shadow_* overrides ignored (global ViewParams — planned, Phase 2b item 2); spot light falls back to a directional fit; re-renders every frame (no ShadowSync caching); no VSM blur (`ShadowSmoothBorder`), no EVSM; ground texture/bump/transparency missing; darker overall than Coin's SoShadowGroup gain; on-top/transparent draws neither cast nor receive. |
 | Volumetric light shafts | 1–1.5 | after shadows: half-res per-pixel raymarch of the shadow map (~32-48 dithered steps) + bilateral upsample, composited before the transparent bucket; intensity/density params; skip when shadows are off. Extension (+~1): **water as a bounded medium** — per-ray entry/exit bounds (water plane, or front/back depth targets of a closed water body) and per-channel Beer–Lambert extinction (also attenuating surfaces seen through the water) cover underwater shafts and tinted harbor/tank/pool views with the same raymarch core; still fragment-shader-only. Above-water refraction and caustics are *not* volumetric and are deferred to Phase 3 |
 | Section caps | 2–3 | stencil capping + hatch, port `_renderSection` semantics. *Done (2026-07).* Two new sequential bgfx views (opaque caps between the opaque and outline passes, transparent caps after the OIT composite — GL's grouped-pass order). Per section plane: depth-independent stencil INVERT parity mark of the solid triangle ranges (`renderSolids` ported via new `SoFCVertexCache::getSolidPartRange` → `MeshData::solidParts`/`hasSolid`, plus `Material::solidshape` from the shape hints) clipped by that plane alone; then a world-space cap quad (`vs/fs_fc_cap(_clip)`, hatch texture modulate, depth LESS + write so the fill keeps the rim like GL's cap-before-fill order, clipped by the remaining planes, unclipped in concave mode) where the parity is odd; then a stencil-cleanup quad standing in for GL's per-pass stencil clear (the cap views also stencil-clear at view start — the outline passes leave marks behind). The bridge feeds a per-frame `Render::SectionConfig` (fill/invert/group/concave/hatch ViewParams) and the hatch image (`Renderer::setHatchImage`, forwarded from `SoFCRenderer` including on late attach); the fill-invert color transform, Coin's z→normal rotation (quad/hatch orientation), and the mid-depth world-to-pixel hatch scale are ported. Verified vs GL (threshold 30; deviations at or below the no-clip fill/edge baseline of the same scene): 1-plane, 2-plane intersection, 2-plane concave union, hatch off, invert off, transparent solids (WBOIT active), SectionFillGroup, and hidden-line+clip (caps match; the missing section-cut *outline* of clipped per-part HL outlines remains — the Phase 1 deviation, not closed by caps). Known deviations: cap sources are scene + whole-object selection draws only (GL also sections on-top buckets when `NoSectionOnTop` is off); transparent caps always follow GL's *grouped* order (after the whole transparent bucket); the grouping key ignores autozoom. |
 | Outline/hidden-line | 1.5–2 | screen-space depth/normal pass + existing edge geometry. *Selection/preselection face outline done (2026-07)*: ported the GL stencil technique — stencil-mark the face, redraw its triangle edges as instanced thick lines + point-sprite corner caps where the stencil differs (the portable stand-in for `glPolygonMode`); per-outline stencil refs avoid per-part clears; the bridge resolves the Show*/No*WithOutline params and outline width. Verified pixel-identical to GL for preselect (outline-only) and two-face selection. *Whole-scene + hidden-line outline variants done (2026-07, see Phase 1).* |
+
+### Phase 2b — material & settings plumbing, glTF interchange (6–8 wks)
+
+The Phase 2 features are all driven by *global* `ViewParams` today. This
+phase gives them a proper settings model (global → per-view → per-object)
+and connects it to a standard interchange format. Sequencing: item 1 first
+(everything else reads its defaults through it); items 2 and 3 are
+independent of each other; item 4 builds on item 3's property model.
+
+1. **`RenderParams` split (0.5 wk)** — move the renderer parameters out of
+   `ViewParams` into a new generated parameter class `Gui::RenderParams`
+   (`src/Gui/RenderParams.py`, cog + `Tools/params_utils.py`, same pattern
+   as `ViewParams.py`), parameter path
+   `User parameter:BaseApp/Preferences/View/Render` — a child group of the
+   View path. Movers: the ten `Renderer*` params (`RendererSSAO`\*,
+   `RendererPBR`\*, `RendererBumpScale`, `RendererParallax`) plus the raw
+   `RendererType` string currently read straight off the View group by
+   `View3DSettings` (View3DSettings.cpp:346) and the 3D-view prefs page.
+   Drop the now-redundant `Renderer` name prefix inside the new group
+   (`SSAO`, `PBRMetallic`, `Type`, …) with a one-time migration that copies
+   any existing old-key values from the View group. Wiring notes:
+   `View3DSettings::OnChange` only observes the View group handle — it must
+   also attach to the Render child group (or `RenderParams`'s own
+   `UserOnChange` hook triggers the redraw, mirroring
+   `ViewParams::onViewParamChanged`); the draw-styles prefs page
+   (`DlgSettingsDrawStyles`) and 3D-view page rewire to the new getters.
+   All *future* renderer settings (shadows, env/HDRI, volumetrics …) land
+   here, not in `ViewParams`.
+
+2. **Per-view render settings, Shadow-style (1–1.5 wks)** — expose the
+   engine settings as `Render_*` dynamic properties on the `View3DInventor`
+   view object, exactly like the Shadow draw style's 31 `Shadow_*`
+   properties: a `_renderParam` helper mirroring `_shadowParam`
+   (View3DInventorViewer.cpp:356) materializes each property on first use in
+   property group "Render", default-initialized from `RenderParams`, so
+   users can override per view/document what the preferences set globally.
+   `onViewPropertyChanged` (View3DInventorViewer.cpp:950) learns the
+   `Render_` prefix and re-resolves the per-frame configs
+   (`Render::AOConfig` / `PBRConfig` / `BumpConfig` / shadow + env config)
+   on edit — the feed path stays the existing once-per-frame
+   `Renderer::set*Config` calls, now reading view properties with
+   `RenderParams` fallback instead of `ViewParams` directly. Covered
+   settings: SSAO (enable/radius/intensity), PBR (enable/metallic/roughness
+   default, env intensity, later HDRI env file as
+   `App::PropertyFileIncluded`), bump (scale/parallax), plus renderer-
+   specific shadow knobs; the bgfx shadow path additionally starts honoring
+   the *existing* `Shadow_*` view properties (light direction/color/
+   intensity, ground show/scale/color/texture/bump, `ShadowSync`) — closing
+   the "per-document Shadow_* overrides ignored" gap in the Phase 2 Shadows
+   row. Unlike Shadow these settings are not tied to one draw style: they
+   apply whenever the backend renders (render cache 3 + renderer type
+   selected).
+
+3. **ViewProvider material / texture / render settings (2–3 wks)** —
+   per-object appearance beyond today's fixed-function `ShapeMaterial`.
+   New optional "Render" property group on `ViewProviderGeometryObject` /
+   `ViewProviderPartExt` (added lazily, dynamic-property style, so plain
+   documents don't grow): `Metallic`, `Roughness`
+   (`PropertyFloatConstraint`, overriding the global/per-view defaults),
+   `BaseColorTexture`, `NormalMap` (later `EmissiveMap`/`OcclusionMap`) as
+   `App::PropertyFileIncluded` so images embed in the `.FCStd`, a texture
+   transform (scale/offset/rotation), and render flags (`CastShadow` /
+   `ReceiveShadow` mapping onto the existing `SoShadowStyle` bitmask
+   plumbing). Plumbing strategy — reuse what the bridge already captures:
+   texture properties build unit-0 `SoTexture2` and `SoBumpMap` nodes in
+   the view provider's display-mode subgraph, so base-color/normal maps
+   render in the plain Coin GL modes too and reach the backend through the
+   existing `Material::textures`/`bumpmaps` capture; the scalar PBR set has
+   no Coin element, so add a lightweight `SoFCRenderMaterial` node captured
+   by a dedicated cache-manager post callback (the `SoBumpMap` precedent)
+   into new `SoFCRenderCache::Material` fields → per-draw
+   `Render::Material::{metallic, roughness, flags}` — the mesh shader
+   already branches on per-draw uniforms, so no new program variants. This
+   closes the Phase 2 PBR-row gap "per-object material plumbing from
+   ViewProvider" and resolves the §6 open question: material parameters
+   live on the ViewProvider (document-saved, per-object, GUI-side); any
+   future App-side material model maps onto these properties rather than
+   replacing them.
+
+4. **glTF import/export with materials & textures (2–3 wks)** — round-trip
+   the renderer's material model (deliberately chosen as glTF
+   metallic-roughness in §2) through the Import module's OCCT RWGltf path.
+   Today `ReaderGltf` flattens each `XCAFDoc_VisMaterial` to a per-face
+   color label (ReaderGltf.cpp:126) and `WriterGltf`/`ExportOCAF2` export
+   geometry + colors only — materials and textures are dropped both ways.
+   *Import*: keep the `VisMaterial` labels, extend `ImportOCAF2` to carry
+   PBR data (base-color factor + texture, metallic/roughness factors +
+   texture, normal/emissive/occlusion maps, double-sided, alpha mode) into
+   the item-3 ViewProvider properties, extracting embedded `Image_Texture`
+   blobs into `PropertyFileIncluded` files; preserve mesh UVs — glTF meshes
+   arrive as triangulation-only faces whose `Poly_Triangulation` carries UV
+   nodes, and `ViewProviderPartExt::updateVisual` must reuse that stored
+   triangulation (not re-tessellate, which would discard the UVs) so Coin
+   texcoords line up with the imported maps. *Export*: `ExportOCAF2` fills
+   `XCAFDoc_VisMaterialTool` from the same ViewProvider properties (plus
+   `ShapeMaterial`'s common-material fallback) so `RWGltf_CafWriter`
+   serializes materials, texture images, and UV coordinates; the current
+   color-only behavior stays for objects without render properties.
+   Acceptance: a textured Khronos sample glTF imports and renders textured
+   in both bgfx and the Coin GL modes; export → re-import is visually
+   stable; a FreeCAD model with per-object metallic/roughness survives the
+   round trip.
 
 ### Phase 3 — performance & portability (open-ended)
 
@@ -525,8 +628,8 @@ predates this work — verified bit-identical before/after.
   ray (the universal approximation); revisit only if a path-tracer handoff
   materializes.
 
-Total to full feature list: **~30–38 wks** (bgfx) — ~6–8 months with SSR
-deferred.
+Total to full feature list: **~36–46 wks** (bgfx, incl. Phase 2b) — ~7–10
+months with SSR deferred.
 
 ---
 
@@ -614,8 +717,12 @@ deferred.
 - Per-view renderer instances vs. shared engine with per-view views
   (bgfx view ids are a global 16-bit space — needs a small allocator for
   multiple 3D views).
-- Where PBR material parameters live (new `ViewProvider` properties vs.
-  App-side material model) — coordinate with upstream material work.
+- ~~Where PBR material parameters live (new `ViewProvider` properties vs.
+  App-side material model) — coordinate with upstream material work.~~
+  Resolved (2026-07): ViewProvider-side properties, document-saved,
+  glTF-metallic-roughness-shaped (Phase 2b item 3); an App-side material
+  model can map onto them later. Interchange goes through the Import
+  module's RWGltf/XCAF path (Phase 2b item 4).
 
 ## 7. References
 
