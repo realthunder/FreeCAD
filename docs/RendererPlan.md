@@ -265,7 +265,10 @@ The engine-agnostic core; everything later depends on it.
    (modulate/decal/blend/replace) on the lit color; GPU textures are
    cached per texture id and evicted with the meshes. Verified vs GL:
    modulate within the fill class, transform variant exact up to
-   minification speckle (both sides non-mip linear), transparent RGBA
+   minification speckle (~~both sides non-mip linear~~ *bgfx mips done
+   2026-07*: full CPU box-filter chain + trilinear — under strong
+   minification bgfx now shows the correct filtered average where the
+   non-mipped GL path aliases into stripes), transparent RGBA
    exact under the sorted fallback (`FC_BGFX_DEBUG_NO_OIT`) — WBOIT
    widens its approximation class on high-contrast layered texels.
    Deviations: GL also textures lines/points (visible with REPLACE on
@@ -604,8 +607,10 @@ independent of each other; item 4 builds on item 3's property model.
    mode-3 GL. Deviation noted while testing (pre-existing, not from this
    plumbing — both renderers read the same cached UVs): the bgfx texture
    path renders a cylinder's *cap* face differently from GL (dim
-   continued checker vs GL's stripes) — investigate with the texture
-   rows' minification work.
+   continued checker vs GL's stripes) — ~~investigate with the texture
+   rows' minification work~~ *resolved (2026-07)* by the texture mip
+   chain: the difference was pure minification aliasing (GL non-mipped
+   stripes vs bgfx's now-correct filtered average).
    *Texture transform + shadow flags done (2026-07)*: optional
    `Render_TextureScale` / `Render_TextureOffset` (`PropertyVector`,
    x/y) and `Render_TextureRotation` (`PropertyAngle`) build an
