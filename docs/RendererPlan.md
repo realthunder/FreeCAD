@@ -659,12 +659,34 @@ independent of each other; item 4 builds on item 3's property model.
    Verified live (GUI round trips on this box): metallic/roughness +
    base-color texture survive export→import on exactly the objects that
    carry them; base + two `App::Link`s export as 1 glTF mesh / 3 nodes
-   and re-import as 1 `Part::Feature` + 2 `App::Link`s. Remaining:
-   normal-map round-trip untested (plumbed, same path as base color);
-   mesh UVs are not preserved into Coin texcoords on import (textures
-   map through Coin's default texgen — the plan's UV-preservation
-   requirement stands); per-face materials; Khronos sample import
-   smoke; metallic-roughness/emissive/occlusion texture slots.
+   and re-import as 1 `Part::Feature` + 2 `App::Link`s.
+   *UV preservation done (2026-07)*: textured glTF meshes now skip
+   `ReaderGltf::fixShape`'s facets→B-Rep rebuild (which discarded the
+   triangulation's UV nodes and authored normals) and stay purely
+   triangulated faces; `ViewProviderPartExt::updateVisual` emits the
+   stored UV nodes of surface-less faces as an explicit
+   `SoTextureCoordinate2` (indexed like the coordinates — picked up by
+   plain Coin, the mode-3 GL renderer and bgfx alike) and their stored
+   normals through `getPointNormals`. Fixed on the way: 4-component
+   texture uploads marked every textured draw transparent (opaque
+   images now upload as RGB888); a purely triangulated face has no
+   vertices and was rejected as an empty shape by `ImportOCAF2`; a
+   top-level free mesh lost its base color factor (material→color-label
+   conversion only ran for sub-shape labels) and, with
+   `ExportKeepPlacement` on, its placement (the bake-in transform has
+   no B-Rep geometry to move — the location is now kept and exported
+   as the node placement). BinTools persistence stores triangulation
+   (with UV/normal arrays) for surface-less faces, so the shapes
+   survive `.FCStd` save/restore. Verified on llvmpipe: the Khronos
+   BoxTextured sample renders identically (0 px > 30) in plain Coin,
+   mode-3 GL and bgfx, matching the reference screenshot;
+   save/reopen, export→re-import (keep placement) and a normal-map
+   round trip are all pixel-identical; untextured glTF still rebuilds
+   planar B-Rep faces; regular B-Rep scenes are bit-unchanged.
+   Remaining: per-face materials;
+   metallic-roughness/emissive/occlusion texture slots; placement of a
+   single textured mesh is still dropped with the default
+   `ExportKeepPlacement=false` (deliberate preference semantics).
 
 ### Phase 3 — performance & portability (open-ended)
 
