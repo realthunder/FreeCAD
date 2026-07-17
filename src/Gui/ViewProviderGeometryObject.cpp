@@ -186,19 +186,36 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
 
 namespace {
 
-// Load an image file into a SoSFImage field (RGBA8). Qt does the decoding
-// so no optional Coin/simage image support is needed; the pixels embed in
-// the node, which also feeds the mode-3 render cache texture capture.
+// Load an image file into a SoSFImage field (RGB8/RGBA8). Qt does the
+// decoding so no optional Coin/simage image support is needed; the pixels
+// embed in the node, which also feeds the mode-3 render cache texture
+// capture. An image without an alpha channel uploads as 3 components —
+// a 4-component image is what marks the texture (and every draw using
+// it) transparent.
 bool loadTextureImage(const char *path, SoSFImage &field)
 {
     QImage img;
     if (!path || !path[0] || !img.load(QString::fromUtf8(path)))
         return false;
-    img = img.convertToFormat(QImage::Format_RGBA8888);
+    bool alpha = img.hasAlphaChannel();
+    img = img.convertToFormat(alpha ? QImage::Format_RGBA8888
+                                    : QImage::Format_RGB888);
     // Coin images are bottom-up.
     img = img.mirrored(false, true);
-    field.setValue(SbVec2s(short(img.width()), short(img.height())), 4,
-                   img.constBits());
+    int nc = alpha ? 4 : 3;
+    int rowLen = img.width() * nc;
+    if (img.bytesPerLine() == rowLen) {
+        field.setValue(SbVec2s(short(img.width()), short(img.height())), nc,
+                       img.constBits());
+    }
+    else {
+        // QImage scanlines are 4-byte aligned; Coin expects packed rows
+        std::vector<unsigned char> packed(size_t(rowLen) * img.height());
+        for (int y = 0; y < img.height(); ++y)
+            memcpy(packed.data() + size_t(y) * rowLen, img.constScanLine(y), rowLen);
+        field.setValue(SbVec2s(short(img.width()), short(img.height())), nc,
+                       packed.data());
+    }
     return true;
 }
 
@@ -235,8 +252,8 @@ void ViewProviderGeometryObject::updateRenderTexture()
             pcRoot->insertChild(pcRenderTexture, 0);
         }
         if (!loadTextureImage(color, pcRenderTexture->image)) {
-            static const unsigned char white[4] = {255, 255, 255, 255};
-            pcRenderTexture->image.setValue(SbVec2s(1, 1), 4, white);
+            static const unsigned char white[3] = {255, 255, 255};
+            pcRenderTexture->image.setValue(SbVec2s(1, 1), 3, white);
         }
     }
 
