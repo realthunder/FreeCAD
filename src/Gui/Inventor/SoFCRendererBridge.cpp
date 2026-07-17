@@ -731,6 +731,12 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
         break;
     }
     if (res.valid) {
+        // Shadow border smoothing scales the backend's variance-map
+        // blur; the Shadow draw style materializes Shadow_SmoothBorder
+        // (0..100) with the ViewParams default.
+        res.smoothBorder = float(viewParamOverride<App::PropertyInteger>(
+                view, "Shadow", "SmoothBorder",
+                ViewParams::getShadowSmoothBorder()));
         // The ground receiver settings honor the per-view Shadow_*
         // dynamic properties (created by the Shadow draw style, which is
         // the only way a shadow light gets here) with ViewParams

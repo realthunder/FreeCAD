@@ -233,6 +233,11 @@ struct LightConfig {
     uint32_t color = 0xffffffff;               ///< packed 0xRRGGBBAA
     float intensity = 1.0f;
 
+    /// Shadow border smoothing (ShadowSmoothBorder / the Shadow draw
+    /// style's SmoothBorder property, 0..100): scales the gaussian blur
+    /// of the variance shadow map moments; 0 = no blur.
+    float smoothBorder = 0.0f;
+
     /// Shadow ground plane (ShadowShowGround*): the Coin-side ground
     /// lives outside the captured scene graph, so backends draw their
     /// own — a receiving quad under the scene bounds.
@@ -249,6 +254,7 @@ struct LightConfig {
             && position[1] == o.position[1]
             && position[2] == o.position[2]
             && color == o.color && intensity == o.intensity
+            && smoothBorder == o.smoothBorder
             && ground == o.ground && groundScale == o.groundScale
             && groundColor == o.groundColor;
     }

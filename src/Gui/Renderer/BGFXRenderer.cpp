@@ -880,6 +880,12 @@ public:
         ViewShadow,         // variance shadow map moments of shadow
                             // casting scene triangles, rendered from the
                             // scene light (own framebuffer, light camera)
+        ViewShadowBlurH,    // separable gaussian blur of the shadow
+                            // moments (ShadowSmoothBorder): horizontal
+                            // into the ping texture ...
+        ViewShadowBlurV,    // ... and vertical back into the moments
+                            // texture, so receivers and the volumetric
+                            // raymarch keep sampling the same target
         ViewAOPrepass,      // SSAO depth+normal prepass of opaque scene
                             // triangles into a non-MSAA RGBA16F target
                             // (own framebuffer, own depth)
@@ -989,25 +995,28 @@ public:
                 *prog = BGFX_INVALID_HANDLE;
             }
         }
-        // Shadow resources: the framebuffer before its textures.
-        if (bgfx::isValid(shadowFbo)) {
-            bgfx::destroy(shadowFbo);
-            shadowFbo = BGFX_INVALID_HANDLE;
+        // Shadow resources: the framebuffers before their textures.
+        for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo}) {
+            if (bgfx::isValid(*fb)) {
+                bgfx::destroy(*fb);
+                *fb = BGFX_INVALID_HANDLE;
+            }
         }
-        for (auto tex : {&shadowTex, &shadowDepth}) {
+        for (auto tex : {&shadowTex, &shadowDepth, &shadowBlurTex}) {
             if (bgfx::isValid(*tex)) {
                 bgfx::destroy(*tex);
                 *tex = BGFX_INVALID_HANDLE;
             }
         }
-        for (auto prog : {&m_progShadow, &m_progShadowClip}) {
+        for (auto prog : {&m_progShadow, &m_progShadowClip,
+                          &m_progShadowBlur}) {
             if (bgfx::isValid(*prog)) {
                 bgfx::destroy(*prog);
                 *prog = BGFX_INVALID_HANDLE;
             }
         }
         for (auto uni : {&s_texShadow, &u_shadowParams, &u_lightDir,
-                         &u_lightColor, &u_shadowMatrix}) {
+                         &u_lightColor, &u_shadowMatrix, &u_shadowBlur}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1374,6 +1383,23 @@ public:
             m_progShadowClip = loadProgram("vs_fc_shadow_clip",
                                            "fs_fc_shadow_clip",
                                            _BGFXLib.resource().c_str());
+            // ShadowSmoothBorder: separable gaussian blur of the
+            // moments, horizontal into the ping texture and vertical
+            // back into shadowTex (a second color-only framebuffer over
+            // the same texture; no depth needed for fullscreen passes).
+            shadowBlurTex = bgfx::createTexture2D(kShadowSize,
+                kShadowSize, false, 1, shadowFormat,
+                BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP
+                | BGFX_SAMPLER_V_CLAMP);
+            shadowBlurFbo = bgfx::createFrameBuffer(1, &shadowBlurTex,
+                                                    false);
+            shadowBlurBackFbo = bgfx::createFrameBuffer(1, &shadowTex,
+                                                        false);
+            m_progShadowBlur = loadProgram("vs_fc_comp",
+                                           "fs_fc_shadow_blur",
+                                           _BGFXLib.resource().c_str());
+            u_shadowBlur = bgfx::createUniform("u_shadowBlur",
+                                               bgfx::UniformType::Vec4);
         }
         static const uint32_t blackCube[6] = {0, 0, 0, 0, 0, 0};
         m_dummyEnvTex = bgfx::createTextureCube(1, false, 1,
@@ -2471,6 +2497,33 @@ public:
         ++drawcount;
     }
 
+    /// Separable gaussian blur of the shadow moments (the Shadow draw
+    /// style's SmoothBorder, 0..100): horizontal into the ping texture,
+    /// vertical back into shadowTex, so the mesh receivers and the
+    /// volumetric raymarch keep sampling the same target. The blur views
+    /// sit right after the caster pass. Softens the VSM penumbra and
+    /// curbs shimmer on razor-straight CAD edges.
+    void submitShadowBlur(float smoothBorder)
+    {
+        if (!bgfx::isValid(m_progShadowBlur)
+                || !bgfx::isValid(shadowBlurFbo)
+                || !bgfx::isValid(shadowBlurBackFbo))
+            return;
+        // 100 -> 4 texel base step of the 9-tap kernel (an effective
+        // radius of ~13 texels at full smoothing).
+        float step = smoothBorder * 0.04f;
+        float dirH[4] = {step, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_shadowBlur, dirH);
+        bgfx::setTexture(0, s_texShadow, shadowTex);
+        fullscreen(ViewShadowBlurH, m_progShadowBlur,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        float dirV[4] = {0.0f, step, 0.0f, 0.0f};
+        bgfx::setUniform(u_shadowBlur, dirV);
+        bgfx::setTexture(0, s_texShadow, shadowBlurTex);
+        fullscreen(ViewShadowBlurV, m_progShadowBlur,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+    }
+
     void submitPrepass(const Render::DrawCall &draw)
     {
         if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -3269,8 +3322,16 @@ public:
     bgfx::TextureHandle shadowTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle shadowDepth = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle shadowFbo = BGFX_INVALID_HANDLE;
+    // ShadowSmoothBorder blur ping texture and the two color-only
+    // framebuffers of the separable passes (the back one re-targets
+    // shadowTex).
+    bgfx::TextureHandle shadowBlurTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle shadowBlurFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle shadowBlurBackFbo = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progShadow = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progShadowClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progShadowBlur = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_shadowBlur = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texShadow = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_shadowParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_lightDir = BGFX_INVALID_HANDLE;
@@ -3497,6 +3558,11 @@ public:
             }
         }
         view->shadowFrame = shadowActive;
+        // ShadowSmoothBorder > 0 runs the separable blur over the fresh
+        // moments right after the caster pass.
+        bool shadowBlurActive = shadowActive
+            && lightconf.smoothBorder > 0.0f
+            && bgfx::isValid(view->shadowBlurFbo);
         static const bool dbgshadow =
             (getenv("FC_BGFX_DEBUG_SHADOW") != nullptr);
         if (dbgshadow)
@@ -3656,6 +3722,22 @@ public:
                 bgfx::setViewRect(id, 0, 0, BGFXView::kShadowSize,
                                   BGFXView::kShadowSize);
                 bgfx::setViewTransform(id, lightViewMtx, lightProjMtx);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (shadowBlurActive
+                       && (i == BGFXView::ViewShadowBlurH
+                           || i == BGFXView::ViewShadowBlurV)) {
+                // Fullscreen blur passes over the shadow map size; the
+                // triangle overwrites every pixel, so no clear.
+                bgfx::setViewFrameBuffer(id,
+                    i == BGFXView::ViewShadowBlurH
+                        ? view->shadowBlurFbo : view->shadowBlurBackFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, BGFXView::kShadowSize,
+                                  BGFXView::kShadowSize);
+                bgfx::setViewTransform(id, nullptr, nullptr);
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
@@ -4004,6 +4086,8 @@ public:
                 view->submitShadowCaster(draw);
             submitSceneOutline(draw);
         }
+        if (shadowBlurActive)
+            view->submitShadowBlur(lightconf.smoothBorder);
         if (shadowActive && lightconf.ground && bboxValid) {
             view->submitShadowGround(bboxMin, bboxMax,
                                      lightconf.groundColor,
