@@ -51,6 +51,12 @@ GuiExport Render::HiddenLineConfig translateHiddenLineConfig(SoState * state);
 /// per-frame config.
 GuiExport Render::SectionConfig translateSectionConfig();
 
+/// Resolve the per-frame autozoom scale from the traversal state's view
+/// volume (the exact SoAutoZoomTranslation::getScaleFactor math with a
+/// node scaleFactor of 1); Material::autozoom entries multiply their own
+/// scaleFactor on top in the backend.
+GuiExport float translateAutoZoomScale(SoState * state);
+
 } // namespace RendererBridge
 } // namespace Gui
 

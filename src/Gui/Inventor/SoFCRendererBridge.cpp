@@ -28,13 +28,17 @@
 
 #include <Inventor/SbBox3f.h>
 #include <Inventor/SbPlane.h>
+#include <Inventor/SbViewVolume.h>
 #include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 #include <Inventor/elements/SoShapeHintsElement.h>
+#include <Inventor/elements/SoViewVolumeElement.h>
+#include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/nodes/SoClipPlane.h>
 
+#include "SoAutoZoomTranslation.h"
 #include "SoFCRendererBridge.h"
 #include "SoFCDisplayModeElement.h"
 #include "SoFCRenderer.h"
@@ -259,6 +263,26 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight)
         }
     }
 
+    // Autozoom transforms: mirror the material's node list; the backend
+    // replays them per frame (GL: setupMatrix runs the nodes' GLRender).
+    if (m.autozoom.getNum()) {
+        res.autozoom.reserve(m.autozoom.getNum());
+        for (const auto & info : m.autozoom.getData()) {
+            res.autozoom.emplace_back();
+            Render::Material::AutoZoomEntry & entry = res.autozoom.back();
+            entry.scaleFactor =
+                info.cast<SoAutoZoomTranslation>()->scaleFactor.getValue();
+            entry.identity = info.identity;
+            entry.resetmatrix = info.resetmatrix;
+            if (!info.identity) {
+                static_assert(sizeof(entry.matrix) == sizeof(SbMat),
+                              "matrix size mismatch");
+                std::memcpy(entry.matrix, info.matrix.getValue(),
+                            sizeof(entry.matrix));
+            }
+        }
+    }
+
     // Clip planes (sections), as world-space plane equations. Same on-top
     // exception as SoFCRenderer::applyMaterial: on-top draws are not
     // sectioned when NoSectionOnTop is set (default) or in concave mode.
@@ -466,6 +490,20 @@ RendererBridge::translateSectionConfig()
     res.hatchEnable = ViewParams::getSectionHatchTextureEnable();
     res.hatchScale = float(ViewParams::getSectionHatchTextureScale());
     return res;
+}
+
+float
+RendererBridge::translateAutoZoomScale(SoState * state)
+{
+  // SoAutoZoomTranslation::getScaleFactor with a node scaleFactor of 1;
+  // each autozoom entry multiplies its own scaleFactor in the backend.
+  const SbViewVolume & vv = SoViewVolumeElement::get(state);
+  if (vv.getWidth() == 0.0f || vv.getHeight() == 0.0f)
+    return 1.0f;
+  float aspectRatio =
+      SoViewportRegionElement::get(state).getViewportAspectRatio();
+  return vv.getWorldToScreenScale(SbVec3f(0.f, 0.f, 0.f), 0.1f)
+      / (5.0f * aspectRatio);
 }
 
 // vim: noai:ts=2:sw=2

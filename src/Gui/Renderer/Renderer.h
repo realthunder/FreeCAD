@@ -221,6 +221,22 @@ struct Material {
     /// gates the stencil section cap of clipped draws.
     bool solidshape = false;
 
+    /// Autozoom transforms (SoAutoZoomTranslation): the draw's model
+    /// matrix is rebuilt every frame by replaying these entries like the
+    /// GL renderer's setupMatrix — accumulate each entry's matrix (or
+    /// reset to it), then substitute the accumulated scale with
+    /// scaleFactor times the per-frame world-to-screen scale fed through
+    /// Renderer::setAutoZoomScale() (a scaleFactor of 0 keeps scale 1) —
+    /// and DrawCall::model multiplies in last. Matrices are GL-layout
+    /// like DrawCall::model.
+    struct AutoZoomEntry {
+        float matrix[16];
+        float scaleFactor = 1.0f;
+        bool identity = true;
+        bool resetmatrix = false;
+    };
+    std::vector<AutoZoomEntry> autozoom;
+
     /// World-space clip plane equations (sections). A fragment survives
     /// when dot(pos, plane.xyz) + plane.w >= 0 holds for every plane, or,
     /// in concave mode, for at least one plane (GL parity: SectionConcave
@@ -294,6 +310,12 @@ public:
     /// Per-frame section fill (cap) configuration.
     virtual void setSectionConfig(const SectionConfig &config)
     { (void)config; }
+    /// Per-frame world-to-screen scale at the world origin consumed by
+    /// Material::autozoom draws (Coin: SoAutoZoomTranslation's
+    /// getWorldToScreenScale((0,0,0), 0.1) / (5 * viewport aspect)).
+    /// Resolved from the traversal state each render like the
+    /// hidden-line config, so it applies one frame late too.
+    virtual void setAutoZoomScale(float scale) { (void)scale; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

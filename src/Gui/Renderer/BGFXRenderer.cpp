@@ -687,6 +687,64 @@ struct GpuMesh
     }
 };
 
+// Set the effective model transform of a draw. Plain draws use
+// DrawCall::model as-is; autozoom draws replay the material's autozoom
+// chain per frame like the GL renderer's setupMatrix: accumulate each
+// entry's matrix Coin-style (multLeft — bx::mtxMul(a, m) with the same
+// row-vector convention and memory layout), then apply the entry's node
+// (SoAutoZoomTranslation::doAction: keep the accumulated rotation and the
+// world position of the local origin, substitute the scale with
+// scaleFactor times the per-frame world-to-screen scale), and multiply
+// the draw's own matrix in last. The scale substitution extracts the
+// rotation by normalizing the upper 3x3 rows, which matches Coin's
+// getTransform for the rotation + translation + uniform positive scale
+// matrices autozoom is used with (no shear support).
+static void setDrawTransform(const Render::DrawCall &draw,
+                             float autozoomScale)
+{
+    const auto &autozoom = draw.material.autozoom;
+    if (autozoom.empty()) {
+        if (!draw.identity)
+            bgfx::setTransform(draw.model);
+        return;
+    }
+
+    float m[16];
+    bx::mtxIdentity(m);
+    for (const auto &entry : autozoom) {
+        if (entry.resetmatrix) {
+            if (entry.identity)
+                bx::mtxIdentity(m);
+            else
+                std::memcpy(m, entry.matrix, sizeof(m));
+        }
+        else if (!entry.identity) {
+            float tmp[16];
+            bx::mtxMul(tmp, entry.matrix, m);
+            std::memcpy(m, tmp, sizeof(m));
+        }
+        float sf = entry.scaleFactor == 0.0f
+            ? 1.0f : entry.scaleFactor * autozoomScale;
+        for (int r = 0; r < 3; ++r) {
+            float *row = m + r * 4;
+            float len = std::sqrt(
+                row[0]*row[0] + row[1]*row[1] + row[2]*row[2]);
+            float s = len > 1e-20f ? sf / len : 0.0f;
+            row[0] *= s;
+            row[1] *= s;
+            row[2] *= s;
+            row[3] = 0.0f;
+        }
+        m[15] = 1.0f;  // the translation row m[12..14] stays
+    }
+    if (!draw.identity) {
+        float tmp[16];
+        bx::mtxMul(tmp, draw.model, m);
+        std::memcpy(m, tmp, sizeof(m));
+    }
+    bgfx::setTransform(m);
+}
+
 static inline void unpackColor(uint32_t rgba, float *out)
 {
     out[0] = ((rgba >> 24) & 0xff) / 255.0f;
@@ -1305,8 +1363,7 @@ public:
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
         setClipUniforms(mat);
-        if (!draw.identity)
-            bgfx::setTransform(draw.model);
+        setDrawTransform(draw, autozoomScale);
         bgfx::setVertexBuffer(0, gpu->vbh);
         bgfx::setIndexBuffer(gpu->tri, uint32_t(start), uint32_t(count));
         bgfx::setState(BGFX_STATE_MSAA
@@ -1386,8 +1443,7 @@ public:
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
         setClipUniforms(mat);
-        if (!draw.identity)
-            bgfx::setTransform(draw.model);
+        setDrawTransform(draw, autozoomScale);
         bgfx::setVertexBuffer(0, m_lineQuadVb);
         bgfx::setIndexBuffer(m_lineQuadIb);
         bgfx::setInstanceDataBuffer(gpu->triEdgeInst, uint32_t(start),
@@ -1409,8 +1465,7 @@ public:
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
         setClipUniforms(mat);
-        if (!draw.identity)
-            bgfx::setTransform(draw.model);
+        setDrawTransform(draw, autozoomScale);
         bgfx::setVertexBuffer(0, m_lineQuadVb);
         bgfx::setIndexBuffer(m_lineQuadIb);
         bgfx::setInstanceDataBuffer(gpu->triCornerInst, uint32_t(start),
@@ -1474,8 +1529,7 @@ public:
             bgfx::setUniform(u_params, params);
             bgfx::setUniform(u_clipParams, clipParams);
             bgfx::setUniform(u_clipPlanes, plane, 1);
-            if (!draw.identity)
-                bgfx::setTransform(draw.model);
+            setDrawTransform(draw, autozoomScale);
             bgfx::setVertexBuffer(0, gpu->vbh);
             if (count > 0)
                 bgfx::setIndexBuffer(gpu->tri, uint32_t(start),
@@ -1815,8 +1869,7 @@ public:
             bgfx::setUniform(u_linePattern, patParams);
         }
 
-        if (!draw.identity)
-            bgfx::setTransform(draw.model);
+        setDrawTransform(draw, autozoomScale);
         if (thickline) {
             // One quad per line segment; a partial (per-edge) index range
             // maps 1:1 onto an instance range (two indices per segment).
@@ -2018,6 +2071,9 @@ public:
     uint64_t frame = 0;
     int drawcount = 0;
     bool ontop = false;   // route submits to the highlight pass
+    // Per-frame world-to-screen scale consumed by autozoom draws
+    // (Renderer::setAutoZoomScale).
+    float autozoomScale = 1.0f;
     GLuint fbo = 0;
     bool hasFBO = false;
 };
@@ -2150,6 +2206,7 @@ public:
 
         ++view->frame;
         view->drawcount = 0;
+        view->autozoomScale = autozoomScale;
         view->submitBackground(background);
         const float *viewMat = reinterpret_cast<const float *>(viewMatrix);
 
@@ -2915,6 +2972,7 @@ public:
     std::unordered_set<const Render::DrawCall *> dupDraws;
     Render::HiddenLineConfig hlconfig;
     Render::SectionConfig secconf;
+    float autozoomScale = 1.0f;
     // CPU copy of the section hatch texture, expanded to RGBA8; the
     // version stamps GPU re-uploads (0 = no image).
     std::vector<uint8_t> hatchRGBA;
@@ -3045,6 +3103,32 @@ void BGFXRenderer::setSectionConfig(const SectionConfig &config)
     if (pimpl->secconf != config) {
         pimpl->secconf = config;
         pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setAutoZoomScale(float scale)
+{
+    if (pimpl->autozoomScale == scale)
+        return;
+    pimpl->autozoomScale = scale;
+    // Only autozoom draws depend on the scale; they converge one frame
+    // late on camera changes like the rest of the feed.
+    auto hasAutoZoom = [](const Render::DrawCallList &draws) {
+        for (const auto &draw : draws) {
+            if (!draw.material.autozoom.empty())
+                return true;
+        }
+        return false;
+    };
+    if (hasAutoZoom(pimpl->scene) || hasAutoZoom(pimpl->highlight)) {
+        pimpl->sceneDirty = true;
+        return;
+    }
+    for (const auto &sel : pimpl->selections) {
+        if (hasAutoZoom(sel.second)) {
+            pimpl->sceneDirty = true;
+            return;
+        }
     }
 }
 
