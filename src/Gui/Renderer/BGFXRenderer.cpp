@@ -921,7 +921,11 @@ public:
 
         bgfxColor = createTexture(bgfx::TextureFormat::RGBA8, flags);
         //GL_DEPTH24_STENCIL8
-        bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags & ~BGFX_TEXTURE_RT);
+        // NOTE: the MSAA levels are an enum in the RT flag nibble, not
+        // orthogonal bits — masking BGFX_TEXTURE_RT out of them would
+        // turn MSAA_X4 (0x3) into MSAA_X2 (0x2) and desync the depth
+        // sample count from the color attachment's.
+        bgfxDepth = createTexture(bgfx::TextureFormat::D24S8, flags);
         bgfx::Attachment attachment[2];
         // No mip chain on these render targets; the default resolve flag
         // (BGFX_RESOLVE_AUTO_GEN_MIPS) is also rejected for depth attachments.
@@ -999,22 +1003,30 @@ public:
                                            Render::Material::MaxClipPlanes);
         u_linePattern = bgfx::createUniform("u_linePattern", bgfx::UniformType::Vec4);
 
-        // Weighted-blended OIT for the transparent bucket. First cut:
-        // without MSAA only (sampling multisampled float targets needs a
-        // resolve chain) and where independent per-target blending and
-        // half-float render targets exist (the WebGL2-compatible set).
-        // Unavailable -> the transparent view falls back to bbox-sorted
-        // alpha blending as before.
+        // Weighted-blended OIT for the transparent bucket. Needs
+        // independent per-target blending and half-float render targets
+        // (the WebGL2-compatible set); with MSAA the formats must also
+        // be multisample-framebuffer capable. Unavailable -> the
+        // transparent view falls back to bbox-sorted alpha blending as
+        // before.
         const auto *caps = bgfx::getCaps();
-        m_oit = samples <= 1
-            && (caps->supported & BGFX_CAPS_BLEND_INDEPENDENT)
-            && (caps->formats[bgfx::TextureFormat::RGBA16F]
-                & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER)
-            && (caps->formats[bgfx::TextureFormat::R16F]
-                & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        const uint32_t oitFmtCaps = samples > 1
+            ? BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER_MSAA
+            : BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER;
+        m_oit = (caps->supported & BGFX_CAPS_BLEND_INDEPENDENT)
+            && (caps->formats[bgfx::TextureFormat::RGBA16F] & oitFmtCaps)
+            && (caps->formats[bgfx::TextureFormat::R16F] & oitFmtCaps);
         if (m_oit) {
+            // With MSAA the accum/reveal targets carry the scene's
+            // sample count (all attachments of the OIT framebuffer must
+            // match the shared multisampled depth). Created *without*
+            // BGFX_TEXTURE_RT_WRITE_ONLY they get both a multisampled
+            // renderbuffer and a single-sample resolve texture; bgfx
+            // resolves automatically when the transparent view's
+            // framebuffer is switched away (before the composite view),
+            // so the composite pass samples the resolved images.
             const uint64_t oitFlags = 0
-                | BGFX_TEXTURE_RT
+                | flags
                 | BGFX_SAMPLER_MIN_POINT
                 | BGFX_SAMPLER_MAG_POINT
                 | BGFX_SAMPLER_MIP_POINT
@@ -2000,7 +2012,7 @@ public:
     bgfx::TextureHandle m_whiteTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_hatchTex = BGFX_INVALID_HANDLE;
     uint64_t m_hatchVersion = 0;   // Private's hatch pixel generation
-    bool m_oit = false;      // OIT resources exist (caps + no MSAA)
+    bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
     std::unordered_map<uint64_t, GpuMesh> meshes;
     uint64_t frame = 0;
