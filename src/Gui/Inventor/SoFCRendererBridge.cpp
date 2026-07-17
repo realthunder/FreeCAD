@@ -210,6 +210,19 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight)
     // capped by SelectionLineMaxWidth, then max of 1.5x that and
     // linewidth * OutlineThicken.
     if (res.type == Render::Material::Triangle && (highlight || selId > 0)) {
+        // The width is computed regardless of the face-outline params:
+        // the hidden-line style's whole-object highlight outline uses it
+        // even with face outlines disabled (GL: renderOutline ~1458).
+        float lw = res.linewidth;
+        float scale = float(ViewParams::getSelectionLineThicken());
+        if (scale < 1.0f)
+            scale = 1.0f;
+        float w = lw * scale;
+        if (ViewParams::getSelectionLineMaxWidth() > 1.0)
+            w = std::min<float>(w, std::max<float>(lw,
+                    float(ViewParams::getSelectionLineMaxWidth())));
+        res.outlinewidth = std::max(w * 1.5f,
+            lw * float(ViewParams::getOutlineThicken()));
         bool show = highlight
             ? ViewParams::getShowPreSelectedFaceOutline()
             : ViewParams::getShowSelectedFaceOutline();
@@ -218,16 +231,6 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight)
             res.outlineonly = highlight
                 ? ViewParams::getNoPreSelFaceHighlightWithOutline()
                 : ViewParams::getNoSelFaceHighlightWithOutline();
-            float lw = res.linewidth;
-            float scale = float(ViewParams::getSelectionLineThicken());
-            if (scale < 1.0f)
-                scale = 1.0f;
-            float w = lw * scale;
-            if (ViewParams::getSelectionLineMaxWidth() > 1.0)
-                w = std::min<float>(w, std::max<float>(lw,
-                        float(ViewParams::getSelectionLineMaxWidth())));
-            res.outlinewidth = std::max(w * 1.5f,
-                lw * float(ViewParams::getOutlineThicken()));
         }
     }
 
@@ -333,8 +336,9 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
 
             // Hidden-line extras, filled on demand: the seam-filtered line
             // index set (hideSeam), and per-face-part triangle ranges for
-            // outlining clipped geometry part by part (GL: renderOutline
-            // switches to getNumFaceParts() when clip planes are active).
+            // outlining geometry part by part (GL: renderOutline switches
+            // to getNumFaceParts() under clip planes or perFaceOutline,
+            // and to getNonFlatParts() for perFaceOutline+sceneOutline).
             if (rmat.outline && ventry.partidx < 0) {
                 if (rmat.type == Render::Material::Line
                         && !mesh->noSeamLineIndices
@@ -345,7 +349,6 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                             ventry.cache->getNoSeamLineIndices());
                 }
                 if (rmat.type == Render::Material::Triangle
-                        && rmat.numclipplanes > 0
                         && mesh->triangleParts.empty()) {
                     int numparts = ventry.cache->getNumFaceParts();
                     mesh->triangleParts.reserve(numparts);
@@ -354,6 +357,18 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                         if (ventry.cache->getTrianglePartRange(i, start, count)
                                 && count > 0)
                             mesh->triangleParts.emplace_back(start, count);
+                    }
+                }
+                if (rmat.type == Render::Material::Triangle
+                        && mesh->nonFlatParts.empty()) {
+                    int numparts = ventry.cache->getNumNonFlatParts();
+                    const int * parts = ventry.cache->getNonFlatParts();
+                    mesh->nonFlatParts.reserve(numparts);
+                    for (int i = 0; i < numparts; ++i) {
+                        int start = 0, count = 0;
+                        if (ventry.cache->getTrianglePartRange(
+                                    parts[i], start, count) && count > 0)
+                            mesh->nonFlatParts.emplace_back(start, count);
                     }
                 }
             }

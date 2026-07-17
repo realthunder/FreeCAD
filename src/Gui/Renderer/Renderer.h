@@ -72,9 +72,15 @@ struct MeshData {
     int numNoSeamLineIndices = 0;
 
     /// Per-face-part {start, count} ranges into triangleIndices, filled
-    /// only for hidden-line outline materials under clip planes (the GL
-    /// renderer outlines clipped geometry per face part).
+    /// for hidden-line outline materials: the GL renderer outlines
+    /// geometry face part by face part under clip planes and in the
+    /// perFaceOutline hidden-line mode. Empty when the cache carries no
+    /// face part table (then those modes outline nothing, like GL).
     std::vector<std::pair<int, int>> triangleParts;
+    /// The subset of triangleParts belonging to non-flat (curved) faces;
+    /// the perFaceOutline mode outlines only these when combined with
+    /// sceneOutline or a zero outline width (GL: getNonFlatParts()).
+    std::vector<std::pair<int, int>> nonFlatParts;
 
     bool hasTransparency = false;   ///< some per-vertex colors are transparent
     bool hasOpaqueParts = false;    ///< some per-vertex colors are opaque

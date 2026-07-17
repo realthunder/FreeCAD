@@ -1123,6 +1123,10 @@ public:
         uint16_t view = ViewHighlight;  ///< target bgfx view
         uint32_t color = 0x000000ff;    ///< packed RGBA, forced opaque
         float width = 1.0f;             ///< edge/cap width in pixels
+        /// Corner cap size in pixels; 0 = same as width. The whole-scene
+        /// silhouette pass uses the unscaled outline width for its caps
+        /// where the edges are 1.5x (GL: renderSceneOutline ~1544).
+        float capWidth = 0.0f;
         /// LEQUAL depth test, like GL's renderOutline for scene
         /// (hidden-line) entries; false = draw on top (highlight).
         bool depthTest = false;
@@ -1155,6 +1159,92 @@ public:
     {
         if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
             return;
+        // Validate the edge passes up front so a mesh that cannot draw
+        // them leaves no stray stencil marks.
+        GpuMesh *gpu = getMesh(*draw.mesh);
+        if (!bgfx::isValid(gpu->tri))
+            return;
+        gpu->ensureOutline(*draw.mesh);
+        if (!bgfx::isValid(gpu->triEdgeInst))
+            return;
+        if (!submitOutlineMark(draw, refCounter, spec.view, spec.depthTest,
+                               spec.start, spec.count))
+            return;
+        submitOutlineEdges(draw, refCounter, spec);
+    }
+
+    void setClipUniforms(const Render::Material &mat)
+    {
+        if (mat.numclipplanes == 0)
+            return;
+        float clipParams[4] = {float(mat.numclipplanes),
+                               mat.clipconcave ? 1.0f : 0.0f,
+                               0.0f, 0.0f};
+        bgfx::setUniform(u_clipParams, clipParams);
+        bgfx::setUniform(u_clipPlanes, mat.clipplanes, mat.numclipplanes);
+    }
+
+    /// Stencil-mark pass of an outline: rasterize (part of) the triangle
+    /// draw into the stencil buffer with the given reference, no color
+    /// output. Scene outlines keep the depth test (matching GL's
+    /// color-masked fill pass; the mark still replaces on depth fail);
+    /// highlight outlines draw on top. The whole-scene silhouette marks
+    /// every scene draw under one shared reference before its edge
+    /// passes. Never writes depth — it must not depth-kill farther
+    /// outlines or the transparent fills that dim them.
+    bool submitOutlineMark(const Render::DrawCall &draw,
+                           uint32_t refCounter, uint16_t view,
+                           bool depthTest, int start = 0, int count = 0)
+    {
+        if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
+            return false;
+        const Render::MeshData &mesh = *draw.mesh;
+        if (count <= 0) {
+            start = 0;
+            count = mesh.numTriangleIndices;
+        }
+        if (count < 3)
+            return false;
+        GpuMesh *gpu = getMesh(mesh);
+        if (!bgfx::isValid(gpu->vbh) || !bgfx::isValid(gpu->tri))
+            return false;
+
+        const Render::Material &mat = draw.material;
+        bool clipped = mat.numclipplanes > 0;
+        uint32_t ref = ((refCounter - 1) % 255) + 1;
+        float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float params[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        bgfx::setUniform(u_matColor, zero);
+        bgfx::setUniform(u_matEmissive, zero);
+        bgfx::setUniform(u_matSpecular, zero);
+        bgfx::setUniform(u_params, params);
+        setClipUniforms(mat);
+        if (!draw.identity)
+            bgfx::setTransform(draw.model);
+        bgfx::setVertexBuffer(0, gpu->vbh);
+        bgfx::setIndexBuffer(gpu->tri, uint32_t(start), uint32_t(count));
+        bgfx::setState(BGFX_STATE_MSAA
+            | (depthTest ? BGFX_STATE_DEPTH_TEST_LEQUAL : 0));
+        bgfx::setStencil(BGFX_STENCIL_TEST_ALWAYS
+            | BGFX_STENCIL_FUNC_REF(ref) | BGFX_STENCIL_FUNC_RMASK(0xff)
+            | BGFX_STENCIL_OP_FAIL_S_KEEP
+            | BGFX_STENCIL_OP_FAIL_Z_REPLACE
+            | BGFX_STENCIL_OP_PASS_Z_REPLACE);
+        bgfx::submit(viewId + view,
+                     clipped ? m_progFlatClip : m_progFlat);
+        ++drawcount;
+        return true;
+    }
+
+    /// Edge and corner-cap passes of an outline: redraw the triangle
+    /// edges as instanced thick lines (plus point-sprite caps) where the
+    /// stencil does not match the reference — only the boundary
+    /// survives.
+    void submitOutlineEdges(const Render::DrawCall &draw,
+                            uint32_t refCounter, const OutlineSpec &spec)
+    {
+        if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
+            return;
         const Render::MeshData &mesh = *draw.mesh;
         int start = spec.start;
         int count = spec.count;
@@ -1165,7 +1255,7 @@ public:
         if (count < 3)
             return;
         GpuMesh *gpu = getMesh(mesh);
-        if (!bgfx::isValid(gpu->tri))
+        if (!bgfx::isValid(gpu->vbh))
             return;
         gpu->ensureOutline(mesh);
         if (!bgfx::isValid(gpu->triEdgeInst))
@@ -1173,46 +1263,13 @@ public:
 
         const Render::Material &mat = draw.material;
         bool clipped = mat.numclipplanes > 0;
-        auto setClip = [&]() {
-            if (!clipped)
-                return;
-            float clipParams[4] = {float(mat.numclipplanes),
-                                   mat.clipconcave ? 1.0f : 0.0f,
-                                   0.0f, 0.0f};
-            bgfx::setUniform(u_clipParams, clipParams);
-            bgfx::setUniform(u_clipPlanes, mat.clipplanes,
-                             mat.numclipplanes);
-        };
-
         uint32_t ref = ((refCounter - 1) % 255) + 1;
         const uint64_t depthtest =
             spec.depthTest ? BGFX_STATE_DEPTH_TEST_LEQUAL : 0;
         const uint64_t depthstate = depthtest
             | (spec.depthWrite ? BGFX_STATE_WRITE_Z : 0);
-
-        // Pass 1: stencil-mark the face(s); no color output. Scene
-        // outlines keep the depth test and write (matching GL's
-        // color-masked fill pass); highlight outlines draw on top.
         float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float params[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-        bgfx::setUniform(u_matColor, zero);
-        bgfx::setUniform(u_matEmissive, zero);
-        bgfx::setUniform(u_matSpecular, zero);
-        bgfx::setUniform(u_params, params);
-        setClip();
-        if (!draw.identity)
-            bgfx::setTransform(draw.model);
-        bgfx::setVertexBuffer(0, gpu->vbh);
-        bgfx::setIndexBuffer(gpu->tri, uint32_t(start), uint32_t(count));
-        bgfx::setState(BGFX_STATE_MSAA | depthtest);
-        bgfx::setStencil(BGFX_STENCIL_TEST_ALWAYS
-            | BGFX_STENCIL_FUNC_REF(ref) | BGFX_STENCIL_FUNC_RMASK(0xff)
-            | BGFX_STENCIL_OP_FAIL_S_KEEP
-            | BGFX_STENCIL_OP_FAIL_Z_REPLACE
-            | BGFX_STENCIL_OP_PASS_Z_REPLACE);
-        bgfx::submit(viewId + spec.view,
-                     clipped ? m_progFlatClip : m_progFlat);
-        ++drawcount;
 
         // Shared uniforms of the edge and corner passes: flat outline
         // color, forced opaque. When the edges write depth, they get
@@ -1242,7 +1299,7 @@ public:
         bgfx::setUniform(u_matEmissive, zero);
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
-        setClip();
+        setClipUniforms(mat);
         if (!draw.identity)
             bgfx::setTransform(draw.model);
         bgfx::setVertexBuffer(0, m_lineQuadVb);
@@ -1259,11 +1316,13 @@ public:
         // pass), patching the notches thick quads leave at corners.
         if (!spec.caps)
             return;
+        if (spec.capWidth > 0.0f)
+            params[1] = qMax(1.0f, std::floor(spec.capWidth + 0.5f));
         bgfx::setUniform(u_matColor, color);
         bgfx::setUniform(u_matEmissive, zero);
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
-        setClip();
+        setClipUniforms(mat);
         if (!draw.identity)
             bgfx::setTransform(draw.model);
         bgfx::setVertexBuffer(0, m_lineQuadVb);
@@ -1955,19 +2014,65 @@ public:
                 && d.material.type == Render::Material::Line
                 && d.partIndex < 0;
         };
-        auto submitSceneOutline = [&](const Render::DrawCall &d) {
-            // Per-entry stencil outline of a whole-cache triangle draw.
-            // The whole-scene outline mode (sceneOutline without
-            // perFaceOutline) suppresses per-entry outlines in GL; its
-            // single-silhouette pass is not implemented yet.
+        // Which face-part set a whole-cache outline splits into
+        // (GL: renderOutline ~1400). Clipped geometry and the
+        // perFaceOutline mode (with a positive outline width, unless the
+        // whole-scene silhouette runs) outline every face part; the
+        // remaining perFaceOutline combinations outline only the
+        // non-flat (curved) parts, whose silhouette edges are not in the
+        // line set. Null = one whole-cache outline. A cache without a
+        // face-part table outlines nothing in the per-part modes,
+        // like GL's zero-iteration loop.
+        auto outlineParts = [&](const Render::DrawCall &d, bool highlight)
+                -> const std::vector<std::pair<int, int>> * {
+            if (!d.mesh)
+                return nullptr;
+            if (d.material.numclipplanes > 0
+                    || (!highlight && hl.perFaceOutline && !hl.sceneOutline
+                        && hl.outlineWidth > 0.0f))
+                return &d.mesh->triangleParts;
+            if (hl.perFaceOutline && !d.mesh->nonFlatParts.empty())
+                return &d.mesh->nonFlatParts;
+            return nullptr;
+        };
+        // Per-part outlines overlap their own object's fills (only the
+        // part's interior is stencil-killed), so they skip the depth
+        // write to let those fills dim them like GL's ordered draw does.
+        auto submitOutlineOrParts = [&](const Render::DrawCall &d,
+                                        BGFXView::OutlineSpec &spec,
+                                        bool highlight) {
+            if (const auto *parts = outlineParts(d, highlight)) {
+                spec.depthWrite = false;
+                for (const auto &part : *parts) {
+                    spec.start = part.first;
+                    spec.count = part.second;
+                    view->submitOutline(d, ++outlineRef, spec);
+                }
+            } else {
+                view->submitOutline(d, ++outlineRef, spec);
+            }
+        };
+        // Per-entry stencil outline of a whole-cache triangle draw of the
+        // scene or a selection (GL: renderOutline with highlight=false,
+        // reached from renderOpaque/renderTransparency right after the
+        // fill). The whole-scene outline mode (sceneOutline without
+        // perFaceOutline) suppresses these; its single-silhouette pass
+        // runs at the end of the frame instead. viewOverride routes
+        // on-top selection outlines into the highlight view where their
+        // fills draw.
+        auto submitSceneOutline = [&](const Render::DrawCall &d,
+                                      int viewOverride = -1) {
             if (!hl.show || !d.material.outline || !isTriangle(d)
                     || d.partIndex >= 0
                     || (hl.sceneOutline && !hl.perFaceOutline))
                 return;
             BGFXView::OutlineSpec spec;
-            spec.view = d.material.ontop ? BGFXView::ViewOnTop
-                                         : BGFXView::ViewOutline;
-            spec.depthTest = !d.material.ontop;
+            bool ontop = d.material.ontop
+                || viewOverride == BGFXView::ViewHighlight;
+            spec.view = viewOverride >= 0 ? uint16_t(viewOverride)
+                : d.material.ontop ? BGFXView::ViewOnTop
+                                   : BGFXView::ViewOutline;
+            spec.depthTest = !ontop;
             spec.depthWrite = spec.depthTest;
             spec.caps = hl.hideVertex;
             spec.color = d.material.linecolor ? d.material.linecolor
@@ -1977,23 +2082,27 @@ public:
             float lw = qMax(d.material.linewidth, hl.outlineWidth);
             spec.width = qMax(lw * 1.5f,
                               d.material.linewidth * hl.outlineThicken);
-            if (d.material.numclipplanes > 0 && d.mesh
-                    && !d.mesh->triangleParts.empty()) {
-                // Clipped geometry outlines per face part (GL:
-                // renderOutline switches to getNumFaceParts() under
-                // active clip planes). Per-part outlines overlap their
-                // own object's fills (only the part's interior is
-                // stencil-killed), so they skip the depth write to let
-                // those fills dim them like GL's ordered draw does.
-                spec.depthWrite = false;
-                for (const auto &part : d.mesh->triangleParts) {
-                    spec.start = part.first;
-                    spec.count = part.second;
-                    view->submitOutline(d, ++outlineRef, spec);
-                }
-            } else {
-                view->submitOutline(d, ++outlineRef, spec);
-            }
+            submitOutlineOrParts(d, spec, false);
+        };
+        // Whole-object outline of the preselection highlight in
+        // hidden-line mode (GL: renderOutline with highlight=true and
+        // partidx < 0): drawn on top with the selection-thickened width
+        // the bridge resolved into Material::outlinewidth, raised to the
+        // configured outline width like GL's in-place formula.
+        auto submitHighlightOutline = [&](const Render::DrawCall &d) {
+            if (!hl.show || !d.material.outline || !isTriangle(d)
+                    || d.partIndex >= 0)
+                return;
+            BGFXView::OutlineSpec spec;
+            spec.view = BGFXView::ViewHighlight;
+            spec.depthTest = false;
+            spec.depthWrite = false;
+            spec.caps = true;
+            spec.color = d.material.linecolor ? d.material.linecolor
+                                              : d.material.diffuse;
+            spec.width = qMax(d.material.outlinewidth,
+                              hl.outlineWidth * 1.5f);
+            submitOutlineOrParts(d, spec, true);
         };
 
         // 1. Normal scene draws, then on-top triangle fills (opaque before
@@ -2040,6 +2149,13 @@ public:
                 if (isDup(draw))
                     continue;
                 view->submit(draw, viewMat);
+                // Hidden-line outline of a whole-object selection fill
+                // (GL: renderOutline from renderOpaque/renderTransparency
+                // over slentries). On-top selections outline in the
+                // highlight view where their fills draw.
+                if (isTriangle(draw))
+                    submitSceneOutline(draw, sel.first > 0
+                            ? int(BGFXView::ViewHighlight) : -1);
             }
         }
 
@@ -2047,8 +2163,10 @@ public:
         view->ontop = true;
         if (hlWholeOnTop) {
             for (const auto &draw : highlight) {
-                if (isTriangle(draw) && !outlineOnly(draw))
+                if (isTriangle(draw) && !outlineOnly(draw)) {
                     view->submit(draw, viewMat);
+                    submitHighlightOutline(draw);
+                }
             }
         }
 
@@ -2139,8 +2257,10 @@ public:
             }
         } else {
             for (const auto &draw : highlight) {
-                if (isTriangle(draw) && !outlineOnly(draw))
+                if (isTriangle(draw) && !outlineOnly(draw)) {
                     view->submit(draw, viewMat);
+                    submitHighlightOutline(draw);
+                }
             }
             for (const auto &draw : highlight) {
                 if (!isTriangle(draw))
@@ -2148,7 +2268,43 @@ public:
             }
         }
 
-        // 8. Selected/preselected face outlines, last of all (GL draws
+        // 8. Whole-scene hidden-line silhouette (GL: renderSceneOutline,
+        // issued after all line/highlight passes and before the face
+        // outlines): every scene triangle draw stencil-marks under one
+        // shared reference — depth-independent, so hidden geometry still
+        // counts — then each one's edges redraw where the stencil
+        // differs, leaving a single outline around the union of the
+        // scene. Deviation from GL: the edge passes apply each entry's
+        // own clip planes, where GL leaves whatever clip state its mark
+        // loop applied last.
+        if (hl.show && hl.sceneOutline) {
+            uint32_t silhouetteRef = ++outlineRef;
+            bool marked = false;
+            for (const auto &draw : scene) {
+                if (!isTriangle(draw) || isHidden(draw))
+                    continue;
+                marked |= view->submitOutlineMark(draw, silhouetteRef,
+                        BGFXView::ViewHighlight, true);
+            }
+            if (marked) {
+                BGFXView::OutlineSpec spec;
+                spec.view = BGFXView::ViewHighlight;
+                spec.color = hl.lineColor;
+                float lw = qMax(1.0f, hl.outlineWidth);
+                spec.width = lw * 1.5f;
+                spec.capWidth = lw;
+                spec.depthTest = true;
+                spec.depthWrite = false;
+                spec.caps = hl.hideVertex;
+                for (const auto &draw : scene) {
+                    if (!isTriangle(draw) || isHidden(draw))
+                        continue;
+                    view->submitOutlineEdges(draw, silhouetteRef, spec);
+                }
+            }
+        }
+
+        // 9. Selected/preselected face outlines, last of all (GL draws
         // them at the very end of the frame under
         // RenderPassSelectionOutline; selections before preselection).
         auto faceOutlineSpec = [](const Render::DrawCall &draw) {
