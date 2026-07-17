@@ -51,6 +51,10 @@ GuiExport Render::HiddenLineConfig translateHiddenLineConfig(SoState * state);
 /// per-frame config.
 GuiExport Render::SectionConfig translateSectionConfig();
 
+/// Resolve the ambient occlusion ViewParams (RendererSSAO*) into the
+/// backend-neutral per-frame config.
+GuiExport Render::AOConfig translateAOConfig();
+
 /// Resolve the per-frame autozoom scale from the traversal state's view
 /// volume (the exact SoAutoZoomTranslation::getScaleFactor math with a
 /// node scaleFactor of 1); Material::autozoom entries multiply their own

@@ -2238,6 +2238,8 @@ SoFCRenderer::render(SoGLRenderAction * action)
         RendererBridge::translateHiddenLineConfig(action->getState()));
     PRIVATE(this)->external->setSectionConfig(
         RendererBridge::translateSectionConfig());
+    PRIVATE(this)->external->setAOConfig(
+        RendererBridge::translateAOConfig());
     PRIVATE(this)->external->setAutoZoomScale(
         RendererBridge::translateAutoZoomScale(action->getState()));
   }

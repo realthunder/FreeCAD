@@ -186,6 +186,23 @@ struct SectionConfig {
     bool operator!=(const SectionConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame screen-space ambient occlusion configuration (there is no
+/// GL-renderer counterpart; the effect exists only in external backends).
+/// Resolved by the bridge each render like SectionConfig.
+struct AOConfig {
+    bool enabled = false;    ///< ambient occlusion pass active
+    /// Sample radius in world units; 0 = automatic (a fraction of the
+    /// scene bounding-sphere size, resolved by the backend).
+    float radius = 0.0f;
+    float intensity = 1.0f;  ///< occlusion darkening strength
+
+    bool operator==(const AOConfig &o) const {
+        return enabled == o.enabled && radius == o.radius
+            && intensity == o.intensity;
+    }
+    bool operator!=(const AOConfig &o) const { return !(*this == o); }
+};
+
 /// Flattened per-draw render state, translated from the Coin-side material
 /// (SoFCRenderCache::Material). Colors are packed 0xRRGGBBAA.
 struct Material {
@@ -347,6 +364,8 @@ public:
     /// Per-frame section fill (cap) configuration.
     virtual void setSectionConfig(const SectionConfig &config)
     { (void)config; }
+    /// Per-frame ambient occlusion configuration.
+    virtual void setAOConfig(const AOConfig &config) { (void)config; }
     /// Per-frame world-to-screen scale at the world origin consumed by
     /// Material::autozoom draws (Coin: SoAutoZoomTranslation's
     /// getWorldToScreenScale((0,0,0), 0.1) / (5 * viewport aspect)).

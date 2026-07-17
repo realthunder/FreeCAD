@@ -59,6 +59,7 @@ public:
     virtual void clearHighlight() override;
     virtual void setHiddenLineConfig(const HiddenLineConfig &config) override;
     virtual void setSectionConfig(const SectionConfig &config) override;
+    virtual void setAOConfig(const AOConfig &config) override;
     virtual void setAutoZoomScale(float scale) override;
     virtual void setHatchImage(const void *data, int nc,
                                int width, int height) override;

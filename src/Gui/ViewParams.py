@@ -452,6 +452,14 @@ Params = [
         "Maximum hierarchy depth that the cache merge can happen. Less than 0 means no limit."),
     ParamInt('RenderCacheMergeDepthMin',  1,
         "Minimum hierarchy depth that the cache merge can happen."),
+    ParamBool('RendererSSAO',  False,
+        "Enable screen space ambient occlusion of the experimental render\n"
+        "engine (RendererType, with render cache mode 3)."),
+    ParamFloat('RendererSSAORadius',  0.0,
+        "Ambient occlusion sample radius in world units.\n"
+        "Zero means automatic (a fraction of the scene size)."),
+    ParamFloat('RendererSSAOIntensity',  1.0,
+        "Ambient occlusion darkening strength."),
     ParamFloat('RenderHighlightPolygonOffsetFactor', 1),
     ParamFloat('RenderHighlightPolygonOffsetUnits', 1),
     ParamBool('ForceSolidSingleSideLighting',  True, on_change=True, title='Force single side lighting on solid',

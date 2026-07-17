@@ -877,6 +877,12 @@ public:
     // draw order. Each is a bgfx view sharing the same framebuffer.
     enum PassView {
         ViewBackground = 0, // clear + gradient background quad (clip space)
+        ViewAOPrepass,      // SSAO depth+normal prepass of opaque scene
+                            // triangles into a non-MSAA RGBA16F target
+                            // (own framebuffer, own depth)
+        ViewAOGen,          // fullscreen SSAO generation into the R8 AO
+                            // target (hemisphere kernel over the prepass)
+        ViewAOBlur,         // fullscreen 4x4 AO blur into a second R8
         ViewOpaque,         // opaque triangles, lines, points
         ViewSectionCap,     // stencil section caps of clipped opaque
                             // solids (GL: _renderSection; before the
@@ -884,6 +890,9 @@ public:
                             // opaque-loop caps, and the cap parity
                             // marking needs the stencil buffer before
                             // the outline passes leave their marks)
+        ViewAOApply,        // fullscreen multiply of the blurred AO onto
+                            // the opaque scene color (after the caps,
+                            // before outlines/transparency)
         ViewOutline,        // hidden-line stencil outlines of scene draws
                             // (after all opaque geometry so the depth
                             // test sees the whole scene, before the
@@ -915,6 +924,34 @@ public:
         for (auto &v : textures)
             v.second.destroy();
         textures.clear();
+        // SSAO resources: framebuffers before the textures they reference.
+        for (auto fb : {&aoPrepassFbo, &aoGenFbo, &aoBlurFbo}) {
+            if (bgfx::isValid(*fb)) {
+                bgfx::destroy(*fb);
+                *fb = BGFX_INVALID_HANDLE;
+            }
+        }
+        for (auto tex : {&aoNormalZ, &aoDepth, &aoTex, &aoBlurTex,
+                         &aoNoiseTex}) {
+            if (bgfx::isValid(*tex)) {
+                bgfx::destroy(*tex);
+                *tex = BGFX_INVALID_HANDLE;
+            }
+        }
+        for (auto prog : {&m_progPrepass, &m_progPrepassClip, &m_progSsao,
+                          &m_progSsaoBlur, &m_progSsaoApply}) {
+            if (bgfx::isValid(*prog)) {
+                bgfx::destroy(*prog);
+                *prog = BGFX_INVALID_HANDLE;
+            }
+        }
+        for (auto uni : {&s_texNormalZ, &s_texAONoise, &s_texAO,
+                         &u_aoParams, &u_aoKernel}) {
+            if (bgfx::isValid(*uni)) {
+                bgfx::destroy(*uni);
+                *uni = BGFX_INVALID_HANDLE;
+            }
+        }
         // The OIT framebuffer references bgfxDepth (owned by bgfxFbo),
         // so it goes first.
         if (bgfx::isValid(oitFbo)) {
@@ -1275,6 +1312,77 @@ public:
                                              bgfx::UniformType::Sampler);
             s_texReveal = bgfx::createUniform("s_texReveal",
                                               bgfx::UniformType::Sampler);
+        }
+
+        // SSAO: depth+normal prepass + AO generation/blur targets, all
+        // non-MSAA at viewport size (the multiply pass samples at pixel
+        // centers under MSAA). Needs renderable-and-samplable RGBA16F
+        // (the WebGL2 float-buffer set, like OIT) and R8.
+        m_ssao = (caps->formats[bgfx::TextureFormat::RGBA16F]
+                      & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER)
+            && (caps->formats[bgfx::TextureFormat::R8]
+                    & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        if (m_ssao) {
+            const uint64_t aoFlags = 0
+                | BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_MIN_POINT
+                | BGFX_SAMPLER_MAG_POINT
+                | BGFX_SAMPLER_MIP_POINT
+                | BGFX_SAMPLER_U_CLAMP
+                | BGFX_SAMPLER_V_CLAMP;
+            aoNormalZ = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::RGBA16F, aoFlags);
+            aoDepth = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::D24S8,
+                aoFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            aoTex = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::R8, aoFlags);
+            aoBlurTex = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::R8, aoFlags);
+            bgfx::TextureHandle preatt[2] = {aoNormalZ, aoDepth};
+            aoPrepassFbo = bgfx::createFrameBuffer(2, preatt, false);
+            aoGenFbo = bgfx::createFrameBuffer(1, &aoTex, false);
+            aoBlurFbo = bgfx::createFrameBuffer(1, &aoBlurTex, false);
+
+            m_progPrepass = loadProgram("vs_fc_prepass", "fs_fc_prepass",
+                                        _BGFXLib.resource().c_str());
+            m_progPrepassClip = loadProgram("vs_fc_prepass_clip",
+                                            "fs_fc_prepass_clip",
+                                            _BGFXLib.resource().c_str());
+            m_progSsao = loadProgram("vs_fc_comp", "fs_fc_ssao",
+                                     _BGFXLib.resource().c_str());
+            m_progSsaoBlur = loadProgram("vs_fc_comp", "fs_fc_ssao_blur",
+                                         _BGFXLib.resource().c_str());
+            m_progSsaoApply = loadProgram("vs_fc_comp", "fs_fc_ssao_apply",
+                                          _BGFXLib.resource().c_str());
+            s_texNormalZ = bgfx::createUniform("s_texNormalZ",
+                                               bgfx::UniformType::Sampler);
+            s_texAONoise = bgfx::createUniform("s_texAONoise",
+                                               bgfx::UniformType::Sampler);
+            s_texAO = bgfx::createUniform("s_texAO",
+                                          bgfx::UniformType::Sampler);
+            u_aoParams = bgfx::createUniform("u_aoParams",
+                                             bgfx::UniformType::Vec4);
+            u_aoKernel = bgfx::createUniform("u_aoKernel",
+                                             bgfx::UniformType::Vec4,
+                                             kAOSamples);
+            // 4x4 tiled random rotation vectors (xy packed *0.5+0.5),
+            // fixed values so frames are deterministic.
+            static const uint8_t noise[64] = {
+                0xa2, 0x05, 0x00, 0xff, 0x11, 0xc0, 0x00, 0xff,
+                0xee, 0xc0, 0x00, 0xff, 0x25, 0xd9, 0x00, 0xff,
+                0x27, 0x23, 0x00, 0xff, 0x63, 0x03, 0x00, 0xff,
+                0x20, 0xd4, 0x00, 0xff, 0x2a, 0xde, 0x00, 0xff,
+                0x90, 0xfe, 0x00, 0xff, 0x9b, 0xfc, 0x00, 0xff,
+                0xae, 0x09, 0x00, 0xff, 0xef, 0xbe, 0x00, 0xff,
+                0xd8, 0x23, 0x00, 0xff, 0x3a, 0x15, 0x00, 0xff,
+                0x00, 0x87, 0x00, 0xff, 0xe8, 0xc9, 0x00, 0xff,
+            };
+            aoNoiseTex = bgfx::createTexture2D(4, 4, false, 1,
+                bgfx::TextureFormat::RGBA8,
+                BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+                | BGFX_SAMPLER_MIP_POINT,
+                bgfx::copy(noise, sizeof(noise)));
         }
     }
 
@@ -1829,6 +1937,102 @@ public:
         ++drawcount;
     }
 
+    /// SSAO depth+normal prepass of one opaque scene triangle draw:
+    /// re-rasterize it into the non-MSAA prepass target with the
+    /// encoding fragment shader, replicating the fill's transform, clip
+    /// planes and culling so the AO sees exactly the visible geometry.
+    void submitPrepass(const Render::DrawCall &draw)
+    {
+        if (!draw.mesh || !draw.mesh->triangleIndices)
+            return;
+        GpuMesh *gpu = getMesh(*draw.mesh);
+        if (!bgfx::isValid(gpu->vbh) || !bgfx::isValid(gpu->tri))
+            return;
+
+        const Render::Material &mat = draw.material;
+        bool clipped = mat.numclipplanes > 0;
+        setClipUniforms(mat);
+        setDrawTransform(draw, autozoomScale);
+        bgfx::setVertexBuffer(0, gpu->vbh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->tri);
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+            | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
+        if (mat.culling && !mat.twoside)
+            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
+        bgfx::setState(state);
+        bgfx::submit(viewId + ViewAOPrepass,
+                     clipped ? m_progPrepassClip : m_progPrepass);
+        ++drawcount;
+    }
+
+    /// Fullscreen SSAO resolve chain: hemisphere-kernel AO from the
+    /// prepass into the R8 target, a 4x4 box blur, then the multiply
+    /// onto the opaque scene color (dst *= src, alpha kept).
+    void submitAOResolve(float radius, float intensity)
+    {
+        SceneVertex::init();
+        auto fullscreen = [this](uint16_t pass, bgfx::ProgramHandle prog,
+                                 uint64_t state) {
+            if (bgfx::getAvailTransientVertexBuffer(
+                        3, SceneVertex::ms_layout) < 3)
+                return;
+            bgfx::TransientVertexBuffer tvb;
+            bgfx::allocTransientVertexBuffer(&tvb, 3,
+                                             SceneVertex::ms_layout);
+            auto *v = reinterpret_cast<SceneVertex *>(tvb.data);
+            v[0] = {-1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+            v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+            v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+            bgfx::setVertexBuffer(0, &tvb);
+            bgfx::setState(state);
+            bgfx::submit(viewId + pass, prog);
+            ++drawcount;
+        };
+
+        // Fixed hemisphere kernel (unit radius, z >= 0, clustered near
+        // the origin), deterministic across frames like the noise.
+        static const float kernel[kAOSamples][4] = {
+            {-0.058091f, 0.018602f, 0.079242f, 0.0f},
+            {-0.016977f, 0.100367f, 0.018809f, 0.0f},
+            {-0.042287f, 0.079676f, 0.069813f, 0.0f},
+            {0.010341f, 0.119322f, 0.054631f, 0.0f},
+            {0.012528f, 0.147272f, 0.050676f, 0.0f},
+            {-0.131686f, -0.100976f, 0.088122f, 0.0f},
+            {0.120937f, 0.161185f, 0.103557f, 0.0f},
+            {0.024414f, -0.112444f, 0.246757f, 0.0f},
+            {-0.050206f, -0.180815f, 0.265349f, 0.0f},
+            {0.057177f, 0.368457f, 0.094947f, 0.0f},
+            {0.223564f, 0.320370f, 0.226476f, 0.0f},
+            {0.173264f, -0.484121f, 0.107897f, 0.0f},
+            {0.046909f, 0.076361f, 0.599589f, 0.0f},
+            {0.263978f, 0.433148f, 0.473845f, 0.0f},
+            {-0.768430f, 0.171215f, 0.053107f, 0.0f},
+            {0.429038f, 0.201413f, 0.754499f, 0.0f},
+        };
+        float params[4] = {radius, intensity, 0.02f * radius, 0.0f};
+        bgfx::setUniform(u_aoParams, params);
+        bgfx::setUniform(u_aoKernel, kernel, kAOSamples);
+        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
+        bgfx::setTexture(1, s_texAONoise, aoNoiseTex);
+        fullscreen(ViewAOGen, m_progSsao,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+
+        bgfx::setTexture(0, s_texAO, aoTex);
+        fullscreen(ViewAOBlur, m_progSsaoBlur,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+
+        bgfx::setTexture(0, s_texAO, aoBlurTex);
+        fullscreen(ViewAOApply, m_progSsaoApply,
+                   BGFX_STATE_WRITE_RGB
+                   | BGFX_STATE_BLEND_FUNC_SEPARATE(
+                       BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_SRC_COLOR,
+                       BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_ONE));
+    }
+
     // Submission passes mirroring SoFCRenderer's delayed render loop.
     enum SubmitPass {
         PassNormal = 0,
@@ -2296,6 +2500,26 @@ public:
     bgfx::TextureHandle m_whiteTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_hatchTex = BGFX_INVALID_HANDLE;
     uint64_t m_hatchVersion = 0;   // Private's hatch pixel generation
+    static constexpr int kAOSamples = 16;
+    bgfx::TextureHandle aoNormalZ = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle aoDepth = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle aoTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle aoBlurTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle aoNoiseTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle aoPrepassFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle aoGenFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle aoBlurFbo = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progPrepass = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progPrepassClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progSsao = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progSsaoBlur = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progSsaoApply = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texNormalZ = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texAONoise = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texAO = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_aoParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_aoKernel = BGFX_INVALID_HANDLE;
+    bool m_ssao = false;     // SSAO resources exist (caps allow it)
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
     std::unordered_map<uint64_t, GpuMesh> meshes;
@@ -2385,6 +2609,37 @@ public:
         }
         view->oitFrame = oitActive;
 
+        // SSAO runs when the resources exist, the per-frame config asks
+        // for it, and there is opaque scene geometry to occlude. The
+        // hidden-line draw style disables it (a technical drawing mode;
+        // its faces may not draw at all).
+        bool ssaoActive = false;
+        if (view->m_ssao && aoconf.enabled && !hlconfig.show) {
+            for (const auto &draw : scene) {
+                if (!draw.material.ontop
+                        && draw.material.type == Render::Material::Triangle
+                        && !draw.material.transparent
+                        && !(draw.material.pervertexcolor && draw.mesh
+                             && draw.mesh->hasTransparency)) {
+                    ssaoActive = true;
+                    break;
+                }
+            }
+        }
+        // Zero radius = automatic: a fraction of the scene bounding
+        // sphere, the scale-free default.
+        float aoRadius = aoconf.radius;
+        if (ssaoActive && aoRadius <= 0.0f) {
+            if (bboxValid) {
+                float dx = bboxMax[0] - bboxMin[0];
+                float dy = bboxMax[1] - bboxMin[1];
+                float dz = bboxMax[2] - bboxMin[2];
+                aoRadius = 0.05f * std::sqrt(dx*dx + dy*dy + dz*dz);
+            }
+            if (aoRadius <= 0.0f)
+                ssaoActive = false;
+        }
+
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
             uint16_t id = base + i;
             if (i == BGFXView::ViewTransparent && oitActive) {
@@ -2395,6 +2650,21 @@ public:
                 bgfx::setPaletteColor(1, 1.0f, 1.0f, 1.0f, 1.0f);
                 bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_COLOR),
                                    1.0f, 0, 0, 1);
+            } else if (ssaoActive && i == BGFXView::ViewAOPrepass) {
+                // Prepass target clears to 0 (.w = 0 marks background
+                // in the AO pass), with its own depth buffer.
+                bgfx::setViewFrameBuffer(id, view->aoPrepassFbo);
+                bgfx::setViewClear(id,
+                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                    0x00000000u, 1.0f, 0);
+            } else if (ssaoActive && (i == BGFXView::ViewAOGen
+                                      || i == BGFXView::ViewAOBlur)) {
+                // Fullscreen passes overwrite their whole target.
+                bgfx::setViewFrameBuffer(id,
+                    i == BGFXView::ViewAOGen ? view->aoGenFbo
+                                             : view->aoBlurFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
             } else {
                 bgfx::setViewFrameBuffer(id, view->bgfxFbo);
                 // The section-cap views clear the stencil: their parity
@@ -2411,10 +2681,14 @@ public:
                     clearColor, 1.0f, 0);
             }
             bgfx::setViewRect(id, 0, 0, width, height);
-            // The background quad and the OIT composite triangle are
-            // submitted in clip space.
+            // The background quad, the OIT composite triangle and the
+            // fullscreen AO blur/apply triangles are submitted in clip
+            // space; the AO generation pass keeps the scene projection
+            // for its predefined u_proj (position reconstruction).
             if (i == BGFXView::ViewBackground
-                    || i == BGFXView::ViewOITComposite)
+                    || i == BGFXView::ViewOITComposite
+                    || i == BGFXView::ViewAOBlur
+                    || i == BGFXView::ViewAOApply)
                 bgfx::setViewTransform(id, nullptr, nullptr);
             else
                 bgfx::setViewTransform(id, viewMatrix, projMatrix);
@@ -2659,6 +2933,12 @@ public:
                 continue;
             view->submit(draw, viewMat, BGFXView::PassNormal,
                          sceneNoSeam(draw));
+            // The SSAO prepass re-rasterizes the opaque fills into the
+            // depth+normal target (transparent geometry neither occludes
+            // nor receives AO; the multiply pass runs before the
+            // transparent bucket).
+            if (ssaoActive && isTriangle(draw) && !isTransp(draw))
+                view->submitPrepass(draw);
             submitSceneOutline(draw);
         }
         for (const auto &draw : scene) {
@@ -2685,6 +2965,12 @@ public:
                                                    : hatchRGBA.data(),
                                  hatchWidth, hatchHeight);
         submitSectionCaps(view, reinterpret_cast<const float *>(projMatrix));
+
+        // 1c. SSAO resolve: generate, blur, and multiply the AO onto the
+        // opaque scene (the AO views sit between the caps and the
+        // outline/transparent passes).
+        if (ssaoActive)
+            view->submitAOResolve(aoRadius, aoconf.intensity);
 
         // 2. Selection whole-object fills; positive ids are on-top
         // selections (SoFCRenderer::addSelection). Their lines/points are
@@ -3209,6 +3495,7 @@ public:
     std::unordered_set<const Render::DrawCall *> dupDraws;
     Render::HiddenLineConfig hlconfig;
     Render::SectionConfig secconf;
+    Render::AOConfig aoconf;
     float autozoomScale = 1.0f;
     // CPU copy of the section hatch texture, expanded to RGBA8; the
     // version stamps GPU re-uploads (0 = no image).
@@ -3339,6 +3626,14 @@ void BGFXRenderer::setSectionConfig(const SectionConfig &config)
 {
     if (pimpl->secconf != config) {
         pimpl->secconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setAOConfig(const AOConfig &config)
+{
+    if (pimpl->aoconf != config) {
+        pimpl->aoconf = config;
         pimpl->sceneDirty = true;
     }
 }

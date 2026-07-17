@@ -212,6 +212,9 @@ public:
     long RenderCacheMergeCountMax;
     long RenderCacheMergeDepthMax;
     long RenderCacheMergeDepthMin;
+    bool RendererSSAO;
+    double RendererSSAORadius;
+    double RendererSSAOIntensity;
     double RenderHighlightPolygonOffsetFactor;
     double RenderHighlightPolygonOffsetUnits;
     bool ForceSolidSingleSideLighting;
@@ -543,6 +546,12 @@ public:
         funcs["RenderCacheMergeDepthMax"] = &ViewParamsP::updateRenderCacheMergeDepthMax;
         RenderCacheMergeDepthMin = this->handle->GetInt("RenderCacheMergeDepthMin", 1);
         funcs["RenderCacheMergeDepthMin"] = &ViewParamsP::updateRenderCacheMergeDepthMin;
+        RendererSSAO = this->handle->GetBool("RendererSSAO", false);
+        funcs["RendererSSAO"] = &ViewParamsP::updateRendererSSAO;
+        RendererSSAORadius = this->handle->GetFloat("RendererSSAORadius", 0.0);
+        funcs["RendererSSAORadius"] = &ViewParamsP::updateRendererSSAORadius;
+        RendererSSAOIntensity = this->handle->GetFloat("RendererSSAOIntensity", 1.0);
+        funcs["RendererSSAOIntensity"] = &ViewParamsP::updateRendererSSAOIntensity;
         RenderHighlightPolygonOffsetFactor = this->handle->GetFloat("RenderHighlightPolygonOffsetFactor", 1);
         funcs["RenderHighlightPolygonOffsetFactor"] = &ViewParamsP::updateRenderHighlightPolygonOffsetFactor;
         RenderHighlightPolygonOffsetUnits = this->handle->GetFloat("RenderHighlightPolygonOffsetUnits", 1);
@@ -1232,6 +1241,18 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderCacheMergeDepthMin(ViewParamsP *self) {
         self->RenderCacheMergeDepthMin = self->handle->GetInt("RenderCacheMergeDepthMin", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRendererSSAO(ViewParamsP *self) {
+        self->RendererSSAO = self->handle->GetBool("RendererSSAO", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRendererSSAORadius(ViewParamsP *self) {
+        self->RendererSSAORadius = self->handle->GetFloat("RendererSSAORadius", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRendererSSAOIntensity(ViewParamsP *self) {
+        self->RendererSSAOIntensity = self->handle->GetFloat("RendererSSAOIntensity", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderHighlightPolygonOffsetFactor(ViewParamsP *self) {
@@ -5623,6 +5644,92 @@ void ViewParams::removeRenderCacheMergeDepthMin() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRendererSSAO() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Enable screen space ambient occlusion of the experimental render\n"
+"engine (RendererType, with render cache mode 3).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & ViewParams::getRendererSSAO() {
+    return instance()->RendererSSAO;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & ViewParams::defaultRendererSSAO() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRendererSSAO(const bool &v) {
+    instance()->handle->SetBool("RendererSSAO",v);
+    instance()->RendererSSAO = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRendererSSAO() {
+    instance()->handle->RemoveBool("RendererSSAO");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRendererSSAORadius() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Ambient occlusion sample radius in world units.\n"
+"Zero means automatic (a fraction of the scene size).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & ViewParams::getRendererSSAORadius() {
+    return instance()->RendererSSAORadius;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & ViewParams::defaultRendererSSAORadius() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRendererSSAORadius(const double &v) {
+    instance()->handle->SetFloat("RendererSSAORadius",v);
+    instance()->RendererSSAORadius = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRendererSSAORadius() {
+    instance()->handle->RemoveFloat("RendererSSAORadius");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRendererSSAOIntensity() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Ambient occlusion darkening strength.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & ViewParams::getRendererSSAOIntensity() {
+    return instance()->RendererSSAOIntensity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & ViewParams::defaultRendererSSAOIntensity() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRendererSSAOIntensity(const double &v) {
+    instance()->handle->SetFloat("RendererSSAOIntensity",v);
+    instance()->RendererSSAOIntensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRendererSSAOIntensity() {
+    instance()->handle->RemoveFloat("RendererSSAOIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docRenderHighlightPolygonOffsetFactor() {
     return "";
 }
@@ -6089,7 +6196,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:517)
+// Auto generated code (Gui/ViewParams.py:525)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6134,7 +6241,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:525)
+// Auto generated code (Gui/ViewParams.py:533)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6148,7 +6255,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:535)
+// Auto generated code (Gui/ViewParams.py:543)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -6162,13 +6269,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:545)
+// Auto generated code (Gui/ViewParams.py:553)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:552)
+// Auto generated code (Gui/ViewParams.py:560)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6176,7 +6283,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:561)
+// Auto generated code (Gui/ViewParams.py:569)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6188,7 +6295,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:574)
+// Auto generated code (Gui/ViewParams.py:582)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)

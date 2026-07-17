@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:485)
+// Auto generated code (Gui/ViewParams.py:493)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -1864,6 +1864,44 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter RendererSSAO
+    ///
+    /// Enable screen space ambient occlusion of the experimental render
+    /// engine (RendererType, with render cache mode 3).
+    static const bool & getRendererSSAO();
+    static const bool & defaultRendererSSAO();
+    static void removeRendererSSAO();
+    static void setRendererSSAO(const bool &v);
+    static const char *docRendererSSAO();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RendererSSAORadius
+    ///
+    /// Ambient occlusion sample radius in world units.
+    /// Zero means automatic (a fraction of the scene size).
+    static const double & getRendererSSAORadius();
+    static const double & defaultRendererSSAORadius();
+    static void removeRendererSSAORadius();
+    static void setRendererSSAORadius(const double &v);
+    static const char *docRendererSSAORadius();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter RendererSSAOIntensity
+    ///
+    /// Ambient occlusion darkening strength.
+    static const double & getRendererSSAOIntensity();
+    static const double & defaultRendererSSAOIntensity();
+    static void removeRendererSSAOIntensity();
+    static void setRendererSSAOIntensity(const double &v);
+    static const char *docRendererSSAOIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter RenderHighlightPolygonOffsetFactor
     static const double & getRenderHighlightPolygonOffsetFactor();
     static const double & defaultRenderHighlightPolygonOffsetFactor();
@@ -2048,7 +2086,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:491)
+    // Auto generated code (Gui/ViewParams.py:499)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2076,7 +2114,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:501)
+// Auto generated code (Gui/ViewParams.py:509)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

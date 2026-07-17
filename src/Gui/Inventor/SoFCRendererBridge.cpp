@@ -570,6 +570,16 @@ RendererBridge::translateSectionConfig()
     return res;
 }
 
+Render::AOConfig
+RendererBridge::translateAOConfig()
+{
+    Render::AOConfig res;
+    res.enabled = ViewParams::getRendererSSAO();
+    res.radius = float(ViewParams::getRendererSSAORadius());
+    res.intensity = float(ViewParams::getRendererSSAOIntensity());
+    return res;
+}
+
 float
 RendererBridge::translateAutoZoomScale(SoState * state)
 {
