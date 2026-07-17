@@ -600,6 +600,7 @@ SET(Dialog_Settings_CPP_SRCS
     PreferencePages/DlgSettingsWorkbenchesImp.cpp
     PreferencePages/DlgSettingsUI.cpp
     PreferencePages/DlgSettingsDrawStyles.cpp
+    PreferencePages/DlgSettingsRender.cpp
     PreferencePages/DlgSettingsObjects.cpp
     PreferencePages/DlgSettingsPreferencePack.cpp
 )
@@ -625,6 +626,7 @@ SET(Dialog_Settings_HPP_SRCS
     PreferencePages/DlgSettingsWorkbenchesImp.h
     PreferencePages/DlgSettingsUI.h
     PreferencePages/DlgSettingsDrawStyles.h
+    PreferencePages/DlgSettingsRender.h
     PreferencePages/DlgSettingsObjects.h
     PreferencePages/DlgSettingsPreferencePack.h
 )

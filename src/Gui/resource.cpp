@@ -34,6 +34,7 @@
 #include "PreferencePages/DlgSettingsCacheDirectory.h"
 #include "PreferencePages/DlgSettingsDocumentImp.h"
 #include "PreferencePages/DlgSettingsDrawStyles.h"
+#include "PreferencePages/DlgSettingsRender.h"
 #include "PreferencePages/DlgSettingsEditor.h"
 #include "PreferencePages/DlgSettingsGeneral.h"
 #include "PreferencePages/DlgSettingsLightSources.h"
@@ -90,6 +91,7 @@ WidgetFactorySupplier::WidgetFactorySupplier()
     new PrefPageProducer<DlgSettingsTheme>            ( QT_TRANSLATE_NOOP("QObject","Display") );
     DlgSettingsTheme::attachObserver();
     new PrefPageProducer<DlgSettingsDrawStyles>       ( QT_TRANSLATE_NOOP("QObject","Display") );
+    new PrefPageProducer<DlgSettingsRender>           ( QT_TRANSLATE_NOOP("QObject","Display") );
     new PrefPageProducer<DlgSettingsWorkbenchesImp>   ( QT_TRANSLATE_NOOP("QObject","Workbenches") );
     new PrefPageProducer<DlgSettingsMacroImp>         ( QT_TRANSLATE_NOOP("QObject", "Python"));
     new PrefPageProducer<DlgSettingsPythonConsole>    ( QT_TRANSLATE_NOOP("QObject", "Python"));

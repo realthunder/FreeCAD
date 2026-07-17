@@ -43,47 +43,47 @@ ClassDoc = 'Convenient class to obtain the experimental render engine parameters
 UserOnChange = 'RenderParams::onRenderParamChanged(sReason);'
 
 Params = [
-    ParamString('Type', 'Default',
-        "Type of the experimental render engine backend. 'Default' keeps\n"
+    ParamString('Type', 'Default', title='Renderer type',
+        doc="Type of the experimental render engine backend. 'Default' keeps\n"
         "the plain GL pipeline. Only effective with render cache mode 3."),
-    ParamBool('SSAO',  False,
-        "Enable screen space ambient occlusion of the experimental render\n"
+    ParamBool('SSAO',  False, title='Ambient occlusion',
+        doc="Enable screen space ambient occlusion of the experimental render\n"
         "engine (render cache mode 3 with a selected renderer type)."),
-    ParamFloat('SSAORadius',  0.0,
-        "Ambient occlusion sample radius in world units.\n"
+    ParamFloat('SSAORadius',  0.0, title='Sample radius',
+        doc="Ambient occlusion sample radius in world units.\n"
         "Zero means automatic (a fraction of the scene size)."),
-    ParamFloat('SSAOIntensity',  1.0,
-        "Ambient occlusion darkening strength."),
-    ParamBool('PBR',  False,
-        "Enable physically based shading with image based lighting of\n"
+    ParamFloat('SSAOIntensity',  1.0, title='Intensity',
+        doc="Ambient occlusion darkening strength."),
+    ParamBool('PBR',  False, title='Physically based shading',
+        doc="Enable physically based shading with image based lighting of\n"
         "the experimental render engine (render cache mode 3 with a\n"
         "selected renderer type). Replaces the default headlight shading\n"
         "of lit surfaces with a metallic/roughness material lit by a\n"
         "built-in studio environment."),
-    ParamFloat('PBRMetallic',  0.0,
-        "Metalness of physically based shaded surfaces, 0 to 1."),
-    ParamFloat('PBRRoughness',  0.0,
-        "Roughness of physically based shaded surfaces, 0 to 1.\n"
+    ParamFloat('PBRMetallic',  0.0, title='Metallic',
+        doc="Metalness of physically based shaded surfaces, 0 to 1."),
+    ParamFloat('PBRRoughness',  0.0, title='Roughness',
+        doc="Roughness of physically based shaded surfaces, 0 to 1.\n"
         "Zero means automatic (derived from each material's shininess)."),
-    ParamFloat('PBREnvIntensity',  1.0,
-        "Brightness of the image based lighting environment."),
-    ParamFloat('BumpScale',  1.0,
-        "Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
+    ParamFloat('PBREnvIntensity',  1.0, title='Environment brightness',
+        doc="Brightness of the image based lighting environment."),
+    ParamFloat('BumpScale',  1.0, title='Bump strength',
+        doc="Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
         "experimental render engine: scales the slope of normal maps and\n"
         "the height amplitude of grayscale bump maps."),
-    ParamBool('Parallax',  True,
-        "Parallax-occlusion map grayscale bump maps (SoBumpMap) of the\n"
+    ParamBool('Parallax',  True, title='Parallax occlusion mapping',
+        doc="Parallax-occlusion map grayscale bump maps (SoBumpMap) of the\n"
         "experimental render engine, shifting the texture with the view\n"
         "angle for a strong relief impression."),
-    ParamBool('Volumetric',  False,
-        "Enable volumetric lighting (light shafts) of the experimental\n"
+    ParamBool('Volumetric',  False, title='Light shafts',
+        doc="Enable volumetric lighting (light shafts) of the experimental\n"
         "render engine: raymarch the shadow map of the Shadow draw style\n"
         "through a homogeneous scattering medium. Only effective while\n"
         "the Shadow draw style provides a scene light."),
-    ParamFloat('VolumetricIntensity',  1.0,
-        "Brightness of the inscattered (light shaft) light."),
-    ParamFloat('VolumetricDensity',  0.0,
-        "Scattering medium density in inverse world units.\n"
+    ParamFloat('VolumetricIntensity',  1.0, title='Intensity',
+        doc="Brightness of the inscattered (light shaft) light."),
+    ParamFloat('VolumetricDensity',  0.0, title='Medium density',
+        doc="Scattering medium density in inverse world units.\n"
         "Zero means automatic (a fraction of the scene size)."),
 ]
 

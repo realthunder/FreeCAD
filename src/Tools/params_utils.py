@@ -806,9 +806,14 @@ class Param:
         if self.widget_setter:
             cog.out(
                 f"""
-    {self.widget_name}->{self.widget_setter}({self.namespace}::{self.class_name}::default{self.name}());"""
+    {self.widget_name}->{self.widget_setter}({self.widget_default_expr()});"""
             )
         self._init_pref_widget()
+
+    def widget_default_expr(self):
+        '''C++ expression of the parameter default passed to the widget
+        setter; string parameters wrap it for QString setters.'''
+        return f"{self.namespace}::{self.class_name}::default{self.name}()"
 
     def _init_pref_widget(self):
         cog.out(
@@ -967,6 +972,10 @@ class ParamString(Param):
     PropertyType = "App::PropertyString"
     WidgetType = "Gui::PrefLineEdit"
     WidgetSetter = "setText"
+
+    def widget_default_expr(self):
+        return (f"QString::fromUtf8({self.namespace}::"
+                f"{self.class_name}::default{self.name}().c_str())")
 
     @property
     def default(self):
