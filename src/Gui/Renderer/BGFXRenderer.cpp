@@ -2464,13 +2464,14 @@ public:
     // graph, so the backend draws its own). Lit by the scene light like
     // any receiver, classic shading regardless of the PBR mode.
     void submitShadowGround(const float bmin[3], const float bmax[3],
-                            uint32_t colorPacked, float scale,
+                            const Render::LightConfig &light,
                             bool prepass = false)
     {
+        uint32_t colorPacked = light.groundColor;
         float cx = (bmin[0] + bmax[0]) * 0.5f;
         float cy = (bmin[1] + bmax[1]) * 0.5f;
         float z = bmin[2];
-        float half = 0.5f * scale
+        float half = 0.5f * light.groundScale
             * std::max(bmax[0] - bmin[0], bmax[1] - bmin[1]);
         if (half <= 0.0f)
             return;
@@ -2519,14 +2520,58 @@ public:
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setTexture(3, s_texShadow, shadowTex);
 
+        // Ground texture (ShadowGroundTexture): tiled every
+        // groundTextureSize world units, modulated by the ground color
+        // like Coin's default SoTexture2 model on the ground material.
+        bool textured = light.groundTexture
+            && bgfx::isValid(m_progMeshTex);
+        bgfx::TransientVertexBuffer uvb;
+        if (textured) {
+            TexCoordVertex::init();
+            if (bgfx::getAvailTransientVertexBuffer(
+                        6, TexCoordVertex::ms_layout) < 6) {
+                textured = false;
+            }
+            else {
+                bgfx::allocTransientVertexBuffer(
+                    &uvb, 6, TexCoordVertex::ms_layout);
+                auto *uv = reinterpret_cast<TexCoordVertex *>(uvb.data);
+                float span = light.groundTextureSize > 1.0e-5f
+                    ? 2.0f * half / light.groundTextureSize : 1.0f;
+                for (int i = 0; i < 6; ++i) {
+                    uv[i].u = (xs[i] + 1.0f) * 0.5f * span;
+                    uv[i].v = (ys[i] + 1.0f) * 0.5f * span;
+                }
+            }
+        }
+        if (textured) {
+            GpuTexture *tex = getTexture(*light.groundTexture);
+            float texParams[4] = {
+                float(Render::TextureImage::Modulate),
+                light.groundTexture->numComponents == 4 ? 1.0f : 0.0f,
+                0.0f, 0.0f};
+            float texmat[16];
+            bx::mtxIdentity(texmat);
+            bgfx::setTexture(0, s_texColor, tex->handle);
+            bgfx::setUniform(u_texParams, texParams);
+            bgfx::setUniform(u_texBlendColor, zero);
+            bgfx::setUniform(u_texMatrix, texmat);
+            float bumpOff[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            bgfx::setTexture(2, s_texBump, m_whiteTex);
+            bgfx::setUniform(u_bumpParams, bumpOff);
+        }
+
         float identity[16];
         bx::mtxIdentity(identity);
         bgfx::setTransform(identity);
         bgfx::setVertexBuffer(0, &tvb);
+        if (textured)
+            bgfx::setVertexBuffer(1, &uvb);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                        | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS
                        | BGFX_STATE_MSAA);
-        bgfx::submit(viewId + ViewOpaque, m_progMesh);
+        bgfx::submit(viewId + ViewOpaque,
+                     textured ? m_progMeshTex : m_progMesh);
         ++drawcount;
 
         // The volumetric raymarch ends rays at the prepass depth, so the
@@ -4297,9 +4342,7 @@ public:
         if (shadowBlurActive)
             view->submitShadowBlur(lightconf.smoothBorder);
         if (shadowActive && lightconf.ground && bboxValid) {
-            view->submitShadowGround(bboxMin, bboxMax,
-                                     lightconf.groundColor,
-                                     lightconf.groundScale,
+            view->submitShadowGround(bboxMin, bboxMax, lightconf,
                                      volActive);
         }
         for (const auto &draw : scene) {

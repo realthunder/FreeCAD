@@ -249,6 +249,11 @@ struct LightConfig {
     bool ground = false;
     float groundScale = 2.0f;    ///< times the scene extent
     uint32_t groundColor = 0x7d7d7dff;
+    /// Ground texture (ShadowGroundTexture), modulated by the ground
+    /// color and tiled every groundTextureSize world units
+    /// (<= 0 = stretched once over the quad); null = plain color.
+    std::shared_ptr<const TextureImage> groundTexture;
+    float groundTextureSize = 100.0f;
 
     bool operator==(const LightConfig &o) const {
         return valid == o.valid && spot == o.spot
@@ -263,7 +268,9 @@ struct LightConfig {
             && dropOffRate == o.dropOffRate
             && smoothBorder == o.smoothBorder
             && ground == o.ground && groundScale == o.groundScale
-            && groundColor == o.groundColor;
+            && groundColor == o.groundColor
+            && groundTexture == o.groundTexture
+            && groundTextureSize == o.groundTextureSize;
     }
     bool operator!=(const LightConfig &o) const { return !(*this == o); }
 };

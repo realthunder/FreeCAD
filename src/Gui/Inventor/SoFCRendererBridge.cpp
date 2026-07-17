@@ -24,7 +24,12 @@
 
 #include <algorithm>
 #include <cstring>
+#include <map>
 #include <unordered_map>
+
+#include <QImage>
+
+#include <App/PropertyFile.h>
 
 #include <Inventor/SbBox3f.h>
 #include <Inventor/SbPlane.h>
@@ -755,6 +760,56 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
             res.groundColor = prop->getValue().getPackedValue();
         else
             res.groundColor = uint32_t(ViewParams::getShadowGroundColor());
+        // Ground texture (Shadow_GroundTexture / ShadowGroundTexture):
+        // decoded once per path with Qt and cached — the backend keys
+        // GPU uploads on the stable textureId.
+        std::string texpath;
+        if (auto prop = viewPropOverride<App::PropertyFileIncluded>(
+                    view, "Shadow", "GroundTexture")) {
+            if (prop->getValue())
+                texpath = prop->getValue();
+        }
+        else {
+            texpath = ViewParams::getShadowGroundTexture();
+        }
+        if (!texpath.empty()) {
+            static std::map<std::string,
+                            std::shared_ptr<const Render::TextureImage>>
+                cache;
+            auto it = cache.find(texpath);
+            if (it == cache.end()) {
+                std::shared_ptr<Render::TextureImage> tex;
+                QImage img;
+                if (img.load(QString::fromUtf8(texpath.c_str()))) {
+                    bool alpha = img.hasAlphaChannel();
+                    img = img.convertToFormat(
+                        alpha ? QImage::Format_RGBA8888
+                              : QImage::Format_RGB888);
+                    // Render::TextureImage rows are bottom-up like GL.
+                    img = img.mirrored(false, true);
+                    tex = std::make_shared<Render::TextureImage>();
+                    // Outside the Coin node-id space the scene textures
+                    // key on.
+                    static uint64_t nextId = 0;
+                    tex->textureId = 0x8000000000000000ULL + ++nextId;
+                    tex->width = img.width();
+                    tex->height = img.height();
+                    tex->numComponents = alpha ? 4 : 3;
+                    int rowLen = img.width() * tex->numComponents;
+                    tex->pixels.resize(size_t(rowLen) * img.height());
+                    for (int y = 0; y < img.height(); ++y)
+                        std::memcpy(tex->pixels.data()
+                                        + size_t(y) * rowLen,
+                                    img.constScanLine(y), rowLen);
+                }
+                it = cache.emplace(texpath, std::move(tex)).first;
+            }
+            res.groundTexture = it->second;
+            res.groundTextureSize =
+                float(viewParamOverride<App::PropertyFloat>(
+                    view, "Shadow", "GroundTextureSize",
+                    ViewParams::getShadowGroundTextureSize()));
+        }
     }
     return res;
 }
