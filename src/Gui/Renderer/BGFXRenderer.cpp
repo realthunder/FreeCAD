@@ -1029,7 +1029,8 @@ public:
             }
         }
         for (auto uni : {&s_texShadow, &u_shadowParams, &u_lightDir,
-                         &u_lightColor, &u_shadowMatrix, &u_shadowBlur}) {
+                         &u_lightPos, &u_lightColor, &u_shadowMatrix,
+                         &u_shadowBlur}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1368,6 +1369,8 @@ public:
         u_shadowParams = bgfx::createUniform("u_shadowParams",
                                              bgfx::UniformType::Vec4);
         u_lightDir = bgfx::createUniform("u_lightDir",
+                                         bgfx::UniformType::Vec4);
+        u_lightPos = bgfx::createUniform("u_lightPos",
                                          bgfx::UniformType::Vec4);
         u_lightColor = bgfx::createUniform("u_lightColor",
                                            bgfx::UniformType::Vec4);
@@ -2453,6 +2456,7 @@ public:
                              lightDirView[2], 1.0f};
         bgfx::setUniform(u_shadowParams, shadowParams);
         bgfx::setUniform(u_lightDir, lightDir);
+        bgfx::setUniform(u_lightPos, lightPosView);
         bgfx::setUniform(u_lightColor, lightColorI);
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setTexture(3, s_texShadow, shadowTex);
@@ -2688,6 +2692,10 @@ public:
         bgfx::setUniform(u_volMedium, medium);
         bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma);
         bgfx::setUniform(u_lightColor, lightColorI);
+        float lightDir[4] = {lightDirView[0], lightDirView[1],
+                             lightDirView[2], 1.0f};
+        bgfx::setUniform(u_lightDir, lightDir);
+        bgfx::setUniform(u_lightPos, lightPosView);
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         bgfx::setTexture(1, s_texShadow, shadowTex);
@@ -2999,6 +3007,9 @@ public:
                 }
             }
             bgfx::setUniform(u_lightDir, lightDir);
+            static const float noSpot[4] = {0.0f, 0.0f, 0.0f, -1.0f};
+            bgfx::setUniform(u_lightPos,
+                             shadowFrame ? lightPosView : noSpot);
             bgfx::setUniform(u_shadowParams, shadowParams);
             bgfx::setTexture(3, s_texShadow, shadow);
         }
@@ -3348,10 +3359,16 @@ public:
     bgfx::UniformHandle s_texShadow = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_shadowParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_lightDir = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_lightPos = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_lightColor = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_shadowMatrix = BGFX_INVALID_HANDLE;
     float lightDirView[3] = {0.0f, 0.0f, -1.0f}; // view space
-    float lightColorI[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // rgb * intensity
+    // rgb = color * intensity; w = the spot falloff exponent
+    // (dropOffRate * 128; 0 for directional lights, pow(x, 0) = 1).
+    float lightColorI[4] = {1.0f, 1.0f, 1.0f, 0.0f};
+    // Spot light position in view space; w = cos(cutOffAngle) for a
+    // spot light, -1 for a directional one (the shader switch).
+    float lightPosView[4] = {0.0f, 0.0f, 0.0f, -1.0f};
     float shadowMtx[16];       // camera view space -> shadow uv/depth
     // Cached shadow map: hash of the light camera + caster set of the
     // moments currently in shadowTex; the caster pass (and blur) only
@@ -3553,15 +3570,36 @@ public:
                     bx::Vec3 center((bboxMin[0] + bboxMax[0]) * 0.5f,
                                     (bboxMin[1] + bboxMax[1]) * 0.5f,
                                     (bboxMin[2] + bboxMax[2]) * 0.5f);
-                    bx::Vec3 eye = bx::sub(center, bx::mul(dir, 2.0f * r));
                     bx::Vec3 up = bx::abs(dir.z) > 0.99f
                         ? bx::Vec3(1.0f, 0.0f, 0.0f)
                         : bx::Vec3(0.0f, 0.0f, 1.0f);
-                    bx::mtxLookAt(lightViewMtx, eye, center, up);
                     const auto *caps = bgfx::getCaps();
-                    bx::mtxOrtho(lightProjMtx, -r, r, -r, r,
-                                 0.0f, 4.0f * r, 0.0f,
-                                 caps->homogeneousDepth);
+                    if (light.spot) {
+                        // Spot light: perspective camera at the light
+                        // position along its direction, field of view
+                        // from the cone cutoff, depth range fit to the
+                        // scene bounding sphere.
+                        bx::Vec3 eye(light.position[0],
+                                     light.position[1],
+                                     light.position[2]);
+                        bx::mtxLookAt(lightViewMtx, eye,
+                                      bx::add(eye, dir), up);
+                        float d = bx::length(bx::sub(center, eye));
+                        float far = d + r;
+                        float near = bx::max(d - r, far * 1.0e-3f);
+                        float fovy = bx::clamp(
+                            2.0f * light.cutOffAngle, 0.02f, 3.1f)
+                            * 180.0f / bx::kPi;
+                        bx::mtxProj(lightProjMtx, fovy, 1.0f, near, far,
+                                    caps->homogeneousDepth);
+                    } else {
+                        bx::Vec3 eye =
+                            bx::sub(center, bx::mul(dir, 2.0f * r));
+                        bx::mtxLookAt(lightViewMtx, eye, center, up);
+                        bx::mtxOrtho(lightProjMtx, -r, r, -r, r,
+                                     0.0f, 4.0f * r, 0.0f,
+                                     caps->homogeneousDepth);
+                    }
                     // Camera view space -> shadow map uv (xy) and light
                     // window depth (z), the matrix the mesh shaders use.
                     float invV[16], tmp[16], tmp2[16];
@@ -3594,6 +3632,29 @@ public:
                     unpackColor(light.color, view->lightColorI);
                     for (int j = 0; j < 3; ++j)
                         view->lightColorI[j] *= light.intensity;
+                    // Spot light: position in camera view space, cone
+                    // cutoff cosine in w (-1 = directional), falloff
+                    // exponent riding the light color's free channel.
+                    if (light.spot) {
+                        for (int j = 0; j < 3; ++j)
+                            view->lightPosView[j] =
+                                light.position[0] * vm[j]
+                                + light.position[1] * vm[4 + j]
+                                + light.position[2] * vm[8 + j]
+                                + vm[12 + j];
+                        view->lightPosView[3] =
+                            std::cos(bx::clamp(light.cutOffAngle,
+                                               0.01f, 1.55f));
+                        view->lightColorI[3] =
+                            bx::clamp(light.dropOffRate, 0.0f, 1.0f)
+                            * 128.0f;
+                    } else {
+                        view->lightPosView[0] = 0.0f;
+                        view->lightPosView[1] = 0.0f;
+                        view->lightPosView[2] = 0.0f;
+                        view->lightPosView[3] = -1.0f;
+                        view->lightColorI[3] = 0.0f;
+                    }
                 }
             }
         }

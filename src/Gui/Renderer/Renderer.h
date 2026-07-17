@@ -230,6 +230,11 @@ struct LightConfig {
     bool spot = false;       ///< spot light; directional otherwise
     float direction[3] = {0.0f, 0.0f, -1.0f};  ///< world, normalized
     float position[3] = {0.0f, 0.0f, 0.0f};    ///< world, spot only
+    /// Spot cone half angle in radians (SoSpotLight::cutOffAngle) and
+    /// intensity falloff inside the cone (SoSpotLight::dropOffRate,
+    /// 0..1 mapping to a GL spot exponent of dropOffRate * 128).
+    float cutOffAngle = 0.78539816f;
+    float dropOffRate = 0.0f;
     uint32_t color = 0xffffffff;               ///< packed 0xRRGGBBAA
     float intensity = 1.0f;
 
@@ -254,6 +259,8 @@ struct LightConfig {
             && position[1] == o.position[1]
             && position[2] == o.position[2]
             && color == o.color && intensity == o.intensity
+            && cutOffAngle == o.cutOffAngle
+            && dropOffRate == o.dropOffRate
             && smoothBorder == o.smoothBorder
             && ground == o.ground && groundScale == o.groundScale
             && groundColor == o.groundColor;

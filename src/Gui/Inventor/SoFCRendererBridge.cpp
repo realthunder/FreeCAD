@@ -707,6 +707,8 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
             res.spot = true;
             dir = spot->direction.getValue();
             pos = spot->location.getValue();
+            res.cutOffAngle = spot->cutOffAngle.getValue();
+            res.dropOffRate = spot->dropOffRate.getValue();
         } else {
             continue;
         }

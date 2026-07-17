@@ -40,6 +40,10 @@ SAMPLERCUBE(s_texEnv, 1);
 SAMPLER2D(s_texShadow, 3);
 uniform vec4 u_shadowParams;
 uniform vec4 u_lightDir;
+// Spot light position in view space; w = cos of the cone cutoff for a
+// spot light, -1 for a directional one. The falloff exponent
+// (dropOffRate * 128) rides u_lightColor.w.
+uniform vec4 u_lightPos;
 uniform vec4 u_lightColor;
 uniform mat4 u_shadowMatrix;
 #ifdef TEXTURE
@@ -163,6 +167,8 @@ void main()
 	if (u_shadowParams.x > 0.5)
 	{
 		vec4 sp = mul(u_shadowMatrix, vec4(v_vpos, 1.0));
+		// Spot lights render the map under a perspective camera.
+		sp.xyz /= sp.w;
 #ifndef OIT
 		if (u_shadowParams.w > 0.5)
 		{
@@ -188,6 +194,19 @@ void main()
 				shadow = clamp((pmax - 0.3) / 0.7, 0.0, 1.0);
 			}
 		}
+	}
+
+	// Scene light vector at this fragment: constant for a directional
+	// light, position-dependent for a spot light, whose cone falloff
+	// folds into the shadow factor (both only feed the scene-light
+	// branches below).
+	vec3 sceneL = u_lightDir.xyz;
+	if (u_lightPos.w > -0.5)
+	{
+		sceneL = normalize(v_vpos - u_lightPos.xyz);
+		float cd = dot(sceneL, u_lightDir.xyz);
+		shadow *= cd > u_lightPos.w
+			? pow(max(cd, 1.0e-4), u_lightColor.w) : 0.0;
 	}
 
 	if (u_params.y > 0.5)
@@ -219,7 +238,7 @@ void main()
 			vec3 direct;
 			if (u_lightDir.w > 0.5)
 			{
-				vec3 l = -u_lightDir.xyz;
+				vec3 l = -sceneL;
 				float ndl = dot(n, l);
 				if (u_params.z > 0.5)
 					ndl = abs(ndl);
