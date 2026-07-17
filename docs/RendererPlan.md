@@ -224,8 +224,31 @@ The engine-agnostic core; everything later depends on it.
    Verified GL/bgfx pixel-identical geometry extents for 1-plane and
    2-plane (intersection) cuts, and (2026-07) for a 2-plane
    `SectionConcave` union cut (two `SoClipPlane` nodes, à la
-   Std_Clipping). Still missing: textures/autozoom
-   ignored (the section-hatch texture is in, Phase 2),
+   Std_Clipping). *Textures done (2026-07)*: the unit-0 `SoTexture2` of
+   triangle materials is translated (`Render::TextureImage` — pixels
+   copied, keyed by the Coin node id — wrap/model/blendColor plus the
+   merged texture matrix) together with the vertex cache's texcoords
+   (second vertex stream, built on first textured use), and rendered by
+   `vs/fs_fc_mesh_tex[_clip]` / `fs_fc_mesh_oit_tex[_clip]` program
+   variants replaying the GL fixed-function texture environment
+   (modulate/decal/blend/replace) on the lit color; GPU textures are
+   cached per texture id and evicted with the meshes. Verified vs GL:
+   modulate within the fill class, transform variant exact up to
+   minification speckle (both sides non-mip linear), transparent RGBA
+   exact under the sorted fallback (`FC_BGFX_DEBUG_NO_OIT`) — WBOIT
+   widens its approximation class on high-contrast layered texels.
+   Deviations: GL also textures lines/points (visible with REPLACE on
+   styled edges; the default modulate on dark edges hides it), further
+   texture units are ignored, non-GL bgfx backends may see images
+   v-flipped. *Autozoom done (2026-07)*: `Material::autozoom` mirrors
+   the cache's SoAutoZoomTranslation list; the Gui side feeds the exact
+   Coin world-to-screen scale per frame
+   (`Renderer::setAutoZoomScale`, one frame late like the rest), and
+   the backend rebuilds those draws' model matrices every frame by
+   replaying GL's `setupMatrix` (scale substitution recovers rotation by
+   row normalization — no shear). App::Placement axis crosses verified
+   GL-identical (2 px front view; 49 px rotated, all half-pixel diagonal
+   line stepping). Still missing:
    per-vertex-transparent caches go wholesale to the transparent bucket.
    ~~**Known issue — transparent scene geometry is invisible**~~ *Fixed
    (2026-07) by background compositing*: the backend now draws the window
