@@ -62,6 +62,7 @@
 #include "../ViewParams.h"
 #include "../SoFCUnifiedSelection.h"
 #include "SoFCRenderCache.h"
+#include "SoFCRenderMaterial.h"
 #include "SoFCVertexCache.h"
 #include "SoFCDetail.h"
 #include "SoFCDiffuseElement.h"
@@ -310,6 +311,8 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->linewidth = 1;
   this->pointsize = 1;
   this->shininess = 0.f;
+  this->metallic = -1.f;
+  this->roughness = -1.f;
   this->polygonoffsetstyle = 0;
   this->polygonoffsetunits = 0.f;
   this->polygonoffsetfactor = 0.f;
@@ -1203,6 +1206,18 @@ SoFCRenderCache::addBumpMap(SoState * state, const SoNode * bumpmap)
   info.identity = true;
 
   PRIVATE(this)->material.bumpmaps.set(unit, info);
+}
+
+void
+SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
+{
+  PRIVATE(this)->checkState(state);
+
+  // SoFCRenderMaterial has no Coin element at all; the node is captured
+  // directly for external backends (per-object PBR parameters).
+  auto material = static_cast<const Gui::SoFCRenderMaterial *>(node);
+  PRIVATE(this)->material.metallic = material->metallic.getValue();
+  PRIVATE(this)->material.roughness = material->roughness.getValue();
 }
 
 void

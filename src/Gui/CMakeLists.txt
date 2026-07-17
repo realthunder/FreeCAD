@@ -1005,6 +1005,7 @@ SOURCE_GROUP("View3D\\Viewprovider" FILES ${Viewprovider_SRCS})
 SET(Inventor_CPP_SRCS
     Inventor/SoDrawingGrid.cpp
     Inventor/SoAutoZoomTranslation.cpp
+    Inventor/SoFCRenderMaterial.cpp
     Inventor/MarkerBitmaps.cpp
     Inventor/SmSwitchboard.cpp
     Inventor/SoFCVBO.cpp
@@ -1049,6 +1050,7 @@ SET(Inventor_SRCS
     ${Inventor_CPP_SRCS}
     Inventor/SoDrawingGrid.h
     Inventor/SoAutoZoomTranslation.h
+    Inventor/SoFCRenderMaterial.h
     Inventor/MarkerBitmaps.h
     Inventor/SmSwitchboard.h
     Inventor/SoFCVBO.h

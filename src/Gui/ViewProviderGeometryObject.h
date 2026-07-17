@@ -38,6 +38,7 @@ namespace Gui {
 
 class SoFCSelection;
 class SoFCBoundingBox;
+class SoFCRenderMaterial;
 class View3DInventorViewer;
 
 /**
@@ -96,9 +97,13 @@ protected:
     virtual unsigned long getBoundColor() const;
     void updateBoundingBox();
     void addBoundSwitch();
+    /// Sync the optional SoFCRenderMaterial node (render engine per-object
+    /// PBR parameters) with the Render_* dynamic properties.
+    void updateRenderMaterial();
 
 protected:
     SoMaterial       * pcShapeMaterial{nullptr};
+    SoFCRenderMaterial * pcRenderMaterial{nullptr};
 
 private:
     SoFCBoundingBox  * pcBoundingBox{nullptr};

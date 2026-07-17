@@ -418,6 +418,12 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     if (res.type == Render::Material::Triangle)
         res.shadowstyle = uint8_t(m.shadowstyle);
 
+    // Per-object PBR parameters (SoFCRenderMaterial capture; < 0 = unset).
+    if (res.type == Render::Material::Triangle) {
+        res.metallic = m.metallic;
+        res.roughness = m.roughness;
+    }
+
     // Bump map of triangle draws, unit 0 only like textures (the GL
     // renderer never draws these; SoBumpMap only acts during Coin GL
     // shape rendering, which the cached pipeline bypasses).

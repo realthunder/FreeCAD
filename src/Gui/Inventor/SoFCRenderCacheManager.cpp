@@ -34,6 +34,7 @@
 #include <Inventor/nodes/SoShape.h>
 #include <Inventor/nodes/SoResetTransform.h>
 #include <Inventor/nodes/SoBumpMap.h>
+#include "SoFCRenderMaterial.h"
 #include <Inventor/nodes/SoTexture2Transform.h>
 #include <Inventor/nodes/SoTexture3Transform.h>
 #include <Inventor/nodes/SoTextureMatrixTransform.h>
@@ -240,6 +241,7 @@ public:
   static SoCallbackAction::Response postTextureTransform(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postTexture(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postBumpMap(void *, SoCallbackAction *action, const SoNode * node);
+  static SoCallbackAction::Response postRenderMaterial(void *, SoCallbackAction *action, const SoNode * node);
   static void addTriangle(void *,
                           SoCallbackAction * action,
                           const SoPrimitiveVertex * v0,
@@ -503,6 +505,9 @@ void SoFCRenderCacheManagerP::initAction()
   // SoBumpMap::callback() is a no-op (its element only exists during GL
   // rendering), so the node is captured directly for external backends.
   this->action->addPostCallback(SoBumpMap::getClassTypeId(), &postBumpMap, this);
+  // SoFCRenderMaterial has no Coin element; captured directly for the
+  // external backends (per-object PBR parameters).
+  this->action->addPostCallback(Gui::SoFCRenderMaterial::getClassTypeId(), &postRenderMaterial, this);
   this->action->addPostCallback(SoResetTransform::getClassTypeId(), &postResetTransform, this);
   this->action->addPostCallback(SoTextureMatrixTransform::getClassTypeId(), &postTextureTransform, this);
   this->action->addPostCallback(SoTexture2Transform::getClassTypeId(), &postTextureTransform, this);
@@ -1373,6 +1378,20 @@ SoFCRenderCacheManagerP::postBumpMap(void *userdata,
 
   assert(node);
   self->stack.back()->addBumpMap(action->getState(), node);
+  return SoCallbackAction::CONTINUE;
+}
+
+SoCallbackAction::Response
+SoFCRenderCacheManagerP::postRenderMaterial(void *userdata,
+                                            SoCallbackAction *action,
+                                            const SoNode * node)
+{
+  SoFCRenderCacheManagerP *self = reinterpret_cast<SoFCRenderCacheManagerP*>(userdata);
+  if (self->stack.empty())
+      return SoCallbackAction::CONTINUE;
+
+  assert(node);
+  self->stack.back()->addRenderMaterial(action->getState(), node);
   return SoCallbackAction::CONTINUE;
 }
 

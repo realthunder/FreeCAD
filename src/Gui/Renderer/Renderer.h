@@ -344,6 +344,13 @@ struct Material {
     /// gates the stencil section cap of clipped draws.
     bool solidshape = false;
 
+    /// Per-object PBR parameters of a triangle draw (SoFCRenderMaterial,
+    /// typically fed from ViewProvider Render_* properties); < 0 = unset,
+    /// the frame's PBRConfig values apply. Only used while the PBR
+    /// shading path is active.
+    float metallic = -1.0f;
+    float roughness = -1.0f;
+
     /// Texture of a triangle draw (unit 0 only; GL applies further units
     /// on top, a known deviation) with its texture matrix, applied to
     /// MeshData::texCoords. Only sampled when the mesh carries texture

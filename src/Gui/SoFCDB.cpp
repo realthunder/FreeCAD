@@ -77,6 +77,7 @@
 #include "Inventor/SoFCDisplayMode.h"
 #include "Inventor/SoFCShapeInfo.h"
 #include "Inventor/SoAutoZoomTranslation.h"
+#include "Inventor/SoFCRenderMaterial.h"
 #include "Inventor/SoDrawingGrid.h"
 #include "SoFCCSysDragger.h"
 #include "SoFCDirectionalLight.h"
@@ -154,6 +155,7 @@ void Gui::SoFCDB::init()
     SoRegPoint                      ::initClass();
     SoDrawingGrid                   ::initClass();
     SoAutoZoomTranslation           ::initClass();
+    SoFCRenderMaterial              ::initClass();
     MarkerBitmaps                   ::initClass();
     SoFCCSysDragger                 ::initClass();
     ClipDragger                     ::initClass();

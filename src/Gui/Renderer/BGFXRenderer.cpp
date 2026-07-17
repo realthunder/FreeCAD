@@ -2673,8 +2673,13 @@ public:
             bgfx::TextureHandle env = m_dummyEnvTex;
             if (pbrFrame && mat.lighting && pass != PassDepthOnly) {
                 pbrParams[0] = 1.0f;
-                pbrParams[1] = bx::clamp(pbrMetallic, 0.0f, 1.0f);
-                float rough = pbrRoughness;
+                // Per-object overrides (SoFCRenderMaterial, from
+                // ViewProvider Render_* properties) beat the frame config.
+                float metal = mat.metallic >= 0.0f ? mat.metallic
+                                                   : pbrMetallic;
+                pbrParams[1] = bx::clamp(metal, 0.0f, 1.0f);
+                float rough = mat.roughness >= 0.0f ? mat.roughness
+                                                    : pbrRoughness;
                 if (rough <= 0.0f) {
                     // Derive from the material shininess (Coin's 0..1
                     // convention maps to a GL exponent of s * 128) with

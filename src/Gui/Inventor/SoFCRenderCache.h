@@ -235,6 +235,10 @@ public:
     float linewidth;
     float pointsize;
     float shininess;
+    /// Per-object PBR overrides captured from SoFCRenderMaterial
+    /// (< 0 = unset); only external backends consume them.
+    float metallic;
+    float roughness;
     float polygonoffsetunits;
     float polygonoffsetfactor;
     int16_t annotation;
@@ -328,6 +332,10 @@ public:
         if (specular > other.specular) return false;
         if (shininess < other.shininess) return true;
         if (shininess > other.shininess) return false;
+        if (metallic < other.metallic) return true;
+        if (metallic > other.metallic) return false;
+        if (roughness < other.roughness) return true;
+        if (roughness > other.roughness) return false;
         if (lightmodel < other.lightmodel) return true;
         if (lightmodel > other.lightmodel) return false;
         if (vertexordering < other.vertexordering) return true;
@@ -492,6 +500,8 @@ public:
   void addTexture(SoState * state, const SoNode * texture);
   void addTextureTransform(SoState * state, const SoNode *);
   void addBumpMap(SoState * state, const SoNode * bumpmap);
+
+  void addRenderMaterial(SoState * state, const SoNode * material);
 
   void addClipPlane(SoState * state, const SoClipPlane * light);
 

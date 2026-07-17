@@ -578,6 +578,24 @@ independent of each other; item 4 builds on item 3's property model.
    live on the ViewProvider (document-saved, per-object, GUI-side); any
    future App-side material model maps onto these properties rather than
    replacing them.
+   *Scalar plumbing done (2026-07)*: `Gui::SoFCRenderMaterial` (new Coin
+   node, no GL effect) carries metallic/roughness (< 0 = unset); captured
+   by a dedicated cache-manager post callback (the `SoBumpMap` precedent)
+   into new `SoFCRenderCache::Material::{metallic,roughness}` fields
+   (part of the material key) → `Render::Material` → per-draw override
+   of the PBR frame parameters in the bgfx submit loop.
+   `ViewProviderGeometryObject` mirrors optional `Render_Metallic` /
+   `Render_Roughness` dynamic properties (group "Render",
+   `App::PropertyFloat*`) into the node (created on demand at the head
+   of the view provider root, removed when both properties go away;
+   resynced in `finishRestoring`). Verified on llvmpipe: per-object
+   metallic/roughness on one of two objects changes exactly that
+   object's pixels under global PBR; default render bit-identical to
+   before. Remaining in this item: texture properties
+   (BaseColorTexture/NormalMap as `PropertyFileIncluded` building
+   `SoTexture2`/`SoBumpMap` nodes), texture transform, shadow
+   cast/receive flags, and a UI beyond the property editor's
+   add-property dialog.
 
 4. **glTF import/export with materials & textures (2–3 wks)** — round-trip
    the renderer's material model (deliberately chosen as glTF

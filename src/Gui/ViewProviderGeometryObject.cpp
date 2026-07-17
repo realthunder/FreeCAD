@@ -51,6 +51,7 @@
 #include "SoFCBoundingBox.h"
 #include "SoFCSelection.h"
 #include "SoFCUnifiedSelection.h"
+#include "Inventor/SoFCRenderMaterial.h"
 #include "View3DInventorViewer.h"
 
 
@@ -105,6 +106,8 @@ ViewProviderGeometryObject::ViewProviderGeometryObject()
 ViewProviderGeometryObject::~ViewProviderGeometryObject()
 {
     pcShapeMaterial->unref();
+    if (pcRenderMaterial)
+        pcRenderMaterial->unref();
     if(pcBoundingBox)
         pcBoundingBox->unref();
     if(pcBoundSwitch)
@@ -157,8 +160,48 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
     else if (prop == &BoundingBox) {
         showBoundingBox(BoundingBox.getValue());
     }
+    else if (prop->getName()
+             && strncmp(prop->getName(), "Render_", 7) == 0) {
+        // Render engine per-object settings (dynamic properties, group
+        // "Render"), mirrored into a SoFCRenderMaterial node.
+        updateRenderMaterial();
+    }
 
     ViewProviderDragger::onChanged(prop);
+}
+
+void ViewProviderGeometryObject::updateRenderMaterial()
+{
+    // The Render_* dynamic properties are optional per-object render
+    // engine settings; a SoFCRenderMaterial node at the head of the view
+    // provider root carries them into the mode-3 render cache (the node
+    // has no effect on Coin's own GL rendering). The node is created on
+    // first use and dropped when no property carries a value anymore.
+    auto floatProp = [this](const char *name) -> float {
+        auto prop = Base::freecad_dynamic_cast<App::PropertyFloat>(
+                getPropertyByName(name));
+        return prop ? float(prop->getValue()) : -1.0f;
+    };
+    float metallic = floatProp("Render_Metallic");
+    float roughness = floatProp("Render_Roughness");
+
+    if (metallic < 0.0f && roughness < 0.0f) {
+        if (pcRenderMaterial) {
+            int idx = pcRoot->findChild(pcRenderMaterial);
+            if (idx >= 0)
+                pcRoot->removeChild(idx);
+            pcRenderMaterial->unref();
+            pcRenderMaterial = nullptr;
+        }
+        return;
+    }
+    if (!pcRenderMaterial) {
+        pcRenderMaterial = new SoFCRenderMaterial;
+        pcRenderMaterial->ref();
+        pcRoot->insertChild(pcRenderMaterial, 0);
+    }
+    pcRenderMaterial->metallic = metallic;
+    pcRenderMaterial->roughness = roughness;
 }
 
 void ViewProviderGeometryObject::attach(App::DocumentObject *pcObj)
@@ -187,6 +230,9 @@ void ViewProviderGeometryObject::updateBoundingBox() {
 void ViewProviderGeometryObject::finishRestoring()
 {
     updateBoundingBox();
+    // Restored Render_* dynamic properties (per-object render engine
+    // settings) need their scene graph node rebuilt.
+    updateRenderMaterial();
     inherited::finishRestoring();
 }
 
