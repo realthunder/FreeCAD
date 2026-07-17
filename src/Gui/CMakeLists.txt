@@ -1143,6 +1143,7 @@ SOURCE_GROUP("Widget" FILES ${Widget_SRCS})
 
 SET(Params_CPP_SRCS
     ViewParams.cpp
+    RenderParams.cpp
     ExprParams.cpp
     ReportViewParams.cpp
     OverlayParams.cpp
@@ -1154,6 +1155,7 @@ SET(Params_CPP_SRCS
 
 SET(Params_HPP_SRCS
     ViewParams.h
+    RenderParams.h
     ExprParams.h
     ReportViewParams.h
     OverlayParams.h

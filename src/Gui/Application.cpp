@@ -91,6 +91,7 @@
 #include "PreferencePackManager.h"
 #include "PythonConsolePy.h"
 #include "PythonDebugger.h"
+#include "RenderParams.h"
 #include "MainWindowPy.h"
 #include "SoFCDB.h"
 #include "Selection.h"
@@ -2061,6 +2062,9 @@ void Application::initApplication()
 
     try {
         initTypes();
+        // Move the pre-split render engine parameter keys into
+        // Preferences/View/Render before anything reads them.
+        RenderParams::migrate();
         new Base::ScriptProducer( "FreeCADGuiInit", FreeCADGuiInit );
         init_resources();
         setCategoryFilterRules();

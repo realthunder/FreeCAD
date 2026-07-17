@@ -209,10 +209,10 @@ report this setting as enabled when seeking support on the FreeCAD forums</strin
         <item row="1" column="1" colspan="2">
          <widget class="Gui::PrefComboBox" name="comboRenderer">
           <property name="prefPath" stdset="0">
-           <cstring>View</cstring>
+           <cstring>View/Render</cstring>
           </property>
           <property name="prefEntry" stdset="0">
-           <cstring>RendererType</cstring>
+           <cstring>Type</cstring>
           </property>
           <property name="prefType" stdset="0">
            <cstring>Default</cstring>

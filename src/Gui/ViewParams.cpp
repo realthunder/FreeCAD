@@ -212,15 +212,6 @@ public:
     long RenderCacheMergeCountMax;
     long RenderCacheMergeDepthMax;
     long RenderCacheMergeDepthMin;
-    bool RendererSSAO;
-    double RendererSSAORadius;
-    double RendererSSAOIntensity;
-    bool RendererPBR;
-    double RendererPBRMetallic;
-    double RendererPBRRoughness;
-    double RendererPBREnvIntensity;
-    double RendererBumpScale;
-    bool RendererParallax;
     double RenderHighlightPolygonOffsetFactor;
     double RenderHighlightPolygonOffsetUnits;
     bool ForceSolidSingleSideLighting;
@@ -552,24 +543,6 @@ public:
         funcs["RenderCacheMergeDepthMax"] = &ViewParamsP::updateRenderCacheMergeDepthMax;
         RenderCacheMergeDepthMin = this->handle->GetInt("RenderCacheMergeDepthMin", 1);
         funcs["RenderCacheMergeDepthMin"] = &ViewParamsP::updateRenderCacheMergeDepthMin;
-        RendererSSAO = this->handle->GetBool("RendererSSAO", false);
-        funcs["RendererSSAO"] = &ViewParamsP::updateRendererSSAO;
-        RendererSSAORadius = this->handle->GetFloat("RendererSSAORadius", 0.0);
-        funcs["RendererSSAORadius"] = &ViewParamsP::updateRendererSSAORadius;
-        RendererSSAOIntensity = this->handle->GetFloat("RendererSSAOIntensity", 1.0);
-        funcs["RendererSSAOIntensity"] = &ViewParamsP::updateRendererSSAOIntensity;
-        RendererPBR = this->handle->GetBool("RendererPBR", false);
-        funcs["RendererPBR"] = &ViewParamsP::updateRendererPBR;
-        RendererPBRMetallic = this->handle->GetFloat("RendererPBRMetallic", 0.0);
-        funcs["RendererPBRMetallic"] = &ViewParamsP::updateRendererPBRMetallic;
-        RendererPBRRoughness = this->handle->GetFloat("RendererPBRRoughness", 0.0);
-        funcs["RendererPBRRoughness"] = &ViewParamsP::updateRendererPBRRoughness;
-        RendererPBREnvIntensity = this->handle->GetFloat("RendererPBREnvIntensity", 1.0);
-        funcs["RendererPBREnvIntensity"] = &ViewParamsP::updateRendererPBREnvIntensity;
-        RendererBumpScale = this->handle->GetFloat("RendererBumpScale", 1.0);
-        funcs["RendererBumpScale"] = &ViewParamsP::updateRendererBumpScale;
-        RendererParallax = this->handle->GetBool("RendererParallax", true);
-        funcs["RendererParallax"] = &ViewParamsP::updateRendererParallax;
         RenderHighlightPolygonOffsetFactor = this->handle->GetFloat("RenderHighlightPolygonOffsetFactor", 1);
         funcs["RenderHighlightPolygonOffsetFactor"] = &ViewParamsP::updateRenderHighlightPolygonOffsetFactor;
         RenderHighlightPolygonOffsetUnits = this->handle->GetFloat("RenderHighlightPolygonOffsetUnits", 1);
@@ -1259,42 +1232,6 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderCacheMergeDepthMin(ViewParamsP *self) {
         self->RenderCacheMergeDepthMin = self->handle->GetInt("RenderCacheMergeDepthMin", 1);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateRendererSSAO(ViewParamsP *self) {
-        self->RendererSSAO = self->handle->GetBool("RendererSSAO", false);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateRendererSSAORadius(ViewParamsP *self) {
-        self->RendererSSAORadius = self->handle->GetFloat("RendererSSAORadius", 0.0);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateRendererSSAOIntensity(ViewParamsP *self) {
-        self->RendererSSAOIntensity = self->handle->GetFloat("RendererSSAOIntensity", 1.0);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateRendererPBR(ViewParamsP *self) {
-        self->RendererPBR = self->handle->GetBool("RendererPBR", false);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateRendererPBRMetallic(ViewParamsP *self) {
-        self->RendererPBRMetallic = self->handle->GetFloat("RendererPBRMetallic", 0.0);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateRendererPBRRoughness(ViewParamsP *self) {
-        self->RendererPBRRoughness = self->handle->GetFloat("RendererPBRRoughness", 0.0);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateRendererPBREnvIntensity(ViewParamsP *self) {
-        self->RendererPBREnvIntensity = self->handle->GetFloat("RendererPBREnvIntensity", 1.0);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateRendererBumpScale(ViewParamsP *self) {
-        self->RendererBumpScale = self->handle->GetFloat("RendererBumpScale", 1.0);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateRendererParallax(ViewParamsP *self) {
-        self->RendererParallax = self->handle->GetBool("RendererParallax", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderHighlightPolygonOffsetFactor(ViewParamsP *self) {
@@ -5686,269 +5623,6 @@ void ViewParams::removeRenderCacheMergeDepthMin() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
-const char *ViewParams::docRendererSSAO() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Enable screen space ambient occlusion of the experimental render\n"
-"engine (RendererType, with render cache mode 3).");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const bool & ViewParams::getRendererSSAO() {
-    return instance()->RendererSSAO;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const bool & ViewParams::defaultRendererSSAO() {
-    const static bool def = false;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setRendererSSAO(const bool &v) {
-    instance()->handle->SetBool("RendererSSAO",v);
-    instance()->RendererSSAO = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void ViewParams::removeRendererSSAO() {
-    instance()->handle->RemoveBool("RendererSSAO");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
-const char *ViewParams::docRendererSSAORadius() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Ambient occlusion sample radius in world units.\n"
-"Zero means automatic (a fraction of the scene size).");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const double & ViewParams::getRendererSSAORadius() {
-    return instance()->RendererSSAORadius;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const double & ViewParams::defaultRendererSSAORadius() {
-    const static double def = 0.0;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setRendererSSAORadius(const double &v) {
-    instance()->handle->SetFloat("RendererSSAORadius",v);
-    instance()->RendererSSAORadius = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void ViewParams::removeRendererSSAORadius() {
-    instance()->handle->RemoveFloat("RendererSSAORadius");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
-const char *ViewParams::docRendererSSAOIntensity() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Ambient occlusion darkening strength.");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const double & ViewParams::getRendererSSAOIntensity() {
-    return instance()->RendererSSAOIntensity;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const double & ViewParams::defaultRendererSSAOIntensity() {
-    const static double def = 1.0;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setRendererSSAOIntensity(const double &v) {
-    instance()->handle->SetFloat("RendererSSAOIntensity",v);
-    instance()->RendererSSAOIntensity = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void ViewParams::removeRendererSSAOIntensity() {
-    instance()->handle->RemoveFloat("RendererSSAOIntensity");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
-const char *ViewParams::docRendererPBR() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Enable physically based shading with image based lighting of\n"
-"the experimental render engine (RendererType, with render cache\n"
-"mode 3). Replaces the default headlight shading of lit surfaces\n"
-"with a metallic/roughness material lit by a built-in studio\n"
-"environment.");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const bool & ViewParams::getRendererPBR() {
-    return instance()->RendererPBR;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const bool & ViewParams::defaultRendererPBR() {
-    const static bool def = false;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setRendererPBR(const bool &v) {
-    instance()->handle->SetBool("RendererPBR",v);
-    instance()->RendererPBR = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void ViewParams::removeRendererPBR() {
-    instance()->handle->RemoveBool("RendererPBR");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
-const char *ViewParams::docRendererPBRMetallic() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Metalness of physically based shaded surfaces, 0 to 1.");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const double & ViewParams::getRendererPBRMetallic() {
-    return instance()->RendererPBRMetallic;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const double & ViewParams::defaultRendererPBRMetallic() {
-    const static double def = 0.0;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setRendererPBRMetallic(const double &v) {
-    instance()->handle->SetFloat("RendererPBRMetallic",v);
-    instance()->RendererPBRMetallic = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void ViewParams::removeRendererPBRMetallic() {
-    instance()->handle->RemoveFloat("RendererPBRMetallic");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
-const char *ViewParams::docRendererPBRRoughness() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Roughness of physically based shaded surfaces, 0 to 1.\n"
-"Zero means automatic (derived from each material's shininess).");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const double & ViewParams::getRendererPBRRoughness() {
-    return instance()->RendererPBRRoughness;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const double & ViewParams::defaultRendererPBRRoughness() {
-    const static double def = 0.0;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setRendererPBRRoughness(const double &v) {
-    instance()->handle->SetFloat("RendererPBRRoughness",v);
-    instance()->RendererPBRRoughness = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void ViewParams::removeRendererPBRRoughness() {
-    instance()->handle->RemoveFloat("RendererPBRRoughness");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
-const char *ViewParams::docRendererPBREnvIntensity() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Brightness of the image based lighting environment.");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const double & ViewParams::getRendererPBREnvIntensity() {
-    return instance()->RendererPBREnvIntensity;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const double & ViewParams::defaultRendererPBREnvIntensity() {
-    const static double def = 1.0;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setRendererPBREnvIntensity(const double &v) {
-    instance()->handle->SetFloat("RendererPBREnvIntensity",v);
-    instance()->RendererPBREnvIntensity = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void ViewParams::removeRendererPBREnvIntensity() {
-    instance()->handle->RemoveFloat("RendererPBREnvIntensity");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
-const char *ViewParams::docRendererBumpScale() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
-"experimental render engine: scales the slope of normal maps and\n"
-"the height amplitude of grayscale bump maps.");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const double & ViewParams::getRendererBumpScale() {
-    return instance()->RendererBumpScale;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const double & ViewParams::defaultRendererBumpScale() {
-    const static double def = 1.0;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setRendererBumpScale(const double &v) {
-    instance()->handle->SetFloat("RendererBumpScale",v);
-    instance()->RendererBumpScale = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void ViewParams::removeRendererBumpScale() {
-    instance()->handle->RemoveFloat("RendererBumpScale");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
-const char *ViewParams::docRendererParallax() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Parallax-occlusion map grayscale bump maps (SoBumpMap) of the\n"
-"experimental render engine, shifting the texture with the view\n"
-"angle for a strong relief impression.");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const bool & ViewParams::getRendererParallax() {
-    return instance()->RendererParallax;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const bool & ViewParams::defaultRendererParallax() {
-    const static bool def = true;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setRendererParallax(const bool &v) {
-    instance()->handle->SetBool("RendererParallax",v);
-    instance()->RendererParallax = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void ViewParams::removeRendererParallax() {
-    instance()->handle->RemoveBool("RendererParallax");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docRenderHighlightPolygonOffsetFactor() {
     return "";
 }
@@ -6415,7 +6089,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:546)
+// Auto generated code (Gui/ViewParams.py:520)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6460,7 +6134,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:554)
+// Auto generated code (Gui/ViewParams.py:528)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6474,7 +6148,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:564)
+// Auto generated code (Gui/ViewParams.py:538)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -6488,13 +6162,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:574)
+// Auto generated code (Gui/ViewParams.py:548)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:581)
+// Auto generated code (Gui/ViewParams.py:555)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6502,7 +6176,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:590)
+// Auto generated code (Gui/ViewParams.py:564)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6514,7 +6188,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:603)
+// Auto generated code (Gui/ViewParams.py:577)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)

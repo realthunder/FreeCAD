@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:514)
+// Auto generated code (Gui/ViewParams.py:488)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -1864,125 +1864,6 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter RendererSSAO
-    ///
-    /// Enable screen space ambient occlusion of the experimental render
-    /// engine (RendererType, with render cache mode 3).
-    static const bool & getRendererSSAO();
-    static const bool & defaultRendererSSAO();
-    static void removeRendererSSAO();
-    static void setRendererSSAO(const bool &v);
-    static const char *docRendererSSAO();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
-    /// Accessor for parameter RendererSSAORadius
-    ///
-    /// Ambient occlusion sample radius in world units.
-    /// Zero means automatic (a fraction of the scene size).
-    static const double & getRendererSSAORadius();
-    static const double & defaultRendererSSAORadius();
-    static void removeRendererSSAORadius();
-    static void setRendererSSAORadius(const double &v);
-    static const char *docRendererSSAORadius();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
-    /// Accessor for parameter RendererSSAOIntensity
-    ///
-    /// Ambient occlusion darkening strength.
-    static const double & getRendererSSAOIntensity();
-    static const double & defaultRendererSSAOIntensity();
-    static void removeRendererSSAOIntensity();
-    static void setRendererSSAOIntensity(const double &v);
-    static const char *docRendererSSAOIntensity();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
-    /// Accessor for parameter RendererPBR
-    ///
-    /// Enable physically based shading with image based lighting of
-    /// the experimental render engine (RendererType, with render cache
-    /// mode 3). Replaces the default headlight shading of lit surfaces
-    /// with a metallic/roughness material lit by a built-in studio
-    /// environment.
-    static const bool & getRendererPBR();
-    static const bool & defaultRendererPBR();
-    static void removeRendererPBR();
-    static void setRendererPBR(const bool &v);
-    static const char *docRendererPBR();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
-    /// Accessor for parameter RendererPBRMetallic
-    ///
-    /// Metalness of physically based shaded surfaces, 0 to 1.
-    static const double & getRendererPBRMetallic();
-    static const double & defaultRendererPBRMetallic();
-    static void removeRendererPBRMetallic();
-    static void setRendererPBRMetallic(const double &v);
-    static const char *docRendererPBRMetallic();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
-    /// Accessor for parameter RendererPBRRoughness
-    ///
-    /// Roughness of physically based shaded surfaces, 0 to 1.
-    /// Zero means automatic (derived from each material's shininess).
-    static const double & getRendererPBRRoughness();
-    static const double & defaultRendererPBRRoughness();
-    static void removeRendererPBRRoughness();
-    static void setRendererPBRRoughness(const double &v);
-    static const char *docRendererPBRRoughness();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
-    /// Accessor for parameter RendererPBREnvIntensity
-    ///
-    /// Brightness of the image based lighting environment.
-    static const double & getRendererPBREnvIntensity();
-    static const double & defaultRendererPBREnvIntensity();
-    static void removeRendererPBREnvIntensity();
-    static void setRendererPBREnvIntensity(const double &v);
-    static const char *docRendererPBREnvIntensity();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
-    /// Accessor for parameter RendererBumpScale
-    ///
-    /// Strength of bump/normal mapped surfaces (SoBumpMap) of the
-    /// experimental render engine: scales the slope of normal maps and
-    /// the height amplitude of grayscale bump maps.
-    static const double & getRendererBumpScale();
-    static const double & defaultRendererBumpScale();
-    static void removeRendererBumpScale();
-    static void setRendererBumpScale(const double &v);
-    static const char *docRendererBumpScale();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
-    /// Accessor for parameter RendererParallax
-    ///
-    /// Parallax-occlusion map grayscale bump maps (SoBumpMap) of the
-    /// experimental render engine, shifting the texture with the view
-    /// angle for a strong relief impression.
-    static const bool & getRendererParallax();
-    static const bool & defaultRendererParallax();
-    static void removeRendererParallax();
-    static void setRendererParallax(const bool &v);
-    static const char *docRendererParallax();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
     /// Accessor for parameter RenderHighlightPolygonOffsetFactor
     static const double & getRenderHighlightPolygonOffsetFactor();
     static const double & defaultRenderHighlightPolygonOffsetFactor();
@@ -2167,7 +2048,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:520)
+    // Auto generated code (Gui/ViewParams.py:494)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2195,7 +2076,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:530)
+// Auto generated code (Gui/ViewParams.py:504)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

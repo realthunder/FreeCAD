@@ -452,35 +452,9 @@ Params = [
         "Maximum hierarchy depth that the cache merge can happen. Less than 0 means no limit."),
     ParamInt('RenderCacheMergeDepthMin',  1,
         "Minimum hierarchy depth that the cache merge can happen."),
-    ParamBool('RendererSSAO',  False,
-        "Enable screen space ambient occlusion of the experimental render\n"
-        "engine (RendererType, with render cache mode 3)."),
-    ParamFloat('RendererSSAORadius',  0.0,
-        "Ambient occlusion sample radius in world units.\n"
-        "Zero means automatic (a fraction of the scene size)."),
-    ParamFloat('RendererSSAOIntensity',  1.0,
-        "Ambient occlusion darkening strength."),
-    ParamBool('RendererPBR',  False,
-        "Enable physically based shading with image based lighting of\n"
-        "the experimental render engine (RendererType, with render cache\n"
-        "mode 3). Replaces the default headlight shading of lit surfaces\n"
-        "with a metallic/roughness material lit by a built-in studio\n"
-        "environment."),
-    ParamFloat('RendererPBRMetallic',  0.0,
-        "Metalness of physically based shaded surfaces, 0 to 1."),
-    ParamFloat('RendererPBRRoughness',  0.0,
-        "Roughness of physically based shaded surfaces, 0 to 1.\n"
-        "Zero means automatic (derived from each material's shininess)."),
-    ParamFloat('RendererPBREnvIntensity',  1.0,
-        "Brightness of the image based lighting environment."),
-    ParamFloat('RendererBumpScale',  1.0,
-        "Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
-        "experimental render engine: scales the slope of normal maps and\n"
-        "the height amplitude of grayscale bump maps."),
-    ParamBool('RendererParallax',  True,
-        "Parallax-occlusion map grayscale bump maps (SoBumpMap) of the\n"
-        "experimental render engine, shifting the texture with the view\n"
-        "angle for a strong relief impression."),
+    # The experimental render engine parameters (former Renderer* keys)
+    # live in RenderParams.py (Preferences/View/Render); see
+    # RenderParams::migrate() for the key migration.
     ParamFloat('RenderHighlightPolygonOffsetFactor', 1),
     ParamFloat('RenderHighlightPolygonOffsetUnits', 1),
     ParamBool('ForceSolidSingleSideLighting',  True, on_change=True, title='Force single side lighting on solid',

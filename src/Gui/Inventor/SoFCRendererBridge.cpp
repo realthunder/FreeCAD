@@ -51,6 +51,7 @@
 #include "SoFCRenderer.h"
 #include "SoFCVertexCache.h"
 #include "../ViewParams.h"
+#include "../RenderParams.h"
 
 using namespace Gui;
 
@@ -627,9 +628,9 @@ Render::AOConfig
 RendererBridge::translateAOConfig()
 {
     Render::AOConfig res;
-    res.enabled = ViewParams::getRendererSSAO();
-    res.radius = float(ViewParams::getRendererSSAORadius());
-    res.intensity = float(ViewParams::getRendererSSAOIntensity());
+    res.enabled = RenderParams::getSSAO();
+    res.radius = float(RenderParams::getSSAORadius());
+    res.intensity = float(RenderParams::getSSAOIntensity());
     return res;
 }
 
@@ -698,8 +699,8 @@ Render::BumpConfig
 RendererBridge::translateBumpConfig()
 {
     Render::BumpConfig res;
-    res.scale = float(ViewParams::getRendererBumpScale());
-    res.parallax = ViewParams::getRendererParallax();
+    res.scale = float(RenderParams::getBumpScale());
+    res.parallax = RenderParams::getParallax();
     return res;
 }
 
@@ -707,10 +708,10 @@ Render::PBRConfig
 RendererBridge::translatePBRConfig()
 {
     Render::PBRConfig res;
-    res.enabled = ViewParams::getRendererPBR();
-    res.metallic = float(ViewParams::getRendererPBRMetallic());
-    res.roughness = float(ViewParams::getRendererPBRRoughness());
-    res.envIntensity = float(ViewParams::getRendererPBREnvIntensity());
+    res.enabled = RenderParams::getPBR();
+    res.metallic = float(RenderParams::getPBRMetallic());
+    res.roughness = float(RenderParams::getPBRRoughness());
+    res.envIntensity = float(RenderParams::getPBREnvIntensity());
     return res;
 }
 
