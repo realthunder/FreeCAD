@@ -166,6 +166,13 @@ public:
     }
     ~CustomGLWidget() override
     {
+        // The context outlives this widget's dynamic type: ~QOpenGLWidget
+        // destroys it and the signal would arrive when *this is no longer
+        // a CustomGLWidget (debug Qt asserts on the member-pointer
+        // connection before the guarded body can run).
+        if (context())
+            disconnect(context(), &QOpenGLContext::aboutToBeDestroyed,
+                       this, &CustomGLWidget::aboutToDestroyGLContext);
     }
     void initializeGL() override
     {
