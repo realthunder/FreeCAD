@@ -244,7 +244,21 @@ void main()
 			// peak (1 / pi a^2) under a headlight, which would
 			// flash whole faces white at low roughness.
 			float a = rough * rough;
+			// The unshadowed headlight always contributes (like
+			// the Blinn-Phong path: Coin's SoShadowGroup keeps
+			// the viewer headlight beside the shadow light) ...
 			vec3 direct;
+			{
+				float d = ndv * ndv * (a * a - 1.0) + 1.0;
+				float D = a * a / (3.14159265 * d * d);
+				float vis = 0.25
+					/ max(ndv * (ndv * (1.0 - a) + a),
+					      1.0e-4);
+				direct = (kd * 0.31830989
+						+ f0 * min(D * vis, 4.0))
+					* (ndv * 1.2);
+			}
+			// ... and the shadowed scene light adds on top.
 			if (u_lightDir.w > 0.5)
 			{
 				vec3 l = -sceneL;
@@ -264,21 +278,10 @@ void main()
 				vec3 F = f0 + (vec3_splat(1.0) - f0)
 					* exp2((-5.55473 * vdh - 6.98316)
 					       * vdh);
-				direct = (kd * 0.31830989
+				direct += (kd * 0.31830989
 						+ F * min(D * vis, 4.0))
 					* u_lightColor.rgb
 					* (ndl * 1.2 * shadow);
-			}
-			else
-			{
-				float d = ndv * ndv * (a * a - 1.0) + 1.0;
-				float D = a * a / (3.14159265 * d * d);
-				float vis = 0.25
-					/ max(ndv * (ndv * (1.0 - a) + a),
-					      1.0e-4);
-				direct = (kd * 0.31830989
-						+ f0 * min(D * vis, 4.0))
-					* (ndv * 1.2);
 			}
 
 			// IBL in world space (the environment does not follow
@@ -312,22 +315,34 @@ void main()
 		}
 		else if (u_lightDir.w > 0.5)
 		{
-			// Directional scene light (Shadow draw style),
-			// shadowed; same 0.2 ambient + 0.8 diffuse split and
-			// specular weight as the headlight below.
-			vec3 l = -u_lightDir.xyz;
+			// Scene light (Shadow draw style), shadowed, on top
+			// of the unshadowed headlight: Coin's SoShadowGroup
+			// keeps the viewer headlight as an "other light"
+			// (the fork's viewer root always carries it), so
+			// replacing the headlight rendered much darker than
+			// the GL Shadow style.
+			vec3 l = -sceneL;
 			float ndl = dot(n, l);
+			float hdl = n.z;
 			if (u_params.z > 0.5)
+			{
 				ndl = abs(ndl);
+				hdl = abs(hdl);
+			}
 			else
+			{
 				ndl = max(ndl, 0.0);
+				hdl = max(hdl, 0.0);
+			}
 
 			vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
 			float shininess = max(u_matSpecular.w * 128.0, 1.0);
 			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
+			float hspec = pow(max(abs(n.z), 0.0), shininess);
 
-			color = base.rgb * (vec3_splat(0.2)
+			color = base.rgb * (vec3_splat(0.2 + 0.8 * hdl)
 					+ u_lightColor.rgb * (ndl * shadow))
+				+ u_matSpecular.rgb * (hspec * 0.75)
 				+ u_matSpecular.rgb * u_lightColor.rgb
 					* (spec * 0.75 * shadow);
 		}
