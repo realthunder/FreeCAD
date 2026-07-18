@@ -957,9 +957,34 @@ independent of each other; item 4 builds on item 3's property model.
   (0 px, incl. whole-object selection); same-valued arrays stay
   instanced; divergent→uniform transition lands pixel-exact on the
   never-applied state; face-variant suite unchanged after the shared
-  ColorVariant refactor. Remaining: per-instance sub-element highlight
-  (path-keyed contexts), CPU-side array dedup across independently
-  built variant caches (GPU is shared; CPU arrays still per cache).
+  ColorVariant refactor.
+  *Per-instance sub-element highlight done (2026-07).* The instance
+  wrappers became SoFCSelectionRoot — selection contexts key on the
+  traversed selection-root stack (the Link mechanism), so a context
+  bound under one wrapper highlights that instance alone;
+  getDetailPath resolves the global element to its instance and
+  returns a path down to the wrapper plus a local-index detail
+  (whole-object degrade only for unresolvable cases). Two supporting
+  fixes: (1) partial line/triangle selection subset caches reached
+  backends with their parent's FULL index array (the restriction
+  lives in the indexer's partial part list, GL-renderer-only before)
+  — the bridge now compacts the parts into real index subsets;
+  selecting one edge used to highlight every edge of the cache in
+  bgfx, flattened or not. (2) The implicit whole-on-top companion of
+  a partial selection thickens its lines like the flattened partial
+  id's shadowed copies did. Verified (Xvfb, llvmpipe): face/vertex
+  sub-element selections on a 3-instance compound instanced vs
+  flattened 0 px; edge selection has a 24-px endpoint-cap class where
+  the instanced result matches the GL renderer's edge length and the
+  flattened single-edge subset draws ~3 px short per end (the
+  standalone 2-index copy loses neighbor cap context — accepted);
+  whole-object/plain/color-variant suites all stay 0 px.
+  Preselect verified headless via `Gui.Selection.setPreselection(obj,
+  subname)` (drives the same getDetailPath cross-highlight route as
+  tree hover): the yellow highlight lands on the one instance's face,
+  instanced vs flattened 0 px. Remaining: CPU-side array dedup across
+  independently built variant caches (GPU is shared; CPU arrays still
+  per cache).
 - Frustum/occlusion culling, GPU-driven paths (bgfx ex.37/48) for very large
   assemblies. *CPU frustum culling done (2026-07).* Per-frame in the bgfx
   backend: world-space clip planes extracted from the camera

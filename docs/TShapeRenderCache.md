@@ -326,11 +326,25 @@ cache re-shares the first one's GPU geometry through the content hash.
   resolves the picked instance from its wrapper separator on the pick
   path (`sepToInstance`), the shared node (or variant faceset) from
   `nodeToGeom`, and adds the instance's bases.
-- **Sub-element highlight degrades to whole-object highlight**: a
-  detail context binds to the shared node and would light the element
-  in *every* instance, so `getDetailPath` degrades instead. Reported
-  names remain exact. Per-instance highlight contexts (path-keyed) are
-  a known follow-up.
+- **Per-instance sub-element highlight**: the instance wrappers are
+  `SoFCSelectionRoot`, and selection/highlight contexts key on the
+  traversed selection-root *stack* — so a context bound under one
+  instance's wrapper highlights that instance alone over the shared
+  shape nodes (the same mechanism that gives each `App::Link` its own
+  contexts). `getDetailPath` resolves the picked global element to its
+  instance, appends the graph chain down to that wrapper (found with a
+  search across the display-mode roots — plain separators that never
+  enter the context stack), and returns an `SoFC*Detail` with the
+  LOCAL element index and the shared (or color-variant) shape node as
+  context. Unresolvable cases (whole sub-shapes, foreign path tails)
+  keep the previous whole-object degrade. Two supporting details: the
+  bridge thickens the implicit whole-on-top companion lines of a
+  partial selection (for flattened objects the partial id's own
+  thickened copies shadow them in the backend dedup; the
+  instance-scoped partial id has no copies of its own), and partial
+  line/triangle subset caches now reach backends as real index
+  subsets (see `getPartialLineParts` — the GL renderer consumed the
+  indexer's partial part list, backends got the full array).
 - The backend's whole-object selection dedup was made instance-aware:
   the dedup key includes a model-matrix hash (distinct placements are
   not duplicates) and explicitly colored selection entries win over the
