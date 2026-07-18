@@ -3990,9 +3990,6 @@ public:
             for (const auto &draw : scene) {
                 const auto &mat = draw.material;
                 if (mat.ontop || mat.type != Render::Material::Triangle
-                        || mat.transparent
-                        || (mat.pervertexcolor && draw.mesh
-                            && draw.mesh->hasTransparency)
                         || !(mat.shadowstyle & 1)
                         || (waterActive && mat.water)
                         || !draw.mesh || isHidden(draw))
@@ -4397,9 +4394,11 @@ public:
             if (prepassActive && isTriangle(draw) && !isTransp(draw)
                     && !isWater)
                 view->submitPrepass(draw);
-            // Shadow casters (like the GL default, transparent geometry
-            // does not cast); skipped while the cached map is valid.
-            if (shadowRender && isTriangle(draw) && !isTransp(draw)
+            // Shadow casters — transparent geometry casts like an opaque
+            // one, matching Coin's SoShadowGroup (its depth-map pass
+            // ignores alpha); water is the one exception (light must
+            // enter the medium). Skipped while the cached map is valid.
+            if (shadowRender && isTriangle(draw)
                     && (draw.material.shadowstyle & 1) && !isWater)
                 view->submitShadowCaster(draw);
             submitSceneOutline(draw);
