@@ -670,7 +670,7 @@ independent of each other; item 4 builds on item 3's property model.
    default texgen never runs for the Brep face sets, in plain Coin GL
    too). The map slots become fully useful with the UV-preserving glTF
    import (item 4); a bbox-based default-UV generator for B-Rep
-   tessellation is a possible follow-up.
+   tessellation is a possible follow-up. *glTF wiring done (2026-07)*: the item-4 import/export round trip now carries EmissiveTexture/OcclusionTexture into/out of these properties (emissiveFactor set to 1 beside an exported emissive texture — the glTF default 0 would cancel it).
 
 4. **glTF import/export with materials & textures (2–3 wks)** — round-trip
    the renderer's material model (deliberately chosen as glTF
