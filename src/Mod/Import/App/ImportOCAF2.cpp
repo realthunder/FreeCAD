@@ -27,6 +27,7 @@
 #ifndef _PreComp_
 # include <gp_Trsf.hxx>
 # include <Interface_Static.hxx>
+# include <BRep_Builder.hxx>
 # include <Quantity_ColorRGBA.hxx>
 # include <Standard_Failure.hxx>
 # include <Standard_Version.hxx>
@@ -38,6 +39,7 @@
 # include <TDF_Tool.hxx>
 # include <TopExp.hxx>
 # include <TopExp_Explorer.hxx>
+# include <TopoDS_Compound.hxx>
 # include <TopoDS_Iterator.hxx>
 # include <XCAFDoc_ColorTool.hxx>
 # include <XCAFDoc_DocumentTool.hxx>
@@ -47,6 +49,8 @@
 # include <XCAFDoc_VisMaterialTool.hxx>
 # include <Image_Texture.hxx>
 #endif
+
+#include <algorithm>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/range/algorithm/replace_if.hpp>
@@ -327,6 +331,15 @@ bool ImportOCAF2::getRenderMaterial(TDF_Label label, RenderMaterial& mat)
     if (visMat.IsNull()) {
         return false;
     }
+    return extractRenderMaterial(visMat, mat);
+}
+
+bool ImportOCAF2::extractRenderMaterial(const Handle(XCAFDoc_VisMaterial)& visMat,
+                                        RenderMaterial& mat)
+{
+    if (visMat.IsNull() || !visMat->HasPbrMaterial()) {
+        return false;
+    }
 
     const XCAFDoc_VisMaterialPBR& pbr = visMat->PbrMaterial();
     // Both factors at the glTF defaults (1.0) with no textures is what a
@@ -483,6 +496,125 @@ bool ImportOCAF2::createObject(App::Document* doc,
     colors.edgeColor = info.edgeColor;
     colors.hasFaceColor = info.hasFaceColor;
     colors.hasEdgeColor = info.hasEdgeColor;
+
+    // glTF meshes may carry a distinct visualization material per face
+    // (each glTF primitive imports as one face). A single object holds a
+    // single Render_* material set, so when the face sub shape labels
+    // resolve to more than one render-relevant material - or to one that
+    // does not cover every face - the shape splits into one feature per
+    // material group under the same group container an assembly uses
+    // (links to the label then reference the container). Color-only
+    // faces form their own group and keep the per-face color path; a
+    // single material covering the whole shape keeps the plain
+    // one-feature import below.
+    if (seq.Length() > 0 && !aMaterialTool.IsNull()) {
+        int numFaces = (int)tshape.countSubShapes(TopAbs_FACE);
+        std::vector<int> faceGroup(numFaces, 0);
+        std::vector<RenderMaterial> groupMats;
+        std::vector<std::string> groupNames;
+        // Group by material content EXCLUDING the base color: materials
+        // that only differ in color merge into one group (the per-face
+        // color path keeps the distinction), so a multi-color mesh with
+        // uniform factors does not split. Texture identity is the
+        // Image_Texture handle - the reader shares one per glTF texture.
+        using MatKey = std::tuple<float, float, const void*, const void*,
+                                  const void*, const void*, const void*>;
+        auto matKey = [](const XCAFDoc_VisMaterialPBR& pbr) -> MatKey {
+            return std::make_tuple(pbr.Metallic, pbr.Roughness,
+                                   (const void*)pbr.BaseColorTexture.get(),
+                                   (const void*)pbr.MetallicRoughnessTexture.get(),
+                                   (const void*)pbr.NormalTexture.get(),
+                                   (const void*)pbr.EmissiveTexture.get(),
+                                   (const void*)pbr.OcclusionTexture.get());
+        };
+        std::map<MatKey, int> matGroups;
+        bool grouped = false;
+        for (int i = 1; i <= seq.Length(); ++i) {
+            TDF_Label l = seq.Value(i);
+            TopoDS_Shape subShape = aShapeTool->GetShape(l);
+            // The sub shape may be more than a bare face: an untextured
+            // glTF primitive gets its B-Rep rebuilt (and possibly sewn
+            // into a shell) by the reader's fixShape.
+            if (subShape.IsNull()
+                || !TopExp_Explorer(subShape, TopAbs_FACE).More()) {
+                continue;
+            }
+            Handle(XCAFDoc_VisMaterial) visMat = aMaterialTool->GetShapeMaterial(l);
+            if (visMat.IsNull() || !visMat->HasPbrMaterial()) {
+                continue;
+            }
+            int group = 0;
+            auto it = matGroups.find(matKey(visMat->PbrMaterial()));
+            if (it != matGroups.end()) {
+                group = it->second;
+            }
+            else {
+                RenderMaterial groupMat;
+                if (extractRenderMaterial(visMat, groupMat)) {
+                    groupMats.push_back(std::move(groupMat));
+                    group = (int)groupMats.size();
+                    groupNames.push_back(
+                        visMat->RawName().IsNull()
+                            ? std::string()
+                            : visMat->RawName()->ToCString());
+                }
+                matGroups.emplace(matKey(visMat->PbrMaterial()), group);
+            }
+            if (!group) {
+                continue;
+            }
+            for (TopExp_Explorer exp(subShape, TopAbs_FACE); exp.More();
+                 exp.Next()) {
+                int idx = tshape.findShape(exp.Current()) - 1;
+                if (idx >= 0 && idx < numFaces) {
+                    faceGroup[idx] = group;
+                    grouped = true;
+                }
+            }
+        }
+        bool ungrouped =
+            std::find(faceGroup.begin(), faceGroup.end(), 0) != faceGroup.end();
+        if (grouped && numFaces > 1 && (groupMats.size() > 1 || ungrouped)) {
+            std::vector<App::DocumentObject*> children;
+            boost::dynamic_bitset<> visibilities;
+            for (int g = 0; g <= (int)groupMats.size(); ++g) {
+                BRep_Builder builder;
+                TopoDS_Compound comp;
+                builder.MakeCompound(comp);
+                std::vector<App::Color> childColors;
+                for (int idx = 0; idx < numFaces; ++idx) {
+                    if (faceGroup[idx] != g) {
+                        continue;
+                    }
+                    builder.Add(comp, tshape.getSubShape(TopAbs_FACE, idx + 1));
+                    childColors.push_back((int)colors.faceColors.size() > idx
+                                              ? colors.faceColors[idx]
+                                              : info.faceColor);
+                }
+                if (childColors.empty()) {
+                    continue;
+                }
+                auto child = static_cast<Part::Feature*>(
+                    doc->addObject("Part::Feature", tshape.shapeName().c_str()));
+                child->Shape.setValue(comp);
+                if (g > 0 && !groupNames[g - 1].empty()) {
+                    child->Label.setValue(groupNames[g - 1].c_str());
+                }
+                applyFaceColors(child, {info.faceColor});
+                applyEdgeColors(child, {info.edgeColor});
+                applyFaceColors(child, childColors);
+                if (g > 0) {
+                    applyRenderMaterial(child, groupMats[g - 1]);
+                }
+                children.push_back(child);
+                visibilities.push_back(true);
+            }
+            if (children.size() > 1
+                && createGroup(doc, info, shape, children, visibilities)) {
+                return true;
+            }
+        }
+    }
 
     feature = static_cast<Part::Feature*>(doc->addObject("Part::Feature",tshape.shapeName().c_str()));
     feature->Shape.setValue(shape);

@@ -34,6 +34,7 @@
 #include <TopoDS_Shape.hxx>
 #include <XCAFDoc_ColorTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
+#include <XCAFDoc_VisMaterial.hxx>
 #include <XCAFDoc_VisMaterialTool.hxx>
 
 #include <Base/Sequencer.h>
@@ -191,6 +192,11 @@ private:
     /// RenderMaterial, extracting embedded texture images to temporary
     /// files. Returns false when there is no PBR material.
     bool getRenderMaterial(TDF_Label label, RenderMaterial& mat);
+    /// Convert an already resolved visualization material into a neutral
+    /// RenderMaterial (texture extraction included). Returns false when
+    /// the material is the color-only default.
+    bool extractRenderMaterial(const Handle(XCAFDoc_VisMaterial)& visMat,
+                               RenderMaterial& mat);
 
 private:
     class ImportLegacy: public ImportOCAF
