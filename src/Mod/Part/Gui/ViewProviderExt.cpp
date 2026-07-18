@@ -1951,7 +1951,6 @@ void ViewProviderPartExt::updateVisual()
             TopLoc_Location loc;
             return BRep_Tool::Surface(face, loc).IsNull();
         };
-        bool hasTexCoords = false;
 
         // count triangles and nodes in the mesh
         TopTools_IndexedMapOfShape faceMap;
@@ -1964,8 +1963,6 @@ void ViewProviderPartExt::updateVisual()
                 numTriangles += mesh->NbTriangles();
                 numNodes     += mesh->NbNodes();
                 numNorms     += mesh->NbNodes();
-                if (mesh->HasUVNodes() && isMeshOnlyFace(face))
-                    hasTexCoords = true;
             }
 
             TopExp_Explorer xp;
@@ -2015,13 +2012,20 @@ void ViewProviderPartExt::updateVisual()
         // create memory for the nodes and indexes
         coords  ->point      .setNum(numNodes);
         norm    ->vector     .setNum(numNorms);
-        texcoords->point     .setNum(hasTexCoords ? numNodes : 0);
+        texcoords->point     .setNum(numNodes);
         faceset ->coordIndex .setNum(numTriangles*4);
         faceset ->partIndex  .setNum(numFaces);
         // get the raw memory for fast fill up
         SbVec3f* verts = coords  ->point       .startEditing();
         SbVec3f* norms = norm    ->vector      .startEditing();
-        SbVec2f* texcoordArr = hasTexCoords ? texcoords->point.startEditing() : nullptr;
+        SbVec2f* texcoordArr = numNodes > 0 ? texcoords->point.startEditing() : nullptr;
+
+        // Default texture coordinates take the shape bounding box as the
+        // projection frame, the largest dimension as the texel scale
+        // (uniform across faces).
+        const SbVec3f bbMin((float)xMin, (float)yMin, (float)zMin);
+        float maxDim = (float)std::max({xMax - xMin, yMax - yMin, zMax - zMin});
+        float invMaxDim = maxDim > 0.0f ? 1.0f / maxDim : 0.0f;
         int32_t* index = faceset ->coordIndex  .startEditing();
         int32_t* parts = faceset ->partIndex   .startEditing();
 
@@ -2198,6 +2202,32 @@ void ViewProviderPartExt::updateVisual()
             }
 
             edgeVector.push_back(-1);
+
+            // Default texture coordinates for regular B-Rep faces:
+            // nothing else in this pipeline generates UVs for them
+            // (Coin's default texgen never runs for the Brep face sets),
+            // so a textured Part shape used to sample one constant
+            // texel. Project the face along the dominant axis of its
+            // accumulated normal onto the shape bounding box (box
+            // mapping; the per-face node range is complete here - faces
+            // share no nodes).
+            if (texcoordArr && !(meshOnly && mesh->HasUVNodes())) {
+                SbVec3f nsum(0.0f, 0.0f, 0.0f);
+                for (int n = 0; n < nbNodesInFace; n++)
+                    nsum += norms[faceNodeOffset + n];
+                float ax = fabsf(nsum[0]);
+                float ay = fabsf(nsum[1]);
+                float az = fabsf(nsum[2]);
+                int axis = ax >= ay && ax >= az ? 0 : (ay >= az ? 1 : 2);
+                int i0 = axis == 0 ? 1 : 0;
+                int i1 = axis == 2 ? 1 : 2;
+                for (int n = 0; n < nbNodesInFace; n++) {
+                    const SbVec3f &p = verts[faceNodeOffset + n];
+                    texcoordArr[faceNodeOffset + n].setValue(
+                        (p[i0] - bbMin[i0]) * invMaxDim,
+                        (p[i1] - bbMin[i1]) * invMaxDim);
+                }
+            }
 
             // counting up the per Face offsets
             faceNodeOffset += nbNodesInFace;
