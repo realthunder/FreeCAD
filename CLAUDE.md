@@ -17,6 +17,7 @@ Underlying tech: **OpenCASCADE (OCCT)** geometry kernel, **Coin3D** (Open Invent
 **Direction & design docs** — read these before large architectural work:
 - `docs/RoadMap.md` — the vision, workstreams (renderer, headless engine, WASM tier, AI-native interface), and phasing.
 - `docs/ComputeBoundaries.md` — the headless-server + parallel-recompute + unified-protocol design.
+- `docs/TShapeRenderCache.md` — TShape-level tessellation sharing, color variants, and backend instancing/GPU-buffer sharing (the renderer instancing architecture).
 
 ## Companion forks (sibling repos)
 
