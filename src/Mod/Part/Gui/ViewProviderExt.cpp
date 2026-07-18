@@ -156,6 +156,20 @@ struct InstGeomKey {
     }
 };
 
+/// One color variant of a shared tessellation: instances whose resolved
+/// per-face colors diverge in value bake them per part — one variant per
+/// DISTINCT resolved color vector (the key), lazily created, refcounted,
+/// shared by every instance (across objects) applying that exact vector.
+/// The variant faceset references the geometry's coordinate/normal/
+/// texcoord nodes; only the per-part material is its own. Variants never
+/// mutate — a different vector materializes a new variant.
+struct ColorVariant {
+    std::vector<uint32_t> key;   ///< packed RGBA per local face
+    Gui::CoinPtr<SoGroup> group;
+    SoBrepFaceSet *faceset = nullptr;
+    int refcount = 0;
+};
+
 /// One shared, immutable tessellation of a leaf sub-shape in its local
 /// frame: the face/edge/vertex subgraphs referenced by every instance
 /// separator (across objects — the table is global). Entries never mutate
@@ -168,6 +182,12 @@ struct InstGeometry {
     SoBrepFaceSet *faceset = nullptr;
     SoBrepEdgeSet *lineset = nullptr;
     SoBrepPointSet *nodeset = nullptr;
+    // Shared geometry nodes (children of faceGroup) the color variants
+    // reference; the face branching never touches edges/vertices.
+    SoCoordinate3 *coordsNode = nullptr;
+    SoNormal *normNode = nullptr;
+    SoTextureCoordinate2 *texcoordsNode = nullptr;
+    std::list<ColorVariant> variants;
     int faceCount = 0;
     int edgeCount = 0;
     int vertexCount = 0;
@@ -176,16 +196,98 @@ struct InstGeometry {
 
 static std::map<InstGeomKey, InstGeometry> _InstGeomTable;
 
+static inline uint32_t packColorRGBA(const App::Color &c)
+{
+    return c.getPackedValue();
+}
+
+/// Find or build the variant of \a geom baking exactly the resolved
+/// per-face colors \a slice (diffuse rgb + transparency in alpha), and
+/// take a reference on it.
+static ColorVariant *acquireColorVariant(InstGeometry &geom,
+                                         const std::vector<App::Color> &slice)
+{
+    std::vector<uint32_t> key;
+    key.reserve(slice.size());
+    for (const auto &c : slice)
+        key.push_back(packColorRGBA(c));
+    for (auto &variant : geom.variants) {
+        if (variant.key == key) {
+            ++variant.refcount;
+            return &variant;
+        }
+    }
+
+    geom.variants.emplace_back();
+    ColorVariant &variant = geom.variants.back();
+    variant.key = std::move(key);
+    variant.refcount = 1;
+
+    int n = int(slice.size());
+    auto bind = new SoMaterialBinding;
+    bind->value = SoMaterialBinding::PER_PART;
+    auto mat = new SoMaterial;
+    mat->diffuseColor.setNum(n);
+    mat->transparency.setNum(n);
+    SbColor *dc = mat->diffuseColor.startEditing();
+    float *t = mat->transparency.startEditing();
+    for (int i = 0; i < n; ++i) {
+        dc[i].setValue(slice[i].r, slice[i].g, slice[i].b);
+        t[i] = slice[i].a;
+    }
+    mat->diffuseColor.finishEditing();
+    mat->transparency.finishEditing();
+    // Everything but diffuse/transparency inherits the object material.
+    mat->ambientColor.setIgnored(TRUE);
+    mat->specularColor.setIgnored(TRUE);
+    mat->emissiveColor.setIgnored(TRUE);
+    mat->shininess.setIgnored(TRUE);
+
+    auto faceset = new SoBrepFaceSet;
+    faceset->coordIndex = geom.faceset->coordIndex;
+    faceset->partIndex = geom.faceset->partIndex;
+    if (geom.faceset->shapeInfo.getNum())
+        faceset->shapeInfo = geom.faceset->shapeInfo;
+    faceset->setSiblings({geom.lineset, geom.nodeset});
+
+    auto root = new Gui::SoFCSelectionRoot;
+    root->addChild(geom.coordsNode);
+    root->addChild(geom.normNode);
+    root->addChild(geom.texcoordsNode);
+    root->addChild(bind);
+    root->addChild(mat);
+    root->addChild(faceset);
+    variant.group = root;
+    variant.faceset = faceset;
+    return &variant;
+}
+
+static void releaseColorVariant(InstGeometry &geom, ColorVariant *variant)
+{
+    for (auto it = geom.variants.begin(); it != geom.variants.end(); ++it) {
+        if (&*it == variant) {
+            if (--it->refcount <= 0)
+                geom.variants.erase(it);
+            return;
+        }
+    }
+}
+
 /// The TShape-instanced representation of one view provider: which global
 /// geometry entries it references and, per placed instance, the wrapper
 /// separators plus the global element index bases (global FaceN/EdgeN/
 /// VertexN = base + index local to the shared node).
 struct ShapeInstanceRep {
     struct Instance {
-        const InstGeometry *geom = nullptr;
+        InstGeometry *geom = nullptr;
         Gui::CoinPtr<SoSeparator> faceSep;
         Gui::CoinPtr<SoSeparator> edgeSep;
         Gui::CoinPtr<SoSeparator> vertexSep;
+        /// uniform-slice per-instance color: rides the render-cache
+        /// material at the wrapper (the Link mechanism) — never baked
+        Gui::CoinPtr<SoMaterial> overrideMat;
+        /// divergent-slice per-instance colors: baked color variant
+        ColorVariant *variant = nullptr;
         int faceBase = 0;
         int edgeBase = 0;
         int vertexBase = 0;
@@ -194,11 +296,31 @@ struct ShapeInstanceRep {
     std::vector<InstGeomKey> keys;   ///< table refs to release
     /// any of an instance's three wrapper separators -> instance index
     std::unordered_map<const SoNode *, int> sepToInstance;
-    /// a shared faceset/lineset/nodeset -> the geometry entry
+    /// a shared faceset/lineset/nodeset (or variant faceset) -> the
+    /// geometry entry
     std::unordered_map<const SoNode *, const InstGeometry *> nodeToGeom;
+
+    /// Recompute nodeToGeom from the instances' current variant choices.
+    void rebuildNodeMap()
+    {
+        nodeToGeom.clear();
+        for (const auto &inst : instances) {
+            nodeToGeom[inst.geom->faceset] = inst.geom;
+            nodeToGeom[inst.geom->lineset] = inst.geom;
+            nodeToGeom[inst.geom->nodeset] = inst.geom;
+            if (inst.variant)
+                nodeToGeom[inst.variant->faceset] = inst.geom;
+        }
+    }
 
     ~ShapeInstanceRep()
     {
+        // Variant references go first — the geometry entries they nest in
+        // are still held by the keys released below.
+        for (auto &inst : instances) {
+            if (inst.variant)
+                releaseColorVariant(*inst.geom, inst.variant);
+        }
         for (const auto &key : keys) {
             auto it = _InstGeomTable.find(key);
             if (it != _InstGeomTable.end() && --it->second.refcount <= 0)
@@ -206,6 +328,30 @@ struct ShapeInstanceRep {
         }
     }
 };
+
+/// Make an instance's face wrapper match its current color choice:
+/// children [matrixTransform, overrideMat?, base group or variant group].
+/// No-op when the wrapper already has that structure.
+static void restructureInstanceFace(ShapeInstanceRep::Instance &inst)
+{
+    SoSeparator *sep = inst.faceSep;
+    if (!sep || sep->getNumChildren() < 1)
+        return;
+    SoNode *body = inst.variant ? inst.variant->group.get()
+                                : inst.geom->faceGroup.get();
+    int n = sep->getNumChildren();
+    bool same = inst.overrideMat
+        ? (n == 3 && sep->getChild(1) == inst.overrideMat.get()
+                  && sep->getChild(2) == body)
+        : (n == 2 && sep->getChild(1) == body);
+    if (same)
+        return;
+    while (sep->getNumChildren() > 1)
+        sep->removeChild(sep->getNumChildren() - 1);
+    if (inst.overrideMat)
+        sep->addChild(inst.overrideMat);
+    sep->addChild(body);
+}
 
 /// The environment part of the shape-instancing gate: the feature param,
 /// a backend renderer selected (plain Coin/GL always flattens — without
@@ -785,7 +931,8 @@ bool ViewProviderPartExt::getElementPicked(const SoPickedPoint *pp, std::string 
             }
             if (inst && inst->geom == git->second) {
                 const InstGeometry *geom = git->second;
-                if (node == geom->faceset
+                if ((node == geom->faceset
+                        || (inst->variant && node == inst->variant->faceset))
                         && detail->isOfType(SoFaceDetail::getClassTypeId())) {
                     int face = static_cast<const SoFaceDetail*>(detail)
                                    ->getPartIndex() + 1;
@@ -1094,14 +1241,15 @@ static bool colorsDivergent(const std::vector<App::Color> &colors)
     return false;
 }
 
-static bool materialsDivergent(const std::vector<App::Material> &mats)
+// Per-face material divergence the instanced representation cannot carry:
+// the color variants bake diffuse+transparency only; every other component
+// must stay uniform in value to ride the inherited object material.
+static bool materialsUnrepresentable(const std::vector<App::Material> &mats)
 {
     for (size_t i = 1; i < mats.size(); ++i) {
-        if (mats[i].diffuseColor != mats[0].diffuseColor
-                || mats[i].ambientColor != mats[0].ambientColor
+        if (mats[i].ambientColor != mats[0].ambientColor
                 || mats[i].specularColor != mats[0].specularColor
-                || mats[i].emissiveColor != mats[0].emissiveColor
-                || mats[i].transparency != mats[0].transparency)
+                || mats[i].emissiveColor != mats[0].emissiveColor)
             return true;
     }
     return false;
@@ -1112,20 +1260,17 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
     if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange))
         getObject()->touch(true);
 
-    // Instanced representation: divergent values must bake per face —
-    // rebuild flattened (the raised flag blocks re-instancing); a
-    // uniform-valued array collapses to the overall path instead.
-    bool divergent = colorsDivergent(colors);
-    if (divergent != appliedFaceColorsDivergent) {
-        appliedFaceColorsDivergent = divergent;
-        if (divergent) {
-            if (instanced)
-                updateVisual();
-        } else if (!instanced && instancingCandidate())
+    // Any per-face color VECTOR is representable by the instanced
+    // representation since the color-variant layer; the divergence flag
+    // only tracks unrepresentable per-face MATERIAL divergence (raised
+    // by the material overload below). A plain color apply clears it.
+    if (appliedFaceColorsDivergent) {
+        appliedFaceColorsDivergent = false;
+        if (!instanced && instancingCandidate())
             VisualTouched = true;   // may re-qualify; rebuilds lazily
     }
-    if (instanced && colors.size() > 1) {
-        setHighlightedFaces(std::vector<App::Color>(1, colors[0]));
+    if (instanced) {
+        applyInstancedFaceColors(colors);
         return;
     }
 
@@ -1168,8 +1313,11 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
 
 void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& colors)
 {
-    // Instanced representation: same policy as the color overload.
-    bool divergent = materialsDivergent(colors);
+    // Instanced representation: diffuse+transparency divergence goes
+    // through the color-variant path; anything beyond that must bake
+    // whole materials per face — rebuild flattened (the raised flag
+    // blocks re-instancing until a representable apply clears it).
+    bool divergent = materialsUnrepresentable(colors);
     if (divergent != appliedFaceColorsDivergent) {
         appliedFaceColorsDivergent = divergent;
         if (divergent) {
@@ -1178,8 +1326,24 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
         } else if (!instanced && instancingCandidate())
             VisualTouched = true;
     }
-    if (instanced && colors.size() > 1) {
-        setHighlightedFaces(std::vector<App::Material>(1, colors[0]));
+    if (instanced) {
+        // The uniform-valued non-diffuse components ride the object
+        // material; diffuse+transparency partition the instances.
+        const auto &m0 = colors.empty() ? ShapeMaterial.getValue() : colors[0];
+        pcShapeMaterial->ambientColor.setValue(
+            m0.ambientColor.r, m0.ambientColor.g, m0.ambientColor.b);
+        pcShapeMaterial->specularColor.setValue(
+            m0.specularColor.r, m0.specularColor.g, m0.specularColor.b);
+        pcShapeMaterial->emissiveColor.setValue(
+            m0.emissiveColor.r, m0.emissiveColor.g, m0.emissiveColor.b);
+        std::vector<App::Color> diffuse;
+        diffuse.reserve(colors.size());
+        for (const auto &m : colors) {
+            App::Color c = m.diffuseColor;
+            c.a = m.transparency;
+            diffuse.push_back(c);
+        }
+        applyInstancedFaceColors(diffuse);
         return;
     }
 
@@ -2087,10 +2251,12 @@ bool ViewProviderPartExt::buildInstanced()
     if (cShape.IsNull() || cShape.ShapeType() != TopAbs_COMPOUND)
         return false;
 
-    // Colors must resolve to one uniform value (compared by value — a
-    // same-valued per-face array is uniform; only the final applied
-    // color matters). Divergent per-face colors get per-vector variant
-    // sharing in a later phase; until then they flatten.
+    // Line/point colors must resolve to one uniform value (compared by
+    // value — a same-valued per-element array is uniform; only the final
+    // applied color matters). Divergent per-FACE colors are fine: they
+    // partition the instances over baked color variants after the build
+    // (applyInstancedFaceColors); edges/vertices get the variant
+    // mechanism later and flatten for now.
     auto uniformColors = [](const std::vector<App::Color> &colors) {
         for (size_t i = 1; i < colors.size(); ++i) {
             if (colors[i] != colors[0])
@@ -2098,8 +2264,7 @@ bool ViewProviderPartExt::buildInstanced()
         }
         return true;
     };
-    if (!uniformColors(DiffuseColor.getValues())
-            || !uniformColors(LineColorArray.getValues())
+    if (!uniformColors(LineColorArray.getValues())
             || !uniformColors(PointColorArray.getValues()))
         return false;
 
@@ -2252,6 +2417,9 @@ bool ViewProviderPartExt::buildInstanced()
             geom.faceset = gfaceset;
             geom.lineset = glineset;
             geom.nodeset = gnodeset;
+            geom.coordsNode = gcoords;
+            geom.normNode = gnorm;
+            geom.texcoordsNode = gtexcoords;
             geom.faceCount = counts[i].faces;
             geom.edgeCount = counts[i].edges;
             geom.vertexCount = counts[i].vertices;
@@ -2323,6 +2491,123 @@ bool ViewProviderPartExt::buildInstanced()
     FC_TRACE(getFullName() << " instanced: " << leaves.size()
              << " leaves over " << instanced->keys.size() << " geometries");
     return true;
+}
+
+void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color> &colors)
+{
+    if (!instanced)
+        return;
+
+    auto setOverall = [&](const App::Color &c, float trans) {
+        pcFaceBind->value = SoMaterialBinding::OVERALL;
+        pcShapeMaterial->diffuseColor.setValue(c.r, c.g, c.b);
+        pcShapeMaterial->transparency.setValue(trans);
+    };
+
+    // Uniform resolved colors: every instance back on the shared base
+    // subgraph, color riding the object material.
+    auto clearInstanceColors = [&]() {
+        bool changed = false;
+        for (auto &inst : instanced->instances) {
+            if (inst.variant) {
+                releaseColorVariant(*inst.geom, inst.variant);
+                inst.variant = nullptr;
+                changed = true;
+            }
+            inst.overrideMat = nullptr;
+            restructureInstanceFace(inst);
+        }
+        if (changed)
+            instanced->rebuildNodeMap();
+    };
+
+    if (colors.size() <= 1) {
+        clearInstanceColors();
+        const App::Color &c = colors.size() == 1 ? colors[0] : ShapeColor.getValue();
+        // do not get transparency from DiffuseColor in this case
+        setOverall(c, ShapeMaterial.getValue().transparency);
+        return;
+    }
+
+    // Resolve the full per-face vector: a short apply keeps the base
+    // color on the remaining faces (flat-path semantics — transparency
+    // rides the alpha channel when applied as an array).
+    int total = 0;
+    for (const auto &inst : instanced->instances)
+        total += inst.geom->faceCount;
+    App::Color base = ShapeColor.getValue();
+    base.a = ShapeMaterial.getValue().transparency;
+    std::vector<App::Color> resolved(size_t(total), base);
+    for (size_t i = 0; i < colors.size() && i < resolved.size(); ++i)
+        resolved[i] = colors[i];
+
+    bool uniform = true;
+    for (size_t i = 1; i < resolved.size(); ++i) {
+        if (resolved[i] != resolved[0]) {
+            uniform = false;
+            break;
+        }
+    }
+    if (uniform) {
+        clearInstanceColors();
+        const App::Color &c = resolved.empty() ? base : resolved[0];
+        setOverall(c, c.a);
+        return;
+    }
+
+    // Divergent by value: partition the instances by their resolved
+    // slice — a uniform slice rides a per-instance override material on
+    // the shared base subgraph (cross-instance sharable whatever its
+    // value, the Link mechanism), a divergent slice a baked, refcounted
+    // color variant shared by every instance applying that exact vector.
+    setOverall(ShapeColor.getValue(), ShapeMaterial.getValue().transparency);
+    bool structureChanged = false;
+    int faceBase = 0;
+    for (auto &inst : instanced->instances) {
+        int count = inst.geom->faceCount;
+        std::vector<App::Color> slice(resolved.begin() + faceBase,
+                                      resolved.begin() + faceBase + count);
+        faceBase += count;
+        bool sliceUniform = true;
+        for (size_t i = 1; i < slice.size(); ++i) {
+            if (slice[i] != slice[0]) {
+                sliceUniform = false;
+                break;
+            }
+        }
+        if (sliceUniform) {
+            if (inst.variant) {
+                releaseColorVariant(*inst.geom, inst.variant);
+                inst.variant = nullptr;
+                structureChanged = true;
+            }
+            const App::Color &c = slice.empty() ? base : slice[0];
+            if (!inst.overrideMat) {
+                inst.overrideMat = new SoMaterial;
+                inst.overrideMat->ambientColor.setIgnored(TRUE);
+                inst.overrideMat->specularColor.setIgnored(TRUE);
+                inst.overrideMat->emissiveColor.setIgnored(TRUE);
+                inst.overrideMat->shininess.setIgnored(TRUE);
+            }
+            inst.overrideMat->diffuseColor.setValue(c.r, c.g, c.b);
+            inst.overrideMat->transparency.setValue(c.a);
+        } else {
+            ColorVariant *variant = acquireColorVariant(*inst.geom, slice);
+            if (variant != inst.variant) {
+                if (inst.variant)
+                    releaseColorVariant(*inst.geom, inst.variant);
+                inst.variant = variant;
+                structureChanged = true;
+            } else {
+                // re-acquired the one already held; drop the extra ref
+                releaseColorVariant(*inst.geom, variant);
+            }
+            inst.overrideMat = nullptr;
+        }
+        restructureInstanceFace(inst);
+    }
+    if (structureChanged)
+        instanced->rebuildNodeMap();
 }
 
 void ViewProviderPartExt::updateVisual()

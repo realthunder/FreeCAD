@@ -241,6 +241,13 @@ protected:
     /// color-divergence transitions.
     bool instancingCandidate() const;
 
+    /// Apply resolved per-face colors to the instanced representation:
+    /// partitions the instances by their slice of the vector — uniform
+    /// slices ride per-instance override materials on the shared base
+    /// subgraph, divergent slices reference baked, refcounted color
+    /// variants from the global table (one per distinct vector).
+    void applyInstancedFaceColors(const std::vector<App::Color> &colors);
+
     /// One shape's worth of tessellation into the given nodes — the
     /// whole shape for the flattened build, one sub-shape (at identity
     /// location) per unique TShape for the instanced build.
@@ -259,11 +266,14 @@ protected:
     bool UpdatingColor;
     bool highlightFaceEdges = false;
 
-    /// Whether the last APPLIED per-element color arrays diverge in
-    /// value (a same-valued array counts as uniform). Divergent applied
-    /// colors bake into the vertex caches and force the flattened
-    /// build; the setHighlighted* entry points maintain these and
-    /// restructure on transitions.
+    /// Whether the last APPLIED per-element colors diverge in value in a
+    /// way the instanced representation cannot carry (a same-valued
+    /// array counts as uniform). Faces carry any per-face color vector
+    /// through the color-variant layer, so their flag only rises for
+    /// per-face MATERIAL divergence beyond diffuse+transparency; line/
+    /// point divergence still forces the flattened build. The
+    /// setHighlighted* entry points maintain these and restructure on
+    /// transitions.
     bool appliedFaceColorsDivergent = false;
     bool appliedLineColorsDivergent = false;
     bool appliedPointColorsDivergent = false;
