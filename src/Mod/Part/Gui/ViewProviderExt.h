@@ -247,6 +247,12 @@ protected:
     /// subgraph, divergent slices reference baked, refcounted color
     /// variants from the global table (one per distinct vector).
     void applyInstancedFaceColors(const std::vector<App::Color> &colors);
+    /// Same partitioning for resolved per-edge / per-vertex colors:
+    /// uniform slices ride per-instance override materials, divergent
+    /// slices baked line/point color variants (diffuse only, like the
+    /// flattened per-edge/per-vertex paths).
+    void applyInstancedLineColors(const std::vector<App::Color> &colors);
+    void applyInstancedPointColors(const std::vector<App::Color> &colors);
 
     /// One shape's worth of tessellation into the given nodes — the
     /// whole shape for the flattened build, one sub-shape (at identity
@@ -266,17 +272,14 @@ protected:
     bool UpdatingColor;
     bool highlightFaceEdges = false;
 
-    /// Whether the last APPLIED per-element colors diverge in value in a
+    /// Whether the last APPLIED per-face materials diverge in value in a
     /// way the instanced representation cannot carry (a same-valued
-    /// array counts as uniform). Faces carry any per-face color vector
-    /// through the color-variant layer, so their flag only rises for
-    /// per-face MATERIAL divergence beyond diffuse+transparency; line/
-    /// point divergence still forces the flattened build. The
-    /// setHighlighted* entry points maintain these and restructure on
-    /// transitions.
+    /// array counts as uniform). Any per-element color vector is carried
+    /// by the face/line/point color-variant layers, so this only rises
+    /// for per-face MATERIAL divergence beyond diffuse+transparency.
+    /// The setHighlightedFaces entry points maintain it and restructure
+    /// on transitions.
     bool appliedFaceColorsDivergent = false;
-    bool appliedLineColorsDivergent = false;
-    bool appliedPointColorsDivergent = false;
 
     std::string shapePropName;
 
