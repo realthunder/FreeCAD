@@ -901,8 +901,7 @@ independent of each other; item 4 builds on item 3's property model.
   faceset references the shared coordinate/normal/texcoord nodes and
   bakes only diffuse+transparency (everything else must stay uniform in
   value and rides the inherited material; per-face MATERIAL divergence
-  beyond that still flattens, as do divergent line/point colors for
-  now). `applyInstancedFaceColors` partitions the instances by their
+  beyond that still flattens). `applyInstancedFaceColors` partitions the instances by their
   slice of the resolved vector: uniform slices stay on the shared base
   subgraph with a per-instance override material (values ride the
   render-cache material — the Link mechanism, so they batch whatever
@@ -943,10 +942,24 @@ independent of each other; item 4 builds on item 3's property model.
   flatten uses the whole shape) — inherent to sharing; shadow frames
   show a ~1k-px edge-line class vs flatten (per-instance model
   matrices vs baked coords, binary at shadow-map texel boundaries —
-  invisible in plain shading, 0 px). Remaining: per-instance
-  sub-element highlight (path-keyed contexts), line/point color
-  variants, CPU-side array dedup across independently built variant
-  caches (GPU is shared; CPU arrays still per cache).
+  invisible in plain shading, 0 px).
+  *Line/point color variants done (2026-07).* Divergent
+  LineColorArray/PointColorArray no longer flatten: the variant
+  mechanism now covers edges and vertices
+  (`applyInstancedLineColors`/`applyInstancedPointColors` mirror the
+  face partitioning — uniform slices ride diffuse-only per-instance
+  override materials, divergent slices baked line/point variants with
+  their own SoBrepEdgeSet/SoBrepPointSet over the shared coordinates,
+  PER_FACE/PER_VERTEX binding, everything else inherited; picking
+  resolves variant sets like variant facesets, and the line/point
+  flatten flags are gone). Verified on llvmpipe (Xvfb): divergent
+  per-edge and per-vertex scenes instanced vs flattened bit-identical
+  (0 px, incl. whole-object selection); same-valued arrays stay
+  instanced; divergent→uniform transition lands pixel-exact on the
+  never-applied state; face-variant suite unchanged after the shared
+  ColorVariant refactor. Remaining: per-instance sub-element highlight
+  (path-keyed contexts), CPU-side array dedup across independently
+  built variant caches (GPU is shared; CPU arrays still per cache).
 - Frustum/occlusion culling, GPU-driven paths (bgfx ex.37/48) for very large
   assemblies. *CPU frustum culling done (2026-07).* Per-frame in the bgfx
   backend: world-space clip planes extracted from the camera

@@ -138,8 +138,9 @@ following holds (`buildInstanced()` gate):
 - The defensive numbering check fails: global FaceN/EdgeN/VertexN must
   equal the concatenation of the leaves' local numbering in traversal
   order (verified against `TopoShape::findShape` per leaf).
-- The applied line/point colors diverge in value, or per-face
-  *materials* diverge beyond diffuse+transparency (§5).
+- The applied per-face *materials* diverge beyond diffuse+transparency
+  (§5). Divergent per-element *colors* — faces, edges and vertices —
+  never disqualify: they branch over color variants (§5).
 
 **Color divergence is value-based, decided at apply time.** The
 presence or length of a `DiffuseColor` array means nothing — a
@@ -191,12 +192,25 @@ Consequences (the "draw-minimal" scenario analysis):
 - Variants are immutable: a different vector is a different variant.
   This keeps every cache in the system immutable after build.
 
+**Line/point color variants** extend the same mechanism to edges and
+vertices: `applyInstancedLineColors()`/`applyInstancedPointColors()`
+partition the instances by their slice of the resolved
+`LineColorArray`/`PointColorArray` (base line/point color filling a
+short apply, like the flattened paths). A uniform slice rides a
+diffuse-only per-instance override `SoMaterial` in the edge/vertex
+wrapper; a divergent slice references a refcounted line/point variant —
+own `SoBrepEdgeSet` (copies `coordIndex`/`seamIndices`) or
+`SoBrepPointSet` (copies `startIndex`) under an `SoFCSelectionRoot`
+sharing the geometry's coordinate node, with `PER_FACE` (one polyline
+per edge) / `PER_VERTEX` diffuse binding and every other material
+component inherited — lines and points never carry transparency, same
+as the flattened per-element paths. Edge/vertex branching stays fully
+decoupled from face branching; picking resolves variant line/point sets
+exactly like variant facesets.
+
 What still flattens: per-face *material* divergence beyond
 diffuse+transparency (ambient/specular/emissive must stay uniform to
-ride the inherited material), and divergent line/point color arrays.
-Edge/vertex rendering is fully decoupled from face branching — their
-wrappers always reference the base line/point subgraphs; a variant
-mechanism for them is a possible follow-up.
+ride the inherited material).
 
 ## 6. Render cache flattening (Gui)
 
