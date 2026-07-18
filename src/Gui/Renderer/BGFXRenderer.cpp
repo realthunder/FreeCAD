@@ -1122,6 +1122,14 @@ public:
             bgfx::destroy(m_progMesh);
             m_progMesh = BGFX_INVALID_HANDLE;
         }
+        if (bgfx::isValid(m_progMeshInst)) {
+            bgfx::destroy(m_progMeshInst);
+            m_progMeshInst = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(u_instParams)) {
+            bgfx::destroy(u_instParams);
+            u_instParams = BGFX_INVALID_HANDLE;
+        }
         if (bgfx::isValid(m_progFlat)) {
             bgfx::destroy(m_progFlat);
             m_progFlat = BGFX_INVALID_HANDLE;
@@ -1347,6 +1355,14 @@ public:
         m_instancing =
             (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING) != 0;
         if (m_instancing) {
+            // Cross-object instancing: identical placements of one shared
+            // geometry cache (Link arrays) collapse into a single
+            // instanced submit carrying {model matrix, diffuse} per
+            // instance.
+            m_progMeshInst = loadProgram("vs_fc_mesh_inst", "fs_fc_mesh",
+                                         _BGFXLib.resource().c_str());
+            u_instParams = bgfx::createUniform("u_instParams",
+                                               bgfx::UniformType::Vec4);
             m_progLine = loadProgram("vs_fc_line", "fs_fc_flat",
                                      _BGFXLib.resource().c_str());
             m_progLineClip = loadProgram("vs_fc_line_clip", "fs_fc_flat_clip",
@@ -2924,6 +2940,167 @@ public:
         PassLineSolid,   // on-top lines/points, depth LEQUAL, full color
     };
 
+    /// Per-frame PBR/shadow uniform + sampler state shared by every
+    /// triangle draw (the branches are uniform-selected in fc_mesh_fs.sh,
+    /// so every mesh program consumes them).
+    void setTriangleFrameState(const Render::Material &mat, int pass,
+                               bool mapped)
+    {
+        float pbrParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::TextureHandle env = m_dummyEnvTex;
+        if (pbrFrame && mat.lighting && pass != PassDepthOnly) {
+            // x = 2 flags a metallic-roughness map on top of the
+            // branch (u_texParams has no free component; the map
+            // only matters to the PBR path anyway).
+            pbrParams[0] = mapped && mat.metallicroughnessmap
+                ? 2.0f : 1.0f;
+            // Per-object overrides (SoFCRenderMaterial, from
+            // ViewProvider Render_* properties) beat the frame config.
+            float metal = mat.metallic >= 0.0f ? mat.metallic
+                                               : pbrMetallic;
+            pbrParams[1] = bx::clamp(metal, 0.0f, 1.0f);
+            float rough = mat.roughness >= 0.0f ? mat.roughness
+                                                : pbrRoughness;
+            if (rough <= 0.0f) {
+                // Derive from the material shininess (Coin's 0..1
+                // convention maps to a GL exponent of s * 128) with
+                // the usual Blinn-Phong-to-GGX conversion.
+                float exponent =
+                    std::max(mat.shininess, 0.0f) * 128.0f;
+                rough = std::sqrt(2.0f / (exponent + 2.0f));
+            }
+            pbrParams[2] = bx::clamp(rough, 0.02f, 1.0f);
+            pbrParams[3] = std::max(pbrEnvIntensity, 0.0f);
+            env = m_envTex;
+            bgfx::setUniform(u_envSH, envSH, kEnvSH);
+        }
+        bgfx::setUniform(u_pbrParams, pbrParams);
+        bgfx::setTexture(1, s_texEnv, env);
+
+        // Shadow draw style: the scene light replaces the headlight
+        // for every lit draw of the frame; the VSM lookup runs only
+        // on receivers (the white stand-in reads as fully lit).
+        float shadowParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float lightDir[4] = {0.0f, 0.0f, -1.0f, 0.0f};
+        bgfx::TextureHandle shadow = m_whiteTex;
+        if (shadowFrame) {
+            lightDir[0] = lightDirView[0];
+            lightDir[1] = lightDirView[1];
+            lightDir[2] = lightDirView[2];
+            lightDir[3] = 1.0f;
+            bgfx::setUniform(u_lightColor, lightColorI);
+            bgfx::setUniform(u_shadowMatrix, shadowMtx);
+            if ((mat.shadowstyle & 2) && pass != PassDepthOnly) {
+                shadowParams[0] = 1.0f;
+                // Coin's epsilon (plain VSM adds it to the
+                // variance; EVSM scales it by the warped moment)
+                shadowParams[1] = shadowEpsilon;
+                shadowParams[2] = 0.003f;   // depth bias
+                static const bool dbgvis =
+                    getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
+                if (dbgvis)
+                    shadowParams[3] = 1.0f;
+                shadow = shadowTex;
+            }
+        }
+        float evsm[4] = {shadowWarpFrame, shadowThreshold,
+                     shadowSpreadUv, shadowSpreadMode};
+        bgfx::setUniform(u_evsm, evsm);
+        bgfx::setUniform(u_lightDir, lightDir);
+        static const float noSpot[4] = {0.0f, 0.0f, 0.0f, -1.0f};
+        bgfx::setUniform(u_lightPos,
+                         shadowFrame ? lightPosView : noSpot);
+        bgfx::setUniform(u_shadowParams, shadowParams);
+        bgfx::setTexture(3, s_texShadow, shadow);
+    }
+
+    /// True when the cross-object instanced mesh path can run this frame.
+    bool instancingActive() const
+    {
+        return m_instancing && bgfx::isValid(m_progMeshInst);
+    }
+
+    /// Stride of one instance: the model matrix columns (i_data0-3,
+    /// DrawCall::model layout) followed by the diffuse color (i_data4).
+    static constexpr uint32_t InstanceStride = 20 * sizeof(float);
+
+    /// Submit one instanced draw of `count` placements of the prototype's
+    /// mesh/material — the eligibility rules live in the producer
+    /// (instancableDraw / buildInstanceGroups): an opaque, untextured,
+    /// unclipped, non-on-top triangle draw of the normal scene pass.
+    /// `data` holds count * InstanceStride bytes. Returns false when the
+    /// transient instance buffer cannot fit the group this frame; the
+    /// caller falls back to per-draw submits.
+    bool submitInstanced(const Render::DrawCall &draw, const float *data,
+                         uint32_t count)
+    {
+        const Render::Material &mat = draw.material;
+        GpuMesh *mesh = getMesh(*draw.mesh);
+        if (!bgfx::isValid(mesh->vbh) || !bgfx::isValid(mesh->tri))
+            return false;
+        if (bgfx::getAvailInstanceDataBuffer(count, InstanceStride)
+                < count)
+            return false;
+        bgfx::InstanceDataBuffer idb;
+        bgfx::allocInstanceDataBuffer(&idb, count, InstanceStride);
+        std::memcpy(idb.data, data, size_t(count) * InstanceStride);
+
+        float color[4], emissive[4], specular[4], params[4];
+        unpackColor(mat.diffuse, color);
+        unpackColor(mat.emissive, emissive);
+        unpackColor(mat.specular, specular);
+        specular[3] = mat.shininess;
+        // The fragment stage always reads v_color0 in the instanced
+        // path — the vertex stage selects the per-vertex stream or the
+        // per-instance color by u_instParams.x.
+        params[0] = 1.0f;
+        bool shaded = mat.lighting
+            || (shadowFrame && (mat.shadowstyle & 2));
+        params[1] = shaded ? 1.0f : 0.0f;
+        bool twoside = mat.twoside;     // never transparent nor on-top
+        params[2] = twoside ? 1.0f : 0.0f;
+        params[3] = polygonOffsetBias(mat);
+        bgfx::setUniform(u_matColor, color);
+        bgfx::setUniform(u_matEmissive, emissive);
+        bgfx::setUniform(u_matSpecular, specular);
+        bgfx::setUniform(u_params, params);
+        float instParams[4] = {mat.pervertexcolor ? 1.0f : 0.0f,
+                               0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_instParams, instParams);
+        setTriangleFrameState(mat, PassNormal, false);
+
+        uint64_t state = BGFX_STATE_MSAA
+            | BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+        if (mat.depthtest)
+            state |= depthFuncState(mat.depthfunc);
+        if (mat.depthwrite)
+            state |= BGFX_STATE_WRITE_Z;
+        if (mat.culling && !twoside)
+            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
+
+        bgfx::setVertexBuffer(0, mesh->vbh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(mesh->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(mesh->tri);
+        bgfx::setInstanceDataBuffer(&idb);
+        bgfx::setState(state);
+
+        static const bool dbgsubmit =
+            (getenv("FC_BGFX_DEBUG_SUBMIT") != nullptr);
+        if (dbgsubmit)
+            fprintf(stderr,
+                    "bgfx submit instanced cache=%llx n=%u range=%d+%d"
+                    " state=%llx pvc=%d\n",
+                    (unsigned long long)draw.mesh->cacheId, count,
+                    draw.indexStart, draw.indexCount,
+                    (unsigned long long)state, mat.pervertexcolor);
+
+        bgfx::submit(viewId + ViewOpaque, m_progMeshInst);
+        return true;
+    }
+
     void submit(const Render::DrawCall &draw, const float *viewMatrix,
                 int pass = PassNormal, bool noseam = false)
     {
@@ -3146,74 +3323,8 @@ public:
         // PBR branch of the mesh programs: every one of them carries the
         // environment sampler (the branch is uniform-selected), so bind
         // the dummy cube whenever the branch is off for this draw.
-        if (mat.type == Render::Material::Triangle) {
-            float pbrParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-            bgfx::TextureHandle env = m_dummyEnvTex;
-            if (pbrFrame && mat.lighting && pass != PassDepthOnly) {
-                // x = 2 flags a metallic-roughness map on top of the
-                // branch (u_texParams has no free component; the map
-                // only matters to the PBR path anyway).
-                pbrParams[0] = mapped && mat.metallicroughnessmap
-                    ? 2.0f : 1.0f;
-                // Per-object overrides (SoFCRenderMaterial, from
-                // ViewProvider Render_* properties) beat the frame config.
-                float metal = mat.metallic >= 0.0f ? mat.metallic
-                                                   : pbrMetallic;
-                pbrParams[1] = bx::clamp(metal, 0.0f, 1.0f);
-                float rough = mat.roughness >= 0.0f ? mat.roughness
-                                                    : pbrRoughness;
-                if (rough <= 0.0f) {
-                    // Derive from the material shininess (Coin's 0..1
-                    // convention maps to a GL exponent of s * 128) with
-                    // the usual Blinn-Phong-to-GGX conversion.
-                    float exponent =
-                        std::max(mat.shininess, 0.0f) * 128.0f;
-                    rough = std::sqrt(2.0f / (exponent + 2.0f));
-                }
-                pbrParams[2] = bx::clamp(rough, 0.02f, 1.0f);
-                pbrParams[3] = std::max(pbrEnvIntensity, 0.0f);
-                env = m_envTex;
-                bgfx::setUniform(u_envSH, envSH, kEnvSH);
-            }
-            bgfx::setUniform(u_pbrParams, pbrParams);
-            bgfx::setTexture(1, s_texEnv, env);
-
-            // Shadow draw style: the scene light replaces the headlight
-            // for every lit draw of the frame; the VSM lookup runs only
-            // on receivers (the white stand-in reads as fully lit).
-            float shadowParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-            float lightDir[4] = {0.0f, 0.0f, -1.0f, 0.0f};
-            bgfx::TextureHandle shadow = m_whiteTex;
-            if (shadowFrame) {
-                lightDir[0] = lightDirView[0];
-                lightDir[1] = lightDirView[1];
-                lightDir[2] = lightDirView[2];
-                lightDir[3] = 1.0f;
-                bgfx::setUniform(u_lightColor, lightColorI);
-                bgfx::setUniform(u_shadowMatrix, shadowMtx);
-                if ((mat.shadowstyle & 2) && pass != PassDepthOnly) {
-                    shadowParams[0] = 1.0f;
-                    // Coin's epsilon (plain VSM adds it to the
-                    // variance; EVSM scales it by the warped moment)
-                    shadowParams[1] = shadowEpsilon;
-                    shadowParams[2] = 0.003f;   // depth bias
-                    static const bool dbgvis =
-                        getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
-                    if (dbgvis)
-                        shadowParams[3] = 1.0f;
-                    shadow = shadowTex;
-                }
-            }
-            float evsm[4] = {shadowWarpFrame, shadowThreshold,
-                         shadowSpreadUv, shadowSpreadMode};
-            bgfx::setUniform(u_evsm, evsm);
-            bgfx::setUniform(u_lightDir, lightDir);
-            static const float noSpot[4] = {0.0f, 0.0f, 0.0f, -1.0f};
-            bgfx::setUniform(u_lightPos,
-                             shadowFrame ? lightPosView : noSpot);
-            bgfx::setUniform(u_shadowParams, shadowParams);
-            bgfx::setTexture(3, s_texShadow, shadow);
-        }
+        if (mat.type == Render::Material::Triangle)
+            setTriangleFrameState(mat, pass, mapped);
 
         // Clipped draws use the discard shader variants; the unclipped
         // programs contain no discard so the rest of the scene keeps
@@ -3484,6 +3595,7 @@ public:
     bgfx::TextureHandle bgfxColor = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle bgfxDepth = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMesh = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshInst = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progFlat = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMeshClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progFlatClip = BGFX_INVALID_HANDLE;
@@ -3508,6 +3620,7 @@ public:
     bgfx::UniformHandle u_matEmissive = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matSpecular = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_params = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_instParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_clipParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_clipPlanes = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_linePattern = BGFX_INVALID_HANDLE;
@@ -4490,13 +4603,70 @@ public:
             submitOutlineOrParts(d, spec, true);
         };
 
+        // Cross-object instancing: each precomputed group of identical
+        // draws (shared geometry cache, matching material bar the
+        // diffuse) collapses into one instanced submit of the opaque
+        // pass, carrying {model matrix, diffuse} per instance. Members
+        // keep their per-draw side submissions (prepass, shadow caster,
+        // hidden-line outline) — only the main color submit batches.
+        // Hidden-line frames stay per-draw (the stencil outline pass
+        // reworks the fill submits wholesale).
+        static const bool noInstancing =
+            getenv("FC_BGFX_NO_INSTANCING") != nullptr;
+        std::vector<uint8_t> drawInstanced;
+        if (!noInstancing && !hl.show && !instGroups.empty()
+                && view->instancingActive()) {
+            drawInstanced.assign(scene.size(), 0);
+            std::vector<float> instData;
+            std::vector<int> vis;
+            for (const auto &group : instGroups) {
+                if (group.members.size() < 2)
+                    continue;
+                vis.clear();
+                for (int i : group.members) {
+                    if (!isHidden(scene[i]))
+                        vis.push_back(i);
+                }
+                if (vis.size() < 2)
+                    continue;
+                instData.clear();
+                instData.reserve(vis.size() * 20);
+                for (int i : vis) {
+                    const auto &d = scene[i];
+                    if (d.identity) {
+                        static const float ident[16] = {
+                            1.0f, 0.0f, 0.0f, 0.0f,
+                            0.0f, 1.0f, 0.0f, 0.0f,
+                            0.0f, 0.0f, 1.0f, 0.0f,
+                            0.0f, 0.0f, 0.0f, 1.0f};
+                        instData.insert(instData.end(), ident, ident + 16);
+                    } else {
+                        instData.insert(instData.end(), d.model,
+                                        d.model + 16);
+                    }
+                    float c[4];
+                    unpackColor(d.material.diffuse, c);
+                    instData.insert(instData.end(), c, c + 4);
+                }
+                if (view->submitInstanced(scene[vis[0]], instData.data(),
+                                          uint32_t(vis.size()))) {
+                    for (int i : vis)
+                        drawInstanced[i] = 1;
+                }
+            }
+        }
+        auto instancedThisFrame = [&](int i) {
+            return !drawInstanced.empty() && drawInstanced[i];
+        };
+
         // 1. Normal scene draws, then on-top triangle fills (opaque before
         // transparent), mirroring the GL delayed-pass order. On-top lines
         // are deferred below so they draw over the selection fills.
         // Hidden-line entries get their stencil outline right after the
         // fill and honor the face/seam/vertex hiding rules.
         view->ontop = false;
-        for (const auto &draw : scene) {
+        for (int drawIdx = 0; drawIdx < int(scene.size()); ++drawIdx) {
+            const auto &draw = scene[drawIdx];
             if (draw.material.ontop || isHidden(draw)) {
                 // A selection-hidden scene draw still casts its shadow —
                 // the same geometry re-renders in the on-top pass, and
@@ -4512,8 +4682,9 @@ public:
             }
             if (hideFill(draw) || hidePoints(draw))
                 continue;
-            view->submit(draw, viewMat, BGFXView::PassNormal,
-                         sceneNoSeam(draw));
+            if (!instancedThisFrame(drawIdx))
+                view->submit(draw, viewMat, BGFXView::PassNormal,
+                             sceneNoSeam(draw));
             // Water body draws bound the medium instead of acting as
             // ordinary surfaces: their front/back depths rasterize into
             // the water targets (whatever their transparency), and they
@@ -5111,6 +5282,117 @@ public:
     // upload happens lazily during render(), so the feed may arrive before
     // bgfx is initialized.
     Render::DrawCallList scene;
+    // Cross-object instance groups of the scene feed: draws sharing one
+    // geometry cache, index range and material (diffuse aside — links
+    // may override colors) collapse into one instanced submit per frame.
+    // Rebuilt with the scene; the per-frame loop still skips hidden
+    // members and falls back to per-draw submits when a group thins out.
+    struct InstGroup { std::vector<int> members; };
+    std::vector<InstGroup> instGroups;
+    std::vector<int> instGroupOf;   ///< scene index -> group index or -1
+
+    /// A draw the instanced mesh path can express: an opaque, untextured,
+    /// unclipped, non-on-top, non-water triangle draw without autozoom.
+    /// (Hidden-line frames disable instancing wholesale, so the outline
+    /// material flag stays out of the picture.)
+    static bool instancableDraw(const Render::DrawCall &d)
+    {
+        const Render::Material &m = d.material;
+        return d.mesh && d.mesh->numTriangleIndices > 0
+            && m.type == Render::Material::Triangle
+            && !m.ontop
+            && !m.transparent
+            && !(m.pervertexcolor && d.mesh->hasTransparency)
+            && m.autozoom.empty()
+            && m.numclipplanes == 0
+            && !m.texture && !m.bumpmap && !m.emissivemap
+            && !m.occlusionmap && !m.metallicroughnessmap
+            && !m.water
+            && !m.faceoutline;
+    }
+
+    void buildInstanceGroups()
+    {
+        instGroups.clear();
+        instGroupOf.assign(scene.size(), -1);
+
+        // Group key: every material field the instanced submit consumes
+        // besides the diffuse color (which rides the instance data).
+        // Byte-compared, so the struct is zeroed first (padding).
+        struct InstKey {
+            const void *mesh;
+            int start, count, part;
+            float shininess, pofactor, pounits, metallic, roughness;
+            uint32_t emissive, specular, ambient;
+            uint8_t depthfunc, shadowstyle;
+            uint8_t depthtest, depthwrite, pervertexcolor, lighting,
+                twoside, culling, ccw, polygonoffset, solidshape;
+        };
+        struct KeyLess {
+            bool operator()(const InstKey &a, const InstKey &b) const
+            { return std::memcmp(&a, &b, sizeof(InstKey)) < 0; }
+        };
+        std::map<InstKey, int, KeyLess> groups;
+        for (int i = 0; i < int(scene.size()); ++i) {
+            const auto &d = scene[i];
+            if (!instancableDraw(d))
+                continue;
+            const Render::Material &m = d.material;
+            InstKey k;
+            std::memset(&k, 0, sizeof(k));
+            k.mesh = d.mesh.get();
+            k.start = d.indexStart;
+            k.count = d.indexCount;
+            k.part = d.partIndex;
+            k.shininess = m.shininess;
+            k.pofactor = m.polygonoffsetfactor;
+            k.pounits = m.polygonoffsetunits;
+            k.metallic = m.metallic;
+            k.roughness = m.roughness;
+            k.emissive = m.emissive;
+            k.specular = m.specular;
+            k.ambient = m.ambient;
+            k.depthfunc = m.depthfunc;
+            k.shadowstyle = m.shadowstyle;
+            k.depthtest = m.depthtest;
+            k.depthwrite = m.depthwrite;
+            k.pervertexcolor = m.pervertexcolor;
+            k.lighting = m.lighting;
+            k.twoside = m.twoside;
+            k.culling = m.culling;
+            k.ccw = m.ccw;
+            k.polygonoffset = m.polygonoffset;
+            k.solidshape = m.solidshape;
+            auto res = groups.emplace(k, int(instGroups.size()));
+            if (res.second)
+                instGroups.emplace_back();
+            instGroups[res.first->second].members.push_back(i);
+            instGroupOf[i] = res.first->second;
+        }
+        // Singletons gain nothing; keep them on the per-draw path.
+        for (auto &g : instGroups) {
+            if (g.members.size() < 2) {
+                for (int i : g.members)
+                    instGroupOf[i] = -1;
+                g.members.clear();
+            }
+        }
+        while (!instGroups.empty() && instGroups.back().members.empty())
+            instGroups.pop_back();
+        if (getenv("FC_BGFX_DEBUG_FEED")) {
+            size_t n = 0, draws = 0;
+            for (const auto &g : instGroups) {
+                if (!g.members.empty()) {
+                    ++n;
+                    draws += g.members.size();
+                }
+            }
+            fprintf(stderr,
+                    "bgfx feed instancing: %zu groups covering %zu of %zu"
+                    " draws\n", n, draws, scene.size());
+        }
+    }
+
     Render::Background background;
     std::map<int, Render::DrawCallList> selections;
     Render::DrawCallList highlight;
@@ -5191,6 +5473,7 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
 {
     dumpFeed("scene", 0, draws);
     pimpl->scene = std::move(draws);
+    pimpl->buildInstanceGroups();
     pimpl->sceneDirty = true;
     pimpl->updateBBox();
 }
