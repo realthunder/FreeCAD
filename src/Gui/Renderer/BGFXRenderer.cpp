@@ -4729,6 +4729,68 @@ public:
         view->submitBackground(background);
         const float *viewMat = reinterpret_cast<const float *>(viewMatrix);
 
+        // Frustum culling: world-space clip planes extracted from the
+        // camera view-projection (Gribb-Hartmann; the fed matrices follow
+        // Coin's GL clip conventions). A scene draw whose world bounds
+        // lie fully outside any plane skips its color/water/prepass
+        // submits below. Shadow casters are exempt — off-screen geometry
+        // still casts into the view — as are autozoom draws (their model
+        // matrix rebuilds per frame, so the fed bounds are stale) and
+        // draws without bounds. Hidden-line frames skip culling like
+        // instancing does (the outline passes rework the fill submits).
+        static const bool noCulling =
+            getenv("FC_BGFX_NO_CULLING") != nullptr;
+        std::vector<uint8_t> sceneCulled;
+        if (!noCulling && !hlconfig.show && !scene.empty()) {
+            float vp[16];
+            bx::mtxMul(vp, viewMat,
+                       reinterpret_cast<const float *>(projMatrix));
+            // Row-vector convention (v' = v * M): clip component i is
+            // dot(v, column i); plane k folds column 3 with the column
+            // of its axis. GL clip volume, so the near plane is w + z.
+            float planes[6][4];
+            for (int k = 0; k < 6; ++k) {
+                int axis = k >> 1;
+                float sign = (k & 1) ? -1.0f : 1.0f;
+                for (int r = 0; r < 4; ++r)
+                    planes[k][r] = vp[r * 4 + 3] + sign * vp[r * 4 + axis];
+            }
+            sceneCulled.assign(scene.size(), 0);
+            size_t nculled = 0;
+            for (size_t i = 0; i < scene.size(); ++i) {
+                const auto &d = scene[i];
+                if (d.bboxMin[0] > d.bboxMax[0]
+                        || !d.material.autozoom.empty())
+                    continue;
+                for (const auto &pl : planes) {
+                    // Positive-vertex test: the bbox corner farthest
+                    // along the plane normal decides containment.
+                    float dist = pl[3]
+                        + pl[0] * (pl[0] >= 0.0f ? d.bboxMax[0]
+                                                 : d.bboxMin[0])
+                        + pl[1] * (pl[1] >= 0.0f ? d.bboxMax[1]
+                                                 : d.bboxMin[1])
+                        + pl[2] * (pl[2] >= 0.0f ? d.bboxMax[2]
+                                                 : d.bboxMin[2]);
+                    if (dist < 0.0f) {
+                        sceneCulled[i] = 1;
+                        ++nculled;
+                        break;
+                    }
+                }
+            }
+            if (getenv("FC_BGFX_DEBUG_CULL"))
+                fprintf(stderr, "bgfx cull: %zu of %zu scene draws\n",
+                        nculled, scene.size());
+        }
+        // Scene draws only — the argument must reference into `scene`.
+        auto culled = [&](const Render::DrawCall &d) {
+            if (sceneCulled.empty())
+                return false;
+            size_t idx = size_t(&d - scene.data());
+            return idx < sceneCulled.size() && sceneCulled[idx] != 0;
+        };
+
         auto isTriangle = [](const Render::DrawCall &d) {
             return d.material.type == Render::Material::Triangle;
         };
@@ -4943,9 +5005,10 @@ public:
         // pass, carrying {model matrix, diffuse} per instance. The
         // depth-only side submissions batch too, over the same instance
         // layout: the SSAO/volumetric prepass with the visible members,
-        // the shadow caster pass with visible AND selection-hidden
-        // members (a hidden scene draw still casts — its geometry
-        // re-renders in the on-top pass). Hidden-line frames stay
+        // the shadow caster pass with visible, frustum-culled AND
+        // selection-hidden members (a hidden scene draw still casts —
+        // its geometry re-renders in the on-top pass). Hidden-line
+        // frames stay
         // per-draw (the stencil outline pass reworks the fill submits
         // wholesale).
         static const bool noInstancing =
@@ -4959,7 +5022,7 @@ public:
             prepassInstanced.assign(scene.size(), 0);
             casterInstanced.assign(scene.size(), 0);
             std::vector<float> instData;
-            std::vector<int> vis, hidden;
+            std::vector<int> vis, visOut, hidden;
             auto appendInstance = [&](int i) {
                 const auto &d = scene[i];
                 if (d.identity) {
@@ -4980,10 +5043,13 @@ public:
                 if (group.members.size() < 2)
                     continue;
                 vis.clear();
+                visOut.clear();
                 hidden.clear();
                 for (int i : group.members) {
                     if (isHidden(scene[i]))
                         hidden.push_back(i);
+                    else if (culled(scene[i]))
+                        visOut.push_back(i);
                     else
                         vis.push_back(i);
                 }
@@ -5006,16 +5072,20 @@ public:
                             prepassInstanced[i] = 1;
                     }
                 }
-                // Casters append the hidden members after the visible
-                // ones — the instance order does not matter for a depth
-                // pass. Group members share the material bar the
+                // Casters append the frustum-culled and hidden members
+                // after the visible ones — off-screen geometry still
+                // casts, and the instance order does not matter for a
+                // depth pass. Group members share the material bar the
                 // diffuse, so one shadowstyle check covers them all.
                 if (shadowRender
                         && (scene[group.members[0]].material.shadowstyle
                             & 1)) {
+                    for (int i : visOut)
+                        appendInstance(i);
                     for (int i : hidden)
                         appendInstance(i);
-                    uint32_t total = uint32_t(vis.size() + hidden.size());
+                    uint32_t total = uint32_t(vis.size() + visOut.size()
+                                              + hidden.size());
                     if (total >= 2
                             && view->submitShadowCasterInstanced(
                                 scene[group.members[0]], instData.data(),
@@ -5060,7 +5130,10 @@ public:
             }
             if (hideFill(draw) || hidePoints(draw))
                 continue;
-            if (!instancedThisFrame(drawIdx))
+            // A frustum-culled draw skips its color/water/prepass
+            // submits but still casts its shadow below.
+            bool cullDraw = culled(draw);
+            if (!cullDraw && !instancedThisFrame(drawIdx))
                 view->submit(draw, viewMat, BGFXView::PassNormal,
                              sceneNoSeam(draw));
             // Water body draws bound the medium instead of acting as
@@ -5070,7 +5143,7 @@ public:
             // casting so light and shafts enter the water.
             bool isWater = waterActive && isTriangle(draw)
                 && draw.material.water;
-            if (isWater) {
+            if (isWater && !cullDraw) {
                 view->submitWaterDepth(draw, false);
                 view->submitWaterDepth(draw, true);
             }
@@ -5080,7 +5153,8 @@ public:
             // transparent bucket). The volumetric raymarch shares it as
             // its ray-end depth source.
             if (prepassActive && isTriangle(draw) && !isTransp(draw)
-                    && !isWater && !prepassInstancedThisFrame(drawIdx))
+                    && !isWater && !cullDraw
+                    && !prepassInstancedThisFrame(drawIdx))
                 view->submitPrepass(draw);
             // Shadow casters — transparent geometry casts like an opaque
             // one, matching Coin's SoShadowGroup (its depth-map pass
@@ -5090,7 +5164,8 @@ public:
                     && (draw.material.shadowstyle & 1) && !isWater
                     && !casterInstancedThisFrame(drawIdx))
                 view->submitShadowCaster(draw);
-            submitSceneOutline(draw);
+            if (!cullDraw)
+                submitSceneOutline(draw);
         }
         if (shadowBlurActive)
             view->submitShadowBlur(lightconf.smoothBorder);
@@ -5101,23 +5176,29 @@ public:
         for (const auto &draw : scene) {
             if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
                     && !isHidden(draw) && !hideFill(draw)) {
-                view->submit(draw, viewMat);
+                bool cullDraw = culled(draw);
+                if (!cullDraw)
+                    view->submit(draw, viewMat);
                 // On-top geometry keeps casting its shadow (the view
                 // order still lands these in the caster pass).
                 if (shadowRender && (draw.material.shadowstyle & 1)
                         && !(waterActive && draw.material.water))
                     view->submitShadowCaster(draw);
-                submitSceneOutline(draw);
+                if (!cullDraw)
+                    submitSceneOutline(draw);
             }
         }
         for (const auto &draw : scene) {
             if (draw.material.ontop && isTriangle(draw) && isTransp(draw)
                     && !isHidden(draw) && !hideFill(draw)) {
-                view->submit(draw, viewMat);
+                bool cullDraw = culled(draw);
+                if (!cullDraw)
+                    view->submit(draw, viewMat);
                 if (shadowRender && (draw.material.shadowstyle & 1)
                         && !(waterActive && draw.material.water))
                     view->submitShadowCaster(draw);
-                submitSceneOutline(draw);
+                if (!cullDraw)
+                    submitSceneOutline(draw);
             }
         }
 
@@ -5187,7 +5268,8 @@ public:
             if (sceneTwoPass) {
                 for (const auto &draw : scene) {
                     if (draw.material.ontop && isTriangle(draw)
-                            && !isHidden(draw) && !hideFill(draw))
+                            && !isHidden(draw) && !hideFill(draw)
+                            && !culled(draw))
                         view->submit(draw, viewMat, BGFXView::PassDepthOnly);
                 }
             }
@@ -5216,7 +5298,8 @@ public:
                              int(BGFXView::PassLineSolid)}) {
                 for (const auto &draw : scene) {
                     if (draw.material.ontop && !isTriangle(draw)
-                            && !isHidden(draw) && !hidePoints(draw))
+                            && !isHidden(draw) && !hidePoints(draw)
+                            && !culled(draw))
                         view->submit(draw, viewMat, pass,
                                      sceneNoSeam(draw));
                 }
@@ -5239,7 +5322,8 @@ public:
             // No fills on top: scene on-top lines draw in a single pass.
             for (const auto &draw : scene) {
                 if (draw.material.ontop && !isTriangle(draw)
-                        && !isHidden(draw) && !hidePoints(draw))
+                        && !isHidden(draw) && !hidePoints(draw)
+                        && !culled(draw))
                     view->submit(draw, viewMat, BGFXView::PassNormal,
                                  sceneNoSeam(draw));
             }
