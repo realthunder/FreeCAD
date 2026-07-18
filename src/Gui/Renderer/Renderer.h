@@ -421,6 +421,17 @@ struct Material {
     /// are ignored.
     std::shared_ptr<const TextureImage> bumpmap;
 
+    /// Emissive/occlusion material maps of a triangle draw
+    /// (SoFCRenderTexture, typically fed from ViewProvider
+    /// Render_EmissiveMap/Render_OcclusionMap properties). The emissive
+    /// map's rgb adds to the lit (and textured) fragment color; the
+    /// occlusion map's first channel multiplies the ambient/environment
+    /// light contribution. Sampled with MeshData::texCoords like the
+    /// bump map (same white-stand-in caveat); wrap fields apply,
+    /// model/blendColor are ignored.
+    std::shared_ptr<const TextureImage> emissivemap;
+    std::shared_ptr<const TextureImage> occlusionmap;
+
     /// Autozoom transforms (SoAutoZoomTranslation): the draw's model
     /// matrix is rebuilt every frame by replaying these entries like the
     /// GL renderer's setupMatrix — accumulate each entry's matrix (or

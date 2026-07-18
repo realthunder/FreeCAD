@@ -242,6 +242,7 @@ public:
   static SoCallbackAction::Response postTexture(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postBumpMap(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postRenderMaterial(void *, SoCallbackAction *action, const SoNode * node);
+  static SoCallbackAction::Response postRenderTexture(void *, SoCallbackAction *action, const SoNode * node);
   static void addTriangle(void *,
                           SoCallbackAction * action,
                           const SoPrimitiveVertex * v0,
@@ -508,6 +509,10 @@ void SoFCRenderCacheManagerP::initAction()
   // SoFCRenderMaterial has no Coin element; captured directly for the
   // external backends (per-object PBR parameters).
   this->action->addPostCallback(Gui::SoFCRenderMaterial::getClassTypeId(), &postRenderMaterial, this);
+  // SoFCRenderTexture: emissive/occlusion material maps, external
+  // backends only (a plain SoNode, so Coin's texture handling and the
+  // unit-0 texture capture above never see it).
+  this->action->addPostCallback(Gui::SoFCRenderTexture::getClassTypeId(), &postRenderTexture, this);
   this->action->addPostCallback(SoResetTransform::getClassTypeId(), &postResetTransform, this);
   this->action->addPostCallback(SoTextureMatrixTransform::getClassTypeId(), &postTextureTransform, this);
   this->action->addPostCallback(SoTexture2Transform::getClassTypeId(), &postTextureTransform, this);
@@ -1392,6 +1397,20 @@ SoFCRenderCacheManagerP::postRenderMaterial(void *userdata,
 
   assert(node);
   self->stack.back()->addRenderMaterial(action->getState(), node);
+  return SoCallbackAction::CONTINUE;
+}
+
+SoCallbackAction::Response
+SoFCRenderCacheManagerP::postRenderTexture(void *userdata,
+                                           SoCallbackAction *action,
+                                           const SoNode * node)
+{
+  SoFCRenderCacheManagerP *self = reinterpret_cast<SoFCRenderCacheManagerP*>(userdata);
+  if (self->stack.empty())
+      return SoCallbackAction::CONTINUE;
+
+  assert(node);
+  self->stack.back()->addRenderTexture(action->getState(), node);
   return SoCallbackAction::CONTINUE;
 }
 

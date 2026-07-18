@@ -24,7 +24,9 @@
 #define GUI_SOFCRENDERMATERIAL_H
 
 #include <Inventor/fields/SoSFBool.h>
+#include <Inventor/fields/SoSFEnum.h>
 #include <Inventor/fields/SoSFFloat.h>
+#include <Inventor/fields/SoSFImage.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoSubNode.h>
 #include <FCGlobal.h>
@@ -60,6 +62,44 @@ public:
 
 protected:
     ~SoFCRenderMaterial() override = default;
+};
+
+/// Render-engine-only material texture map (emissive/occlusion) of the
+/// shapes that follow in the scene graph. Like SoFCRenderMaterial the
+/// node has no effect on Coin's own GL rendering — it derives straight
+/// from SoNode (deriving from SoTexture2 would feed Coin's texture
+/// element and the manager's unit-0 texture capture); the mode-3 render
+/// cache traversal captures it into the per-draw material of the
+/// external render backends, which sample it with the mesh texture
+/// coordinates (an enabled color texture unit is what makes shapes
+/// generate them — a white stand-in texture accompanies a lone map).
+class GuiExport SoFCRenderTexture : public SoNode {
+    using inherited = SoNode;
+
+    SO_NODE_HEADER(SoFCRenderTexture);
+
+public:
+    static void initClass();
+    SoFCRenderTexture();
+
+    enum Slot {
+        /// rgb added to the lit (and textured) fragment color
+        EMISSIVE,
+        /// r multiplies the ambient/environment light contribution
+        OCCLUSION,
+    };
+    enum Wrap {
+        REPEAT,
+        CLAMP,
+    };
+
+    SoSFEnum slot;    ///< which material map this image feeds
+    SoSFImage image;  ///< the map pixels (RGB8/RGBA8, bottom-up)
+    SoSFEnum wrapS;
+    SoSFEnum wrapT;
+
+protected:
+    ~SoFCRenderTexture() override = default;
 };
 
 } // namespace Gui

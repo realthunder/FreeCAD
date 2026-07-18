@@ -275,6 +275,11 @@ public:
     /// which is wrong for a bump map node (only external backends
     /// consume this).
     TextureMap bumpmaps;
+    /// Unit-0 emissive/occlusion material maps (SoFCRenderTexture) of
+    /// triangle draws, kept out of `textures` like the bump map (only
+    /// external backends consume these).
+    TextureMap emissivemaps;
+    TextureMap occlusionmaps;
     NodeInfoArray lights;
     NodeInfoArray clippers;
     NodeInfoArray autozoom;
@@ -319,6 +324,10 @@ public:
         if (textures > other.textures) return false;
         if (bumpmaps < other.bumpmaps) return true;
         if (bumpmaps > other.bumpmaps) return false;
+        if (emissivemaps < other.emissivemaps) return true;
+        if (emissivemaps > other.emissivemaps) return false;
+        if (occlusionmaps < other.occlusionmaps) return true;
+        if (occlusionmaps > other.occlusionmaps) return false;
         if (shadowstyle < other.shadowstyle) return true;
         if (shadowstyle > other.shadowstyle) return false;
         if (diffuse < other.diffuse) return true;
@@ -511,6 +520,7 @@ public:
   void addBumpMap(SoState * state, const SoNode * bumpmap);
 
   void addRenderMaterial(SoState * state, const SoNode * material);
+  void addRenderTexture(SoState * state, const SoNode * texture);
 
   void addClipPlane(SoState * state, const SoClipPlane * light);
 

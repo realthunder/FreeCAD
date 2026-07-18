@@ -43,6 +43,7 @@
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/nodes/SoClipPlane.h>
 #include <Inventor/nodes/SoBumpMap.h>
+#include "SoFCRenderMaterial.h"
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoSpotLight.h>
 #include <Inventor/annex/FXViz/nodes/SoShadowDirectionalLight.h>
@@ -221,6 +222,42 @@ translateBumpMap(const SoFCRenderCache::TextureInfo & info,
     tex->wrapS = node->wrapS.getValue() == SoBumpMap::CLAMP
         ? Render::TextureImage::Clamp : Render::TextureImage::Repeat;
     tex->wrapT = node->wrapT.getValue() == SoBumpMap::CLAMP
+        ? Render::TextureImage::Clamp : Render::TextureImage::Repeat;
+    res = tex;
+    return res;
+}
+
+std::shared_ptr<const Render::TextureImage>
+translateRenderTexture(const SoFCRenderCache::TextureInfo & info,
+                       TextureImageMap & texmap)
+{
+    if (!info.texture
+            || !info.texture->isOfType(
+                    Gui::SoFCRenderTexture::getClassTypeId()))
+        return nullptr;
+
+    auto & res = texmap[info.texture.get()];
+    if (res)
+        return res;
+
+    auto node = static_cast<const Gui::SoFCRenderTexture *>(
+            info.texture.get());
+    SbVec2s size;
+    int nc = 0;
+    const unsigned char * pixels = node->image.getValue(size, nc);
+    if (!pixels || size[0] <= 0 || size[1] <= 0 || nc <= 0 || nc > 4)
+        return nullptr;
+
+    auto tex = std::make_shared<Render::TextureImage>();
+    tex->textureId = node->getNodeId();
+    tex->width = size[0];
+    tex->height = size[1];
+    tex->numComponents = nc;
+    tex->pixels.assign(pixels,
+                       pixels + size_t(size[0]) * size[1] * nc);
+    tex->wrapS = node->wrapS.getValue() == Gui::SoFCRenderTexture::CLAMP
+        ? Render::TextureImage::Clamp : Render::TextureImage::Repeat;
+    tex->wrapT = node->wrapT.getValue() == Gui::SoFCRenderTexture::CLAMP
         ? Render::TextureImage::Clamp : Render::TextureImage::Repeat;
     res = tex;
     return res;
@@ -437,6 +474,17 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     if (res.type == Render::Material::Triangle && m.bumpmaps.getNum()) {
         if (const auto * info = m.bumpmaps.get(0))
             res.bumpmap = translateBumpMap(*info, texmap);
+    }
+
+    // Emissive/occlusion material maps (SoFCRenderTexture capture),
+    // unit 0 only like the maps above.
+    if (res.type == Render::Material::Triangle && m.emissivemaps.getNum()) {
+        if (const auto * info = m.emissivemaps.get(0))
+            res.emissivemap = translateRenderTexture(*info, texmap);
+    }
+    if (res.type == Render::Material::Triangle && m.occlusionmaps.getNum()) {
+        if (const auto * info = m.occlusionmaps.get(0))
+            res.occlusionmap = translateRenderTexture(*info, texmap);
     }
 
     // Autozoom transforms: mirror the material's node list; the backend

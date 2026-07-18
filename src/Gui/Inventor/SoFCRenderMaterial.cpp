@@ -41,3 +41,28 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_ADD_FIELD(water, (false));
     SO_NODE_ADD_FIELD(waterDensity, (0.0f));
 }
+
+SO_NODE_SOURCE(SoFCRenderTexture)
+
+void SoFCRenderTexture::initClass()
+{
+    SO_NODE_INIT_CLASS(SoFCRenderTexture, SoNode, "Node");
+}
+
+SoFCRenderTexture::SoFCRenderTexture()
+{
+    SO_NODE_CONSTRUCTOR(SoFCRenderTexture);
+    SO_NODE_ADD_FIELD(slot, (EMISSIVE));
+    SO_NODE_ADD_FIELD(image, (SbVec2s(0, 0), 0, nullptr));
+    SO_NODE_ADD_FIELD(wrapS, (REPEAT));
+    SO_NODE_ADD_FIELD(wrapT, (REPEAT));
+
+    SO_NODE_DEFINE_ENUM_VALUE(Slot, EMISSIVE);
+    SO_NODE_DEFINE_ENUM_VALUE(Slot, OCCLUSION);
+    SO_NODE_SET_SF_ENUM_TYPE(slot, Slot);
+
+    SO_NODE_DEFINE_ENUM_VALUE(Wrap, REPEAT);
+    SO_NODE_DEFINE_ENUM_VALUE(Wrap, CLAMP);
+    SO_NODE_SET_SF_ENUM_TYPE(wrapS, Wrap);
+    SO_NODE_SET_SF_ENUM_TYPE(wrapT, Wrap);
+}

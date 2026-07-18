@@ -1092,7 +1092,8 @@ public:
         for (auto uni : {&s_texNormalZ, &s_texAONoise, &s_texAO,
                          &u_aoParams, &u_aoKernel,
                          &s_texEnv, &u_pbrParams, &u_envSH,
-                         &s_texBump, &u_bumpParams}) {
+                         &s_texBump, &u_bumpParams,
+                         &s_texEmissive, &s_texOcclusion}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1404,6 +1405,13 @@ public:
                                         bgfx::UniformType::Sampler);
         u_bumpParams = bgfx::createUniform("u_bumpParams",
                                            bgfx::UniformType::Vec4);
+        // Emissive/occlusion material maps of the textured mesh programs
+        // (units 4/5; u_texParams.zw flag their presence, the white
+        // stand-in is never sampled).
+        s_texEmissive = bgfx::createUniform("s_texEmissive",
+                                            bgfx::UniformType::Sampler);
+        s_texOcclusion = bgfx::createUniform("s_texOcclusion",
+                                             bgfx::UniformType::Sampler);
 
         // Shadows: variance moments rendered from the scene light of the
         // Shadow draw style (unit 3 of the mesh programs; the white
@@ -2888,13 +2896,19 @@ public:
         bool bumped = mat.type == Render::Material::Triangle
             && mat.bumpmap && mat.lighting && draw.mesh->texCoords
             && pass != PassDepthOnly;
+        // Emissive/occlusion material maps ride the textured programs
+        // too, with the same white unit-0 stand-in as a lone bump map.
+        bool mapped = mat.type == Render::Material::Triangle
+            && (mat.emissivemap || mat.occlusionmap)
+            && draw.mesh->texCoords && pass != PassDepthOnly;
         bool textured = (mat.type == Render::Material::Triangle
             && mat.texture && draw.mesh->texCoords
-            && pass != PassDepthOnly) || bumped;
+            && pass != PassDepthOnly) || bumped || mapped;
         if (textured) {
             mesh->ensureTexCoord(*draw.mesh);
             textured = bgfx::isValid(mesh->texcoord);
             bumped = bumped && textured;
+            mapped = mapped && textured;
         }
 
         // Line stipple: the hidden (dimmed) pass of on-top lines uses the
@@ -3141,7 +3155,8 @@ public:
             // u_texParams: x = texture environment (TextureImage::Model),
             // y = the source format carries alpha (GL's REPLACE keeps the
             // fragment alpha for alpha-less formats; the RGBA8 expansion
-            // hides that distinction from the sampler). The bump-only
+            // hides that distinction from the sampler), z = emissive map
+            // present, w = occlusion map present. The bump-only
             // stand-in modulates by opaque white.
             float texParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
             float blend[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -3154,6 +3169,10 @@ public:
                     ? 1.0f : 0.0f;
                 unpackColor(mat.texture->blendColor, blend);
             }
+            if (mapped && mat.emissivemap)
+                texParams[2] = 1.0f;
+            if (mapped && mat.occlusionmap)
+                texParams[3] = 1.0f;
             bgfx::setTexture(0, s_texColor, color);
             bgfx::setUniform(u_texParams, texParams);
             bgfx::setUniform(u_texBlendColor, blend);
@@ -3183,6 +3202,17 @@ public:
             }
             bgfx::setUniform(u_bumpParams, bumpParams);
             bgfx::setTexture(2, s_texBump, bump);
+
+            // Emissive/occlusion maps at units 4/5 (flagged in
+            // u_texParams.zw above; white stand-ins are never sampled).
+            bgfx::setTexture(4, s_texEmissive,
+                             texParams[2] > 0.5f
+                                 ? getTexture(*mat.emissivemap)->handle
+                                 : m_whiteTex);
+            bgfx::setTexture(5, s_texOcclusion,
+                             texParams[3] > 0.5f
+                                 ? getTexture(*mat.occlusionmap)->handle
+                                 : m_whiteTex);
         }
 
         if (patterned) {
@@ -3446,6 +3476,8 @@ public:
     float pbrEnvIntensity = 1.0f;
     bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_bumpParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texEmissive = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texOcclusion = BGFX_INVALID_HANDLE;
     float bumpScale = 1.0f;    // bump/normal map strength (BumpConfig)
     bool bumpParallax = true;  // parallax-occlusion map height maps
     // Variance shadow map of the Shadow draw style's scene light.
@@ -4985,7 +5017,8 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
                 "  type=%d part=%d range=%d+%d diffuse=%08x emissive=%08x"
                 " pvc=%d light=%d transp=%d ontop=%d dtest=%d dwrite=%d"
                 " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f lp=%08x/%08x"
-                " ol=%d lc=%08x tex=%d bump=%d uv=%d ss=%d\n",
+                " ol=%d lc=%08x tex=%d bump=%d em=%d occ=%d uv=%d"
+                " ss=%d\n",
                 m.type, d.partIndex, d.indexStart, d.indexCount,
                 m.diffuse, m.emissive, m.pervertexcolor, m.lighting,
                 m.transparent, m.ontop, m.depthtest, m.depthwrite,
@@ -4995,6 +5028,8 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
                 m.outline, m.linecolor,
                 m.texture ? m.texture->numComponents : 0,
                 m.bumpmap ? m.bumpmap->numComponents : 0,
+                m.emissivemap ? m.emissivemap->numComponents : 0,
+                m.occlusionmap ? m.occlusionmap->numComponents : 0,
                 d.mesh && d.mesh->texCoords ? 1 : 0,
                 m.shadowstyle);
         for (int i = 0; i < m.numclipplanes; ++i)

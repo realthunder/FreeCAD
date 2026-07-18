@@ -43,6 +43,7 @@ namespace Gui {
 class SoFCSelection;
 class SoFCBoundingBox;
 class SoFCRenderMaterial;
+class SoFCRenderTexture;
 class View3DInventorViewer;
 
 /**
@@ -121,9 +122,10 @@ protected:
     /// Sync the optional SoFCRenderMaterial node (render engine per-object
     /// PBR parameters) with the Render_* dynamic properties.
     void updateRenderMaterial();
-    /// Sync the optional SoTexture2/SoTexture2Transform/SoBumpMap nodes
-    /// with the Render_BaseColorTexture / Render_Texture* /
-    /// Render_NormalMap dynamic properties.
+    /// Sync the optional SoTexture2/SoTexture2Transform/SoBumpMap/
+    /// SoFCRenderTexture nodes with the Render_BaseColorTexture /
+    /// Render_Texture* / Render_NormalMap / Render_EmissiveMap /
+    /// Render_OcclusionMap dynamic properties.
     void updateRenderTexture();
     /// Sync the optional SoShadowStyle node with the Render_CastShadow /
     /// Render_ReceiveShadow dynamic properties.
@@ -137,6 +139,8 @@ protected:
     SoTexture2       * pcRenderTexture{nullptr};
     SoTexture2Transform * pcRenderTexTransform{nullptr};
     SoBumpMap        * pcRenderBumpMap{nullptr};
+    SoFCRenderTexture * pcRenderEmissiveMap{nullptr};
+    SoFCRenderTexture * pcRenderOcclusionMap{nullptr};
     SoShadowStyle    * pcRenderShadowStyle{nullptr};
 
 private:

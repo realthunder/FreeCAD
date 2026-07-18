@@ -156,6 +156,7 @@ void Gui::SoFCDB::init()
     SoDrawingGrid                   ::initClass();
     SoAutoZoomTranslation           ::initClass();
     SoFCRenderMaterial              ::initClass();
+    SoFCRenderTexture               ::initClass();
     MarkerBitmaps                   ::initClass();
     SoFCCSysDragger                 ::initClass();
     ClipDragger                     ::initClass();

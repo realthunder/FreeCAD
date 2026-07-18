@@ -332,6 +332,8 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->texturematrices.clear();
   this->textures.clear();
   this->bumpmaps.clear();
+  this->emissivemaps.clear();
+  this->occlusionmaps.clear();
   this->lights.clear();
   this->partialhighlight = 0;
   this->selectstyle = Material::Full;
@@ -818,6 +820,8 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
     res.overrideflags.set(Material::FLAG_NO_TEXTURE);
     res.textures.clear();
     res.bumpmaps.clear();
+    res.emissivemaps.clear();
+    res.occlusionmaps.clear();
     res.texturematrices.clear();
   } else {
     res.texturematrices.combine(parent.texturematrices);
@@ -836,6 +840,8 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
     }
     res.textures.add(parent.textures, false);
     res.bumpmaps.add(parent.bumpmaps, false);
+    res.emissivemaps.add(parent.emissivemaps, false);
+    res.occlusionmaps.add(parent.occlusionmaps, false);
   }
 
   res.lights = parent.lights;
@@ -1222,6 +1228,27 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
   PRIVATE(this)->material.roughness = material->roughness.getValue();
   PRIVATE(this)->material.water = material->water.getValue();
   PRIVATE(this)->material.waterdensity = material->waterDensity.getValue();
+}
+
+void
+SoFCRenderCache::addRenderTexture(SoState * state, const SoNode * node)
+{
+  PRIVATE(this)->checkState(state);
+
+  // SoFCRenderTexture has no Coin element either; the node routes into
+  // the material map its slot field selects (emissive/occlusion), kept
+  // out of `textures` like the bump map. Unit 0 like the other maps.
+  auto texture = static_cast<const Gui::SoFCRenderTexture *>(node);
+
+  TextureInfo info;
+  info.texture = const_cast<SoNode *>(node);
+  info.transparent = false;
+  info.identity = true;
+
+  if (texture->slot.getValue() == Gui::SoFCRenderTexture::OCCLUSION)
+    PRIVATE(this)->material.occlusionmaps.set(0, info);
+  else
+    PRIVATE(this)->material.emissivemaps.set(0, info);
 }
 
 void
@@ -2210,6 +2237,8 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
     bboxmaterial.overrideflags.set(Material::FLAG_NO_TEXTURE);
     bboxmaterial.textures.clear();
     bboxmaterial.bumpmaps.clear();
+    bboxmaterial.emissivemaps.clear();
+    bboxmaterial.occlusionmaps.clear();
     bboxmaterial.texturematrices.clear();
 
     res[bboxmaterial].emplace_back(cache, matrix, false, false, CacheKeyPtr());

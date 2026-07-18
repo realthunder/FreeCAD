@@ -139,6 +139,8 @@ RenderSettingsWidget::RenderSettingsWidget(
     };
     addFile(tr("Base color texture"), baseColorCheck, baseColorEdit);
     addFile(tr("Normal map"), normalMapCheck, normalMapEdit);
+    addFile(tr("Emissive map"), emissiveMapCheck, emissiveMapEdit);
+    addFile(tr("Occlusion map"), occlusionMapCheck, occlusionMapEdit);
 
     texScaleCheck = addOverride(tr("Texture scale"));
     texScaleX = addSpin(1, -1.0e4, 1.0e4, 0.1);
@@ -189,6 +191,8 @@ RenderSettingsWidget::RenderSettingsWidget(
     enables(waterCheck, {waterDensitySpin});
     enables(baseColorCheck, {baseColorEdit});
     enables(normalMapCheck, {normalMapEdit});
+    enables(emissiveMapCheck, {emissiveMapEdit});
+    enables(occlusionMapCheck, {occlusionMapEdit});
     enables(texScaleCheck, {texScaleX, texScaleY});
     enables(texOffsetCheck, {texOffsetX, texOffsetY});
     enables(texRotationCheck, {texRotationSpin});
@@ -234,6 +238,16 @@ void RenderSettingsWidget::load()
                 vp, "Render_NormalMap")) {
         normalMapCheck->setChecked(true);
         normalMapEdit->setText(QString::fromUtf8(prop->getValue()));
+    }
+    if (auto prop = getProp<App::PropertyFileIncluded>(
+                vp, "Render_EmissiveMap")) {
+        emissiveMapCheck->setChecked(true);
+        emissiveMapEdit->setText(QString::fromUtf8(prop->getValue()));
+    }
+    if (auto prop = getProp<App::PropertyFileIncluded>(
+                vp, "Render_OcclusionMap")) {
+        occlusionMapCheck->setChecked(true);
+        occlusionMapEdit->setText(QString::fromUtf8(prop->getValue()));
     }
     if (auto prop = getProp<App::PropertyVector>(
                 vp, "Render_TextureScale")) {
@@ -324,6 +338,13 @@ void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
     applyFile(normalMapCheck, normalMapEdit, "Render_NormalMap",
               "Tangent-space normal map or grayscale height map "
               "(embedded in the document)");
+    applyFile(emissiveMapCheck, emissiveMapEdit, "Render_EmissiveMap",
+              "Emissive map added to the lit color by the render "
+              "engine (embedded in the document)");
+    applyFile(occlusionMapCheck, occlusionMapEdit, "Render_OcclusionMap",
+              "Ambient occlusion map multiplying the ambient/"
+              "environment light of the render engine (embedded in "
+              "the document)");
 
     auto applyVector = [vp](QCheckBox *check, QDoubleSpinBox *x,
                             QDoubleSpinBox *y, const char *name,

@@ -127,6 +127,10 @@ ViewProviderGeometryObject::~ViewProviderGeometryObject()
         pcRenderTexTransform->unref();
     if (pcRenderBumpMap)
         pcRenderBumpMap->unref();
+    if (pcRenderEmissiveMap)
+        pcRenderEmissiveMap->unref();
+    if (pcRenderOcclusionMap)
+        pcRenderOcclusionMap->unref();
     if (pcRenderShadowStyle)
         pcRenderShadowStyle->unref();
     if(pcBoundingBox)
@@ -238,12 +242,16 @@ void ViewProviderGeometryObject::updateRenderTexture()
     };
     const char *color = fileProp("Render_BaseColorTexture");
     const char *bump = fileProp("Render_NormalMap");
+    const char *emissive = fileProp("Render_EmissiveMap");
+    const char *occlusion = fileProp("Render_OcclusionMap");
 
-    // Base color texture (unit-0 SoTexture2, modulate). When only a bump
-    // map is set, a 1x1 white stand-in still goes in: an enabled texture
-    // unit is what makes the shapes generate texture coordinates (both in
-    // Coin GL and in the render cache capture).
-    bool wantTexture = (color && color[0]) || (bump && bump[0]);
+    // Base color texture (unit-0 SoTexture2, modulate). When only a
+    // bump/emissive/occlusion map is set, a 1x1 white stand-in still
+    // goes in: an enabled texture unit is what makes the shapes generate
+    // texture coordinates (both in Coin GL and in the render cache
+    // capture).
+    bool wantTexture = (color && color[0]) || (bump && bump[0])
+        || (emissive && emissive[0]) || (occlusion && occlusion[0]);
     if (!wantTexture) {
         if (pcRenderTexture) {
             int idx = pcRoot->findChild(pcRenderTexture);
@@ -334,6 +342,34 @@ void ViewProviderGeometryObject::updateRenderTexture()
         }
         loadTextureImage(bump, pcRenderBumpMap->image);
     }
+
+    // Emissive/occlusion material maps (SoFCRenderTexture; only the
+    // external render backends draw them).
+    auto syncRenderTexture = [this](const char *path,
+                                    SoFCRenderTexture::Slot slot,
+                                    SoFCRenderTexture *&node) {
+        if (!(path && path[0])) {
+            if (node) {
+                int idx = pcRoot->findChild(node);
+                if (idx >= 0)
+                    pcRoot->removeChild(idx);
+                node->unref();
+                node = nullptr;
+            }
+            return;
+        }
+        if (!node) {
+            node = new SoFCRenderTexture;
+            node->ref();
+            node->slot = slot;
+            pcRoot->insertChild(node, 0);
+        }
+        loadTextureImage(path, node->image);
+    };
+    syncRenderTexture(emissive, SoFCRenderTexture::EMISSIVE,
+                      pcRenderEmissiveMap);
+    syncRenderTexture(occlusion, SoFCRenderTexture::OCCLUSION,
+                      pcRenderOcclusionMap);
 }
 
 void ViewProviderGeometryObject::updateRenderMaterial()
@@ -384,6 +420,8 @@ void ViewProviderGeometryObject::updateRenderProperty(const char *name)
 {
     if (strcmp(name, "Render_BaseColorTexture") == 0
             || strcmp(name, "Render_NormalMap") == 0
+            || strcmp(name, "Render_EmissiveMap") == 0
+            || strcmp(name, "Render_OcclusionMap") == 0
             || strncmp(name, "Render_Texture", 14) == 0)
         updateRenderTexture();
     else if (strcmp(name, "Render_CastShadow") == 0

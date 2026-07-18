@@ -70,6 +70,10 @@ private:
     QLineEdit *baseColorEdit = nullptr;
     QCheckBox *normalMapCheck = nullptr;
     QLineEdit *normalMapEdit = nullptr;
+    QCheckBox *emissiveMapCheck = nullptr;
+    QLineEdit *emissiveMapEdit = nullptr;
+    QCheckBox *occlusionMapCheck = nullptr;
+    QLineEdit *occlusionMapEdit = nullptr;
     QCheckBox *texScaleCheck = nullptr;
     QDoubleSpinBox *texScaleX = nullptr;
     QDoubleSpinBox *texScaleY = nullptr;

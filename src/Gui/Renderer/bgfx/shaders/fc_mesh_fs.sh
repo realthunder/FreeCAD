@@ -9,6 +9,8 @@
  * u_matEmissive : rgb emissive add
  * u_matSpecular : rgb specular, w = shininess (0..1 Coin convention)
  * u_params      : x = per-vertex color, y = lighting on, z = two-sided
+ * u_texParams   : x = texture environment, y = source carries alpha,
+ *                 z = emissive map on, w = occlusion map on
  * u_pbrParams   : x = PBR branch on, y = metallic, z = roughness,
  *                 w = environment intensity
  * u_envSH       : irradiance spherical harmonics of the environment,
@@ -65,6 +67,12 @@ uniform vec4 u_texBlendColor;
 // trick) — no vertex tangents, any UV source works.
 SAMPLER2D(s_texBump, 2);
 uniform vec4 u_bumpParams;
+// Emissive/occlusion material maps (SoFCRenderTexture; the mesh must
+// carry texcoords like bump mapping). The emissive rgb adds to the lit
+// and textured color; the occlusion first channel multiplies the
+// ambient/environment contribution (glTF semantics).
+SAMPLER2D(s_texEmissive, 4);
+SAMPLER2D(s_texOcclusion, 5);
 #endif
 
 void main()
@@ -161,6 +169,16 @@ void main()
 		n = normalize((T * nts.x + B * nts.y) * invmax
 		              + n * nts.z);
 	}
+#endif
+
+	// Ambient/environment occlusion factor of the material's occlusion
+	// map: indirect light only (glTF semantics) — the constant ambient
+	// term of the fixed-function paths and the IBL of the PBR path;
+	// direct (head/scene) light stays untouched.
+	float occ = 1.0;
+#ifdef TEXTURE
+	if (u_texParams.w > 0.5)
+		occ = texture2D(s_texOcclusion, uv).x;
 #endif
 
 	// Variance shadow map factor of the scene light (Chebyshev upper
@@ -311,7 +329,7 @@ void main()
 			vec2 ab = vec2(-1.04, 1.04) * a004 + r4.zw;
 			color = (kd * max(irr, vec3_splat(0.0))
 				+ pref * (f0 * ab.x + vec3_splat(ab.y)))
-				* u_pbrParams.w + direct;
+				* (u_pbrParams.w * occ) + direct;
 		}
 		else if (u_lightDir.w > 0.5)
 		{
@@ -340,7 +358,7 @@ void main()
 			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
 			float hspec = pow(max(abs(n.z), 0.0), shininess);
 
-			color = base.rgb * (vec3_splat(0.2 + 0.8 * hdl)
+			color = base.rgb * (vec3_splat(0.2 * occ + 0.8 * hdl)
 					+ u_lightColor.rgb * (ndl * shadow))
 				+ u_matSpecular.rgb * (hspec * 0.75)
 				+ u_matSpecular.rgb * u_lightColor.rgb
@@ -358,7 +376,7 @@ void main()
 			float shininess = max(u_matSpecular.w * 128.0, 1.0);
 			float spec = pow(max(abs(n.z), 0.0), shininess);
 
-			color = base.rgb * (0.2 + 0.8 * ndl)
+			color = base.rgb * (0.2 * occ + 0.8 * ndl)
 				+ u_matSpecular.rgb * (spec * 0.75);
 		}
 	}
@@ -385,6 +403,11 @@ void main()
 		if (u_texParams.y > 0.5)
 			alpha = texel.a;
 	}
+
+	// Emissive map: added after the texture environment so the base
+	// color texture does not modulate the glow (glTF semantics).
+	if (u_texParams.z > 0.5)
+		color += texture2D(s_texEmissive, uv).rgb;
 #endif
 
 #ifdef OIT
