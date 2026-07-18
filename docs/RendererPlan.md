@@ -669,8 +669,20 @@ independent of each other; item 4 builds on item 3's property model.
    pipeline — Part shapes sample a constant corner texel (Coin's
    default texgen never runs for the Brep face sets, in plain Coin GL
    too). The map slots become fully useful with the UV-preserving glTF
-   import (item 4); a bbox-based default-UV generator for B-Rep
-   tessellation is a possible follow-up. *glTF wiring done (2026-07)*: the item-4 import/export round trip now carries EmissiveTexture/OcclusionTexture into/out of these properties (emissiveFactor set to 1 beside an exported emissive texture — the glTF default 0 would cancel it).
+   import (item 4); ~~a bbox-based default-UV generator for B-Rep
+   tessellation is a possible follow-up~~ *default-UV generator done
+   (2026-07)*: `ViewProviderPartExt::updateVisual` now fills the
+   texcoord node for every tessellation node — each regular B-Rep face
+   projects along the dominant axis of its accumulated normal onto the
+   shape bounding box (box mapping), normalized by the largest box
+   dimension for a uniform texel scale across faces; authored glTF UVs
+   keep priority, closed surfaces whose normals cancel fall back to the
+   z axis. Feeds plain Coin, the mode-3 GL renderer and bgfx alike (the
+   GPU caches still only capture texcoords while a texture unit is
+   enabled). Verified: untextured scenes bit-unchanged (0 px, both
+   renderers); a checker base color tiles identically across all three
+   modes on box + cylinder; the PBR map slots now vary across plain
+   Part faces. *glTF wiring done (2026-07)*: the item-4 import/export round trip now carries EmissiveTexture/OcclusionTexture into/out of these properties (emissiveFactor set to 1 beside an exported emissive texture — the glTF default 0 would cancel it).
    *Metallic-roughness map slot done (2026-07)*: `Render_MetallicRoughnessMap`
    completes the material map set through the same `SoFCRenderTexture`
    route (new `METALLIC_ROUGHNESS` slot → `Material::metallicroughnessmaps`
