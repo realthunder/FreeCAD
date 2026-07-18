@@ -895,13 +895,38 @@ independent of each other; item 4 builds on item 3's property model.
   base) instanced vs flattened bit-identical, incl. whole-object
   selection; transitions divergent↔uniform land pixel-exact on the
   target state; GL stays flattened; backend feed shows 2 instanced
-  groups covering the 6 face draws (base 4 + variant 2). Next phase
-  (user-agreed): **(C)** separate color vertex stream in cache/backend
-  so variants share position/normal/index GPU buffers (texcoords
-  already ride a second stream), plus forced UV capture for shared
-  groups (today a shared cache built under an untextured user leaves a
-  textured sharer without UVs). Per-instance sub-element highlight
-  (path-keyed contexts) and line/point color variants remain open.
+  groups covering the 6 face draws (base 4 + variant 2).
+  *Color vertex stream + shared geometry buffers done (2026-07, phase
+  C).* The backend no longer interleaves per-vertex colors into the
+  geometry buffer: colors ride their own stream (per-cache when baked,
+  one shared all-white buffer otherwise), and every colorless buffer —
+  position+normal VB, triangle/line/point/no-seam index sets, outline
+  instance data, texcoord stream — lives in a geometry table keyed by
+  a CONTENT HASH of the arrays (FNV-1a, computed once per cache id).
+  Any caches with identical geometry share one set of GPU buffers
+  whatever their colors: the PartGui color variants (a variant costs
+  4 B/vertex), the render cache's recolored copies behind Link
+  element-color overrides, and caches split by texture state. Plus
+  **forced UV capture**: SoBrepFaceSet::forceTexCoords (set on the
+  instance table's shared facesets + variants) makes
+  generatePrimitives supply explicit unit-0 UVs and the vertex cache
+  capture them without an enabled texture unit — a shared cache built
+  by an untextured user now serves textured sharers (Link-flattened
+  consumers), and same-tessellation caches hash together across
+  texture states. Verified: whole phase A+B matrix bit-identical
+  before/after the refactor (plain/variant/selection/transitions, and
+  vs flatten); feed shows the variant cache and the texture-split
+  cache sharing the base geometry hash; cross-object texture on a
+  shared tessellation renders the checker in instanced == flattened
+  behavior. Known deviations: instanced compounds tile default UVs at
+  LEAF scale (the shared tessellation cannot know its parent's bbox;
+  flatten uses the whole shape) — inherent to sharing; shadow frames
+  show a ~1k-px edge-line class vs flatten (per-instance model
+  matrices vs baked coords, binary at shadow-map texel boundaries —
+  invisible in plain shading, 0 px). Remaining: per-instance
+  sub-element highlight (path-keyed contexts), line/point color
+  variants, CPU-side array dedup across independently built variant
+  caches (GPU is shared; CPU arrays still per cache).
 - Frustum/occlusion culling, GPU-driven paths (bgfx ex.37/48) for very large
   assemblies.
 - WASM build of the renderer; progressive refinement (drop AA/AO during
