@@ -30,11 +30,11 @@ import PartGuiParams
 PartGuiParams.declare()
 ]]]*/
 
-// Auto generated code (Tools/params_utils.py:72)
+// Auto generated code (Tools/params_utils.py:82)
 #include <Base/Parameter.h>
 
 
-// Auto generated code (Tools/params_utils.py:78)
+// Auto generated code (Tools/params_utils.py:90)
 namespace PartGui {
 /** Convenient class to obtain Part/PartDesign visual related parameters
 
@@ -70,7 +70,7 @@ class PartGuiExport PartParams {
 public:
     static ParameterGrp::handle getHandle();
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter NormalsFromUVNodes
     static const bool & getNormalsFromUVNodes();
@@ -80,7 +80,7 @@ public:
     static const char *docNormalsFromUVNodes();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter TwoSideRendering
     static const bool & getTwoSideRendering();
@@ -90,7 +90,7 @@ public:
     static const char *docTwoSideRendering();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MinimumDeviation
     static const double & getMinimumDeviation();
@@ -101,7 +101,7 @@ public:
     static void onMinimumDeviationChanged();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MeshDeviation
     static const double & getMeshDeviation();
@@ -112,7 +112,7 @@ public:
     static void onMeshDeviationChanged();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MeshAngularDeflection
     static const double & getMeshAngularDeflection();
@@ -123,7 +123,7 @@ public:
     static void onMeshAngularDeflectionChanged();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MinimumAngularDeflection
     static const double & getMinimumAngularDeflection();
@@ -134,7 +134,7 @@ public:
     static void onMinimumAngularDeflectionChanged();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter OverrideTessellation
     static const bool & getOverrideTessellation();
@@ -145,7 +145,7 @@ public:
     static void onOverrideTessellationChanged();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MapFaceColor
     static const bool & getMapFaceColor();
@@ -155,7 +155,7 @@ public:
     static const char *docMapFaceColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MapLineColor
     static const bool & getMapLineColor();
@@ -165,7 +165,7 @@ public:
     static const char *docMapLineColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MapPointColor
     static const bool & getMapPointColor();
@@ -175,7 +175,7 @@ public:
     static const char *docMapPointColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter MapTransparency
     static const bool & getMapTransparency();
@@ -185,7 +185,7 @@ public:
     static const char *docMapTransparency();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AutoGridScale
     static const bool & getAutoGridScale();
@@ -195,7 +195,7 @@ public:
     static const char *docAutoGridScale();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewAddColor
     static const unsigned long & getPreviewAddColor();
@@ -205,7 +205,7 @@ public:
     static const char *docPreviewAddColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewSubColor
     static const unsigned long & getPreviewSubColor();
@@ -215,7 +215,7 @@ public:
     static const char *docPreviewSubColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewDressColor
     static const unsigned long & getPreviewDressColor();
@@ -225,7 +225,7 @@ public:
     static const char *docPreviewDressColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewIntersectColor
     static const unsigned long & getPreviewIntersectColor();
@@ -235,7 +235,7 @@ public:
     static const char *docPreviewIntersectColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewOnEdit
     static const bool & getPreviewOnEdit();
@@ -245,7 +245,7 @@ public:
     static const char *docPreviewOnEdit();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter PreviewWithTransparency
     static const bool & getPreviewWithTransparency();
@@ -255,7 +255,7 @@ public:
     static const char *docPreviewWithTransparency();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditOnTop
     static const bool & getEditOnTop();
@@ -265,7 +265,7 @@ public:
     static const char *docEditOnTop();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter EditRecomputeWait
     static const long & getEditRecomputeWait();
@@ -275,7 +275,7 @@ public:
     static const char *docEditRecomputeWait();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter AdjustCameraForNewFeature
     static const bool & getAdjustCameraForNewFeature();
@@ -285,7 +285,7 @@ public:
     static const char *docAdjustCameraForNewFeature();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter DefaultDatumColor
     static const unsigned long & getDefaultDatumColor();
@@ -295,7 +295,7 @@ public:
     static const char *docDefaultDatumColor();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RespectSystemDPI
     static const bool & getRespectSystemDPI();
@@ -306,7 +306,23 @@ public:
     static void onRespectSystemDPIChanged();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShapeInstancing
+    ///
+    /// Share the tessellation of repeated sub-shapes (same TopoDS_TShape)
+    /// inside a compound and render them as GPU instances. Only takes
+    /// effect when the renderer supports instanced draws; otherwise the
+    /// geometry is flattened as before.
+    static const bool & getShapeInstancing();
+    static const bool & defaultShapeInstancing();
+    static void removeShapeInstancing();
+    static void setShapeInstancing(const bool &v);
+    static const char *docShapeInstancing();
+    static void onShapeInstancingChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionPickThreshold
     static const long & getSelectionPickThreshold();
@@ -316,7 +332,7 @@ public:
     static const char *docSelectionPickThreshold();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionPickThreshold2
     static const long & getSelectionPickThreshold2();
@@ -326,7 +342,7 @@ public:
     static const char *docSelectionPickThreshold2();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:122)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter SelectionPickRTree
     static const bool & getSelectionPickRTree();
@@ -336,7 +352,7 @@ public:
     static const char *docSelectionPickRTree();
     //@}
 
-// Auto generated code (Tools/params_utils.py:150)
+// Auto generated code (Tools/params_utils.py:179)
 }; // class PartParams
 } // namespace PartGui
 //[[[end]]]

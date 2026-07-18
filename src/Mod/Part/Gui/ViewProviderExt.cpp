@@ -46,6 +46,7 @@
 # include <TopoDS_Edge.hxx>
 # include <TopoDS_Face.hxx>
 # include <TopoDS_Shape.hxx>
+# include <TopoDS_Iterator.hxx>
 # include <TopoDS_Vertex.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
 
@@ -63,6 +64,7 @@
 # include <Inventor/nodes/SoDrawStyle.h>
 # include <Inventor/nodes/SoMaterial.h>
 # include <Inventor/nodes/SoMaterialBinding.h>
+# include <Inventor/nodes/SoMatrixTransform.h>
 # include <Inventor/nodes/SoNormal.h>
 # include <Inventor/nodes/SoNormalBinding.h>
 # include <Inventor/nodes/SoPolygonOffset.h>
@@ -100,6 +102,8 @@
 #include <Gui/SoFCSelectionAction.h>
 #include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/ViewParams.h>
+#include <Gui/RenderParams.h>
+#include <Gui/Renderer/Renderer.h>
 #include <Mod/Part/App/Tools.h>
 
 #include "ViewProviderExt.h"
@@ -135,6 +139,90 @@ public:
     ViewProviderPartExt *vp = nullptr;
 };
 
+void initShapeInstancingGateObserver();  // PartParams.cpp
+
+/// Key of one shared tessellation in the global instance-geometry table:
+/// the underlying TShape with its orientation (a reversed occurrence winds
+/// differently) and the quantized tessellation parameters (objects with
+/// different deviation settings must not fight over one mesh).
+struct InstGeomKey {
+    const void *tshape = nullptr;
+    int orientation = 0;
+    int64_t deflection = 0;      ///< quantized linear deflection
+    int64_t angdeflection = 0;   ///< quantized angular deflection
+    bool operator<(const InstGeomKey &o) const {
+        return std::tie(tshape, orientation, deflection, angdeflection)
+            < std::tie(o.tshape, o.orientation, o.deflection, o.angdeflection);
+    }
+};
+
+/// One shared, immutable tessellation of a leaf sub-shape in its local
+/// frame: the face/edge/vertex subgraphs referenced by every instance
+/// separator (across objects — the table is global). Entries never mutate
+/// after build; a changed shape produces a new TShape and thus a new entry.
+struct InstGeometry {
+    Gui::CoinPtr<SoGroup> faceGroup;
+    Gui::CoinPtr<SoGroup> edgeGroup;
+    Gui::CoinPtr<SoGroup> vertexGroup;
+    // Owned by the groups above; kept for detail/element mapping.
+    SoBrepFaceSet *faceset = nullptr;
+    SoBrepEdgeSet *lineset = nullptr;
+    SoBrepPointSet *nodeset = nullptr;
+    int faceCount = 0;
+    int edgeCount = 0;
+    int vertexCount = 0;
+    int refcount = 0;
+};
+
+static std::map<InstGeomKey, InstGeometry> _InstGeomTable;
+
+/// The TShape-instanced representation of one view provider: which global
+/// geometry entries it references and, per placed instance, the wrapper
+/// separators plus the global element index bases (global FaceN/EdgeN/
+/// VertexN = base + index local to the shared node).
+struct ShapeInstanceRep {
+    struct Instance {
+        const InstGeometry *geom = nullptr;
+        Gui::CoinPtr<SoSeparator> faceSep;
+        Gui::CoinPtr<SoSeparator> edgeSep;
+        Gui::CoinPtr<SoSeparator> vertexSep;
+        int faceBase = 0;
+        int edgeBase = 0;
+        int vertexBase = 0;
+    };
+    std::vector<Instance> instances;
+    std::vector<InstGeomKey> keys;   ///< table refs to release
+    /// any of an instance's three wrapper separators -> instance index
+    std::unordered_map<const SoNode *, int> sepToInstance;
+    /// a shared faceset/lineset/nodeset -> the geometry entry
+    std::unordered_map<const SoNode *, const InstGeometry *> nodeToGeom;
+
+    ~ShapeInstanceRep()
+    {
+        for (const auto &key : keys) {
+            auto it = _InstGeomTable.find(key);
+            if (it != _InstGeomTable.end() && --it->second.refcount <= 0)
+                _InstGeomTable.erase(it);
+        }
+    }
+};
+
+/// The environment part of the shape-instancing gate: the feature param,
+/// a backend renderer selected (plain Coin/GL always flattens — without
+/// GPU instancing many small shared nodes are a net loss), and the
+/// backend's published instancing capability.
+static bool shapeInstancingActive()
+{
+    if (!PartParams::getShapeInstancing())
+        return false;
+    if (Gui::ViewParams::getRenderCache() != 3)
+        return false;
+    const std::string &type = Gui::RenderParams::getType();
+    if (type.empty() || type == "Default")
+        return false;
+    return Render::Renderer::instancingHint();
+}
+
 } // namespace PartGui
 
 //**************************************************************************
@@ -158,6 +246,11 @@ ViewProviderPartExt::ViewProviderPartExt()
     UpdatingColor = false;
     VisualTouched = true;
     forceUpdateCount = 0;
+
+    // Rebuild Part visuals when a parameter of the shape-instancing gate
+    // flips (render cache mode / renderer type), so the representation
+    // switches between the instanced and the flattened build.
+    initShapeInstancingGateObserver();
 
     // get default line color
     unsigned long lcol = Gui::ViewParams::getDefaultShapeLineColor(); // dark grey (25,25,25)
@@ -570,6 +663,14 @@ void ViewProviderPartExt::attach(App::DocumentObject *pcFeat)
     pcFlatRoot->addChild(texcoords);
     pcFlatRoot->addChild(faceset);
 
+    // Roots of the TShape-instanced representation (updateVisual fills
+    // them and empties the flat nodes above when instancing is active).
+    pFaceInstRoot = new SoGroup;
+    pcFlatRoot->addChild(pFaceInstRoot);
+    pEdgeInstRoot = new SoGroup;
+    wireframe->addChild(pEdgeInstRoot);
+    pVertexInstRoot = new SoGroup;
+
     // edges and points
     pcWireframeRoot->addChild(wireframe);
     pcWireframeRoot->addChild(pcPointsRoot);
@@ -583,6 +684,7 @@ void ViewProviderPartExt::attach(App::DocumentObject *pcFeat)
     pcPointsRoot->addChild(pcPointMaterial);
     pcPointsRoot->addChild(pcPointStyle);
     pcPointsRoot->addChild(nodeset);
+    pcPointsRoot->addChild(pVertexInstRoot);
 
     // Move 'coords' before the switch
     pcRoot->insertChild(coords,pcRoot->findChild(pcModeSwitch));
@@ -664,6 +766,50 @@ bool ViewProviderPartExt::getElementPicked(const SoPickedPoint *pp, std::string 
 
     std::ostringstream ss;
     auto node = pp->getPath()->getTail();
+
+    // TShape-instanced representation: the tail is a shared face/edge/
+    // point set; the picked instance comes from its wrapper separator in
+    // the pick path, whose element bases turn the local index global.
+    if (instanced) {
+        auto git = instanced->nodeToGeom.find(node);
+        if (git != instanced->nodeToGeom.end()) {
+            const SoFullPath *path =
+                static_cast<const SoFullPath *>(pp->getPath());
+            const ShapeInstanceRep::Instance *inst = nullptr;
+            for (int i = path->getLength() - 1; i >= 0; --i) {
+                auto sit = instanced->sepToInstance.find(path->getNode(i));
+                if (sit != instanced->sepToInstance.end()) {
+                    inst = &instanced->instances[sit->second];
+                    break;
+                }
+            }
+            if (inst && inst->geom == git->second) {
+                const InstGeometry *geom = git->second;
+                if (node == geom->faceset
+                        && detail->isOfType(SoFaceDetail::getClassTypeId())) {
+                    int face = static_cast<const SoFaceDetail*>(detail)
+                                   ->getPartIndex() + 1;
+                    ss << "Face" << (inst->faceBase + face);
+                } else if (node == geom->lineset
+                        && detail->isOfType(SoLineDetail::getClassTypeId())) {
+                    int edge = static_cast<const SoLineDetail*>(detail)
+                                   ->getLineIndex() + 1;
+                    ss << "Edge" << (inst->edgeBase + edge);
+                } else if (node == geom->nodeset
+                        && detail->isOfType(SoPointDetail::getClassTypeId())) {
+                    int vertex = static_cast<const SoPointDetail*>(detail)
+                                     ->getCoordinateIndex()
+                        - geom->nodeset->startIndex.getValue() + 1;
+                    ss << "Vertex" << (inst->vertexBase + vertex);
+                } else
+                    return inherited::getElementPicked(pp, subname);
+                subname = ss.str();
+                return true;
+            }
+        }
+        // fall through: not one of ours (or no instance on the path)
+    }
+
     if (node == faceset && detail->isOfType(SoFaceDetail::getClassTypeId())) {
         const SoFaceDetail* face_detail = static_cast<const SoFaceDetail*>(detail);
         int face = face_detail->getPartIndex() + 1;
@@ -689,6 +835,12 @@ std::string ViewProviderPartExt::getElement(const SoDetail *detail) const
     // mostly the same function as getElementPick(), but cannot work with exotic
     // viewproviders that also group other nodes here.
     if (!detail)
+        return inherited::getElement(detail);
+
+    // TShape-instanced representation: a bare detail carries a local
+    // part index of an unknown instance — unresolvable without the pick
+    // path; getElementPicked is the reliable route.
+    if (instanced)
         return inherited::getElement(detail);
 
     std::ostringstream ss;
@@ -736,6 +888,14 @@ bool ViewProviderPartExt::getDetailPath(const char *subname,
         pPath->append(pcRoot);
         pPath->append(pcModeSwitch);
     }
+
+    // TShape-instanced representation: a sub-element detail would bind
+    // its context to the SHARED face/edge/point set and highlight that
+    // element in every instance, so degrade to whole-object highlight
+    // (the element names reported by picking stay exact). Per-instance
+    // highlight contexts are a follow-up.
+    if (instanced)
+        return true;
 
     const auto &shape = getShape();
     Data::IndexedName element = shape.getElementName(subelement).index;
@@ -805,6 +965,11 @@ bool ViewProviderPartExt::getDetailPath(const char *subname,
 
 SoDetail* ViewProviderPartExt::getDetail(const char* subelement) const
 {
+    // TShape-instanced representation: no per-instance details (see
+    // getDetailPath) — null causes whole-object treatment.
+    if (instanced)
+        return nullptr;
+
     const auto &shape = getShape();
     Data::IndexedName element = shape.getElementName(subelement).index;
     auto res = shape.shapeTypeAndIndex(element);
@@ -917,10 +1082,52 @@ std::vector<Base::Vector3d> ViewProviderPartExt::getSelectionShape(const char* /
     return {};
 }
 
+// Value-based divergence of an applied per-element color array — a
+// same-valued array is uniform whatever its length; only the final
+// values matter to the shared instanced representation.
+static bool colorsDivergent(const std::vector<App::Color> &colors)
+{
+    for (size_t i = 1; i < colors.size(); ++i) {
+        if (colors[i] != colors[0])
+            return true;
+    }
+    return false;
+}
+
+static bool materialsDivergent(const std::vector<App::Material> &mats)
+{
+    for (size_t i = 1; i < mats.size(); ++i) {
+        if (mats[i].diffuseColor != mats[0].diffuseColor
+                || mats[i].ambientColor != mats[0].ambientColor
+                || mats[i].specularColor != mats[0].specularColor
+                || mats[i].emissiveColor != mats[0].emissiveColor
+                || mats[i].transparency != mats[0].transparency)
+            return true;
+    }
+    return false;
+}
+
 void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& colors)
 {
     if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange))
         getObject()->touch(true);
+
+    // Instanced representation: divergent values must bake per face —
+    // rebuild flattened (the raised flag blocks re-instancing); a
+    // uniform-valued array collapses to the overall path instead.
+    bool divergent = colorsDivergent(colors);
+    if (divergent != appliedFaceColorsDivergent) {
+        appliedFaceColorsDivergent = divergent;
+        if (divergent) {
+            if (instanced)
+                updateVisual();
+        } else if (!instanced && instancingCandidate())
+            VisualTouched = true;   // may re-qualify; rebuilds lazily
+    }
+    if (instanced && colors.size() > 1) {
+        setHighlightedFaces(std::vector<App::Color>(1, colors[0]));
+        return;
+    }
 
     Gui::SoUpdateVBOAction action;
     action.apply(this->faceset);
@@ -961,6 +1168,21 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
 
 void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& colors)
 {
+    // Instanced representation: same policy as the color overload.
+    bool divergent = materialsDivergent(colors);
+    if (divergent != appliedFaceColorsDivergent) {
+        appliedFaceColorsDivergent = divergent;
+        if (divergent) {
+            if (instanced)
+                updateVisual();
+        } else if (!instanced && instancingCandidate())
+            VisualTouched = true;
+    }
+    if (instanced && colors.size() > 1) {
+        setHighlightedFaces(std::vector<App::Material>(1, colors[0]));
+        return;
+    }
+
     int size = static_cast<int>(colors.size());
     if (size > 1) {
         int numfaces = this->faceset->partIndex.getNum();
@@ -1186,6 +1408,22 @@ void ViewProviderPartExt::setHighlightedEdges(const std::vector<App::Color>& col
 {
     if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange))
         getObject()->touch(true);
+
+    // Instanced representation: same policy as setHighlightedFaces.
+    bool divergent = colorsDivergent(colors);
+    if (divergent != appliedLineColorsDivergent) {
+        appliedLineColorsDivergent = divergent;
+        if (divergent) {
+            if (instanced)
+                updateVisual();
+        } else if (!instanced && instancingCandidate())
+            VisualTouched = true;
+    }
+    if (instanced && colors.size() > 1) {
+        setHighlightedEdges(std::vector<App::Color>(1, colors[0]));
+        return;
+    }
+
     int size = static_cast<int>(colors.size());
     if (size > 1) {
         // Although indexed lineset is used the material binding must be PER_FACE!
@@ -1229,6 +1467,22 @@ void ViewProviderPartExt::setHighlightedPoints(const std::vector<App::Color>& co
 {
     if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange))
         getObject()->touch(true);
+
+    // Instanced representation: same policy as setHighlightedFaces.
+    bool divergent = colorsDivergent(colors);
+    if (divergent != appliedPointColorsDivergent) {
+        appliedPointColorsDivergent = divergent;
+        if (divergent) {
+            if (instanced)
+                updateVisual();
+        } else if (!instanced && instancingCandidate())
+            VisualTouched = true;
+    }
+    if (instanced && colors.size() > 1) {
+        setHighlightedPoints(std::vector<App::Color>(1, colors[0]));
+        return;
+    }
+
     int size = static_cast<int>(colors.size());
     if (size > 1) {
         int numpoints = pcoords->point.getNum();
@@ -1814,6 +2068,263 @@ static void registerShape(Part::TopoShape &shape, const Part::TopoShape &newshap
 }
 }
 
+bool ViewProviderPartExt::instancingCandidate() const
+{
+    return shapeInstancingActive() && !cachedShape.isNull()
+        && cachedShape.getShape().ShapeType() == TopAbs_COMPOUND;
+}
+
+bool ViewProviderPartExt::buildInstanced()
+{
+    if (!shapeInstancingActive())
+        return false;
+    if (appliedFaceColorsDivergent || appliedLineColorsDivergent
+            || appliedPointColorsDivergent)
+        return false;
+    if (!pFaceInstRoot || !pEdgeInstRoot || !pVertexInstRoot)
+        return false;
+    const TopoDS_Shape &cShape = cachedShape.getShape();
+    if (cShape.IsNull() || cShape.ShapeType() != TopAbs_COMPOUND)
+        return false;
+
+    // Colors must resolve to one uniform value (compared by value — a
+    // same-valued per-face array is uniform; only the final applied
+    // color matters). Divergent per-face colors get per-vector variant
+    // sharing in a later phase; until then they flatten.
+    auto uniformColors = [](const std::vector<App::Color> &colors) {
+        for (size_t i = 1; i < colors.size(); ++i) {
+            if (colors[i] != colors[0])
+                return false;
+        }
+        return true;
+    };
+    if (!uniformColors(DiffuseColor.getValues())
+            || !uniformColors(LineColorArray.getValues())
+            || !uniformColors(PointColorArray.getValues()))
+        return false;
+
+    // Collect the non-compound leaves (locations composed by the
+    // iterator through nested compounds).
+    std::vector<TopoDS_Shape> leaves;
+    std::vector<TopoDS_Shape> pending;
+    pending.push_back(cShape);
+    while (!pending.empty()) {
+        TopoDS_Shape s = pending.back();
+        pending.pop_back();
+        for (TopoDS_Iterator it(s); it.More(); it.Next()) {
+            if (it.Value().IsNull())
+                continue;
+            if (it.Value().ShapeType() == TopAbs_COMPOUND)
+                pending.push_back(it.Value());
+            else
+                leaves.push_back(it.Value());
+        }
+    }
+    if (leaves.size() < 2)
+        return false;
+
+    // Qualification: some TShape must repeat (else nothing to share), no
+    // mirror placements (they flip the triangle winding), and no two
+    // leaves identical including location (TopExp::MapShapes would
+    // deduplicate the second one and shift the global element numbering).
+    std::unordered_map<const void *, std::vector<int>> byTShape;
+    int maxCount = 0;
+    for (int i = 0; i < int(leaves.size()); ++i) {
+        const TopoDS_Shape &leaf = leaves[i];
+        if (leaf.Location().Transformation().IsNegative())
+            return false;
+        auto &group = byTShape[leaf.TShape().get()];
+        for (int j : group) {
+            if (leaf.IsSame(leaves[j]))
+                return false;
+        }
+        group.push_back(i);
+        maxCount = std::max(maxCount, int(group.size()));
+    }
+    if (maxCount < 2)
+        return false;
+
+    // Per-leaf element counts, and the defensive contiguity check: the
+    // global FaceN/EdgeN/VertexN numbering must equal the concatenation
+    // of the leaves' local numbering in traversal order.
+    struct LeafCounts { int faces = 0, edges = 0, vertices = 0; };
+    std::vector<LeafCounts> counts(leaves.size());
+    int faceBase = 0, edgeBase = 0, vertexBase = 0;
+    for (size_t i = 0; i < leaves.size(); ++i) {
+        const TopoDS_Shape &leaf = leaves[i];
+        TopTools_IndexedMapOfShape m;
+        TopExp::MapShapes(leaf, TopAbs_FACE, m);
+        counts[i].faces = m.Extent();
+        m.Clear();
+        TopExp::MapShapes(leaf, TopAbs_EDGE, m);
+        counts[i].edges = m.Extent();
+        m.Clear();
+        TopExp::MapShapes(leaf, TopAbs_VERTEX, m);
+        counts[i].vertices = m.Extent();
+
+        TopExp_Explorer exp(leaf, TopAbs_FACE);
+        if (exp.More() && cachedShape.findShape(exp.Current()) != faceBase + 1)
+            return false;
+        exp.Init(leaf, TopAbs_EDGE);
+        if (exp.More() && cachedShape.findShape(exp.Current()) != edgeBase + 1)
+            return false;
+        exp.Init(leaf, TopAbs_VERTEX);
+        if (exp.More() && cachedShape.findShape(exp.Current()) != vertexBase + 1)
+            return false;
+        faceBase += counts[i].faces;
+        edgeBase += counts[i].edges;
+        vertexBase += counts[i].vertices;
+    }
+
+    // The linear deflection of a shared tessellation derives from the
+    // LEAF bounding box (same formula as the flattened build, which uses
+    // the whole shape) — the same part in differently sized parents must
+    // agree on one mesh. Different deviation settings key apart.
+    auto leafDeflection = [&](const TopoDS_Shape &s) -> Standard_Real {
+        Bnd_Box bounds;
+        BRepBndLib::Add(s, bounds);
+        bounds.SetGap(0.0);
+        Standard_Real x0, y0, z0, x1, y1, z1;
+        bounds.Get(x0, y0, z0, x1, y1, z1);
+        Standard_Real defl = std::max(Precision::Confusion(),
+            ((x1-x0)+(y1-y0)+(z1-z0))/300.0 *
+                std::max(PartParams::getOverrideTessellation()
+                             ? PartParams::getMeshDeviation()
+                             : Deviation.getValue(),
+                         PartParams::getMinimumDeviation()));
+        if (defl < gp::Resolution())
+            defl = Precision::Confusion();
+        return std::min(defl, 20.0);
+    };
+    Standard_Real angDefl = std::max(Precision::Angular(),
+        std::max((PartParams::getOverrideTessellation()
+                      ? PartParams::getMeshAngularDeflection()
+                      : AngularDeflection.getValue()),
+                  PartParams::getMinimumAngularDeflection()) / 180.0 * M_PI);
+
+    auto rep = std::make_unique<ShapeInstanceRep>();
+    faceBase = edgeBase = vertexBase = 0;
+    for (size_t i = 0; i < leaves.size(); ++i) {
+        const TopoDS_Shape &leaf = leaves[i];
+        InstGeomKey key;
+        key.tshape = leaf.TShape().get();
+        key.orientation = int(leaf.Orientation());
+        // Deflection from the LOCAL-frame bbox: the located bbox varies
+        // with the instance rotation and would split the table key.
+        Standard_Real defl = leafDeflection(leaf.Located(TopLoc_Location()));
+        key.deflection = int64_t(defl * 1e9);
+        key.angdeflection = int64_t(angDefl * 1e9);
+
+        auto res = _InstGeomTable.emplace(key, InstGeometry());
+        InstGeometry &geom = res.first->second;
+        ++geom.refcount;
+        rep->keys.push_back(key);
+        if (res.second) {
+            // First user of this (TShape, orientation, tessellation):
+            // build the shared subgraphs from the leaf in its local frame.
+            TopoDS_Shape local = leaf.Located(TopLoc_Location());
+            auto gcoords = new SoCoordinate3;
+            auto gpcoords = new SoCoordinate3;
+            auto gnorm = new SoNormal;
+            auto gtexcoords = new SoTextureCoordinate2;
+            gtexcoords->point.setNum(0);
+            auto gfaceset = new SoBrepFaceSet;
+            auto glineset = new SoBrepEdgeSet;
+            auto gnodeset = new SoBrepPointSet;
+            gfaceset->setSiblings({glineset, gnodeset});
+            glineset->setSiblings({gfaceset, gnodeset});
+            gnodeset->setSiblings({gfaceset, glineset});
+            // The shared subgraphs are SoFCSelectionRoot — the render
+            // cache's child boundary. Entering the same root under N
+            // transforms flattens into shared-cache entries with
+            // per-instance matrices (the App::Link mechanism).
+            geom.faceGroup = new Gui::SoFCSelectionRoot;
+            geom.faceGroup->addChild(gcoords);
+            geom.faceGroup->addChild(gnorm);
+            geom.faceGroup->addChild(gtexcoords);
+            geom.faceGroup->addChild(gfaceset);
+            geom.edgeGroup = new Gui::SoFCSelectionRoot;
+            geom.edgeGroup->addChild(gcoords);
+            geom.edgeGroup->addChild(glineset);
+            geom.vertexGroup = new Gui::SoFCSelectionRoot;
+            geom.vertexGroup->addChild(gpcoords);
+            geom.vertexGroup->addChild(gnodeset);
+            geom.faceset = gfaceset;
+            geom.lineset = glineset;
+            geom.nodeset = gnodeset;
+            geom.faceCount = counts[i].faces;
+            geom.edgeCount = counts[i].edges;
+            geom.vertexCount = counts[i].vertices;
+            int nt = 0, nn = 0, np = 0, nno = 0, nf = 0, ne = 0, nl = 0;
+            buildVisualNodes(local, defl, angDefl,
+                             gcoords, gpcoords, gnorm, gtexcoords,
+                             gfaceset, glineset, gnodeset,
+                             nt, nn, np, nno, nf, ne, nl);
+            // Solid knowledge for the section-cap pass, in local part
+            // numbering (the cache reads it per shape node).
+            if (local.ShapeType() == TopAbs_SOLID && counts[i].faces > 0) {
+                auto it = _ShapeTable.find(local.TShape().get());
+                if (it != _ShapeTable.end() && it->second.node) {
+                    auto instNode = new SoFCShapeInstance;
+                    instNode->partIndex = 1;
+                    instNode->shapeInfo = it->second.node;
+                    gfaceset->shapeInfo.setValue(instNode);
+                }
+            }
+        }
+
+        ShapeInstanceRep::Instance inst;
+        inst.geom = &geom;
+        SbMatrix mat = convert(Part::TopoShape(leaf).getTransform());
+        auto makeSep = [&mat](SoGroup *group) {
+            auto sep = new SoSeparator;
+            sep->renderCaching = SoSeparator::OFF;
+            sep->boundingBoxCaching = SoSeparator::OFF;
+            auto mt = new SoMatrixTransform;
+            mt->matrix = mat;
+            sep->addChild(mt);
+            sep->addChild(group);
+            return sep;
+        };
+        inst.faceSep = makeSep(geom.faceGroup);
+        inst.edgeSep = makeSep(geom.edgeGroup);
+        inst.vertexSep = makeSep(geom.vertexGroup);
+        pFaceInstRoot->addChild(inst.faceSep);
+        pEdgeInstRoot->addChild(inst.edgeSep);
+        pVertexInstRoot->addChild(inst.vertexSep);
+        inst.faceBase = faceBase;
+        inst.edgeBase = edgeBase;
+        inst.vertexBase = vertexBase;
+        int instIdx = int(rep->instances.size());
+        rep->sepToInstance[inst.faceSep] = instIdx;
+        rep->sepToInstance[inst.edgeSep] = instIdx;
+        rep->sepToInstance[inst.vertexSep] = instIdx;
+        rep->nodeToGeom[geom.faceset] = &geom;
+        rep->nodeToGeom[geom.lineset] = &geom;
+        rep->nodeToGeom[geom.nodeset] = &geom;
+        rep->instances.push_back(std::move(inst));
+        faceBase += counts[i].faces;
+        edgeBase += counts[i].edges;
+        vertexBase += counts[i].vertices;
+    }
+
+    // The flattened member nodes stay in the graph but carry nothing.
+    coords->point.setNum(0);
+    pcoords->point.setNum(0);
+    norm->vector.setNum(0);
+    texcoords->point.setNum(0);
+    faceset->coordIndex.setNum(0);
+    faceset->partIndex.setNum(0);
+    faceset->shapeInfo.setNum(0);
+    lineset->coordIndex.setNum(0);
+    nodeset->startIndex.setValue(0);
+
+    instanced = std::move(rep);
+    FC_TRACE(getFullName() << " instanced: " << leaves.size()
+             << " leaves over " << instanced->keys.size() << " geometries");
+    return true;
+}
+
 void ViewProviderPartExt::updateVisual()
 {
     if (!getObject()
@@ -1839,6 +2350,20 @@ void ViewProviderPartExt::updateVisual()
     haction.apply(this->lineset);
     haction.apply(this->nodeset);
 
+    // Drop any previous TShape-instanced representation; the qualifying
+    // path rebuilds it below, every other path leaves only the flat
+    // member nodes filled.
+    auto clearInstanced = [this]() {
+        if (pFaceInstRoot)
+            pFaceInstRoot->removeAllChildren();
+        if (pEdgeInstRoot)
+            pEdgeInstRoot->removeAllChildren();
+        if (pVertexInstRoot)
+            pVertexInstRoot->removeAllChildren();
+        instanced.reset();
+    };
+    clearInstanced();
+
     Part::TopoShape toposhape = getShape();
     // We must reset the location here because the transformation data
     // are set in the placement property
@@ -1859,6 +2384,36 @@ void ViewProviderPartExt::updateVisual()
         VisualTouched = false;
         return;
     }
+
+    // TShape-instanced build of qualifying compounds (shared sub-shape
+    // tessellation under per-instance transforms); everything else runs
+    // the flattened build below, unchanged.
+    bool instancedOk = false;
+    try {
+        instancedOk = buildInstanced();
+    }
+    catch (Base::Exception &e) {
+        FC_ERR("Failed instanced representation for the shape of "
+               << pcObject->getFullName() << ": " << e.what());
+    }
+    catch (const Standard_Failure& e) {
+        FC_ERR("Failed instanced representation for the shape of "
+               << pcObject->getFullName() << ": " << e.GetMessageString());
+    }
+    catch (...) {
+        FC_ERR("Failed instanced representation for the shape of "
+               << pcObject->getFullName());
+    }
+    if (instancedOk) {
+        VisualTouched = false;
+        // The material has to be checked again (colors verified uniform)
+        setHighlightedFaces(DiffuseColor.getValues());
+        setHighlightedEdges(LineColorArray.getValues());
+        setHighlightedPoints(PointColorArray.getValue());
+        return;
+    }
+    // An aborted attempt may have left partial instance wrappers behind.
+    clearInstanced();
 
     faceset->shapeInfo.enableNotify(FALSE);
     faceset->shapeInfo.setNum(cachedShape.countSubShapes(TopAbs_SOLID));
@@ -1899,7 +2454,6 @@ void ViewProviderPartExt::updateVisual()
     // time measurement and book keeping
     Base::TimeInfo start_time;
     int numTriangles=0,numNodes=0,numPoints=0,numNorms=0,numFaces=0,numEdges=0,numLines=0;
-    std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
 
     try {
         // calculating the deflection value
@@ -1929,6 +2483,59 @@ void ViewProviderPartExt::updateVisual()
             std::max((PartParams::getOverrideTessellation() ?
                         PartParams::getMeshAngularDeflection() : AngularDeflection.getValue()),
                       PartParams::getMinimumAngularDeflection()) / 180.0 * M_PI);
+
+        buildVisualNodes(cShape, deflection, AngDeflectionRads,
+                         coords, pcoords, norm, texcoords,
+                         faceset, lineset, nodeset,
+                         numTriangles, numNodes, numPoints, numNorms,
+                         numFaces, numEdges, numLines);
+    }
+    catch (Base::Exception &e) {
+        FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());
+    }
+    catch (const Standard_Failure& e) {
+        FC_ERR("Cannot compute Inventor representation for the shape of "
+               << pcObject->getFullName() << ": " << e.GetMessageString());
+    }
+    catch (...) {
+        FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName());
+    }
+
+    // printing some information
+    FC_TRACE(getFullName() << " update time: " << Base::TimeInfo::diffTimeF(start_time,Base::TimeInfo()));
+    FC_TRACE("Shape tria info: Faces:" << numFaces << " Edges:" << numEdges
+             << " Points:" << numPoints << " Nodes:" << numNodes
+             << " Triangles:" << numTriangles << " IdxVec:" << numLines);
+    VisualTouched = false;
+
+    // The material has to be checked again
+    setHighlightedFaces(DiffuseColor.getValues());
+    setHighlightedEdges(LineColorArray.getValues());
+    setHighlightedPoints(PointColorArray.getValue());
+}
+
+void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
+        double deflection, double AngDeflectionRads,
+        SoCoordinate3 *coords, SoCoordinate3 *pcoords,
+        SoNormal *norm, SoTextureCoordinate2 *texcoords,
+        SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
+        SoBrepPointSet *nodeset,
+        int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
+        int &numFaces, int &numEdges, int &numLines)
+{
+    (void)nodeset;
+    std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
+    TopLoc_Location aLoc;
+
+    {
+        // The default-texture-coordinate projection frame comes from this
+        // shape's own bounding box (for the flattened build that is the
+        // same whole-shape box the deflection derives from).
+        Bnd_Box bounds;
+        BRepBndLib::Add(cShape, bounds);
+        bounds.SetGap(0.0);
+        Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+        bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
 
 #if OCC_VERSION_HEX >= 0x070500
         IMeshTools_Parameters meshParams;
@@ -2313,28 +2920,6 @@ void ViewProviderPartExt::updateVisual()
         if (seamEdges.size())
             lineset->seamIndices.setValues(0, seamEdges.size(), &seamEdges[0]);
     }
-    catch (Base::Exception &e) {
-        FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());
-    }
-    catch (const Standard_Failure& e) {
-        FC_ERR("Cannot compute Inventor representation for the shape of "
-               << pcObject->getFullName() << ": " << e.GetMessageString());
-    }
-    catch (...) {
-        FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName());
-    }
-
-    // printing some information
-    FC_TRACE(getFullName() << " update time: " << Base::TimeInfo::diffTimeF(start_time,Base::TimeInfo()));
-    FC_TRACE("Shape tria info: Faces:" << numFaces << " Edges:" << numEdges 
-             << " Points:" << numPoints << " Nodes:" << numNodes
-             << " Triangles:" << numTriangles << " IdxVec:" << numLines);
-    VisualTouched = false;
-
-    // The material has to be checked again
-    setHighlightedFaces(DiffuseColor.getValues());
-    setHighlightedEdges(LineColorArray.getValues());
-    setHighlightedPoints(PointColorArray.getValue());
 }
 
 void ViewProviderPartExt::forceUpdate(bool enable) {

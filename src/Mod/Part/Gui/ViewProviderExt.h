@@ -24,6 +24,7 @@
 #define PARTGUI_VIEWPROVIDERPARTEXT_H
 
 #include <map>
+#include <memory>
 
 #include <App/PropertyUnits.h>
 #include <Gui/ViewProviderGeometryObject.h>
@@ -60,6 +61,7 @@ class SoBrepFaceSet;
 class SoBrepEdgeSet;
 class SoBrepPointSet;
 class SoFCCoordinate3;
+struct ShapeInstanceRep;
 
 class PartGuiExport ViewProviderPartExt : public Gui::ViewProviderGeometryObject
 {
@@ -220,10 +222,51 @@ protected:
     Gui::CoinPtr<SoGroup>  pEdgeRoot;
     Gui::CoinPtr<SoGroup>  pVertexRoot;
 
+    /// Roots of the TShape-instanced representation (shared sub-shape
+    /// geometry under per-instance transforms); empty while the flattened
+    /// build is active. See updateVisual().
+    Gui::CoinPtr<SoGroup>  pFaceInstRoot;
+    Gui::CoinPtr<SoGroup>  pEdgeInstRoot;
+    Gui::CoinPtr<SoGroup>  pVertexInstRoot;
+    std::unique_ptr<ShapeInstanceRep> instanced;
+
+    /// TShape-instanced build of a qualifying compound (leaf sub-shapes
+    /// with repeated TShapes share one tessellation from the global
+    /// table under per-instance transforms). Returns false when the
+    /// shape or environment does not qualify — the caller then runs the
+    /// flattened build exactly as before.
+    bool buildInstanced();
+    /// Cheap pre-check whether the current shape could instance at all
+    /// (environment gate + compound) — used to schedule lazy rebuilds on
+    /// color-divergence transitions.
+    bool instancingCandidate() const;
+
+    /// One shape's worth of tessellation into the given nodes — the
+    /// whole shape for the flattened build, one sub-shape (at identity
+    /// location) per unique TShape for the instanced build.
+    void buildVisualNodes(const TopoDS_Shape &cShape,
+                          double deflection, double angDeflectionRads,
+                          SoCoordinate3 *coords, SoCoordinate3 *pcoords,
+                          SoNormal *norm, SoTextureCoordinate2 *texcoords,
+                          SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
+                          SoBrepPointSet *nodeset,
+                          int &numTriangles, int &numNodes, int &numPoints,
+                          int &numNorms, int &numFaces, int &numEdges,
+                          int &numLines);
+
     bool VisualTouched;
     bool NormalsFromUV;
     bool UpdatingColor;
     bool highlightFaceEdges = false;
+
+    /// Whether the last APPLIED per-element color arrays diverge in
+    /// value (a same-valued array counts as uniform). Divergent applied
+    /// colors bake into the vertex caches and force the flattened
+    /// build; the setHighlighted* entry points maintain these and
+    /// restructure on transitions.
+    bool appliedFaceColorsDivergent = false;
+    bool appliedLineColorsDivergent = false;
+    bool appliedPointColorsDivergent = false;
 
     std::string shapePropName;
 

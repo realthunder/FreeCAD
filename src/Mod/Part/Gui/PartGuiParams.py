@@ -60,6 +60,11 @@ Params = [
     ParamBool("AdjustCameraForNewFeature", True),
     ParamHex("DefaultDatumColor", 0xFFD70099, proxy=ParamColor()),
     ParamBool("RespectSystemDPI", False, on_change=True),
+    ParamBool("ShapeInstancing", True, on_change=True,
+       doc="Share the tessellation of repeated sub-shapes (same TopoDS_TShape)\n"
+           "inside a compound and render them as GPU instances. Only takes\n"
+           "effect when the renderer supports instanced draws; otherwise the\n"
+           "geometry is flattened as before."),
     ParamInt("SelectionPickThreshold", 1000),
     ParamInt("SelectionPickThreshold2", 500),
     ParamBool("SelectionPickRTree", False),
