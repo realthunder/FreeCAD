@@ -858,11 +858,10 @@ independent of each other; item 4 builds on item 3's property model.
   mirror-placed, two leaves are identical incl. location (MapShapes
   dedup would shift element numbering), the defensive
   global-vs-concatenated numbering check fails, or the **final applied
-  per-element colors diverge in value** — a same-valued `DiffuseColor`
-  array counts as uniform; only resolved values matter, checked at the
+  line/point colors diverge in value** — a same-valued color array
+  counts as uniform; only resolved values matter, checked at the
   `setHighlighted*` apply points which also restructure on transitions
-  in both directions (per-part colors bake into the shared vertex caches
-  and cannot differ per instance until the color-variant layer lands).
+  in both directions.
   A parameter observer rebuilds Part visuals when the gate parameters
   flip. Element naming stays exact (pick paths resolve the instance
   wrapper and add its face/edge/vertex base offsets); sub-element
@@ -872,18 +871,37 @@ independent of each other; item 4 builds on item 3's property model.
   mirrored into Renderer.h, model matrix added to the dedup key so
   distinct placements never collapse). Verified on llvmpipe: instanced
   vs flattened bit-identical (boxes, incl. selection of the Link-array
-  suite), GL renderer stays flattened (scene-graph probe), divergent
-  per-face colors flatten while same-valued arrays stay instanced,
-  cylinders render correctly. Next phases (user-agreed): **(B)**
-  color-variant layer — instances partition by resolved per-face color
-  vector, one shared variant faceset per distinct vector referencing the
-  same coordinate/index data (draw-minimal: draws = #distinct vectors,
-  memory bounded by flatten); **(C)** separate color vertex stream in
-  cache/backend so variants share position/normal/index GPU buffers
-  (texcoords already ride a second stream), plus forced UV capture for
-  shared groups (today a shared cache built under an untextured user
-  leaves a textured sharer without UVs). Per-instance sub-element
-  highlight (path-keyed contexts) remains open.
+  suite), GL renderer stays flattened (scene-graph probe), same-valued
+  color arrays stay instanced, cylinders render correctly.
+  *Color-variant layer done (2026-07, phase B).* Divergent per-face
+  colors no longer flatten: baked per-part colors may not traverse a
+  shared subgraph under differing state, so they branch below it — each
+  global geometry entry carries lazily created, refcounted **color
+  variants**, one per DISTINCT resolved per-face color vector, whose
+  faceset references the shared coordinate/normal/texcoord nodes and
+  bakes only diffuse+transparency (everything else must stay uniform in
+  value and rides the inherited material; per-face MATERIAL divergence
+  beyond that still flattens, as do divergent line/point colors for
+  now). `applyInstancedFaceColors` partitions the instances by their
+  slice of the resolved vector: uniform slices stay on the shared base
+  subgraph with a per-instance override material (values ride the
+  render-cache material — the Link mechanism, so they batch whatever
+  the colors), divergent slices reference the variant matching their
+  exact vector, shared across instances and objects. Draws per TShape =
+  #distinct vectors (draw-minimal: worst case equals flatten, no
+  face-level splitting ever); transitions restructure the wrappers in
+  place both ways. Verified on llvmpipe (Xvfb harness): divergent
+  scene (2 instances sharing one variant + 1 uniform-override + 3
+  base) instanced vs flattened bit-identical, incl. whole-object
+  selection; transitions divergent↔uniform land pixel-exact on the
+  target state; GL stays flattened; backend feed shows 2 instanced
+  groups covering the 6 face draws (base 4 + variant 2). Next phase
+  (user-agreed): **(C)** separate color vertex stream in cache/backend
+  so variants share position/normal/index GPU buffers (texcoords
+  already ride a second stream), plus forced UV capture for shared
+  groups (today a shared cache built under an untextured user leaves a
+  textured sharer without UVs). Per-instance sub-element highlight
+  (path-keyed contexts) and line/point color variants remain open.
 - Frustum/occlusion culling, GPU-driven paths (bgfx ex.37/48) for very large
   assemblies.
 - WASM build of the renderer; progressive refinement (drop AA/AO during
