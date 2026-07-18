@@ -792,6 +792,15 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
         res.smoothBorder = float(viewParamOverride<App::PropertyInteger>(
                 view, "Shadow", "SmoothBorder",
                 ViewParams::getShadowSmoothBorder()));
+        // Coin VsmLookup parameters of the plain-VSM (SmoothBorder 0)
+        // path; the Shadow draw style materializes Shadow_Epsilon /
+        // Shadow_Threshold like the rest.
+        res.epsilon = float(viewParamOverride<App::PropertyFloat>(
+                view, "Shadow", "Epsilon",
+                ViewParams::getShadowEpsilon()));
+        res.threshold = float(viewParamOverride<App::PropertyFloat>(
+                view, "Shadow", "Threshold",
+                ViewParams::getShadowThreshold()));
         // The ground receiver settings honor the per-view Shadow_*
         // dynamic properties (created by the Shadow draw style, which is
         // the only way a shadow light gets here) with ViewParams

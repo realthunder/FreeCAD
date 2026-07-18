@@ -2522,12 +2522,13 @@ public:
         bgfx::setTexture(1, s_texEnv, m_dummyEnvTex);
         static const bool dbgvis =
             getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
-        float shadowParams[4] = {1.0f, 1.0e-5f, 0.003f,
+        float shadowParams[4] = {1.0f, shadowEpsilon, 0.003f,
                                  dbgvis ? 1.0f : 0.0f};
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2], 1.0f};
         bgfx::setUniform(u_shadowParams, shadowParams);
-        float evsm[4] = {shadowWarp, 0.0f, 0.0f, 0.0f};
+        float evsm[4] = {shadowWarpFrame, shadowThreshold,
+                         0.0f, 0.0f};
         bgfx::setUniform(u_evsm, evsm);
         bgfx::setUniform(u_lightDir, lightDir);
         bgfx::setUniform(u_lightPos, lightPosView);
@@ -2653,7 +2654,8 @@ public:
             bgfx::setIndexBuffer(gpu->tri);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_Z
                        | BGFX_STATE_DEPTH_TEST_LESS);
-        float evsm[4] = {shadowWarp, 0.0f, 0.0f, 0.0f};
+        float evsm[4] = {shadowWarpFrame, shadowThreshold,
+                         0.0f, 0.0f};
         bgfx::setUniform(u_evsm, evsm);
         bgfx::submit(viewId + ViewShadow,
                      clipped ? m_progShadowClip : m_progShadow);
@@ -2842,7 +2844,8 @@ public:
                              lightDirView[2], 1.0f};
         bgfx::setUniform(u_lightDir, lightDir);
         bgfx::setUniform(u_lightPos, lightPosView);
-        float evsm[4] = {shadowWarp, 0.0f, 0.0f, 0.0f};
+        float evsm[4] = {shadowWarpFrame, shadowThreshold,
+                         0.0f, 0.0f};
         bgfx::setUniform(u_evsm, evsm);
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
@@ -3151,7 +3154,9 @@ public:
                 bgfx::setUniform(u_shadowMatrix, shadowMtx);
                 if ((mat.shadowstyle & 2) && pass != PassDepthOnly) {
                     shadowParams[0] = 1.0f;
-                    shadowParams[1] = 1.0e-5f;  // minimum variance
+                    // Coin's epsilon (plain VSM adds it to the
+                    // variance; EVSM scales it by the warped moment)
+                    shadowParams[1] = shadowEpsilon;
                     shadowParams[2] = 0.003f;   // depth bias
                     static const bool dbgvis =
                         getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
@@ -3160,7 +3165,8 @@ public:
                     shadow = shadowTex;
                 }
             }
-            float evsm[4] = {shadowWarp, 0.0f, 0.0f, 0.0f};
+            float evsm[4] = {shadowWarpFrame, shadowThreshold,
+                         0.0f, 0.0f};
             bgfx::setUniform(u_evsm, evsm);
             bgfx::setUniform(u_lightDir, lightDir);
             static const float noSpot[4] = {0.0f, 0.0f, 0.0f, -1.0f};
@@ -3514,9 +3520,18 @@ public:
     float bumpScale = 1.0f;    // bump/normal map strength (BumpConfig)
     bool bumpParallax = true;  // parallax-occlusion map height maps
     // Variance shadow map of the Shadow draw style's scene light.
-    static constexpr uint16_t kShadowSize = 1024;
+    // Coin sizes its shadow map as precision * min(2048, max texture
+    // size) — 2048 at the ShadowPrecision default of 1.0; match it
+    // (the precision parameter itself is not plumbed yet).
+    static constexpr uint16_t kShadowSize = 2048;
     bool m_shadow = false;     // shadow resources exist (caps allow it)
     float shadowWarp = 42.0f;  // EVSM exponent (by moments format)
+    // Per-frame shadow lookup state: warp 0 = plain VSM (Coin
+    // parity, SmoothBorder 0), else the EVSM exponent above;
+    // epsilon/threshold are Coin's VsmLookup parameters.
+    float shadowWarpFrame = 0.0f;
+    float shadowEpsilon = 1.0e-5f;
+    float shadowThreshold = 0.0f;
     bool shadowFrame = false;  // shadows active this frame
     bgfx::TextureHandle shadowTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle shadowDepth = BGFX_INVALID_HANDLE;
@@ -3835,6 +3850,14 @@ public:
             }
         }
         view->shadowFrame = shadowActive;
+        // At SmoothBorder 0 the map stores plain (z, z^2) moments and
+        // the receivers run Coin's exact VsmLookup — the GL Shadow
+        // style's soft default penumbra. The exponential warp (and its
+        // tighter penumbra) only engages with the blur.
+        view->shadowWarpFrame =
+            lightconf.smoothBorder > 0.0f ? view->shadowWarp : 0.0f;
+        view->shadowEpsilon = lightconf.epsilon;
+        view->shadowThreshold = lightconf.threshold;
         static const bool dbgshadow =
             (getenv("FC_BGFX_DEBUG_SHADOW") != nullptr);
         if (dbgshadow)
@@ -4046,8 +4069,8 @@ public:
                 // clear color cannot exceed 1), own depth; the caster
                 // pass renders under the light camera at the shadow
                 // map size.
-                float evsmClear[4] = {std::exp(view->shadowWarp),
-                                      std::exp(2.0f * view->shadowWarp),
+                float evsmClear[4] = {std::exp(view->shadowWarpFrame),
+                                      std::exp(2.0f * view->shadowWarpFrame),
                                       0.0f, 0.0f};
                 bgfx::setPaletteColor(2, evsmClear);
                 bgfx::setViewFrameBuffer(id, view->shadowFbo);

@@ -197,10 +197,13 @@ void main()
 			// depth (unwarped), green = stored depth^2 moment
 			// (unwarped), blue = receiver light depth
 			vec2 dm = texture2D(s_texShadow, sp.xy).xy;
-			gl_FragColor = vec4(
-				log(max(dm.x, 1.0e-12)) / u_evsm.x,
-				log(max(dm.y, 1.0e-12)) / (2.0 * u_evsm.x),
-				sp.z, 1.0);
+			gl_FragColor = u_evsm.x < 0.5
+				? vec4(dm.x, dm.y, sp.z, 1.0)
+				: vec4(
+					log(max(dm.x, 1.0e-12)) / u_evsm.x,
+					log(max(dm.y, 1.0e-12))
+						/ (2.0 * u_evsm.x),
+					sp.z, 1.0);
 			return;
 		}
 #endif
@@ -208,17 +211,41 @@ void main()
 		    && sp.z > 0.0 && sp.z < 1.0)
 		{
 			vec2 mo = texture2D(s_texShadow, sp.xy).xy;
-			// Warp the (biased) receiver depth like the caster;
-			// the variance floor scales with the warped moment.
-			float p = exp(u_evsm.x * (sp.z - u_shadowParams.z));
-			if (p > mo.x)
+			if (u_evsm.x < 0.5)
 			{
-				float va = max(mo.y - mo.x * mo.x,
-				               u_shadowParams.y
-				                   * mo.x * mo.x);
-				float dd = p - mo.x;
+				// Plain VSM, Coin SoShadowGroup parity (its
+				// VsmLookup): epsilon (u_shadowParams.y) adds
+				// to the variance outright and the threshold
+				// (u_evsm.y) smoothsteps the tail — moment
+				// interpolation across a depth gap makes the
+				// soft distance-growing penumbra of the GL
+				// Shadow style.
+				float lit = sp.z <= mo.x ? 1.0 : 0.0;
+				float va = min(max(mo.y - mo.x * mo.x, 0.0)
+				                   + u_shadowParams.y,
+				               1.0);
+				float dd = mo.x - sp.z;
 				float pmax = va / (va + dd * dd);
-				shadow = clamp((pmax - 0.3) / 0.7, 0.0, 1.0);
+				pmax *= smoothstep(u_evsm.y, 1.0, pmax);
+				shadow = max(lit, pmax);
+			}
+			else
+			{
+				// EVSM (SmoothBorder blur active): warp the
+				// (biased) receiver depth like the caster; the
+				// variance floor scales with the warped moment.
+				float p = exp(u_evsm.x
+				              * (sp.z - u_shadowParams.z));
+				if (p > mo.x)
+				{
+					float va = max(mo.y - mo.x * mo.x,
+					               u_shadowParams.y
+					                   * mo.x * mo.x);
+					float dd = p - mo.x;
+					float pmax = va / (va + dd * dd);
+					shadow = clamp((pmax - 0.3) / 0.7,
+					               0.0, 1.0);
+				}
 			}
 		}
 	}

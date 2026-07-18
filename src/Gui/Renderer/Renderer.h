@@ -240,8 +240,18 @@ struct LightConfig {
 
     /// Shadow border smoothing (ShadowSmoothBorder / the Shadow draw
     /// style's SmoothBorder property, 0..100): scales the gaussian blur
-    /// of the variance shadow map moments; 0 = no blur.
+    /// of the variance shadow map moments. 0 (the default) renders
+    /// plain VSM with Coin's exact lookup semantics — the GL Shadow
+    /// style's soft distance-growing penumbra; > 0 switches to the
+    /// blurred EVSM variant (tighter penumbras than GL, a documented
+    /// deviation).
     float smoothBorder = 0.0f;
+    /// Coin VsmLookup parameters (ShadowEpsilon/ShadowThreshold, the
+    /// Shadow draw style's Epsilon/Threshold properties): epsilon adds
+    /// to the moment variance outright, threshold smoothsteps the
+    /// Chebyshev tail (light-bleed reduction). Plain-VSM mode only.
+    float epsilon = 1.0e-5f;
+    float threshold = 0.0f;
 
     /// Shadow ground plane (ShadowShowGround*): the Coin-side ground
     /// lives outside the captured scene graph, so backends draw their
@@ -276,6 +286,7 @@ struct LightConfig {
             && cutOffAngle == o.cutOffAngle
             && dropOffRate == o.dropOffRate
             && smoothBorder == o.smoothBorder
+            && epsilon == o.epsilon && threshold == o.threshold
             && ground == o.ground && groundScale == o.groundScale
             && groundColor == o.groundColor
             && groundTexture == o.groundTexture
