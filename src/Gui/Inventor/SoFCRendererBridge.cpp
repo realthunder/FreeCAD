@@ -314,6 +314,16 @@ useHighlightPass(const CoinMaterial & m, int selId, bool highlight)
         return true;
     if (selId & SoFCRenderer::SelIdPartial)
         return true;
+    // The implicit whole-object companion of a partial selection
+    // thickens too. For flattened objects this is invisible — the
+    // partial id's own (thickened) whole-on-top copies win the
+    // backend's dedup — but a TShape-instanced partial selection
+    // scopes its id to one instance wrapper, so the companion draws
+    // are the only whole-on-top lines and must match the flattened
+    // width. (Deviation from the GL renderer's selsontop bucket, which
+    // leaves surviving implicit lines thin.)
+    if (selId & SoFCRenderer::SelIdImplicit)
+        return true;
     return (selId & SoFCRenderer::SelIdFull) && !m.partialhighlight;
 }
 

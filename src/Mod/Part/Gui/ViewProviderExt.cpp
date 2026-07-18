@@ -56,6 +56,8 @@
 # include <sstream>
 
 # include <Inventor/SoPickedPoint.h>
+# include <Inventor/actions/SoSearchAction.h>
+# include <Inventor/misc/SoChildList.h>
 # include <Inventor/details/SoFaceDetail.h>
 # include <Inventor/details/SoLineDetail.h>
 # include <Inventor/details/SoPointDetail.h>
@@ -1188,13 +1190,92 @@ bool ViewProviderPartExt::getDetailPath(const char *subname,
         pPath->append(pcModeSwitch);
     }
 
-    // TShape-instanced representation: a sub-element detail would bind
-    // its context to the SHARED face/edge/point set and highlight that
-    // element in every instance, so degrade to whole-object highlight
-    // (the element names reported by picking stay exact). Per-instance
-    // highlight contexts are a follow-up.
-    if (instanced)
+    // TShape-instanced representation: per-instance sub-element
+    // highlight. The instance wrappers are SoFCSelectionRoot and the
+    // selection contexts key on the traversed selection-root stack, so
+    // a path ending at the picked instance's wrapper binds the detail's
+    // context to that instance alone; the detail carries the LOCAL
+    // element index of the shared (or variant) shape node. Anything
+    // unresolvable degrades to whole-object highlight.
+    if (instanced) {
+        const auto &shape = getShape();
+        Data::IndexedName element = shape.getElementName(subelement).index;
+        auto res = shape.shapeTypeAndIndex(element);
+        if (!res.second)
+            return true;
+        const ShapeInstanceRep::Instance *inst = nullptr;
+        int local = 0;
+        for (const auto &i : instanced->instances) {
+            int base = 0, count = 0;
+            switch (res.first) {
+            case TopAbs_FACE:
+                base = i.faceBase; count = i.geom->faceCount; break;
+            case TopAbs_EDGE:
+                base = i.edgeBase; count = i.geom->edgeCount; break;
+            case TopAbs_VERTEX:
+                base = i.vertexBase; count = i.geom->vertexCount; break;
+            default:
+                return true;   // whole sub-shapes: whole-object
+            }
+            if (res.second > base && res.second <= base + count) {
+                inst = &i;
+                local = res.second - base;
+                break;
+            }
+        }
+        if (!inst)
+            return true;
+        SoSeparator *wrapper = res.first == TopAbs_FACE ? inst->faceSep
+            : res.first == TopAbs_EDGE ? inst->edgeSep
+                                       : inst->vertexSep;
+        // Append the graph chain from the mode switch down to the
+        // wrapper. The chain crosses display-mode roots (plain
+        // separators — they never enter the context stack, so any of
+        // the wrapper's parent paths keys identically); a search keeps
+        // this independent of the mode graph layout.
+        SoSearchAction sa;
+        sa.setNode(wrapper);
+        sa.setSearchingAll(true);
+        sa.apply(pcModeSwitch);
+        SoFullPath *found = static_cast<SoFullPath *>(sa.getPath());
+        if (!found || found->getLength() < 2)
+            return true;
+        for (int i = 1; i < found->getLength(); ++i) {
+            SoNode *next = found->getNode(i);
+            SoNode *tail = pPath->getTail();
+            auto group = tail ? tail->getChildren() : nullptr;
+            if (!group || group->find(next) < 0)
+                return true;   // tail mismatch (e.g. Link snapshot type)
+            pPath->append(next);
+        }
+        switch (res.first) {
+        case TopAbs_FACE: {
+            auto fdet = new SoFCFaceDetail;
+            det = fdet;
+            fdet->setPartIndex(local - 1);
+            fdet->setContext(inst->variant ? inst->variant->shape
+                                           : inst->geom->faceset);
+            break;
+        }
+        case TopAbs_EDGE: {
+            auto ldet = new SoFCLineDetail;
+            det = ldet;
+            ldet->setLineIndex(local - 1);
+            ldet->setContext(inst->lineVariant ? inst->lineVariant->shape
+                                               : inst->geom->lineset);
+            break;
+        }
+        default: {
+            auto pdet = new SoFCPointDetail;
+            det = pdet;
+            pdet->setCoordinateIndex(
+                local + inst->geom->nodeset->startIndex.getValue() - 1);
+            pdet->setContext(inst->pointVariant ? inst->pointVariant->shape
+                                                : inst->geom->nodeset);
+            break;
+        }}
         return true;
+    }
 
     const auto &shape = getShape();
     Data::IndexedName element = shape.getElementName(subelement).index;
@@ -2562,8 +2643,13 @@ bool ViewProviderPartExt::buildInstanced()
         ShapeInstanceRep::Instance inst;
         inst.geom = &geom;
         SbMatrix mat = convert(Part::TopoShape(leaf).getTransform());
-        auto makeSep = [&mat](SoGroup *group) {
-            auto sep = new SoSeparator;
+        // The wrappers are SoFCSelectionRoot: selection/highlight
+        // contexts key on the traversed selection-root stack, so a
+        // per-instance root gives each instance its own sub-element
+        // context over the shared shape nodes (the App::Link
+        // mechanism) — see getDetailPath.
+        auto makeSep = [&mat](SoGroup *group) -> SoSeparator * {
+            auto sep = new Gui::SoFCSelectionRoot;
             sep->renderCaching = SoSeparator::OFF;
             sep->boundingBoxCaching = SoSeparator::OFF;
             auto mt = new SoMatrixTransform;
