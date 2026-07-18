@@ -671,6 +671,23 @@ independent of each other; item 4 builds on item 3's property model.
    too). The map slots become fully useful with the UV-preserving glTF
    import (item 4); a bbox-based default-UV generator for B-Rep
    tessellation is a possible follow-up. *glTF wiring done (2026-07)*: the item-4 import/export round trip now carries EmissiveTexture/OcclusionTexture into/out of these properties (emissiveFactor set to 1 beside an exported emissive texture — the glTF default 0 would cancel it).
+   *Metallic-roughness map slot done (2026-07)*: `Render_MetallicRoughnessMap`
+   completes the material map set through the same `SoFCRenderTexture`
+   route (new `METALLIC_ROUGHNESS` slot → `Material::metallicroughnessmaps`
+   → `Render::Material::metallicroughnessmap` → bgfx unit 6 of the
+   textured programs). `u_texParams` has no free component, so
+   `u_pbrParams.x = 2` flags the map on top of the PBR branch it
+   exclusively feeds: green multiplies the roughness factor, blue the
+   metallic factor (glTF semantics), the 0.02 roughness floor kept after
+   the multiply; the modulated roughness also drives the IBL mip/BRDF
+   terms. Task panel row included. Verified on llvmpipe: plain control
+   0 px bgfx vs mode-3 GL, GL bit-identical with/without the map, and
+   the map's roughness/metallic gradients shade correctly across an
+   explicit-UV surface under PBR while an unmapped sibling draw stays
+   untouched. *glTF wiring done too*: MetallicRoughnessTexture
+   round-trips into/out of the property (with the texture present an
+   unset metallic factor exports as 1, not the plain-dielectric 0 — the
+   factors multiply the map channels in conforming viewers).
 
 4. **glTF import/export with materials & textures (2–3 wks)** — round-trip
    the renderer's material model (deliberately chosen as glTF
@@ -746,10 +763,11 @@ independent of each other; item 4 builds on item 3's property model.
    save/reopen, export→re-import (keep placement) and a normal-map
    round trip are all pixel-identical; untextured glTF still rebuilds
    planar B-Rep faces; regular B-Rep scenes are bit-unchanged.
-   Remaining: per-face materials;
-   metallic-roughness/emissive/occlusion texture slots; placement of a
-   single textured mesh is still dropped with the default
-   `ExportKeepPlacement=false` (deliberate preference semantics).
+   Remaining: per-face materials (the texture-slot set — base color,
+   normal, emissive, occlusion, metallic-roughness — is complete as of
+   2026-07); placement of a single textured mesh is still dropped with
+   the default `ExportKeepPlacement=false` (deliberate preference
+   semantics).
 
 ### Phase 3 — performance & portability (open-ended)
 
