@@ -160,4 +160,7 @@ void ImportOCAFGui::applyRenderMaterial(Part::Feature* part,
     setFile("Render_OcclusionMap", mat.occlusionTexture,
             "Ambient occlusion map multiplying the ambient/environment "
             "light of the render engine");
+    setFile("Render_MetallicRoughnessMap", mat.metallicRoughnessTexture,
+            "glTF metallic-roughness map of the render engine PBR shading: "
+            "green multiplies roughness, blue metallic");
 }

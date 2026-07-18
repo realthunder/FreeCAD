@@ -296,9 +296,11 @@ private:
         mat.normalMapTexture = getFile("Render_NormalMap");
         mat.emissiveTexture = getFile("Render_EmissiveMap");
         mat.occlusionTexture = getFile("Render_OcclusionMap");
+        mat.metallicRoughnessTexture = getFile("Render_MetallicRoughnessMap");
         mat.valid = mat.metallic >= 0.0 || mat.roughness >= 0.0
             || !mat.baseColorTexture.empty() || !mat.normalMapTexture.empty()
-            || !mat.emissiveTexture.empty() || !mat.occlusionTexture.empty();
+            || !mat.emissiveTexture.empty() || !mat.occlusionTexture.empty()
+            || !mat.metallicRoughnessTexture.empty();
         if (mat.valid) {
             mat.hasBaseColor = true;
             mat.baseColor = vp->ShapeColor.getValue();

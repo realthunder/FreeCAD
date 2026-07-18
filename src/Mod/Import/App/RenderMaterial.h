@@ -49,6 +49,7 @@ struct RenderMaterial
     std::string normalMapTexture;
     std::string emissiveTexture;
     std::string occlusionTexture;
+    std::string metallicRoughnessTexture;
 };
 
 }  // namespace Import

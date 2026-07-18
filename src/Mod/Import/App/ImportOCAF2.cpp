@@ -335,6 +335,7 @@ bool ImportOCAF2::getRenderMaterial(TDF_Label label, RenderMaterial& mat)
     // turn fully metallic) on re-import.
     if (pbr.BaseColorTexture.IsNull() && pbr.NormalTexture.IsNull()
         && pbr.EmissiveTexture.IsNull() && pbr.OcclusionTexture.IsNull()
+        && pbr.MetallicRoughnessTexture.IsNull()
         && pbr.Metallic >= 1.0f && pbr.Roughness >= 1.0f) {
         return false;
     }
@@ -368,6 +369,8 @@ bool ImportOCAF2::getRenderMaterial(TDF_Label label, RenderMaterial& mat)
     mat.normalMapTexture = extract(pbr.NormalTexture, "gltf_normal");
     mat.emissiveTexture = extract(pbr.EmissiveTexture, "gltf_emissive");
     mat.occlusionTexture = extract(pbr.OcclusionTexture, "gltf_occlusion");
+    mat.metallicRoughnessTexture =
+        extract(pbr.MetallicRoughnessTexture, "gltf_metalrough");
 
     mat.valid = true;
     return true;

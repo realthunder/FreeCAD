@@ -250,9 +250,14 @@ void ExportOCAF2::setupObject(TDF_Label label,
             XCAFDoc_VisMaterialPBR pbr;
             pbr.IsDefined = Standard_True;
             // glTF defaults are metallic 1 / roughness 1; unset factors
-            // export as a plain dielectric instead.
-            pbr.Metallic = rmat.metallic >= 0.0 ? float(rmat.metallic) : 0.0f;
-            pbr.Roughness = rmat.roughness >= 0.0 ? float(rmat.roughness) : 1.0f;
+            // export as a plain dielectric instead — unless a
+            // metallic-roughness texture goes out, whose channels the
+            // factors multiply (metallic 0 would cancel the map).
+            bool hasMRTexture = !rmat.metallicRoughnessTexture.empty();
+            pbr.Metallic = rmat.metallic >= 0.0 ? float(rmat.metallic)
+                                                : (hasMRTexture ? 1.0f : 0.0f);
+            pbr.Roughness =
+                rmat.roughness >= 0.0 ? float(rmat.roughness) : 1.0f;
             if (rmat.hasBaseColor) {
                 pbr.BaseColor = Tools::convertColor(rmat.baseColor);
             }
@@ -274,6 +279,10 @@ void ExportOCAF2::setupObject(TDF_Label label,
             if (!rmat.occlusionTexture.empty()) {
                 pbr.OcclusionTexture =
                     new Image_Texture(rmat.occlusionTexture.c_str());
+            }
+            if (hasMRTexture) {
+                pbr.MetallicRoughnessTexture =
+                    new Image_Texture(rmat.metallicRoughnessTexture.c_str());
             }
             visMat->SetPbrMaterial(pbr);
             TDF_Label matLabel = aMatTool->AddMaterial(
