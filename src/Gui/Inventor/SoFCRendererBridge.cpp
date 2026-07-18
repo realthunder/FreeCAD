@@ -801,6 +801,16 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
         res.threshold = float(viewParamOverride<App::PropertyFloat>(
                 view, "Shadow", "Threshold",
                 ViewParams::getShadowThreshold()));
+        // Coin's N-tap receiver spread kernel (the Shadow draw style's
+        // SpreadSize/SpreadSampleSize properties, packed into the Coin
+        // smoothBorder field by the viewer; the backend consumes the
+        // raw values).
+        res.spreadSize = float(viewParamOverride<App::PropertyInteger>(
+                view, "Shadow", "SpreadSize",
+                ViewParams::getShadowSpreadSize()));
+        res.spreadSampleSize = float(viewParamOverride<App::PropertyInteger>(
+                view, "Shadow", "SpreadSampleSize",
+                ViewParams::getShadowSpreadSampleSize()));
         res.precision = float(viewParamOverride<App::PropertyFloat>(
                 view, "Shadow", "Precision",
                 ViewParams::getShadowPrecision()));

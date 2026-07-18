@@ -48,7 +48,11 @@ uniform vec4 u_lightDir;
 uniform vec4 u_lightPos;
 uniform vec4 u_lightColor;
 // EVSM warp exponent (x): the moments store exp(c z), exp(c z)^2 of
-// the light window depth.
+// the light window depth. y = Coin's VsmLookup smoothstep threshold.
+// zw = the Coin SoShadowGroup N-tap spread kernel (ShadowSpreadSize /
+// ShadowSpreadSampleSize): z = tap spacing in shadow map UV (Coin's
+// swidth * 0.001, the 0.1 spot factor folded in), w = kernel mode —
+// 0 single tap, 1 Coin's 4-tap dithered kernel, N >= 3 an N x N grid.
 uniform vec4 u_evsm;
 uniform mat4 u_shadowMatrix;
 #ifdef TEXTURE
@@ -74,6 +78,45 @@ uniform vec4 u_bumpParams;
 SAMPLER2D(s_texEmissive, 4);
 SAMPLER2D(s_texOcclusion, 5);
 #endif
+
+// One variance shadow map tap at uv against receiver light-window
+// depth z. Plain VSM runs Coin SoShadowGroup's exact VsmLookup
+// (including its far-plane map.x < 0.9999 early-out — cleared texels
+// read as lit); EVSM (SmoothBorder blur active) warps the biased depth
+// like the caster.
+float fc_shadowTap(vec2 uv, float z)
+{
+	vec2 mo = texture2D(s_texShadow, uv).xy;
+	if (u_evsm.x < 0.5)
+	{
+		// Plain VSM, Coin SoShadowGroup parity (its VsmLookup):
+		// epsilon (u_shadowParams.y) adds to the variance outright
+		// and the threshold (u_evsm.y) smoothsteps the tail —
+		// moment interpolation across a depth gap makes the soft
+		// distance-growing penumbra of the GL Shadow style.
+		if (mo.x >= 0.9999)
+			return 1.0;
+		float lit = z <= mo.x ? 1.0 : 0.0;
+		float va = min(max(mo.y - mo.x * mo.x, 0.0)
+		                   + u_shadowParams.y,
+		               1.0);
+		float dd = mo.x - z;
+		float pmax = va / (va + dd * dd);
+		pmax *= smoothstep(u_evsm.y, 1.0, pmax);
+		return max(lit, pmax);
+	}
+	// EVSM: the variance floor scales with the warped moment.
+	float p = exp(u_evsm.x * (z - u_shadowParams.z));
+	if (p > mo.x)
+	{
+		float va = max(mo.y - mo.x * mo.x,
+		               u_shadowParams.y * mo.x * mo.x);
+		float dd = p - mo.x;
+		float pmax = va / (va + dd * dd);
+		return clamp((pmax - 0.3) / 0.7, 0.0, 1.0);
+	}
+	return 1.0;
+}
 
 void main()
 {
@@ -210,42 +253,65 @@ void main()
 		if (sp.x > 0.0 && sp.x < 1.0 && sp.y > 0.0 && sp.y < 1.0
 		    && sp.z > 0.0 && sp.z < 1.0)
 		{
-			vec2 mo = texture2D(s_texShadow, sp.xy).xy;
-			if (u_evsm.x < 0.5)
+			if (u_evsm.w > 0.5 && u_evsm.z > 0.0)
 			{
-				// Plain VSM, Coin SoShadowGroup parity (its
-				// VsmLookup): epsilon (u_shadowParams.y) adds
-				// to the variance outright and the threshold
-				// (u_evsm.y) smoothsteps the tail — moment
-				// interpolation across a depth gap makes the
-				// soft distance-growing penumbra of the GL
-				// Shadow style.
-				float lit = sp.z <= mo.x ? 1.0 : 0.0;
-				float va = min(max(mo.y - mo.x * mo.x, 0.0)
-				                   + u_shadowParams.y,
-				               1.0);
-				float dd = mo.x - sp.z;
-				float pmax = va / (va + dd * dd);
-				pmax *= smoothstep(u_evsm.y, 1.0, pmax);
-				shadow = max(lit, pmax);
+				// Coin's N-tap spread kernel (ShadowSpreadSize
+				// / SpreadSampleSize): taps average, spacing
+				// scales with the homogeneous w like Coin's
+				// shadowCoord.w (1 for a directional light).
+				float sw = u_evsm.z * sp.w;
+				shadow = 0.0;
+				if (u_evsm.w < 1.5)
+				{
+					// SpreadSampleSize 0: Coin's fixed
+					// 4-tap kernel dithered by the pixel
+					// parity.
+					vec2 dith = mod(floor(gl_FragCoord.xy),
+					                vec2(2.0, 2.0));
+					dith.y = -dith.y;
+					shadow += fc_shadowTap(
+					    sp.xy + (vec2(-1.5, 1.5) + dith) * sw,
+					    sp.z);
+					shadow += fc_shadowTap(
+					    sp.xy + (vec2(-1.5, -0.5) + dith) * sw,
+					    sp.z);
+					shadow += fc_shadowTap(
+					    sp.xy + (vec2(0.5, 1.5) + dith) * sw,
+					    sp.z);
+					shadow += fc_shadowTap(
+					    sp.xy + (vec2(0.5, -0.5) + dith) * sw,
+					    sp.z);
+					shadow *= 0.25;
+				}
+				else
+				{
+					// SpreadSampleSize >= 1: an N x N grid,
+					// N = min(2 * size + 1, 8) with Coin's
+					// integer-centered offsets.
+					int n = int(u_evsm.w + 0.5);
+					int cen = n / 2;
+					for (int j = 0; j < 8; ++j)
+					{
+						if (j >= n)
+							break;
+						for (int k = 0; k < 8; ++k)
+						{
+							if (k >= n)
+								break;
+							shadow += fc_shadowTap(
+							    sp.xy
+							        + vec2(float(k - cen),
+							               float(j - cen))
+							            * sw,
+							    sp.z);
+						}
+					}
+					shadow /= float(n * n);
+				}
 			}
 			else
 			{
-				// EVSM (SmoothBorder blur active): warp the
-				// (biased) receiver depth like the caster; the
-				// variance floor scales with the warped moment.
-				float p = exp(u_evsm.x
-				              * (sp.z - u_shadowParams.z));
-				if (p > mo.x)
-				{
-					float va = max(mo.y - mo.x * mo.x,
-					               u_shadowParams.y
-					                   * mo.x * mo.x);
-					float dd = p - mo.x;
-					float pmax = va / (va + dd * dd);
-					shadow = clamp((pmax - 0.3) / 0.7,
-					               0.0, 1.0);
-				}
+				shadow = fc_shadowTap(sp.xy, sp.z);
 			}
 		}
 	}

@@ -252,6 +252,15 @@ struct LightConfig {
     /// Chebyshev tail (light-bleed reduction). Plain-VSM mode only.
     float epsilon = 1.0e-5f;
     float threshold = 0.0f;
+    /// Coin SoShadowGroup N-tap receiver spread kernel
+    /// (ShadowSpreadSize / ShadowSpreadSampleSize, the Shadow draw
+    /// style's SpreadSize/SpreadSampleSize properties): spreadSize
+    /// scales the tap spacing (Coin: swidth = size * 5e-4 shadow map
+    /// UV per unit offset, spot lights * 0.1), spreadSampleSize picks
+    /// the kernel — 0 a 4-tap dithered kernel (spreadSize > 0), s >= 1
+    /// an N x N grid with N = min(2 s + 1, 8).
+    float spreadSize = 0.0f;
+    float spreadSampleSize = 0.0f;
     /// Shadow map size factor (ShadowPrecision, 0..1 of the backend's
     /// maximum — Coin's precision field semantics).
     float precision = 1.0f;
@@ -290,6 +299,8 @@ struct LightConfig {
             && dropOffRate == o.dropOffRate
             && smoothBorder == o.smoothBorder
             && epsilon == o.epsilon && threshold == o.threshold
+            && spreadSize == o.spreadSize
+            && spreadSampleSize == o.spreadSampleSize
             && precision == o.precision
             && ground == o.ground && groundScale == o.groundScale
             && groundColor == o.groundColor

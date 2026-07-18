@@ -2509,7 +2509,7 @@ public:
                              lightDirView[2], 1.0f};
         bgfx::setUniform(u_shadowParams, shadowParams);
         float evsm[4] = {shadowWarpFrame, shadowThreshold,
-                         0.0f, 0.0f};
+                         shadowSpreadUv, shadowSpreadMode};
         bgfx::setUniform(u_evsm, evsm);
         bgfx::setUniform(u_lightDir, lightDir);
         bgfx::setUniform(u_lightPos, lightPosView);
@@ -3191,7 +3191,7 @@ public:
                 }
             }
             float evsm[4] = {shadowWarpFrame, shadowThreshold,
-                         0.0f, 0.0f};
+                         shadowSpreadUv, shadowSpreadMode};
             bgfx::setUniform(u_evsm, evsm);
             bgfx::setUniform(u_lightDir, lightDir);
             static const float noSpot[4] = {0.0f, 0.0f, 0.0f, -1.0f};
@@ -3559,6 +3559,12 @@ public:
     float shadowWarpFrame = 0.0f;
     float shadowEpsilon = 1.0e-5f;
     float shadowThreshold = 0.0f;
+    // Coin's N-tap receiver spread kernel (ShadowSpreadSize /
+    // SpreadSampleSize), packed into u_evsm.zw: tap spacing in shadow
+    // map uv and the kernel mode (0 off, 1 dithered 4-tap, N >= 3 an
+    // N x N grid).
+    float shadowSpreadUv = 0.0f;
+    float shadowSpreadMode = 0.0f;
     bool shadowFrame = false;  // shadows active this frame
     bgfx::TextureHandle shadowTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle shadowDepth = BGFX_INVALID_HANDLE;
@@ -3897,6 +3903,39 @@ public:
             lightconf.smoothBorder > 0.0f ? view->shadowWarp : 0.0f;
         view->shadowEpsilon = lightconf.epsilon;
         view->shadowThreshold = lightconf.threshold;
+        // Coin's N-tap receiver spread kernel (ShadowSpreadSize /
+        // SpreadSampleSize). The viewer packs both into the Coin
+        // smoothBorder field as spread * 1e-6 + sample * 1e-2 digits;
+        // Coin decodes swidth = (packed % 100000) * 5e-5 — i.e. the
+        // spread wraps every 10000 (replicated for parity) — and taps
+        // at coord + offset * swidth * 0.001 (spot lights * 0.1). The
+        // viewer also shrinks a spot light's spread by 256 / the scene
+        // extent on large scenes before packing (the backend uses the
+        // raw scene bbox where the viewer's box includes the ground).
+        {
+            float spread = std::max(lightconf.spreadSize, 0.0f);
+            spread = std::fmod(spread * 10.0f, 100000.0f) * 0.1f;
+            if (lightconf.spot && bboxValid) {
+                float maxSize = std::max(
+                    bboxMax[0] - bboxMin[0],
+                    std::max(bboxMax[1] - bboxMin[1],
+                             bboxMax[2] - bboxMin[2]));
+                if (maxSize > 256.0f)
+                    spread *= 256.0f / maxSize;
+            }
+            int sample = int(bx::clamp(lightconf.spreadSampleSize,
+                                       0.0f, 7.0f) + 0.5f);
+            float mode = 0.0f;
+            if (spread > 0.0f)
+                mode = sample >= 1
+                    ? float(std::min(2 * sample + 1, 8))
+                    : 1.0f;
+            float sw = spread * 5.0e-4f * 0.001f;
+            if (lightconf.spot)
+                sw *= 0.1f;
+            view->shadowSpreadUv = sw;
+            view->shadowSpreadMode = mode;
+        }
         static const bool dbgshadow =
             (getenv("FC_BGFX_DEBUG_SHADOW") != nullptr);
         if (dbgshadow)
