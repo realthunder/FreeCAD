@@ -775,11 +775,26 @@ independent of each other; item 4 builds on item 3's property model.
    save/reopen, export→re-import (keep placement) and a normal-map
    round trip are all pixel-identical; untextured glTF still rebuilds
    planar B-Rep faces; regular B-Rep scenes are bit-unchanged.
-   Remaining: per-face materials (the texture-slot set — base color,
-   normal, emissive, occlusion, metallic-roughness — is complete as of
-   2026-07); placement of a single textured mesh is still dropped with
-   the default `ExportKeepPlacement=false` (deliberate preference
-   semantics).
+   *Per-face materials done (2026-07)*: a mesh whose primitives carry
+   different render-relevant materials now splits on import into one
+   `Part::Feature` per material group under the same group container an
+   assembly uses (links to the mesh label reference the container), each
+   carrying its own material through the existing whole-object Render_*
+   path with the glTF material name as its label. Grouping ignores the
+   base color — materials differing only in color merge and the per-face
+   color path keeps the distinction, so multi-color/uniform-factor
+   meshes still import as a single feature — and keys textures by the
+   reader-shared `Image_Texture` handle; untextured primitives arrive
+   fixShape-rebuilt (possibly sewn), so the scan explores each sub
+   shape's faces. Verified: texture + metal two-primitive mesh splits
+   correctly and renders in bgfx; instanced mesh nodes become links to
+   the split container; color-only material pairs and single-material
+   meshes import unchanged; STEP untouched. Export of a split group
+   writes one node+mesh per feature (per-face materials become
+   per-object — visually equivalent, structurally N meshes instead of N
+   primitives). Item-4 remaining: placement of a single textured mesh is
+   still dropped with the default `ExportKeepPlacement=false`
+   (deliberate preference semantics).
 
 ### Phase 3 — performance & portability (open-ended)
 
