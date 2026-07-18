@@ -833,6 +833,57 @@ independent of each other; item 4 builds on item 3's property model.
   expansion — cross-object batching there would collide); a non-zero
   `RenderCacheMergeCount` bakes matrices into merged caches and defeats
   grouping (default 0 is the instancing-friendly path).
+  *TShape-level cut done (2026-07).* Instancing now reaches below the
+  object boundary into `TopoDS_TShape`: a compound holding located
+  instances of one TShape (`TopoDS_Shape` = TShape + placement) used to
+  bake N transformed copies of the tessellation into one coordinate node
+  — `ViewProviderPartExt::buildInstanced()` instead tessellates each
+  unique leaf sub-shape once (in its local frame, deflection from the
+  leaf bbox so the same part in differently sized parents shares) into a
+  **global** refcounted table keyed (TShape, orientation, quantized
+  tessellation parameters) — shared across objects — and instantiates
+  per-leaf `SoSeparator[SoMatrixTransform, shared SoFCSelectionRoot]`
+  wrappers in the display-mode roots. The shared selection root is the
+  render-cache child boundary, so the existing flattening yields
+  shared-cache entries with per-instance matrices and the backend's
+  instanced submit batches them (verified: 6-instance compound = one
+  vertex cache per primitive type, one instanced face submit).
+  **Flatten-unless-provably-better**: the legacy baked build runs
+  whenever the `ShapeInstancing` param is off, render-cache mode ≠ 3, no
+  backend renderer is selected, the backend published no GPU-instancing
+  capability (`Render::Renderer::instancingHint`, from
+  `BGFX_CAPS_INSTANCING` — without real instancing many small shared
+  nodes are a net loss, the 2021 `LinkShapeTable` lesson), the shape is
+  not a compound with a repeated (TShape, orientation), an instance is
+  mirror-placed, two leaves are identical incl. location (MapShapes
+  dedup would shift element numbering), the defensive
+  global-vs-concatenated numbering check fails, or the **final applied
+  per-element colors diverge in value** — a same-valued `DiffuseColor`
+  array counts as uniform; only resolved values matter, checked at the
+  `setHighlighted*` apply points which also restructure on transitions
+  in both directions (per-part colors bake into the shared vertex caches
+  and cannot differ per instance until the color-variant layer lands).
+  A parameter observer rebuilds Part visuals when the gate parameters
+  flip. Element naming stays exact (pick paths resolve the instance
+  wrapper and add its face/edge/vertex base offsets); sub-element
+  highlight degrades to whole-object highlight (a detail context on the
+  shared node would light every instance) — the explicitly colored
+  selection now wins the backend's whole-object dedup (`SelIdBits`
+  mirrored into Renderer.h, model matrix added to the dedup key so
+  distinct placements never collapse). Verified on llvmpipe: instanced
+  vs flattened bit-identical (boxes, incl. selection of the Link-array
+  suite), GL renderer stays flattened (scene-graph probe), divergent
+  per-face colors flatten while same-valued arrays stay instanced,
+  cylinders render correctly. Next phases (user-agreed): **(B)**
+  color-variant layer — instances partition by resolved per-face color
+  vector, one shared variant faceset per distinct vector referencing the
+  same coordinate/index data (draw-minimal: draws = #distinct vectors,
+  memory bounded by flatten); **(C)** separate color vertex stream in
+  cache/backend so variants share position/normal/index GPU buffers
+  (texcoords already ride a second stream), plus forced UV capture for
+  shared groups (today a shared cache built under an untextured user
+  leaves a textured sharer without UVs). Per-instance sub-element
+  highlight (path-keyed contexts) remains open.
 - Frustum/occlusion culling, GPU-driven paths (bgfx ex.37/48) for very large
   assemblies.
 - WASM build of the renderer; progressive refinement (drop AA/AO during
