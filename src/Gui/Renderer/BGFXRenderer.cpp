@@ -345,10 +345,65 @@ BGFXRendererLib BGFXLib;
 
 } // namespace Renderer
 
-// Interleaved vertex format built from the separate MeshData attribute
-// arrays: position + normal + rgba8 color (white when the cache has no
-// per-vertex colors, zero normal when it has no normals).
+// Geometry vertex stream built from the separate MeshData attribute
+// arrays: position + normal (zero normal when the cache has none).
+// Per-vertex colors ride their own stream (ColorVertex) so caches that
+// differ only in baked colors — the PartGui color variants and the
+// render cache's recolored copies — share one geometry buffer.
 struct SceneVertex
+{
+    float px, py, pz;
+    float nx, ny, nz;
+
+    static void init()
+    {
+        if (ms_initialized)
+            return;
+        ms_initialized = true;
+        ms_layout
+            .begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Normal,   3, bgfx::AttribType::Float)
+            .end();
+    };
+
+    static bgfx::VertexLayout ms_layout;
+    static bool ms_initialized;
+};
+
+bgfx::VertexLayout SceneVertex::ms_layout;
+bool SceneVertex::ms_initialized = false;
+
+// Second vertex stream of the mesh/flat programs: per-vertex rgba8
+// color. Meshes without baked colors bind a shared all-white buffer
+// (grown to the largest vertex count seen) instead of carrying one each.
+struct ColorVertex
+{
+    uint32_t rgba;
+
+    static void init()
+    {
+        if (ms_initialized)
+            return;
+        ms_initialized = true;
+        ms_layout
+            .begin()
+            .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+            .end();
+    };
+
+    static bgfx::VertexLayout ms_layout;
+    static bool ms_initialized;
+};
+
+bgfx::VertexLayout ColorVertex::ms_layout;
+bool ColorVertex::ms_initialized = false;
+
+// Interleaved position + normal + rgba8 vertex of the TRANSIENT draws
+// (background gradient, shadow ground quad): one-off buffers where a
+// separate color stream would buy nothing. The mesh programs source
+// their attributes from this single stream.
+struct TransientVertex
 {
     float px, py, pz;
     float nx, ny, nz;
@@ -371,12 +426,12 @@ struct SceneVertex
     static bool ms_initialized;
 };
 
-bgfx::VertexLayout SceneVertex::ms_layout;
-bool SceneVertex::ms_initialized = false;
+bgfx::VertexLayout TransientVertex::ms_layout;
+bool TransientVertex::ms_initialized = false;
 
-// Second vertex stream of textured meshes: 2D texture coordinates,
-// bound only by the textured mesh programs (texcoords live outside
-// SceneVertex so untextured scenes don't pay for them).
+// Texture-coordinate vertex stream of textured meshes: 2D texture
+// coordinates, bound only by the textured mesh programs (texcoords live
+// outside SceneVertex so untextured scenes don't pay for them).
 struct TexCoordVertex
 {
     float u, v;
@@ -470,82 +525,112 @@ struct CapVertex
 bgfx::VertexLayout CapVertex::ms_layout;
 bool CapVertex::ms_initialized = false;
 
-// GPU buffers of one MeshData, keyed by MeshData::cacheId. A cache id
-// always refers to identical content, so buffers are immutable and reused
-// until the id disappears from the scene.
-struct GpuMesh
+// Content identity of a mesh's geometry: every attribute and index array
+// EXCEPT the per-vertex colors (they ride their own stream). Two caches
+// with the same key — e.g. the color variants of one shared tessellation,
+// or the render cache's recolored/reindexed copies — share one set of
+// geometry buffers. The hash is FNV-1a over the raw array bytes,
+// computed once per cache id.
+struct GeomKey
 {
+    uint64_t hash = 0;
+    int numVertices = 0;
+    int numTri = 0;
+    int numLine = 0;
+    int numPoint = 0;
+    uint8_t hasNormals = 0;
+    uint8_t hasTexCoords = 0;
+
+    bool operator==(const GeomKey &o) const
+    {
+        return hash == o.hash && numVertices == o.numVertices
+            && numTri == o.numTri && numLine == o.numLine
+            && numPoint == o.numPoint && hasNormals == o.hasNormals
+            && hasTexCoords == o.hasTexCoords;
+    }
+};
+
+struct GeomKeyHasher
+{
+    size_t operator()(const GeomKey &k) const { return size_t(k.hash); }
+};
+
+static uint64_t fnv1a64(uint64_t h, const void *data, size_t len)
+{
+    const uint8_t *p = static_cast<const uint8_t *>(data);
+    for (size_t i = 0; i < len; ++i) {
+        h ^= p[i];
+        h *= 0x100000001b3ull;
+    }
+    return h;
+}
+
+static GeomKey computeGeomKey(const Render::MeshData &mesh)
+{
+    GeomKey key;
+    key.numVertices = mesh.numVertices;
+    key.numTri = mesh.numTriangleIndices;
+    key.numLine = mesh.numLineIndices;
+    key.numPoint = mesh.numPointIndices;
+    key.hasNormals = mesh.normals ? 1 : 0;
+    key.hasTexCoords = mesh.texCoords ? 1 : 0;
+    uint64_t h = 0xcbf29ce484222325ull;
+    size_t nv = size_t(mesh.numVertices);
+    h = fnv1a64(h, mesh.positions, nv * 12);
+    if (mesh.normals)
+        h = fnv1a64(h, mesh.normals, nv * 12);
+    if (mesh.texCoords)
+        h = fnv1a64(h, mesh.texCoords, nv * 16);
+    if (mesh.numTriangleIndices > 0)
+        h = fnv1a64(h, mesh.triangleIndices,
+                    size_t(mesh.numTriangleIndices) * 4);
+    if (mesh.numLineIndices > 0)
+        h = fnv1a64(h, mesh.lineIndices, size_t(mesh.numLineIndices) * 4);
+    if (mesh.numPointIndices > 0)
+        h = fnv1a64(h, mesh.pointIndices,
+                    size_t(mesh.numPointIndices) * 4);
+    key.hash = h;
+    return key;
+}
+
+// Colorless GPU buffers of one geometry (GeomKey): shared by every cache
+// whose arrays match. Buffers are immutable; entries are dropped when no
+// referencing mesh used them recently.
+struct GpuGeometry
+{
+    /// Position + normal vertex stream.
     bgfx::VertexBufferHandle vbh = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle tri = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle line = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle point = BGFX_INVALID_HANDLE;
-    /// Per-segment instance data (endpoints + colors) feeding the
-    /// quad-expanded thick line path; invalid without instancing support.
-    bgfx::VertexBufferHandle lineInst = BGFX_INVALID_HANDLE;
-    /// Per-point instance data (position + color) feeding the point
-    /// sprite path; invalid without instancing support.
-    bgfx::VertexBufferHandle pointInst = BGFX_INVALID_HANDLE;
-    /// Seam-filtered variants of line/lineInst (hidden-line hideSeam);
-    /// only created when the mesh carries a no-seam index set.
+    /// Seam-filtered line index set (hidden-line hideSeam); only created
+    /// when the mesh carries a no-seam index set.
     bgfx::IndexBufferHandle lineNoSeam = BGFX_INVALID_HANDLE;
-    bgfx::VertexBufferHandle lineNoSeamInst = BGFX_INVALID_HANDLE;
     /// Triangle-edge segment / corner instance data feeding the stencil
-    /// outline passes, built lazily on first outline use of the mesh.
-    /// Instance i maps 1:1 onto triangle index position i (the edge
-    /// leaving that corner), so partial index ranges translate directly
-    /// into instance ranges.
+    /// outline passes (constant white colors), built lazily on first
+    /// outline use. Instance i maps 1:1 onto triangle index position i
+    /// (the edge leaving that corner), so partial index ranges translate
+    /// directly into instance ranges.
     bgfx::VertexBufferHandle triEdgeInst = BGFX_INVALID_HANDLE;
     bgfx::VertexBufferHandle triCornerInst = BGFX_INVALID_HANDLE;
-    /// Texture-coordinate stream of textured draws (second vertex
-    /// stream), built lazily on first textured use.
+    /// Texture-coordinate stream of textured draws, built lazily on
+    /// first textured use.
     bgfx::VertexBufferHandle texcoord = BGFX_INVALID_HANDLE;
     uint64_t lastUsed = 0;
 
     void destroy()
     {
-        if (bgfx::isValid(vbh)) {
-            bgfx::destroy(vbh);
-            vbh = BGFX_INVALID_HANDLE;
+        for (auto ib : {&tri, &line, &point, &lineNoSeam}) {
+            if (bgfx::isValid(*ib)) {
+                bgfx::destroy(*ib);
+                *ib = BGFX_INVALID_HANDLE;
+            }
         }
-        if (bgfx::isValid(tri)) {
-            bgfx::destroy(tri);
-            tri = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(line)) {
-            bgfx::destroy(line);
-            line = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(point)) {
-            bgfx::destroy(point);
-            point = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(lineInst)) {
-            bgfx::destroy(lineInst);
-            lineInst = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(pointInst)) {
-            bgfx::destroy(pointInst);
-            pointInst = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(lineNoSeam)) {
-            bgfx::destroy(lineNoSeam);
-            lineNoSeam = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(lineNoSeamInst)) {
-            bgfx::destroy(lineNoSeamInst);
-            lineNoSeamInst = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(triEdgeInst)) {
-            bgfx::destroy(triEdgeInst);
-            triEdgeInst = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(triCornerInst)) {
-            bgfx::destroy(triCornerInst);
-            triCornerInst = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(texcoord)) {
-            bgfx::destroy(texcoord);
-            texcoord = BGFX_INVALID_HANDLE;
+        for (auto vb : {&vbh, &triEdgeInst, &triCornerInst, &texcoord}) {
+            if (bgfx::isValid(*vb)) {
+                bgfx::destroy(*vb);
+                *vb = BGFX_INVALID_HANDLE;
+            }
         }
     }
 
@@ -568,10 +653,6 @@ struct GpuMesh
                 v.nx = v.ny = 0.0f;
                 v.nz = 1.0f;
             }
-            if (mesh.colors)
-                memcpy(&v.rgba, mesh.colors + i*4, 4);
-            else
-                v.rgba = 0xffffffff;
         }
         vbh = bgfx::createVertexBuffer(vmem, SceneVertex::ms_layout);
 
@@ -587,74 +668,8 @@ struct GpuMesh
             point = bgfx::createIndexBuffer(
                 bgfx::copy(mesh.pointIndices, mesh.numPointIndices * 4),
                 BGFX_BUFFER_INDEX32);
-
-        if (mesh.numLineIndices > 1
-                && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING))
-            lineInst = makeSegmentInstances(
-                mesh, mesh.lineIndices, mesh.numLineIndices);
-
-        if (mesh.numPointIndices > 0
-                && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)) {
-            LineQuadVertex::init();
-            const bgfx::Memory *imem = bgfx::alloc(
-                uint32_t(mesh.numPointIndices) * 8 * sizeof(float));
-            float *d = reinterpret_cast<float *>(imem->data);
-            for (int i = 0; i < mesh.numPointIndices; ++i, d += 8) {
-                int32_t ip = mesh.pointIndices[i];
-                d[0] = mesh.positions[ip*3];
-                d[1] = mesh.positions[ip*3 + 1];
-                d[2] = mesh.positions[ip*3 + 2];
-                d[3] = 0.0f;
-                if (mesh.colors) {
-                    for (int c = 0; c < 4; ++c)
-                        d[4 + c] = mesh.colors[ip*4 + c] / 255.0f;
-                } else {
-                    for (int c = 0; c < 4; ++c)
-                        d[4 + c] = 1.0f;
-                }
-            }
-            pointInst = bgfx::createVertexBuffer(
-                imem, LineQuadVertex::ms_pointInstLayout);
-        }
     }
 
-    /// One quad-expansion instance per line segment (endpoints + endpoint
-    /// colors), from any GL_LINES style index set of the mesh.
-    static bgfx::VertexBufferHandle makeSegmentInstances(
-            const Render::MeshData &mesh, const int32_t *indices, int num)
-    {
-        LineQuadVertex::init();
-        int nseg = num / 2;
-        const bgfx::Memory *imem =
-            bgfx::alloc(uint32_t(nseg) * 16 * sizeof(float));
-        float *d = reinterpret_cast<float *>(imem->data);
-        for (int s = 0; s < nseg; ++s, d += 16) {
-            int32_t ia = indices[s*2];
-            int32_t ib = indices[s*2 + 1];
-            d[0] = mesh.positions[ia*3];
-            d[1] = mesh.positions[ia*3 + 1];
-            d[2] = mesh.positions[ia*3 + 2];
-            d[3] = 0.0f;
-            d[4] = mesh.positions[ib*3];
-            d[5] = mesh.positions[ib*3 + 1];
-            d[6] = mesh.positions[ib*3 + 2];
-            d[7] = 0.0f;
-            if (mesh.colors) {
-                for (int i = 0; i < 4; ++i) {
-                    d[8 + i] = mesh.colors[ia*4 + i] / 255.0f;
-                    d[12 + i] = mesh.colors[ib*4 + i] / 255.0f;
-                }
-            } else {
-                for (int i = 0; i < 8; ++i)
-                    d[8 + i] = 1.0f;
-            }
-        }
-        return bgfx::createVertexBuffer(imem, LineQuadVertex::ms_instLayout);
-    }
-
-    /// Seam-filtered line buffers (hidden-line hideSeam), built on first
-    /// use: a mesh may be uploaded before the hidden-line feed arrives
-    /// (GpuMesh is keyed by cacheId), so upload() cannot see this data.
     void ensureNoSeam(const Render::MeshData &mesh)
     {
         if (bgfx::isValid(lineNoSeam) || mesh.numNoSeamLineIndices <= 1)
@@ -663,9 +678,6 @@ struct GpuMesh
             bgfx::copy(mesh.noSeamLineIndices,
                        mesh.numNoSeamLineIndices * 4),
             BGFX_BUFFER_INDEX32);
-        if (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)
-            lineNoSeamInst = makeSegmentInstances(
-                mesh, mesh.noSeamLineIndices, mesh.numNoSeamLineIndices);
     }
 
     /// Texture-coordinate stream (Coin xyzw texcoords collapsed to 2D,
@@ -739,6 +751,130 @@ struct GpuMesh
         }
         triCornerInst = bgfx::createVertexBuffer(
             cmem, LineQuadVertex::ms_pointInstLayout);
+    }
+};
+
+// Per-cache GPU buffers of one MeshData, keyed by MeshData::cacheId: the
+// baked per-vertex color stream and the color-carrying line/point
+// instance data, plus a reference to the shared colorless geometry. A
+// cache id always refers to identical content, so buffers are immutable
+// and reused until the id disappears from the scene.
+struct GpuMesh
+{
+    /// Shared geometry buffers (owned by the geometry table; guaranteed
+    /// to outlive this entry — see collectMeshes).
+    GpuGeometry *geom = nullptr;
+    /// Per-vertex rgba8 color stream; invalid when the cache carries no
+    /// baked colors (the shared white buffer is bound instead).
+    bgfx::VertexBufferHandle color = BGFX_INVALID_HANDLE;
+    /// Per-segment instance data (endpoints + colors) feeding the
+    /// quad-expanded thick line path; invalid without instancing support.
+    bgfx::VertexBufferHandle lineInst = BGFX_INVALID_HANDLE;
+    /// Per-point instance data (position + color) feeding the point
+    /// sprite path; invalid without instancing support.
+    bgfx::VertexBufferHandle pointInst = BGFX_INVALID_HANDLE;
+    /// Seam-filtered variant of lineInst (hidden-line hideSeam).
+    bgfx::VertexBufferHandle lineNoSeamInst = BGFX_INVALID_HANDLE;
+    uint64_t lastUsed = 0;
+
+    void destroy()
+    {
+        geom = nullptr;
+        for (auto vb : {&color, &lineInst, &pointInst, &lineNoSeamInst}) {
+            if (bgfx::isValid(*vb)) {
+                bgfx::destroy(*vb);
+                *vb = BGFX_INVALID_HANDLE;
+            }
+        }
+    }
+
+    void upload(const Render::MeshData &mesh)
+    {
+        if (mesh.colors) {
+            ColorVertex::init();
+            color = bgfx::createVertexBuffer(
+                bgfx::copy(mesh.colors, uint32_t(mesh.numVertices) * 4),
+                ColorVertex::ms_layout);
+        }
+
+        if (mesh.numLineIndices > 1
+                && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING))
+            lineInst = makeSegmentInstances(
+                mesh, mesh.lineIndices, mesh.numLineIndices);
+
+        if (mesh.numPointIndices > 0
+                && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)) {
+            LineQuadVertex::init();
+            const bgfx::Memory *imem = bgfx::alloc(
+                uint32_t(mesh.numPointIndices) * 8 * sizeof(float));
+            float *d = reinterpret_cast<float *>(imem->data);
+            for (int i = 0; i < mesh.numPointIndices; ++i, d += 8) {
+                int32_t ip = mesh.pointIndices[i];
+                d[0] = mesh.positions[ip*3];
+                d[1] = mesh.positions[ip*3 + 1];
+                d[2] = mesh.positions[ip*3 + 2];
+                d[3] = 0.0f;
+                if (mesh.colors) {
+                    for (int c = 0; c < 4; ++c)
+                        d[4 + c] = mesh.colors[ip*4 + c] / 255.0f;
+                } else {
+                    for (int c = 0; c < 4; ++c)
+                        d[4 + c] = 1.0f;
+                }
+            }
+            pointInst = bgfx::createVertexBuffer(
+                imem, LineQuadVertex::ms_pointInstLayout);
+        }
+    }
+
+    /// One quad-expansion instance per line segment (endpoints + endpoint
+    /// colors), from any GL_LINES style index set of the mesh.
+    static bgfx::VertexBufferHandle makeSegmentInstances(
+            const Render::MeshData &mesh, const int32_t *indices, int num)
+    {
+        LineQuadVertex::init();
+        int nseg = num / 2;
+        const bgfx::Memory *imem =
+            bgfx::alloc(uint32_t(nseg) * 16 * sizeof(float));
+        float *d = reinterpret_cast<float *>(imem->data);
+        for (int s = 0; s < nseg; ++s, d += 16) {
+            int32_t ia = indices[s*2];
+            int32_t ib = indices[s*2 + 1];
+            d[0] = mesh.positions[ia*3];
+            d[1] = mesh.positions[ia*3 + 1];
+            d[2] = mesh.positions[ia*3 + 2];
+            d[3] = 0.0f;
+            d[4] = mesh.positions[ib*3];
+            d[5] = mesh.positions[ib*3 + 1];
+            d[6] = mesh.positions[ib*3 + 2];
+            d[7] = 0.0f;
+            if (mesh.colors) {
+                for (int i = 0; i < 4; ++i) {
+                    d[8 + i] = mesh.colors[ia*4 + i] / 255.0f;
+                    d[12 + i] = mesh.colors[ib*4 + i] / 255.0f;
+                }
+            } else {
+                for (int i = 0; i < 8; ++i)
+                    d[8 + i] = 1.0f;
+            }
+        }
+        return bgfx::createVertexBuffer(imem, LineQuadVertex::ms_instLayout);
+    }
+
+    /// Seam-filtered line buffers (hidden-line hideSeam), built on first
+    /// use: a mesh may be uploaded before the hidden-line feed arrives
+    /// (GpuMesh is keyed by cacheId), so upload() cannot see this data.
+    /// The index set lands on the shared geometry, the color-carrying
+    /// segment instances on this entry.
+    void ensureNoSeam(const Render::MeshData &mesh)
+    {
+        geom->ensureNoSeam(mesh);
+        if (bgfx::isValid(lineNoSeamInst)
+                || mesh.numNoSeamLineIndices <= 1)
+            return;
+        if (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)
+            lineNoSeamInst = makeSegmentInstances(
+                mesh, mesh.noSeamLineIndices, mesh.numNoSeamLineIndices);
     }
 };
 
@@ -913,7 +1049,7 @@ static inline void hashBytes(uint64_t &h, const void *data, size_t len)
     }
 }
 
-// 0xRRGGBBAA to the SceneVertex byte order (r,g,b,a in memory, i.e. what
+// 0xRRGGBBAA to the TransientVertex byte order (r,g,b,a in memory, i.e. what
 // GpuMesh::upload memcpy's from MeshData::colors).
 static inline uint32_t vertexColor(uint32_t rgba)
 {
@@ -1003,6 +1139,14 @@ public:
         for (auto &v : meshes)
             v.second.destroy();
         meshes.clear();
+        for (auto &v : geometries)
+            v.second.destroy();
+        geometries.clear();
+        if (bgfx::isValid(whiteColorVb)) {
+            bgfx::destroy(whiteColorVb);
+            whiteColorVb = BGFX_INVALID_HANDLE;
+        }
+        whiteColorCount = 0;
         for (auto &v : textures)
             v.second.destroy();
         textures.clear();
@@ -1921,9 +2065,57 @@ public:
     {
         GpuMesh &mesh = meshes[data.cacheId];
         mesh.lastUsed = frame;
-        if (!bgfx::isValid(mesh.vbh))
+        if (!mesh.geom) {
+            GeomKey key = computeGeomKey(data);
+            auto res = geometries.emplace(key, GpuGeometry());
+            GpuGeometry &geom = res.first->second;
+            if (!bgfx::isValid(geom.vbh))
+                geom.upload(data);
+            mesh.geom = &geom;
             mesh.upload(data);
+            static const bool dbgfeed =
+                (getenv("FC_BGFX_DEBUG_FEED") != nullptr);
+            if (dbgfeed)
+                fprintf(stderr,
+                        "bgfx mesh cache=%llx nv=%d geom=%llx%s\n",
+                        (unsigned long long)data.cacheId,
+                        data.numVertices,
+                        (unsigned long long)key.hash,
+                        res.second ? "" : " shared");
+        }
+        mesh.geom->lastUsed = frame;
         return &mesh;
+    }
+
+    /// Color stream fallback of meshes without baked per-vertex colors:
+    /// one shared all-white buffer, regrown to the largest vertex count
+    /// seen (attribute fetches are bounded by the draw's indices).
+    bgfx::VertexBufferHandle whiteColors(int numVertices)
+    {
+        if (numVertices > whiteColorCount) {
+            if (bgfx::isValid(whiteColorVb))
+                bgfx::destroy(whiteColorVb);
+            whiteColorCount = std::max(numVertices, 4096);
+            ColorVertex::init();
+            const bgfx::Memory *mem =
+                bgfx::alloc(uint32_t(whiteColorCount) * 4);
+            memset(mem->data, 0xff, size_t(whiteColorCount) * 4);
+            whiteColorVb = bgfx::createVertexBuffer(
+                mem, ColorVertex::ms_layout);
+        }
+        return whiteColorVb;
+    }
+
+    /// Bind the two mesh vertex streams: the shared colorless geometry
+    /// and the per-cache color stream (white fallback). Only for
+    /// programs whose vertex stage reads a_color0 (mesh/flat families);
+    /// depth-only programs bind gpu->geom->vbh alone.
+    void setMeshVertexBuffers(GpuMesh *gpu, const Render::MeshData &mesh)
+    {
+        bgfx::setVertexBuffer(0, gpu->geom->vbh);
+        bgfx::setVertexBuffer(1, bgfx::isValid(gpu->color)
+                                     ? gpu->color
+                                     : whiteColors(mesh.numVertices));
     }
 
     GpuTexture *getTexture(const Render::TextureImage &data)
@@ -1943,6 +2135,16 @@ public:
             if (it->second.lastUsed + 2 < frame) {
                 it->second.destroy();
                 it = meshes.erase(it);
+            } else
+                ++it;
+        }
+        // After the meshes: any geometry a surviving mesh references was
+        // touched this frame through it, so an aged geometry has no
+        // referencing mesh left and can go.
+        for (auto it = geometries.begin(); it != geometries.end();) {
+            if (it->second.lastUsed + 2 < frame) {
+                it->second.destroy();
+                it = geometries.erase(it);
             } else
                 ++it;
         }
@@ -1971,9 +2173,9 @@ public:
         uint32_t tcol = vertexColor(bg.toColor);
         uint32_t mcol = vertexColor(bg.midColor);
 
-        std::vector<SceneVertex> verts;
+        std::vector<TransientVertex> verts;
         auto vert = [](float x, float y, uint32_t rgba) {
-            SceneVertex v;
+            TransientVertex v;
             v.px = x; v.py = y; v.pz = 1.0f;
             v.nx = v.ny = 0.0f; v.nz = 1.0f;
             v.rgba = rgba;
@@ -1981,14 +2183,14 @@ public:
         };
         // Triangle-list expansion of a strip/fan given as a vertex list;
         // winding is irrelevant (the background draw does not cull).
-        auto strip = [&verts](const std::vector<SceneVertex> &vs) {
+        auto strip = [&verts](const std::vector<TransientVertex> &vs) {
             for (size_t i = 2; i < vs.size(); ++i) {
                 verts.push_back(vs[i - 2]);
                 verts.push_back(vs[i - 1]);
                 verts.push_back(vs[i]);
             }
         };
-        auto fan = [&verts](const std::vector<SceneVertex> &vs) {
+        auto fan = [&verts](const std::vector<TransientVertex> &vs) {
             for (size_t i = 2; i < vs.size(); ++i) {
                 verts.push_back(vs[0]);
                 verts.push_back(vs[i - 1]);
@@ -2019,14 +2221,14 @@ public:
                 oval[i][1] = s / bx::kSqrt2;
             }
             if (!bg.hasMid) {
-                std::vector<SceneVertex> vs;
+                std::vector<TransientVertex> vs;
                 vs.push_back(vert(0.0f, 0.0f, fcol));
                 for (auto &p : circle)
                     vs.push_back(vert(p[0], p[1], tcol));
                 vs.push_back(vs[1]);
                 fan(vs);
             } else {
-                std::vector<SceneVertex> vs;
+                std::vector<TransientVertex> vs;
                 vs.push_back(vert(0.0f, 0.0f, fcol));
                 for (auto &p : oval)
                     vs.push_back(vert(p[0], p[1], mcol));
@@ -2043,14 +2245,14 @@ public:
             }
         }
 
-        SceneVertex::init();
+        TransientVertex::init();
         uint32_t num = uint32_t(verts.size());
-        if (bgfx::getAvailTransientVertexBuffer(num, SceneVertex::ms_layout)
+        if (bgfx::getAvailTransientVertexBuffer(num, TransientVertex::ms_layout)
                 < num)
             return;
         bgfx::TransientVertexBuffer tvb;
-        bgfx::allocTransientVertexBuffer(&tvb, num, SceneVertex::ms_layout);
-        memcpy(tvb.data, verts.data(), num * sizeof(SceneVertex));
+        bgfx::allocTransientVertexBuffer(&tvb, num, TransientVertex::ms_layout);
+        memcpy(tvb.data, verts.data(), num * sizeof(TransientVertex));
 
         float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float params[4] = {1.0f, 0.0f, 0.0f, 1.0f};  // per-vertex color
@@ -2122,10 +2324,10 @@ public:
         // Validate the edge passes up front so a mesh that cannot draw
         // them leaves no stray stencil marks.
         GpuMesh *gpu = getMesh(*draw.mesh);
-        if (!bgfx::isValid(gpu->tri))
+        if (!bgfx::isValid(gpu->geom->tri))
             return;
-        gpu->ensureOutline(*draw.mesh);
-        if (!bgfx::isValid(gpu->triEdgeInst))
+        gpu->geom->ensureOutline(*draw.mesh);
+        if (!bgfx::isValid(gpu->geom->triEdgeInst))
             return;
         if (!submitOutlineMark(draw, refCounter, spec.view, spec.depthTest,
                                spec.start, spec.count))
@@ -2166,7 +2368,7 @@ public:
         if (count < 3)
             return false;
         GpuMesh *gpu = getMesh(mesh);
-        if (!bgfx::isValid(gpu->vbh) || !bgfx::isValid(gpu->tri))
+        if (!bgfx::isValid(gpu->geom->vbh) || !bgfx::isValid(gpu->geom->tri))
             return false;
 
         const Render::Material &mat = draw.material;
@@ -2180,8 +2382,8 @@ public:
         bgfx::setUniform(u_params, params);
         setClipUniforms(mat);
         setDrawTransform(draw, autozoomScale);
-        bgfx::setVertexBuffer(0, gpu->vbh);
-        bgfx::setIndexBuffer(gpu->tri, uint32_t(start), uint32_t(count));
+        setMeshVertexBuffers(gpu, mesh);
+        bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(start), uint32_t(count));
         bgfx::setState(BGFX_STATE_MSAA
             | (depthTest ? BGFX_STATE_DEPTH_TEST_LEQUAL : 0));
         bgfx::setStencil(BGFX_STENCIL_TEST_ALWAYS
@@ -2214,10 +2416,10 @@ public:
         if (count < 3)
             return;
         GpuMesh *gpu = getMesh(mesh);
-        if (!bgfx::isValid(gpu->vbh))
+        if (!bgfx::isValid(gpu->geom->vbh))
             return;
-        gpu->ensureOutline(mesh);
-        if (!bgfx::isValid(gpu->triEdgeInst))
+        gpu->geom->ensureOutline(mesh);
+        if (!bgfx::isValid(gpu->geom->triEdgeInst))
             return;
 
         const Render::Material &mat = draw.material;
@@ -2262,7 +2464,7 @@ public:
         setDrawTransform(draw, autozoomScale);
         bgfx::setVertexBuffer(0, m_lineQuadVb);
         bgfx::setIndexBuffer(m_lineQuadIb);
-        bgfx::setInstanceDataBuffer(gpu->triEdgeInst, uint32_t(start),
+        bgfx::setInstanceDataBuffer(gpu->geom->triEdgeInst, uint32_t(start),
                                     uint32_t(count));
         bgfx::setState(outlinestate);
         bgfx::setStencil(outlinestencil);
@@ -2284,7 +2486,7 @@ public:
         setDrawTransform(draw, autozoomScale);
         bgfx::setVertexBuffer(0, m_lineQuadVb);
         bgfx::setIndexBuffer(m_lineQuadIb);
-        bgfx::setInstanceDataBuffer(gpu->triCornerInst, uint32_t(start),
+        bgfx::setInstanceDataBuffer(gpu->geom->triCornerInst, uint32_t(start),
                                     uint32_t(count));
         bgfx::setState(outlinestate);
         bgfx::setStencil(outlinestencil);
@@ -2326,7 +2528,7 @@ public:
             return false;
         const Render::MeshData &mesh = *draw.mesh;
         GpuMesh *gpu = getMesh(mesh);
-        if (!bgfx::isValid(gpu->vbh) || !bgfx::isValid(gpu->tri))
+        if (!bgfx::isValid(gpu->geom->vbh) || !bgfx::isValid(gpu->geom->tri))
             return false;
 
         float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -2346,12 +2548,12 @@ public:
             bgfx::setUniform(u_clipParams, clipParams);
             bgfx::setUniform(u_clipPlanes, plane, 1);
             setDrawTransform(draw, autozoomScale);
-            bgfx::setVertexBuffer(0, gpu->vbh);
+            setMeshVertexBuffers(gpu, mesh);
             if (count > 0)
-                bgfx::setIndexBuffer(gpu->tri, uint32_t(start),
+                bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(start),
                                      uint32_t(count));
             else
-                bgfx::setIndexBuffer(gpu->tri);
+                bgfx::setIndexBuffer(gpu->geom->tri);
             bgfx::setState(BGFX_STATE_MSAA);
             bgfx::setStencil(markstencil);
             bgfx::submit(viewId + view, m_progFlatClip);
@@ -2447,13 +2649,13 @@ public:
     // the source alpha, blend INV_SRC_ALPHA / SRC_ALPHA).
     void submitComposite()
     {
-        SceneVertex::init();
-        if (bgfx::getAvailTransientVertexBuffer(3, SceneVertex::ms_layout)
+        TransientVertex::init();
+        if (bgfx::getAvailTransientVertexBuffer(3, TransientVertex::ms_layout)
                 < 3)
             return;
         bgfx::TransientVertexBuffer tvb;
-        bgfx::allocTransientVertexBuffer(&tvb, 3, SceneVertex::ms_layout);
-        auto *v = reinterpret_cast<SceneVertex *>(tvb.data);
+        bgfx::allocTransientVertexBuffer(&tvb, 3, TransientVertex::ms_layout);
+        auto *v = reinterpret_cast<TransientVertex *>(tvb.data);
         // Clip-space triangle covering the viewport.
         v[0] = {-1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
         v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
@@ -2496,13 +2698,13 @@ public:
         if (half <= 0.0f)
             return;
 
-        SceneVertex::init();
-        if (bgfx::getAvailTransientVertexBuffer(6, SceneVertex::ms_layout)
+        TransientVertex::init();
+        if (bgfx::getAvailTransientVertexBuffer(6, TransientVertex::ms_layout)
                 < 6)
             return;
         bgfx::TransientVertexBuffer tvb;
-        bgfx::allocTransientVertexBuffer(&tvb, 6, SceneVertex::ms_layout);
-        auto verts = reinterpret_cast<SceneVertex *>(tvb.data);
+        bgfx::allocTransientVertexBuffer(&tvb, 6, TransientVertex::ms_layout);
+        auto verts = reinterpret_cast<TransientVertex *>(tvb.data);
         const float xs[6] = {-1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f};
         const float ys[6] = {-1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f};
         for (int i = 0; i < 6; ++i) {
@@ -2647,19 +2849,19 @@ public:
         if (!draw.mesh || !draw.mesh->triangleIndices)
             return;
         GpuMesh *gpu = getMesh(*draw.mesh);
-        if (!bgfx::isValid(gpu->vbh) || !bgfx::isValid(gpu->tri))
+        if (!bgfx::isValid(gpu->geom->vbh) || !bgfx::isValid(gpu->geom->tri))
             return;
 
         const Render::Material &mat = draw.material;
         bool clipped = mat.numclipplanes > 0;
         setClipUniforms(mat);
         setDrawTransform(draw, autozoomScale);
-        bgfx::setVertexBuffer(0, gpu->vbh);
+        bgfx::setVertexBuffer(0, gpu->geom->vbh);
         if (draw.indexCount > 0)
-            bgfx::setIndexBuffer(gpu->tri, uint32_t(draw.indexStart),
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
                                  uint32_t(draw.indexCount));
         else
-            bgfx::setIndexBuffer(gpu->tri);
+            bgfx::setIndexBuffer(gpu->geom->tri);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_Z
                        | BGFX_STATE_DEPTH_TEST_LESS);
         float evsm[4] = {shadowWarpFrame, shadowThreshold,
@@ -2746,19 +2948,19 @@ public:
         if (!draw.mesh || !draw.mesh->triangleIndices)
             return;
         GpuMesh *gpu = getMesh(*draw.mesh);
-        if (!bgfx::isValid(gpu->vbh) || !bgfx::isValid(gpu->tri))
+        if (!bgfx::isValid(gpu->geom->vbh) || !bgfx::isValid(gpu->geom->tri))
             return;
 
         const Render::Material &mat = draw.material;
         bool clipped = mat.numclipplanes > 0;
         setClipUniforms(mat);
         setDrawTransform(draw, autozoomScale);
-        bgfx::setVertexBuffer(0, gpu->vbh);
+        bgfx::setVertexBuffer(0, gpu->geom->vbh);
         if (draw.indexCount > 0)
-            bgfx::setIndexBuffer(gpu->tri, uint32_t(draw.indexStart),
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
                                  uint32_t(draw.indexCount));
         else
-            bgfx::setIndexBuffer(gpu->tri);
+            bgfx::setIndexBuffer(gpu->geom->tri);
         uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
             | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
         if (mat.culling && !mat.twoside)
@@ -2779,19 +2981,19 @@ public:
         if (!draw.mesh || !draw.mesh->triangleIndices)
             return;
         GpuMesh *gpu = getMesh(*draw.mesh);
-        if (!bgfx::isValid(gpu->vbh) || !bgfx::isValid(gpu->tri))
+        if (!bgfx::isValid(gpu->geom->vbh) || !bgfx::isValid(gpu->geom->tri))
             return;
 
         const Render::Material &mat = draw.material;
         bool clipped = mat.numclipplanes > 0;
         setClipUniforms(mat);
         setDrawTransform(draw, autozoomScale);
-        bgfx::setVertexBuffer(0, gpu->vbh);
+        bgfx::setVertexBuffer(0, gpu->geom->vbh);
         if (draw.indexCount > 0)
-            bgfx::setIndexBuffer(gpu->tri, uint32_t(draw.indexStart),
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
                                  uint32_t(draw.indexCount));
         else
-            bgfx::setIndexBuffer(gpu->tri);
+            bgfx::setIndexBuffer(gpu->geom->tri);
         uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
             | BGFX_STATE_WRITE_Z;
         if (back) {
@@ -2812,14 +3014,14 @@ public:
     void fullscreen(uint16_t pass, bgfx::ProgramHandle prog,
                     uint64_t state)
     {
-        SceneVertex::init();
+        TransientVertex::init();
         if (bgfx::getAvailTransientVertexBuffer(
-                    3, SceneVertex::ms_layout) < 3)
+                    3, TransientVertex::ms_layout) < 3)
             return;
         bgfx::TransientVertexBuffer tvb;
         bgfx::allocTransientVertexBuffer(&tvb, 3,
-                                         SceneVertex::ms_layout);
-        auto *v = reinterpret_cast<SceneVertex *>(tvb.data);
+                                         TransientVertex::ms_layout);
+        auto *v = reinterpret_cast<TransientVertex *>(tvb.data);
         v[0] = {-1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
         v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
         v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
@@ -3039,7 +3241,8 @@ public:
     {
         const Render::Material &mat = draw.material;
         GpuMesh *mesh = getMesh(*draw.mesh);
-        if (!bgfx::isValid(mesh->vbh) || !bgfx::isValid(mesh->tri))
+        if (!bgfx::isValid(mesh->geom->vbh)
+                || !bgfx::isValid(mesh->geom->tri))
             return false;
         if (bgfx::getAvailInstanceDataBuffer(count, InstanceStride)
                 < count)
@@ -3081,12 +3284,12 @@ public:
         if (mat.culling && !twoside)
             state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
 
-        bgfx::setVertexBuffer(0, mesh->vbh);
+        setMeshVertexBuffers(mesh, *draw.mesh);
         if (draw.indexCount > 0)
-            bgfx::setIndexBuffer(mesh->tri, uint32_t(draw.indexStart),
+            bgfx::setIndexBuffer(mesh->geom->tri, uint32_t(draw.indexStart),
                                  uint32_t(draw.indexCount));
         else
-            bgfx::setIndexBuffer(mesh->tri);
+            bgfx::setIndexBuffer(mesh->geom->tri);
         bgfx::setInstanceDataBuffer(&idb);
         bgfx::setState(state);
 
@@ -3121,16 +3324,16 @@ public:
             fprintf(stderr, "bgfx noseam cache=%llx num=%d valid=%d\n",
                     (unsigned long long)draw.mesh->cacheId,
                     draw.mesh->numNoSeamLineIndices,
-                    bgfx::isValid(mesh->lineNoSeam));
+                    bgfx::isValid(mesh->geom->lineNoSeam));
         noseam = noseam && mat.type == Render::Material::Line
-            && bgfx::isValid(mesh->lineNoSeam);
+            && bgfx::isValid(mesh->geom->lineNoSeam);
         bgfx::IndexBufferHandle ibh = BGFX_INVALID_HANDLE;
         switch (mat.type) {
-        case Render::Material::Triangle: ibh = mesh->tri; break;
+        case Render::Material::Triangle: ibh = mesh->geom->tri; break;
         case Render::Material::Line:
-            ibh = noseam ? mesh->lineNoSeam : mesh->line;
+            ibh = noseam ? mesh->geom->lineNoSeam : mesh->geom->line;
             break;
-        case Render::Material::Point: ibh = mesh->point; break;
+        case Render::Material::Point: ibh = mesh->geom->point; break;
         }
         if (!bgfx::isValid(ibh))
             return;
@@ -3156,8 +3359,8 @@ public:
             && mat.texture && draw.mesh->texCoords
             && pass != PassDepthOnly) || bumped || mapped;
         if (textured) {
-            mesh->ensureTexCoord(*draw.mesh);
-            textured = bgfx::isValid(mesh->texcoord);
+            mesh->geom->ensureTexCoord(*draw.mesh);
+            textured = bgfx::isValid(mesh->geom->texcoord);
             bumped = bumped && textured;
             mapped = mapped && textured;
         }
@@ -3457,9 +3660,9 @@ public:
             bgfx::setInstanceDataBuffer(mesh->pointInst, startPt, numPt);
         }
         else {
-            bgfx::setVertexBuffer(0, mesh->vbh);
+            setMeshVertexBuffers(mesh, *draw.mesh);
             if (textured)
-                bgfx::setVertexBuffer(1, mesh->texcoord);
+                bgfx::setVertexBuffer(2, mesh->geom->texcoord);
             if (draw.indexCount > 0)
                 bgfx::setIndexBuffer(ibh, uint32_t(draw.indexStart),
                                      uint32_t(draw.indexCount));
@@ -3765,6 +3968,12 @@ public:
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
     std::unordered_map<uint64_t, GpuMesh> meshes;
+    /// Shared colorless geometry buffers keyed by content; GpuMesh::geom
+    /// points into this map (values are node-stable).
+    std::unordered_map<GeomKey, GpuGeometry, GeomKeyHasher> geometries;
+    /// Shared all-white color stream of meshes without baked colors.
+    bgfx::VertexBufferHandle whiteColorVb = BGFX_INVALID_HANDLE;
+    int whiteColorCount = 0;
     std::unordered_map<uint64_t, GpuTexture> textures;
     uint64_t frame = 0;
     int drawcount = 0;
