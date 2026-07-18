@@ -238,6 +238,37 @@ One vertex-cache subtlety: a cache captures the
 a *textured* consumer builds a second vertex cache (correct rendering,
 split sharing). See §8 for why this stays cheap.
 
+### CPU array dedup across variant caches
+
+A variant shape node names its base shape node in a `protoNode` field
+(`SoSFNode`, read by name like `forceTexCoords`). When the cache
+manager builds a fresh vertex cache for such a node, it seeds it with a
+cache of the prototype (the `prev` argument of the cache constructor).
+The capture then runs through `SoFCVertexAttribute`'s
+equality-preserving append: as long as the captured values equal the
+seed's, the copy-on-write storage stays *shared*, and only the first
+differing value detaches an array. Since a variant emits the same
+primitives as its base over the same coordinate/normal/texcoord nodes,
+the position, normal, texcoord and index arrays end up CPU-shared —
+only the baked per-vertex color array is owned (colors necessarily
+differ, that is what a variant is). The finished cache is also
+registered under the prototype's cache-table entry (foreign entries
+never pass the node-id check, so they act purely as seed candidates),
+which keeps sharing alive even when the base node itself is never
+traversed — e.g. every instance divergent — and lets sibling variants
+and the base derive from whichever built first.
+
+One inherent exception: *line* variants usually own their vertex
+arrays. The capture's vertex key includes the baked color, and a
+corner point shared by differently-colored edges must split into one
+vertex per color — the variant's arrays then genuinely differ from the
+base's. Faces and points are unaffected (B-Rep tessellation shares no
+coordinates across faces; points are unique anyway).
+
+Debug: `FC_DEBUG_VCACHE_PROTO=1` prints each fresh shape cache with its
+node, prototype and array pointers (shared arrays show identical
+pointers); `FC_NO_VCACHE_PROTO=1` disables the seeding for A/B runs.
+
 ## 7. Backend: instanced draws + content-shared GPU buffers (bgfx)
 
 `src/Gui/Renderer/BGFXRenderer.cpp`.
@@ -362,10 +393,10 @@ cache re-shares the first one's GPU geometry through the content hash.
   flatten-baked coordinates differ at float precision; the binary
   shadow-map test amplifies this into a ~1k-px thin-edge-line diff
   class on shadowed edges. Plain shading compares 0 px.
-- **CPU arrays are not deduped across variants.** Variant facesets
-  build their own (equal) CPU arrays; only the GPU side shares. A
-  CPU-side dedup (deriving variant caches from the base cache via the
-  copy + `setFaceColors` mechanism) is a possible follow-up.
+- **Line variants own their CPU vertex arrays.** Face and point
+  variant caches CPU-share the base cache's geometry arrays through
+  the `protoNode` seeding (§6); divergent per-edge colors split shared
+  corner vertices, so a line variant's arrays genuinely differ.
 - Divergent line/point colors and per-face materials beyond
   diffuse+transparency still flatten (§5).
 - Same-valued color arrays applied as arrays take their transparency
@@ -386,12 +417,10 @@ was re-run bit-identical after the phase C backend refactor.
 
 ## 12. Future work
 
-- Instanced shadow-caster and prepass submits (members currently keep
-  per-draw side submits).
-- Frustum culling per instance; GPU-driven paths for very large
-  assemblies (RendererPlan Phase 3 rows).
-- Line/point color variants; per-instance sub-element highlight.
-- CPU-side array dedup across variant caches.
+- Occlusion culling / GPU-driven paths for very large assemblies
+  (RendererPlan Phase 3 rows; instanced shadow/prepass submits, CPU
+  frustum culling, line/point variants and per-instance highlight are
+  done).
 - Textured / OIT-transparent instanced submits.
 - Cross-layer idea now cheap to explore: instance groups could key on
   the backend's *geometry hash* instead of the cache pointer, batching
