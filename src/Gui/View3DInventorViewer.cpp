@@ -461,6 +461,7 @@ struct View3DInventorViewer::Private
     void activateShadow();
     void deactivateShadow();
     void updateShadowGround(const SbBox3f &box);
+    void updateShadowGroundSwitch();
     void redraw();
     void onRender();
     bool toggleDragger(int toggle);
@@ -1638,6 +1639,24 @@ void View3DInventorViewer::Private::deactivateShadow()
     }
 }
 
+void View3DInventorViewer::Private::updateShadowGroundSwitch()
+{
+    if (!pcShadowGroundSwitch)
+        return;
+    // An active external render backend draws its own shadow ground
+    // (Render::LightConfig::ground); letting Coin GL-render this one
+    // too would composite the two grounds on top of each other -
+    // z-fighting bands where Coin's (differently blurred) shadow wins
+    // the depth test.
+    if (!renderer
+            && _shadowParam<App::PropertyBool>(view, "ShowGround",
+                ViewParams::docShadowShowGround(),
+                ViewParams::getShadowShowGround()))
+        pcShadowGroundSwitch->whichChild = 0;
+    else
+        pcShadowGroundSwitch->whichChild = -1;
+}
+
 void View3DInventorViewer::Private::activateShadow()
 {
     if (!view)
@@ -1954,11 +1973,7 @@ void View3DInventorViewer::Private::activateShadow()
     pcShadowMaterial->transparency = transp;
     pcShadowGroundStyle->style = (transp == 1.0 ? 0x4 : 0) | SoShadowStyle::SHADOWED;
 
-    if(_shadowParam<App::PropertyBool>(view, "ShowGround",
-            ViewParams::docShadowShowGround(), ViewParams::getShadowShowGround()))
-        pcShadowGroundSwitch->whichChild = 0;
-    else
-        pcShadowGroundSwitch->whichChild = -1;
+    updateShadowGroundSwitch();
 
     if(isValidBBox(bbox))
         updateShadowGround(bbox);
@@ -3210,6 +3225,9 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         }
         getSoRenderManager()->scheduleRedraw();
     }
+    // The Coin shadow ground is suppressed while a backend is active
+    // (it draws its own); re-evaluate if the Shadow style is on.
+    _pimpl->updateShadowGroundSwitch();
 }
 
 void View3DInventorViewer::initRenderProperties()
