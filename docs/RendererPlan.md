@@ -948,7 +948,31 @@ independent of each other; item 4 builds on item 3's property model.
   variants, CPU-side array dedup across independently built variant
   caches (GPU is shared; CPU arrays still per cache).
 - Frustum/occlusion culling, GPU-driven paths (bgfx ex.37/48) for very large
-  assemblies.
+  assemblies. *CPU frustum culling done (2026-07).* Per-frame in the bgfx
+  backend: world-space clip planes extracted from the camera
+  view-projection (Gribb-Hartmann, GL clip conventions — the fed
+  matrices are Coin's), positive-vertex test against each scene draw's
+  fed world bbox (`DrawCall::bboxMin/Max`, the whole-cache bounds so
+  partial draws test conservatively). A culled draw skips its
+  color/water-depth/SSAO-prepass/outline submits and the on-top
+  line/depth passes; **shadow casters are exempt** — off-screen
+  geometry still casts into the view, which also keeps the cached
+  shadow-map hash stable — as are autozoom draws (their model matrix
+  rebuilds per frame, so the fed bbox is stale) and draws without
+  bounds. Hidden-line frames skip culling like instancing. Instance
+  groups partition visible members into in/out-of-frustum: the color
+  and prepass instanced submits carry only the in-frustum count while
+  the caster instanced submit appends the culled and selection-hidden
+  members after them (one instance-data build still serves all three).
+  Selection/highlight/section-cap draws are not culled (small sets;
+  caps interact with stencil grouping — a possible follow-up, like
+  culling casters against the light frustum instead of not at all).
+  `FC_BGFX_NO_CULLING` disables for A/B, `FC_BGFX_DEBUG_CULL` prints
+  per-frame counts. Verified on llvmpipe (xvfb): cull vs no-cull
+  bit-identical (0 px) in ortho and perspective, fully-visible (0
+  culled) and zoomed-past scenes, and in the Link-array instancing +
+  shadow scene where the caster instanced submit keeps n=6 while the
+  color submit thins to the visible members.
 - WASM build of the renderer; progressive refinement (drop AA/AO during
   camera motion, refine on idle — the Fusion 360 pattern).
 - SSR (optional), GTAO, TAA where compute is available.
