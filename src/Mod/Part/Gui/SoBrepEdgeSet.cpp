@@ -88,6 +88,7 @@ SoBrepEdgeSet::SoBrepEdgeSet()
     seamIndices.setNum(0);
     SO_NODE_ADD_FIELD(elementSelectable, (TRUE));
     SO_NODE_ADD_FIELD(onTopPattern, (TRUE));
+    SO_NODE_ADD_FIELD(protoNode, (nullptr));
 }
 
 void SoBrepEdgeSet::notify(SoNotList * list)

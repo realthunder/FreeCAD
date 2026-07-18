@@ -26,6 +26,7 @@
 #include <Inventor/fields/SoMFInt32.h>
 #include <Inventor/fields/SoSFBool.h>
 #include <Inventor/fields/SoSFColor.h>
+#include <Inventor/fields/SoSFNode.h>
 #include <Inventor/nodes/SoPointSet.h>
 #include <memory>
 #include <vector>
@@ -44,6 +45,10 @@ public:
     SoMFInt32 highlightIndices;
     SoSFColor highlightColor;
     SoSFBool  elementSelectable;
+    /// The base shape node this node is a color variant of (TShape
+    /// instance table). Read by name from Gui::SoFCRenderCacheManager
+    /// to CPU-share the geometry arrays of a fresh vertex cache.
+    SoSFNode  protoNode;
 
     static void initClass();
     SoBrepPointSet();

@@ -341,6 +341,7 @@ SoBrepFaceSet::SoBrepFaceSet()
     SO_NODE_ADD_FIELD(elementSelectable, (TRUE));
     SO_NODE_ADD_FIELD(forceTexCoords, (FALSE));
     SO_NODE_ADD_FIELD(shapeInfo, (0));
+    SO_NODE_ADD_FIELD(protoNode, (nullptr));
     shapeInfo.setNum(0);
 
     selContext = std::make_shared<SelContext>();

@@ -266,6 +266,10 @@ static ColorVariant *acquireColorVariant(InstGeometry &geom,
     // produce identical geometry arrays (incl. texcoords) so the
     // backend's content-keyed geometry buffers are shared.
     faceset->forceTexCoords = TRUE;
+    // Lets the render cache manager seed this node's vertex cache with
+    // the base's — the geometry arrays stay CPU-shared, only the baked
+    // color array is owned.
+    faceset->protoNode = geom.faceset;
     faceset->coordIndex = geom.faceset->coordIndex;
     faceset->partIndex = geom.faceset->partIndex;
     if (geom.faceset->shapeInfo.getNum())
@@ -325,6 +329,7 @@ static ColorVariant *acquireLineColorVariant(InstGeometry &geom,
     mat->diffuseColor.finishEditing();
 
     auto lineset = new SoBrepEdgeSet;
+    lineset->protoNode = geom.lineset;
     lineset->coordIndex = geom.lineset->coordIndex;
     if (geom.lineset->seamIndices.getNum())
         lineset->seamIndices = geom.lineset->seamIndices;
@@ -365,6 +370,7 @@ static ColorVariant *acquirePointColorVariant(InstGeometry &geom,
     mat->diffuseColor.finishEditing();
 
     auto nodeset = new SoBrepPointSet;
+    nodeset->protoNode = geom.nodeset;
     nodeset->startIndex = geom.nodeset->startIndex;
     nodeset->setSiblings({geom.faceset, geom.lineset});
 

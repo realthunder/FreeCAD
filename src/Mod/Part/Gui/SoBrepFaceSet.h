@@ -28,6 +28,7 @@
 #include <Inventor/fields/SoMFNode.h>
 #include <Inventor/fields/SoSFColor.h>
 #include <Inventor/fields/SoSFBool.h>
+#include <Inventor/fields/SoSFNode.h>
 #include <Inventor/sensors/SoFieldSensor.h>
 #include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <memory>
@@ -98,6 +99,12 @@ public:
     /// without UVs. Read by name from Gui::SoFCVertexCache.
     SoSFBool  forceTexCoords;
     SoMFNode  shapeInfo;
+    /// The base shape node this node is a color variant of (TShape
+    /// instance table). Read by name from Gui::SoFCRenderCacheManager:
+    /// a fresh vertex cache of this node is seeded with the base's so
+    /// the geometry arrays stay CPU-shared and only the baked color
+    /// array is owned.
+    SoSFNode  protoNode;
 
     static bool makeDistinctColor(SbColor &res, const SbColor &color, const SbColor &other);
     static bool makeDistinctColor(uint32_t &res, uint32_t color, uint32_t other);
