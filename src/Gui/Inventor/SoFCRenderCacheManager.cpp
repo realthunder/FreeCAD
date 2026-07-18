@@ -22,6 +22,9 @@
 
 #include "PreCompiled.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 #include <Inventor/lists/SoTypeList.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
@@ -1657,6 +1660,21 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
     ++it;
   }
 
+  static int noproto = -1;
+  if (noproto < 0)
+    noproto = std::getenv("FC_NO_VCACHE_PROTO") ? 1 : 0;
+  if (!prev && !noproto) {
+    // A color variant of a shared tessellation names its base shape
+    // node (protoNode field): seed the fresh cache with a cache of that
+    // node so the equality-preserving capture keeps the geometry arrays
+    // shared — only the baked color array detaches.
+    if (SoNode *proto = SoFCVertexCache::getProtoNode(node)) {
+      auto it = self->vcachetable.find(proto);
+      if (it != self->vcachetable.end() && it->second.caches.size())
+        prev = it->second.caches.front();
+    }
+  }
+
   state->push();
   self->vcache.reset(new SoFCVertexCache(state, const_cast<SoNode*>(node), prev));
   if (self->selnodeid.size())
@@ -1673,7 +1691,6 @@ SoFCRenderCacheManagerP::postShape(void *userdata,
                                    SoCallbackAction *action,
                                    const SoNode * node)
 {
-  (void)node;
   SoFCRenderCacheManagerP *self = reinterpret_cast<SoFCRenderCacheManagerP*>(userdata);
   if (!self->vcache)
     return SoCallbackAction::PRUNE;
@@ -1682,6 +1699,37 @@ SoFCRenderCacheManagerP::postShape(void *userdata,
   state->pop();
   self->vcache->close(state);
   self->stack.back()->endChildCaching(state, self->vcache);
+
+  static int debugproto = -1;
+  if (debugproto < 0)
+    debugproto = std::getenv("FC_DEBUG_VCACHE_PROTO") ? 1 : 0;
+  if (debugproto)
+    fprintf(stderr, "vcache node %p (%s) proto %p verts %p norms %p\n",
+            static_cast<const void*>(node), node->getTypeId().getName().getString(),
+            static_cast<void*>(SoFCVertexCache::getProtoNode(node)),
+            static_cast<const void*>(self->vcache->getVertexArray()),
+            static_cast<const void*>(self->vcache->getNormalArray()));
+
+  static int noproto = -1;
+  if (noproto < 0)
+    noproto = std::getenv("FC_NO_VCACHE_PROTO") ? 1 : 0;
+  if (SoNode *proto = noproto ? nullptr : SoFCVertexCache::getProtoNode(node)) {
+    // Register the finished cache under its prototype node as well, so
+    // sibling variants derive shared arrays even when the base shape
+    // itself is never traversed (every instance divergent). A foreign
+    // entry never passes the node-id check in preShape, so at most one
+    // is kept, purely as a prev-seed candidate.
+    VCacheSensor &psensor = self->vcachetable[proto];
+    psensor.attach(self, proto);
+    for (auto it = psensor.caches.begin(); it != psensor.caches.end();) {
+      if ((*it)->getNodeId() != proto->getNodeId())
+        it = psensor.caches.erase(it);
+      else
+        ++it;
+    }
+    psensor.caches.emplace_back(self->vcache.get());
+  }
+
   self->vcache.reset();
   return SoCallbackAction::CONTINUE;
 }

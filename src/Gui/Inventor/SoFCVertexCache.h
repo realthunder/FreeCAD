@@ -65,6 +65,13 @@ public:
   static void initClass();
   static void cleanup();
 
+  /// Read \a node's by-name 'protoNode' field (SoSFNode). A color
+  /// variant of a shared tessellation names its base shape node there,
+  /// so a fresh cache of the variant can be seeded with the base's
+  /// cache: the equality-preserving capture then keeps the geometry
+  /// arrays shared and only the baked color array detaches.
+  static SoNode * getProtoNode(const SoNode * node);
+
   virtual SbBool isValid(const SoState * state) const;
 
   void open(SoState * state);

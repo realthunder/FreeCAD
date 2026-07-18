@@ -72,6 +72,7 @@
 #include <Inventor/VRMLnodes/SoVRMLIndexedFaceSet.h>
 #include <Inventor/fields/SoMFInt32.h>
 #include <Inventor/fields/SoMFNode.h>
+#include <Inventor/fields/SoSFNode.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
@@ -123,6 +124,7 @@ static SbName * ElementSelectableField;
 static SbName * OnTopPatternField;
 static SbName * ShapeInfoField;
 static SbName * ForceTexCoordsField;
+static SbName * ProtoNodeField;
 
 class SoFCVertexCacheP {
 public:
@@ -145,6 +147,7 @@ public:
     OnTopPatternField = new SbName("onTopPattern");
     ShapeInfoField = new SbName("shapeInfo");
     ForceTexCoordsField = new SbName("forceTexCoords");
+    ProtoNodeField = new SbName("protoNode");
   }
 
   static void cleanup()
@@ -163,6 +166,8 @@ public:
     ShapeInfoField = nullptr;
     delete ForceTexCoordsField;
     ForceTexCoordsField = nullptr;
+    delete ProtoNodeField;
+    ProtoNodeField = nullptr;
   }
 
   struct Vertex {
@@ -881,6 +886,15 @@ SoNode *
 SoFCVertexCache::getNode() const
 {
   return PRIVATE(this)->node;
+}
+
+SoNode *
+SoFCVertexCache::getProtoNode(const SoNode * node)
+{
+  const SoField * field = node->getField(*ProtoNodeField);
+  if (field && field->isOfType(SoSFNode::getClassTypeId()))
+    return static_cast<const SoSFNode*>(field)->getValue();
+  return nullptr;
 }
 
 SbBool 
