@@ -1186,7 +1186,8 @@ public:
                 *uni = BGFX_INVALID_HANDLE;
             }
         }
-        for (auto prog : {&m_progPrepass, &m_progPrepassClip, &m_progSsao,
+        for (auto prog : {&m_progPrepass, &m_progPrepassClip,
+                          &m_progPrepassInst, &m_progSsao,
                           &m_progSsaoBlur, &m_progSsaoApply,
                           &m_progVol, &m_progVolApply, &m_progVolExt}) {
             if (bgfx::isValid(*prog)) {
@@ -1211,7 +1212,7 @@ public:
             }
         }
         for (auto prog : {&m_progShadow, &m_progShadowClip,
-                          &m_progShadowBlur}) {
+                          &m_progShadowInst, &m_progShadowBlur}) {
             if (bgfx::isValid(*prog)) {
                 bgfx::destroy(*prog);
                 *prog = BGFX_INVALID_HANDLE;
@@ -1624,6 +1625,10 @@ public:
             m_progShadowClip = loadProgram("vs_fc_shadow_clip",
                                            "fs_fc_shadow_clip",
                                            _BGFXLib.resource().c_str());
+            if (m_instancing)
+                m_progShadowInst = loadProgram("vs_fc_shadow_inst",
+                                               "fs_fc_shadow",
+                                               _BGFXLib.resource().c_str());
             m_progShadowBlur = loadProgram("vs_fc_comp",
                                            "fs_fc_shadow_blur",
                                            _BGFXLib.resource().c_str());
@@ -1742,6 +1747,10 @@ public:
             m_progPrepassClip = loadProgram("vs_fc_prepass_clip",
                                             "fs_fc_prepass_clip",
                                             _BGFXLib.resource().c_str());
+            if (m_instancing)
+                m_progPrepassInst = loadProgram("vs_fc_prepass_inst",
+                                                "fs_fc_prepass",
+                                                _BGFXLib.resource().c_str());
             m_progSsao = loadProgram("vs_fc_comp", "fs_fc_ssao",
                                      _BGFXLib.resource().c_str());
             m_progSsaoBlur = loadProgram("vs_fc_comp", "fs_fc_ssao_blur",
@@ -3307,6 +3316,93 @@ public:
         return true;
     }
 
+    /// Instanced counterpart of submitShadowCaster: one caster submit of
+    /// `count` placements of the prototype's mesh. `data` uses the same
+    /// {model, diffuse} InstanceStride layout as the color pass (the
+    /// diffuse rides along unused). Instancable draws are never
+    /// section-clipped, so only the unclipped program exists. Returns
+    /// false when the program or transient instance space is missing;
+    /// the caller falls back to per-draw caster submits.
+    bool submitShadowCasterInstanced(const Render::DrawCall &draw,
+                                     const float *data, uint32_t count)
+    {
+        if (!bgfx::isValid(m_progShadowInst) || !draw.mesh
+                || !draw.mesh->triangleIndices)
+            return false;
+        GpuMesh *gpu = getMesh(*draw.mesh);
+        if (!bgfx::isValid(gpu->geom->vbh)
+                || !bgfx::isValid(gpu->geom->tri))
+            return false;
+        if (bgfx::getAvailInstanceDataBuffer(count, InstanceStride)
+                < count)
+            return false;
+        bgfx::InstanceDataBuffer idb;
+        bgfx::allocInstanceDataBuffer(&idb, count, InstanceStride);
+        std::memcpy(idb.data, data, size_t(count) * InstanceStride);
+
+        bgfx::setVertexBuffer(0, gpu->geom->vbh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->geom->tri);
+        bgfx::setInstanceDataBuffer(&idb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_Z
+                       | BGFX_STATE_DEPTH_TEST_LESS);
+        float evsm[4] = {shadowWarpFrame, shadowThreshold,
+                         0.0f, 0.0f};
+        bgfx::setUniform(u_evsm, evsm);
+        if (getenv("FC_BGFX_DEBUG_SUBMIT"))
+            fprintf(stderr,
+                    "bgfx submit instanced shadow cache=%llx n=%u\n",
+                    (unsigned long long)draw.mesh->cacheId, count);
+        bgfx::submit(viewId + ViewShadow, m_progShadowInst);
+        ++drawcount;
+        return true;
+    }
+
+    /// Instanced counterpart of submitPrepass (SSAO/volumetric
+    /// depth+normal): same instance-data contract and fallback rules as
+    /// submitShadowCasterInstanced.
+    bool submitPrepassInstanced(const Render::DrawCall &draw,
+                                const float *data, uint32_t count)
+    {
+        if (!bgfx::isValid(m_progPrepassInst) || !draw.mesh
+                || !draw.mesh->triangleIndices)
+            return false;
+        GpuMesh *gpu = getMesh(*draw.mesh);
+        if (!bgfx::isValid(gpu->geom->vbh)
+                || !bgfx::isValid(gpu->geom->tri))
+            return false;
+        if (bgfx::getAvailInstanceDataBuffer(count, InstanceStride)
+                < count)
+            return false;
+        bgfx::InstanceDataBuffer idb;
+        bgfx::allocInstanceDataBuffer(&idb, count, InstanceStride);
+        std::memcpy(idb.data, data, size_t(count) * InstanceStride);
+
+        const Render::Material &mat = draw.material;
+        bgfx::setVertexBuffer(0, gpu->geom->vbh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->geom->tri);
+        bgfx::setInstanceDataBuffer(&idb);
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+            | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
+        if (mat.culling && !mat.twoside)
+            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
+        bgfx::setState(state);
+        if (getenv("FC_BGFX_DEBUG_SUBMIT"))
+            fprintf(stderr,
+                    "bgfx submit instanced prepass cache=%llx n=%u\n",
+                    (unsigned long long)draw.mesh->cacheId, count);
+        bgfx::submit(viewId + ViewAOPrepass, m_progPrepassInst);
+        ++drawcount;
+        return true;
+    }
+
     void submit(const Render::DrawCall &draw, const float *viewMatrix,
                 int pass = PassNormal, bool noseam = false)
     {
@@ -3855,6 +3951,7 @@ public:
     bgfx::FrameBufferHandle aoBlurFbo = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPrepass = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPrepassClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progPrepassInst = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSsao = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSsaoBlur = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSsaoApply = BGFX_INVALID_HANDLE;
@@ -3920,6 +4017,7 @@ public:
     bgfx::FrameBufferHandle shadowBlurBackFbo = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progShadow = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progShadowClip = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progShadowInst = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progShadowBlur = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_shadowBlur = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texShadow = BGFX_INVALID_HANDLE;
@@ -4842,57 +4940,100 @@ public:
         // Cross-object instancing: each precomputed group of identical
         // draws (shared geometry cache, matching material bar the
         // diffuse) collapses into one instanced submit of the opaque
-        // pass, carrying {model matrix, diffuse} per instance. Members
-        // keep their per-draw side submissions (prepass, shadow caster,
-        // hidden-line outline) — only the main color submit batches.
-        // Hidden-line frames stay per-draw (the stencil outline pass
-        // reworks the fill submits wholesale).
+        // pass, carrying {model matrix, diffuse} per instance. The
+        // depth-only side submissions batch too, over the same instance
+        // layout: the SSAO/volumetric prepass with the visible members,
+        // the shadow caster pass with visible AND selection-hidden
+        // members (a hidden scene draw still casts — its geometry
+        // re-renders in the on-top pass). Hidden-line frames stay
+        // per-draw (the stencil outline pass reworks the fill submits
+        // wholesale).
         static const bool noInstancing =
             getenv("FC_BGFX_NO_INSTANCING") != nullptr;
         std::vector<uint8_t> drawInstanced;
+        std::vector<uint8_t> prepassInstanced;
+        std::vector<uint8_t> casterInstanced;
         if (!noInstancing && !hl.show && !instGroups.empty()
                 && view->instancingActive()) {
             drawInstanced.assign(scene.size(), 0);
+            prepassInstanced.assign(scene.size(), 0);
+            casterInstanced.assign(scene.size(), 0);
             std::vector<float> instData;
-            std::vector<int> vis;
+            std::vector<int> vis, hidden;
+            auto appendInstance = [&](int i) {
+                const auto &d = scene[i];
+                if (d.identity) {
+                    static const float ident[16] = {
+                        1.0f, 0.0f, 0.0f, 0.0f,
+                        0.0f, 1.0f, 0.0f, 0.0f,
+                        0.0f, 0.0f, 1.0f, 0.0f,
+                        0.0f, 0.0f, 0.0f, 1.0f};
+                    instData.insert(instData.end(), ident, ident + 16);
+                } else {
+                    instData.insert(instData.end(), d.model, d.model + 16);
+                }
+                float c[4];
+                unpackColor(d.material.diffuse, c);
+                instData.insert(instData.end(), c, c + 4);
+            };
             for (const auto &group : instGroups) {
                 if (group.members.size() < 2)
                     continue;
                 vis.clear();
+                hidden.clear();
                 for (int i : group.members) {
-                    if (!isHidden(scene[i]))
+                    if (isHidden(scene[i]))
+                        hidden.push_back(i);
+                    else
                         vis.push_back(i);
                 }
-                if (vis.size() < 2)
-                    continue;
                 instData.clear();
-                instData.reserve(vis.size() * 20);
-                for (int i : vis) {
-                    const auto &d = scene[i];
-                    if (d.identity) {
-                        static const float ident[16] = {
-                            1.0f, 0.0f, 0.0f, 0.0f,
-                            0.0f, 1.0f, 0.0f, 0.0f,
-                            0.0f, 0.0f, 1.0f, 0.0f,
-                            0.0f, 0.0f, 0.0f, 1.0f};
-                        instData.insert(instData.end(), ident, ident + 16);
-                    } else {
-                        instData.insert(instData.end(), d.model,
-                                        d.model + 16);
+                instData.reserve(group.members.size() * 20);
+                for (int i : vis)
+                    appendInstance(i);
+                if (vis.size() >= 2) {
+                    const auto &proto = scene[vis[0]];
+                    if (view->submitInstanced(proto, instData.data(),
+                                              uint32_t(vis.size()))) {
+                        for (int i : vis)
+                            drawInstanced[i] = 1;
                     }
-                    float c[4];
-                    unpackColor(d.material.diffuse, c);
-                    instData.insert(instData.end(), c, c + 4);
+                    if (prepassActive
+                            && view->submitPrepassInstanced(
+                                proto, instData.data(),
+                                uint32_t(vis.size()))) {
+                        for (int i : vis)
+                            prepassInstanced[i] = 1;
+                    }
                 }
-                if (view->submitInstanced(scene[vis[0]], instData.data(),
-                                          uint32_t(vis.size()))) {
-                    for (int i : vis)
-                        drawInstanced[i] = 1;
+                // Casters append the hidden members after the visible
+                // ones — the instance order does not matter for a depth
+                // pass. Group members share the material bar the
+                // diffuse, so one shadowstyle check covers them all.
+                if (shadowRender
+                        && (scene[group.members[0]].material.shadowstyle
+                            & 1)) {
+                    for (int i : hidden)
+                        appendInstance(i);
+                    uint32_t total = uint32_t(vis.size() + hidden.size());
+                    if (total >= 2
+                            && view->submitShadowCasterInstanced(
+                                scene[group.members[0]], instData.data(),
+                                total)) {
+                        for (int i : group.members)
+                            casterInstanced[i] = 1;
+                    }
                 }
             }
         }
         auto instancedThisFrame = [&](int i) {
             return !drawInstanced.empty() && drawInstanced[i];
+        };
+        auto prepassInstancedThisFrame = [&](int i) {
+            return !prepassInstanced.empty() && prepassInstanced[i];
+        };
+        auto casterInstancedThisFrame = [&](int i) {
+            return !casterInstanced.empty() && casterInstanced[i];
         };
 
         // 1. Normal scene draws, then on-top triangle fills (opaque before
@@ -4912,7 +5053,8 @@ public:
                 if (shadowRender && !draw.material.ontop
                         && isTriangle(draw)
                         && (draw.material.shadowstyle & 1)
-                        && !(waterActive && draw.material.water))
+                        && !(waterActive && draw.material.water)
+                        && !casterInstancedThisFrame(drawIdx))
                     view->submitShadowCaster(draw);
                 continue;
             }
@@ -4938,14 +5080,15 @@ public:
             // transparent bucket). The volumetric raymarch shares it as
             // its ray-end depth source.
             if (prepassActive && isTriangle(draw) && !isTransp(draw)
-                    && !isWater)
+                    && !isWater && !prepassInstancedThisFrame(drawIdx))
                 view->submitPrepass(draw);
             // Shadow casters — transparent geometry casts like an opaque
             // one, matching Coin's SoShadowGroup (its depth-map pass
             // ignores alpha); water is the one exception (light must
             // enter the medium). Skipped while the cached map is valid.
             if (shadowRender && isTriangle(draw)
-                    && (draw.material.shadowstyle & 1) && !isWater)
+                    && (draw.material.shadowstyle & 1) && !isWater
+                    && !casterInstancedThisFrame(drawIdx))
                 view->submitShadowCaster(draw);
             submitSceneOutline(draw);
         }
