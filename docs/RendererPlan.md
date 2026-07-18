@@ -562,7 +562,7 @@ independent of each other; item 4 builds on item 3's property model.
    `ViewProviderPartExt` (added lazily, dynamic-property style, so plain
    documents don't grow): `Metallic`, `Roughness`
    (`PropertyFloatConstraint`, overriding the global/per-view defaults),
-   `BaseColorTexture`, `NormalMap` (later `EmissiveMap`/`OcclusionMap`) as
+   `BaseColorTexture`, `NormalMap`, `EmissiveMap`, `OcclusionMap` as
    `App::PropertyFileIncluded` so images embed in the `.FCStd`, a texture
    transform (scale/offset/rotation), and render flags (`CastShadow` /
    `ReceiveShadow` mapping onto the existing `SoShadowStyle` bitmask
@@ -644,7 +644,33 @@ independent of each other; item 4 builds on item 3's property model.
    render nodes like `addDynamicProperty` (deleting a Render_* property
    in the property editor used to leave the nodes stale). Verified by
    a scripted GUI run (apply / reload / remove round trip).
-   Remaining in this item: `EmissiveMap`/`OcclusionMap` texture slots.
+   *Emissive/occlusion map slots done (2026-07)*: optional
+   `Render_EmissiveMap` / `Render_OcclusionMap` dynamic properties
+   (`App::PropertyFileIncluded`) build a new Coin-inert
+   `Gui::SoFCRenderTexture` node each (a plain `SoNode` with
+   slot/image/wrap fields — deriving from `SoTexture2` would feed
+   Coin's texture element and the unit-0 capture), captured like the
+   bump map into `Material::emissivemaps`/`occlusionmaps` (material
+   key) → `Render::Material::emissivemap`/`occlusionmap`. The bgfx
+   mesh path binds them at units 4/5 of the textured programs
+   (`u_texParams.zw` flag presence): emissive rgb adds *after* the
+   fixed-function texture environment so the base color texture does
+   not modulate the glow; the occlusion first channel multiplies only
+   the ambient/environment light — the constant ambient of the
+   fixed-function paths and the IBL of the PBR path (glTF semantics);
+   direct light stays untouched. Map-only draws route through the
+   textured programs with the white unit-0 stand-in (the lone-bump-map
+   pattern). The task panel gets both rows. Verified on llvmpipe:
+   plain control bit-identical bgfx vs mode-3 GL; both maps vary
+   correctly across an explicit-UV surface; mode-3 GL is bit-identical
+   with and without the maps (only external backends draw them).
+   Limitation found while verifying (pre-existing, all modes): B-Rep
+   tessellation carries no real texture coordinates anywhere in this
+   pipeline — Part shapes sample a constant corner texel (Coin's
+   default texgen never runs for the Brep face sets, in plain Coin GL
+   too). The map slots become fully useful with the UV-preserving glTF
+   import (item 4); a bbox-based default-UV generator for B-Rep
+   tessellation is a possible follow-up.
 
 4. **glTF import/export with materials & textures (2–3 wks)** — round-trip
    the renderer's material model (deliberately chosen as glTF
