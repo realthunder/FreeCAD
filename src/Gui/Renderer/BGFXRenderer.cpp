@@ -1449,32 +1449,13 @@ public:
                         & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER) != 0;
         }
         if (m_shadow) {
-            shadowTex = bgfx::createTexture2D(kShadowSize, kShadowSize,
-                false, 1, shadowFormat,
-                BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP
-                | BGFX_SAMPLER_V_CLAMP);
-            shadowDepth = bgfx::createTexture2D(kShadowSize, kShadowSize,
-                false, 1, bgfx::TextureFormat::D24S8,
-                BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
-            bgfx::TextureHandle att[2] = {shadowTex, shadowDepth};
-            shadowFbo = bgfx::createFrameBuffer(2, att, false);
+            this->shadowFormat = shadowFormat;
+            shadowSize = 0;  // targets created on first use
             m_progShadow = loadProgram("vs_fc_shadow", "fs_fc_shadow",
                                        _BGFXLib.resource().c_str());
             m_progShadowClip = loadProgram("vs_fc_shadow_clip",
                                            "fs_fc_shadow_clip",
                                            _BGFXLib.resource().c_str());
-            // ShadowSmoothBorder: separable gaussian blur of the
-            // moments, horizontal into the ping texture and vertical
-            // back into shadowTex (a second color-only framebuffer over
-            // the same texture; no depth needed for fullscreen passes).
-            shadowBlurTex = bgfx::createTexture2D(kShadowSize,
-                kShadowSize, false, 1, shadowFormat,
-                BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP
-                | BGFX_SAMPLER_V_CLAMP);
-            shadowBlurFbo = bgfx::createFrameBuffer(1, &shadowBlurTex,
-                                                    false);
-            shadowBlurBackFbo = bgfx::createFrameBuffer(1, &shadowTex,
-                                                        false);
             m_progShadowBlur = loadProgram("vs_fc_comp",
                                            "fs_fc_shadow_blur",
                                            _BGFXLib.resource().c_str());
@@ -2668,6 +2649,50 @@ public:
     /// volumetric raymarch keep sampling the same target. The blur views
     /// sit right after the caster pass. Softens the VSM penumbra and
     /// curbs shimmer on razor-straight CAD edges.
+    /// (Re)create the shadow map targets for the requested size
+    /// (ShadowPrecision); the stored moments are lost, so the cached
+    /// map re-renders.
+    void ensureShadowTargets(uint16_t size)
+    {
+        if (!m_shadow || (size == shadowSize && bgfx::isValid(shadowFbo)))
+            return;
+        for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo}) {
+            if (bgfx::isValid(*fb)) {
+                bgfx::destroy(*fb);
+                *fb = BGFX_INVALID_HANDLE;
+            }
+        }
+        for (auto tex : {&shadowTex, &shadowDepth, &shadowBlurTex}) {
+            if (bgfx::isValid(*tex)) {
+                bgfx::destroy(*tex);
+                *tex = BGFX_INVALID_HANDLE;
+            }
+        }
+        shadowSize = size;
+        shadowMapHash = 0;
+        shadowTex = bgfx::createTexture2D(size, size,
+            false, 1, shadowFormat,
+            BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP
+            | BGFX_SAMPLER_V_CLAMP);
+        shadowDepth = bgfx::createTexture2D(size, size,
+            false, 1, bgfx::TextureFormat::D24S8,
+            BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
+        bgfx::TextureHandle att[2] = {shadowTex, shadowDepth};
+        shadowFbo = bgfx::createFrameBuffer(2, att, false);
+        // ShadowSmoothBorder: separable gaussian blur of the moments,
+        // horizontal into the ping texture and vertical back into
+        // shadowTex (a second color-only framebuffer over the same
+        // texture; no depth needed for fullscreen passes).
+        shadowBlurTex = bgfx::createTexture2D(size, size,
+            false, 1, shadowFormat,
+            BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP
+            | BGFX_SAMPLER_V_CLAMP);
+        shadowBlurFbo = bgfx::createFrameBuffer(1, &shadowBlurTex,
+                                                false);
+        shadowBlurBackFbo = bgfx::createFrameBuffer(1, &shadowTex,
+                                                    false);
+    }
+
     void submitShadowBlur(float smoothBorder)
     {
         if (!bgfx::isValid(m_progShadowBlur)
@@ -3521,9 +3546,11 @@ public:
     bool bumpParallax = true;  // parallax-occlusion map height maps
     // Variance shadow map of the Shadow draw style's scene light.
     // Coin sizes its shadow map as precision * min(2048, max texture
-    // size) — 2048 at the ShadowPrecision default of 1.0; match it
-    // (the precision parameter itself is not plumbed yet).
-    static constexpr uint16_t kShadowSize = 2048;
+    // size) (ShadowPrecision, default 1.0 -> 2048); the targets are
+    // (re)created for the requested size by ensureShadowTargets.
+    static constexpr uint16_t kShadowMaxSize = 2048;
+    uint16_t shadowSize = 0;
+    bgfx::TextureFormat::Enum shadowFormat = bgfx::TextureFormat::RG32F;
     bool m_shadow = false;     // shadow resources exist (caps allow it)
     float shadowWarp = 42.0f;  // EVSM exponent (by moments format)
     // Per-frame shadow lookup state: warp 0 = plain VSM (Coin
@@ -3850,6 +3877,18 @@ public:
             }
         }
         view->shadowFrame = shadowActive;
+        // Shadow map size from ShadowPrecision (Coin: the next power of
+        // two of precision * the 2048 cap); recreating the targets
+        // resets the cached-map hash.
+        if (shadowActive) {
+            float prec = bx::clamp(lightconf.precision, 0.01f, 1.0f);
+            uint16_t desired = 1;
+            uint16_t want = uint16_t(prec * BGFXView::kShadowMaxSize);
+            while (desired < want)
+                desired = uint16_t(desired << 1);
+            view->ensureShadowTargets(desired);
+            shadowActive = bgfx::isValid(view->shadowFbo);
+        }
         // At SmoothBorder 0 the map stores plain (z, z^2) moments and
         // the receivers run Coin's exact VsmLookup — the GL Shadow
         // style's soft default penumbra. The exponential warp (and its
@@ -4080,8 +4119,8 @@ public:
                 bgfx::setViewClear(id,
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     1.0f, 0, 2);
-                bgfx::setViewRect(id, 0, 0, BGFXView::kShadowSize,
-                                  BGFXView::kShadowSize);
+                bgfx::setViewRect(id, 0, 0, view->shadowSize,
+                                  view->shadowSize);
                 bgfx::setViewTransform(id, lightViewMtx, lightProjMtx);
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
@@ -4096,8 +4135,8 @@ public:
                         ? view->shadowBlurFbo : view->shadowBlurBackFbo);
                 bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                                    clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, BGFXView::kShadowSize,
-                                  BGFXView::kShadowSize);
+                bgfx::setViewRect(id, 0, 0, view->shadowSize,
+                                  view->shadowSize);
                 bgfx::setViewTransform(id, nullptr, nullptr);
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);

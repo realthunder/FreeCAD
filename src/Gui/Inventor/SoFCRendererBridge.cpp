@@ -801,6 +801,9 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
         res.threshold = float(viewParamOverride<App::PropertyFloat>(
                 view, "Shadow", "Threshold",
                 ViewParams::getShadowThreshold()));
+        res.precision = float(viewParamOverride<App::PropertyFloat>(
+                view, "Shadow", "Precision",
+                ViewParams::getShadowPrecision()));
         // The ground receiver settings honor the per-view Shadow_*
         // dynamic properties (created by the Shadow draw style, which is
         // the only way a shadow light gets here) with ViewParams

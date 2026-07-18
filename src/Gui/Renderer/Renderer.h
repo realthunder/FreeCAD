@@ -252,6 +252,9 @@ struct LightConfig {
     /// Chebyshev tail (light-bleed reduction). Plain-VSM mode only.
     float epsilon = 1.0e-5f;
     float threshold = 0.0f;
+    /// Shadow map size factor (ShadowPrecision, 0..1 of the backend's
+    /// maximum — Coin's precision field semantics).
+    float precision = 1.0f;
 
     /// Shadow ground plane (ShadowShowGround*): the Coin-side ground
     /// lives outside the captured scene graph, so backends draw their
@@ -287,6 +290,7 @@ struct LightConfig {
             && dropOffRate == o.dropOffRate
             && smoothBorder == o.smoothBorder
             && epsilon == o.epsilon && threshold == o.threshold
+            && precision == o.precision
             && ground == o.ground && groundScale == o.groundScale
             && groundColor == o.groundColor
             && groundTexture == o.groundTexture
