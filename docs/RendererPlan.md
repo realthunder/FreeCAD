@@ -826,8 +826,28 @@ independent of each other; item 4 builds on item 3's property model.
   Link-array scene): instanced vs per-draw bit-identical, incl.
   per-link override colors and a link-selected frame (group thins 6 → 5);
   shadow frame maxdiff 1/255 (float association order); vs GL stays in
-  the usual axo edge-AA class. Known gaps: only the main opaque color
-  pass batches (prepass/shadow/caster submits stay per-draw); textured/
+  the usual axo edge-AA class.
+  *Instanced depth passes done (2026-07).* The shadow-caster and
+  SSAO/volumetric-prepass side submits batch too: `vs_fc_shadow_inst` /
+  `vs_fc_prepass_inst` (paired with the stock depth fragment shaders)
+  consume the same {model, diffuse} instance layout — the diffuse rides
+  along unused, so one instance-data build serves all three submits.
+  The prepass batches the visible group members; the caster batches
+  visible AND selection-hidden members (a hidden scene draw still
+  casts — its geometry re-renders on top), appended after the visible
+  ones so the caster count can exceed the color count. Group
+  eligibility already bars clipped/water/transparent draws, so the
+  depth-pass variants need no clip programs. Per-pass fallback: if the
+  instanced submit fails (missing program, transient buffer full) that
+  pass reverts to per-draw for the group. Verified on llvmpipe (box +
+  5 links): plain instanced vs per-draw stays bit-identical; shadow
+  frame 2 px > 30 (the thin-edge shadow-texel class); selected-link
+  frame maxdiff 1 with the caster keeping all 6 instances while the
+  color submit thins to 5; SSAO shows a silhouette-band-only deviation
+  vs per-draw (the instanced VS computes `u_viewProj*(model*pos)` vs
+  the precomputed `u_modelViewProj` — 1-ulp depth flips at silhouettes
+  discretely change AO edge pixels; faces are identical). Known gaps:
+  textured/
   clipped/transparent/OIT draws and line/point primitives are not
   instanced (lines/points already instance per-segment for thick-quad
   expansion — cross-object batching there would collide); a non-zero
