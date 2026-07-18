@@ -1354,6 +1354,9 @@ public:
         // support every line falls back to 1px primitives.
         m_instancing =
             (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING) != 0;
+        // Publish the capability so geometry producers (Part tessellation)
+        // know whether shared-instance scene structure will actually batch.
+        Render::Renderer::setInstancingHint(m_instancing);
         if (m_instancing) {
             // Cross-object instancing: identical placements of one shared
             // geometry cache (Link arrays) collapse into a single
@@ -4454,22 +4457,46 @@ public:
         // The same object selected through several ids draws its
         // whole-object geometry only once (GL's renderkeys dedup in
         // SoFCRendererP::updateSelection): the first draw of a given
-        // (objectKey, cacheId, primitive type) wins, on-top selections
-        // considered first like the GL loop order.
+        // (objectKey, cacheId, primitive type, model matrix) wins, on-top
+        // selections considered first like the GL loop order. The matrix
+        // hash keeps distinct placements of one shared geometry cache
+        // (TShape instancing) apart — only true duplicates collapse.
         dupDraws.clear();
         {
-            std::set<std::tuple<uint64_t, uint64_t, uint8_t>> seen;
+            auto matrixHash = [](const Render::DrawCall &d) -> uint64_t {
+                if (d.identity)
+                    return 0;
+                uint64_t h = 1469598103934665603ull;
+                const uint8_t *p =
+                    reinterpret_cast<const uint8_t *>(d.model);
+                for (size_t i = 0; i < sizeof(d.model); ++i) {
+                    h ^= p[i];
+                    h *= 1099511628211ull;
+                }
+                return h ? h : 1;
+            };
+            std::set<std::tuple<uint64_t, uint64_t, uint8_t, uint64_t>> seen;
             auto dedup = [&](const Render::DrawCallList &draws) {
                 for (const auto &draw : draws) {
                     if (!draw.wholeObject || !draw.objectKey || !draw.mesh)
                         continue;
                     if (!seen.emplace(draw.objectKey, draw.mesh->cacheId,
-                                      draw.material.type).second)
+                                      draw.material.type,
+                                      matrixHash(draw)).second)
                         dupDraws.insert(&draw);
                 }
             };
+            // Explicitly colored selections (SelIdSelected) win over the
+            // implicit whole-on-top companions an element selection adds
+            // — both can carry whole-object draws of the same geometry
+            // (e.g. the instanced whole-highlight degradation), and the
+            // tinted one is the visible signal.
             for (const auto &sel : selections) {
-                if (sel.first > 0)
+                if (sel.first > 0 && (sel.first & Render::SelIdSelected))
+                    dedup(sel.second);
+            }
+            for (const auto &sel : selections) {
+                if (sel.first > 0 && !(sel.first & Render::SelIdSelected))
                     dedup(sel.second);
             }
             for (const auto &sel : selections) {
@@ -5491,11 +5518,12 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
     for (const auto &d : draws) {
         const auto &m = d.material;
         fprintf(stderr,
-                "  type=%d part=%d range=%d+%d diffuse=%08x emissive=%08x"
+                "  cache=%llx type=%d part=%d range=%d+%d diffuse=%08x emissive=%08x"
                 " pvc=%d light=%d transp=%d ontop=%d dtest=%d dwrite=%d"
                 " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f lp=%08x/%08x"
                 " ol=%d lc=%08x tex=%d bump=%d em=%d occ=%d mr=%d uv=%d"
                 " ss=%d\n",
+                d.mesh ? (unsigned long long)d.mesh->cacheId : 0ull,
                 m.type, d.partIndex, d.indexStart, d.indexCount,
                 m.diffuse, m.emissive, m.pervertexcolor, m.lighting,
                 m.transparent, m.ontop, m.depthtest, m.depthwrite,

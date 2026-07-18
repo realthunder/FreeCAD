@@ -528,6 +528,16 @@ struct DrawCall {
 
 typedef std::vector<DrawCall> DrawCallList;
 
+/// Flag bits of the selection ids fed through Renderer::addSelection
+/// (mirroring SoFCRenderer::SelIdBits — the producer side of the feed).
+enum SelIdBits : int {
+    SelIdImplicit = 0x01000000,  ///< whole-object brought along a partial
+    SelIdAlt      = 0x02000000,  ///< alternative (Ctrl) selection group
+    SelIdFull     = 0x04000000,  ///< explicit whole-object selection
+    SelIdPartial  = 0x08000000,  ///< sub-element selection
+    SelIdSelected = SelIdFull | SelIdPartial,
+};
+
 class RendererExport Renderer
 {
 public:
@@ -538,6 +548,15 @@ public:
                         const void *projMatrix) = 0;
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) = 0;
+
+    /// Global hint whether the active backend supports GPU-instanced
+    /// draws. Geometry producers (e.g. the Part tessellation) consult it
+    /// before emitting shared-instance scene structure: without real
+    /// instancing many small shared nodes are a net loss, so they keep
+    /// flattening instead. Defaults to true; a backend publishes its
+    /// actual capability once initialized.
+    static void setInstancingHint(bool supported);
+    static bool instancingHint();
 
     /// \name Scene API
     /// Mirrors SoFCRenderer's feed. Backends that don't consume scene data

@@ -74,6 +74,18 @@ std::unique_ptr<Renderer> RendererFactory::create(
     return res;
 }
 
+static bool _InstancingHint = true;
+
+void Renderer::setInstancingHint(bool supported)
+{
+    _InstancingHint = supported;
+}
+
+bool Renderer::instancingHint()
+{
+    return _InstancingHint;
+}
+
 static std::string _ResourcePath;
 
 void RendererFactory::setResourcePath(const std::string &path)
