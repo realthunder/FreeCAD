@@ -4012,10 +4012,13 @@ public:
                       sizeof(lightconf.smoothBorder));
             for (const auto &draw : scene) {
                 const auto &mat = draw.material;
-                if (mat.ontop || mat.type != Render::Material::Triangle
+                // On-top draws cast too: a selected-on-top object's
+                // scene draws are hidden and re-rendered on top, so
+                // excluding them dropped its whole shadow (GL keeps it).
+                if (mat.type != Render::Material::Triangle
                         || !(mat.shadowstyle & 1)
                         || (waterActive && mat.water)
-                        || !draw.mesh || isHidden(draw))
+                        || !draw.mesh)
                     continue;
                 hashBytes(h, &draw.mesh->cacheId,
                           sizeof(draw.mesh->cacheId));
@@ -4392,8 +4395,19 @@ public:
         // fill and honor the face/seam/vertex hiding rules.
         view->ontop = false;
         for (const auto &draw : scene) {
-            if (draw.material.ontop || isHidden(draw))
+            if (draw.material.ontop || isHidden(draw)) {
+                // A selection-hidden scene draw still casts its shadow —
+                // the same geometry re-renders in the on-top pass, and
+                // GL's SoShadowGroup shadow map render is oblivious to
+                // the selection re-render. This also keeps the cached
+                // shadow map valid across select/deselect.
+                if (shadowRender && !draw.material.ontop
+                        && isTriangle(draw)
+                        && (draw.material.shadowstyle & 1)
+                        && !(waterActive && draw.material.water))
+                    view->submitShadowCaster(draw);
                 continue;
+            }
             if (hideFill(draw) || hidePoints(draw))
                 continue;
             view->submit(draw, viewMat, BGFXView::PassNormal,
@@ -4436,6 +4450,11 @@ public:
             if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
                     && !isHidden(draw) && !hideFill(draw)) {
                 view->submit(draw, viewMat);
+                // On-top geometry keeps casting its shadow (the view
+                // order still lands these in the caster pass).
+                if (shadowRender && (draw.material.shadowstyle & 1)
+                        && !(waterActive && draw.material.water))
+                    view->submitShadowCaster(draw);
                 submitSceneOutline(draw);
             }
         }
@@ -4443,6 +4462,9 @@ public:
             if (draw.material.ontop && isTriangle(draw) && isTransp(draw)
                     && !isHidden(draw) && !hideFill(draw)) {
                 view->submit(draw, viewMat);
+                if (shadowRender && (draw.material.shadowstyle & 1)
+                        && !(waterActive && draw.material.water))
+                    view->submitShadowCaster(draw);
                 submitSceneOutline(draw);
             }
         }
