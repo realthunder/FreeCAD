@@ -90,6 +90,13 @@ public:
     SoMFInt32 highlightIndices;
     SoSFColor highlightColor;
     SoSFBool  elementSelectable;
+    /// Emit explicit unit-0 texture coordinates from the state even when
+    /// no texture unit is enabled, so the vertex cache captures UVs.
+    /// Set on shared tessellations (the TShape instance table): the
+    /// shared cache is built by its first user, and without this a cache
+    /// built under an untextured user would leave every textured sharer
+    /// without UVs. Read by name from Gui::SoFCVertexCache.
+    SoSFBool  forceTexCoords;
     SoMFNode  shapeInfo;
 
     static bool makeDistinctColor(SbColor &res, const SbColor &color, const SbColor &other);

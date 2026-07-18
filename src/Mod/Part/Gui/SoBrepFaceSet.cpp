@@ -339,6 +339,7 @@ SoBrepFaceSet::SoBrepFaceSet()
     SO_NODE_ADD_FIELD(highlightColor, (0,0,0));
     highlightIndices.setNum(0);
     SO_NODE_ADD_FIELD(elementSelectable, (TRUE));
+    SO_NODE_ADD_FIELD(forceTexCoords, (FALSE));
     SO_NODE_ADD_FIELD(shapeInfo, (0));
     shapeInfo.setNum(0);
 
@@ -1461,8 +1462,47 @@ void SoBrepFaceSet::generatePrimitivesRange(SoAction * action, int pstart, int f
 
     cindices += vstart;
 
-    SoTextureCoordinateBundle tb(action, false, false);
-    doTextures = tb.needCoordinates();
+    SoTextureCoordinateBundle tcb(action, false, false);
+    doTextures = tcb.needCoordinates();
+
+    // Forced UV capture (forceTexCoords, shared tessellations): supply
+    // the state's explicit unit-0 texture coordinates even without an
+    // enabled texture unit, so the vertex cache built from these
+    // primitives carries UVs for textured sharers of the cache.
+    const SoMultiTextureCoordinateElement * forcedtc = nullptr;
+    if (!doTextures && this->forceTexCoords.getValue()) {
+        const SoMultiTextureCoordinateElement * telem =
+            SoMultiTextureCoordinateElement::getInstance(state);
+        if (telem->getType(0) == SoMultiTextureCoordinateElement::EXPLICIT
+                && telem->getNum(0) > 0) {
+            forcedtc = telem;
+            doTextures = true;
+        }
+    }
+
+    // The texcoord source the vertex loop reads: the bundle, or the
+    // element directly on the forced path (the bundle is not set up
+    // when no texture unit is enabled).
+    struct TexCoordSource {
+        SoTextureCoordinateBundle & bundle;
+        const SoMultiTextureCoordinateElement * forced;
+        SbBool isFunction() const {
+            return forced ? FALSE : bundle.isFunction();
+        }
+        SbBool needIndices() const {
+            return forced ? FALSE : bundle.needIndices();
+        }
+        SbVec4f get(int index) const {
+            if (!forced)
+                return bundle.get(index);
+            int n = forced->getNum(0);
+            return forced->get4(0, index < n ? index : n - 1);
+        }
+        SbVec4f get(const SbVec3f &point, const SbVec3f &normal) const {
+            return bundle.get(point, normal);
+        }
+    };
+    TexCoordSource tb{tcb, forcedtc};
 
     if (!sendNormals) nbind = OVERALL;
     else if (normalCacheUsed && nbind == PER_VERTEX) {

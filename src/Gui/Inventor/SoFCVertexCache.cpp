@@ -122,6 +122,7 @@ static SbName * HighlightIndicesField;
 static SbName * ElementSelectableField;
 static SbName * OnTopPatternField;
 static SbName * ShapeInfoField;
+static SbName * ForceTexCoordsField;
 
 class SoFCVertexCacheP {
 public:
@@ -143,6 +144,7 @@ public:
     ElementSelectableField = new SbName("elementSelectable");
     OnTopPatternField = new SbName("onTopPattern");
     ShapeInfoField = new SbName("shapeInfo");
+    ForceTexCoordsField = new SbName("forceTexCoords");
   }
 
   static void cleanup()
@@ -159,6 +161,8 @@ public:
     OnTopPatternField = nullptr;
     delete ShapeInfoField;
     ShapeInfoField = nullptr;
+    delete ForceTexCoordsField;
+    ForceTexCoordsField = nullptr;
   }
 
   struct Vertex {
@@ -469,6 +473,10 @@ public:
   uint32_t firstcolor;
 
   int lastenabled = -1;
+  /// forceTexCoords field of the node: capture unit-0 texcoords even
+  /// when no texture unit is enabled (shared tessellations whose cache
+  /// must carry UVs for textured sharers).
+  bool forcetexcoord = false;
   int prevsorted = 0;
   SbPlane prevsortplane;
 
@@ -589,6 +597,10 @@ SoFCVertexCache::SoFCVertexCache(SoState * state, SoNode * node, SoFCVertexCache
   field = node->getField(*OnTopPatternField);
   if (field && field->isOfType(SoSFBool::getClassTypeId()))
     PRIVATE(this)->ontoppattern = static_cast<const SoSFBool*>(field)->getValue();
+
+  field = node->getField(*ForceTexCoordsField);
+  if (field && field->isOfType(SoSFBool::getClassTypeId()))
+    PRIVATE(this)->forcetexcoord = static_cast<const SoSFBool*>(field)->getValue();
 }
 
 SoFCVertexCache::SoFCVertexCache(SoFCVertexCache & prev)
@@ -636,6 +648,8 @@ SoFCVertexCache::SoFCVertexCache(SoFCVertexCache & prev)
 
   PRIVATE(this)->elementselectable = PRIVATE(pprev)->elementselectable;
   PRIVATE(this)->ontoppattern = PRIVATE(pprev)->ontoppattern;
+  PRIVATE(this)->forcetexcoord = PRIVATE(pprev)->forcetexcoord;
+  PRIVATE(this)->lastenabled = PRIVATE(pprev)->lastenabled;
 }
 
 SoFCVertexCache::SoFCVertexCache(const SbBox3f &bbox)
@@ -836,6 +850,11 @@ SoFCVertexCache::open(SoState * state)
   // set up for multi texturing
   PRIVATE(this)->lastenabled = -1;
   SoMultiTextureEnabledElement::getEnabledUnits(state, PRIVATE(this)->lastenabled);
+  // Forced UV capture (forceTexCoords nodes): treat unit 0 as enabled
+  // so prepare()/addVertex() capture the texcoord array; the node's
+  // generatePrimitives supplies the explicit coordinates.
+  if (PRIVATE(this)->forcetexcoord && PRIVATE(this)->lastenabled < 0)
+    PRIVATE(this)->lastenabled = 0;
   PRIVATE(this)->tmp->multielem = NULL;
 
 }

@@ -244,6 +244,10 @@ static ColorVariant *acquireColorVariant(InstGeometry &geom,
     mat->shininess.setIgnored(TRUE);
 
     auto faceset = new SoBrepFaceSet;
+    // Same forced UV capture as the base faceset — the variant must
+    // produce identical geometry arrays (incl. texcoords) so the
+    // backend's content-keyed geometry buffers are shared.
+    faceset->forceTexCoords = TRUE;
     faceset->coordIndex = geom.faceset->coordIndex;
     faceset->partIndex = geom.faceset->partIndex;
     if (geom.faceset->shapeInfo.getNum())
@@ -2394,6 +2398,10 @@ bool ViewProviderPartExt::buildInstanced()
             auto gtexcoords = new SoTextureCoordinate2;
             gtexcoords->point.setNum(0);
             auto gfaceset = new SoBrepFaceSet;
+            // The shared cache is built by whichever sharer traverses
+            // first; capture UVs unconditionally so a build under an
+            // untextured user still serves textured sharers.
+            gfaceset->forceTexCoords = TRUE;
             auto glineset = new SoBrepEdgeSet;
             auto gnodeset = new SoBrepPointSet;
             gfaceset->setSiblings({glineset, gnodeset});
