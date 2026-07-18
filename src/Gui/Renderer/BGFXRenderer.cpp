@@ -2464,8 +2464,11 @@ public:
         float cx = (bmin[0] + bmax[0]) * 0.5f;
         float cy = (bmin[1] + bmax[1]) * 0.5f;
         float z = bmin[2];
-        float half = 0.5f * light.groundScale
-            * std::max(bmax[0] - bmin[0], bmax[1] - bmin[1]);
+        // Coin parity (updateShadowGround): the ground half-extent is
+        // GroundSizeScale times the largest scene dimension (z included).
+        float half = light.groundScale
+            * std::max(bmax[0] - bmin[0],
+                       std::max(bmax[1] - bmin[1], bmax[2] - bmin[2]));
         if (half <= 0.0f)
             return;
 
@@ -5142,6 +5145,21 @@ bool BGFXRenderer::boundBox(float &xmin, float &ymin, float &zmin,
     xmax = pimpl->bboxMax[0];
     ymax = pimpl->bboxMax[1];
     zmax = pimpl->bboxMax[2];
+    // The shadow ground quad is backend geometry outside the scene
+    // draws; include it so the viewer's camera auto-clipping covers it
+    // (the Coin GL ground used to do this through the scene graph).
+    const Render::LightConfig &light = pimpl->lightconf;
+    if (light.valid && light.ground && light.groundTransparency < 1.0f) {
+        float half = light.groundScale
+            * std::max(xmax - xmin,
+                       std::max(ymax - ymin, zmax - zmin));
+        float cx = (xmin + xmax) * 0.5f;
+        float cy = (ymin + ymax) * 0.5f;
+        xmin = std::min(xmin, cx - half);
+        xmax = std::max(xmax, cx + half);
+        ymin = std::min(ymin, cy - half);
+        ymax = std::max(ymax, cy + half);
+    }
     return true;
 }
 
