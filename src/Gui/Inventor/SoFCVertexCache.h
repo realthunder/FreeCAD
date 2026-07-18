@@ -160,6 +160,18 @@ public:
   SbBool getLinePartRange(int part, int & start, int & count) const;
   SbBool getPointPartRange(int part, int & start, int & count) const;
 
+  /** Part numbers of a partial subset cache (a copy restricted by
+   * addTriangles()/addLines()/addPoints(), e.g. a single selected edge):
+   * the index ARRAY getters still expose the whole parent array with the
+   * restriction recorded here, part by part (ranges via
+   * get*PartRange()). Empty when the cache draws its full index array —
+   * note a partial POINT subset rebuilds the index array instead and
+   * stays empty here.
+   */
+  const SbFCVector<int> & getPartialTriangleParts() const;
+  const SbFCVector<int> & getPartialLineParts() const;
+  const SbFCVector<int> & getPartialPointParts() const;
+
   /** The triangle index ranges renderSolids() draws when only some face
    * parts belong to solids (hasSolid() == 1); 0 when renderSolids() draws
    * the whole triangle set. \a start and \a count are in index units.

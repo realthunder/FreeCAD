@@ -104,6 +104,10 @@ ValueT viewParamOverride(View3DInventor * view,
 // arrays, which are ref-counted and shared across cache generations) alive.
 struct CacheMeshData : Render::MeshData {
     Gui::CoinPtr<SoFCVertexCache> holder;
+    // Compacted index subsets of partial caches (see below); the base
+    // struct's index pointers alias these when filled.
+    std::vector<int32_t> partialTriangles;
+    std::vector<int32_t> partialLines;
 };
 
 std::shared_ptr<CacheMeshData>
@@ -137,6 +141,38 @@ translateCache(SoFCVertexCache * cache)
 
     mesh->texCoords =
         reinterpret_cast<const float *>(cache->getTexCoordArray());
+
+    // Partial subset caches (e.g. the single-edge copy of a partial
+    // selection) keep the parent's FULL index array and record the
+    // restriction as a part list — the GL renderer draws it part by
+    // part (SoFCVertexArrayIndexer::partialindices). Compact those
+    // parts into a real index subset so backends (which consume the
+    // arrays verbatim) draw only the selected parts. Point subsets
+    // rebuild their index array at copy time and never get here.
+    const auto &triParts = cache->getPartialTriangleParts();
+    if (!triParts.empty() && mesh->triangleIndices) {
+        for (int p : triParts) {
+            int start = 0, count = 0;
+            if (cache->getTrianglePartRange(p, start, count) && count > 0)
+                mesh->partialTriangles.insert(mesh->partialTriangles.end(),
+                        mesh->triangleIndices + start,
+                        mesh->triangleIndices + start + count);
+        }
+        mesh->triangleIndices = mesh->partialTriangles.data();
+        mesh->numTriangleIndices = int(mesh->partialTriangles.size());
+    }
+    const auto &lineParts = cache->getPartialLineParts();
+    if (!lineParts.empty() && mesh->lineIndices) {
+        for (int p : lineParts) {
+            int start = 0, count = 0;
+            if (cache->getLinePartRange(p, start, count) && count > 0)
+                mesh->partialLines.insert(mesh->partialLines.end(),
+                        mesh->lineIndices + start,
+                        mesh->lineIndices + start + count);
+        }
+        mesh->lineIndices = mesh->partialLines.data();
+        mesh->numLineIndices = int(mesh->partialLines.size());
+    }
     return mesh;
 }
 

@@ -1936,6 +1936,32 @@ SoFCVertexCache::getLineIndices(void) const
   return PRIVATE(this)->lineindexer->getIndices();
 }
 
+static const SbFCVector<int> _EmptyPartialParts;
+
+const SbFCVector<int> &
+SoFCVertexCache::getPartialTriangleParts() const
+{
+  return PRIVATE(this)->triangleindexer
+    ? PRIVATE(this)->triangleindexer->getPartialIndices()
+    : _EmptyPartialParts;
+}
+
+const SbFCVector<int> &
+SoFCVertexCache::getPartialLineParts() const
+{
+  return PRIVATE(this)->lineindexer
+    ? PRIVATE(this)->lineindexer->getPartialIndices()
+    : _EmptyPartialParts;
+}
+
+const SbFCVector<int> &
+SoFCVertexCache::getPartialPointParts() const
+{
+  return PRIVATE(this)->pointindexer
+    ? PRIVATE(this)->pointindexer->getPartialIndices()
+    : _EmptyPartialParts;
+}
+
 int
 SoFCVertexCache::getNumNoSeamLineIndices(void) const
 {
