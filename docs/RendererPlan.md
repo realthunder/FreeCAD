@@ -803,6 +803,36 @@ independent of each other; item 4 builds on item 3's property model.
   2021 `LinkShapeTable` branch identified but couldn't do in Coin. Requires
   a vertex-cache-level dedup key (TShape pointer) surfaced into
   `VertexCacheEntry`.
+  *First cut done (2026-07).* No cache-level key turned out to be needed:
+  Link placements already share one `SoFCVertexCache` (the render-cache
+  flattening reuses the child cache pointer per placement, only the
+  per-entry matrix differs), so the bridge already feeds one
+  `MeshData`/`cacheId` with N `DrawCall`s differing in model matrix and
+  diffuse — instancing became a pure backend grouping problem. At
+  `setScene` the bgfx backend groups triangle draws by (mesh, index range,
+  material-bar-diffuse); eligible are opaque, untextured, unclipped,
+  non-on-top, non-water draws without autozoom. Per frame, each group of
+  ≥ 2 non-hidden members collapses into a single `bgfx::submit` of the new
+  `vs_fc_mesh_inst` program (paired with the stock `fs_fc_mesh`), fed a
+  transient instance buffer of {model matrix columns, diffuse} per
+  instance (i_data0-4; the VS picks per-vertex vs per-instance color by
+  `u_instParams.x`, the FS is forced onto the v_color0 path). Members keep
+  their per-draw side submissions (SSAO prepass, shadow caster, water
+  depths); selection-hidden members drop out of the group per frame (the
+  selected object re-renders on top). Hidden-line frames disable
+  instancing wholesale (the stencil outline path reworks fill submits).
+  `FC_BGFX_NO_INSTANCING` reverts to per-draw for A/B;
+  `FC_BGFX_DEBUG_FEED` prints group coverage. Verified on llvmpipe (6-box
+  Link-array scene): instanced vs per-draw bit-identical, incl.
+  per-link override colors and a link-selected frame (group thins 6 → 5);
+  shadow frame maxdiff 1/255 (float association order); vs GL stays in
+  the usual axo edge-AA class. Known gaps: only the main opaque color
+  pass batches (prepass/shadow/caster submits stay per-draw); textured/
+  clipped/transparent/OIT draws and line/point primitives are not
+  instanced (lines/points already instance per-segment for thick-quad
+  expansion — cross-object batching there would collide); a non-zero
+  `RenderCacheMergeCount` bakes matrices into merged caches and defeats
+  grouping (default 0 is the instancing-friendly path).
 - Frustum/occlusion culling, GPU-driven paths (bgfx ex.37/48) for very large
   assemblies.
 - WASM build of the renderer; progressive refinement (drop AA/AO during
