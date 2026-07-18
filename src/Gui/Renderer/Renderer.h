@@ -469,6 +469,13 @@ struct Material {
     std::shared_ptr<const TextureImage> emissivemap;
     std::shared_ptr<const TextureImage> occlusionmap;
 
+    /// glTF metallic-roughness map of a triangle draw (SoFCRenderTexture,
+    /// typically fed from a ViewProvider Render_MetallicRoughnessMap
+    /// property): the green channel multiplies the roughness factor and
+    /// the blue channel the metallic factor (glTF semantics) — only used
+    /// while the PBR shading path is active. Sampling caveats as above.
+    std::shared_ptr<const TextureImage> metallicroughnessmap;
+
     /// Autozoom transforms (SoAutoZoomTranslation): the draw's model
     /// matrix is rebuilt every frame by replaying these entries like the
     /// GL renderer's setupMatrix — accumulate each entry's matrix (or

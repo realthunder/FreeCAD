@@ -334,6 +334,7 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->bumpmaps.clear();
   this->emissivemaps.clear();
   this->occlusionmaps.clear();
+  this->metallicroughnessmaps.clear();
   this->lights.clear();
   this->partialhighlight = 0;
   this->selectstyle = Material::Full;
@@ -822,6 +823,7 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
     res.bumpmaps.clear();
     res.emissivemaps.clear();
     res.occlusionmaps.clear();
+    res.metallicroughnessmaps.clear();
     res.texturematrices.clear();
   } else {
     res.texturematrices.combine(parent.texturematrices);
@@ -842,6 +844,7 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
     res.bumpmaps.add(parent.bumpmaps, false);
     res.emissivemaps.add(parent.emissivemaps, false);
     res.occlusionmaps.add(parent.occlusionmaps, false);
+    res.metallicroughnessmaps.add(parent.metallicroughnessmaps, false);
   }
 
   res.lights = parent.lights;
@@ -1236,8 +1239,9 @@ SoFCRenderCache::addRenderTexture(SoState * state, const SoNode * node)
   PRIVATE(this)->checkState(state);
 
   // SoFCRenderTexture has no Coin element either; the node routes into
-  // the material map its slot field selects (emissive/occlusion), kept
-  // out of `textures` like the bump map. Unit 0 like the other maps.
+  // the material map its slot field selects (emissive/occlusion/
+  // metallic-roughness), kept out of `textures` like the bump map.
+  // Unit 0 like the other maps.
   auto texture = static_cast<const Gui::SoFCRenderTexture *>(node);
 
   TextureInfo info;
@@ -1245,10 +1249,17 @@ SoFCRenderCache::addRenderTexture(SoState * state, const SoNode * node)
   info.transparent = false;
   info.identity = true;
 
-  if (texture->slot.getValue() == Gui::SoFCRenderTexture::OCCLUSION)
+  switch (texture->slot.getValue()) {
+  case Gui::SoFCRenderTexture::OCCLUSION:
     PRIVATE(this)->material.occlusionmaps.set(0, info);
-  else
+    break;
+  case Gui::SoFCRenderTexture::METALLIC_ROUGHNESS:
+    PRIVATE(this)->material.metallicroughnessmaps.set(0, info);
+    break;
+  default:
     PRIVATE(this)->material.emissivemaps.set(0, info);
+    break;
+  }
 }
 
 void
@@ -2239,6 +2250,7 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
     bboxmaterial.bumpmaps.clear();
     bboxmaterial.emissivemaps.clear();
     bboxmaterial.occlusionmaps.clear();
+    bboxmaterial.metallicroughnessmaps.clear();
     bboxmaterial.texturematrices.clear();
 
     res[bboxmaterial].emplace_back(cache, matrix, false, false, CacheKeyPtr());

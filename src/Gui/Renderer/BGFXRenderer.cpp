@@ -1093,7 +1093,8 @@ public:
                          &u_aoParams, &u_aoKernel,
                          &s_texEnv, &u_pbrParams, &u_envSH,
                          &s_texBump, &u_bumpParams,
-                         &s_texEmissive, &s_texOcclusion}) {
+                         &s_texEmissive, &s_texOcclusion,
+                         &s_texMetallicRoughness}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1412,6 +1413,10 @@ public:
                                             bgfx::UniformType::Sampler);
         s_texOcclusion = bgfx::createUniform("s_texOcclusion",
                                              bgfx::UniformType::Sampler);
+        // Metallic-roughness map at unit 6; u_pbrParams.x = 2 flags it.
+        s_texMetallicRoughness =
+            bgfx::createUniform("s_texMetallicRoughness",
+                                bgfx::UniformType::Sampler);
 
         // Shadows: variance moments rendered from the scene light of the
         // Shadow draw style (unit 3 of the mesh programs; the white
@@ -2960,10 +2965,12 @@ public:
         bool bumped = mat.type == Render::Material::Triangle
             && mat.bumpmap && mat.lighting && draw.mesh->texCoords
             && pass != PassDepthOnly;
-        // Emissive/occlusion material maps ride the textured programs
-        // too, with the same white unit-0 stand-in as a lone bump map.
+        // Emissive/occlusion/metallic-roughness material maps ride the
+        // textured programs too, with the same white unit-0 stand-in as
+        // a lone bump map.
         bool mapped = mat.type == Render::Material::Triangle
-            && (mat.emissivemap || mat.occlusionmap)
+            && (mat.emissivemap || mat.occlusionmap
+                || mat.metallicroughnessmap)
             && draw.mesh->texCoords && pass != PassDepthOnly;
         bool textured = (mat.type == Render::Material::Triangle
             && mat.texture && draw.mesh->texCoords
@@ -3143,7 +3150,11 @@ public:
             float pbrParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
             bgfx::TextureHandle env = m_dummyEnvTex;
             if (pbrFrame && mat.lighting && pass != PassDepthOnly) {
-                pbrParams[0] = 1.0f;
+                // x = 2 flags a metallic-roughness map on top of the
+                // branch (u_texParams has no free component; the map
+                // only matters to the PBR path anyway).
+                pbrParams[0] = mapped && mat.metallicroughnessmap
+                    ? 2.0f : 1.0f;
                 // Per-object overrides (SoFCRenderMaterial, from
                 // ViewProvider Render_* properties) beat the frame config.
                 float metal = mat.metallic >= 0.0f ? mat.metallic
@@ -3240,6 +3251,7 @@ public:
                 texParams[2] = 1.0f;
             if (mapped && mat.occlusionmap)
                 texParams[3] = 1.0f;
+            bool mrmapped = mapped && mat.metallicroughnessmap;
             bgfx::setTexture(0, s_texColor, color);
             bgfx::setUniform(u_texParams, texParams);
             bgfx::setUniform(u_texBlendColor, blend);
@@ -3280,6 +3292,14 @@ public:
                              texParams[3] > 0.5f
                                  ? getTexture(*mat.occlusionmap)->handle
                                  : m_whiteTex);
+
+            // Metallic-roughness map at unit 6 (flagged via
+            // u_pbrParams.x = 2 above; the white stand-in is never
+            // sampled).
+            bgfx::setTexture(
+                6, s_texMetallicRoughness,
+                mrmapped ? getTexture(*mat.metallicroughnessmap)->handle
+                         : m_whiteTex);
         }
 
         if (patterned) {
@@ -3545,6 +3565,7 @@ public:
     bgfx::UniformHandle u_bumpParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texEmissive = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texOcclusion = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texMetallicRoughness = BGFX_INVALID_HANDLE;
     float bumpScale = 1.0f;    // bump/normal map strength (BumpConfig)
     bool bumpParallax = true;  // parallax-occlusion map height maps
     // Variance shadow map of the Shadow draw style's scene light.
@@ -5190,7 +5211,7 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
                 "  type=%d part=%d range=%d+%d diffuse=%08x emissive=%08x"
                 " pvc=%d light=%d transp=%d ontop=%d dtest=%d dwrite=%d"
                 " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f lp=%08x/%08x"
-                " ol=%d lc=%08x tex=%d bump=%d em=%d occ=%d uv=%d"
+                " ol=%d lc=%08x tex=%d bump=%d em=%d occ=%d mr=%d uv=%d"
                 " ss=%d\n",
                 m.type, d.partIndex, d.indexStart, d.indexCount,
                 m.diffuse, m.emissive, m.pervertexcolor, m.lighting,
@@ -5203,6 +5224,8 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
                 m.bumpmap ? m.bumpmap->numComponents : 0,
                 m.emissivemap ? m.emissivemap->numComponents : 0,
                 m.occlusionmap ? m.occlusionmap->numComponents : 0,
+                m.metallicroughnessmap
+                    ? m.metallicroughnessmap->numComponents : 0,
                 d.mesh && d.mesh->texCoords ? 1 : 0,
                 m.shadowstyle);
         for (int i = 0; i < m.numclipplanes; ++i)

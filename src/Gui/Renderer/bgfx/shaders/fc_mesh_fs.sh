@@ -11,7 +11,8 @@
  * u_params      : x = per-vertex color, y = lighting on, z = two-sided
  * u_texParams   : x = texture environment, y = source carries alpha,
  *                 z = emissive map on, w = occlusion map on
- * u_pbrParams   : x = PBR branch on, y = metallic, z = roughness,
+ * u_pbrParams   : x = PBR branch on (2 = with a metallic-roughness
+ *                 map), y = metallic, z = roughness,
  *                 w = environment intensity
  * u_envSH       : irradiance spherical harmonics of the environment,
  *                 cosine-convolved with the basis and 1/pi constants
@@ -77,6 +78,10 @@ uniform vec4 u_bumpParams;
 // ambient/environment contribution (glTF semantics).
 SAMPLER2D(s_texEmissive, 4);
 SAMPLER2D(s_texOcclusion, 5);
+// glTF metallic-roughness map (u_pbrParams.x = 2): the green channel
+// multiplies the roughness factor, the blue channel the metallic
+// factor — PBR branch only.
+SAMPLER2D(s_texMetallicRoughness, 6);
 #endif
 
 // One variance shadow map tap at uv against receiver light-window
@@ -343,6 +348,19 @@ void main()
 			float ndv = max(n.z, 1.0e-4);
 			float metal = u_pbrParams.y;
 			float rough = u_pbrParams.z;
+#ifdef TEXTURE
+			if (u_pbrParams.x > 1.5)
+			{
+				// glTF metallic-roughness map: the factors
+				// multiply the map channels (g = roughness,
+				// b = metallic); keep the CPU-side roughness
+				// floor after the multiply.
+				vec4 mrt = texture2D(s_texMetallicRoughness,
+				                     uv);
+				metal = clamp(metal * mrt.z, 0.0, 1.0);
+				rough = clamp(rough * mrt.y, 0.02, 1.0);
+			}
+#endif
 			vec3 f0 = mix(vec3_splat(0.04), base.rgb, metal);
 			vec3 kd = base.rgb * (1.0 - metal);
 

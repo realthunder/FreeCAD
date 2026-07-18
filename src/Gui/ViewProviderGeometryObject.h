@@ -125,7 +125,8 @@ protected:
     /// Sync the optional SoTexture2/SoTexture2Transform/SoBumpMap/
     /// SoFCRenderTexture nodes with the Render_BaseColorTexture /
     /// Render_Texture* / Render_NormalMap / Render_EmissiveMap /
-    /// Render_OcclusionMap dynamic properties.
+    /// Render_OcclusionMap / Render_MetallicRoughnessMap dynamic
+    /// properties.
     void updateRenderTexture();
     /// Sync the optional SoShadowStyle node with the Render_CastShadow /
     /// Render_ReceiveShadow dynamic properties.
@@ -141,6 +142,7 @@ protected:
     SoBumpMap        * pcRenderBumpMap{nullptr};
     SoFCRenderTexture * pcRenderEmissiveMap{nullptr};
     SoFCRenderTexture * pcRenderOcclusionMap{nullptr};
+    SoFCRenderTexture * pcRenderMetallicRoughnessMap{nullptr};
     SoShadowStyle    * pcRenderShadowStyle{nullptr};
 
 private:

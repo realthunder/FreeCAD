@@ -275,11 +275,12 @@ public:
     /// which is wrong for a bump map node (only external backends
     /// consume this).
     TextureMap bumpmaps;
-    /// Unit-0 emissive/occlusion material maps (SoFCRenderTexture) of
-    /// triangle draws, kept out of `textures` like the bump map (only
-    /// external backends consume these).
+    /// Unit-0 emissive/occlusion/metallic-roughness material maps
+    /// (SoFCRenderTexture) of triangle draws, kept out of `textures`
+    /// like the bump map (only external backends consume these).
     TextureMap emissivemaps;
     TextureMap occlusionmaps;
+    TextureMap metallicroughnessmaps;
     NodeInfoArray lights;
     NodeInfoArray clippers;
     NodeInfoArray autozoom;
@@ -328,6 +329,8 @@ public:
         if (emissivemaps > other.emissivemaps) return false;
         if (occlusionmaps < other.occlusionmaps) return true;
         if (occlusionmaps > other.occlusionmaps) return false;
+        if (metallicroughnessmaps < other.metallicroughnessmaps) return true;
+        if (metallicroughnessmaps > other.metallicroughnessmaps) return false;
         if (shadowstyle < other.shadowstyle) return true;
         if (shadowstyle > other.shadowstyle) return false;
         if (diffuse < other.diffuse) return true;

@@ -64,7 +64,8 @@ protected:
     ~SoFCRenderMaterial() override = default;
 };
 
-/// Render-engine-only material texture map (emissive/occlusion) of the
+/// Render-engine-only material texture map (emissive/occlusion/
+/// metallic-roughness) of the
 /// shapes that follow in the scene graph. Like SoFCRenderMaterial the
 /// node has no effect on Coin's own GL rendering — it derives straight
 /// from SoNode (deriving from SoTexture2 would feed Coin's texture
@@ -87,6 +88,9 @@ public:
         EMISSIVE,
         /// r multiplies the ambient/environment light contribution
         OCCLUSION,
+        /// glTF metallic-roughness map: g multiplies the roughness
+        /// factor, b the metallic factor (PBR shading only)
+        METALLIC_ROUGHNESS,
     };
     enum Wrap {
         REPEAT,

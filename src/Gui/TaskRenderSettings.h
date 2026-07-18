@@ -74,6 +74,8 @@ private:
     QLineEdit *emissiveMapEdit = nullptr;
     QCheckBox *occlusionMapCheck = nullptr;
     QLineEdit *occlusionMapEdit = nullptr;
+    QCheckBox *metallicRoughnessMapCheck = nullptr;
+    QLineEdit *metallicRoughnessMapEdit = nullptr;
     QCheckBox *texScaleCheck = nullptr;
     QDoubleSpinBox *texScaleX = nullptr;
     QDoubleSpinBox *texScaleY = nullptr;

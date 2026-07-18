@@ -131,6 +131,8 @@ ViewProviderGeometryObject::~ViewProviderGeometryObject()
         pcRenderEmissiveMap->unref();
     if (pcRenderOcclusionMap)
         pcRenderOcclusionMap->unref();
+    if (pcRenderMetallicRoughnessMap)
+        pcRenderMetallicRoughnessMap->unref();
     if (pcRenderShadowStyle)
         pcRenderShadowStyle->unref();
     if(pcBoundingBox)
@@ -249,14 +251,16 @@ void ViewProviderGeometryObject::updateRenderTexture()
     const char *bump = fileProp("Render_NormalMap");
     const char *emissive = fileProp("Render_EmissiveMap");
     const char *occlusion = fileProp("Render_OcclusionMap");
+    const char *metallicroughness = fileProp("Render_MetallicRoughnessMap");
 
     // Base color texture (unit-0 SoTexture2, modulate). When only a
-    // bump/emissive/occlusion map is set, a 1x1 white stand-in still
-    // goes in: an enabled texture unit is what makes the shapes generate
-    // texture coordinates (both in Coin GL and in the render cache
-    // capture).
+    // bump/emissive/occlusion/metallic-roughness map is set, a 1x1 white
+    // stand-in still goes in: an enabled texture unit is what makes the
+    // shapes generate texture coordinates (both in Coin GL and in the
+    // render cache capture).
     bool wantTexture = (color && color[0]) || (bump && bump[0])
-        || (emissive && emissive[0]) || (occlusion && occlusion[0]);
+        || (emissive && emissive[0]) || (occlusion && occlusion[0])
+        || (metallicroughness && metallicroughness[0]);
     if (!wantTexture) {
         if (pcRenderTexture) {
             int idx = pcRoot->findChild(pcRenderTexture);
@@ -348,8 +352,8 @@ void ViewProviderGeometryObject::updateRenderTexture()
         loadTextureImage(bump, pcRenderBumpMap->image, true);
     }
 
-    // Emissive/occlusion material maps (SoFCRenderTexture; only the
-    // external render backends draw them).
+    // Emissive/occlusion/metallic-roughness material maps
+    // (SoFCRenderTexture; only the external render backends draw them).
     auto syncRenderTexture = [this](const char *path,
                                     SoFCRenderTexture::Slot slot,
                                     SoFCRenderTexture *&node) {
@@ -375,6 +379,9 @@ void ViewProviderGeometryObject::updateRenderTexture()
                       pcRenderEmissiveMap);
     syncRenderTexture(occlusion, SoFCRenderTexture::OCCLUSION,
                       pcRenderOcclusionMap);
+    syncRenderTexture(metallicroughness,
+                      SoFCRenderTexture::METALLIC_ROUGHNESS,
+                      pcRenderMetallicRoughnessMap);
 }
 
 void ViewProviderGeometryObject::updateRenderMaterial()
@@ -427,6 +434,7 @@ void ViewProviderGeometryObject::updateRenderProperty(const char *name)
             || strcmp(name, "Render_NormalMap") == 0
             || strcmp(name, "Render_EmissiveMap") == 0
             || strcmp(name, "Render_OcclusionMap") == 0
+            || strcmp(name, "Render_MetallicRoughnessMap") == 0
             || strncmp(name, "Render_Texture", 14) == 0)
         updateRenderTexture();
     else if (strcmp(name, "Render_CastShadow") == 0

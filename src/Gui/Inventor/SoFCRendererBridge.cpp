@@ -476,8 +476,8 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
             res.bumpmap = translateBumpMap(*info, texmap);
     }
 
-    // Emissive/occlusion material maps (SoFCRenderTexture capture),
-    // unit 0 only like the maps above.
+    // Emissive/occlusion/metallic-roughness material maps
+    // (SoFCRenderTexture capture), unit 0 only like the maps above.
     if (res.type == Render::Material::Triangle && m.emissivemaps.getNum()) {
         if (const auto * info = m.emissivemaps.get(0))
             res.emissivemap = translateRenderTexture(*info, texmap);
@@ -485,6 +485,11 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     if (res.type == Render::Material::Triangle && m.occlusionmaps.getNum()) {
         if (const auto * info = m.occlusionmaps.get(0))
             res.occlusionmap = translateRenderTexture(*info, texmap);
+    }
+    if (res.type == Render::Material::Triangle
+            && m.metallicroughnessmaps.getNum()) {
+        if (const auto * info = m.metallicroughnessmaps.get(0))
+            res.metallicroughnessmap = translateRenderTexture(*info, texmap);
     }
 
     // Autozoom transforms: mirror the material's node list; the backend

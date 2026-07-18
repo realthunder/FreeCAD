@@ -141,6 +141,8 @@ RenderSettingsWidget::RenderSettingsWidget(
     addFile(tr("Normal map"), normalMapCheck, normalMapEdit);
     addFile(tr("Emissive map"), emissiveMapCheck, emissiveMapEdit);
     addFile(tr("Occlusion map"), occlusionMapCheck, occlusionMapEdit);
+    addFile(tr("Metallic-roughness map"), metallicRoughnessMapCheck,
+            metallicRoughnessMapEdit);
 
     texScaleCheck = addOverride(tr("Texture scale"));
     texScaleX = addSpin(1, -1.0e4, 1.0e4, 0.1);
@@ -193,6 +195,7 @@ RenderSettingsWidget::RenderSettingsWidget(
     enables(normalMapCheck, {normalMapEdit});
     enables(emissiveMapCheck, {emissiveMapEdit});
     enables(occlusionMapCheck, {occlusionMapEdit});
+    enables(metallicRoughnessMapCheck, {metallicRoughnessMapEdit});
     enables(texScaleCheck, {texScaleX, texScaleY});
     enables(texOffsetCheck, {texOffsetX, texOffsetY});
     enables(texRotationCheck, {texRotationSpin});
@@ -248,6 +251,12 @@ void RenderSettingsWidget::load()
                 vp, "Render_OcclusionMap")) {
         occlusionMapCheck->setChecked(true);
         occlusionMapEdit->setText(QString::fromUtf8(prop->getValue()));
+    }
+    if (auto prop = getProp<App::PropertyFileIncluded>(
+                vp, "Render_MetallicRoughnessMap")) {
+        metallicRoughnessMapCheck->setChecked(true);
+        metallicRoughnessMapEdit->setText(
+            QString::fromUtf8(prop->getValue()));
     }
     if (auto prop = getProp<App::PropertyVector>(
                 vp, "Render_TextureScale")) {
@@ -345,6 +354,11 @@ void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
               "Ambient occlusion map multiplying the ambient/"
               "environment light of the render engine (embedded in "
               "the document)");
+    applyFile(metallicRoughnessMapCheck, metallicRoughnessMapEdit,
+              "Render_MetallicRoughnessMap",
+              "glTF metallic-roughness map of the render engine PBR "
+              "shading: green multiplies roughness, blue metallic "
+              "(embedded in the document)");
 
     auto applyVector = [vp](QCheckBox *check, QDoubleSpinBox *x,
                             QDoubleSpinBox *y, const char *name,
