@@ -47,6 +47,8 @@ struct RenderMaterial
     /// on import, PropertyFileIncluded storage on export. Empty = none.
     std::string baseColorTexture;
     std::string normalMapTexture;
+    std::string emissiveTexture;
+    std::string occlusionTexture;
 };
 
 }  // namespace Import

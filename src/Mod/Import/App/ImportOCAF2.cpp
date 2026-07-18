@@ -334,6 +334,7 @@ bool ImportOCAF2::getRenderMaterial(TDF_Label label, RenderMaterial& mat)
     // Skip it so plain colored exports do not grow render properties (and
     // turn fully metallic) on re-import.
     if (pbr.BaseColorTexture.IsNull() && pbr.NormalTexture.IsNull()
+        && pbr.EmissiveTexture.IsNull() && pbr.OcclusionTexture.IsNull()
         && pbr.Metallic >= 1.0f && pbr.Roughness >= 1.0f) {
         return false;
     }
@@ -365,6 +366,8 @@ bool ImportOCAF2::getRenderMaterial(TDF_Label label, RenderMaterial& mat)
     };
     mat.baseColorTexture = extract(pbr.BaseColorTexture, "gltf_basecolor");
     mat.normalMapTexture = extract(pbr.NormalTexture, "gltf_normal");
+    mat.emissiveTexture = extract(pbr.EmissiveTexture, "gltf_emissive");
+    mat.occlusionTexture = extract(pbr.OcclusionTexture, "gltf_occlusion");
 
     mat.valid = true;
     return true;

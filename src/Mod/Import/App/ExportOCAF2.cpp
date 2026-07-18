@@ -264,6 +264,17 @@ void ExportOCAF2::setupObject(TDF_Label label,
                 pbr.NormalTexture =
                     new Image_Texture(rmat.normalMapTexture.c_str());
             }
+            if (!rmat.emissiveTexture.empty()) {
+                pbr.EmissiveTexture =
+                    new Image_Texture(rmat.emissiveTexture.c_str());
+                // The glTF emissiveFactor (default 0) multiplies the
+                // texture in conforming viewers.
+                pbr.EmissiveFactor.SetValues(1.0f, 1.0f, 1.0f);
+            }
+            if (!rmat.occlusionTexture.empty()) {
+                pbr.OcclusionTexture =
+                    new Image_Texture(rmat.occlusionTexture.c_str());
+            }
             visMat->SetPbrMaterial(pbr);
             TDF_Label matLabel = aMatTool->AddMaterial(
                 visMat, TCollection_AsciiString(obj->getNameInDocument()));

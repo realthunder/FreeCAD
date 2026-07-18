@@ -155,4 +155,9 @@ void ImportOCAFGui::applyRenderMaterial(Part::Feature* part,
             "Base color texture image of the object");
     setFile("Render_NormalMap", mat.normalMapTexture,
             "Tangent space normal map (or grayscale height map) of the object");
+    setFile("Render_EmissiveMap", mat.emissiveTexture,
+            "Emissive map added to the lit color by the render engine");
+    setFile("Render_OcclusionMap", mat.occlusionTexture,
+            "Ambient occlusion map multiplying the ambient/environment "
+            "light of the render engine");
 }
