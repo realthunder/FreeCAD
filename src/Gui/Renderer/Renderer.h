@@ -254,6 +254,15 @@ struct LightConfig {
     /// (<= 0 = stretched once over the quad); null = plain color.
     std::shared_ptr<const TextureImage> groundTexture;
     float groundTextureSize = 100.0f;
+    /// Ground transparency (ShadowGroundTransparency, 0..1): the ground
+    /// quad alpha-blends over the background; 1 = invisible (Coin then
+    /// keeps a shadow-only ground, not ported - the ground disappears).
+    float groundTransparency = 0.0f;
+    /// Ground bump map (ShadowGroundBumpMap): grayscale height (1/2
+    /// components) or tangent-space normal map (3/4), perturbing the
+    /// ground lighting like a scene Material::bumpmap; tiled with the
+    /// ground texture coordinates.
+    std::shared_ptr<const TextureImage> groundBumpMap;
 
     bool operator==(const LightConfig &o) const {
         return valid == o.valid && spot == o.spot
@@ -270,7 +279,9 @@ struct LightConfig {
             && ground == o.ground && groundScale == o.groundScale
             && groundColor == o.groundColor
             && groundTexture == o.groundTexture
-            && groundTextureSize == o.groundTextureSize;
+            && groundTextureSize == o.groundTextureSize
+            && groundTransparency == o.groundTransparency
+            && groundBumpMap == o.groundBumpMap;
     }
     bool operator!=(const LightConfig &o) const { return !(*this == o); }
 };

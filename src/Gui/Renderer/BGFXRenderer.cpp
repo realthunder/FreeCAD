@@ -2475,6 +2475,10 @@ public:
                             const Render::LightConfig &light,
                             bool prepass = false)
     {
+        // Fully transparent = invisible ground (Coin then switches to a
+        // shadow-only ground rendering, not ported).
+        if (light.groundTransparency >= 1.0f)
+            return;
         uint32_t colorPacked = light.groundColor;
         float cx = (bmin[0] + bmax[0]) * 0.5f;
         float cy = (bmin[1] + bmax[1]) * 0.5f;
@@ -2504,7 +2508,10 @@ public:
 
         float color[4], zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         unpackColor(colorPacked, color);
-        color[3] = 1.0f;
+        // Ground transparency (ShadowGroundTransparency): plain alpha
+        // blend over whatever lies behind in the depth order (the
+        // background; the quad still writes depth like Coin's ground).
+        color[3] = 1.0f - light.groundTransparency;
         float params[4] = {0.0f, 1.0f, 1.0f, 0.0f};  // lit, two-sided
         bgfx::setUniform(u_matColor, color);
         bgfx::setUniform(u_matEmissive, zero);
@@ -2531,7 +2538,11 @@ public:
         // Ground texture (ShadowGroundTexture): tiled every
         // groundTextureSize world units, modulated by the ground color
         // like Coin's default SoTexture2 model on the ground material.
-        bool textured = light.groundTexture
+        // A ground bump map (ShadowGroundBumpMap) rides the same
+        // textured program with the same tiled UVs (white color
+        // stand-in when there is no ground texture, the scene's
+        // lone-bump-map pattern).
+        bool textured = (light.groundTexture || light.groundBumpMap)
             && bgfx::isValid(m_progMeshTex);
         bgfx::TransientVertexBuffer uvb;
         if (textured) {
@@ -2553,20 +2564,39 @@ public:
             }
         }
         if (textured) {
-            GpuTexture *tex = getTexture(*light.groundTexture);
             float texParams[4] = {
                 float(Render::TextureImage::Modulate),
-                light.groundTexture->numComponents == 4 ? 1.0f : 0.0f,
-                0.0f, 0.0f};
+                0.0f, 0.0f, 0.0f};
+            bgfx::TextureHandle colorTex = m_whiteTex;
+            if (light.groundTexture) {
+                colorTex = getTexture(*light.groundTexture)->handle;
+                texParams[1] =
+                    light.groundTexture->numComponents == 4 ? 1.0f
+                                                            : 0.0f;
+            }
             float texmat[16];
             bx::mtxIdentity(texmat);
-            bgfx::setTexture(0, s_texColor, tex->handle);
+            bgfx::setTexture(0, s_texColor, colorTex);
             bgfx::setUniform(u_texParams, texParams);
             bgfx::setUniform(u_texBlendColor, zero);
             bgfx::setUniform(u_texMatrix, texmat);
-            float bumpOff[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-            bgfx::setTexture(2, s_texBump, m_whiteTex);
-            bgfx::setUniform(u_bumpParams, bumpOff);
+            float bumpParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            bgfx::TextureHandle bump = m_whiteTex;
+            if (light.groundBumpMap) {
+                const auto &bm = *light.groundBumpMap;
+                bool heightmap = bm.numComponents <= 2;
+                bumpParams[0] = heightmap
+                    ? (bumpParallax ? 3.0f : 2.0f) : 1.0f;
+                bumpParams[1] = heightmap
+                    ? 0.04f * bumpScale : bumpScale;
+                bumpParams[2] = 1.0f / float(bm.width);
+                bumpParams[3] = 1.0f / float(bm.height);
+                bump = getTexture(bm)->handle;
+            }
+            bgfx::setUniform(u_bumpParams, bumpParams);
+            bgfx::setTexture(2, s_texBump, bump);
+            bgfx::setTexture(4, s_texEmissive, m_whiteTex);
+            bgfx::setTexture(5, s_texOcclusion, m_whiteTex);
         }
 
         float identity[16];
@@ -2575,9 +2605,12 @@ public:
         bgfx::setVertexBuffer(0, &tvb);
         if (textured)
             bgfx::setVertexBuffer(1, &uvb);
-        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-                       | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS
-                       | BGFX_STATE_MSAA);
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+            | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS
+            | BGFX_STATE_MSAA;
+        if (light.groundTransparency > 0.0f)
+            state |= BGFX_STATE_BLEND_ALPHA;
+        bgfx::setState(state);
         bgfx::submit(viewId + ViewOpaque,
                      textured ? m_progMeshTex : m_progMesh);
         ++drawcount;

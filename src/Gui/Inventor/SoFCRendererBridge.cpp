@@ -820,19 +820,30 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
         else {
             texpath = ViewParams::getShadowGroundTexture();
         }
-        if (!texpath.empty()) {
-            static std::map<std::string,
+        // Image files decoded once per path with Qt and cached — the
+        // backend keys GPU uploads on the stable textureId. keepGray
+        // preserves grayscale images as one component: a bump map's
+        // component count is what tells a height field (1/2) from a
+        // tangent-space normal map (3/4).
+        auto loadImage = [](const std::string &path, bool keepGray)
+                -> std::shared_ptr<const Render::TextureImage> {
+            if (path.empty())
+                return nullptr;
+            static std::map<std::pair<std::string, bool>,
                             std::shared_ptr<const Render::TextureImage>>
                 cache;
-            auto it = cache.find(texpath);
+            auto key = std::make_pair(path, keepGray);
+            auto it = cache.find(key);
             if (it == cache.end()) {
                 std::shared_ptr<Render::TextureImage> tex;
                 QImage img;
-                if (img.load(QString::fromUtf8(texpath.c_str()))) {
+                if (img.load(QString::fromUtf8(path.c_str()))) {
                     bool alpha = img.hasAlphaChannel();
+                    bool gray = keepGray && !alpha && img.isGrayscale();
                     img = img.convertToFormat(
-                        alpha ? QImage::Format_RGBA8888
-                              : QImage::Format_RGB888);
+                        gray ? QImage::Format_Grayscale8
+                             : alpha ? QImage::Format_RGBA8888
+                                     : QImage::Format_RGB888);
                     // Render::TextureImage rows are bottom-up like GL.
                     img = img.mirrored(false, true);
                     tex = std::make_shared<Render::TextureImage>();
@@ -842,7 +853,7 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
                     tex->textureId = 0x8000000000000000ULL + ++nextId;
                     tex->width = img.width();
                     tex->height = img.height();
-                    tex->numComponents = alpha ? 4 : 3;
+                    tex->numComponents = gray ? 1 : alpha ? 4 : 3;
                     int rowLen = img.width() * tex->numComponents;
                     tex->pixels.resize(size_t(rowLen) * img.height());
                     for (int y = 0; y < img.height(); ++y)
@@ -850,14 +861,39 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
                                         + size_t(y) * rowLen,
                                     img.constScanLine(y), rowLen);
                 }
-                it = cache.emplace(texpath, std::move(tex)).first;
+                it = cache.emplace(key, std::move(tex)).first;
             }
-            res.groundTexture = it->second;
+            return it->second;
+        };
+        res.groundTexture = loadImage(texpath, false);
+        if (res.groundTexture) {
             res.groundTextureSize =
                 float(viewParamOverride<App::PropertyFloat>(
                     view, "Shadow", "GroundTextureSize",
                     ViewParams::getShadowGroundTextureSize()));
         }
+
+        // Ground transparency and bump map (Shadow_GroundTransparency /
+        // Shadow_GroundBumpMap; the Shadow draw style materializes the
+        // constrained float, so accept both float property types).
+        if (auto prop = viewPropOverride<App::PropertyFloat>(
+                    view, "Shadow", "GroundTransparency"))
+            res.groundTransparency = float(prop->getValue());
+        else
+            res.groundTransparency =
+                float(ViewParams::getShadowGroundTransparency());
+        res.groundTransparency =
+            std::min(1.0f, std::max(0.0f, res.groundTransparency));
+        std::string bumppath;
+        if (auto prop = viewPropOverride<App::PropertyFileIncluded>(
+                    view, "Shadow", "GroundBumpMap")) {
+            if (prop->getValue())
+                bumppath = prop->getValue();
+        }
+        else {
+            bumppath = ViewParams::getShadowGroundBumpMap();
+        }
+        res.groundBumpMap = loadImage(bumppath, true);
     }
     return res;
 }

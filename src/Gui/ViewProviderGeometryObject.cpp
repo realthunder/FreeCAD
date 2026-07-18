@@ -203,18 +203,23 @@ namespace {
 // embed in the node, which also feeds the mode-3 render cache texture
 // capture. An image without an alpha channel uploads as 3 components —
 // a 4-component image is what marks the texture (and every draw using
-// it) transparent.
-bool loadTextureImage(const char *path, SoSFImage &field)
+// it) transparent. keepGray preserves grayscale images as one component
+// (a bump map's component count is what tells a height field from a
+// tangent-space normal map).
+bool loadTextureImage(const char *path, SoSFImage &field,
+                      bool keepGray = false)
 {
     QImage img;
     if (!path || !path[0] || !img.load(QString::fromUtf8(path)))
         return false;
     bool alpha = img.hasAlphaChannel();
-    img = img.convertToFormat(alpha ? QImage::Format_RGBA8888
-                                    : QImage::Format_RGB888);
+    bool gray = keepGray && !alpha && img.isGrayscale();
+    img = img.convertToFormat(gray ? QImage::Format_Grayscale8
+                              : alpha ? QImage::Format_RGBA8888
+                                      : QImage::Format_RGB888);
     // Coin images are bottom-up.
     img = img.mirrored(false, true);
-    int nc = alpha ? 4 : 3;
+    int nc = gray ? 1 : alpha ? 4 : 3;
     int rowLen = img.width() * nc;
     if (img.bytesPerLine() == rowLen) {
         field.setValue(SbVec2s(short(img.width()), short(img.height())), nc,
@@ -340,7 +345,7 @@ void ViewProviderGeometryObject::updateRenderTexture()
             pcRenderBumpMap->ref();
             pcRoot->insertChild(pcRenderBumpMap, 0);
         }
-        loadTextureImage(bump, pcRenderBumpMap->image);
+        loadTextureImage(bump, pcRenderBumpMap->image, true);
     }
 
     // Emissive/occlusion material maps (SoFCRenderTexture; only the
