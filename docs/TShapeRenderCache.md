@@ -259,11 +259,61 @@ traversed — e.g. every instance divergent — and lets sibling variants
 and the base derive from whichever built first.
 
 One inherent exception: *line* variants usually own their vertex
-arrays. The capture's vertex key includes the baked color, and a
-corner point shared by differently-colored edges must split into one
-vertex per color — the variant's arrays then genuinely differ from the
-base's. Faces and points are unaffected (B-Rep tessellation shares no
-coordinates across faces; points are unique anyway).
+arrays. The capture deduplicates vertices through a hash keyed on the
+full attribute tuple — position, normal, texcoord *and baked color* —
+which is just the GL vertex model: an array entry is one tuple of all
+attributes, so a point that needs two colors must exist twice (the
+same reason a hard edge duplicates vertices for two normals). The
+base lineset (uniform color) merges a corner touched by three edges
+into one vertex; a variant giving those edges three colors produces
+three entries. From the first split corner the arrays differ in
+content and length, and the copy-on-write sharing is all-or-nothing
+per array, so the variant owns its vertex and line-index arrays
+outright. Since edges meet at their endpoints, any divergent coloring
+of adjacent edges — which is what a divergent `LineColorArray` means
+in practice — triggers this. Faces and points are unaffected: B-Rep
+tessellation shares no coordinates across faces, and points are
+unique anyway. The split also makes the variant's arrays hash apart
+in the backend's geometry table (§7), so GPU sharing is lost for line
+variants too — proportional only to edge data.
+
+**Considered and rejected: per-edge color lookup.** Storing line
+colors per *part* (one entry per edge polyline — what `LineColorArray`
+semantically is) instead of expanding them per vertex would remove the
+split entirely and restore both CPU and GPU sharing; the bgfx line
+path even half-fits already (it bakes colors into per-segment instance
+data, not a vertex stream). Rejected for now on cost/benefit:
+the color-in-key capture lives in `SoFCVertexCache`, which serves
+every shape, both renderers, selection subsets, merging and
+transparency sorting; generic Coin scenes legitimately have
+per-*vertex* colored lines, so the key change must be gated on the
+material binding (a two-mode capture with a subtle correctness
+matrix); the fixed-function GL path cannot fetch per primitive and
+would need per-color-run draws or transient re-expansion; and the
+payoff is kilobytes for a rare styling case — edge polylines are a
+rounding error next to face meshes, and owning a few KB still beats
+the flatten fallback it replaced. Revisit only if profiling shows
+edge-dominated scenes paying for it; if so, scope it narrowly
+(per-part storage for `PER_FACE`-bound line/point captures only, GL
+expanding transiently, bridge reading the part table) behind an A/B
+env.
+
+**Selection and preselect do not duplicate.** Highlight and selection
+overrides never re-run the capture — they derive from the *finished*
+cache via the copy constructor (`prevattached` caches share every
+array by refcounted copy-on-write and assert they never re-capture) —
+so the vertex-splitting question never arises there. Whole-object
+tint is a single uniform color and rides the entry `Material`
+(binding forced to `OVERALL`; on a color-carrying cache the copy's
+color array is *truncated*, a length reset on shared storage).
+Partial selection copies share all vertex arrays and add only a
+subset indexer plus the bridge-compacted index list. The one case
+that bakes — divergent per-face selection colors via
+`setFaceColors` — detaches the color array alone (4 B/vertex, the
+same owned-colorarray cost a face variant pays). Selection contexts
+also never touch the shared shape nodes (the `SoFCSelectionRoot`
+stack mechanism), so no node id changes, no vertex cache rebuilds,
+and the `protoNode` sharing stays intact across highlight churn.
 
 Debug: `FC_DEBUG_VCACHE_PROTO=1` prints each fresh shape cache with its
 node, prototype and array pointers (shared arrays show identical
