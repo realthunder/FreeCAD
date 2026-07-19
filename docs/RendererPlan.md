@@ -1110,8 +1110,13 @@ independent of each other; item 4 builds on item 3's property model.
   frozen-time deterministic; time-0 vs time-3 differ only on the water;
   water-medium and caustics scenes bit-identical with the surface off;
   all effects compose (surface + medium tint + caustics + shadows +
-  ground reflection). Known gaps: refraction can sample above-water
-  pixels near protruding geometry (the classic screen-space artifact);
+  ground reflection). Known gaps: **refraction smears the not-submerged
+  surfaces of protruding objects** (the classic screen-space artifact —
+  the wave-offset sample lands on above-water pixels near the
+  waterline; user-flagged, to fix next: restrict the refraction source
+  to submerged pixels, e.g. a stencil/mask laid down by the water
+  surface draws, or reject samples whose scene depth is nearer than the
+  water surface and fall back to the unperturbed sample);
   transparent geometry behind the surface is occluded (the surface
   writes depth); clipped water bodies keep the plain transparent path;
   one shared wave appearance per frame.
