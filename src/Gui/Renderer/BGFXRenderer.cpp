@@ -5066,11 +5066,22 @@ public:
         // FC_BGFX_DUMP_SCENE=<path>: snapshot the first non-empty scene
         // feed with all per-frame configs and the camera for the
         // standalone/wasm viewer (SceneDump.h).
+        // FC_BGFX_DUMP_SCENE_DELAY=<n> skips the first n non-empty
+        // frames, and FC_BGFX_DUMP_SCENE_SEL=1 additionally waits for a
+        // non-empty selection feed, so later state (a selection made by
+        // a script) is in the capture.
         static const char *dumpPath = getenv("FC_BGFX_DUMP_SCENE");
-        if (dumpPath && *dumpPath && !sceneDumped && !scene.empty()) {
+        static const char *dumpDelay = getenv("FC_BGFX_DUMP_SCENE_DELAY");
+        static const bool dumpSel = getenv("FC_BGFX_DUMP_SCENE_SEL") != nullptr;
+        if (dumpPath && *dumpPath && !sceneDumped && !scene.empty()
+                && ++dumpFrames > (dumpDelay ? atoi(dumpDelay) : 0)
+                && (!dumpSel || !selections.empty())) {
             sceneDumped = true;
             Render::SceneSnapshot snap;
             snap.scene = scene;
+            snap.selections.assign(selections.begin(), selections.end());
+            snap.highlight = highlight;
+            snap.highlightWholeOnTop = hlWholeOnTop;
             snap.background = background;
             snap.hlconfig = hlconfig;
             snap.secconf = secconf;
@@ -7642,6 +7653,7 @@ public:
     uint64_t hatchVersion = 0;
     bool hlWholeOnTop = false;
     bool sceneDumped = false;   ///< FC_BGFX_DUMP_SCENE fired
+    int dumpFrames = 0;         ///< non-empty frames seen (dump delay)
     bool sceneDirty = false;
     bool hasScene = false;
     bool renderOk = false;

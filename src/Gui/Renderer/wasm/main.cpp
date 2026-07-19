@@ -163,6 +163,15 @@ int main()
                                       s_snap.hatchHeight);
         Render::DrawCallList draws = s_snap.scene;
         s_renderer->setScene(std::move(draws));
+        for (const auto &sel : s_snap.selections) {
+            Render::DrawCallList sdraws = sel.second;
+            s_renderer->addSelection(sel.first, std::move(sdraws));
+        }
+        if (!s_snap.highlight.empty()) {
+            Render::DrawCallList hdraws = s_snap.highlight;
+            s_renderer->setHighlight(std::move(hdraws),
+                                     s_snap.highlightWholeOnTop);
+        }
     } else {
         std::printf("fcviewer: no /scene.fcsd snapshot, empty scene\n");
     }

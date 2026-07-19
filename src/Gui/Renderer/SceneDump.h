@@ -35,6 +35,12 @@ namespace Render {
 
 struct SceneSnapshot {
     DrawCallList scene;
+    /// Selection feeds keyed by selection id (SelIdBits) and the
+    /// preselection highlight, as fed through addSelection()/
+    /// setHighlight() (v2; empty on v1 snapshots).
+    std::vector<std::pair<int, DrawCallList>> selections;
+    DrawCallList highlight;
+    bool highlightWholeOnTop = false;
     Background background;
     HiddenLineConfig hlconfig;
     SectionConfig secconf;

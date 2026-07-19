@@ -33,7 +33,8 @@ using namespace Render;
 namespace {
 
 const uint32_t kMagic = 0x46435344;  // 'FCSD'
-const uint32_t kVersion = 1;
+// v2: selection/highlight feeds appended (v1 files still load).
+const uint32_t kVersion = 2;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -474,6 +475,72 @@ void readLight(Reader &r, LightConfig &l, const TextureTable &tex)
     l.groundReflectionIntensity = r.f();
 }
 
+//////////////////////////////////////////////////////////////////////
+// Draw calls
+
+typedef std::map<const MeshData *, int32_t> MeshIndex;
+typedef std::vector<std::shared_ptr<const MeshData>> MeshTable;
+
+void writeDraw(Writer &w, const DrawCall &d, const MeshIndex &meshIndex,
+               const TextureIndex &texIndex)
+{
+    writeMaterial(w, d.material, texIndex);
+    auto it = d.mesh ? meshIndex.find(d.mesh.get()) : meshIndex.end();
+    w.i32(it == meshIndex.end() ? -1 : it->second);
+    w.floats(d.model, 16);
+    w.b(d.identity);
+    w.u64(d.objectKey);
+    w.b(d.wholeObject);
+    w.i32(d.partIndex);
+    w.i32(d.indexStart);
+    w.i32(d.indexCount);
+    w.floats(d.bboxMin, 3);
+    w.floats(d.bboxMax, 3);
+}
+
+void readDraw(Reader &r, DrawCall &d, const MeshTable &meshes,
+              const TextureTable &textures)
+{
+    readMaterial(r, d.material, textures);
+    int32_t mi = r.i32();
+    if (mi >= 0 && size_t(mi) < meshes.size())
+        d.mesh = meshes[size_t(mi)];
+    r.floats(d.model, 16);
+    d.identity = r.b();
+    d.objectKey = r.u64();
+    d.wholeObject = r.b();
+    d.partIndex = r.i32();
+    d.indexStart = r.i32();
+    d.indexCount = r.i32();
+    r.floats(d.bboxMin, 3);
+    r.floats(d.bboxMax, 3);
+}
+
+void writeDrawList(Writer &w, const DrawCallList &draws,
+                   const MeshIndex &meshIndex, const TextureIndex &texIndex)
+{
+    w.u32(uint32_t(draws.size()));
+    for (const auto &d : draws)
+        writeDraw(w, d, meshIndex, texIndex);
+}
+
+bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
+                  const TextureTable &textures)
+{
+    uint32_t n = r.u32();
+    if (!r.ok || n > 0x1000000u) {
+        r.ok = false;
+        return false;
+    }
+    draws.clear();
+    for (uint32_t i = 0; r.ok && i < n; ++i) {
+        DrawCall d;
+        readDraw(r, d, meshes, textures);
+        draws.push_back(std::move(d));
+    }
+    return r.ok;
+}
+
 } // anonymous namespace
 
 //////////////////////////////////////////////////////////////////////
@@ -489,7 +556,7 @@ bool Render::saveSceneSnapshot(const char *path, const SceneSnapshot &snap)
     w.u32(kVersion);
 
     // Unique mesh and texture tables referenced by index from the draws.
-    std::map<const MeshData *, int32_t> meshIndex;
+    MeshIndex meshIndex;
     std::vector<const MeshData *> meshes;
     TextureIndex texIndex;
     std::vector<const TextureImage *> textures;
@@ -498,16 +565,22 @@ bool Render::saveSceneSnapshot(const char *path, const SceneSnapshot &snap)
                                   int32_t(textures.size())).second)
             textures.push_back(t.get());
     };
-    for (const auto &d : snap.scene) {
-        if (d.mesh && meshIndex.emplace(d.mesh.get(),
-                                        int32_t(meshes.size())).second)
-            meshes.push_back(d.mesh.get());
-        addTex(d.material.texture);
-        addTex(d.material.bumpmap);
-        addTex(d.material.emissivemap);
-        addTex(d.material.occlusionmap);
-        addTex(d.material.metallicroughnessmap);
-    }
+    auto addDraws = [&](const DrawCallList &draws) {
+        for (const auto &d : draws) {
+            if (d.mesh && meshIndex.emplace(d.mesh.get(),
+                                            int32_t(meshes.size())).second)
+                meshes.push_back(d.mesh.get());
+            addTex(d.material.texture);
+            addTex(d.material.bumpmap);
+            addTex(d.material.emissivemap);
+            addTex(d.material.occlusionmap);
+            addTex(d.material.metallicroughnessmap);
+        }
+    };
+    addDraws(snap.scene);
+    for (const auto &sel : snap.selections)
+        addDraws(sel.second);
+    addDraws(snap.highlight);
     addTex(snap.lightconf.groundTexture);
     addTex(snap.lightconf.groundBumpMap);
 
@@ -518,21 +591,7 @@ bool Render::saveSceneSnapshot(const char *path, const SceneSnapshot &snap)
     for (auto *t : textures)
         writeTexture(w, *t);
 
-    w.u32(uint32_t(snap.scene.size()));
-    for (const auto &d : snap.scene) {
-        writeMaterial(w, d.material, texIndex);
-        auto it = d.mesh ? meshIndex.find(d.mesh.get()) : meshIndex.end();
-        w.i32(it == meshIndex.end() ? -1 : it->second);
-        w.floats(d.model, 16);
-        w.b(d.identity);
-        w.u64(d.objectKey);
-        w.b(d.wholeObject);
-        w.i32(d.partIndex);
-        w.i32(d.indexStart);
-        w.i32(d.indexCount);
-        w.floats(d.bboxMin, 3);
-        w.floats(d.bboxMax, 3);
-    }
+    writeDrawList(w, snap.scene, meshIndex, texIndex);
 
     // Background + per-frame configs.
     w.u8(snap.background.type);
@@ -586,6 +645,16 @@ bool Render::saveSceneSnapshot(const char *path, const SceneSnapshot &snap)
     w.i32(snap.height);
     w.u32(snap.clearColor);
 
+    // v2: selection/highlight feeds (appended so the v1 prefix layout
+    // is unchanged).
+    w.u32(uint32_t(snap.selections.size()));
+    for (const auto &sel : snap.selections) {
+        w.i32(sel.first);
+        writeDrawList(w, sel.second, meshIndex, texIndex);
+    }
+    writeDrawList(w, snap.highlight, meshIndex, texIndex);
+    w.b(snap.highlightWholeOnTop);
+
     std::fclose(fp);
     return w.ok;
 }
@@ -597,13 +666,15 @@ bool Render::loadSceneSnapshot(const char *path, SceneSnapshot &snap)
         return false;
     Reader r;
     r.fp = fp;
-    if (r.u32() != kMagic || r.u32() != kVersion) {
+    uint32_t magic = r.u32();
+    uint32_t version = r.u32();
+    if (magic != kMagic || version < 1 || version > kVersion) {
         std::fclose(fp);
         return false;
     }
 
     uint32_t nmesh = r.u32();
-    std::vector<std::shared_ptr<const MeshData>> meshes;
+    MeshTable meshes;
     if (nmesh > 0x100000u)
         r.ok = false;
     for (uint32_t i = 0; r.ok && i < nmesh; ++i)
@@ -615,27 +686,7 @@ bool Render::loadSceneSnapshot(const char *path, SceneSnapshot &snap)
     for (uint32_t i = 0; r.ok && i < ntex; ++i)
         textures.push_back(readTexture(r));
 
-    uint32_t ndraw = r.u32();
-    if (ndraw > 0x1000000u)
-        r.ok = false;
-    snap.scene.clear();
-    for (uint32_t i = 0; r.ok && i < ndraw; ++i) {
-        DrawCall d;
-        readMaterial(r, d.material, textures);
-        int32_t mi = r.i32();
-        if (mi >= 0 && size_t(mi) < meshes.size())
-            d.mesh = meshes[size_t(mi)];
-        r.floats(d.model, 16);
-        d.identity = r.b();
-        d.objectKey = r.u64();
-        d.wholeObject = r.b();
-        d.partIndex = r.i32();
-        d.indexStart = r.i32();
-        d.indexCount = r.i32();
-        r.floats(d.bboxMin, 3);
-        r.floats(d.bboxMax, 3);
-        snap.scene.push_back(std::move(d));
-    }
+    readDrawList(r, snap.scene, meshes, textures);
 
     snap.background.type = r.u8();
     snap.background.fromColor = r.u32();
@@ -694,6 +745,23 @@ bool Render::loadSceneSnapshot(const char *path, SceneSnapshot &snap)
     snap.width = r.i32();
     snap.height = r.i32();
     snap.clearColor = r.u32();
+
+    snap.selections.clear();
+    snap.highlight.clear();
+    snap.highlightWholeOnTop = false;
+    if (version >= 2) {
+        uint32_t nsel = r.u32();
+        if (!r.ok || nsel > 0x10000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < nsel; ++i) {
+            int id = r.i32();
+            DrawCallList draws;
+            if (readDrawList(r, draws, meshes, textures))
+                snap.selections.emplace_back(id, std::move(draws));
+        }
+        readDrawList(r, snap.highlight, meshes, textures);
+        snap.highlightWholeOnTop = r.b();
+    }
 
     std::fclose(fp);
     return r.ok;
