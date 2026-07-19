@@ -179,6 +179,14 @@ public:
     return &this->array[start];
   }
 
+  /// Whether the backing storage is shared with another holder — e.g.
+  /// an equality-preserving capture seeded from a previous cache that
+  /// kept pointing at its array. A write through getWritableArrayPtr()
+  /// would copy-on-write detach it.
+  bool isShared() const {
+    return this->array.isShared();
+  }
+
   T * getWritableArrayPtr(int start = 0) {
     detach();
     if (!this->len)

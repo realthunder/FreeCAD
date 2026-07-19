@@ -141,6 +141,12 @@ public:
     this->data.reset();
   }
 
+  /// Whether the backing storage is currently shared with another
+  /// holder (a write through a non-const accessor would copy).
+  bool isShared() const {
+    return this->data.use_count() > 1;
+  }
+
   void detach() {
     if (!this->data) return;
     if (this->data.use_count() > 1)

@@ -1704,11 +1704,14 @@ SoFCRenderCacheManagerP::postShape(void *userdata,
   if (debugproto < 0)
     debugproto = std::getenv("FC_DEBUG_VCACHE_PROTO") ? 1 : 0;
   if (debugproto)
-    fprintf(stderr, "vcache node %p (%s) proto %p verts %p norms %p\n",
+    fprintf(stderr, "vcache node %p (%s) id %llx proto %p verts %p norms %p tri %p\n",
             static_cast<const void*>(node), node->getTypeId().getName().getString(),
+            (unsigned long long)self->vcache->getCacheId(),
             static_cast<void*>(SoFCVertexCache::getProtoNode(node)),
             static_cast<const void*>(self->vcache->getVertexArray()),
-            static_cast<const void*>(self->vcache->getNormalArray()));
+            static_cast<const void*>(self->vcache->getNormalArray()),
+            static_cast<const void*>(self->vcache->getNumTriangleIndices() > 0
+                ? self->vcache->getTriangleIndices() : nullptr));
 
   static int noproto = -1;
   if (noproto < 0)

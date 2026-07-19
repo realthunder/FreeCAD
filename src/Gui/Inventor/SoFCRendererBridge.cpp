@@ -145,6 +145,14 @@ translateCache(SoFCVertexCache * cache)
     mesh->hasTransparency = cache->hasTransparency();
     mesh->hasOpaqueParts = cache->hasOpaqueParts();
 
+    if (getenv("FC_BGFX_DEBUG_FEED"))
+        fprintf(stderr,
+                "bridge cache=%llx nv=%d nti=%d tri=%p pos=%p\n",
+                (unsigned long long)mesh->cacheId, mesh->numVertices,
+                mesh->numTriangleIndices,
+                (const void *)mesh->triangleIndices,
+                (const void *)mesh->positions);
+
     mesh->texCoords =
         reinterpret_cast<const float *>(cache->getTexCoordArray());
 

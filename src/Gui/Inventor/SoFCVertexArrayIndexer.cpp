@@ -519,6 +519,14 @@ SoFCVertexArrayIndexer::sort_triangles(void)
   // Does this really helps?
 #else
   if (!this->indexarray) return;
+  // A shared index array came out of an equality-preserving capture
+  // seeded from a previous cache, whose own close() already applied
+  // this sort — re-sorting would only copy-on-write detach the
+  // storage (defeating the array sharing and orphaning captured
+  // pointers) to reproduce identical content. The sort is a pure
+  // GPU-vertex-cache locality optimization, so a shared array is
+  // always safe to leave alone.
+  if (this->indexarray.isShared()) return;
   // sort triangles based on vertex indices to get more hits in the
   // GPU vertex cache. Not the optimal solution, but should work
   // pretty well. Example: bunny.iv (~70000 triangles) went from 238
@@ -556,9 +564,13 @@ SoFCVertexArrayIndexer::sort_lines(void)
   if (!this->indexarray) return;
 
   // sort lines based on vertex indices to get more hits in the
-  // GPU vertex cache.
+  // GPU vertex cache. A shared (equality-captured) array is already
+  // sorted by its seed cache's close() — skip the redundant sort
+  // rather than copy-on-write detaching it (see sort_triangles). The
+  // line-strip append below is functional (line-pattern rendering)
+  // and must still run; genuinely diverging content detaches there.
   if (this->partarray.size() <= 1) {
-    if (this->indexarraylength > 10 * 2)
+    if (this->indexarraylength > 10 * 2 && !this->indexarray.isShared())
       qsort((void*) this->indexarray.getWritableArrayPtr(),
             this->indexarraylength / 2,
             sizeof(int32_t) * 2,
