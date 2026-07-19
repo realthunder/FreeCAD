@@ -1168,6 +1168,79 @@ independent of each other; item 4 builds on item 3's property model.
   view, delta/mesh-level streaming instead of full snapshots,
   rubber-band selection, edit-mode/dragger event forwarding,
   face-level hover (needs the part table on plain materials).
+- **Raw-GL overlay ports (Coin-ification, planned 2026-07)** — every
+  fixed-function GL draw that today rides on top of the composited frame
+  must become Coin scene-graph content (or a backend overlay feed) so it
+  reaches the render-cache bridge and renders through the backend.
+  **Why**: these draws only work because the backend shares the desktop
+  GL context — they vanish in the WASM/streamed viewer (no NaviCube in
+  the browser), they would vanish entirely on a non-GL backend
+  (Vulkan/Metal/WebGPU is the whole point of bgfx), backend-only frame
+  grabs / offscreen captures miss them, and they pin FreeCAD to the GL
+  compatibility profile (`glBegin` everywhere). **Inventory** (grep for
+  `glBegin` outside Quarter/Inventor):
+  - `View3DInventorViewer::drawAxisCross` (~5215) — the corner axis
+    cross; immediate-mode GL with its own viewport+matrices (mortene's
+    2002 FIXME already says "convert to a superimposition scenegraph").
+  - `NaviCube.cpp` — the navigation cube: `QOpenGLTexture` faces
+    (QImage-generated), immediate-mode quads/strips, own picking pass.
+  - `GLPainter.cpp` (`GLGraphicsItem`: `Rubberband`, `Polyline`; used
+    by Flag/navigation) — screen-space rubber bands and polylines drawn
+    from `paintGL` hooks after the scene.
+  - `View3DInventorViewer` text/overlay helpers: `draw2DString` (fps
+    readout), `printDimension`, `drawSingleBackground` + `renderToFramebuffer`/
+    `renderGLImage` blit quads (infrastructure paths, evaluate
+    case-by-case; the window background gradient itself is already
+    ported — the `Background` feed suppresses the Coin node).
+  - In-scene Coin nodes whose `GLRender` bodies bypass the vertex-cache
+    capture with raw GL: `SoDatumLabel` (Sketcher edit-mode dimensions
+    — lines, arrows, glyph quads), `SoTextLabel`/`SoFrameLabel`,
+    `SoAxisCrossKit`'s `SoRegPoint`, `SoFCBackgroundGradient` (only
+    reached when no backend is active). These render fine through GL
+    Coin but produce nothing for the backend feed inside edit modes.
+  **Approach** — two complementary mechanisms, chosen per item:
+  1. *True Coin-ification* (preferred where the drawing is
+     camera-anchored or in-scene): rebuild as ordinary Coin shapes
+     (`SoIndexedFaceSet`/`SoLineSet`/`SoImage`/`SoText2` under
+     `SoAnnotation`), so `SoFCRenderCache` captures them like any other
+     node and the backend needs nothing new. In-scene nodes
+     (`SoDatumLabel` etc.) must move their `GLRender` bodies into
+     child geometry / `generatePrimitives` so the cache sees real
+     primitives; glyph rendering becomes textured quads (the bridge's
+     texture slots already carry images).
+  2. *Backend overlay feed* (for viewport-anchored widgets with their
+     own camera — NaviCube, axis cross, rubber band): a new
+     `Renderer::setOverlay(id, DrawCallList&&, OverlayAnchor)` feed
+     mirroring the selection feeds, drawn in a late view with its own
+     ortho/pixel or mini-perspective camera (the machinery parallels
+     the existing shadow-ground / background passes). Viewport-corner
+     anchoring + pixel sizing ride an `OverlayAnchor` struct rather
+     than baked matrices so the WASM viewer can re-anchor on resize.
+  **Phasing**:
+  - *A — bridge groundwork*: capture the viewer's `foregroundroot`
+    (and `backgroundroot` remnants) through the render-cache traversal;
+    add the overlay feed + one proof consumer (axis cross as Coin
+    geometry fed through it); serialize overlay feeds into the scene
+    snapshot so the WASM viewer replays them.
+  - *B — viewer overlays*: rubber band / polyline (`GLGraphicsItem` →
+    overlay line draws), fps/2D text (`draw2DString` → glyph-atlas
+    textured quads), `printDimension`.
+  - *C — NaviCube*: keep the QImage face generation (becomes
+    `TextureImage`s) and the existing ray-based hit testing; replace
+    the immediate-mode draw with overlay draws (textured quads +
+    border lines) or a Coin kit under an annotation camera — decide by
+    prototyping; must work in the WASM viewer (its own orbit camera
+    supplies the orientation) and stay clickable there via the
+    browser-local raycast.
+  - *D — in-scene raw-GL nodes*: `SoDatumLabel`, `SoTextLabel`,
+    `SoRegPoint` — needed before Sketcher/edit-mode parity on
+    backend-only frames; port bodies to cached primitives, verify
+    against GL edit-mode rendering.
+  **Acceptance**: a backend-only readback (`FC_BGFX_DEBUG_READBACK`)
+  shows axis cross, NaviCube, rubber band and fps text without the GL
+  composite; the WASM viewer shows the NaviCube and responds to its
+  clicks; GL-only path (no backend) renders unchanged; no `glBegin`
+  remains outside `3rdParty`/Quarter/Coin-internal code.
 - SSR (optional), GTAO, TAA where compute is available.
 - **Displacement mapping** (true geometric displacement, beyond Phase 2's
   parallax illusion): vertex-shader height sampling where
