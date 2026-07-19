@@ -1174,8 +1174,18 @@ independent of each other; item 4 builds on item 3's property model.
     environment cube (roughness picks the mip + widens the sun glint),
     and the water-surface 5-tap prepass depth reject guarding the
     offset samples (the prepass runs on glass frames; glass draws stay
-    out of it). Glass is exempt from shadow casting (tinting via a
-    second moment map is future work), instancing, the ground
+    out of it). **Glass shadows** *(user-requested follow-up, done)*:
+    glass casts through a light-space **tint map** beside the EVSM
+    moments — a `ViewShadowTint` pass (own RGBA8 target at map size,
+    cleared to white each caster pass, cached with the moments; glass
+    diffuse joins the map hash) multiplies each glass caster's
+    per-channel transmittance `0.3 + 0.5 * diffuse` in (front faces
+    only), and every surface receiver samples it at unit 7 and
+    multiplies it into the direct scene-light term — glass shadows are
+    softer than opaque ones and tinted when the glass is colored; a
+    no-glass scene samples the white map and is bit-identical. Not yet
+    tinting: the volumetric raymarch and caustics (they keep the
+    moments only). Glass stays out of instancing, the ground
     reflection mirror pass and the volumetric ray ends; unlike water
     the body's CAD edge/vertex draws keep rendering. Per-object rows
     (checkbox + IOR/density/roughness) added to the render settings
