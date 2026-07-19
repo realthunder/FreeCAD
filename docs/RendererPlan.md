@@ -847,12 +847,34 @@ independent of each other; item 4 builds on item 3's property model.
   vs per-draw (the instanced VS computes `u_viewProj*(model*pos)` vs
   the precomputed `u_modelViewProj` — 1-ulp depth flips at silhouettes
   discretely change AO edge pixels; faces are identical). Known gaps:
-  textured/
-  clipped/transparent/OIT draws and line/point primitives are not
+  clipped draws and line/point primitives are not
   instanced (lines/points already instance per-segment for thick-quad
   expansion — cross-object batching there would collide); a non-zero
   `RenderCacheMergeCount` bakes matrices into merged caches and defeats
   grouping (default 0 is the instancing-friendly path).
+  *Instancing completeness (2026-07).* Three extensions: (1) groups key
+  on the geometry **content hash** (the `GeomKey` FNV hash + a baked
+  color-stream hash, cached per cacheId) instead of the mesh pointer,
+  so byte-identical caches without a shared TShape — imported
+  duplicates, flattened copies — batch too, with zero Gui-side work
+  (the backend geometry table already shares their GPU buffers);
+  (2) **textured** draws instance: the texture identity (all five map
+  ids, model/wrap/blend, texture matrix) joins the group key, the new
+  `vs_fc_mesh_tex_inst` pairs with the stock textured/OIT-textured
+  fragment shaders, and the texture bind block is shared with the
+  per-draw path (`bindTextureStage`); (3) **transparent** draws
+  instance on WBOIT frames (commutative accumulation makes instance
+  order irrelevant) via `vs_fc_mesh_inst`(+`_tex`) + the OIT fragment
+  shaders — on sorted-transparency frames `submitInstanced` refuses
+  and members fall back to per-draw depth-keyed submits; transparent
+  groups stay out of the SSAO prepass like the per-draw path.
+  Verified on llvmpipe (box + 5 links, axo, A/B vs
+  `FC_BGFX_NO_INSTANCING`): plain, transparent-50, shadow+SSAO combo,
+  selected-link and diffuse-only override frames all 0 px
+  bit-identical; textured (checker) and textured+transparent maxdiff
+  1/255 (the float-association class); 5 independent same-size boxes
+  (distinct caches, no Links) group n=5 and stay bit-identical; OIT-off
+  transparent scene falls back with zero instanced submits, 0 px.
   *TShape-level cut done (2026-07).* Instancing now reaches below the
   object boundary into `TopoDS_TShape`: a compound holding located
   instances of one TShape (`TopoDS_Shape` = TShape + placement) used to

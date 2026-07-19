@@ -326,16 +326,41 @@ pointers); `FC_NO_VCACHE_PROTO=1` disables the seeding for A/B runs.
 ### Instanced submits
 
 `buildInstanceGroups()` groups draws at scene-set time by
-(mesh pointer, index range, part index, material-minus-diffuse); a
-frame submits each group of ≥ 2 visible members as **one instanced
-draw**: transient instance buffer of `{model 4×vec4, diffuse vec4}`
-per instance, `vs_fc_mesh_inst` selecting per-vertex color or the
-per-instance diffuse by uniform. Eligibility: opaque, untextured,
-unclipped, non-on-top, non-water triangle draws of the normal pass; all
-other passes (prepass, shadow caster, water depth, highlight frames)
-keep per-draw submits. Because grouping keys on the shared cache,
-PartGui's uniform group and each color variant group batch naturally:
-draws per TShape = #variants + 1, each a single instanced submit.
+(geometry **content hash**, index range, part index,
+material-minus-diffuse); a frame submits each group of ≥ 2 visible
+members as **one instanced draw**: transient instance buffer of
+`{model 4×vec4, diffuse vec4}` per instance, `vs_fc_mesh_inst` /
+`vs_fc_mesh_tex_inst` selecting per-vertex color or the per-instance
+diffuse by uniform.
+
+- **Content-hash keying**: the key reuses `computeGeomKey`'s FNV hash
+  plus a hash of the baked color stream, cached once per cacheId
+  (`meshContents`; a cache id always refers to immutable content).
+  Draws whose caches are merely *byte-identical* — imported
+  duplicates, flattened copies without a shared TShape — batch exactly
+  like shared-cache draws: the geometry table already gave them one
+  set of GPU buffers, and equal color hashes make the prototype's
+  color stream valid for every member.
+- **Textured draws batch**: the texture identity joins the group key
+  (all five map ids — color/bump/emissive/occlusion/metallic-roughness
+  — plus model/wrap/blend color and the texture matrix); the instanced
+  submit routes through `vs_fc_mesh_tex_inst` and binds the texcoord
+  stream + samplers exactly like the per-draw path (shared
+  `bindTextureStage`).
+- **Transparent draws batch on WBOIT frames**: the accumulation
+  blending is commutative, so instance order is irrelevant —
+  `vs_fc_mesh_inst`(+`_tex`) paired with the OIT fragment shaders,
+  submitted to the transparent view with no depth write and no
+  culling. On sorted-transparency frames (OIT resources missing or
+  `FC_BGFX_DEBUG_NO_OIT`) `submitInstanced` refuses and the members
+  fall back to per-draw depth-keyed submits. Transparent groups stay
+  out of the SSAO/volumetric prepass like the per-draw path.
+
+Eligibility: unclipped, non-on-top, non-water triangle draws of the
+normal pass without autozoom; highlight frames keep per-draw submits
+wholesale. Because grouping keys on content, PartGui's uniform group
+and each color variant group batch naturally: draws per TShape =
+#variants + 1, each a single instanced submit.
 
 ### GPU buffer sharing by content
 
