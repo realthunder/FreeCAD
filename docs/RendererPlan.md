@@ -1158,20 +1158,38 @@ independent of each other; item 4 builds on item 3's property model.
   ViewProvider dynamic property turning an ordinary modeled body into a
   medium/effect, resolved per draw through the same
   `SoFCRenderMaterial` → cache material → `Render::Material` chain)*:
-  - **`Render_Glass`** (+IOR, +absorption color/density, +roughness):
-    reuses the water-surface machinery — the scene-color copy for
-    screen-space refraction (offset scaled by IOR and surface
-    curvature/normal instead of waves), Fresnel-blended environment
-    reflection, per-channel Beer–Lambert absorption tinted by thickness
-    (front/back depth targets like the water medium give the interval).
-    Roughness blurs the refraction via a mip chain on the scene copy
-    (needs `BGFX_TEXTURE_RT` mip generation or a manual downsample
-    chain — WebGL2-safe either way). Glass shadow casting should tint
-    rather than block (a colored-shadow approximation via a second
-    moment map is future work; first cut keeps glass out of the caster
-    set like water). Solid CAD parts double-refract (entry + exit); the
-    honest first cut refracts at entry only, like every real-time
-    engine.
+  - **`Render_Glass`** *(first cut done 2026-07)* (+`Render_GlassIOR`
+    <= 0 = 1.5, +`Render_GlassDensity` <= 0 = auto 3/diag,
+    +`Render_GlassRoughness`): reuses the water-surface machinery — the
+    same scene-color copy (`ViewWaterCopy` now runs for either), a new
+    `ViewGlassSurface` opaque re-render with `fs_fc_glass`:
+    screen-space refraction whose offset is the entry-refracted view
+    direction displaced over the body thickness and projected to uv
+    (ortho and perspective; IOR 1.0 degenerates to exact straight-
+    through sampling), per-channel Beer–Lambert absorption
+    `exp(-density*(1-diffuse)*thickness)` over the
+    `ViewGlassFront`/`Back` interval (own full-res depth target pair,
+    the water-medium pattern, so glass and a water body can coexist),
+    Schlick Fresnel with f0 from the IOR blending the prefiltered
+    environment cube (roughness picks the mip + widens the sun glint),
+    and the water-surface 5-tap prepass depth reject guarding the
+    offset samples (the prepass runs on glass frames; glass draws stay
+    out of it). Glass is exempt from shadow casting (tinting via a
+    second moment map is future work), instancing, the ground
+    reflection mirror pass and the volumetric ray ends; unlike water
+    the body's CAD edge/vertex draws keep rendering. Per-object rows
+    (checkbox + IOR/density/roughness) added to the render settings
+    task panel. Verified on llvmpipe: refraction displaces the scene
+    behind a thick block, a front cylinder stays clean (reject), IOR
+    1.0 A/B shows straight-through, glass casts no shadow while
+    neighbors do, water smokes bit-identical pre/post. Gaps: refraction
+    blur by roughness not implemented (needs a scene-copy mip chain —
+    roughness currently only affects reflection/glint, subtle under
+    the gradient environment); entry-interface refraction only (like
+    every real-time engine); clipped glass keeps the plain path;
+    transparent-bucket geometry behind glass is occluded (the surface
+    draws opaque with depth, the water-surface limitation); glass in
+    front of a water surface refracts the pre-water scene copy.
   - **`Render_Cloud`** (+density, +detail scale, +drift speed): a
     volumetric medium like the water body — front/back depth targets
     bound the raymarch interval — but with procedural FBM density
