@@ -48,6 +48,10 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_ADD_FIELD(cloudDensity, (0.0f));
     SO_NODE_ADD_FIELD(cloudDetail, (0.0f));
     SO_NODE_ADD_FIELD(cloudSpeed, (1.0f));
+    SO_NODE_ADD_FIELD(fire, (false));
+    SO_NODE_ADD_FIELD(fireIntensity, (0.0f));
+    SO_NODE_ADD_FIELD(fireDetail, (0.0f));
+    SO_NODE_ADD_FIELD(fireSpeed, (1.0f));
 }
 
 SO_NODE_SOURCE(SoFCRenderTexture)

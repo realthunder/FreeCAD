@@ -432,8 +432,24 @@ void ViewProviderGeometryObject::updateRenderMaterial()
             cloudSpeed = v;
     }
 
+    // Render_Fire turns the closed shape into an emissive flame medium
+    // of the volumetric lighting pass (the body geometry itself is not
+    // rendered); intensity <= 0 = 1, detail <= 0 = automatic, speed
+    // scales the rise animation.
+    auto fireProp = Base::freecad_dynamic_cast<App::PropertyBool>(
+            getPropertyByName("Render_Fire"));
+    bool fire = fireProp && fireProp->getValue();
+    float fireIntensity = fire ? floatProp("Render_FireIntensity") : 0.0f;
+    float fireDetail = fire ? floatProp("Render_FireDetail") : 0.0f;
+    float fireSpeed = 1.0f;
+    if (fire) {
+        float v = floatProp("Render_FireSpeed");
+        if (v >= 0.0f)
+            fireSpeed = v;
+    }
+
     if (metallic < 0.0f && roughness < 0.0f && !water && !glass
-            && !cloud) {
+            && !cloud && !fire) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);
             if (idx >= 0)
@@ -465,6 +481,12 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     pcRenderMaterial->cloudDetail = cloudDetail < 0.0f ? 0.0f
                                                        : cloudDetail;
     pcRenderMaterial->cloudSpeed = cloudSpeed;
+    pcRenderMaterial->fire = fire;
+    pcRenderMaterial->fireIntensity = fireIntensity < 0.0f
+        ? 0.0f : fireIntensity;
+    pcRenderMaterial->fireDetail = fireDetail < 0.0f ? 0.0f
+                                                     : fireDetail;
+    pcRenderMaterial->fireSpeed = fireSpeed;
 }
 
 void ViewProviderGeometryObject::updateRenderProperty(const char *name)

@@ -74,6 +74,10 @@ private:
     QDoubleSpinBox *cloudDensitySpin = nullptr;
     QDoubleSpinBox *cloudDetailSpin = nullptr;
     QDoubleSpinBox *cloudSpeedSpin = nullptr;
+    QCheckBox *fireCheck = nullptr;
+    QDoubleSpinBox *fireIntensitySpin = nullptr;
+    QDoubleSpinBox *fireDetailSpin = nullptr;
+    QDoubleSpinBox *fireSpeedSpin = nullptr;
     QCheckBox *baseColorCheck = nullptr;
     QLineEdit *baseColorEdit = nullptr;
     QCheckBox *normalMapCheck = nullptr;

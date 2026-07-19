@@ -323,6 +323,10 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->clouddensity = 0.f;
   this->clouddetail = 0.f;
   this->cloudspeed = 1.f;
+  this->fire = false;
+  this->fireintensity = 0.f;
+  this->firedetail = 0.f;
+  this->firespeed = 1.f;
   this->polygonoffsetstyle = 0;
   this->polygonoffsetunits = 0.f;
   this->polygonoffsetfactor = 0.f;
@@ -1249,6 +1253,11 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
       = material->cloudDensity.getValue();
   PRIVATE(this)->material.clouddetail = material->cloudDetail.getValue();
   PRIVATE(this)->material.cloudspeed = material->cloudSpeed.getValue();
+  PRIVATE(this)->material.fire = material->fire.getValue();
+  PRIVATE(this)->material.fireintensity
+      = material->fireIntensity.getValue();
+  PRIVATE(this)->material.firedetail = material->fireDetail.getValue();
+  PRIVATE(this)->material.firespeed = material->fireSpeed.getValue();
 }
 
 void

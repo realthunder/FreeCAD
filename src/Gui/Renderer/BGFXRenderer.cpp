@@ -1109,6 +1109,13 @@ public:
         ViewCloudBack,      // farthest back-face depths of cloud body
                             // draws (depth GREATER, cleared to 0): the
                             // cloud medium exit
+        ViewFireFront,      // nearest front-face depths of fire body
+                            // draws (prepass shader family, own
+                            // framebuffer): entry of the emissive flame
+                            // interval of the volumetric raymarch
+        ViewFireBack,       // farthest back-face depths of fire body
+                            // draws (depth GREATER, cleared to 0): the
+                            // flame interval exit
         ViewAOGen,          // fullscreen SSAO generation into the R8 AO
                             // target (hemisphere kernel over the prepass)
         ViewAOBlur,         // fullscreen 4x4 AO blur into a second R8
@@ -1220,6 +1227,7 @@ public:
         for (auto fb : {&volFbo, &waterFrontFbo, &waterBackFbo,
                         &glassFrontFbo, &glassBackFbo,
                         &cloudFrontFbo, &cloudBackFbo,
+                        &fireFrontFbo, &fireBackFbo,
                         &sceneCopyFbo, &reflFbo}) {
             if (bgfx::isValid(*fb)) {
                 bgfx::destroy(*fb);
@@ -1232,6 +1240,8 @@ public:
                          &glassFrontDepth, &glassBackDepth,
                          &cloudFrontTex, &cloudBackTex,
                          &cloudFrontDepth, &cloudBackDepth,
+                         &fireFrontTex, &fireBackTex,
+                         &fireFrontDepth, &fireBackDepth,
                          &sceneCopyTex, &reflTex, &reflDepth}) {
             if (bgfx::isValid(*tex)) {
                 bgfx::destroy(*tex);
@@ -1245,7 +1255,9 @@ public:
                          &s_texGlassFront, &s_texGlassBack,
                          &u_glassParams,
                          &s_texCloudFront, &s_texCloudBack,
-                         &u_cloudParams}) {
+                         &u_cloudParams,
+                         &s_texFireFront, &s_texFireBack,
+                         &u_fireParams, &u_fireParams2}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -2014,6 +2026,31 @@ public:
             s_texCloudBack = bgfx::createUniform(
                 "s_texCloudBack", bgfx::UniformType::Sampler);
             u_cloudParams = bgfx::createUniform("u_cloudParams",
+                                                bgfx::UniformType::Vec4);
+            // Fire body medium: its own front/back interval pair (the
+            // per-medium-kind slot scheme), emissive FBM flame in the
+            // raymarch.
+            fireFrontTex = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::RGBA16F, waterFlags);
+            fireBackTex = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::RGBA16F, waterFlags);
+            fireFrontDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            fireBackDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            bgfx::TextureHandle ffatt[2] = {fireFrontTex, fireFrontDepth};
+            fireFrontFbo = bgfx::createFrameBuffer(2, ffatt, false);
+            bgfx::TextureHandle fbatt[2] = {fireBackTex, fireBackDepth};
+            fireBackFbo = bgfx::createFrameBuffer(2, fbatt, false);
+            s_texFireFront = bgfx::createUniform(
+                "s_texFireFront", bgfx::UniformType::Sampler);
+            s_texFireBack = bgfx::createUniform(
+                "s_texFireBack", bgfx::UniformType::Sampler);
+            u_fireParams = bgfx::createUniform("u_fireParams",
+                                               bgfx::UniformType::Vec4);
+            u_fireParams2 = bgfx::createUniform("u_fireParams2",
                                                 bgfx::UniformType::Vec4);
         }
 
@@ -3253,7 +3290,7 @@ public:
     /// in .z): front faces with the nearest depth = interval entry,
     /// back faces with the farthest = interval exit. Culling is forced
     /// by face side whatever the material's two-sidedness. kind: 0 =
-    /// water, 1 = glass, 2 = cloud.
+    /// water, 1 = glass, 2 = cloud, 3 = fire.
     void submitWaterDepth(const Render::DrawCall &draw, bool back,
                           int kind = 0)
     {
@@ -3286,6 +3323,7 @@ public:
         uint16_t pass = kind == 1
             ? (back ? ViewGlassBack : ViewGlassFront)
             : kind == 2 ? (back ? ViewCloudBack : ViewCloudFront)
+            : kind == 3 ? (back ? ViewFireBack : ViewFireFront)
                         : (back ? ViewWaterBack : ViewWaterFront);
         bgfx::submit(viewId + pass,
                      clipped ? m_progPrepassClip : m_progPrepass);
@@ -3369,7 +3407,9 @@ public:
     void submitVolumetric(float density, float intensity, float maxDist,
                           const float medium[4], bool water,
                           const float waterSigma[4],
-                          const float cloudParams[4])
+                          const float cloudParams[4],
+                          const float fireParams[4],
+                          const float fireParams2[4])
     {
         static const float noSigma[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float params[4] = {density, intensity, maxDist,
@@ -3378,6 +3418,8 @@ public:
         bgfx::setUniform(u_volMedium, medium);
         bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma);
         bgfx::setUniform(u_cloudParams, cloudParams);
+        bgfx::setUniform(u_fireParams, fireParams);
+        bgfx::setUniform(u_fireParams2, fireParams2);
         bgfx::setUniform(u_lightColor, lightColorI);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2], 1.0f};
@@ -3393,6 +3435,8 @@ public:
         bgfx::setTexture(3, s_texWaterBack, waterBackTex);
         bgfx::setTexture(4, s_texCloudFront, cloudFrontTex);
         bgfx::setTexture(5, s_texCloudBack, cloudBackTex);
+        bgfx::setTexture(6, s_texFireFront, fireFrontTex);
+        bgfx::setTexture(7, s_texFireBack, fireBackTex);
         fullscreen(ViewVolGen, m_progVol,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 
@@ -4711,6 +4755,18 @@ public:
     bgfx::UniformHandle s_texCloudFront = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texCloudBack = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_cloudParams = BGFX_INVALID_HANDLE;
+    // Fire body: front/back depth targets bounding the emissive flame
+    // interval of the volumetric raymarch.
+    bgfx::TextureHandle fireFrontTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle fireBackTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle fireFrontDepth = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle fireBackDepth = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle fireFrontFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle fireBackFbo = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texFireFront = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texFireBack = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_fireParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_fireParams2 = BGFX_INVALID_HANDLE;
     // Water surface refraction (scene copy) + ground reflection targets.
     bgfx::TextureHandle sceneCopyTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle sceneCopyFbo = BGFX_INVALID_HANDLE;
@@ -5274,6 +5330,55 @@ public:
                     cloudObjects.insert(draw.objectKey);
             }
         }
+        // Fire bodies (Material::fire): the closed volume raymarches as
+        // an emissive flame medium of the volumetric pass and the
+        // geometry itself is not rendered. The first flagged draw
+        // supplies the shared appearance like the water/cloud media (a
+        // known single-appearance limitation).
+        bool hasFireBody = false;
+        float fireEmission = 0.0f, fireDetail = 0.0f, fireSpeed = 1.0f;
+        float fireZMin = 0.0f, fireInvHeight = 0.0f;
+        for (const auto &draw : scene) {
+            const auto &mat = draw.material;
+            if (!mat.fire || mat.ontop
+                    || mat.type != Render::Material::Triangle)
+                continue;
+            float dx = draw.bboxMax[0] - draw.bboxMin[0];
+            float dy = draw.bboxMax[1] - draw.bboxMin[1];
+            float dz = draw.bboxMax[2] - draw.bboxMin[2];
+            float diag = (dx >= 0.0f && dy >= 0.0f && dz >= 0.0f)
+                ? std::sqrt(dx * dx + dy * dy + dz * dz) : 0.0f;
+            float intensity = mat.fireintensity > 0.0f
+                ? mat.fireintensity : 1.0f;
+            if (diag > 0.0f)
+                fireEmission = intensity * 4.0f / diag;
+            fireDetail = mat.firedetail;
+            if (fireDetail <= 0.0f && diag > 0.0f)
+                fireDetail = 5.0f / diag;
+            fireSpeed = mat.firespeed;
+            fireZMin = draw.bboxMin[2];
+            fireInvHeight = dz > 0.0f ? 1.0f / dz : 0.0f;
+            hasFireBody = fireEmission > 0.0f && fireDetail > 0.0f
+                && fireInvHeight > 0.0f;
+            break;
+        }
+        bool fireActive = hasFireBody && volActive;
+        if (getenv("FC_BGFX_DEBUG_FEED"))
+            fprintf(stderr,
+                    "bgfx fire: body=%d active=%d emit=%g detail=%g\n",
+                    hasFireBody, fireActive, fireEmission, fireDetail);
+        // The fire body's own draws (fills and feature lines) are
+        // suppressed entirely while the medium renders, matched by
+        // object key like the cloud body.
+        std::unordered_set<uint64_t> fireObjects;
+        if (fireActive) {
+            for (const auto &draw : scene) {
+                const auto &mat = draw.material;
+                if (mat.fire && !mat.ontop && draw.objectKey
+                        && mat.type == Render::Material::Triangle)
+                    fireObjects.insert(draw.objectKey);
+            }
+        }
         // The water body's edge/vertex draws are suppressed while the
         // surface renders (a water surface has no CAD feature lines, and
         // the black edges would smear through the screen-space
@@ -5340,7 +5445,8 @@ public:
         auto mediumExempt = [&](const Render::Material &mat) {
             return (waterExempt && mat.water)
                 || (glassActive && mat.glass)
-                || (cloudActive && mat.cloud);
+                || (cloudActive && mat.cloud)
+                || (fireActive && mat.fire);
         };
         bool shadowRender = shadowActive;
         if (shadowActive && !hlconfig.show && !shadowNoCache) {
@@ -5360,6 +5466,7 @@ public:
                         || !(mat.shadowstyle & 1)
                         || (waterExempt && mat.water)
                         || (cloudActive && mat.cloud)
+                        || (fireActive && mat.fire)
                         || !draw.mesh)
                     continue;
                 if (glassActive && mat.glass)
@@ -5541,6 +5648,21 @@ public:
                 bool back = i == BGFXView::ViewCloudBack;
                 bgfx::setViewFrameBuffer(id, back ? view->cloudBackFbo
                                                   : view->cloudFrontFbo);
+                bgfx::setViewClear(id,
+                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                    0x00000000u, back ? 0.0f : 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
+                bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (fireActive && (i == BGFXView::ViewFireFront
+                                      || i == BGFXView::ViewFireBack)) {
+                // Fire body interval depth targets, the water depth
+                // target pattern.
+                bool back = i == BGFXView::ViewFireBack;
+                bgfx::setViewFrameBuffer(id, back ? view->fireBackFbo
+                                                  : view->fireFrontFbo);
                 bgfx::setViewClear(id,
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     0x00000000u, back ? 0.0f : 1.0f, 0);
@@ -6105,13 +6227,26 @@ public:
                 && (cloudFill
                     || (!isTriangle(draw) && draw.objectKey
                         && cloudObjects.count(draw.objectKey)));
+            // Fire body: like the cloud, only the interval depth
+            // targets see the triangles.
+            bool fireFill = fireActive && isTriangle(draw)
+                && draw.material.fire;
+            bool firePart = fireActive
+                && (fireFill
+                    || (!isTriangle(draw) && draw.objectKey
+                        && fireObjects.count(draw.objectKey)));
             if (!cullDraw && !instancedThisFrame(drawIdx) && !surfWater
-                    && !surfWaterLine && !surfGlass && !cloudPart)
+                    && !surfWaterLine && !surfGlass && !cloudPart
+                    && !firePart)
                 view->submit(draw, viewMat, BGFXView::PassNormal,
                              sceneNoSeam(draw));
             if (cloudFill && !cullDraw) {
                 view->submitWaterDepth(draw, false, 2);
                 view->submitWaterDepth(draw, true, 2);
+            }
+            if (fireFill && !cullDraw) {
+                view->submitWaterDepth(draw, false, 3);
+                view->submitWaterDepth(draw, true, 3);
             }
             if (surfWater && !cullDraw)
                 view->submitWaterSurface(draw, waterWaveStrength,
@@ -6247,11 +6382,22 @@ public:
                 cloudActive ? cloudDetail : 0.0f,
                 animTime * cloudSpeed,
                 cloudActive ? 1.0f : 0.0f};
+            // The 2.0 rise rate makes the flame climb a couple of
+            // noise cells per second at the default speed.
+            float fireParams[4] = {
+                fireActive ? fireEmission : 0.0f,
+                fireActive ? fireDetail : 0.0f,
+                animTime * fireSpeed * 2.0f,
+                fireActive ? 1.0f : 0.0f};
+            float fireParams2[4] = {fireZMin, fireInvHeight,
+                                    0.0f, 0.0f};
             view->submitVolumetric(volDensity, volconf.intensity,
                                    volMaxDist, volMedium,
-                                   waterActive, waterSigma, cloudParams);
+                                   waterActive, waterSigma, cloudParams,
+                                   fireParams, fireParams2);
             animatedFrame = animatedFrame
-                || (cloudActive && animLive && cloudSpeed != 0.0f);
+                || (cloudActive && animLive && cloudSpeed != 0.0f)
+                || (fireActive && animLive && fireSpeed != 0.0f);
         }
 
         // 1e. Water caustics: additive light-space pattern splat over
@@ -6865,6 +7011,7 @@ public:
             && !m.water
             && !m.glass
             && !m.cloud
+            && !m.fire
             && !m.faceoutline;
     }
 

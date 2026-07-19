@@ -509,6 +509,19 @@ struct Material {
     float clouddetail = 0.0f;
     float cloudspeed = 1.0f;
 
+    /// Fire body flag of a triangle draw (SoFCRenderMaterial, typically
+    /// fed from a ViewProvider Render_Fire property): while the
+    /// volumetric lighting pass is active the draw's closed volume
+    /// raymarches as an emissive flame medium (rising FBM noise through
+    /// a blackbody-style color ramp, added on top of the scene) and the
+    /// geometry itself is not rendered. fireintensity <= 0 = 1 (a plain
+    /// brightness multiplier); firedetail <= 0 = automatic (from the
+    /// draw bounds); firespeed scales the rise animation.
+    bool fire = false;
+    float fireintensity = 0.0f;
+    float firedetail = 0.0f;
+    float firespeed = 1.0f;
+
     /// Texture of a triangle draw (unit 0 only; GL applies further units
     /// on top, a known deviation) with its texture matrix, applied to
     /// MeshData::texCoords. Only sampled when the mesh carries texture

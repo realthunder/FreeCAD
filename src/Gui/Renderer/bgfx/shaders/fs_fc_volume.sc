@@ -28,6 +28,8 @@ SAMPLER2D(s_texWaterFront, 2);
 SAMPLER2D(s_texWaterBack, 3);
 SAMPLER2D(s_texCloudFront, 4);
 SAMPLER2D(s_texCloudBack, 5);
+SAMPLER2D(s_texFireFront, 6);
+SAMPLER2D(s_texFireBack, 7);
 
 void main()
 {
@@ -46,6 +48,9 @@ void main()
 	vec2 cloud = volCloudSpan(texture2D(s_texCloudFront, v_texcoord0),
 	                          texture2D(s_texCloudBack, v_texcoord0),
 	                          dir);
+	vec2 fire = volFireSpan(texture2D(s_texFireFront, v_texcoord0),
+	                        texture2D(s_texFireBack, v_texcoord0),
+	                        dir);
 	// Henyey-Greenstein forward-scattering phase of the cloud toward
 	// the light, constant along the (parallel-light) ray; the air and
 	// water media keep their isotropic behavior.
@@ -59,6 +64,7 @@ void main()
 			/ max(denom * sqrt(denom), 1.0e-3);
 	}
 	vec3 scatter = vec3_splat(0.0);
+	vec3 emission = vec3_splat(0.0);
 	if (t1 > t0)
 	{
 		// Dithered start offset (interleaved gradient noise)
@@ -103,6 +109,25 @@ void main()
 				phase = cloudPhase;
 				ambient = 0.25;
 			}
+			if (t > fire.x && t < fire.y)
+			{
+				// Fire stretch: emissive medium — the rising
+				// FBM temperature field mapped through the
+				// blackbody-style ramp adds self-lit radiance
+				// (no shadow term, no light color; hot gas is
+				// its own light source) attenuated by the
+				// eye-ward transmittance. The interval-edge
+				// fade softens the body's box silhouette; the
+				// extinction stays untouched, so the flame is
+				// purely additive over the scene behind it.
+				vec3 fwp = mul(u_invView,
+				               vec4(origin + dir * t, 1.0)).xyz;
+				float ffade = clamp(min(t - fire.x, fire.y - t)
+					/ max(0.2 * (fire.y - fire.x),
+					      1.0e-3), 0.0, 1.0);
+				emission += fireRamp(fireTempAt(fwp) * ffade)
+					* (u_fireParams.x * dt) * T;
+			}
 			scatter += (shadowVis(origin + dir * t) * phase
 			            + ambient)
 				* (sigS * dt) * T;
@@ -110,6 +135,7 @@ void main()
 		}
 	}
 
-	gl_FragColor = vec4(u_lightColor.rgb * scatter * u_volParams.y,
+	gl_FragColor = vec4(u_lightColor.rgb * scatter * u_volParams.y
+	                        + emission,
 	                    tEnd);
 }

@@ -86,6 +86,19 @@ public:
     SoSFFloat cloudDetail;
     /// Drift speed multiplier of the animated noise domain.
     SoSFFloat cloudSpeed;
+    /// The shapes form a fire body: the closed volume becomes an
+    /// emissive flame medium of the render engine's volumetric
+    /// lighting pass (rising FBM noise through a blackbody-style color
+    /// ramp, added on top of the scene); the body geometry itself is
+    /// not rendered.
+    SoSFBool fire;
+    /// Flame brightness multiplier; <= 0 = default (1).
+    SoSFFloat fireIntensity;
+    /// Noise domain scale in inverse world units; <= 0 = automatic
+    /// (a few tongues across the body).
+    SoSFFloat fireDetail;
+    /// Rise speed multiplier of the animated noise domain.
+    SoSFFloat fireSpeed;
 
 protected:
     ~SoFCRenderMaterial() override = default;

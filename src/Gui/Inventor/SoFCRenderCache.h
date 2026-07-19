@@ -260,6 +260,13 @@ public:
     float clouddensity;
     float clouddetail;
     float cloudspeed;
+    /// Fire body flag/parameters captured from SoFCRenderMaterial:
+    /// external backends raymarch the shapes' closed volume as an
+    /// emissive flame medium instead of rendering the geometry.
+    bool fire;
+    float fireintensity;
+    float firedetail;
+    float firespeed;
     float polygonoffsetunits;
     float polygonoffsetfactor;
     int16_t annotation;
@@ -389,6 +396,14 @@ public:
         if (clouddetail > other.clouddetail) return false;
         if (cloudspeed < other.cloudspeed) return true;
         if (cloudspeed > other.cloudspeed) return false;
+        if (fire < other.fire) return true;
+        if (fire > other.fire) return false;
+        if (fireintensity < other.fireintensity) return true;
+        if (fireintensity > other.fireintensity) return false;
+        if (firedetail < other.firedetail) return true;
+        if (firedetail > other.firedetail) return false;
+        if (firespeed < other.firespeed) return true;
+        if (firespeed > other.firespeed) return false;
         if (lightmodel < other.lightmodel) return true;
         if (lightmodel > other.lightmodel) return false;
         if (vertexordering < other.vertexordering) return true;

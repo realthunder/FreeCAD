@@ -160,6 +160,23 @@ RenderSettingsWidget::RenderSettingsWidget(
     cloudSpeedSpin->setToolTip(tr("Drift animation speed multiplier"));
     ++row;
 
+    // Fire body of the volumetric lighting pass.
+    fireCheck = addOverride(tr("Fire body"));
+    fireIntensitySpin = addSpin(1, 0.0, 1.0e6, 0.1, 2);
+    fireIntensitySpin->setSpecialValueText(tr("auto intensity"));
+    fireIntensitySpin->setToolTip(
+        tr("Flame brightness multiplier; 0 = default (1)"));
+    fireDetailSpin = addSpin(2, 0.0, 1.0e6, 0.01, 2);
+    fireDetailSpin->setSpecialValueText(tr("auto detail"));
+    fireDetailSpin->setToolTip(
+        tr("Noise detail scale in inverse model units; 0 = automatic"));
+    ++row;
+    fireSpeedSpin = addSpin(1, 0.0, 100.0, 0.1, 2);
+    fireSpeedSpin->setPrefix(tr("rise "));
+    fireSpeedSpin->setValue(1.0);
+    fireSpeedSpin->setToolTip(tr("Rise animation speed multiplier"));
+    ++row;
+
     // Texture images (embedded into the document by
     // App::PropertyFileIncluded).
     auto addFile = [&](const QString &text, QCheckBox *&check,
@@ -231,6 +248,8 @@ RenderSettingsWidget::RenderSettingsWidget(
     enables(glassCheck, {glassIORSpin, glassDensitySpin, glassRoughSpin});
     enables(cloudCheck, {cloudDensitySpin, cloudDetailSpin,
                          cloudSpeedSpin});
+    enables(fireCheck, {fireIntensitySpin, fireDetailSpin,
+                        fireSpeedSpin});
     enables(baseColorCheck, {baseColorEdit});
     enables(normalMapCheck, {normalMapEdit});
     enables(emissiveMapCheck, {emissiveMapEdit});
@@ -295,6 +314,18 @@ void RenderSettingsWidget::load()
         if (auto spd = getProp<App::PropertyFloat>(
                     vp, "Render_CloudSpeed"))
             cloudSpeedSpin->setValue(spd->getValue());
+    }
+    if (auto prop = getProp<App::PropertyBool>(vp, "Render_Fire")) {
+        fireCheck->setChecked(prop->getValue());
+        if (auto inten = getProp<App::PropertyFloat>(
+                    vp, "Render_FireIntensity"))
+            fireIntensitySpin->setValue(inten->getValue());
+        if (auto det = getProp<App::PropertyFloat>(
+                    vp, "Render_FireDetail"))
+            fireDetailSpin->setValue(det->getValue());
+        if (auto spd = getProp<App::PropertyFloat>(
+                    vp, "Render_FireSpeed"))
+            fireSpeedSpin->setValue(spd->getValue());
     }
     if (auto prop = getProp<App::PropertyFileIncluded>(
                 vp, "Render_BaseColorTexture")) {
@@ -471,6 +502,47 @@ void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
         removeProp(vp, "Render_CloudDensity");
         removeProp(vp, "Render_CloudDetail");
         removeProp(vp, "Render_CloudSpeed");
+    }
+
+    // Fire body flag + optional intensity/detail/speed.
+    if (fireCheck->isChecked()) {
+        if (auto prop = ensureProp<App::PropertyBool>(
+                    vp, "App::PropertyBool", "Render_Fire",
+                    "Render the closed shape as a fire body of the "
+                    "render engine's volumetric lighting"))
+            prop->setValue(true);
+        auto applyOptional = [vp](double value, const char *name,
+                                  const char *doc) {
+            if (value > 0.0) {
+                if (auto prop = ensureProp<App::PropertyFloat>(
+                            vp, "App::PropertyFloat", name, doc))
+                    prop->setValue(value);
+            }
+            else {
+                removeProp(vp, name);
+            }
+        };
+        applyOptional(fireIntensitySpin->value(),
+                      "Render_FireIntensity",
+                      "Flame brightness multiplier; 0 = default (1)");
+        applyOptional(fireDetailSpin->value(), "Render_FireDetail",
+                      "Fire noise detail scale in inverse model "
+                      "units; 0 = automatic");
+        if (fireSpeedSpin->value() != 1.0) {
+            if (auto prop = ensureProp<App::PropertyFloat>(
+                        vp, "App::PropertyFloat", "Render_FireSpeed",
+                        "Fire rise animation speed multiplier"))
+                prop->setValue(fireSpeedSpin->value());
+        }
+        else {
+            removeProp(vp, "Render_FireSpeed");
+        }
+    }
+    else {
+        removeProp(vp, "Render_Fire");
+        removeProp(vp, "Render_FireIntensity");
+        removeProp(vp, "Render_FireDetail");
+        removeProp(vp, "Render_FireSpeed");
     }
 
     // Texture images: PropertyFileIncluded copies the file into the
