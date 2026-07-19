@@ -4911,6 +4911,22 @@ public:
             if (!bgfx::isValid(view->m_envTex))
                 waterSurfActive = bgfx::isValid(view->m_dummyEnvTex);
         }
+        // The water body's edge/vertex draws are suppressed while the
+        // surface renders (a water surface has no CAD feature lines, and
+        // the black edges would smear through the screen-space
+        // refraction). The line/point draws don't reliably carry the
+        // material's water flag (node-order dependent capture), so they
+        // are matched by the body's object key.
+        std::unordered_set<uint64_t> waterSurfObjects;
+        if (waterSurfActive) {
+            for (const auto &draw : scene) {
+                const auto &mat = draw.material;
+                if (mat.water && !mat.ontop && draw.objectKey
+                        && mat.type == Render::Material::Triangle
+                        && mat.numclipplanes == 0)
+                    waterSurfObjects.insert(draw.objectKey);
+            }
+        }
         // Shared animation clock of the water effects (caustics, surface
         // waves); FC_BGFX_CAUSTIC_TIME freezes it for deterministic
         // comparisons. animating() reports live animation so the viewer
@@ -5626,11 +5642,18 @@ public:
             // Water surface pass: the water body's triangles leave the
             // ordinary (transparent-bucket) path and re-render in the
             // dedicated surface view; clipped bodies keep the normal
-            // path (no clip variant of the surface shader).
+            // path (no clip variant of the surface shader). The body's
+            // edge/vertex draws are dropped entirely — a water surface
+            // has no CAD feature lines, and the black edges would also
+            // smear through the screen-space refraction.
             bool surfWater = waterSurfActive && isTriangle(draw)
                 && draw.material.water
                 && draw.material.numclipplanes == 0;
-            if (!cullDraw && !instancedThisFrame(drawIdx) && !surfWater)
+            bool surfWaterLine = waterSurfActive && !isTriangle(draw)
+                && draw.objectKey
+                && waterSurfObjects.count(draw.objectKey);
+            if (!cullDraw && !instancedThisFrame(drawIdx) && !surfWater
+                    && !surfWaterLine)
                 view->submit(draw, viewMat, BGFXView::PassNormal,
                              sceneNoSeam(draw));
             if (surfWater && !cullDraw)
@@ -6603,7 +6626,7 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
                 " pvc=%d light=%d transp=%d ontop=%d dtest=%d dwrite=%d"
                 " dfunc=%d lw=%.1f po=%d/%.1f/%.1f hla=%.2f lp=%08x/%08x"
                 " ol=%d lc=%08x tex=%d bump=%d em=%d occ=%d mr=%d uv=%d"
-                " ss=%d\n",
+                " ss=%d water=%d\n",
                 d.mesh ? (unsigned long long)d.mesh->cacheId : 0ull,
                 m.type, d.partIndex, d.indexStart, d.indexCount,
                 m.diffuse, m.emissive, m.pervertexcolor, m.lighting,
@@ -6619,7 +6642,7 @@ static void dumpFeed(const char *tag, int id, const Render::DrawCallList &draws)
                 m.metallicroughnessmap
                     ? m.metallicroughnessmap->numComponents : 0,
                 d.mesh && d.mesh->texCoords ? 1 : 0,
-                m.shadowstyle);
+                m.shadowstyle, m.water);
         for (int i = 0; i < m.numclipplanes; ++i)
             fprintf(stderr, "  clip%s %d: %g,%g,%g,%g\n",
                     m.clipconcave ? " (concave)" : "", i,

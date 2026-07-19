@@ -1096,7 +1096,12 @@ independent of each other; item 4 builds on item 3's property model.
   into a linearly-sampled copy; the widget blit switched to separate
   color/depth read framebuffers (texture vs renderbuffer attachments).
   Wave animation shares the caustics clock, `animating()` redraw loop
-  and `FC_BGFX_CAUSTIC_TIME` freeze. **Key find (cost a session
+  and `FC_BGFX_CAUSTIC_TIME` freeze. The body's edge/vertex draws are
+  suppressed while the surface renders (user feedback: the black CAD
+  feature lines smeared through the refraction along the body borders
+  and looked wrong) — they're matched by the body's `objectKey`, since
+  the derived line/point cache materials don't reliably carry the water
+  flag. **Key find (cost a session
   half):** bgfx uniforms are global per frame — a mesh-VS program
   submitted without setting `u_params` inherits the last line draw's
   value, whose `.w` (dim alpha 1.0) is a full NDC depth bias that pushes
