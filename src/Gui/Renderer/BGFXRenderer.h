@@ -79,6 +79,9 @@ public:
     /// output size — the next render() picks up a change.
     static void setWindowHandle(void *handle);
     static void setWindowSize(int width, int height);
+    /// Scene render-target sample count (0/1 = off). Takes effect when
+    /// the view (re)creates its targets; call before the first render().
+    static void setMSAASamples(int samples);
 #endif
 
     friend class BGFXRendererLib;

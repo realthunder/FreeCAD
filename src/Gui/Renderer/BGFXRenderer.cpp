@@ -360,6 +360,9 @@ public:
     void *windowHandle = nullptr;
     uint16_t standaloneWidth = 1024;
     uint16_t standaloneHeight = 768;
+    // Scene render-target sample count (BGFXRenderer::setMSAASamples);
+    // a change re-creates the view targets on the next render().
+    int standaloneSamples = 4;
 #else
     typedef void (*FreeResourceFunc)(QOpenGLFunctions *functions, GLuint id);
     std::vector<std::pair<GLuint, FreeResourceFunc>> pendingRemoves;
@@ -1616,10 +1619,12 @@ public:
 #ifdef FC_RENDERER_STANDALONE
         width = _BGFXLib.standaloneWidth;
         height = _BGFXLib.standaloneHeight;
-        // First cut: no MSAA in the standalone build (WebGL2 could back
-        // it, but the blit-free present path is verified single-sample
-        // first).
-        int samples = 0;
+        // The sampled scene color under MSAA becomes a multisampled
+        // renderbuffer plus a resolve texture; the present pass samples
+        // the resolve (WebGL2 backs both via renderbufferStorageMultisample
+        // + blitFramebuffer).
+        int samples = _BGFXLib.standaloneSamples;
+        msaaSamples = samples;
 #else
         width = uint16_t(widget->width());
         height = uint16_t(widget->height());
@@ -4979,6 +4984,7 @@ public:
     float autozoomScale = 1.0f;
 #ifdef FC_RENDERER_STANDALONE
     bgfx::ProgramHandle m_progPresent = BGFX_INVALID_HANDLE;
+    int msaaSamples = 0;   // sample count the current targets were built with
 #else
     GLuint fbo = 0;
     GLuint fboDepth = 0;
@@ -5025,9 +5031,12 @@ public:
 
 #ifdef FC_RENDERER_STANDALONE
         if (_BGFXLib.standaloneWidth != view->width
-                || _BGFXLib.standaloneHeight != view->height) {
-            bgfx::reset(_BGFXLib.standaloneWidth, _BGFXLib.standaloneHeight,
-                        BGFX_RESET_VSYNC);
+                || _BGFXLib.standaloneHeight != view->height
+                || _BGFXLib.standaloneSamples != view->msaaSamples) {
+            if (_BGFXLib.standaloneWidth != view->width
+                    || _BGFXLib.standaloneHeight != view->height)
+                bgfx::reset(_BGFXLib.standaloneWidth,
+                            _BGFXLib.standaloneHeight, BGFX_RESET_VSYNC);
             view->init();
         }
 
@@ -7928,6 +7937,11 @@ void BGFXRenderer::setWindowSize(int width, int height)
         _BGFXLib.standaloneWidth = uint16_t(width);
     if (height > 0)
         _BGFXLib.standaloneHeight = uint16_t(height);
+}
+
+void BGFXRenderer::setMSAASamples(int samples)
+{
+    _BGFXLib.standaloneSamples = samples < 2 ? 0 : samples;
 }
 #endif
 

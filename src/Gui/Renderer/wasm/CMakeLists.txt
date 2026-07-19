@@ -31,6 +31,13 @@ set(BGFX_INSTALL OFF CACHE BOOL "" FORCE)
 set(BGFX_CUSTOM_TARGETS OFF CACHE BOOL "" FORCE)
 set(BGFX_LIBRARY_TYPE STATIC CACHE STRING "" FORCE)
 set(BGFX_CONFIG_VIDEO OFF CACHE BOOL "" FORCE)
+# GLES3 profile: off-Android the config defaults to GLES2, where core-in-ES3
+# entry points (glRenderbufferStorageMultisample, ...) are only reachable
+# through EXT/IMG-suffixed proc lookups WebGL2 does not export — the MSAA
+# render targets then call a NULL import. The viewer is WebGL2-only anyway
+# (MIN_WEBGL_VERSION=2), so compile bgfx against the ES3 headers and link
+# the core functions statically.
+set(BGFX_OPENGLES_VERSION 30 CACHE STRING "" FORCE)
 add_subdirectory(${FC_SRC}/3rdParty/bgfx bgfx EXCLUDE_FROM_ALL)
 
 add_executable(fcviewer

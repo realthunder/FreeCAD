@@ -136,6 +136,7 @@ int main()
     Render::BGFXRenderer::setWindowHandle(
         const_cast<char *>("#canvas"));
     Render::BGFXRenderer::setWindowSize(s_width, s_height);
+    Render::BGFXRenderer::setMSAASamples(4);
 
     s_renderer = Render::RendererFactory::create("bgfx - OpenGL", nullptr);
     if (!s_renderer) {

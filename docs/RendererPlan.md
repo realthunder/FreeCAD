@@ -1084,8 +1084,24 @@ independent of each other; item 4 builds on item 3's property model.
   look — headlight shading, CAD edges, gradient background — orbit and
   zoom respond, a 50%-transparent body composites through WBOIT; the
   desktop path is regression-checked (readback pixel count bit-equal
-  pre/post, glsl/spirv bins byte-identical). Not yet ported: MSAA in
-  the present path, selection/highlight feeds, live geometry streaming
+  pre/post, glsl/spirv bins byte-identical). *MSAA done (2026-07)*: the
+  scene targets take a sample count from
+  `BGFXRenderer::setMSAASamples()` (viewer default 4; a change rebuilds
+  the targets on the next render, sized for runtime toggling later) and
+  the present pass samples bgfx's auto-resolved texture. Three
+  vendored-bgfx WebGL2 fixes made it real: `GL_MAX_SAMPLES` is only
+  queried behind desktop/ANGLE extension strings WebGL2 never
+  advertises (every MSAA flag silently clamped to 1 sample — compile
+  bgfx with `BGFX_OPENGLES_VERSION=30`, added to the wasm project, and
+  query it under GLES3 core), `glBlitFramebuffer`/
+  `glRenderbufferStorageMultisample` were importable only under
+  ANGLE-suffixed names Emscripten's proc lookup does not export (the
+  NULL import pointers shadow the static core ES3 functions — crash on
+  first MSAA storage), and the MSAA resolve used desktop-only
+  `glDrawBuffer` (GLES path now selects the draw buffer with a one-hot
+  `glDrawBuffers` list). Verified in headless Chromium: edges/outlines
+  resolve smooth, WBOIT + orbit/zoom intact; desktop readback bit-equal.
+  Not yet ported: selection/highlight feeds, live geometry streaming
   (snapshots only), touch input, progressive refinement.
 - SSR (optional), GTAO, TAA where compute is available.
 - **Displacement mapping** (true geometric displacement, beyond Phase 2's
