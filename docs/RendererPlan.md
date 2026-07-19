@@ -1079,7 +1079,97 @@ independent of each other; item 4 builds on item 3's property model.
   allow. Camera-above-water volumetric shafts keep using the unrefracted
   ray (the universal approximation); revisit only if a path-tracer handoff
   materializes.
-  *Caustics first cut done (2026-07)* — the animated procedural fake, as a
+  *Refraction/reflection surface first cut done (2026-07)* — the
+  `WaterSurface` (+`WaterWaveStrength`/`WaterWaveScale` 0 = auto/
+  `WaterWaveSpeed`) params, `Render::WaterConfig`, independent of the
+  volumetric pass: water body draws leave the transparent bucket and
+  re-render in a dedicated `ViewWaterSurface` pass as an opaque animated
+  surface — screen-space refraction of the opaque scene sampled through
+  wave-perturbed UV offsets (four directional slope waves in a
+  world-space frame on the surface, so tank sides work and the pattern
+  sticks under camera moves), a Schlick-Fresnel-blended environment
+  reflection from the PBR studio cube, and a sun glint. The scene color
+  attachment is now created sampleable (with MSAA bgfx backs it with a
+  renderbuffer + auto-resolved texture, the WBOIT pattern) and a
+  `ViewWaterCopy` fullscreen pass — after the volumetric composite, so
+  the refracted view carries the underwater tint/shafts — resolves it
+  into a linearly-sampled copy; the widget blit switched to separate
+  color/depth read framebuffers (texture vs renderbuffer attachments).
+  Wave animation shares the caustics clock, `animating()` redraw loop
+  and `FC_BGFX_CAUSTIC_TIME` freeze. **Key find (cost a session
+  half):** bgfx uniforms are global per frame — a mesh-VS program
+  submitted without setting `u_params` inherits the last line draw's
+  value, whose `.w` (dim alpha 1.0) is a full NDC depth bias that pushes
+  every fragment past the far plane; any new submit path pairing
+  `vs_fc_mesh` must zero `u_params` explicitly. Verified on llvmpipe:
+  frozen-time deterministic; time-0 vs time-3 differ only on the water;
+  water-medium and caustics scenes bit-identical with the surface off;
+  all effects compose (surface + medium tint + caustics + shadows +
+  ground reflection). Known gaps: refraction can sample above-water
+  pixels near protruding geometry (the classic screen-space artifact);
+  transparent geometry behind the surface is occluded (the surface
+  writes depth); clipped water bodies keep the plain transparent path;
+  one shared wave appearance per frame.
+- **Ground reflection** *(done 2026-07)* — `GroundReflection` /
+  `GroundReflectionIntensity` params riding `Render::LightConfig`: the
+  opaque scene re-renders into `ViewGroundRefl` with the world mirrored
+  about the shadow ground plane (z = scene bbox bottom) — the ground
+  acts as a window into the mirrored world, so the overlay samples the
+  reflection texture at the fragment's own screen position. The mirror
+  pass redirects through the ordinary `submit()` path (`reflPass`
+  member: view redirect + flipped culling) with the shadow matrix
+  rebased into the mirrored view space, so reflected geometry keeps its
+  shadows; hidden/on-top/transparent/water draws stay out, frustum
+  culling is skipped (the mirrored camera sees a different volume). The
+  `ViewGroundReflApply` overlay draws the same quad geometry and vertex
+  shader as the shadow ground (EQUAL depth test hits exactly the still-
+  visible ground pixels) blending by intensity × reflection alpha.
+  Costs one extra opaque scene pass while enabled. Known gaps: the
+  reflection is unlit by SSAO/AO of the receiver, single-sample (no
+  MSAA), and ignores ground bump distortion.
+- **Presentation media materials: glass, cloud, fire** *(planned —
+  extend the `Render_Water` special-material pattern; each is a
+  ViewProvider dynamic property turning an ordinary modeled body into a
+  medium/effect, resolved per draw through the same
+  `SoFCRenderMaterial` → cache material → `Render::Material` chain)*:
+  - **`Render_Glass`** (+IOR, +absorption color/density, +roughness):
+    reuses the water-surface machinery — the scene-color copy for
+    screen-space refraction (offset scaled by IOR and surface
+    curvature/normal instead of waves), Fresnel-blended environment
+    reflection, per-channel Beer–Lambert absorption tinted by thickness
+    (front/back depth targets like the water medium give the interval).
+    Roughness blurs the refraction via a mip chain on the scene copy
+    (needs `BGFX_TEXTURE_RT` mip generation or a manual downsample
+    chain — WebGL2-safe either way). Glass shadow casting should tint
+    rather than block (a colored-shadow approximation via a second
+    moment map is future work; first cut keeps glass out of the caster
+    set like water). Solid CAD parts double-refract (entry + exit); the
+    honest first cut refracts at entry only, like every real-time
+    engine.
+  - **`Render_Cloud`** (+density, +detail scale, +drift speed): a
+    volumetric medium like the water body — front/back depth targets
+    bound the raymarch interval — but with procedural FBM density
+    modulating the sigma per step and a Henyey–Greenstein phase folded
+    into the existing shadow-map-gated inscatter; the animation clock
+    drifts the noise domain. Requires generalizing the current
+    single-body water interval to per-body medium slots (the known
+    single-appearance limitation) — worth doing once for
+    water+cloud+fire together: a small array of medium intervals per
+    pixel, or one interval pair per medium kind.
+  - **`Render_Fire`** (+intensity, +speed, +color ramp): an emissive
+    medium — same bounded raymarch but accumulating a blackbody-style
+    color ramp weighted by animated rising FBM noise (domain scrolled
+    along the body's up axis), composited additively before the
+    transparent bucket; no shadow interaction (fire is a light source,
+    not a receiver). A cheap first cut can skip the raymarch: an
+    animated emissive fresnel-faded shell on the body's surface.
+    Actually lighting the scene from the fire (a flickering point light
+    feeding the existing scene-light path) is a natural follow-up.
+  - Shared groundwork all three want: per-body medium slots (above),
+    the animation clock + `animating()` redraw loop (done, s27), the
+    sampleable scene color + copy pass (done, s27), and per-object
+    Render_* rows in the render settings task panel (the water
+    checkbox/density rows are the template). — the animated procedural fake, as a
   screen-space pass instead of a projected texture: a new `ViewCaustics`
   fullscreen view (between the outlines and the volumetric apply)
   reconstructs each opaque pixel's view-space position from the SSAO
