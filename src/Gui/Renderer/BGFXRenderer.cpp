@@ -1257,7 +1257,8 @@ public:
                          &s_texCloudFront, &s_texCloudBack,
                          &u_cloudParams,
                          &s_texFireFront, &s_texFireBack,
-                         &u_fireParams, &u_fireParams2}) {
+                         &u_fireParams, &u_fireParams2,
+                         &u_fireFrame}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -2057,6 +2058,8 @@ public:
                                                bgfx::UniformType::Vec4);
             u_fireParams2 = bgfx::createUniform("u_fireParams2",
                                                 bgfx::UniformType::Vec4);
+            u_fireFrame = bgfx::createUniform("u_fireFrame",
+                                              bgfx::UniformType::Mat4);
         }
 
         // Water surface refraction: the scene color copies into a
@@ -3414,7 +3417,8 @@ public:
                           const float waterSigma[4],
                           const float cloudParams[4],
                           const float fireParams[4],
-                          const float fireParams2[4])
+                          const float fireParams2[4],
+                          const float fireFrame[16])
     {
         static const float noSigma[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float params[4] = {density, intensity, maxDist,
@@ -3425,6 +3429,7 @@ public:
         bgfx::setUniform(u_cloudParams, cloudParams);
         bgfx::setUniform(u_fireParams, fireParams);
         bgfx::setUniform(u_fireParams2, fireParams2);
+        bgfx::setUniform(u_fireFrame, fireFrame);
         bgfx::setUniform(u_lightColor, lightColorI);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2], 1.0f};
@@ -3453,6 +3458,7 @@ public:
         bgfx::setUniform(u_cloudParams, cloudParams);
         bgfx::setUniform(u_fireParams, fireParams);
         bgfx::setUniform(u_fireParams2, fireParams2);
+        bgfx::setUniform(u_fireFrame, fireFrame);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         bgfx::setTexture(1, s_texWaterFront, waterFrontTex);
         bgfx::setTexture(2, s_texWaterBack, waterBackTex);
@@ -4789,6 +4795,7 @@ public:
     bgfx::UniformHandle s_texFireBack = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_fireParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_fireParams2 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_fireFrame = BGFX_INVALID_HANDLE;
     // Water surface refraction (scene copy) + ground reflection targets.
     bgfx::TextureHandle sceneCopyTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle sceneCopyFbo = BGFX_INVALID_HANDLE;
@@ -5359,9 +5366,15 @@ public:
         // known single-appearance limitation).
         bool hasFireBody = false;
         float fireEmission = 0.0f, fireDetail = 0.0f, fireSpeed = 1.0f;
-        float fireZMin = 0.0f, fireInvHeight = 0.0f;
+        float fireInvHeight = 0.0f;
         float fireIntensity = 1.0f, fireDiag = 0.0f, fireSoot = 0.0f;
-        float fireCenter[3] = {0.0f, 0.0f, 0.0f};
+        // World -> fire-local frame (z = the body placement's up axis,
+        // origin at the bottom center) and the effect-light anchor.
+        float fireFrame[16] = {1.0f, 0.0f, 0.0f, 0.0f,
+                               0.0f, 1.0f, 0.0f, 0.0f,
+                               0.0f, 0.0f, 1.0f, 0.0f,
+                               0.0f, 0.0f, 0.0f, 1.0f};
+        float fireLightWorld[3] = {0.0f, 0.0f, 0.0f};
         for (const auto &draw : scene) {
             const auto &mat = draw.material;
             if (!mat.fire || mat.ontop
@@ -5380,8 +5393,6 @@ public:
             if (fireDetail <= 0.0f && diag > 0.0f)
                 fireDetail = 5.0f / diag;
             fireSpeed = mat.firespeed;
-            fireZMin = draw.bboxMin[2];
-            fireInvHeight = dz > 0.0f ? 1.0f / dz : 0.0f;
             fireIntensity = intensity;
             fireDiag = diag;
             // Mild soot absorption scaled like the other auto
@@ -5391,9 +5402,87 @@ public:
                 (getenv("FC_BGFX_NO_FIRESOOT") != nullptr);
             if (!noSoot && diag > 0.0f)
                 fireSoot = 1.5f / diag;
+            // The taper frame comes from the body's placement, not
+            // world z: up = the model's local z axis, with its x axis
+            // Gram-Schmidt'd into a lateral right vector. The world
+            // AABB corners projected onto the frame give the bottom
+            // center and the up-extent (conservative for tilted
+            // bodies — a taper frame, not a fit).
+            float u[3] = {0.0f, 0.0f, 1.0f};
+            float r[3] = {1.0f, 0.0f, 0.0f};
+            if (!draw.identity) {
+                for (int j = 0; j < 3; ++j) {
+                    u[j] = draw.model[8 + j];
+                    r[j] = draw.model[j];
+                }
+                float ul = std::sqrt(u[0]*u[0] + u[1]*u[1] + u[2]*u[2]);
+                if (ul > 1.0e-6f)
+                    for (int j = 0; j < 3; ++j)
+                        u[j] /= ul;
+                else
+                    u[0] = 0.0f, u[1] = 0.0f, u[2] = 1.0f;
+                float ru = r[0]*u[0] + r[1]*u[1] + r[2]*u[2];
+                for (int j = 0; j < 3; ++j)
+                    r[j] -= ru * u[j];
+                float rl = std::sqrt(r[0]*r[0] + r[1]*r[1] + r[2]*r[2]);
+                if (rl > 1.0e-6f) {
+                    for (int j = 0; j < 3; ++j)
+                        r[j] /= rl;
+                } else {
+                    // up nearly parallel to the model x axis: any
+                    // stable perpendicular does for the lateral frame.
+                    r[0] = -u[2]; r[1] = 0.0f; r[2] = u[0];
+                    rl = std::sqrt(r[0]*r[0] + r[2]*r[2]);
+                    if (rl > 1.0e-6f) {
+                        r[0] /= rl; r[2] /= rl;
+                    } else {
+                        r[0] = 1.0f; r[2] = 0.0f;
+                    }
+                }
+            }
+            float f[3] = {u[1]*r[2] - u[2]*r[1],
+                          u[2]*r[0] - u[0]*r[2],
+                          u[0]*r[1] - u[1]*r[0]};
+            float pmin[3], pmax[3];
+            for (int c = 0; c < 8; ++c) {
+                float wp[3] = {
+                    (c & 1) ? draw.bboxMax[0] : draw.bboxMin[0],
+                    (c & 2) ? draw.bboxMax[1] : draw.bboxMin[1],
+                    (c & 4) ? draw.bboxMax[2] : draw.bboxMin[2]};
+                float pr[3] = {
+                    wp[0]*r[0] + wp[1]*r[1] + wp[2]*r[2],
+                    wp[0]*f[0] + wp[1]*f[1] + wp[2]*f[2],
+                    wp[0]*u[0] + wp[1]*u[1] + wp[2]*u[2]};
+                for (int j = 0; j < 3; ++j) {
+                    if (c == 0 || pr[j] < pmin[j]) pmin[j] = pr[j];
+                    if (c == 0 || pr[j] > pmax[j]) pmax[j] = pr[j];
+                }
+            }
+            float height = pmax[2] - pmin[2];
+            fireInvHeight = height > 0.0f ? 1.0f / height : 0.0f;
+            // Bottom center of the body in the frame, back in world
+            // coordinates (r/f/u are an orthonormal world basis).
+            float rc = 0.5f * (pmin[0] + pmax[0]);
+            float fc = 0.5f * (pmin[1] + pmax[1]);
+            float base[3];
             for (int j = 0; j < 3; ++j)
-                fireCenter[j] =
-                    0.5f * (draw.bboxMin[j] + draw.bboxMax[j]);
+                base[j] = rc * r[j] + fc * f[j] + pmin[2] * u[j];
+            // Row-vector convention like the shadow matrix: lp =
+            // [wp, 1] * M with the frame axes as columns.
+            for (int j = 0; j < 3; ++j) {
+                fireFrame[j * 4 + 0] = r[j];
+                fireFrame[j * 4 + 1] = f[j];
+                fireFrame[j * 4 + 2] = u[j];
+                fireFrame[j * 4 + 3] = 0.0f;
+            }
+            fireFrame[12] = -(rc);
+            fireFrame[13] = -(fc);
+            fireFrame[14] = -pmin[2];
+            fireFrame[15] = 1.0f;
+            // The effect light sits a third up the flame — the ramp's
+            // bright zone — along the body's up axis.
+            for (int j = 0; j < 3; ++j)
+                fireLightWorld[j] = base[j] + 0.35f * height * u[j];
             hasFireBody = fireEmission > 0.0f && fireDetail > 0.0f
                 && fireInvHeight > 0.0f;
             break;
@@ -5456,16 +5545,15 @@ public:
         // engine effect-light shortcut.
         static const bool noFireLight =
             (getenv("FC_BGFX_NO_FIRELIGHT") != nullptr);
-        if (fireActive && !noFireLight && fireDiag > 0.0f
-                && fireInvHeight > 0.0f) {
+        if (fireActive && !noFireLight && fireDiag > 0.0f) {
             const float *vm = reinterpret_cast<const float *>(viewMatrix);
-            // The light sits at a third of the flame height — the
-            // bright zone of the ramp, below the tapering tongues.
-            float wp[3] = {fireCenter[0], fireCenter[1],
-                           fireZMin + 0.35f / fireInvHeight};
+            // The light anchor (a third up the flame along the body's
+            // up axis, the ramp's bright zone) came out of the fire
+            // scan's taper frame.
             for (int j = 0; j < 3; ++j)
-                view->fireLightView[j] = wp[0] * vm[j]
-                    + wp[1] * vm[4 + j] + wp[2] * vm[8 + j]
+                view->fireLightView[j] = fireLightWorld[0] * vm[j]
+                    + fireLightWorld[1] * vm[4 + j]
+                    + fireLightWorld[2] * vm[8 + j]
                     + vm[12 + j];
             float range = 2.5f * fireDiag;
             view->fireLightView[3] = 1.0f / (range * range);
@@ -6464,12 +6552,12 @@ public:
                 fireActive ? fireDetail : 0.0f,
                 animTime * fireSpeed * 2.0f,
                 fireActive ? 1.0f : 0.0f};
-            float fireParams2[4] = {fireZMin, fireInvHeight,
+            float fireParams2[4] = {0.0f, fireInvHeight,
                                     fireActive ? fireSoot : 0.0f, 0.0f};
             view->submitVolumetric(volDensity, volconf.intensity,
                                    volMaxDist, volMedium,
                                    waterActive, waterSigma, cloudParams,
-                                   fireParams, fireParams2);
+                                   fireParams, fireParams2, fireFrame);
             animatedFrame = animatedFrame
                 || (cloudActive && animLive && cloudSpeed != 0.0f)
                 || (fireActive && animLive && fireSpeed != 0.0f);

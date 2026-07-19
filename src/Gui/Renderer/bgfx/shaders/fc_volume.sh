@@ -24,10 +24,15 @@
  * u_fireParams: x = flame emission density (1/world units), y = noise
  *               domain scale (1/world units), z = rise time, w > 0.5 =
  *               fire body active
- * u_fireParams2: x = fire body minimum world z, y = 1 / body height
- *               (the vertical flame taper frame), z = soot extinction
- *               density (1/world units; a mild absorption that follows
- *               the temperature field, 0 = none)
+ * u_fireParams2: y = 1 / body extent along its up axis (the flame
+ *               taper frame), z = soot extinction density (1/world
+ *               units; a mild absorption that follows the temperature
+ *               field, 0 = none), x/w unused
+ * u_fireFrame : world -> fire-local transform — z rises along the
+ *               body placement's up axis (not world z), origin at the
+ *               bottom center of the body, unit world scale. The
+ *               noise field lives in this frame, so the flame rides a
+ *               moved or tilted body.
  */
 
 uniform vec4 u_volParams;
@@ -36,6 +41,7 @@ uniform vec4 u_waterSigma;
 uniform vec4 u_cloudParams;
 uniform vec4 u_fireParams;
 uniform vec4 u_fireParams2;
+uniform mat4 u_fireFrame;
 
 // View-space ray of a screen pixel (uv in [0,1]). GL projection:
 // perspective has u_proj[2][3] == -1 (w = viewZ), orthographic has 0
@@ -154,14 +160,15 @@ vec2 volFireSpan(vec4 ff, vec4 fb, vec3 dir)
 }
 
 // Flame temperature field in [0,1] at a world position: 3-octave value
-// noise (the cloud lattice) rising along +z with a slight lateral
-// wobble, eroded by a threshold that climbs with the normalized height
-// so the flame breaks into separate tongues and dies out near the top.
+// noise (the cloud lattice) rising along the body's up axis with a
+// slight lateral wobble, eroded by a threshold that climbs with the
+// normalized height so the flame breaks into separate tongues and dies
+// out near the top. All sampling happens in the fire-local frame.
 float fireTempAt(vec3 wp)
 {
-	float h = clamp((wp.z - u_fireParams2.x) * u_fireParams2.y,
-	                0.0, 1.0);
-	vec3 p = wp * u_fireParams.y;
+	vec3 lp = mul(u_fireFrame, vec4(wp, 1.0)).xyz;
+	float h = clamp(lp.z * u_fireParams2.y, 0.0, 1.0);
+	vec3 p = lp * u_fireParams.y;
 	p.z *= 0.55;  // vertically stretched noise = licking tongues
 	p.z -= u_fireParams.z;
 	p.x += 0.35 * sin(0.8 * u_fireParams.z + p.z * 1.7);
