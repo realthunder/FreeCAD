@@ -1122,19 +1122,52 @@ independent of each other; item 4 builds on item 3's property model.
   interaction drops the scene targets to single-sample and disables
   SSAO, 300 ms idle restores full quality (the Fusion 360 pattern) via
   the runtime `setMSAASamples()` toggle. All verified in headless
-  Chromium; desktop readback stayed bit-equal throughout. **Next
-  (planned 2026-07): mouse interaction from the canvas back to
-  FreeCAD** — in order: WebSocket push replacing the HTTP poll (the
-  transport upgrade goes first, before any event-stream feature),
-  browser-local preselection (CPU raycast against the snapshot meshes
-  → objectKey/partIndex → immediate hover tint, no round trip), and
-  roundtrip click selection (world ray from the viewer camera → server
-  → `SoRayPickAction::setRay` + `ViewProvider::getElementPicked` →
-  `Gui::Selection`, consumed on the GUI thread; the selection echo
-  back into the viewer already rides the scene feed). Later ideas
-  (unscheduled): camera sync from the desktop view, delta/mesh-level
-  streaming instead of full snapshots, rubber-band selection, edit-
-  mode/dragger event forwarding.
+  Chromium; desktop readback stayed bit-equal throughout.
+  *Mouse interaction done (2026-07)* — the canvas talks back to
+  FreeCAD. **WebSocket push transport**: `SceneServer` upgrades a
+  GET /scene carrying `Upgrade: websocket` per RFC 6455 (compact
+  SHA-1 + base64 in SceneServer.cpp), one thread per connection, and
+  pushes the versioned payload on connect and on every publish();
+  the viewer connects with the Emscripten WebSocket API
+  (`-lwebsocket.js`) and keeps the HTTP poll as an automatic
+  fallback on error/close. Plain-HTTP polling still answers on the
+  same port. **Browser-local preselection**: hovering raycasts the
+  snapshot meshes on the CPU (world-space ray from the orbit camera
+  through the pixel, per-draw world-bbox slab pre-cull, then
+  Möller-Trumbore over the draw's index range with the ray in model
+  space, world-t compared across draws), maps the hit triangle to a
+  face part where `MeshData::triangleParts` is filled (whole-object
+  tint otherwise — the part table only rides hidden-line outline
+  materials so far) and applies a local `setHighlight()` with an
+  `E1E114` ViewParams-highlight material copy, no round trip; a
+  streamed snapshot replaces the tint until the next mouse move.
+  `?debugpick=1` logs every hover pick to the console. **Roundtrip
+  click selection**: a click (mouseup within 3 px of mousedown)
+  sends a 26-byte binary WS message ('P', modifier flags, six LE
+  floats of world ray origin + direction); the server queues it to
+  the Gui-installed pick handler (`SceneStreamServer::setPickHandler`,
+  installed by `View3DInventorViewer::setRendererType` while
+  FC_BGFX_SERVE_SCENE is set) which marshals to the GUI thread via a
+  queued `QMetaObject::invokeMethod` + `QPointer` and runs
+  `View3DInventorViewer::pickAndSelect`: `SoRayPickAction::setRay`
+  against a temporary camera+scene root (the getPointOnRay pattern),
+  `Document::getViewProviderByPathFromHead` →
+  `ViewProvider::getElementPicked` → `Gui::Selection` add / Ctrl
+  toggle / clear on miss; the selection echo returns through the
+  scene feed within the same second. One trap burned a session hour:
+  the orbit frame's `right = cross(dir, up)` (dir pointing at→eye,
+  kept for the historical pan convention) is the *negation* of the
+  camera's right axis — rays built from it were horizontally
+  mirrored, and both ends agreed with each other (local raycast and
+  desktop pick consumed the same ray) while disagreeing with the
+  pixels; `screenRay()` now derives right from the forward vector.
+  Verified end-to-end in headless Chromium against a live xvfb
+  desktop: hover tint, click-select (Box.Face4), Ctrl-add
+  (Cylinder.Face1), empty-click clear, echoes rendered green in the
+  browser. Later ideas (unscheduled): camera sync from the desktop
+  view, delta/mesh-level streaming instead of full snapshots,
+  rubber-band selection, edit-mode/dragger event forwarding,
+  face-level hover (needs the part table on plain materials).
 - SSR (optional), GTAO, TAA where compute is available.
 - **Displacement mapping** (true geometric displacement, beyond Phase 2's
   parallax illusion): vertex-shader height sampling where
