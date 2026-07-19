@@ -1078,6 +1078,12 @@ public:
         ViewShadowBlurV,    // ... and vertical back into the moments
                             // texture, so receivers and the volumetric
                             // raymarch keep sampling the same target
+        ViewShadowTint,     // glass casters render their per-channel
+                            // light transmittance into the shadow tint
+                            // map (cleared to white, multiplicative);
+                            // receivers multiply it into the direct
+                            // scene-light term — glass shadows are
+                            // softer, tinted when colored
         ViewAOPrepass,      // SSAO depth+normal prepass of opaque scene
                             // triangles into a non-MSAA RGBA16F target
                             // (own framebuffer, own depth)
@@ -1260,26 +1266,30 @@ public:
         // recreated moments texture starts empty, so the cached-map hash
         // resets with it.
         shadowMapHash = 0;
-        for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo}) {
+        for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo,
+                        &shadowTintFbo}) {
             if (bgfx::isValid(*fb)) {
                 bgfx::destroy(*fb);
                 *fb = BGFX_INVALID_HANDLE;
             }
         }
-        for (auto tex : {&shadowTex, &shadowDepth, &shadowBlurTex}) {
+        for (auto tex : {&shadowTex, &shadowDepth, &shadowBlurTex,
+                         &shadowTintTex}) {
             if (bgfx::isValid(*tex)) {
                 bgfx::destroy(*tex);
                 *tex = BGFX_INVALID_HANDLE;
             }
         }
         for (auto prog : {&m_progShadow, &m_progShadowClip,
-                          &m_progShadowInst, &m_progShadowBlur}) {
+                          &m_progShadowInst, &m_progShadowBlur,
+                          &m_progShadowTint}) {
             if (bgfx::isValid(*prog)) {
                 bgfx::destroy(*prog);
                 *prog = BGFX_INVALID_HANDLE;
             }
         }
-        for (auto uni : {&s_texShadow, &u_shadowParams, &u_lightDir,
+        for (auto uni : {&s_texShadow, &s_texShadowTint,
+                         &u_shadowParams, &u_lightDir,
                          &u_lightPos, &u_lightColor, &u_shadowMatrix,
                          &u_shadowBlur, &u_evsm}) {
             if (bgfx::isValid(*uni)) {
@@ -1720,6 +1730,14 @@ public:
                                            _BGFXLib.resource().c_str());
             u_shadowBlur = bgfx::createUniform("u_shadowBlur",
                                                bgfx::UniformType::Vec4);
+            // Glass shadow tint: glass casters render their light
+            // transmittance into a color map beside the moments
+            // (multiplicative; receivers sample it at unit 7).
+            m_progShadowTint = loadProgram("vs_fc_shadow",
+                                           "fs_fc_shadow_tint",
+                                           _BGFXLib.resource().c_str());
+            s_texShadowTint = bgfx::createUniform(
+                "s_texShadowTint", bgfx::UniformType::Sampler);
         }
         static const uint32_t blackCube[6] = {0, 0, 0, 0, 0, 0};
         m_dummyEnvTex = bgfx::createTextureCube(1, false, 1,
@@ -2958,6 +2976,10 @@ public:
         bgfx::setUniform(u_lightColor, lightColorI);
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setTexture(3, s_texShadow, shadowTex);
+        if (bgfx::isValid(s_texShadowTint))
+            bgfx::setTexture(7, s_texShadowTint,
+                             bgfx::isValid(shadowTintTex) ? shadowTintTex
+                                                          : m_whiteTex);
 
         // Ground texture (ShadowGroundTexture): tiled every
         // groundTextureSize world units, modulated by the ground color
@@ -3085,6 +3107,38 @@ public:
         ++drawcount;
     }
 
+    /// Render a glass caster's light transmittance into the shadow
+    /// tint map (multiplicative onto the white-cleared target; front
+    /// faces only so one glass body multiplies once, no depth).
+    void submitShadowTint(const Render::DrawCall &draw)
+    {
+        if (!draw.mesh || !draw.mesh->triangleIndices
+                || !bgfx::isValid(m_progShadowTint))
+            return;
+        GpuMesh *gpu = getMesh(*draw.mesh);
+        if (!bgfx::isValid(gpu->geom->vbh) || !bgfx::isValid(gpu->geom->tri))
+            return;
+
+        const Render::Material &mat = draw.material;
+        float color[4];
+        unpackColor(mat.diffuse, color);
+        bgfx::setUniform(u_matColor, color);
+        setDrawTransform(draw, autozoomScale);
+        bgfx::setVertexBuffer(0, gpu->geom->vbh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->geom->tri);
+        bgfx::setState(BGFX_STATE_WRITE_RGB
+                       | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ZERO,
+                                               BGFX_STATE_BLEND_SRC_COLOR)
+                       | (mat.ccw ? BGFX_STATE_CULL_CW
+                                  : BGFX_STATE_CULL_CCW));
+        bgfx::submit(viewId + ViewShadowTint, m_progShadowTint);
+        ++drawcount;
+    }
+
     /// Separable gaussian blur of the shadow moments (the Shadow draw
     /// style's SmoothBorder, 0..100): horizontal into the ping texture,
     /// vertical back into shadowTex, so the mesh receivers and the
@@ -3098,13 +3152,15 @@ public:
     {
         if (!m_shadow || (size == shadowSize && bgfx::isValid(shadowFbo)))
             return;
-        for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo}) {
+        for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo,
+                        &shadowTintFbo}) {
             if (bgfx::isValid(*fb)) {
                 bgfx::destroy(*fb);
                 *fb = BGFX_INVALID_HANDLE;
             }
         }
-        for (auto tex : {&shadowTex, &shadowDepth, &shadowBlurTex}) {
+        for (auto tex : {&shadowTex, &shadowDepth, &shadowBlurTex,
+                         &shadowTintTex}) {
             if (bgfx::isValid(*tex)) {
                 bgfx::destroy(*tex);
                 *tex = BGFX_INVALID_HANDLE;
@@ -3133,6 +3189,14 @@ public:
                                                 false);
         shadowBlurBackFbo = bgfx::createFrameBuffer(1, &shadowTex,
                                                     false);
+        // Glass shadow tint map: color only (multiplicative blending
+        // needs no depth), cleared to white each caster pass.
+        shadowTintTex = bgfx::createTexture2D(size, size,
+            false, 1, bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP
+            | BGFX_SAMPLER_V_CLAMP);
+        shadowTintFbo = bgfx::createFrameBuffer(1, &shadowTintTex,
+                                                false);
     }
 
     void submitShadowBlur(float smoothBorder)
@@ -3763,6 +3827,10 @@ public:
                          shadowFrame ? lightPosView : noSpot);
         bgfx::setUniform(u_shadowParams, shadowParams);
         bgfx::setTexture(3, s_texShadow, shadow);
+        if (bgfx::isValid(s_texShadowTint))
+            bgfx::setTexture(7, s_texShadowTint,
+                             shadowFrame && bgfx::isValid(shadowTintTex)
+                                 ? shadowTintTex : m_whiteTex);
     }
 
     /// True when the cross-object instanced mesh path can run this frame.
@@ -4558,6 +4626,10 @@ public:
     float shadowSpreadMode = 0.0f;
     bool shadowFrame = false;  // shadows active this frame
     bgfx::TextureHandle shadowTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle shadowTintTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle shadowTintFbo = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progShadowTint = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texShadowTint = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle shadowDepth = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle shadowFbo = BGFX_INVALID_HANDLE;
     // ShadowSmoothBorder blur ping texture and the two color-only
@@ -5282,11 +5354,16 @@ public:
                 // On-top draws cast too: a selected-on-top object's
                 // scene draws are hidden and re-rendered on top, so
                 // excluding them dropped its whole shadow (GL keeps it).
+                // Glass draws stay in the hash: they feed the tint
+                // map beside the moments (with their color).
                 if (mat.type != Render::Material::Triangle
                         || !(mat.shadowstyle & 1)
-                        || mediumExempt(mat)
+                        || (waterExempt && mat.water)
+                        || (cloudActive && mat.cloud)
                         || !draw.mesh)
                     continue;
+                if (glassActive && mat.glass)
+                    hashBytes(h, &mat.diffuse, sizeof(mat.diffuse));
                 hashBytes(h, &draw.mesh->cacheId,
                           sizeof(draw.mesh->cacheId));
                 if (!draw.identity)
@@ -5389,6 +5466,20 @@ public:
                 bgfx::setViewClear(id,
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     1.0f, 0, 2);
+                bgfx::setViewRect(id, 0, 0, view->shadowSize,
+                                  view->shadowSize);
+                bgfx::setViewTransform(id, lightViewMtx, lightProjMtx);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (shadowRender && i == BGFXView::ViewShadowTint
+                       && bgfx::isValid(view->shadowTintFbo)) {
+                // Glass shadow tint map: cleared to white (no glass =
+                // full transmittance) under the light camera; glass
+                // casters multiply their transmittance in.
+                bgfx::setViewFrameBuffer(id, view->shadowTintFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_COLOR),
+                                   0xffffffffu, 1.0f, 0);
                 bgfx::setViewRect(id, 0, 0, view->shadowSize,
                                   view->shadowSize);
                 bgfx::setViewTransform(id, lightViewMtx, lightProjMtx);
@@ -5972,6 +6063,11 @@ public:
                         && !mediumExempt(draw.material)
                         && !casterInstancedThisFrame(drawIdx))
                     view->submitShadowCaster(draw);
+                if (shadowRender && !draw.material.ontop
+                        && isTriangle(draw)
+                        && (draw.material.shadowstyle & 1)
+                        && glassActive && draw.material.glass)
+                    view->submitShadowTint(draw);
                 continue;
             }
             if (hideFill(draw) || hidePoints(draw))
@@ -6055,6 +6151,12 @@ public:
                     && !mediumExempt(draw.material)
                     && !casterInstancedThisFrame(drawIdx))
                 view->submitShadowCaster(draw);
+            // Glass casts through the tint map instead of the moments:
+            // a softer shadow, tinted when the glass is colored.
+            if (shadowRender && isTriangle(draw)
+                    && (draw.material.shadowstyle & 1)
+                    && glassActive && draw.material.glass)
+                view->submitShadowTint(draw);
             if (!cullDraw)
                 submitSceneOutline(draw);
         }

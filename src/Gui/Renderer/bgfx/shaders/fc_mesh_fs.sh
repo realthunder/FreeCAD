@@ -41,6 +41,11 @@ SAMPLERCUBE(s_texEnv, 1);
 // map uv (xy) + light window depth (z). u_lightColor.rgb carries the
 // light color premultiplied by its intensity.
 SAMPLER2D(s_texShadow, 3);
+// Shadow tint map: per-channel transmittance of glass casters rendered
+// from the light camera (white where no glass blocks the light). It
+// multiplies the direct scene-light term beside the variance shadow
+// factor, so glass casts a softer shadow, tinted when colored.
+SAMPLER2D(s_texShadowTint, 7);
 uniform vec4 u_shadowParams;
 uniform vec4 u_lightDir;
 // Spot light position in view space; w = cos of the cone cutoff for a
@@ -231,8 +236,10 @@ void main()
 
 	// Variance shadow map factor of the scene light (Chebyshev upper
 	// bound with light-bleed reduction); fragments outside the map stay
-	// lit. Only attenuates the direct light term below.
+	// lit. Only attenuates the direct light term below. The tint map
+	// adds the per-channel glass-caster transmittance.
 	float shadow = 1.0;
+	vec3 shadowTint = vec3_splat(1.0);
 	if (u_shadowParams.x > 0.5)
 	{
 		vec4 sp = mul(u_shadowMatrix, vec4(v_vpos, 1.0));
@@ -258,6 +265,7 @@ void main()
 		if (sp.x > 0.0 && sp.x < 1.0 && sp.y > 0.0 && sp.y < 1.0
 		    && sp.z > 0.0 && sp.z < 1.0)
 		{
+			shadowTint = texture2D(s_texShadowTint, sp.xy).rgb;
 			if (u_evsm.w > 0.5 && u_evsm.z > 0.0)
 			{
 				// Coin's N-tap spread kernel (ShadowSpreadSize
@@ -409,7 +417,7 @@ void main()
 					       * vdh);
 				direct += (kd * 0.31830989
 						+ F * min(D * vis, 4.0))
-					* u_lightColor.rgb
+					* u_lightColor.rgb * shadowTint
 					* (ndl * 1.2 * shadow);
 			}
 
@@ -470,10 +478,11 @@ void main()
 			float hspec = pow(max(abs(n.z), 0.0), shininess);
 
 			color = base.rgb * (vec3_splat(0.2 * occ + 0.8 * hdl)
-					+ u_lightColor.rgb * (ndl * shadow))
+					+ u_lightColor.rgb * shadowTint
+						* (ndl * shadow))
 				+ u_matSpecular.rgb * (hspec * 0.75)
 				+ u_matSpecular.rgb * u_lightColor.rgb
-					* (spec * 0.75 * shadow);
+					* shadowTint * (spec * 0.75 * shadow);
 		}
 		else
 		{
