@@ -1200,16 +1200,32 @@ independent of each other; item 4 builds on item 3's property model.
     transparent-bucket geometry behind glass is occluded (the surface
     draws opaque with depth, the water-surface limitation); glass in
     front of a water surface refracts the pre-water scene copy.
-  - **`Render_Cloud`** (+density, +detail scale, +drift speed): a
-    volumetric medium like the water body — front/back depth targets
-    bound the raymarch interval — but with procedural FBM density
-    modulating the sigma per step and a Henyey–Greenstein phase folded
-    into the existing shadow-map-gated inscatter; the animation clock
-    drifts the noise domain. Requires generalizing the current
-    single-body water interval to per-body medium slots (the known
-    single-appearance limitation) — worth doing once for
-    water+cloud+fire together: a small array of medium intervals per
-    pixel, or one interval pair per medium kind.
+  - **`Render_Cloud`** *(first cut done 2026-07)*
+    (+`Render_CloudDensity` <= 0 = auto 6/diag, +`Render_CloudDetail`
+    <= 0 = auto 4/diag, +`Render_CloudSpeed` drift multiplier): a
+    volumetric medium like the water body, taking the cheaper
+    "one interval pair per medium kind" slot generalization — its own
+    `ViewCloudFront`/`Back` full-res depth target pair beside the
+    water and glass pairs. The body geometry (fills and feature lines,
+    matched by object key) is not rendered at all; the raymarch swaps
+    a drifting 3-octave value-noise FBM density
+    (`smoothstep(0.4, 0.75, fbm)`, world-frame domain via `u_invView`)
+    over the cloud stretch with a Henyey–Greenstein forward phase
+    (g = 0.35), reduced eye-ward extinction (0.6) plus an unshadowed
+    ambient floor (0.25) — the usual cheap multiple-scattering
+    stand-ins that keep the cloud bright — and an interval-edge fade
+    (20%) softening the body's box silhouette. The extinction pass
+    runs a matching 8-step FBM sub-march so surfaces darken
+    consistently through the cloud. Needs Volumetric + Shadow active
+    (like the water medium); the drift rides the shared animation
+    clock. Per-object rows in the render settings panel. Verified on
+    llvmpipe: puffy drifting wisps replace the body, baseline flag off
+    renders the plain solid, two frozen times differ only in the cloud
+    footprint, no-cloud volumetric scenes bit-identical. Gaps: no
+    self-shadowing (the cloud is not an EVSM caster, so it is lit
+    throughout); single shared appearance per frame (first body wins);
+    per-body medium slot arrays still future work if overlapping
+    mixed media are wanted.
   - **`Render_Fire`** (+intensity, +speed, +color ramp): an emissive
     medium — same bounded raymarch but accumulating a blackbody-style
     color ramp weighted by animated rising FBM noise (domain scrolled
