@@ -59,6 +59,34 @@ static bool s_dragging = false;
 static bool s_panning = false;
 static int s_lastX = 0, s_lastY = 0;
 
+// Progressive refinement (the Fusion 360 pattern): camera interaction
+// drops MSAA and SSAO for cheap frames, idle restores them. The MSAA
+// flip re-creates the render targets on the next render()
+// (BGFXRenderer::setMSAASamples).
+static const double kRefineDelayMs = 300.0;
+static const int kFullMSAA = 4;
+static double s_lastInteract = -1e9;
+static bool s_degraded = false;
+
+static void interact()
+{
+    s_lastInteract = emscripten_get_now();
+}
+
+static void updateQuality()
+{
+    const bool moving =
+        emscripten_get_now() - s_lastInteract < kRefineDelayMs;
+    if (moving == s_degraded)
+        return;
+    s_degraded = moving;
+    Render::BGFXRenderer::setMSAASamples(moving ? 0 : kFullMSAA);
+    Render::AOConfig ao = s_snap.aoconf;
+    if (moving)
+        ao.enabled = false;
+    s_renderer->setAOConfig(ao);
+}
+
 static void buildCamera(float *viewMtx, float *projMtx)
 {
     const float cp = std::cos(s_pitch), sp = std::sin(s_pitch);
@@ -99,6 +127,8 @@ static void mainLoop()
         Render::BGFXRenderer::setWindowSize(iw, ih);
     }
 
+    updateQuality();
+
     float viewMtx[16], projMtx[16];
     buildCamera(viewMtx, projMtx);
     QColor bg((s_snap.clearColor >> 24) & 0xff,
@@ -126,6 +156,7 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
 {
     if (!s_dragging)
         return EM_FALSE;
+    interact();
     int dx = int(e->clientX) - s_lastX;
     int dy = int(e->clientY) - s_lastY;
     s_lastX = int(e->clientX);
@@ -146,6 +177,7 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
 
 static EM_BOOL onWheel(int, const EmscriptenWheelEvent *e, void *)
 {
+    interact();
     s_dist *= e->deltaY > 0 ? 1.1f : (1.0f / 1.1f);
     s_dist = bx::clamp(s_dist, 0.01f * s_diag, 50.0f * s_diag);
     return EM_TRUE;
@@ -180,6 +212,7 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
     }
 
     if (type == EMSCRIPTEN_EVENT_TOUCHMOVE && n == s_numTouch) {
+        interact();
         if (n == 1) {
             s_yaw -= (x[0] - s_touchX[0]) * 0.01f;
             s_pitch = bx::clamp(s_pitch + (y[0] - s_touchY[0]) * 0.01f,
@@ -234,7 +267,10 @@ static void applySnapshot(bool fit)
     s_renderer->setBackground(s_snap.background);
     s_renderer->setHiddenLineConfig(s_snap.hlconfig);
     s_renderer->setSectionConfig(s_snap.secconf);
-    s_renderer->setAOConfig(s_snap.aoconf);
+    Render::AOConfig ao = s_snap.aoconf;
+    if (s_degraded)
+        ao.enabled = false;
+    s_renderer->setAOConfig(ao);
     s_renderer->setPBRConfig(s_snap.pbrconf);
     s_renderer->setBumpConfig(s_snap.bumpconf);
     s_renderer->setLightConfig(s_snap.lightconf);
