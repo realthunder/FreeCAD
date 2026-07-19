@@ -1033,6 +1033,25 @@ independent of each other; item 4 builds on item 3's property model.
   culled) and zoomed-past scenes, and in the Link-array instancing +
   shadow scene where the caster instanced submit keeps n=6 while the
   color submit thins to the visible members.
+- **Import-time shape dedup / instancing recovery** (planned, not
+  started): make imported duplicates *actually share a TShape* instead
+  of deduping their bytes downstream. Rationale (2026-07 analysis): the
+  backend already content-hash-dedups GPU buffers and batches
+  byte-identical caches, but that only catches duplicates tessellated
+  in identical local frames — STEP-style imports bake placements into
+  the coordinates, so no byte-level dedup at any layer can help, and a
+  CPU-side content-hash table in the vertex caches was rejected (saves
+  memory only after tessellating both copies, no time win, hard
+  ownership/invalidation in Coin, and the OCCT triangulation+B-Rep copy
+  per object stays either way). Import-time dedup fixes all layers at
+  once: recognize equal shapes at read time (preserve instancing where
+  the format has it, as the glTF reader already does; otherwise
+  canonicalize placement out and hash/compare the located-free B-Rep)
+  and emit one shared shape + per-instance placements (App::Link or
+  compound-of-located-instances) — then the TShape instancing table,
+  the shared vertex caches, the GPU table and the instanced submits all
+  apply, including the tessellation-time win no post-hoc dedup can
+  give.
 - WASM build of the renderer; progressive refinement (drop AA/AO during
   camera motion, refine on idle — the Fusion 360 pattern).
 - SSR (optional), GTAO, TAA where compute is available.
