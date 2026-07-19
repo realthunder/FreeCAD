@@ -1053,7 +1053,40 @@ independent of each other; item 4 builds on item 3's property model.
   apply, including the tessellation-time win no post-hoc dedup can
   give.
 - WASM build of the renderer; progressive refinement (drop AA/AO during
-  camera motion, refine on idle — the Fusion 360 pattern).
+  camera motion, refine on idle — the Fusion 360 pattern). *First cut
+  done (2026-07): standalone Emscripten viewer.* The renderer core
+  (`Renderer.cpp` + `BGFXRenderer.cpp`) compiles Qt-free under a new
+  `FC_RENDERER_STANDALONE` switch — `StandalonePlatform.h/cpp` supplies
+  the minimal QColor/log/loadProgram stand-ins, bgfx owns the WebGL2
+  context on the canvas (`BGFXRenderer::setWindowHandle("#canvas")` +
+  `setWindowSize`), and a new `ViewPresent` pass copies the offscreen
+  scene color onto the default backbuffer in place of the desktop GL
+  blit (single-sample first cut, no MSAA). The scene feed crosses over
+  as a **binary snapshot** (`SceneDump.h/cpp`, versioned little-endian):
+  `FC_BGFX_DUMP_SCENE=<path>` on the desktop captures the first
+  non-empty feed — draw calls with mesh/texture tables, every per-frame
+  config, hatch image, camera — and the wasm viewer
+  (`src/Gui/Renderer/wasm/`, `emcmake cmake` + Ninja, preloads the essl
+  shader pack and optionally the snapshot) replays it through the same
+  `setScene`/config API with an orbit/pan/zoom camera
+  (**right-handed** bx camera — the bx default left-handed lookAt
+  renders geometry fine but silently breaks every view-space shading
+  assumption; symptom was ambient-dark fills). The shader set gained an
+  `essl` flavor (`compile.sh` → `-p 300_es --platform asm.js`, all 57
+  compile clean). Two vendored-bgfx fixes on the way: the GLES3 runtime
+  patcher only recognized the `bgfx_FragData[N]` array form, so
+  shaderc-essl's scalar `bgfx_FragData0` output got an extra injected
+  `bgfx_FragColor` (WebGL2 rejects two unqualified outputs), and
+  glsl-optimizer's GLES2 `*LodEXT` calls needed ES3 `textureLod`
+  aliases; plus bx's cmake x86 probe passing `-msse4.2` under
+  Emscripten (clang ICE — scalar simd fallback). Verified in headless
+  Chromium (SwiftShader): box+cylinder snapshot renders the FreeCAD
+  look — headlight shading, CAD edges, gradient background — orbit and
+  zoom respond, a 50%-transparent body composites through WBOIT; the
+  desktop path is regression-checked (readback pixel count bit-equal
+  pre/post, glsl/spirv bins byte-identical). Not yet ported: MSAA in
+  the present path, selection/highlight feeds, live geometry streaming
+  (snapshots only), touch input, progressive refinement.
 - SSR (optional), GTAO, TAA where compute is available.
 - **Displacement mapping** (true geometric displacement, beyond Phase 2's
   parallax illusion): vertex-shader height sampling where
