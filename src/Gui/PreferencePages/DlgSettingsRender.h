@@ -104,6 +104,13 @@ private:
     Gui::PrefDoubleSpinBox *VolumetricIntensity = nullptr;
     QLabel *labelVolumetricDensity = nullptr;
     Gui::PrefDoubleSpinBox *VolumetricDensity = nullptr;
+    Gui::PrefCheckBox *Caustics = nullptr;
+    QLabel *labelCausticsIntensity = nullptr;
+    Gui::PrefDoubleSpinBox *CausticsIntensity = nullptr;
+    QLabel *labelCausticsScale = nullptr;
+    Gui::PrefDoubleSpinBox *CausticsScale = nullptr;
+    QLabel *labelCausticsSpeed = nullptr;
+    Gui::PrefDoubleSpinBox *CausticsSpeed = nullptr;
 // Auto generated code (Tools/params_utils.py:573)
 };
 } // namespace Dialog

@@ -62,6 +62,10 @@ public:
     bool Volumetric;
     double VolumetricIntensity;
     double VolumetricDensity;
+    bool Caustics;
+    double CausticsIntensity;
+    double CausticsScale;
+    double CausticsSpeed;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -94,6 +98,14 @@ public:
         funcs["VolumetricIntensity"] = &RenderParamsP::updateVolumetricIntensity;
         VolumetricDensity = this->handle->GetFloat("VolumetricDensity", 0.0);
         funcs["VolumetricDensity"] = &RenderParamsP::updateVolumetricDensity;
+        Caustics = this->handle->GetBool("Caustics", false);
+        funcs["Caustics"] = &RenderParamsP::updateCaustics;
+        CausticsIntensity = this->handle->GetFloat("CausticsIntensity", 1.0);
+        funcs["CausticsIntensity"] = &RenderParamsP::updateCausticsIntensity;
+        CausticsScale = this->handle->GetFloat("CausticsScale", 0.0);
+        funcs["CausticsScale"] = &RenderParamsP::updateCausticsScale;
+        CausticsSpeed = this->handle->GetFloat("CausticsSpeed", 1.0);
+        funcs["CausticsSpeed"] = &RenderParamsP::updateCausticsSpeed;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -165,6 +177,22 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateVolumetricDensity(RenderParamsP *self) {
         self->VolumetricDensity = self->handle->GetFloat("VolumetricDensity", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCaustics(RenderParamsP *self) {
+        self->Caustics = self->handle->GetBool("Caustics", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCausticsIntensity(RenderParamsP *self) {
+        self->CausticsIntensity = self->handle->GetFloat("CausticsIntensity", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCausticsScale(RenderParamsP *self) {
+        self->CausticsScale = self->handle->GetFloat("CausticsScale", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCausticsSpeed(RenderParamsP *self) {
+        self->CausticsSpeed = self->handle->GetFloat("CausticsSpeed", 1.0);
     }
 };
 
@@ -559,6 +587,122 @@ void RenderParams::setVolumetricDensity(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeVolumetricDensity() {
     instance()->handle->RemoveFloat("VolumetricDensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCaustics() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Project an animated caustic light pattern onto surfaces\n"
+"below the water body (objects with the Render_Water property),\n"
+"modulated by the shadow map. Only effective while volumetric\n"
+"lighting and the Shadow draw style are active.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getCaustics() {
+    return instance()->Caustics;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultCaustics() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCaustics(const bool &v) {
+    instance()->handle->SetBool("Caustics",v);
+    instance()->Caustics = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCaustics() {
+    instance()->handle->RemoveBool("Caustics");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCausticsIntensity() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Brightness of the projected caustic pattern.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getCausticsIntensity() {
+    return instance()->CausticsIntensity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultCausticsIntensity() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCausticsIntensity(const double &v) {
+    instance()->handle->SetFloat("CausticsIntensity",v);
+    instance()->CausticsIntensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCausticsIntensity() {
+    instance()->handle->RemoveFloat("CausticsIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCausticsScale() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Caustic pattern cell frequency in inverse world units.\n"
+"Zero means automatic (a fraction of the water body size).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getCausticsScale() {
+    return instance()->CausticsScale;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultCausticsScale() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCausticsScale(const double &v) {
+    instance()->handle->SetFloat("CausticsScale",v);
+    instance()->CausticsScale = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCausticsScale() {
+    instance()->handle->RemoveFloat("CausticsScale");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCausticsSpeed() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Animation speed of the caustic pattern; zero freezes it.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getCausticsSpeed() {
+    return instance()->CausticsSpeed;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultCausticsSpeed() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCausticsSpeed(const double &v) {
+    instance()->handle->SetFloat("CausticsSpeed",v);
+    instance()->CausticsSpeed = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCausticsSpeed() {
+    instance()->handle->RemoveFloat("CausticsSpeed");
 }
 //[[[end]]]
 

@@ -67,6 +67,10 @@ ParamGroup = (
         'Volumetric',
         'VolumetricIntensity',
         'VolumetricDensity',
+        'Caustics',
+        'CausticsIntensity',
+        'CausticsScale',
+        'CausticsSpeed',
     )]),
 )
 

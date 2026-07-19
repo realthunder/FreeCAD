@@ -983,6 +983,17 @@ RendererBridge::translateVolumetricConfig(View3DInventor * view)
     res.density = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "VolumetricDensity",
             RenderParams::getVolumetricDensity()));
+    res.caustics = viewParamOverride<App::PropertyBool>(
+            view, "Render", "Caustics", RenderParams::getCaustics());
+    res.causticsIntensity = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "CausticsIntensity",
+            RenderParams::getCausticsIntensity()));
+    res.causticsScale = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "CausticsScale",
+            RenderParams::getCausticsScale()));
+    res.causticsSpeed = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "CausticsSpeed",
+            RenderParams::getCausticsSpeed()));
     return res;
 }
 

@@ -3275,6 +3275,17 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "VolumetricDensity",
             RenderParams::docVolumetricDensity(),
             RenderParams::getVolumetricDensity());
+    _renderParam<App::PropertyBool>(view, "Caustics",
+            RenderParams::docCaustics(), RenderParams::getCaustics());
+    _renderParam<App::PropertyFloat>(view, "CausticsIntensity",
+            RenderParams::docCausticsIntensity(),
+            RenderParams::getCausticsIntensity());
+    _renderParam<App::PropertyFloat>(view, "CausticsScale",
+            RenderParams::docCausticsScale(),
+            RenderParams::getCausticsScale());
+    _renderParam<App::PropertyFloat>(view, "CausticsSpeed",
+            RenderParams::docCausticsSpeed(),
+            RenderParams::getCausticsSpeed());
 }
 
 // #define ENABLE_GL_DEPTH_RANGE
@@ -3338,6 +3349,10 @@ void View3DInventorViewer::renderScene()
         _pimpl->renderer->setBackground(rbg);
         externalRendered =
             _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
+        // Time-animated backend content (e.g. water caustics) keeps
+        // advancing by itself: schedule the follow-up frame.
+        if (externalRendered && _pimpl->renderer->animating())
+            getSoRenderManager()->scheduleRedraw();
         if (!externalRendered) {
             // Backend failed this frame. Clear like the plain GL path so the
             // fixed-function renderer (not skipped in this case) draws on a

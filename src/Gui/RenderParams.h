@@ -239,6 +239,58 @@ public:
     static void setVolumetricDensity(const double &v);
     static const char *docVolumetricDensity();
     //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Caustics
+    ///
+    /// Project an animated caustic light pattern onto surfaces
+    /// below the water body (objects with the Render_Water property),
+    /// modulated by the shadow map. Only effective while volumetric
+    /// lighting and the Shadow draw style are active.
+    static const bool & getCaustics();
+    static const bool & defaultCaustics();
+    static void removeCaustics();
+    static void setCaustics(const bool &v);
+    static const char *docCaustics();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CausticsIntensity
+    ///
+    /// Brightness of the projected caustic pattern.
+    static const double & getCausticsIntensity();
+    static const double & defaultCausticsIntensity();
+    static void removeCausticsIntensity();
+    static void setCausticsIntensity(const double &v);
+    static const char *docCausticsIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CausticsScale
+    ///
+    /// Caustic pattern cell frequency in inverse world units.
+    /// Zero means automatic (a fraction of the water body size).
+    static const double & getCausticsScale();
+    static const double & defaultCausticsScale();
+    static void removeCausticsScale();
+    static void setCausticsScale(const double &v);
+    static const char *docCausticsScale();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CausticsSpeed
+    ///
+    /// Animation speed of the caustic pattern; zero freezes it.
+    static const double & getCausticsSpeed();
+    static const double & defaultCausticsSpeed();
+    static void removeCausticsSpeed();
+    static void setCausticsSpeed(const double &v);
+    static const char *docCausticsSpeed();
+    //@}
 //[[[end]]]
 
     /// Called on any parameter change: re-selects the renderer backend on

@@ -85,6 +85,18 @@ Params = [
     ParamFloat('VolumetricDensity',  0.0, title='Medium density',
         doc="Scattering medium density in inverse world units.\n"
         "Zero means automatic (a fraction of the scene size)."),
+    ParamBool('Caustics',  False, title='Water caustics',
+        doc="Project an animated caustic light pattern onto surfaces\n"
+        "below the water body (objects with the Render_Water property),\n"
+        "modulated by the shadow map. Only effective while volumetric\n"
+        "lighting and the Shadow draw style are active."),
+    ParamFloat('CausticsIntensity',  1.0, title='Caustics intensity',
+        doc="Brightness of the projected caustic pattern."),
+    ParamFloat('CausticsScale',  0.0, title='Caustics scale',
+        doc="Caustic pattern cell frequency in inverse world units.\n"
+        "Zero means automatic (a fraction of the water body size)."),
+    ParamFloat('CausticsSpeed',  1.0, title='Caustics speed',
+        doc="Animation speed of the caustic pattern; zero freezes it."),
 ]
 
 def declare_begin():

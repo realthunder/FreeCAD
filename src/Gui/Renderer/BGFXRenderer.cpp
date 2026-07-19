@@ -41,6 +41,7 @@
 # endif
 #endif
 
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -1110,6 +1111,11 @@ public:
                             // (after all opaque geometry so the depth
                             // test sees the whole scene, before the
                             // transparent bucket blends over them)
+        ViewCaustics,       // fullscreen additive water caustics splat
+                            // over the prepass surfaces inside the water
+                            // interval — before the volumetric apply so
+                            // the extinction multiply absorbs the
+                            // caustic light on its way to the eye
         ViewVolApply,       // fullscreen bilateral upsample of the
                             // half-res inscatter, composited onto the
                             // opaque scene before the transparent bucket
@@ -1180,7 +1186,7 @@ public:
         }
         for (auto uni : {&s_texVol, &u_volParams, &u_volMedium,
                          &u_volTexel, &s_texWaterFront, &s_texWaterBack,
-                         &u_waterSigma}) {
+                         &u_waterSigma, &u_causticParams}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1189,7 +1195,8 @@ public:
         for (auto prog : {&m_progPrepass, &m_progPrepassClip,
                           &m_progPrepassInst, &m_progSsao,
                           &m_progSsaoBlur, &m_progSsaoApply,
-                          &m_progVol, &m_progVolApply, &m_progVolExt}) {
+                          &m_progVol, &m_progVolApply, &m_progVolExt,
+                          &m_progCaustics}) {
             if (bgfx::isValid(*prog)) {
                 bgfx::destroy(*prog);
                 *prog = BGFX_INVALID_HANDLE;
@@ -1872,6 +1879,12 @@ public:
                 "s_texWaterBack", bgfx::UniformType::Sampler);
             u_waterSigma = bgfx::createUniform("u_waterSigma",
                                                bgfx::UniformType::Vec4);
+            // Water caustics: a fullscreen light-space pattern splat
+            // over the prepass surfaces inside the water interval.
+            m_progCaustics = loadProgram("vs_fc_comp", "fs_fc_caustics",
+                                         _BGFXLib.resource().c_str());
+            u_causticParams = bgfx::createUniform(
+                "u_causticParams", bgfx::UniformType::Vec4);
         }
     }
 
@@ -3172,6 +3185,38 @@ public:
                                            BGFX_STATE_BLEND_ONE));
     }
 
+    /// Water caustics splat: additive fullscreen pass over the prepass
+    /// surfaces inside the water body interval, in its own view before
+    /// the volumetric apply (the extinction multiply then absorbs the
+    /// caustic light over the eye-ward underwater path). The light /
+    /// shadow / water uniforms match the raymarch; u_volParams.w flags
+    /// the water span helper active.
+    void submitCaustics(float intensity, float scale, float time,
+                        const float waterSigma[4])
+    {
+        float params[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        bgfx::setUniform(u_volParams, params);
+        bgfx::setUniform(u_waterSigma, waterSigma);
+        bgfx::setUniform(u_lightColor, lightColorI);
+        float lightDir[4] = {lightDirView[0], lightDirView[1],
+                             lightDirView[2], 1.0f};
+        bgfx::setUniform(u_lightDir, lightDir);
+        bgfx::setUniform(u_lightPos, lightPosView);
+        float evsm[4] = {shadowWarpFrame, shadowThreshold, 0.0f, 0.0f};
+        bgfx::setUniform(u_evsm, evsm);
+        bgfx::setUniform(u_shadowMatrix, shadowMtx);
+        float cparams[4] = {intensity, scale, time, 0.0f};
+        bgfx::setUniform(u_causticParams, cparams);
+        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
+        bgfx::setTexture(1, s_texShadow, shadowTex);
+        bgfx::setTexture(2, s_texWaterFront, waterFrontTex);
+        bgfx::setTexture(3, s_texWaterBack, waterBackTex);
+        fullscreen(ViewCaustics, m_progCaustics,
+                   BGFX_STATE_WRITE_RGB
+                   | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
+                                           BGFX_STATE_BLEND_ONE));
+    }
+
     // Submission passes mirroring SoFCRenderer's delayed render loop.
     enum SubmitPass {
         PassNormal = 0,
@@ -4132,9 +4177,11 @@ public:
     bgfx::ProgramHandle m_progVol = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolApply = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolExt = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progCaustics = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texVol = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_volParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_volMedium = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_causticParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_volTexel = BGFX_INVALID_HANDLE;
     // Water medium: front/back depth targets of water body draws
     // (prepass shader family) bounding the underwater ray stretch.
@@ -4570,21 +4617,24 @@ public:
         // differing bodies).
         bool waterActive = false;
         float waterSigma[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float waterDiag = 0.0f;
         if (volActive) {
             for (const auto &draw : scene) {
                 const auto &mat = draw.material;
                 if (!mat.water || mat.ontop
                         || mat.type != Render::Material::Triangle)
                     continue;
-                float dens = mat.waterdensity;
-                if (dens <= 0.0f) {
+                {
                     float dx = draw.bboxMax[0] - draw.bboxMin[0];
                     float dy = draw.bboxMax[1] - draw.bboxMin[1];
                     float dz = draw.bboxMax[2] - draw.bboxMin[2];
-                    float diag = std::sqrt(dx*dx + dy*dy + dz*dz);
-                    if (diag <= 0.0f)
+                    waterDiag = std::sqrt(dx*dx + dy*dy + dz*dz);
+                }
+                float dens = mat.waterdensity;
+                if (dens <= 0.0f) {
+                    if (waterDiag <= 0.0f)
                         continue;
-                    dens = 3.0f / diag;
+                    dens = 3.0f / waterDiag;
                 }
                 float color[4];
                 unpackColor(mat.diffuse, color);
@@ -5313,6 +5363,36 @@ public:
             view->submitVolumetric(volDensity, volconf.intensity,
                                    volMaxDist, volMedium,
                                    waterActive, waterSigma);
+
+        // 1e. Water caustics: additive light-space pattern splat over
+        // the prepass surfaces inside the water interval, before the
+        // extinction multiply of the volumetric apply. Animation time
+        // from a steady clock (frozen by FC_BGFX_CAUSTIC_TIME for
+        // deterministic comparisons); animating() reports the state so
+        // the viewer keeps scheduling redraws.
+        animatedFrame = false;
+        if (waterActive && volconf.caustics) {
+            float scale = volconf.causticsScale;
+            if (scale <= 0.0f && waterDiag > 0.0f)
+                scale = 6.0f / waterDiag;
+            if (scale > 0.0f) {
+                float time = 0.0f;
+                static const char *fixedTime =
+                    getenv("FC_BGFX_CAUSTIC_TIME");
+                if (fixedTime) {
+                    time = float(atof(fixedTime));
+                } else if (volconf.causticsSpeed != 0.0f) {
+                    using clock = std::chrono::steady_clock;
+                    static const clock::time_point start = clock::now();
+                    time = std::chrono::duration<float>(
+                               clock::now() - start).count()
+                        * volconf.causticsSpeed;
+                    animatedFrame = true;
+                }
+                view->submitCaustics(volconf.causticsIntensity, scale,
+                                     time, waterSigma);
+            }
+        }
 
         // 2. Selection whole-object fills; positive ids are on-top
         // selections (SoFCRenderer::addSelection). Their lines/points are
@@ -6051,6 +6131,9 @@ public:
     bool hasScene = false;
     bool renderOk = false;
     bool bboxValid = false;
+    // The last rendered frame splatted animated water caustics: the
+    // viewer keeps redrawing while set so the animation advances.
+    bool animatedFrame = false;
     float bboxMin[3], bboxMax[3];
 };
 
@@ -6068,6 +6151,11 @@ bool BGFXRenderer::render(const QColor &col,
                           const void * projMatrix)
 {
     return pimpl->render(col, viewMatrix, projMatrix);
+}
+
+bool BGFXRenderer::animating() const
+{
+    return pimpl->animatedFrame;
 }
 
 bool BGFXRenderer::boundBox(float &xmin, float &ymin, float &zmin,

@@ -255,6 +255,56 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     VolumetricDensity->setValue(Gui::RenderParams::defaultVolumetricDensity());
     VolumetricDensity->setEntryName("VolumetricDensity");
     VolumetricDensity->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutVolumetriclighting->addLayout(layoutRow);
+    Caustics = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(Caustics);
+    Caustics->setChecked(Gui::RenderParams::defaultCaustics());
+    Caustics->setEntryName("Caustics");
+    Caustics->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutVolumetriclighting->addLayout(layoutRow);
+    labelCausticsIntensity = new QLabel(this);
+    layoutRow->addWidget(labelCausticsIntensity);
+    CausticsIntensity = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(CausticsIntensity);
+    CausticsIntensity->setValue(Gui::RenderParams::defaultCausticsIntensity());
+    CausticsIntensity->setEntryName("CausticsIntensity");
+    CausticsIntensity->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutVolumetriclighting->addLayout(layoutRow);
+    labelCausticsScale = new QLabel(this);
+    layoutRow->addWidget(labelCausticsScale);
+    CausticsScale = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(CausticsScale);
+    CausticsScale->setValue(Gui::RenderParams::defaultCausticsScale());
+    CausticsScale->setEntryName("CausticsScale");
+    CausticsScale->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutVolumetriclighting->addLayout(layoutRow);
+    labelCausticsSpeed = new QLabel(this);
+    layoutRow->addWidget(labelCausticsSpeed);
+    CausticsSpeed = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(CausticsSpeed);
+    CausticsSpeed->setValue(Gui::RenderParams::defaultCausticsSpeed());
+    CausticsSpeed->setEntryName("CausticsSpeed");
+    CausticsSpeed->setParamGrpPath("View/Render");
     layout->addItem(new QSpacerItem(40, 20, QSizePolicy::Fixed, QSizePolicy::Expanding));
     retranslateUi();
     // Auto generated code (Tools/params_utils.py:645)
@@ -284,6 +334,10 @@ void DlgSettingsRender::saveSettings()
     Volumetric->onSave();
     VolumetricIntensity->onSave();
     VolumetricDensity->onSave();
+    Caustics->onSave();
+    CausticsIntensity->onSave();
+    CausticsScale->onSave();
+    CausticsSpeed->onSave();
 }
 
 // Auto generated code (Tools/params_utils.py:670)
@@ -303,6 +357,10 @@ void DlgSettingsRender::loadSettings()
     Volumetric->onRestore();
     VolumetricIntensity->onRestore();
     VolumetricDensity->onRestore();
+    Caustics->onRestore();
+    CausticsIntensity->onRestore();
+    CausticsScale->onRestore();
+    CausticsSpeed->onRestore();
 }
 
 // Auto generated code (Tools/params_utils.py:679)
@@ -349,6 +407,17 @@ void DlgSettingsRender::retranslateUi()
     VolumetricDensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docVolumetricDensity()));
     labelVolumetricDensity->setText(QObject::tr("Medium density"));
     labelVolumetricDensity->setToolTip(VolumetricDensity->toolTip());
+    Caustics->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCaustics()));
+    Caustics->setText(QObject::tr("Water caustics"));
+    CausticsIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCausticsIntensity()));
+    labelCausticsIntensity->setText(QObject::tr("Caustics intensity"));
+    labelCausticsIntensity->setToolTip(CausticsIntensity->toolTip());
+    CausticsScale->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCausticsScale()));
+    labelCausticsScale->setText(QObject::tr("Caustics scale"));
+    labelCausticsScale->setToolTip(CausticsScale->toolTip());
+    CausticsSpeed->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCausticsSpeed()));
+    labelCausticsSpeed->setText(QObject::tr("Caustics speed"));
+    labelCausticsSpeed->setToolTip(CausticsSpeed->toolTip());
 }
 
 // Auto generated code (Tools/params_utils.py:697)

@@ -50,6 +50,7 @@ public:
                         const void *projMatrix) override;
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) override;
+    virtual bool animating() const override;
 
     virtual void setScene(DrawCallList &&draws) override;
     virtual void setBackground(const Background &bg) override;

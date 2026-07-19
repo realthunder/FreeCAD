@@ -324,10 +324,24 @@ struct VolumetricConfig {
     /// 0 = automatic (a fraction of the scene size, resolved by the
     /// backend).
     float density = 0.0f;
+    /// Water caustics: while a water body is active, project an animated
+    /// caustic light pattern (modulated by the shadow map) onto surfaces
+    /// below the water surface.
+    bool caustics = false;
+    float causticsIntensity = 1.0f; ///< caustic pattern brightness
+    /// Caustic pattern cell frequency in inverse world units; 0 =
+    /// automatic (a fraction of the water body size, resolved by the
+    /// backend).
+    float causticsScale = 0.0f;
+    /// Caustic animation speed; 0 freezes the pattern.
+    float causticsSpeed = 1.0f;
 
     bool operator==(const VolumetricConfig &o) const {
         return enabled == o.enabled && intensity == o.intensity
-            && density == o.density;
+            && density == o.density && caustics == o.caustics
+            && causticsIntensity == o.causticsIntensity
+            && causticsScale == o.causticsScale
+            && causticsSpeed == o.causticsSpeed;
     }
     bool operator!=(const VolumetricConfig &o) const { return !(*this == o); }
 };
@@ -548,6 +562,11 @@ public:
                         const void *projMatrix) = 0;
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) = 0;
+
+    /// Whether the frame just rendered contains time-animated content
+    /// (e.g. water caustics): the viewer keeps scheduling redraws while
+    /// this returns true, so the animation advances without user input.
+    virtual bool animating() const { return false; }
 
     /// Global hint whether the active backend supports GPU-instanced
     /// draws. Geometry producers (e.g. the Part tessellation) consult it
