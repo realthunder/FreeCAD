@@ -1258,13 +1258,14 @@ public:
                          &u_cloudParams,
                          &s_texFireFront, &s_texFireBack,
                          &u_fireParams, &u_fireParams2,
-                         &u_fireFrame}) {
+                         &u_fireFrame, &u_mediumSlot}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
             }
         }
         for (auto prog : {&m_progPrepass, &m_progPrepassClip,
+                          &m_progMedDepth, &m_progMedDepthClip,
                           &m_progPrepassInst, &m_progSsao,
                           &m_progSsaoBlur, &m_progSsaoApply,
                           &m_progVol, &m_progVolApply, &m_progVolExt,
@@ -1710,9 +1711,11 @@ public:
                                              bgfx::UniformType::Mat4);
         u_evsm = bgfx::createUniform("u_evsm", bgfx::UniformType::Vec4);
         u_fireLight = bgfx::createUniform("u_fireLight",
-                                          bgfx::UniformType::Vec4);
+                                          bgfx::UniformType::Vec4,
+                                          kMediumSlots);
         u_fireLightColor = bgfx::createUniform("u_fireLightColor",
-                                               bgfx::UniformType::Vec4);
+                                               bgfx::UniformType::Vec4,
+                                               kMediumSlots);
         // EVSM: the moments store an exponential warp of the light
         // window depth (exp(c z), exp(c z)^2), which curbs VSM's light
         // bleeding at overlapping occluders. RG32F carries the classic
@@ -1880,6 +1883,16 @@ public:
             m_progPrepassClip = loadProgram("vs_fc_prepass_clip",
                                             "fs_fc_prepass_clip",
                                             _BGFXLib.resource().c_str());
+            // Medium interval depth writers: prepass layout with the
+            // body's appearance slot in .x.
+            m_progMedDepth = loadProgram("vs_fc_prepass",
+                                         "fs_fc_meddepth",
+                                         _BGFXLib.resource().c_str());
+            m_progMedDepthClip = loadProgram("vs_fc_prepass_clip",
+                                             "fs_fc_meddepth_clip",
+                                             _BGFXLib.resource().c_str());
+            u_mediumSlot = bgfx::createUniform("u_mediumSlot",
+                                               bgfx::UniformType::Vec4);
             if (m_instancing)
                 m_progPrepassInst = loadProgram("vs_fc_prepass_inst",
                                                 "fs_fc_prepass",
@@ -2003,13 +2016,15 @@ public:
             s_texWaterBack = bgfx::createUniform(
                 "s_texWaterBack", bgfx::UniformType::Sampler);
             u_waterSigma = bgfx::createUniform("u_waterSigma",
-                                               bgfx::UniformType::Vec4);
+                                               bgfx::UniformType::Vec4,
+                                               kMediumSlots);
             // Water caustics: a fullscreen light-space pattern splat
             // over the prepass surfaces inside the water interval.
             m_progCaustics = loadProgram("vs_fc_comp", "fs_fc_caustics",
                                          _BGFXLib.resource().c_str());
             u_causticParams = bgfx::createUniform(
-                "u_causticParams", bgfx::UniformType::Vec4);
+                "u_causticParams", bgfx::UniformType::Vec4,
+                kMediumSlots);
             // Cloud body medium: its own front/back interval pair (the
             // per-medium-kind slot scheme), FBM density in the
             // raymarch.
@@ -2032,7 +2047,8 @@ public:
             s_texCloudBack = bgfx::createUniform(
                 "s_texCloudBack", bgfx::UniformType::Sampler);
             u_cloudParams = bgfx::createUniform("u_cloudParams",
-                                                bgfx::UniformType::Vec4);
+                                                bgfx::UniformType::Vec4,
+                                                kMediumSlots);
             // Fire body medium: its own front/back interval pair (the
             // per-medium-kind slot scheme), emissive FBM flame in the
             // raymarch.
@@ -2055,11 +2071,14 @@ public:
             s_texFireBack = bgfx::createUniform(
                 "s_texFireBack", bgfx::UniformType::Sampler);
             u_fireParams = bgfx::createUniform("u_fireParams",
-                                               bgfx::UniformType::Vec4);
+                                               bgfx::UniformType::Vec4,
+                                               kMediumSlots);
             u_fireParams2 = bgfx::createUniform("u_fireParams2",
-                                                bgfx::UniformType::Vec4);
+                                                bgfx::UniformType::Vec4,
+                                                kMediumSlots);
             u_fireFrame = bgfx::createUniform("u_fireFrame",
-                                              bgfx::UniformType::Mat4);
+                                              bgfx::UniformType::Mat4,
+                                              kMediumSlots);
         }
 
         // Water surface refraction: the scene color copies into a
@@ -3294,13 +3313,14 @@ public:
     }
 
     /// Rasterize a water/glass/cloud body draw into one of its interval
-    /// depth targets (the prepass programs write the linear view depth
-    /// in .z): front faces with the nearest depth = interval entry,
-    /// back faces with the farthest = interval exit. Culling is forced
-    /// by face side whatever the material's two-sidedness. kind: 0 =
-    /// water, 1 = glass, 2 = cloud, 3 = fire.
+    /// depth targets (the meddepth programs write the linear view depth
+    /// in .z and the body's appearance slot in .x): front faces with
+    /// the nearest depth = interval entry, back faces with the farthest
+    /// = interval exit. Culling is forced by face side whatever the
+    /// material's two-sidedness. kind: 0 = water, 1 = glass, 2 =
+    /// cloud, 3 = fire.
     void submitWaterDepth(const Render::DrawCall &draw, bool back,
-                          int kind = 0)
+                          int kind = 0, int slot = 0)
     {
         if (!draw.mesh || !draw.mesh->triangleIndices)
             return;
@@ -3333,8 +3353,15 @@ public:
             : kind == 2 ? (back ? ViewCloudBack : ViewCloudFront)
             : kind == 3 ? (back ? ViewFireBack : ViewFireFront)
                         : (back ? ViewWaterBack : ViewWaterFront);
+        float slotv[4] = {float(slot), 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_mediumSlot, slotv);
+        if (getenv("FC_BGFX_DEBUG_SUBMIT"))
+            fprintf(stderr,
+                    "bgfx meddepth kind=%d back=%d slot=%d key=%llx\n",
+                    kind, back, slot,
+                    (unsigned long long)draw.objectKey);
         bgfx::submit(viewId + pass,
-                     clipped ? m_progPrepassClip : m_progPrepass);
+                     clipped ? m_progMedDepthClip : m_progMedDepth);
         ++drawcount;
     }
 
@@ -3414,22 +3441,23 @@ public:
     /// add: dst = inscatter + transmittance * scene.
     void submitVolumetric(float density, float intensity, float maxDist,
                           const float medium[4], bool water,
-                          const float waterSigma[4],
-                          const float cloudParams[4],
-                          const float fireParams[4],
-                          const float fireParams2[4],
-                          const float fireFrame[16])
+                          const float waterSigma[][4],
+                          const float cloudParams[][4],
+                          const float fireParams[][4],
+                          const float fireParams2[][4],
+                          const float fireFrames[][16])
     {
-        static const float noSigma[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        static const float noSigma[kMediumSlots][4] = {};
         float params[4] = {density, intensity, maxDist,
                            water ? 1.0f : 0.0f};
         bgfx::setUniform(u_volParams, params);
         bgfx::setUniform(u_volMedium, medium);
-        bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma);
-        bgfx::setUniform(u_cloudParams, cloudParams);
-        bgfx::setUniform(u_fireParams, fireParams);
-        bgfx::setUniform(u_fireParams2, fireParams2);
-        bgfx::setUniform(u_fireFrame, fireFrame);
+        bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma,
+                         kMediumSlots);
+        bgfx::setUniform(u_cloudParams, cloudParams, kMediumSlots);
+        bgfx::setUniform(u_fireParams, fireParams, kMediumSlots);
+        bgfx::setUniform(u_fireParams2, fireParams2, kMediumSlots);
+        bgfx::setUniform(u_fireFrame, fireFrames, kMediumSlots);
         bgfx::setUniform(u_lightColor, lightColorI);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2], 1.0f};
@@ -3454,11 +3482,12 @@ public:
         // sequential apply view keeps it before the inscatter add).
         bgfx::setUniform(u_volParams, params);
         bgfx::setUniform(u_volMedium, medium);
-        bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma);
-        bgfx::setUniform(u_cloudParams, cloudParams);
-        bgfx::setUniform(u_fireParams, fireParams);
-        bgfx::setUniform(u_fireParams2, fireParams2);
-        bgfx::setUniform(u_fireFrame, fireFrame);
+        bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma,
+                         kMediumSlots);
+        bgfx::setUniform(u_cloudParams, cloudParams, kMediumSlots);
+        bgfx::setUniform(u_fireParams, fireParams, kMediumSlots);
+        bgfx::setUniform(u_fireParams2, fireParams2, kMediumSlots);
+        bgfx::setUniform(u_fireFrame, fireFrames, kMediumSlots);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         bgfx::setTexture(1, s_texWaterFront, waterFrontTex);
         bgfx::setTexture(2, s_texWaterBack, waterBackTex);
@@ -3492,12 +3521,12 @@ public:
     /// caustic light over the eye-ward underwater path). The light /
     /// shadow / water uniforms match the raymarch; u_volParams.w flags
     /// the water span helper active.
-    void submitCaustics(float intensity, float scale, float time,
-                        const float waterSigma[4])
+    void submitCaustics(const float causticParams[][4],
+                        const float waterSigma[][4])
     {
         float params[4] = {0.0f, 0.0f, 0.0f, 1.0f};
         bgfx::setUniform(u_volParams, params);
-        bgfx::setUniform(u_waterSigma, waterSigma);
+        bgfx::setUniform(u_waterSigma, waterSigma, kMediumSlots);
         bgfx::setUniform(u_lightColor, lightColorI);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2], 1.0f};
@@ -3506,8 +3535,7 @@ public:
         float evsm[4] = {shadowWarpFrame, shadowThreshold, 0.0f, 0.0f};
         bgfx::setUniform(u_evsm, evsm);
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
-        float cparams[4] = {intensity, scale, time, 0.0f};
-        bgfx::setUniform(u_causticParams, cparams);
+        bgfx::setUniform(u_causticParams, causticParams, kMediumSlots);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         bgfx::setTexture(1, s_texShadow, shadowTex);
         bgfx::setTexture(2, s_texWaterFront, waterFrontTex);
@@ -3888,8 +3916,9 @@ public:
         // Fire body effect light: frame-wide state computed in render()
         // (zeroed w when no fire body burns); set on every mesh submit
         // because bgfx uniforms are global per program.
-        bgfx::setUniform(u_fireLight, fireLightView);
-        bgfx::setUniform(u_fireLightColor, fireLightColorI);
+        bgfx::setUniform(u_fireLight, fireLightView, kMediumSlots);
+        bgfx::setUniform(u_fireLightColor, fireLightColorI,
+                         kMediumSlots);
         bgfx::setTexture(3, s_texShadow, shadow);
         if (bgfx::isValid(s_texShadowTint))
             bgfx::setTexture(7, s_texShadowTint,
@@ -4634,6 +4663,17 @@ public:
     bgfx::FrameBufferHandle aoBlurFbo = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPrepass = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPrepassClip = BGFX_INVALID_HANDLE;
+    // Medium (water/glass/cloud/fire) interval depth writers: the
+    // prepass layout with the body's appearance slot stamped into .x
+    // (fs_fc_meddepth); u_mediumSlot.x carries the slot per submit.
+    bgfx::ProgramHandle m_progMedDepth = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMedDepthClip = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_mediumSlot = BGFX_INVALID_HANDLE;
+    // Appearance slots per medium kind: distinct bodies get their own
+    // parameter slot (uniform array entry), looked up per pixel via
+    // the slot index in the interval targets. Must match MEDIUM_SLOTS
+    // in fc_volume.sh and FIRE_LIGHTS in fc_mesh_fs.sh.
+    static constexpr int kMediumSlots = 4;
     bgfx::ProgramHandle m_progPrepassInst = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSsao = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSsaoBlur = BGFX_INVALID_HANDLE;
@@ -4721,14 +4761,15 @@ public:
     // Spot light position in view space; w = cos(cutOffAngle) for a
     // spot light, -1 for a directional one (the shader switch).
     float lightPosView[4] = {0.0f, 0.0f, 0.0f, -1.0f};
-    // Fire body effect light (unshadowed flickering point light at the
-    // flame centroid): xyz = position in view space, w = 1 / range^2
-    // (0 = no fire light this frame). The color arrives premultiplied
-    // by intensity and the animation-clock flicker.
+    // Fire body effect lights (unshadowed flickering point lights at
+    // the flame centroids, one entry per fire appearance slot): xyz =
+    // position in view space, w = 1 / range^2 (0 = slot inactive this
+    // frame). The colors arrive premultiplied by intensity and the
+    // animation-clock flicker.
     bgfx::UniformHandle u_fireLight = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_fireLightColor = BGFX_INVALID_HANDLE;
-    float fireLightView[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    float fireLightColorI[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float fireLightView[kMediumSlots][4] = {};
+    float fireLightColorI[kMediumSlots][4] = {};
     float shadowMtx[16];       // camera view space -> shadow uv/depth
     // Cached shadow map: hash of the light camera + caster set of the
     // moments currently in shadowTex; the caster pass (and blur) only
@@ -5226,50 +5267,72 @@ public:
                         volDensity, volMaxDist, volMedium[0],
                         volMedium[1], volMedium[2], volMedium[3]);
         }
-        // Water medium: scene draws flagged Material::water become the
-        // water body of the volumetric pass. The first flagged draw
-        // supplies the shared appearance — extinction sigma from its
-        // diffuse color (absorption of the complement) plus a
+        // Water medium: scene draws flagged Material::water become
+        // water bodies of the volumetric pass. Each body (object key)
+        // gets an appearance slot — extinction sigma from its diffuse
+        // color (absorption of the complement) plus a
         // wavelength-independent scattering term, density auto = from
-        // its bounds (a known single-appearance limitation for multiple
-        // differing bodies).
+        // its own bounds. The interval depth writer stamps the slot per
+        // pixel; bodies beyond the slot count share slot 0's
+        // appearance. slotOf resolves a draw's slot at submit time.
+        constexpr int kSlots = BGFXView::kMediumSlots;
         bool waterActive = false;
         bool hasWaterBody = false;
-        float waterSigma[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        float waterDiag = 0.0f;
+        float waterSigma[kSlots][4] = {};
+        float waterDiagSlot[kSlots] = {};
+        float waterDiag = 0.0f;   // first body's, for the wave-scale auto
+        std::unordered_map<uint64_t, int> waterSlots;
+        auto slotOf = [](const std::unordered_map<uint64_t, int> &slots,
+                         uint64_t key) {
+            auto it = slots.find(key);
+            return it == slots.end() ? 0 : it->second;
+        };
+        int waterSlotCount = 0;
         for (const auto &draw : scene) {
             const auto &mat = draw.material;
             if (!mat.water || mat.ontop
                     || mat.type != Render::Material::Triangle)
                 continue;
+            if (waterSlots.count(draw.objectKey))
+                continue;
+            if (waterSlotCount >= kSlots) {
+                waterSlots.emplace(draw.objectKey, 0);
+                continue;
+            }
+            int slot = waterSlotCount++;
+            waterSlots.emplace(draw.objectKey, slot);
+            float diag;
             {
                 float dx = draw.bboxMax[0] - draw.bboxMin[0];
                 float dy = draw.bboxMax[1] - draw.bboxMin[1];
                 float dz = draw.bboxMax[2] - draw.bboxMin[2];
-                waterDiag = std::sqrt(dx*dx + dy*dy + dz*dz);
+                diag = std::sqrt(dx*dx + dy*dy + dz*dz);
             }
+            waterDiagSlot[slot] = diag;
+            if (waterDiag <= 0.0f)
+                waterDiag = diag;
             hasWaterBody = true;
             float dens = mat.waterdensity;
             if (dens <= 0.0f) {
-                if (waterDiag <= 0.0f)
-                    continue;
-                dens = 3.0f / waterDiag;
+                if (diag <= 0.0f)
+                    continue;   // degenerate body: slot stays a no-op
+                dens = 3.0f / diag;
             }
             float color[4];
             unpackColor(mat.diffuse, color);
             float sigmaS = 0.35f * dens;
             for (int j = 0; j < 3; ++j)
-                waterSigma[j] = sigmaS + dens * (1.0f - color[j]);
-            waterSigma[3] = sigmaS;
+                waterSigma[slot][j] = sigmaS + dens * (1.0f - color[j]);
+            waterSigma[slot][3] = sigmaS;
             // The volumetric water medium needs the volumetric pass; the
             // body detection itself also serves the surface pass below.
             waterActive = volActive;
             if (volActive && getenv("FC_BGFX_DEBUG_VOL"))
                 fprintf(stderr,
-                        "bgfx water dens=%g sigma=%g,%g,%g s=%g\n",
-                        dens, waterSigma[0], waterSigma[1],
-                        waterSigma[2], waterSigma[3]);
-            break;
+                        "bgfx water slot=%d dens=%g sigma=%g,%g,%g s=%g\n",
+                        slot, dens, waterSigma[slot][0],
+                        waterSigma[slot][1], waterSigma[slot][2],
+                        waterSigma[slot][3]);
         }
         // Water surface (refraction/reflection) pass: independent of the
         // volumetric medium — it only needs a water body, the scene copy
@@ -5317,36 +5380,55 @@ public:
                     hasGlassBody, glassActive);
         // Cloud bodies (Material::cloud): the closed volume raymarches
         // as a procedural-density medium of the volumetric pass and the
-        // geometry itself is not rendered. The first flagged draw
-        // supplies the shared appearance like the water medium (a known
-        // single-appearance limitation).
+        // geometry itself is not rendered. Each body gets an appearance
+        // slot like the water medium (bodies beyond the slot count
+        // share slot 0); density/detail auto = from the body's own
+        // bounds.
         bool hasCloudBody = false;
-        float cloudDensity = 0.0f, cloudDetail = 0.0f, cloudSpeed = 1.0f;
+        // Per slot: x = density, y = detail, z = speed, w = valid.
+        float cloudSlot[kSlots][4] = {};
+        std::unordered_map<uint64_t, int> cloudSlots;
+        int cloudSlotCount = 0;
         for (const auto &draw : scene) {
             const auto &mat = draw.material;
             if (!mat.cloud || mat.ontop
                     || mat.type != Render::Material::Triangle)
                 continue;
+            if (cloudSlots.count(draw.objectKey))
+                continue;
+            if (cloudSlotCount >= kSlots) {
+                cloudSlots.emplace(draw.objectKey, 0);
+                continue;
+            }
+            int slot = cloudSlotCount++;
+            cloudSlots.emplace(draw.objectKey, slot);
             float dx = draw.bboxMax[0] - draw.bboxMin[0];
             float dy = draw.bboxMax[1] - draw.bboxMin[1];
             float dz = draw.bboxMax[2] - draw.bboxMin[2];
             float diag = (dx >= 0.0f && dy >= 0.0f && dz >= 0.0f)
                 ? std::sqrt(dx * dx + dy * dy + dz * dz) : 0.0f;
-            cloudDensity = mat.clouddensity;
-            if (cloudDensity <= 0.0f && diag > 0.0f)
-                cloudDensity = 6.0f / diag;
-            cloudDetail = mat.clouddetail;
-            if (cloudDetail <= 0.0f && diag > 0.0f)
-                cloudDetail = 4.0f / diag;
-            cloudSpeed = mat.cloudspeed;
-            hasCloudBody = cloudDensity > 0.0f && cloudDetail > 0.0f;
-            break;
+            float density = mat.clouddensity;
+            if (density <= 0.0f && diag > 0.0f)
+                density = 6.0f / diag;
+            float detail = mat.clouddetail;
+            if (detail <= 0.0f && diag > 0.0f)
+                detail = 4.0f / diag;
+            if (density <= 0.0f || detail <= 0.0f)
+                continue;   // degenerate body: slot stays inactive
+            cloudSlot[slot][0] = density;
+            cloudSlot[slot][1] = detail;
+            cloudSlot[slot][2] = mat.cloudspeed;
+            cloudSlot[slot][3] = 1.0f;
+            hasCloudBody = true;
+            if (getenv("FC_BGFX_DEBUG_FEED"))
+                fprintf(stderr,
+                        "bgfx cloud slot=%d dens=%g detail=%g\n",
+                        slot, density, detail);
         }
         bool cloudActive = hasCloudBody && volActive;
         if (getenv("FC_BGFX_DEBUG_FEED"))
-            fprintf(stderr,
-                    "bgfx cloud: body=%d active=%d dens=%g detail=%g\n",
-                    hasCloudBody, cloudActive, cloudDensity, cloudDetail);
+            fprintf(stderr, "bgfx cloud: body=%d active=%d\n",
+                    hasCloudBody, cloudActive);
         // The cloud body's own draws (fills and feature lines) are
         // suppressed entirely while the medium renders, matched by
         // object key like the water surface line suppression.
@@ -5361,25 +5443,41 @@ public:
         }
         // Fire bodies (Material::fire): the closed volume raymarches as
         // an emissive flame medium of the volumetric pass and the
-        // geometry itself is not rendered. The first flagged draw
-        // supplies the shared appearance like the water/cloud media (a
-        // known single-appearance limitation).
-        bool hasFireBody = false;
-        float fireEmission = 0.0f, fireDetail = 0.0f, fireSpeed = 1.0f;
-        float fireInvHeight = 0.0f;
-        float fireIntensity = 1.0f, fireDiag = 0.0f, fireSoot = 0.0f;
-        // World -> fire-local frame (z = the body placement's up axis,
-        // origin at the bottom center) and the effect-light anchor.
-        float fireFrame[16] = {1.0f, 0.0f, 0.0f, 0.0f,
+        // geometry itself is not rendered. Each body gets an appearance
+        // slot like the water/cloud media (bodies beyond the slot count
+        // share slot 0), carrying its own emission/detail/speed, taper
+        // frame and effect-light anchor.
+        struct FireSlot {
+            float emission = 0.0f, detail = 0.0f, speed = 1.0f;
+            float invHeight = 0.0f, soot = 0.0f;
+            float intensity = 1.0f, diag = 0.0f;
+            // World -> fire-local frame (z = the body placement's up
+            // axis, origin at the bottom center) and the effect-light
+            // anchor.
+            float frame[16] = {1.0f, 0.0f, 0.0f, 0.0f,
                                0.0f, 1.0f, 0.0f, 0.0f,
                                0.0f, 0.0f, 1.0f, 0.0f,
                                0.0f, 0.0f, 0.0f, 1.0f};
-        float fireLightWorld[3] = {0.0f, 0.0f, 0.0f};
+            float lightWorld[3] = {0.0f, 0.0f, 0.0f};
+            bool valid = false;
+        };
+        bool hasFireBody = false;
+        FireSlot fireSlot[kSlots];
+        std::unordered_map<uint64_t, int> fireSlots;
+        int fireSlotCount = 0;
         for (const auto &draw : scene) {
             const auto &mat = draw.material;
             if (!mat.fire || mat.ontop
                     || mat.type != Render::Material::Triangle)
                 continue;
+            if (fireSlots.count(draw.objectKey))
+                continue;
+            if (fireSlotCount >= kSlots) {
+                fireSlots.emplace(draw.objectKey, 0);
+                continue;
+            }
+            FireSlot &fs = fireSlot[fireSlotCount];
+            fireSlots.emplace(draw.objectKey, fireSlotCount++);
             float dx = draw.bboxMax[0] - draw.bboxMin[0];
             float dy = draw.bboxMax[1] - draw.bboxMin[1];
             float dz = draw.bboxMax[2] - draw.bboxMin[2];
@@ -5388,20 +5486,20 @@ public:
             float intensity = mat.fireintensity > 0.0f
                 ? mat.fireintensity : 1.0f;
             if (diag > 0.0f)
-                fireEmission = intensity * 4.0f / diag;
-            fireDetail = mat.firedetail;
-            if (fireDetail <= 0.0f && diag > 0.0f)
-                fireDetail = 5.0f / diag;
-            fireSpeed = mat.firespeed;
-            fireIntensity = intensity;
-            fireDiag = diag;
+                fs.emission = intensity * 4.0f / diag;
+            fs.detail = mat.firedetail;
+            if (fs.detail <= 0.0f && diag > 0.0f)
+                fs.detail = 5.0f / diag;
+            fs.speed = mat.firespeed;
+            fs.intensity = intensity;
+            fs.diag = diag;
             // Mild soot absorption scaled like the other auto
             // densities; FC_BGFX_NO_FIRESOOT keeps the old purely
             // additive flame for A/B comparisons.
             static const bool noSoot =
                 (getenv("FC_BGFX_NO_FIRESOOT") != nullptr);
             if (!noSoot && diag > 0.0f)
-                fireSoot = 1.5f / diag;
+                fs.soot = 1.5f / diag;
             // The taper frame comes from the body's placement, not
             // world z: up = the model's local z axis, with its x axis
             // Gram-Schmidt'd into a lateral right vector. The world
@@ -5459,7 +5557,7 @@ public:
                 }
             }
             float height = pmax[2] - pmin[2];
-            fireInvHeight = height > 0.0f ? 1.0f / height : 0.0f;
+            fs.invHeight = height > 0.0f ? 1.0f / height : 0.0f;
             // Bottom center of the body in the frame, back in world
             // coordinates (r/f/u are an orthonormal world basis).
             float rc = 0.5f * (pmin[0] + pmax[0]);
@@ -5470,28 +5568,32 @@ public:
             // Row-vector convention like the shadow matrix: lp =
             // [wp, 1] * M with the frame axes as columns.
             for (int j = 0; j < 3; ++j) {
-                fireFrame[j * 4 + 0] = r[j];
-                fireFrame[j * 4 + 1] = f[j];
-                fireFrame[j * 4 + 2] = u[j];
-                fireFrame[j * 4 + 3] = 0.0f;
+                fs.frame[j * 4 + 0] = r[j];
+                fs.frame[j * 4 + 1] = f[j];
+                fs.frame[j * 4 + 2] = u[j];
+                fs.frame[j * 4 + 3] = 0.0f;
             }
-            fireFrame[12] = -(rc);
-            fireFrame[13] = -(fc);
-            fireFrame[14] = -pmin[2];
-            fireFrame[15] = 1.0f;
+            fs.frame[12] = -(rc);
+            fs.frame[13] = -(fc);
+            fs.frame[14] = -pmin[2];
+            fs.frame[15] = 1.0f;
             // The effect light sits a third up the flame — the ramp's
             // bright zone — along the body's up axis.
             for (int j = 0; j < 3; ++j)
-                fireLightWorld[j] = base[j] + 0.35f * height * u[j];
-            hasFireBody = fireEmission > 0.0f && fireDetail > 0.0f
-                && fireInvHeight > 0.0f;
-            break;
+                fs.lightWorld[j] = base[j] + 0.35f * height * u[j];
+            fs.valid = fs.emission > 0.0f && fs.detail > 0.0f
+                && fs.invHeight > 0.0f;
+            hasFireBody = hasFireBody || fs.valid;
+            if (getenv("FC_BGFX_DEBUG_FEED"))
+                fprintf(stderr,
+                        "bgfx fire slot=%d valid=%d emit=%g detail=%g\n",
+                        int(&fs - fireSlot), fs.valid, fs.emission,
+                        fs.detail);
         }
         bool fireActive = hasFireBody && volActive;
         if (getenv("FC_BGFX_DEBUG_FEED"))
-            fprintf(stderr,
-                    "bgfx fire: body=%d active=%d emit=%g detail=%g\n",
-                    hasFireBody, fireActive, fireEmission, fireDetail);
+            fprintf(stderr, "bgfx fire: body=%d active=%d\n",
+                    hasFireBody, fireActive);
         // The fire body's own draws (fills and feature lines) are
         // suppressed entirely while the medium renders, matched by
         // object key like the cloud body.
@@ -5537,43 +5639,48 @@ public:
                            animclock::now() - start).count();
             animLive = true;
         }
-        // Fire lights the scene: an unshadowed point light at the flame
-        // centroid, its brightness flickered on the shared animation
-        // clock (frozen clocks stay deterministic) and its color the
-        // flame ramp's bright zone. The mesh FS adds it on top of the
-        // frame's lighting model — no shadow map from it, the usual
-        // engine effect-light shortcut.
+        // Fire lights the scene: an unshadowed point light per fire
+        // body slot at the flame centroid, its brightness flickered on
+        // the shared animation clock (frozen clocks stay deterministic)
+        // and its color the flame ramp's bright zone. The mesh FS adds
+        // them on top of the frame's lighting model — no shadow maps
+        // from them, the usual engine effect-light shortcut.
         static const bool noFireLight =
             (getenv("FC_BGFX_NO_FIRELIGHT") != nullptr);
-        if (fireActive && !noFireLight && fireDiag > 0.0f) {
+        for (int slot = 0; slot < kSlots; ++slot) {
+            const FireSlot &fs = fireSlot[slot];
+            if (!(fireActive && !noFireLight && fs.valid
+                  && fs.diag > 0.0f)) {
+                view->fireLightView[slot][3] = 0.0f;
+                continue;
+            }
             const float *vm = reinterpret_cast<const float *>(viewMatrix);
             // The light anchor (a third up the flame along the body's
             // up axis, the ramp's bright zone) came out of the fire
             // scan's taper frame.
             for (int j = 0; j < 3; ++j)
-                view->fireLightView[j] = fireLightWorld[0] * vm[j]
-                    + fireLightWorld[1] * vm[4 + j]
-                    + fireLightWorld[2] * vm[8 + j]
+                view->fireLightView[slot][j] = fs.lightWorld[0] * vm[j]
+                    + fs.lightWorld[1] * vm[4 + j]
+                    + fs.lightWorld[2] * vm[8 + j]
                     + vm[12 + j];
-            float range = 2.5f * fireDiag;
-            view->fireLightView[3] = 1.0f / (range * range);
+            float range = 2.5f * fs.diag;
+            view->fireLightView[slot][3] = 1.0f / (range * range);
             // Flicker: a few incommensurate sines on the flame clock
             // (same 2.0 rise rate as the noise scroll), amplitude kept
-            // above zero so the fire never blacks out.
-            float t = animTime * fireSpeed * 2.0f;
+            // above zero so the fire never blacks out. The slot index
+            // offsets the phases so several fires don't pulse in step.
+            float t = animTime * fs.speed * 2.0f + 3.1f * float(slot);
             float flicker = 0.80f
                 + 0.20f * (0.55f * std::sin(t * 11.7f)
                            + 0.33f * std::sin(t * 7.3f + 1.7f)
                            + 0.12f * std::sin(t * 23.9f + 0.5f));
-            float glow = fireIntensity * flicker;
+            float glow = fs.intensity * flicker;
             // fireRamp(0.6) of the volume shader: the flame's dominant
             // orange.
-            view->fireLightColorI[0] = 1.00f * glow;
-            view->fireLightColorI[1] = 0.72f * glow;
-            view->fireLightColorI[2] = 0.13f * glow;
-            view->fireLightColorI[3] = 0.0f;
-        } else {
-            view->fireLightView[3] = 0.0f;
+            view->fireLightColorI[slot][0] = 1.00f * glow;
+            view->fireLightColorI[slot][1] = 0.72f * glow;
+            view->fireLightColorI[slot][2] = 0.13f * glow;
+            view->fireLightColorI[slot][3] = 0.0f;
         }
         float waterWaveStrength = waterconf.waveStrength;
         float waterWaveScale = waterconf.waveScale;
@@ -6404,12 +6511,14 @@ public:
                 view->submit(draw, viewMat, BGFXView::PassNormal,
                              sceneNoSeam(draw));
             if (cloudFill && !cullDraw) {
-                view->submitWaterDepth(draw, false, 2);
-                view->submitWaterDepth(draw, true, 2);
+                int slot = slotOf(cloudSlots, draw.objectKey);
+                view->submitWaterDepth(draw, false, 2, slot);
+                view->submitWaterDepth(draw, true, 2, slot);
             }
             if (fireFill && !cullDraw) {
-                view->submitWaterDepth(draw, false, 3);
-                view->submitWaterDepth(draw, true, 3);
+                int slot = slotOf(fireSlots, draw.objectKey);
+                view->submitWaterDepth(draw, false, 3, slot);
+                view->submitWaterDepth(draw, true, 3, slot);
             }
             if (surfWater && !cullDraw)
                 view->submitWaterSurface(draw, waterWaveStrength,
@@ -6428,8 +6537,9 @@ public:
             bool isWater = waterActive && isTriangle(draw)
                 && draw.material.water;
             if (isWater && !cullDraw) {
-                view->submitWaterDepth(draw, false);
-                view->submitWaterDepth(draw, true);
+                int slot = slotOf(waterSlots, draw.objectKey);
+                view->submitWaterDepth(draw, false, 0, slot);
+                view->submitWaterDepth(draw, true, 0, slot);
             }
             // The SSAO prepass re-rasterizes the opaque fills into the
             // depth+normal target (transparent geometry neither occludes
@@ -6540,40 +6650,60 @@ public:
         // map, bilateral-upsampled and composited onto the opaque scene
         // after the outlines, before the transparent bucket.
         if (volActive) {
-            float cloudParams[4] = {
-                cloudActive ? cloudDensity : 0.0f,
-                cloudActive ? cloudDetail : 0.0f,
-                animTime * cloudSpeed,
-                cloudActive ? 1.0f : 0.0f};
-            // The 2.0 rise rate makes the flame climb a couple of
-            // noise cells per second at the default speed.
-            float fireParams[4] = {
-                fireActive ? fireEmission : 0.0f,
-                fireActive ? fireDetail : 0.0f,
-                animTime * fireSpeed * 2.0f,
-                fireActive ? 1.0f : 0.0f};
-            float fireParams2[4] = {0.0f, fireInvHeight,
-                                    fireActive ? fireSoot : 0.0f, 0.0f};
+            float cloudParams[kSlots][4] = {};
+            float fireParams[kSlots][4] = {};
+            float fireParams2[kSlots][4] = {};
+            float fireFrames[kSlots][16] = {};
+            for (int s = 0; s < kSlots; ++s) {
+                if (cloudActive && cloudSlot[s][3] > 0.0f) {
+                    cloudParams[s][0] = cloudSlot[s][0];
+                    cloudParams[s][1] = cloudSlot[s][1];
+                    cloudParams[s][2] = animTime * cloudSlot[s][2];
+                    cloudParams[s][3] = 1.0f;
+                    animatedFrame = animatedFrame
+                        || (animLive && cloudSlot[s][2] != 0.0f);
+                }
+                const FireSlot &fsl = fireSlot[s];
+                if (fireActive && fsl.valid) {
+                    // The 2.0 rise rate makes the flame climb a couple
+                    // of noise cells per second at the default speed.
+                    fireParams[s][0] = fsl.emission;
+                    fireParams[s][1] = fsl.detail;
+                    fireParams[s][2] = animTime * fsl.speed * 2.0f;
+                    fireParams[s][3] = 1.0f;
+                    fireParams2[s][1] = fsl.invHeight;
+                    fireParams2[s][2] = fsl.soot;
+                    animatedFrame = animatedFrame
+                        || (animLive && fsl.speed != 0.0f);
+                }
+                std::memcpy(fireFrames[s], fsl.frame,
+                            sizeof(fsl.frame));
+            }
             view->submitVolumetric(volDensity, volconf.intensity,
                                    volMaxDist, volMedium,
                                    waterActive, waterSigma, cloudParams,
-                                   fireParams, fireParams2, fireFrame);
-            animatedFrame = animatedFrame
-                || (cloudActive && animLive && cloudSpeed != 0.0f)
-                || (fireActive && animLive && fireSpeed != 0.0f);
+                                   fireParams, fireParams2, fireFrames);
         }
 
         // 1e. Water caustics: additive light-space pattern splat over
         // the prepass surfaces inside the water interval, before the
         // extinction multiply of the volumetric apply.
         if (waterActive && volconf.caustics) {
-            float scale = volconf.causticsScale;
-            if (scale <= 0.0f && waterDiag > 0.0f)
-                scale = 6.0f / waterDiag;
-            if (scale > 0.0f) {
-                view->submitCaustics(volconf.causticsIntensity, scale,
-                                     animTime * volconf.causticsSpeed,
-                                     waterSigma);
+            float causticParams[kSlots][4] = {};
+            bool anyCaustics = false;
+            for (int s = 0; s < waterSlotCount; ++s) {
+                float scale = volconf.causticsScale;
+                if (scale <= 0.0f && waterDiagSlot[s] > 0.0f)
+                    scale = 6.0f / waterDiagSlot[s];
+                if (scale <= 0.0f)
+                    continue;
+                causticParams[s][0] = volconf.causticsIntensity;
+                causticParams[s][1] = scale;
+                causticParams[s][2] = animTime * volconf.causticsSpeed;
+                anyCaustics = true;
+            }
+            if (anyCaustics) {
+                view->submitCaustics(causticParams, waterSigma);
                 animatedFrame = animatedFrame
                     || (animLive && volconf.causticsSpeed != 0.0f);
             }

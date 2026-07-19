@@ -35,13 +35,13 @@ void main()
 
 	// Water body overlap of the in-medium path (the body lies inside
 	// the medium sphere).
-	vec2 water = volWaterSpan(texture2D(s_texWaterFront, v_texcoord0),
+	vec3 water = volWaterSpan(texture2D(s_texWaterFront, v_texcoord0),
 	                          texture2D(s_texWaterBack, v_texcoord0),
 	                          dir);
 	float wlen = max(0.0, min(water.y, t1) - max(water.x, med.x));
 
 	vec3 depth = vec3_splat(u_volParams.x * (len - wlen))
-		+ u_waterSigma.xyz * wlen;
+		+ u_waterSigma[int(water.z + 0.5)].xyz * wlen;
 
 	// Cloud body overlap: the density is procedural, so the analytic
 	// length is replaced by a short FBM sub-march over the stretch
@@ -49,9 +49,10 @@ void main()
 	// the full non-water length — the cloud march replaces only its
 	// own optical depth on top (the air density inside the body is
 	// negligible next to the cloud's).
-	vec2 cloud = volCloudSpan(texture2D(s_texCloudFront, v_texcoord0),
+	vec3 cloud = volCloudSpan(texture2D(s_texCloudFront, v_texcoord0),
 	                          texture2D(s_texCloudBack, v_texcoord0),
 	                          dir);
+	int cs = int(cloud.z + 0.5);
 	float c0 = max(cloud.x, med.x);
 	float c1 = min(cloud.y, t1);
 	if (c1 > c0)
@@ -68,7 +69,8 @@ void main()
 				0.0, 1.0);
 			// The 0.6 matches the raymarch's reduced eye-ward
 			// extinction.
-			od += cloudDensityAt(wp) * fade * 0.6 * cdt;
+			od += cloudDensityAt(wp, u_cloudParams[cs])
+				* fade * 0.6 * cdt;
 		}
 		depth += vec3_splat(od);
 	}
@@ -77,12 +79,13 @@ void main()
 	// mild soot extinction along the temperature field, so the surface
 	// behind the flame darkens exactly as much as the raymarch's
 	// eye-ward transmittance dims the inscatter.
-	vec2 fire = volFireSpan(texture2D(s_texFireFront, v_texcoord0),
+	vec3 fire = volFireSpan(texture2D(s_texFireFront, v_texcoord0),
 	                        texture2D(s_texFireBack, v_texcoord0),
 	                        dir);
+	int fs = int(fire.z + 0.5);
 	float f0 = max(fire.x, med.x);
 	float f1 = min(fire.y, t1);
-	if (f1 > f0 && u_fireParams2.z > 0.0)
+	if (f1 > f0 && u_fireParams2[fs].z > 0.0)
 	{
 		float fdt = (f1 - f0) * (1.0 / 8.0);
 		float od = 0.0;
@@ -94,7 +97,10 @@ void main()
 			float fade = clamp(min(t - fire.x, fire.y - t)
 				/ max(0.2 * (fire.y - fire.x), 1.0e-3),
 				0.0, 1.0);
-			od += u_fireParams2.z * fireTempAt(wp) * fade * fdt;
+			od += u_fireParams2[fs].z
+				* fireTempAt(wp, u_fireFrame[fs],
+				             u_fireParams[fs],
+				             u_fireParams2[fs]) * fade * fdt;
 		}
 		depth += vec3_splat(od);
 	}

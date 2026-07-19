@@ -14,8 +14,10 @@ $input v_texcoord0
  * volumetric extinction multiply, so the eye-ward underwater absorption
  * applies to the caustic light like to the surface it lights.
  *
- * u_causticParams: x = intensity, y = pattern frequency (1/world units),
- *                  z = animation time (speed folded in), w = unused
+ * u_causticParams[s] (per water body appearance slot, indexed by the
+ * span's per-pixel slot): x = intensity, y = pattern frequency
+ * (1/world units), z = animation time (speed folded in), w = unused;
+ * x or y <= 0 = no caustics for the slot.
  */
 
 #include <bgfx_shader.sh>
@@ -26,7 +28,7 @@ SAMPLER2D(s_texNormalZ, 0);
 SAMPLER2D(s_texWaterFront, 2);
 SAMPLER2D(s_texWaterBack, 3);
 
-uniform vec4 u_causticParams;
+uniform vec4 u_causticParams[MEDIUM_SLOTS];
 
 vec3 octDecode(vec2 e)
 {
@@ -77,10 +79,14 @@ void main()
 	// Underwater test against the water body interval; receivers just
 	// behind the body's back face (a tank floor coincident with the
 	// water bottom) keep their caustics through the slack.
-	vec2 water = volWaterSpan(texture2D(s_texWaterFront, v_texcoord0),
+	vec3 water = volWaterSpan(texture2D(s_texWaterFront, v_texcoord0),
 	                          texture2D(s_texWaterBack, v_texcoord0),
 	                          dir);
 	if (water.y < water.x)
+		discard;
+	int ws = int(water.z + 0.5);
+	vec4 cp = u_causticParams[ws];
+	if (cp.x <= 0.0 || cp.y <= 0.0)
 		discard;
 	float slack = 0.1 * (water.y - water.x);
 	if (t <= water.x || t > water.y + slack)
@@ -102,14 +108,14 @@ void main()
 	                          : vec3(1.0, 0.0, 0.0);
 	vec3 b1 = normalize(cross(up, lw));
 	vec3 b2 = cross(lw, b1);
-	vec2 uv = vec2(dot(wp, b1), dot(wp, b2)) * u_causticParams.y;
-	float c = causticPattern(uv, u_causticParams.z);
+	vec2 uv = vec2(dot(wp, b1), dot(wp, b2)) * cp.y;
+	float c = causticPattern(uv, cp.z);
 
 	// Light-path tint: the depth below the water entry stands in for
 	// the in-water light leg (the light arrives otherwise untinted).
-	vec3 tint = exp(-u_waterSigma.xyz * max(0.0, t - water.x));
+	vec3 tint = exp(-u_waterSigma[ws].xyz * max(0.0, t - water.x));
 
 	gl_FragColor = vec4(u_lightColor.rgb * tint
-	                        * (c * ndl * vis * u_causticParams.x),
+	                        * (c * ndl * vis * cp.x),
 	                    0.0);
 }

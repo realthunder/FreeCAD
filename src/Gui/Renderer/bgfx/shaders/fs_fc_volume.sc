@@ -42,20 +42,24 @@ void main()
 	vec2 med = volMedium(origin, dir);
 	float t0 = med.x;
 	float t1 = min(med.y, tEnd);
-	vec2 water = volWaterSpan(texture2D(s_texWaterFront, v_texcoord0),
+	vec3 water = volWaterSpan(texture2D(s_texWaterFront, v_texcoord0),
 	                          texture2D(s_texWaterBack, v_texcoord0),
 	                          dir);
-	vec2 cloud = volCloudSpan(texture2D(s_texCloudFront, v_texcoord0),
+	vec3 cloud = volCloudSpan(texture2D(s_texCloudFront, v_texcoord0),
 	                          texture2D(s_texCloudBack, v_texcoord0),
 	                          dir);
-	vec2 fire = volFireSpan(texture2D(s_texFireFront, v_texcoord0),
+	vec3 fire = volFireSpan(texture2D(s_texFireFront, v_texcoord0),
 	                        texture2D(s_texFireBack, v_texcoord0),
 	                        dir);
+	// Per-pixel appearance slots of the media (fc_volume.sh).
+	int ws = int(water.z + 0.5);
+	int cs = int(cloud.z + 0.5);
+	int fs = int(fire.z + 0.5);
 	// Henyey-Greenstein forward-scattering phase of the cloud toward
 	// the light, constant along the (parallel-light) ray; the air and
 	// water media keep their isotropic behavior.
 	float cloudPhase = 1.0;
-	if (u_cloudParams.w > 0.5)
+	if (cloud.y > cloud.x)
 	{
 		float g = 0.35;
 		float mu = dot(dir, -normalize(u_lightDir.xyz));
@@ -82,9 +86,9 @@ void main()
 		{
 			float t = t0 + (float(i) + jitter) * dt;
 			bool inWater = t > water.x && t < water.y;
-			vec3 sigT = inWater ? u_waterSigma.xyz
+			vec3 sigT = inWater ? u_waterSigma[ws].xyz
 			                    : vec3_splat(density);
-			float sigS = inWater ? u_waterSigma.w : density;
+			float sigS = inWater ? u_waterSigma[ws].w : density;
 			float phase = 1.0;
 			float ambient = 0.0;
 			if (t > cloud.x && t < cloud.y)
@@ -103,7 +107,8 @@ void main()
 				                       cloud.y - t)
 					/ max(0.2 * (cloud.y - cloud.x),
 					      1.0e-3), 0.0, 1.0);
-				float cd = cloudDensityAt(wp) * fade;
+				float cd = cloudDensityAt(wp,
+				                          u_cloudParams[cs]) * fade;
 				sigT = vec3_splat(cd * 0.6);
 				sigS = cd;
 				phase = cloudPhase;
@@ -126,10 +131,12 @@ void main()
 				float ffade = clamp(min(t - fire.x, fire.y - t)
 					/ max(0.2 * (fire.y - fire.x),
 					      1.0e-3), 0.0, 1.0);
-				float ftemp = fireTempAt(fwp) * ffade;
+				float ftemp = fireTempAt(fwp, u_fireFrame[fs],
+				                         u_fireParams[fs],
+				                         u_fireParams2[fs]) * ffade;
 				emission += fireRamp(ftemp)
-					* (u_fireParams.x * dt) * T;
-				sigT += vec3_splat(u_fireParams2.z * ftemp);
+					* (u_fireParams[fs].x * dt) * T;
+				sigT += vec3_splat(u_fireParams2[fs].z * ftemp);
 			}
 			scatter += (shadowVis(origin + dir * t) * phase
 			            + ambient)

@@ -13,35 +13,54 @@
  * underwater stretch of each ray, with extinction/scattering from
  * u_waterSigma instead of the air density.
  *
+ * The water/cloud/fire parameter uniforms are MEDIUM_SLOTS-entry
+ * arrays: each body of a medium kind gets an appearance slot, the
+ * interval depth writer stamps the slot index into the targets' .x
+ * (fc_meddepth_fs.sh), and the span helpers return it so every pixel
+ * reads its own body's parameters. Bodies of one kind overlapping on
+ * screen still merge into one interval with the nearest body's slot —
+ * the remaining (much smaller) limitation.
+ *
  * u_volParams : x = air medium density (1/world units), y = intensity,
  *               z = maximum march distance, w = water body active
  * u_volMedium : xyz = medium sphere center (view space), w = radius
- * u_waterSigma: xyz = water extinction per channel, w = water
+ * u_waterSigma[s]: xyz = water extinction per channel, w = water
  *               scattering coefficient
- * u_cloudParams: x = cloud extinction density (1/world units), y =
+ * u_cloudParams[s]: x = cloud extinction density (1/world units), y =
  *               noise domain scale (1/world units), z = drift time,
- *               w > 0.5 = cloud body active
- * u_fireParams: x = flame emission density (1/world units), y = noise
- *               domain scale (1/world units), z = rise time, w > 0.5 =
- *               fire body active
- * u_fireParams2: y = 1 / body extent along its up axis (the flame
+ *               w > 0.5 = slot active
+ * u_fireParams[s]: x = flame emission density (1/world units), y =
+ *               noise domain scale (1/world units), z = rise time,
+ *               w > 0.5 = slot active
+ * u_fireParams2[s]: y = 1 / body extent along its up axis (the flame
  *               taper frame), z = soot extinction density (1/world
  *               units; a mild absorption that follows the temperature
  *               field, 0 = none), x/w unused
- * u_fireFrame : world -> fire-local transform — z rises along the
+ * u_fireFrame[s]: world -> fire-local transform — z rises along the
  *               body placement's up axis (not world z), origin at the
  *               bottom center of the body, unit world scale. The
  *               noise field lives in this frame, so the flame rides a
  *               moved or tilted body.
  */
 
+#define MEDIUM_SLOTS 4
+
 uniform vec4 u_volParams;
 uniform vec4 u_volMedium;
-uniform vec4 u_waterSigma;
-uniform vec4 u_cloudParams;
-uniform vec4 u_fireParams;
-uniform vec4 u_fireParams2;
-uniform mat4 u_fireFrame;
+uniform vec4 u_waterSigma[MEDIUM_SLOTS];
+uniform vec4 u_cloudParams[MEDIUM_SLOTS];
+uniform vec4 u_fireParams[MEDIUM_SLOTS];
+uniform vec4 u_fireParams2[MEDIUM_SLOTS];
+uniform mat4 u_fireFrame[MEDIUM_SLOTS];
+
+// Appearance slot index stamped into a medium interval sample's .x by
+// the depth writer; the front sample wins, the back sample covers the
+// camera-inside-the-body case (no front faces on screen).
+int mediumSlot(vec4 front, vec4 back)
+{
+	float s = front.w > 0.5 ? front.x : back.x;
+	return int(clamp(s, 0.0, float(MEDIUM_SLOTS - 1)) + 0.5);
+}
 
 // View-space ray of a screen pixel (uv in [0,1]). GL projection:
 // perspective has u_proj[2][3] == -1 (w = viewZ), orthographic has 0
@@ -83,25 +102,32 @@ float volSurface(vec4 nz, vec3 dir)
 	return tEnd;
 }
 
-// Underwater interval of the ray from the water depth samples;
-// (0, -1) when the pixel has no water body. A back face without a
-// front face means the camera is inside the water.
-vec2 volWaterSpan(vec4 wf, vec4 wb, vec3 dir)
+// Underwater interval of the ray from the water depth samples, with
+// the body's appearance slot in .z; (0, -1, 0) when the pixel has no
+// water body. A back face without a front face means the camera is
+// inside the water.
+vec3 volWaterSpan(vec4 wf, vec4 wb, vec3 dir)
 {
 	if (u_volParams.w < 0.5 || wb.w < 0.5)
-		return vec2(0.0, -1.0);
-	return vec2(wf.w > 0.5 ? volT(wf.z, dir) : 0.0,
-	            volT(wb.z, dir));
+		return vec3(0.0, -1.0, 0.0);
+	return vec3(wf.w > 0.5 ? volT(wf.z, dir) : 0.0,
+	            volT(wb.z, dir),
+	            float(mediumSlot(wf, wb)));
 }
 
-// Cloud body interval of the ray from its depth target pair; (0, -1)
-// when the pixel has no cloud body (the water span rules).
-vec2 volCloudSpan(vec4 cf, vec4 cb, vec3 dir)
+// Cloud body interval of the ray from its depth target pair, slot in
+// .z; (0, -1, 0) when the pixel has no cloud body (the water span
+// rules, plus the per-slot active flag — a stale target from a frame
+// with the medium disabled reads all slots inactive).
+vec3 volCloudSpan(vec4 cf, vec4 cb, vec3 dir)
 {
-	if (u_cloudParams.w < 0.5 || cb.w < 0.5)
-		return vec2(0.0, -1.0);
-	return vec2(cf.w > 0.5 ? volT(cf.z, dir) : 0.0,
-	            volT(cb.z, dir));
+	if (cb.w < 0.5)
+		return vec3(0.0, -1.0, 0.0);
+	int s = mediumSlot(cf, cb);
+	if (u_cloudParams[s].w < 0.5)
+		return vec3(0.0, -1.0, 0.0);
+	return vec3(cf.w > 0.5 ? volT(cf.z, dir) : 0.0,
+	            volT(cb.z, dir), float(s));
 }
 
 // Value-noise FBM for the cloud density field (float math only, no bit
@@ -130,11 +156,11 @@ float cloudNoise(vec3 p)
 	           u.z);
 }
 
-// 3-octave FBM in [0,1], drifted by the animation clock.
-float cloudFBM(vec3 wp)
+// 3-octave FBM in [0,1], drifted by the animation clock; cp = the
+// body slot's u_cloudParams entry.
+float cloudFBM(vec3 wp, vec4 cp)
 {
-	vec3 p = wp * u_cloudParams.y
-		+ vec3(u_cloudParams.z, 0.0, 0.17 * u_cloudParams.z);
+	vec3 p = wp * cp.y + vec3(cp.z, 0.0, 0.17 * cp.z);
 	float n = 0.5 * cloudNoise(p)
 		+ 0.25 * cloudNoise(p * 2.03)
 		+ 0.125 * cloudNoise(p * 4.09);
@@ -143,35 +169,40 @@ float cloudFBM(vec3 wp)
 
 // Local cloud extinction at a world position: the FBM field remapped
 // so roughly half the volume is clear (puffy holes).
-float cloudDensityAt(vec3 wp)
+float cloudDensityAt(vec3 wp, vec4 cp)
 {
-	return u_cloudParams.x
-		* smoothstep(0.4, 0.75, cloudFBM(wp));
+	return cp.x * smoothstep(0.4, 0.75, cloudFBM(wp, cp));
 }
 
-// Fire body interval of the ray from its depth target pair; (0, -1)
-// when the pixel has no fire body (the water span rules).
-vec2 volFireSpan(vec4 ff, vec4 fb, vec3 dir)
+// Fire body interval of the ray from its depth target pair, slot in
+// .z; (0, -1, 0) when the pixel has no fire body (the cloud span
+// rules).
+vec3 volFireSpan(vec4 ff, vec4 fb, vec3 dir)
 {
-	if (u_fireParams.w < 0.5 || fb.w < 0.5)
-		return vec2(0.0, -1.0);
-	return vec2(ff.w > 0.5 ? volT(ff.z, dir) : 0.0,
-	            volT(fb.z, dir));
+	if (fb.w < 0.5)
+		return vec3(0.0, -1.0, 0.0);
+	int s = mediumSlot(ff, fb);
+	if (u_fireParams[s].w < 0.5)
+		return vec3(0.0, -1.0, 0.0);
+	return vec3(ff.w > 0.5 ? volT(ff.z, dir) : 0.0,
+	            volT(fb.z, dir), float(s));
 }
 
 // Flame temperature field in [0,1] at a world position: 3-octave value
 // noise (the cloud lattice) rising along the body's up axis with a
 // slight lateral wobble, eroded by a threshold that climbs with the
 // normalized height so the flame breaks into separate tongues and dies
-// out near the top. All sampling happens in the fire-local frame.
-float fireTempAt(vec3 wp)
+// out near the top. All sampling happens in the fire-local frame;
+// frame/fp/fp2 = the body slot's u_fireFrame/u_fireParams/
+// u_fireParams2 entries.
+float fireTempAt(vec3 wp, mat4 frame, vec4 fp, vec4 fp2)
 {
-	vec3 lp = mul(u_fireFrame, vec4(wp, 1.0)).xyz;
-	float h = clamp(lp.z * u_fireParams2.y, 0.0, 1.0);
-	vec3 p = lp * u_fireParams.y;
+	vec3 lp = mul(frame, vec4(wp, 1.0)).xyz;
+	float h = clamp(lp.z * fp2.y, 0.0, 1.0);
+	vec3 p = lp * fp.y;
 	p.z *= 0.55;  // vertically stretched noise = licking tongues
-	p.z -= u_fireParams.z;
-	p.x += 0.35 * sin(0.8 * u_fireParams.z + p.z * 1.7);
+	p.z -= fp.z;
+	p.x += 0.35 * sin(0.8 * fp.z + p.z * 1.7);
 	float n = 0.5 * cloudNoise(p)
 		+ 0.25 * cloudNoise(p * 2.03)
 		+ 0.125 * cloudNoise(p * 4.09);
