@@ -1271,6 +1271,18 @@ public:
             bgfx::destroy(m_progMeshInst);
             m_progMeshInst = BGFX_INVALID_HANDLE;
         }
+        if (bgfx::isValid(m_progMeshInstTex)) {
+            bgfx::destroy(m_progMeshInstTex);
+            m_progMeshInstTex = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progMeshInstOit)) {
+            bgfx::destroy(m_progMeshInstOit);
+            m_progMeshInstOit = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progMeshInstOitTex)) {
+            bgfx::destroy(m_progMeshInstOitTex);
+            m_progMeshInstOitTex = BGFX_INVALID_HANDLE;
+        }
         if (bgfx::isValid(u_instParams)) {
             bgfx::destroy(u_instParams);
             u_instParams = BGFX_INVALID_HANDLE;
@@ -1509,6 +1521,9 @@ public:
             // instance.
             m_progMeshInst = loadProgram("vs_fc_mesh_inst", "fs_fc_mesh",
                                          _BGFXLib.resource().c_str());
+            m_progMeshInstTex = loadProgram("vs_fc_mesh_tex_inst",
+                                            "fs_fc_mesh_tex",
+                                            _BGFXLib.resource().c_str());
             u_instParams = bgfx::createUniform("u_instParams",
                                                bgfx::UniformType::Vec4);
             m_progLine = loadProgram("vs_fc_line", "fs_fc_flat",
@@ -1704,6 +1719,17 @@ public:
             m_progMeshOitTexClip = loadProgram("vs_fc_mesh_tex_clip",
                                                "fs_fc_mesh_oit_tex_clip",
                                                _BGFXLib.resource().c_str());
+            if (m_instancing) {
+                // WBOIT accumulation is order-independent, so transparent
+                // instance groups are legal — but only while OIT runs
+                // (the sorted fallback needs per-draw depth keys).
+                m_progMeshInstOit = loadProgram("vs_fc_mesh_inst",
+                                                "fs_fc_mesh_oit",
+                                                _BGFXLib.resource().c_str());
+                m_progMeshInstOitTex = loadProgram("vs_fc_mesh_tex_inst",
+                                                   "fs_fc_mesh_oit_tex",
+                                                   _BGFXLib.resource().c_str());
+            }
             m_progComp = loadProgram("vs_fc_comp", "fs_fc_comp",
                                      _BGFXLib.resource().c_str());
             s_texAccum = bgfx::createUniform("s_texAccum",
@@ -3157,6 +3183,83 @@ public:
     /// Per-frame PBR/shadow uniform + sampler state shared by every
     /// triangle draw (the branches are uniform-selected in fc_mesh_fs.sh,
     /// so every mesh program consumes them).
+    /// Bind the samplers and uniforms of a textured triangle draw
+    /// (shared by the per-draw and the instanced submit paths).
+    void bindTextureStage(const Render::Material &mat, bool bumped,
+                          bool mapped)
+    {
+        // u_texParams: x = texture environment (TextureImage::Model),
+        // y = the source format carries alpha (GL's REPLACE keeps the
+        // fragment alpha for alpha-less formats; the RGBA8 expansion
+        // hides that distinction from the sampler), z = emissive map
+        // present, w = occlusion map present. The bump-only
+        // stand-in modulates by opaque white.
+        float texParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float blend[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::TextureHandle color = m_whiteTex;
+        if (mat.texture) {
+            color = getTexture(*mat.texture)->handle;
+            texParams[0] = float(mat.texture->model);
+            texParams[1] = mat.texture->numComponents == 2
+                    || mat.texture->numComponents == 4
+                ? 1.0f : 0.0f;
+            unpackColor(mat.texture->blendColor, blend);
+        }
+        if (mapped && mat.emissivemap)
+            texParams[2] = 1.0f;
+        if (mapped && mat.occlusionmap)
+            texParams[3] = 1.0f;
+        bool mrmapped = mapped && mat.metallicroughnessmap;
+        bgfx::setTexture(0, s_texColor, color);
+        bgfx::setUniform(u_texParams, texParams);
+        bgfx::setUniform(u_texBlendColor, blend);
+        float texmat[16];
+        if (mat.texidentity)
+            bx::mtxIdentity(texmat);
+        else
+            std::memcpy(texmat, mat.texmatrix, sizeof(texmat));
+        bgfx::setUniform(u_texMatrix, texmat);
+
+        // Bump map at unit 2: x = mode (1 normal map, 2 height,
+        // 3 height + parallax), y = strength (normal-map slope
+        // multiplier / height amplitude in UV units), zw = one
+        // texel in UV. White stand-in when off (branch not taken).
+        float bumpParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::TextureHandle bump = m_whiteTex;
+        if (bumped) {
+            const auto &bm = *mat.bumpmap;
+            bool heightmap = bm.numComponents <= 2;
+            bumpParams[0] = heightmap
+                ? (bumpParallax ? 3.0f : 2.0f) : 1.0f;
+            bumpParams[1] = heightmap
+                ? 0.04f * bumpScale : bumpScale;
+            bumpParams[2] = 1.0f / float(bm.width);
+            bumpParams[3] = 1.0f / float(bm.height);
+            bump = getTexture(bm)->handle;
+        }
+        bgfx::setUniform(u_bumpParams, bumpParams);
+        bgfx::setTexture(2, s_texBump, bump);
+
+        // Emissive/occlusion maps at units 4/5 (flagged in
+        // u_texParams.zw above; white stand-ins are never sampled).
+        bgfx::setTexture(4, s_texEmissive,
+                         texParams[2] > 0.5f
+                             ? getTexture(*mat.emissivemap)->handle
+                             : m_whiteTex);
+        bgfx::setTexture(5, s_texOcclusion,
+                         texParams[3] > 0.5f
+                             ? getTexture(*mat.occlusionmap)->handle
+                             : m_whiteTex);
+
+        // Metallic-roughness map at unit 6 (flagged via
+        // u_pbrParams.x = 2 above; the white stand-in is never
+        // sampled).
+        bgfx::setTexture(
+            6, s_texMetallicRoughness,
+            mrmapped ? getTexture(*mat.metallicroughnessmap)->handle
+                     : m_whiteTex);
+    }
+
     void setTriangleFrameState(const Render::Material &mat, int pass,
                                bool mapped)
     {
@@ -3240,11 +3343,15 @@ public:
 
     /// Submit one instanced draw of `count` placements of the prototype's
     /// mesh/material — the eligibility rules live in the producer
-    /// (instancableDraw / buildInstanceGroups): an opaque, untextured,
-    /// unclipped, non-on-top triangle draw of the normal scene pass.
-    /// `data` holds count * InstanceStride bytes. Returns false when the
-    /// transient instance buffer cannot fit the group this frame; the
-    /// caller falls back to per-draw submits.
+    /// (instancableDraw / buildInstanceGroups): an unclipped, non-on-top,
+    /// non-water triangle draw of the normal scene pass. Textured draws
+    /// batch too (the texture handles are part of the group key); a
+    /// transparent group only batches while WBOIT runs — its blending is
+    /// order-independent, unlike the sorted fallback. `data` holds
+    /// count * InstanceStride bytes. Returns false when the program or
+    /// the transient instance space is missing (or the group is
+    /// transparent on a sorted-transparency frame); the caller falls
+    /// back to per-draw submits.
     bool submitInstanced(const Render::DrawCall &draw, const float *data,
                          uint32_t count)
     {
@@ -3253,6 +3360,32 @@ public:
         if (!bgfx::isValid(mesh->geom->vbh)
                 || !bgfx::isValid(mesh->geom->tri))
             return false;
+
+        // Texture routing mirrors submit(): a bump/material map rides
+        // the textured programs with a white unit-0 stand-in.
+        bool bumped = mat.bumpmap && mat.lighting && draw.mesh->texCoords;
+        bool mapped = (mat.emissivemap || mat.occlusionmap
+                       || mat.metallicroughnessmap)
+            && draw.mesh->texCoords;
+        bool textured = (mat.texture && draw.mesh->texCoords)
+            || bumped || mapped;
+        if (textured) {
+            mesh->geom->ensureTexCoord(*draw.mesh);
+            textured = bgfx::isValid(mesh->geom->texcoord);
+            bumped = bumped && textured;
+            mapped = mapped && textured;
+        }
+
+        bool transparent = mat.transparent
+            || (mat.pervertexcolor && draw.mesh->hasTransparency);
+        if (transparent && !oitFrame)
+            return false;
+        bgfx::ProgramHandle prog = transparent
+            ? (textured ? m_progMeshInstOitTex : m_progMeshInstOit)
+            : (textured ? m_progMeshInstTex : m_progMeshInst);
+        if (!bgfx::isValid(prog))
+            return false;
+
         if (bgfx::getAvailInstanceDataBuffer(count, InstanceStride)
                 < count)
             return false;
@@ -3272,7 +3405,9 @@ public:
         bool shaded = mat.lighting
             || (shadowFrame && (mat.shadowstyle & 2));
         params[1] = shaded ? 1.0f : 0.0f;
-        bool twoside = mat.twoside;     // never transparent nor on-top
+        // GL parity (applyMaterial ~745): transparent draws are lit on
+        // both faces and never culled (never on-top here).
+        bool twoside = mat.twoside || transparent;
         params[2] = twoside ? 1.0f : 0.0f;
         params[3] = polygonOffsetBias(mat);
         bgfx::setUniform(u_matColor, color);
@@ -3282,37 +3417,53 @@ public:
         float instParams[4] = {mat.pervertexcolor ? 1.0f : 0.0f,
                                0.0f, 0.0f, 0.0f};
         bgfx::setUniform(u_instParams, instParams);
-        setTriangleFrameState(mat, PassNormal, false);
+        setTriangleFrameState(mat, PassNormal, mapped);
+        if (textured)
+            bindTextureStage(mat, bumped, mapped);
 
         uint64_t state = BGFX_STATE_MSAA
             | BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+        uint32_t blendRt = 0;
         if (mat.depthtest)
             state |= depthFuncState(mat.depthfunc);
-        if (mat.depthwrite)
+        if (mat.depthwrite && !transparent)
             state |= BGFX_STATE_WRITE_Z;
-        if (mat.culling && !twoside)
+        if (transparent) {
+            // WBOIT accumulation blending (submit()'s oitDraw state).
+            state |= BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
+                                           BGFX_STATE_BLEND_ONE)
+                | BGFX_STATE_BLEND_INDEPENDENT;
+            blendRt = uint32_t(
+                BGFX_STATE_BLEND_FUNC_RT_1(BGFX_STATE_BLEND_ZERO,
+                                           BGFX_STATE_BLEND_INV_SRC_COLOR));
+        }
+        if (mat.culling && !transparent && !twoside)
             state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
 
         setMeshVertexBuffers(mesh, *draw.mesh);
+        if (textured)
+            bgfx::setVertexBuffer(2, mesh->geom->texcoord);
         if (draw.indexCount > 0)
             bgfx::setIndexBuffer(mesh->geom->tri, uint32_t(draw.indexStart),
                                  uint32_t(draw.indexCount));
         else
             bgfx::setIndexBuffer(mesh->geom->tri);
         bgfx::setInstanceDataBuffer(&idb);
-        bgfx::setState(state);
+        bgfx::setState(state, blendRt);
 
         static const bool dbgsubmit =
             (getenv("FC_BGFX_DEBUG_SUBMIT") != nullptr);
         if (dbgsubmit)
             fprintf(stderr,
                     "bgfx submit instanced cache=%llx n=%u range=%d+%d"
-                    " state=%llx pvc=%d\n",
+                    " state=%llx pvc=%d tex=%d transp=%d\n",
                     (unsigned long long)draw.mesh->cacheId, count,
                     draw.indexStart, draw.indexCount,
-                    (unsigned long long)state, mat.pervertexcolor);
+                    (unsigned long long)state, mat.pervertexcolor,
+                    textured, transparent);
 
-        bgfx::submit(viewId + ViewOpaque, m_progMeshInst);
+        bgfx::submit(viewId + (transparent ? ViewTransparent : ViewOpaque),
+                     prog);
         return true;
     }
 
@@ -3642,78 +3793,8 @@ public:
                              mat.numclipplanes);
         }
 
-        if (textured) {
-            // u_texParams: x = texture environment (TextureImage::Model),
-            // y = the source format carries alpha (GL's REPLACE keeps the
-            // fragment alpha for alpha-less formats; the RGBA8 expansion
-            // hides that distinction from the sampler), z = emissive map
-            // present, w = occlusion map present. The bump-only
-            // stand-in modulates by opaque white.
-            float texParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-            float blend[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-            bgfx::TextureHandle color = m_whiteTex;
-            if (mat.texture) {
-                color = getTexture(*mat.texture)->handle;
-                texParams[0] = float(mat.texture->model);
-                texParams[1] = mat.texture->numComponents == 2
-                        || mat.texture->numComponents == 4
-                    ? 1.0f : 0.0f;
-                unpackColor(mat.texture->blendColor, blend);
-            }
-            if (mapped && mat.emissivemap)
-                texParams[2] = 1.0f;
-            if (mapped && mat.occlusionmap)
-                texParams[3] = 1.0f;
-            bool mrmapped = mapped && mat.metallicroughnessmap;
-            bgfx::setTexture(0, s_texColor, color);
-            bgfx::setUniform(u_texParams, texParams);
-            bgfx::setUniform(u_texBlendColor, blend);
-            float texmat[16];
-            if (mat.texidentity)
-                bx::mtxIdentity(texmat);
-            else
-                std::memcpy(texmat, mat.texmatrix, sizeof(texmat));
-            bgfx::setUniform(u_texMatrix, texmat);
-
-            // Bump map at unit 2: x = mode (1 normal map, 2 height,
-            // 3 height + parallax), y = strength (normal-map slope
-            // multiplier / height amplitude in UV units), zw = one
-            // texel in UV. White stand-in when off (branch not taken).
-            float bumpParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-            bgfx::TextureHandle bump = m_whiteTex;
-            if (bumped) {
-                const auto &bm = *mat.bumpmap;
-                bool heightmap = bm.numComponents <= 2;
-                bumpParams[0] = heightmap
-                    ? (bumpParallax ? 3.0f : 2.0f) : 1.0f;
-                bumpParams[1] = heightmap
-                    ? 0.04f * bumpScale : bumpScale;
-                bumpParams[2] = 1.0f / float(bm.width);
-                bumpParams[3] = 1.0f / float(bm.height);
-                bump = getTexture(bm)->handle;
-            }
-            bgfx::setUniform(u_bumpParams, bumpParams);
-            bgfx::setTexture(2, s_texBump, bump);
-
-            // Emissive/occlusion maps at units 4/5 (flagged in
-            // u_texParams.zw above; white stand-ins are never sampled).
-            bgfx::setTexture(4, s_texEmissive,
-                             texParams[2] > 0.5f
-                                 ? getTexture(*mat.emissivemap)->handle
-                                 : m_whiteTex);
-            bgfx::setTexture(5, s_texOcclusion,
-                             texParams[3] > 0.5f
-                                 ? getTexture(*mat.occlusionmap)->handle
-                                 : m_whiteTex);
-
-            // Metallic-roughness map at unit 6 (flagged via
-            // u_pbrParams.x = 2 above; the white stand-in is never
-            // sampled).
-            bgfx::setTexture(
-                6, s_texMetallicRoughness,
-                mrmapped ? getTexture(*mat.metallicroughnessmap)->handle
-                         : m_whiteTex);
-        }
+        if (textured)
+            bindTextureStage(mat, bumped, mapped);
 
         if (patterned) {
             // glLineStipple clamps the repeat factor to [1, 256].
@@ -3898,6 +3979,9 @@ public:
     bgfx::TextureHandle bgfxDepth = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMesh = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMeshInst = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshInstTex = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshInstOit = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMeshInstOitTex = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progFlat = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMeshClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progFlatClip = BGFX_INVALID_HANDLE;
@@ -5000,9 +5084,10 @@ public:
         };
 
         // Cross-object instancing: each precomputed group of identical
-        // draws (shared geometry cache, matching material bar the
-        // diffuse) collapses into one instanced submit of the opaque
-        // pass, carrying {model matrix, diffuse} per instance. The
+        // draws (matching geometry content and material bar the diffuse)
+        // collapses into one instanced submit of the opaque — or, on
+        // WBOIT frames, transparent — pass, carrying {model matrix,
+        // diffuse} per instance. The
         // depth-only side submissions batch too, over the same instance
         // layout: the SSAO/volumetric prepass with the visible members,
         // the shadow caster pass with visible, frustum-culled AND
@@ -5064,7 +5149,10 @@ public:
                         for (int i : vis)
                             drawInstanced[i] = 1;
                     }
-                    if (prepassActive
+                    // Transparent geometry neither occludes nor receives
+                    // AO — it stays out of the prepass like the per-draw
+                    // path.
+                    if (prepassActive && !isTransp(proto)
                             && view->submitPrepassInstanced(
                                 proto, instData.data(),
                                 uint32_t(vis.size()))) {
@@ -5746,30 +5834,67 @@ public:
     // bgfx is initialized.
     Render::DrawCallList scene;
     // Cross-object instance groups of the scene feed: draws sharing one
-    // geometry cache, index range and material (diffuse aside — links
-    // may override colors) collapse into one instanced submit per frame.
-    // Rebuilt with the scene; the per-frame loop still skips hidden
-    // members and falls back to per-draw submits when a group thins out.
+    // geometry content (by hash — a shared cache OR coincidentally
+    // identical flattened caches), index range and material (diffuse
+    // aside — links may override colors) collapse into one instanced
+    // submit per frame. Rebuilt with the scene; the per-frame loop still
+    // skips hidden members and falls back to per-draw submits when a
+    // group thins out.
     struct InstGroup { std::vector<int> members; };
     std::vector<InstGroup> instGroups;
     std::vector<int> instGroupOf;   ///< scene index -> group index or -1
 
-    /// A draw the instanced mesh path can express: an opaque, untextured,
-    /// unclipped, non-on-top, non-water triangle draw without autozoom.
-    /// (Hidden-line frames disable instancing wholesale, so the outline
-    /// material flag stays out of the picture.)
+    /// Content identity of one mesh cache: the colorless geometry hash
+    /// (computeGeomKey) plus a hash of the per-vertex color stream.
+    /// Computed once per cache id — a cache id always refers to
+    /// identical content — so scene rebuilds only hash caches they have
+    /// not seen before. Two caches with equal hashes render identically
+    /// through one prototype: the geometry table already shares their
+    /// GPU buffers, and equal color hashes mean the baked color streams
+    /// match byte for byte.
+    struct MeshContent {
+        uint64_t geomHash;
+        uint64_t colorHash;
+        int numVertices;
+        int numTri;
+        uint64_t stamp;
+    };
+    std::unordered_map<uint64_t, MeshContent> meshContents;
+    uint64_t meshContentStamp = 0;
+
+    const MeshContent &meshContent(const Render::MeshData &mesh)
+    {
+        auto res = meshContents.try_emplace(mesh.cacheId);
+        MeshContent &c = res.first->second;
+        if (res.second) {
+            c.geomHash = computeGeomKey(mesh).hash;
+            c.colorHash = mesh.colors
+                ? fnv1a64(0xcbf29ce484222325ull, mesh.colors,
+                          size_t(mesh.numVertices) * 4)
+                : 0;
+            c.numVertices = mesh.numVertices;
+            c.numTri = mesh.numTriangleIndices;
+        }
+        c.stamp = meshContentStamp;
+        return c;
+    }
+
+    /// A draw the instanced mesh path can express: an unclipped,
+    /// non-on-top, non-water triangle draw without autozoom. Textured
+    /// draws qualify (the texture identity joins the group key);
+    /// transparent draws qualify too but only batch on WBOIT frames
+    /// (submitInstanced falls back otherwise — sorted transparency
+    /// needs per-draw depth keys). (Hidden-line frames disable
+    /// instancing wholesale, so the outline material flag stays out of
+    /// the picture.)
     static bool instancableDraw(const Render::DrawCall &d)
     {
         const Render::Material &m = d.material;
         return d.mesh && d.mesh->numTriangleIndices > 0
             && m.type == Render::Material::Triangle
             && !m.ontop
-            && !m.transparent
-            && !(m.pervertexcolor && d.mesh->hasTransparency)
             && m.autozoom.empty()
             && m.numclipplanes == 0
-            && !m.texture && !m.bumpmap && !m.emissivemap
-            && !m.occlusionmap && !m.metallicroughnessmap
             && !m.water
             && !m.faceoutline;
     }
@@ -5778,18 +5903,25 @@ public:
     {
         instGroups.clear();
         instGroupOf.assign(scene.size(), -1);
+        ++meshContentStamp;
 
-        // Group key: every material field the instanced submit consumes
-        // besides the diffuse color (which rides the instance data).
-        // Byte-compared, so the struct is zeroed first (padding).
+        // Group key: the geometry content identity plus every material
+        // field the instanced submit consumes besides the diffuse color
+        // (which rides the instance data). Byte-compared, so the struct
+        // is zeroed first (padding).
         struct InstKey {
-            const void *mesh;
+            uint64_t geomHash, colorHash;
+            uint64_t texId, bumpId, emissiveId, occlusionId, mrId;
+            float texmatrix[16];
+            int numVertices, numTri;
             int start, count, part;
             float shininess, pofactor, pounits, metallic, roughness;
-            uint32_t emissive, specular, ambient;
+            uint32_t emissive, specular, ambient, texBlend;
+            uint8_t texModel, texWrapS, texWrapT, texComps;
             uint8_t depthfunc, shadowstyle;
             uint8_t depthtest, depthwrite, pervertexcolor, lighting,
-                twoside, culling, ccw, polygonoffset, solidshape;
+                twoside, culling, ccw, polygonoffset, solidshape,
+                transparent;
         };
         struct KeyLess {
             bool operator()(const InstKey &a, const InstKey &b) const
@@ -5801,9 +5933,36 @@ public:
             if (!instancableDraw(d))
                 continue;
             const Render::Material &m = d.material;
+            const MeshContent &c = meshContent(*d.mesh);
             InstKey k;
             std::memset(&k, 0, sizeof(k));
-            k.mesh = d.mesh.get();
+            k.geomHash = c.geomHash;
+            k.colorHash = c.colorHash;
+            k.numVertices = c.numVertices;
+            k.numTri = c.numTri;
+            if (m.texture) {
+                k.texId = m.texture->textureId;
+                k.texModel = m.texture->model;
+                k.texWrapS = m.texture->wrapS;
+                k.texWrapT = m.texture->wrapT;
+                k.texComps = uint8_t(m.texture->numComponents);
+                k.texBlend = m.texture->blendColor;
+            }
+            if (m.bumpmap)
+                k.bumpId = m.bumpmap->textureId;
+            if (m.emissivemap)
+                k.emissiveId = m.emissivemap->textureId;
+            if (m.occlusionmap)
+                k.occlusionId = m.occlusionmap->textureId;
+            if (m.metallicroughnessmap)
+                k.mrId = m.metallicroughnessmap->textureId;
+            // The texture matrix feeds any textured route (a bump or
+            // material map transforms its texcoords through it too).
+            if ((k.texId || k.bumpId || k.emissiveId || k.occlusionId
+                 || k.mrId) && !m.texidentity)
+                std::memcpy(k.texmatrix, m.texmatrix, sizeof(k.texmatrix));
+            k.transparent = m.transparent
+                || (m.pervertexcolor && d.mesh->hasTransparency);
             k.start = d.indexStart;
             k.count = d.indexCount;
             k.part = d.partIndex;
@@ -5831,6 +5990,17 @@ public:
                 instGroups.emplace_back();
             instGroups[res.first->second].members.push_back(i);
             instGroupOf[i] = res.first->second;
+        }
+        // Drop content entries no recent scene referenced (cache ids of
+        // removed geometry never come back).
+        if (meshContents.size() > 4 * scene.size() + 64) {
+            for (auto it = meshContents.begin();
+                 it != meshContents.end();) {
+                if (it->second.stamp + 4 < meshContentStamp)
+                    it = meshContents.erase(it);
+                else
+                    ++it;
+            }
         }
         // Singletons gain nothing; keep them on the per-draw path.
         for (auto &g : instGroups) {

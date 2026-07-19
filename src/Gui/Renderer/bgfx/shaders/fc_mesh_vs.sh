@@ -9,13 +9,15 @@
  * u_params.w : NDC depth bias (glPolygonOffset approximation); positive
  *              pushes the fragment away from the viewer.
  *
- * INSTANCED variant (vs_fc_mesh_inst): the model transform comes from
- * the per-instance data instead of the predefined u_model chain —
- * i_data0-3 are the columns of the instance's model matrix (the same
- * GL-layout 16 floats DrawCall::model holds), i_data4 its diffuse
- * color. u_instParams.x selects the per-vertex color stream over the
- * per-instance color (the fragment stage always reads v_color0 in the
- * instanced path, u_params.x is forced to 1 by the submitter).
+ * INSTANCED variant (vs_fc_mesh_inst / vs_fc_mesh_tex_inst): the model
+ * transform comes from the per-instance data instead of the predefined
+ * u_model chain — i_data0-3 are the columns of the instance's model
+ * matrix (the same GL-layout 16 floats DrawCall::model holds), i_data4
+ * its diffuse color. u_instParams.x selects the per-vertex color stream
+ * over the per-instance color (the fragment stage always reads v_color0
+ * in the instanced path, u_params.x is forced to 1 by the submitter).
+ * The TEXTURE combination carries the texture coordinates exactly like
+ * the non-instanced textured variant.
  */
 
 uniform vec4 u_params;
@@ -37,6 +39,10 @@ void main()
 	                            0.0)).xyz;
 	v_color0 = u_instParams.x > 0.5 ? a_color0 : i_data4;
 	v_vpos = mul(u_view, wpos).xyz;
+#ifdef TEXTURE
+	vec4 tc = mul(u_texMatrix, vec4(a_texcoord0, 0.0, 1.0));
+	v_texcoord0 = tc.xy / (tc.w != 0.0 ? tc.w : 1.0);
+#endif
 #else
 	gl_Position = mul(u_modelViewProj, vec4(a_position, 1.0));
 	gl_Position.z += u_params.w * gl_Position.w;
