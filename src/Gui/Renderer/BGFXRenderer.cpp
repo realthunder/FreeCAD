@@ -1303,7 +1303,8 @@ public:
         for (auto uni : {&s_texShadow, &s_texShadowTint,
                          &u_shadowParams, &u_lightDir,
                          &u_lightPos, &u_lightColor, &u_shadowMatrix,
-                         &u_shadowBlur, &u_evsm}) {
+                         &u_shadowBlur, &u_evsm,
+                         &u_fireLight, &u_fireLightColor}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1707,6 +1708,10 @@ public:
         u_shadowMatrix = bgfx::createUniform("u_shadowMatrix",
                                              bgfx::UniformType::Mat4);
         u_evsm = bgfx::createUniform("u_evsm", bgfx::UniformType::Vec4);
+        u_fireLight = bgfx::createUniform("u_fireLight",
+                                          bgfx::UniformType::Vec4);
+        u_fireLightColor = bgfx::createUniform("u_fireLightColor",
+                                               bgfx::UniformType::Vec4);
         // EVSM: the moments store an exponential warp of the light
         // window depth (exp(c z), exp(c z)^2), which curbs VSM's light
         // bleeding at overlapping occluders. RG32F carries the classic
@@ -3870,6 +3875,11 @@ public:
         bgfx::setUniform(u_lightPos,
                          shadowFrame ? lightPosView : noSpot);
         bgfx::setUniform(u_shadowParams, shadowParams);
+        // Fire body effect light: frame-wide state computed in render()
+        // (zeroed w when no fire body burns); set on every mesh submit
+        // because bgfx uniforms are global per program.
+        bgfx::setUniform(u_fireLight, fireLightView);
+        bgfx::setUniform(u_fireLightColor, fireLightColorI);
         bgfx::setTexture(3, s_texShadow, shadow);
         if (bgfx::isValid(s_texShadowTint))
             bgfx::setTexture(7, s_texShadowTint,
@@ -4701,6 +4711,14 @@ public:
     // Spot light position in view space; w = cos(cutOffAngle) for a
     // spot light, -1 for a directional one (the shader switch).
     float lightPosView[4] = {0.0f, 0.0f, 0.0f, -1.0f};
+    // Fire body effect light (unshadowed flickering point light at the
+    // flame centroid): xyz = position in view space, w = 1 / range^2
+    // (0 = no fire light this frame). The color arrives premultiplied
+    // by intensity and the animation-clock flicker.
+    bgfx::UniformHandle u_fireLight = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_fireLightColor = BGFX_INVALID_HANDLE;
+    float fireLightView[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float fireLightColorI[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float shadowMtx[16];       // camera view space -> shadow uv/depth
     // Cached shadow map: hash of the light camera + caster set of the
     // moments currently in shadowTex; the caster pass (and blur) only
@@ -5338,6 +5356,8 @@ public:
         bool hasFireBody = false;
         float fireEmission = 0.0f, fireDetail = 0.0f, fireSpeed = 1.0f;
         float fireZMin = 0.0f, fireInvHeight = 0.0f;
+        float fireIntensity = 1.0f, fireDiag = 0.0f;
+        float fireCenter[3] = {0.0f, 0.0f, 0.0f};
         for (const auto &draw : scene) {
             const auto &mat = draw.material;
             if (!mat.fire || mat.ontop
@@ -5358,6 +5378,11 @@ public:
             fireSpeed = mat.firespeed;
             fireZMin = draw.bboxMin[2];
             fireInvHeight = dz > 0.0f ? 1.0f / dz : 0.0f;
+            fireIntensity = intensity;
+            fireDiag = diag;
+            for (int j = 0; j < 3; ++j)
+                fireCenter[j] =
+                    0.5f * (draw.bboxMin[j] + draw.bboxMax[j]);
             hasFireBody = fireEmission > 0.0f && fireDetail > 0.0f
                 && fireInvHeight > 0.0f;
             break;
@@ -5411,6 +5436,45 @@ public:
             animTime = std::chrono::duration<float>(
                            animclock::now() - start).count();
             animLive = true;
+        }
+        // Fire lights the scene: an unshadowed point light at the flame
+        // centroid, its brightness flickered on the shared animation
+        // clock (frozen clocks stay deterministic) and its color the
+        // flame ramp's bright zone. The mesh FS adds it on top of the
+        // frame's lighting model — no shadow map from it, the usual
+        // engine effect-light shortcut.
+        static const bool noFireLight =
+            (getenv("FC_BGFX_NO_FIRELIGHT") != nullptr);
+        if (fireActive && !noFireLight && fireDiag > 0.0f
+                && fireInvHeight > 0.0f) {
+            const float *vm = reinterpret_cast<const float *>(viewMatrix);
+            // The light sits at a third of the flame height — the
+            // bright zone of the ramp, below the tapering tongues.
+            float wp[3] = {fireCenter[0], fireCenter[1],
+                           fireZMin + 0.35f / fireInvHeight};
+            for (int j = 0; j < 3; ++j)
+                view->fireLightView[j] = wp[0] * vm[j]
+                    + wp[1] * vm[4 + j] + wp[2] * vm[8 + j]
+                    + vm[12 + j];
+            float range = 2.5f * fireDiag;
+            view->fireLightView[3] = 1.0f / (range * range);
+            // Flicker: a few incommensurate sines on the flame clock
+            // (same 2.0 rise rate as the noise scroll), amplitude kept
+            // above zero so the fire never blacks out.
+            float t = animTime * fireSpeed * 2.0f;
+            float flicker = 0.80f
+                + 0.20f * (0.55f * std::sin(t * 11.7f)
+                           + 0.33f * std::sin(t * 7.3f + 1.7f)
+                           + 0.12f * std::sin(t * 23.9f + 0.5f));
+            float glow = fireIntensity * flicker;
+            // fireRamp(0.6) of the volume shader: the flame's dominant
+            // orange.
+            view->fireLightColorI[0] = 1.00f * glow;
+            view->fireLightColorI[1] = 0.72f * glow;
+            view->fireLightColorI[2] = 0.13f * glow;
+            view->fireLightColorI[3] = 0.0f;
+        } else {
+            view->fireLightView[3] = 0.0f;
         }
         float waterWaveStrength = waterconf.waveStrength;
         float waterWaveScale = waterconf.waveScale;
