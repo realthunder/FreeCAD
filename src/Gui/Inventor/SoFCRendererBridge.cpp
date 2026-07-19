@@ -100,10 +100,15 @@ ValueT viewParamOverride(View3DInventor * view,
     return def;
 }
 
-// MeshData that keeps its SoFCVertexCache (and thus all the exposed CPU
-// arrays, which are ref-counted and shared across cache generations) alive.
+// MeshData that keeps its SoFCVertexCache alive, plus a token pinning
+// the exposed CPU arrays' current storage generation. The cache alone
+// is not enough: the arrays are copy-on-write and shared across caches
+// (the variant-cache array dedup), so a later write — e.g. an
+// equality-shared index array detaching under sort_triangles — frees
+// the storage the raw pointers below were captured from.
 struct CacheMeshData : Render::MeshData {
     Gui::CoinPtr<SoFCVertexCache> holder;
+    std::shared_ptr<const void> arrayRefs;
     // Compacted index subsets of partial caches (see below); the base
     // struct's index pointers alias these when filled.
     std::vector<int32_t> partialTriangles;
@@ -115,6 +120,7 @@ translateCache(SoFCVertexCache * cache)
 {
     auto mesh = std::make_shared<CacheMeshData>();
     mesh->holder = cache;
+    mesh->arrayRefs = cache->copyArrayRefs();
     mesh->cacheId = cache->getCacheId();
 
     mesh->numVertices = cache->getNumVertices();

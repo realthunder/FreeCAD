@@ -24,6 +24,7 @@
 
 #include <set>
 #include <map>
+#include <memory>
 
 #include <Inventor/caches/SoCache.h>
 #include <Inventor/system/gl.h>
@@ -157,6 +158,15 @@ public:
 
   int getNumPointIndices(void) const;
   const GLint * getPointIndices(void) const;
+
+  /** Pin the current generation of every CPU array exposed by the raw
+   * pointer accessors above. The pointers point into copy-on-write
+   * storage that a later write replaces — e.g. an equality-shared
+   * index array detaching under sort_triangles — and keeping the cache
+   * itself alive does not keep the superseded generation. Holding the
+   * returned token does.
+   */
+  std::shared_ptr<const void> copyArrayRefs(void) const;
 
   /** Get the index range of one part (as used for partial rendering, e.g.
    * a single face/edge/point) inside the respective index array. \a start

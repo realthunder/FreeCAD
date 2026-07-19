@@ -1897,6 +1897,35 @@ SoFCVertexCache::getTriangleIndex(const int idx) const
   return PRIVATE(this)->triangleindexer->getIndices()[idx];
 }
 
+std::shared_ptr<const void>
+SoFCVertexCache::copyArrayRefs(void) const
+{
+  // Copies of the COW attribute/index array objects share (and thus
+  // refcount) their current backing storage, so the raw pointers the
+  // accessors handed out stay valid even after the cache's own member
+  // detaches to a new generation (e.g. an equality-shared index array
+  // copied on write by sort_triangles).
+  struct Refs {
+    Vec3Array vertex, normal;
+    Vec4Array texcoord;
+    ByteArray color;
+    SbFCVector<SoFCVertexArrayIndexer::IndexArray> indices;
+  };
+  auto refs = std::allocate_shared<Refs>(SoFCAllocator<Refs>());
+  refs->vertex = PRIVATE(this)->vertexarray;
+  refs->normal = PRIVATE(this)->normalarray;
+  refs->texcoord = PRIVATE(this)->texcoord0array;
+  refs->color = PRIVATE(this)->colorarray;
+  for (auto indexer : {PRIVATE(this)->triangleindexer,
+                       PRIVATE(this)->lineindexer,
+                       PRIVATE(this)->pointindexer,
+                       PRIVATE(this)->noseamindexer}) {
+    if (indexer)
+      refs->indices.push_back(indexer->getIndexArray());
+  }
+  return refs;
+}
+
 SbBool
 SoFCVertexCache::colorPerVertex(void) const
 {
