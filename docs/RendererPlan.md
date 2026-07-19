@@ -140,6 +140,34 @@ now ships in all major browsers, Kitware moved VTK to it for exactly this
 workload, and it would collapse the backend matrix to one modern API — but
 today it lacks bgfx's reach and our WebGL fallback need.
 
+**Rejected alternative (recorded 2026-07): Qt3D / Qt Quick 3D + Qt for
+WebAssembly.** Considered as "port the view layer to Qt's 3D stack, get the
+browser via Qt-wasm." Rejected on four grounds. (1) Qt 3D is dead as a
+target: removed from the Qt release configuration as of Qt 6.8,
+community/KDAB critical-fix maintenance only, superseded by Qt Quick 3D —
+and its architecture is *more* GL-bound than what we have. (2) Qt Quick 3D
+replaces Coin, not just the drawing: FreeCAD's entire ViewProvider /
+selection / dragger / edit-mode layer is built on the Coin scene graph, and
+the bridge's whole premise is that Coin stays the source of truth while
+only rendering is redirected; a Qt Quick 3D port is a multi-year rewrite of
+that layer, with our CAD-specific passes (WBOIT, stencil face outlines,
+hidden-line, section caps, per-face selection appends, instancing)
+re-implemented inside a frame graph we don't own via QQuick3DRenderExtension
+hooks. (3) Qt-wasm compiles the whole application to the browser: OCCT
+builds for wasm, but Python + PySide6 on wasm is near-blocking, Coin still
+cannot render on WebGL (fixed-function GL — the reason this renderer
+exists), and the result is a several-hundred-MB binary with slow cold
+start — versus the shipped few-MB thin viewer (bgfx + snapshot/WebSocket
+stream, no Qt/Python/OCCT in the browser), which also matches the
+ComputeBoundaries.md thin-client direction. (4) The attractive piece of
+Qt's stack, QRhi, is exactly the role bgfx already fills, proven through
+Phases 0–3 including the WebGL2 build; and the raw-GL overlay problem
+(NaviCube etc.) would exist under Qt Quick 3D too — that porting work is
+not saved, only relocated. Revisit only if a no-server full-authoring-app
+in the browser becomes a goal, and then as a Qt-wasm *shell* around this
+same backend, gated on Python/PySide-on-wasm maturity — not as a renderer
+change.
+
 Feature-technique choices (what shipping CAD viewers actually do):
 
 - **Reflections: IBL, not SSR.** No shipping CAD viewer uses SSR (SolidWorks
