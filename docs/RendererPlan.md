@@ -1122,10 +1122,19 @@ independent of each other; item 4 builds on item 3's property model.
   interaction drops the scene targets to single-sample and disables
   SSAO, 300 ms idle restores full quality (the Fusion 360 pattern) via
   the runtime `setMSAASamples()` toggle. All verified in headless
-  Chromium; desktop readback stayed bit-equal throughout. Remaining
-  ideas (not started): camera sync from the desktop view, delta/mesh-
-  level streaming instead of full snapshots, WebSocket push instead of
-  polling.
+  Chromium; desktop readback stayed bit-equal throughout. **Next
+  (planned 2026-07): mouse interaction from the canvas back to
+  FreeCAD** — in order: WebSocket push replacing the HTTP poll (the
+  transport upgrade goes first, before any event-stream feature),
+  browser-local preselection (CPU raycast against the snapshot meshes
+  → objectKey/partIndex → immediate hover tint, no round trip), and
+  roundtrip click selection (world ray from the viewer camera → server
+  → `SoRayPickAction::setRay` + `ViewProvider::getElementPicked` →
+  `Gui::Selection`, consumed on the GUI thread; the selection echo
+  back into the viewer already rides the scene feed). Later ideas
+  (unscheduled): camera sync from the desktop view, delta/mesh-level
+  streaming instead of full snapshots, rubber-band selection, edit-
+  mode/dragger event forwarding.
 - SSR (optional), GTAO, TAA where compute is available.
 - **Displacement mapping** (true geometric displacement, beyond Phase 2's
   parallax illusion): vertex-shader height sampling where
