@@ -507,6 +507,11 @@ public:
     /// object (RenderParams defaults), called when a renderer backend is
     /// selected.
     void initRenderProperties();
+    /// Pick along a world-space ray and select the hit element —
+    /// remote-viewer click selection forwarded by the scene-streaming
+    /// server (SceneServer.h). ctrl toggles like a Ctrl-click; a miss
+    /// without ctrl clears the selection. GUI thread only.
+    void pickAndSelect(const SbVec3f &origin, const SbVec3f &dir, bool ctrl);
 
     void updateHatchTexture();
     void refreshRenderCache();

@@ -77,6 +77,7 @@
 # include <Inventor/nodes/SoTexture2.h>
 # include <QApplication>
 # include <QBitmap>
+# include <QPointer>
 # include <QEventLoop>
 # include <QKeyEvent>
 # include <QMessageBox>
@@ -164,6 +165,7 @@
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderLink.h"
 #include "Renderer/Renderer.h"
+#include "Renderer/SceneServer.h"
 #include "NavigationAnimator.h"
 #include "NavigationAnimation.h"
 #include "Utilities.h"
@@ -3223,11 +3225,84 @@ void View3DInventorViewer::setRendererType(const std::string &type)
             selectionRoot->setExternalRenderer(_pimpl->renderer.get(), _pimpl->view);
             initRenderProperties();
         }
+        // Remote-viewer click selection: while the backend serves the
+        // scene stream (FC_BGFX_SERVE_SCENE), viewer clicks arrive as
+        // world-ray pick requests on a server thread — marshal them to
+        // the GUI thread and pick against this viewer's scene.
+        if (_pimpl->renderer && getenv("FC_BGFX_SERVE_SCENE")) {
+            QPointer<View3DInventorViewer> self(this);
+            Render::SceneStreamServer::instance().setPickHandler(
+                [self](const Render::ScenePickRequest &req) {
+                    Render::ScenePickRequest r = req;
+                    QMetaObject::invokeMethod(qApp, [self, r]() {
+                        if (self)
+                            self->pickAndSelect(
+                                SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
+                                SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
+                                r.modifiers & 1);
+                    }, Qt::QueuedConnection);
+                });
+        }
         getSoRenderManager()->scheduleRedraw();
     }
     // The Coin shadow ground is suppressed while a backend is active
     // (it draws its own); re-evaluate if the Shadow style is on.
     _pimpl->updateShadowGroundSwitch();
+}
+
+void View3DInventorViewer::pickAndSelect(const SbVec3f &origin,
+                                         const SbVec3f &dir,
+                                         bool ctrl)
+{
+    SoRayPickAction rp(getSoRenderManager()->getViewportRegion());
+    rp.setRay(origin, dir);
+    rp.setRadius(getPickRadius());
+    // setRay picking needs the camera as a traversed child (the
+    // getPointOnRay() pattern), so pick a temporary root of camera +
+    // scene instead of the scene graph directly.
+    auto root = new SoSeparator;
+    root->ref();
+    if (SoCamera *cam = getSoRenderManager()->getCamera())
+        root->addChild(cam);
+    root->addChild(getSoRenderManager()->getSceneGraph());
+    rp.apply(root);
+
+    SoPickedPoint *pp = rp.getPickedPoint();
+    ViewProviderDocumentObject *vpd = nullptr;
+    std::string subname;
+    if (pp && guiDocument) {
+        vpd = guiDocument->getViewProviderByPathFromHead(
+                static_cast<SoFullPath*>(pp->getPath()));
+        if (vpd && (!vpd->getObject()
+                    || !vpd->getObject()->isAttachedToDocument()
+                    || !vpd->getElementPicked(pp, subname)))
+            vpd = nullptr;
+    }
+    if (!vpd) {
+        if (!ctrl)
+            Gui::Selection().clearSelection();
+        root->unref();
+        return;
+    }
+
+    const char *docname = vpd->getObject()->getDocument()->getName();
+    const char *objname = vpd->getObject()->getNameInDocument();
+    const auto &pt = pp->getPoint();
+    SelectionNoTopParentCheck guard;
+    if (ctrl) {
+        if (Gui::Selection().isSelected(docname, objname, subname.c_str(),
+                                        ResolveMode::NoResolve))
+            Gui::Selection().rmvSelection(docname, objname, subname.c_str());
+        else
+            Gui::Selection().addSelection(docname, objname, subname.c_str(),
+                                          pt[0], pt[1], pt[2]);
+    }
+    else {
+        Gui::Selection().clearSelection();
+        Gui::Selection().addSelection(docname, objname, subname.c_str(),
+                                      pt[0], pt[1], pt[2]);
+    }
+    root->unref();
 }
 
 void View3DInventorViewer::initRenderProperties()

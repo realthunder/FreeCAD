@@ -22,22 +22,39 @@
 #ifndef RENDERER_SCENE_SERVER_H
 #define RENDERER_SCENE_SERVER_H
 
-/// Minimal HTTP server publishing the latest serialized scene snapshot
-/// to the standalone/WebAssembly viewer (the live-streaming transport).
-/// The desktop bridge publishes a new payload whenever a backend feed
-/// changes (FC_BGFX_SERVE_SCENE=<port>); the viewer polls
-///   GET /scene?v=<last-seen-version>
-/// which answers 204 while unchanged, else 200 with an 8-byte
-/// little-endian version followed by the SceneDump payload. Responses
-/// carry Access-Control-Allow-Origin: * so the page can be served from
-/// any origin. POSIX sockets; start() fails gracefully on Windows.
+/// Minimal scene-streaming server publishing the latest serialized
+/// scene snapshot to the standalone/WebAssembly viewer. The desktop
+/// bridge publishes a new payload whenever a backend feed changes
+/// (FC_BGFX_SERVE_SCENE=<port>).
+///
+/// Primary transport: WebSocket. A GET /scene request carrying an
+/// Upgrade: websocket header is answered with an RFC 6455 handshake;
+/// the connection then receives a binary frame of 8-byte little-endian
+/// version + SceneDump payload immediately and on every publish().
+/// Client frames carry viewer events back — currently the pick request
+/// ('P', flags byte, six little-endian floats: world ray origin +
+/// direction) dispatched to the installed pick handler.
+///
+/// Fallback transport: plain HTTP polling. GET /scene?v=<last-seen>
+/// answers 204 while unchanged, else 200 with the same version-prefixed
+/// payload. Responses carry Access-Control-Allow-Origin: * so the page
+/// can be served from any origin. POSIX sockets; start() fails
+/// gracefully on Windows.
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include "Renderer.h"
 
 namespace Render {
+
+/// A viewer click forwarded for picking: world-space ray + modifiers.
+struct ScenePickRequest {
+    float origin[3];
+    float dir[3];
+    uint32_t modifiers = 0;   ///< bit 0 = ctrl (toggle selection)
+};
 
 class RendererExport SceneStreamServer {
 public:
@@ -51,10 +68,16 @@ public:
     /// Replace the served payload and bump the version.
     void publish(std::vector<uint8_t> &&payload);
 
+    /// Install the consumer of viewer pick requests. Called on a
+    /// server connection thread — the handler must marshal to the GUI
+    /// thread itself before touching any scene graph.
+    void setPickHandler(std::function<void(const ScenePickRequest &)> handler);
+
 private:
     SceneStreamServer() = default;
     class Private;
     Private *pimpl = nullptr;
+    Private *ensure();
 };
 
 } // namespace Render
