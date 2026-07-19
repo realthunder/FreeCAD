@@ -1101,8 +1101,31 @@ independent of each other; item 4 builds on item 3's property model.
   `glDrawBuffer` (GLES path now selects the draw buffer with a one-hot
   `glDrawBuffers` list). Verified in headless Chromium: edges/outlines
   resolve smooth, WBOIT + orbit/zoom intact; desktop readback bit-equal.
-  Not yet ported: selection/highlight feeds, live geometry streaming
-  (snapshots only), touch input, progressive refinement.
+  *Viewer close-out done (2026-07)* — the remaining first-cut gaps are
+  ported: **selection/highlight feeds** ride the snapshot (v2 format,
+  v1 still loads; `FC_BGFX_DUMP_SCENE_DELAY=<frames>` /
+  `FC_BGFX_DUMP_SCENE_SEL=1` let a scripted capture include selection
+  state) and replay through `addSelection`/`setHighlight` — a captured
+  box-face selection renders the green fill/edge pair and a face
+  preselection the on-top outline in the browser. **Live streaming**:
+  `FC_BGFX_SERVE_SCENE=<port>` starts a minimal HTTP server
+  (`SceneServer.h`, POSIX sockets) publishing the serialized snapshot
+  (new in-memory SceneDump variants) whenever a feed changes; with a
+  `?scene=<url>` page parameter the viewer polls `GET /scene?v=<seen>`
+  (Emscripten FETCH, 204 while unchanged, else 8-byte version +
+  payload) twice a second and re-applies configs/scene/selections
+  (stale ids removed)/highlight — the first scene fits the camera,
+  updates keep the user's; a mid-session resize + recolor + selection
+  made in the running FreeCAD appears in the browser within the poll
+  interval. **Touch**: one finger orbits, two fingers pan by centroid
+  and pinch-zoom by distance ratio. **Progressive refinement**: camera
+  interaction drops the scene targets to single-sample and disables
+  SSAO, 300 ms idle restores full quality (the Fusion 360 pattern) via
+  the runtime `setMSAASamples()` toggle. All verified in headless
+  Chromium; desktop readback stayed bit-equal throughout. Remaining
+  ideas (not started): camera sync from the desktop view, delta/mesh-
+  level streaming instead of full snapshots, WebSocket push instead of
+  polling.
 - SSR (optional), GTAO, TAA where compute is available.
 - **Displacement mapping** (true geometric displacement, beyond Phase 2's
   parallax illusion): vertex-shader height sampling where
