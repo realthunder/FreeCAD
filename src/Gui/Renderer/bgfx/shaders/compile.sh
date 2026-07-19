@@ -17,7 +17,7 @@ out=$here/../assets/shaders
 
 [ -x "$shaderc" ] || { echo "shaderc not found: $shaderc" >&2; exit 1; }
 
-mkdir -p "$out/glsl" "$out/spirv"
+mkdir -p "$out/glsl" "$out/spirv" "$out/essl"
 
 for f in "$here"/vs_*.sc; do
     name=$(basename "$f" .sc)
@@ -25,6 +25,8 @@ for f in "$here"/vs_*.sc; do
         -p 140 -i "$inc" --varyingdef "$here/varying.def.sc"
     "$shaderc" -f "$f" -o "$out/spirv/$name.bin" --type v --platform linux \
         -p spirv -i "$inc" --varyingdef "$here/varying.def.sc"
+    "$shaderc" -f "$f" -o "$out/essl/$name.bin" --type v --platform asm.js \
+        -p 300_es -i "$inc" --varyingdef "$here/varying.def.sc"
     echo "compiled $name"
 done
 
@@ -34,5 +36,7 @@ for f in "$here"/fs_*.sc; do
         -p 140 -i "$inc" --varyingdef "$here/varying.def.sc"
     "$shaderc" -f "$f" -o "$out/spirv/$name.bin" --type f --platform linux \
         -p spirv -i "$inc" --varyingdef "$here/varying.def.sc"
+    "$shaderc" -f "$f" -o "$out/essl/$name.bin" --type f --platform asm.js \
+        -p 300_es -i "$inc" --varyingdef "$here/varying.def.sc"
     echo "compiled $name"
 done

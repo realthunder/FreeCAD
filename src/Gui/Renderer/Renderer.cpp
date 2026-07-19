@@ -25,7 +25,11 @@
 #include <map>
 #include <vector>
 #include <string>
+#ifdef FC_RENDERER_STANDALONE
+#include "StandalonePlatform.h"
+#else
 #include <QDebug>
+#endif
 
 using namespace Render;
 

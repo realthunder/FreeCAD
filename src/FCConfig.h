@@ -61,6 +61,10 @@
 #   ifndef FC_OS_MACOSX
 #   define FC_OS_MACOSX
 #   endif
+#elif defined(__EMSCRIPTEN__)
+#   ifndef FC_OS_WASM
+#   define FC_OS_WASM
+#   endif
 #elif defined(linux) || defined(__linux) || defined(__linux__) || defined(__GLIBC__)
 #   ifndef FC_OS_LINUX
 #   define FC_OS_LINUX

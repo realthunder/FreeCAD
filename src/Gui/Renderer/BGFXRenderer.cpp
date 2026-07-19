@@ -22,6 +22,7 @@
 
 #include "FCConfig.h"
 #include "BGFXRenderer.h"
+#include "SceneDump.h"
 
 #ifndef FC_OS_WIN32
 # ifndef GL_GLEXT_PROTOTYPES
@@ -52,6 +53,9 @@
 #include <set>
 
 #undef GL_GLEXT_VERSION
+#ifdef FC_RENDERER_STANDALONE
+#include "StandalonePlatform.h"
+#else
 #include <QColor>
 #include <QCoreApplication>
 #include <QVariant>
@@ -62,6 +66,7 @@
 #include <QOpenGLWidget>
 #include <QWindow>
 #include <QDebug>
+#endif
 
 // #if !defined(FC_OS_MACOSX)
 // # include <GL/gl.h>
@@ -72,6 +77,8 @@
 #include <bgfx/bgfx.h>
 #include <bx/timer.h>
 #include <bx/math.h>
+
+#ifndef FC_RENDERER_STANDALONE
 #include <bgfx_utils.h>
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -86,6 +93,7 @@ typedef QWGLNativeContext OpenGLContext;
 #  include <QtPlatformHeaders/QCocoaNativeContext>
 typedef QCocoaNativeContext OpenGLContext;
 #endif
+#endif // !FC_RENDERER_STANDALONE
 #undef KeyPress
 #undef Status
 #undef None
@@ -109,6 +117,7 @@ extern "C" int _main_(int, char**) {
 
 namespace
 {
+#ifndef FC_RENDERER_STANDALONE
     void freeFramebufferFunc(QOpenGLFunctions *funcs, GLuint id)
     {
         funcs->glDeleteFramebuffers(1, &id);
@@ -191,6 +200,7 @@ namespace
         return false;
     }
     #define checkFramebufferStatus() _checkFramebufferStatus(__LINE__)
+#endif // !FC_RENDERER_STANDALONE
 }
 
 ////////////////////////////////////////////////////////
@@ -212,6 +222,35 @@ public:
 
     void removeView(QOpenGLWidget *widget);
 
+    void shutdown();
+
+#ifdef FC_RENDERER_STANDALONE
+    /// Standalone (no Qt): bgfx owns the native window/canvas handed in
+    /// through setWindowHandle() — under Emscripten the "#canvas" CSS
+    /// selector — and creates its own GL context on it.
+    bool prepare(QOpenGLWidget *, RendererType::Enum type)
+    {
+        if (currentType == RendererType::Noop) {
+            currentType = type;
+            bgfx::Init init;
+            init.type = type;
+            init.platformData.nwh = windowHandle;
+            init.resolution.width = standaloneWidth;
+            init.resolution.height = standaloneHeight;
+            init.resolution.reset = BGFX_RESET_VSYNC;
+            if (!bgfx::init(init)) {
+                currentType = RendererType::Noop;
+                RENDER_ERR("init failed");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void makeCurrent() {}
+    void doneCurrent() {}
+    void freeFBO(int) {}
+#else
     bool prepare(QOpenGLWidget *widget, RendererType::Enum type)
     {
         if (!context) {
@@ -290,8 +329,6 @@ public:
         return true;
     }
 
-    void shutdown();
-
     void makeCurrent()
     {
         context->makeCurrent(offscreen.get());
@@ -309,21 +346,37 @@ public:
     {
         pendingRemoves.emplace_back(fbo, freeFramebufferFunc);
     }
+#endif // !FC_RENDERER_STANDALONE
 
     std::string resource()
     {
         return RendererFactory::resourcePath() + "bgfx/assets/";
     }
 
+#ifdef FC_RENDERER_STANDALONE
+    /// Native window handle bgfx initializes on (Emscripten: the canvas
+    /// CSS selector) and the current output size, fed by the host app
+    /// through BGFXRenderer::setWindowHandle()/setWindowSize().
+    void *windowHandle = nullptr;
+    uint16_t standaloneWidth = 1024;
+    uint16_t standaloneHeight = 768;
+#else
     typedef void (*FreeResourceFunc)(QOpenGLFunctions *functions, GLuint id);
     std::vector<std::pair<GLuint, FreeResourceFunc>> pendingRemoves;
-    std::unordered_map<QOpenGLWidget *, std::unique_ptr<BGFXView>> views;
-    std::set<uint16_t> viewIds;
     std::unique_ptr<QOpenGLContext> context;
     std::unique_ptr<QOffscreenSurface> offscreen;
+#endif
+    std::unordered_map<QOpenGLWidget *, std::unique_ptr<BGFXView>> views;
+    std::set<uint16_t> viewIds;
 
     std::map<std::string, RendererType::Enum> typeMap = {
+#ifdef FC_RENDERER_STANDALONE
+        // The standalone build renders through GLES — under Emscripten
+        // that is WebGL2 on the canvas.
+        {"bgfx - OpenGL", RendererType::OpenGLES},
+#else
         {"bgfx - OpenGL", RendererType::OpenGL},
+#endif
         // {"bgfx - Vulkan", RendererType::Vulkan},
 #ifdef FC_OS_WIN32
         // {"bgfx - Direct3D9", RendererType::Direct3D9},
@@ -337,8 +390,10 @@ public:
     RendererType::Enum currentType = RendererType::Noop;
     std::string name = "bgfx";
     std::set<BGFXRenderer::Private *> renderers;
+#ifndef FC_RENDERER_STANDALONE
     QWindow *window = nullptr;
     bool quitHooked = false;
+#endif
 };
 
 BGFXRendererLibP _BGFXLib;
@@ -1185,6 +1240,10 @@ public:
                             // because the outline views left marks
         ViewOnTop,          // scene geometry with on-top materials
         ViewHighlight,      // selection-on-top and preselection highlight
+        ViewPresent,        // standalone build only: fullscreen copy of
+                            // the scene color onto the default backbuffer
+                            // (the desktop build GL-blits into the Qt
+                            // framebuffer instead)
         NUM_VIEWS
     };
 
@@ -1518,6 +1577,12 @@ public:
             bgfx::destroy(u_linePattern);
             u_linePattern = BGFX_INVALID_HANDLE;
         }
+#ifdef FC_RENDERER_STANDALONE
+        if (bgfx::isValid(m_progPresent)) {
+            bgfx::destroy(m_progPresent);
+            m_progPresent = BGFX_INVALID_HANDLE;
+        }
+#else
         if (hasFBO) {
             _BGFXLib.freeFBO(fbo);
             if (fboDepth)
@@ -1525,6 +1590,7 @@ public:
             fboDepth = 0;
             hasFBO = false;
         }
+#endif
     }
 
     bgfx::TextureHandle createTexture(bgfx::TextureFormat::Enum format, uint64_t flags = 0,
@@ -1547,10 +1613,19 @@ public:
     void init()
     {
         destroy();
+#ifdef FC_RENDERER_STANDALONE
+        width = _BGFXLib.standaloneWidth;
+        height = _BGFXLib.standaloneHeight;
+        // First cut: no MSAA in the standalone build (WebGL2 could back
+        // it, but the blit-free present path is verified single-sample
+        // first).
+        int samples = 0;
+#else
         width = uint16_t(widget->width());
         height = uint16_t(widget->height());
 
         int samples = widget->format().samples();
+#endif
         uint64_t flags = 0;
         if (samples >= 8)
             flags = BGFX_TEXTURE_RT_MSAA_X8;
@@ -1579,6 +1654,16 @@ public:
 
         for (uint16_t i = 0; i < NUM_VIEWS; ++i)
             bgfx::setViewFrameBuffer(viewId + i, bgfxFbo);
+
+#ifdef FC_RENDERER_STANDALONE
+        // The standalone present pass copies the scene color onto the
+        // default backbuffer (no Qt framebuffer to GL-blit into).
+        m_progPresent = loadProgram("vs_fc_comp", "fs_fc_copy",
+                                    _BGFXLib.resource().c_str());
+        if (!bgfx::isValid(s_texScene))
+            s_texScene = bgfx::createUniform("s_texScene",
+                                             bgfx::UniformType::Sampler);
+#endif
 
         m_progMesh = loadProgram("vs_fc_mesh", "fs_fc_mesh",
                                  _BGFXLib.resource().c_str());
@@ -4515,6 +4600,29 @@ public:
         }
     }
 
+#ifdef FC_RENDERER_STANDALONE
+    /// Standalone present: fullscreen copy of the scene color onto the
+    /// default backbuffer (ViewPresent targets the invalid framebuffer).
+    /// Submitted before bgfx::frame(), replacing the desktop GL blit.
+    void present()
+    {
+        TransientVertex::init();
+        if (bgfx::getAvailTransientVertexBuffer(3, TransientVertex::ms_layout)
+                < 3)
+            return;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, 3, TransientVertex::ms_layout);
+        auto *v = reinterpret_cast<TransientVertex *>(tvb.data);
+        v[0] = {-1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
+        bgfx::setTexture(0, s_texScene, bgfxColor);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        bgfx::submit(viewId + ViewPresent, m_progPresent);
+        ++drawcount;
+    }
+#else
     void blit()
     {
         GLint prevFbo;
@@ -4597,6 +4705,7 @@ public:
         }
         glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
     }
+#endif // !FC_RENDERER_STANDALONE
 
     QOpenGLWidget *widget = nullptr;
     uint16_t viewId = 0;
@@ -4868,9 +4977,13 @@ public:
     // Per-frame world-to-screen scale consumed by autozoom draws
     // (Renderer::setAutoZoomScale).
     float autozoomScale = 1.0f;
+#ifdef FC_RENDERER_STANDALONE
+    bgfx::ProgramHandle m_progPresent = BGFX_INVALID_HANDLE;
+#else
     GLuint fbo = 0;
     GLuint fboDepth = 0;
     bool hasFBO = false;
+#endif
 };
 
 class BGFXRenderer::Private
@@ -4910,6 +5023,17 @@ public:
         if (!view)
             return false;
 
+#ifdef FC_RENDERER_STANDALONE
+        if (_BGFXLib.standaloneWidth != view->width
+                || _BGFXLib.standaloneHeight != view->height) {
+            bgfx::reset(_BGFXLib.standaloneWidth, _BGFXLib.standaloneHeight,
+                        BGFX_RESET_VSYNC);
+            view->init();
+        }
+
+        if (!bgfx::isValid(view->bgfxFbo))
+            return false;
+#else
         if (widget->width() != int(view->width)
                 || widget->height() != int(view->height))
             view->init();
@@ -4918,6 +5042,7 @@ public:
             widget->makeCurrent();
             return false;
         }
+#endif
 
         uint16_t base = view->viewId;
         uint16_t width = view->width;
@@ -4928,6 +5053,38 @@ public:
             | 0xff;
         if (getenv("FC_BGFX_DEBUG_CLEAR"))
             clearColor = 0xff0000ff;
+
+        // FC_BGFX_DUMP_SCENE=<path>: snapshot the first non-empty scene
+        // feed with all per-frame configs and the camera for the
+        // standalone/wasm viewer (SceneDump.h).
+        static const char *dumpPath = getenv("FC_BGFX_DUMP_SCENE");
+        if (dumpPath && *dumpPath && !sceneDumped && !scene.empty()) {
+            sceneDumped = true;
+            Render::SceneSnapshot snap;
+            snap.scene = scene;
+            snap.background = background;
+            snap.hlconfig = hlconfig;
+            snap.secconf = secconf;
+            snap.aoconf = aoconf;
+            snap.pbrconf = pbrconf;
+            snap.bumpconf = bumpconf;
+            snap.lightconf = lightconf;
+            snap.volconf = volconf;
+            snap.waterconf = waterconf;
+            snap.autozoomScale = autozoomScale;
+            snap.hatchRGBA = hatchRGBA;
+            snap.hatchWidth = hatchWidth;
+            snap.hatchHeight = hatchHeight;
+            std::memcpy(snap.viewMatrix, viewMatrix, sizeof(snap.viewMatrix));
+            std::memcpy(snap.projMatrix, projMatrix, sizeof(snap.projMatrix));
+            snap.width = width;
+            snap.height = height;
+            snap.clearColor = clearColor;
+            fprintf(stderr, "bgfx: scene snapshot (%zu draws) -> %s: %s\n",
+                    scene.size(), dumpPath,
+                    Render::saveSceneSnapshot(dumpPath, snap)
+                        ? "ok" : "FAILED");
+        }
 
         // WBOIT runs when the resources exist and the scene has any
         // transparent (non-on-top) triangles this frame; otherwise the
@@ -5984,6 +6141,19 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
+#ifdef FC_RENDERER_STANDALONE
+            } else if (i == BGFXView::ViewPresent) {
+                // Standalone present: the default backbuffer; the
+                // fullscreen triangle overwrites every pixel.
+                bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
+                bgfx::setViewTransform(id, nullptr, nullptr);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+#endif
             } else if (prepassActive && i == BGFXView::ViewAOPrepass) {
                 // Prepass target clears to 0 (.w = 0 marks background
                 // in the AO pass), with its own depth buffer.
@@ -6929,11 +7099,16 @@ public:
 
         view->collectMeshes();
 
+#ifdef FC_RENDERER_STANDALONE
+        view->present();
+        bgfx::frame();
+#else
         widget->doneCurrent();
         _BGFXLib.makeCurrent();
         bgfx::frame();
         widget->makeCurrent();
         view->blit();
+#endif
 
         if (!hasScene && !scene.empty())
             qDebug() << "bgfx: scene consumed:" << view->drawcount
@@ -7457,6 +7632,7 @@ public:
     const void *hatchKey = nullptr;
     uint64_t hatchVersion = 0;
     bool hlWholeOnTop = false;
+    bool sceneDumped = false;   ///< FC_BGFX_DUMP_SCENE fired
     bool sceneDirty = false;
     bool hasScene = false;
     bool renderOk = false;
@@ -7740,6 +7916,21 @@ const std::string &BGFXRenderer::type() const
     return pimpl->typeName;
 }
 
+#ifdef FC_RENDERER_STANDALONE
+void BGFXRenderer::setWindowHandle(void *handle)
+{
+    _BGFXLib.windowHandle = handle;
+}
+
+void BGFXRenderer::setWindowSize(int width, int height)
+{
+    if (width > 0)
+        _BGFXLib.standaloneWidth = uint16_t(width);
+    if (height > 0)
+        _BGFXLib.standaloneHeight = uint16_t(height);
+}
+#endif
+
 //////////////////////////////////////////////////////////////////////
 
 BGFXRendererLib::BGFXRendererLib()
@@ -7824,8 +8015,10 @@ BGFXRendererLibP::~BGFXRendererLibP()
     for (auto &v : views)
         v.second.release();
     views.clear();
+#ifndef FC_RENDERER_STANDALONE
     context.release();
     offscreen.release();
+#endif
 }
 
 void BGFXRendererLibP::shutdown()
@@ -7836,11 +8029,13 @@ void BGFXRendererLibP::shutdown()
     // mess up with the other context that is currently active
     makeCurrent();
     bgfx::shutdown();
+#ifndef FC_RENDERER_STANDALONE
     if (window) {
         window->deleteLater();
         window = nullptr;
     }
     context.reset();
     offscreen.reset();
+#endif
     currentType = RendererType::Noop;
 }

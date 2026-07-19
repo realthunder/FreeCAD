@@ -4,9 +4,9 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB CMakeCache RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}/CMakeCache.txt)
 
-set(Renderer_Headers Renderer.h)
+set(Renderer_Headers Renderer.h SceneDump.h)
 set(Renderer_HPP_SRCS ${Renderer_Headers})
-set(Renderer_CPP_SRCS Renderer.cpp)
+set(Renderer_CPP_SRCS Renderer.cpp SceneDump.cpp)
 set(Renderer_LIBS FreeCADBase
                   ${QtCore_LIBRARIES}
                   ${QtWidgets_LIBRARIES}

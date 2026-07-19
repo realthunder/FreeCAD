@@ -72,6 +72,15 @@ public:
     virtual bool needsRedraw() const override;
     virtual bool canSkipInternal() const override;
 
+#ifdef FC_RENDERER_STANDALONE
+    /// Standalone (no Qt) build: the host app hands bgfx the native
+    /// window handle (Emscripten: the canvas CSS selector, e.g.
+    /// "#canvas") before creating a renderer, and reports the current
+    /// output size — the next render() picks up a change.
+    static void setWindowHandle(void *handle);
+    static void setWindowSize(int width, int height);
+#endif
+
     friend class BGFXRendererLib;
     friend class BGFXRendererLibP;
 
