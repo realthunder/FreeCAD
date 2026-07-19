@@ -90,4 +90,10 @@ if (Renderer_Assets)
     fc_copy_sources(Renderer_assets
                     "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer"
                     ${Renderer_Assets})
+    # Building the library (thus any target linking it, e.g. FreeCADGui)
+    # refreshes the copied assets too — a plain --target FreeCADGui after
+    # shaders/compile.sh must not leave stale .bins in the build tree.
+    # Note the asset list itself is a configure-time GLOB: an all-new
+    # shader file still needs a cmake reconfigure to be picked up.
+    add_dependencies(${Library} Renderer_assets)
 endif (Renderer_Assets)
