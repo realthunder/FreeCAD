@@ -1938,6 +1938,12 @@ public:
                                          bgfx::UniformType::Sampler);
         u_waterSurf = bgfx::createUniform("u_waterSurf",
                                           bgfx::UniformType::Vec4);
+        // The surface shader's refraction depth reject samples the SSAO
+        // prepass; without those resources the sampler uniform still
+        // has to exist for the (disabled) stage binding.
+        if (!bgfx::isValid(s_texNormalZ))
+            s_texNormalZ = bgfx::createUniform("s_texNormalZ",
+                                               bgfx::UniformType::Sampler);
 
         // Ground reflection: the mirrored-camera scene render target
         // (single-sample; the overlay blend softens the aliasing).
@@ -3303,7 +3309,7 @@ public:
     /// transparent-bucket blending of the body.
     void submitWaterSurface(const Render::DrawCall &draw,
                             float waveStrength, float waveScale,
-                            float time)
+                            float time, bool depthReject)
     {
         if (!draw.mesh || !draw.mesh->triangleIndices)
             return;
@@ -3327,7 +3333,8 @@ public:
         // and push every fragment past the far plane.
         float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         bgfx::setUniform(u_params, params);
-        float surf[4] = {waveStrength, waveScale, time, 0.0f};
+        float surf[4] = {waveStrength, waveScale, time,
+                         depthReject ? 1.0f : 0.0f};
         bgfx::setUniform(u_waterSurf, surf);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2],
@@ -3337,6 +3344,11 @@ public:
         bgfx::setTexture(0, s_texScene, sceneCopyTex);
         bgfx::setTexture(1, s_texEnv, m_envBuilt ? m_envTex
                                                  : m_dummyEnvTex);
+        // Prepass viewZ for the refraction depth reject (u_waterSurf.w
+        // flags it valid; without the prepass the stage still needs a
+        // bound texture, any will do since the shader skips the read).
+        bgfx::setTexture(2, s_texNormalZ,
+                         depthReject ? aoNormalZ : sceneCopyTex);
 
         setDrawTransform(draw, autozoomScale);
         // The mesh vertex shader needs the color stream too (bgfx drops
@@ -5021,8 +5033,15 @@ public:
             && bgfx::isValid(view->shadowBlurFbo);
 
         // The prepass rasterizes for SSAO and/or the volumetric ray
-        // ends; the AO resolve chain itself stays SSAO-gated.
-        bool prepassActive = ssaoActive || volActive;
+        // ends; the AO resolve chain itself stays SSAO-gated. The water
+        // surface pass also reads its viewZ, to reject refraction
+        // samples landing on geometry in front of the surface (the
+        // not-submerged parts of protruding objects would smear).
+        static const bool noWaterReject =
+            (getenv("FC_BGFX_NO_WATER_REJECT") != nullptr);
+        bool waterSurfReject = waterSurfActive && view->m_ssao
+            && !noWaterReject;
+        bool prepassActive = ssaoActive || volActive || waterSurfReject;
 
         // Ground reflection: mirror the world about the shadow ground
         // plane (z = scene bbox bottom, the plane the ground quad sits
@@ -5658,7 +5677,8 @@ public:
                              sceneNoSeam(draw));
             if (surfWater && !cullDraw)
                 view->submitWaterSurface(draw, waterWaveStrength,
-                                         waterWaveScale, waterSurfTime);
+                                         waterWaveScale, waterSurfTime,
+                                         waterSurfReject);
             // Water body draws bound the medium instead of acting as
             // ordinary surfaces: their front/back depths rasterize into
             // the water targets (whatever their transparency), and they

@@ -12,7 +12,8 @@ $input v_normal, v_color0, v_vpos
  * included).
  *
  * u_waterSurf: x = wave strength (slope amplitude), y = wave frequency
- *              (1/world units), z = animation time, w = unused
+ *              (1/world units), z = animation time, w > 0.5 = the
+ *              prepass viewZ is bound for the refraction depth reject
  * u_matColor : water body diffuse — tints the refracted scene slightly
  * u_lightDir : scene light (w > 0.5 = present), view space
  */
@@ -21,6 +22,7 @@ $input v_normal, v_color0, v_vpos
 
 SAMPLER2D(s_texScene, 0);
 SAMPLERCUBE(s_texEnv, 1);
+SAMPLER2D(s_texNormalZ, 2);
 
 uniform vec4 u_matColor;
 uniform vec4 u_lightDir;
@@ -65,10 +67,34 @@ void main()
 	// Screen-space refraction: offset the scene sample by the wave
 	// normal delta (the flat surface samples straight through, so the
 	// unperturbed result matches the plain transparent look shifted
-	// only by shading).
+	// only by shading). Offset samples landing on geometry in front
+	// of the surface (prepass viewZ nearer than this fragment — the
+	// not-submerged parts of protruding objects) fall back to the
+	// straight-through sample, which is behind the surface wherever
+	// the surface itself is visible.
+	// The cross taps dilate the reject by ~2 px: the CAD edge lines
+	// drawn on dry silhouettes don't rasterize into the prepass, so
+	// the line pixels straddling the background would smear their
+	// black through the offset otherwise.
 	vec2 uv = gl_FragCoord.xy * u_viewTexel.xy;
-	vec3 refr = texture2D(s_texScene,
-	                      uv + (np.xy - n.xy) * 0.08).xyz;
+	vec2 ruv = uv + (np.xy - n.xy) * 0.08;
+	if (u_waterSurf.w > 0.5)
+	{
+		float fragZ = -v_vpos.z * 0.999;
+		vec2 o = u_viewTexel.xy * 2.0;
+		vec4 p0 = texture2D(s_texNormalZ, ruv);
+		vec4 p1 = texture2D(s_texNormalZ, ruv + vec2(o.x, 0.0));
+		vec4 p2 = texture2D(s_texNormalZ, ruv - vec2(o.x, 0.0));
+		vec4 p3 = texture2D(s_texNormalZ, ruv + vec2(0.0, o.y));
+		vec4 p4 = texture2D(s_texNormalZ, ruv - vec2(0.0, o.y));
+		if ((p0.w > 0.5 && p0.z < fragZ)
+			|| (p1.w > 0.5 && p1.z < fragZ)
+			|| (p2.w > 0.5 && p2.z < fragZ)
+			|| (p3.w > 0.5 && p3.z < fragZ)
+			|| (p4.w > 0.5 && p4.z < fragZ))
+			ruv = uv;
+	}
+	vec3 refr = texture2D(s_texScene, ruv).xyz;
 	refr *= mix(vec3_splat(1.0), u_matColor.rgb, 0.2);
 
 	// Environment reflection in world space, slightly rough.
