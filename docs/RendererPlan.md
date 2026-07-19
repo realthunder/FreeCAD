@@ -1079,6 +1079,39 @@ independent of each other; item 4 builds on item 3's property model.
   allow. Camera-above-water volumetric shafts keep using the unrefracted
   ray (the universal approximation); revisit only if a path-tracer handoff
   materializes.
+  *Caustics first cut done (2026-07)* — the animated procedural fake, as a
+  screen-space pass instead of a projected texture: a new `ViewCaustics`
+  fullscreen view (between the outlines and the volumetric apply)
+  reconstructs each opaque pixel's view-space position from the SSAO
+  prepass, tests it against the water body interval of the
+  `ViewWaterFront`/`Back` depth targets (with 10% of the interval as
+  slack, so a tank floor coincident with the water bottom still
+  receives), and additively splats the caustic pattern modulated by the
+  shadow-map visibility (`shadowVis` factored out of `fs_fc_volume.sc`
+  into `fc_volume_shadow.sh`, verified bit-identical), the prepass
+  normal's N·L, and a Beer–Lambert light-leg tint over the depth below
+  the water entry (`u_waterSigma`). Because the splat lands before the
+  extinction multiply, the eye-ward underwater absorption applies to the
+  caustic light for free. The pattern itself (`fs_fc_caustics.sc`) is
+  three mutually warped sine layers whose zero lines sharpen into thin
+  filaments, evaluated in a light-perpendicular world-space frame (the
+  pattern sticks to the model under camera moves; light space follows the
+  light like the real thing). New `RenderParams`/per-view `Render_*`
+  params `Caustics`/`CausticsIntensity`/`CausticsScale` (0 = auto: a
+  fraction of the water body diagonal)/`CausticsSpeed`, riding
+  `Render::VolumetricConfig`; gated like the water medium (Volumetric +
+  Shadow draw style + a `Render_Water` body). Animation time comes from a
+  steady clock and a new `Renderer::animating()` hook makes the viewer
+  schedule follow-up redraws while active; `FC_BGFX_CAUSTIC_TIME` freezes
+  the time for deterministic comparisons. Verified on llvmpipe: frozen-time
+  runs bit-identical; the caustics-off water scene bit-identical to the
+  pre-change renderer; the on/off diff confined to the water footprint
+  with shadow holes; two grabs 0.6 s apart differ in the water region
+  only (the redraw loop drives the animation without input). Known gaps:
+  no surface refraction/Fresnel yet (the bullet's other half), the light
+  leg uses the view-path entry depth rather than the true along-light
+  distance to the surface, and the physically-derived light-space
+  accumulation option remains future work.
 
 Total to full feature list: **~36–46 wks** (bgfx, incl. Phase 2b) — ~7–10
 months with SSR deferred.
