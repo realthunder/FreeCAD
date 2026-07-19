@@ -117,16 +117,19 @@ void main()
 				// (no shadow term, no light color; hot gas is
 				// its own light source) attenuated by the
 				// eye-ward transmittance. The interval-edge
-				// fade softens the body's box silhouette; the
-				// extinction stays untouched, so the flame is
-				// purely additive over the scene behind it.
+				// fade softens the body's box silhouette. A
+				// mild soot extinction rides the temperature
+				// field (unburnt soot dims what lies behind
+				// the tongues) — absorption only, no scatter.
 				vec3 fwp = mul(u_invView,
 				               vec4(origin + dir * t, 1.0)).xyz;
 				float ffade = clamp(min(t - fire.x, fire.y - t)
 					/ max(0.2 * (fire.y - fire.x),
 					      1.0e-3), 0.0, 1.0);
-				emission += fireRamp(fireTempAt(fwp) * ffade)
+				float ftemp = fireTempAt(fwp) * ffade;
+				emission += fireRamp(ftemp)
 					* (u_fireParams.x * dt) * T;
+				sigT += vec3_splat(u_fireParams2.z * ftemp);
 			}
 			scatter += (shadowVis(origin + dir * t) * phase
 			            + ambient)

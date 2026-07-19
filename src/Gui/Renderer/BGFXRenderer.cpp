@@ -3451,11 +3451,15 @@ public:
         bgfx::setUniform(u_volMedium, medium);
         bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma);
         bgfx::setUniform(u_cloudParams, cloudParams);
+        bgfx::setUniform(u_fireParams, fireParams);
+        bgfx::setUniform(u_fireParams2, fireParams2);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         bgfx::setTexture(1, s_texWaterFront, waterFrontTex);
         bgfx::setTexture(2, s_texWaterBack, waterBackTex);
         bgfx::setTexture(3, s_texCloudFront, cloudFrontTex);
         bgfx::setTexture(4, s_texCloudBack, cloudBackTex);
+        bgfx::setTexture(5, s_texFireFront, fireFrontTex);
+        bgfx::setTexture(6, s_texFireBack, fireBackTex);
         fullscreen(ViewVolApply, m_progVolExt,
                    BGFX_STATE_WRITE_RGB
                    | BGFX_STATE_BLEND_FUNC_SEPARATE(
@@ -5356,7 +5360,7 @@ public:
         bool hasFireBody = false;
         float fireEmission = 0.0f, fireDetail = 0.0f, fireSpeed = 1.0f;
         float fireZMin = 0.0f, fireInvHeight = 0.0f;
-        float fireIntensity = 1.0f, fireDiag = 0.0f;
+        float fireIntensity = 1.0f, fireDiag = 0.0f, fireSoot = 0.0f;
         float fireCenter[3] = {0.0f, 0.0f, 0.0f};
         for (const auto &draw : scene) {
             const auto &mat = draw.material;
@@ -5380,6 +5384,13 @@ public:
             fireInvHeight = dz > 0.0f ? 1.0f / dz : 0.0f;
             fireIntensity = intensity;
             fireDiag = diag;
+            // Mild soot absorption scaled like the other auto
+            // densities; FC_BGFX_NO_FIRESOOT keeps the old purely
+            // additive flame for A/B comparisons.
+            static const bool noSoot =
+                (getenv("FC_BGFX_NO_FIRESOOT") != nullptr);
+            if (!noSoot && diag > 0.0f)
+                fireSoot = 1.5f / diag;
             for (int j = 0; j < 3; ++j)
                 fireCenter[j] =
                     0.5f * (draw.bboxMin[j] + draw.bboxMax[j]);
@@ -6454,7 +6465,7 @@ public:
                 animTime * fireSpeed * 2.0f,
                 fireActive ? 1.0f : 0.0f};
             float fireParams2[4] = {fireZMin, fireInvHeight,
-                                    0.0f, 0.0f};
+                                    fireActive ? fireSoot : 0.0f, 0.0f};
             view->submitVolumetric(volDensity, volconf.intensity,
                                    volMaxDist, volMedium,
                                    waterActive, waterSigma, cloudParams,

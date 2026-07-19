@@ -25,7 +25,9 @@
  *               domain scale (1/world units), z = rise time, w > 0.5 =
  *               fire body active
  * u_fireParams2: x = fire body minimum world z, y = 1 / body height
- *               (the vertical flame taper frame)
+ *               (the vertical flame taper frame), z = soot extinction
+ *               density (1/world units; a mild absorption that follows
+ *               the temperature field, 0 = none)
  */
 
 uniform vec4 u_volParams;
