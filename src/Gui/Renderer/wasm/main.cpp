@@ -151,6 +151,64 @@ static EM_BOOL onWheel(int, const EmscriptenWheelEvent *e, void *)
     return EM_TRUE;
 }
 
+// Touch: one finger orbits, two fingers pan (centroid) and pinch-zoom
+// (distance ratio). State resets whenever the touch count changes.
+static int s_numTouch = 0;
+static float s_touchX[2], s_touchY[2];
+
+static float panScale()
+{
+    return 2.0f * s_dist * std::tan(0.5f * 45.0f * bx::kPi / 180.0f)
+        / float(s_height > 0 ? s_height : 1);
+}
+
+static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
+{
+    // Active touch positions (up to two).
+    int n = 0;
+    float x[2] = {0.0f, 0.0f}, y[2] = {0.0f, 0.0f};
+    for (int i = 0; i < e->numTouches && n < 2; ++i) {
+        if (type == EMSCRIPTEN_EVENT_TOUCHEND
+                || type == EMSCRIPTEN_EVENT_TOUCHCANCEL) {
+            // Lifted fingers are still listed with isChanged set.
+            if (e->touches[i].isChanged)
+                continue;
+        }
+        x[n] = float(e->touches[i].clientX);
+        y[n] = float(e->touches[i].clientY);
+        ++n;
+    }
+
+    if (type == EMSCRIPTEN_EVENT_TOUCHMOVE && n == s_numTouch) {
+        if (n == 1) {
+            s_yaw -= (x[0] - s_touchX[0]) * 0.01f;
+            s_pitch = bx::clamp(s_pitch + (y[0] - s_touchY[0]) * 0.01f,
+                                -1.55f, 1.55f);
+        }
+        else if (n == 2) {
+            const float scale = panScale();
+            s_panX -= 0.5f * (x[0] - s_touchX[0] + x[1] - s_touchX[1])
+                * scale;
+            s_panY += 0.5f * (y[0] - s_touchY[0] + y[1] - s_touchY[1])
+                * scale;
+            const float oldDist = std::hypot(s_touchX[1] - s_touchX[0],
+                                             s_touchY[1] - s_touchY[0]);
+            const float newDist = std::hypot(x[1] - x[0], y[1] - y[0]);
+            if (oldDist > 1.0f && newDist > 1.0f) {
+                s_dist = bx::clamp(s_dist * oldDist / newDist,
+                                   0.01f * s_diag, 50.0f * s_diag);
+            }
+        }
+    }
+
+    s_numTouch = n;
+    for (int i = 0; i < n; ++i) {
+        s_touchX[i] = x[i];
+        s_touchY[i] = y[i];
+    }
+    return EM_TRUE;  // preventDefault: no synthesized mouse events
+}
+
 static void fitCamera()
 {
     float bmin[3], bmax[3];
@@ -304,6 +362,14 @@ int main()
     emscripten_set_mousemove_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT,
                                       nullptr, EM_TRUE, onMouseMove);
     emscripten_set_wheel_callback("#canvas", nullptr, EM_TRUE, onWheel);
+    emscripten_set_touchstart_callback("#canvas", nullptr, EM_TRUE,
+                                       onTouch);
+    emscripten_set_touchmove_callback("#canvas", nullptr, EM_TRUE,
+                                      onTouch);
+    emscripten_set_touchend_callback("#canvas", nullptr, EM_TRUE,
+                                     onTouch);
+    emscripten_set_touchcancel_callback("#canvas", nullptr, EM_TRUE,
+                                        onTouch);
 
     emscripten_set_main_loop(mainLoop, 0, 0);
     return 0;
