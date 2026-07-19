@@ -23,6 +23,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -545,11 +546,8 @@ bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
 
 //////////////////////////////////////////////////////////////////////
 
-bool Render::saveSceneSnapshot(const char *path, const SceneSnapshot &snap)
+static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
 {
-    FILE *fp = std::fopen(path, "wb");
-    if (!fp)
-        return false;
     Writer w;
     w.fp = fp;
     w.u32(kMagic);
@@ -655,23 +653,17 @@ bool Render::saveSceneSnapshot(const char *path, const SceneSnapshot &snap)
     writeDrawList(w, snap.highlight, meshIndex, texIndex);
     w.b(snap.highlightWholeOnTop);
 
-    std::fclose(fp);
     return w.ok;
 }
 
-bool Render::loadSceneSnapshot(const char *path, SceneSnapshot &snap)
+static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
 {
-    FILE *fp = std::fopen(path, "rb");
-    if (!fp)
-        return false;
     Reader r;
     r.fp = fp;
     uint32_t magic = r.u32();
     uint32_t version = r.u32();
-    if (magic != kMagic || version < 1 || version > kVersion) {
-        std::fclose(fp);
+    if (magic != kMagic || version < 1 || version > kVersion)
         return false;
-    }
 
     uint32_t nmesh = r.u32();
     MeshTable meshes;
@@ -763,6 +755,91 @@ bool Render::loadSceneSnapshot(const char *path, SceneSnapshot &snap)
         snap.highlightWholeOnTop = r.b();
     }
 
-    std::fclose(fp);
     return r.ok;
 }
+
+bool Render::saveSceneSnapshot(const char *path, const SceneSnapshot &snap)
+{
+    FILE *fp = std::fopen(path, "wb");
+    if (!fp)
+        return false;
+    bool ok = saveSnapshotFp(fp, snap);
+    std::fclose(fp);
+    return ok;
+}
+
+bool Render::loadSceneSnapshot(const char *path, SceneSnapshot &snap)
+{
+    FILE *fp = std::fopen(path, "rb");
+    if (!fp)
+        return false;
+    bool ok = loadSnapshotFp(fp, snap);
+    std::fclose(fp);
+    return ok;
+}
+
+#ifdef _WIN32
+// No open_memstream/fmemopen: stage through a temporary file.
+
+bool Render::saveSceneSnapshot(std::vector<uint8_t> &out,
+                               const SceneSnapshot &snap)
+{
+    FILE *fp = std::tmpfile();
+    if (!fp)
+        return false;
+    bool ok = saveSnapshotFp(fp, snap);
+    if (ok) {
+        long size = (std::fseek(fp, 0, SEEK_END) == 0) ? std::ftell(fp) : -1;
+        ok = size >= 0 && std::fseek(fp, 0, SEEK_SET) == 0;
+        if (ok) {
+            out.resize(size_t(size));
+            ok = std::fread(out.data(), 1, out.size(), fp) == out.size();
+        }
+    }
+    std::fclose(fp);
+    return ok;
+}
+
+bool Render::loadSceneSnapshot(const void *data, size_t size,
+                               SceneSnapshot &snap)
+{
+    FILE *fp = std::tmpfile();
+    if (!fp)
+        return false;
+    bool ok = std::fwrite(data, 1, size, fp) == size
+        && std::fseek(fp, 0, SEEK_SET) == 0
+        && loadSnapshotFp(fp, snap);
+    std::fclose(fp);
+    return ok;
+}
+
+#else // !_WIN32
+
+bool Render::saveSceneSnapshot(std::vector<uint8_t> &out,
+                               const SceneSnapshot &snap)
+{
+    char *buf = nullptr;
+    size_t size = 0;
+    FILE *fp = open_memstream(&buf, &size);
+    if (!fp)
+        return false;
+    bool ok = saveSnapshotFp(fp, snap);
+    std::fclose(fp);
+    if (ok)
+        out.assign(buf, buf + size);
+    std::free(buf);
+    return ok;
+}
+
+bool Render::loadSceneSnapshot(const void *data, size_t size,
+                               SceneSnapshot &snap)
+{
+    FILE *fp = fmemopen(const_cast<void *>(data), size, "rb");
+    if (!fp)
+        return false;
+    bool ok = loadSnapshotFp(fp, snap);
+    std::fclose(fp);
+    return ok;
+}
+
+#endif // _WIN32

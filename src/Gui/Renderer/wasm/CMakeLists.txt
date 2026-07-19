@@ -65,6 +65,7 @@ target_link_options(fcviewer PRIVATE
     -sMAX_WEBGL_VERSION=2
     -sMIN_WEBGL_VERSION=2
     -sALLOW_MEMORY_GROWTH=1
+    -sFETCH=1
     -sSTACK_SIZE=1048576
     -sEXIT_RUNTIME=0
     # Compiled essl shaders at the resource path the renderer resolves

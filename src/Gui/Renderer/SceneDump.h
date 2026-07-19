@@ -72,6 +72,12 @@ RendererExport bool saveSceneSnapshot(const char *path,
 RendererExport bool loadSceneSnapshot(const char *path,
                                       SceneSnapshot &snap);
 
+/// In-memory variants (the live-streaming transport).
+RendererExport bool saveSceneSnapshot(std::vector<uint8_t> &out,
+                                      const SceneSnapshot &snap);
+RendererExport bool loadSceneSnapshot(const void *data, size_t size,
+                                      SceneSnapshot &snap);
+
 } // namespace Render
 
 #endif // RENDERER_SCENE_DUMP_H

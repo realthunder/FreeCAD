@@ -23,6 +23,9 @@
 #include "FCConfig.h"
 #include "BGFXRenderer.h"
 #include "SceneDump.h"
+#ifndef FC_RENDERER_STANDALONE
+#include "SceneServer.h"
+#endif
 
 #ifndef FC_OS_WIN32
 # ifndef GL_GLEXT_PROTOTYPES
@@ -5019,6 +5022,8 @@ public:
     {
         // The pending scene data (whatever its age) is consumed by this
         // frame; needsRedraw() reports false until new data arrives.
+        const bool feedChanged = sceneDirty;
+        (void)feedChanged;
         sceneDirty = false;
         renderOk = false;
 
@@ -5073,11 +5078,7 @@ public:
         static const char *dumpPath = getenv("FC_BGFX_DUMP_SCENE");
         static const char *dumpDelay = getenv("FC_BGFX_DUMP_SCENE_DELAY");
         static const bool dumpSel = getenv("FC_BGFX_DUMP_SCENE_SEL") != nullptr;
-        if (dumpPath && *dumpPath && !sceneDumped && !scene.empty()
-                && ++dumpFrames > (dumpDelay ? atoi(dumpDelay) : 0)
-                && (!dumpSel || !selections.empty())) {
-            sceneDumped = true;
-            Render::SceneSnapshot snap;
+        auto makeSnapshot = [&](Render::SceneSnapshot &snap) {
             snap.scene = scene;
             snap.selections.assign(selections.begin(), selections.end());
             snap.highlight = highlight;
@@ -5100,11 +5101,50 @@ public:
             snap.width = width;
             snap.height = height;
             snap.clearColor = clearColor;
+        };
+        if (dumpPath && *dumpPath && !sceneDumped && !scene.empty()
+                && ++dumpFrames > (dumpDelay ? atoi(dumpDelay) : 0)
+                && (!dumpSel || !selections.empty())) {
+            sceneDumped = true;
+            Render::SceneSnapshot snap;
+            makeSnapshot(snap);
             fprintf(stderr, "bgfx: scene snapshot (%zu draws) -> %s: %s\n",
                     scene.size(), dumpPath,
                     Render::saveSceneSnapshot(dumpPath, snap)
                         ? "ok" : "FAILED");
         }
+
+#ifndef FC_RENDERER_STANDALONE
+        // FC_BGFX_SERVE_SCENE=<port>: publish the feeds to the
+        // standalone/wasm viewer over the snapshot HTTP server whenever
+        // they change (SceneServer.h).
+        static const char *servePort = getenv("FC_BGFX_SERVE_SCENE");
+        if (servePort && *servePort) {
+            auto &server = Render::SceneStreamServer::instance();
+            static bool serveFailed = false;
+            if (!server.running() && !serveFailed && !serveStarted) {
+                serveStarted = true;
+                if (server.start(atoi(servePort)))
+                    fprintf(stderr, "bgfx: scene server on port %s\n",
+                            servePort);
+                else {
+                    serveFailed = true;
+                    fprintf(stderr,
+                            "bgfx: scene server FAILED on port %s\n",
+                            servePort);
+                }
+            }
+            if (server.running() && (feedChanged || !scenePublished)
+                    && !scene.empty()) {
+                scenePublished = true;
+                Render::SceneSnapshot snap;
+                makeSnapshot(snap);
+                std::vector<uint8_t> payload;
+                if (Render::saveSceneSnapshot(payload, snap))
+                    server.publish(std::move(payload));
+            }
+        }
+#endif
 
         // WBOIT runs when the resources exist and the scene has any
         // transparent (non-on-top) triangles this frame; otherwise the
@@ -7654,6 +7694,8 @@ public:
     bool hlWholeOnTop = false;
     bool sceneDumped = false;   ///< FC_BGFX_DUMP_SCENE fired
     int dumpFrames = 0;         ///< non-empty frames seen (dump delay)
+    bool serveStarted = false;  ///< FC_BGFX_SERVE_SCENE start attempted
+    bool scenePublished = false;///< at least one payload published
     bool sceneDirty = false;
     bool hasScene = false;
     bool renderOk = false;
