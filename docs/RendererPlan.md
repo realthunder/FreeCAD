@@ -1226,15 +1226,40 @@ independent of each other; item 4 builds on item 3's property model.
     throughout); single shared appearance per frame (first body wins);
     per-body medium slot arrays still future work if overlapping
     mixed media are wanted.
-  - **`Render_Fire`** (+intensity, +speed, +color ramp): an emissive
-    medium — same bounded raymarch but accumulating a blackbody-style
-    color ramp weighted by animated rising FBM noise (domain scrolled
-    along the body's up axis), composited additively before the
-    transparent bucket; no shadow interaction (fire is a light source,
-    not a receiver). A cheap first cut can skip the raymarch: an
-    animated emissive fresnel-faded shell on the body's surface.
-    Actually lighting the scene from the fire (a flickering point light
-    feeding the existing scene-light path) is a natural follow-up.
+  - **`Render_Fire`** *(first cut done 2026-07)*
+    (+`Render_FireIntensity` <= 0 = 1, +`Render_FireDetail` <= 0 =
+    auto 5/diag, +`Render_FireSpeed` rise multiplier): an emissive
+    medium on the per-medium-kind slot scheme — its own
+    `ViewFireFront`/`Back` full-res depth target pair beside the water,
+    glass and cloud pairs; the body geometry (fills and feature lines)
+    is not rendered and the body neither casts nor hashes into the
+    shadow map (fire is a light source, not a receiver). Inside the
+    interval the volumetric raymarch accumulates self-lit radiance —
+    a 3-octave value-noise field (the cloud lattice) vertically
+    stretched (0.55 z-scale = licking tongues), scrolled down the
+    world z axis by the shared animation clock with a slight lateral
+    sine wobble, eroded by a threshold climbing with the normalized
+    body height (`u_fireParams2` carries the body's min-z / 1/height
+    frame from the first flagged draw's world bounds) so the flame
+    breaks into tongues and dies toward the top — mapped through a
+    blackbody-style smoothstep ramp (dark red → orange → yellow-white
+    core) and attenuated by the eye-ward transmittance, added on top
+    of the light-color-scaled inscatter (self-lit: no shadow term, no
+    scene light color). Purely additive: the extinction pass is
+    untouched, so the scene behind the flame keeps its full lighting.
+    Emission auto-normalizes as intensity × 4/diag per world unit.
+    Needs Volumetric + Shadow active (the medium pattern); per-object
+    rows (checkbox + intensity/detail/speed) in the render settings
+    task panel. Verified on llvmpipe: licking flame replaces the
+    cylinder body (no fills, edges or cast shadow), the no-fire scene
+    is bit-identical to the pre-change shader, two frozen times
+    (`FC_BGFX_CAUSTIC_TIME`) differ only inside the flame footprint.
+    Gaps: single shared appearance per frame (first body wins, the
+    water/cloud limitation); the flame does not light the scene (a
+    flickering point light feeding the scene-light path is the natural
+    follow-up); vertical taper is world-z (a placed/rotated body keeps
+    the world-up flame frame); no soot extinction — geometry behind
+    the flame shows through the bright core.
   - Shared groundwork all three want: per-body medium slots (above),
     the animation clock + `animating()` redraw loop (done, s27), the
     sampleable scene color + copy pass (done, s27), and per-object
