@@ -18,6 +18,8 @@ $input v_texcoord0
 SAMPLER2D(s_texNormalZ, 0);
 SAMPLER2D(s_texWaterFront, 1);
 SAMPLER2D(s_texWaterBack, 2);
+SAMPLER2D(s_texCloudFront, 3);
+SAMPLER2D(s_texCloudBack, 4);
 
 void main()
 {
@@ -38,5 +40,35 @@ void main()
 
 	vec3 depth = vec3_splat(u_volParams.x * (len - wlen))
 		+ u_waterSigma.xyz * wlen;
+
+	// Cloud body overlap: the density is procedural, so the analytic
+	// length is replaced by a short FBM sub-march over the stretch
+	// (matching the inscatter raymarch's field). The air term keeps
+	// the full non-water length — the cloud march replaces only its
+	// own optical depth on top (the air density inside the body is
+	// negligible next to the cloud's).
+	vec2 cloud = volCloudSpan(texture2D(s_texCloudFront, v_texcoord0),
+	                          texture2D(s_texCloudBack, v_texcoord0),
+	                          dir);
+	float c0 = max(cloud.x, med.x);
+	float c1 = min(cloud.y, t1);
+	if (c1 > c0)
+	{
+		float cdt = (c1 - c0) * (1.0 / 8.0);
+		float od = 0.0;
+		for (int i = 0; i < 8; ++i)
+		{
+			float t = c0 + (float(i) + 0.5) * cdt;
+			vec3 wp = mul(u_invView,
+			              vec4(origin + dir * t, 1.0)).xyz;
+			float fade = clamp(min(t - cloud.x, cloud.y - t)
+				/ max(0.2 * (cloud.y - cloud.x), 1.0e-3),
+				0.0, 1.0);
+			// The 0.6 matches the raymarch's reduced eye-ward
+			// extinction.
+			od += cloudDensityAt(wp) * fade * 0.6 * cdt;
+		}
+		depth += vec3_splat(od);
+	}
 	gl_FragColor = vec4(exp(-depth), 1.0);
 }

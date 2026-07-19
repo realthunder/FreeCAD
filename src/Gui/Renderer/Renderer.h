@@ -497,6 +497,18 @@ struct Material {
     float glassdensity = 0.0f;
     float glassroughness = 0.0f;
 
+    /// Cloud body flag of a triangle draw (SoFCRenderMaterial, typically
+    /// fed from a ViewProvider Render_Cloud property): while the
+    /// volumetric lighting pass is active the draw's closed volume
+    /// raymarches as a procedural-density (FBM) scattering medium and
+    /// the geometry itself is not rendered. clouddensity/clouddetail
+    /// <= 0 = automatic (from the draw bounds); cloudspeed scales the
+    /// drift animation of the noise domain.
+    bool cloud = false;
+    float clouddensity = 0.0f;
+    float clouddetail = 0.0f;
+    float cloudspeed = 1.0f;
+
     /// Texture of a triangle draw (unit 0 only; GL applies further units
     /// on top, a known deviation) with its texture matrix, applied to
     /// MeshData::texCoords. Only sampled when the mesh carries texture

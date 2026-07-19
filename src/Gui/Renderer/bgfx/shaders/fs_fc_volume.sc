@@ -26,6 +26,8 @@ SAMPLER2D(s_texNormalZ, 0);
 #include "fc_volume_shadow.sh"
 SAMPLER2D(s_texWaterFront, 2);
 SAMPLER2D(s_texWaterBack, 3);
+SAMPLER2D(s_texCloudFront, 4);
+SAMPLER2D(s_texCloudBack, 5);
 
 void main()
 {
@@ -41,6 +43,21 @@ void main()
 	vec2 water = volWaterSpan(texture2D(s_texWaterFront, v_texcoord0),
 	                          texture2D(s_texWaterBack, v_texcoord0),
 	                          dir);
+	vec2 cloud = volCloudSpan(texture2D(s_texCloudFront, v_texcoord0),
+	                          texture2D(s_texCloudBack, v_texcoord0),
+	                          dir);
+	// Henyey-Greenstein forward-scattering phase of the cloud toward
+	// the light, constant along the (parallel-light) ray; the air and
+	// water media keep their isotropic behavior.
+	float cloudPhase = 1.0;
+	if (u_cloudParams.w > 0.5)
+	{
+		float g = 0.35;
+		float mu = dot(dir, -normalize(u_lightDir.xyz));
+		float denom = 1.0 + g * g - 2.0 * g * mu;
+		cloudPhase = (1.0 - g * g)
+			/ max(denom * sqrt(denom), 1.0e-3);
+	}
 	vec3 scatter = vec3_splat(0.0);
 	if (t1 > t0)
 	{
@@ -62,7 +79,32 @@ void main()
 			vec3 sigT = inWater ? u_waterSigma.xyz
 			                    : vec3_splat(density);
 			float sigS = inWater ? u_waterSigma.w : density;
-			scatter += shadowVis(origin + dir * t)
+			float phase = 1.0;
+			float ambient = 0.0;
+			if (t > cloud.x && t < cloud.y)
+			{
+				// Cloud stretch: FBM density in a stable
+				// world frame replaces the air density, faded
+				// near the interval ends so the body's box
+				// silhouette softens. The eye-ward extinction
+				// is reduced (0.6) and an unshadowed ambient
+				// floor added — the usual cheap stand-ins for
+				// the multiple scattering that keeps real
+				// clouds bright.
+				vec3 wp = mul(u_invView,
+				              vec4(origin + dir * t, 1.0)).xyz;
+				float fade = clamp(min(t - cloud.x,
+				                       cloud.y - t)
+					/ max(0.2 * (cloud.y - cloud.x),
+					      1.0e-3), 0.0, 1.0);
+				float cd = cloudDensityAt(wp) * fade;
+				sigT = vec3_splat(cd * 0.6);
+				sigS = cd;
+				phase = cloudPhase;
+				ambient = 0.25;
+			}
+			scatter += (shadowVis(origin + dir * t) * phase
+			            + ambient)
 				* (sigS * dt) * T;
 			T *= exp(-sigT * dt);
 		}

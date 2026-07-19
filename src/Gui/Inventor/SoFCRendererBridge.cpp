@@ -516,6 +516,10 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.glassior = m.glassior;
         res.glassdensity = m.glassdensity;
         res.glassroughness = m.glassroughness;
+        res.cloud = m.cloud;
+        res.clouddensity = m.clouddensity;
+        res.clouddetail = m.clouddetail;
+        res.cloudspeed = m.cloudspeed;
     }
 
     // Bump map of triangle draws, unit 0 only like textures (the GL

@@ -70,6 +70,10 @@ private:
     QDoubleSpinBox *glassIORSpin = nullptr;
     QDoubleSpinBox *glassDensitySpin = nullptr;
     QDoubleSpinBox *glassRoughSpin = nullptr;
+    QCheckBox *cloudCheck = nullptr;
+    QDoubleSpinBox *cloudDensitySpin = nullptr;
+    QDoubleSpinBox *cloudDetailSpin = nullptr;
+    QDoubleSpinBox *cloudSpeedSpin = nullptr;
     QCheckBox *baseColorCheck = nullptr;
     QLineEdit *baseColorEdit = nullptr;
     QCheckBox *normalMapCheck = nullptr;

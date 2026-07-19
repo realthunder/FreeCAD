@@ -142,6 +142,24 @@ RenderSettingsWidget::RenderSettingsWidget(
         tr("Glass surface roughness (blurs the reflection)"));
     ++row;
 
+    // Cloud body of the volumetric lighting pass.
+    cloudCheck = addOverride(tr("Cloud body"));
+    cloudDensitySpin = addSpin(1, 0.0, 1.0e6, 0.01, 2);
+    cloudDensitySpin->setSpecialValueText(tr("auto density"));
+    cloudDensitySpin->setToolTip(
+        tr("Cloud extinction density in inverse model units; 0 = "
+           "automatic (from the body size)"));
+    cloudDetailSpin = addSpin(2, 0.0, 1.0e6, 0.01, 2);
+    cloudDetailSpin->setSpecialValueText(tr("auto detail"));
+    cloudDetailSpin->setToolTip(
+        tr("Noise detail scale in inverse model units; 0 = automatic"));
+    ++row;
+    cloudSpeedSpin = addSpin(1, 0.0, 100.0, 0.1, 2);
+    cloudSpeedSpin->setPrefix(tr("drift "));
+    cloudSpeedSpin->setValue(1.0);
+    cloudSpeedSpin->setToolTip(tr("Drift animation speed multiplier"));
+    ++row;
+
     // Texture images (embedded into the document by
     // App::PropertyFileIncluded).
     auto addFile = [&](const QString &text, QCheckBox *&check,
@@ -211,6 +229,8 @@ RenderSettingsWidget::RenderSettingsWidget(
     enables(roughnessCheck, {roughnessSpin});
     enables(waterCheck, {waterDensitySpin});
     enables(glassCheck, {glassIORSpin, glassDensitySpin, glassRoughSpin});
+    enables(cloudCheck, {cloudDensitySpin, cloudDetailSpin,
+                         cloudSpeedSpin});
     enables(baseColorCheck, {baseColorEdit});
     enables(normalMapCheck, {normalMapEdit});
     enables(emissiveMapCheck, {emissiveMapEdit});
@@ -263,6 +283,18 @@ void RenderSettingsWidget::load()
         if (auto rough = getProp<App::PropertyFloat>(
                     vp, "Render_GlassRoughness"))
             glassRoughSpin->setValue(rough->getValue());
+    }
+    if (auto prop = getProp<App::PropertyBool>(vp, "Render_Cloud")) {
+        cloudCheck->setChecked(prop->getValue());
+        if (auto dens = getProp<App::PropertyFloat>(
+                    vp, "Render_CloudDensity"))
+            cloudDensitySpin->setValue(dens->getValue());
+        if (auto det = getProp<App::PropertyFloat>(
+                    vp, "Render_CloudDetail"))
+            cloudDetailSpin->setValue(det->getValue());
+        if (auto spd = getProp<App::PropertyFloat>(
+                    vp, "Render_CloudSpeed"))
+            cloudSpeedSpin->setValue(spd->getValue());
     }
     if (auto prop = getProp<App::PropertyFileIncluded>(
                 vp, "Render_BaseColorTexture")) {
@@ -398,6 +430,47 @@ void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
         removeProp(vp, "Render_GlassIOR");
         removeProp(vp, "Render_GlassDensity");
         removeProp(vp, "Render_GlassRoughness");
+    }
+
+    // Cloud body flag + optional density/detail/speed.
+    if (cloudCheck->isChecked()) {
+        if (auto prop = ensureProp<App::PropertyBool>(
+                    vp, "App::PropertyBool", "Render_Cloud",
+                    "Render the closed shape as a cloud body of the "
+                    "render engine's volumetric lighting"))
+            prop->setValue(true);
+        auto applyOptional = [vp](double value, const char *name,
+                                  const char *doc) {
+            if (value > 0.0) {
+                if (auto prop = ensureProp<App::PropertyFloat>(
+                            vp, "App::PropertyFloat", name, doc))
+                    prop->setValue(value);
+            }
+            else {
+                removeProp(vp, name);
+            }
+        };
+        applyOptional(cloudDensitySpin->value(), "Render_CloudDensity",
+                      "Cloud extinction density in inverse model "
+                      "units; 0 = automatic");
+        applyOptional(cloudDetailSpin->value(), "Render_CloudDetail",
+                      "Cloud noise detail scale in inverse model "
+                      "units; 0 = automatic");
+        if (cloudSpeedSpin->value() != 1.0) {
+            if (auto prop = ensureProp<App::PropertyFloat>(
+                        vp, "App::PropertyFloat", "Render_CloudSpeed",
+                        "Cloud drift animation speed multiplier"))
+                prop->setValue(cloudSpeedSpin->value());
+        }
+        else {
+            removeProp(vp, "Render_CloudSpeed");
+        }
+    }
+    else {
+        removeProp(vp, "Render_Cloud");
+        removeProp(vp, "Render_CloudDensity");
+        removeProp(vp, "Render_CloudDetail");
+        removeProp(vp, "Render_CloudSpeed");
     }
 
     // Texture images: PropertyFileIncluded copies the file into the

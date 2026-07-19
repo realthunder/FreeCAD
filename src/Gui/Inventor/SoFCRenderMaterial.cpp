@@ -44,6 +44,10 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_ADD_FIELD(glassIOR, (0.0f));
     SO_NODE_ADD_FIELD(glassDensity, (0.0f));
     SO_NODE_ADD_FIELD(glassRoughness, (0.0f));
+    SO_NODE_ADD_FIELD(cloud, (false));
+    SO_NODE_ADD_FIELD(cloudDensity, (0.0f));
+    SO_NODE_ADD_FIELD(cloudDetail, (0.0f));
+    SO_NODE_ADD_FIELD(cloudSpeed, (1.0f));
 }
 
 SO_NODE_SOURCE(SoFCRenderTexture)

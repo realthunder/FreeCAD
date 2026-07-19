@@ -416,8 +416,24 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     float glassIOR = glass ? floatProp("Render_GlassIOR") : 0.0f;
     float glassDensity = glass ? floatProp("Render_GlassDensity") : 0.0f;
     float glassRoughness = glass ? floatProp("Render_GlassRoughness") : 0.0f;
+    // Render_Cloud turns the closed shape into a procedural-density
+    // scattering medium of the volumetric lighting pass (the body
+    // geometry itself is not rendered); density/detail <= 0 =
+    // automatic, speed scales the drift animation.
+    auto cloudProp = Base::freecad_dynamic_cast<App::PropertyBool>(
+            getPropertyByName("Render_Cloud"));
+    bool cloud = cloudProp && cloudProp->getValue();
+    float cloudDensity = cloud ? floatProp("Render_CloudDensity") : 0.0f;
+    float cloudDetail = cloud ? floatProp("Render_CloudDetail") : 0.0f;
+    float cloudSpeed = 1.0f;
+    if (cloud) {
+        float v = floatProp("Render_CloudSpeed");
+        if (v >= 0.0f)
+            cloudSpeed = v;
+    }
 
-    if (metallic < 0.0f && roughness < 0.0f && !water && !glass) {
+    if (metallic < 0.0f && roughness < 0.0f && !water && !glass
+            && !cloud) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);
             if (idx >= 0)
@@ -443,6 +459,12 @@ void ViewProviderGeometryObject::updateRenderMaterial()
                                                          : glassDensity;
     pcRenderMaterial->glassRoughness = glassRoughness < 0.0f
         ? 0.0f : glassRoughness;
+    pcRenderMaterial->cloud = cloud;
+    pcRenderMaterial->cloudDensity = cloudDensity < 0.0f ? 0.0f
+                                                         : cloudDensity;
+    pcRenderMaterial->cloudDetail = cloudDetail < 0.0f ? 0.0f
+                                                       : cloudDetail;
+    pcRenderMaterial->cloudSpeed = cloudSpeed;
 }
 
 void ViewProviderGeometryObject::updateRenderProperty(const char *name)

@@ -252,6 +252,14 @@ public:
     float glassior;
     float glassdensity;
     float glassroughness;
+    /// Cloud body flag/parameters captured from SoFCRenderMaterial:
+    /// external backends raymarch the shapes' closed volume as a
+    /// procedural-density scattering medium instead of rendering the
+    /// geometry.
+    bool cloud;
+    float clouddensity;
+    float clouddetail;
+    float cloudspeed;
     float polygonoffsetunits;
     float polygonoffsetfactor;
     int16_t annotation;
@@ -373,6 +381,14 @@ public:
         if (glassdensity > other.glassdensity) return false;
         if (glassroughness < other.glassroughness) return true;
         if (glassroughness > other.glassroughness) return false;
+        if (cloud < other.cloud) return true;
+        if (cloud > other.cloud) return false;
+        if (clouddensity < other.clouddensity) return true;
+        if (clouddensity > other.clouddensity) return false;
+        if (clouddetail < other.clouddetail) return true;
+        if (clouddetail > other.clouddetail) return false;
+        if (cloudspeed < other.cloudspeed) return true;
+        if (cloudspeed > other.cloudspeed) return false;
         if (lightmodel < other.lightmodel) return true;
         if (lightmodel > other.lightmodel) return false;
         if (vertexordering < other.vertexordering) return true;

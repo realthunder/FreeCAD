@@ -18,11 +18,15 @@
  * u_volMedium : xyz = medium sphere center (view space), w = radius
  * u_waterSigma: xyz = water extinction per channel, w = water
  *               scattering coefficient
+ * u_cloudParams: x = cloud extinction density (1/world units), y =
+ *               noise domain scale (1/world units), z = drift time,
+ *               w > 0.5 = cloud body active
  */
 
 uniform vec4 u_volParams;
 uniform vec4 u_volMedium;
 uniform vec4 u_waterSigma;
+uniform vec4 u_cloudParams;
 
 // View-space ray of a screen pixel (uv in [0,1]). GL projection:
 // perspective has u_proj[2][3] == -1 (w = viewZ), orthographic has 0
@@ -73,6 +77,61 @@ vec2 volWaterSpan(vec4 wf, vec4 wb, vec3 dir)
 		return vec2(0.0, -1.0);
 	return vec2(wf.w > 0.5 ? volT(wf.z, dir) : 0.0,
 	            volT(wb.z, dir));
+}
+
+// Cloud body interval of the ray from its depth target pair; (0, -1)
+// when the pixel has no cloud body (the water span rules).
+vec2 volCloudSpan(vec4 cf, vec4 cb, vec3 dir)
+{
+	if (u_cloudParams.w < 0.5 || cb.w < 0.5)
+		return vec2(0.0, -1.0);
+	return vec2(cf.w > 0.5 ? volT(cf.z, dir) : 0.0,
+	            volT(cb.z, dir));
+}
+
+// Value-noise FBM for the cloud density field (float math only, no bit
+// ops — WebGL2/GLSL-140 safe). Domain in scaled world units.
+float cloudHash(vec3 p)
+{
+	return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719)))
+	             * 43758.5453);
+}
+
+float cloudNoise(vec3 p)
+{
+	vec3 i = floor(p);
+	vec3 f = p - i;
+	vec3 u = f * f * (vec3_splat(3.0) - 2.0 * f);
+	float n000 = cloudHash(i);
+	float n100 = cloudHash(i + vec3(1.0, 0.0, 0.0));
+	float n010 = cloudHash(i + vec3(0.0, 1.0, 0.0));
+	float n110 = cloudHash(i + vec3(1.0, 1.0, 0.0));
+	float n001 = cloudHash(i + vec3(0.0, 0.0, 1.0));
+	float n101 = cloudHash(i + vec3(1.0, 0.0, 1.0));
+	float n011 = cloudHash(i + vec3(0.0, 1.0, 1.0));
+	float n111 = cloudHash(i + vec3(1.0, 1.0, 1.0));
+	return mix(mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+	           mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y),
+	           u.z);
+}
+
+// 3-octave FBM in [0,1], drifted by the animation clock.
+float cloudFBM(vec3 wp)
+{
+	vec3 p = wp * u_cloudParams.y
+		+ vec3(u_cloudParams.z, 0.0, 0.17 * u_cloudParams.z);
+	float n = 0.5 * cloudNoise(p)
+		+ 0.25 * cloudNoise(p * 2.03)
+		+ 0.125 * cloudNoise(p * 4.09);
+	return n / 0.875;
+}
+
+// Local cloud extinction at a world position: the FBM field remapped
+// so roughly half the volume is clear (puffy holes).
+float cloudDensityAt(vec3 wp)
+{
+	return u_cloudParams.x
+		* smoothstep(0.4, 0.75, cloudFBM(wp));
 }
 
 // Entry/exit distances of the ray through the medium sphere, entry

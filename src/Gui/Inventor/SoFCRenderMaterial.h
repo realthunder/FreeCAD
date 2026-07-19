@@ -73,6 +73,19 @@ public:
     /// 0..1 surface roughness of the glass (blurs the environment
     /// reflection); < 0 = 0.
     SoSFFloat glassRoughness;
+    /// The shapes form a cloud body: the closed volume becomes a
+    /// procedural-density (FBM) scattering medium of the render
+    /// engine's volumetric lighting pass; the body geometry itself is
+    /// not rendered.
+    SoSFBool cloud;
+    /// Cloud extinction density in inverse world units; <= 0 =
+    /// automatic (from the body extent).
+    SoSFFloat cloudDensity;
+    /// Noise domain scale in inverse world units; <= 0 = automatic
+    /// (a few puffs across the body).
+    SoSFFloat cloudDetail;
+    /// Drift speed multiplier of the animated noise domain.
+    SoSFFloat cloudSpeed;
 
 protected:
     ~SoFCRenderMaterial() override = default;

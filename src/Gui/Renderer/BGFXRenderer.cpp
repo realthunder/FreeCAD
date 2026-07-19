@@ -1096,6 +1096,13 @@ public:
         ViewGlassBack,      // farthest back-face depths of glass body
                             // draws (depth GREATER, cleared to 0): the
                             // absorption interval exit
+        ViewCloudFront,     // nearest front-face depths of cloud body
+                            // draws (prepass shader family, own
+                            // framebuffer): entry of the cloud medium
+                            // interval of the volumetric raymarch
+        ViewCloudBack,      // farthest back-face depths of cloud body
+                            // draws (depth GREATER, cleared to 0): the
+                            // cloud medium exit
         ViewAOGen,          // fullscreen SSAO generation into the R8 AO
                             // target (hemisphere kernel over the prepass)
         ViewAOBlur,         // fullscreen 4x4 AO blur into a second R8
@@ -1206,6 +1213,7 @@ public:
         // Volumetric resources: the framebuffers before their textures.
         for (auto fb : {&volFbo, &waterFrontFbo, &waterBackFbo,
                         &glassFrontFbo, &glassBackFbo,
+                        &cloudFrontFbo, &cloudBackFbo,
                         &sceneCopyFbo, &reflFbo}) {
             if (bgfx::isValid(*fb)) {
                 bgfx::destroy(*fb);
@@ -1216,6 +1224,8 @@ public:
                          &waterFrontDepth, &waterBackDepth,
                          &glassFrontTex, &glassBackTex,
                          &glassFrontDepth, &glassBackDepth,
+                         &cloudFrontTex, &cloudBackTex,
+                         &cloudFrontDepth, &cloudBackDepth,
                          &sceneCopyTex, &reflTex, &reflDepth}) {
             if (bgfx::isValid(*tex)) {
                 bgfx::destroy(*tex);
@@ -1227,7 +1237,9 @@ public:
                          &u_waterSigma, &u_causticParams,
                          &s_texScene, &u_waterSurf, &u_reflParams,
                          &s_texGlassFront, &s_texGlassBack,
-                         &u_glassParams}) {
+                         &u_glassParams,
+                         &s_texCloudFront, &s_texCloudBack,
+                         &u_cloudParams}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1962,6 +1974,29 @@ public:
                                          _BGFXLib.resource().c_str());
             u_causticParams = bgfx::createUniform(
                 "u_causticParams", bgfx::UniformType::Vec4);
+            // Cloud body medium: its own front/back interval pair (the
+            // per-medium-kind slot scheme), FBM density in the
+            // raymarch.
+            cloudFrontTex = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::RGBA16F, waterFlags);
+            cloudBackTex = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::RGBA16F, waterFlags);
+            cloudFrontDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            cloudBackDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            bgfx::TextureHandle cfatt[2] = {cloudFrontTex, cloudFrontDepth};
+            cloudFrontFbo = bgfx::createFrameBuffer(2, cfatt, false);
+            bgfx::TextureHandle cbatt[2] = {cloudBackTex, cloudBackDepth};
+            cloudBackFbo = bgfx::createFrameBuffer(2, cbatt, false);
+            s_texCloudFront = bgfx::createUniform(
+                "s_texCloudFront", bgfx::UniformType::Sampler);
+            s_texCloudBack = bgfx::createUniform(
+                "s_texCloudBack", bgfx::UniformType::Sampler);
+            u_cloudParams = bgfx::createUniform("u_cloudParams",
+                                                bgfx::UniformType::Vec4);
         }
 
         // Water surface refraction: the scene color copies into a
@@ -3149,13 +3184,14 @@ public:
         ++drawcount;
     }
 
-    /// Rasterize a water/glass body draw into one of its interval depth
-    /// targets (the prepass programs write the linear view depth in
-    /// .z): front faces with the nearest depth = interval entry, back
-    /// faces with the farthest = interval exit. Culling is forced by
-    /// face side whatever the material's two-sidedness.
+    /// Rasterize a water/glass/cloud body draw into one of its interval
+    /// depth targets (the prepass programs write the linear view depth
+    /// in .z): front faces with the nearest depth = interval entry,
+    /// back faces with the farthest = interval exit. Culling is forced
+    /// by face side whatever the material's two-sidedness. kind: 0 =
+    /// water, 1 = glass, 2 = cloud.
     void submitWaterDepth(const Render::DrawCall &draw, bool back,
-                          bool glass = false)
+                          int kind = 0)
     {
         if (!draw.mesh || !draw.mesh->triangleIndices)
             return;
@@ -3183,8 +3219,10 @@ public:
                 | (mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW);
         }
         bgfx::setState(state);
-        uint16_t pass = glass ? (back ? ViewGlassBack : ViewGlassFront)
-                              : (back ? ViewWaterBack : ViewWaterFront);
+        uint16_t pass = kind == 1
+            ? (back ? ViewGlassBack : ViewGlassFront)
+            : kind == 2 ? (back ? ViewCloudBack : ViewCloudFront)
+                        : (back ? ViewWaterBack : ViewWaterFront);
         bgfx::submit(viewId + pass,
                      clipped ? m_progPrepassClip : m_progPrepass);
         ++drawcount;
@@ -3266,7 +3304,8 @@ public:
     /// add: dst = inscatter + transmittance * scene.
     void submitVolumetric(float density, float intensity, float maxDist,
                           const float medium[4], bool water,
-                          const float waterSigma[4])
+                          const float waterSigma[4],
+                          const float cloudParams[4])
     {
         static const float noSigma[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float params[4] = {density, intensity, maxDist,
@@ -3274,6 +3313,7 @@ public:
         bgfx::setUniform(u_volParams, params);
         bgfx::setUniform(u_volMedium, medium);
         bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma);
+        bgfx::setUniform(u_cloudParams, cloudParams);
         bgfx::setUniform(u_lightColor, lightColorI);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2], 1.0f};
@@ -3287,6 +3327,8 @@ public:
         bgfx::setTexture(1, s_texShadow, shadowTex);
         bgfx::setTexture(2, s_texWaterFront, waterFrontTex);
         bgfx::setTexture(3, s_texWaterBack, waterBackTex);
+        bgfx::setTexture(4, s_texCloudFront, cloudFrontTex);
+        bgfx::setTexture(5, s_texCloudBack, cloudBackTex);
         fullscreen(ViewVolGen, m_progVol,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 
@@ -3295,9 +3337,12 @@ public:
         bgfx::setUniform(u_volParams, params);
         bgfx::setUniform(u_volMedium, medium);
         bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma);
+        bgfx::setUniform(u_cloudParams, cloudParams);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         bgfx::setTexture(1, s_texWaterFront, waterFrontTex);
         bgfx::setTexture(2, s_texWaterBack, waterBackTex);
+        bgfx::setTexture(3, s_texCloudFront, cloudFrontTex);
+        bgfx::setTexture(4, s_texCloudBack, cloudBackTex);
         fullscreen(ViewVolApply, m_progVolExt,
                    BGFX_STATE_WRITE_RGB
                    | BGFX_STATE_BLEND_FUNC_SEPARATE(
@@ -4583,6 +4628,17 @@ public:
     bgfx::UniformHandle s_texGlassFront = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texGlassBack = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_glassParams = BGFX_INVALID_HANDLE;
+    // Cloud body: front/back depth targets bounding the FBM medium
+    // interval of the volumetric raymarch.
+    bgfx::TextureHandle cloudFrontTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle cloudBackTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle cloudFrontDepth = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle cloudBackDepth = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle cloudFrontFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle cloudBackFbo = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texCloudFront = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texCloudBack = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_cloudParams = BGFX_INVALID_HANDLE;
     // Water surface refraction (scene copy) + ground reflection targets.
     bgfx::TextureHandle sceneCopyTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle sceneCopyFbo = BGFX_INVALID_HANDLE;
@@ -5102,6 +5158,50 @@ public:
         if (getenv("FC_BGFX_DEBUG_FEED"))
             fprintf(stderr, "bgfx glass: body=%d active=%d\n",
                     hasGlassBody, glassActive);
+        // Cloud bodies (Material::cloud): the closed volume raymarches
+        // as a procedural-density medium of the volumetric pass and the
+        // geometry itself is not rendered. The first flagged draw
+        // supplies the shared appearance like the water medium (a known
+        // single-appearance limitation).
+        bool hasCloudBody = false;
+        float cloudDensity = 0.0f, cloudDetail = 0.0f, cloudSpeed = 1.0f;
+        for (const auto &draw : scene) {
+            const auto &mat = draw.material;
+            if (!mat.cloud || mat.ontop
+                    || mat.type != Render::Material::Triangle)
+                continue;
+            float dx = draw.bboxMax[0] - draw.bboxMin[0];
+            float dy = draw.bboxMax[1] - draw.bboxMin[1];
+            float dz = draw.bboxMax[2] - draw.bboxMin[2];
+            float diag = (dx >= 0.0f && dy >= 0.0f && dz >= 0.0f)
+                ? std::sqrt(dx * dx + dy * dy + dz * dz) : 0.0f;
+            cloudDensity = mat.clouddensity;
+            if (cloudDensity <= 0.0f && diag > 0.0f)
+                cloudDensity = 6.0f / diag;
+            cloudDetail = mat.clouddetail;
+            if (cloudDetail <= 0.0f && diag > 0.0f)
+                cloudDetail = 4.0f / diag;
+            cloudSpeed = mat.cloudspeed;
+            hasCloudBody = cloudDensity > 0.0f && cloudDetail > 0.0f;
+            break;
+        }
+        bool cloudActive = hasCloudBody && volActive;
+        if (getenv("FC_BGFX_DEBUG_FEED"))
+            fprintf(stderr,
+                    "bgfx cloud: body=%d active=%d dens=%g detail=%g\n",
+                    hasCloudBody, cloudActive, cloudDensity, cloudDetail);
+        // The cloud body's own draws (fills and feature lines) are
+        // suppressed entirely while the medium renders, matched by
+        // object key like the water surface line suppression.
+        std::unordered_set<uint64_t> cloudObjects;
+        if (cloudActive) {
+            for (const auto &draw : scene) {
+                const auto &mat = draw.material;
+                if (mat.cloud && !mat.ontop && draw.objectKey
+                        && mat.type == Render::Material::Triangle)
+                    cloudObjects.insert(draw.objectKey);
+            }
+        }
         // The water body's edge/vertex draws are suppressed while the
         // surface renders (a water surface has no CAD feature lines, and
         // the black edges would smear through the screen-space
@@ -5167,7 +5267,8 @@ public:
         bool waterExempt = waterActive || waterSurfActive;
         auto mediumExempt = [&](const Render::Material &mat) {
             return (waterExempt && mat.water)
-                || (glassActive && mat.glass);
+                || (glassActive && mat.glass)
+                || (cloudActive && mat.cloud);
         };
         bool shadowRender = shadowActive;
         if (shadowActive && !hlconfig.show && !shadowNoCache) {
@@ -5334,6 +5435,21 @@ public:
                 bool back = i == BGFXView::ViewWaterBack;
                 bgfx::setViewFrameBuffer(id, back ? view->waterBackFbo
                                                   : view->waterFrontFbo);
+                bgfx::setViewClear(id,
+                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                    0x00000000u, back ? 0.0f : 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
+                bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (cloudActive && (i == BGFXView::ViewCloudFront
+                                       || i == BGFXView::ViewCloudBack)) {
+                // Cloud body interval depth targets, the water depth
+                // target pattern.
+                bool back = i == BGFXView::ViewCloudBack;
+                bgfx::setViewFrameBuffer(id, back ? view->cloudBackFbo
+                                                  : view->cloudFrontFbo);
                 bgfx::setViewClear(id,
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     0x00000000u, back ? 0.0f : 1.0f, 0);
@@ -5884,17 +6000,30 @@ public:
             bool surfGlass = glassActive && isTriangle(draw)
                 && draw.material.glass
                 && draw.material.numclipplanes == 0;
+            // Cloud body: neither the fills nor the feature lines
+            // render — the volume raymarches as a medium instead. The
+            // triangles rasterize the interval depth targets only.
+            bool cloudFill = cloudActive && isTriangle(draw)
+                && draw.material.cloud;
+            bool cloudPart = cloudActive
+                && (cloudFill
+                    || (!isTriangle(draw) && draw.objectKey
+                        && cloudObjects.count(draw.objectKey)));
             if (!cullDraw && !instancedThisFrame(drawIdx) && !surfWater
-                    && !surfWaterLine && !surfGlass)
+                    && !surfWaterLine && !surfGlass && !cloudPart)
                 view->submit(draw, viewMat, BGFXView::PassNormal,
                              sceneNoSeam(draw));
+            if (cloudFill && !cullDraw) {
+                view->submitWaterDepth(draw, false, 2);
+                view->submitWaterDepth(draw, true, 2);
+            }
             if (surfWater && !cullDraw)
                 view->submitWaterSurface(draw, waterWaveStrength,
                                          waterWaveScale, waterSurfTime,
                                          waterSurfReject);
             if (surfGlass && !cullDraw) {
-                view->submitWaterDepth(draw, false, true);
-                view->submitWaterDepth(draw, true, true);
+                view->submitWaterDepth(draw, false, 1);
+                view->submitWaterDepth(draw, true, 1);
                 view->submitGlassSurface(draw, glassReject);
             }
             // Water body draws bound the medium instead of acting as
@@ -6010,10 +6139,18 @@ public:
         // 1d. Volumetric light shafts: half-res raymarch of the shadow
         // map, bilateral-upsampled and composited onto the opaque scene
         // after the outlines, before the transparent bucket.
-        if (volActive)
+        if (volActive) {
+            float cloudParams[4] = {
+                cloudActive ? cloudDensity : 0.0f,
+                cloudActive ? cloudDetail : 0.0f,
+                animTime * cloudSpeed,
+                cloudActive ? 1.0f : 0.0f};
             view->submitVolumetric(volDensity, volconf.intensity,
                                    volMaxDist, volMedium,
-                                   waterActive, waterSigma);
+                                   waterActive, waterSigma, cloudParams);
+            animatedFrame = animatedFrame
+                || (cloudActive && animLive && cloudSpeed != 0.0f);
+        }
 
         // 1e. Water caustics: additive light-space pattern splat over
         // the prepass surfaces inside the water interval, before the
@@ -6625,6 +6762,7 @@ public:
             && m.numclipplanes == 0
             && !m.water
             && !m.glass
+            && !m.cloud
             && !m.faceoutline;
     }
 
