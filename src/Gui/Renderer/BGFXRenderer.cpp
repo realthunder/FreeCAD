@@ -1089,6 +1089,13 @@ public:
                             // draws (depth GREATER, cleared to 0): the
                             // medium exit; no front but a back face
                             // means the camera is under water
+        ViewGlassFront,     // nearest front-face depths of glass body
+                            // draws (prepass shader family, own
+                            // framebuffer): entry of the absorption
+                            // interval of the glass surface pass
+        ViewGlassBack,      // farthest back-face depths of glass body
+                            // draws (depth GREATER, cleared to 0): the
+                            // absorption interval exit
         ViewAOGen,          // fullscreen SSAO generation into the R8 AO
                             // target (hemisphere kernel over the prepass)
         ViewAOBlur,         // fullscreen 4x4 AO blur into a second R8
@@ -1141,6 +1148,12 @@ public:
                             // copy, Fresnel environment reflection, sun
                             // glint; replaces their transparent-bucket
                             // rendering while the surface is enabled
+        ViewGlassSurface,   // glass body draws re-rendered as glass:
+                            // screen-space refraction (IOR + normal),
+                            // per-channel thickness absorption from the
+                            // glass front/back interval, Fresnel
+                            // environment reflection; replaces their
+                            // ordinary rendering
         ViewTransparent,    // transparent triangles: WBOIT accumulation
                             // into the OIT targets, or blended
                             // back-to-front into the scene FBO when OIT
@@ -1192,6 +1205,7 @@ public:
         }
         // Volumetric resources: the framebuffers before their textures.
         for (auto fb : {&volFbo, &waterFrontFbo, &waterBackFbo,
+                        &glassFrontFbo, &glassBackFbo,
                         &sceneCopyFbo, &reflFbo}) {
             if (bgfx::isValid(*fb)) {
                 bgfx::destroy(*fb);
@@ -1200,6 +1214,8 @@ public:
         }
         for (auto tex : {&volTex, &waterFrontTex, &waterBackTex,
                          &waterFrontDepth, &waterBackDepth,
+                         &glassFrontTex, &glassBackTex,
+                         &glassFrontDepth, &glassBackDepth,
                          &sceneCopyTex, &reflTex, &reflDepth}) {
             if (bgfx::isValid(*tex)) {
                 bgfx::destroy(*tex);
@@ -1209,7 +1225,9 @@ public:
         for (auto uni : {&s_texVol, &u_volParams, &u_volMedium,
                          &u_volTexel, &s_texWaterFront, &s_texWaterBack,
                          &u_waterSigma, &u_causticParams,
-                         &s_texScene, &u_waterSurf, &u_reflParams}) {
+                         &s_texScene, &u_waterSurf, &u_reflParams,
+                         &s_texGlassFront, &s_texGlassBack,
+                         &u_glassParams}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1220,7 +1238,7 @@ public:
                           &m_progSsaoBlur, &m_progSsaoApply,
                           &m_progVol, &m_progVolApply, &m_progVolExt,
                           &m_progCaustics, &m_progWaterCopy, &m_progWater,
-                          &m_progGroundRefl}) {
+                          &m_progGlass, &m_progGroundRefl}) {
             if (bgfx::isValid(*prog)) {
                 bgfx::destroy(*prog);
                 *prog = BGFX_INVALID_HANDLE;
@@ -1852,6 +1870,31 @@ public:
                 BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
                 | BGFX_SAMPLER_MIP_POINT,
                 bgfx::copy(noise, sizeof(noise)));
+
+            // Glass body absorption interval: full-res front/back
+            // depths of glass draws, written by the prepass programs
+            // like the water medium interval (only .z viewZ and .w
+            // validity are consumed). In the SSAO resource set because
+            // the depth writer is the prepass shader family.
+            const uint64_t glassFlags = 0
+                | BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+                | BGFX_SAMPLER_MIP_POINT
+                | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+            glassFrontTex = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::RGBA16F, glassFlags);
+            glassBackTex = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::RGBA16F, glassFlags);
+            glassFrontDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                glassFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            glassBackDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                glassFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            bgfx::TextureHandle gfatt[2] = {glassFrontTex, glassFrontDepth};
+            glassFrontFbo = bgfx::createFrameBuffer(2, gfatt, false);
+            bgfx::TextureHandle gbatt[2] = {glassBackTex, glassBackDepth};
+            glassBackFbo = bgfx::createFrameBuffer(2, gbatt, false);
         }
 
         // Volumetric light shafts: the half-res raymarch reads the SSAO
@@ -1944,6 +1987,18 @@ public:
         if (!bgfx::isValid(s_texNormalZ))
             s_texNormalZ = bgfx::createUniform("s_texNormalZ",
                                                bgfx::UniformType::Sampler);
+
+        // Glass surface: refraction from the same scene copy, plus the
+        // absorption interval targets of the SSAO resource set (the
+        // glass pass is gated on both).
+        m_progGlass = loadProgram("vs_fc_mesh", "fs_fc_glass",
+                                  _BGFXLib.resource().c_str());
+        s_texGlassFront = bgfx::createUniform("s_texGlassFront",
+                                              bgfx::UniformType::Sampler);
+        s_texGlassBack = bgfx::createUniform("s_texGlassBack",
+                                             bgfx::UniformType::Sampler);
+        u_glassParams = bgfx::createUniform("u_glassParams",
+                                            bgfx::UniformType::Vec4);
 
         // Ground reflection: the mirrored-camera scene render target
         // (single-sample; the overlay blend softens the aliasing).
@@ -3094,12 +3149,13 @@ public:
         ++drawcount;
     }
 
-    /// Rasterize a water body draw into one of the water depth targets
-    /// (the prepass programs write the linear view depth in .z): front
-    /// faces with the nearest depth = medium entry, back faces with the
-    /// farthest = medium exit. Culling is forced by face side whatever
-    /// the material's two-sidedness.
-    void submitWaterDepth(const Render::DrawCall &draw, bool back)
+    /// Rasterize a water/glass body draw into one of its interval depth
+    /// targets (the prepass programs write the linear view depth in
+    /// .z): front faces with the nearest depth = interval entry, back
+    /// faces with the farthest = interval exit. Culling is forced by
+    /// face side whatever the material's two-sidedness.
+    void submitWaterDepth(const Render::DrawCall &draw, bool back,
+                          bool glass = false)
     {
         if (!draw.mesh || !draw.mesh->triangleIndices)
             return;
@@ -3127,7 +3183,9 @@ public:
                 | (mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW);
         }
         bgfx::setState(state);
-        bgfx::submit(viewId + (back ? ViewWaterBack : ViewWaterFront),
+        uint16_t pass = glass ? (back ? ViewGlassBack : ViewGlassFront)
+                              : (back ? ViewWaterBack : ViewWaterFront);
+        bgfx::submit(viewId + pass,
                      clipped ? m_progPrepassClip : m_progPrepass);
         ++drawcount;
     }
@@ -3366,6 +3424,84 @@ public:
             state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
         bgfx::setState(state);
         bgfx::submit(viewId + ViewWaterSurface, m_progWater);
+        ++drawcount;
+    }
+
+    /// Re-render a glass body draw as glass: screen-space refraction of
+    /// the scene copy (offset from the IOR-refracted view direction and
+    /// the front/back thickness), per-channel Beer-Lambert absorption
+    /// tinted by the material diffuse, Fresnel-blended environment
+    /// reflection (fs_fc_glass). Draws opaquely with depth write like
+    /// the water surface.
+    void submitGlassSurface(const Render::DrawCall &draw, bool depthReject)
+    {
+        if (!draw.mesh || !draw.mesh->triangleIndices)
+            return;
+        GpuMesh *gpu = getMesh(*draw.mesh);
+        if (!bgfx::isValid(gpu->geom->vbh)
+                || !bgfx::isValid(gpu->geom->tri))
+            return;
+        if (getenv("FC_BGFX_DEBUG_SUBMIT"))
+            fprintf(stderr,
+                    "bgfx submit glass cache=%llx start=%d num=%d\n",
+                    (unsigned long long)draw.mesh->cacheId,
+                    draw.indexStart, draw.indexCount);
+
+        const Render::Material &mat = draw.material;
+        float color[4];
+        unpackColor(mat.diffuse, color);
+        bgfx::setUniform(u_matColor, color);
+        // Like every vs_fc_mesh pairing: u_params is a global uniform,
+        // an unset value would inherit a line draw's depth bias.
+        float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_params, params);
+        float ior = mat.glassior > 0.0f ? mat.glassior : 1.5f;
+        // Automatic absorption density from the body extent: about one
+        // optical depth across the diagonal (before the diffuse tint
+        // weighting), like the water medium's automatic density.
+        float density = mat.glassdensity;
+        if (density <= 0.0f) {
+            density = 0.0f;
+            float dx = draw.bboxMax[0] - draw.bboxMin[0];
+            float dy = draw.bboxMax[1] - draw.bboxMin[1];
+            float dz = draw.bboxMax[2] - draw.bboxMin[2];
+            if (dx >= 0.0f && dy >= 0.0f && dz >= 0.0f) {
+                float diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+                if (diag > 0.0f)
+                    density = 3.0f / diag;
+            }
+        }
+        float rough = std::min(std::max(mat.glassroughness, 0.0f), 1.0f);
+        float glassParams[4] = {ior, density, rough,
+                                depthReject ? 1.0f : 0.0f};
+        bgfx::setUniform(u_glassParams, glassParams);
+        float lightDir[4] = {lightDirView[0], lightDirView[1],
+                             lightDirView[2],
+                             shadowFrame ? 1.0f : 0.0f};
+        bgfx::setUniform(u_lightDir, lightDir);
+        bgfx::setUniform(u_lightColor, lightColorI);
+        bgfx::setTexture(0, s_texScene, sceneCopyTex);
+        bgfx::setTexture(1, s_texEnv, m_envBuilt ? m_envTex
+                                                 : m_dummyEnvTex);
+        bgfx::setTexture(2, s_texNormalZ,
+                         depthReject ? aoNormalZ : sceneCopyTex);
+        bgfx::setTexture(3, s_texGlassFront, glassFrontTex);
+        bgfx::setTexture(4, s_texGlassBack, glassBackTex);
+
+        setDrawTransform(draw, autozoomScale);
+        setMeshVertexBuffers(gpu, *draw.mesh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->geom->tri);
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+            | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS
+            | BGFX_STATE_MSAA;
+        if (mat.culling && !mat.twoside)
+            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
+        bgfx::setState(state);
+        bgfx::submit(viewId + ViewGlassSurface, m_progGlass);
         ++drawcount;
     }
 
@@ -4435,6 +4571,18 @@ public:
     bgfx::UniformHandle s_texWaterFront = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texWaterBack = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_waterSigma = BGFX_INVALID_HANDLE;
+    // Glass body: front/back depth targets bounding the absorption
+    // interval of the glass surface pass.
+    bgfx::TextureHandle glassFrontTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle glassBackTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle glassFrontDepth = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle glassBackDepth = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle glassFrontFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle glassBackFbo = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progGlass = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texGlassFront = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texGlassBack = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_glassParams = BGFX_INVALID_HANDLE;
     // Water surface refraction (scene copy) + ground reflection targets.
     bgfx::TextureHandle sceneCopyTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle sceneCopyFbo = BGFX_INVALID_HANDLE;
@@ -4923,6 +5071,37 @@ public:
             if (!bgfx::isValid(view->m_envTex))
                 waterSurfActive = bgfx::isValid(view->m_dummyEnvTex);
         }
+        // Glass bodies (Material::glass): the draws leave the ordinary
+        // path and re-render in the glass surface pass — screen-space
+        // refraction, thickness absorption from the glass front/back
+        // interval, environment reflection. Needs the scene copy, the
+        // SSAO resource set (the interval targets and the prepass
+        // depth-reject live there) and the environment; hidden-line
+        // mode disables it like the other shading effects. Unlike
+        // water the body's edge/vertex draws keep rendering (a glass
+        // part keeps its CAD feature lines).
+        bool hasGlassBody = false;
+        for (const auto &draw : scene) {
+            const auto &mat = draw.material;
+            if (mat.glass && !mat.ontop && mat.numclipplanes == 0
+                    && mat.type == Render::Material::Triangle) {
+                hasGlassBody = true;
+                break;
+            }
+        }
+        bool glassActive = hasGlassBody && !hlconfig.show
+            && view->m_ssao
+            && bgfx::isValid(view->m_progGlass)
+            && bgfx::isValid(view->glassFrontFbo)
+            && bgfx::isValid(view->sceneCopyFbo);
+        if (glassActive) {
+            view->ensureEnvironment();
+            if (!bgfx::isValid(view->m_envTex))
+                glassActive = bgfx::isValid(view->m_dummyEnvTex);
+        }
+        if (getenv("FC_BGFX_DEBUG_FEED"))
+            fprintf(stderr, "bgfx glass: body=%d active=%d\n",
+                    hasGlassBody, glassActive);
         // The water body's edge/vertex draws are suppressed while the
         // surface renders (a water surface has no CAD feature lines, and
         // the black edges would smear through the screen-space
@@ -4981,8 +5160,15 @@ public:
             (getenv("FC_BGFX_SHADOW_NOCACHE") != nullptr);
         // Water bodies neither cast shadows (the medium needs the light
         // inside) nor act as ordinary surfaces while either water mode
-        // (volumetric medium or surface) is active.
+        // (volumetric medium or surface) is active. Glass bodies are
+        // exempt the same way while the glass pass runs (a tinting
+        // colored-shadow approximation is future work — light passes
+        // through for now).
         bool waterExempt = waterActive || waterSurfActive;
+        auto mediumExempt = [&](const Render::Material &mat) {
+            return (waterExempt && mat.water)
+                || (glassActive && mat.glass);
+        };
         bool shadowRender = shadowActive;
         if (shadowActive && !hlconfig.show && !shadowNoCache) {
             uint64_t h = 1469598103934665603ULL;
@@ -4997,7 +5183,7 @@ public:
                 // excluding them dropped its whole shadow (GL keeps it).
                 if (mat.type != Render::Material::Triangle
                         || !(mat.shadowstyle & 1)
-                        || (waterExempt && mat.water)
+                        || mediumExempt(mat)
                         || !draw.mesh)
                     continue;
                 hashBytes(h, &draw.mesh->cacheId,
@@ -5041,7 +5227,9 @@ public:
             (getenv("FC_BGFX_NO_WATER_REJECT") != nullptr);
         bool waterSurfReject = waterSurfActive && view->m_ssao
             && !noWaterReject;
-        bool prepassActive = ssaoActive || volActive || waterSurfReject;
+        bool glassReject = glassActive && !noWaterReject;
+        bool prepassActive = ssaoActive || volActive || waterSurfReject
+            || glassReject;
 
         // Ground reflection: mirror the world about the shadow ground
         // plane (z = scene bbox bottom, the plane the ground quad sits
@@ -5154,6 +5342,22 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
+            } else if (glassActive && (i == BGFXView::ViewGlassFront
+                                       || i == BGFXView::ViewGlassBack)) {
+                // Glass body absorption interval depth targets, the
+                // water depth target pattern (back keeps the farthest
+                // depth: clear to 0, test GREATER).
+                bool back = i == BGFXView::ViewGlassBack;
+                bgfx::setViewFrameBuffer(id, back ? view->glassBackFbo
+                                                  : view->glassFrontFbo);
+                bgfx::setViewClear(id,
+                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                    0x00000000u, back ? 0.0f : 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
+                bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
             } else if (groundReflActive
                        && i == BGFXView::ViewGroundRefl) {
                 // Mirrored-scene render: own color (cleared to alpha 0 =
@@ -5168,7 +5372,8 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if (waterSurfActive && i == BGFXView::ViewWaterCopy) {
+            } else if ((waterSurfActive || glassActive)
+                       && i == BGFXView::ViewWaterCopy) {
                 // Fullscreen copy of the scene color; the framebuffer
                 // switch also resolves a multisampled scene attachment
                 // before the surface pass samples the copy.
@@ -5648,7 +5853,7 @@ public:
                 if (shadowRender && !draw.material.ontop
                         && isTriangle(draw)
                         && (draw.material.shadowstyle & 1)
-                        && !(waterExempt && draw.material.water)
+                        && !mediumExempt(draw.material)
                         && !casterInstancedThisFrame(drawIdx))
                     view->submitShadowCaster(draw);
                 continue;
@@ -5671,14 +5876,27 @@ public:
             bool surfWaterLine = waterSurfActive && !isTriangle(draw)
                 && draw.objectKey
                 && waterSurfObjects.count(draw.objectKey);
+            // Glass pass: the body's triangles re-render as glass
+            // (their front/back depths bound the absorption interval);
+            // clipped bodies keep the normal path like water. The
+            // edge/vertex draws keep rendering — a glass part keeps
+            // its CAD feature lines.
+            bool surfGlass = glassActive && isTriangle(draw)
+                && draw.material.glass
+                && draw.material.numclipplanes == 0;
             if (!cullDraw && !instancedThisFrame(drawIdx) && !surfWater
-                    && !surfWaterLine)
+                    && !surfWaterLine && !surfGlass)
                 view->submit(draw, viewMat, BGFXView::PassNormal,
                              sceneNoSeam(draw));
             if (surfWater && !cullDraw)
                 view->submitWaterSurface(draw, waterWaveStrength,
                                          waterWaveScale, waterSurfTime,
                                          waterSurfReject);
+            if (surfGlass && !cullDraw) {
+                view->submitWaterDepth(draw, false, true);
+                view->submitWaterDepth(draw, true, true);
+                view->submitGlassSurface(draw, glassReject);
+            }
             // Water body draws bound the medium instead of acting as
             // ordinary surfaces: their front/back depths rasterize into
             // the water targets (whatever their transparency), and they
@@ -5696,7 +5914,7 @@ public:
             // transparent bucket). The volumetric raymarch shares it as
             // its ray-end depth source.
             if (prepassActive && isTriangle(draw) && !isTransp(draw)
-                    && !(waterExempt && draw.material.water) && !cullDraw
+                    && !mediumExempt(draw.material) && !cullDraw
                     && !prepassInstancedThisFrame(drawIdx))
                 view->submitPrepass(draw);
             // Shadow casters — transparent geometry casts like an opaque
@@ -5705,7 +5923,7 @@ public:
             // enter the medium). Skipped while the cached map is valid.
             if (shadowRender && isTriangle(draw)
                     && (draw.material.shadowstyle & 1)
-                    && !(waterExempt && draw.material.water)
+                    && !mediumExempt(draw.material)
                     && !casterInstancedThisFrame(drawIdx))
                 view->submitShadowCaster(draw);
             if (!cullDraw)
@@ -5735,7 +5953,7 @@ public:
                 const auto &mat = draw.material;
                 if (!isTriangle(draw) || mat.ontop || isHidden(draw)
                         || hideFill(draw) || isTransp(draw)
-                        || (waterExempt && mat.water))
+                        || mediumExempt(mat))
                     continue;
                 view->submit(draw, viewMat);
             }
@@ -5753,7 +5971,7 @@ public:
                 // On-top geometry keeps casting its shadow (the view
                 // order still lands these in the caster pass).
                 if (shadowRender && (draw.material.shadowstyle & 1)
-                        && !(waterExempt && draw.material.water))
+                        && !mediumExempt(draw.material))
                     view->submitShadowCaster(draw);
                 if (!cullDraw)
                     submitSceneOutline(draw);
@@ -5766,7 +5984,7 @@ public:
                 if (!cullDraw)
                     view->submit(draw, viewMat);
                 if (shadowRender && (draw.material.shadowstyle & 1)
-                        && !(waterExempt && draw.material.water))
+                        && !mediumExempt(draw.material))
                     view->submitShadowCaster(draw);
                 if (!cullDraw)
                     submitSceneOutline(draw);
@@ -5813,12 +6031,13 @@ public:
             }
         }
 
-        // 1f. Water surface: copy the scene color (post volumetric
-        // composite) into the refraction source; the per-draw surface
-        // submits happened in the scene loop above (their view renders
-        // after the copy).
-        if (waterSurfActive) {
+        // 1f. Water surface / glass: copy the scene color (post
+        // volumetric composite) into the refraction source; the
+        // per-draw surface submits happened in the scene loop above
+        // (their views render after the copy).
+        if (waterSurfActive || glassActive)
             view->submitWaterCopy();
+        if (waterSurfActive) {
             animatedFrame = animatedFrame
                 || (animLive && waterconf.waveSpeed != 0.0f);
         }
@@ -6405,6 +6624,7 @@ public:
             && m.autozoom.empty()
             && m.numclipplanes == 0
             && !m.water
+            && !m.glass
             && !m.faceoutline;
     }
 

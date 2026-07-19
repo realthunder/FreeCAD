@@ -244,6 +244,14 @@ public:
     /// volumetric lighting pass (only external backends consume this).
     bool water;
     float waterdensity;
+    /// Glass body flag/parameters captured from SoFCRenderMaterial:
+    /// external backends render the shapes with screen-space
+    /// refraction, environment reflection and thickness absorption
+    /// instead of the ordinary transparent path.
+    bool glass;
+    float glassior;
+    float glassdensity;
+    float glassroughness;
     float polygonoffsetunits;
     float polygonoffsetfactor;
     int16_t annotation;
@@ -357,6 +365,14 @@ public:
         if (water > other.water) return false;
         if (waterdensity < other.waterdensity) return true;
         if (waterdensity > other.waterdensity) return false;
+        if (glass < other.glass) return true;
+        if (glass > other.glass) return false;
+        if (glassior < other.glassior) return true;
+        if (glassior > other.glassior) return false;
+        if (glassdensity < other.glassdensity) return true;
+        if (glassdensity > other.glassdensity) return false;
+        if (glassroughness < other.glassroughness) return true;
+        if (glassroughness > other.glassroughness) return false;
         if (lightmodel < other.lightmodel) return true;
         if (lightmodel > other.lightmodel) return false;
         if (vertexordering < other.vertexordering) return true;

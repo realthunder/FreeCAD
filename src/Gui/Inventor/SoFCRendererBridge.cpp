@@ -512,6 +512,10 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.roughness = m.roughness;
         res.water = m.water;
         res.waterdensity = m.waterdensity;
+        res.glass = m.glass;
+        res.glassior = m.glassior;
+        res.glassdensity = m.glassdensity;
+        res.glassroughness = m.glassroughness;
     }
 
     // Bump map of triangle draws, unit 0 only like textures (the GL

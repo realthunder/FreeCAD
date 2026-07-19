@@ -59,6 +59,20 @@ public:
     /// Water extinction density in inverse world units; <= 0 = automatic
     /// (from the body extent).
     SoSFFloat waterDensity;
+    /// The shapes form a glass body: instead of the ordinary
+    /// transparent path, external backends render them with
+    /// screen-space refraction, Fresnel-blended environment reflection
+    /// and per-channel Beer-Lambert absorption tinted by the material
+    /// diffuse over the body thickness.
+    SoSFBool glass;
+    /// Index of refraction; <= 0 = default (1.5).
+    SoSFFloat glassIOR;
+    /// Absorption density in inverse world units; <= 0 = automatic
+    /// (from the body extent).
+    SoSFFloat glassDensity;
+    /// 0..1 surface roughness of the glass (blurs the environment
+    /// reflection); < 0 = 0.
+    SoSFFloat glassRoughness;
 
 protected:
     ~SoFCRenderMaterial() override = default;

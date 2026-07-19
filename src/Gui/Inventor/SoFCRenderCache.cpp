@@ -315,6 +315,10 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->roughness = -1.f;
   this->water = false;
   this->waterdensity = 0.f;
+  this->glass = false;
+  this->glassior = 0.f;
+  this->glassdensity = 0.f;
+  this->glassroughness = 0.f;
   this->polygonoffsetstyle = 0;
   this->polygonoffsetunits = 0.f;
   this->polygonoffsetfactor = 0.f;
@@ -1231,6 +1235,11 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
   PRIVATE(this)->material.roughness = material->roughness.getValue();
   PRIVATE(this)->material.water = material->water.getValue();
   PRIVATE(this)->material.waterdensity = material->waterDensity.getValue();
+  PRIVATE(this)->material.glass = material->glass.getValue();
+  PRIVATE(this)->material.glassior = material->glassIOR.getValue();
+  PRIVATE(this)->material.glassdensity = material->glassDensity.getValue();
+  PRIVATE(this)->material.glassroughness
+      = material->glassRoughness.getValue();
 }
 
 void

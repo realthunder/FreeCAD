@@ -484,6 +484,19 @@ struct Material {
     bool water = false;
     float waterdensity = 0.0f;
 
+    /// Glass body flag of a triangle draw (SoFCRenderMaterial, typically
+    /// fed from a ViewProvider Render_Glass property): the draw leaves
+    /// the ordinary (transparent) path and renders with screen-space
+    /// refraction, Fresnel-blended environment reflection and
+    /// per-channel Beer-Lambert absorption tinted by the diffuse color
+    /// over the body thickness (front/back depth interval). glassior
+    /// <= 0 = default 1.5; glassdensity <= 0 = automatic (from the draw
+    /// bounds); glassroughness in 0..1 blurs the reflection.
+    bool glass = false;
+    float glassior = 0.0f;
+    float glassdensity = 0.0f;
+    float glassroughness = 0.0f;
+
     /// Texture of a triangle draw (unit 0 only; GL applies further units
     /// on top, a known deviation) with its texture matrix, applied to
     /// MeshData::texCoords. Only sampled when the mesh carries texture

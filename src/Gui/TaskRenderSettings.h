@@ -66,6 +66,10 @@ private:
     QDoubleSpinBox *roughnessSpin = nullptr;
     QCheckBox *waterCheck = nullptr;
     QDoubleSpinBox *waterDensitySpin = nullptr;
+    QCheckBox *glassCheck = nullptr;
+    QDoubleSpinBox *glassIORSpin = nullptr;
+    QDoubleSpinBox *glassDensitySpin = nullptr;
+    QDoubleSpinBox *glassRoughSpin = nullptr;
     QCheckBox *baseColorCheck = nullptr;
     QLineEdit *baseColorEdit = nullptr;
     QCheckBox *normalMapCheck = nullptr;

@@ -123,6 +123,25 @@ RenderSettingsWidget::RenderSettingsWidget(
            "(from the body size)"));
     ++row;
 
+    // Glass body: refraction + absorption + reflection of the render
+    // engine.
+    glassCheck = addOverride(tr("Glass body"));
+    glassIORSpin = addSpin(1, 1.0, 5.0, 0.05, 2);
+    glassIORSpin->setPrefix(tr("IOR "));
+    glassIORSpin->setValue(1.5);
+    glassIORSpin->setToolTip(tr("Index of refraction"));
+    glassDensitySpin = addSpin(2, 0.0, 1.0e6, 0.01, 2);
+    glassDensitySpin->setSpecialValueText(tr("auto density"));
+    glassDensitySpin->setToolTip(
+        tr("Absorption density in inverse model units; 0 = automatic "
+           "(from the body size)"));
+    ++row;
+    glassRoughSpin = addSpin(1, 0.0, 1.0, 0.05, 2);
+    glassRoughSpin->setPrefix(tr("roughness "));
+    glassRoughSpin->setToolTip(
+        tr("Glass surface roughness (blurs the reflection)"));
+    ++row;
+
     // Texture images (embedded into the document by
     // App::PropertyFileIncluded).
     auto addFile = [&](const QString &text, QCheckBox *&check,
@@ -191,6 +210,7 @@ RenderSettingsWidget::RenderSettingsWidget(
     enables(metallicCheck, {metallicSpin});
     enables(roughnessCheck, {roughnessSpin});
     enables(waterCheck, {waterDensitySpin});
+    enables(glassCheck, {glassIORSpin, glassDensitySpin, glassRoughSpin});
     enables(baseColorCheck, {baseColorEdit});
     enables(normalMapCheck, {normalMapEdit});
     enables(emissiveMapCheck, {emissiveMapEdit});
@@ -231,6 +251,18 @@ void RenderSettingsWidget::load()
         if (auto dens = getProp<App::PropertyFloat>(
                     vp, "Render_WaterDensity"))
             waterDensitySpin->setValue(dens->getValue());
+    }
+    if (auto prop = getProp<App::PropertyBool>(vp, "Render_Glass")) {
+        glassCheck->setChecked(prop->getValue());
+        if (auto ior = getProp<App::PropertyFloat>(
+                    vp, "Render_GlassIOR"))
+            glassIORSpin->setValue(ior->getValue());
+        if (auto dens = getProp<App::PropertyFloat>(
+                    vp, "Render_GlassDensity"))
+            glassDensitySpin->setValue(dens->getValue());
+        if (auto rough = getProp<App::PropertyFloat>(
+                    vp, "Render_GlassRoughness"))
+            glassRoughSpin->setValue(rough->getValue());
     }
     if (auto prop = getProp<App::PropertyFileIncluded>(
                 vp, "Render_BaseColorTexture")) {
@@ -325,6 +357,47 @@ void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
     else {
         removeProp(vp, "Render_Water");
         removeProp(vp, "Render_WaterDensity");
+    }
+
+    // Glass body flag + optional IOR/density/roughness.
+    if (glassCheck->isChecked()) {
+        if (auto prop = ensureProp<App::PropertyBool>(
+                    vp, "App::PropertyBool", "Render_Glass",
+                    "Render the closed shape as a glass body of the "
+                    "render engine (refraction, absorption, "
+                    "reflection)"))
+            prop->setValue(true);
+        if (auto prop = ensureProp<App::PropertyFloat>(
+                    vp, "App::PropertyFloat", "Render_GlassIOR",
+                    "Glass index of refraction; 0 = default (1.5)"))
+            prop->setValue(glassIORSpin->value());
+        if (glassDensitySpin->value() > 0.0) {
+            if (auto prop = ensureProp<App::PropertyFloat>(
+                        vp, "App::PropertyFloat", "Render_GlassDensity",
+                        "Glass absorption density in inverse model "
+                        "units; 0 = automatic"))
+                prop->setValue(glassDensitySpin->value());
+        }
+        else {
+            removeProp(vp, "Render_GlassDensity");
+        }
+        if (glassRoughSpin->value() > 0.0) {
+            if (auto prop = ensureProp<App::PropertyFloat>(
+                        vp, "App::PropertyFloat",
+                        "Render_GlassRoughness",
+                        "Glass surface roughness (blurs the "
+                        "reflection)"))
+                prop->setValue(glassRoughSpin->value());
+        }
+        else {
+            removeProp(vp, "Render_GlassRoughness");
+        }
+    }
+    else {
+        removeProp(vp, "Render_Glass");
+        removeProp(vp, "Render_GlassIOR");
+        removeProp(vp, "Render_GlassDensity");
+        removeProp(vp, "Render_GlassRoughness");
     }
 
     // Texture images: PropertyFileIncluded copies the file into the

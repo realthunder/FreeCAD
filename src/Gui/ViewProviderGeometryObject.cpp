@@ -405,8 +405,19 @@ void ViewProviderGeometryObject::updateRenderMaterial()
             getPropertyByName("Render_Water"));
     bool water = boolProp && boolProp->getValue();
     float waterDensity = water ? floatProp("Render_WaterDensity") : 0.0f;
+    // Render_Glass renders the object's closed shape as a glass body:
+    // screen-space refraction (Render_GlassIOR <= 0 = default 1.5),
+    // per-channel absorption tinted by the shape color
+    // (Render_GlassDensity <= 0 = automatic) and environment
+    // reflection blurred by Render_GlassRoughness.
+    auto glassProp = Base::freecad_dynamic_cast<App::PropertyBool>(
+            getPropertyByName("Render_Glass"));
+    bool glass = glassProp && glassProp->getValue();
+    float glassIOR = glass ? floatProp("Render_GlassIOR") : 0.0f;
+    float glassDensity = glass ? floatProp("Render_GlassDensity") : 0.0f;
+    float glassRoughness = glass ? floatProp("Render_GlassRoughness") : 0.0f;
 
-    if (metallic < 0.0f && roughness < 0.0f && !water) {
+    if (metallic < 0.0f && roughness < 0.0f && !water && !glass) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);
             if (idx >= 0)
@@ -426,6 +437,12 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     pcRenderMaterial->water = water;
     pcRenderMaterial->waterDensity = waterDensity < 0.0f ? 0.0f
                                                          : waterDensity;
+    pcRenderMaterial->glass = glass;
+    pcRenderMaterial->glassIOR = glassIOR < 0.0f ? 0.0f : glassIOR;
+    pcRenderMaterial->glassDensity = glassDensity < 0.0f ? 0.0f
+                                                         : glassDensity;
+    pcRenderMaterial->glassRoughness = glassRoughness < 0.0f
+        ? 0.0f : glassRoughness;
 }
 
 void ViewProviderGeometryObject::updateRenderProperty(const char *name)

@@ -40,6 +40,10 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_ADD_FIELD(roughness, (-1.0f));
     SO_NODE_ADD_FIELD(water, (false));
     SO_NODE_ADD_FIELD(waterDensity, (0.0f));
+    SO_NODE_ADD_FIELD(glass, (false));
+    SO_NODE_ADD_FIELD(glassIOR, (0.0f));
+    SO_NODE_ADD_FIELD(glassDensity, (0.0f));
+    SO_NODE_ADD_FIELD(glassRoughness, (0.0f));
 }
 
 SO_NODE_SOURCE(SoFCRenderTexture)
