@@ -1237,16 +1237,13 @@ independent of each other; item 4 builds on item 3's property model.
     interval the volumetric raymarch accumulates self-lit radiance —
     a 3-octave value-noise field (the cloud lattice) vertically
     stretched (0.55 z-scale = licking tongues), scrolled down the
-    world z axis by the shared animation clock with a slight lateral
+    rise axis by the shared animation clock with a slight lateral
     sine wobble, eroded by a threshold climbing with the normalized
-    body height (`u_fireParams2` carries the body's min-z / 1/height
-    frame from the first flagged draw's world bounds) so the flame
-    breaks into tongues and dies toward the top — mapped through a
-    blackbody-style smoothstep ramp (dark red → orange → yellow-white
-    core) and attenuated by the eye-ward transmittance, added on top
-    of the light-color-scaled inscatter (self-lit: no shadow term, no
-    scene light color). Purely additive: the extinction pass is
-    untouched, so the scene behind the flame keeps its full lighting.
+    body height so the flame breaks into tongues and dies toward the
+    top — mapped through a blackbody-style smoothstep ramp (dark red
+    → orange → yellow-white core) and attenuated by the eye-ward
+    transmittance, added on top of the light-color-scaled inscatter
+    (self-lit: no shadow term, no scene light color).
     Emission auto-normalizes as intensity × 4/diag per world unit.
     Needs Volumetric + Shadow active (the medium pattern); per-object
     rows (checkbox + intensity/detail/speed) in the render settings
@@ -1254,12 +1251,29 @@ independent of each other; item 4 builds on item 3's property model.
     cylinder body (no fills, edges or cast shadow), the no-fire scene
     is bit-identical to the pre-change shader, two frozen times
     (`FC_BGFX_CAUSTIC_TIME`) differ only inside the flame footprint.
+    Follow-ups landed 2026-07: **fire lights the scene** — an
+    unshadowed point light at the flame centroid (a third up the
+    body's axis), flame-ramp orange premultiplied by intensity and an
+    animation-clock sine flicker, added as a distance-attenuated term
+    to every lit branch of `fc_mesh_fs.sh` (`u_fireLight`/
+    `u_fireLightColor`, set per mesh submit in
+    `setTriangleFrameState`; `FC_BGFX_NO_FIRELIGHT` for A/B) — the
+    first light beyond the single-scene-light model; **soot
+    extinction** — a mild absorption riding the temperature field
+    (auto 1.5/diag in `u_fireParams2.z`, `FC_BGFX_NO_FIRESOOT`),
+    added to the raymarch's eye-ward transmittance and as a
+    cloud-style 8-step sub-march in the extinction pass, so surfaces
+    behind the flame darken to match; **placement-derived taper
+    frame** — `u_fireFrame` (world → fire-local mat4; z = the model's
+    up axis, origin at the bottom center from the AABB corners
+    projected onto the orthonormalized frame) carries the taper and
+    the noise domain, so tilted bodies burn along their own axis and
+    the pattern rides a moved body. No-fire scenes stay bit-identical
+    through all three; fire scenes are no longer bit-identical by
+    construction (local-frame noise phase).
     Gaps: single shared appearance per frame (first body wins, the
-    water/cloud limitation); the flame does not light the scene (a
-    flickering point light feeding the scene-light path is the natural
-    follow-up); vertical taper is world-z (a placed/rotated body keeps
-    the world-up flame frame); no soot extinction — geometry behind
-    the flame shows through the bright core.
+    water/cloud limitation — per-body medium slots next); the effect
+    light is unshadowed and single (first body's centroid).
   - Shared groundwork all three want: per-body medium slots (above),
     the animation clock + `animating()` redraw loop (done, s27), the
     sampleable scene color + copy pass (done, s27), and per-object
