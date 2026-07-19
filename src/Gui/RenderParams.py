@@ -97,6 +97,27 @@ Params = [
         "Zero means automatic (a fraction of the water body size)."),
     ParamFloat('CausticsSpeed',  1.0, title='Caustics speed',
         doc="Animation speed of the caustic pattern; zero freezes it."),
+    ParamBool('WaterSurface',  False, title='Water surface',
+        doc="Shade water bodies (objects with the Render_Water property)\n"
+        "as an animated water surface: screen-space refraction of the\n"
+        "scene behind it, Fresnel-blended environment reflection and a\n"
+        "sun glint from the Shadow draw style light."),
+    ParamFloat('WaterWaveStrength',  0.3, title='Wave strength',
+        doc="Amplitude of the animated wave perturbation of the water\n"
+        "surface normal; zero gives a flat mirror-like surface."),
+    ParamFloat('WaterWaveScale',  0.0, title='Wave scale',
+        doc="Wave frequency in inverse world units.\n"
+        "Zero means automatic (a fraction of the water body size)."),
+    ParamFloat('WaterWaveSpeed',  1.0, title='Wave speed',
+        doc="Animation speed of the water surface waves; zero freezes\n"
+        "them."),
+    ParamBool('GroundReflection',  False, title='Ground reflection',
+        doc="Mirror the model in the shadow ground plane of the\n"
+        "experimental render engine: the opaque scene is re-rendered\n"
+        "with a reflected camera and blended onto the ground. Only\n"
+        "effective while the Shadow draw style shows a ground plane."),
+    ParamFloat('GroundReflectionIntensity',  0.4, title='Reflection intensity',
+        doc="Blend factor of the mirrored model on the ground plane."),
 ]
 
 def declare_begin():

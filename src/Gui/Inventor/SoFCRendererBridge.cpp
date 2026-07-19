@@ -967,6 +967,15 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
             bumppath = ViewParams::getShadowGroundBumpMap();
         }
         res.groundBumpMap = loadImage(bumppath, true);
+        // Ground reflection is a render-engine extra (no Coin shadow
+        // ground counterpart), so it lives in the Render_* family.
+        res.groundReflection = viewParamOverride<App::PropertyBool>(
+                view, "Render", "GroundReflection",
+                RenderParams::getGroundReflection());
+        res.groundReflectionIntensity =
+            float(viewParamOverride<App::PropertyFloat>(
+                view, "Render", "GroundReflectionIntensity",
+                RenderParams::getGroundReflectionIntensity()));
     }
     return res;
 }
@@ -994,6 +1003,25 @@ RendererBridge::translateVolumetricConfig(View3DInventor * view)
     res.causticsSpeed = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "CausticsSpeed",
             RenderParams::getCausticsSpeed()));
+    return res;
+}
+
+Render::WaterConfig
+RendererBridge::translateWaterConfig(View3DInventor * view)
+{
+    Render::WaterConfig res;
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "WaterSurface",
+            RenderParams::getWaterSurface());
+    res.waveStrength = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "WaterWaveStrength",
+            RenderParams::getWaterWaveStrength()));
+    res.waveScale = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "WaterWaveScale",
+            RenderParams::getWaterWaveScale()));
+    res.waveSpeed = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "WaterWaveSpeed",
+            RenderParams::getWaterWaveSpeed()));
     return res;
 }
 

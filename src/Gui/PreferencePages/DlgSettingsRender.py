@@ -72,6 +72,18 @@ ParamGroup = (
         'CausticsScale',
         'CausticsSpeed',
     )]),
+
+    ('Water surface', [_RenderParams[name] for name in (
+        'WaterSurface',
+        'WaterWaveStrength',
+        'WaterWaveScale',
+        'WaterWaveSpeed',
+    )]),
+
+    ('Ground reflection', [_RenderParams[name] for name in (
+        'GroundReflection',
+        'GroundReflectionIntensity',
+    )]),
 )
 
 def declare():

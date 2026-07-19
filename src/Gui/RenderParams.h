@@ -291,6 +291,87 @@ public:
     static void setCausticsSpeed(const double &v);
     static const char *docCausticsSpeed();
     //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WaterSurface
+    ///
+    /// Shade water bodies (objects with the Render_Water property)
+    /// as an animated water surface: screen-space refraction of the
+    /// scene behind it, Fresnel-blended environment reflection and a
+    /// sun glint from the Shadow draw style light.
+    static const bool & getWaterSurface();
+    static const bool & defaultWaterSurface();
+    static void removeWaterSurface();
+    static void setWaterSurface(const bool &v);
+    static const char *docWaterSurface();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WaterWaveStrength
+    ///
+    /// Amplitude of the animated wave perturbation of the water
+    /// surface normal; zero gives a flat mirror-like surface.
+    static const double & getWaterWaveStrength();
+    static const double & defaultWaterWaveStrength();
+    static void removeWaterWaveStrength();
+    static void setWaterWaveStrength(const double &v);
+    static const char *docWaterWaveStrength();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WaterWaveScale
+    ///
+    /// Wave frequency in inverse world units.
+    /// Zero means automatic (a fraction of the water body size).
+    static const double & getWaterWaveScale();
+    static const double & defaultWaterWaveScale();
+    static void removeWaterWaveScale();
+    static void setWaterWaveScale(const double &v);
+    static const char *docWaterWaveScale();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WaterWaveSpeed
+    ///
+    /// Animation speed of the water surface waves; zero freezes
+    /// them.
+    static const double & getWaterWaveSpeed();
+    static const double & defaultWaterWaveSpeed();
+    static void removeWaterWaveSpeed();
+    static void setWaterWaveSpeed(const double &v);
+    static const char *docWaterWaveSpeed();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GroundReflection
+    ///
+    /// Mirror the model in the shadow ground plane of the
+    /// experimental render engine: the opaque scene is re-rendered
+    /// with a reflected camera and blended onto the ground. Only
+    /// effective while the Shadow draw style shows a ground plane.
+    static const bool & getGroundReflection();
+    static const bool & defaultGroundReflection();
+    static void removeGroundReflection();
+    static void setGroundReflection(const bool &v);
+    static const char *docGroundReflection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter GroundReflectionIntensity
+    ///
+    /// Blend factor of the mirrored model on the ground plane.
+    static const double & getGroundReflectionIntensity();
+    static const double & defaultGroundReflectionIntensity();
+    static void removeGroundReflectionIntensity();
+    static void setGroundReflectionIntensity(const double &v);
+    static const char *docGroundReflectionIntensity();
+    //@}
 //[[[end]]]
 
     /// Called on any parameter change: re-selects the renderer backend on

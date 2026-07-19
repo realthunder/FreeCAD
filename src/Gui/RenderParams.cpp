@@ -66,6 +66,12 @@ public:
     double CausticsIntensity;
     double CausticsScale;
     double CausticsSpeed;
+    bool WaterSurface;
+    double WaterWaveStrength;
+    double WaterWaveScale;
+    double WaterWaveSpeed;
+    bool GroundReflection;
+    double GroundReflectionIntensity;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -106,6 +112,18 @@ public:
         funcs["CausticsScale"] = &RenderParamsP::updateCausticsScale;
         CausticsSpeed = this->handle->GetFloat("CausticsSpeed", 1.0);
         funcs["CausticsSpeed"] = &RenderParamsP::updateCausticsSpeed;
+        WaterSurface = this->handle->GetBool("WaterSurface", false);
+        funcs["WaterSurface"] = &RenderParamsP::updateWaterSurface;
+        WaterWaveStrength = this->handle->GetFloat("WaterWaveStrength", 0.3);
+        funcs["WaterWaveStrength"] = &RenderParamsP::updateWaterWaveStrength;
+        WaterWaveScale = this->handle->GetFloat("WaterWaveScale", 0.0);
+        funcs["WaterWaveScale"] = &RenderParamsP::updateWaterWaveScale;
+        WaterWaveSpeed = this->handle->GetFloat("WaterWaveSpeed", 1.0);
+        funcs["WaterWaveSpeed"] = &RenderParamsP::updateWaterWaveSpeed;
+        GroundReflection = this->handle->GetBool("GroundReflection", false);
+        funcs["GroundReflection"] = &RenderParamsP::updateGroundReflection;
+        GroundReflectionIntensity = this->handle->GetFloat("GroundReflectionIntensity", 0.4);
+        funcs["GroundReflectionIntensity"] = &RenderParamsP::updateGroundReflectionIntensity;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -193,6 +211,30 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCausticsSpeed(RenderParamsP *self) {
         self->CausticsSpeed = self->handle->GetFloat("CausticsSpeed", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterSurface(RenderParamsP *self) {
+        self->WaterSurface = self->handle->GetBool("WaterSurface", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterWaveStrength(RenderParamsP *self) {
+        self->WaterWaveStrength = self->handle->GetFloat("WaterWaveStrength", 0.3);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterWaveScale(RenderParamsP *self) {
+        self->WaterWaveScale = self->handle->GetFloat("WaterWaveScale", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterWaveSpeed(RenderParamsP *self) {
+        self->WaterWaveSpeed = self->handle->GetFloat("WaterWaveSpeed", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateGroundReflection(RenderParamsP *self) {
+        self->GroundReflection = self->handle->GetBool("GroundReflection", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateGroundReflectionIntensity(RenderParamsP *self) {
+        self->GroundReflectionIntensity = self->handle->GetFloat("GroundReflectionIntensity", 0.4);
     }
 };
 
@@ -703,6 +745,183 @@ void RenderParams::setCausticsSpeed(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeCausticsSpeed() {
     instance()->handle->RemoveFloat("CausticsSpeed");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterSurface() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Shade water bodies (objects with the Render_Water property)\n"
+"as an animated water surface: screen-space refraction of the\n"
+"scene behind it, Fresnel-blended environment reflection and a\n"
+"sun glint from the Shadow draw style light.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getWaterSurface() {
+    return instance()->WaterSurface;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultWaterSurface() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterSurface(const bool &v) {
+    instance()->handle->SetBool("WaterSurface",v);
+    instance()->WaterSurface = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterSurface() {
+    instance()->handle->RemoveBool("WaterSurface");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterWaveStrength() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Amplitude of the animated wave perturbation of the water\n"
+"surface normal; zero gives a flat mirror-like surface.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getWaterWaveStrength() {
+    return instance()->WaterWaveStrength;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultWaterWaveStrength() {
+    const static double def = 0.3;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterWaveStrength(const double &v) {
+    instance()->handle->SetFloat("WaterWaveStrength",v);
+    instance()->WaterWaveStrength = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterWaveStrength() {
+    instance()->handle->RemoveFloat("WaterWaveStrength");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterWaveScale() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Wave frequency in inverse world units.\n"
+"Zero means automatic (a fraction of the water body size).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getWaterWaveScale() {
+    return instance()->WaterWaveScale;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultWaterWaveScale() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterWaveScale(const double &v) {
+    instance()->handle->SetFloat("WaterWaveScale",v);
+    instance()->WaterWaveScale = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterWaveScale() {
+    instance()->handle->RemoveFloat("WaterWaveScale");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterWaveSpeed() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Animation speed of the water surface waves; zero freezes\n"
+"them.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getWaterWaveSpeed() {
+    return instance()->WaterWaveSpeed;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultWaterWaveSpeed() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterWaveSpeed(const double &v) {
+    instance()->handle->SetFloat("WaterWaveSpeed",v);
+    instance()->WaterWaveSpeed = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterWaveSpeed() {
+    instance()->handle->RemoveFloat("WaterWaveSpeed");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docGroundReflection() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Mirror the model in the shadow ground plane of the\n"
+"experimental render engine: the opaque scene is re-rendered\n"
+"with a reflected camera and blended onto the ground. Only\n"
+"effective while the Shadow draw style shows a ground plane.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getGroundReflection() {
+    return instance()->GroundReflection;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultGroundReflection() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setGroundReflection(const bool &v) {
+    instance()->handle->SetBool("GroundReflection",v);
+    instance()->GroundReflection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeGroundReflection() {
+    instance()->handle->RemoveBool("GroundReflection");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docGroundReflectionIntensity() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Blend factor of the mirrored model on the ground plane.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getGroundReflectionIntensity() {
+    return instance()->GroundReflectionIntensity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultGroundReflectionIntensity() {
+    const static double def = 0.4;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setGroundReflectionIntensity(const double &v) {
+    instance()->handle->SetFloat("GroundReflectionIntensity",v);
+    instance()->GroundReflectionIntensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeGroundReflectionIntensity() {
+    instance()->handle->RemoveFloat("GroundReflectionIntensity");
 }
 //[[[end]]]
 

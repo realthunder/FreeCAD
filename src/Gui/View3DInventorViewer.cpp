@@ -3286,6 +3286,24 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "CausticsSpeed",
             RenderParams::docCausticsSpeed(),
             RenderParams::getCausticsSpeed());
+    _renderParam<App::PropertyBool>(view, "WaterSurface",
+            RenderParams::docWaterSurface(),
+            RenderParams::getWaterSurface());
+    _renderParam<App::PropertyFloat>(view, "WaterWaveStrength",
+            RenderParams::docWaterWaveStrength(),
+            RenderParams::getWaterWaveStrength());
+    _renderParam<App::PropertyFloat>(view, "WaterWaveScale",
+            RenderParams::docWaterWaveScale(),
+            RenderParams::getWaterWaveScale());
+    _renderParam<App::PropertyFloat>(view, "WaterWaveSpeed",
+            RenderParams::docWaterWaveSpeed(),
+            RenderParams::getWaterWaveSpeed());
+    _renderParam<App::PropertyBool>(view, "GroundReflection",
+            RenderParams::docGroundReflection(),
+            RenderParams::getGroundReflection());
+    _renderParam<App::PropertyFloat>(view, "GroundReflectionIntensity",
+            RenderParams::docGroundReflectionIntensity(),
+            RenderParams::getGroundReflectionIntensity());
 }
 
 // #define ENABLE_GL_DEPTH_RANGE

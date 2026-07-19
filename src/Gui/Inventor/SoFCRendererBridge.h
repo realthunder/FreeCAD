@@ -72,6 +72,11 @@ GuiExport Render::PBRConfig translatePBRConfig(View3DInventor * view);
 GuiExport Render::VolumetricConfig translateVolumetricConfig(
         View3DInventor * view);
 
+/// Resolve the water surface settings (Render_WaterSurface/WaterWave*
+/// view properties, RenderParams fallback) into the backend-neutral
+/// per-frame config.
+GuiExport Render::WaterConfig translateWaterConfig(View3DInventor * view);
+
 /// Resolve the bump mapping settings (Render_BumpScale/Render_Parallax
 /// view properties, RenderParams fallback) into the backend-neutral
 /// per-frame config.

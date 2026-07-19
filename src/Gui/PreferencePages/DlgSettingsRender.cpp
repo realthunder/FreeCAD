@@ -305,6 +305,98 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     CausticsSpeed->setValue(Gui::RenderParams::defaultCausticsSpeed());
     CausticsSpeed->setEntryName("CausticsSpeed");
     CausticsSpeed->setParamGrpPath("View/Render");
+
+
+    // Auto generated code (Tools/params_utils.py:448)
+    groupWatersurface = new QGroupBox(this);
+    layout->addWidget(groupWatersurface);
+    auto layoutHorizWatersurface = new QHBoxLayout(groupWatersurface);
+    auto layoutWatersurface = new QVBoxLayout();
+    layoutHorizWatersurface->addLayout(layoutWatersurface);
+    layoutHorizWatersurface->addStretch();
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutWatersurface->addLayout(layoutRow);
+    WaterSurface = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(WaterSurface);
+    WaterSurface->setChecked(Gui::RenderParams::defaultWaterSurface());
+    WaterSurface->setEntryName("WaterSurface");
+    WaterSurface->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutWatersurface->addLayout(layoutRow);
+    labelWaterWaveStrength = new QLabel(this);
+    layoutRow->addWidget(labelWaterWaveStrength);
+    WaterWaveStrength = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(WaterWaveStrength);
+    WaterWaveStrength->setValue(Gui::RenderParams::defaultWaterWaveStrength());
+    WaterWaveStrength->setEntryName("WaterWaveStrength");
+    WaterWaveStrength->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutWatersurface->addLayout(layoutRow);
+    labelWaterWaveScale = new QLabel(this);
+    layoutRow->addWidget(labelWaterWaveScale);
+    WaterWaveScale = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(WaterWaveScale);
+    WaterWaveScale->setValue(Gui::RenderParams::defaultWaterWaveScale());
+    WaterWaveScale->setEntryName("WaterWaveScale");
+    WaterWaveScale->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutWatersurface->addLayout(layoutRow);
+    labelWaterWaveSpeed = new QLabel(this);
+    layoutRow->addWidget(labelWaterWaveSpeed);
+    WaterWaveSpeed = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(WaterWaveSpeed);
+    WaterWaveSpeed->setValue(Gui::RenderParams::defaultWaterWaveSpeed());
+    WaterWaveSpeed->setEntryName("WaterWaveSpeed");
+    WaterWaveSpeed->setParamGrpPath("View/Render");
+
+
+    // Auto generated code (Tools/params_utils.py:448)
+    groupGroundreflection = new QGroupBox(this);
+    layout->addWidget(groupGroundreflection);
+    auto layoutHorizGroundreflection = new QHBoxLayout(groupGroundreflection);
+    auto layoutGroundreflection = new QVBoxLayout();
+    layoutHorizGroundreflection->addLayout(layoutGroundreflection);
+    layoutHorizGroundreflection->addStretch();
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutGroundreflection->addLayout(layoutRow);
+    GroundReflection = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(GroundReflection);
+    GroundReflection->setChecked(Gui::RenderParams::defaultGroundReflection());
+    GroundReflection->setEntryName("GroundReflection");
+    GroundReflection->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutGroundreflection->addLayout(layoutRow);
+    labelGroundReflectionIntensity = new QLabel(this);
+    layoutRow->addWidget(labelGroundReflectionIntensity);
+    GroundReflectionIntensity = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(GroundReflectionIntensity);
+    GroundReflectionIntensity->setValue(Gui::RenderParams::defaultGroundReflectionIntensity());
+    GroundReflectionIntensity->setEntryName("GroundReflectionIntensity");
+    GroundReflectionIntensity->setParamGrpPath("View/Render");
     layout->addItem(new QSpacerItem(40, 20, QSizePolicy::Fixed, QSizePolicy::Expanding));
     retranslateUi();
     // Auto generated code (Tools/params_utils.py:645)
@@ -338,6 +430,12 @@ void DlgSettingsRender::saveSettings()
     CausticsIntensity->onSave();
     CausticsScale->onSave();
     CausticsSpeed->onSave();
+    WaterSurface->onSave();
+    WaterWaveStrength->onSave();
+    WaterWaveScale->onSave();
+    WaterWaveSpeed->onSave();
+    GroundReflection->onSave();
+    GroundReflectionIntensity->onSave();
 }
 
 // Auto generated code (Tools/params_utils.py:670)
@@ -361,6 +459,12 @@ void DlgSettingsRender::loadSettings()
     CausticsIntensity->onRestore();
     CausticsScale->onRestore();
     CausticsSpeed->onRestore();
+    WaterSurface->onRestore();
+    WaterWaveStrength->onRestore();
+    WaterWaveScale->onRestore();
+    WaterWaveSpeed->onRestore();
+    GroundReflection->onRestore();
+    GroundReflectionIntensity->onRestore();
 }
 
 // Auto generated code (Tools/params_utils.py:679)
@@ -418,6 +522,24 @@ void DlgSettingsRender::retranslateUi()
     CausticsSpeed->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCausticsSpeed()));
     labelCausticsSpeed->setText(QObject::tr("Caustics speed"));
     labelCausticsSpeed->setToolTip(CausticsSpeed->toolTip());
+    groupWatersurface->setTitle(QObject::tr("Water surface"));
+    WaterSurface->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docWaterSurface()));
+    WaterSurface->setText(QObject::tr("Water surface"));
+    WaterWaveStrength->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docWaterWaveStrength()));
+    labelWaterWaveStrength->setText(QObject::tr("Wave strength"));
+    labelWaterWaveStrength->setToolTip(WaterWaveStrength->toolTip());
+    WaterWaveScale->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docWaterWaveScale()));
+    labelWaterWaveScale->setText(QObject::tr("Wave scale"));
+    labelWaterWaveScale->setToolTip(WaterWaveScale->toolTip());
+    WaterWaveSpeed->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docWaterWaveSpeed()));
+    labelWaterWaveSpeed->setText(QObject::tr("Wave speed"));
+    labelWaterWaveSpeed->setToolTip(WaterWaveSpeed->toolTip());
+    groupGroundreflection->setTitle(QObject::tr("Ground reflection"));
+    GroundReflection->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docGroundReflection()));
+    GroundReflection->setText(QObject::tr("Ground reflection"));
+    GroundReflectionIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docGroundReflectionIntensity()));
+    labelGroundReflectionIntensity->setText(QObject::tr("Reflection intensity"));
+    labelGroundReflectionIntensity->setToolTip(GroundReflectionIntensity->toolTip());
 }
 
 // Auto generated code (Tools/params_utils.py:697)

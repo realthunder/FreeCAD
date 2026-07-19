@@ -1097,6 +1097,11 @@ public:
                             // medium, bounded by the prepass depth (own
                             // half-res framebuffer, scene transforms for
                             // position reconstruction)
+        ViewGroundRefl,     // ground reflection: the opaque scene
+                            // re-rendered with the world mirrored about
+                            // the shadow ground plane (own framebuffer,
+                            // flipped culling, reflected shadow matrix);
+                            // the overlay view blends it onto the ground
         ViewOpaque,         // opaque triangles, lines, points
         ViewSectionCap,     // stencil section caps of clipped opaque
                             // solids (GL: _renderSection; before the
@@ -1107,6 +1112,11 @@ public:
         ViewAOApply,        // fullscreen multiply of the blurred AO onto
                             // the opaque scene color (after the caps,
                             // before outlines/transparency)
+        ViewGroundReflApply, // ground reflection overlay: the mirrored
+                            // scene blended onto the shadow ground quad
+                            // (depth EQUAL against the ground's own
+                            // depth), after the AO multiply so the
+                            // reflection is not AO-darkened twice
         ViewOutline,        // hidden-line stencil outlines of scene draws
                             // (after all opaque geometry so the depth
                             // test sees the whole scene, before the
@@ -1121,6 +1131,16 @@ public:
                             // opaque scene before the transparent bucket
                             // (after the outlines so edges are fogged
                             // like the fills)
+        ViewWaterCopy,      // fullscreen copy of the scene color into
+                            // the sampleable refraction source (also
+                            // forces the multisample resolve), after the
+                            // volumetric composite so the refracted view
+                            // carries the underwater tint and shafts
+        ViewWaterSurface,   // water body draws re-rendered as the water
+                            // surface: screen-space refraction from the
+                            // copy, Fresnel environment reflection, sun
+                            // glint; replaces their transparent-bucket
+                            // rendering while the surface is enabled
         ViewTransparent,    // transparent triangles: WBOIT accumulation
                             // into the OIT targets, or blended
                             // back-to-front into the scene FBO when OIT
@@ -1171,14 +1191,16 @@ public:
             }
         }
         // Volumetric resources: the framebuffers before their textures.
-        for (auto fb : {&volFbo, &waterFrontFbo, &waterBackFbo}) {
+        for (auto fb : {&volFbo, &waterFrontFbo, &waterBackFbo,
+                        &sceneCopyFbo, &reflFbo}) {
             if (bgfx::isValid(*fb)) {
                 bgfx::destroy(*fb);
                 *fb = BGFX_INVALID_HANDLE;
             }
         }
         for (auto tex : {&volTex, &waterFrontTex, &waterBackTex,
-                         &waterFrontDepth, &waterBackDepth}) {
+                         &waterFrontDepth, &waterBackDepth,
+                         &sceneCopyTex, &reflTex, &reflDepth}) {
             if (bgfx::isValid(*tex)) {
                 bgfx::destroy(*tex);
                 *tex = BGFX_INVALID_HANDLE;
@@ -1186,7 +1208,8 @@ public:
         }
         for (auto uni : {&s_texVol, &u_volParams, &u_volMedium,
                          &u_volTexel, &s_texWaterFront, &s_texWaterBack,
-                         &u_waterSigma, &u_causticParams}) {
+                         &u_waterSigma, &u_causticParams,
+                         &s_texScene, &u_waterSurf, &u_reflParams}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1196,7 +1219,8 @@ public:
                           &m_progPrepassInst, &m_progSsao,
                           &m_progSsaoBlur, &m_progSsaoApply,
                           &m_progVol, &m_progVolApply, &m_progVolExt,
-                          &m_progCaustics}) {
+                          &m_progCaustics, &m_progWaterCopy, &m_progWater,
+                          &m_progGroundRefl}) {
             if (bgfx::isValid(*prog)) {
                 bgfx::destroy(*prog);
                 *prog = BGFX_INVALID_HANDLE;
@@ -1441,19 +1465,27 @@ public:
         }
         if (hasFBO) {
             _BGFXLib.freeFBO(fbo);
+            if (fboDepth)
+                _BGFXLib.freeFBO(fboDepth);
+            fboDepth = 0;
             hasFBO = false;
         }
     }
 
-    bgfx::TextureHandle createTexture(bgfx::TextureFormat::Enum format, uint64_t flags = 0)
+    bgfx::TextureHandle createTexture(bgfx::TextureFormat::Enum format, uint64_t flags = 0,
+                                      bool sampled = false)
     {
+        // A sampled attachment drops WRITE_ONLY: with MSAA bgfx then
+        // backs it with a multisampled renderbuffer plus a resolve
+        // texture (auto-resolved on framebuffer switch, the WBOIT
+        // pattern), without MSAA it becomes a plain sampleable texture.
         const uint64_t tsFlags = 0
             | BGFX_SAMPLER_MIN_POINT
             | BGFX_SAMPLER_MAG_POINT
             | BGFX_SAMPLER_MIP_POINT
             | BGFX_SAMPLER_U_CLAMP
             | BGFX_SAMPLER_V_CLAMP
-            | BGFX_TEXTURE_RT_WRITE_ONLY;
+            | (sampled ? 0 : BGFX_TEXTURE_RT_WRITE_ONLY);
         return bgfx::createTexture2D(width, height, false, 1, format, tsFlags | flags);
     }
 
@@ -1474,7 +1506,9 @@ public:
         else
             flags = BGFX_TEXTURE_RT;
 
-        bgfxColor = createTexture(bgfx::TextureFormat::RGBA8, flags);
+        // The scene color stays sampleable for the water surface
+        // refraction copy (and future screen-space effects).
+        bgfxColor = createTexture(bgfx::TextureFormat::RGBA8, flags, true);
         //GL_DEPTH24_STENCIL8
         // NOTE: the MSAA levels are an enum in the RT flag nibble, not
         // orthogonal bits — masking BGFX_TEXTURE_RT out of them would
@@ -1886,6 +1920,41 @@ public:
             u_causticParams = bgfx::createUniform(
                 "u_causticParams", bgfx::UniformType::Vec4);
         }
+
+        // Water surface refraction: the scene color copies into a
+        // linearly-sampled texture the surface shader offsets into.
+        // Independent of the volumetric resource sets.
+        sceneCopyTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        sceneCopyFbo = bgfx::createFrameBuffer(1, &sceneCopyTex, false);
+        m_progWaterCopy = loadProgram("vs_fc_comp", "fs_fc_copy",
+                                      _BGFXLib.resource().c_str());
+        m_progWater = loadProgram("vs_fc_mesh", "fs_fc_water",
+                                  _BGFXLib.resource().c_str());
+        s_texScene = bgfx::createUniform("s_texScene",
+                                         bgfx::UniformType::Sampler);
+        u_waterSurf = bgfx::createUniform("u_waterSurf",
+                                          bgfx::UniformType::Vec4);
+
+        // Ground reflection: the mirrored-camera scene render target
+        // (single-sample; the overlay blend softens the aliasing).
+        reflTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        reflDepth = createTexture(bgfx::TextureFormat::D24S8,
+                                  BGFX_TEXTURE_RT);
+        bgfx::TextureHandle ratt[2] = {reflTex, reflDepth};
+        reflFbo = bgfx::createFrameBuffer(2, ratt, false);
+        m_progGroundRefl = loadProgram("vs_fc_mesh", "fs_fc_groundrefl",
+                                       _BGFXLib.resource().c_str());
+        u_reflParams = bgfx::createUniform("u_reflParams",
+                                           bgfx::UniformType::Vec4);
     }
 
     // Radiance of the fixed procedural studio environment for a world
@@ -3217,6 +3286,133 @@ public:
                                            BGFX_STATE_BLEND_ONE));
     }
 
+    /// Copy the scene color into the sampleable refraction source (its
+    /// view sits after the volumetric composite; the framebuffer switch
+    /// also resolves a multisampled scene attachment).
+    void submitWaterCopy()
+    {
+        bgfx::setTexture(0, s_texScene, bgfxColor);
+        fullscreen(ViewWaterCopy, m_progWaterCopy,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+    }
+
+    /// Re-render a water body draw as the animated water surface:
+    /// screen-space refraction from the scene copy, Fresnel-blended
+    /// environment reflection and a sun glint (fs_fc_water). Draws
+    /// opaquely with depth write — the refraction replaces the
+    /// transparent-bucket blending of the body.
+    void submitWaterSurface(const Render::DrawCall &draw,
+                            float waveStrength, float waveScale,
+                            float time)
+    {
+        if (!draw.mesh || !draw.mesh->triangleIndices)
+            return;
+        GpuMesh *gpu = getMesh(*draw.mesh);
+        if (!bgfx::isValid(gpu->geom->vbh)
+                || !bgfx::isValid(gpu->geom->tri))
+            return;
+        if (getenv("FC_BGFX_DEBUG_SUBMIT"))
+            fprintf(stderr,
+                    "bgfx submit water surf cache=%llx start=%d num=%d\n",
+                    (unsigned long long)draw.mesh->cacheId,
+                    draw.indexStart, draw.indexCount);
+
+        const Render::Material &mat = draw.material;
+        float color[4];
+        unpackColor(mat.diffuse, color);
+        bgfx::setUniform(u_matColor, color);
+        // The mesh vertex shader reads u_params.w as an NDC depth bias;
+        // bgfx uniforms are global (commit uploads the last-set value),
+        // so an unset u_params would inherit a line draw's dim-alpha 1.0
+        // and push every fragment past the far plane.
+        float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_params, params);
+        float surf[4] = {waveStrength, waveScale, time, 0.0f};
+        bgfx::setUniform(u_waterSurf, surf);
+        float lightDir[4] = {lightDirView[0], lightDirView[1],
+                             lightDirView[2],
+                             shadowFrame ? 1.0f : 0.0f};
+        bgfx::setUniform(u_lightDir, lightDir);
+        bgfx::setUniform(u_lightColor, lightColorI);
+        bgfx::setTexture(0, s_texScene, sceneCopyTex);
+        bgfx::setTexture(1, s_texEnv, m_envBuilt ? m_envTex
+                                                 : m_dummyEnvTex);
+
+        setDrawTransform(draw, autozoomScale);
+        // The mesh vertex shader needs the color stream too (bgfx drops
+        // draws with unbound attributes) — bind like the normal path.
+        setMeshVertexBuffers(gpu, *draw.mesh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->geom->tri);
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+            | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS
+            | BGFX_STATE_MSAA;
+        if (mat.culling && !mat.twoside)
+            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
+        bgfx::setState(state);
+        bgfx::submit(viewId + ViewWaterSurface, m_progWater);
+        ++drawcount;
+    }
+
+    /// Blend the mirrored-scene render onto the shadow ground quad:
+    /// the same quad geometry and vertex shader as the ground draw, so
+    /// the EQUAL depth test hits exactly the ground pixels still
+    /// visible; the reflection texture's alpha (0 = nothing mirrored)
+    /// scales the blend with the intensity.
+    void submitGroundReflOverlay(const float bmin[3], const float bmax[3],
+                                 const Render::LightConfig &light)
+    {
+        if (light.groundTransparency >= 1.0f)
+            return;
+        float cx = (bmin[0] + bmax[0]) * 0.5f;
+        float cy = (bmin[1] + bmax[1]) * 0.5f;
+        float z = bmin[2];
+        float half = light.groundScale
+            * std::max(bmax[0] - bmin[0],
+                       std::max(bmax[1] - bmin[1], bmax[2] - bmin[2]));
+        if (half <= 0.0f)
+            return;
+        TransientVertex::init();
+        if (bgfx::getAvailTransientVertexBuffer(6, TransientVertex::ms_layout)
+                < 6)
+            return;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, 6, TransientVertex::ms_layout);
+        auto verts = reinterpret_cast<TransientVertex *>(tvb.data);
+        const float xs[6] = {-1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f};
+        const float ys[6] = {-1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f};
+        for (int i = 0; i < 6; ++i) {
+            verts[i].px = cx + xs[i] * half;
+            verts[i].py = cy + ys[i] * half;
+            verts[i].pz = z;
+            verts[i].nx = verts[i].ny = 0.0f;
+            verts[i].nz = 1.0f;
+            verts[i].rgba = 0xffffffffu;
+        }
+        float params[4] = {light.groundReflectionIntensity,
+                           0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_reflParams, params);
+        // Zero the mesh VS's global u_params (its .w depth bias would
+        // otherwise carry over from the last line/point draw and break
+        // the EQUAL depth test against the ground quad).
+        float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_params, zero);
+        bgfx::setTexture(0, s_texScene, reflTex);
+        float identity[16];
+        bx::mtxIdentity(identity);
+        bgfx::setTransform(identity);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB
+                       | BGFX_STATE_DEPTH_TEST_EQUAL
+                       | BGFX_STATE_BLEND_ALPHA
+                       | BGFX_STATE_MSAA);
+        bgfx::submit(viewId + ViewGroundReflApply, m_progGroundRefl);
+        ++drawcount;
+    }
+
     // Submission passes mirroring SoFCRenderer's delayed render loop.
     enum SubmitPass {
         PassNormal = 0,
@@ -3699,6 +3895,11 @@ public:
             : transparent && mat.type == Render::Material::Triangle
                 ? ViewTransparent
                 : ViewOpaque;
+        // Ground reflection pass: the same submit path renders into the
+        // mirrored-scene view (the caller feeds opaque scene triangles
+        // only); the mirror flips the winding, so culling flips too.
+        if (reflPass)
+            passView = ViewGroundRefl;
 
         // GL parity (SoFCRenderer::applyMaterial ~520): on-top draws ignore
         // the depth test, only non-on-top transparent draws drop the depth
@@ -3766,7 +3967,8 @@ public:
             state |= BGFX_STATE_BLEND_ALPHA;
         if (culling && !twoside
                         && mat.type == Render::Material::Triangle)
-            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
+            state |= (mat.ccw != reflPass) ? BGFX_STATE_CULL_CW
+                                           : BGFX_STATE_CULL_CCW;
         if (mat.type == Render::Material::Line) {
             if (!thickline)
                 state |= BGFX_STATE_PT_LINES;
@@ -3967,14 +4169,35 @@ public:
             hasFBO = true;
             GLuint colorBuffer = bgfx::getInternal(bgfxColor);
             GLuint depthBuffer = bgfx::getInternal(bgfxDepth);
+            // The sampleable scene color is a texture (with MSAA it is
+            // bgfx's single-sample resolve texture, resolved by the
+            // frame-end framebuffer restore), while the write-only depth
+            // stays a renderbuffer — under MSAA their sample counts
+            // differ, so the color and depth transfers use separate
+            // read framebuffers.
             glGenFramebuffers(1, &fbo);
             glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                        GL_RENDERBUFFER, colorBuffer);
+            if (glIsTexture(colorBuffer))
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                       GL_TEXTURE_2D, colorBuffer, 0);
+            else
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                          GL_RENDERBUFFER, colorBuffer);
+            if (!checkFramebufferStatus()) {
+                glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+                destroy();
+                return;
+            }
+            glGenFramebuffers(1, &fboDepth);
+            glBindFramebuffer(GL_FRAMEBUFFER, fboDepth);
             glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
                                         GL_RENDERBUFFER, depthBuffer);
             glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
                                         GL_RENDERBUFFER, depthBuffer);
+            // No color attachment: complete only with the draw/read
+            // buffers off.
+            glDrawBuffer(GL_NONE);
+            glReadBuffer(GL_NONE);
             if (!checkFramebufferStatus()) {
                 glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
                 destroy();
@@ -3986,9 +4209,15 @@ public:
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
         glBlitFramebuffer(0, 0, width, height,
                           0, 0, width, height,
-                          GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT,
+                          GL_COLOR_BUFFER_BIT,
                           GL_NEAREST);
-        checkGLError("blit");
+        checkGLError("blit color");
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fboDepth);
+        glBlitFramebuffer(0, 0, width, height,
+                          0, 0, width, height,
+                          GL_DEPTH_BUFFER_BIT,
+                          GL_NEAREST);
+        checkGLError("blit depth");
 
         static const bool readback = (getenv("FC_BGFX_DEBUG_READBACK") != nullptr);
         if (readback) {
@@ -4194,6 +4423,21 @@ public:
     bgfx::UniformHandle s_texWaterFront = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texWaterBack = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_waterSigma = BGFX_INVALID_HANDLE;
+    // Water surface refraction (scene copy) + ground reflection targets.
+    bgfx::TextureHandle sceneCopyTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle sceneCopyFbo = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle reflTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle reflDepth = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle reflFbo = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progWaterCopy = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progWater = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progGroundRefl = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texScene = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_waterSurf = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_reflParams = BGFX_INVALID_HANDLE;
+    // Redirect submit() into the ground reflection view (mirrored
+    // camera, flipped culling).
+    bool reflPass = false;
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
     std::unordered_map<uint64_t, GpuMesh> meshes;
@@ -4211,6 +4455,7 @@ public:
     // (Renderer::setAutoZoomScale).
     float autozoomScale = 1.0f;
     GLuint fbo = 0;
+    GLuint fboDepth = 0;
     bool hasFBO = false;
 };
 
@@ -4616,41 +4861,85 @@ public:
         // its bounds (a known single-appearance limitation for multiple
         // differing bodies).
         bool waterActive = false;
+        bool hasWaterBody = false;
         float waterSigma[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float waterDiag = 0.0f;
-        if (volActive) {
-            for (const auto &draw : scene) {
-                const auto &mat = draw.material;
-                if (!mat.water || mat.ontop
-                        || mat.type != Render::Material::Triangle)
-                    continue;
-                {
-                    float dx = draw.bboxMax[0] - draw.bboxMin[0];
-                    float dy = draw.bboxMax[1] - draw.bboxMin[1];
-                    float dz = draw.bboxMax[2] - draw.bboxMin[2];
-                    waterDiag = std::sqrt(dx*dx + dy*dy + dz*dz);
-                }
-                float dens = mat.waterdensity;
-                if (dens <= 0.0f) {
-                    if (waterDiag <= 0.0f)
-                        continue;
-                    dens = 3.0f / waterDiag;
-                }
-                float color[4];
-                unpackColor(mat.diffuse, color);
-                float sigmaS = 0.35f * dens;
-                for (int j = 0; j < 3; ++j)
-                    waterSigma[j] = sigmaS + dens * (1.0f - color[j]);
-                waterSigma[3] = sigmaS;
-                waterActive = true;
-                if (getenv("FC_BGFX_DEBUG_VOL"))
-                    fprintf(stderr,
-                            "bgfx water dens=%g sigma=%g,%g,%g s=%g\n",
-                            dens, waterSigma[0], waterSigma[1],
-                            waterSigma[2], waterSigma[3]);
-                break;
+        for (const auto &draw : scene) {
+            const auto &mat = draw.material;
+            if (!mat.water || mat.ontop
+                    || mat.type != Render::Material::Triangle)
+                continue;
+            {
+                float dx = draw.bboxMax[0] - draw.bboxMin[0];
+                float dy = draw.bboxMax[1] - draw.bboxMin[1];
+                float dz = draw.bboxMax[2] - draw.bboxMin[2];
+                waterDiag = std::sqrt(dx*dx + dy*dy + dz*dz);
             }
+            hasWaterBody = true;
+            float dens = mat.waterdensity;
+            if (dens <= 0.0f) {
+                if (waterDiag <= 0.0f)
+                    continue;
+                dens = 3.0f / waterDiag;
+            }
+            float color[4];
+            unpackColor(mat.diffuse, color);
+            float sigmaS = 0.35f * dens;
+            for (int j = 0; j < 3; ++j)
+                waterSigma[j] = sigmaS + dens * (1.0f - color[j]);
+            waterSigma[3] = sigmaS;
+            // The volumetric water medium needs the volumetric pass; the
+            // body detection itself also serves the surface pass below.
+            waterActive = volActive;
+            if (volActive && getenv("FC_BGFX_DEBUG_VOL"))
+                fprintf(stderr,
+                        "bgfx water dens=%g sigma=%g,%g,%g s=%g\n",
+                        dens, waterSigma[0], waterSigma[1],
+                        waterSigma[2], waterSigma[3]);
+            break;
         }
+        // Water surface (refraction/reflection) pass: independent of the
+        // volumetric medium — it only needs a water body, the scene copy
+        // resources, and the environment for the reflection. Hidden-line
+        // mode disables it like the other shading effects.
+        bool waterSurfActive = waterconf.enabled && hasWaterBody
+            && !hlconfig.show
+            && bgfx::isValid(view->m_progWater)
+            && bgfx::isValid(view->sceneCopyFbo);
+        if (waterSurfActive) {
+            view->ensureEnvironment();
+            if (!bgfx::isValid(view->m_envTex))
+                waterSurfActive = bgfx::isValid(view->m_dummyEnvTex);
+        }
+        // Shared animation clock of the water effects (caustics, surface
+        // waves); FC_BGFX_CAUSTIC_TIME freezes it for deterministic
+        // comparisons. animating() reports live animation so the viewer
+        // keeps scheduling redraws.
+        animatedFrame = false;
+        float animTime = 0.0f;
+        bool animLive = false;
+        static const char *fixedTime = getenv("FC_BGFX_CAUSTIC_TIME");
+        if (fixedTime) {
+            animTime = float(atof(fixedTime));
+        } else {
+            using animclock = std::chrono::steady_clock;
+            static const animclock::time_point start = animclock::now();
+            animTime = std::chrono::duration<float>(
+                           animclock::now() - start).count();
+            animLive = true;
+        }
+        float waterWaveStrength = waterconf.waveStrength;
+        float waterWaveScale = waterconf.waveScale;
+        if (waterWaveScale <= 0.0f)
+            waterWaveScale = waterDiag > 0.0f ? 4.0f / waterDiag : 1.0f;
+        float waterSurfTime = animTime * waterconf.waveSpeed;
+        if (getenv("FC_BGFX_DEBUG_FEED"))
+            fprintf(stderr,
+                    "bgfx water surf: conf=%d body=%d active=%d prog=%d"
+                    " scale=%g strength=%g time=%g\n",
+                    waterconf.enabled, hasWaterBody, waterSurfActive,
+                    bgfx::isValid(view->m_progWater), waterWaveScale,
+                    waterWaveStrength, waterSurfTime);
         // Cached shadow map: the moments in shadowTex stay valid while
         // the light camera, the smoothing, and the caster set (mesh
         // content, transforms, ranges, clipping) are unchanged — camera
@@ -4662,6 +4951,10 @@ public:
         // it just disables the caching.
         static const bool shadowNoCache =
             (getenv("FC_BGFX_SHADOW_NOCACHE") != nullptr);
+        // Water bodies neither cast shadows (the medium needs the light
+        // inside) nor act as ordinary surfaces while either water mode
+        // (volumetric medium or surface) is active.
+        bool waterExempt = waterActive || waterSurfActive;
         bool shadowRender = shadowActive;
         if (shadowActive && !hlconfig.show && !shadowNoCache) {
             uint64_t h = 1469598103934665603ULL;
@@ -4676,7 +4969,7 @@ public:
                 // excluding them dropped its whole shadow (GL keeps it).
                 if (mat.type != Render::Material::Triangle
                         || !(mat.shadowstyle & 1)
-                        || (waterActive && mat.water)
+                        || (waterExempt && mat.water)
                         || !draw.mesh)
                     continue;
                 hashBytes(h, &draw.mesh->cacheId,
@@ -4714,6 +5007,39 @@ public:
         // The prepass rasterizes for SSAO and/or the volumetric ray
         // ends; the AO resolve chain itself stays SSAO-gated.
         bool prepassActive = ssaoActive || volActive;
+
+        // Ground reflection: mirror the world about the shadow ground
+        // plane (z = scene bbox bottom, the plane the ground quad sits
+        // on) and re-render the opaque scene with the original camera —
+        // the ground then acts as a window into the mirrored world. The
+        // shadow lookup of the mirrored draws needs the shadow matrix
+        // rebased from the mirrored view space (mirrored-view -> world
+        // -> original-view -> shadow uv).
+        bool groundReflActive = shadowActive && lightconf.ground
+            && lightconf.groundReflection && bboxValid && !hlconfig.show
+            && bgfx::isValid(view->m_progGroundRefl)
+            && bgfx::isValid(view->reflFbo);
+        if (getenv("FC_BGFX_DEBUG_FEED"))
+            fprintf(stderr,
+                    "bgfx ground refl: conf=%d ground=%d shadow=%d"
+                    " active=%d intensity=%g\n",
+                    lightconf.groundReflection, lightconf.ground,
+                    shadowActive, groundReflActive,
+                    lightconf.groundReflectionIntensity);
+        float reflViewMtx[16], reflShadowMtx[16];
+        if (groundReflActive) {
+            const float *vm = reinterpret_cast<const float *>(viewMatrix);
+            float S[16];
+            bx::mtxIdentity(S);
+            S[10] = -1.0f;
+            S[14] = 2.0f * bboxMin[2];
+            bx::mtxMul(reflViewMtx, S, vm);
+            float invV[16], m1[16], m2[16];
+            bx::mtxInverse(invV, vm);
+            bx::mtxMul(m1, invV, S);
+            bx::mtxMul(m2, m1, vm);
+            bx::mtxMul(reflShadowMtx, m2, view->shadowMtx);
+        }
 
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
             uint16_t id = base + i;
@@ -4790,6 +5116,32 @@ public:
                     0x00000000u, back ? 0.0f : 1.0f, 0);
                 bgfx::setViewRect(id, 0, 0, width, height);
                 bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (groundReflActive
+                       && i == BGFXView::ViewGroundRefl) {
+                // Mirrored-scene render: own color (cleared to alpha 0 =
+                // nothing reflected) + depth, the original projection
+                // over the mirrored view.
+                bgfx::setViewFrameBuffer(id, view->reflFbo);
+                bgfx::setViewClear(id,
+                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                    0x00000000u, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
+                bgfx::setViewTransform(id, reflViewMtx, projMatrix);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (waterSurfActive && i == BGFXView::ViewWaterCopy) {
+                // Fullscreen copy of the scene color; the framebuffer
+                // switch also resolves a multisampled scene attachment
+                // before the surface pass samples the copy.
+                bgfx::setViewFrameBuffer(id, view->sceneCopyFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
+                bgfx::setViewTransform(id, nullptr, nullptr);
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
@@ -5261,7 +5613,7 @@ public:
                 if (shadowRender && !draw.material.ontop
                         && isTriangle(draw)
                         && (draw.material.shadowstyle & 1)
-                        && !(waterActive && draw.material.water)
+                        && !(waterExempt && draw.material.water)
                         && !casterInstancedThisFrame(drawIdx))
                     view->submitShadowCaster(draw);
                 continue;
@@ -5271,9 +5623,19 @@ public:
             // A frustum-culled draw skips its color/water/prepass
             // submits but still casts its shadow below.
             bool cullDraw = culled(draw);
-            if (!cullDraw && !instancedThisFrame(drawIdx))
+            // Water surface pass: the water body's triangles leave the
+            // ordinary (transparent-bucket) path and re-render in the
+            // dedicated surface view; clipped bodies keep the normal
+            // path (no clip variant of the surface shader).
+            bool surfWater = waterSurfActive && isTriangle(draw)
+                && draw.material.water
+                && draw.material.numclipplanes == 0;
+            if (!cullDraw && !instancedThisFrame(drawIdx) && !surfWater)
                 view->submit(draw, viewMat, BGFXView::PassNormal,
                              sceneNoSeam(draw));
+            if (surfWater && !cullDraw)
+                view->submitWaterSurface(draw, waterWaveStrength,
+                                         waterWaveScale, waterSurfTime);
             // Water body draws bound the medium instead of acting as
             // ordinary surfaces: their front/back depths rasterize into
             // the water targets (whatever their transparency), and they
@@ -5291,7 +5653,7 @@ public:
             // transparent bucket). The volumetric raymarch shares it as
             // its ray-end depth source.
             if (prepassActive && isTriangle(draw) && !isTransp(draw)
-                    && !isWater && !cullDraw
+                    && !(waterExempt && draw.material.water) && !cullDraw
                     && !prepassInstancedThisFrame(drawIdx))
                 view->submitPrepass(draw);
             // Shadow casters — transparent geometry casts like an opaque
@@ -5299,7 +5661,8 @@ public:
             // ignores alpha); water is the one exception (light must
             // enter the medium). Skipped while the cached map is valid.
             if (shadowRender && isTriangle(draw)
-                    && (draw.material.shadowstyle & 1) && !isWater
+                    && (draw.material.shadowstyle & 1)
+                    && !(waterExempt && draw.material.water)
                     && !casterInstancedThisFrame(drawIdx))
                 view->submitShadowCaster(draw);
             if (!cullDraw)
@@ -5311,6 +5674,33 @@ public:
             view->submitShadowGround(bboxMin, bboxMax, lightconf,
                                      volActive);
         }
+        // Ground reflection: the opaque scene triangles re-submit into
+        // the mirrored view through the ordinary submit path (redirected
+        // by reflPass, culling flipped, shadow matrix rebased), then the
+        // overlay quad blends the result onto the ground. Frustum
+        // culling is skipped — the mirrored camera sees a different
+        // volume; hidden and on-top draws stay out like the water
+        // bodies and transparent geometry (single-bounce opaque only).
+        if (groundReflActive) {
+            view->reflPass = true;
+            float savedShadowMtx[16];
+            std::memcpy(savedShadowMtx, view->shadowMtx,
+                        sizeof(savedShadowMtx));
+            std::memcpy(view->shadowMtx, reflShadowMtx,
+                        sizeof(reflShadowMtx));
+            for (const auto &draw : scene) {
+                const auto &mat = draw.material;
+                if (!isTriangle(draw) || mat.ontop || isHidden(draw)
+                        || hideFill(draw) || isTransp(draw)
+                        || (waterExempt && mat.water))
+                    continue;
+                view->submit(draw, viewMat);
+            }
+            std::memcpy(view->shadowMtx, savedShadowMtx,
+                        sizeof(savedShadowMtx));
+            view->reflPass = false;
+            view->submitGroundReflOverlay(bboxMin, bboxMax, lightconf);
+        }
         for (const auto &draw : scene) {
             if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
                     && !isHidden(draw) && !hideFill(draw)) {
@@ -5320,7 +5710,7 @@ public:
                 // On-top geometry keeps casting its shadow (the view
                 // order still lands these in the caster pass).
                 if (shadowRender && (draw.material.shadowstyle & 1)
-                        && !(waterActive && draw.material.water))
+                        && !(waterExempt && draw.material.water))
                     view->submitShadowCaster(draw);
                 if (!cullDraw)
                     submitSceneOutline(draw);
@@ -5333,7 +5723,7 @@ public:
                 if (!cullDraw)
                     view->submit(draw, viewMat);
                 if (shadowRender && (draw.material.shadowstyle & 1)
-                        && !(waterActive && draw.material.water))
+                        && !(waterExempt && draw.material.water))
                     view->submitShadowCaster(draw);
                 if (!cullDraw)
                     submitSceneOutline(draw);
@@ -5366,32 +5756,28 @@ public:
 
         // 1e. Water caustics: additive light-space pattern splat over
         // the prepass surfaces inside the water interval, before the
-        // extinction multiply of the volumetric apply. Animation time
-        // from a steady clock (frozen by FC_BGFX_CAUSTIC_TIME for
-        // deterministic comparisons); animating() reports the state so
-        // the viewer keeps scheduling redraws.
-        animatedFrame = false;
+        // extinction multiply of the volumetric apply.
         if (waterActive && volconf.caustics) {
             float scale = volconf.causticsScale;
             if (scale <= 0.0f && waterDiag > 0.0f)
                 scale = 6.0f / waterDiag;
             if (scale > 0.0f) {
-                float time = 0.0f;
-                static const char *fixedTime =
-                    getenv("FC_BGFX_CAUSTIC_TIME");
-                if (fixedTime) {
-                    time = float(atof(fixedTime));
-                } else if (volconf.causticsSpeed != 0.0f) {
-                    using clock = std::chrono::steady_clock;
-                    static const clock::time_point start = clock::now();
-                    time = std::chrono::duration<float>(
-                               clock::now() - start).count()
-                        * volconf.causticsSpeed;
-                    animatedFrame = true;
-                }
                 view->submitCaustics(volconf.causticsIntensity, scale,
-                                     time, waterSigma);
+                                     animTime * volconf.causticsSpeed,
+                                     waterSigma);
+                animatedFrame = animatedFrame
+                    || (animLive && volconf.causticsSpeed != 0.0f);
             }
+        }
+
+        // 1f. Water surface: copy the scene color (post volumetric
+        // composite) into the refraction source; the per-draw surface
+        // submits happened in the scene loop above (their view renders
+        // after the copy).
+        if (waterSurfActive) {
+            view->submitWaterCopy();
+            animatedFrame = animatedFrame
+                || (animLive && waterconf.waveSpeed != 0.0f);
         }
 
         // 2. Selection whole-object fills; positive ids are on-top
@@ -6118,6 +6504,7 @@ public:
     Render::BumpConfig bumpconf;
     Render::LightConfig lightconf;
     Render::VolumetricConfig volconf;
+    Render::WaterConfig waterconf;
     float autozoomScale = 1.0f;
     // CPU copy of the section hatch texture, expanded to RGBA8; the
     // version stamps GPU re-uploads (0 = no image).
@@ -6322,6 +6709,14 @@ void BGFXRenderer::setVolumetricConfig(const VolumetricConfig &config)
 {
     if (pimpl->volconf != config) {
         pimpl->volconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setWaterConfig(const WaterConfig &config)
+{
+    if (pimpl->waterconf != config) {
+        pimpl->waterconf = config;
         pimpl->sceneDirty = true;
     }
 }

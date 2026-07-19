@@ -111,6 +111,22 @@ private:
     Gui::PrefDoubleSpinBox *CausticsScale = nullptr;
     QLabel *labelCausticsSpeed = nullptr;
     Gui::PrefDoubleSpinBox *CausticsSpeed = nullptr;
+
+    // Auto generated code (Tools/params_utils.py:426)
+    QGroupBox * groupWatersurface = nullptr;
+    Gui::PrefCheckBox *WaterSurface = nullptr;
+    QLabel *labelWaterWaveStrength = nullptr;
+    Gui::PrefDoubleSpinBox *WaterWaveStrength = nullptr;
+    QLabel *labelWaterWaveScale = nullptr;
+    Gui::PrefDoubleSpinBox *WaterWaveScale = nullptr;
+    QLabel *labelWaterWaveSpeed = nullptr;
+    Gui::PrefDoubleSpinBox *WaterWaveSpeed = nullptr;
+
+    // Auto generated code (Tools/params_utils.py:426)
+    QGroupBox * groupGroundreflection = nullptr;
+    Gui::PrefCheckBox *GroundReflection = nullptr;
+    QLabel *labelGroundReflectionIntensity = nullptr;
+    Gui::PrefDoubleSpinBox *GroundReflectionIntensity = nullptr;
 // Auto generated code (Tools/params_utils.py:573)
 };
 } // namespace Dialog

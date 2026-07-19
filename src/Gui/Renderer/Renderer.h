@@ -285,6 +285,11 @@ struct LightConfig {
     /// ground lighting like a scene Material::bumpmap; tiled with the
     /// ground texture coordinates.
     std::shared_ptr<const TextureImage> groundBumpMap;
+    /// Ground reflection (RenderParams::GroundReflection, backend-only —
+    /// no Coin counterpart): mirror the opaque scene in the ground plane
+    /// and blend it onto the ground quad by the intensity factor.
+    bool groundReflection = false;
+    float groundReflectionIntensity = 0.4f;
 
     bool operator==(const LightConfig &o) const {
         return valid == o.valid && spot == o.spot
@@ -307,7 +312,9 @@ struct LightConfig {
             && groundTexture == o.groundTexture
             && groundTextureSize == o.groundTextureSize
             && groundTransparency == o.groundTransparency
-            && groundBumpMap == o.groundBumpMap;
+            && groundBumpMap == o.groundBumpMap
+            && groundReflection == o.groundReflection
+            && groundReflectionIntensity == o.groundReflectionIntensity;
     }
     bool operator!=(const LightConfig &o) const { return !(*this == o); }
 };
@@ -344,6 +351,30 @@ struct VolumetricConfig {
             && causticsSpeed == o.causticsSpeed;
     }
     bool operator!=(const VolumetricConfig &o) const { return !(*this == o); }
+};
+
+/// Per-frame water surface configuration. While enabled and the scene
+/// carries a water body (Material::water), the water draws leave the
+/// ordinary transparent path and render as an animated water surface:
+/// screen-space refraction of the opaque scene behind them, a
+/// Fresnel-blended environment reflection and a sun glint from the scene
+/// light. Independent of the volumetric pass.
+struct WaterConfig {
+    bool enabled = false;
+    /// Amplitude of the animated wave normal perturbation; 0 = flat
+    /// mirror-like surface.
+    float waveStrength = 0.3f;
+    /// Wave frequency in inverse world units; 0 = automatic (a fraction
+    /// of the water body size, resolved by the backend).
+    float waveScale = 0.0f;
+    /// Wave animation speed; 0 freezes the surface.
+    float waveSpeed = 1.0f;
+
+    bool operator==(const WaterConfig &o) const {
+        return enabled == o.enabled && waveStrength == o.waveStrength
+            && waveScale == o.waveScale && waveSpeed == o.waveSpeed;
+    }
+    bool operator!=(const WaterConfig &o) const { return !(*this == o); }
 };
 
 /// Per-frame physically based shading configuration (like AOConfig there
@@ -613,6 +644,9 @@ public:
     virtual void setLightConfig(const LightConfig &config) { (void)config; }
     /// Per-frame volumetric lighting (light shaft) configuration.
     virtual void setVolumetricConfig(const VolumetricConfig &config)
+    { (void)config; }
+    /// Per-frame water surface (refraction/reflection) configuration.
+    virtual void setWaterConfig(const WaterConfig &config)
     { (void)config; }
     /// Per-frame world-to-screen scale at the world origin consumed by
     /// Material::autozoom draws (Coin: SoAutoZoomTranslation's
