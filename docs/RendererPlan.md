@@ -1110,13 +1110,29 @@ independent of each other; item 4 builds on item 3's property model.
   frozen-time deterministic; time-0 vs time-3 differ only on the water;
   water-medium and caustics scenes bit-identical with the surface off;
   all effects compose (surface + medium tint + caustics + shadows +
-  ground reflection). Known gaps: **refraction smears the not-submerged
-  surfaces of protruding objects** (the classic screen-space artifact —
-  the wave-offset sample lands on above-water pixels near the
-  waterline; user-flagged, to fix next: restrict the refraction source
-  to submerged pixels, e.g. a stencil/mask laid down by the water
-  surface draws, or reject samples whose scene depth is nearer than the
-  water surface and fall back to the unperturbed sample);
+  ground reflection). **Refraction depth reject** *(done 2026-07,
+  user-picked depth over stencil)*: the smear of not-submerged surfaces
+  of protruding objects (the classic screen-space artifact — the
+  wave-offset sample landed on above-water pixels near the waterline)
+  is fixed by running the SSAO/volumetric depth+normal prepass on
+  water-surface frames (`prepassActive` gains a `waterSurfActive &&
+  m_ssao` leg; the AO resolve chain stays SSAO-gated) and rejecting
+  offset samples whose prepass viewZ is nearer than the water fragment
+  — the shader falls back to the straight-through sample, which is
+  behind the surface wherever the surface is visible. `fs_fc_water`
+  samples `s_texNormalZ` (stage 2) in a 5-tap cross dilated by ~2 px:
+  the CAD edge lines of dry silhouettes don't rasterize into the
+  prepass, so their pixels straddling the background would otherwise
+  still smear their black through the offset (clearly visible as wavy
+  ghost outlines around the dry geometry). `u_waterSurf.w` flags the
+  prepass bound; `FC_BGFX_NO_WATER_REJECT` is the A/B switch. Verified
+  on llvmpipe: reject on-vs-off diffs confined to the waterline
+  neighborhoods of protruding objects (ghost outlines gone, refracted
+  submerged edges keep wobbling); a fully-submerged-only scene is
+  bit-identical on-vs-off; the full combo (surface + shadow + SSAO +
+  volumetric + caustics) still composes. Remaining reject gap:
+  transparent protruding geometry stays out of the prepass, so it can
+  still smear. Known gaps:
   transparent geometry behind the surface is occluded (the surface
   writes depth); clipped water bodies keep the plain transparent path;
   one shared wave appearance per frame.
