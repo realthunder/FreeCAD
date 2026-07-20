@@ -833,30 +833,63 @@ static int s_downX = 0, s_downY = 0;
 static bool s_clickOk = false;
 static double s_lastHoverMs = 0.0;
 
-static void canvasPos(const EmscriptenMouseEvent *e, float &x, float &y)
+static void clientToCanvas(float cx, float cy, float &x, float &y)
 {
     double origin[2] = {0.0, 0.0};
     fcviewer_canvas_origin(origin);
-    x = float(e->clientX - origin[0]);
-    y = float(e->clientY - origin[1]);
+    x = cx - float(origin[0]);
+    y = cy - float(origin[1]);
 }
 
-/// Send the click as a world-ray pick request to the desktop (the
-/// selection echo returns through the scene feed).
-static void sendPick(const EmscriptenMouseEvent *e)
+static void canvasPos(const EmscriptenMouseEvent *e, float &x, float &y)
+{
+    clientToCanvas(float(e->clientX), float(e->clientY), x, y);
+}
+
+/// Send a world-ray pick request for canvas pixel (px,py) to the desktop
+/// (the selection echo returns through the scene feed).
+static void sendPickXY(float px, float py, bool ctrl)
 {
     if (!s_wsOpen)
         return;
-    float px, py;
-    canvasPos(e, px, py);
     bx::Vec3 orig(bx::InitZero), rdir(bx::InitZero);
     screenRay(px, py, orig, rdir);
     uint8_t msg[2 + 6 * sizeof(float)];
     msg[0] = 'P';
-    msg[1] = e->ctrlKey ? 1 : 0;
+    msg[1] = ctrl ? 1 : 0;
     float v[6] = {orig.x, orig.y, orig.z, rdir.x, rdir.y, rdir.z};
     std::memcpy(msg + 2, v, sizeof(v));
     emscripten_websocket_send_binary(s_ws, msg, sizeof(msg));
+}
+
+/// Resolve a click/tap at canvas pixel (px,py): the NaviCube claims it
+/// first (local orient, then rotate button), otherwise it is a scene pick
+/// sent to the desktop. Shared by the mouse-up and touch-tap paths.
+static void doTapPick(float px, float py, bool ctrl)
+{
+    static const bool debugPick = EM_ASM_INT({
+        return new URLSearchParams(window.location.search).has('debugpick')
+            ? 1 : 0;
+    }) != 0;
+    bx::Vec3 dir(bx::InitZero);
+    NaviButtonAction btn = NaviBtnNone;
+    if (s_haveScene && pickNaviCube(px, py, dir)) {
+        if (debugPick)
+            std::printf("fcviewer: navicube orient (%g,%g) -> dir %g,%g,%g\n",
+                        px, py, dir.x, dir.y, dir.z);
+        orientToDir(dir);
+        interact();
+    }
+    else if (s_haveScene && (btn = pickNaviButton(px, py)) != NaviBtnNone) {
+        if (debugPick)
+            std::printf("fcviewer: navicube button (%g,%g) -> %d\n",
+                        px, py, int(btn));
+        applyNaviButton(btn);
+        interact();
+    }
+    else {
+        sendPickXY(px, py, ctrl);
+    }
 }
 
 static void updateHover(const EmscriptenMouseEvent *e)
@@ -914,34 +947,9 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
     s_dragging = false;
     if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 6
             && std::abs(int(e->clientY) - s_downY) <= 6) {
-        // The NaviCube overlay claims the click first (local orient); a
-        // click anywhere else is a scene pick sent to the desktop.
         float px, py;
         canvasPos(e, px, py);
-        static const bool debugPick = EM_ASM_INT({
-            return new URLSearchParams(window.location.search)
-                .has('debugpick') ? 1 : 0;
-        }) != 0;
-        bx::Vec3 dir(bx::InitZero);
-        NaviButtonAction btn = NaviBtnNone;
-        if (s_haveScene && pickNaviCube(px, py, dir)) {
-            if (debugPick)
-                std::printf("fcviewer: navicube orient (%g,%g) -> "
-                            "dir %g,%g,%g\n", px, py, dir.x, dir.y, dir.z);
-            orientToDir(dir);
-            interact();
-        }
-        else if (s_haveScene
-                 && (btn = pickNaviButton(px, py)) != NaviBtnNone) {
-            if (debugPick)
-                std::printf("fcviewer: navicube button (%g,%g) -> %d\n",
-                            px, py, int(btn));
-            applyNaviButton(btn);
-            interact();
-        }
-        else {
-            sendPick(e);
-        }
+        doTapPick(px, py, e->ctrlKey);
     }
     s_clickOk = false;
     return EM_TRUE;
@@ -1012,6 +1020,10 @@ static EM_BOOL onKeyDown(int, const EmscriptenKeyboardEvent *e, void *)
 // (distance ratio). State resets whenever the touch count changes.
 static int s_numTouch = 0;
 static float s_touchX[2], s_touchY[2];
+// Tap candidate: a single finger down + up with no meaningful drag, mapped
+// to the same pick as a mouse click (NaviCube orient/button, else scene pick).
+static bool s_tapOk = false;
+static float s_tapX = 0.0f, s_tapY = 0.0f;
 
 static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
 {
@@ -1030,9 +1042,27 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
         ++n;
     }
 
-    if (type == EMSCRIPTEN_EVENT_TOUCHMOVE && n == s_numTouch) {
+    if (type == EMSCRIPTEN_EVENT_TOUCHSTART) {
+        // One finger down opens a tap candidate; a second finger (a gesture)
+        // cancels it. The cube hover tint isn't used on touch, but clear any
+        // stale one before the geometry can move.
+        clearCubeHover();
+        if (e->numTouches == 1 && n == 1) {
+            s_tapOk = true;
+            s_tapX = x[0];
+            s_tapY = y[0];
+        }
+        else {
+            s_tapOk = false;
+        }
+    }
+    else if (type == EMSCRIPTEN_EVENT_TOUCHMOVE && n == s_numTouch) {
         interact();
         if (n == 1) {
+            // Drag past the slop cancels the tap so orbit doesn't also pick.
+            if (std::abs(x[0] - s_tapX) > 8.0f
+                    || std::abs(y[0] - s_tapY) > 8.0f)
+                s_tapOk = false;
             s_yaw -= (x[0] - s_touchX[0]) * 0.01f;
             s_pitch = bx::clamp(s_pitch + (y[0] - s_touchY[0]) * 0.01f,
                                 -1.55f, 1.55f);
@@ -1051,6 +1081,20 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
                                    0.01f * s_diag, 50.0f * s_diag);
             }
         }
+    }
+    else if (type == EMSCRIPTEN_EVENT_TOUCHEND
+             || type == EMSCRIPTEN_EVENT_TOUCHCANCEL) {
+        // A single finger lifted with no drag = tap: run the same
+        // NaviCube-first pick as a mouse click, at the touch-down point.
+        // (On a clean tap the lone touch is the one just lifted, so
+        // e->numTouches == 1.)
+        if (type == EMSCRIPTEN_EVENT_TOUCHEND && s_tapOk
+                && e->numTouches == 1) {
+            float px, py;
+            clientToCanvas(s_tapX, s_tapY, px, py);
+            doTapPick(px, py, /*ctrl*/ false);
+        }
+        s_tapOk = false;
     }
 
     s_numTouch = n;
