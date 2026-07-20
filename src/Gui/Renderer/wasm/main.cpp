@@ -915,6 +915,35 @@ static void doTapPick(float px, float py, bool ctrl)
     }
 }
 
+// Last committed tap/click (CSS px + time) for double-tap/double-click
+// detection, shared by the mouse and touch paths.
+static double s_lastTapMs = -1e9;
+static float s_lastTapX = 0.0f, s_lastTapY = 0.0f;
+
+/// A committed tap/click at CSS-pixel (clientX,clientY): a second one soon
+/// after and near the first is a double = zoom-to-fit; otherwise a normal
+/// pick. Detected manually (not the dblclick event) so mouse and touch behave
+/// identically and the window is tunable.
+static void tapOrDouble(float clientX, float clientY, bool ctrl)
+{
+    const double now = emscripten_get_now();
+    if (now - s_lastTapMs < 450.0
+            && std::fabs(clientX - s_lastTapX) < 30.0f
+            && std::fabs(clientY - s_lastTapY) < 30.0f) {
+        fitCamera();
+        interact();
+        s_lastTapMs = -1e9;   // consume so a 3rd tap starts fresh
+    }
+    else {
+        float px, py;
+        clientToCanvas(clientX, clientY, px, py);
+        doTapPick(px, py, ctrl);
+        s_lastTapMs = now;
+        s_lastTapX = clientX;
+        s_lastTapY = clientY;
+    }
+}
+
 static void updateHover(const EmscriptenMouseEvent *e)
 {
     if (!s_haveScene)
@@ -970,9 +999,7 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
     s_dragging = false;
     if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 6
             && std::abs(int(e->clientY) - s_downY) <= 6) {
-        float px, py;
-        canvasPos(e, px, py);
-        doTapPick(px, py, e->ctrlKey);
+        tapOrDouble(float(e->clientX), float(e->clientY), e->ctrlKey);
     }
     s_clickOk = false;
     return EM_TRUE;
@@ -1043,8 +1070,8 @@ static EM_BOOL onKeyDown(int, const EmscriptenKeyboardEvent *e, void *)
 // (distance ratio). State resets whenever the touch count changes.
 static int s_numTouch = 0;
 static float s_touchX[2], s_touchY[2];
-// Tap candidate: a single finger down + up with no meaningful drag, mapped
-// to the same pick as a mouse click (NaviCube orient/button, else scene pick).
+// Tap candidate: a single finger down + up with no meaningful drag, routed
+// through tapOrDouble (single = pick, double = zoom-to-fit).
 static bool s_tapOk = false;
 static float s_tapX = 0.0f, s_tapY = 0.0f;
 
@@ -1107,16 +1134,14 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
     }
     else if (type == EMSCRIPTEN_EVENT_TOUCHEND
              || type == EMSCRIPTEN_EVENT_TOUCHCANCEL) {
-        // A single finger lifted with no drag = tap: run the same
-        // NaviCube-first pick as a mouse click, at the touch-down point.
-        // (On a clean tap the lone touch is the one just lifted, so
+        // A single finger lifted with no drag = tap. A second such tap soon
+        // after and near the first is a double-tap -> zoom-to-fit; otherwise
+        // run the same NaviCube-first pick as a mouse click, at the touch-down
+        // point. (On a clean tap the lone touch is the one just lifted, so
         // e->numTouches == 1.)
         if (type == EMSCRIPTEN_EVENT_TOUCHEND && s_tapOk
-                && e->numTouches == 1) {
-            float px, py;
-            clientToCanvas(s_tapX, s_tapY, px, py);
-            doTapPick(px, py, /*ctrl*/ false);
-        }
+                && e->numTouches == 1)
+            tapOrDouble(s_tapX, s_tapY, /*ctrl*/ false);
         s_tapOk = false;
     }
 
