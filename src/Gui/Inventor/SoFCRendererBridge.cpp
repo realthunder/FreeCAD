@@ -672,6 +672,23 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             // outlining geometry part by part (GL: renderOutline switches
             // to getNumFaceParts() under clip planes or perFaceOutline,
             // and to getNonFlatParts() for perFaceOutline+sceneOutline).
+            // Per-face triangle ranges for browser-side per-face
+            // preselection: the WASM viewer maps a hovered triangle to
+            // its face part. Filled for every whole-object triangle mesh
+            // (not just outlined ones) so shaded-mode hover highlights the
+            // face under the cursor, matching the desktop.
+            if (rmat.type == Render::Material::Triangle && ventry.partidx < 0
+                    && mesh->triangleParts.empty()) {
+                int numparts = ventry.cache->getNumFaceParts();
+                mesh->triangleParts.reserve(numparts);
+                for (int i = 0; i < numparts; ++i) {
+                    int start = 0, count = 0;
+                    if (ventry.cache->getTrianglePartRange(i, start, count)
+                            && count > 0)
+                        mesh->triangleParts.emplace_back(start, count);
+                }
+            }
+
             if (rmat.outline && ventry.partidx < 0) {
                 if (rmat.type == Render::Material::Line
                         && !mesh->noSeamLineIndices
@@ -680,17 +697,6 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                         ventry.cache->getNumNoSeamLineIndices();
                     mesh->noSeamLineIndices = reinterpret_cast<const int32_t *>(
                             ventry.cache->getNoSeamLineIndices());
-                }
-                if (rmat.type == Render::Material::Triangle
-                        && mesh->triangleParts.empty()) {
-                    int numparts = ventry.cache->getNumFaceParts();
-                    mesh->triangleParts.reserve(numparts);
-                    for (int i = 0; i < numparts; ++i) {
-                        int start = 0, count = 0;
-                        if (ventry.cache->getTrianglePartRange(i, start, count)
-                                && count > 0)
-                            mesh->triangleParts.emplace_back(start, count);
-                    }
                 }
                 if (rmat.type == Render::Material::Triangle
                         && mesh->nonFlatParts.empty()) {
