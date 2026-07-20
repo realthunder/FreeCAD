@@ -42,6 +42,9 @@
 # include <Inventor/SoPrimitiveVertex.h>
 # include <Inventor/actions/SoCallbackAction.h>
 # include <Inventor/actions/SoGLRenderAction.h>
+# include <Inventor/actions/SoGetBoundingBoxAction.h>
+# include <Inventor/actions/SoGetMatrixAction.h>
+# include <Inventor/actions/SoPickAction.h>
 # include <Inventor/elements/SoModelMatrixElement.h>
 # include <Inventor/elements/SoViewingMatrixElement.h>
 # include <Inventor/elements/SoViewportRegionElement.h>
@@ -50,12 +53,14 @@
 # include <Inventor/misc/SoState.h>
 # include <Inventor/nodes/SoSeparator.h>
 # include <Inventor/nodes/SoTexture2.h>
+# include <Inventor/nodes/SoTransformation.h>
 #endif // _PreComp_
 
 #include <Gui/BitmapFactory.h>
 #include <Gui/Tools.h>
 
 #include "SoDatumLabel.h"
+#include "Inventor/SoAutoZoomTranslation.h"
 
 
 #define ZCONSTR 0.006f
@@ -76,6 +81,40 @@ using namespace Gui;
 // ------------------------------------------------------
 
 namespace Gui {
+// Places the text quad at the datum's textOffset/textAngle (both in local
+// sketch-plane coordinates, recomputed by the leader pass). Kept as a live
+// transform that reads the owner rather than baked fields so it needs no
+// notify plumbing. Paired with an SoAutoZoomTranslation that follows it, so
+// the quad renders screen-constant: postAutoZoom resets the model matrix to
+// identity and the backend replays this placement + a per-frame scale each
+// frame (see setDrawTransform), which is why the quad is emitted at the origin.
+class SoDatumLabelAnchor : public SoTransformation {
+    using inherited = SoTransformation;
+    SO_NODE_HEADER(SoDatumLabelAnchor);
+
+public:
+    static void initClass();
+    SoDatumLabelAnchor();
+    SoDatumLabel* owner = nullptr;
+
+protected:
+    ~SoDatumLabelAnchor() override = default;
+    void doAction(SoAction* action) override
+    {
+        if (!this->owner)
+            return;
+        SoState* state = action->getState();
+        SoModelMatrixElement::translateBy(state, this, this->owner->textOffset);
+        SoModelMatrixElement::rotateBy(
+            state, this, SbRotation(SbVec3f(0.f, 0.f, 1.f), this->owner->textAngle));
+    }
+    void callback(SoCallbackAction* action) override { doAction(action); }
+    void GLRender(SoGLRenderAction* action) override { doAction(action); }
+    void getBoundingBox(SoGetBoundingBoxAction* action) override { doAction(action); }
+    void pick(SoPickAction* action) override { doAction(action); }
+    void getMatrix(SoGetMatrixAction* action) override;
+};
+
 class SoDatumLabelImage : public SoShape {
     using inherited = SoShape;
     SO_NODE_HEADER(SoDatumLabelImage);
@@ -96,6 +135,31 @@ protected:
 };
 }  // namespace Gui
 
+SO_NODE_SOURCE(SoDatumLabelAnchor)
+
+void SoDatumLabelAnchor::initClass()
+{
+    SO_NODE_INIT_CLASS(SoDatumLabelAnchor, SoTransformation, "Transformation");
+}
+
+SoDatumLabelAnchor::SoDatumLabelAnchor()
+{
+    SO_NODE_CONSTRUCTOR(SoDatumLabelAnchor);
+}
+
+void SoDatumLabelAnchor::getMatrix(SoGetMatrixAction* action)
+{
+    if (!this->owner)
+        return;
+    SbMatrix t;
+    t.setTranslate(this->owner->textOffset);
+    SbMatrix m;
+    m.setRotate(SbRotation(SbVec3f(0.f, 0.f, 1.f), this->owner->textAngle));
+    m.multRight(t);
+    action->getMatrix().multLeft(m);
+    action->getInverse().multRight(m.inverse());
+}
+
 SO_NODE_SOURCE(SoDatumLabelImage)
 
 void SoDatumLabelImage::initClass()
@@ -112,18 +176,12 @@ SoDatumLabelImage::SoDatumLabelImage()
 
 void SoDatumLabelImage::computeBBox(SoAction*, SbBox3f& box, SbVec3f& center)
 {
-    if (!this->owner || this->owner->imgWidth <= FLT_EPSILON
-        || this->owner->imgHeight <= FLT_EPSILON) {
-        // Nothing sensible to contribute yet; leave an empty box.
-        center = SbVec3f(0.f, 0.f, 0.f);
-        return;
-    }
-    const SbVec3f& c = this->owner->textOffset;
-    float hw = this->owner->imgWidth * 0.5f;
-    float hh = this->owner->imgHeight * 0.5f;
-    float r = std::sqrt(hw * hw + hh * hh);
-    box.setBounds(SbVec3f(c[0] - r, c[1] - r, c[2]), SbVec3f(c[0] + r, c[1] + r, c[2]));
-    center = c;
+    // The quad is emitted at the origin (native pixel units) and placed by the
+    // anchor + screen-constant autozoom; contribute a tiny box at the origin so
+    // it neither dominates fitAll nor leaves an invalid bbox. The datum's real
+    // extent is already covered by the leader shape (SoDatumLabel).
+    box.setBounds(SbVec3f(0.f, 0.f, 0.f), SbVec3f(0.f, 0.f, 0.f));
+    center = SbVec3f(0.f, 0.f, 0.f);
 }
 
 void SoDatumLabelImage::generatePrimitives(SoAction* action)
@@ -142,6 +200,7 @@ SO_NODE_SOURCE(SoDatumLabel)
 void SoDatumLabel::initClass()
 {
     SO_NODE_INIT_CLASS(SoDatumLabel, SoShape, "Shape");
+    SoDatumLabelAnchor::initClass();
     SoDatumLabelImage::initClass();
 }
 
@@ -184,6 +243,8 @@ SoDatumLabel::SoDatumLabel()
     this->textAngle = 0.f;
     this->imageRoot = nullptr;
     this->imageTexture = nullptr;
+    this->imageAnchor = nullptr;
+    this->imageZoom = nullptr;
     this->imageShape = nullptr;
 }
 
@@ -200,6 +261,14 @@ SoNode* SoDatumLabel::getImageNode()
         // The glyph bitmap already bakes in the text colour, so replace the
         // fragment colour with the texel (alpha-blended); no material tint.
         this->imageTexture->model = SoTexture2::REPLACE;
+
+        // Anchor places the quad at textOffset/textAngle; the autozoom that
+        // follows makes it screen-constant (native glyph pixels), matching the
+        // GL path and avoiding the minification that darkened the baked glyph.
+        this->imageAnchor = new SoDatumLabelAnchor;
+        this->imageAnchor->owner = this;
+        this->imageZoom = new SoAutoZoomTranslation;
+
         this->imageShape = new SoDatumLabelImage;
         this->imageShape->owner = this;
 
@@ -210,6 +279,8 @@ SoNode* SoDatumLabel::getImageNode()
         this->imageRoot->renderCaching = SoSeparator::OFF;
         this->imageRoot->boundingBoxCaching = SoSeparator::OFF;
         this->imageRoot->addChild(this->imageTexture);
+        this->imageRoot->addChild(this->imageAnchor);
+        this->imageRoot->addChild(this->imageZoom);
         this->imageRoot->addChild(this->imageShape);
 
         syncImageTexture();
@@ -896,6 +967,22 @@ bool SoDatumLabel::updateImageSize(SoState * state, int & srcw, int & srch)
         this->imgWidth  = scale * 25.0f;
     }
 
+    // Calibrate the companion autozoom so the glyph quad (emitted in native
+    // pixels) renders at the same screen size the GL path draws (imgHeight ==
+    // getScaleFactor*srch pixels). SoAutoZoomTranslation applies
+    // scaleFactor*worldToScreenScale/(5*aspect); matching that to the datum
+    // scale (worldToScreenScale/vpWidth) gives scaleFactor = 5/vpHeight. Set
+    // only on change so it does not thrash the render cache each frame.
+    if (this->imageZoom) {
+        const SbViewportRegion& vp = SoViewportRegionElement::get(state);
+        float vph = (float)vp.getViewportSizePixels()[1];
+        if (vph > 0.f) {
+            float sf = 5.0f / vph;
+            if (this->imageZoom->scaleFactor.getValue() != sf)
+                this->imageZoom->scaleFactor.setValue(sf);
+        }
+    }
+
     return hasText;
 }
 
@@ -1179,22 +1266,24 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
 
 void SoDatumLabel::generateTextQuad(SoAction * action)
 {
-    // Emit the text glyph as a textured quad (two triangles + UVs) for the
-    // companion SoDatumLabelImage. Runs after generateLeaderPrimitives has
-    // filled textOffset/textAngle/imgWidth/imgHeight for this frame. The glyph
-    // bitmap is bound as the quad's texture (REPLACE), so no colour is needed.
-    if (this->imgWidth <= FLT_EPSILON || this->imgHeight <= FLT_EPSILON)
-        return;
+    // Emit the glyph as a textured quad (two triangles + UVs) for the companion
+    // SoDatumLabelImage. The quad is emitted at the ORIGIN in native glyph
+    // pixels; the sub-graph's SoDatumLabelAnchor moves it to textOffset/textAngle
+    // and the SoAutoZoomTranslation scales it to a constant screen size each
+    // frame (native pixels => sampled at mip 0 => the baked colour is preserved,
+    // fixing both the minification darkening and the fixed-world-size problem).
     if (this->string.getNum() == 0 || this->string[0].getLength() == 0)
         return;
 
-    float hw = this->imgWidth * 0.5f;
-    float hh = this->imgHeight * 0.5f;
-    float c = cosf(this->textAngle);
-    float s = sinf(this->textAngle);
+    SbVec2s imgsize;
+    int nc;
+    if (!this->image.getValue(imgsize, nc) || imgsize[0] <= 0 || imgsize[1] <= 0)
+        return;
+    float hw = imgsize[0] * 0.5f;
+    float hh = imgsize[1] * 0.5f;
 
-    // Local corners (before rotation) with matching UVs. The glyph bitmap is
-    // stored bottom-up (GL convention), so v=0 is the bottom row.
+    // Local corners at the origin with matching UVs. The glyph bitmap is stored
+    // bottom-up (GL convention), so v=0 is the bottom row.
     struct Corner { float x, y, u, v; };
     const Corner corners[4] = {
         {-hw, -hh, 0.f, 0.f},
@@ -1203,19 +1292,12 @@ void SoDatumLabel::generateTextQuad(SoAction * action)
         {-hw,  hh, 0.f, 1.f},
     };
 
-    SbVec3f p[4];
-    for (int i = 0; i < 4; ++i) {
-        float rx = corners[i].x * c - corners[i].y * s;
-        float ry = corners[i].x * s + corners[i].y * c;
-        p[i] = this->textOffset + SbVec3f(rx, ry, 0.f);
-    }
-
     SoPrimitiveVertex pv;
     pv.setNormal(SbVec3f(0.f, 0.f, 1.f));
     pv.setMaterialIndex(0);
 
     auto emit = [&](int i) {
-        pv.setPoint(p[i]);
+        pv.setPoint(SbVec3f(corners[i].x, corners[i].y, 0.f));
         pv.setTextureCoords(SbVec4f(corners[i].u, corners[i].v, 0.f, 1.f));
         shapeVertex(&pv);
     };

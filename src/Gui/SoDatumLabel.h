@@ -43,6 +43,8 @@ class SoSeparator;
 namespace Gui {
 
 class SoDatumLabelImage;
+class SoDatumLabelAnchor;
+class SoAutoZoomTranslation;
 
 class GuiExport SoDatumLabel : public SoShape {
     using inherited = SoShape;
@@ -50,6 +52,7 @@ class GuiExport SoDatumLabel : public SoShape {
     SO_NODE_HEADER(SoDatumLabel);
 
     friend class SoDatumLabelImage;
+    friend class SoDatumLabelAnchor;
 
 public:
     enum Type
@@ -143,9 +146,12 @@ private:
     SbVec3f textOffset;
     float textAngle;
 
-    // Lazily built companion sub-graph rendering the text glyph quad.
+    // Lazily built companion sub-graph rendering the text glyph quad, screen
+    // constant via the autozoom node (SoSeparator[texture, anchor, zoom, quad]).
     SoSeparator* imageRoot;
     SoTexture2* imageTexture;
+    Gui::SoDatumLabelAnchor* imageAnchor;
+    Gui::SoAutoZoomTranslation* imageZoom;
     Gui::SoDatumLabelImage* imageShape;
 };
 
