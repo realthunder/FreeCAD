@@ -55,3 +55,8 @@ src/Tools/freecad.zip
 tsupdate_stderr.log
 tsupdate_stdout.log
 files_to_translate.txt
+
+# personal handoff notes — never track any file with "handoff" in its name
+*handoff*
+*Handoff*
+*HANDOFF*
