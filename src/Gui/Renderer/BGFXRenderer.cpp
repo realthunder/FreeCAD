@@ -6261,6 +6261,21 @@ public:
                     bgfx::touch(id);
                     continue;
                 }
+                if (anchor->sceneCamera) {
+                    // In-scene overlay (editing graph, dimensions): draw over
+                    // the whole viewport with the main scene camera so the
+                    // world-space geometry lines up with the finished scene,
+                    // on a fresh depth buffer so it sits on top but still
+                    // depth-tests within itself.
+                    bgfx::setViewFrameBuffer(id, view->bgfxFbo);
+                    bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_DEPTH),
+                                       clearColor, 1.0f, 0);
+                    bgfx::setViewRect(id, 0, 0, width, height);
+                    bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                    bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
+                    bgfx::touch(id);
+                    continue;
+                }
                 uint16_t rx = 0, ry = 0, rw = width, rh = height;
                 if (anchor->corner != Render::OverlayAnchor::FullViewport) {
                     uint16_t edge = uint16_t(std::max(1.0f,

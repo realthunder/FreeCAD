@@ -471,6 +471,7 @@ struct View3DInventorViewer::Private
         OverlayFpsText = 4,
         OverlayNaviCube = 5,
         OverlayNaviButtons = 6,
+        OverlayEditing = 7,
     };
     struct OverlayCapture {
         CoinPtr<SoNode> root;
@@ -489,6 +490,11 @@ struct View3DInventorViewer::Private
     OverlayCapture fpsTextCapture;
     OverlayCapture naviCubeCapture;
     OverlayCapture naviButtonCapture;
+    // In-scene editing overlays (Sketcher constraints/datums, edit-mode
+    // helpers) captured into a scene-camera overlay feed: the edit graph
+    // lives under pcEditingRoot, a sibling of the render-cache-captured
+    // selectionRoot, so it never reaches the main scene feed.
+    OverlayCapture editingCapture;
     // fps overlay state: the string renderScene() wants displayed (empty
     // when the readout is off) and the nodes/values last fed.
     std::string fpsText;
@@ -907,13 +913,36 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         dropCapture(naviCubeCapture, OverlayNaviCube);
         dropCapture(naviButtonCapture, OverlayNaviButtons);
     }
+
+    // In-scene editing overlays (Sketcher constraints/datums, edit-mode
+    // draggers): during editing the edit ViewProvider's graph is moved
+    // under pcEditingRoot (setEditingRoot), which is a sibling of the
+    // render-cache-captured selectionRoot and so never reaches the main
+    // scene feed — these are the raw-GL nodes ported in Phase D. Capture
+    // pcEditingRoot into a scene-camera overlay so it renders through the
+    // backend (and the WASM viewer) sharing the main scene camera; the
+    // world-space geometry lines up with the main scene for free. Gated on
+    // there being edit content (more than just the editing transform).
+    if (owner->pcEditingRoot && owner->pcEditingRoot->getNumChildren() > 1) {
+        if (!editingCapture.manager)
+            initCapture(editingCapture, owner->pcEditingRoot);
+        Render::OverlayAnchor editAnchor;
+        editAnchor.sceneCamera = true;
+        editingCapture.manager->setExternalOverlay(
+            renderer.get(), OverlayEditing, editAnchor);
+        captureAction.apply(editingCapture.applyRoot);
+    }
+    else {
+        dropCapture(editingCapture, OverlayEditing);
+    }
 }
 
 void View3DInventorViewer::Private::clearOverlayCaptures()
 {
     for (auto capture : {&foregroundCapture, &axisCrossCapture,
                          &graphicsItemsCapture, &fpsTextCapture,
-                         &naviCubeCapture, &naviButtonCapture}) {
+                         &naviCubeCapture, &naviButtonCapture,
+                         &editingCapture}) {
         if (capture->manager) {
             capture->manager->setExternalOverlay(
                 nullptr, 0, Render::OverlayAnchor());

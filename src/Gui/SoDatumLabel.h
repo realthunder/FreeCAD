@@ -96,6 +96,12 @@ private:
     void generateDiameterPrimitives(SoAction * action, const SbVec3f&, const SbVec3f&);
     void generateAnglePrimitives(SoAction * action, const SbVec3f&);
     void generateSymmetricPrimitives(SoAction * action, const SbVec3f&, const SbVec3f&);
+    // Emit the leader lines / arrows / arcs as cache-visible primitives so the
+    // render-cache bridge (and the bgfx/WASM backend) can draw the datum
+    // without the raw-GL GLRender pass. Called only during SoCallbackAction
+    // traversal (render-cache capture), never during ray picking.
+    void generateLeaderPrimitives(SoAction * action);
+    bool updateImageSize(SoState * state, int & srcw, int & srch);
     SbVec3f getLabelTextCenterDistance(const SbVec3f&, const SbVec3f&);
     SbVec3f getLabelTextCenterDiameter(const SbVec3f&, const SbVec3f&);
     SbVec3f getLabelTextCenterAngle(const SbVec3f&);

@@ -180,6 +180,16 @@ struct OverlayAnchor {
     /// fovDeg/orthoHeight/cameraDistance/nearPlane/farPlane/
     /// orientFromScene are ignored.
     bool pixelSpace = false;
+    /// Scene-camera overlay (in-scene 3D content that must share the main
+    /// scene's camera: editing overlays, measurement dimensions). The
+    /// backend draws the feed over the full viewport with the current main
+    /// view/projection matrices and a fresh depth buffer (on top of the
+    /// finished scene, depth-tested within itself) — the world-space
+    /// geometry lines up with the main scene for free, and re-derives from
+    /// the local camera in the WASM viewer like the other overlays. When
+    /// set, all corner/fov/ortho/cameraDistance/orient/pixelSpace fields
+    /// are ignored.
+    bool sceneCamera = false;
 
     bool operator==(const OverlayAnchor &o) const {
         return corner == o.corner && sizeFraction == o.sizeFraction
@@ -188,6 +198,7 @@ struct OverlayAnchor {
             && nearPlane == o.nearPlane && farPlane == o.farPlane
             && orientFromScene == o.orientFromScene
             && pixelSpace == o.pixelSpace
+            && sceneCamera == o.sceneCamera
             && marginX == o.marginX && marginY == o.marginY;
     }
     bool operator!=(const OverlayAnchor &o) const { return !(*this == o); }

@@ -1764,12 +1764,19 @@ void EditModeConstraintCoinManager::rebuildConstraintNodes(
                 text->useAntialiasing = false;
                 SoAnnotation* anno = new SoAnnotation();
                 anno->renderCaching = SoSeparator::OFF;
+                // The datum's leader lines/arrows are captured from
+                // SoDatumLabel::generatePrimitives() for the render-cache
+                // bridge (bgfx/WASM backend), where the raw-GL GLRender pass is
+                // bypassed. The vertex cache takes the geometry colour from the
+                // material state, so give the label its own SoMaterial (same
+                // colour the GL path draws via textColor).
+                anno->addChild(mat);
                 anno->addChild(text);
                 // #define CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL 0
                 sep->addChild(text);
                 editModeScenegraphNodes.constrGroup->addChild(anno);
                 vConstrType.push_back((*it)->Type);
-                // nodes not needed
+                // nodes not needed (mat is now owned by anno)
                 sep->unref();
                 mat->unref();
                 continue;  // jump to next constraint

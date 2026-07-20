@@ -40,6 +40,7 @@
 # include <QPainter>
 
 # include <Inventor/SoPrimitiveVertex.h>
+# include <Inventor/actions/SoCallbackAction.h>
 # include <Inventor/actions/SoGLRenderAction.h>
 # include <Inventor/elements/SoModelMatrixElement.h>
 # include <Inventor/elements/SoViewingMatrixElement.h>
@@ -723,8 +724,316 @@ void SoDatumLabel::generateSymmetricPrimitives(SoAction * action, const SbVec3f&
     this->endShape();
 }
 
+bool SoDatumLabel::updateImageSize(SoState * state, int & srcw, int & srch)
+{
+    // Recompute imgWidth/imgHeight the same way GLRender does at its top. This
+    // is needed during render-cache capture because GLRender never runs then
+    // (in render-cache modes SoFCSelectionRoot draws through the render cache,
+    // not the per-shape GL traversal), so the members would otherwise be stale.
+    float scale = getScaleFactor(state);
+
+    const SbString* s = string.getValues(0);
+    bool hasText = (s->getLength() > 0);
+    srcw = 1;
+    srch = 1;
+
+    if (hasText) {
+        if (!this->glimagevalid) {
+            drawImage();
+            this->glimagevalid = true;
+        }
+        SbVec2s imgsize;
+        int nc;
+        const unsigned char* dataptr = this->image.getValue(imgsize, nc);
+        if (!dataptr) {
+            hasText = false;
+        }
+        else {
+            srcw = imgsize[0];
+            srch = imgsize[1];
+            float aspectRatio = (float)srcw / (float)srch;
+            this->imgHeight = scale * (float)srch;
+            this->imgWidth  = aspectRatio * (float)this->imgHeight;
+        }
+    }
+
+    if (this->datumtype.getValue() == SYMMETRIC) {
+        this->imgHeight = scale * 25.0f;
+        this->imgWidth  = scale * 25.0f;
+    }
+
+    return hasText;
+}
+
+void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
+{
+    // Mirror of GLRender()'s line/arrow/arc drawing, emitted as cache-visible
+    // primitives (via beginShape/shapeVertex) instead of immediate-mode GL, so
+    // the render-cache bridge captures the datum for the bgfx / WASM backend.
+    // Kept geometry-identical to GLRender(); the text glyph quad is handled
+    // separately (it needs its own textured material scope).
+    SoState* state = action->getState();
+
+    int srcw = 1, srch = 1;
+    updateImageSize(state, srcw, srch);
+    float scale = getScaleFactor(state);
+
+    const SbVec3f* points = this->pnts.getValues(0);
+    int npts = this->pnts.getNum();
+
+    SoPrimitiveVertex pv;
+    pv.setNormal(SbVec3f(0.f, 0.f, 1.f));
+    pv.setMaterialIndex(0);
+
+    auto emitLine = [&](const SbVec3f& a, const SbVec3f& b) {
+        this->beginShape(action, LINES);
+        pv.setPoint(a); shapeVertex(&pv);
+        pv.setPoint(b); shapeVertex(&pv);
+        this->endShape();
+    };
+    auto emitTri = [&](const SbVec3f& a, const SbVec3f& b, const SbVec3f& c) {
+        this->beginShape(action, TRIANGLES);
+        pv.setPoint(a); shapeVertex(&pv);
+        pv.setPoint(b); shapeVertex(&pv);
+        pv.setPoint(c); shapeVertex(&pv);
+        this->endShape();
+    };
+
+    int dt = this->datumtype.getValue();
+
+    if (dt == DISTANCE || dt == DISTANCEX || dt == DISTANCEY) {
+        if (npts < 2)
+            return;
+        float length = this->param1.getValue();
+        float length2 = this->param2.getValue();
+
+        SbVec3f p1 = points[0];
+        SbVec3f p2 = points[1];
+
+        SbVec3f dir, normal;
+        if (dt == DISTANCE) {
+            dir = (p2 - p1);
+        } else if (dt == DISTANCEX) {
+            dir = SbVec3f((p2[0] - p1[0] >= FLT_EPSILON) ? 1 : -1, 0, 0);
+        } else {
+            dir = SbVec3f(0, (p2[1] - p1[1] >= FLT_EPSILON) ? 1 : -1, 0);
+        }
+        dir.normalize();
+        normal = SbVec3f(-dir[1], dir[0], 0);
+
+        float normproj12 = (p2 - p1).dot(normal);
+        SbVec3f p1_ = p1 + normproj12 * normal;
+        SbVec3f midpos = (p1_ + p2) / 2;
+
+        float offset1 = ((length + normproj12 < 0) ? -1. : 1.) * srch;
+        float offset2 = ((length < 0) ? -1 : 1) * srch;
+
+        float margin = this->imgHeight / 4.0;
+
+        SbVec3f perp1 = p1_ + normal * (length + offset1 * scale);
+        SbVec3f perp2 = p2  + normal * (length + offset2 * scale);
+
+        SbVec3f par1 = p1_ + normal * length;
+        SbVec3f par2 = midpos + normal * length + dir * (length2 - this->imgWidth / 2 - margin);
+        SbVec3f par3 = midpos + normal * length + dir * (length2 + this->imgWidth / 2 + margin);
+        SbVec3f par4 = p2  + normal * length;
+
+        bool flipTriang = false;
+        if ((par3 - par1).dot(dir) > (par4 - par1).length()) {
+            float tmpMargin = this->imgHeight / 0.75;
+            par3 = par4;
+            if ((par2 - par1).dot(dir) > (par4 - par1).length()) {
+                par3 = par2;
+                par2 = par1 - dir * tmpMargin;
+                flipTriang = true;
+            }
+        }
+        else if ((par2 - par1).dot(dir) < 0.f) {
+            float tmpMargin = this->imgHeight / 0.75;
+            par2 = par1;
+            if ((par3 - par1).dot(dir) < 0.f) {
+                par2 = par3;
+                par3 = par4 + dir * tmpMargin;
+                flipTriang = true;
+            }
+        }
+
+        if (length != 0.) {
+            emitLine(p1, perp1);
+            emitLine(p2, perp2);
+        }
+        emitLine(par1, par2);
+        emitLine(par3, par4);
+
+        SbVec3f ar1 = par1 + ((flipTriang) ? -1 : 1) * dir * 0.866f * 2 * margin;
+        SbVec3f ar2 = ar1 + normal * margin;
+        ar1 -= normal * margin;
+
+        SbVec3f ar3 = par4 - ((flipTriang) ? -1 : 1) * dir * 0.866f * 2 * margin;
+        SbVec3f ar4 = ar3 + normal * margin;
+        ar3 -= normal * margin;
+
+        emitTri(par1, ar1, ar2);
+        emitTri(par4, ar3, ar4);
+    }
+    else if (dt == RADIUS || dt == DIAMETER) {
+        if (npts < 2)
+            return;
+        SbVec3f p1 = points[0];
+        SbVec3f p2 = points[1];
+
+        SbVec3f dir = (p2 - p1);
+        SbVec3f center = p1;
+        double radius = (p2 - p1).length();
+        if (dt == DIAMETER) {
+            center = (p1 + p2) / 2;
+            radius = radius / 2;
+        }
+        dir.normalize();
+        SbVec3f normal(-dir[1], dir[0], 0);
+
+        float length = this->param1.getValue();
+        SbVec3f pos = p2 + length * dir;
+        float margin = this->imgHeight / 4.0;
+
+        SbVec3f ar0 = p2;
+        SbVec3f ar1 = p2 - dir * 0.866f * 2 * margin;
+        SbVec3f ar2 = ar1 + normal * margin;
+        ar1 -= normal * margin;
+
+        SbVec3f p3 = pos + dir * (this->imgWidth / 2 + margin);
+        if ((p3 - p1).length() > (p2 - p1).length())
+            p2 = p3;
+
+        SbVec3f pnt1 = pos - dir * (margin + this->imgWidth / 2);
+        SbVec3f pnt2 = pos + dir * (margin + this->imgWidth / 2);
+
+        emitLine(p1, pnt1);
+        emitLine(pnt2, p2);
+        emitTri(ar0, ar1, ar2);
+
+        if (dt == DIAMETER) {
+            SbVec3f ar0_1 = p1;
+            SbVec3f ar1_1 = p1 + dir * 0.866f * 2 * margin;
+            SbVec3f ar2_1 = ar1_1 + normal * margin;
+            ar1_1 -= normal * margin;
+            emitTri(ar0_1, ar1_1, ar2_1);
+        }
+
+        float startangle = this->param3.getValue();
+        float range = this->param4.getValue();
+        if (range != 0.0) {
+            int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
+            double segment = range / (countSegments - 1);
+            this->beginShape(action, LINE_STRIP);
+            for (int i = 0; i < countSegments; i++) {
+                double theta = startangle + segment * i;
+                SbVec3f v1 = center + SbVec3f(radius * cos(theta), radius * sin(theta), 0);
+                pv.setPoint(v1);
+                shapeVertex(&pv);
+            }
+            this->endShape();
+        }
+    }
+    else if (dt == ANGLE) {
+        if (npts < 1)
+            return;
+        SbVec3f p0 = points[0];
+        float margin = this->imgHeight / 4.0;
+
+        float length     = this->param1.getValue();
+        float startangle = this->param2.getValue();
+        float range      = this->param3.getValue();
+        float endangle   = startangle + range;
+        float endLineLength1  = std::max(this->param4.getValue(), margin);
+        float endLineLength2  = std::max(this->param5.getValue(), margin);
+        float endLineLength12 = std::max(-this->param4.getValue(), margin);
+        float endLineLength22 = std::max(-this->param5.getValue(), margin);
+
+        float r = 2 * length;
+
+        if (range >= 0)
+            range = std::max(0.2f * range, range - this->imgWidth / (2 * r));
+        else
+            range = std::min(0.2f * range, range + this->imgWidth / (2 * r));
+
+        int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
+        double segment = range / (2 * countSegments - 2);
+
+        this->beginShape(action, LINE_STRIP);
+        for (int i = 0; i < countSegments; i++) {
+            double theta = startangle + segment * i;
+            SbVec3f v1 = p0 + SbVec3f(r * cos(theta), r * sin(theta), 0);
+            pv.setPoint(v1);
+            shapeVertex(&pv);
+        }
+        this->endShape();
+
+        this->beginShape(action, LINE_STRIP);
+        for (int i = 0; i < countSegments; i++) {
+            double theta = endangle - segment * i;
+            SbVec3f v1 = p0 + SbVec3f(r * cos(theta), r * sin(theta), 0);
+            pv.setPoint(v1);
+            shapeVertex(&pv);
+        }
+        this->endShape();
+
+        SbVec3f v1(cos(startangle), sin(startangle), 0);
+        SbVec3f v2(cos(endangle), sin(endangle), 0);
+
+        SbVec3f pnt1 = p0 + (r - endLineLength1) * v1;
+        SbVec3f pnt2 = p0 + (r + endLineLength12) * v1;
+        SbVec3f pnt3 = p0 + (r - endLineLength2) * v2;
+        SbVec3f pnt4 = p0 + (r + endLineLength22) * v2;
+
+        emitLine(pnt1, pnt2);
+        emitLine(pnt3, pnt4);
+    }
+    else if (dt == SYMMETRIC) {
+        if (npts < 2)
+            return;
+        SbVec3f p1 = points[0];
+        SbVec3f p2 = points[1];
+
+        SbVec3f dir = (p2 - p1);
+        dir.normalize();
+        SbVec3f normal(-dir[1], dir[0], 0);
+        float margin = this->imgHeight / 4.0;
+
+        SbVec3f ar0 = p1 + dir * 4 * margin;
+        SbVec3f ar1 = ar0 - dir * 0.866f * 2 * margin;
+        SbVec3f ar2 = ar1 + normal * margin;
+        ar1 -= normal * margin;
+
+        SbVec3f zc(0, 0, ZCONSTR);
+        emitLine(p1 + zc, ar0 + zc);
+        emitLine(ar0 + zc, ar1 + zc);
+        emitLine(ar0 + zc, ar2 + zc);
+
+        SbVec3f ar3 = p2 - dir * 4 * margin;
+        SbVec3f ar4 = ar3 + dir * 0.866f * 2 * margin;
+        SbVec3f ar5 = ar4 + normal * margin;
+        ar4 -= normal * margin;
+
+        emitLine(p2 + zc, ar3 + zc);
+        emitLine(ar3 + zc, ar4 + zc);
+        emitLine(ar3 + zc, ar5 + zc);
+    }
+}
+
 void SoDatumLabel::generatePrimitives(SoAction * action)
 {
+    // Render-cache capture (SoCallbackAction): emit the leader/arrow/arc
+    // geometry so the datum is drawn by the render-cache bridge (and thus the
+    // bgfx/WASM backend), where the raw-GL GLRender pass never runs. The text
+    // glyph quad is intentionally not emitted on this path yet — it needs a
+    // separate textured material scope (a follow-up increment).
+    if (action->isOfType(SoCallbackAction::getClassTypeId())) {
+        generateLeaderPrimitives(action);
+        return;
+    }
+
+    // Ray-pick path: keep only the text label box selectable (unchanged).
     // Initialisation check (needs something more sensible) prevents an infinite loop bug
     if (this->imgHeight <= FLT_EPSILON || this->imgWidth <= FLT_EPSILON)
         return;
