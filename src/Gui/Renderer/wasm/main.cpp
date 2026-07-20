@@ -29,6 +29,7 @@ static std::unique_ptr<Render::Renderer> s_renderer;
 static Render::SceneSnapshot s_snap;
 static bool s_haveScene = false;
 static std::set<int> s_selIds;
+static std::set<int> s_overlayIds;
 
 // Live streaming (?scene=<http://host:port> page parameter): connect a
 // WebSocket to the desktop scene server (FC_BGFX_SERVE_SCENE) and
@@ -585,6 +586,21 @@ static void applySnapshot(bool fit)
             s_renderer->removeSelection(id);
     }
     s_selIds.swap(ids);
+    // Overlay feeds (foreground superimposition, corner axis cross):
+    // replayed with their declarative anchors — the local renderer
+    // re-derives viewport and camera each frame, so overlays re-anchor
+    // on resize and follow the local orbit camera.
+    std::set<int> ovIds;
+    for (const auto &ov : s_snap.overlays) {
+        ovIds.insert(ov.id);
+        Render::DrawCallList odraws = ov.draws;
+        s_renderer->setOverlay(ov.id, std::move(odraws), ov.anchor);
+    }
+    for (int id : s_overlayIds) {
+        if (!ovIds.count(id))
+            s_renderer->removeOverlay(id);
+    }
+    s_overlayIds.swap(ovIds);
     if (!s_snap.highlight.empty()) {
         Render::DrawCallList hdraws = s_snap.highlight;
         s_renderer->setHighlight(std::move(hdraws),
@@ -619,8 +635,9 @@ static void applyScenePayload(const char *data, size_t size)
         bool first = !s_haveScene;
         s_snap = std::move(snap);
         applySnapshot(first);
-        std::printf("fcviewer: scene update v%llu, %zu draws\n",
-                    (unsigned long long)version, s_snap.scene.size());
+        std::printf("fcviewer: scene update v%llu, %zu draws, %zu overlays\n",
+                    (unsigned long long)version, s_snap.scene.size(),
+                    s_snap.overlays.size());
     }
     else {
         std::printf("fcviewer: scene update parse FAILED\n");

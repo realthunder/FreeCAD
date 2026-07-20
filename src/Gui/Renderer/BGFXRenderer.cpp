@@ -1246,12 +1246,22 @@ public:
                             // because the outline views left marks
         ViewOnTop,          // scene geometry with on-top materials
         ViewHighlight,      // selection-on-top and preselection highlight
+        ViewOverlay0,       // overlay feeds (Renderer::setOverlay — the
+                            // foreground superimposition, the corner axis
+                            // cross): each active overlay slot renders
+                            // late into its own view with an
+                            // anchor-derived viewport + camera and a
+                            // fresh depth inside its rect
+        ViewOverlay1,
+        ViewOverlay2,
+        ViewOverlay3,
         ViewPresent,        // standalone build only: fullscreen copy of
                             // the scene color onto the default backbuffer
                             // (the desktop build GL-blits into the Qt
                             // framebuffer instead)
         NUM_VIEWS
     };
+    enum { NumOverlayViews = ViewPresent - ViewOverlay0 };
 
     ~BGFXView()
     {
@@ -4347,6 +4357,10 @@ public:
         // only); the mirror flips the winding, so culling flips too.
         if (reflPass)
             passView = ViewGroundRefl;
+        // Overlay feeds render into their own late view (anchor camera,
+        // fresh depth) regardless of material routing.
+        if (overlayView >= 0)
+            passView = uint16_t(overlayView);
 
         // GL parity (SoFCRenderer::applyMaterial ~520): on-top draws ignore
         // the depth test, only non-on-top transparent draws drop the depth
@@ -4982,6 +4996,7 @@ public:
     uint64_t frame = 0;
     int drawcount = 0;
     bool ontop = false;   // route submits to the highlight pass
+    int overlayView = -1; // >= 0: route submits into this overlay view
     // Per-frame world-to-screen scale consumed by autozoom draws
     // (Renderer::setAutoZoomScale).
     float autozoomScale = 1.0f;
@@ -5083,6 +5098,13 @@ public:
             snap.selections.assign(selections.begin(), selections.end());
             snap.highlight = highlight;
             snap.highlightWholeOnTop = hlWholeOnTop;
+            for (const auto &ov : overlays) {
+                Render::SceneSnapshot::Overlay sov;
+                sov.id = ov.first;
+                sov.anchor = ov.second.anchor;
+                sov.draws = ov.second.draws;
+                snap.overlays.push_back(std::move(sov));
+            }
             snap.background = background;
             snap.hlconfig = hlconfig;
             snap.secconf = secconf;
@@ -6201,6 +6223,90 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
+            } else if (i >= BGFXView::ViewOverlay0
+                       && i < int(BGFXView::ViewOverlay0)
+                              + int(BGFXView::NumOverlayViews)) {
+                // Overlay feed slot: derive the viewport rect and the
+                // camera from the declarative anchor each frame, so
+                // overlays re-anchor on resize and (orientFromScene)
+                // follow the current camera — including the WASM
+                // viewer's own orbit camera.
+                int slot = i - BGFXView::ViewOverlay0;
+                const Render::OverlayAnchor *anchor = nullptr;
+                if (slot < int(overlays.size())) {
+                    auto it = overlays.begin();
+                    std::advance(it, slot);
+                    anchor = &it->second.anchor;
+                }
+                if (!anchor) {
+                    // Unused slot: nothing submits into it.
+                    bgfx::setViewFrameBuffer(id, view->bgfxFbo);
+                    bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                       clearColor, 1.0f, 0);
+                    bgfx::setViewRect(id, 0, 0, width, height);
+                    bgfx::setViewTransform(id, nullptr, nullptr);
+                    bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
+                    bgfx::touch(id);
+                    continue;
+                }
+                uint16_t rx = 0, ry = 0, rw = width, rh = height;
+                if (anchor->corner != Render::OverlayAnchor::FullViewport) {
+                    uint16_t edge = uint16_t(std::max(1.0f,
+                        anchor->sizeFraction
+                            * float(std::min(width, height))));
+                    rw = rh = edge;
+                    bool right =
+                        anchor->corner == Render::OverlayAnchor::BottomRight
+                        || anchor->corner == Render::OverlayAnchor::TopRight;
+                    bool top =
+                        anchor->corner == Render::OverlayAnchor::TopLeft
+                        || anchor->corner == Render::OverlayAnchor::TopRight;
+                    // bgfx view rects are top-left anchored.
+                    rx = right ? uint16_t(width - edge) : uint16_t(0);
+                    ry = top ? uint16_t(0) : uint16_t(height - edge);
+                }
+                const auto *caps = bgfx::getCaps();
+                float ovProj[16];
+                float aspect = float(rw) / float(rh);
+                // Right-handed like the GL view matrix convention the
+                // anchor camera follows (bx defaults to left-handed).
+                if (anchor->fovDeg > 0.0f) {
+                    bx::mtxProj(ovProj, anchor->fovDeg, aspect,
+                                std::max(anchor->nearPlane, 1.0e-3f),
+                                anchor->farPlane, caps->homogeneousDepth,
+                                bx::Handedness::Right);
+                } else {
+                    float hh = 0.5f * anchor->orthoHeight;
+                    float hw = hh * aspect;
+                    bx::mtxOrtho(ovProj, -hw, hw, -hh, hh,
+                                 anchor->nearPlane, anchor->farPlane,
+                                 0.0f, caps->homogeneousDepth,
+                                 bx::Handedness::Right);
+                }
+                float ovView[16];
+                bx::mtxIdentity(ovView);
+                if (anchor->orientFromScene && viewMatrix) {
+                    // Rotation part of the scene view matrix (rigid:
+                    // upper-left 3x3), translation dropped — the axis
+                    // cross tracks the camera orientation only.
+                    const float *v =
+                        reinterpret_cast<const float *>(viewMatrix);
+                    for (int c = 0; c < 3; ++c)
+                        for (int r = 0; r < 3; ++r)
+                            ovView[c * 4 + r] = v[c * 4 + r];
+                }
+                ovView[14] = -anchor->cameraDistance;
+                bgfx::setViewFrameBuffer(id, view->bgfxFbo);
+                // Fresh depth inside the overlay rect: overlays draw on
+                // top of the finished frame but depth-test within
+                // themselves.
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_DEPTH),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, rx, ry, rw, rh);
+                bgfx::setViewTransform(id, ovView, ovProj);
+                bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
+                bgfx::touch(id);
+                continue;
 #ifdef FC_RENDERER_STANDALONE
             } else if (i == BGFXView::ViewPresent) {
                 // Standalone present: the default backbuffer; the
@@ -7154,6 +7260,32 @@ public:
         }
         view->ontop = false;
 
+        // 10. Overlay feeds (foreground superimposition, corner axis
+        // cross): each slot draws late into its own view — anchor-derived
+        // camera and viewport, fresh depth — through the normal submit
+        // path with the target view overridden.
+        {
+            int slot = 0;
+            for (const auto &ov : overlays) {
+                if (slot >= BGFXView::NumOverlayViews) {
+                    static bool warned = false;
+                    if (!warned) {
+                        warned = true;
+                        fprintf(stderr,
+                                "bgfx: overlay feed %d dropped (only %d"
+                                " overlay views)\n", ov.first,
+                                int(BGFXView::NumOverlayViews));
+                    }
+                    break;
+                }
+                view->overlayView = int(BGFXView::ViewOverlay0) + slot;
+                for (const auto &draw : ov.second.draws)
+                    view->submit(draw, viewMat);
+                ++slot;
+            }
+            view->overlayView = -1;
+        }
+
         if (oitActive)
             view->submitComposite();
 
@@ -7672,6 +7804,13 @@ public:
 
     Render::Background background;
     std::map<int, Render::DrawCallList> selections;
+    // Overlay feeds keyed by producer id (Renderer::setOverlay); map
+    // order assigns the (limited) overlay view slots deterministically.
+    struct OverlayFeed {
+        Render::DrawCallList draws;
+        Render::OverlayAnchor anchor;
+    };
+    std::map<int, OverlayFeed> overlays;
     Render::DrawCallList highlight;
     std::unordered_set<uint64_t> hiddenKeys;
     std::unordered_set<const Render::DrawCall *> dupDraws;
@@ -7820,6 +7959,26 @@ void BGFXRenderer::addSelection(int id, DrawCallList &&draws)
 void BGFXRenderer::removeSelection(int id)
 {
     if (pimpl->selections.erase(id))
+        pimpl->sceneDirty = true;
+}
+
+void BGFXRenderer::setOverlay(int id, DrawCallList &&draws,
+                              const OverlayAnchor &anchor)
+{
+    dumpFeed("overlay", id, draws);
+    if (draws.empty()) {
+        removeOverlay(id);
+        return;
+    }
+    auto &feed = pimpl->overlays[id];
+    feed.draws = std::move(draws);
+    feed.anchor = anchor;
+    pimpl->sceneDirty = true;
+}
+
+void BGFXRenderer::removeOverlay(int id)
+{
+    if (pimpl->overlays.erase(id))
         pimpl->sceneDirty = true;
 }
 

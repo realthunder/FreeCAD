@@ -136,6 +136,49 @@ struct Background {
     bool hasMid = false;
 };
 
+/// Declarative placement of one overlay feed (Renderer::setOverlay):
+/// viewport-anchored content — the corner axis cross, the viewer's
+/// foreground superimposition — drawn on top of the finished frame with
+/// its own camera. The anchor carries camera/viewport parameters instead
+/// of baked matrices so every consumer (including the WASM viewer) can
+/// re-derive them from its own viewport size and camera each frame —
+/// overlays re-anchor on resize and follow the local orbit camera for
+/// free.
+struct OverlayAnchor {
+    enum Corner : uint8_t {
+        FullViewport,  ///< cover the whole viewport (sizeFraction ignored)
+        BottomLeft, BottomRight, TopLeft, TopRight,
+    };
+    uint8_t corner = FullViewport;
+    /// Corner-anchored square viewport edge length as a fraction of
+    /// min(viewport width, height). Ignored for FullViewport.
+    float sizeFraction = 0.25f;
+    /// Perspective vertical field of view in degrees; 0 = orthographic.
+    float fovDeg = 0.0f;
+    /// Orthographic view height in model units (used when fovDeg == 0);
+    /// width follows the viewport aspect ratio.
+    float orthoHeight = 10.0f;
+    /// Eye distance from the overlay model origin along +z (the view
+    /// matrix is translate(0,0,-cameraDistance) after the optional scene
+    /// orientation).
+    float cameraDistance = 5.0f;
+    float nearPlane = 0.0f;
+    float farPlane = 10.0f;
+    /// Rotate the overlay content by the main camera's orientation (the
+    /// rotation part of the scene view matrix) so it tracks the scene,
+    /// like the axis cross does.
+    bool orientFromScene = false;
+
+    bool operator==(const OverlayAnchor &o) const {
+        return corner == o.corner && sizeFraction == o.sizeFraction
+            && fovDeg == o.fovDeg && orthoHeight == o.orthoHeight
+            && cameraDistance == o.cameraDistance
+            && nearPlane == o.nearPlane && farPlane == o.farPlane
+            && orientFromScene == o.orientFromScene;
+    }
+    bool operator!=(const OverlayAnchor &o) const { return !(*this == o); }
+};
+
 /// Per-frame hidden-line draw style configuration, mirroring the Coin-side
 /// SoFCDisplayModeElement::HiddenLineConfig resolved at render time. Only
 /// meaningful while `show` is true; scene materials carry the matching
@@ -665,6 +708,15 @@ public:
     virtual void setHighlight(DrawCallList &&draws, bool wholeOnTop)
     { (void)draws; (void)wholeOnTop; }
     virtual void clearHighlight() {}
+    /// Add/replace one overlay draw list keyed by \a id: viewport-anchored
+    /// content (corner axis cross, foreground superimposition) drawn after
+    /// the whole scene against a fresh depth buffer, with viewport and
+    /// camera derived from \a anchor each frame. An empty list removes the
+    /// overlay, same as removeOverlay().
+    virtual void setOverlay(int id, DrawCallList &&draws,
+                            const OverlayAnchor &anchor)
+    { (void)id; (void)draws; (void)anchor; }
+    virtual void removeOverlay(int id) { (void)id; }
     /// Per-frame hidden-line draw style state (resolved from the traversal
     /// state each render, like the GL renderer does).
     virtual void setHiddenLineConfig(const HiddenLineConfig &config)

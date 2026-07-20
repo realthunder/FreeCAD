@@ -318,6 +318,12 @@ public:
   // Owning 3D view of the external backend, for per-view dynamic property
   // overrides (Render_*/Shadow_*) in the per-frame config feed.
   Gui::View3DInventor *externalview = nullptr;
+  // Overlay-capture mode (setExternalOverlay): the scene feed routes to
+  // external->setOverlay(overlayid, ..., overlayanchor) and render() is a
+  // no-op.
+  bool overlaymode = false;
+  int overlayid = 0;
+  Render::OverlayAnchor overlayanchor;
 
   char stats[512];
   int drawcallcount;
@@ -855,9 +861,35 @@ SoFCRenderer::setExternalRenderer(Render::Renderer * renderer,
 }
 
 void
+SoFCRenderer::setExternalOverlay(Render::Renderer * renderer, int id,
+                                 const Render::OverlayAnchor & anchor)
+{
+  auto self = PRIVATE(this);
+  if (self->external == renderer && self->overlaymode
+      && self->overlayid == id && self->overlayanchor == anchor)
+    return;
+  // Detaching or re-keying: remove the previously fed overlay.
+  if (self->external && self->overlaymode
+      && (self->external != renderer || self->overlayid != id))
+    self->external->removeOverlay(self->overlayid);
+  self->overlaymode = (renderer != nullptr);
+  self->overlayid = id;
+  self->overlayanchor = anchor;
+  self->externalview = nullptr;
+  self->external = renderer;
+  if (renderer && self->scene)
+    renderer->setOverlay(id,
+        RendererBridge::translate(self->scene->getVertexCaches(true)),
+        anchor);
+}
+
+void
 SoFCRenderer::clear()
 {
-  if (PRIVATE(this)->external) {
+  if (PRIVATE(this)->external && PRIVATE(this)->overlaymode) {
+    PRIVATE(this)->external->removeOverlay(PRIVATE(this)->overlayid);
+  }
+  else if (PRIVATE(this)->external) {
     for (auto & sel : PRIVATE(this)->selections)
       PRIVATE(this)->external->removeSelection(sel.first);
     for (auto & sel : PRIVATE(this)->selectionsontop)
@@ -1054,8 +1086,13 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
         << PRIVATE(this)->drawentries.size() << " entries, "
         << mergecount << " after merge");
 
-  if (PRIVATE(this)->external)
-    PRIVATE(this)->external->setScene(RendererBridge::translate(caches));
+  if (PRIVATE(this)->external) {
+    if (PRIVATE(this)->overlaymode)
+      PRIVATE(this)->external->setOverlay(PRIVATE(this)->overlayid,
+          RendererBridge::translate(caches), PRIVATE(this)->overlayanchor);
+    else
+      PRIVATE(this)->external->setScene(RendererBridge::translate(caches));
+  }
 
   PRIVATE(this)->applyKeys(PRIVATE(this)->highlightkeys);
   PRIVATE(this)->selectionkeys.clear();
@@ -2234,6 +2271,13 @@ SoFCRendererP::renderTransparency(SoGLRenderAction * action,
 void
 SoFCRenderer::render(SoGLRenderAction * action)
 {
+  // In overlay-capture mode this renderer only exists as a feed conduit:
+  // the backend draws the overlay itself, and the GL fallback keeps its
+  // own drawing path (e.g. drawAxisCross), so never render here and never
+  // push per-frame configs.
+  if (PRIVATE(this)->overlaymode)
+    return;
+
   // The hidden-line draw style configuration lives in the traversal state
   // and is resolved per render; mirror it to the external backend (which
   // draws before this traversal, so it applies one frame late like the

@@ -56,16 +56,19 @@
 # include <Inventor/nodes/SoAnnotation.h>
 # include <Inventor/nodes/SoBaseColor.h>
 # include <Inventor/nodes/SoCallback.h>
+# include <Inventor/nodes/SoCoordinate3.h>
 # include <Inventor/nodes/SoCube.h>
 # include <Inventor/nodes/SoDirectionalLight.h>
 # include <Inventor/nodes/SoEventCallback.h>
 # include <Inventor/nodes/SoFaceSet.h>
+# include <Inventor/nodes/SoIndexedFaceSet.h>
 # include <Inventor/nodes/SoLightModel.h>
 # include <Inventor/nodes/SoMaterial.h>
 # include <Inventor/nodes/SoOrthographicCamera.h>
 # include <Inventor/nodes/SoPerspectiveCamera.h>
 # include <Inventor/nodes/SoPolygonOffset.h>
 # include <Inventor/nodes/SoPickStyle.h>
+# include <Inventor/nodes/SoRotation.h>
 # include <Inventor/nodes/SoScale.h>
 # include <Inventor/nodes/SoSelection.h>
 # include <Inventor/nodes/SoSeparator.h>
@@ -452,6 +455,22 @@ struct View3DInventorViewer::Private
 
     std::unique_ptr<Renderer> renderer;
 
+    // Overlay captures (raw-GL overlay Coin-ification): mirror the
+    // foreground superimposition and the corner axis cross to the
+    // backend's overlay feed, each through a dedicated render-cache
+    // manager in overlay mode (SoFCRenderCacheManager::setExternalOverlay).
+    enum OverlayId { OverlayForeground = 1, OverlayAxisCross = 2 };
+    struct OverlayCapture {
+        CoinPtr<SoNode> root;
+        // The capture runs inside its own tiny GL render action traversal
+        // (an SoCallback under applyRoot) so it gets a live traversal
+        // state without touching the viewer's shared render action.
+        CoinPtr<SoSeparator> applyRoot;
+        std::unique_ptr<SoFCRenderCacheManager> manager;
+    };
+    OverlayCapture foregroundCapture;
+    OverlayCapture axisCrossCapture;
+
     Private(View3DInventorViewer *owner)
         :view(qobject_cast<View3DInventor*>(owner->parent()))
         ,owner(owner)
@@ -459,6 +478,10 @@ struct View3DInventorViewer::Private
         ,pickAction(SbViewportRegion())
         ,pickMatrixAction(SbViewportRegion())
     {}
+
+    void updateOverlayCaptures(SoGLRenderAction *glra);
+    void clearOverlayCaptures();
+    static void overlayCaptureCB(void *ud, SoAction *action);
 
     void activateShadow();
     void deactivateShadow();
@@ -493,6 +516,164 @@ struct View3DInventorViewer::Private
 
     static void onDragFinish(void *data, SoDragger *d);
 };
+
+// Coin geometry equivalent of drawArrow()/drawAxisCross(): one arrow along
+// +x (shaft box + crossed head fins), instanced three times with the axis
+// colors and rotations. Captured through the backend's overlay feed so the
+// corner axis cross renders without the immediate-mode GL path (and in the
+// WASM viewer). The "X"/"Y"/"Z" letter pixmaps are not ported yet — glyph
+// rendering belongs to the overlay text phase.
+static SoSeparator *createAxisCrossOverlayGraph()
+{
+    constexpr float shaftEnd = 1.0F - 1.0F / 3.0F;
+    constexpr float s = 0.02F;       // shaft half thickness
+    constexpr float f = 0.5F / 4.0F; // head fin half width
+    static const SbVec3f coords[13] = {
+        // shaft box corners (x = 0 and x = shaftEnd)
+        {0, -s,  s}, {0,  s,  s}, {0,  s, -s}, {0, -s, -s},
+        {shaftEnd, -s,  s}, {shaftEnd,  s,  s},
+        {shaftEnd,  s, -s}, {shaftEnd, -s, -s},
+        // head: tip + fin corners
+        {1, 0, 0},
+        {shaftEnd,  f, 0}, {shaftEnd, -f, 0},
+        {shaftEnd, 0,  f}, {shaftEnd, 0, -f},
+    };
+    static const int32_t indices[] = {
+        0, 1, 5, 4, -1,    // shaft +z side
+        3, 2, 6, 7, -1,    // shaft -z side
+        0, 3, 7, 4, -1,    // shaft -y side
+        1, 2, 6, 5, -1,    // shaft +y side
+        0, 1, 2, 3, -1,    // shaft end cap at x = 0
+        8, 9, 10, -1,      // head fin in the xy plane
+        8, 11, 12, -1,     // head fin in the xz plane
+        9, 11, 10, 12, -1, // head base quad
+    };
+
+    auto coord = new SoCoordinate3;
+    coord->point.setValues(0, 13, coords);
+    auto faces = new SoIndexedFaceSet;
+    faces->coordIndex.setValues(
+        0, int(sizeof(indices) / sizeof(indices[0])), indices);
+
+    auto root = new SoSeparator;
+    auto lightModel = new SoLightModel; // like glDisable(GL_LIGHTING)
+    lightModel->model = SoLightModel::BASE_COLOR;
+    root->addChild(lightModel);
+
+    const SbColor axisColors[3] = {
+        {0.5F, 0.125F, 0.125F},
+        {0.125F, 0.5F, 0.125F},
+        {0.125F, 0.125F, 0.5F},
+    };
+    const SbRotation axisRotations[3] = {
+        SbRotation::identity(),
+        SbRotation(SbVec3f(0, 0, 1), float(M_PI_2)),  // y axis
+        SbRotation(SbVec3f(0, 1, 0), -float(M_PI_2)), // z axis
+    };
+    for (int i = 0; i < 3; ++i) {
+        auto sep = new SoSeparator;
+        auto color = new SoBaseColor;
+        color->rgb = axisColors[i];
+        sep->addChild(color);
+        if (i) {
+            auto rot = new SoRotation;
+            rot->rotation = axisRotations[i];
+            sep->addChild(rot);
+        }
+        sep->addChild(coord);
+        sep->addChild(faces);
+        root->addChild(sep);
+    }
+    return root;
+}
+
+// SoCallback body of an overlay capture: runs mid-traversal of the
+// capture's own render action, so the cache build sees a live state.
+void View3DInventorViewer::Private::overlayCaptureCB(void *ud, SoAction *action)
+{
+    if (!action->isOfType(SoGLRenderAction::getClassTypeId()))
+        return;
+    auto *capture = static_cast<OverlayCapture *>(ud);
+    capture->manager->capture(static_cast<SoGLRenderAction *>(action),
+                              capture->root);
+}
+
+void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra)
+{
+    if (!renderer)
+        return;
+
+    auto initCapture = [](OverlayCapture &capture, SoNode *root) {
+        capture.root = root;
+        capture.manager.reset(new SoFCRenderCacheManager);
+        capture.applyRoot = new SoSeparator;
+        auto cb = new SoCallback;
+        cb->setCallback(overlayCaptureCB, &capture);
+        capture.applyRoot->addChild(cb);
+    };
+    // The capture traversals never draw; a private action keeps their
+    // state handling away from the viewer's shared render action. It
+    // must still declare the real GL cache context — Coin initializes
+    // its GL glue for the action's context id even when nothing renders.
+    SoGLRenderAction captureAction(
+        owner->getSoRenderManager()->getViewportRegion());
+    captureAction.setCacheContext(glra->getCacheContext());
+
+    if (!foregroundCapture.manager)
+        initCapture(foregroundCapture, owner->foregroundroot);
+    // Full-viewport orthographic anchor mirroring the foreground root's own
+    // camera (position (0,0,5), height 10, near 0, far 10).
+    Render::OverlayAnchor fgAnchor;
+    fgAnchor.corner = Render::OverlayAnchor::FullViewport;
+    fgAnchor.orthoHeight = 10.0F;
+    fgAnchor.cameraDistance = 5.0F;
+    fgAnchor.nearPlane = 0.0F;
+    fgAnchor.farPlane = 10.0F;
+    foregroundCapture.manager->setExternalOverlay(
+        renderer.get(), OverlayForeground, fgAnchor);
+    captureAction.apply(foregroundCapture.applyRoot);
+
+    if (owner->axiscrossEnabled) {
+        if (!axisCrossCapture.manager)
+            initCapture(axisCrossCapture, createAxisCrossOverlayGraph());
+        // Corner mini-perspective anchor matching drawAxisCross(): a square
+        // viewport of axiscrossSize percent of the smaller viewport edge in
+        // the bottom-right corner, 45 deg FOV, content rotated by the scene
+        // camera orientation at eye distance 3.5.
+        Render::OverlayAnchor anchor;
+        anchor.corner = Render::OverlayAnchor::BottomRight;
+        anchor.sizeFraction = float(owner->axiscrossSize) / 100.0F;
+        anchor.fovDeg = 45.0F;
+        anchor.cameraDistance = 3.5F;
+        anchor.nearPlane = 0.1F;
+        anchor.farPlane = 10.0F;
+        anchor.orientFromScene = true;
+        axisCrossCapture.manager->setExternalOverlay(
+            renderer.get(), OverlayAxisCross, anchor);
+        captureAction.apply(axisCrossCapture.applyRoot);
+    }
+    else if (axisCrossCapture.manager) {
+        // Detaching removes the overlay from the backend.
+        axisCrossCapture.manager->setExternalOverlay(
+            nullptr, OverlayAxisCross, Render::OverlayAnchor());
+        axisCrossCapture.manager.reset();
+        axisCrossCapture.applyRoot.reset();
+        axisCrossCapture.root.reset();
+    }
+}
+
+void View3DInventorViewer::Private::clearOverlayCaptures()
+{
+    for (auto capture : {&foregroundCapture, &axisCrossCapture}) {
+        if (capture->manager) {
+            capture->manager->setExternalOverlay(
+                nullptr, 0, Render::OverlayAnchor());
+            capture->manager.reset();
+        }
+        capture->applyRoot.reset();
+        capture->root.reset();
+    }
+}
 
 /** \defgroup View3D 3D Viewer
  *  \ingroup GUI
@@ -824,6 +1005,7 @@ View3DInventorViewer::~View3DInventorViewer()
     // Detach the external render backend before _pimpl->renderer is
     // destroyed; the selection root (and its render cache manager) may
     // outlive this viewer through external references.
+    _pimpl->clearOverlayCaptures();
     if (this->selectionRoot)
         this->selectionRoot->setExternalRenderer(nullptr);
 
@@ -3210,6 +3392,7 @@ void View3DInventorViewer::setRendererType(const std::string &type)
     // RendererFactory::create() also returns null, falling back to plain GL.
     if (type.empty() || type == "Default") {
         if (_pimpl->renderer) {
+            _pimpl->clearOverlayCaptures();
             if (selectionRoot)
                 selectionRoot->setExternalRenderer(nullptr);
             _pimpl->renderer.reset();
@@ -3217,6 +3400,7 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         }
     }
     else if (!_pimpl->renderer || _pimpl->renderer->type() != type) {
+        _pimpl->clearOverlayCaptures();
         if (selectionRoot)
             selectionRoot->setExternalRenderer(nullptr);
         _pimpl->renderer = RendererFactory::create(
@@ -3512,10 +3696,21 @@ void View3DInventorViewer::renderScene()
     glDepthRange(0.0,0.1);
 #endif
 
-    // Render overlay front scenegraph.
-    glra->apply(this->foregroundroot);
+    // With an active backend the foreground superimposition and the corner
+    // axis cross are captured into the backend's overlay feed below and
+    // drawn by the backend itself; keep the GL drawing for the plain path
+    // and for FC_RENDERER_PARALLEL_GL comparison frames.
+    static const bool parallelgl =
+        (std::getenv("FC_RENDERER_PARALLEL_GL") != nullptr);
 
-    if (this->axiscrossEnabled) {
+    // Render overlay front scenegraph.
+    if (!externalRendered || parallelgl)
+        glra->apply(this->foregroundroot);
+
+    if (_pimpl->renderer)
+        _pimpl->updateOverlayCaptures(glra);
+
+    if (this->axiscrossEnabled && (!externalRendered || parallelgl)) {
         this->drawAxisCross();
     }
 

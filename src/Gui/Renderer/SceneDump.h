@@ -41,6 +41,16 @@ struct SceneSnapshot {
     std::vector<std::pair<int, DrawCallList>> selections;
     DrawCallList highlight;
     bool highlightWholeOnTop = false;
+    /// Overlay feeds as fed through setOverlay() (v3; empty on older
+    /// snapshots): viewport-anchored content — the foreground
+    /// superimposition, the corner axis cross — replayed by the
+    /// standalone/WASM viewer with its own viewport and camera.
+    struct Overlay {
+        int id = 0;
+        OverlayAnchor anchor;
+        DrawCallList draws;
+    };
+    std::vector<Overlay> overlays;
     Background background;
     HiddenLineConfig hlconfig;
     SectionConfig secconf;

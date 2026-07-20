@@ -29,6 +29,7 @@
 class SoSFImage;
 class SoGLRenderAction;
 class SoGroup;
+class SoNode;
 class SoFCRenderCache;
 class SoFCRenderCacheManagerP;
 class SoPath;
@@ -36,6 +37,7 @@ class SoDetail;
 
 namespace Render {
 class Renderer;
+struct OverlayAnchor;
 }
 
 namespace Gui {
@@ -49,6 +51,13 @@ public:
   virtual ~SoFCRenderCacheManager();
 
   void render(SoGLRenderAction *action);
+
+  /// Build (or refresh, keyed on \a root's node id) the render cache of an
+  /// explicit \a root without drawing anything. Only meaningful together
+  /// with setExternalOverlay(): the captured content is mirrored to the
+  /// backend's overlay feed. \a action supplies the traversal state seed.
+  void capture(SoGLRenderAction *action, SoNode *root);
+
   void clear();
 
   /// Attach an optional external render backend (see
@@ -57,6 +66,14 @@ public:
   /// property overrides.
   void setExternalRenderer(Render::Renderer *renderer,
                            Gui::View3DInventor *view = nullptr);
+
+  /// Route the scene feed to the backend's overlay feed instead (see
+  /// SoFCRenderer::setExternalOverlay()): this manager then captures an
+  /// overlay root (foreground superimposition, corner axis cross) and
+  /// mirrors it as Renderer::setOverlay(\a id, ..., \a anchor), while
+  /// render() stops drawing any internal GL pass. Pass null to detach.
+  void setExternalOverlay(Render::Renderer *renderer, int id,
+                          const Render::OverlayAnchor &anchor);
 
   SoPath *getHighlightPath() const;
   void setHighlight(SoPath * path,

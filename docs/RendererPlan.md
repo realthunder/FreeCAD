@@ -1245,11 +1245,42 @@ independent of each other; item 4 builds on item 3's property model.
      anchoring + pixel sizing ride an `OverlayAnchor` struct rather
      than baked matrices so the WASM viewer can re-anchor on resize.
   **Phasing**:
-  - *A — bridge groundwork*: capture the viewer's `foregroundroot`
-    (and `backgroundroot` remnants) through the render-cache traversal;
-    add the overlay feed + one proof consumer (axis cross as Coin
-    geometry fed through it); serialize overlay feeds into the scene
-    snapshot so the WASM viewer replays them.
+  - *A — bridge groundwork* — **DONE (2026-07-20)**: capture the viewer's
+    `foregroundroot` (and `backgroundroot` remnants) through the
+    render-cache traversal; add the overlay feed + one proof consumer
+    (axis cross as Coin geometry fed through it); serialize overlay
+    feeds into the scene snapshot so the WASM viewer replays them.
+    *As built*: `Render::OverlayAnchor` (declarative corner/size/camera
+    — full-viewport ortho or corner mini-perspective, optional
+    orient-from-scene rotation) + `Renderer::setOverlay(id, draws,
+    anchor)`/`removeOverlay(id)`; `SoFCRenderer::setExternalOverlay()`
+    turns a renderer instance into a pure feed conduit (scene feed →
+    `setOverlay`, `render()` a no-op), and
+    `SoFCRenderCacheManager::capture(action, root)` builds the cache of
+    an explicit root without drawing — the viewer drives one
+    manager+conduit per overlay root from `renderScene()` through a
+    private `SoGLRenderAction` over an `SoCallback` (must
+    `setCacheContext(glra->getCacheContext())` or Coin's GL glue
+    errors every frame). The corner axis cross is rebuilt as plain Coin
+    geometry (`createAxisCrossOverlayGraph()`: shared
+    coord/indexed-face-set arrow instanced 3x, BASE_COLOR) and fed with
+    a BottomRight 45°-FOV anchor matching `drawAxisCross()`, which is
+    skipped on backend frames (kept for GL-only and
+    FC_RENDERER_PARALLEL_GL). BGFX side: 4 late `ViewOverlay*` views
+    (fresh depth inside their rect, Sequential, anchor-derived
+    rect+matrices re-computed per frame — overlays re-anchor on resize
+    and track the local camera in the WASM viewer for free; bx
+    matrices MUST be `Handedness::Right` to pair with GL-convention
+    view matrices), submits ride the normal path with a `overlayView`
+    view override. Snapshot v3 appends the overlay feeds; the WASM
+    viewer replays them like selections. Verified: backend desktop
+    frame and headless-Chromium WASM viewer both show the corner cross
+    (browser cross follows the local orbit camera); GL-only frame
+    unchanged. Deferred: the "X/Y/Z" letter pixmaps (glyph quads are
+    Phase B's text work); NaviCube stays GL until Phase C. Note:
+    `FC_BGFX_DEBUG_READBACK`'s depth `glReadPixels` itself raises
+    GL_INVALID_OPERATION under WSLg (bogus stats, per-frame Coin error
+    spam) — don't use it to judge frames here.
   - *B — viewer overlays*: rubber band / polyline (`GLGraphicsItem` →
     overlay line draws), fps/2D text (`draw2DString` → glyph-atlas
     textured quads), `printDimension`.

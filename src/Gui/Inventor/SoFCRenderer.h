@@ -34,6 +34,7 @@ class SoFCRendererP;
 
 namespace Render {
 class Renderer;
+struct OverlayAnchor;
 }
 
 namespace Gui {
@@ -57,6 +58,17 @@ public:
   /// dynamic property overrides.
   void setExternalRenderer(Render::Renderer * renderer,
                            Gui::View3DInventor * view = nullptr);
+
+  /// Route this renderer's scene feed to an external backend's overlay
+  /// feed instead of the main scene feed: setScene() translates the
+  /// caches into Renderer::setOverlay(\a id, draws, \a anchor), while
+  /// render() becomes a no-op (no per-frame configs, no internal GL
+  /// pass). Used to capture overlay roots (the foreground
+  /// superimposition, the corner axis cross) through the same
+  /// render-cache traversal as the main scene. Pass null to detach,
+  /// which removes the overlay from the backend.
+  void setExternalOverlay(Render::Renderer * renderer, int id,
+                          const Render::OverlayAnchor & anchor);
 
   void render(SoGLRenderAction * action);
 

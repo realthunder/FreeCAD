@@ -569,6 +569,14 @@ SoFCRenderCacheManager::setExternalRenderer(Render::Renderer *renderer,
 }
 
 void
+SoFCRenderCacheManager::setExternalOverlay(Render::Renderer *renderer,
+                                           int id,
+                                           const Render::OverlayAnchor &anchor)
+{
+  PRIVATE(this)->renderer->setExternalOverlay(renderer, id, anchor);
+}
+
+void
 SoFCRenderCacheManager::clear()
 {
   PRIVATE(this)->stack.clear();
@@ -1116,6 +1124,32 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
   }
 
   PRIVATE(this)->renderer->render(action);
+}
+
+void
+SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
+{
+  // Same cache build as render(), but over an explicit \a root instead of
+  // the action's current path tail, and without any drawing: used for
+  // overlay roots (foreground superimposition, corner axis cross) that
+  // are captured outside their own traversal and mirrored to the backend
+  // through the overlay feed (setExternalOverlay()).
+  if (PRIVATE(this)->sceneid == root->getNodeId())
+    return;
+  PRIVATE(this)->sceneid = root->getNodeId();
+
+  SoState * state = action->getState();
+  RenderCachePtr cache = new SoFCRenderCache(state, root);
+  cache->open(state);
+  cache->resetActionStateStackDepth();
+  PRIVATE(this)->stack.resize(1, cache);
+  PRIVATE(this)->initAction();
+  PRIVATE(this)->override_selectstyle = false;
+  PRIVATE(this)->action->apply(root);
+  cache->close(state);
+  PRIVATE(this)->renderer->setScene(cache);
+  PRIVATE(this)->stack.clear();
+  PRIVATE(this)->selnodeid.clear();
 }
 
 SoCallbackAction::Response

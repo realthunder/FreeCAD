@@ -35,7 +35,7 @@ namespace {
 
 const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // v2: selection/highlight feeds appended (v1 files still load).
-const uint32_t kVersion = 2;
+const uint32_t kVersion = 3;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -579,6 +579,8 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     for (const auto &sel : snap.selections)
         addDraws(sel.second);
     addDraws(snap.highlight);
+    for (const auto &ov : snap.overlays)
+        addDraws(ov.draws);
     addTex(snap.lightconf.groundTexture);
     addTex(snap.lightconf.groundBumpMap);
 
@@ -652,6 +654,22 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     }
     writeDrawList(w, snap.highlight, meshIndex, texIndex);
     w.b(snap.highlightWholeOnTop);
+
+    // v3: overlay feeds (appended so the v2 prefix layout is unchanged).
+    w.u32(uint32_t(snap.overlays.size()));
+    for (const auto &ov : snap.overlays) {
+        w.i32(ov.id);
+        const OverlayAnchor &a = ov.anchor;
+        w.u8(a.corner);
+        w.f(a.sizeFraction);
+        w.f(a.fovDeg);
+        w.f(a.orthoHeight);
+        w.f(a.cameraDistance);
+        w.f(a.nearPlane);
+        w.f(a.farPlane);
+        w.b(a.orientFromScene);
+        writeDrawList(w, ov.draws, meshIndex, texIndex);
+    }
 
     return w.ok;
 }
@@ -753,6 +771,28 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         }
         readDrawList(r, snap.highlight, meshes, textures);
         snap.highlightWholeOnTop = r.b();
+    }
+
+    snap.overlays.clear();
+    if (version >= 3) {
+        uint32_t nov = r.u32();
+        if (!r.ok || nov > 0x10000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < nov; ++i) {
+            SceneSnapshot::Overlay ov;
+            ov.id = r.i32();
+            OverlayAnchor &a = ov.anchor;
+            a.corner = r.u8();
+            a.sizeFraction = r.f();
+            a.fovDeg = r.f();
+            a.orthoHeight = r.f();
+            a.cameraDistance = r.f();
+            a.nearPlane = r.f();
+            a.farPlane = r.f();
+            a.orientFromScene = r.b();
+            if (readDrawList(r, ov.draws, meshes, textures))
+                snap.overlays.push_back(std::move(ov));
+        }
     }
 
     return r.ok;

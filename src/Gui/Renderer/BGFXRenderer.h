@@ -58,6 +58,9 @@ public:
     virtual void removeSelection(int id) override;
     virtual void setHighlight(DrawCallList &&draws, bool wholeOnTop) override;
     virtual void clearHighlight() override;
+    virtual void setOverlay(int id, DrawCallList &&draws,
+                            const OverlayAnchor &anchor) override;
+    virtual void removeOverlay(int id) override;
     virtual void setHiddenLineConfig(const HiddenLineConfig &config) override;
     virtual void setSectionConfig(const SectionConfig &config) override;
     virtual void setAOConfig(const AOConfig &config) override;
