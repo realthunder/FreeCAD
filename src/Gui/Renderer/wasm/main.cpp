@@ -97,8 +97,9 @@ EM_JS(void, fcviewer_canvas_origin, (double *out), {
     HEAPF64[(out >> 3) + 1] = r.top;
 });
 
-static int s_width = 1024;
+static int s_width = 1024;    // drawing-buffer size, device px (css * dpr)
 static int s_height = 768;
+static float s_dpr = 1.0f;    // devicePixelRatio applied to the buffer
 
 // Orbit camera state around the scene bounds.
 static float s_center[3] = {0.0f, 0.0f, 0.0f};
@@ -129,10 +130,14 @@ static const double kRefineDelayMs = 300.0;
 static const int kFullMSAA = 4;
 static double s_lastInteract = -1e9;
 static bool s_degraded = false;
+// Set once the user drives the camera (orbit/pan/zoom/NaviCube/?cam). Until
+// then the camera is the auto fit, so a viewport/orientation change re-fits.
+static bool s_userCam = false;
 
 static void interact()
 {
     s_lastInteract = emscripten_get_now();
+    s_userCam = true;
 }
 
 static void updateQuality()
@@ -783,16 +788,29 @@ static void applyHover(const PickHit &hit)
     s_renderer->setHighlight(std::move(draws), false);
 }
 
+static void fitCamera();
+
 static void mainLoop()
 {
     double w = 0, h = 0;
     emscripten_get_element_css_size("#canvas", &w, &h);
-    int iw = int(w), ih = int(h);
+    // Render at the device pixel ratio so the buffer matches physical pixels
+    // (crisp on hi-DPI / mobile); the CSS size still fills the viewport, so
+    // the browser downsamples nothing.
+    double dpr = emscripten_get_device_pixel_ratio();
+    if (dpr < 1.0)
+        dpr = 1.0;
+    int iw = int(w * dpr + 0.5), ih = int(h * dpr + 0.5);
     if (iw > 0 && ih > 0 && (iw != s_width || ih != s_height)) {
         s_width = iw;
         s_height = ih;
+        s_dpr = float(dpr);
         emscripten_set_canvas_element_size("#canvas", iw, ih);
         Render::BGFXRenderer::setWindowSize(iw, ih);
+        // Until the user takes the camera, reframe on resize/rotation so the
+        // whole model stays visible in the new aspect.
+        if (!s_userCam)
+            fitCamera();
     }
 
     updateQuality();
@@ -823,8 +841,11 @@ static void mainLoop()
 
 static float panScale()
 {
+    // World units per CSS pixel of drag: the visible world height spans the
+    // buffer's device-px height, and drag deltas come in CSS px, so fold in
+    // the dpr (buffer = css * dpr).
     return 2.0f * s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f)
-        / float(s_height > 0 ? s_height : 1);
+        * s_dpr / float(s_height > 0 ? s_height : 1);
 }
 
 // Click detection (mouseup without meaningful drag) for the roundtrip
@@ -835,10 +856,12 @@ static double s_lastHoverMs = 0.0;
 
 static void clientToCanvas(float cx, float cy, float &x, float &y)
 {
+    // Event coords + the canvas rect are CSS px; scale to device px so they
+    // match the (dpr-scaled) drawing buffer used for picking / overlay rects.
     double origin[2] = {0.0, 0.0};
     fcviewer_canvas_origin(origin);
-    x = cx - float(origin[0]);
-    y = cy - float(origin[1]);
+    x = (cx - float(origin[0])) * s_dpr;
+    y = (cy - float(origin[1])) * s_dpr;
 }
 
 static void canvasPos(const EmscriptenMouseEvent *e, float &x, float &y)
@@ -1118,7 +1141,38 @@ static void fitCamera()
         s_diag = std::sqrt(dx * dx + dy * dy + dz * dz);
         if (s_diag <= 0.0f)
             s_diag = 10.0f;
-        s_dist = 2.0f * s_diag;
+        // Tight perspective fit: back off just enough that the projected
+        // bounding box fills the frame in the current view. Project the 8
+        // corners onto the current orbit's screen axes and depth, so portrait
+        // and landscape each frame snugly and aspect is respected. (Replaces a
+        // bounding-sphere fit that over-margined non-round models.)
+        const float cp = std::cos(s_pitch), sp = std::sin(s_pitch);
+        const float cyw = std::cos(s_yaw), syw = std::sin(s_yaw);
+        const bx::Vec3 dir(cp * cyw, cp * syw, sp);
+        const bx::Vec3 right =
+            bx::normalize(bx::cross(dir, bx::Vec3(0.0f, 0.0f, 1.0f)));
+        const bx::Vec3 up = bx::normalize(bx::cross(right, dir));
+        const bx::Vec3 c(s_center[0], s_center[1], s_center[2]);
+        const float aspect = s_height > 0
+            ? float(s_width) / float(s_height) : 1.0f;
+        const float tanV = std::tan(0.5f * kFovY * bx::kPi / 180.0f);
+        const float invH = 1.0f / (tanV * aspect);   // per-lateral-unit distance
+        const float invV = 1.0f / tanV;
+        // Exact tight fit: each corner must sit inside the frustum at its own
+        // depth (dir points toward the eye, so +f is nearer). The distance is
+        // the max over corners of what each needs -- not max(lateral)+max(depth),
+        // which over-backs-off when the widest corner isn't also the nearest.
+        float dNeed = 0.0f;
+        for (int ci = 0; ci < 8; ++ci) {
+            const bx::Vec3 corner((ci & 1) ? bmax[0] : bmin[0],
+                                  (ci & 2) ? bmax[1] : bmin[1],
+                                  (ci & 4) ? bmax[2] : bmin[2]);
+            const bx::Vec3 d = bx::sub(corner, c);
+            const float f = bx::dot(d, dir);
+            dNeed = bx::max(dNeed, std::fabs(bx::dot(d, right)) * invH + f);
+            dNeed = bx::max(dNeed, std::fabs(bx::dot(d, up)) * invV + f);
+        }
+        s_dist = bx::max(dNeed * 1.05f, 0.02f * s_diag);   // small margin + floor
         s_panX = s_panY = 0.0f;
     }
 }
@@ -1198,6 +1252,7 @@ static void applySnapshot(bool fit)
             s_panX = s_camParam[6];
             s_panY = s_camParam[7];
             s_haveCamParam = false;   // only the initial view
+            s_userCam = true;         // a reproduced view; don't auto-refit
         }
     }
 }
