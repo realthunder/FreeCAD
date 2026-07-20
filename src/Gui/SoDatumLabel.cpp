@@ -197,6 +197,8 @@ void SoDatumLabelImage::generatePrimitives(SoAction* action)
 
 SO_NODE_SOURCE(SoDatumLabel)
 
+bool SoDatumLabel::SuppressGLRender = false;
+
 void SoDatumLabel::initClass()
 {
     SO_NODE_INIT_CLASS(SoDatumLabel, SoShape, "Shape");
@@ -968,16 +970,18 @@ bool SoDatumLabel::updateImageSize(SoState * state, int & srcw, int & srch)
     }
 
     // Calibrate the companion autozoom so the glyph quad (emitted in native
-    // pixels) renders at the same screen size the GL path draws (imgHeight ==
-    // getScaleFactor*srch pixels). SoAutoZoomTranslation applies
-    // scaleFactor*worldToScreenScale/(5*aspect); matching that to the datum
-    // scale (worldToScreenScale/vpWidth) gives scaleFactor = 5/vpHeight. Set
-    // only on change so it does not thrash the render cache each frame.
+    // pixels) renders at the same screen size the GL path draws. The backend
+    // applies scaleFactor*worldToScreenScale/(5*aspect); matching that to the
+    // datum scale (worldToScreenScale/vpWidth) gives scaleFactor = k/vpHeight.
+    // Analytically k==5, but measured against the GL path the glyph then comes
+    // out ~2/3 too small (an empirical factor in SoAutoZoomTranslation's own
+    // /5 tuning), so k=7.5 matches the GL size. Set only on change so it does
+    // not thrash the render cache each frame.
     if (this->imageZoom) {
         const SbViewportRegion& vp = SoViewportRegionElement::get(state);
         float vph = (float)vp.getViewportSizePixels()[1];
         if (vph > 0.f) {
-            float sf = 5.0f / vph;
+            float sf = 7.5f / vph;
             if (this->imageZoom->scaleFactor.getValue() != sf)
                 this->imageZoom->scaleFactor.setValue(sf);
         }
@@ -1406,6 +1410,11 @@ float SoDatumLabel::getScaleFactor(SoState* state) const
 
 void SoDatumLabel::GLRender(SoGLRenderAction * action)
 {
+    // An external backend is already drawing this datum (leaders + glyph) from
+    // the captured editing overlay; skip the raw-GL draw to avoid doubling.
+    if (SuppressGLRender)
+        return;
+
     SoState *state = action->getState();
 
     if (!shouldGLRender(action))

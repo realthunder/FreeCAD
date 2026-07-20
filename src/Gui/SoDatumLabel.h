@@ -76,6 +76,13 @@ public:
     /* returns the center point of the text of the label */
     SbVec3f getLabelTextCenter();
 
+    /* When true, GLRender() draws nothing. Set by the viewer around the Coin GL
+     * pass when an external backend (render-cache mode 3) is already rendering
+     * the editing overlay these labels live in, so the datum is not drawn twice
+     * (raw GL + backend). Left false everywhere else so the classic GL path is
+     * unchanged. */
+    static bool SuppressGLRender;
+
     /* Returns the companion sub-graph that renders the datum text glyph as a
      * textured quad for the render-cache bridge (bgfx/WASM backend), where the
      * raw-GL GLRender text pass is bypassed. Add it as a sibling right after

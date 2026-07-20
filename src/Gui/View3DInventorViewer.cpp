@@ -151,6 +151,7 @@
 #include "SoFCDirectionalLight.h"
 #include "SoFCSpotLight.h"
 #include "SoFCSelectionAction.h"
+#include "SoDatumLabel.h"
 #include "SoFCUnifiedSelection.h"
 #include "SoFCVectorizeSVGAction.h"
 #include "SoFCVectorizeU3DAction.h"
@@ -495,6 +496,10 @@ struct View3DInventorViewer::Private
     // lives under pcEditingRoot, a sibling of the render-cache-captured
     // selectionRoot, so it never reaches the main scene feed.
     OverlayCapture editingCapture;
+    // Whether the editing overlay is currently fed to (and thus drawn by) the
+    // external backend. When true, renderScene() suppresses the raw-GL datum
+    // draw so it is not doubled with the backend's.
+    bool editingBackendFed = false;
     // fps overlay state: the string renderScene() wants displayed (empty
     // when the readout is off) and the nodes/values last fed.
     std::string fpsText;
@@ -931,9 +936,11 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         editingCapture.manager->setExternalOverlay(
             renderer.get(), OverlayEditing, editAnchor);
         captureAction.apply(editingCapture.applyRoot);
+        editingBackendFed = true;
     }
     else {
         dropCapture(editingCapture, OverlayEditing);
+        editingBackendFed = false;
     }
 }
 
@@ -3959,6 +3966,17 @@ void View3DInventorViewer::renderScene()
         glbra = static_cast<SoBoxSelectionRenderAction*>(glra);
         glbra->checkRootNode(this->getSoRenderManager()->getSceneGraph());
     }
+    // With an active backend the foreground superimposition, corner axis cross
+    // and in-scene datums are drawn by the backend from its captured feeds;
+    // keep the GL drawing for the plain path and for FC_RENDERER_PARALLEL_GL
+    // comparison frames.
+    static const bool parallelgl =
+        (std::getenv("FC_RENDERER_PARALLEL_GL") != nullptr);
+
+    // When the backend already draws the editing overlay (datums), suppress the
+    // raw-GL datum draw during this Coin pass so it is not doubled.
+    SoDatumLabel::SuppressGLRender =
+        externalRendered && _pimpl->editingBackendFed && !parallelgl;
     try {
         // Render normal scenegraph.
         inherited::actualRedraw();
@@ -3973,6 +3991,7 @@ void View3DInventorViewer::renderScene()
         QMessageBox::warning(parentWidget(), QObject::tr("Out of memory"),
                              QObject::tr("Not enough memory available to display the data."));
     }
+    SoDatumLabel::SuppressGLRender = false;
     if (glbra) {
         glbra->checkRootNode(nullptr);
     }
@@ -3981,13 +4000,6 @@ void View3DInventorViewer::renderScene()
     // using 10% of the z-buffer for the foreground node
     glDepthRange(0.0,0.1);
 #endif
-
-    // With an active backend the foreground superimposition and the corner
-    // axis cross are captured into the backend's overlay feed below and
-    // drawn by the backend itself; keep the GL drawing for the plain path
-    // and for FC_RENDERER_PARALLEL_GL comparison frames.
-    static const bool parallelgl =
-        (std::getenv("FC_RENDERER_PARALLEL_GL") != nullptr);
 
     // Render overlay front scenegraph.
     if (!externalRendered || parallelgl)
