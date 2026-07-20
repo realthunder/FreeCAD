@@ -828,17 +828,14 @@ void NaviCubeShared::addFace(const Vector3f& x, const Vector3f& z, int frontTex,
 	Vector3f y = x.cross(-z);
 	y = y / y.norm() * x.norm();
 
-	int t = m_VertexArray.size();
-
-    m_VertexArray.emplace_back(z - x - y);
-    m_TextureCoordArray.emplace_back(0, 0);
-    m_VertexArray.emplace_back(z + x - y);
-    m_TextureCoordArray.emplace_back(1, 0);
-    m_VertexArray.emplace_back(z + x + y);
-    m_TextureCoordArray.emplace_back(1, 1);
-    m_VertexArray.emplace_back(z - x + y);
-    m_TextureCoordArray.emplace_back(0, 1);
-
+    // The exact chamfered-cube region polygon for this face: an octagon for
+    // the 6 main faces, a rectangle for the 12 edge bevels, a hexagon for the
+    // 8 corners. These points are the *actual* fill/pick geometry now (not a
+    // full square masked by an alpha texture), so the drawn silhouette and the
+    // pick region match the visible cube exactly. They are also reused to
+    // stroke the borders (see drawNaviCube / buildCoinCube). Winding matches
+    // the old square (CCW in local x/y) so GL_TRIANGLE_FAN + backface culling
+    // stay correct.
     if (pickTex == TEX_FRONT_FACE) {
         auto x2 = x * (1 - m_Chamfer * 2);
         auto y2 = y * (1 - m_Chamfer * 2);
@@ -876,35 +873,61 @@ void NaviCubeShared::addFace(const Vector3f& x, const Vector3f& z, int frontTex,
         m_VertexArrays2[pickId].emplace_back(z - x_sqrt2 + y_sqrt6);
     }
 
-    // TEX_TOP, TEX_FRONT_FACE, TEX_TOP
-	// TEX_TOP 			frontTex,
-	// TEX_FRONT_FACE	pickTex,
-	// TEX_TOP 			pickId
-	m_Faces.emplace_back(
-		m_IndexArray.size(),
-		4,
-		m_Textures[pickTex],
-		pickId,
+    // Fill face: the exact region polygon, untextured flat color. Texture ids
+    // are 0 (fill has no glyph) so the fill/label classifier
+    // (m_TextureId == m_PickTextureId) reads true for fill and false for the
+    // label square emitted below. Texcoords are computed from each point's
+    // (x, y) projection so the parallel arrays stay well-formed for the Coin
+    // twin, even though the untextured fill doesn't sample them.
+    const auto &poly = m_VertexArrays2[pickId];
+    const float xx = x.dot(x), yy = y.dot(y);
+    int fillStart = int(m_VertexArray.size());
+    for (const auto &p : poly) {
+        m_VertexArray.push_back(p);
+        Vector3f d = p - z;
+        m_TextureCoordArray.emplace_back(0.5f + 0.5f * d.dot(x) / xx,
+                                         0.5f + 0.5f * d.dot(y) / yy);
+    }
+    m_Faces.emplace_back(
+        int(m_IndexArray.size()),
+        int(poly.size()),
+        0,
+        pickId,
         pickTex,
-		m_Textures[pickTex],
-		pickTex == TEX_EDGE_FACE ? m_EdgeFaceColor :
+        0,
+        pickTex == TEX_EDGE_FACE ? m_EdgeFaceColor :
             (pickTex == TEX_CORNER_FACE ? m_CornerFaceColor : m_FrontFaceColor),
-		1);
+        1);
+    for (size_t i = 0; i < poly.size(); i++)
+        m_IndexArray.push_back(GLubyte(fillStart + i));
 
-	if (text) {
-		m_Faces.emplace_back(
-			m_IndexArray.size(),
-			4,
-			m_Textures[frontTex],
-			pickId,
+    // Label face: a separate centered 4-vert square carrying the glyph texture
+    // (rendered upright in drawNaviCube's text pass, which relies on the 4
+    // corners). Kept as its own square so the octagon fill doesn't distort the
+    // text; picking skips it (untextured pick pass) so it never broadens the
+    // pick region.
+    if (text) {
+        int textStart = int(m_VertexArray.size());
+        m_VertexArray.emplace_back(z - x - y);
+        m_TextureCoordArray.emplace_back(0, 0);
+        m_VertexArray.emplace_back(z + x - y);
+        m_TextureCoordArray.emplace_back(1, 0);
+        m_VertexArray.emplace_back(z + x + y);
+        m_TextureCoordArray.emplace_back(1, 1);
+        m_VertexArray.emplace_back(z - x + y);
+        m_TextureCoordArray.emplace_back(0, 1);
+        m_Faces.emplace_back(
+            int(m_IndexArray.size()),
+            4,
+            m_Textures[frontTex],
+            pickId,
             pickTex,
-			m_Textures[pickTex],
-			m_TextColor,
-			2);
-	}
-
-	for (int i = 0; i < 4; i++)
-		m_IndexArray.push_back(t + i);
+            0,
+            m_TextColor,
+            2);
+        for (int i = 0; i < 4; i++)
+            m_IndexArray.push_back(GLubyte(textStart + i));
+    }
 }
 
 bool NaviCubeShared::initNaviCube() {
@@ -1310,23 +1333,28 @@ void NaviCubeImplementation::buildCoinCube()
 					        short(it->second.height())),
 					4, it->second.constBits());
 			sep->addChild(tex);
+			// Faces now have a variable vertex count: octagon (8) main-face
+			// fills, hexagon (6) corners, rectangle (4) edges, and 4-vert
+			// label squares.
+			const int n = f.m_VertexCount;
 			auto tc = new SoTextureCoordinate2;
-			SbVec2f uvs[4];
-			for (int k = 0; k < 4; ++k) {
+			std::vector<SbVec2f> uvs(n);
+			for (int k = 0; k < n; ++k) {
 				const auto &t = shared->m_TextureCoordArray[
 					shared->m_IndexArray[f.m_FirstVertex + k]];
 				uvs[k].setValue(t[0], t[1]);
 			}
-			tc->point.setValues(0, 4, uvs);
+			tc->point.setValues(0, n, uvs.data());
 			sep->addChild(tc);
 			auto quad = new SoIndexedFaceSet;
-			int32_t ci[5];
-			for (int k = 0; k < 4; ++k)
+			std::vector<int32_t> ci(n + 1), ti(n + 1);
+			for (int k = 0; k < n; ++k) {
 				ci[k] = shared->m_IndexArray[f.m_FirstVertex + k];
-			ci[4] = -1;
-			quad->coordIndex.setValues(0, 5, ci);
-			static const int32_t ti[5] = {0, 1, 2, 3, -1};
-			quad->textureCoordIndex.setValues(0, 5, ti);
+				ti[k] = k;
+			}
+			ci[n] = ti[n] = -1;
+			quad->coordIndex.setValues(0, n + 1, ci.data());
+			quad->textureCoordIndex.setValues(0, n + 1, ti.data());
 			sep->addChild(quad);
 			root->addChild(sep);
 			bool text = f.m_TextureId != f.m_PickTextureId;
@@ -1676,12 +1704,21 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, bool pickMode, int hiliteId, bo
 	// Draw the cube faces
 	if (pickMode) {
         for (auto &f : m_Faces) {
+            // Only the exact-polygon fill faces define the pick region; the
+            // label squares (glyph texture, m_PickTextureId 0) would poke past
+            // the octagon at the chamfer corners, so skip them.
+            if (f.m_TextureId != f.m_PickTextureId)
+                continue;
             glColor3ub(f.m_PickId, 0, 0);
             glBindTexture(GL_TEXTURE_2D, f.m_PickTextureId);
             glDrawElements(GL_TRIANGLE_FAN, f.m_VertexCount, GL_UNSIGNED_BYTE, (void*) &m_IndexArray[f.m_FirstVertex]);
         }
 	}
 	else if (hit || !m_AutoHideCube) {
+        // Fill faces are untextured exact polygons now; disable texturing so
+        // the flat face/edge/corner color is driver-independent (some drivers
+        // still sample the bound texture 0).
+        glDisable(GL_TEXTURE_2D);
 		for (int pass = 0; pass < 3 ; pass++) {
             for (auto &f : m_Faces) {
                 if (pass != f.m_RenderPass || f.m_TextureId != f.m_PickTextureId)
@@ -1689,11 +1726,11 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, bool pickMode, int hiliteId, bo
 
                 QColor& c = (hiliteId == f.m_PickId) && (pass < 2) ? m_HiliteColor : f.m_Color;
                 glColor4f(c.redF(), c.greenF(), c.blueF(),c.alphaF());
-                glBindTexture(GL_TEXTURE_2D, f.m_TextureId);
-                
+
                 glDrawElements(GL_TRIANGLE_FAN, f.m_VertexCount, GL_UNSIGNED_BYTE, (void*) &m_IndexArray[f.m_FirstVertex]);
             }
         }
+        glEnable(GL_TEXTURE_2D);
     }
 
     glDisableClientState(GL_VERTEX_ARRAY);

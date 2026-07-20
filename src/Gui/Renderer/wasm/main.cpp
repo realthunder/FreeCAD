@@ -536,6 +536,12 @@ static int pickCubeDraw(float px, float py,
         if (dc.material.type != Render::Material::Triangle || !dc.mesh
                 || !dc.mesh->triangleIndices || !dc.mesh->positions)
             continue;
+        // Hover picks only the untextured exact-polygon fill draws. The label
+        // squares are textured and coplanar with the octagon faces, poking a
+        // little past them at the chamfer corners; skipping them keeps the
+        // hover region exactly the face/edge/corner shape.
+        if (dc.material.texture)
+            continue;
         bx::Vec3 mo = orig, md = rdir;
         float model[16], inv[16];
         if (!dc.identity) {
