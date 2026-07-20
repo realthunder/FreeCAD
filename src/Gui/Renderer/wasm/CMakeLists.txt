@@ -72,6 +72,9 @@ target_link_options(fcviewer PRIVATE
     # Compiled essl shaders at the resource path the renderer resolves
     # (setResourcePath("/assets") + "bgfx/assets/shaders/essl/...").
     "SHELL:--preload-file ${FC_SRC}/Gui/Renderer/bgfx/assets/shaders/essl@/assets/bgfx/assets/shaders/essl"
+    # Mobile-friendly HTML shell (viewport meta + full-viewport, touch-action
+    # canvas) instead of the stock desktop emscripten template.
+    "SHELL:--shell-file ${CMAKE_CURRENT_SOURCE_DIR}/shell.html"
 )
 
 # Optional desktop-captured scene snapshot (FC_BGFX_DUMP_SCENE) baked
@@ -86,6 +89,7 @@ endif()
 file(GLOB fcviewer_shader_bins
     ${FC_SRC}/Gui/Renderer/bgfx/assets/shaders/essl/*.bin)
 set_property(TARGET fcviewer APPEND PROPERTY
-    LINK_DEPENDS ${fcviewer_shader_bins} ${FCVIEWER_SCENE})
+    LINK_DEPENDS ${fcviewer_shader_bins} ${FCVIEWER_SCENE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/shell.html)
 
 set_target_properties(fcviewer PROPERTIES SUFFIX ".html")
