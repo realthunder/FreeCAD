@@ -46,7 +46,10 @@
 # include <Inventor/elements/SoViewingMatrixElement.h>
 # include <Inventor/elements/SoViewportRegionElement.h>
 # include <Inventor/elements/SoViewVolumeElement.h>
+# include <Inventor/fields/SoSFBool.h>
 # include <Inventor/misc/SoState.h>
+# include <Inventor/nodes/SoSeparator.h>
+# include <Inventor/nodes/SoTexture2.h>
 #endif // _PreComp_
 
 #include <Gui/BitmapFactory.h>
@@ -61,11 +64,85 @@ using namespace Gui;
 
 // ------------------------------------------------------
 
+// ------------------------------------------------------
+// Companion node that renders only the datum text glyph as a textured quad.
+// SoDatumLabel keeps its leader lines/arrows in its own vertex cache (untextured
+// datum colour); this sibling gets its own render-cache scope so the glyph
+// texture applies to the quad alone. It is inert on the classic GL path — the
+// owner's GLRender still draws the glyph there — and only emits geometry during
+// render-cache capture (SoCallbackAction). The forceTexCoords field makes the
+// vertex cache keep the explicit UVs even though no texture element is active on
+// the capture traversal.
+// ------------------------------------------------------
+
+namespace Gui {
+class SoDatumLabelImage : public SoShape {
+    using inherited = SoShape;
+    SO_NODE_HEADER(SoDatumLabelImage);
+
+public:
+    static void initClass();
+    SoDatumLabelImage();
+
+    SoSFBool forceTexCoords;
+    SoDatumLabel* owner = nullptr;
+
+protected:
+    ~SoDatumLabelImage() override = default;
+    // The glyph is drawn by SoDatumLabel::GLRender on the classic GL path.
+    void GLRender(SoGLRenderAction*) override {}
+    void computeBBox(SoAction*, SbBox3f& box, SbVec3f& center) override;
+    void generatePrimitives(SoAction* action) override;
+};
+}  // namespace Gui
+
+SO_NODE_SOURCE(SoDatumLabelImage)
+
+void SoDatumLabelImage::initClass()
+{
+    SO_NODE_INIT_CLASS(SoDatumLabelImage, SoShape, "Shape");
+}
+
+SoDatumLabelImage::SoDatumLabelImage()
+{
+    SO_NODE_CONSTRUCTOR(SoDatumLabelImage);
+    // Read by SoFCVertexCache to force unit-0 UV capture from our primitives.
+    SO_NODE_ADD_FIELD(forceTexCoords, (TRUE));
+}
+
+void SoDatumLabelImage::computeBBox(SoAction*, SbBox3f& box, SbVec3f& center)
+{
+    if (!this->owner || this->owner->imgWidth <= FLT_EPSILON
+        || this->owner->imgHeight <= FLT_EPSILON) {
+        // Nothing sensible to contribute yet; leave an empty box.
+        center = SbVec3f(0.f, 0.f, 0.f);
+        return;
+    }
+    const SbVec3f& c = this->owner->textOffset;
+    float hw = this->owner->imgWidth * 0.5f;
+    float hh = this->owner->imgHeight * 0.5f;
+    float r = std::sqrt(hw * hw + hh * hh);
+    box.setBounds(SbVec3f(c[0] - r, c[1] - r, c[2]), SbVec3f(c[0] + r, c[1] + r, c[2]));
+    center = c;
+}
+
+void SoDatumLabelImage::generatePrimitives(SoAction* action)
+{
+    // Only feed the render-cache capture (SoCallbackAction); stay invisible to
+    // ray picking (the owner's text box handles selection) and every other
+    // action.
+    if (this->owner && action->isOfType(SoCallbackAction::getClassTypeId()))
+        this->owner->generateTextQuad(action);
+}
+
+// ------------------------------------------------------
+
 SO_NODE_SOURCE(SoDatumLabel)
 
 void SoDatumLabel::initClass()
 {
     SO_NODE_INIT_CLASS(SoDatumLabel, SoShape, "Shape");
+    SoDatumLabelImage::initClass();
 }
 
 
@@ -101,6 +178,56 @@ SoDatumLabel::SoDatumLabel()
     this->imgWidth = 0;
     this->imgHeight = 0;
     this->glimagevalid = false;
+    this->imagesynced = false;
+
+    this->textOffset = SbVec3f(0.f, 0.f, 0.f);
+    this->textAngle = 0.f;
+    this->imageRoot = nullptr;
+    this->imageTexture = nullptr;
+    this->imageShape = nullptr;
+}
+
+SoDatumLabel::~SoDatumLabel()
+{
+    if (this->imageRoot)
+        this->imageRoot->unref();
+}
+
+SoNode* SoDatumLabel::getImageNode()
+{
+    if (!this->imageRoot) {
+        this->imageTexture = new SoTexture2;
+        // The glyph bitmap already bakes in the text colour, so replace the
+        // fragment colour with the texel (alpha-blended); no material tint.
+        this->imageTexture->model = SoTexture2::REPLACE;
+        this->imageShape = new SoDatumLabelImage;
+        this->imageShape->owner = this;
+
+        this->imageRoot = new SoSeparator;
+        // Hold our own reference so the sub-graph outlives its scene parent
+        // (the companion reads back into this label during capture).
+        this->imageRoot->ref();
+        this->imageRoot->renderCaching = SoSeparator::OFF;
+        this->imageRoot->boundingBoxCaching = SoSeparator::OFF;
+        this->imageRoot->addChild(this->imageTexture);
+        this->imageRoot->addChild(this->imageShape);
+
+        syncImageTexture();
+    }
+    return this->imageRoot;
+}
+
+void SoDatumLabel::syncImageTexture()
+{
+    if (!this->imageTexture)
+        return;
+    SbVec2s size;
+    int nc;
+    const unsigned char* bytes = this->image.getValue(size, nc);
+    if (bytes && size[0] > 0 && size[1] > 0)
+        this->imageTexture->image.setValue(size, nc, bytes);
+    else
+        this->imageTexture->image.setValue(SbVec2s(0, 0), 0, nullptr);
 }
 
 void SoDatumLabel::drawImage()
@@ -742,6 +869,13 @@ bool SoDatumLabel::updateImageSize(SoState * state, int & srcw, int & srch)
             drawImage();
             this->glimagevalid = true;
         }
+        // Keep the companion quad's texture in step with the current bitmap.
+        // Gated on imagesynced (not glimagevalid) because GLRender may have
+        // already validated the bitmap without ever feeding the companion.
+        if (this->imageTexture && !this->imagesynced) {
+            syncImageTexture();
+            this->imagesynced = true;
+        }
         SbVec2s imgsize;
         int nc;
         const unsigned char* dataptr = this->image.getValue(imgsize, nc);
@@ -801,6 +935,16 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
 
     int dt = this->datumtype.getValue();
 
+    // Text label rotation matching GLRender's normalisation (keep upright).
+    auto textAngleFromDir = [](const SbVec3f& d) -> float {
+        float a = atan2f(d[1], d[0]);
+        if (a > float(M_PI_2 + M_PI / 12))
+            a -= float(M_PI);
+        else if (a <= float(-M_PI_2 + M_PI / 12))
+            a += float(M_PI);
+        return a;
+    };
+
     if (dt == DISTANCE || dt == DISTANCEX || dt == DISTANCEY) {
         if (npts < 2)
             return;
@@ -827,6 +971,9 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
 
         float offset1 = ((length + normproj12 < 0) ? -1. : 1.) * srch;
         float offset2 = ((length < 0) ? -1 : 1) * srch;
+
+        this->textOffset = midpos + normal * length + dir * length2;
+        this->textAngle = textAngleFromDir(dir);
 
         float margin = this->imgHeight / 4.0;
 
@@ -896,6 +1043,9 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         SbVec3f pos = p2 + length * dir;
         float margin = this->imgHeight / 4.0;
 
+        this->textOffset = pos;
+        this->textAngle = textAngleFromDir(dir);
+
         SbVec3f ar0 = p2;
         SbVec3f ar1 = p2 - dir * 0.866f * 2 * margin;
         SbVec3f ar2 = ar1 + normal * margin;
@@ -951,6 +1101,12 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         float endLineLength22 = std::max(-this->param5.getValue(), margin);
 
         float r = 2 * length;
+
+        // Text sits on the mid-angle ray, upright (matches GLRender). Use the
+        // original range before it is trimmed below to leave room for the text.
+        this->textOffset =
+            p0 + SbVec3f(cos(startangle + range / 2), sin(startangle + range / 2), 0) * r;
+        this->textAngle = 0.f;
 
         if (range >= 0)
             range = std::max(0.2f * range, range - this->imgWidth / (2 * r));
@@ -1021,13 +1177,62 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
     }
 }
 
+void SoDatumLabel::generateTextQuad(SoAction * action)
+{
+    // Emit the text glyph as a textured quad (two triangles + UVs) for the
+    // companion SoDatumLabelImage. Runs after generateLeaderPrimitives has
+    // filled textOffset/textAngle/imgWidth/imgHeight for this frame. The glyph
+    // bitmap is bound as the quad's texture (REPLACE), so no colour is needed.
+    if (this->imgWidth <= FLT_EPSILON || this->imgHeight <= FLT_EPSILON)
+        return;
+    if (this->string.getNum() == 0 || this->string[0].getLength() == 0)
+        return;
+
+    float hw = this->imgWidth * 0.5f;
+    float hh = this->imgHeight * 0.5f;
+    float c = cosf(this->textAngle);
+    float s = sinf(this->textAngle);
+
+    // Local corners (before rotation) with matching UVs. The glyph bitmap is
+    // stored bottom-up (GL convention), so v=0 is the bottom row.
+    struct Corner { float x, y, u, v; };
+    const Corner corners[4] = {
+        {-hw, -hh, 0.f, 0.f},
+        { hw, -hh, 1.f, 0.f},
+        { hw,  hh, 1.f, 1.f},
+        {-hw,  hh, 0.f, 1.f},
+    };
+
+    SbVec3f p[4];
+    for (int i = 0; i < 4; ++i) {
+        float rx = corners[i].x * c - corners[i].y * s;
+        float ry = corners[i].x * s + corners[i].y * c;
+        p[i] = this->textOffset + SbVec3f(rx, ry, 0.f);
+    }
+
+    SoPrimitiveVertex pv;
+    pv.setNormal(SbVec3f(0.f, 0.f, 1.f));
+    pv.setMaterialIndex(0);
+
+    auto emit = [&](int i) {
+        pv.setPoint(p[i]);
+        pv.setTextureCoords(SbVec4f(corners[i].u, corners[i].v, 0.f, 1.f));
+        shapeVertex(&pv);
+    };
+
+    this->beginShape(action, TRIANGLES);
+    emit(0); emit(1); emit(2);
+    emit(0); emit(2); emit(3);
+    this->endShape();
+}
+
 void SoDatumLabel::generatePrimitives(SoAction * action)
 {
     // Render-cache capture (SoCallbackAction): emit the leader/arrow/arc
     // geometry so the datum is drawn by the render-cache bridge (and thus the
     // bgfx/WASM backend), where the raw-GL GLRender pass never runs. The text
-    // glyph quad is intentionally not emitted on this path yet — it needs a
-    // separate textured material scope (a follow-up increment).
+    // glyph quad is emitted separately by the companion SoDatumLabelImage
+    // (getImageNode()), which owns its own textured render-cache scope.
     if (action->isOfType(SoCallbackAction::getClassTypeId())) {
         generateLeaderPrimitives(action);
         return;
@@ -1068,20 +1273,11 @@ void SoDatumLabel::generatePrimitives(SoAction * action)
 void SoDatumLabel::notify(SoNotList * l)
 {
     SoField * f = l->getLastField();
-    if (f == &this->string) {
+    if (f == &this->string || f == &this->textColor || f == &this->name
+        || f == &this->size || f == &this->image) {
         this->glimagevalid = false;
-    }
-    else if (f == &this->textColor) {
-        this->glimagevalid = false;
-    }
-    else if (f == &this->name) {
-        this->glimagevalid = false;
-    }
-    else if (f == &this->size) {
-        this->glimagevalid = false;
-    }
-    else if (f == &this->image) {
-        this->glimagevalid = false;
+        // The glyph bitmap changed; the companion texture must be re-fed.
+        this->imagesynced = false;
     }
     inherited::notify(l);
 }

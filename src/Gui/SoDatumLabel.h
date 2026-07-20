@@ -37,13 +37,19 @@
 
 #include <FCGlobal.h>
 
+class SoTexture2;
+class SoSeparator;
 
 namespace Gui {
+
+class SoDatumLabelImage;
 
 class GuiExport SoDatumLabel : public SoShape {
     using inherited = SoShape;
 
     SO_NODE_HEADER(SoDatumLabel);
+
+    friend class SoDatumLabelImage;
 
 public:
     enum Type
@@ -67,6 +73,13 @@ public:
     /* returns the center point of the text of the label */
     SbVec3f getLabelTextCenter();
 
+    /* Returns the companion sub-graph that renders the datum text glyph as a
+     * textured quad for the render-cache bridge (bgfx/WASM backend), where the
+     * raw-GL GLRender text pass is bypassed. Add it as a sibling right after
+     * this label in the scene graph; it is inert on the classic GL path (this
+     * node's GLRender still draws the text there). Built lazily, owned here. */
+    SoNode* getImageNode();
+
     SoMFString string;
     SoSFColor  textColor;
     SoSFEnum   datumtype;
@@ -84,7 +97,7 @@ public:
     bool       useAntialiasing;
 
 protected:
-    ~SoDatumLabel() override = default;
+    ~SoDatumLabel() override;
     void GLRender(SoGLRenderAction *action) override;
     void computeBBox(SoAction *, SbBox3f &box, SbVec3f &center) override;
     void generatePrimitives(SoAction * action) override;
@@ -106,11 +119,34 @@ private:
     SbVec3f getLabelTextCenterDiameter(const SbVec3f&, const SbVec3f&);
     SbVec3f getLabelTextCenterAngle(const SbVec3f&);
 
+    // Emit the text glyph as a textured quad (2 triangles + UVs) so the
+    // render-cache bridge captures the datum number; called by the companion
+    // SoDatumLabelImage during render-cache capture. Uses textOffset/textAngle
+    // and imgWidth/imgHeight computed by the leader pass.
+    void generateTextQuad(SoAction * action);
+
 private:
     void drawImage();
+    // Keep the companion texture's image in sync with this->image (called after
+    // drawImage() regenerates the glyph bitmap).
+    void syncImageTexture();
     float imgWidth;
     float imgHeight;
     bool glimagevalid;
+    // Whether imageTexture mirrors the current glyph bitmap. Distinct from
+    // glimagevalid because GLRender validates the bitmap without touching the
+    // companion texture; reset together with glimagevalid on content change.
+    bool imagesynced;
+
+    // Text placement in local (sketch-plane) coordinates, recomputed by the
+    // leader pass (generateLeaderPrimitives) for the text-quad companion.
+    SbVec3f textOffset;
+    float textAngle;
+
+    // Lazily built companion sub-graph rendering the text glyph quad.
+    SoSeparator* imageRoot;
+    SoTexture2* imageTexture;
+    Gui::SoDatumLabelImage* imageShape;
 };
 
 }

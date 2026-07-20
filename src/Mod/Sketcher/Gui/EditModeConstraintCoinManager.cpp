@@ -1772,6 +1772,11 @@ void EditModeConstraintCoinManager::rebuildConstraintNodes(
                 // colour the GL path draws via textColor).
                 anno->addChild(mat);
                 anno->addChild(text);
+                // The datum number itself is a textured quad captured in its
+                // own render-cache scope (so the glyph texture applies to the
+                // number, not the leaders/arrows). Add it right after the label
+                // so the texture state follows the untextured leader capture.
+                anno->addChild(text->getImageNode());
                 // #define CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL 0
                 sep->addChild(text);
                 editModeScenegraphNodes.constrGroup->addChild(anno);

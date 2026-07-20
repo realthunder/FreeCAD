@@ -6910,6 +6910,13 @@ void ViewProviderSketch::rebuildConstraintsVisual(void)
                 SoAnnotation *anno = new SoAnnotation();
                 anno->renderCaching = SoSeparator::OFF;
                 anno->addChild(text);
+                // The datum number is a textured quad captured in its own
+                // render-cache scope so the glyph texture applies to the number
+                // (not the leaders); added after the label so the texture state
+                // follows the untextured leader capture. Renders the dimension
+                // value in the bgfx/WASM backend (the raw-GL GLRender text pass
+                // is bypassed there).
+                anno->addChild(text->getImageNode());
                 // #define CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL 0
                 sep->addChild(text);
                 edit->constraNodeMap[anno] = edit->constrGroup->getNumChildren();
