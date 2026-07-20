@@ -59,9 +59,11 @@
 # include <Inventor/nodes/SoCoordinate3.h>
 # include <Inventor/nodes/SoCube.h>
 # include <Inventor/nodes/SoDirectionalLight.h>
+# include <Inventor/nodes/SoDrawStyle.h>
 # include <Inventor/nodes/SoEventCallback.h>
 # include <Inventor/nodes/SoFaceSet.h>
 # include <Inventor/nodes/SoIndexedFaceSet.h>
+# include <Inventor/nodes/SoIndexedLineSet.h>
 # include <Inventor/nodes/SoLightModel.h>
 # include <Inventor/nodes/SoMaterial.h>
 # include <Inventor/nodes/SoOrthographicCamera.h>
@@ -89,6 +91,9 @@
 # include <QTimer>
 # include <QVariantAnimation>
 # include <QWheelEvent>
+# include <QFontMetrics>
+# include <QImage>
+# include <QPainter>
 #endif
 
 #include <Inventor/SbImage.h>
@@ -459,7 +464,12 @@ struct View3DInventorViewer::Private
     // foreground superimposition and the corner axis cross to the
     // backend's overlay feed, each through a dedicated render-cache
     // manager in overlay mode (SoFCRenderCacheManager::setExternalOverlay).
-    enum OverlayId { OverlayForeground = 1, OverlayAxisCross = 2 };
+    enum OverlayId {
+        OverlayForeground = 1,
+        OverlayAxisCross = 2,
+        OverlayGraphicsItems = 3,
+        OverlayFpsText = 4,
+    };
     struct OverlayCapture {
         CoinPtr<SoNode> root;
         // The capture runs inside its own tiny GL render action traversal
@@ -470,6 +480,18 @@ struct View3DInventorViewer::Private
     };
     OverlayCapture foregroundCapture;
     OverlayCapture axisCrossCapture;
+    // Shared counter-rotation keeping the axis-cross letter strokes
+    // screen-aligned (set to the camera orientation each frame).
+    CoinPtr<SoRotation> axisLetterRotation;
+    OverlayCapture graphicsItemsCapture;
+    OverlayCapture fpsTextCapture;
+    // fps overlay state: the string renderScene() wants displayed (empty
+    // when the readout is off) and the nodes/values last fed.
+    std::string fpsText;
+    CoinPtr<SoTexture2> fpsTexture;
+    CoinPtr<SoCoordinate3> fpsCoords;
+    std::string fpsFedText;
+    SbVec2s fpsFedVp {0, 0};
 
     Private(View3DInventorViewer *owner)
         :view(qobject_cast<View3DInventor*>(owner->parent()))
@@ -517,13 +539,47 @@ struct View3DInventorViewer::Private
     static void onDragFinish(void *data, SoDragger *d);
 };
 
+// Line-stroke letter shapes for the axis-cross labels, replacing the
+// XPM letter pixmaps of drawAxisCross(): each letter is a few 2px line
+// segments in its local xy plane, centered at the origin. Crisper than
+// rescaled glyph bitmaps and needs no texture.
+static SoSeparator *createAxisLetterGraph(int axis)
+{
+    constexpr float s = 0.11F; // letter half size
+    static const SbVec3f xPts[] = {
+        {-s, -s, 0}, {s, s, 0}, {-s, s, 0}, {s, -s, 0}};
+    static const int32_t xIdx[] = {0, 1, -1, 2, 3, -1};
+    static const SbVec3f yPts[] = {
+        {-s, s, 0}, {0, 0, 0}, {s, s, 0}, {0, -s, 0}};
+    static const int32_t yIdx[] = {0, 1, -1, 2, 1, -1, 1, 3, -1};
+    static const SbVec3f zPts[] = {
+        {-s, s, 0}, {s, s, 0}, {-s, -s, 0}, {s, -s, 0}};
+    static const int32_t zIdx[] = {0, 1, -1, 1, 2, -1, 2, 3, -1};
+    static const SbVec3f *pts[3] = {xPts, yPts, zPts};
+    static const int npts[3] = {4, 4, 4};
+    static const int32_t *idx[3] = {xIdx, yIdx, zIdx};
+    static const int nidx[3] = {6, 9, 9};
+
+    auto sep = new SoSeparator;
+    auto coord = new SoCoordinate3;
+    coord->point.setValues(0, npts[axis], pts[axis]);
+    sep->addChild(coord);
+    auto lines = new SoIndexedLineSet;
+    lines->coordIndex.setValues(0, nidx[axis], idx[axis]);
+    sep->addChild(lines);
+    return sep;
+}
+
 // Coin geometry equivalent of drawArrow()/drawAxisCross(): one arrow along
 // +x (shaft box + crossed head fins), instanced three times with the axis
-// colors and rotations. Captured through the backend's overlay feed so the
-// corner axis cross renders without the immediate-mode GL path (and in the
-// WASM viewer). The "X"/"Y"/"Z" letter pixmaps are not ported yet — glyph
-// rendering belongs to the overlay text phase.
-static SoSeparator *createAxisCrossOverlayGraph()
+// colors and rotations, plus the "X"/"Y"/"Z" labels as line-stroke letters
+// just beyond the arrow tips. The labels share one SoRotation (letterRot)
+// that the viewer sets to the scene camera's orientation each frame,
+// cancelling the anchor's orientFromScene rotation so they stay
+// screen-aligned. Captured through the backend's overlay feed so the
+// corner axis cross renders without the immediate-mode GL path (and in
+// the WASM viewer).
+static SoSeparator *createAxisCrossOverlayGraph(CoinPtr<SoRotation> &letterRot)
 {
     constexpr float shaftEnd = 1.0F - 1.0F / 3.0F;
     constexpr float s = 0.02F;       // shaft half thickness
@@ -584,6 +640,28 @@ static SoSeparator *createAxisCrossOverlayGraph()
         sep->addChild(faces);
         root->addChild(sep);
     }
+
+    // Axis labels: black like drawAxisCross()'s letter pixmaps, placed
+    // just beyond each arrow tip, all sharing the screen-alignment
+    // counter-rotation.
+    letterRot = new SoRotation;
+    auto letterColor = new SoBaseColor;
+    letterColor->rgb = SbColor(0.0F, 0.0F, 0.0F);
+    root->addChild(letterColor);
+    auto letterStyle = new SoDrawStyle;
+    letterStyle->lineWidth = 2.0F;
+    root->addChild(letterStyle);
+    const SbVec3f tips[3] = {
+        {1.25F, 0, 0}, {0, 1.25F, 0}, {0, 0, 1.25F}};
+    for (int i = 0; i < 3; ++i) {
+        auto sep = new SoSeparator;
+        auto trans = new SoTranslation;
+        trans->translation = tips[i];
+        sep->addChild(trans);
+        sep->addChild(letterRot);
+        sep->addChild(createAxisLetterGraph(i));
+        root->addChild(sep);
+    }
     return root;
 }
 
@@ -635,7 +713,19 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
 
     if (owner->axiscrossEnabled) {
         if (!axisCrossCapture.manager)
-            initCapture(axisCrossCapture, createAxisCrossOverlayGraph());
+            initCapture(axisCrossCapture,
+                        createAxisCrossOverlayGraph(axisLetterRotation));
+        // Screen-align the letter strokes: their shared rotation set to
+        // the camera orientation cancels the anchor's orientFromScene
+        // rotation. (The WASM viewer's local orbit camera can drift from
+        // this desktop-fed rotation — letters skew there until a
+        // billboard hint exists backend-side.)
+        if (auto cam = owner->getSoRenderManager()->getCamera()) {
+            SbRotation orient = cam->orientation.getValue();
+            if (axisLetterRotation
+                && axisLetterRotation->rotation.getValue() != orient)
+                axisLetterRotation->rotation = orient;
+        }
         // Corner mini-perspective anchor matching drawAxisCross(): a square
         // viewport of axiscrossSize percent of the smaller viewport edge in
         // the bottom-right corner, 45 deg FOV, content rotated by the scene
@@ -659,12 +749,132 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         axisCrossCapture.manager.reset();
         axisCrossCapture.applyRoot.reset();
         axisCrossCapture.root.reset();
+        axisLetterRotation.reset();
+    }
+
+    auto dropCapture = [](OverlayCapture &capture, int id) {
+        if (!capture.manager)
+            return;
+        capture.manager->setExternalOverlay(
+            nullptr, id, Render::OverlayAnchor());
+        capture.manager.reset();
+        capture.applyRoot.reset();
+        capture.root.reset();
+    };
+    // Pixel-space anchor shared by the screen-space overlays below: one
+    // model unit is one pixel, origin top-left, y down (Qt coordinates).
+    Render::OverlayAnchor pixelAnchor;
+    pixelAnchor.corner = Render::OverlayAnchor::FullViewport;
+    pixelAnchor.pixelSpace = true;
+
+    // Screen-space GLGraphicsItem drawings (rubber band, polyline):
+    // aggregate the items' Coin overlay graphs under one pixel-space
+    // feed. Items without an overlay port (e.g. flag leader lines) keep
+    // painting through GL in renderScene().
+    std::vector<SoSeparator *> itemGraphs;
+    for (auto item : owner->graphicsItems) {
+        if (auto graph = item->getOverlaySceneGraph())
+            itemGraphs.push_back(graph);
+    }
+    if (!itemGraphs.empty()) {
+        if (!graphicsItemsCapture.manager)
+            initCapture(graphicsItemsCapture, new SoSeparator);
+        auto aggRoot =
+            static_cast<SoSeparator *>(graphicsItemsCapture.root.get());
+        bool changed = aggRoot->getNumChildren() != int(itemGraphs.size());
+        for (int i = 0; !changed && i < aggRoot->getNumChildren(); ++i)
+            changed = aggRoot->getChild(i) != itemGraphs[size_t(i)];
+        if (changed) {
+            coinRemoveAllChildren(aggRoot);
+            for (auto graph : itemGraphs)
+                aggRoot->addChild(graph);
+        }
+        graphicsItemsCapture.manager->setExternalOverlay(
+            renderer.get(), OverlayGraphicsItems, pixelAnchor);
+        captureAction.apply(graphicsItemsCapture.applyRoot);
+    }
+    else {
+        dropCapture(graphicsItemsCapture, OverlayGraphicsItems);
+    }
+
+    // fps/stats readout (draw2DString): the string rendered into a small
+    // texture on one pixel-space quad. GL parity: yellow text one percent
+    // in from the viewport's bottom-left corner.
+    if (!fpsText.empty()) {
+        if (!fpsTextCapture.manager) {
+            auto root = new SoSeparator;
+            auto lightModel = new SoLightModel;
+            lightModel->model = SoLightModel::BASE_COLOR;
+            root->addChild(lightModel);
+            fpsTexture = new SoTexture2;
+            root->addChild(fpsTexture);
+            fpsCoords = new SoCoordinate3;
+            root->addChild(fpsCoords);
+            auto texCoords = new SoTextureCoordinate2;
+            // Coin images are bottom-up; the quad below starts at its
+            // bottom-left corner (largest y in pixel space).
+            const SbVec2f uvs[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+            texCoords->point.setValues(0, 4, uvs);
+            root->addChild(texCoords);
+            auto quad = new SoIndexedFaceSet;
+            static const int32_t quadIdx[] = {0, 1, 2, 3, -1};
+            quad->coordIndex.setValues(0, 5, quadIdx);
+            quad->textureCoordIndex.setValues(0, 5, quadIdx);
+            root->addChild(quad);
+            initCapture(fpsTextCapture, root);
+            fpsFedText.clear();
+            fpsFedVp = SbVec2s(0, 0);
+        }
+        const SbVec2s vpsize = owner->getSoRenderManager()
+            ->getViewportRegion().getViewportSizePixels();
+        if (fpsFedText != fpsText || fpsFedVp != vpsize) {
+            QFont font(QStringLiteral("monospace"));
+            font.setPixelSize(14);
+            QFontMetrics fm(font);
+            QString text = QString::fromUtf8(fpsText.c_str());
+            int tw = fm.horizontalAdvance(text) + 2;
+            int th = fm.height() + 2;
+            QImage img(tw, th, QImage::Format_RGBA8888);
+            img.fill(Qt::transparent);
+            {
+                QPainter painter(&img);
+                painter.setFont(font);
+                painter.setPen(QColor(255, 255, 0));
+                painter.drawText(1, 1 + fm.ascent(), text);
+            }
+            // Coin images are bottom-up, QImage is top-down.
+            img = img.mirrored();
+            fpsTexture->image.setValue(SbVec2s(short(tw), short(th)), 4,
+                                       img.constBits());
+            // draw2DString(pos (0.1, 0.1) in a 10x10 ortho): one percent
+            // in from the bottom-left corner.
+            float x = 0.01F * float(vpsize[0]);
+            float yBottom = float(vpsize[1]) - 0.01F * float(vpsize[1]);
+            const SbVec3f quadPts[4] = {
+                {x, yBottom, 0},
+                {x + float(tw), yBottom, 0},
+                {x + float(tw), yBottom - float(th), 0},
+                {x, yBottom - float(th), 0},
+            };
+            fpsCoords->point.setValues(0, 4, quadPts);
+            fpsFedText = fpsText;
+            fpsFedVp = vpsize;
+        }
+        fpsTextCapture.manager->setExternalOverlay(
+            renderer.get(), OverlayFpsText, pixelAnchor);
+        captureAction.apply(fpsTextCapture.applyRoot);
+    }
+    else {
+        dropCapture(fpsTextCapture, OverlayFpsText);
+        fpsTexture.reset();
+        fpsCoords.reset();
     }
 }
 
 void View3DInventorViewer::Private::clearOverlayCaptures()
 {
-    for (auto capture : {&foregroundCapture, &axisCrossCapture}) {
+    for (auto capture : {&foregroundCapture, &axisCrossCapture,
+                         &graphicsItemsCapture, &fpsTextCapture}) {
         if (capture->manager) {
             capture->manager->setExternalOverlay(
                 nullptr, 0, Render::OverlayAnchor());
@@ -673,6 +883,9 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
         capture->applyRoot.reset();
         capture->root.reset();
     }
+    axisLetterRotation.reset();
+    fpsTexture.reset();
+    fpsCoords.reset();
 }
 
 /** \defgroup View3D 3D Viewer
@@ -3386,6 +3599,11 @@ void View3DInventorViewer::onGetBoundingBox(SoGetBoundingBoxAction *action)
     }
 }
 
+bool View3DInventorViewer::hasExternalRenderer() const
+{
+    return _pimpl->renderer != nullptr;
+}
+
 void View3DInventorViewer::setRendererType(const std::string &type)
 {
     // An empty or 'Default' type selects the plain GL pipeline. A failed
@@ -3707,6 +3925,26 @@ void View3DInventorViewer::renderScene()
     if (!externalRendered || parallelgl)
         glra->apply(this->foregroundroot);
 
+    // Compose the fps/stats readout before the overlay captures run so
+    // the backend feed carries the current frame's numbers.
+    if (fpsEnabled) {
+        static FC_COIN_THREAD_LOCAL std::ostringstream stream;
+        stream.str("");
+        stream.precision(1);
+        stream.setf(std::ios::fixed | std::ios::showpoint);
+        stream << framesPerSecond[0] << " ms / " << framesPerSecond[1] << " fps";
+
+        if (auto manager = selectionRoot->getRenderManager()) {
+            auto stats = manager->getRenderStatistics();
+            if (stats)
+                stream << ". " << stats;
+        }
+        _pimpl->fpsText = stream.str();
+    }
+    else {
+        _pimpl->fpsText.clear();
+    }
+
     if (_pimpl->renderer)
         _pimpl->updateOverlayCaptures(glra);
 
@@ -3735,24 +3973,17 @@ void View3DInventorViewer::renderScene()
     navigation->redraw();
 
     for (auto it : this->graphicsItems) {
+        // Items ported to the backend's overlay feed (rubber band,
+        // polyline) skip the GL painting on backend frames; items
+        // without an overlay graph keep the GL path.
+        if (externalRendered && !parallelgl && it->getOverlaySceneGraph())
+            continue;
         it->paintGL();
     }
 
-    //fps rendering
-    if (fpsEnabled) {
-        static FC_COIN_THREAD_LOCAL std::ostringstream stream;
-        stream.str("");
-        stream.precision(1);
-        stream.setf(std::ios::fixed | std::ios::showpoint);
-        stream << framesPerSecond[0] << " ms / " << framesPerSecond[1] << " fps";
-
-        if (auto manager = selectionRoot->getRenderManager()) {
-            auto stats = manager->getRenderStatistics();
-            if (stats)
-                stream << ". " << stats;
-        }
-
-        draw2DString(stream.str().c_str(), SbVec2s(10, 10), SbVec2f(0.1F, 0.1F));  // NOLINT
+    //fps rendering (fed through the backend overlay on backend frames)
+    if (fpsEnabled && (!externalRendered || parallelgl)) {
+        draw2DString(_pimpl->fpsText.c_str(), SbVec2s(10, 10), SbVec2f(0.1F, 0.1F));  // NOLINT
     }
 
     if (naviCubeEnabled) {

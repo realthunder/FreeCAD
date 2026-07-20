@@ -35,7 +35,7 @@ namespace {
 
 const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // v2: selection/highlight feeds appended (v1 files still load).
-const uint32_t kVersion = 3;
+const uint32_t kVersion = 4;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -668,6 +668,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(a.nearPlane);
         w.f(a.farPlane);
         w.b(a.orientFromScene);
+        w.b(a.pixelSpace); // v4
         writeDrawList(w, ov.draws, meshIndex, texIndex);
     }
 
@@ -790,6 +791,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             a.nearPlane = r.f();
             a.farPlane = r.f();
             a.orientFromScene = r.b();
+            a.pixelSpace = version >= 4 ? r.b() : false;
             if (readDrawList(r, ov.draws, meshes, textures))
                 snap.overlays.push_back(std::move(ov));
         }

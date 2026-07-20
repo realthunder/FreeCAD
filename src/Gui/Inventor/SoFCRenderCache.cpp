@@ -1199,6 +1199,11 @@ SoFCRenderCache::addTexture(SoState * state, const SoNode * texture)
 
   auto elem = constElement<MyMultiTextureImageElement>(state);
   info.transparent = elem->hasTransparency(unit);
+  // The merge path (mergeMaterial) derives transptexture when caches
+  // nest; a texture applied in the same cache as the shape (e.g. a flat
+  // overlay graph) must set it here or the draw never blends.
+  if (info.transparent)
+    PRIVATE(this)->material.transptexture = true;
 
   info.identity = true;
   auto melem = constElement<MyMultiTextureMatrixElement>(state);

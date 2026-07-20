@@ -25,11 +25,58 @@
 #ifndef _PreComp_
 #endif
 
+#include <Inventor/nodes/SoCoordinate3.h>
+#include <Inventor/nodes/SoDrawStyle.h>
+#include <Inventor/nodes/SoIndexedFaceSet.h>
+#include <Inventor/nodes/SoIndexedLineSet.h>
+#include <Inventor/nodes/SoLightModel.h>
+#include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoSeparator.h>
+
 #include "GLPainter.h"
 #include "View3DInventorViewer.h"
 
 
 using namespace Gui;
+
+namespace {
+// Guarded field writers for the overlay graphs: Coin notifies on every
+// field write, and a notification means a cache rebuild plus a backend
+// re-feed — only touch fields whose values actually changed.
+void syncPoints(SoCoordinate3 *coord, const SbVec3f *pts, int n)
+{
+    bool same = coord->point.getNum() == n;
+    for (int i = 0; same && i < n; ++i)
+        same = coord->point[i] == pts[i];
+    if (same)
+        return;
+    coord->point.setValues(0, n, pts);
+    if (coord->point.getNum() != n)
+        coord->point.setNum(n);
+}
+
+void syncIndices(SoIndexedLineSet *lines, const int32_t *idx, int n)
+{
+    bool same = lines->coordIndex.getNum() == n;
+    for (int i = 0; same && i < n; ++i)
+        same = lines->coordIndex[i] == idx[i];
+    if (same)
+        return;
+    if (n > 0)
+        lines->coordIndex.setValues(0, n, idx);
+    if (lines->coordIndex.getNum() != n)
+        lines->coordIndex.setNum(n);
+}
+
+void syncColor(SoMaterial *mat, const SbColor &col, float alpha)
+{
+    if (mat->diffuseColor.getNum() != 1 || mat->diffuseColor[0] != col)
+        mat->diffuseColor = col;
+    float transp = 1.0F - alpha;
+    if (mat->transparency.getNum() != 1 || mat->transparency[0] != transp)
+        mat->transparency = transp;
+}
+} // namespace
 
 TYPESYSTEM_SOURCE_ABSTRACT(Gui::GLGraphicsItem, Base::BaseClass)
 
@@ -303,6 +350,59 @@ void Rubberband::paintGL()
     glDisable(GL_BLEND);
 }
 
+// Coin overlay twin of Rubberband::paintGL() for the external render
+// backend: a pixel-space translucent fill plus the (optionally stippled)
+// frame. Built once, fields mutated in place per call.
+SoSeparator *Rubberband::getOverlaySceneGraph()
+{
+    if (!working)
+        return nullptr;
+
+    if (!overlayRoot) {
+        overlayRoot = new SoSeparator;
+        auto lightModel = new SoLightModel; // like glDisable(GL_LIGHTING)
+        lightModel->model = SoLightModel::BASE_COLOR;
+        overlayRoot->addChild(lightModel);
+        overlayCoords = new SoCoordinate3;
+        overlayRoot->addChild(overlayCoords);
+
+        // Translucent fill (glRecti with white 50% alpha).
+        auto fillMaterial = new SoMaterial;
+        fillMaterial->diffuseColor = SbColor(1.0F, 1.0F, 1.0F);
+        fillMaterial->transparency = 0.5F;
+        overlayRoot->addChild(fillMaterial);
+        auto fill = new SoIndexedFaceSet;
+        static const int32_t quad[] = {0, 1, 2, 3, -1};
+        fill->coordIndex.setValues(0, 5, quad);
+        overlayRoot->addChild(fill);
+
+        // Frame (4px line loop, glLineStipple(3, 0xAAAA) when stippled).
+        overlayFrameMaterial = new SoMaterial;
+        overlayRoot->addChild(overlayFrameMaterial);
+        overlayFrameStyle = new SoDrawStyle;
+        overlayFrameStyle->lineWidth = 4.0F;
+        overlayFrameStyle->linePatternScaleFactor = 3;
+        overlayRoot->addChild(overlayFrameStyle);
+        auto frame = new SoIndexedLineSet;
+        static const int32_t loop[] = {0, 1, 2, 3, 0, -1};
+        frame->coordIndex.setValues(0, 6, loop);
+        overlayRoot->addChild(frame);
+    }
+
+    const SbVec3f pts[4] = {
+        {float(x_old), float(y_old), 0.0F},
+        {float(x_old), float(y_new), 0.0F},
+        {float(x_new), float(y_new), 0.0F},
+        {float(x_new), float(y_old), 0.0F},
+    };
+    syncPoints(overlayCoords, pts, 4);
+    syncColor(overlayFrameMaterial, SbColor(rgb_r, rgb_g, rgb_b), rgb_a);
+    uint16_t pattern = stipple ? 0xAAAA : 0xFFFF;
+    if (overlayFrameStyle->linePattern.getValue() != pattern)
+        overlayFrameStyle->linePattern = pattern;
+    return overlayRoot;
+}
+
 // -----------------------------------------------------------------------------------
 
 Polyline::Polyline(View3DInventorViewer* v) : viewer(v)
@@ -450,4 +550,62 @@ void Polyline::paintGL()
     }
 
     glDisable(GL_BLEND);
+}
+
+// Coin overlay twin of Polyline::paintGL(): the node strip (closed into a
+// loop when closed && !stippled) plus the optional stippled closing edge.
+SoSeparator *Polyline::getOverlaySceneGraph()
+{
+    if (!working || _cNodeVector.empty())
+        return nullptr;
+
+    if (!overlayRoot) {
+        overlayRoot = new SoSeparator;
+        auto lightModel = new SoLightModel;
+        lightModel->model = SoLightModel::BASE_COLOR;
+        overlayRoot->addChild(lightModel);
+        overlayMaterial = new SoMaterial;
+        overlayRoot->addChild(overlayMaterial);
+        overlayStyle = new SoDrawStyle;
+        overlayRoot->addChild(overlayStyle);
+        overlayCoords = new SoCoordinate3;
+        overlayRoot->addChild(overlayCoords);
+        overlayLines = new SoIndexedLineSet;
+        overlayRoot->addChild(overlayLines);
+        // Closing edge in paintGL()'s glLineStipple(2, 0x3F3F) style.
+        overlayCloseStyle = new SoDrawStyle;
+        overlayCloseStyle->linePattern = 0x3F3F;
+        overlayCloseStyle->linePatternScaleFactor = 2;
+        overlayRoot->addChild(overlayCloseStyle);
+        overlayCloseLine = new SoIndexedLineSet;
+        overlayRoot->addChild(overlayCloseLine);
+    }
+
+    int n = int(_cNodeVector.size());
+    std::vector<SbVec3f> pts;
+    pts.reserve(n);
+    for (const QPoint &p : _cNodeVector)
+        pts.emplace_back(float(p.x()), float(p.y()), 0.0F);
+    syncPoints(overlayCoords, pts.data(), n);
+    syncColor(overlayMaterial, SbColor(rgb_r, rgb_g, rgb_b), rgb_a);
+    if (overlayStyle->lineWidth.getValue() != line)
+        overlayStyle->lineWidth = line;
+
+    std::vector<int32_t> idx;
+    idx.reserve(n + 2);
+    for (int i = 0; i < n; ++i)
+        idx.push_back(i);
+    if (closed && !stippled)
+        idx.push_back(0);
+    idx.push_back(-1);
+    syncIndices(overlayLines, idx.data(), int(idx.size()));
+
+    if (closed && stippled && n > 1) {
+        const int32_t close[] = {n - 1, 0, -1};
+        syncIndices(overlayCloseLine, close, 3);
+    }
+    else {
+        syncIndices(overlayCloseLine, nullptr, 0);
+    }
+    return overlayRoot;
 }

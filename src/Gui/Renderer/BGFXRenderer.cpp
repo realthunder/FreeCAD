@@ -6270,7 +6270,13 @@ public:
                 float aspect = float(rw) / float(rh);
                 // Right-handed like the GL view matrix convention the
                 // anchor camera follows (bx defaults to left-handed).
-                if (anchor->fovDeg > 0.0f) {
+                if (anchor->pixelSpace) {
+                    // One unit == one pixel, origin top-left, y down (Qt
+                    // widget coordinates); z=0 content sits mid-range.
+                    bx::mtxOrtho(ovProj, 0.0f, float(rw), float(rh), 0.0f,
+                                 -1.0f, 1.0f, 0.0f, caps->homogeneousDepth,
+                                 bx::Handedness::Right);
+                } else if (anchor->fovDeg > 0.0f) {
                     bx::mtxProj(ovProj, anchor->fovDeg, aspect,
                                 std::max(anchor->nearPlane, 1.0e-3f),
                                 anchor->farPlane, caps->homogeneousDepth,
@@ -6285,7 +6291,8 @@ public:
                 }
                 float ovView[16];
                 bx::mtxIdentity(ovView);
-                if (anchor->orientFromScene && viewMatrix) {
+                if (!anchor->pixelSpace
+                    && anchor->orientFromScene && viewMatrix) {
                     // Rotation part of the scene view matrix (rigid:
                     // upper-left 3x3), translation dropped — the axis
                     // cross tracks the camera orientation only.
@@ -6295,7 +6302,8 @@ public:
                         for (int r = 0; r < 3; ++r)
                             ovView[c * 4 + r] = v[c * 4 + r];
                 }
-                ovView[14] = -anchor->cameraDistance;
+                if (!anchor->pixelSpace)
+                    ovView[14] = -anchor->cameraDistance;
                 bgfx::setViewFrameBuffer(id, view->bgfxFbo);
                 // Fresh depth inside the overlay rect: overlays draw on
                 // top of the finished frame but depth-test within

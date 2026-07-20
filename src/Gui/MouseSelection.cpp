@@ -252,8 +252,13 @@ void PolyPickerSelection::initialize()
     polyline.setViewer(_pcView3D);
 
     _pcView3D->addGraphicsItem(&polyline);
-    _pcView3D->redraw(true); // needed to get an up-to-date image
-    _pcView3D->setRenderType(View3DInventorViewer::Image);
+    // The cached-image optimization bypasses renderScene(); with an
+    // external render backend the polyline rides the backend's overlay
+    // feed instead, which needs live backend frames.
+    if (!_pcView3D->hasExternalRenderer()) {
+        _pcView3D->redraw(true); // needed to get an up-to-date image
+        _pcView3D->setRenderType(View3DInventorViewer::Image);
+    }
     _pcView3D->redraw();
 
     lastConfirmed = false;
@@ -816,7 +821,10 @@ void RubberbandSelection::initialize()
     rubberband.setViewer(_pcView3D);
     rubberband.setWorking(false);
     _pcView3D->addGraphicsItem(&rubberband);
-    if (QtGLFramebufferObject::hasOpenGLFramebufferObjects()) {
+    // Same as PolyPickerSelection: with an external backend keep Native
+    // rendering so the rubber band rides the overlay feed.
+    if (!_pcView3D->hasExternalRenderer()
+        && QtGLFramebufferObject::hasOpenGLFramebufferObjects()) {
         _pcView3D->redraw(true);
         _pcView3D->setRenderType(View3DInventorViewer::Image);
     }

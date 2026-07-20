@@ -41,7 +41,15 @@
 #include <QtOpenGL.h>
 #include <QPoint>
 
+#include "InventorBase.h"
+
 class QPaintDevice;
+class SoSeparator;
+class SoCoordinate3;
+class SoIndexedLineSet;
+class SoIndexedFaceSet;
+class SoMaterial;
+class SoDrawStyle;
 
 namespace Gui {
 class View3DInventorViewer;
@@ -91,6 +99,13 @@ public:
     GLGraphicsItem() = default;
     ~GLGraphicsItem() override  = default;
     virtual void paintGL() = 0;
+    /// Coin overlay equivalent of paintGL() for the external render
+    /// backend: a scene graph in pixel space (Qt widget coordinates,
+    /// y down, z = 0) describing the current drawing, or null when there
+    /// is nothing to draw — or when the item has no overlay port and
+    /// must keep painting through GL even on backend frames. The item
+    /// keeps ownership and mutates the graph in place between calls.
+    virtual SoSeparator *getOverlaySceneGraph() { return nullptr; }
 };
 
 class GuiExport Rubberband : public Gui::GLGraphicsItem
@@ -111,6 +126,13 @@ public:
     void setCoords(int x1, int y1, int x2, int y2);
     void setColor(float r, float g, float b, float a);
     void paintGL() override;
+    SoSeparator *getOverlaySceneGraph() override;
+
+private:
+    CoinPtr<SoSeparator> overlayRoot;
+    CoinPtr<SoCoordinate3> overlayCoords;
+    CoinPtr<SoMaterial> overlayFrameMaterial;
+    CoinPtr<SoDrawStyle> overlayFrameStyle;
 };
 
 class GuiExport Polyline : public Gui::GLGraphicsItem
@@ -138,6 +160,16 @@ public:
     void popNode();
     void clear();
     void paintGL() override;
+    SoSeparator *getOverlaySceneGraph() override;
+
+private:
+    CoinPtr<SoSeparator> overlayRoot;
+    CoinPtr<SoCoordinate3> overlayCoords;
+    CoinPtr<SoMaterial> overlayMaterial;
+    CoinPtr<SoDrawStyle> overlayStyle;
+    CoinPtr<SoIndexedLineSet> overlayLines;
+    CoinPtr<SoIndexedLineSet> overlayCloseLine;
+    CoinPtr<SoDrawStyle> overlayCloseStyle;
 };
 
 } // namespace Gui

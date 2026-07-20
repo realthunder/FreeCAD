@@ -503,6 +503,11 @@ public:
     bool isEnabledVBO() const;
     void setRenderCache(int);
     void setRendererType(const std::string &);
+    /// Whether an external render backend (Renderer/) is active on this
+    /// viewer. Interaction paths that would bypass renderScene() (e.g.
+    /// the cached-image rubber-band optimization) must keep Native
+    /// rendering so backend frames — and their overlay feeds — stay live.
+    bool hasExternalRenderer() const;
     /// Materialize the per-view Render_* dynamic properties on the view
     /// object (RenderParams defaults), called when a renderer backend is
     /// selected.

@@ -1281,9 +1281,43 @@ independent of each other; item 4 builds on item 3's property model.
     `FC_BGFX_DEBUG_READBACK`'s depth `glReadPixels` itself raises
     GL_INVALID_OPERATION under WSLg (bogus stats, per-frame Coin error
     spam) — don't use it to judge frames here.
-  - *B — viewer overlays*: rubber band / polyline (`GLGraphicsItem` →
-    overlay line draws), fps/2D text (`draw2DString` → glyph-atlas
-    textured quads), `printDimension`.
+  - *B — viewer overlays* — **DONE (2026-07-20)**: rubber band / polyline
+    (`GLGraphicsItem` → overlay line draws), fps/2D text (`draw2DString`
+    → textured quad), and the Phase-A-deferred axis-cross letters.
+    (`printDimension` turned out to be status-bar text only — nothing to
+    port.) *As built*: `OverlayAnchor.pixelSpace` — a pixel-space ortho
+    mode (one unit = one pixel, origin top-left, y down = Qt widget
+    coordinates; snapshot v4 appends the flag per overlay record) shared
+    by two new pixel-space feeds. `GLGraphicsItem` grew
+    `getOverlaySceneGraph()`: an item returns a pixel-space Coin graph
+    of its current drawing (null = nothing to draw, or no overlay port —
+    the item then keeps GL-painting even on backend frames, e.g. flag
+    leader lines). `Rubberband` (translucent fill quad + 4px stippled
+    frame) and `Polyline` (strip/loop + stippled closing edge) implement
+    it with persistent nodes and guarded field writes (Coin notifies on
+    every write; a notification = cache rebuild + backend re-feed, so
+    only real changes touch fields). The viewer aggregates all item
+    graphs under one capture (overlay id 3) and skips those items'
+    `paintGL` on backend frames. fps text (id 4): the string is rendered
+    into a QImage via QPainter (yellow, monospace) onto one textured
+    alpha-blended quad, re-rasterized only when the string or viewport
+    changes; `SoFCRenderCache::addTexture` now sets `transptexture`
+    directly (the merge-only derivation missed textures applied in the
+    same cache as the shape — the text quad rendered on an opaque black
+    box). Axis letters: line-stroke X/Y/Z glyphs (crisper than rescaled
+    bitmaps, no texture) just beyond the arrow tips, sharing one
+    `SoRotation` set to the camera orientation each frame to cancel the
+    anchor's orientFromScene rotation (screen-aligned on desktop; the
+    WASM viewer's local orbit can drift from the desktop-fed rotation
+    until a billboard hint exists backend-side). **Key fix**:
+    `RubberbandSelection`/`PolyPickerSelection` switch the viewer to the
+    cached-`Image` render type during drags — `renderScene()` (hence the
+    backend and every overlay feed) never runs, so the streamed viewer
+    saw nothing move; with an external backend they now keep `Native`
+    rendering (`View3DInventorViewer::hasExternalRenderer()`), backend
+    frames stay live, and the WASM viewer shows the rubber band mid-drag.
+    Verified: xvfb backend frame + GL-only frame + headless-Chromium
+    WASM replay (live band, updating fps text, lettered cross).
   - *C — NaviCube*: keep the QImage face generation (becomes
     `TextureImage`s) and the existing ray-based hit testing; replace
     the immediate-mode draw with overlay draws (textured quads +

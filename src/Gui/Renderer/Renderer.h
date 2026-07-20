@@ -168,13 +168,21 @@ struct OverlayAnchor {
     /// rotation part of the scene view matrix) so it tracks the scene,
     /// like the axis cross does.
     bool orientFromScene = false;
+    /// Pixel-space overlay (screen-space content: rubber band, 2D text):
+    /// the projection maps one model unit to one pixel with the origin at
+    /// the viewport rect's top-left corner and y growing downward (Qt
+    /// widget coordinates), z clipped to [-1, 1]. Meant for FullViewport;
+    /// fovDeg/orthoHeight/cameraDistance/nearPlane/farPlane/
+    /// orientFromScene are ignored.
+    bool pixelSpace = false;
 
     bool operator==(const OverlayAnchor &o) const {
         return corner == o.corner && sizeFraction == o.sizeFraction
             && fovDeg == o.fovDeg && orthoHeight == o.orthoHeight
             && cameraDistance == o.cameraDistance
             && nearPlane == o.nearPlane && farPlane == o.farPlane
-            && orientFromScene == o.orientFromScene;
+            && orientFromScene == o.orientFromScene
+            && pixelSpace == o.pixelSpace;
     }
     bool operator!=(const OverlayAnchor &o) const { return !(*this == o); }
 };
