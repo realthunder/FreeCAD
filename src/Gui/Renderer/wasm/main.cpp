@@ -122,12 +122,14 @@ static bool s_dragging = false;
 static bool s_panning = false;
 static int s_lastX = 0, s_lastY = 0;
 
-// Progressive refinement (the Fusion 360 pattern): camera interaction
-// drops MSAA and SSAO for cheap frames, idle restores them. The MSAA
-// flip re-creates the render targets on the next render()
-// (BGFXRenderer::setMSAASamples).
+// Progressive refinement (the Fusion 360 pattern): camera interaction drops
+// the SSAO pass for cheap frames, idle restores it. MSAA is intentionally NOT
+// toggled: changing the sample count re-creates the render target on the next
+// render (BGFXRenderer view->init), and reallocating a multisampled target --
+// especially the hi-DPI-sized one -- stalls the first drag frame in WebGL,
+// which reads as a delay before pan/zoom starts. AO is a cheap flag, so only
+// that flexes.
 static const double kRefineDelayMs = 300.0;
-static const int kFullMSAA = 4;
 static double s_lastInteract = -1e9;
 static bool s_degraded = false;
 // Set once the user drives the camera (orbit/pan/zoom/NaviCube/?cam). Until
@@ -147,7 +149,6 @@ static void updateQuality()
     if (moving == s_degraded)
         return;
     s_degraded = moving;
-    Render::BGFXRenderer::setMSAASamples(moving ? 0 : kFullMSAA);
     Render::AOConfig ao = s_snap.aoconf;
     if (moving)
         ao.enabled = false;
