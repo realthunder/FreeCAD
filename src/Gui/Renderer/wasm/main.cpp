@@ -51,6 +51,44 @@ EM_JS(char *, fcviewer_scene_param, (), {
     return s;
 });
 
+// ?cam=<yaw,pitch,dist,cx,cy,cz,panX,panY> reproduces an exact viewport
+// (the string the 'v' key prints); null when absent.
+EM_JS(char *, fcviewer_cam_param, (), {
+    var p = new URLSearchParams(window.location.search).get('cam');
+    if (!p)
+        return 0;
+    var len = lengthBytesUTF8(p) + 1;
+    var s = _malloc(len);
+    stringToUTF8(p, s, len);
+    return s;
+});
+
+// Log the current camera string to the console (and copy to the clipboard
+// when available) so it can be pasted back as a ?cam= parameter.
+EM_JS(void, fcviewer_report_cam, (const char *s), {
+    var str = UTF8ToString(s);
+    console.log('fcviewer: cam=' + str);
+    try { if (navigator.clipboard) navigator.clipboard.writeText(str); } catch (e) {}
+});
+
+// On-screen debug HUD: a fixed div over the canvas top-left showing live
+// state (mouse, camera, hover). Passing null hides it.
+EM_JS(void, fcviewer_hud, (const char *s), {
+    var el = document.getElementById('__hud');
+    if (!s) { if (el) el.style.display = 'none'; return; }
+    if (!el) {
+        el = document.createElement('div');
+        el.id = '__hud';
+        el.style.cssText = 'position:fixed;left:10px;top:96px;z-index:99999;'
+            + 'font:12px/1.45 monospace;color:#0f0;background:rgba(0,0,0,.62);'
+            + 'padding:6px 9px;white-space:pre;pointer-events:none;'
+            + 'border-radius:4px';
+        document.body.appendChild(el);
+    }
+    el.style.display = 'block';
+    el.textContent = UTF8ToString(s);
+});
+
 // Canvas position in client coordinates (mouse events are registered
 // on the document; picking needs canvas-relative pixels).
 EM_JS(void, fcviewer_canvas_origin, (double *out), {
@@ -69,6 +107,16 @@ static float s_yaw = 0.785f;
 static float s_pitch = 0.5f;
 static float s_dist = 10.0f;
 static float s_diag = 10.0f;
+// A ?cam= parameter overriding the initial fit (applied after the first
+// fitCamera so the scene bounds / near-far are still derived).
+static bool s_haveCamParam = false;
+static float s_camParam[8] = {0.0f};
+
+// On-screen debug HUD state.
+static bool s_hudOn = false;
+static float s_mouseX = 0.0f, s_mouseY = 0.0f;   // last cursor, canvas px
+static char s_hoverDesc[128] = "none";
+static char s_camMsg[96] = "";                    // last 'v' capture
 static bool s_dragging = false;
 static bool s_panning = false;
 static int s_lastX = 0, s_lastY = 0;
@@ -295,6 +343,12 @@ static PickHit pickScene(float px, float py)
 // streamed (and snapshot-only) cube interactive in the browser.
 
 static const int kNaviCubeOverlayId = 5;  // View3DInventorViewer OverlayNaviCube
+// Browser-local NaviCube hover highlight: a tinted copy of the hovered
+// cube face, fed as its own overlay (a high id so it draws after the cube
+// and buttons) anchored to the cube's viewport. Not part of the streamed
+// snapshot, so the snapshot replay never clears it.
+static const int kCubeHiliteOverlayId = 20;
+static int s_cubeHiliteDraw = -2;         // cube draw index currently tinted
 
 /// Overlay viewport rect in top-left canvas pixels, mirroring
 /// BGFXRenderer's per-frame anchor placement (corner + margins).
@@ -427,6 +481,152 @@ static bool pickNaviCube(float px, float py, bx::Vec3 &dirOut)
                       ayv > thr ? (hp.y > 0.0f ? 1.0f : -1.0f) : 0.0f,
                       azv > thr ? (hp.z > 0.0f ? 1.0f : -1.0f) : 0.0f);
     return true;
+}
+
+/// Closest-hit cube face draw under canvas pixel (px, py), or -1. Shares
+/// the overlay-space ray construction with pickNaviCube; \a cubeOut is the
+/// cube overlay the hit belongs to (null when the cursor is off the cube).
+static int pickCubeDraw(float px, float py,
+                        const Render::SceneSnapshot::Overlay *&cubeOut)
+{
+    cubeOut = nullptr;
+    const Render::SceneSnapshot::Overlay *cube = nullptr;
+    for (const auto &ov : s_snap.overlays) {
+        if (ov.id == kNaviCubeOverlayId) {
+            cube = &ov;
+            break;
+        }
+    }
+    if (!cube || cube->draws.empty())
+        return -1;
+
+    const Render::OverlayAnchor &a = cube->anchor;
+    int rx, ry, rw, rh;
+    overlayRect(a, rx, ry, rw, rh);
+    const float lx = px - float(rx), ly = py - float(ry);
+    if (rw <= 0 || rh <= 0 || lx < 0.0f || ly < 0.0f
+            || lx > float(rw) || ly > float(rh))
+        return -1;
+
+    float viewMtx[16], projMtx[16];
+    buildCamera(viewMtx, projMtx);
+    float ovView[16];
+    bx::mtxIdentity(ovView);
+    if (a.orientFromScene) {
+        for (int c = 0; c < 3; ++c)
+            for (int r = 0; r < 3; ++r)
+                ovView[c * 4 + r] = viewMtx[c * 4 + r];
+    }
+    ovView[14] = -a.cameraDistance;
+    const float aspect = float(rw) / float(rh);
+    const float th = std::tan(0.5f * a.fovDeg * bx::kPi / 180.0f);
+    const float nx = 2.0f * lx / float(rw) - 1.0f;
+    const float ny = 1.0f - 2.0f * ly / float(rh);
+    const bx::Vec3 dv =
+        bx::normalize(bx::Vec3(nx * th * aspect, ny * th, -1.0f));
+    float invV[16];
+    bx::mtxInverse(invV, ovView);
+    const bx::Vec3 orig = bx::mul(bx::Vec3(0.0f, 0.0f, 0.0f), invV);
+    const bx::Vec3 rdir = bx::normalize(bx::mulXyz0(dv, invV));
+
+    int best = -1;
+    float bestT = 1e30f;
+    for (size_t di = 0; di < cube->draws.size(); ++di) {
+        const auto &dc = cube->draws[di];
+        if (dc.material.type != Render::Material::Triangle || !dc.mesh
+                || !dc.mesh->triangleIndices || !dc.mesh->positions)
+            continue;
+        bx::Vec3 mo = orig, md = rdir;
+        float model[16], inv[16];
+        if (!dc.identity) {
+            std::memcpy(model, dc.model, sizeof(model));
+            bx::mtxInverse(inv, model);
+            mo = bx::mul(orig, inv);
+            md = bx::mulXyz0(rdir, inv);
+        }
+        const int total = dc.mesh->numTriangleIndices;
+        int start = dc.indexStart;
+        int count = dc.indexCount ? dc.indexCount : total - start;
+        if (start < 0 || start + count > total)
+            continue;
+        const int32_t *idx = dc.mesh->triangleIndices;
+        const float *pos = dc.mesh->positions;
+        for (int i = start; i + 2 < start + count; i += 3) {
+            float t;
+            if (!rayHitsTriangle(mo, md, pos + 3 * idx[i],
+                                 pos + 3 * idx[i + 1],
+                                 pos + 3 * idx[i + 2], t))
+                continue;
+            float tw = t;
+            if (!dc.identity) {
+                bx::Vec3 mp = bx::add(mo, bx::mul(md, t));
+                bx::Vec3 wp = bx::mul(mp, model);
+                tw = bx::dot(bx::sub(wp, orig), rdir);
+            }
+            if (tw > 0.0f && tw < bestT) {
+                bestT = tw;
+                best = int(di);
+            }
+        }
+    }
+    static const bool dbg = EM_ASM_INT({
+        return new URLSearchParams(location.search).has('debugpick') ? 1 : 0;
+    }) != 0;
+    if (dbg && best >= 0) {
+        bx::Vec3 hp = bx::add(orig, bx::mul(rdir, bestT));
+        std::printf("fcviewer: cubepick cur(%.0f,%.0f) rect(%d,%d,%d,%d) "
+                    "-> draw %d hit(%.2f,%.2f,%.2f)\n",
+                    px, py, rx, ry, rw, rh, best, hp.x, hp.y, hp.z);
+    }
+    cubeOut = cube;
+    return best;
+}
+
+/// Hover highlight for the NaviCube: tints the hovered face by feeding a
+/// translucent copy of its draw as an overlay in the cube's own viewport.
+/// Returns true while the cursor is over the cube (so scene preselection
+/// yields to it). No round trip — matches the desktop's local cube hilite.
+static bool updateCubeHover(float px, float py)
+{
+    const Render::SceneSnapshot::Overlay *cube = nullptr;
+    int di = pickCubeDraw(px, py, cube);
+    if (di < 0 || !cube) {
+        if (s_cubeHiliteDraw != -2) {
+            s_renderer->removeOverlay(kCubeHiliteOverlayId);
+            s_cubeHiliteDraw = -2;
+        }
+        return false;
+    }
+    if (di != s_cubeHiliteDraw) {
+        s_cubeHiliteDraw = di;
+        Render::DrawCall hl = cube->draws[size_t(di)];
+        // NaviCube HiliteColor (170,226,255) tint over the face. The face
+        // texture is kept (not reset): its rounded-corner texels are
+        // transparent and the mesh shader discards near-zero alpha, so the
+        // tint is clipped to the actual face shape instead of the full
+        // quad. Pushed toward the viewer so it wins the depth test.
+        hl.material.diffuse = 0xAAE2FFD0;
+        hl.material.pervertexcolor = false;
+        hl.material.transparent = true;
+        hl.material.polygonoffset = true;
+        hl.material.polygonoffsetfactor = -3.0f;
+        hl.material.polygonoffsetunits = -3.0f;
+        Render::DrawCallList draws;
+        draws.push_back(std::move(hl));
+        s_renderer->setOverlay(kCubeHiliteOverlayId, std::move(draws),
+                               cube->anchor);
+    }
+    return true;
+}
+
+/// Drop any active cube hover tint (on drag start / click, before the cube
+/// geometry moves under it).
+static void clearCubeHover()
+{
+    if (s_cubeHiliteDraw != -2) {
+        s_renderer->removeOverlay(kCubeHiliteOverlayId);
+        s_cubeHiliteDraw = -2;
+    }
 }
 
 /// Snap the orbit camera to look from world direction \a d (eye offset
@@ -597,6 +797,22 @@ static void mainLoop()
               (s_snap.clearColor >> 16) & 0xff,
               (s_snap.clearColor >> 8) & 0xff);
     s_renderer->render(bg, viewMtx, projMtx);
+
+    if (s_hudOn) {
+        char hud[512];
+        std::snprintf(hud, sizeof(hud),
+            "mouse: %.0f, %.0f  (canvas %dx%d)\n"
+            "cam:   yaw %.3f  pitch %.3f  dist %.2f\n"
+            "pan:   %.2f, %.2f   center %.1f, %.1f, %.1f\n"
+            "hover: %s\n"
+            "%s"
+            "[d] toggle HUD   [v] copy cam",
+            s_mouseX, s_mouseY, s_width, s_height,
+            s_yaw, s_pitch, s_dist, s_panX, s_panY,
+            s_center[0], s_center[1], s_center[2], s_hoverDesc,
+            s_camMsg[0] ? s_camMsg : "");
+        fcviewer_hud(hud);
+    }
 }
 
 static float panScale()
@@ -647,6 +863,16 @@ static void updateHover(const EmscriptenMouseEvent *e)
     s_lastHoverMs = now;
     float px, py;
     canvasPos(e, px, py);
+    s_mouseX = px;
+    s_mouseY = py;
+    // NaviCube face hover highlight wins over scene preselection: when the
+    // cursor is over the cube, tint the face and clear any scene hover.
+    if (updateCubeHover(px, py)) {
+        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc),
+                      "NaviCube draw %d", s_cubeHiliteDraw);
+        applyHover(PickHit{});
+        return;
+    }
     PickHit hit = pickScene(px, py);
     static const bool debugPick = EM_ASM_INT({
         return new URLSearchParams(window.location.search).has('debugpick')
@@ -655,6 +881,11 @@ static void updateHover(const EmscriptenMouseEvent *e)
     if (debugPick)
         std::printf("fcviewer: pick (%g,%g) -> draw %d tri %d t %g\n",
                     px, py, hit.draw, hit.triOffset, hit.t);
+    if (hit.draw >= 0)
+        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc),
+                      "scene draw %d tri %d", hit.draw, hit.triOffset);
+    else
+        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc), "none");
     applyHover(hit);
 }
 
@@ -667,14 +898,16 @@ static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
     s_downX = s_lastX;
     s_downY = s_lastY;
     s_clickOk = e->button == 0 && !e->shiftKey;
+    // The cube geometry is about to move under any active hover tint.
+    clearCubeHover();
     return EM_TRUE;
 }
 
 static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
 {
     s_dragging = false;
-    if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 3
-            && std::abs(int(e->clientY) - s_downY) <= 3) {
+    if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 6
+            && std::abs(int(e->clientY) - s_downY) <= 6) {
         // The NaviCube overlay claims the click first (local orient); a
         // click anywhere else is a scene pick sent to the desktop.
         float px, py;
@@ -714,8 +947,8 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
         updateHover(e);
         return EM_FALSE;
     }
-    if (std::abs(int(e->clientX) - s_downX) > 3
-            || std::abs(int(e->clientY) - s_downY) > 3)
+    if (std::abs(int(e->clientX) - s_downX) > 6
+            || std::abs(int(e->clientY) - s_downY) > 6)
         s_clickOk = false;
     interact();
     int dx = int(e->clientX) - s_lastX;
@@ -724,7 +957,10 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
     s_lastY = int(e->clientY);
     if (s_panning) {
         const float scale = panScale();
-        s_panX -= float(dx) * scale;
+        // Grab-pan: the scene follows the cursor. CamFrame::right is the
+        // negation of screen-right (the historical orbit convention), so
+        // +dx must increase panX to move the target opposite the drag.
+        s_panX += float(dx) * scale;
         s_panY += float(dy) * scale;
     } else {
         s_yaw -= float(dx) * 0.01f;
@@ -740,6 +976,30 @@ static EM_BOOL onWheel(int, const EmscriptenWheelEvent *e, void *)
     s_dist *= e->deltaY > 0 ? 1.1f : (1.0f / 1.1f);
     s_dist = bx::clamp(s_dist, 0.01f * s_diag, 50.0f * s_diag);
     return EM_TRUE;
+}
+
+// 'v' prints (and copies) the current camera as a ?cam= string so an exact
+// viewport can be reproduced by reloading with it appended to the URL.
+static EM_BOOL onKeyDown(int, const EmscriptenKeyboardEvent *e, void *)
+{
+    const char k = e->key[0];
+    if (k == 'v' || k == 'V') {
+        char buf[256];
+        std::snprintf(buf, sizeof(buf),
+                      "%.5f,%.5f,%.5f,%.4f,%.4f,%.4f,%.4f,%.4f",
+                      s_yaw, s_pitch, s_dist, s_center[0], s_center[1],
+                      s_center[2], s_panX, s_panY);
+        fcviewer_report_cam(buf);
+        std::snprintf(s_camMsg, sizeof(s_camMsg), "cam=%s (copied)\n", buf);
+        return EM_TRUE;
+    }
+    if (k == 'd' || k == 'D') {
+        s_hudOn = !s_hudOn;
+        if (!s_hudOn)
+            fcviewer_hud(nullptr);
+        return EM_TRUE;
+    }
+    return EM_FALSE;
 }
 
 // Touch: one finger orbits, two fingers pan (centroid) and pinch-zoom
@@ -874,8 +1134,22 @@ static void applySnapshot(bool fit)
     s_hoverKey = 0;
     s_hoverPart = -2;
     s_haveScene = true;
-    if (fit)
-        fitCamera();
+    if (fit) {
+        fitCamera();   // derives scene center / dist / s_diag (near-far)
+        if (s_haveCamParam) {
+            // Reproduce an exact viewport: keep fitCamera's s_diag but
+            // override the orbit/pan the ?cam= parameter carries.
+            s_yaw = s_camParam[0];
+            s_pitch = s_camParam[1];
+            s_dist = s_camParam[2];
+            s_center[0] = s_camParam[3];
+            s_center[1] = s_camParam[4];
+            s_center[2] = s_camParam[5];
+            s_panX = s_camParam[6];
+            s_panY = s_camParam[7];
+            s_haveCamParam = false;   // only the initial view
+        }
+    }
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -1021,6 +1295,20 @@ int main()
         return 1;
     }
 
+    // Parse ?cam= before the first snapshot fit so the override is in place
+    // when applySnapshot(fit=true) runs (whether from the bundled snapshot
+    // below or the first streamed scene).
+    if (char *camParam = fcviewer_cam_param()) {
+        if (std::sscanf(camParam, "%f,%f,%f,%f,%f,%f,%f,%f",
+                        &s_camParam[0], &s_camParam[1], &s_camParam[2],
+                        &s_camParam[3], &s_camParam[4], &s_camParam[5],
+                        &s_camParam[6], &s_camParam[7]) == 8) {
+            s_haveCamParam = true;
+            std::printf("fcviewer: reproducing camera %s\n", camParam);
+        }
+        std::free(camParam);
+    }
+
     if (Render::loadSceneSnapshot("/scene.fcsd", s_snap)) {
         std::printf("fcviewer: snapshot loaded, %zu draws\n",
                     s_snap.scene.size());
@@ -1036,6 +1324,13 @@ int main()
         startStream();
     }
 
+    s_hudOn = EM_ASM_INT({
+        var q = new URLSearchParams(window.location.search);
+        return (q.has('hud') || q.has('debugpick')) ? 1 : 0;
+    }) != 0;
+
+    emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT,
+                                    nullptr, EM_TRUE, onKeyDown);
     emscripten_set_mousedown_callback("#canvas", nullptr, EM_TRUE,
                                       onMouseDown);
     emscripten_set_mouseup_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT,
