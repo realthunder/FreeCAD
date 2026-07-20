@@ -1347,10 +1347,20 @@ independent of each other; item 4 builds on item 3's property model.
     and borders drawn later; (4) borders are depth-tested lines pushed
     1.005× off the surface (lines cannot backface-cull like GL's
     polygon-mode border pass). Overlay view slots grew 4 → 8.
-    *Remaining for C*: WASM-side click-to-orient (browser-local raycast
-    against the cube + local camera rotation) — the cube is
-    display-only in the browser so far; stroke letters always face the
-    desktop camera (billboard hint someday).
+    *WASM click-to-orient* — **DONE (2026-07-20)**: a click on the cube
+    overlay is raycast browser-side against the cube face draws (`main.cpp`
+    `pickNaviCube`) using the same anchor view/projection the backend
+    renders with; the hit point (in the cube's own frame, which equals the
+    world frame because `orientFromScene` applied exactly the orbit
+    rotation) is snapped to the NaviCube 3×3 face grid → an axis-signed
+    face/edge/corner direction, and `orientToDir` snaps the orbit camera to
+    look from it (keeping azimuth at the poles, recentering the pan). The
+    click handler tries the cube first and only falls through to the scene
+    round-trip pick off the cube. Verified headless-Chromium: 19 distinct
+    snapped directions across the grid, view reorients (axonometric → front
+    on a face click). *Still remaining for C*: rotate-button overlay (id 6)
+    clicks are not yet handled in the browser; stroke letters always face
+    the desktop camera (billboard hint someday).
   - *D — in-scene raw-GL nodes*: `SoDatumLabel`, `SoTextLabel`,
     `SoRegPoint` — needed before Sketcher/edit-mode parity on
     backend-only frames; port bodies to cached primitives, verify

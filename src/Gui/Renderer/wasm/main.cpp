@@ -288,6 +288,163 @@ static PickHit pickScene(float px, float py)
     return hit;
 }
 
+//////////////////////////////////////////////////////////////////////
+// NaviCube click-to-orient: browser-local raycast against the cube
+// overlay feed, then snap the orbit camera to the picked face / edge /
+// corner view. The desktop keeps its own GL pick pass; this makes the
+// streamed (and snapshot-only) cube interactive in the browser.
+
+static const int kNaviCubeOverlayId = 5;  // View3DInventorViewer OverlayNaviCube
+
+/// Overlay viewport rect in top-left canvas pixels, mirroring
+/// BGFXRenderer's per-frame anchor placement (corner + margins).
+static void overlayRect(const Render::OverlayAnchor &a,
+                        int &rx, int &ry, int &rw, int &rh)
+{
+    if (a.corner == Render::OverlayAnchor::FullViewport) {
+        rx = ry = 0;
+        rw = s_width;
+        rh = s_height;
+        return;
+    }
+    int edge = int(std::max(1.0f,
+        a.sizeFraction * float(std::min(s_width, s_height))));
+    rw = rh = edge;
+    const bool right = a.corner == Render::OverlayAnchor::BottomRight
+        || a.corner == Render::OverlayAnchor::TopRight;
+    const bool top = a.corner == Render::OverlayAnchor::TopLeft
+        || a.corner == Render::OverlayAnchor::TopRight;
+    const int mx = int(a.marginX), my = int(a.marginY);
+    rx = std::max(0, right ? s_width - edge - mx : mx);
+    ry = std::max(0, top ? my : s_height - edge - my);
+}
+
+/// If canvas pixel (px, py) lands on the NaviCube overlay, return in
+/// \a dirOut the snapped world-space direction (the eye offset from the
+/// scene center) for the picked face / edge / corner view.
+static bool pickNaviCube(float px, float py, bx::Vec3 &dirOut)
+{
+    const Render::SceneSnapshot::Overlay *cube = nullptr;
+    for (const auto &ov : s_snap.overlays) {
+        if (ov.id == kNaviCubeOverlayId) {
+            cube = &ov;
+            break;
+        }
+    }
+    if (!cube || cube->draws.empty())
+        return false;
+
+    const Render::OverlayAnchor &a = cube->anchor;
+    int rx, ry, rw, rh;
+    overlayRect(a, rx, ry, rw, rh);
+    const float lx = px - float(rx), ly = py - float(ry);
+    if (rw <= 0 || rh <= 0 || lx < 0.0f || ly < 0.0f
+            || lx > float(rw) || ly > float(rh))
+        return false;
+
+    // Overlay view matrix: the orientFromScene rotation of the current
+    // orbit view, translated back by the anchor camera distance — the
+    // same matrix BGFXRenderer builds to draw the cube.
+    float viewMtx[16], projMtx[16];
+    buildCamera(viewMtx, projMtx);
+    float ovView[16];
+    bx::mtxIdentity(ovView);
+    if (a.orientFromScene) {
+        for (int c = 0; c < 3; ++c)
+            for (int r = 0; r < 3; ++r)
+                ovView[c * 4 + r] = viewMtx[c * 4 + r];
+    }
+    ovView[14] = -a.cameraDistance;
+
+    // Perspective ray in overlay view space (RH, camera looks down -z);
+    // matches bx::mtxProj's mapping used to render the overlay.
+    const float aspect = float(rw) / float(rh);
+    const float th = std::tan(0.5f * a.fovDeg * bx::kPi / 180.0f);
+    const float nx = 2.0f * lx / float(rw) - 1.0f;
+    const float ny = 1.0f - 2.0f * ly / float(rh);
+    const bx::Vec3 dv =
+        bx::normalize(bx::Vec3(nx * th * aspect, ny * th, -1.0f));
+
+    float invV[16];
+    bx::mtxInverse(invV, ovView);
+    const bx::Vec3 orig = bx::mul(bx::Vec3(0.0f, 0.0f, 0.0f), invV);
+    const bx::Vec3 rdir = bx::normalize(bx::mulXyz0(dv, invV));
+
+    // Closest triangle hit across the cube overlay's face draws.
+    float bestT = 1e30f;
+    for (const auto &dc : cube->draws) {
+        if (dc.material.type != Render::Material::Triangle || !dc.mesh
+                || !dc.mesh->triangleIndices || !dc.mesh->positions)
+            continue;
+        bx::Vec3 mo = orig, md = rdir;
+        float model[16], inv[16];
+        if (!dc.identity) {
+            std::memcpy(model, dc.model, sizeof(model));
+            bx::mtxInverse(inv, model);
+            mo = bx::mul(orig, inv);
+            md = bx::mulXyz0(rdir, inv);
+        }
+        const int total = dc.mesh->numTriangleIndices;
+        int start = dc.indexStart;
+        int count = dc.indexCount ? dc.indexCount : total - start;
+        if (start < 0 || start + count > total)
+            continue;
+        const int32_t *idx = dc.mesh->triangleIndices;
+        const float *pos = dc.mesh->positions;
+        for (int i = start; i + 2 < start + count; i += 3) {
+            float t;
+            if (!rayHitsTriangle(mo, md, pos + 3 * idx[i],
+                                 pos + 3 * idx[i + 1],
+                                 pos + 3 * idx[i + 2], t))
+                continue;
+            float tw = t;
+            if (!dc.identity) {
+                bx::Vec3 mp = bx::add(mo, bx::mul(md, t));
+                bx::Vec3 wp = bx::mul(mp, model);
+                tw = bx::dot(bx::sub(wp, orig), rdir);
+            }
+            if (tw > 0.0f && tw < bestT)
+                bestT = tw;
+        }
+    }
+    if (bestT >= 1e29f)
+        return false;
+
+    // Hit point in the cube's own frame — which equals the world frame,
+    // since orientFromScene applied exactly the orbit camera's rotation.
+    // Snap to the NaviCube 3x3 face grid: the outer third of each face
+    // edge counts toward the neighbouring edge / corner view. The
+    // resulting axis-signed direction is where the eye goes so that the
+    // picked feature faces the camera.
+    const bx::Vec3 hp = bx::add(orig, bx::mul(rdir, bestT));
+    const float axv = std::fabs(hp.x), ayv = std::fabs(hp.y),
+                azv = std::fabs(hp.z);
+    const float m = bx::max(axv, bx::max(ayv, azv));
+    if (m < 1e-6f)
+        return false;
+    const float thr = m / 3.0f;
+    dirOut = bx::Vec3(axv > thr ? (hp.x > 0.0f ? 1.0f : -1.0f) : 0.0f,
+                      ayv > thr ? (hp.y > 0.0f ? 1.0f : -1.0f) : 0.0f,
+                      azv > thr ? (hp.z > 0.0f ? 1.0f : -1.0f) : 0.0f);
+    return true;
+}
+
+/// Snap the orbit camera to look from world direction \a d (eye offset
+/// from the scene center). Keeps the current azimuth for the top/bottom
+/// poles where it is otherwise undefined, and recenters the pan.
+static void orientToDir(const bx::Vec3 &d)
+{
+    const bx::Vec3 n = bx::normalize(d);
+    const float newPitch = std::asin(bx::clamp(n.z, -1.0f, 1.0f));
+    float newYaw = s_yaw;
+    if (std::fabs(n.x) > 1e-4f || std::fabs(n.y) > 1e-4f)
+        newYaw = std::atan2(n.y, n.x);
+    // Match the orbit clamp (avoids the up-vector singularity at ±90°).
+    s_pitch = bx::clamp(newPitch, -1.55f, 1.55f);
+    s_yaw = newYaw;
+    s_panX = s_panY = 0.0f;
+}
+
 // Hover highlight state: a local setHighlight() built from the hit
 // draw (no server round trip). The next streamed snapshot replaces it
 // with the desktop's highlight feed until the mouse moves again.
@@ -442,8 +599,27 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
 {
     s_dragging = false;
     if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 3
-            && std::abs(int(e->clientY) - s_downY) <= 3)
-        sendPick(e);
+            && std::abs(int(e->clientY) - s_downY) <= 3) {
+        // The NaviCube overlay claims the click first (local orient); a
+        // click anywhere else is a scene pick sent to the desktop.
+        float px, py;
+        canvasPos(e, px, py);
+        bx::Vec3 dir(bx::InitZero);
+        if (s_haveScene && pickNaviCube(px, py, dir)) {
+            static const bool debugPick = EM_ASM_INT({
+                return new URLSearchParams(window.location.search)
+                    .has('debugpick') ? 1 : 0;
+            }) != 0;
+            if (debugPick)
+                std::printf("fcviewer: navicube orient (%g,%g) -> "
+                            "dir %g,%g,%g\n", px, py, dir.x, dir.y, dir.z);
+            orientToDir(dir);
+            interact();
+        }
+        else {
+            sendPick(e);
+        }
+    }
     s_clickOk = false;
     return EM_TRUE;
 }
