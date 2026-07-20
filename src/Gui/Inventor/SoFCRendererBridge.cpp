@@ -615,7 +615,7 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
 
 Render::DrawCallList
 RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
-                          int selId, bool highlight)
+                          int selId, bool highlight, bool sequentialOrder)
 {
     Render::DrawCallList res;
 
@@ -758,6 +758,18 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             }
         }
     }
+
+    // Overlay feeds: restore the scene-graph traversal order (vertex
+    // caches are created in traversal order and their ids ascend), so
+    // the backend's Sequential overlay view blends like the original GL
+    // drawing sequence.
+    if (sequentialOrder)
+        std::stable_sort(res.begin(), res.end(),
+            [](const Render::DrawCall &a, const Render::DrawCall &b) {
+                uint64_t ka = a.mesh ? a.mesh->cacheId : 0;
+                uint64_t kb = b.mesh ? b.mesh->cacheId : 0;
+                return ka < kb;
+            });
     return res;
 }
 

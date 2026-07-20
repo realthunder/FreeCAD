@@ -469,6 +469,8 @@ struct View3DInventorViewer::Private
         OverlayAxisCross = 2,
         OverlayGraphicsItems = 3,
         OverlayFpsText = 4,
+        OverlayNaviCube = 5,
+        OverlayNaviButtons = 6,
     };
     struct OverlayCapture {
         CoinPtr<SoNode> root;
@@ -485,6 +487,8 @@ struct View3DInventorViewer::Private
     CoinPtr<SoRotation> axisLetterRotation;
     OverlayCapture graphicsItemsCapture;
     OverlayCapture fpsTextCapture;
+    OverlayCapture naviCubeCapture;
+    OverlayCapture naviButtonCapture;
     // fps overlay state: the string renderScene() wants displayed (empty
     // when the readout is off) and the nodes/values last fed.
     std::string fpsText;
@@ -869,12 +873,47 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         fpsTexture.reset();
         fpsCoords.reset();
     }
+
+    // NaviCube (phase C): the rotating cube and the viewport-fixed
+    // buttons/menu each ride their own anchor. The graphs live in the
+    // NaviCube implementation (per-viewer, over shared textures); null
+    // means hidden (auto-hide) or not yet initialized. A root swap
+    // (rebuild after a parameter change) re-creates the capture.
+    auto feedNaviGraph = [&](OverlayCapture &capture, int id,
+                             SoSeparator *graph,
+                             const Render::OverlayAnchor &anchor) {
+        if (!graph) {
+            dropCapture(capture, id);
+            return;
+        }
+        if (capture.manager && capture.root != graph)
+            dropCapture(capture, id);
+        if (!capture.manager)
+            initCapture(capture, graph);
+        capture.manager->setExternalOverlay(renderer.get(), id, anchor);
+        captureAction.apply(capture.applyRoot);
+    };
+    if (owner->naviCubeEnabled && owner->naviCube) {
+        Render::OverlayAnchor cubeAnchor;
+        feedNaviGraph(naviCubeCapture, OverlayNaviCube,
+                      owner->naviCube->getOverlayCubeGraph(cubeAnchor),
+                      cubeAnchor);
+        Render::OverlayAnchor btnAnchor;
+        feedNaviGraph(naviButtonCapture, OverlayNaviButtons,
+                      owner->naviCube->getOverlayButtonGraph(btnAnchor),
+                      btnAnchor);
+    }
+    else {
+        dropCapture(naviCubeCapture, OverlayNaviCube);
+        dropCapture(naviButtonCapture, OverlayNaviButtons);
+    }
 }
 
 void View3DInventorViewer::Private::clearOverlayCaptures()
 {
     for (auto capture : {&foregroundCapture, &axisCrossCapture,
-                         &graphicsItemsCapture, &fpsTextCapture}) {
+                         &graphicsItemsCapture, &fpsTextCapture,
+                         &naviCubeCapture, &naviButtonCapture}) {
         if (capture->manager) {
             capture->manager->setExternalOverlay(
                 nullptr, 0, Render::OverlayAnchor());
@@ -3986,7 +4025,9 @@ void View3DInventorViewer::renderScene()
         draw2DString(_pimpl->fpsText.c_str(), SbVec2s(10, 10), SbVec2f(0.1F, 0.1F));  // NOLINT
     }
 
-    if (naviCubeEnabled) {
+    // On backend frames the NaviCube rides the overlay feed
+    // (updateOverlayCaptures above); picking stays on the GL pick pass.
+    if (naviCubeEnabled && (!externalRendered || parallelgl)) {
         naviCube->drawNaviCube();
     }
 

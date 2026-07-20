@@ -559,6 +559,13 @@ void main()
 			alpha = texel.a;
 	}
 
+	// Fully transparent texels contribute no color but would still
+	// write depth (GL parity: alpha-tested textures — the NaviCube's
+	// shaped face textures — discard their transparent skirt so it
+	// cannot depth-occlude later draws).
+	if (alpha < 0.004)
+		discard;
+
 	// Emissive map: added after the texture environment so the base
 	// color texture does not modulate the glow (glTF semantics).
 	if (u_texParams.z > 0.5)

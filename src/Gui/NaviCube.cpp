@@ -33,7 +33,22 @@
 #  include <GL/gl.h>
 # endif
 # include <boost/math/constants/constants.hpp>
+# include <Inventor/nodes/SoBaseColor.h>
+# include <Inventor/nodes/SoCoordinate3.h>
+# include <Inventor/nodes/SoDepthBuffer.h>
+# include <Inventor/nodes/SoDrawStyle.h>
+# include <Inventor/nodes/SoIndexedFaceSet.h>
+# include <Inventor/nodes/SoIndexedLineSet.h>
+# include <Inventor/nodes/SoLightModel.h>
+# include <Inventor/nodes/SoMaterial.h>
 # include <Inventor/nodes/SoOrthographicCamera.h>
+# include <Inventor/nodes/SoRotation.h>
+# include <Inventor/nodes/SoSeparator.h>
+# include <Inventor/nodes/SoShapeHints.h>
+# include <Inventor/nodes/SoSwitch.h>
+# include <Inventor/nodes/SoTexture2.h>
+# include <Inventor/nodes/SoTextureCoordinate2.h>
+# include <Inventor/nodes/SoTranslation.h>
 # include <Inventor/events/SoEvent.h>
 # include <Inventor/events/SoLocation2Event.h>
 # include <Inventor/events/SoMouseButtonEvent.h>
@@ -271,6 +286,13 @@ public:
 	vector<Face> m_Faces;
 	vector<int> m_Buttons;
 	vector<std::unique_ptr<QOpenGLTexture>> m_glTextures;
+	// Coin overlay twins (raw-GL overlay Coin-ification, phase C): the
+	// creators keep the rasterized images (bottom-up RGBA, same as the
+	// GL upload) keyed by GL texture id so the per-viewer Coin graphs
+	// can feed them as SoTexture2 images. m_TexGeneration bumps on
+	// (re)init so the graphs rebuild after a deinit.
+	map<GLuint, QImage> m_TexQImages;
+	int m_TexGeneration = 0;
 
     ParameterGrp::handle m_hGrp;
     bool m_Saving = false;
@@ -322,7 +344,16 @@ public:
 	void OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::MessageType Reason) override;
 
 	bool processSoEvent(const SoEvent* ev);
+
+	// Coin overlay twins (raw-GL overlay Coin-ification, phase C).
+	SoSeparator *getOverlayCubeGraph(Render::OverlayAnchor &anchor);
+	SoSeparator *getOverlayButtonGraph(Render::OverlayAnchor &anchor);
+
 private:
+	void buildCoinCube();
+	void buildCoinButtons();
+	void fillCornerAnchor(Render::OverlayAnchor &anchor) const;
+
 	bool mousePressed(short x, short y);
 	bool mouseReleased(short x, short y);
 	bool mouseMoved(short x, short y);
@@ -359,6 +390,23 @@ public:
 	int &m_CubeWidgetSize = NaviCubeShared::m_CubeWidgetSize;
     QTimer timer;
     QTimer autoHideTimer;
+
+	// Coin overlay twins: per-viewer graphs over the shared cube data
+	// (textures/vertices live in NaviCubeShared; hover state and camera
+	// sync are per viewer). Rebuilt when the shared data regenerates.
+	struct CoinFace {
+		int faceIndex;                    // into m_Shared->m_Faces
+		SoMaterial *material;
+		SoTextureCoordinate2 *texCoords;  // text faces only (flip)
+		float uv = 1.0f;                  // last applied flip factor
+	};
+	CoinPtr<SoSeparator> m_CoinCubeRoot;
+	CoinPtr<SoRotation> m_CoinAxisLetterRot;
+	std::vector<CoinFace> m_CoinFaces;
+	CoinPtr<SoSeparator> m_CoinButtonRoot;
+	std::vector<std::pair<int, SoMaterial*>> m_CoinButtons;
+	CoinPtr<SoSwitch> m_CoinMenuHilite;
+	int m_CoinGeneration = -1;
 };
 
 int NaviCube::getNaviCubeSize()
@@ -380,6 +428,14 @@ void NaviCube::drawNaviCube() {
 
 bool NaviCube::processSoEvent(const SoEvent* ev) {
 	return m_NaviCubeImplementation->processSoEvent(ev);
+}
+
+SoSeparator *NaviCube::getOverlayCubeGraph(Render::OverlayAnchor &anchor) {
+	return m_NaviCubeImplementation->getOverlayCubeGraph(anchor);
+}
+
+SoSeparator *NaviCube::getOverlayButtonGraph(Render::OverlayAnchor &anchor) {
+	return m_NaviCubeImplementation->getOverlayButtonGraph(anchor);
 }
 
 void NaviCube::setCorner(Corner c) {
@@ -455,6 +511,9 @@ void NaviCubeShared::deinit(QOpenGLContext *ctx)
 	m_Textures.clear();
 	m_Faces.clear();
 	m_Buttons.clear();
+	m_TexQImages.clear();
+	// Invalidate the per-viewer Coin overlay graphs built on this data.
+	++m_TexGeneration;
 }
 
 void NaviCubeImplementation::OnChange(ParameterGrp::SubjectType &, ParameterGrp::MessageType)
@@ -545,6 +604,9 @@ GLuint NaviCubeShared::createCubeFaceTex(const char* text, int shape) {
 	texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
     texture->setMagnificationFilter(QOpenGLTexture::Linear);
 	texture->generateMipMaps();
+    // Bottom-up RGBA copy for the Coin overlay twins (SoTexture2 images).
+    m_TexQImages[texture->textureId()] =
+        image.mirrored().convertToFormat(QImage::Format_RGBA8888);
     return texture->textureId();
 }
 
@@ -680,6 +742,9 @@ GLuint NaviCubeShared::createButtonTex(int button, bool stroke) {
 	texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
     texture->setMagnificationFilter(QOpenGLTexture::Linear);
 	texture->generateMipMaps();
+    // Bottom-up RGBA copy for the Coin overlay twins (SoTexture2 images).
+    m_TexQImages[texture->textureId()] =
+        image.mirrored().convertToFormat(QImage::Format_RGBA8888);
     return texture->textureId();
 }
 
@@ -753,6 +818,9 @@ GLuint NaviCubeShared::createMenuTex(bool forPicking) {
 	texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
     texture->setMagnificationFilter(QOpenGLTexture::Linear);
 	texture->generateMipMaps();
+    // Bottom-up RGBA copy for the Coin overlay twins (SoTexture2 images).
+    m_TexQImages[texture->textureId()] =
+        image.mirrored().convertToFormat(QImage::Format_RGBA8888);
     return texture->textureId();
 }
 
@@ -1085,6 +1153,383 @@ void NaviCubeImplementation::drawNaviCube(bool pickMode) {
 	handleResize();
     if (m_Shared->drawNaviCube(cam, pickMode, m_HiliteId, m_Hit))
 		m_View3DInventorViewer->getSoRenderManager()->scheduleRedraw();
+}
+
+namespace {
+// Guarded material writer for the overlay graphs: Coin notifies on every
+// field write (= cache rebuild + backend re-feed), so only touch fields
+// whose values actually changed.
+void syncQColor(SoMaterial *mat, const QColor &c)
+{
+	SbColor col(float(c.redF()), float(c.greenF()), float(c.blueF()));
+	if (mat->diffuseColor.getNum() != 1 || mat->diffuseColor[0] != col)
+		mat->diffuseColor = col;
+	float transp = 1.0f - float(c.alphaF());
+	if (mat->transparency.getNum() != 1 || mat->transparency[0] != transp)
+		mat->transparency = transp;
+}
+
+// Line-stroke letter shapes for the corner-axes labels, like the viewer's
+// axis-cross overlay letters (custom axis-label texts fall back to X/Y/Z
+// strokes here).
+SoSeparator *createStrokeLetter(int axis, float s)
+{
+	const SbVec3f xPts[] = {{-s,-s,0},{s,s,0},{-s,s,0},{s,-s,0}};
+	static const int32_t xIdx[] = {0,1,-1,2,3,-1};
+	const SbVec3f yPts[] = {{-s,s,0},{0,0,0},{s,s,0},{0,-s,0}};
+	static const int32_t yIdx[] = {0,1,-1,2,1,-1,1,3,-1};
+	const SbVec3f zPts[] = {{-s,s,0},{s,s,0},{-s,-s,0},{s,-s,0}};
+	static const int32_t zIdx[] = {0,1,-1,1,2,-1,2,3,-1};
+	const SbVec3f *pts[3] = {xPts, yPts, zPts};
+	static const int32_t *idx[3] = {xIdx, yIdx, zIdx};
+	static const int nidx[3] = {6, 9, 9};
+
+	auto sep = new SoSeparator;
+	auto coord = new SoCoordinate3;
+	coord->point.setValues(0, 4, pts[axis]);
+	sep->addChild(coord);
+	auto lines = new SoIndexedLineSet;
+	lines->coordIndex.setValues(0, nidx[axis], idx[axis]);
+	sep->addChild(lines);
+	return sep;
+}
+} // namespace
+
+void NaviCubeImplementation::fillCornerAnchor(Render::OverlayAnchor &anchor) const
+{
+	switch (m_Corner) {
+	case NaviCube::TopLeftCorner:
+		anchor.corner = Render::OverlayAnchor::TopLeft; break;
+	case NaviCube::TopRightCorner:
+		anchor.corner = Render::OverlayAnchor::TopRight; break;
+	case NaviCube::BottomLeftCorner:
+		anchor.corner = Render::OverlayAnchor::BottomLeft; break;
+	default:
+		anchor.corner = Render::OverlayAnchor::BottomRight; break;
+	}
+	const SbViewportRegion vp =
+		m_View3DInventorViewer->getSoRenderManager()->getViewportRegion();
+	SbVec2s sz = vp.getViewportSizePixels();
+	int minDim = std::min(sz[0], sz[1]);
+	anchor.sizeFraction =
+		minDim > 0 ? float(m_CubeWidgetSize) / float(minDim) : 0.25f;
+	// Same placement as the GL viewport (handleResize): 5% of the cube
+	// size plus the user offsets, inward from the anchoring corner.
+	anchor.marginX = float(0.05 * m_CubeWidgetSize + m_CubeWidgetOffsetX);
+	anchor.marginY = float(0.05 * m_CubeWidgetSize + m_CubeWidgetOffsetY);
+	anchor.nearPlane = 0.1f;
+	anchor.farPlane = 10.0f;
+	anchor.cameraDistance = 5.0f;
+}
+
+void NaviCubeImplementation::buildCoinCube()
+{
+	auto shared = m_Shared.get();
+	auto root = new SoSeparator;
+	m_CoinCubeRoot = root;
+	auto lightModel = new SoLightModel;
+	lightModel->model = SoLightModel::BASE_COLOR;
+	root->addChild(lightModel);
+
+	// Corner axes with stroke labels (drawNaviCube's m_ShowCS block).
+	if (NaviCubeShared::m_ShowCS) {
+		auto cs = new SoSeparator;
+		auto style = new SoDrawStyle;
+		style->lineWidth = 2.0f;
+		cs->addChild(style);
+		auto coord = new SoCoordinate3;
+		const SbVec3f axisPts[4] = {
+			{-1.1f, -1.1f, -1.1f},
+			{0.5f, -1.1f, -1.1f},
+			{-1.1f, 0.5f, -1.1f},
+			{-1.1f, -1.1f, 0.5f},
+		};
+		coord->point.setValues(0, 4, axisPts);
+		cs->addChild(coord);
+		const SbColor axisCols[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+		for (int i = 0; i < 3; ++i) {
+			auto col = new SoBaseColor;
+			col->rgb = axisCols[i];
+			cs->addChild(col);
+			auto lines = new SoIndexedLineSet;
+			const int32_t idx[3] = {0, i + 1, -1};
+			lines->coordIndex.setValues(0, 3, idx);
+			cs->addChild(lines);
+		}
+		auto lblCol = new SoBaseColor;
+		lblCol->rgb.setValue(float(shared->m_AxisLabelColor.redF()),
+		                     float(shared->m_AxisLabelColor.greenF()),
+		                     float(shared->m_AxisLabelColor.blueF()));
+		cs->addChild(lblCol);
+		m_CoinAxisLetterRot = new SoRotation;
+		constexpr float a = 1.1f;
+		constexpr float b = -0.2f;
+		const SbVec3f lblPos[3] = {
+			{a + b, -a + b, -a}, {-a + b, a + b, -a}, {-a + b, -a + b, a + b}};
+		for (int i = 0; i < 3; ++i) {
+			auto sep = new SoSeparator;
+			auto trans = new SoTranslation;
+			trans->translation = lblPos[i];
+			sep->addChild(trans);
+			sep->addChild(m_CoinAxisLetterRot);
+			sep->addChild(createStrokeLetter(i, 0.15f));
+			cs->addChild(sep);
+		}
+		root->addChild(cs);
+	}
+
+	// Cube faces: closed solid, backface-culled like the GL draw (the
+	// backend keeps explicit culling for transparent overlay draws).
+	auto hints = new SoShapeHints;
+	hints->vertexOrdering = SoShapeHints::COUNTERCLOCKWISE;
+	hints->shapeType = SoShapeHints::SOLID;
+	root->addChild(hints);
+	auto coords = new SoCoordinate3;
+	{
+		std::vector<SbVec3f> pts;
+		pts.reserve(shared->m_VertexArray.size());
+		for (const auto &v : shared->m_VertexArray)
+			pts.emplace_back(v[0], v[1], v[2]);
+		coords->point.setValues(0, int(pts.size()), pts.data());
+	}
+	root->addChild(coords);
+
+	for (int pass = 0; pass < 3; ++pass) {
+		for (size_t i = 0; i < shared->m_Faces.size(); ++i) {
+			const Face &f = shared->m_Faces[i];
+			if (f.m_RenderPass != pass)
+				continue;
+			auto sep = new SoSeparator;
+			auto mat = new SoMaterial; // synced per frame
+			sep->addChild(mat);
+			auto tex = new SoTexture2;
+			auto it = shared->m_TexQImages.find(f.m_TextureId);
+			if (it != shared->m_TexQImages.end())
+				tex->image.setValue(
+					SbVec2s(short(it->second.width()),
+					        short(it->second.height())),
+					4, it->second.constBits());
+			sep->addChild(tex);
+			auto tc = new SoTextureCoordinate2;
+			SbVec2f uvs[4];
+			for (int k = 0; k < 4; ++k) {
+				const auto &t = shared->m_TextureCoordArray[
+					shared->m_IndexArray[f.m_FirstVertex + k]];
+				uvs[k].setValue(t[0], t[1]);
+			}
+			tc->point.setValues(0, 4, uvs);
+			sep->addChild(tc);
+			auto quad = new SoIndexedFaceSet;
+			int32_t ci[5];
+			for (int k = 0; k < 4; ++k)
+				ci[k] = shared->m_IndexArray[f.m_FirstVertex + k];
+			ci[4] = -1;
+			quad->coordIndex.setValues(0, 5, ci);
+			static const int32_t ti[5] = {0, 1, 2, 3, -1};
+			quad->textureCoordIndex.setValues(0, 5, ti);
+			sep->addChild(quad);
+			root->addChild(sep);
+			bool text = f.m_TextureId != f.m_PickTextureId;
+			m_CoinFaces.push_back({int(i), mat, text ? tc : nullptr, 1.0f});
+		}
+	}
+
+	// Face borders. The GL pass draws them depth-test-less as backface-
+	// culled polygons in line mode; lines cannot cull, so keep the depth
+	// test instead — the (depth-writing) front faces occlude the back
+	// loops, and coplanar front loops pass on LEQUAL.
+	if (NaviCubeShared::m_BorderWidth >= 1.0) {
+		auto bsep = new SoSeparator;
+		auto style = new SoDrawStyle;
+		style->lineWidth = float(NaviCubeShared::m_BorderWidth);
+		bsep->addChild(style);
+		auto mat = new SoMaterial;
+		syncQColor(mat, shared->m_BorderColor);
+		bsep->addChild(mat);
+		std::vector<SbVec3f> pts;
+		std::vector<int32_t> idx;
+		for (const auto &f : shared->m_Faces) {
+			if (f.m_TextureId != f.m_PickTextureId)
+				continue; // base pass only, like the GL border loop
+			if (f.m_PickTexId != TEX_FRONT_FACE
+			    && f.m_PickTexId != TEX_EDGE_FACE
+			    && f.m_PickTexId != TEX_CORNER_FACE)
+				continue;
+			const auto &loop = shared->m_VertexArrays2[f.m_PickId];
+			int start = int(pts.size());
+			// Slightly off the cube surface so the loops win the depth
+			// test against their own (coplanar, depth-writing) faces
+			// from every view direction.
+			for (const auto &v : loop)
+				pts.emplace_back(v[0] * 1.005f, v[1] * 1.005f,
+				                 v[2] * 1.005f);
+			for (size_t k = 0; k < loop.size(); ++k)
+				idx.push_back(start + int(k));
+			idx.push_back(start);
+			idx.push_back(-1);
+		}
+		auto bc = new SoCoordinate3;
+		bc->point.setValues(0, int(pts.size()), pts.data());
+		bsep->addChild(bc);
+		auto ls = new SoIndexedLineSet;
+		ls->coordIndex.setValues(0, int(idx.size()), idx.data());
+		bsep->addChild(ls);
+		root->addChild(bsep);
+	}
+}
+
+void NaviCubeImplementation::buildCoinButtons()
+{
+	auto shared = m_Shared.get();
+	auto root = new SoSeparator;
+	m_CoinButtonRoot = root;
+	auto lightModel = new SoLightModel;
+	lightModel->model = SoLightModel::BASE_COLOR;
+	root->addChild(lightModel);
+	// One full-anchor quad per button texture: the GL draw covers the
+	// whole cube viewport in a 0..1 y-down ortho; the anchor here is a
+	// -1..1 y-up ortho (orthoHeight 2), same visual orientation.
+	auto coords = new SoCoordinate3;
+	const SbVec3f qpts[4] = {{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}};
+	coords->point.setValues(0, 4, qpts);
+	root->addChild(coords);
+	auto tcoords = new SoTextureCoordinate2;
+	const SbVec2f uvs[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+	tcoords->point.setValues(0, 4, uvs);
+	root->addChild(tcoords);
+
+	auto addQuad = [&](SoGroup *parent, int texKey) -> SoMaterial * {
+		auto sep = new SoSeparator;
+		auto mat = new SoMaterial;
+		sep->addChild(mat);
+		auto tex = new SoTexture2;
+		auto it = shared->m_TexQImages.find(shared->m_Textures[texKey]);
+		if (it != shared->m_TexQImages.end())
+			tex->image.setValue(
+				SbVec2s(short(it->second.width()),
+				        short(it->second.height())),
+				4, it->second.constBits());
+		sep->addChild(tex);
+		auto quad = new SoIndexedFaceSet;
+		static const int32_t qi[5] = {0, 1, 2, 3, -1};
+		quad->coordIndex.setValues(0, 5, qi);
+		quad->textureCoordIndex.setValues(0, 5, qi);
+		sep->addChild(quad);
+		parent->addChild(sep);
+		return mat;
+	};
+
+	for (int b : shared->m_Buttons)
+		m_CoinButtons.emplace_back(b, addQuad(root, b));
+	// Menu icon: a hilite backdrop quad toggled on hover, then the icon
+	// in the plain button color (matching the GL draw).
+	m_CoinMenuHilite = new SoSwitch;
+	auto hsep = new SoSeparator;
+	syncQColor(addQuad(hsep, TEX_VIEW_MENU_FACE), shared->m_HiliteColor);
+	m_CoinMenuHilite->addChild(hsep);
+	m_CoinMenuHilite->whichChild = SO_SWITCH_NONE;
+	root->addChild(m_CoinMenuHilite);
+	m_CoinButtons.emplace_back(-1, addQuad(root, TEX_VIEW_MENU_ICON));
+}
+
+SoSeparator *NaviCubeImplementation::getOverlayCubeGraph(Render::OverlayAnchor &anchor)
+{
+	auto shared = m_Shared.get();
+	shared->initNaviCube(); // no-op once ready; needs a current GL context
+	if (!shared->m_Context)
+		return nullptr;
+	if (!m_Hit && NaviCubeShared::m_AutoHideCube)
+		return nullptr;
+	if (m_CoinGeneration != shared->m_TexGeneration) {
+		m_CoinCubeRoot.reset();
+		m_CoinButtonRoot.reset();
+		m_CoinFaces.clear();
+		m_CoinButtons.clear();
+		m_CoinMenuHilite.reset();
+		m_CoinAxisLetterRot.reset();
+		m_CoinGeneration = shared->m_TexGeneration;
+	}
+	if (!m_CoinCubeRoot)
+		buildCoinCube();
+
+	handleResize();
+
+	SoCamera *cam = m_View3DInventorViewer->getSoRenderManager()->getCamera();
+	SbRotation orient = cam ? cam->orientation.getValue()
+	                        : SbRotation::identity();
+	if (m_CoinAxisLetterRot
+	    && m_CoinAxisLetterRot->rotation.getValue() != orient)
+		m_CoinAxisLetterRot->rotation = orient;
+
+	// Per-frame sync: hover highlight and the text-readability flip of
+	// drawNaviCube()'s label pass.
+	SbMatrix mx;
+	mx = orient;
+	mx = mx.inverse();
+	mx[3][2] = -5.0f;
+	for (auto &cf : m_CoinFaces) {
+		const Face &f = shared->m_Faces[size_t(cf.faceIndex)];
+		bool hilite = (m_HiliteId == f.m_PickId) && f.m_RenderPass < 2;
+		syncQColor(cf.material, hilite ? shared->m_HiliteColor : f.m_Color);
+		if (!cf.texCoords)
+			continue;
+		int idx = f.m_FirstVertex;
+		const auto &mv1 = shared->m_VertexArray[shared->m_IndexArray[idx]];
+		const auto &mv2 = shared->m_VertexArray[shared->m_IndexArray[idx + 1]];
+		const auto &mv4 = shared->m_VertexArray[shared->m_IndexArray[idx + 3]];
+		SbVec3f v1, v2, v4;
+		mx.multVecMatrix(SbVec3f(mv1[0], mv1[1], mv1[2]), v1);
+		mx.multVecMatrix(SbVec3f(mv2[0], mv2[1], mv2[2]), v2);
+		mx.multVecMatrix(SbVec3f(mv4[0], mv4[1], mv4[2]), v4);
+		float uv = (v1[0] - v2[0] > 0.001f && v1[1] - v4[1] > 0.001f)
+			? -1.0f : 1.0f;
+		if (uv != cf.uv) {
+			cf.uv = uv;
+			SbVec2f uvs[4];
+			for (int k = 0; k < 4; ++k) {
+				const auto &t = shared->m_TextureCoordArray[
+					shared->m_IndexArray[idx + k]];
+				uvs[k].setValue(uv * t[0], uv * t[1]);
+			}
+			cf.texCoords->point.setValues(0, 4, uvs);
+		}
+	}
+
+	// Corner mini-perspective matching drawNaviCube()'s frustum: dim =
+	// NEAR * tan(pi/8) * 1.2 at NEAR => half-angle atan(tan(22.5deg)*1.2).
+	fillCornerAnchor(anchor);
+	anchor.fovDeg =
+		float(2.0 * atan(tan(M_PI / 8.0) * 1.2) * 180.0 / M_PI);
+	anchor.orientFromScene = true;
+	return m_CoinCubeRoot;
+}
+
+SoSeparator *NaviCubeImplementation::getOverlayButtonGraph(Render::OverlayAnchor &anchor)
+{
+	auto shared = m_Shared.get();
+	if (!shared->m_Context)
+		return nullptr;
+	if (!m_Hit && (NaviCubeShared::m_AutoHideButton
+	               || NaviCubeShared::m_AutoHideCube))
+		return nullptr;
+	if (!m_CoinButtonRoot)
+		buildCoinButtons();
+
+	for (auto &bp : m_CoinButtons) {
+		bool hilite = bp.first >= 0 && m_HiliteId == bp.first;
+		syncQColor(bp.second,
+		           hilite ? shared->m_HiliteColor : shared->m_ButtonColor);
+	}
+	int which = m_HiliteId == TEX_VIEW_MENU_FACE
+		? SO_SWITCH_ALL : SO_SWITCH_NONE;
+	if (m_CoinMenuHilite->whichChild.getValue() != which)
+		m_CoinMenuHilite->whichChild = which;
+
+	fillCornerAnchor(anchor);
+	anchor.fovDeg = 0.0f;
+	anchor.orthoHeight = 2.0f;
+	anchor.orientFromScene = false;
+	return m_CoinButtonRoot;
 }
 
 bool NaviCubeShared::drawNaviCube(SoCamera *cam, bool pickMode, int hiliteId, bool hit) {

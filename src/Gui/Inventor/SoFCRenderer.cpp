@@ -879,7 +879,8 @@ SoFCRenderer::setExternalOverlay(Render::Renderer * renderer, int id,
   self->external = renderer;
   if (renderer && self->scene)
     renderer->setOverlay(id,
-        RendererBridge::translate(self->scene->getVertexCaches(true)),
+        RendererBridge::translate(self->scene->getVertexCaches(true),
+                                  0, false, true),
         anchor);
 }
 
@@ -1089,7 +1090,8 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
   if (PRIVATE(this)->external) {
     if (PRIVATE(this)->overlaymode)
       PRIVATE(this)->external->setOverlay(PRIVATE(this)->overlayid,
-          RendererBridge::translate(caches), PRIVATE(this)->overlayanchor);
+          RendererBridge::translate(caches, 0, false, true),
+          PRIVATE(this)->overlayanchor);
     else
       PRIVATE(this)->external->setScene(RendererBridge::translate(caches));
   }

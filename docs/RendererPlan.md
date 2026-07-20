@@ -1318,13 +1318,39 @@ independent of each other; item 4 builds on item 3's property model.
     frames stay live, and the WASM viewer shows the rubber band mid-drag.
     Verified: xvfb backend frame + GL-only frame + headless-Chromium
     WASM replay (live band, updating fps text, lettered cross).
-  - *C — NaviCube*: keep the QImage face generation (becomes
-    `TextureImage`s) and the existing ray-based hit testing; replace
-    the immediate-mode draw with overlay draws (textured quads +
-    border lines) or a Coin kit under an annotation camera — decide by
-    prototyping; must work in the WASM viewer (its own orbit camera
-    supplies the orientation) and stay clickable there via the
-    browser-local raycast.
+  - *C — NaviCube* — **rendering DONE (2026-07-20)**: the cube renders
+    through the overlay feed on backend frames and replays in the WASM
+    viewer (tracking its local camera); desktop picking keeps the
+    existing GL pick-FBO pass (still works alongside the backend).
+    *As built*: the texture creators keep their rasterized QImages
+    (bottom-up RGBA keyed by GL id, `m_TexQImages`) so per-viewer Coin
+    graphs feed them as `SoTexture2` images over the shared cube data;
+    `NaviCube::getOverlayCubeGraph()` (corner mini-perspective anchor,
+    fov 2·atan(tan(π/8)·1.2), orientFromScene) carries faces in
+    GL pass order + hover-highlight/text-flip per-frame sync, corner
+    axes with stroke letters, and the face borders;
+    `getOverlayButtonGraph()` (corner ortho anchor, orthoHeight 2)
+    carries the viewport-fixed rotate buttons and menu icon with an
+    SoSwitch hilite backdrop. `OverlayAnchor` gained pixel margins
+    (snapshot v5) so the anchor rect matches `handleResize()`'s
+    5%-of-size + user-offset placement — the GL pick pass and the
+    backend cube stay aligned. Fixes this port forced in the shared
+    machinery: (1) overlay feeds are **sorted by vertex-cache id**
+    (creation = traversal order) in the bridge, because the Sequential
+    overlay view blends in submission order and the material-keyed
+    cache map loses traversal order; (2) overlay draws keep **explicit
+    backface culling and depth writes even when transparent**
+    (closed semi-transparent widget solids, GL parity); (3) the mesh
+    shader **discards fully transparent texels** — the shaped face
+    textures' alpha-0 skirt otherwise writes depth (GL used
+    glAlphaFunc(GREATER, 0.25)) and occludes the bevel faces, labels
+    and borders drawn later; (4) borders are depth-tested lines pushed
+    1.005× off the surface (lines cannot backface-cull like GL's
+    polygon-mode border pass). Overlay view slots grew 4 → 8.
+    *Remaining for C*: WASM-side click-to-orient (browser-local raycast
+    against the cube + local camera rotation) — the cube is
+    display-only in the browser so far; stroke letters always face the
+    desktop camera (billboard hint someday).
   - *D — in-scene raw-GL nodes*: `SoDatumLabel`, `SoTextLabel`,
     `SoRegPoint` — needed before Sketcher/edit-mode parity on
     backend-only frames; port bodies to cached primitives, verify

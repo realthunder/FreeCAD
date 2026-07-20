@@ -42,9 +42,15 @@ namespace RendererBridge {
 /// the GL renderer's selection line/point thickening
 /// (ViewParams::SelectionLineThicken etc., applyMaterial's
 /// RenderPassHighlight handling) to the translated materials.
+/// \a sequentialOrder returns the draws sorted by vertex-cache id —
+/// ascending creation order, which follows the scene-graph traversal
+/// order. Overlay feeds need it: they render in a Sequential view where
+/// submission order is blending order (the material-keyed cache map
+/// itself has no traversal order).
 GuiExport Render::DrawCallList translate(
         const SoFCRenderCache::VertexCacheMap & vcachemap,
-        int selId = 0, bool highlight = false);
+        int selId = 0, bool highlight = false,
+        bool sequentialOrder = false);
 
 /// Resolve the hidden-line draw style state from the traversal state
 /// (SoFCDisplayModeElement) into the backend-neutral per-frame config.

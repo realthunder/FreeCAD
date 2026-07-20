@@ -168,6 +168,11 @@ struct OverlayAnchor {
     /// rotation part of the scene view matrix) so it tracks the scene,
     /// like the axis cross does.
     bool orientFromScene = false;
+    /// Distance in pixels between the viewport edges and the overlay
+    /// rect, along the anchoring corner's directions (NaviCube margin +
+    /// user offsets). Ignored for FullViewport.
+    float marginX = 0.0f;
+    float marginY = 0.0f;
     /// Pixel-space overlay (screen-space content: rubber band, 2D text):
     /// the projection maps one model unit to one pixel with the origin at
     /// the viewport rect's top-left corner and y growing downward (Qt
@@ -182,7 +187,8 @@ struct OverlayAnchor {
             && cameraDistance == o.cameraDistance
             && nearPlane == o.nearPlane && farPlane == o.farPlane
             && orientFromScene == o.orientFromScene
-            && pixelSpace == o.pixelSpace;
+            && pixelSpace == o.pixelSpace
+            && marginX == o.marginX && marginY == o.marginY;
     }
     bool operator!=(const OverlayAnchor &o) const { return !(*this == o); }
 };

@@ -25,7 +25,10 @@
 
 #include <CXX/Extensions.hxx>
 
+#include "Renderer/Renderer.h"
+
 class SoEvent;
+class SoSeparator;
 class QWidget;
 
 namespace Gui {
@@ -47,6 +50,14 @@ public:
 	void drawNaviCube();
 	bool processSoEvent(const SoEvent* ev);
 	void setCorner(Corner);
+	/// Coin overlay twins of drawNaviCube() for the external render
+	/// backend (raw-GL overlay Coin-ification, phase C): the rotating
+	/// cube under a corner mini-perspective anchor, and the viewport-
+	/// fixed rotate buttons / menu icon under a corner ortho anchor.
+	/// Null when hidden (auto-hide) or before the GL textures exist.
+	/// The cube stays clickable through the existing GL pick pass.
+	SoSeparator *getOverlayCubeGraph(Render::OverlayAnchor &anchor);
+	SoSeparator *getOverlayButtonGraph(Render::OverlayAnchor &anchor);
     static int getNaviCubeSize();
     static void setColors(QWidget *parent);
     static void setLabels(QWidget *parent);

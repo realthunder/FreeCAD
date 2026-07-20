@@ -1255,6 +1255,10 @@ public:
         ViewOverlay1,
         ViewOverlay2,
         ViewOverlay3,
+        ViewOverlay4,
+        ViewOverlay5,
+        ViewOverlay6,
+        ViewOverlay7,
         ViewPresent,        // standalone build only: fullscreen copy of
                             // the scene color onto the default backbuffer
                             // (the desktop build GL-blits into the Qt
@@ -4345,7 +4349,11 @@ public:
         // are lit on both faces, transparent draws are never culled —
         // back faces are visible layers of a transparent solid.
         bool twoside = mat.twoside || transparent || mat.ontop;
-        bool culling = mat.culling && !transparent;
+        // Overlay feeds keep explicit backface culling even when
+        // transparent: overlay widgets (NaviCube) are closed solids whose
+        // semi-transparent faces must not double-blend with their own
+        // back faces, matching their original GL draw.
+        bool culling = mat.culling && (!transparent || overlayView >= 0);
 
         uint16_t passView = ontop ? ViewHighlight
             : mat.ontop ? ViewOnTop
@@ -4368,7 +4376,11 @@ public:
         // and every bgfx backend alike), which is why on-top fills need the
         // PassDepthOnly prepass before the line passes.
         bool depthtest = mat.ontop ? false : mat.depthtest;
-        bool depthwrite = (!mat.ontop && transparent) ? false : mat.depthwrite;
+        // Overlay widgets keep their depth writes even when blended
+        // (NaviCube faces GL-parity: glDepthMask stays on), so their
+        // depth-tested elements resolve against each other.
+        bool depthwrite = (!mat.ontop && transparent && overlayView < 0)
+            ? false : mat.depthwrite;
         uint8_t depthfunc = mat.depthfunc;
         // GL quirk (renderHighlight ~2187): a selected face drawn with
         // its outline keeps the depth test at LEQUAL so the outline
@@ -6262,8 +6274,12 @@ public:
                         anchor->corner == Render::OverlayAnchor::TopLeft
                         || anchor->corner == Render::OverlayAnchor::TopRight;
                     // bgfx view rects are top-left anchored.
-                    rx = right ? uint16_t(width - edge) : uint16_t(0);
-                    ry = top ? uint16_t(0) : uint16_t(height - edge);
+                    int mx = int(anchor->marginX);
+                    int my = int(anchor->marginY);
+                    rx = uint16_t(std::max(0,
+                        right ? width - edge - mx : mx));
+                    ry = uint16_t(std::max(0,
+                        top ? my : height - edge - my));
                 }
                 const auto *caps = bgfx::getCaps();
                 float ovProj[16];
