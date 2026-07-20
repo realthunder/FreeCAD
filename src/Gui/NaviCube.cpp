@@ -907,14 +907,20 @@ void NaviCubeShared::addFace(const Vector3f& x, const Vector3f& z, int frontTex,
     // text; picking skips it (untextured pick pass) so it never broadens the
     // pick region.
     if (text) {
+        // Lift the label square a hair off the face plane along the face
+        // normal. It is coplanar with its own octagon fill, so under the
+        // LEQUAL depth test (and different triangulation) the two z-fight and
+        // the plain fill intermittently hides the glyph at some view angles;
+        // the small outward offset makes the label deterministically win.
+        const Vector3f zt = z + z.normalized() * 0.01f;
         int textStart = int(m_VertexArray.size());
-        m_VertexArray.emplace_back(z - x - y);
+        m_VertexArray.emplace_back(zt - x - y);
         m_TextureCoordArray.emplace_back(0, 0);
-        m_VertexArray.emplace_back(z + x - y);
+        m_VertexArray.emplace_back(zt + x - y);
         m_TextureCoordArray.emplace_back(1, 0);
-        m_VertexArray.emplace_back(z + x + y);
+        m_VertexArray.emplace_back(zt + x + y);
         m_TextureCoordArray.emplace_back(1, 1);
-        m_VertexArray.emplace_back(z - x + y);
+        m_VertexArray.emplace_back(zt - x + y);
         m_TextureCoordArray.emplace_back(0, 1);
         m_Faces.emplace_back(
             int(m_IndexArray.size()),
