@@ -4022,8 +4022,16 @@ public:
         bgfx::setUniform(u_shadowParams, shadowParams);
         // Fire body effect light: frame-wide state computed in render()
         // (zeroed w when no fire body burns); set on every mesh submit
-        // because bgfx uniforms are global per program.
-        bgfx::setUniform(u_fireLight, fireLightView, kMediumSlots);
+        // because bgfx uniforms are global per program. Overlays (NaviCube,
+        // axis cross, …) are UI chrome and must not flicker with the
+        // scene's fire light, so they get a zeroed fire light.
+        if (overlayView >= 0) {
+            static const float noFire[kMediumSlots][4] = {};
+            bgfx::setUniform(u_fireLight, noFire, kMediumSlots);
+        }
+        else {
+            bgfx::setUniform(u_fireLight, fireLightView, kMediumSlots);
+        }
         bgfx::setUniform(u_fireLightColor, fireLightColorI,
                          kMediumSlots);
         bgfx::setTexture(3, s_texShadow, shadow);
@@ -4106,6 +4114,10 @@ public:
         params[0] = 1.0f;
         bool shaded = mat.lighting
             || (shadowFrame && (mat.shadowstyle & 2));
+        // UI overlays (NaviCube faces, etc.) are flat chrome with baked
+        // textures: light them uniformly so faces don't darken by angle.
+        if (overlayView >= 0)
+            shaded = false;
         params[1] = shaded ? 1.0f : 0.0f;
         // GL parity (applyMaterial ~745): transparent draws are lit on
         // both faces and never culled (never on-top here).
@@ -4471,6 +4483,9 @@ public:
         // of the light model.
         bool shaded = mat.lighting
             || (shadowFrame && (mat.shadowstyle & 2));
+        // UI overlays render unlit (see the instanced path above).
+        if (overlayView >= 0)
+            shaded = false;
         params[1] = mat.type == Render::Material::Line
             ? qMax(1.0f, std::floor(mat.linewidth + 0.5f))
             : mat.type == Render::Material::Point
