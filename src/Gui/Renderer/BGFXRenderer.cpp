@@ -5199,8 +5199,13 @@ public:
                             servePort);
                 }
             }
+            // Publish whenever there is anything to show, not just a non-empty
+            // main scene: while editing the only object (e.g. a Sketcher sketch
+            // with no other geometry) the whole edit graph lives in the editing
+            // overlay and the main scene is empty — the datums/leaders must
+            // still stream.
             if (server.running() && (feedChanged || !scenePublished)
-                    && !scene.empty()) {
+                    && !(scene.empty() && overlays.empty())) {
                 scenePublished = true;
                 Render::SceneSnapshot snap;
                 makeSnapshot(snap);
