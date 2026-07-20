@@ -240,7 +240,11 @@ public:
             init.platformData.nwh = windowHandle;
             init.resolution.width = standaloneWidth;
             init.resolution.height = standaloneHeight;
-            init.resolution.reset = BGFX_RESET_VSYNC;
+            // MAXANISOTROPY is required for BGFX_SAMPLER_*_ANISOTROPIC to have
+            // any effect: bgfx only raises its internal m_maxAnisotropy (and
+            // thus honors the per-sampler anisotropic flags) when this reset
+            // bit is set — otherwise the flags are silently ignored.
+            init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY;
             if (!bgfx::init(init)) {
                 currentType = RendererType::Noop;
                 RENDER_ERR("init failed");
@@ -322,7 +326,11 @@ public:
             }
             init.resolution.width = widget->width();
             init.resolution.height = widget->height();
-            init.resolution.reset = BGFX_RESET_VSYNC;
+            // MAXANISOTROPY is required for BGFX_SAMPLER_*_ANISOTROPIC to have
+            // any effect: bgfx only raises its internal m_maxAnisotropy (and
+            // thus honors the per-sampler anisotropic flags) when this reset
+            // bit is set — otherwise the flags are silently ignored.
+            init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY;
             if (!bgfx::init(init)) {
                 widget->makeCurrent();
                 RENDER_ERR("init failed");
@@ -1024,7 +1032,14 @@ struct GpuTexture
                 dst += lvl.size();
             }
         }
-        uint64_t flags = 0;
+        // Anisotropic min/mag filtering: without it, textures viewed at a
+        // grazing angle (the NaviCube face labels are the visible case) get
+        // isotropically over-blurred along the foreshortened axis. The desktop
+        // path sets setMaximumAnisotropy(4.0) for the same reason; match it
+        // here. Harmless where the hardware lacks it (bgfx checks caps; WebGL
+        // gates on EXT_texture_filter_anisotropic) and it also sharpens the
+        // head-on minified case by taking higher-mip taps.
+        uint64_t flags = BGFX_SAMPLER_MIN_ANISOTROPIC | BGFX_SAMPLER_MAG_ANISOTROPIC;
         if (tex.wrapS == Render::TextureImage::Clamp)
             flags |= BGFX_SAMPLER_U_CLAMP;
         if (tex.wrapT == Render::TextureImage::Clamp)
@@ -5083,7 +5098,8 @@ public:
             if (_BGFXLib.standaloneWidth != view->width
                     || _BGFXLib.standaloneHeight != view->height)
                 bgfx::reset(_BGFXLib.standaloneWidth,
-                            _BGFXLib.standaloneHeight, BGFX_RESET_VSYNC);
+                            _BGFXLib.standaloneHeight,
+                            BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY);
             view->init();
         }
 
