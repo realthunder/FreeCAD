@@ -445,6 +445,81 @@ static void orientToDir(const bx::Vec3 &d)
     s_panX = s_panY = 0.0f;
 }
 
+static const int kNaviButtonsOverlayId = 6;  // OverlayNaviButtons
+
+enum NaviButtonAction {
+    NaviBtnNone, NaviBtnTiltUp, NaviBtnTiltDown,
+    NaviBtnOrbitLeft, NaviBtnOrbitRight
+};
+
+/// Map a click on the NaviCube button overlay (the tilt/orbit arrows
+/// ringing the cube) to an orbit-camera nudge. The button quads all
+/// cover the whole corner rect and differ only in where their texture
+/// is opaque, so — unlike the cube — they are hit-tested by the arrow
+/// hot-zones at the rect mid-edges rather than raycast. The corner roll
+/// arrows and the menu icon have no place in the fixed-world-up orbit
+/// camera and are left unhandled.
+static NaviButtonAction pickNaviButton(float px, float py)
+{
+    const Render::SceneSnapshot::Overlay *btn = nullptr;
+    for (const auto &ov : s_snap.overlays) {
+        if (ov.id == kNaviButtonsOverlayId) {
+            btn = &ov;
+            break;
+        }
+    }
+    if (!btn || btn->draws.empty())
+        return NaviBtnNone;
+
+    int rx, ry, rw, rh;
+    overlayRect(btn->anchor, rx, ry, rw, rh);
+    const float lx = px - float(rx), ly = py - float(ry);
+    if (rw <= 0 || rh <= 0 || lx < 0.0f || ly < 0.0f
+            || lx > float(rw) || ly > float(rh))
+        return NaviBtnNone;
+
+    // Local NDC of the button ortho (orthoHeight 2, y up), matching the
+    // arrow texture layout: north/south at top/bottom mid, east/west at
+    // right/left mid. The cube occupies the centre (|n| < ~0.5), so the
+    // outer edge bands never overlap it.
+    const float nx = 2.0f * lx / float(rw) - 1.0f;
+    const float ny = 1.0f - 2.0f * ly / float(rh);
+    const float lat = 0.28f;   // arrow half-width across its travel axis
+    const float band = 0.6f;   // how far out along the axis the arrow sits
+    if (std::fabs(nx) < lat && ny > band)
+        return NaviBtnTiltUp;       // north arrow
+    if (std::fabs(nx) < lat && ny < -band)
+        return NaviBtnTiltDown;     // south arrow
+    if (std::fabs(ny) < lat && nx > band)
+        return NaviBtnOrbitRight;   // east arrow
+    if (std::fabs(ny) < lat && nx < -band)
+        return NaviBtnOrbitLeft;    // west arrow
+    return NaviBtnNone;
+}
+
+/// Nudge the orbit camera by one NaviCube step (default NaviStepByTurn
+/// = 8 -> 45°). Tilt changes elevation, orbit changes azimuth.
+static void applyNaviButton(NaviButtonAction a)
+{
+    const float step = bx::kPi / 4.0f;
+    switch (a) {
+    case NaviBtnTiltUp:
+        s_pitch = bx::clamp(s_pitch + step, -1.55f, 1.55f);
+        break;
+    case NaviBtnTiltDown:
+        s_pitch = bx::clamp(s_pitch - step, -1.55f, 1.55f);
+        break;
+    case NaviBtnOrbitLeft:
+        s_yaw += step;
+        break;
+    case NaviBtnOrbitRight:
+        s_yaw -= step;
+        break;
+    default:
+        break;
+    }
+}
+
 // Hover highlight state: a local setHighlight() built from the hit
 // draw (no server round trip). The next streamed snapshot replaces it
 // with the desktop's highlight feed until the mouse moves again.
@@ -604,16 +679,25 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
         // click anywhere else is a scene pick sent to the desktop.
         float px, py;
         canvasPos(e, px, py);
+        static const bool debugPick = EM_ASM_INT({
+            return new URLSearchParams(window.location.search)
+                .has('debugpick') ? 1 : 0;
+        }) != 0;
         bx::Vec3 dir(bx::InitZero);
+        NaviButtonAction btn = NaviBtnNone;
         if (s_haveScene && pickNaviCube(px, py, dir)) {
-            static const bool debugPick = EM_ASM_INT({
-                return new URLSearchParams(window.location.search)
-                    .has('debugpick') ? 1 : 0;
-            }) != 0;
             if (debugPick)
                 std::printf("fcviewer: navicube orient (%g,%g) -> "
                             "dir %g,%g,%g\n", px, py, dir.x, dir.y, dir.z);
             orientToDir(dir);
+            interact();
+        }
+        else if (s_haveScene
+                 && (btn = pickNaviButton(px, py)) != NaviBtnNone) {
+            if (debugPick)
+                std::printf("fcviewer: navicube button (%g,%g) -> %d\n",
+                            px, py, int(btn));
+            applyNaviButton(btn);
             interact();
         }
         else {

@@ -1356,11 +1356,21 @@ independent of each other; item 4 builds on item 3's property model.
     face/edge/corner direction, and `orientToDir` snaps the orbit camera to
     look from it (keeping azimuth at the poles, recentering the pan). The
     click handler tries the cube first and only falls through to the scene
-    round-trip pick off the cube. Verified headless-Chromium: 19 distinct
+    round-trip pick off the cube. Verified headless-Chromium: 18 distinct
     snapped directions across the grid, view reorients (axonometric → front
-    on a face click). *Still remaining for C*: rotate-button overlay (id 6)
-    clicks are not yet handled in the browser; stroke letters always face
-    the desktop camera (billboard hint someday).
+    on a face click). The rotate-button overlay (id 6) is handled too:
+    those quads all cover the whole corner rect and differ only by where
+    their texture is opaque, so they are hit-tested by arrow hot-zones at
+    the rect mid-edges (`pickNaviButton`) rather than raycast — north/south
+    nudge elevation, east/west nudge azimuth by one NaviCube step (45°).
+    The corner roll arrows and the menu icon have no representation in the
+    fixed-world-up orbit camera and are left unhandled. Verified: all four
+    tilt/orbit arrows fire and the north arrow tilts the view to top-down.
+    (Buttons auto-hide unless the desktop cube is hovered — `AutoHideButton`
+    defaults true — so the stream only carries id 6 when the desktop is
+    hovering or auto-hide is off.) *Still open for C*: stroke letters
+    always face the desktop camera (billboard hint someday); roll/menu
+    buttons intentionally unsupported in the browser.
   - *D — in-scene raw-GL nodes*: `SoDatumLabel`, `SoTextLabel`,
     `SoRegPoint` — needed before Sketcher/edit-mode parity on
     backend-only frames; port bodies to cached primitives, verify
