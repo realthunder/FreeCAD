@@ -46,8 +46,10 @@
 # include <Inventor/nodes/SoCone.h>
 # include <Inventor/nodes/SoCoordinate3.h>
 # include <Inventor/nodes/SoCube.h>
+# include <Inventor/nodes/SoDrawStyle.h>
 # include <Inventor/nodes/SoFontStyle.h>
 # include <Inventor/nodes/SoLineSet.h>
+# include <Inventor/nodes/SoPointSet.h>
 # include <Inventor/nodes/SoSeparator.h>
 # include <Inventor/nodes/SoText2.h>
 # include <Inventor/nodes/SoTranslation.h>
@@ -267,25 +269,65 @@ SoRegPoint::SoRegPoint()
     SO_NODE_ADD_FIELD(color, (1.0f, 0.447059f, 0.337255f));
     SO_NODE_ADD_FIELD(text, (""));
 
+    SbVec3f p1 = base.getValue();
+    SbVec3f p2 = p1 + normal.getValue() * length.getValue();
+
     root = new SoSeparator();
     root->ref();
+    root->renderCaching = SoSeparator::OFF;
+    root->boundingBoxCaching = SoSeparator::OFF;
 
-    // translation
-    auto move = new SoTranslation();
-    move->translation.setValue(base.getValue() + normal.getValue() * length.getValue());
-    root->addChild(move);
+    // Probe colour for the leader line and the two point markers (real Coin
+    // geometry so the render-cache backend captures them like any other node,
+    // instead of the old raw-GL GLRender that produced nothing for bgfx/WASM).
+    probeColor = new SoBaseColor();
+    probeColor->rgb.setValue(this->color.getValue());
+    root->addChild(probeColor);
 
-    // sub-group
-    auto col = new SoBaseColor();
-    col->rgb.setValue(this->color.getValue());
+    // leader line p1 -> p2
+    auto lineStyle = new SoDrawStyle();
+    lineStyle->lineWidth = 1.0f;
+    root->addChild(lineStyle);
+    lineCoords = new SoCoordinate3();
+    lineCoords->point.setNum(2);
+    lineCoords->point.set1Value(0, p1);
+    lineCoords->point.set1Value(1, p2);
+    root->addChild(lineCoords);
+    auto lineSet = new SoLineSet();
+    lineSet->numVertices.setValue(2);
+    root->addChild(lineSet);
+
+    // base point marker (larger)
+    auto baseStyle = new SoDrawStyle();
+    baseStyle->pointSize = 5.0f;
+    root->addChild(baseStyle);
+    baseCoords = new SoCoordinate3();
+    baseCoords->point.setNum(1);
+    baseCoords->point.set1Value(0, p1);
+    root->addChild(baseCoords);
+    root->addChild(new SoPointSet());
+
+    // tip point marker (smaller)
+    auto tipStyle = new SoDrawStyle();
+    tipStyle->pointSize = 2.0f;
+    root->addChild(tipStyle);
+    tipCoords = new SoCoordinate3();
+    tipCoords->point.setNum(1);
+    tipCoords->point.set1Value(0, p2);
+    root->addChild(tipCoords);
+    root->addChild(new SoPointSet());
+
+    // text label at the tip
+    textMove = new SoTranslation();
+    textMove->translation.setValue(p2);
+    root->addChild(textMove);
 
     auto font = new SoFontStyle;
     font->size = 14;
 
     auto sub = new SoSeparator();
-    sub->addChild(col);
     sub->addChild(font);
-    auto label = new SoText2();
+    label = new SoText2();
     sub->addChild(label);
     // Companion glyph quad so the probe text is drawn by the render-cache backend
     // (bgfx / WASM) too; captured via generatePrimitives() traversing root below.
@@ -299,47 +341,20 @@ SoRegPoint::~SoRegPoint()
 }
 
 /**
- * Renders the probe with text label and a bullet at the base point.
+ * Renders the probe (leader line + point markers + text label) — all now real
+ * Coin geometry under root, so GL and the render-cache backend draw the same.
  */
 void SoRegPoint::GLRender(SoGLRenderAction *action)
 {
     if (shouldGLRender(action))
-    {
-        SoState*  state = action->getState();
-        state->push();
-        SoMaterialBundle mb(action);
-        SoTextureCoordinateBundle tb(action, true, false);
-        SoLazyElement::setLightModel(state, SoLazyElement::BASE_COLOR);
-        mb.sendFirst();  // make sure we have the correct material
-
-        SbVec3f p1 = base.getValue();
-        SbVec3f p2 = p1 + normal.getValue() * length.getValue();
-
-        glLineWidth(1.0f);
-        glColor3fv(color.getValue().getValue());
-        glBegin(GL_LINE_STRIP);
-            glVertex3d(p1[0], p1[1], p1[2]);
-            glVertex3d(p2[0], p2[1], p2[2]);
-        glEnd();
-        glPointSize(5.0f);
-        glBegin(GL_POINTS);
-            glVertex3fv(p1.getValue());
-        glEnd();
-        glPointSize(2.0f);
-        glBegin(GL_POINTS);
-            glVertex3fv(p2.getValue());
-        glEnd();
-
         root->GLRender(action);
-        state->pop();
-    }
 }
 
 void SoRegPoint::generatePrimitives(SoAction* action)
 {
-    // Feed the render-cache capture: traverse the internal graph so the text
-    // companion (SoTextImage) emits its glyph quad. The raw-GL leader line/points
-    // in GLRender remain desktop-only. Inert on the ray-pick path.
+    // Feed the render-cache capture (and any other traversal): the line, points
+    // and text companion under root emit real primitives for the bgfx/WASM
+    // backend. Inert on the ray-pick path (root has no pickable text box).
     if (action->isOfType(SoCallbackAction::getClassTypeId()))
         root->doAction(action);
 }
@@ -347,16 +362,16 @@ void SoRegPoint::generatePrimitives(SoAction* action)
 /**
  * Sets the bounding box of the probe to \a box and its center to \a center.
  */
-void SoRegPoint::computeBBox(SoAction *action, SbBox3f &box, SbVec3f &center)
+void SoRegPoint::computeBBox(SoAction * /*action*/, SbBox3f &box, SbVec3f &center)
 {
-    root->doAction(action);
-    if (action->getTypeId().isDerivedFrom(SoGetBoundingBoxAction::getClassTypeId()))
-        static_cast<SoGetBoundingBoxAction*>(action)->resetCenter();
-
+    // The leader endpoints define the extent; the screen-space text adds a
+    // negligible amount. (Do NOT run the bbox action over root here — its real
+    // line/point geometry would set the action's centre, tripping the
+    // single-setCenter assertion in SoGetBoundingBoxAction.)
     SbVec3f p1 = base.getValue();
     SbVec3f p2 = p1 + normal.getValue() * length.getValue();
 
-    box.extendBy(p1);
+    box.setBounds(p1, p1);
     box.extendBy(p2);
 
     center = box.getCenter();
@@ -365,18 +380,20 @@ void SoRegPoint::computeBBox(SoAction *action, SbBox3f &box, SbVec3f &center)
 void SoRegPoint::notify(SoNotList * node)
 {
     SoField * f = node->getLastField();
-    if (f == &this->base || f == &this->normal || f == &this->length) {
-        auto move = static_cast<SoTranslation*>(root->getChild(0));
-        move->translation.setValue(base.getValue() + normal.getValue() * length.getValue());
+    if ((f == &this->base || f == &this->normal || f == &this->length)
+        && lineCoords) {
+        SbVec3f p1 = base.getValue();
+        SbVec3f p2 = p1 + normal.getValue() * length.getValue();
+        lineCoords->point.set1Value(0, p1);
+        lineCoords->point.set1Value(1, p2);
+        baseCoords->point.set1Value(0, p1);
+        tipCoords->point.set1Value(0, p2);
+        textMove->translation.setValue(p2);
     }
-    else if (f == &this->color) {
-        auto sub = static_cast<SoSeparator*>(root->getChild(1));
-        auto col = static_cast<SoBaseColor*>(sub->getChild(0));
-        col->rgb = this->color.getValue();
+    else if (f == &this->color && probeColor) {
+        probeColor->rgb = this->color.getValue();
     }
-    else if (f == &this->text) {
-        auto sub = static_cast<SoSeparator*>(root->getChild(1));
-        auto label = static_cast<SoText2*>(sub->getChild(2));
+    else if (f == &this->text && label) {
         label->string = this->text.getValue();
     }
 

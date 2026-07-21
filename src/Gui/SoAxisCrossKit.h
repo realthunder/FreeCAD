@@ -36,6 +36,10 @@ class SbViewport;
 class SoState;
 class SbColor;
 class SbVec2s;
+class SoBaseColor;
+class SoCoordinate3;
+class SoTranslation;
+class SoText2;
 
 namespace Gui {
 class GuiExport SoShapeScale : public SoBaseKit {
@@ -113,6 +117,14 @@ protected:
 
 private:
     SoSeparator* root;
+    // Mutable child nodes (leader line + endpoint markers + text), rebuilt as
+    // real Coin geometry so both GL and the render-cache backend draw them.
+    SoBaseColor* probeColor {nullptr};
+    SoCoordinate3* lineCoords {nullptr};
+    SoCoordinate3* baseCoords {nullptr};
+    SoCoordinate3* tipCoords {nullptr};
+    SoTranslation* textMove {nullptr};
+    SoText2* label {nullptr};
 };
 
 } // namespace Gui

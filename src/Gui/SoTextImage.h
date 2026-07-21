@@ -35,6 +35,8 @@
 
 class SoSeparator;
 class SoTexture2;
+class SoText2;
+class SoFont;
 
 namespace Gui {
 
@@ -102,7 +104,7 @@ public:
      * @a fontName defaults to Helvetica when null. This is the one-liner most
      * call sites want to port an in-scene SoText2 to the render-cache backend.
      */
-    static SoSeparator* createFor(class SoText2* label, float fontSize,
+    static SoSeparator* createFor(SoText2* label, float fontSize,
                                   const char* fontName = nullptr);
 
     /**
@@ -110,7 +112,7 @@ public:
      * size and font name are connected to @a font->size / @a font->name, so a
      * font/size change on the owning ViewProvider re-rasterizes automatically.
      */
-    static SoSeparator* createFor(class SoText2* label, class SoFont* font);
+    static SoSeparator* createFor(SoText2* label, SoFont* font);
 
 protected:
     ~SoTextImage() override;
