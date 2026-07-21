@@ -2791,10 +2791,29 @@ void View3DInventorViewer::showRotationCenter(bool show)
             complexity->value = 1;
 
             auto material = new SoMaterial();
+            // Base color as well as emissive: with the flat (BASE_COLOR)
+            // light model below the render-cache backend takes the diffuse
+            // color as the unlit fill.
+            material->diffuseColor = SbColor(float(color.redF()),
+                                             float(color.greenF()),
+                                             float(color.blueF()));
             material->emissiveColor = SbColor(float(color.redF()),
                                               float(color.greenF()),
                                               float(color.blueF()));
             material->transparency = 1.0F - float(color.alphaF());
+
+            // The rotation-center sphere is a navigation gizmo, not scene
+            // geometry: render it flat (unlit) and out of the shadow pass so
+            // the render-cache backend never shades, shadows or tints it.
+            // Drawn on-top (SoAnnotation) it already renders after the
+            // screen-space effects (SSAO / volumetric / water / caustics);
+            // this keeps the lighting and shadow passes off it too, so no
+            // special effect touches the transparent sphere.
+            auto lightModel = new SoLightModel();
+            lightModel->model = SoLightModel::BASE_COLOR;
+
+            auto shadowStyle = new SoShadowStyle();
+            shadowStyle->style = SoShadowStyle::NO_SHADOWING;
 
             auto translation = new SoTranslation();
             translation->setName("translation");
@@ -2802,6 +2821,8 @@ void View3DInventorViewer::showRotationCenter(bool show)
 
             auto annotation = new SoAnnotation();
             annotation->addChild(complexity);
+            annotation->addChild(lightModel);
+            annotation->addChild(shadowStyle);
             annotation->addChild(material);
             annotation->addChild(sphere);
 
