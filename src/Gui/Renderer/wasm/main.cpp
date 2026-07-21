@@ -1129,7 +1129,10 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
         }
         else if (n == 2) {
             const float scale = panScale();
-            s_panX -= 0.5f * (x[0] - s_touchX[0] + x[1] - s_touchX[1])
+            // Match the mouse grab-pan sign convention (onMouseMove: +dx
+            // increases panX); the previous -= reversed two-finger pan on the
+            // X axis while Y was already correct.
+            s_panX += 0.5f * (x[0] - s_touchX[0] + x[1] - s_touchX[1])
                 * scale;
             s_panY += 0.5f * (y[0] - s_touchY[0] + y[1] - s_touchY[1])
                 * scale;
