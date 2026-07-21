@@ -23,6 +23,7 @@
 #ifndef GUI_SOAUTOZOOMTRANSLATION_H
 #define GUI_SOAUTOZOOMTRANSLATION_H
 
+#include <Inventor/fields/SoSFBool.h>
 #include <Inventor/fields/SoSFFloat.h>
 #include <Inventor/nodes/SoTransformation.h>
 #include <FCGlobal.h>
@@ -40,6 +41,11 @@ public:
     SoAutoZoomTranslation();
 
     SoSFFloat scaleFactor;
+    /// Screen-align the geometry under this node (billboard): the render-cache
+    /// backend replaces the model rotation with the camera basis so the draw
+    /// always faces the viewer, matching SoText2's screen-space text. Default
+    /// FALSE (plain screen-constant scaling, model rotation kept).
+    SoSFBool billboard;
 
 protected:
     ~SoAutoZoomTranslation() override = default;

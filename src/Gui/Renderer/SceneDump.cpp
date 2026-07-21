@@ -35,7 +35,7 @@ namespace {
 
 const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // v2: selection/highlight feeds appended (v1 files still load).
-const uint32_t kVersion = 6;
+const uint32_t kVersion = 7;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -323,6 +323,7 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex)
         w.f(az.scaleFactor);
         w.b(az.identity);
         w.b(az.resetmatrix);
+        w.b(az.billboard);  // v7
     }
     w.u8(m.numclipplanes);
     w.b(m.clipconcave);
@@ -330,7 +331,7 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex)
         w.floats(m.clipplanes[i], 4);
 }
 
-void readMaterial(Reader &r, Material &m, const TextureTable &tex)
+void readMaterial(Reader &r, Material &m, const TextureTable &tex, uint32_t version)
 {
     auto texref = [&](std::shared_ptr<const TextureImage> &t) {
         int32_t idx = r.i32();
@@ -403,6 +404,7 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex)
         az.scaleFactor = r.f();
         az.identity = r.b();
         az.resetmatrix = r.b();
+        az.billboard = version >= 7 ? r.b() : false;
     }
     m.numclipplanes = r.u8();
     m.clipconcave = r.b();
@@ -500,9 +502,9 @@ void writeDraw(Writer &w, const DrawCall &d, const MeshIndex &meshIndex,
 }
 
 void readDraw(Reader &r, DrawCall &d, const MeshTable &meshes,
-              const TextureTable &textures)
+              const TextureTable &textures, uint32_t version)
 {
-    readMaterial(r, d.material, textures);
+    readMaterial(r, d.material, textures, version);
     int32_t mi = r.i32();
     if (mi >= 0 && size_t(mi) < meshes.size())
         d.mesh = meshes[size_t(mi)];
@@ -526,7 +528,7 @@ void writeDrawList(Writer &w, const DrawCallList &draws,
 }
 
 bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
-                  const TextureTable &textures)
+                  const TextureTable &textures, uint32_t version)
 {
     uint32_t n = r.u32();
     if (!r.ok || n > 0x1000000u) {
@@ -536,7 +538,7 @@ bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
     draws.clear();
     for (uint32_t i = 0; r.ok && i < n; ++i) {
         DrawCall d;
-        readDraw(r, d, meshes, textures);
+        readDraw(r, d, meshes, textures, version);
         draws.push_back(std::move(d));
     }
     return r.ok;
@@ -700,7 +702,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     for (uint32_t i = 0; r.ok && i < ntex; ++i)
         textures.push_back(readTexture(r));
 
-    readDrawList(r, snap.scene, meshes, textures);
+    readDrawList(r, snap.scene, meshes, textures, version);
 
     snap.background.type = r.u8();
     snap.background.fromColor = r.u32();
@@ -770,10 +772,10 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         for (uint32_t i = 0; r.ok && i < nsel; ++i) {
             int id = r.i32();
             DrawCallList draws;
-            if (readDrawList(r, draws, meshes, textures))
+            if (readDrawList(r, draws, meshes, textures, version))
                 snap.selections.emplace_back(id, std::move(draws));
         }
-        readDrawList(r, snap.highlight, meshes, textures);
+        readDrawList(r, snap.highlight, meshes, textures, version);
         snap.highlightWholeOnTop = r.b();
     }
 
@@ -800,7 +802,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 a.marginY = r.f();
             }
             a.sceneCamera = version >= 6 ? r.b() : false;
-            if (readDrawList(r, ov.draws, meshes, textures))
+            if (readDrawList(r, ov.draws, meshes, textures, version))
                 snap.overlays.push_back(std::move(ov));
         }
     }

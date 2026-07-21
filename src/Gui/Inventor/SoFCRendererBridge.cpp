@@ -571,8 +571,9 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         for (const auto & info : m.autozoom.getData()) {
             res.autozoom.emplace_back();
             Render::Material::AutoZoomEntry & entry = res.autozoom.back();
-            entry.scaleFactor =
-                info.cast<SoAutoZoomTranslation>()->scaleFactor.getValue();
+            auto node = info.cast<SoAutoZoomTranslation>();
+            entry.scaleFactor = node->scaleFactor.getValue();
+            entry.billboard = node->billboard.getValue();
             entry.identity = info.identity;
             entry.resetmatrix = info.resetmatrix;
             if (!info.identity) {

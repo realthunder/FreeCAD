@@ -1069,7 +1069,8 @@ struct GpuTexture
 // getTransform for the rotation + translation + uniform positive scale
 // matrices autozoom is used with (no shear support).
 static void setDrawTransform(const Render::DrawCall &draw,
-                             float autozoomScale)
+                             float autozoomScale,
+                             const float *viewMatrix)
 {
     const auto &autozoom = draw.material.autozoom;
     if (autozoom.empty()) {
@@ -1081,28 +1082,51 @@ static void setDrawTransform(const Render::DrawCall &draw,
     float m[16];
     bx::mtxIdentity(m);
     for (const auto &entry : autozoom) {
-        if (entry.resetmatrix) {
-            if (entry.identity)
-                bx::mtxIdentity(m);
-            else
-                std::memcpy(m, entry.matrix, sizeof(m));
-        }
-        else if (!entry.identity) {
-            float tmp[16];
-            bx::mtxMul(tmp, entry.matrix, m);
-            std::memcpy(m, tmp, sizeof(m));
-        }
+        // Each entry.matrix is the FULL accumulated model matrix at its
+        // SoAutoZoomTranslation node (SoFCRenderCache::addAutoZoom stores
+        // SoModelMatrixElement as-is), so it is absolute, not incremental —
+        // the deepest autozoom on the path wins, matching Coin's nested
+        // doAction (each substitutes scale on the current matrix). Assigning
+        // it (rather than multiplying) is byte-identical for a single entry
+        // (m starts identity) and fixes the case of two autozooms on one path
+        // — e.g. a SoTextImage glyph companion placed under a node that
+        // already carries its own autozoom (ViewProviderDatumCS), where the
+        // former mtxMul double-counted the shared prefix.
+        if (entry.resetmatrix && entry.identity)
+            bx::mtxIdentity(m);
+        else if (!entry.identity)
+            std::memcpy(m, entry.matrix, sizeof(m));
         float sf = entry.scaleFactor == 0.0f
             ? 1.0f : entry.scaleFactor * autozoomScale;
-        for (int r = 0; r < 3; ++r) {
-            float *row = m + r * 4;
-            float len = std::sqrt(
-                row[0]*row[0] + row[1]*row[1] + row[2]*row[2]);
-            float s = len > 1e-20f ? sf / len : 0.0f;
-            row[0] *= s;
-            row[1] *= s;
-            row[2] *= s;
-            row[3] = 0.0f;
+        if (entry.billboard && viewMatrix) {
+            // Screen-align: substitute the upper 3x3 with the camera basis so
+            // the geometry always faces the viewer (SoText2-style text). The
+            // camera's world-space axes are the columns of the view matrix's
+            // 3x3 (row-vector layout: p_view = p_world * V). Keep the
+            // accumulated translation (m[12..14]) as the anchor. Scaling by sf
+            // holds a constant screen size, like the plain autozoom path.
+            const float *V = viewMatrix;
+            const float right[3] = {V[0], V[4], V[8]};   // local X -> screen right
+            const float up[3]    = {V[1], V[5], V[9]};   // local Y -> screen up
+            const float fwd[3]   = {V[2], V[6], V[10]};  // local Z -> toward viewer
+            for (int k = 0; k < 3; ++k) {
+                m[0 + k] = right[k] * sf;
+                m[4 + k] = up[k]    * sf;
+                m[8 + k] = fwd[k]   * sf;
+            }
+            m[3] = m[7] = m[11] = 0.0f;
+        }
+        else {
+            for (int r = 0; r < 3; ++r) {
+                float *row = m + r * 4;
+                float len = std::sqrt(
+                    row[0]*row[0] + row[1]*row[1] + row[2]*row[2]);
+                float s = len > 1e-20f ? sf / len : 0.0f;
+                row[0] *= s;
+                row[1] *= s;
+                row[2] *= s;
+                row[3] = 0.0f;
+            }
         }
         m[15] = 1.0f;  // the translation row m[12..14] stays
     }
@@ -2813,7 +2837,7 @@ public:
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
         setClipUniforms(mat);
-        setDrawTransform(draw, autozoomScale);
+        setDrawTransform(draw, autozoomScale, viewMatrix);
         setMeshVertexBuffers(gpu, mesh);
         bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(start), uint32_t(count));
         bgfx::setState(BGFX_STATE_MSAA
@@ -2893,7 +2917,7 @@ public:
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
         setClipUniforms(mat);
-        setDrawTransform(draw, autozoomScale);
+        setDrawTransform(draw, autozoomScale, viewMatrix);
         bgfx::setVertexBuffer(0, m_lineQuadVb);
         bgfx::setIndexBuffer(m_lineQuadIb);
         bgfx::setInstanceDataBuffer(gpu->geom->triEdgeInst, uint32_t(start),
@@ -2915,7 +2939,7 @@ public:
         bgfx::setUniform(u_matSpecular, zero);
         bgfx::setUniform(u_params, params);
         setClipUniforms(mat);
-        setDrawTransform(draw, autozoomScale);
+        setDrawTransform(draw, autozoomScale, viewMatrix);
         bgfx::setVertexBuffer(0, m_lineQuadVb);
         bgfx::setIndexBuffer(m_lineQuadIb);
         bgfx::setInstanceDataBuffer(gpu->geom->triCornerInst, uint32_t(start),
@@ -2979,7 +3003,7 @@ public:
             bgfx::setUniform(u_params, params);
             bgfx::setUniform(u_clipParams, clipParams);
             bgfx::setUniform(u_clipPlanes, plane, 1);
-            setDrawTransform(draw, autozoomScale);
+            setDrawTransform(draw, autozoomScale, viewMatrix);
             setMeshVertexBuffers(gpu, mesh);
             if (count > 0)
                 bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(start),
@@ -3291,7 +3315,7 @@ public:
         const Render::Material &mat = draw.material;
         bool clipped = mat.numclipplanes > 0;
         setClipUniforms(mat);
-        setDrawTransform(draw, autozoomScale);
+        setDrawTransform(draw, autozoomScale, viewMatrix);
         bgfx::setVertexBuffer(0, gpu->geom->vbh);
         if (draw.indexCount > 0)
             bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
@@ -3324,7 +3348,7 @@ public:
         float color[4];
         unpackColor(mat.diffuse, color);
         bgfx::setUniform(u_matColor, color);
-        setDrawTransform(draw, autozoomScale);
+        setDrawTransform(draw, autozoomScale, viewMatrix);
         bgfx::setVertexBuffer(0, gpu->geom->vbh);
         if (draw.indexCount > 0)
             bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
@@ -3432,7 +3456,7 @@ public:
         const Render::Material &mat = draw.material;
         bool clipped = mat.numclipplanes > 0;
         setClipUniforms(mat);
-        setDrawTransform(draw, autozoomScale);
+        setDrawTransform(draw, autozoomScale, viewMatrix);
         bgfx::setVertexBuffer(0, gpu->geom->vbh);
         if (draw.indexCount > 0)
             bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
@@ -3468,7 +3492,7 @@ public:
         const Render::Material &mat = draw.material;
         bool clipped = mat.numclipplanes > 0;
         setClipUniforms(mat);
-        setDrawTransform(draw, autozoomScale);
+        setDrawTransform(draw, autozoomScale, viewMatrix);
         bgfx::setVertexBuffer(0, gpu->geom->vbh);
         if (draw.indexCount > 0)
             bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
@@ -3741,7 +3765,7 @@ public:
         bgfx::setTexture(2, s_texNormalZ,
                          depthReject ? aoNormalZ : sceneCopyTex);
 
-        setDrawTransform(draw, autozoomScale);
+        setDrawTransform(draw, autozoomScale, viewMatrix);
         // The mesh vertex shader needs the color stream too (bgfx drops
         // draws with unbound attributes) — bind like the normal path.
         setMeshVertexBuffers(gpu, *draw.mesh);
@@ -3821,7 +3845,7 @@ public:
         bgfx::setTexture(3, s_texGlassFront, glassFrontTex);
         bgfx::setTexture(4, s_texGlassBack, glassBackTex);
 
-        setDrawTransform(draw, autozoomScale);
+        setDrawTransform(draw, autozoomScale, viewMatrix);
         setMeshVertexBuffers(gpu, *draw.mesh);
         if (draw.indexCount > 0)
             bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
@@ -4570,7 +4594,7 @@ public:
             bgfx::setUniform(u_linePattern, patParams);
         }
 
-        setDrawTransform(draw, autozoomScale);
+        setDrawTransform(draw, autozoomScale, viewMatrix);
         if (thickline) {
             // One quad per line segment; a partial (per-edge) index range
             // maps 1:1 onto an instance range (two indices per segment).
@@ -5067,6 +5091,11 @@ public:
     // Per-frame world-to-screen scale consumed by autozoom draws
     // (Renderer::setAutoZoomScale).
     float autozoomScale = 1.0f;
+    // Current frame's view matrix (GL-layout), for billboard autozoom draws
+    // (SoTextImage): the screen-aligned basis is read from it in
+    // setDrawTransform. Null outside a frame -> billboard falls back to plain
+    // scaling.
+    const float *viewMatrix = nullptr;
 #ifdef FC_RENDERER_STANDALONE
     bgfx::ProgramHandle m_progPresent = BGFX_INVALID_HANDLE;
 #else
@@ -6509,6 +6538,7 @@ public:
         view->autozoomScale = autozoomScale;
         view->submitBackground(background);
         const float *viewMat = reinterpret_cast<const float *>(viewMatrix);
+        view->viewMatrix = viewMat;
 
         // Frustum culling: world-space clip planes extracted from the
         // camera view-projection (Gribb-Hartmann; the fed matrices follow

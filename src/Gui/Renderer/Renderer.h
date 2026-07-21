@@ -640,6 +640,11 @@ struct Material {
         float scaleFactor = 1.0f;
         bool identity = true;
         bool resetmatrix = false;
+        /// Screen-align (billboard) the draw: the backend substitutes the
+        /// upper 3x3 with the camera basis (so the quad always faces the
+        /// viewer, like SoText2) instead of keeping the model rotation. Used
+        /// by SoTextImage glyph quads.
+        bool billboard = false;
     };
     std::vector<AutoZoomEntry> autozoom;
 

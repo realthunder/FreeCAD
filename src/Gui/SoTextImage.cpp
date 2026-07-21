@@ -83,6 +83,9 @@ SoSeparator* SoTextImage::createSubGraph(SoTextImage** outImage)
     texture->model = SoTexture2::MODULATE;
 
     auto zoom = new SoAutoZoomTranslation;
+    // Screen-align the glyph quad so it always faces the viewer (SoText2 is
+    // screen-space); without this the in-plane quad skews in 3D views.
+    zoom->billboard = TRUE;
 
     auto shape = new SoTextImage;
     shape->imageTexture = texture;
