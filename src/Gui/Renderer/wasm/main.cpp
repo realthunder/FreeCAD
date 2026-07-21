@@ -1434,7 +1434,6 @@ int main()
         var m = new URLSearchParams(window.location.search).get('msaa');
         return m === null ? 4 : (parseInt(m) | 0);
     });
-    Render::BGFXRenderer::setMSAASamples(msaaSamples);
     std::printf("fcviewer: MSAA=%d\n", msaaSamples);
 
     s_renderer = Render::RendererFactory::create("bgfx - OpenGL", nullptr);
@@ -1442,6 +1441,9 @@ int main()
         std::printf("fcviewer: renderer creation failed\n");
         return 1;
     }
+    // Applied before the first render(), so the initial target is built with
+    // the requested sample count.
+    s_renderer->setMSAASamples(msaaSamples);
 
     // Parse ?cam= before the first snapshot fit so the override is in place
     // when applySnapshot(fit=true) runs (whether from the bundled snapshot

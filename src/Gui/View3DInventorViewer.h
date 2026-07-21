@@ -508,6 +508,12 @@ public:
     /// the cached-image rubber-band optimization) must keep Native
     /// rendering so backend frames — and their overlay feeds — stay live.
     bool hasExternalRenderer() const;
+    /// Apply the current AntiAliasing preference to the external render
+    /// backend (if any) and schedule a redraw. Returns true when a backend
+    /// handled it — the caller then skips the Coin view-clone that a plain-GL
+    /// view needs to change its multisampled context. Returns false (no-op)
+    /// when there is no external renderer.
+    bool applyRendererAntiAliasing();
     /// Materialize the per-view Render_* dynamic properties on the view
     /// object (RenderParams defaults), called when a renderer backend is
     /// selected.

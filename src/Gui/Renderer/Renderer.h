@@ -769,6 +769,12 @@ public:
     /// Resolved from the traversal state each render like the
     /// hidden-line config, so it applies one frame late too.
     virtual void setAutoZoomScale(float scale) { (void)scale; }
+    /// Scene multisample (MSAA) sample count for the backend's own render
+    /// target (0/1 = off). Backends that render into an offscreen buffer own
+    /// their MSAA independently of the host GL context, so a preference change
+    /// is applied here rather than by recreating the view. Takes effect when
+    /// the render target is next (re)created.
+    virtual void setMSAASamples(int samples) { (void)samples; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

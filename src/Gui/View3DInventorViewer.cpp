@@ -3717,6 +3717,20 @@ bool View3DInventorViewer::hasExternalRenderer() const
     return _pimpl->renderer != nullptr;
 }
 
+bool View3DInventorViewer::applyRendererAntiAliasing()
+{
+    if (!_pimpl->renderer)
+        return false;
+    // The backend renders into its own offscreen target and resolves before
+    // compositing, so the sample count is applied directly — no need to clone
+    // the view to obtain a multisampled GL context (which would tear down and
+    // recreate the backend). The change takes effect on the next frame.
+    _pimpl->renderer->setMSAASamples(getNumSamples());
+    if (auto rm = getSoRenderManager())
+        rm->scheduleRedraw();
+    return true;
+}
+
 void View3DInventorViewer::setRendererType(const std::string &type)
 {
     // An empty or 'Default' type selects the plain GL pipeline. A failed

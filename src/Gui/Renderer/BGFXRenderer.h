@@ -74,6 +74,9 @@ public:
                                int width, int height) override;
     virtual bool needsRedraw() const override;
     virtual bool canSkipInternal() const override;
+    /// Scene render-target sample count (0/1 = off). Takes effect when the
+    /// view next (re)creates its targets (detected at the top of render()).
+    virtual void setMSAASamples(int samples) override;
 
 #ifdef FC_RENDERER_STANDALONE
     /// Standalone (no Qt) build: the host app hands bgfx the native
@@ -82,9 +85,6 @@ public:
     /// output size — the next render() picks up a change.
     static void setWindowHandle(void *handle);
     static void setWindowSize(int width, int height);
-    /// Scene render-target sample count (0/1 = off). Takes effect when
-    /// the view (re)creates its targets; call before the first render().
-    static void setMSAASamples(int samples);
 #endif
 
     friend class BGFXRendererLib;

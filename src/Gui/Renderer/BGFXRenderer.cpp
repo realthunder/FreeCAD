@@ -375,6 +375,12 @@ public:
     // a change re-creates the view targets on the next render().
     int standaloneSamples = 4;
 #else
+    // Scene render-target sample count override (BGFXRenderer::setMSAASamples,
+    // driven by the AntiAliasing preference). -1 = follow the host GL widget's
+    // format; >= 0 overrides it. A change re-creates the view targets at the
+    // top of the next render() — bgfx renders into its own offscreen FBO and
+    // resolves before the blit, so the Qt context need not be multisampled.
+    int desktopSamples = -1;
     typedef void (*FreeResourceFunc)(QOpenGLFunctions *functions, GLuint id);
     std::vector<std::pair<GLuint, FreeResourceFunc>> pendingRemoves;
     std::unique_ptr<QOpenGLContext> context;
@@ -1664,7 +1670,13 @@ public:
         width = uint16_t(widget->width());
         height = uint16_t(widget->height());
 
-        int samples = widget->format().samples();
+        // bgfx owns MSAA in its own offscreen target: prefer the preference
+        // override (BGFXRenderer::setMSAASamples) over the host widget's GL
+        // format, so an AntiAliasing change need not recreate the Qt view.
+        int samples = _BGFXLib.desktopSamples >= 0
+            ? _BGFXLib.desktopSamples
+            : widget->format().samples();
+        msaaSamples = samples;
 #endif
         uint64_t flags = 0;
         if (samples >= 8)
@@ -5051,12 +5063,12 @@ public:
     int warmup = 0;
     bool ontop = false;   // route submits to the highlight pass
     int overlayView = -1; // >= 0: route submits into this overlay view
+    int msaaSamples = 0;  // sample count the current targets were built with
     // Per-frame world-to-screen scale consumed by autozoom draws
     // (Renderer::setAutoZoomScale).
     float autozoomScale = 1.0f;
 #ifdef FC_RENDERER_STANDALONE
     bgfx::ProgramHandle m_progPresent = BGFX_INVALID_HANDLE;
-    int msaaSamples = 0;   // sample count the current targets were built with
 #else
     GLuint fbo = 0;
     GLuint fboDepth = 0;
@@ -5137,7 +5149,9 @@ public:
             return false;
 #else
         if (widget->width() != int(view->width)
-                || widget->height() != int(view->height))
+                || widget->height() != int(view->height)
+                || (_BGFXLib.desktopSamples >= 0
+                    && _BGFXLib.desktopSamples != view->msaaSamples))
             view->init();
 
         if (!bgfx::isValid(view->bgfxFbo)) {
@@ -8257,12 +8271,17 @@ void BGFXRenderer::setWindowSize(int width, int height)
     if (height > 0)
         _BGFXLib.standaloneHeight = uint16_t(height);
 }
+#endif
 
 void BGFXRenderer::setMSAASamples(int samples)
 {
-    _BGFXLib.standaloneSamples = samples < 2 ? 0 : samples;
-}
+    const int s = samples < 2 ? 0 : samples;
+#ifdef FC_RENDERER_STANDALONE
+    _BGFXLib.standaloneSamples = s;
+#else
+    _BGFXLib.desktopSamples = s;
 #endif
+}
 
 //////////////////////////////////////////////////////////////////////
 

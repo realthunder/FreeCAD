@@ -197,6 +197,15 @@ void applyAntiAlias(ParameterGrp *)
     }
     std::map<View3DInventor*, View3DInventor*> viewMap;
     for (auto view : views) {
+        // A view driven by an external render backend (bgfx) owns its own
+        // multisampled offscreen target; it applies the new sample count in
+        // place. Cloning it to obtain a multisampled GL context — as a
+        // plain-GL/Coin view requires — would instead tear down and recreate
+        // the backend (crashes/deadlocks). Skip the clone for those.
+        if (auto viewer = view->getViewer()) {
+            if (viewer->applyRendererAntiAliasing())
+                continue;
+        }
         auto clone = static_cast<View3DInventor*>(
                 view->getGuiDocument()->cloneView(view));
         if (!clone)
