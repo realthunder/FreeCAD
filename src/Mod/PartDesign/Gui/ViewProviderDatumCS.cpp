@@ -37,6 +37,7 @@
 
 #include <App/Application.h>
 #include <Gui/Inventor/SoAutoZoomTranslation.h>
+#include <Gui/SoTextImage.h>
 #include <Mod/Part/Gui/SoBrepEdgeSet.h>
 
 #include "ViewProviderDatumCS.h"
@@ -176,16 +177,19 @@ void ViewProviderDatumCoordinateSystem::setupLabels() {
     auto* t = new SoText2();
     t->string = "X";
     labelGroup->addChild(t);
+    labelGroup->addChild(Gui::SoTextImage::createFor(t, font));
 
     labelGroup->addChild(axisLabelXToYTrans);
     t = new SoText2();
     t->string = "Y";
     labelGroup->addChild(t);
+    labelGroup->addChild(Gui::SoTextImage::createFor(t, font));
 
     labelGroup->addChild(axisLabelYToZTrans);
     t = new SoText2();
     t->string = "Z";
     labelGroup->addChild(t);
+    labelGroup->addChild(Gui::SoTextImage::createFor(t, font));
 }
 
 void ViewProviderDatumCoordinateSystem::updateData(const App::Property* prop)

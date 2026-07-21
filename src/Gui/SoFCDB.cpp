@@ -69,6 +69,7 @@
 #include "SoMouseWheelEvent.h"
 #include "SoNavigationDragger.h"
 #include "SoTextLabel.h"
+#include "SoTextImage.h"
 #include "SoDatumLabel.h"
 #include "Inventor/MarkerBitmaps.h"
 #include "Inventor/SmSwitchboard.h"
@@ -155,6 +156,7 @@ void Gui::SoFCDB::init()
     SoRegPoint                      ::initClass();
     SoDrawingGrid                   ::initClass();
     SoAutoZoomTranslation           ::initClass();
+    SoTextImage                     ::initClass();
     SoFCRenderMaterial              ::initClass();
     SoFCRenderTexture               ::initClass();
     MarkerBitmaps                   ::initClass();

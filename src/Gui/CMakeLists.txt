@@ -1043,6 +1043,7 @@ SET(Inventor_CPP_SRCS
     SoNavigationDragger.cpp
     SoAxisCrossKit.cpp
     SoTextLabel.cpp
+    SoTextImage.cpp
     SoDatumLabel.cpp
     SoTouchEvents.cpp
     SoMouseWheelEvent.cpp
@@ -1090,6 +1091,7 @@ SET(Inventor_SRCS
     SoNavigationDragger.h
     SoAxisCrossKit.h
     SoTextLabel.h
+    SoTextImage.h
     SoDatumLabel.h
     SoTouchEvents.h
     SoMouseWheelEvent.h

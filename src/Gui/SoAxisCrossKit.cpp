@@ -32,6 +32,7 @@
 # include <GL/gl.h>
 # endif
 
+# include <Inventor/actions/SoCallbackAction.h>
 # include <Inventor/actions/SoGetBoundingBoxAction.h>
 # include <Inventor/actions/SoGLRenderAction.h>
 # include <Inventor/bundles/SoMaterialBundle.h>
@@ -56,6 +57,7 @@
 
 #include "SoAxisCrossKit.h"
 #include "Inventor/SoAutoZoomTranslation.h"
+#include "SoTextImage.h"
 
 
 using namespace Gui;
@@ -283,7 +285,11 @@ SoRegPoint::SoRegPoint()
     auto sub = new SoSeparator();
     sub->addChild(col);
     sub->addChild(font);
-    sub->addChild(new SoText2());
+    auto label = new SoText2();
+    sub->addChild(label);
+    // Companion glyph quad so the probe text is drawn by the render-cache backend
+    // (bgfx / WASM) too; captured via generatePrimitives() traversing root below.
+    sub->addChild(SoTextImage::createFor(label, font));
     root->addChild(sub);
 }
 
@@ -329,8 +335,13 @@ void SoRegPoint::GLRender(SoGLRenderAction *action)
     }
 }
 
-void SoRegPoint::generatePrimitives(SoAction* /*action*/)
+void SoRegPoint::generatePrimitives(SoAction* action)
 {
+    // Feed the render-cache capture: traverse the internal graph so the text
+    // companion (SoTextImage) emits its glyph quad. The raw-GL leader line/points
+    // in GLRender remain desktop-only. Inert on the ray-pick path.
+    if (action->isOfType(SoCallbackAction::getClassTypeId()))
+        root->doAction(action);
 }
 
 /**

@@ -39,6 +39,7 @@
 #include <Base/Parameter.h>
 #include "SoFCColorGradient.h"
 #include "SoTextLabel.h"
+#include "SoTextImage.h"
 #include "DlgSettingsColorGradientImp.h"
 #include "MainWindow.h"
 #include "MDIView.h"
@@ -123,6 +124,10 @@ void SoFCColorGradient::setMarkerLabel(const SoMFString& label)
             text2->string.setValue(label[i]);
             labels->addChild(trans);
             labels->addChild(text2);
+            // Companion glyph quad so the legend labels reach the render-cache
+            // backend (bgfx / WASM) too. A separator (not counted by the
+            // SoTransform-based label layout in setViewportSize).
+            labels->addChild(SoTextImage::createFor(text2, textFont));
         }
     }
 

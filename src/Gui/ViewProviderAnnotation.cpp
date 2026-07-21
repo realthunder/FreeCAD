@@ -54,6 +54,7 @@
 #include "BitmapFactory.h"
 #include "Document.h"
 #include "SoFCSelection.h"
+#include "SoTextImage.h"
 #include "Tools.h"
 #include "ViewParams.h"
 #include "Window.h"
@@ -213,6 +214,10 @@ void ViewProviderAnnotation::attach(App::DocumentObject* f)
     textsep->addChild(pColor);
     textsep->addChild(pFont); // causes problems
     textsep->addChild(pLabel);
+    // Companion glyph quad so the (screen-space) annotation text is also drawn
+    // by the render-cache backend (bgfx / WASM), where SoText2's raw-GL pass is
+    // bypassed. Tracks pLabel's text and pFont's size/name live; inert on GL.
+    textsep->addChild(SoTextImage::createFor(pLabel, pFont));
 
     auto textsep3d = new SoFCSelection();
 
