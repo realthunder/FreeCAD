@@ -35,7 +35,7 @@ namespace {
 
 const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // v2: selection/highlight feeds appended (v1 files still load).
-const uint32_t kVersion = 7;
+const uint32_t kVersion = 8;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -324,6 +324,8 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex)
         w.b(az.identity);
         w.b(az.resetmatrix);
         w.b(az.billboard);  // v7
+        w.b(az.datumFlip);  // v8
+        w.floats(az.normal, 3);  // v8
     }
     w.u8(m.numclipplanes);
     w.b(m.clipconcave);
@@ -405,6 +407,10 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex, uint32_t vers
         az.identity = r.b();
         az.resetmatrix = r.b();
         az.billboard = version >= 7 ? r.b() : false;
+        if (version >= 8) {
+            az.datumFlip = r.b();
+            r.floats(az.normal, 3);
+        }
     }
     m.numclipplanes = r.u8();
     m.clipconcave = r.b();

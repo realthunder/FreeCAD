@@ -270,6 +270,11 @@ SoNode* SoDatumLabel::getImageNode()
         this->imageAnchor = new SoDatumLabelAnchor;
         this->imageAnchor->owner = this;
         this->imageZoom = new SoAutoZoomTranslation;
+        // Per-frame auto-flip so the number reads upright from any viewpoint,
+        // matching GLRender's projected-axis + backfacing test. flipNormal
+        // tracks the datum's (world-space) plane normal.
+        this->imageZoom->datumFlip = TRUE;
+        this->imageZoom->flipNormal.connectFrom(&this->norm);
 
         this->imageShape = new SoDatumLabelImage;
         this->imageShape->owner = this;

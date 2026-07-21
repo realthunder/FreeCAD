@@ -574,6 +574,11 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
             auto node = info.cast<SoAutoZoomTranslation>();
             entry.scaleFactor = node->scaleFactor.getValue();
             entry.billboard = node->billboard.getValue();
+            entry.datumFlip = node->datumFlip.getValue();
+            const SbVec3f & nrm = node->flipNormal.getValue();
+            entry.normal[0] = nrm[0];
+            entry.normal[1] = nrm[1];
+            entry.normal[2] = nrm[2];
             entry.identity = info.identity;
             entry.resetmatrix = info.resetmatrix;
             if (!info.identity) {

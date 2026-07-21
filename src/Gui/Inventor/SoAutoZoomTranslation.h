@@ -25,6 +25,7 @@
 
 #include <Inventor/fields/SoSFBool.h>
 #include <Inventor/fields/SoSFFloat.h>
+#include <Inventor/fields/SoSFVec3f.h>
 #include <Inventor/nodes/SoTransformation.h>
 #include <FCGlobal.h>
 
@@ -46,6 +47,12 @@ public:
     /// always faces the viewer, matching SoText2's screen-space text. Default
     /// FALSE (plain screen-constant scaling, model rotation kept).
     SoSFBool billboard;
+    /// Datum-label auto-flip: keep the glyph in its plane but mirror its local
+    /// X/Y per frame so the text always reads upright from the current view
+    /// (SoDatumLabel GLRender behaviour). flipNormal is the world-space plane
+    /// normal used for the backfacing test. Default FALSE.
+    SoSFBool datumFlip;
+    SoSFVec3f flipNormal;
 
 protected:
     ~SoAutoZoomTranslation() override = default;

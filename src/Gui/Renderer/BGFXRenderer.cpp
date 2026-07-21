@@ -1147,6 +1147,38 @@ static void setDrawTransform(const Render::DrawCall &draw,
                 row[2] *= s;
                 row[3] = 0.0f;
             }
+            if (entry.datumFlip && viewMatrix) {
+                // Keep the glyph in its dimension plane but mirror its local
+                // X/Y so the number reads upright from the current viewpoint —
+                // a per-frame port of SoDatumLabel::GLRender's projected-axis +
+                // backfacing test. Row 0/1 of m are the glyph's local X/Y axes
+                // in world space; project them onto the view axes to see which
+                // way they point on screen (row-vector: dir_view = dir_world*V).
+                const float *V = viewMatrix;
+                const float projX = m[0]*V[0] + m[1]*V[4] + m[2]*V[8];   // screen-x of local +X
+                const float projY = m[4]*V[1] + m[5]*V[5] + m[6]*V[9];   // screen-y of local +Y
+                // reflection in the model matrix inverts the decision
+                const float det =
+                    m[0]*(m[5]*m[10] - m[6]*m[9])
+                  - m[1]*(m[4]*m[10] - m[6]*m[8])
+                  + m[2]*(m[4]*m[9]  - m[5]*m[8]);
+                const float margin = det < 0.f ? -1e-3f : 1e-3f;
+                float xfactor = (-2.0f*projX < margin) ? 0.5f : -0.5f;
+                float yfactor = (-2.0f*projY < margin) ? 0.5f : -0.5f;
+                // backfacing: does the plane normal point away from the camera?
+                // camera "toward viewer" world axis = view-matrix z column.
+                const float *N = entry.normal;
+                const float ndotz = N[0]*V[2] + N[1]*V[6] + N[2]*V[10];
+                const bool backfacing = ndotz < 0.f;
+                bool flip = backfacing ? (xfactor*yfactor > 0.f)
+                                       : (xfactor*yfactor < 0.f);
+                if (det < 0.f)
+                    flip = !flip;
+                if (flip)
+                    xfactor = -xfactor;
+                if (xfactor < 0.f) { m[0] = -m[0]; m[1] = -m[1]; m[2] = -m[2]; }
+                if (yfactor < 0.f) { m[4] = -m[4]; m[5] = -m[5]; m[6] = -m[6]; }
+            }
         }
         m[15] = 1.0f;  // the translation row m[12..14] stays
     }

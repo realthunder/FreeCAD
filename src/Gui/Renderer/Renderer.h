@@ -645,6 +645,13 @@ struct Material {
         /// viewer, like SoText2) instead of keeping the model rotation. Used
         /// by SoTextImage glyph quads.
         bool billboard = false;
+        /// Datum-label auto-flip: keep the glyph in its dimension plane, but
+        /// mirror its local X/Y per frame so the number always reads
+        /// left-to-right / upright from the current viewpoint (SoDatumLabel's
+        /// GLRender does this via a projected-axis + backfacing test). `normal`
+        /// is the world-space plane normal used for the backfacing decision.
+        bool datumFlip = false;
+        float normal[3] = {0.f, 0.f, 1.f};
     };
     std::vector<AutoZoomEntry> autozoom;
 
