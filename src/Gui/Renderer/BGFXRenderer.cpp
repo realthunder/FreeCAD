@@ -1274,6 +1274,9 @@ public:
         ViewOverlay5,
         ViewOverlay6,
         ViewOverlay7,
+        ViewOverlay8,       // headroom: the overlay ids (foreground, axis,
+                            // graphics-items, fps, navi-cube, navi-buttons,
+                            // editing, dimensions) can all be active at once
         ViewPresent,        // standalone build only: fullscreen copy of
                             // the scene color onto the default backbuffer
                             // (the desktop build GL-blits into the Qt

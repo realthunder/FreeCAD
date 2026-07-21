@@ -473,6 +473,7 @@ struct View3DInventorViewer::Private
         OverlayNaviCube = 5,
         OverlayNaviButtons = 6,
         OverlayEditing = 7,
+        OverlayDimensions = 8,
     };
     struct OverlayCapture {
         CoinPtr<SoNode> root;
@@ -496,6 +497,11 @@ struct View3DInventorViewer::Private
     // lives under pcEditingRoot, a sibling of the render-cache-captured
     // selectionRoot, so it never reaches the main scene feed.
     OverlayCapture editingCapture;
+    // In-scene Measure/Part dimensions (leaders, arrows, dimension text)
+    // captured into a scene-camera overlay feed: dimensionRoot is attached to
+    // the aux root (a sibling of the render-cache-captured selectionRoot), so
+    // it never reaches the main scene feed. Mirrors editingCapture.
+    OverlayCapture dimensionCapture;
     // Whether the editing overlay is currently fed to (and thus drawn by) the
     // external backend. When true, renderScene() suppresses the raw-GL datum
     // draw so it is not doubled with the backend's.
@@ -942,6 +948,38 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         dropCapture(editingCapture, OverlayEditing);
         editingBackendFed = false;
     }
+
+    // In-scene Measure/Part dimensions: dimensionRoot is a sibling of the
+    // captured selectionRoot (attached to the aux root), so its leaders,
+    // arrows and dimension text never reach the main scene feed. Capture it
+    // into a scene-camera overlay so it renders through the backend (and the
+    // WASM viewer) sharing the main scene camera — world-space geometry lines
+    // up with the main scene for free. Gated on the dimension switches being
+    // turned on with actual content, so an empty capture is skipped.
+    bool dimHasContent = false;
+    if (owner->dimensionRoot
+        && owner->dimensionRoot->whichChild.getValue() != SO_SWITCH_NONE) {
+        for (int i = 0; i < owner->dimensionRoot->getNumChildren(); ++i) {
+            auto *sw = static_cast<SoSwitch *>(owner->dimensionRoot->getChild(i));
+            if (sw->whichChild.getValue() != SO_SWITCH_NONE
+                && sw->getNumChildren() > 0) {
+                dimHasContent = true;
+                break;
+            }
+        }
+    }
+    if (dimHasContent) {
+        if (!dimensionCapture.manager)
+            initCapture(dimensionCapture, owner->dimensionRoot);
+        Render::OverlayAnchor dimAnchor;
+        dimAnchor.sceneCamera = true;
+        dimensionCapture.manager->setExternalOverlay(
+            renderer.get(), OverlayDimensions, dimAnchor);
+        captureAction.apply(dimensionCapture.applyRoot);
+    }
+    else {
+        dropCapture(dimensionCapture, OverlayDimensions);
+    }
 }
 
 void View3DInventorViewer::Private::clearOverlayCaptures()
@@ -949,7 +987,7 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
     for (auto capture : {&foregroundCapture, &axisCrossCapture,
                          &graphicsItemsCapture, &fpsTextCapture,
                          &naviCubeCapture, &naviButtonCapture,
-                         &editingCapture}) {
+                         &editingCapture, &dimensionCapture}) {
         if (capture->manager) {
             capture->manager->setExternalOverlay(
                 nullptr, 0, Render::OverlayAnchor());
