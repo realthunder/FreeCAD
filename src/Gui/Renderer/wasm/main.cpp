@@ -818,6 +818,15 @@ static void mainLoop()
 
     float viewMtx[16], projMtx[16];
     buildCamera(viewMtx, projMtx);
+    // Recompute the autozoom (screen-constant) scale from THIS viewer's camera
+    // each frame, replacing the value baked into the snapshot from the desktop
+    // camera; otherwise screen-constant content (datum labels) keeps the desktop
+    // size and grows/shrinks as the browser user zooms. Mirrors Coin's
+    // translateAutoZoomScale (worldToScreenScale/(5*aspect)), which for this
+    // perspective camera is proportional to the focal distance; the constant is
+    // calibrated so the glyph keeps the size the captured desktop scale gave.
+    s_renderer->setAutoZoomScale(
+        s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f) * 0.0857f);
     QColor bg((s_snap.clearColor >> 24) & 0xff,
               (s_snap.clearColor >> 16) & 0xff,
               (s_snap.clearColor >> 8) & 0xff);
