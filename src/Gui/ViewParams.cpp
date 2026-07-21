@@ -163,6 +163,7 @@ public:
     long ShadowSpreadSampleSize;
     double ShadowPrecision;
     double ShadowEpsilon;
+    double ShadowEpsilonMinimum;
     double ShadowThreshold;
     double ShadowBoundBoxScale;
     double ShadowMaxDistance;
@@ -445,6 +446,8 @@ public:
         funcs["ShadowPrecision"] = &ViewParamsP::updateShadowPrecision;
         ShadowEpsilon = this->handle->GetFloat("ShadowEpsilon", 1e-05);
         funcs["ShadowEpsilon"] = &ViewParamsP::updateShadowEpsilon;
+        ShadowEpsilonMinimum = this->handle->GetFloat("ShadowEpsilonMinimum", 1e-06);
+        funcs["ShadowEpsilonMinimum"] = &ViewParamsP::updateShadowEpsilonMinimum;
         ShadowThreshold = this->handle->GetFloat("ShadowThreshold", 0.0);
         funcs["ShadowThreshold"] = &ViewParamsP::updateShadowThreshold;
         ShadowBoundBoxScale = this->handle->GetFloat("ShadowBoundBoxScale", 1.2);
@@ -1028,6 +1031,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShadowEpsilon(ViewParamsP *self) {
         self->ShadowEpsilon = self->handle->GetFloat("ShadowEpsilon", 1e-05);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateShadowEpsilonMinimum(ViewParamsP *self) {
+        self->ShadowEpsilonMinimum = self->handle->GetFloat("ShadowEpsilonMinimum", 1e-06);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShadowThreshold(ViewParamsP *self) {
@@ -4243,6 +4250,38 @@ void ViewParams::removeShadowEpsilon() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docShadowEpsilonMinimum() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Lower bound enforced on the shadow Epsilon (both the per-view\n"
+"Shadow_Epsilon property constraint and the render-cache backend).\n"
+"The variance shadow map needs a small non-zero epsilon or its\n"
+"Chebyshev bound is numerically unstable and speckles the\n"
+"self-shadowed side of curved surfaces. Zero disables the floor.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & ViewParams::getShadowEpsilonMinimum() {
+    return instance()->ShadowEpsilonMinimum;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & ViewParams::defaultShadowEpsilonMinimum() {
+    const static double def = 1e-06;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setShadowEpsilonMinimum(const double &v) {
+    instance()->handle->SetFloat("ShadowEpsilonMinimum",v);
+    instance()->ShadowEpsilonMinimum = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeShadowEpsilonMinimum() {
+    instance()->handle->RemoveFloat("ShadowEpsilonMinimum");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docShadowThreshold() {
     return QT_TRANSLATE_NOOP("ViewParams",
 "Can be used to avoid light bleeding in merged shadows cast from different objects.");
@@ -6089,7 +6128,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:520)
+// Auto generated code (Gui/ViewParams.py:527)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6134,7 +6173,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:528)
+// Auto generated code (Gui/ViewParams.py:535)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6148,7 +6187,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:538)
+// Auto generated code (Gui/ViewParams.py:545)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -6162,13 +6201,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:548)
+// Auto generated code (Gui/ViewParams.py:555)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:555)
+// Auto generated code (Gui/ViewParams.py:562)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6176,7 +6215,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:564)
+// Auto generated code (Gui/ViewParams.py:571)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6188,7 +6227,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:577)
+// Auto generated code (Gui/ViewParams.py:584)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)

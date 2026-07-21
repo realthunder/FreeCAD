@@ -357,6 +357,13 @@ Params = [
         "Should be set to as low a number as possible without causing flickering\n"
         "in the shadows or on non-shadowed objects.",
         title='Epsilon', proxy=ParamSpinBox(0.0, 1.0, 1e-5, 10)),
+    ParamFloat('ShadowEpsilonMinimum',  1e-6,
+        "Lower bound enforced on the shadow Epsilon (both the per-view\n"
+        "Shadow_Epsilon property constraint and the render-cache backend).\n"
+        "The variance shadow map needs a small non-zero epsilon or its\n"
+        "Chebyshev bound is numerically unstable and speckles the\n"
+        "self-shadowed side of curved surfaces. Zero disables the floor.",
+        title='Epsilon minimum', proxy=ParamSpinBox(0.0, 1.0, 1e-6, 10)),
     ParamFloat('ShadowThreshold',  0.0,
         "Can be used to avoid light bleeding in merged shadows cast from different objects.",
         title='Threshold', proxy=ParamSpinBox(0.0, 1.0, 0.1)),

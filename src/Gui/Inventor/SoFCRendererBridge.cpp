@@ -899,6 +899,15 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
         res.epsilon = float(viewParamOverride<App::PropertyFloat>(
                 view, "Shadow", "Epsilon",
                 ViewParams::getShadowEpsilon()));
+        // A zero (or too-small) epsilon collapses the VSM variance floor,
+        // so the Chebyshev bound flips per pixel on the self-shadowed
+        // terminator (dark-spot acne). Enforce the same configurable
+        // minimum the Shadow_Epsilon property clamps to (ViewParams
+        // ShadowEpsilonMinimum, see docs/ShaderDesign.md) since a value
+        // stored before that constraint can still reach the backend.
+        float epsMin = float(ViewParams::getShadowEpsilonMinimum());
+        if (res.epsilon < epsMin)
+            res.epsilon = epsMin;
         res.threshold = float(viewParamOverride<App::PropertyFloat>(
                 view, "Shadow", "Threshold",
                 ViewParams::getShadowThreshold()));

@@ -2382,15 +2382,27 @@ void View3DInventorViewer::Private::activateShadow()
     SbBox3f bbox;
     owner->getSceneBoundBox(bbox);
 
-    static const App::PropertyPrecision::Constraints _epsilon_cstr(0.0,1000.0,1e-5);
+    // The variance shadow map needs a small non-zero epsilon or its
+    // Chebyshev bound is numerically unstable and speckles the
+    // self-shadowed side of curved surfaces (see docs/ShaderDesign.md).
+    // Enforce a configurable minimum (ViewParams ShadowEpsilonMinimum) as
+    // the property's lower bound instead of the former 0.0, and clamp any
+    // value that predates the constraint. PropertyPrecision is a
+    // PropertyFloatConstraint that keeps enough display digits for the
+    // tiny epsilon.
+    static App::PropertyPrecision::Constraints _epsilon_cstr(1e-6,1000.0,1e-5);
+    _epsilon_cstr.LowerBound = ViewParams::getShadowEpsilonMinimum();
+    double epsilonDef = ViewParams::getShadowEpsilon();
+    if (epsilonDef < _epsilon_cstr.LowerBound)
+        epsilonDef = _epsilon_cstr.LowerBound;
     auto epsilon = _shadowParam<App::PropertyPrecision>(view, "Epsilon",
-            ViewParams::docShadowEpsilon(), ViewParams::getShadowEpsilon(),
+            ViewParams::docShadowEpsilon(), epsilonDef,
             [](App::PropertyFloatConstraint &prop) {
                 if(prop.getConstraints() != &_epsilon_cstr)
                     prop.setConstraints(&_epsilon_cstr);
             });
-    if (epsilon == 0.0)
-        epsilon = 1e-5;
+    if (epsilon < _epsilon_cstr.LowerBound)
+        epsilon = _epsilon_cstr.LowerBound;
     pcShadowGroup->epsilon = epsilon;
 
     static const App::PropertyFloatConstraint::Constraints _threshold_cstr(0.0,1.0,0.1);

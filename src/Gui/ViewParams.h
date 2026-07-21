@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:488)
+// Auto generated code (Gui/ViewParams.py:495)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -1268,6 +1268,22 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ShadowEpsilonMinimum
+    ///
+    /// Lower bound enforced on the shadow Epsilon (both the per-view
+    /// Shadow_Epsilon property constraint and the render-cache backend).
+    /// The variance shadow map needs a small non-zero epsilon or its
+    /// Chebyshev bound is numerically unstable and speckles the
+    /// self-shadowed side of curved surfaces. Zero disables the floor.
+    static const double & getShadowEpsilonMinimum();
+    static const double & defaultShadowEpsilonMinimum();
+    static void removeShadowEpsilonMinimum();
+    static void setShadowEpsilonMinimum(const double &v);
+    static const char *docShadowEpsilonMinimum();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter ShadowThreshold
     ///
     /// Can be used to avoid light bleeding in merged shadows cast from different objects.
@@ -2048,7 +2064,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:494)
+    // Auto generated code (Gui/ViewParams.py:501)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2076,7 +2092,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:504)
+// Auto generated code (Gui/ViewParams.py:511)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();
