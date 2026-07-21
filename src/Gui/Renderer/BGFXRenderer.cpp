@@ -5167,7 +5167,8 @@ public:
             snap.height = height;
             snap.clearColor = clearColor;
         };
-        if (dumpPath && *dumpPath && !sceneDumped && !scene.empty()
+        if (dumpPath && *dumpPath && !sceneDumped
+                && !(scene.empty() && overlays.empty())
                 && ++dumpFrames > (dumpDelay ? atoi(dumpDelay) : 0)
                 && (!dumpSel || !selections.empty())) {
             sceneDumped = true;
