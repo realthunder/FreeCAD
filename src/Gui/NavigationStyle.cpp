@@ -1751,9 +1751,15 @@ void NavigationStyle::openPopupMenu(const SbVec2s& position)
     if(selList.size()) {
         separator = true;
         auto cmd = Application::Instance->commandManager().getCommandByName("Std_PickGeometry");
-        if (cmd) {
-            pickAction = new QAction(cmd->getAction()->text(), &contextMenu);
-            pickAction->setShortcut(cmd->getAction()->shortcut());
+        // getAction() is null until the command has been added to a menu or
+        // toolbar (the action is created lazily in Command::addTo). In a
+        // headless/scripted session Std_PickGeometry can exist without ever
+        // being realized, so guard the dereference and fall back to a plain
+        // action rather than crashing in Action::text().
+        Action* cmdAction = cmd ? cmd->getAction() : nullptr;
+        if (cmdAction) {
+            pickAction = new QAction(cmdAction->text(), &contextMenu);
+            pickAction->setShortcut(cmdAction->shortcut());
         } else
             pickAction = new QAction(QObject::tr("Pick geometry"), &contextMenu);
         contextMenu.insertAction(posAction,pickAction);
