@@ -48,6 +48,7 @@
 #include <Base/Quantity.h>
 
 #include "ViewProviderMeasureDistance.h"
+#include "SoTextImage.h"
 #include "Application.h"
 #include <Command.h>
 #include "Document.h"
@@ -189,6 +190,9 @@ void ViewProviderMeasureDistance::attach(App::DocumentObject* pcObject)
     textsep->addChild(pTextColor);
     textsep->addChild(pFont);
     textsep->addChild(pLabel);
+    // Companion glyph quad so the measurement text renders in the render-cache
+    // backend (bgfx / WASM), where SoText2's raw-GL pass is bypassed.
+    textsep->addChild(SoTextImage::createFor(pLabel, pFont));
 
     auto sep = new SoAnnotation();
     sep->addChild(lineSep);

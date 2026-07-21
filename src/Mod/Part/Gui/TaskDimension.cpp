@@ -72,6 +72,7 @@
 #include <Gui/BitmapFactory.h>
 #include <Gui/Control.h>
 #include <Gui/Selection.h>
+#include <Gui/SoTextImage.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Mod/Part/App/PartFeature.h>
@@ -530,6 +531,9 @@ void PartGui::DimensionLinear::setupDimension()
   textNode->justification = SoText2::CENTER;
   textNode->string.connectFrom(&text);
   textSep->addChild(textNode);
+  // Companion glyph quad so the dimension number renders in the render-cache
+  // backend (bgfx / WASM), where SoText2's raw-GL pass is bypassed.
+  textSep->addChild(Gui::SoTextImage::createFor(textNode, fontNode));
 
   //this prevents the 2d text from screwing up the bounding box for a viewall
   SoResetTransform *rTrans = new SoResetTransform;
@@ -1313,6 +1317,9 @@ void PartGui::DimensionAngular::setupDimension()
   textNode->justification = SoText2::CENTER;
   textNode->string.connectFrom(&text);
   textSep->addChild(textNode);
+  // Companion glyph quad so the dimension number renders in the render-cache
+  // backend (bgfx / WASM), where SoText2's raw-GL pass is bypassed.
+  textSep->addChild(Gui::SoTextImage::createFor(textNode, fontNode));
 
   //this prevents the 2d text from screwing up the bounding box for a viewall
   SoResetTransform *rTrans = new SoResetTransform;

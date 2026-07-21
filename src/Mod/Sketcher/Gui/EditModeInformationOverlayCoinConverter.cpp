@@ -37,6 +37,8 @@
 #include <Base/Exception.h>
 #include <Base/UnitsApi.h>
 
+#include <Gui/SoTextImage.h>
+
 #include "EditModeCoinManagerParameters.h"
 #include "EditModeInformationOverlayCoinConverter.h"
 #include "ViewProviderSketchCoinAttorney.h"
@@ -454,6 +456,9 @@ void EditModeInformationOverlayCoinConverter::addNode(const Result& result)
             sep->addChild(font);
             sep->addChild(translate);
             sep->addChild(text);
+            // render-cache backend (bgfx/WASM) glyph companion, appended after the
+            // TextNodePosition-indexed children so it does not shift them
+            sep->addChild(Gui::SoTextImage::createFor(text, font));
 
             sw->addChild(sep);
 

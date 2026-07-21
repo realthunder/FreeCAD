@@ -114,6 +114,7 @@
 #include <Gui/ViewParams.h>
 #include <Gui/DlgEditFileIncludePropertyExternal.h>
 #include <Gui/SoDatumLabel.h>
+#include <Gui/SoTextImage.h>
 #include <Gui/SoFCBoundingBox.h>
 #include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/Inventor/MarkerBitmaps.h>
@@ -5322,6 +5323,9 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
             sep->addChild(mat);
             sep->addChild(font);
             sep->addChild(degreetext);
+            // render-cache backend (bgfx/WASM) glyph companion (appended after
+            // the indexed GEOINFO children so it does not shift them)
+            sep->addChild(Gui::SoTextImage::createFor(degreetext, font));
 
             sw->addChild(sep);
 
@@ -5601,6 +5605,7 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
                 sep->addChild(mat);
                 sep->addChild(font);
                 sep->addChild(degreetext);
+                sep->addChild(Gui::SoTextImage::createFor(degreetext, font));
 
                 sw->addChild(sep);
 
@@ -5679,6 +5684,7 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
                 sep->addChild(mat);
                 sep->addChild(font);
                 sep->addChild(WeightText);
+                sep->addChild(Gui::SoTextImage::createFor(WeightText, font));
 
                 sw->addChild(sep);
 
@@ -7805,6 +7811,8 @@ void ViewProviderSketch::createEditInventorNodes(void)
     edit->textX->justification = SoText2::LEFT;
     edit->textX->string = "";
     Coordsep->addChild(edit->textX);
+    // render-cache backend (bgfx/WASM) glyph companion for the cursor coordinates
+    Coordsep->addChild(Gui::SoTextImage::createFor(edit->textX, font));
 
     // group node for the Constraint visual +++++++++++++++++++++++++++++++++++
     auto cstrMtlBind = new SoMaterialBinding;

@@ -44,6 +44,7 @@
 
 #include <Base/Exception.h>
 #include <Gui/Inventor/MarkerBitmaps.h>
+#include <Gui/SoTextImage.h>
 #include <Gui/SoFCBoundingBox.h>
 #include <Mod/Sketcher/App/Constraint.h>
 #include <Mod/Sketcher/App/GeoList.h>
@@ -973,6 +974,9 @@ void EditModeCoinManager::createEditModeInventorNodes()
     editModeScenegraphNodes.textX->justification = SoText2::LEFT;
     editModeScenegraphNodes.textX->string = "";
     Coordsep->addChild(editModeScenegraphNodes.textX);
+    // render-cache backend (bgfx/WASM) glyph companion for the cursor coordinates
+    Coordsep->addChild(Gui::SoTextImage::createFor(editModeScenegraphNodes.textX,
+                                                   editModeScenegraphNodes.textFont));
     editModeScenegraphNodes.EditRoot->addChild(Coordsep);
 
     // coin nodes for the constraints +++++++++++++++++++++++++++++++++++++++++++++++++++
