@@ -226,11 +226,13 @@ void SoTextImage::syncAutoZoom(SoAction* action)
     float vph = (float)vp.getViewportSizePixels()[1];
     if (vph <= 0.f)
         return;
-    // Same calibration as SoDatumLabel's glyph companion: the backend applies
-    // scaleFactor * worldToScreenScale / (5*aspect); k=7.5/vph makes the native
-    // pixel quad render at the GL text's screen size. Set only on change so it
-    // does not thrash the render cache each frame.
-    float sf = 7.5f / vph;
+    // Calibrates the screen-constant glyph size (backend applies
+    // scaleFactor * autozoomScale). SoDatumLabel uses k=7.5 but rasters its
+    // text pre-scaled larger; SoTextImage rasters at the native font pixel
+    // size, so it needs a bigger k to land at a comparable on-screen size.
+    // k=12 renders the label close to its font pixel size. Set only on change
+    // so it does not thrash the render cache each frame.
+    float sf = 12.0f / vph;
     if (this->imageZoom->scaleFactor.getValue() != sf)
         this->imageZoom->scaleFactor.setValue(sf);
 }
