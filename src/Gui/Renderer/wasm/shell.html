@@ -16,8 +16,14 @@
        buffer to match, so making the CSS size viewport-relative is all that
        is needed for rotation/resize to work. touch-action:none stops the
        browser from consuming touch gestures (scroll/zoom) so our own touch
-       orbit/pan/zoom + tap-pick handlers receive them. */
-    #canvas { display: block; width: 100vw; height: 100vh; border: 0;
+       orbit/pan/zoom + tap-pick handlers receive them.
+       Use dynamic viewport units (dvw/dvh) so the canvas tracks the VISIBLE
+       viewport on mobile: static 100vh is the tall layout viewport (browser
+       chrome hidden), so with the address bar shown the bottom of the canvas
+       (and the bottom-right axis-cross overlay) fell below the fold. The
+       vw/vh declarations are the fallback for browsers without dvh support. */
+    #canvas { display: block; width: 100vw; height: 100vh;
+              width: 100dvw; height: 100dvh; border: 0;
               outline: none; touch-action: none; }
     #status { position: fixed; left: 0; right: 0; top: 50%;
               transform: translateY(-50%); text-align: center;
