@@ -51,6 +51,7 @@ public:
     std::unordered_map<const char *,void(*)(RenderParamsP*),App::CStringHasher,App::CStringHasher> funcs;
     std::string Type;
     bool SSAO;
+    bool Shadow;
     double SSAORadius;
     double SSAOIntensity;
     bool PBR;
@@ -72,6 +73,9 @@ public:
     double WaterWaveSpeed;
     double WaterAbsorption;
     double WaterInscatter;
+    bool WaterRefraction;
+    bool WaterReflection;
+    bool WaterPlanarReflection;
     bool GroundReflection;
     double GroundReflectionIntensity;
 
@@ -84,6 +88,8 @@ public:
         funcs["Type"] = &RenderParamsP::updateType;
         SSAO = this->handle->GetBool("SSAO", false);
         funcs["SSAO"] = &RenderParamsP::updateSSAO;
+        Shadow = this->handle->GetBool("Shadow", true);
+        funcs["Shadow"] = &RenderParamsP::updateShadow;
         SSAORadius = this->handle->GetFloat("SSAORadius", 0.0);
         funcs["SSAORadius"] = &RenderParamsP::updateSSAORadius;
         SSAOIntensity = this->handle->GetFloat("SSAOIntensity", 1.0);
@@ -126,6 +132,12 @@ public:
         funcs["WaterAbsorption"] = &RenderParamsP::updateWaterAbsorption;
         WaterInscatter = this->handle->GetFloat("WaterInscatter", 0.5);
         funcs["WaterInscatter"] = &RenderParamsP::updateWaterInscatter;
+        WaterRefraction = this->handle->GetBool("WaterRefraction", true);
+        funcs["WaterRefraction"] = &RenderParamsP::updateWaterRefraction;
+        WaterReflection = this->handle->GetBool("WaterReflection", true);
+        funcs["WaterReflection"] = &RenderParamsP::updateWaterReflection;
+        WaterPlanarReflection = this->handle->GetBool("WaterPlanarReflection", true);
+        funcs["WaterPlanarReflection"] = &RenderParamsP::updateWaterPlanarReflection;
         GroundReflection = this->handle->GetBool("GroundReflection", false);
         funcs["GroundReflection"] = &RenderParamsP::updateGroundReflection;
         GroundReflectionIntensity = this->handle->GetFloat("GroundReflectionIntensity", 0.4);
@@ -157,6 +169,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateSSAO(RenderParamsP *self) {
         self->SSAO = self->handle->GetBool("SSAO", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateShadow(RenderParamsP *self) {
+        self->Shadow = self->handle->GetBool("Shadow", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateSSAORadius(RenderParamsP *self) {
@@ -243,6 +259,18 @@ public:
         self->WaterInscatter = self->handle->GetFloat("WaterInscatter", 0.5);
     }
     // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterRefraction(RenderParamsP *self) {
+        self->WaterRefraction = self->handle->GetBool("WaterRefraction", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterReflection(RenderParamsP *self) {
+        self->WaterReflection = self->handle->GetBool("WaterReflection", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterPlanarReflection(RenderParamsP *self) {
+        self->WaterPlanarReflection = self->handle->GetBool("WaterPlanarReflection", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
     static void updateGroundReflection(RenderParamsP *self) {
         self->GroundReflection = self->handle->GetBool("GroundReflection", false);
     }
@@ -321,6 +349,39 @@ void RenderParams::setSSAO(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeSSAO() {
     instance()->handle->RemoveBool("SSAO");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docShadow() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Render the shadow map cast by the Shadow draw style's scene\n"
+"light (and the god-ray shafts / caustic occlusion that depend on\n"
+"it). A convenience switch to drop shadows without leaving the\n"
+"Shadow draw style; the base headlight and environment lighting\n"
+"stay, so the scene remains lit, just flatter. Has no effect unless\n"
+"the Shadow draw style provides a scene light.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getShadow() {
+    return instance()->Shadow;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultShadow() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setShadow(const bool &v) {
+    instance()->handle->SetBool("Shadow",v);
+    instance()->Shadow = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeShadow() {
+    instance()->handle->RemoveBool("Shadow");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -939,6 +1000,99 @@ void RenderParams::setWaterInscatter(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeWaterInscatter() {
     instance()->handle->RemoveFloat("WaterInscatter");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterRefraction() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Screen-space refraction of the scene behind the water\n"
+"surface. When off the surface shows a flat water colour instead\n"
+"of the see-through refracted scene.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getWaterRefraction() {
+    return instance()->WaterRefraction;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultWaterRefraction() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterRefraction(const bool &v) {
+    instance()->handle->SetBool("WaterRefraction",v);
+    instance()->WaterRefraction = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterRefraction() {
+    instance()->handle->RemoveBool("WaterRefraction");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterReflection() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Reflection on the water surface (Fresnel-blended). When off\n"
+"the surface only refracts. See WaterPlanarReflection for the\n"
+"reflection method.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getWaterReflection() {
+    return instance()->WaterReflection;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultWaterReflection() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterReflection(const bool &v) {
+    instance()->handle->SetBool("WaterReflection",v);
+    instance()->WaterReflection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterReflection() {
+    instance()->handle->RemoveBool("WaterReflection");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterPlanarReflection() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Reflection method when WaterReflection is on: planar (a\n"
+"mirror-camera re-render of the scene about the water plane -\n"
+"exact, no taper) when true, else screen-space reflection (a\n"
+"cheaper per-pixel ray march that can only reflect on-screen\n"
+"geometry and tapers past it). The environment cubemap is the\n"
+"fallback for both.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getWaterPlanarReflection() {
+    return instance()->WaterPlanarReflection;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultWaterPlanarReflection() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterPlanarReflection(const bool &v) {
+    instance()->handle->SetBool("WaterPlanarReflection",v);
+    instance()->WaterPlanarReflection = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterPlanarReflection() {
+    instance()->handle->RemoveBool("WaterPlanarReflection");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

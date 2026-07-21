@@ -49,6 +49,13 @@ Params = [
     ParamBool('SSAO',  False, title='Ambient occlusion',
         doc="Enable screen space ambient occlusion of the experimental render\n"
         "engine (render cache mode 3 with a selected renderer type)."),
+    ParamBool('Shadow',  True, title='Shadow',
+        doc="Render the shadow map cast by the Shadow draw style's scene\n"
+        "light (and the god-ray shafts / caustic occlusion that depend on\n"
+        "it). A convenience switch to drop shadows without leaving the\n"
+        "Shadow draw style; the base headlight and environment lighting\n"
+        "stay, so the scene remains lit, just flatter. Has no effect unless\n"
+        "the Shadow draw style provides a scene light."),
     ParamFloat('SSAORadius',  0.0, title='Sample radius',
         doc="Ambient occlusion sample radius in world units.\n"
         "Zero means automatic (a fraction of the scene size)."),
@@ -121,6 +128,21 @@ Params = [
         doc="How much the water's own color is added back into the\n"
         "depth-absorbed refraction (in-scattering); zero leaves absorbed\n"
         "regions dark, one fills them with the water color."),
+    ParamBool('WaterRefraction',  True, title='Refraction',
+        doc="Screen-space refraction of the scene behind the water\n"
+        "surface. When off the surface shows a flat water colour instead\n"
+        "of the see-through refracted scene."),
+    ParamBool('WaterReflection',  True, title='Reflection',
+        doc="Reflection on the water surface (Fresnel-blended). When off\n"
+        "the surface only refracts. See WaterPlanarReflection for the\n"
+        "reflection method."),
+    ParamBool('WaterPlanarReflection',  True, title='Planar reflection',
+        doc="Reflection method when WaterReflection is on: planar (a\n"
+        "mirror-camera re-render of the scene about the water plane -\n"
+        "exact, no taper) when true, else screen-space reflection (a\n"
+        "cheaper per-pixel ray march that can only reflect on-screen\n"
+        "geometry and tapers past it). The environment cubemap is the\n"
+        "fallback for both."),
     ParamBool('GroundReflection',  False, title='Ground reflection',
         doc="Mirror the model in the shadow ground plane of the\n"
         "experimental render engine: the opaque scene is re-rendered\n"

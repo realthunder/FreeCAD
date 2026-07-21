@@ -295,6 +295,10 @@ struct BumpConfig {
 /// map from it, honoring each draw's Material::shadowstyle.
 struct LightConfig {
     bool valid = false;
+    /// Render the shadow map (and the shafts/caustic occlusion depending
+    /// on it); false drops shadows but keeps the scene lit. From the
+    /// Render_Shadow view property.
+    bool shadow = true;
     bool spot = false;       ///< spot light; directional otherwise
     float direction[3] = {0.0f, 0.0f, -1.0f};  ///< world, normalized
     float position[3] = {0.0f, 0.0f, 0.0f};    ///< world, spot only
@@ -360,7 +364,7 @@ struct LightConfig {
     float groundReflectionIntensity = 0.4f;
 
     bool operator==(const LightConfig &o) const {
-        return valid == o.valid && spot == o.spot
+        return valid == o.valid && shadow == o.shadow && spot == o.spot
             && direction[0] == o.direction[0]
             && direction[1] == o.direction[1]
             && direction[2] == o.direction[2]
@@ -443,11 +447,22 @@ struct WaterConfig {
     /// Fraction of the water color scattered back into the absorbed
     /// refraction (in-scattering).
     float inscatter = 0.5f;
+    /// Screen-space refraction of the scene behind the surface; off = flat
+    /// water color.
+    bool refraction = true;
+    /// Reflection on the surface (Fresnel-blended); off = refraction only.
+    bool reflection = true;
+    /// Reflection method when reflection is on: true = planar mirror pass
+    /// (exact), false = screen-space reflection (march). Env cubemap is the
+    /// fallback for both.
+    bool planarReflection = true;
 
     bool operator==(const WaterConfig &o) const {
         return enabled == o.enabled && waveStrength == o.waveStrength
             && waveScale == o.waveScale && waveSpeed == o.waveSpeed
-            && absorption == o.absorption && inscatter == o.inscatter;
+            && absorption == o.absorption && inscatter == o.inscatter
+            && refraction == o.refraction && reflection == o.reflection
+            && planarReflection == o.planarReflection;
     }
     bool operator!=(const WaterConfig &o) const { return !(*this == o); }
 };

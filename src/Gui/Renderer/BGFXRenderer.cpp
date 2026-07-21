@@ -3781,9 +3781,11 @@ public:
     /// transparent-bucket blending of the body.
     void submitWaterSurface(const Render::DrawCall &draw,
                             float waveStrength, float waveScale,
-                            float time, bool depthReject, bool planarRefl,
-                            bool absorb, float absorption, float inscatter)
+                            float time, bool depthReject, int reflMode,
+                            bool refraction, bool absorb, float absorption,
+                            float inscatter)
     {
+        bool planarRefl = reflMode == 3;
         if (!draw.mesh || !draw.mesh->triangleIndices)
             return;
         GpuMesh *gpu = getMesh(*draw.mesh);
@@ -3816,7 +3818,8 @@ public:
         float surf[4] = {waveStrength, waveScale, time,
                          depthReject ? (absorb ? 2.0f : 1.0f) : 0.0f};
         bgfx::setUniform(u_waterSurf, surf);
-        float absorbP[4] = {absorption, inscatter, 0.0f, 0.0f};
+        float absorbP[4] = {absorption, inscatter, float(reflMode),
+                             refraction ? 1.0f : 0.0f};
         bgfx::setUniform(u_waterAbsorb, absorbP);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2],
@@ -5449,7 +5452,8 @@ public:
         // (a known first-cut deviation).
         bool shadowActive = false;
         float lightViewMtx[16], lightProjMtx[16];
-        if (view->m_shadow && bboxValid && lightconf.valid) {
+        if (view->m_shadow && bboxValid && lightconf.valid
+                && lightconf.shadow) {
             const Render::LightConfig &light = lightconf;
             shadowActive = true;
             {
@@ -6269,10 +6273,19 @@ public:
         // SSR taper). Reuses the ground-reflection FBO/pass; only when the
         // ground reflection is not itself using them (single mirror plane
         // per frame). Assumes a horizontal water surface, like the ground.
-        bool waterReflActive = waterSurfActive && waterPlaneSet
+        bool waterReflActive = waterSurfActive && waterconf.reflection
+            && waterconf.planarReflection && waterPlaneSet
             && !groundReflActive && bboxValid && !hlconfig.show
             && bgfx::isValid(view->m_progGroundRefl)
             && bgfx::isValid(view->reflFbo);
+        // Reflection mode fed to the water shader: 0 off, 1 environment
+        // cubemap, 2 screen-space (march), 3 planar (mirror pass). Planar
+        // requested but unavailable (e.g. ground reflection using the
+        // shared target) degrades to the environment cubemap.
+        int waterReflMode = 0;
+        if (waterSurfActive && waterconf.reflection)
+            waterReflMode = waterReflActive ? 3
+                : (waterconf.planarReflection ? 1 : 2);
         float waterReflViewMtx[16], waterReflShadowMtx[16];
         if (waterReflActive) {
             const float *vm = reinterpret_cast<const float *>(viewMatrix);
@@ -7120,8 +7133,9 @@ public:
             if (surfWater && !cullDraw)
                 view->submitWaterSurface(draw, waterWaveStrength,
                                          waterWaveScale, waterSurfTime,
-                                         waterSurfReject, waterReflActive,
-                                         waterActive, waterconf.absorption,
+                                         waterSurfReject, waterReflMode,
+                                         waterconf.refraction, waterActive,
+                                         waterconf.absorption,
                                          waterconf.inscatter);
             if (surfGlass && !cullDraw) {
                 view->submitWaterDepth(draw, false, 1);

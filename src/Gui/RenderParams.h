@@ -96,6 +96,23 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter Shadow
+    ///
+    /// Render the shadow map cast by the Shadow draw style's scene
+    /// light (and the god-ray shafts / caustic occlusion that depend on
+    /// it). A convenience switch to drop shadows without leaving the
+    /// Shadow draw style; the base headlight and environment lighting
+    /// stay, so the scene remains lit, just flatter. Has no effect unless
+    /// the Shadow draw style provides a scene light.
+    static const bool & getShadow();
+    static const bool & defaultShadow();
+    static void removeShadow();
+    static void setShadow(const bool &v);
+    static const char *docShadow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter SSAORadius
     ///
     /// Ambient occlusion sample radius in world units.
@@ -374,6 +391,51 @@ public:
     static void removeWaterInscatter();
     static void setWaterInscatter(const double &v);
     static const char *docWaterInscatter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WaterRefraction
+    ///
+    /// Screen-space refraction of the scene behind the water
+    /// surface. When off the surface shows a flat water colour instead
+    /// of the see-through refracted scene.
+    static const bool & getWaterRefraction();
+    static const bool & defaultWaterRefraction();
+    static void removeWaterRefraction();
+    static void setWaterRefraction(const bool &v);
+    static const char *docWaterRefraction();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WaterReflection
+    ///
+    /// Reflection on the water surface (Fresnel-blended). When off
+    /// the surface only refracts. See WaterPlanarReflection for the
+    /// reflection method.
+    static const bool & getWaterReflection();
+    static const bool & defaultWaterReflection();
+    static void removeWaterReflection();
+    static void setWaterReflection(const bool &v);
+    static const char *docWaterReflection();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WaterPlanarReflection
+    ///
+    /// Reflection method when WaterReflection is on: planar (a
+    /// mirror-camera re-render of the scene about the water plane -
+    /// exact, no taper) when true, else screen-space reflection (a
+    /// cheaper per-pixel ray march that can only reflect on-screen
+    /// geometry and tapers past it). The environment cubemap is the
+    /// fallback for both.
+    static const bool & getWaterPlanarReflection();
+    static const bool & defaultWaterPlanarReflection();
+    static void removeWaterPlanarReflection();
+    static void setWaterPlanarReflection(const bool &v);
+    static const char *docWaterPlanarReflection();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

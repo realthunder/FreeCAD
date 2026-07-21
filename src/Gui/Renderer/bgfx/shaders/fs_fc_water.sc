@@ -30,11 +30,7 @@ uniform vec4 u_matColor;   // rgb = water tint; a > 0.5 = planar refl in s_texRe
 uniform vec4 u_lightDir;
 uniform vec4 u_lightColor;
 uniform vec4 u_waterSurf;
-uniform vec4 u_waterAbsorb; // x = absorption strength, y = in-scatter
-
-// Test toggle: 0 disables the water surface reflection, leaving pure
-// screen-space refraction.
-#define FC_WATER_REFLECT 1
+uniform vec4 u_waterAbsorb; // x=absorption, y=in-scatter, z=refl mode, w=refract
 
 void main()
 {
@@ -84,80 +80,129 @@ void main()
 	// the line pixels straddling the background would smear their
 	// black through the offset otherwise.
 	vec2 uv = gl_FragCoord.xy * u_viewTexel.xy;
-	vec2 ruv = uv + (np.xy - n.xy) * 0.08;
-	if (u_waterSurf.w > 0.5)
+
+	// --- Refraction (u_waterAbsorb.w toggles it) -------------------------
+	vec3 refr;
+	if (u_waterAbsorb.w > 0.5)
 	{
-		float fragZ = -v_vpos.z * 0.999;
-		vec2 o = u_viewTexel.xy * 2.0;
-		vec4 p0 = texture2D(s_texNormalZ, ruv);
-		vec4 p1 = texture2D(s_texNormalZ, ruv + vec2(o.x, 0.0));
-		vec4 p2 = texture2D(s_texNormalZ, ruv - vec2(o.x, 0.0));
-		vec4 p3 = texture2D(s_texNormalZ, ruv + vec2(0.0, o.y));
-		vec4 p4 = texture2D(s_texNormalZ, ruv - vec2(0.0, o.y));
-		if ((p0.w > 0.5 && p0.z < fragZ)
-			|| (p1.w > 0.5 && p1.z < fragZ)
-			|| (p2.w > 0.5 && p2.z < fragZ)
-			|| (p3.w > 0.5 && p3.z < fragZ)
-			|| (p4.w > 0.5 && p4.z < fragZ))
-			ruv = uv;
+		vec2 ruv = uv + (np.xy - n.xy) * 0.08;
+		if (u_waterSurf.w > 0.5)
+		{
+			// Reject offset samples landing on geometry in front of the
+			// surface (the dry parts of protruding objects); cross taps
+			// dilate the reject ~2px past CAD edge lines.
+			float fragZ = -v_vpos.z * 0.999;
+			vec2 o = u_viewTexel.xy * 2.0;
+			vec4 p0 = texture2D(s_texNormalZ, ruv);
+			vec4 p1 = texture2D(s_texNormalZ, ruv + vec2(o.x, 0.0));
+			vec4 p2 = texture2D(s_texNormalZ, ruv - vec2(o.x, 0.0));
+			vec4 p3 = texture2D(s_texNormalZ, ruv + vec2(0.0, o.y));
+			vec4 p4 = texture2D(s_texNormalZ, ruv - vec2(0.0, o.y));
+			if ((p0.w > 0.5 && p0.z < fragZ)
+				|| (p1.w > 0.5 && p1.z < fragZ)
+				|| (p2.w > 0.5 && p2.z < fragZ)
+				|| (p3.w > 0.5 && p3.z < fragZ)
+				|| (p4.w > 0.5 && p4.z < fragZ))
+				ruv = uv;
+		}
+		refr = texture2D(s_texScene, ruv).xyz;
+		refr *= mix(vec3_splat(1.0), u_matColor.rgb, 0.2);
+
+		// Depth-based absorption (Beer-Lambert) over the water column from
+		// the surface to the body back face (s_texWaterBack.z; the water
+		// gains body and the floor recedes with depth). u_waterSurf.w == 2
+		// flags the back-depth target as bound.
+		if (u_waterSurf.w > 1.5)
+		{
+			vec4 wb = texture2D(s_texWaterBack, uv);
+			float thick = wb.w > 0.5 ? max(wb.z + v_vpos.z, 0.0) : 0.0;
+			vec3 sigma = (vec3_splat(1.0) - u_matColor.rgb)
+				* u_waterAbsorb.x + vec3_splat(0.1 * u_waterAbsorb.x);
+			vec3 trans = exp(-sigma * thick);
+			refr = refr * trans
+				+ u_matColor.rgb * (1.0 - trans) * u_waterAbsorb.y;
+		}
 	}
-	vec3 refr = texture2D(s_texScene, ruv).xyz;
-	refr *= mix(vec3_splat(1.0), u_matColor.rgb, 0.2);
-
-	// Depth-based absorption (Beer-Lambert): dim and tint the refracted
-	// scene by the water column below this surface fragment — from the
-	// surface here to the water body's back face (pool bottom, its eye
-	// distance in s_texWaterBack.z) — so the water gains real body and the
-	// floor recedes with depth instead of reading crystal-clear (which
-	// made the surface look like it sat at the bottom). Per-channel
-	// extinction: channels the water tint lacks are absorbed most, so
-	// blue-green water reddens and darkens with depth, and at grazing
-	// angles the long path turns opaque water-colour. u_waterSurf.w == 2
-	// flags the back-depth target as bound.
-	if (u_waterSurf.w > 1.5)
+	else
 	{
-		vec4 wb = texture2D(s_texWaterBack, uv);
-		float thick = wb.w > 0.5 ? max(wb.z + v_vpos.z, 0.0) : 0.0;
-		vec3 sigma = (vec3_splat(1.0) - u_matColor.rgb) * u_waterAbsorb.x
-			+ vec3_splat(0.1 * u_waterAbsorb.x);
-		vec3 trans = exp(-sigma * thick);
-		refr = refr * trans
-			+ u_matColor.rgb * (1.0 - trans) * u_waterAbsorb.y;
-	}
-
-#if FC_WATER_REFLECT
-	// Environment reflection in world space, slightly rough — the
-	// fallback wherever the planar reflection has nothing.
-	vec3 Vw = normalize(mul(u_invView, vec4(V, 0.0)).xyz);
-	vec3 rw = reflect(-Vw, npw);
-	vec3 refl = textureCubeLod(s_texEnv, rw, 1.0).xyz;
-
-	// Planar reflection: the scene is re-rendered through a camera
-	// mirrored about the (horizontal) water plane into s_texRefl, so the
-	// surface mirrors the actual model (cylinder, flame) exactly — no
-	// screen-space march, no taper. The mirrored scene projects to the
-	// same pixel the reflected eye ray exits through, so sample at the
-	// fragment's own screen position, nudged by the wave normal for the
-	// rippled distortion; the reflection's alpha (0 = nothing mirrored,
-	// e.g. sky past the model) falls back to the environment. Flagged by
-	// u_matColor.a (set only when the mirror pass actually ran).
-	if (u_matColor.a > 0.5)
-	{
-		vec2 ruv2 = gl_FragCoord.xy * u_viewTexel.xy
-			+ (np.xy - n.xy) * 0.08;
-		vec4 pr = texture2D(s_texRefl, ruv2);
-		refl = mix(refl, pr.xyz, pr.w);
+		// Refraction off: flat water tint, no see-through.
+		refr = u_matColor.rgb;
 	}
 
-	// Schlick Fresnel, water f0.
+	// --- Reflection (u_waterAbsorb.z: 0 off, 1 env, 2 SSR, 3 planar) -----
+	int rmode = int(u_waterAbsorb.z + 0.5);
+	vec3 refl = refr;
+	if (rmode > 0)
+	{
+		// Environment cubemap: the base, and the fallback for the
+		// screen-space / planar modes wherever they find nothing.
+		vec3 Vw = normalize(mul(u_invView, vec4(V, 0.0)).xyz);
+		vec3 rw = reflect(-Vw, npw);
+		refl = textureCubeLod(s_texEnv, rw, 1.0).xyz;
+
+		if (rmode == 2 && u_waterSurf.w > 0.5)
+		{
+			// Screen-space reflection: distance-adaptive coarse march +
+			// binary refine of the reflected view ray through the prepass
+			// depth. Reflects only on-screen geometry (tapers past it).
+			vec3 Rv = reflect(normalize(v_vpos), np);
+			float stp = 0.5;
+			vec3 P = v_vpos, Pprev = v_vpos;
+			vec2 suv = vec2_splat(-1.0);
+			bool crossed = false;
+			for (int i = 0; i < 28; ++i)
+			{
+				Pprev = P;
+				P += Rv * stp;
+				vec4 c = mul(u_proj, vec4(P, 1.0));
+				suv = c.xy / c.w * 0.5 + 0.5;
+				if (suv.x < 0.0 || suv.x > 1.0
+					|| suv.y < 0.0 || suv.y > 1.0)
+					break;
+				vec4 s = texture2D(s_texNormalZ, suv);
+				if (s.w > 0.5 && -P.z > s.z) { crossed = true; break; }
+				stp *= 1.15;
+			}
+			if (crossed)
+			{
+				vec3 a = Pprev, b = P;
+				for (int j = 0; j < 5; ++j)
+				{
+					vec3 m = (a + b) * 0.5;
+					vec4 c = mul(u_proj, vec4(m, 1.0));
+					suv = c.xy / c.w * 0.5 + 0.5;
+					vec4 s = texture2D(s_texNormalZ, suv);
+					if (s.w > 0.5 && -m.z > s.z) b = m; else a = m;
+				}
+				vec3 hitP = (a + b) * 0.5;
+				vec4 hs = texture2D(s_texNormalZ, suv);
+				if (hs.w > 0.5 && abs(-hitP.z - hs.z) < 2.0)
+				{
+					vec2 e = smoothstep(vec2_splat(0.0),
+						vec2_splat(0.12), suv)
+						* smoothstep(vec2_splat(0.0),
+						vec2_splat(0.12), vec2_splat(1.0) - suv);
+					refl = mix(refl,
+						texture2D(s_texScene, suv).xyz, e.x * e.y);
+				}
+			}
+		}
+		else if (rmode == 3 && u_matColor.a > 0.5)
+		{
+			// Planar reflection: sample the mirror-camera scene render
+			// (s_texRefl) at the fragment's own screen pos, wave-offset;
+			// exact, no taper. Alpha 0 = nothing mirrored -> env.
+			vec2 ruv2 = uv + (np.xy - n.xy) * 0.08;
+			vec4 pr = texture2D(s_texRefl, ruv2);
+			refl = mix(refl, pr.xyz, pr.w);
+		}
+	}
+
+	// Schlick Fresnel, water f0; reflection off (rmode 0) -> no reflection.
 	float f = 1.0 - max(dot(np, V), 0.0);
 	float f2 = f * f;
-	float fres = 0.02 + 0.98 * f2 * f2 * f;
+	float fres = rmode > 0 ? (0.02 + 0.98 * f2 * f2 * f) : 0.0;
 	vec3 color = mix(refr, refl, fres);
-#else
-	// Reflection OFF (test): pure refraction of the scene behind.
-	vec3 color = refr;
-#endif
 
 	// Sun glint from the scene light on the perturbed normal.
 	if (u_lightDir.w > 0.5)

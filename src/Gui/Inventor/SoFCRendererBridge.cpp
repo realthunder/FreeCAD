@@ -887,6 +887,11 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
         break;
     }
     if (res.valid) {
+        // Render_Shadow (Render group) is a convenience toggle to drop the
+        // shadow map while keeping the scene lit; the Shadow draw style
+        // still provides the light.
+        res.shadow = viewParamOverride<App::PropertyBool>(
+                view, "Render", "Shadow", RenderParams::getShadow());
         // Shadow border smoothing scales the backend's variance-map
         // blur; the Shadow draw style materializes Shadow_SmoothBorder
         // (0..100) with the ViewParams default.
@@ -1087,6 +1092,15 @@ RendererBridge::translateWaterConfig(View3DInventor * view)
     res.inscatter = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "WaterInscatter",
             RenderParams::getWaterInscatter()));
+    res.refraction = viewParamOverride<App::PropertyBool>(
+            view, "Render", "WaterRefraction",
+            RenderParams::getWaterRefraction());
+    res.reflection = viewParamOverride<App::PropertyBool>(
+            view, "Render", "WaterReflection",
+            RenderParams::getWaterReflection());
+    res.planarReflection = viewParamOverride<App::PropertyBool>(
+            view, "Render", "WaterPlanarReflection",
+            RenderParams::getWaterPlanarReflection());
     return res;
 }
 

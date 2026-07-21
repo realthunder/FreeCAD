@@ -3881,6 +3881,8 @@ void View3DInventorViewer::initRenderProperties()
         return;
     _renderParam<App::PropertyBool>(view, "SSAO",
             RenderParams::docSSAO(), RenderParams::getSSAO());
+    _renderParam<App::PropertyBool>(view, "Shadow",
+            RenderParams::docShadow(), RenderParams::getShadow());
     _renderParam<App::PropertyFloat>(view, "SSAORadius",
             RenderParams::docSSAORadius(), RenderParams::getSSAORadius());
     _renderParam<App::PropertyFloat>(view, "SSAOIntensity",
@@ -3941,6 +3943,15 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "WaterInscatter",
             RenderParams::docWaterInscatter(),
             RenderParams::getWaterInscatter());
+    _renderParam<App::PropertyBool>(view, "WaterRefraction",
+            RenderParams::docWaterRefraction(),
+            RenderParams::getWaterRefraction());
+    _renderParam<App::PropertyBool>(view, "WaterReflection",
+            RenderParams::docWaterReflection(),
+            RenderParams::getWaterReflection());
+    _renderParam<App::PropertyBool>(view, "WaterPlanarReflection",
+            RenderParams::docWaterPlanarReflection(),
+            RenderParams::getWaterPlanarReflection());
     _renderParam<App::PropertyBool>(view, "GroundReflection",
             RenderParams::docGroundReflection(),
             RenderParams::getGroundReflection());
