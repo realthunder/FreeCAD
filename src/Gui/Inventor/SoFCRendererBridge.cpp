@@ -1081,6 +1081,12 @@ RendererBridge::translateWaterConfig(View3DInventor * view)
     res.waveSpeed = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "WaterWaveSpeed",
             RenderParams::getWaterWaveSpeed()));
+    res.absorption = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "WaterAbsorption",
+            RenderParams::getWaterAbsorption()));
+    res.inscatter = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "WaterInscatter",
+            RenderParams::getWaterInscatter()));
     return res;
 }
 

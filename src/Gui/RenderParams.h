@@ -348,6 +348,36 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter WaterAbsorption
+    ///
+    /// Beer-Lambert absorption strength of the water surface
+    /// refraction: the refracted scene is dimmed and tinted by the
+    /// water column it travels through (channels the water color lacks
+    /// are absorbed most), so the water gains body and the bottom
+    /// recedes with depth. Zero = crystal clear.
+    static const double & getWaterAbsorption();
+    static const double & defaultWaterAbsorption();
+    static void removeWaterAbsorption();
+    static void setWaterAbsorption(const double &v);
+    static const char *docWaterAbsorption();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WaterInscatter
+    ///
+    /// How much the water's own color is added back into the
+    /// depth-absorbed refraction (in-scattering); zero leaves absorbed
+    /// regions dark, one fills them with the water color.
+    static const double & getWaterInscatter();
+    static const double & defaultWaterInscatter();
+    static void removeWaterInscatter();
+    static void setWaterInscatter(const double &v);
+    static const char *docWaterInscatter();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter GroundReflection
     ///
     /// Mirror the model in the shadow ground plane of the

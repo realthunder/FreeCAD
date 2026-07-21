@@ -3935,6 +3935,12 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "WaterWaveSpeed",
             RenderParams::docWaterWaveSpeed(),
             RenderParams::getWaterWaveSpeed());
+    _renderParam<App::PropertyFloat>(view, "WaterAbsorption",
+            RenderParams::docWaterAbsorption(),
+            RenderParams::getWaterAbsorption());
+    _renderParam<App::PropertyFloat>(view, "WaterInscatter",
+            RenderParams::docWaterInscatter(),
+            RenderParams::getWaterInscatter());
     _renderParam<App::PropertyBool>(view, "GroundReflection",
             RenderParams::docGroundReflection(),
             RenderParams::getGroundReflection());

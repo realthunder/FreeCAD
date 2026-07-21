@@ -437,10 +437,17 @@ struct WaterConfig {
     float waveScale = 0.0f;
     /// Wave animation speed; 0 freezes the surface.
     float waveSpeed = 1.0f;
+    /// Beer-Lambert absorption strength of the refraction over the water
+    /// column depth; 0 = crystal clear.
+    float absorption = 0.2f;
+    /// Fraction of the water color scattered back into the absorbed
+    /// refraction (in-scattering).
+    float inscatter = 0.5f;
 
     bool operator==(const WaterConfig &o) const {
         return enabled == o.enabled && waveStrength == o.waveStrength
-            && waveScale == o.waveScale && waveSpeed == o.waveSpeed;
+            && waveScale == o.waveScale && waveSpeed == o.waveSpeed
+            && absorption == o.absorption && inscatter == o.inscatter;
     }
     bool operator!=(const WaterConfig &o) const { return !(*this == o); }
 };

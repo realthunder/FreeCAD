@@ -111,6 +111,16 @@ Params = [
     ParamFloat('WaterWaveSpeed',  1.0, title='Wave speed',
         doc="Animation speed of the water surface waves; zero freezes\n"
         "them."),
+    ParamFloat('WaterAbsorption',  0.2, title='Absorption',
+        doc="Beer-Lambert absorption strength of the water surface\n"
+        "refraction: the refracted scene is dimmed and tinted by the\n"
+        "water column it travels through (channels the water color lacks\n"
+        "are absorbed most), so the water gains body and the bottom\n"
+        "recedes with depth. Zero = crystal clear."),
+    ParamFloat('WaterInscatter',  0.5, title='In-scatter',
+        doc="How much the water's own color is added back into the\n"
+        "depth-absorbed refraction (in-scattering); zero leaves absorbed\n"
+        "regions dark, one fills them with the water color."),
     ParamBool('GroundReflection',  False, title='Ground reflection',
         doc="Mirror the model in the shadow ground plane of the\n"
         "experimental render engine: the opaque scene is re-rendered\n"

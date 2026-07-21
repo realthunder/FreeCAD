@@ -1430,7 +1430,8 @@ public:
         for (auto uni : {&s_texVol, &u_volParams, &u_volMedium,
                          &u_volTexel, &s_texWaterFront, &s_texWaterBack,
                          &u_waterSigma, &u_causticParams,
-                         &s_texScene, &u_waterSurf, &u_reflParams,
+                         &s_texScene, &s_texRefl, &u_waterSurf,
+                         &u_waterAbsorb, &u_reflParams,
                          &s_texGlassFront, &s_texGlassBack,
                          &u_glassParams,
                          &s_texCloudFront, &s_texCloudBack,
@@ -2309,8 +2310,12 @@ public:
                                   _BGFXLib.resource().c_str());
         s_texScene = bgfx::createUniform("s_texScene",
                                          bgfx::UniformType::Sampler);
+        s_texRefl = bgfx::createUniform("s_texRefl",
+                                        bgfx::UniformType::Sampler);
         u_waterSurf = bgfx::createUniform("u_waterSurf",
                                           bgfx::UniformType::Vec4);
+        u_waterAbsorb = bgfx::createUniform("u_waterAbsorb",
+                                            bgfx::UniformType::Vec4);
         // The surface shader's refraction depth reject samples the SSAO
         // prepass; without those resources the sampler uniform still
         // has to exist for the (disabled) stage binding.
@@ -3776,7 +3781,8 @@ public:
     /// transparent-bucket blending of the body.
     void submitWaterSurface(const Render::DrawCall &draw,
                             float waveStrength, float waveScale,
-                            float time, bool depthReject)
+                            float time, bool depthReject, bool planarRefl,
+                            bool absorb, float absorption, float inscatter)
     {
         if (!draw.mesh || !draw.mesh->triangleIndices)
             return;
@@ -3793,6 +3799,10 @@ public:
         const Render::Material &mat = draw.material;
         float color[4];
         unpackColor(mat.diffuse, color);
+        // The alpha channel flags the shader that a planar reflection is
+        // rendered into s_texRefl (mirror-camera scene) — otherwise it
+        // falls back to the environment cubemap.
+        color[3] = planarRefl ? 1.0f : 0.0f;
         bgfx::setUniform(u_matColor, color);
         // The mesh vertex shader reads u_params.w as an NDC depth bias;
         // bgfx uniforms are global (commit uploads the last-set value),
@@ -3800,9 +3810,14 @@ public:
         // and push every fragment past the far plane.
         float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         bgfx::setUniform(u_params, params);
+        // w encodes the prepass/absorption state: 0 = no prepass,
+        // 1 = prepass bound (refraction depth reject), 2 = prepass bound
+        // AND the water back-face depth is available (depth absorption).
         float surf[4] = {waveStrength, waveScale, time,
-                         depthReject ? 1.0f : 0.0f};
+                         depthReject ? (absorb ? 2.0f : 1.0f) : 0.0f};
         bgfx::setUniform(u_waterSurf, surf);
+        float absorbP[4] = {absorption, inscatter, 0.0f, 0.0f};
+        bgfx::setUniform(u_waterAbsorb, absorbP);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2],
                              shadowFrame ? 1.0f : 0.0f};
@@ -3816,6 +3831,12 @@ public:
         // bound texture, any will do since the shader skips the read).
         bgfx::setTexture(2, s_texNormalZ,
                          depthReject ? aoNormalZ : sceneCopyTex);
+        // Planar reflection source (mirror-camera scene); when off, bind
+        // the scene copy so the sampler is valid (the shader skips it).
+        bgfx::setTexture(3, s_texRefl, planarRefl ? reflTex : sceneCopyTex);
+        // Water back-face depth (pool bottom along each ray) for the
+        // Beer-Lambert depth absorption of the refraction.
+        bgfx::setTexture(4, s_texWaterBack, absorb ? waterBackTex : sceneCopyTex);
 
         setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
         // The mesh vertex shader needs the color stream too (bgfx drops
@@ -5111,7 +5132,9 @@ public:
     bgfx::ProgramHandle m_progWater = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progGroundRefl = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texScene = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texRefl = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_waterSurf = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_waterAbsorb = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_reflParams = BGFX_INVALID_HANDLE;
     // Redirect submit() into the ground reflection view (mirrored
     // camera, flipped culling).
@@ -5696,6 +5719,8 @@ public:
         float waterSigma[kSlots][4] = {};
         float waterDiagSlot[kSlots] = {};
         float waterDiag = 0.0f;   // first body's, for the wave-scale auto
+        float waterPlaneZ = 0.0f; // top of the water body/bodies, the plane
+        bool waterPlaneSet = false; // the planar reflection mirrors about
         std::unordered_map<uint64_t, int> waterSlots;
         auto slotOf = [](const std::unordered_map<uint64_t, int> &slots,
                          uint64_t key) {
@@ -5726,6 +5751,10 @@ public:
             waterDiagSlot[slot] = diag;
             if (waterDiag <= 0.0f)
                 waterDiag = diag;
+            if (!waterPlaneSet || draw.bboxMax[2] > waterPlaneZ) {
+                waterPlaneZ = draw.bboxMax[2];
+                waterPlaneSet = true;
+            }
             hasWaterBody = true;
             float dens = mat.waterdensity;
             if (dens <= 0.0f) {
@@ -6234,6 +6263,31 @@ public:
             bx::mtxMul(reflShadowMtx, m2, view->shadowMtx);
         }
 
+        // Water planar reflection: mirror the world about the water body's
+        // top plane and re-render the opaque scene into the same reflection
+        // target, so the water surface shader samples a true reflection (no
+        // SSR taper). Reuses the ground-reflection FBO/pass; only when the
+        // ground reflection is not itself using them (single mirror plane
+        // per frame). Assumes a horizontal water surface, like the ground.
+        bool waterReflActive = waterSurfActive && waterPlaneSet
+            && !groundReflActive && bboxValid && !hlconfig.show
+            && bgfx::isValid(view->m_progGroundRefl)
+            && bgfx::isValid(view->reflFbo);
+        float waterReflViewMtx[16], waterReflShadowMtx[16];
+        if (waterReflActive) {
+            const float *vm = reinterpret_cast<const float *>(viewMatrix);
+            float S[16];
+            bx::mtxIdentity(S);
+            S[10] = -1.0f;
+            S[14] = 2.0f * waterPlaneZ;
+            bx::mtxMul(waterReflViewMtx, S, vm);
+            float invV[16], m1[16], m2[16];
+            bx::mtxInverse(invV, vm);
+            bx::mtxMul(m1, invV, S);
+            bx::mtxMul(m2, m1, vm);
+            bx::mtxMul(waterReflShadowMtx, m2, view->shadowMtx);
+        }
+
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
             uint16_t id = base + i;
             if (i == BGFXView::ViewTransparent && oitActive) {
@@ -6372,17 +6426,19 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if (groundReflActive
+            } else if ((groundReflActive || waterReflActive)
                        && i == BGFXView::ViewGroundRefl) {
                 // Mirrored-scene render: own color (cleared to alpha 0 =
                 // nothing reflected) + depth, the original projection
-                // over the mirrored view.
+                // over the mirrored view (ground plane or water plane).
                 bgfx::setViewFrameBuffer(id, view->reflFbo);
                 bgfx::setViewClear(id,
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     0x00000000u, 1.0f, 0);
                 bgfx::setViewRect(id, 0, 0, width, height);
-                bgfx::setViewTransform(id, reflViewMtx, projMatrix);
+                bgfx::setViewTransform(id,
+                    groundReflActive ? reflViewMtx : waterReflViewMtx,
+                    projMatrix);
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
@@ -7064,7 +7120,9 @@ public:
             if (surfWater && !cullDraw)
                 view->submitWaterSurface(draw, waterWaveStrength,
                                          waterWaveScale, waterSurfTime,
-                                         waterSurfReject);
+                                         waterSurfReject, waterReflActive,
+                                         waterActive, waterconf.absorption,
+                                         waterconf.inscatter);
             if (surfGlass && !cullDraw) {
                 view->submitWaterDepth(draw, false, 1);
                 view->submitWaterDepth(draw, true, 1);
@@ -7122,13 +7180,14 @@ public:
         // culling is skipped — the mirrored camera sees a different
         // volume; hidden and on-top draws stay out like the water
         // bodies and transparent geometry (single-bounce opaque only).
-        if (groundReflActive) {
+        if (groundReflActive || waterReflActive) {
             view->reflPass = true;
             float savedShadowMtx[16];
             std::memcpy(savedShadowMtx, view->shadowMtx,
                         sizeof(savedShadowMtx));
-            std::memcpy(view->shadowMtx, reflShadowMtx,
-                        sizeof(reflShadowMtx));
+            std::memcpy(view->shadowMtx,
+                        groundReflActive ? reflShadowMtx : waterReflShadowMtx,
+                        sizeof(savedShadowMtx));
             for (const auto &draw : scene) {
                 const auto &mat = draw.material;
                 if (!isTriangle(draw) || mat.ontop || isHidden(draw)
@@ -7140,7 +7199,10 @@ public:
             std::memcpy(view->shadowMtx, savedShadowMtx,
                         sizeof(savedShadowMtx));
             view->reflPass = false;
-            view->submitGroundReflOverlay(bboxMin, bboxMax, lightconf);
+            // Ground blends its reflection with a quad here; the water
+            // surface pass samples reflTex itself (s_texRefl) below.
+            if (groundReflActive)
+                view->submitGroundReflOverlay(bboxMin, bboxMax, lightconf);
         }
         for (const auto &draw : scene) {
             if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)

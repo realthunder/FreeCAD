@@ -70,6 +70,8 @@ public:
     double WaterWaveStrength;
     double WaterWaveScale;
     double WaterWaveSpeed;
+    double WaterAbsorption;
+    double WaterInscatter;
     bool GroundReflection;
     double GroundReflectionIntensity;
 
@@ -120,6 +122,10 @@ public:
         funcs["WaterWaveScale"] = &RenderParamsP::updateWaterWaveScale;
         WaterWaveSpeed = this->handle->GetFloat("WaterWaveSpeed", 1.0);
         funcs["WaterWaveSpeed"] = &RenderParamsP::updateWaterWaveSpeed;
+        WaterAbsorption = this->handle->GetFloat("WaterAbsorption", 0.2);
+        funcs["WaterAbsorption"] = &RenderParamsP::updateWaterAbsorption;
+        WaterInscatter = this->handle->GetFloat("WaterInscatter", 0.5);
+        funcs["WaterInscatter"] = &RenderParamsP::updateWaterInscatter;
         GroundReflection = this->handle->GetBool("GroundReflection", false);
         funcs["GroundReflection"] = &RenderParamsP::updateGroundReflection;
         GroundReflectionIntensity = this->handle->GetFloat("GroundReflectionIntensity", 0.4);
@@ -227,6 +233,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateWaterWaveSpeed(RenderParamsP *self) {
         self->WaterWaveSpeed = self->handle->GetFloat("WaterWaveSpeed", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterAbsorption(RenderParamsP *self) {
+        self->WaterAbsorption = self->handle->GetFloat("WaterAbsorption", 0.2);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterInscatter(RenderParamsP *self) {
+        self->WaterInscatter = self->handle->GetFloat("WaterInscatter", 0.5);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateGroundReflection(RenderParamsP *self) {
@@ -863,6 +877,68 @@ void RenderParams::setWaterWaveSpeed(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeWaterWaveSpeed() {
     instance()->handle->RemoveFloat("WaterWaveSpeed");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterAbsorption() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Beer-Lambert absorption strength of the water surface\n"
+"refraction: the refracted scene is dimmed and tinted by the\n"
+"water column it travels through (channels the water color lacks\n"
+"are absorbed most), so the water gains body and the bottom\n"
+"recedes with depth. Zero = crystal clear.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getWaterAbsorption() {
+    return instance()->WaterAbsorption;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultWaterAbsorption() {
+    const static double def = 0.2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterAbsorption(const double &v) {
+    instance()->handle->SetFloat("WaterAbsorption",v);
+    instance()->WaterAbsorption = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterAbsorption() {
+    instance()->handle->RemoveFloat("WaterAbsorption");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterInscatter() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How much the water's own color is added back into the\n"
+"depth-absorbed refraction (in-scattering); zero leaves absorbed\n"
+"regions dark, one fills them with the water color.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getWaterInscatter() {
+    return instance()->WaterInscatter;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultWaterInscatter() {
+    const static double def = 0.5;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterInscatter(const double &v) {
+    instance()->handle->SetFloat("WaterInscatter",v);
+    instance()->WaterInscatter = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterInscatter() {
+    instance()->handle->RemoveFloat("WaterInscatter");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
