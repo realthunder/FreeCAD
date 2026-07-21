@@ -1427,7 +1427,15 @@ int main()
     Render::BGFXRenderer::setWindowHandle(
         const_cast<char *>("#canvas"));
     Render::BGFXRenderer::setWindowSize(s_width, s_height);
-    Render::BGFXRenderer::setMSAASamples(4);
+    // ?msaa=N overrides the scene multisample count (default 4). Lets us test
+    // whether the WebGL2-only overlay artifact ("box in the corner") is driven
+    // by MSAA on the real driver: ?msaa=0 turns it off.
+    int msaaSamples = EM_ASM_INT({
+        var m = new URLSearchParams(window.location.search).get('msaa');
+        return m === null ? 4 : (parseInt(m) | 0);
+    });
+    Render::BGFXRenderer::setMSAASamples(msaaSamples);
+    std::printf("fcviewer: MSAA=%d\n", msaaSamples);
 
     s_renderer = Render::RendererFactory::create("bgfx - OpenGL", nullptr);
     if (!s_renderer) {
