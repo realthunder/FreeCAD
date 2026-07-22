@@ -1538,7 +1538,7 @@ public:
         for (auto prog : {&m_progPrepass, &m_progPrepassClip,
                           &m_progMedDepth, &m_progMedDepthClip,
                           &m_progPrepassInst, &m_progSsao,
-                          &m_progGtao,
+                          &m_progGtao, &m_progGtaoBlur,
                           &m_progSsaoBlur, &m_progSsaoApply,
                           &m_progVol, &m_progVolApply, &m_progVolExt,
                           &m_progCaustics, &m_progWaterCopy, &m_progWater,
@@ -2246,6 +2246,8 @@ public:
                                      _BGFXLib.resource().c_str());
             m_progGtao = loadProgram("vs_fc_comp", "fs_fc_gtao",
                                      _BGFXLib.resource().c_str());
+            m_progGtaoBlur = loadProgram("vs_fc_comp", "fs_fc_gtao_blur",
+                                         _BGFXLib.resource().c_str());
             m_progSsaoBlur = loadProgram("vs_fc_comp", "fs_fc_ssao_blur",
                                          _BGFXLib.resource().c_str());
             m_progSsaoApply = loadProgram("vs_fc_comp", "fs_fc_ssao_apply",
@@ -3792,9 +3794,18 @@ public:
         fullscreen(ViewAOGen, gtao ? m_progGtao : m_progSsao,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 
+        // GTAO swaps the plain box blur for an edge-aware (depth+normal
+        // weighted) denoise reading the prepass beside the raw AO.
         bgfx::setTexture(0, s_texAO, aoTex);
-        fullscreen(ViewAOBlur, m_progSsaoBlur,
-                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        if (gtao && bgfx::isValid(m_progGtaoBlur)) {
+            bgfx::setTexture(1, s_texNormalZ, aoNormalZ);
+            fullscreen(ViewAOBlur, m_progGtaoBlur,
+                       BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        }
+        else {
+            fullscreen(ViewAOBlur, m_progSsaoBlur,
+                       BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        }
 
         bgfx::setTexture(0, s_texAO, aoBlurTex);
         fullscreen(ViewAOApply, m_progSsaoApply,
@@ -5149,6 +5160,7 @@ public:
     bgfx::ProgramHandle m_progPrepassInst = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSsao = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progGtao = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progGtaoBlur = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSsaoBlur = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSsaoApply = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texNormalZ = BGFX_INVALID_HANDLE;

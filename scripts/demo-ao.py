@@ -34,7 +34,9 @@ try:
     # --- ONLY ambient occlusion on -------------------------------------
     _ao = os.environ.get("AO", "1") == "1"
     render.SetBool("SSAO", _ao)
-    render.SetFloat("SSAOIntensity", 1.6)   # a touch stronger so it reads clearly
+    # Exaggerated default (1.6) so classic SSAO reads clearly; AOINT=1.0
+    # gives the natural strength (GTAO usually wants 1.0).
+    render.SetFloat("SSAOIntensity", float(os.environ.get("AOINT", "1.6")))
     render.SetFloat("SSAORadius", float(os.environ.get("AORADIUS", "0.0")))  # 0=auto
     # AO algorithm: 0 = classic hemisphere SSAO, 1 = GTAO (horizon-based).
     render.SetInt("SSAOMethod", int(os.environ.get("AOMETHOD", "0")))
