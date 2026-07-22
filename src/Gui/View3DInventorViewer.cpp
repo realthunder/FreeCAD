@@ -3747,6 +3747,13 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         if (_pimpl->renderer && selectionRoot) {
             selectionRoot->setExternalRenderer(_pimpl->renderer.get(), _pimpl->view);
             initRenderProperties();
+            // Apply the persisted AntiAliasing preference to the backend's
+            // offscreen target now: at startup the sample count otherwise
+            // only reaches the Qt surface-format REQUEST (not granted on
+            // e.g. WSLg/Wayland), and the preference handler only fires on
+            // a change — so a stored MSAA setting was silently ignored
+            // until the user re-toggled it.
+            applyRendererAntiAliasing();
         }
         // Remote-viewer click selection: while the backend serves the
         // scene stream (FC_BGFX_SERVE_SCENE), viewer clicks arrive as
@@ -3842,6 +3849,18 @@ void View3DInventorViewer::initRenderProperties()
         return;
     _renderParam<App::PropertyBool>(view, "SSAO",
             RenderParams::docSSAO(), RenderParams::getSSAO());
+    // The AO method is an enumeration; _renderParam can't create it (the
+    // generic helper sets the default value before any callback could
+    // install the enum strings), so materialize it explicitly.
+    if (!view->getPropertyByName("Render_SSAOMethod")) {
+        static const char* _ssaoMethodEnums[] = {"SSAO", "GTAO", nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_SSAOMethod", "Render",
+                                         RenderParams::docSSAOMethod()));
+        prop->setEnums(_ssaoMethodEnums);
+        prop->setValue(long(RenderParams::getSSAOMethod()));
+    }
     _renderParam<App::PropertyBool>(view, "Shadow",
             RenderParams::docShadow(), RenderParams::getShadow());
     _renderParam<App::PropertyFloat>(view, "EffectResolution",
