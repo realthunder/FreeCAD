@@ -17,4 +17,16 @@ WASM="$REPO/build/wasm"
 echo "local:  http://127.0.0.1:$HTTP/fcviewer.html?scene=http://127.0.0.1:$SCENE"
 echo "  add &hud&debugpick for the HUD/pick log, &cam=yaw,pitch,dist,cx,cy,cz,panX,panY to reproduce a view"
 echo "(for remote viewing, reverse-tunnel $HTTP and $SCENE to a public host)"
-cd "$WASM" && exec python3 -m http.server "$HTTP" --bind 127.0.0.1
+# no-store: mobile Chrome otherwise keeps serving a stale cached
+# fcviewer.{js,wasm,data} after a rebuild (a normal reload does not
+# revalidate subresources), which silently hides viewer updates.
+cd "$WASM" && exec python3 -c '
+import http.server
+
+class H(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+http.server.ThreadingHTTPServer(("127.0.0.1", '"$HTTP"'), H).serve_forever()
+'
