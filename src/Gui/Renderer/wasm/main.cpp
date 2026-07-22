@@ -21,6 +21,7 @@
 #include <emscripten/html5.h>
 #include <emscripten/websocket.h>
 
+#include <bgfx/bgfx.h>
 #include <bx/math.h>
 
 #include "BGFXRenderer.h"
@@ -1315,9 +1316,19 @@ static void mainLoop()
         // as the numbers change: the widest line (fps) has constant width, the
         // variable strings (hover / cam) are truncated, and the cam line is
         // always present (blank until [v]).
+        // Build stamp + float-target caps: tells at a glance whether the
+        // page runs the current viewer build (mobile caches bite) and
+        // whether the AO depth prepass / pyramid run fp32 or fell back
+        // to fp16 on this GPU (fp16 quantization bands the AO).
+        const bgfx::Caps *caps = bgfx::getCaps();
+        const bool rgba32f = 0 != (caps->formats[bgfx::TextureFormat::RGBA32F]
+                                   & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        const bool r32f = 0 != (caps->formats[bgfx::TextureFormat::R32F]
+                                & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
         std::snprintf(hud, sizeof(hud),
             "fps:  %6.1f  (frame %6.1f ms  render %6.1f ms)\n"
             "res:  %5d x%5d   dpr %4.2f   effRes %4.2f\n"
+            "bld:  %.11s %.8s   prepass %s  aomip %s\n"
             "cam:  yaw %8.2f  pitch %7.2f  dist %9.2f\n"
             "pan:  %8.2f,%8.2f  ctr %7.1f,%7.1f,%7.1f\n"
             "hover: %-30.30s\n"
@@ -1325,6 +1336,8 @@ static void mainLoop()
             "[d] toggle HUD   [v] copy cam",
             s_frameMs > 0.0 ? 1000.0 / s_frameMs : 0.0, s_frameMs, s_renderMs,
             s_width, s_height, double(s_dpr), double(s_snap.effectResolution),
+            __DATE__, __TIME__,
+            rgba32f ? "fp32" : "fp16", r32f ? "fp32" : "fp16",
             s_yaw, s_pitch, s_dist, s_panX, s_panY,
             s_center[0], s_center[1], s_center[2], s_hoverDesc,
             s_camMsg);
