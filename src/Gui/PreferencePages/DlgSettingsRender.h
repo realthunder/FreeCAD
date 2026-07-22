@@ -76,6 +76,8 @@ private:
     // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupAmbientocclusion = nullptr;
     Gui::PrefCheckBox *SSAO = nullptr;
+    QLabel *labelSSAOMethod = nullptr;
+    Gui::PrefComboBox *SSAOMethod = nullptr;
     QLabel *labelSSAORadius = nullptr;
     Gui::PrefDoubleSpinBox *SSAORadius = nullptr;
     QLabel *labelSSAOIntensity = nullptr;

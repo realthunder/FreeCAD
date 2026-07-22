@@ -47,6 +47,7 @@ ParamGroup = (
 
     ('Ambient occlusion', [_RenderParams[name] for name in (
         'SSAO',
+        'SSAOMethod',
         'SSAORadius',
         'SSAOIntensity',
     )]),

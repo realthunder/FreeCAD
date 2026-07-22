@@ -36,6 +36,8 @@ try:
     render.SetBool("SSAO", _ao)
     render.SetFloat("SSAOIntensity", 1.6)   # a touch stronger so it reads clearly
     render.SetFloat("SSAORadius", float(os.environ.get("AORADIUS", "0.0")))  # 0=auto
+    # AO algorithm: 0 = classic hemisphere SSAO, 1 = GTAO (horizon-based).
+    render.SetInt("SSAOMethod", int(os.environ.get("AOMETHOD", "0")))
     # Dedicated AO resolution control (independent of EffectResolution).
     render.SetFloat("SSAOResolution", float(os.environ.get("AORES", "1.0")))
     # --- everything else off -------------------------------------------

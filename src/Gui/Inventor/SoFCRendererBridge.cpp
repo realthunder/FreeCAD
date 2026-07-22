@@ -853,6 +853,8 @@ RendererBridge::translateAOConfig(View3DInventor * view)
             view, "Render", "SSAORadius", RenderParams::getSSAORadius()));
     res.intensity = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "SSAOIntensity", RenderParams::getSSAOIntensity()));
+    res.method = int(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "SSAOMethod", RenderParams::getSSAOMethod()));
     return res;
 }
 

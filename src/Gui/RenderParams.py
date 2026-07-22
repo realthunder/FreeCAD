@@ -34,7 +34,8 @@ from os import sys, path
 sys.path.append(path.join(path.dirname(path.dirname(path.abspath(__file__))), 'Tools'))
 import params_utils
 
-from params_utils import ParamBool, ParamString, ParamFloat, auto_comment
+from params_utils import ParamBool, ParamString, ParamFloat, ParamInt, \
+                         ParamComboBox, auto_comment
 
 NameSpace = 'Gui'
 ClassName = 'RenderParams'
@@ -65,6 +66,14 @@ Params = [
         "Shadow draw style; the base headlight and environment lighting\n"
         "stay, so the scene remains lit, just flatter. Has no effect unless\n"
         "the Shadow draw style provides a scene light."),
+    ParamInt('SSAOMethod',  0, title='AO method',
+        proxy=ParamComboBox(items=['SSAO (hemisphere)', 'GTAO (horizon)']),
+        doc="Ambient occlusion algorithm. 0 = classic hemisphere-kernel\n"
+        "SSAO (screen-space depth-difference sampling). 1 = GTAO\n"
+        "(ground-truth ambient occlusion, XeGTAO-style horizon-based\n"
+        "visibility integration): physically correct occlusion falloff,\n"
+        "tight contact shadows without the wide low-contrast wash of\n"
+        "classic SSAO at large radii."),
     ParamFloat('SSAORadius',  0.0, title='Sample radius',
         doc="Ambient occlusion sample radius in world units.\n"
         "Zero means automatic (a fraction of the scene size)."),

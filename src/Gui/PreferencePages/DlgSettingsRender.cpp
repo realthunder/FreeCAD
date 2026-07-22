@@ -97,6 +97,21 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:467)
     layoutAmbientocclusion->addLayout(layoutRow);
+    labelSSAOMethod = new QLabel(this);
+    layoutRow->addWidget(labelSSAOMethod);
+    SSAOMethod = new Gui::PrefComboBox(this);
+    layoutRow->addWidget(SSAOMethod);
+    SSAOMethod->setEntryName("SSAOMethod");
+    SSAOMethod->setParamGrpPath("View/Render");
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1127)
+        SSAOMethod->addItem(QString());
+    SSAOMethod->setCurrentIndex(Gui::RenderParams::defaultSSAOMethod());
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutAmbientocclusion->addLayout(layoutRow);
     labelSSAORadius = new QLabel(this);
     layoutRow->addWidget(labelSSAORadius);
     SSAORadius = new Gui::PrefDoubleSpinBox(this);
@@ -415,6 +430,7 @@ void DlgSettingsRender::saveSettings()
     // Auto generated code (Tools/params_utils.py:497)
     Type->onSave();
     SSAO->onSave();
+    SSAOMethod->onSave();
     SSAORadius->onSave();
     SSAOIntensity->onSave();
     PBR->onSave();
@@ -444,6 +460,7 @@ void DlgSettingsRender::loadSettings()
     // Auto generated code (Tools/params_utils.py:484)
     Type->onRestore();
     SSAO->onRestore();
+    SSAOMethod->onRestore();
     SSAORadius->onRestore();
     SSAOIntensity->onRestore();
     PBR->onRestore();
@@ -478,6 +495,12 @@ void DlgSettingsRender::retranslateUi()
     groupAmbientocclusion->setTitle(QObject::tr("Ambient occlusion"));
     SSAO->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docSSAO()));
     SSAO->setText(QObject::tr("Ambient occlusion"));
+    SSAOMethod->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docSSAOMethod()));
+    labelSSAOMethod->setText(QObject::tr("AO method"));
+    labelSSAOMethod->setToolTip(SSAOMethod->toolTip());
+    // Auto generated code (Tools/params_utils.py:1152)
+    SSAOMethod->setItemText(0, QObject::tr("SSAO (hemisphere)"));
+    SSAOMethod->setItemText(1, QObject::tr("GTAO (horizon)"));
     SSAORadius->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docSSAORadius()));
     labelSSAORadius->setText(QObject::tr("Sample radius"));
     labelSSAORadius->setToolTip(SSAORadius->toolTip());

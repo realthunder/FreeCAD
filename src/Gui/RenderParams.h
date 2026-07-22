@@ -132,6 +132,23 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter SSAOMethod
+    ///
+    /// Ambient occlusion algorithm. 0 = classic hemisphere-kernel
+    /// SSAO (screen-space depth-difference sampling). 1 = GTAO
+    /// (ground-truth ambient occlusion, XeGTAO-style horizon-based
+    /// visibility integration): physically correct occlusion falloff,
+    /// tight contact shadows without the wide low-contrast wash of
+    /// classic SSAO at large radii.
+    static const long & getSSAOMethod();
+    static const long & defaultSSAOMethod();
+    static void removeSSAOMethod();
+    static void setSSAOMethod(const long &v);
+    static const char *docSSAOMethod();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter SSAORadius
     ///
     /// Ambient occlusion sample radius in world units.

@@ -295,10 +295,13 @@ struct AOConfig {
     /// scene bounding-sphere size, resolved by the backend).
     float radius = 0.0f;
     float intensity = 1.0f;  ///< occlusion darkening strength
+    /// Algorithm: 0 = classic hemisphere-kernel SSAO, 1 = GTAO
+    /// (ground-truth horizon-based, XeGTAO-style).
+    int method = 0;
 
     bool operator==(const AOConfig &o) const {
         return enabled == o.enabled && radius == o.radius
-            && intensity == o.intensity;
+            && intensity == o.intensity && method == o.method;
     }
     bool operator!=(const AOConfig &o) const { return !(*this == o); }
 };

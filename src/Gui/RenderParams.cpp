@@ -53,6 +53,7 @@ public:
     double EffectResolution;
     bool SSAO;
     bool Shadow;
+    long SSAOMethod;
     double SSAORadius;
     double SSAOIntensity;
     double SSAOResolution;
@@ -95,6 +96,8 @@ public:
         funcs["SSAO"] = &RenderParamsP::updateSSAO;
         Shadow = this->handle->GetBool("Shadow", true);
         funcs["Shadow"] = &RenderParamsP::updateShadow;
+        SSAOMethod = this->handle->GetInt("SSAOMethod", 0);
+        funcs["SSAOMethod"] = &RenderParamsP::updateSSAOMethod;
         SSAORadius = this->handle->GetFloat("SSAORadius", 0.0);
         funcs["SSAORadius"] = &RenderParamsP::updateSSAORadius;
         SSAOIntensity = this->handle->GetFloat("SSAOIntensity", 1.0);
@@ -186,6 +189,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShadow(RenderParamsP *self) {
         self->Shadow = self->handle->GetBool("Shadow", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSSAOMethod(RenderParamsP *self) {
+        self->SSAOMethod = self->handle->GetInt("SSAOMethod", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateSSAORadius(RenderParamsP *self) {
@@ -438,6 +445,39 @@ void RenderParams::setShadow(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeShadow() {
     instance()->handle->RemoveBool("Shadow");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docSSAOMethod() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Ambient occlusion algorithm. 0 = classic hemisphere-kernel\n"
+"SSAO (screen-space depth-difference sampling). 1 = GTAO\n"
+"(ground-truth ambient occlusion, XeGTAO-style horizon-based\n"
+"visibility integration): physically correct occlusion falloff,\n"
+"tight contact shadows without the wide low-contrast wash of\n"
+"classic SSAO at large radii.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getSSAOMethod() {
+    return instance()->SSAOMethod;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultSSAOMethod() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setSSAOMethod(const long &v) {
+    instance()->handle->SetInt("SSAOMethod",v);
+    instance()->SSAOMethod = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeSSAOMethod() {
+    instance()->handle->RemoveInt("SSAOMethod");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
