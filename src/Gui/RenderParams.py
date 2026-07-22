@@ -56,7 +56,7 @@ Params = [
         "frame; the main geometry, edges, text and overlays stay full\n"
         "resolution. 1.0 renders the effects at full resolution. The\n"
         "volumetric light shafts already render at half resolution."),
-    ParamBool('SSAO',  False, title='Ambient occlusion',
+    ParamBool('AO',  False, title='Ambient occlusion',
         doc="Enable screen space ambient occlusion of the experimental render\n"
         "engine (render cache mode 3 with a selected renderer type)."),
     ParamBool('Shadow',  True, title='Shadow',
@@ -66,7 +66,7 @@ Params = [
         "Shadow draw style; the base headlight and environment lighting\n"
         "stay, so the scene remains lit, just flatter. Has no effect unless\n"
         "the Shadow draw style provides a scene light."),
-    ParamInt('SSAOMethod',  0, title='AO method',
+    ParamInt('AOMethod',  0, title='AO method',
         proxy=ParamComboBox(items=['SSAO (hemisphere)', 'GTAO (horizon)']),
         doc="Ambient occlusion algorithm. 0 = classic hemisphere-kernel\n"
         "SSAO (screen-space depth-difference sampling). 1 = GTAO\n"
@@ -74,12 +74,21 @@ Params = [
         "visibility integration): physically correct occlusion falloff,\n"
         "tight contact shadows without the wide low-contrast wash of\n"
         "classic SSAO at large radii."),
-    ParamFloat('SSAORadius',  0.0, title='Sample radius',
+    ParamInt('AOSlices',  9, title='GTAO slices',
+        doc="GTAO only: number of screen-space slice directions per pixel\n"
+        "(XeGTAO High preset = 9). The dominant quality/cost dial —\n"
+        "direction variance shows as blotchy grain the denoiser cannot\n"
+        "fully flatten. Cost scales linearly."),
+    ParamInt('AOSteps',  3, title='GTAO steps',
+        doc="GTAO only: horizon-march samples per slice side. More steps\n"
+        "resolve distant occluders more stably (less mid-frequency blotch\n"
+        "on grazing surfaces), at linear cost."),
+    ParamFloat('AORadius',  0.0, title='Sample radius',
         doc="Ambient occlusion sample radius in world units.\n"
         "Zero means automatic (a fraction of the scene size)."),
-    ParamFloat('SSAOIntensity',  1.0, title='Intensity',
+    ParamFloat('AOIntensity',  0.6, title='Intensity',
         doc="Ambient occlusion darkening strength."),
-    ParamFloat('SSAOResolution',  1.0, title='AO resolution',
+    ParamFloat('AOResolution',  1.0, title='AO resolution',
         doc="Resolution scale (0.25-1.0) of the ambient occlusion resolve\n"
         "targets relative to the main view resolution, independent of the\n"
         "shared Effect resolution. Ambient occlusion is resolution-sensitive\n"

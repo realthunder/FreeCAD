@@ -1368,6 +1368,9 @@ public:
         ViewAOGen,          // fullscreen SSAO generation into the R8 AO
                             // target (hemisphere kernel over the prepass)
         ViewAOBlur,         // fullscreen 4x4 AO blur into a second R8
+        ViewAOBlur2,        // GTAO only: second edge-aware denoise pass,
+                            // ping-ponged back into the first R8 target
+                            // (XeGTAO's DenoisePasses > 1)
         ViewVolGen,         // volumetric light shafts: half-res raymarch
                             // of the shadow map through the scattering
                             // medium, bounded by the prepass depth (own
@@ -1593,7 +1596,7 @@ public:
         }
         m_envBuilt = false;
         for (auto uni : {&s_texNormalZ, &s_texAONoise, &s_texAO,
-                         &u_aoParams, &u_aoKernel,
+                         &u_aoParams, &u_aoParams2, &u_aoKernel,
                          &s_texEnv, &u_pbrParams, &u_envSH,
                          &s_texBump, &u_bumpParams,
                          &s_texEmissive, &s_texOcclusion,
@@ -2271,6 +2274,8 @@ public:
                                           bgfx::UniformType::Sampler);
             u_aoParams = bgfx::createUniform("u_aoParams",
                                              bgfx::UniformType::Vec4);
+            u_aoParams2 = bgfx::createUniform("u_aoParams2",
+                                              bgfx::UniformType::Vec4);
             u_aoKernel = bgfx::createUniform("u_aoKernel",
                                              bgfx::UniformType::Vec4,
                                              kAOSamples);
@@ -3768,7 +3773,7 @@ public:
     /// horizon-integral GTAO (method 1) — a 4x4 box blur, then the
     /// multiply onto the opaque scene color (dst *= src, alpha kept).
     void submitAOResolve(float radius, float intensity, int method,
-                         bool fast)
+                         bool fast, int slices, int steps)
     {
         // Fixed hemisphere kernel (unit radius, z >= 0, clustered near
         // the origin), deterministic across frames like the noise.
@@ -3806,6 +3811,15 @@ public:
             : 0.02f * radius;
         float params[4] = {radius, intensity, paramZ, aoPower};
         bgfx::setUniform(u_aoParams, params);
+        if (gtao) {
+            // GTAO tuning (Render_GTAOSlices/Steps; 0 = defaults). Clamped
+            // here so a wild property value cannot explode the pass.
+            float params2[4] = {
+                float(slices > 0 ? std::min(slices, 32) : 9),
+                float(steps > 0 ? std::min(steps, 16) : 6),
+                0.0f, 0.0f};
+            bgfx::setUniform(u_aoParams2, params2);
+        }
         if (!gtao)
             bgfx::setUniform(u_aoKernel, kernel, kAOSamples);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
@@ -3820,13 +3834,21 @@ public:
             bgfx::setTexture(1, s_texNormalZ, aoNormalZ);
             fullscreen(ViewAOBlur, m_progGtaoBlur,
                        BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+            // Second denoise pass (XeGTAO DenoisePasses > 1), ping-ponged
+            // back into aoTex: composes to an effective ~9x9 edge-aware
+            // kernel, flattening the spatial-noise grain the single 5x5
+            // leaves visible.
+            bgfx::setTexture(0, s_texAO, aoBlurTex);
+            bgfx::setTexture(1, s_texNormalZ, aoNormalZ);
+            fullscreen(ViewAOBlur2, m_progGtaoBlur,
+                       BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+            bgfx::setTexture(0, s_texAO, aoTex);
         }
         else {
             fullscreen(ViewAOBlur, m_progSsaoBlur,
                        BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+            bgfx::setTexture(0, s_texAO, aoBlurTex);
         }
-
-        bgfx::setTexture(0, s_texAO, aoBlurTex);
         fullscreen(ViewAOApply, m_progSsaoApply,
                    BGFX_STATE_WRITE_RGB
                    | BGFX_STATE_BLEND_FUNC_SEPARATE(
@@ -5202,6 +5224,7 @@ public:
     bgfx::UniformHandle s_texAONoise = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texAO = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_aoParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_aoParams2 = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_aoKernel = BGFX_INVALID_HANDLE;
     // PBR image based lighting: a fixed procedural studio environment
     // built once on demand — a GGX-prefiltered cubemap mip chain for the
@@ -6872,11 +6895,13 @@ public:
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     0x00000000u, 1.0f, 0);
             } else if (ssaoActive && (i == BGFXView::ViewAOGen
-                                      || i == BGFXView::ViewAOBlur)) {
+                                      || i == BGFXView::ViewAOBlur
+                                      || i == BGFXView::ViewAOBlur2)) {
                 // Fullscreen passes overwrite their whole target.
+                // ViewAOBlur2 ping-pongs the denoise back into aoTex.
                 bgfx::setViewFrameBuffer(id,
-                    i == BGFXView::ViewAOGen ? view->aoGenFbo
-                                             : view->aoBlurFbo);
+                    i == BGFXView::ViewAOBlur ? view->aoBlurFbo
+                                              : view->aoGenFbo);
                 bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                                    clearColor, 1.0f, 0);
             } else {
@@ -6900,7 +6925,8 @@ public:
             // the blurred AO back at full res. The reduced-resolution
             // reflection re-render sets its own rect in its own branch above.
             bool aoResolveView = i == BGFXView::ViewAOGen
-                || i == BGFXView::ViewAOBlur;
+                || i == BGFXView::ViewAOBlur
+                || i == BGFXView::ViewAOBlur2;
             bgfx::setViewRect(id, 0, 0,
                 aoResolveView ? view->ssaoW : width,
                 aoResolveView ? view->ssaoH : height);
@@ -6908,9 +6934,12 @@ public:
             // fullscreen AO blur/apply triangles are submitted in clip
             // space; the AO generation pass keeps the scene projection
             // for its predefined u_proj (position reconstruction).
+            // The GTAO denoise passes (AOBlur/AOBlur2) keep the scene
+            // projection like the gen pass: their plane-aware bilateral
+            // weight reconstructs view positions from u_proj (the shared
+            // fullscreen vertex shader ignores the matrices).
             if (i == BGFXView::ViewBackground
                     || i == BGFXView::ViewOITComposite
-                    || i == BGFXView::ViewAOBlur
                     || i == BGFXView::ViewAOApply)
                 bgfx::setViewTransform(id, nullptr, nullptr);
             else
@@ -7544,7 +7573,8 @@ public:
         // outline/transparent passes).
         if (ssaoActive)
             view->submitAOResolve(aoRadius, aoconf.intensity,
-                                  aoconf.method, aoconf.fast);
+                                  aoconf.method, aoconf.fast,
+                                  aoconf.slices, aoconf.steps);
 
         // 1d. Volumetric light shafts: half-res raymarch of the shadow
         // map, bilateral-upsampled and composited onto the opaque scene

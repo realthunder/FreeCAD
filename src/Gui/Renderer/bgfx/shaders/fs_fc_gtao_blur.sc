@@ -32,6 +32,20 @@ vec3 octDecode(vec2 e)
 	return normalize(n);
 }
 
+/// View-space position of a prepass texel (same unproject as the gen
+/// pass; the denoise views keep the scene projection for this).
+vec3 viewPos(vec2 uv, float viewZ, bool persp)
+{
+	vec2 ndc = uv * 2.0 - vec2_splat(1.0);
+	if (persp)
+		return vec3(viewZ * (ndc.x + u_proj[2][0]) / u_proj[0][0],
+		            viewZ * (ndc.y + u_proj[2][1]) / u_proj[1][1],
+		            -viewZ);
+	return vec3((ndc.x - u_proj[3][0]) / u_proj[0][0],
+	            (ndc.y - u_proj[3][1]) / u_proj[1][1],
+	            -viewZ);
+}
+
 void main()
 {
 	vec4 cnz = texture2D(s_texNormalZ, v_texcoord0);
@@ -41,8 +55,10 @@ void main()
 		gl_FragColor = vec4_splat(cao);
 		return;
 	}
+	bool persp = u_proj[2][3] != 0.0;
 	float cz = cnz.z;
 	vec3 cn = octDecode(cnz.xy);
+	vec3 cpos = viewPos(v_texcoord0, cz, persp);
 
 	float sum = cao;
 	float wsum = 1.0;
@@ -57,11 +73,17 @@ void main()
 			vec4 snz = texture2D(s_texNormalZ, suv);
 			if (snz.w < 0.5)
 				continue;
-			// Depth tolerance relative to the center depth (plus a
-			// floor for near geometry): neighbours across a step in
-			// depth belong to another surface.
-			float dw = clamp(1.0 - abs(snz.z - cz)
-			                 / (0.03 * cz + 0.001), 0.0, 1.0);
+			// PLANE-aware surface test (XeGTAO's slope-corrected
+			// edges): weight by the neighbour's distance to the
+			// center's tangent plane, not by raw depth difference. A
+			// raw |dz| tolerance rejects legitimate neighbours on any
+			// steep (grazing-angle) face — where depth changes fast
+			// per pixel — degenerating the blur to 1-D along
+			// iso-depth lines and leaving the grain exactly there.
+			vec3 spos = viewPos(suv, snz.z, persp);
+			float planeD = abs(dot(cn, spos - cpos));
+			float dw = clamp(1.0 - planeD / (0.01 * cz + 0.001),
+			                 0.0, 1.0);
 			// Normal agreement keeps creases (the very places GTAO
 			// darkens) from bleeding onto adjacent faces.
 			vec3 sn2 = octDecode(snz.xy);

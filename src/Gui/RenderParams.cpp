@@ -51,12 +51,14 @@ public:
     std::unordered_map<const char *,void(*)(RenderParamsP*),App::CStringHasher,App::CStringHasher> funcs;
     std::string Type;
     double EffectResolution;
-    bool SSAO;
+    bool AO;
     bool Shadow;
-    long SSAOMethod;
-    double SSAORadius;
-    double SSAOIntensity;
-    double SSAOResolution;
+    long AOMethod;
+    long AOSlices;
+    long AOSteps;
+    double AORadius;
+    double AOIntensity;
+    double AOResolution;
     bool PBR;
     double PBRMetallic;
     double PBRRoughness;
@@ -92,18 +94,22 @@ public:
         funcs["Type"] = &RenderParamsP::updateType;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
         funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
-        SSAO = this->handle->GetBool("SSAO", false);
-        funcs["SSAO"] = &RenderParamsP::updateSSAO;
+        AO = this->handle->GetBool("AO", false);
+        funcs["AO"] = &RenderParamsP::updateAO;
         Shadow = this->handle->GetBool("Shadow", true);
         funcs["Shadow"] = &RenderParamsP::updateShadow;
-        SSAOMethod = this->handle->GetInt("SSAOMethod", 0);
-        funcs["SSAOMethod"] = &RenderParamsP::updateSSAOMethod;
-        SSAORadius = this->handle->GetFloat("SSAORadius", 0.0);
-        funcs["SSAORadius"] = &RenderParamsP::updateSSAORadius;
-        SSAOIntensity = this->handle->GetFloat("SSAOIntensity", 1.0);
-        funcs["SSAOIntensity"] = &RenderParamsP::updateSSAOIntensity;
-        SSAOResolution = this->handle->GetFloat("SSAOResolution", 1.0);
-        funcs["SSAOResolution"] = &RenderParamsP::updateSSAOResolution;
+        AOMethod = this->handle->GetInt("AOMethod", 0);
+        funcs["AOMethod"] = &RenderParamsP::updateAOMethod;
+        AOSlices = this->handle->GetInt("AOSlices", 9);
+        funcs["AOSlices"] = &RenderParamsP::updateAOSlices;
+        AOSteps = this->handle->GetInt("AOSteps", 3);
+        funcs["AOSteps"] = &RenderParamsP::updateAOSteps;
+        AORadius = this->handle->GetFloat("AORadius", 0.0);
+        funcs["AORadius"] = &RenderParamsP::updateAORadius;
+        AOIntensity = this->handle->GetFloat("AOIntensity", 0.6);
+        funcs["AOIntensity"] = &RenderParamsP::updateAOIntensity;
+        AOResolution = this->handle->GetFloat("AOResolution", 1.0);
+        funcs["AOResolution"] = &RenderParamsP::updateAOResolution;
         PBR = this->handle->GetBool("PBR", false);
         funcs["PBR"] = &RenderParamsP::updatePBR;
         PBRMetallic = this->handle->GetFloat("PBRMetallic", 0.0);
@@ -183,28 +189,36 @@ public:
         self->EffectResolution = self->handle->GetFloat("EffectResolution", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
-    static void updateSSAO(RenderParamsP *self) {
-        self->SSAO = self->handle->GetBool("SSAO", false);
+    static void updateAO(RenderParamsP *self) {
+        self->AO = self->handle->GetBool("AO", false);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShadow(RenderParamsP *self) {
         self->Shadow = self->handle->GetBool("Shadow", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
-    static void updateSSAOMethod(RenderParamsP *self) {
-        self->SSAOMethod = self->handle->GetInt("SSAOMethod", 0);
+    static void updateAOMethod(RenderParamsP *self) {
+        self->AOMethod = self->handle->GetInt("AOMethod", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
-    static void updateSSAORadius(RenderParamsP *self) {
-        self->SSAORadius = self->handle->GetFloat("SSAORadius", 0.0);
+    static void updateAOSlices(RenderParamsP *self) {
+        self->AOSlices = self->handle->GetInt("AOSlices", 9);
     }
     // Auto generated code (Tools/params_utils.py:310)
-    static void updateSSAOIntensity(RenderParamsP *self) {
-        self->SSAOIntensity = self->handle->GetFloat("SSAOIntensity", 1.0);
+    static void updateAOSteps(RenderParamsP *self) {
+        self->AOSteps = self->handle->GetInt("AOSteps", 3);
     }
     // Auto generated code (Tools/params_utils.py:310)
-    static void updateSSAOResolution(RenderParamsP *self) {
-        self->SSAOResolution = self->handle->GetFloat("SSAOResolution", 1.0);
+    static void updateAORadius(RenderParamsP *self) {
+        self->AORadius = self->handle->GetFloat("AORadius", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateAOIntensity(RenderParamsP *self) {
+        self->AOIntensity = self->handle->GetFloat("AOIntensity", 0.6);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateAOResolution(RenderParamsP *self) {
+        self->AOResolution = self->handle->GetFloat("AOResolution", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBR(RenderParamsP *self) {
@@ -386,32 +400,32 @@ void RenderParams::removeEffectResolution() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
-const char *RenderParams::docSSAO() {
+const char *RenderParams::docAO() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Enable screen space ambient occlusion of the experimental render\n"
 "engine (render cache mode 3 with a selected renderer type).");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
-const bool & RenderParams::getSSAO() {
-    return instance()->SSAO;
+const bool & RenderParams::getAO() {
+    return instance()->AO;
 }
 
 // Auto generated code (Tools/params_utils.py:388)
-const bool & RenderParams::defaultSSAO() {
+const bool & RenderParams::defaultAO() {
     const static bool def = false;
     return def;
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-void RenderParams::setSSAO(const bool &v) {
-    instance()->handle->SetBool("SSAO",v);
-    instance()->SSAO = v;
+void RenderParams::setAO(const bool &v) {
+    instance()->handle->SetBool("AO",v);
+    instance()->AO = v;
 }
 
 // Auto generated code (Tools/params_utils.py:406)
-void RenderParams::removeSSAO() {
-    instance()->handle->RemoveBool("SSAO");
+void RenderParams::removeAO() {
+    instance()->handle->RemoveBool("AO");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -448,7 +462,7 @@ void RenderParams::removeShadow() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
-const char *RenderParams::docSSAOMethod() {
+const char *RenderParams::docAOMethod() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Ambient occlusion algorithm. 0 = classic hemisphere-kernel\n"
 "SSAO (screen-space depth-difference sampling). 1 = GTAO\n"
@@ -459,86 +473,147 @@ const char *RenderParams::docSSAOMethod() {
 }
 
 // Auto generated code (Tools/params_utils.py:380)
-const long & RenderParams::getSSAOMethod() {
-    return instance()->SSAOMethod;
+const long & RenderParams::getAOMethod() {
+    return instance()->AOMethod;
 }
 
 // Auto generated code (Tools/params_utils.py:388)
-const long & RenderParams::defaultSSAOMethod() {
+const long & RenderParams::defaultAOMethod() {
     const static long def = 0;
     return def;
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-void RenderParams::setSSAOMethod(const long &v) {
-    instance()->handle->SetInt("SSAOMethod",v);
-    instance()->SSAOMethod = v;
+void RenderParams::setAOMethod(const long &v) {
+    instance()->handle->SetInt("AOMethod",v);
+    instance()->AOMethod = v;
 }
 
 // Auto generated code (Tools/params_utils.py:406)
-void RenderParams::removeSSAOMethod() {
-    instance()->handle->RemoveInt("SSAOMethod");
+void RenderParams::removeAOMethod() {
+    instance()->handle->RemoveInt("AOMethod");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
-const char *RenderParams::docSSAORadius() {
+const char *RenderParams::docAOSlices() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"GTAO only: number of screen-space slice directions per pixel\n"
+"(XeGTAO High preset = 9). The dominant quality/cost dial —\n"
+"direction variance shows as blotchy grain the denoiser cannot\n"
+"fully flatten. Cost scales linearly.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getAOSlices() {
+    return instance()->AOSlices;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultAOSlices() {
+    const static long def = 9;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setAOSlices(const long &v) {
+    instance()->handle->SetInt("AOSlices",v);
+    instance()->AOSlices = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeAOSlices() {
+    instance()->handle->RemoveInt("AOSlices");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docAOSteps() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"GTAO only: horizon-march samples per slice side. More steps\n"
+"resolve distant occluders more stably (less mid-frequency blotch\n"
+"on grazing surfaces), at linear cost.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getAOSteps() {
+    return instance()->AOSteps;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultAOSteps() {
+    const static long def = 3;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setAOSteps(const long &v) {
+    instance()->handle->SetInt("AOSteps",v);
+    instance()->AOSteps = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeAOSteps() {
+    instance()->handle->RemoveInt("AOSteps");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docAORadius() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Ambient occlusion sample radius in world units.\n"
 "Zero means automatic (a fraction of the scene size).");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
-const double & RenderParams::getSSAORadius() {
-    return instance()->SSAORadius;
+const double & RenderParams::getAORadius() {
+    return instance()->AORadius;
 }
 
 // Auto generated code (Tools/params_utils.py:388)
-const double & RenderParams::defaultSSAORadius() {
+const double & RenderParams::defaultAORadius() {
     const static double def = 0.0;
     return def;
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-void RenderParams::setSSAORadius(const double &v) {
-    instance()->handle->SetFloat("SSAORadius",v);
-    instance()->SSAORadius = v;
+void RenderParams::setAORadius(const double &v) {
+    instance()->handle->SetFloat("AORadius",v);
+    instance()->AORadius = v;
 }
 
 // Auto generated code (Tools/params_utils.py:406)
-void RenderParams::removeSSAORadius() {
-    instance()->handle->RemoveFloat("SSAORadius");
+void RenderParams::removeAORadius() {
+    instance()->handle->RemoveFloat("AORadius");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
-const char *RenderParams::docSSAOIntensity() {
+const char *RenderParams::docAOIntensity() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Ambient occlusion darkening strength.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
-const double & RenderParams::getSSAOIntensity() {
-    return instance()->SSAOIntensity;
+const double & RenderParams::getAOIntensity() {
+    return instance()->AOIntensity;
 }
 
 // Auto generated code (Tools/params_utils.py:388)
-const double & RenderParams::defaultSSAOIntensity() {
-    const static double def = 1.0;
+const double & RenderParams::defaultAOIntensity() {
+    const static double def = 0.6;
     return def;
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-void RenderParams::setSSAOIntensity(const double &v) {
-    instance()->handle->SetFloat("SSAOIntensity",v);
-    instance()->SSAOIntensity = v;
+void RenderParams::setAOIntensity(const double &v) {
+    instance()->handle->SetFloat("AOIntensity",v);
+    instance()->AOIntensity = v;
 }
 
 // Auto generated code (Tools/params_utils.py:406)
-void RenderParams::removeSSAOIntensity() {
-    instance()->handle->RemoveFloat("SSAOIntensity");
+void RenderParams::removeAOIntensity() {
+    instance()->handle->RemoveFloat("AOIntensity");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
-const char *RenderParams::docSSAOResolution() {
+const char *RenderParams::docAOResolution() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Resolution scale (0.25-1.0) of the ambient occlusion resolve\n"
 "targets relative to the main view resolution, independent of the\n"
@@ -550,25 +625,25 @@ const char *RenderParams::docSSAOResolution() {
 }
 
 // Auto generated code (Tools/params_utils.py:380)
-const double & RenderParams::getSSAOResolution() {
-    return instance()->SSAOResolution;
+const double & RenderParams::getAOResolution() {
+    return instance()->AOResolution;
 }
 
 // Auto generated code (Tools/params_utils.py:388)
-const double & RenderParams::defaultSSAOResolution() {
+const double & RenderParams::defaultAOResolution() {
     const static double def = 1.0;
     return def;
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-void RenderParams::setSSAOResolution(const double &v) {
-    instance()->handle->SetFloat("SSAOResolution",v);
-    instance()->SSAOResolution = v;
+void RenderParams::setAOResolution(const double &v) {
+    instance()->handle->SetFloat("AOResolution",v);
+    instance()->AOResolution = v;
 }
 
 // Auto generated code (Tools/params_utils.py:406)
-void RenderParams::removeSSAOResolution() {
-    instance()->handle->RemoveFloat("SSAOResolution");
+void RenderParams::removeAOResolution() {
+    instance()->handle->RemoveFloat("AOResolution");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

@@ -3847,31 +3847,35 @@ void View3DInventorViewer::initRenderProperties()
     auto view = _pimpl->view;
     if (!view)
         return;
-    _renderParam<App::PropertyBool>(view, "SSAO",
-            RenderParams::docSSAO(), RenderParams::getSSAO());
+    _renderParam<App::PropertyBool>(view, "AO",
+            RenderParams::docAO(), RenderParams::getAO());
     // The AO method is an enumeration; _renderParam can't create it (the
     // generic helper sets the default value before any callback could
     // install the enum strings), so materialize it explicitly.
-    if (!view->getPropertyByName("Render_SSAOMethod")) {
+    if (!view->getPropertyByName("Render_AOMethod")) {
         static const char* _ssaoMethodEnums[] = {"SSAO", "GTAO", nullptr};
         auto prop = static_cast<App::PropertyEnumeration*>(
                 view->addDynamicProperty("App::PropertyEnumeration",
-                                         "Render_SSAOMethod", "Render",
-                                         RenderParams::docSSAOMethod()));
+                                         "Render_AOMethod", "Render",
+                                         RenderParams::docAOMethod()));
         prop->setEnums(_ssaoMethodEnums);
-        prop->setValue(long(RenderParams::getSSAOMethod()));
+        prop->setValue(long(RenderParams::getAOMethod()));
     }
+    _renderParam<App::PropertyInteger>(view, "AOSlices",
+            RenderParams::docAOSlices(), RenderParams::getAOSlices());
+    _renderParam<App::PropertyInteger>(view, "AOSteps",
+            RenderParams::docAOSteps(), RenderParams::getAOSteps());
     _renderParam<App::PropertyBool>(view, "Shadow",
             RenderParams::docShadow(), RenderParams::getShadow());
     _renderParam<App::PropertyFloat>(view, "EffectResolution",
             RenderParams::docEffectResolution(),
             RenderParams::getEffectResolution());
-    _renderParam<App::PropertyFloat>(view, "SSAORadius",
-            RenderParams::docSSAORadius(), RenderParams::getSSAORadius());
-    _renderParam<App::PropertyFloat>(view, "SSAOIntensity",
-            RenderParams::docSSAOIntensity(), RenderParams::getSSAOIntensity());
-    _renderParam<App::PropertyFloat>(view, "SSAOResolution",
-            RenderParams::docSSAOResolution(), RenderParams::getSSAOResolution());
+    _renderParam<App::PropertyFloat>(view, "AORadius",
+            RenderParams::docAORadius(), RenderParams::getAORadius());
+    _renderParam<App::PropertyFloat>(view, "AOIntensity",
+            RenderParams::docAOIntensity(), RenderParams::getAOIntensity());
+    _renderParam<App::PropertyFloat>(view, "AOResolution",
+            RenderParams::docAOResolution(), RenderParams::getAOResolution());
     _renderParam<App::PropertyBool>(view, "PBR",
             RenderParams::docPBR(), RenderParams::getPBR());
     static const App::PropertyFloatConstraint::Constraints _unit_cstr(0.0,1.0,0.1);

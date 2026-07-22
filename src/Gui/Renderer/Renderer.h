@@ -302,11 +302,15 @@ struct AOConfig {
     /// visible while the camera moves, refined once idle. A per-frame
     /// hint, not persisted in scene snapshots.
     bool fast = false;
+    /// GTAO tuning (0 = backend default): screen-space slice directions
+    /// per pixel and horizon-march steps per slice side.
+    int slices = 0;
+    int steps = 0;
 
     bool operator==(const AOConfig &o) const {
         return enabled == o.enabled && radius == o.radius
             && intensity == o.intensity && method == o.method
-            && fast == o.fast;
+            && fast == o.fast && slices == o.slices && steps == o.steps;
     }
     bool operator!=(const AOConfig &o) const { return !(*this == o); }
 };

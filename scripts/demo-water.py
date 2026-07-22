@@ -45,8 +45,8 @@ try:
 
     render = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render")
     render.SetString("Type", "bgfx - OpenGL")     # backend factory string
-    render.SetBool("SSAO", os.environ.get("AO", "1") == "1")
-    render.SetFloat("SSAOIntensity", float(os.environ.get("AOINT", "1.0")))
+    render.SetBool("AO", os.environ.get("AO", "1") == "1")
+    render.SetFloat("AOIntensity", float(os.environ.get("AOINT", "1.0")))
     render.SetBool("Volumetric", os.environ.get("VOL", "1") == "1")  # water body + fire + shafts
     render.SetBool("WaterSurface", True)          # refraction + reflection
     render.SetFloat("WaterWaveStrength", 0.25)

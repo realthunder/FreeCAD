@@ -86,52 +86,78 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:467)
     layoutAmbientocclusion->addLayout(layoutRow);
-    SSAO = new Gui::PrefCheckBox(this);
-    layoutRow->addWidget(SSAO);
-    SSAO->setChecked(Gui::RenderParams::defaultSSAO());
-    SSAO->setEntryName("SSAO");
-    SSAO->setParamGrpPath("View/Render");
+    AO = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(AO);
+    AO->setChecked(Gui::RenderParams::defaultAO());
+    AO->setEntryName("AO");
+    AO->setParamGrpPath("View/Render");
 
     // Auto generated code (Tools/params_utils.py:461)
     layoutRow = new QHBoxLayout();
 
     // Auto generated code (Tools/params_utils.py:467)
     layoutAmbientocclusion->addLayout(layoutRow);
-    labelSSAOMethod = new QLabel(this);
-    layoutRow->addWidget(labelSSAOMethod);
-    SSAOMethod = new Gui::PrefComboBox(this);
-    layoutRow->addWidget(SSAOMethod);
-    SSAOMethod->setEntryName("SSAOMethod");
-    SSAOMethod->setParamGrpPath("View/Render");
+    labelAOMethod = new QLabel(this);
+    layoutRow->addWidget(labelAOMethod);
+    AOMethod = new Gui::PrefComboBox(this);
+    layoutRow->addWidget(AOMethod);
+    AOMethod->setEntryName("AOMethod");
+    AOMethod->setParamGrpPath("View/Render");
     for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1127)
-        SSAOMethod->addItem(QString());
-    SSAOMethod->setCurrentIndex(Gui::RenderParams::defaultSSAOMethod());
+        AOMethod->addItem(QString());
+    AOMethod->setCurrentIndex(Gui::RenderParams::defaultAOMethod());
 
     // Auto generated code (Tools/params_utils.py:461)
     layoutRow = new QHBoxLayout();
 
     // Auto generated code (Tools/params_utils.py:467)
     layoutAmbientocclusion->addLayout(layoutRow);
-    labelSSAORadius = new QLabel(this);
-    layoutRow->addWidget(labelSSAORadius);
-    SSAORadius = new Gui::PrefDoubleSpinBox(this);
-    layoutRow->addWidget(SSAORadius);
-    SSAORadius->setValue(Gui::RenderParams::defaultSSAORadius());
-    SSAORadius->setEntryName("SSAORadius");
-    SSAORadius->setParamGrpPath("View/Render");
+    labelAOSlices = new QLabel(this);
+    layoutRow->addWidget(labelAOSlices);
+    AOSlices = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(AOSlices);
+    AOSlices->setValue(Gui::RenderParams::defaultAOSlices());
+    AOSlices->setEntryName("AOSlices");
+    AOSlices->setParamGrpPath("View/Render");
 
     // Auto generated code (Tools/params_utils.py:461)
     layoutRow = new QHBoxLayout();
 
     // Auto generated code (Tools/params_utils.py:467)
     layoutAmbientocclusion->addLayout(layoutRow);
-    labelSSAOIntensity = new QLabel(this);
-    layoutRow->addWidget(labelSSAOIntensity);
-    SSAOIntensity = new Gui::PrefDoubleSpinBox(this);
-    layoutRow->addWidget(SSAOIntensity);
-    SSAOIntensity->setValue(Gui::RenderParams::defaultSSAOIntensity());
-    SSAOIntensity->setEntryName("SSAOIntensity");
-    SSAOIntensity->setParamGrpPath("View/Render");
+    labelAOSteps = new QLabel(this);
+    layoutRow->addWidget(labelAOSteps);
+    AOSteps = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(AOSteps);
+    AOSteps->setValue(Gui::RenderParams::defaultAOSteps());
+    AOSteps->setEntryName("AOSteps");
+    AOSteps->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutAmbientocclusion->addLayout(layoutRow);
+    labelAORadius = new QLabel(this);
+    layoutRow->addWidget(labelAORadius);
+    AORadius = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(AORadius);
+    AORadius->setValue(Gui::RenderParams::defaultAORadius());
+    AORadius->setEntryName("AORadius");
+    AORadius->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutAmbientocclusion->addLayout(layoutRow);
+    labelAOIntensity = new QLabel(this);
+    layoutRow->addWidget(labelAOIntensity);
+    AOIntensity = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(AOIntensity);
+    AOIntensity->setValue(Gui::RenderParams::defaultAOIntensity());
+    AOIntensity->setEntryName("AOIntensity");
+    AOIntensity->setParamGrpPath("View/Render");
 
 
     // Auto generated code (Tools/params_utils.py:448)
@@ -429,10 +455,12 @@ void DlgSettingsRender::saveSettings()
 {
     // Auto generated code (Tools/params_utils.py:497)
     Type->onSave();
-    SSAO->onSave();
-    SSAOMethod->onSave();
-    SSAORadius->onSave();
-    SSAOIntensity->onSave();
+    AO->onSave();
+    AOMethod->onSave();
+    AOSlices->onSave();
+    AOSteps->onSave();
+    AORadius->onSave();
+    AOIntensity->onSave();
     PBR->onSave();
     PBRMetallic->onSave();
     PBRRoughness->onSave();
@@ -459,10 +487,12 @@ void DlgSettingsRender::loadSettings()
 {
     // Auto generated code (Tools/params_utils.py:484)
     Type->onRestore();
-    SSAO->onRestore();
-    SSAOMethod->onRestore();
-    SSAORadius->onRestore();
-    SSAOIntensity->onRestore();
+    AO->onRestore();
+    AOMethod->onRestore();
+    AOSlices->onRestore();
+    AOSteps->onRestore();
+    AORadius->onRestore();
+    AOIntensity->onRestore();
     PBR->onRestore();
     PBRMetallic->onRestore();
     PBRRoughness->onRestore();
@@ -493,20 +523,26 @@ void DlgSettingsRender::retranslateUi()
     labelType->setText(QObject::tr("Renderer type"));
     labelType->setToolTip(Type->toolTip());
     groupAmbientocclusion->setTitle(QObject::tr("Ambient occlusion"));
-    SSAO->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docSSAO()));
-    SSAO->setText(QObject::tr("Ambient occlusion"));
-    SSAOMethod->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docSSAOMethod()));
-    labelSSAOMethod->setText(QObject::tr("AO method"));
-    labelSSAOMethod->setToolTip(SSAOMethod->toolTip());
+    AO->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAO()));
+    AO->setText(QObject::tr("Ambient occlusion"));
+    AOMethod->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOMethod()));
+    labelAOMethod->setText(QObject::tr("AO method"));
+    labelAOMethod->setToolTip(AOMethod->toolTip());
     // Auto generated code (Tools/params_utils.py:1152)
-    SSAOMethod->setItemText(0, QObject::tr("SSAO (hemisphere)"));
-    SSAOMethod->setItemText(1, QObject::tr("GTAO (horizon)"));
-    SSAORadius->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docSSAORadius()));
-    labelSSAORadius->setText(QObject::tr("Sample radius"));
-    labelSSAORadius->setToolTip(SSAORadius->toolTip());
-    SSAOIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docSSAOIntensity()));
-    labelSSAOIntensity->setText(QObject::tr("Intensity"));
-    labelSSAOIntensity->setToolTip(SSAOIntensity->toolTip());
+    AOMethod->setItemText(0, QObject::tr("SSAO (hemisphere)"));
+    AOMethod->setItemText(1, QObject::tr("GTAO (horizon)"));
+    AOSlices->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOSlices()));
+    labelAOSlices->setText(QObject::tr("GTAO slices"));
+    labelAOSlices->setToolTip(AOSlices->toolTip());
+    AOSteps->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOSteps()));
+    labelAOSteps->setText(QObject::tr("GTAO steps"));
+    labelAOSteps->setToolTip(AOSteps->toolTip());
+    AORadius->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAORadius()));
+    labelAORadius->setText(QObject::tr("Sample radius"));
+    labelAORadius->setToolTip(AORadius->toolTip());
+    AOIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOIntensity()));
+    labelAOIntensity->setText(QObject::tr("Intensity"));
+    labelAOIntensity->setToolTip(AOIntensity->toolTip());
     groupPhysicallybasedshading->setTitle(QObject::tr("Physically based shading"));
     PBR->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBR()));
     PBR->setText(QObject::tr("Physically based shading"));

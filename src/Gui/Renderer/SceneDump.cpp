@@ -38,7 +38,8 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // v11: per-edge/vertex part tables in the mesh + pickRadius in the
 // presel/sel config, for browser-side edge/vertex picking.
 // v13: AO method selector (SSAO / GTAO) in the AO config.
-const uint32_t kVersion = 13;
+// v14: GTAO slice/step tuning in the AO config.
+const uint32_t kVersion = 14;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -630,6 +631,8 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.f(snap.aoconf.radius);
     w.f(snap.aoconf.intensity);
     w.i32(snap.aoconf.method);
+    w.i32(snap.aoconf.slices);
+    w.i32(snap.aoconf.steps);
 
     w.b(snap.pbrconf.enabled);
     w.f(snap.pbrconf.metallic);
@@ -752,6 +755,8 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.aoconf.radius = r.f();
     snap.aoconf.intensity = r.f();
     snap.aoconf.method = version >= 13 ? r.i32() : 0;
+    snap.aoconf.slices = version >= 14 ? r.i32() : 0;
+    snap.aoconf.steps = version >= 14 ? r.i32() : 0;
 
     snap.pbrconf.enabled = r.b();
     snap.pbrconf.metallic = r.f();

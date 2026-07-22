@@ -33,15 +33,18 @@ try:
     render.SetString("Type", "bgfx - OpenGL")
     # --- ONLY ambient occlusion on -------------------------------------
     _ao = os.environ.get("AO", "1") == "1"
-    render.SetBool("SSAO", _ao)
-    # Exaggerated default (1.6) so classic SSAO reads clearly; AOINT=1.0
-    # gives the natural strength (GTAO usually wants 1.0).
-    render.SetFloat("SSAOIntensity", float(os.environ.get("AOINT", "1.6")))
-    render.SetFloat("SSAORadius", float(os.environ.get("AORADIUS", "0.0")))  # 0=auto
+    render.SetBool("AO", _ao)
+    # Follows the AOIntensity parameter default; AOINT overrides (classic
+    # SSAO reads clearer around 1.6, GTAO is naturally stronger).
+    render.SetFloat("AOIntensity", float(os.environ.get("AOINT", "0.6")))
+    render.SetFloat("AORadius", float(os.environ.get("AORADIUS", "0.0")))  # 0=auto
     # AO algorithm: 0 = classic hemisphere SSAO, 1 = GTAO (horizon-based).
-    render.SetInt("SSAOMethod", int(os.environ.get("AOMETHOD", "0")))
+    render.SetInt("AOMethod", int(os.environ.get("AOMETHOD", "0")))
+    # GTAO quality dials (0 = backend defaults 9 slices / 6 steps).
+    render.SetInt("AOSlices", int(os.environ.get("AOSLICES", "0")))
+    render.SetInt("AOSteps", int(os.environ.get("AOSTEPS", "0")))
     # Dedicated AO resolution control (independent of EffectResolution).
-    render.SetFloat("SSAOResolution", float(os.environ.get("AORES", "1.0")))
+    render.SetFloat("AOResolution", float(os.environ.get("AORES", "1.0")))
     # --- everything else off -------------------------------------------
     render.SetBool("Shadow", False)         # default is True -> must disable
     render.SetBool("Volumetric", False)

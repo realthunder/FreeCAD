@@ -102,15 +102,15 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter SSAO
+    /// Accessor for parameter AO
     ///
     /// Enable screen space ambient occlusion of the experimental render
     /// engine (render cache mode 3 with a selected renderer type).
-    static const bool & getSSAO();
-    static const bool & defaultSSAO();
-    static void removeSSAO();
-    static void setSSAO(const bool &v);
-    static const char *docSSAO();
+    static const bool & getAO();
+    static const bool & defaultAO();
+    static void removeAO();
+    static void setAO(const bool &v);
+    static const char *docAO();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -132,7 +132,7 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter SSAOMethod
+    /// Accessor for parameter AOMethod
     ///
     /// Ambient occlusion algorithm. 0 = classic hemisphere-kernel
     /// SSAO (screen-space depth-difference sampling). 1 = GTAO
@@ -140,41 +140,70 @@ public:
     /// visibility integration): physically correct occlusion falloff,
     /// tight contact shadows without the wide low-contrast wash of
     /// classic SSAO at large radii.
-    static const long & getSSAOMethod();
-    static const long & defaultSSAOMethod();
-    static void removeSSAOMethod();
-    static void setSSAOMethod(const long &v);
-    static const char *docSSAOMethod();
+    static const long & getAOMethod();
+    static const long & defaultAOMethod();
+    static void removeAOMethod();
+    static void setAOMethod(const long &v);
+    static const char *docAOMethod();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter SSAORadius
+    /// Accessor for parameter AOSlices
+    ///
+    /// GTAO only: number of screen-space slice directions per pixel
+    /// (XeGTAO High preset = 9). The dominant quality/cost dial —
+    /// direction variance shows as blotchy grain the denoiser cannot
+    /// fully flatten. Cost scales linearly.
+    static const long & getAOSlices();
+    static const long & defaultAOSlices();
+    static void removeAOSlices();
+    static void setAOSlices(const long &v);
+    static const char *docAOSlices();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AOSteps
+    ///
+    /// GTAO only: horizon-march samples per slice side. More steps
+    /// resolve distant occluders more stably (less mid-frequency blotch
+    /// on grazing surfaces), at linear cost.
+    static const long & getAOSteps();
+    static const long & defaultAOSteps();
+    static void removeAOSteps();
+    static void setAOSteps(const long &v);
+    static const char *docAOSteps();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AORadius
     ///
     /// Ambient occlusion sample radius in world units.
     /// Zero means automatic (a fraction of the scene size).
-    static const double & getSSAORadius();
-    static const double & defaultSSAORadius();
-    static void removeSSAORadius();
-    static void setSSAORadius(const double &v);
-    static const char *docSSAORadius();
+    static const double & getAORadius();
+    static const double & defaultAORadius();
+    static void removeAORadius();
+    static void setAORadius(const double &v);
+    static const char *docAORadius();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter SSAOIntensity
+    /// Accessor for parameter AOIntensity
     ///
     /// Ambient occlusion darkening strength.
-    static const double & getSSAOIntensity();
-    static const double & defaultSSAOIntensity();
-    static void removeSSAOIntensity();
-    static void setSSAOIntensity(const double &v);
-    static const char *docSSAOIntensity();
+    static const double & getAOIntensity();
+    static const double & defaultAOIntensity();
+    static void removeAOIntensity();
+    static void setAOIntensity(const double &v);
+    static const char *docAOIntensity();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter SSAOResolution
+    /// Accessor for parameter AOResolution
     ///
     /// Resolution scale (0.25-1.0) of the ambient occlusion resolve
     /// targets relative to the main view resolution, independent of the
@@ -183,11 +212,11 @@ public:
     /// Effect resolution drives only the costlier reflection re-render.
     /// 1.0 renders the occlusion at full resolution; lower trades AO
     /// sharpness for speed.
-    static const double & getSSAOResolution();
-    static const double & defaultSSAOResolution();
-    static void removeSSAOResolution();
-    static void setSSAOResolution(const double &v);
-    static const char *docSSAOResolution();
+    static const double & getAOResolution();
+    static const double & defaultAOResolution();
+    static void removeAOResolution();
+    static void setAOResolution(const double &v);
+    static const char *docAOResolution();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

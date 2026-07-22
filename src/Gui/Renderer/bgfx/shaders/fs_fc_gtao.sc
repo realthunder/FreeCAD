@@ -25,13 +25,14 @@ $input v_texcoord0
 
 #include <bgfx_shader.sh>
 
-#define GTAO_SLICES 3
-#define GTAO_STEPS  6
 
 SAMPLER2D(s_texNormalZ, 0);
 SAMPLER2D(s_texAONoise, 1);
 
 uniform vec4 u_aoParams;
+// x = slice count, y = steps per slice side (Render_GTAOSlices/Steps,
+// clamped by the backend).
+uniform vec4 u_aoParams2;
 
 #define HALF_PI 1.5707963267948966
 #define GOLDEN  0.6180339887498948
@@ -155,8 +156,8 @@ void main()
 	// (guard only against true coincidence); fp16 has a ~10-bit
 	// mantissa, deltas below ~2e-3 * viewZ are rounding garbage.
 	float depthEps = pz >= 2.0 ? 2.0e-3 : 1.0e-5;
-	int slices = fast ? 2 : GTAO_SLICES;
-	int steps = fast ? 3 : GTAO_STEPS;
+	int slices = fast ? 2 : int(u_aoParams2.x);
+	int steps = fast ? 3 : int(u_aoParams2.y);
 
 	float visibility = 0.0;
 	for (int i = 0; i < slices; ++i)

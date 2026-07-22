@@ -848,13 +848,17 @@ RendererBridge::translateAOConfig(View3DInventor * view)
 {
     Render::AOConfig res;
     res.enabled = viewParamOverride<App::PropertyBool>(
-            view, "Render", "SSAO", RenderParams::getSSAO());
+            view, "Render", "AO", RenderParams::getAO());
     res.radius = float(viewParamOverride<App::PropertyFloat>(
-            view, "Render", "SSAORadius", RenderParams::getSSAORadius()));
+            view, "Render", "AORadius", RenderParams::getAORadius()));
     res.intensity = float(viewParamOverride<App::PropertyFloat>(
-            view, "Render", "SSAOIntensity", RenderParams::getSSAOIntensity()));
+            view, "Render", "AOIntensity", RenderParams::getAOIntensity()));
     res.method = int(viewParamOverride<App::PropertyEnumeration>(
-            view, "Render", "SSAOMethod", RenderParams::getSSAOMethod()));
+            view, "Render", "AOMethod", RenderParams::getAOMethod()));
+    res.slices = int(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "AOSlices", RenderParams::getAOSlices()));
+    res.steps = int(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "AOSteps", RenderParams::getAOSteps()));
     return res;
 }
 
@@ -1210,8 +1214,8 @@ float
 RendererBridge::translateSSAOResolution(View3DInventor * view)
 {
     return float(viewParamOverride<App::PropertyFloat>(
-            view, "Render", "SSAOResolution",
-            RenderParams::getSSAOResolution()));
+            view, "Render", "AOResolution",
+            RenderParams::getAOResolution()));
 }
 
 float

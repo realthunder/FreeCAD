@@ -46,10 +46,12 @@ ParamGroup = (
     )]),
 
     ('Ambient occlusion', [_RenderParams[name] for name in (
-        'SSAO',
-        'SSAOMethod',
-        'SSAORadius',
-        'SSAOIntensity',
+        'AO',
+        'AOMethod',
+        'AOSlices',
+        'AOSteps',
+        'AORadius',
+        'AOIntensity',
     )]),
 
     ('Physically based shading', [_RenderParams[name] for name in (

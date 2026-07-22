@@ -75,13 +75,17 @@ private:
 
     // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupAmbientocclusion = nullptr;
-    Gui::PrefCheckBox *SSAO = nullptr;
-    QLabel *labelSSAOMethod = nullptr;
-    Gui::PrefComboBox *SSAOMethod = nullptr;
-    QLabel *labelSSAORadius = nullptr;
-    Gui::PrefDoubleSpinBox *SSAORadius = nullptr;
-    QLabel *labelSSAOIntensity = nullptr;
-    Gui::PrefDoubleSpinBox *SSAOIntensity = nullptr;
+    Gui::PrefCheckBox *AO = nullptr;
+    QLabel *labelAOMethod = nullptr;
+    Gui::PrefComboBox *AOMethod = nullptr;
+    QLabel *labelAOSlices = nullptr;
+    Gui::PrefSpinBox *AOSlices = nullptr;
+    QLabel *labelAOSteps = nullptr;
+    Gui::PrefSpinBox *AOSteps = nullptr;
+    QLabel *labelAORadius = nullptr;
+    Gui::PrefDoubleSpinBox *AORadius = nullptr;
+    QLabel *labelAOIntensity = nullptr;
+    Gui::PrefDoubleSpinBox *AOIntensity = nullptr;
 
     // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupPhysicallybasedshading = nullptr;
