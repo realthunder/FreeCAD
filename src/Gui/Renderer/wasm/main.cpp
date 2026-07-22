@@ -791,8 +791,23 @@ static void applyHover(const PickHit &hit)
 
 static void fitCamera();
 
+// Browser-measured frame timing for the HUD: the wall-clock period between
+// mainLoop calls (the real displayed frame rate, unlike the backend's own
+// render time) and the CPU time spent inside the render call, both smoothed
+// with an exponential moving average.
+static double s_lastFrameNow = 0.0;
+static double s_frameMs = 0.0;   // smoothed frame period
+static double s_renderMs = 0.0;  // smoothed render()-call CPU time
+
 static void mainLoop()
 {
+    const double frameNow = emscripten_get_now();
+    if (s_lastFrameNow > 0.0) {
+        const double dt = frameNow - s_lastFrameNow;
+        s_frameMs = s_frameMs > 0.0 ? s_frameMs * 0.9 + dt * 0.1 : dt;
+    }
+    s_lastFrameNow = frameNow;
+
     double w = 0, h = 0;
     emscripten_get_element_css_size("#canvas", &w, &h);
     // Render at the device pixel ratio so the buffer matches physical pixels
@@ -830,18 +845,23 @@ static void mainLoop()
     QColor bg((s_snap.clearColor >> 24) & 0xff,
               (s_snap.clearColor >> 16) & 0xff,
               (s_snap.clearColor >> 8) & 0xff);
+    const double renderT0 = emscripten_get_now();
     s_renderer->render(bg, viewMtx, projMtx);
+    const double rdt = emscripten_get_now() - renderT0;
+    s_renderMs = s_renderMs > 0.0 ? s_renderMs * 0.9 + rdt * 0.1 : rdt;
 
     if (s_hudOn) {
         char hud[512];
         std::snprintf(hud, sizeof(hud),
-            "mouse: %.0f, %.0f  (canvas %dx%d)\n"
+            "fps:   %.1f  (frame %.1f ms, render %.1f ms)\n"
+            "res:   %dx%d  dpr %.2f  effRes %.2f\n"
             "cam:   yaw %.3f  pitch %.3f  dist %.2f\n"
             "pan:   %.2f, %.2f   center %.1f, %.1f, %.1f\n"
             "hover: %s\n"
             "%s"
             "[d] toggle HUD   [v] copy cam",
-            s_mouseX, s_mouseY, s_width, s_height,
+            s_frameMs > 0.0 ? 1000.0 / s_frameMs : 0.0, s_frameMs, s_renderMs,
+            s_width, s_height, double(s_dpr), double(s_snap.effectResolution),
             s_yaw, s_pitch, s_dist, s_panX, s_panY,
             s_center[0], s_center[1], s_center[2], s_hoverDesc,
             s_camMsg[0] ? s_camMsg : "");
@@ -1232,6 +1252,7 @@ static void applySnapshot(bool fit)
     s_renderer->setVolumetricConfig(s_snap.volconf);
     s_renderer->setWaterConfig(s_snap.waterconf);
     s_renderer->setAutoZoomScale(s_snap.autozoomScale);
+    s_renderer->setEffectResolution(s_snap.effectResolution);
     if (!s_snap.hatchRGBA.empty())
         s_renderer->setHatchImage(s_snap.hatchRGBA.data(), 4,
                                   s_snap.hatchWidth, s_snap.hatchHeight);

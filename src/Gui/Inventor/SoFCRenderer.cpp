@@ -2302,6 +2302,8 @@ SoFCRenderer::render(SoGLRenderAction * action)
         RendererBridge::translateVolumetricConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setWaterConfig(
         RendererBridge::translateWaterConfig(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setEffectResolution(
+        RendererBridge::translateEffectResolution(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setAutoZoomScale(
         RendererBridge::translateAutoZoomScale(action->getState()));
   }

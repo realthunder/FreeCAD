@@ -83,6 +83,25 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter EffectResolution
+    ///
+    /// Resolution scale (0.25-1.0) of the expensive screen-space effect
+    /// passes -- the planar/ground reflection scene re-render, the water
+    /// body depth prepass and screen-space ambient occlusion -- relative to
+    /// the main view resolution. Lowering it trades effect sharpness for
+    /// speed on large windows, where those per-pixel passes dominate the
+    /// frame; the main geometry, edges, text and overlays stay full
+    /// resolution. 1.0 renders the effects at full resolution. The
+    /// volumetric light shafts already render at half resolution.
+    static const double & getEffectResolution();
+    static const double & defaultEffectResolution();
+    static void removeEffectResolution();
+    static void setEffectResolution(const double &v);
+    static const char *docEffectResolution();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter SSAO
     ///
     /// Enable screen space ambient occlusion of the experimental render

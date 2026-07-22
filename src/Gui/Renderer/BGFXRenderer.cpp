@@ -419,6 +419,10 @@ public:
     std::unique_ptr<QOpenGLContext> context;
     std::unique_ptr<QOffscreenSurface> offscreen;
 #endif
+    // Resolution scale of the expensive screen-space effect passes
+    // (Render_EffectResolution; BGFXRenderer::setEffectResolution). A change
+    // re-creates the view's scaled targets at the top of the next render().
+    float effectResolution = 1.0f;
     std::unordered_map<QOpenGLWidget *, std::unique_ptr<BGFXView>> views;
     std::set<uint16_t> viewIds;
 
@@ -1788,6 +1792,16 @@ public:
             : widget->format().samples();
         msaaSamples = samples;
 #endif
+        // Resolution of the scaled effect targets (reflection re-render, SSAO
+        // resolve). effectScale clamps to [0.25, 1]; the targets and their
+        // view rects use effW/effH while the main scene / geometry prepass use
+        // width/height. The half-res volumetric follows the same pattern.
+        effectScale = _BGFXLib.effectResolution;
+        {
+            float es = std::min(std::max(effectScale, 0.25f), 1.0f);
+            effW = uint16_t(std::max(1, int(width * es + 0.5f)));
+            effH = uint16_t(std::max(1, int(height * es + 0.5f)));
+        }
         uint64_t flags = 0;
         if (samples >= 8)
             flags = BGFX_TEXTURE_RT_MSAA_X8;
@@ -2119,15 +2133,24 @@ public:
                 | BGFX_SAMPLER_MIP_POINT
                 | BGFX_SAMPLER_U_CLAMP
                 | BGFX_SAMPLER_V_CLAMP;
+            // The geometry prepass (aoNormalZ/aoDepth) stays full-res and
+            // POINT-sampled: refraction/glass reject, volumetric ray-ends and
+            // water span all read its exact eye-space depth, which bilinear
+            // upscaling would corrupt at silhouettes. The AO resolve targets
+            // (aoTex raw, aoBlurTex blurred) scale to effW/effH and sample
+            // LINEAR, so the half-res AO upsamples smoothly onto the full-res
+            // scene in the apply pass.
             aoNormalZ = bgfx::createTexture2D(width, height, false, 1,
                 bgfx::TextureFormat::RGBA16F, aoFlags);
             aoDepth = bgfx::createTexture2D(width, height, false, 1,
                 bgfx::TextureFormat::D24S8,
                 aoFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-            aoTex = bgfx::createTexture2D(width, height, false, 1,
-                bgfx::TextureFormat::R8, aoFlags);
-            aoBlurTex = bgfx::createTexture2D(width, height, false, 1,
-                bgfx::TextureFormat::R8, aoFlags);
+            const uint64_t aoResFlags = BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;  // linear
+            aoTex = bgfx::createTexture2D(effW, effH, false, 1,
+                bgfx::TextureFormat::R8, aoResFlags);
+            aoBlurTex = bgfx::createTexture2D(effW, effH, false, 1,
+                bgfx::TextureFormat::R8, aoResFlags);
             bgfx::TextureHandle preatt[2] = {aoNormalZ, aoDepth};
             aoPrepassFbo = bgfx::createFrameBuffer(2, preatt, false);
             aoGenFbo = bgfx::createFrameBuffer(1, &aoTex, false);
@@ -2376,16 +2399,19 @@ public:
         u_glassParams = bgfx::createUniform("u_glassParams",
                                             bgfx::UniformType::Vec4);
 
-        // Ground reflection: the mirrored-camera scene render target
-        // (single-sample; the overlay blend softens the aliasing).
-        reflTex = bgfx::createTexture2D(width, height, false, 1,
+        // Ground/planar reflection: the mirrored-camera scene re-render
+        // target. This full opaque-scene re-render is the priciest effect on
+        // a large window, so it scales to effW/effH (Render_EffectResolution);
+        // LINEAR sampling upscales it smoothly onto the full-res consumers
+        // (ground overlay, water surface), which read it at normalized UV.
+        reflTex = bgfx::createTexture2D(effW, effH, false, 1,
             bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
             | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        reflDepth = createTexture(bgfx::TextureFormat::D24S8,
-                                  BGFX_TEXTURE_RT);
+        reflDepth = bgfx::createTexture2D(effW, effH, false, 1,
+            bgfx::TextureFormat::D24S8,
+            BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
         bgfx::TextureHandle ratt[2] = {reflTex, reflDepth};
         reflFbo = bgfx::createFrameBuffer(2, ratt, false);
         m_progGroundRefl = loadProgram("vs_fc_mesh", "fs_fc_groundrefl",
@@ -4951,6 +4977,13 @@ public:
     uint16_t viewId = 0;
     uint16_t width;
     uint16_t height;
+    // Reduced resolution of the expensive screen-space effect passes
+    // (planar/ground reflection re-render, SSAO resolve) -- effectScale of
+    // the view resolution, clamped in init(). The main scene, the geometry
+    // prepass and the water depth prepass stay full-res.
+    float effectScale = 1.0f;
+    uint16_t effW = 0;
+    uint16_t effH = 0;
     bgfx::FrameBufferHandle bgfxFbo = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle bgfxColor = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle bgfxDepth = BGFX_INVALID_HANDLE;
@@ -5309,6 +5342,7 @@ public:
         if (_BGFXLib.standaloneWidth != view->width
                 || _BGFXLib.standaloneHeight != view->height
                 || _BGFXLib.standaloneSamples != view->msaaSamples
+                || _BGFXLib.effectResolution != view->effectScale
                 || warmupReinit) {
             if (_BGFXLib.standaloneWidth != view->width
                     || _BGFXLib.standaloneHeight != view->height)
@@ -5323,6 +5357,7 @@ public:
 #else
         if (widget->width() != int(view->width)
                 || widget->height() != int(view->height)
+                || _BGFXLib.effectResolution != view->effectScale
                 || (_BGFXLib.desktopSamples >= 0
                     && _BGFXLib.desktopSamples != view->msaaSamples))
             view->init();
@@ -5375,6 +5410,7 @@ public:
             snap.volconf = volconf;
             snap.waterconf = waterconf;
             snap.autozoomScale = autozoomScale;
+            snap.effectResolution = _BGFXLib.effectResolution;
             snap.hatchRGBA = hatchRGBA;
             snap.hatchWidth = hatchWidth;
             snap.hatchHeight = hatchHeight;
@@ -6518,7 +6554,8 @@ public:
                 bgfx::setViewClear(id,
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     0x00000000u, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, width, height);
+                // Reduced-resolution reflection re-render (matches reflFbo).
+                bgfx::setViewRect(id, 0, 0, view->effW, view->effH);
                 bgfx::setViewTransform(id,
                     groundReflActive ? reflViewMtx : waterReflViewMtx,
                     projMatrix);
@@ -6692,7 +6729,14 @@ public:
                         : uint16_t(BGFX_CLEAR_NONE),
                     clearColor, 1.0f, 0);
             }
-            bgfx::setViewRect(id, 0, 0, width, height);
+            // The SSAO generate/blur passes render into the reduced-resolution
+            // aoTex/aoBlurTex (Render_EffectResolution); their apply pass reads
+            // the blurred AO back at full res. Every other view is full-res.
+            bool aoResolveView = i == BGFXView::ViewAOGen
+                || i == BGFXView::ViewAOBlur;
+            bgfx::setViewRect(id, 0, 0,
+                aoResolveView ? view->effW : width,
+                aoResolveView ? view->effH : height);
             // The background quad, the OIT composite triangle and the
             // fullscreen AO blur/apply triangles are submitted in clip
             // space; the AO generation pass keeps the scene projection
@@ -8513,6 +8557,11 @@ void BGFXRenderer::setMSAASamples(int samples)
 #else
     _BGFXLib.desktopSamples = s;
 #endif
+}
+
+void BGFXRenderer::setEffectResolution(float scale)
+{
+    _BGFXLib.effectResolution = std::min(std::max(scale, 0.25f), 1.0f);
 }
 
 //////////////////////////////////////////////////////////////////////

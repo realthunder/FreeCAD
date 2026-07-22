@@ -1134,6 +1134,14 @@ RendererBridge::translatePBRConfig(View3DInventor * view)
 }
 
 float
+RendererBridge::translateEffectResolution(View3DInventor * view)
+{
+    return float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "EffectResolution",
+            RenderParams::getEffectResolution()));
+}
+
+float
 RendererBridge::translateAutoZoomScale(SoState * state)
 {
   // SoAutoZoomTranslation::getScaleFactor with a node scaleFactor of 1;

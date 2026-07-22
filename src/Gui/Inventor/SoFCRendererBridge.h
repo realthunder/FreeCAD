@@ -101,6 +101,10 @@ GuiExport Render::LightConfig translateLightConfig(SoState * state,
 /// scaleFactor on top in the backend.
 GuiExport float translateAutoZoomScale(SoState * state);
 
+/// Resolution scale of the expensive screen-space effect passes (reflection
+/// re-render, SSAO resolve) from Render_EffectResolution / RenderParams.
+GuiExport float translateEffectResolution(View3DInventor * view);
+
 } // namespace RendererBridge
 } // namespace Gui
 

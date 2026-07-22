@@ -46,6 +46,15 @@ Params = [
     ParamString('Type', 'Default', title='Renderer type',
         doc="Type of the experimental render engine backend. 'Default' keeps\n"
         "the plain GL pipeline. Only effective with render cache mode 3."),
+    ParamFloat('EffectResolution',  1.0, title='Effect resolution',
+        doc="Resolution scale (0.25-1.0) of the expensive screen-space effect\n"
+        "passes -- the planar/ground reflection scene re-render, the water\n"
+        "body depth prepass and screen-space ambient occlusion -- relative to\n"
+        "the main view resolution. Lowering it trades effect sharpness for\n"
+        "speed on large windows, where those per-pixel passes dominate the\n"
+        "frame; the main geometry, edges, text and overlays stay full\n"
+        "resolution. 1.0 renders the effects at full resolution. The\n"
+        "volumetric light shafts already render at half resolution."),
     ParamBool('SSAO',  False, title='Ambient occlusion',
         doc="Enable screen space ambient occlusion of the experimental render\n"
         "engine (render cache mode 3 with a selected renderer type)."),

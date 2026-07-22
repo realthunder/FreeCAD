@@ -815,6 +815,13 @@ public:
     /// is applied here rather than by recreating the view. Takes effect when
     /// the render target is next (re)created.
     virtual void setMSAASamples(int samples) { (void)samples; }
+    /// Resolution scale (0.25-1.0) of the expensive screen-space effect
+    /// passes -- the planar/ground reflection scene re-render and the SSAO
+    /// resolve -- relative to the main view resolution. Lowering it trades
+    /// effect sharpness for speed on large windows where those per-pixel
+    /// passes dominate; the main scene, geometry prepass and overlays stay
+    /// full resolution. Takes effect when the targets are next (re)created.
+    virtual void setEffectResolution(float scale) { (void)scale; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

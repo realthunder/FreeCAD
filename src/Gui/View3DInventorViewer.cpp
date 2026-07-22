@@ -3883,6 +3883,9 @@ void View3DInventorViewer::initRenderProperties()
             RenderParams::docSSAO(), RenderParams::getSSAO());
     _renderParam<App::PropertyBool>(view, "Shadow",
             RenderParams::docShadow(), RenderParams::getShadow());
+    _renderParam<App::PropertyFloat>(view, "EffectResolution",
+            RenderParams::docEffectResolution(),
+            RenderParams::getEffectResolution());
     _renderParam<App::PropertyFloat>(view, "SSAORadius",
             RenderParams::docSSAORadius(), RenderParams::getSSAORadius());
     _renderParam<App::PropertyFloat>(view, "SSAOIntensity",

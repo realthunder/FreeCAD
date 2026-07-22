@@ -35,7 +35,7 @@ namespace {
 
 const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // v2: selection/highlight feeds appended (v1 files still load).
-const uint32_t kVersion = 8;
+const uint32_t kVersion = 9;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -641,6 +641,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.f(wc.waveSpeed);
 
     w.f(snap.autozoomScale);
+    w.f(snap.effectResolution);
 
     w.i32(snap.hatchWidth);
     w.i32(snap.hatchHeight);
@@ -751,6 +752,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     wc.waveSpeed = r.f();
 
     snap.autozoomScale = r.f();
+    snap.effectResolution = version >= 9 ? r.f() : 1.0f;
 
     snap.hatchWidth = r.i32();
     snap.hatchHeight = r.i32();

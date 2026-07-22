@@ -61,6 +61,9 @@ struct SceneSnapshot {
     VolumetricConfig volconf;
     WaterConfig waterconf;
     float autozoomScale = 1.0f;
+    /// Resolution scale (0.25-1.0) of the expensive screen-space effect
+    /// passes (reflection re-render, SSAO resolve); 1.0 = full resolution.
+    float effectResolution = 1.0f;
 
     /// Section-cap hatch image, RGBA8 (the renderer stores it
     /// pre-expanded); empty = none.

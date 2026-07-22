@@ -50,6 +50,7 @@ public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(RenderParamsP*),App::CStringHasher,App::CStringHasher> funcs;
     std::string Type;
+    double EffectResolution;
     bool SSAO;
     bool Shadow;
     double SSAORadius;
@@ -87,6 +88,8 @@ public:
 
         Type = this->handle->GetASCII("Type", "Default");
         funcs["Type"] = &RenderParamsP::updateType;
+        EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
+        funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
         SSAO = this->handle->GetBool("SSAO", false);
         funcs["SSAO"] = &RenderParamsP::updateSSAO;
         Shadow = this->handle->GetBool("Shadow", true);
@@ -168,6 +171,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateType(RenderParamsP *self) {
         self->Type = self->handle->GetASCII("Type", "Default");
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateEffectResolution(RenderParamsP *self) {
+        self->EffectResolution = self->handle->GetFloat("EffectResolution", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateSSAO(RenderParamsP *self) {
@@ -327,6 +334,41 @@ void RenderParams::setType(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeType() {
     instance()->handle->RemoveASCII("Type");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docEffectResolution() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Resolution scale (0.25-1.0) of the expensive screen-space effect\n"
+"passes -- the planar/ground reflection scene re-render, the water\n"
+"body depth prepass and screen-space ambient occlusion -- relative to\n"
+"the main view resolution. Lowering it trades effect sharpness for\n"
+"speed on large windows, where those per-pixel passes dominate the\n"
+"frame; the main geometry, edges, text and overlays stay full\n"
+"resolution. 1.0 renders the effects at full resolution. The\n"
+"volumetric light shafts already render at half resolution.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getEffectResolution() {
+    return instance()->EffectResolution;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultEffectResolution() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setEffectResolution(const double &v) {
+    instance()->handle->SetFloat("EffectResolution",v);
+    instance()->EffectResolution = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeEffectResolution() {
+    instance()->handle->RemoveFloat("EffectResolution");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

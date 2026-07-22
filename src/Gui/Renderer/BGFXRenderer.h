@@ -77,6 +77,9 @@ public:
     /// Scene render-target sample count (0/1 = off). Takes effect when the
     /// view next (re)creates its targets (detected at the top of render()).
     virtual void setMSAASamples(int samples) override;
+    /// Resolution scale of the expensive screen-space effect passes
+    /// (reflection re-render, SSAO resolve); see Render::Renderer.
+    virtual void setEffectResolution(float scale) override;
 
 #ifdef FC_RENDERER_STANDALONE
     /// Standalone (no Qt) build: the host app hands bgfx the native
