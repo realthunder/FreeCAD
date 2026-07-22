@@ -60,14 +60,20 @@ void main()
 		           -viewZ);
 
 	vec3 n = octDecode(nz.xy);
-	// Per-pixel random rotation of the kernel from the tiled noise.
-	vec2 noiseUV = v_texcoord0 * u_viewRect.zw / 4.0;
-	vec2 rv = texture2D(s_texAONoise, noiseUV).xy * 2.0 - vec2_splat(1.0);
+	// Per-pixel random rotation of the kernel from the tiled noise, plus a
+	// per-pixel radius jitter from the noise .z (a 4x4 Bayer dither). Azimuthal
+	// rotation alone leaves the RADIAL occlusion banding correlated across
+	// neighbours, so the box blur cannot remove it; jittering the radius makes
+	// each pixel sample at a different distance and the blur averages the tile.
+	vec3 noiseTexel = texture2D(s_texAONoise, v_texcoord0 * u_viewRect.zw / 4.0).xyz;
+	vec2 rv = noiseTexel.xy * 2.0 - vec2_splat(1.0);
 	vec3 rvec = vec3(rv, 0.0);
 	vec3 tangent = normalize(rvec - n * dot(rvec, n));
 	vec3 bitangent = cross(n, tangent);
 
-	float radius = u_aoParams.x;
+	// 0.7 .. 1.15 of the nominal radius, centred so the mean occlusion is
+	// close to the un-jittered result.
+	float radius = u_aoParams.x * (0.7 + 0.45 * noiseTexel.z);
 	float bias = u_aoParams.z;
 	float occlusion = 0.0;
 	for (int i = 0; i < AO_SAMPLES; ++i)
@@ -98,6 +104,14 @@ void main()
 			                        radius / abs(viewZ - snz.z));
 	}
 
-	float ao = 1.0 - u_aoParams.y * occlusion / float(AO_SAMPLES);
+	// Contrast/power curve on the mean occlusion: full occlusion (deep
+	// contacts) stays at full strength, but the faint tail is suppressed, so a
+	// shallow ramp collapses to a tight band near the real contact instead of a
+	// wide, low-contrast wash spread over the whole face (which only spans a
+	// few 8-bit levels and bands). The visible shaded WIDTH then scales with
+	// occlusion depth. u_aoParams.w = power (>= 1).
+	float occ = occlusion / float(AO_SAMPLES);
+	occ = pow(occ, max(u_aoParams.w, 1.0));
+	float ao = 1.0 - u_aoParams.y * occ;
 	gl_FragColor = vec4_splat(clamp(ao, 0.0, 1.0));
 }

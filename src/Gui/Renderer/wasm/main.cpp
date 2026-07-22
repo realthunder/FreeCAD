@@ -1698,6 +1698,7 @@ static void applySnapshot(bool fit)
     s_renderer->setWaterConfig(s_snap.waterconf);
     s_renderer->setAutoZoomScale(s_snap.autozoomScale);
     s_renderer->setEffectResolution(s_snap.effectResolution);
+    s_renderer->setSSAOResolution(s_snap.ssaoResolution);
     if (!s_snap.hatchRGBA.empty())
         s_renderer->setHatchImage(s_snap.hatchRGBA.data(), 4,
                                   s_snap.hatchWidth, s_snap.hatchHeight);

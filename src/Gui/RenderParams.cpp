@@ -55,6 +55,7 @@ public:
     bool Shadow;
     double SSAORadius;
     double SSAOIntensity;
+    double SSAOResolution;
     bool PBR;
     double PBRMetallic;
     double PBRRoughness;
@@ -98,6 +99,8 @@ public:
         funcs["SSAORadius"] = &RenderParamsP::updateSSAORadius;
         SSAOIntensity = this->handle->GetFloat("SSAOIntensity", 1.0);
         funcs["SSAOIntensity"] = &RenderParamsP::updateSSAOIntensity;
+        SSAOResolution = this->handle->GetFloat("SSAOResolution", 1.0);
+        funcs["SSAOResolution"] = &RenderParamsP::updateSSAOResolution;
         PBR = this->handle->GetBool("PBR", false);
         funcs["PBR"] = &RenderParamsP::updatePBR;
         PBRMetallic = this->handle->GetFloat("PBRMetallic", 0.0);
@@ -191,6 +194,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateSSAOIntensity(RenderParamsP *self) {
         self->SSAOIntensity = self->handle->GetFloat("SSAOIntensity", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSSAOResolution(RenderParamsP *self) {
+        self->SSAOResolution = self->handle->GetFloat("SSAOResolution", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBR(RenderParamsP *self) {
@@ -488,6 +495,40 @@ void RenderParams::setSSAOIntensity(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeSSAOIntensity() {
     instance()->handle->RemoveFloat("SSAOIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docSSAOResolution() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Resolution scale (0.25-1.0) of the ambient occlusion resolve\n"
+"targets relative to the main view resolution, independent of the\n"
+"shared Effect resolution. Ambient occlusion is resolution-sensitive\n"
+"(contact and crevice detail), so it has its own control; the shared\n"
+"Effect resolution drives only the costlier reflection re-render.\n"
+"1.0 renders the occlusion at full resolution; lower trades AO\n"
+"sharpness for speed.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getSSAOResolution() {
+    return instance()->SSAOResolution;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultSSAOResolution() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setSSAOResolution(const double &v) {
+    instance()->handle->SetFloat("SSAOResolution",v);
+    instance()->SSAOResolution = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeSSAOResolution() {
+    instance()->handle->RemoveFloat("SSAOResolution");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

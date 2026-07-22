@@ -82,6 +82,7 @@ public:
     /// Resolution scale of the expensive screen-space effect passes
     /// (reflection re-render, SSAO resolve); see Render::Renderer.
     virtual void setEffectResolution(float scale) override;
+    virtual void setSSAOResolution(float scale) override;
 
 #ifdef FC_RENDERER_STANDALONE
     /// Standalone (no Qt) build: the host app hands bgfx the native

@@ -862,6 +862,11 @@ public:
     /// passes dominate; the main scene, geometry prepass and overlays stay
     /// full resolution. Takes effect when the targets are next (re)created.
     virtual void setEffectResolution(float scale) { (void)scale; }
+    /// Resolution scale (0.25-1.0) of the SSAO resolve targets, independent
+    /// of setEffectResolution -- ambient occlusion is resolution-sensitive,
+    /// so it has its own control. Takes effect when the targets are next
+    /// (re)created.
+    virtual void setSSAOResolution(float scale) { (void)scale; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

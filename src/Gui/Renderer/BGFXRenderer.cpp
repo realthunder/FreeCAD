@@ -423,6 +423,10 @@ public:
     // (Render_EffectResolution; BGFXRenderer::setEffectResolution). A change
     // re-creates the view's scaled targets at the top of the next render().
     float effectResolution = 1.0f;
+    // Resolution scale of the SSAO resolve targets (Render_SSAOResolution;
+    // BGFXRenderer::setSSAOResolution) -- independent of effectResolution so
+    // ambient occlusion stays sharp while the reflection re-render can scale.
+    float ssaoResolution = 1.0f;
     std::unordered_map<QOpenGLWidget *, std::unique_ptr<BGFXView>> views;
     std::set<uint16_t> viewIds;
 
@@ -1852,6 +1856,15 @@ public:
             effW = uint16_t(std::max(1, int(width * es + 0.5f)));
             effH = uint16_t(std::max(1, int(height * es + 0.5f)));
         }
+        // SSAO resolve resolution is independent of effectScale (its own
+        // Render_SSAOResolution): AO is resolution-sensitive, so it does not
+        // share the reflection scale.
+        ssaoScale = _BGFXLib.ssaoResolution;
+        {
+            float ss = std::min(std::max(ssaoScale, 0.25f), 1.0f);
+            ssaoW = uint16_t(std::max(1, int(width * ss + 0.5f)));
+            ssaoH = uint16_t(std::max(1, int(height * ss + 0.5f)));
+        }
         uint64_t flags = 0;
         if (samples >= 8)
             flags = BGFX_TEXTURE_RT_MSAA_X8;
@@ -2187,9 +2200,12 @@ public:
             // POINT-sampled: refraction/glass reject, volumetric ray-ends and
             // water span all read its exact eye-space depth, which bilinear
             // upscaling would corrupt at silhouettes. The AO resolve targets
-            // (aoTex raw, aoBlurTex blurred) scale to effW/effH and sample
-            // LINEAR, so the half-res AO upsamples smoothly onto the full-res
-            // scene in the apply pass.
+            // (aoTex raw, aoBlurTex blurred) scale to ssaoW/ssaoH — their OWN
+            // Render_SSAOResolution, independent of the reflection scale
+            // (effW/effH) — and sample LINEAR, so a reduced-res AO upsamples
+            // smoothly. SSAO is resolution-sensitive (contact/crevice detail),
+            // so it defaults to full-res rather than sharing effectResolution,
+            // whose reduction produced visibly blocky occlusion.
             aoNormalZ = bgfx::createTexture2D(width, height, false, 1,
                 bgfx::TextureFormat::RGBA16F, aoFlags);
             aoDepth = bgfx::createTexture2D(width, height, false, 1,
@@ -2197,9 +2213,9 @@ public:
                 aoFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
             const uint64_t aoResFlags = BGFX_TEXTURE_RT
                 | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;  // linear
-            aoTex = bgfx::createTexture2D(effW, effH, false, 1,
+            aoTex = bgfx::createTexture2D(ssaoW, ssaoH, false, 1,
                 bgfx::TextureFormat::R8, aoResFlags);
-            aoBlurTex = bgfx::createTexture2D(effW, effH, false, 1,
+            aoBlurTex = bgfx::createTexture2D(ssaoW, ssaoH, false, 1,
                 bgfx::TextureFormat::R8, aoResFlags);
             bgfx::TextureHandle preatt[2] = {aoNormalZ, aoDepth};
             aoPrepassFbo = bgfx::createFrameBuffer(2, preatt, false);
@@ -2243,16 +2259,21 @@ public:
                                              bgfx::UniformType::Vec4,
                                              kAOSamples);
             // 4x4 tiled random rotation vectors (xy packed *0.5+0.5),
-            // fixed values so frames are deterministic.
+            // fixed values so frames are deterministic. The .z channel packs a
+            // 4x4 Bayer dither (0..255): the gen pass uses it to jitter the
+            // per-pixel sample radius, so neighbouring pixels sample at
+            // different distances and the 4x4 blur (one Bayer tile) averages
+            // all 16 sub-radii — decorrelating the RADIAL occlusion banding
+            // that the azimuthal-only rotation leaves behind.
             static const uint8_t noise[64] = {
-                0xa2, 0x05, 0x00, 0xff, 0x11, 0xc0, 0x00, 0xff,
-                0xee, 0xc0, 0x00, 0xff, 0x25, 0xd9, 0x00, 0xff,
-                0x27, 0x23, 0x00, 0xff, 0x63, 0x03, 0x00, 0xff,
-                0x20, 0xd4, 0x00, 0xff, 0x2a, 0xde, 0x00, 0xff,
-                0x90, 0xfe, 0x00, 0xff, 0x9b, 0xfc, 0x00, 0xff,
-                0xae, 0x09, 0x00, 0xff, 0xef, 0xbe, 0x00, 0xff,
-                0xd8, 0x23, 0x00, 0xff, 0x3a, 0x15, 0x00, 0xff,
-                0x00, 0x87, 0x00, 0xff, 0xe8, 0xc9, 0x00, 0xff,
+                0xa2, 0x05, 0x00, 0xff, 0x11, 0xc0, 0x88, 0xff,
+                0xee, 0xc0, 0x22, 0xff, 0x25, 0xd9, 0xaa, 0xff,
+                0x27, 0x23, 0xcc, 0xff, 0x63, 0x03, 0x44, 0xff,
+                0x20, 0xd4, 0xee, 0xff, 0x2a, 0xde, 0x66, 0xff,
+                0x90, 0xfe, 0x33, 0xff, 0x9b, 0xfc, 0xbb, 0xff,
+                0xae, 0x09, 0x11, 0xff, 0xef, 0xbe, 0x99, 0xff,
+                0xd8, 0x23, 0xff, 0xff, 0x3a, 0x15, 0x77, 0xff,
+                0x00, 0x87, 0xdd, 0xff, 0xe8, 0xc9, 0x55, 0xff,
             };
             aoNoiseTex = bgfx::createTexture2D(4, 4, false, 1,
                 bgfx::TextureFormat::RGBA8,
@@ -3751,7 +3772,11 @@ public:
             {-0.768430f, 0.171215f, 0.053107f, 0.0f},
             {0.429038f, 0.201413f, 0.754499f, 0.0f},
         };
-        float params[4] = {radius, intensity, 0.02f * radius, 0.0f};
+        // .w = occlusion contrast/power: concentrates the darkening near real
+        // contacts (visible width scales with occlusion depth) so weak, distant
+        // occlusion does not wash a wide low-contrast band up open faces.
+        const float aoPower = 2.5f;
+        float params[4] = {radius, intensity, 0.02f * radius, aoPower};
         bgfx::setUniform(u_aoParams, params);
         bgfx::setUniform(u_aoKernel, kernel, kAOSamples);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
@@ -5036,6 +5061,11 @@ public:
     float effectScale = 1.0f;
     uint16_t effW = 0;
     uint16_t effH = 0;
+    // SSAO resolve resolution (Render_SSAOResolution), independent of
+    // effectScale; the AO gen/blur targets and view rects use it.
+    float ssaoScale = 1.0f;
+    uint16_t ssaoW = 0;
+    uint16_t ssaoH = 0;
     bgfx::FrameBufferHandle bgfxFbo = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle bgfxColor = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle bgfxDepth = BGFX_INVALID_HANDLE;
@@ -5409,6 +5439,7 @@ public:
                 || _BGFXLib.standaloneHeight != view->height
                 || _BGFXLib.standaloneSamples != view->msaaSamples
                 || _BGFXLib.effectResolution != view->effectScale
+                || _BGFXLib.ssaoResolution != view->ssaoScale
                 || warmupReinit) {
             if (_BGFXLib.standaloneWidth != view->width
                     || _BGFXLib.standaloneHeight != view->height)
@@ -5424,6 +5455,7 @@ public:
         if (widget->width() != int(view->width)
                 || widget->height() != int(view->height)
                 || _BGFXLib.effectResolution != view->effectScale
+                || _BGFXLib.ssaoResolution != view->ssaoScale
                 || (_BGFXLib.desktopSamples >= 0
                     && _BGFXLib.desktopSamples != view->msaaSamples))
             view->init();
@@ -5479,6 +5511,7 @@ public:
             snap.selconf = selconf;
             snap.autozoomScale = autozoomScale;
             snap.effectResolution = _BGFXLib.effectResolution;
+            snap.ssaoResolution = _BGFXLib.ssaoResolution;
             snap.hatchRGBA = hatchRGBA;
             snap.hatchWidth = hatchWidth;
             snap.hatchHeight = hatchHeight;
@@ -6797,14 +6830,16 @@ public:
                         : uint16_t(BGFX_CLEAR_NONE),
                     clearColor, 1.0f, 0);
             }
-            // The SSAO generate/blur passes render into the reduced-resolution
-            // aoTex/aoBlurTex (Render_EffectResolution); their apply pass reads
-            // the blurred AO back at full res. Every other view is full-res.
+            // The SSAO generate/blur passes render into aoTex/aoBlurTex at
+            // their own Render_SSAOResolution (ssaoW/ssaoH, default full-res
+            // and independent of the reflection scale); their apply pass reads
+            // the blurred AO back at full res. The reduced-resolution
+            // reflection re-render sets its own rect in its own branch above.
             bool aoResolveView = i == BGFXView::ViewAOGen
                 || i == BGFXView::ViewAOBlur;
             bgfx::setViewRect(id, 0, 0,
-                aoResolveView ? view->effW : width,
-                aoResolveView ? view->effH : height);
+                aoResolveView ? view->ssaoW : width,
+                aoResolveView ? view->ssaoH : height);
             // The background quad, the OIT composite triangle and the
             // fullscreen AO blur/apply triangles are submitted in clip
             // space; the AO generation pass keeps the scene projection
@@ -8680,6 +8715,11 @@ void BGFXRenderer::setMSAASamples(int samples)
 void BGFXRenderer::setEffectResolution(float scale)
 {
     _BGFXLib.effectResolution = std::min(std::max(scale, 0.25f), 1.0f);
+}
+
+void BGFXRenderer::setSSAOResolution(float scale)
+{
+    _BGFXLib.ssaoResolution = std::min(std::max(scale, 0.25f), 1.0f);
 }
 
 //////////////////////////////////////////////////////////////////////

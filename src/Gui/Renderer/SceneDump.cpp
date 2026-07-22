@@ -37,7 +37,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // v2: selection/highlight feeds appended (v1 files still load).
 // v11: per-edge/vertex part tables in the mesh + pickRadius in the
 // presel/sel config, for browser-side edge/vertex picking.
-const uint32_t kVersion = 11;
+const uint32_t kVersion = 12;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -650,6 +650,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
 
     w.f(snap.autozoomScale);
     w.f(snap.effectResolution);
+    w.f(snap.ssaoResolution);
 
     w.i32(snap.hatchWidth);
     w.i32(snap.hatchHeight);
@@ -770,6 +771,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
 
     snap.autozoomScale = r.f();
     snap.effectResolution = version >= 9 ? r.f() : 1.0f;
+    snap.ssaoResolution = version >= 12 ? r.f() : 1.0f;
 
     snap.hatchWidth = r.i32();
     snap.hatchHeight = r.i32();

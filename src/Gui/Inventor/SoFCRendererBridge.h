@@ -115,6 +115,7 @@ GuiExport float translateAutoZoomScale(SoState * state);
 /// Resolution scale of the expensive screen-space effect passes (reflection
 /// re-render, SSAO resolve) from Render_EffectResolution / RenderParams.
 GuiExport float translateEffectResolution(View3DInventor * view);
+GuiExport float translateSSAOResolution(View3DInventor * view);
 
 } // namespace RendererBridge
 } // namespace Gui

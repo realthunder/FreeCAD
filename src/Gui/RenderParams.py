@@ -70,6 +70,14 @@ Params = [
         "Zero means automatic (a fraction of the scene size)."),
     ParamFloat('SSAOIntensity',  1.0, title='Intensity',
         doc="Ambient occlusion darkening strength."),
+    ParamFloat('SSAOResolution',  1.0, title='AO resolution',
+        doc="Resolution scale (0.25-1.0) of the ambient occlusion resolve\n"
+        "targets relative to the main view resolution, independent of the\n"
+        "shared Effect resolution. Ambient occlusion is resolution-sensitive\n"
+        "(contact and crevice detail), so it has its own control; the shared\n"
+        "Effect resolution drives only the costlier reflection re-render.\n"
+        "1.0 renders the occlusion at full resolution; lower trades AO\n"
+        "sharpness for speed."),
     ParamBool('PBR',  False, title='Physically based shading',
         doc="Enable physically based shading with image based lighting of\n"
         "the experimental render engine (render cache mode 3 with a\n"

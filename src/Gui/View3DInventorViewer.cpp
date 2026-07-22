@@ -3851,6 +3851,8 @@ void View3DInventorViewer::initRenderProperties()
             RenderParams::docSSAORadius(), RenderParams::getSSAORadius());
     _renderParam<App::PropertyFloat>(view, "SSAOIntensity",
             RenderParams::docSSAOIntensity(), RenderParams::getSSAOIntensity());
+    _renderParam<App::PropertyFloat>(view, "SSAOResolution",
+            RenderParams::docSSAOResolution(), RenderParams::getSSAOResolution());
     _renderParam<App::PropertyBool>(view, "PBR",
             RenderParams::docPBR(), RenderParams::getPBR());
     static const App::PropertyFloatConstraint::Constraints _unit_cstr(0.0,1.0,0.1);

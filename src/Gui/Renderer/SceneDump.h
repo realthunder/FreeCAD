@@ -64,6 +64,7 @@ struct SceneSnapshot {
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect
     /// passes (reflection re-render, SSAO resolve); 1.0 = full resolution.
     float effectResolution = 1.0f;
+    float ssaoResolution = 1.0f;
 
     /// Preselection (hover) and selection highlight styling from ViewParams
     /// (v10). The standalone/WASM viewer builds both highlights locally (no

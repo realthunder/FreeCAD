@@ -157,6 +157,24 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter SSAOResolution
+    ///
+    /// Resolution scale (0.25-1.0) of the ambient occlusion resolve
+    /// targets relative to the main view resolution, independent of the
+    /// shared Effect resolution. Ambient occlusion is resolution-sensitive
+    /// (contact and crevice detail), so it has its own control; the shared
+    /// Effect resolution drives only the costlier reflection re-render.
+    /// 1.0 renders the occlusion at full resolution; lower trades AO
+    /// sharpness for speed.
+    static const double & getSSAOResolution();
+    static const double & defaultSSAOResolution();
+    static void removeSSAOResolution();
+    static void setSSAOResolution(const double &v);
+    static const char *docSSAOResolution();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter PBR
     ///
     /// Enable physically based shading with image based lighting of

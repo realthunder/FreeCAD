@@ -1205,6 +1205,14 @@ RendererBridge::translateEffectResolution(View3DInventor * view)
 }
 
 float
+RendererBridge::translateSSAOResolution(View3DInventor * view)
+{
+    return float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "SSAOResolution",
+            RenderParams::getSSAOResolution()));
+}
+
+float
 RendererBridge::translateAutoZoomScale(SoState * state)
 {
   // SoAutoZoomTranslation::getScaleFactor with a node scaleFactor of 1;
