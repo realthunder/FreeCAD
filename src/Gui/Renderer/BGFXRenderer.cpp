@@ -1340,9 +1340,10 @@ public:
         ViewAODepthMip2,    // depth MIP chain): each level halves the
         ViewAODepthMip3,    // previous — fullscreen weighted-downsample
         ViewAODepthMip4,    // passes reading the prepass / prior level;
-                            // far horizon taps of the GTAO pass read the
-                            // coarse levels (long-range occlusion without
-                            // sparse full-res taps)
+        ViewAODepthMip5,    // far horizon taps of the GTAO pass read the
+        ViewAODepthMip6,    // coarse levels (long-range occlusion without
+                            // sparse full-res taps, cache-coherent out to
+                            // the pixel radius cap)
         ViewWaterFront,     // nearest front-face depths of water body
                             // draws (prepass shader family, own
                             // framebuffer): per-pixel entry of the
@@ -1491,8 +1492,8 @@ public:
         textures.clear();
         // SSAO resources: framebuffers before the textures they reference.
         for (auto fb : {&aoPrepassFbo, &aoGenFbo, &aoBlurFbo,
-                        &aoMipFbo[0], &aoMipFbo[1],
-                        &aoMipFbo[2], &aoMipFbo[3]}) {
+                        &aoMipFbo[0], &aoMipFbo[1], &aoMipFbo[2],
+                        &aoMipFbo[3], &aoMipFbo[4], &aoMipFbo[5]}) {
             if (bgfx::isValid(*fb)) {
                 bgfx::destroy(*fb);
                 *fb = BGFX_INVALID_HANDLE;
@@ -1500,7 +1501,8 @@ public:
         }
         for (auto tex : {&aoNormalZ, &aoDepth, &aoTex, &aoBlurTex,
                          &aoNoiseTex, &aoMipTex[0], &aoMipTex[1],
-                         &aoMipTex[2], &aoMipTex[3]}) {
+                         &aoMipTex[2], &aoMipTex[3], &aoMipTex[4],
+                         &aoMipTex[5]}) {
             if (bgfx::isValid(*tex)) {
                 bgfx::destroy(*tex);
                 *tex = BGFX_INVALID_HANDLE;
@@ -1607,8 +1609,8 @@ public:
         }
         m_envBuilt = false;
         for (auto uni : {&s_texNormalZ, &s_texAONoise, &s_texAO,
-                         &s_texAOMip[0], &s_texAOMip[1],
-                         &s_texAOMip[2], &s_texAOMip[3],
+                         &s_texAOMip[0], &s_texAOMip[1], &s_texAOMip[2],
+                         &s_texAOMip[3], &s_texAOMip[4], &s_texAOMip[5],
                          &u_aoParams, &u_aoParams2, &u_aoKernel,
                          &s_texEnv, &u_pbrParams, &u_envSH,
                          &s_texBump, &u_bumpParams,
@@ -2277,7 +2279,8 @@ public:
                     aoMipCount = 0;
             }
             static const char *const mipSamplerNames[kAOMipLevels] = {
-                "s_texAOMip1", "s_texAOMip2", "s_texAOMip3", "s_texAOMip4"};
+                "s_texAOMip1", "s_texAOMip2", "s_texAOMip3",
+                "s_texAOMip4", "s_texAOMip5", "s_texAOMip6"};
             for (int m = 0; m < kAOMipLevels; ++m)
                 s_texAOMip[m] = bgfx::createUniform(
                     mipSamplerNames[m], bgfx::UniformType::Sampler);
@@ -5276,20 +5279,24 @@ public:
     bgfx::FrameBufferHandle aoPrepassFbo = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle aoGenFbo = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle aoBlurFbo = BGFX_INVALID_HANDLE;
-    // GTAO prefiltered depth pyramid (XeGTAO depth MIP chain): four
+    // GTAO prefiltered depth pyramid (XeGTAO depth MIP chain): six
     // successively halved single-channel viewZ levels below full res,
     // each its own texture+framebuffer (rendering into mip N of one
-    // texture while sampling mip N-1 is a GL feedback hazard).
-    static constexpr int kAOMipLevels = 4;
+    // texture while sampling mip N-1 is a GL feedback hazard). Six
+    // levels keep the per-tap level pick (one level per octave beyond
+    // ~10px) cache-coherent out to the pixel radius cap — with fewer,
+    // taps past the coarsest level stride sparsely through it and the
+    // AO pass turns memory-bound as the camera zooms in.
+    static constexpr int kAOMipLevels = 6;
     bgfx::TextureHandle aoMipTex[kAOMipLevels] = {
-        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE,
-        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
+        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE,
+        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
     bgfx::FrameBufferHandle aoMipFbo[kAOMipLevels] = {
-        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE,
-        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
+        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE,
+        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
     bgfx::UniformHandle s_texAOMip[kAOMipLevels] = {
-        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE,
-        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
+        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE,
+        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE};
     bgfx::ProgramHandle m_progGtaoDepth = BGFX_INVALID_HANDLE;
     int aoMipCount = 0;   // 0 = no pyramid (R32F/R16F not renderable)
     bgfx::ProgramHandle m_progPrepass = BGFX_INVALID_HANDLE;
@@ -6986,7 +6993,7 @@ public:
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     0x00000000u, 1.0f, 0);
             } else if (i >= BGFXView::ViewAODepthMip1
-                       && i <= BGFXView::ViewAODepthMip4) {
+                       && i <= BGFXView::ViewAODepthMip6) {
                 // GTAO depth pyramid downsamples: each level renders a
                 // clip-space fullscreen triangle into its own half-stepped
                 // single-channel target (no-op views otherwise).

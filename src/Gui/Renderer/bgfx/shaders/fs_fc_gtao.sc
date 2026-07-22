@@ -37,6 +37,8 @@ SAMPLER2D(s_texAOMip1, 2);
 SAMPLER2D(s_texAOMip2, 3);
 SAMPLER2D(s_texAOMip3, 4);
 SAMPLER2D(s_texAOMip4, 5);
+SAMPLER2D(s_texAOMip5, 6);
+SAMPLER2D(s_texAOMip6, 7);
 
 uniform vec4 u_aoParams;
 // x = slice count, y = steps per slice side (Render_AOSlices/Steps,
@@ -106,15 +108,18 @@ void main()
 		uvRadius /= viewZ;
 	// Cap the marched extent in PIXELS. With the depth pyramid the far
 	// taps read coarse prefiltered levels, so a long radius stays both
-	// cheap and dense-enough — only cap at the screen diagonal (beyond
-	// it every tap is off-screen anyway). Without the pyramid (R32F/R16F
-	// not renderable) keep the old hard cap: zoomed in, the world radius
-	// can project to thousands of pixels and the fixed step count then
-	// samples hundreds of pixels apart — smeared, low-res-looking
-	// shading.
+	// cheap and dense-enough — cap at 1024 (or the screen diagonal if
+	// smaller): the level pick saturates one octave past the coarsest
+	// level, so an unbounded radius would stride ever more sparsely
+	// through it and the pass turns memory-bound as the camera zooms
+	// in. Without the pyramid (R32F/R16F not renderable) keep the old
+	// hard cap: zoomed in, the world radius can project to thousands of
+	// pixels and the fixed step count then samples hundreds of pixels
+	// apart — smeared, low-res-looking shading.
 	float mipCount = u_aoParams2.z;
 	float radiusPx = max(length(uvRadius * u_viewRect.zw), 1.0e-4);
-	float maxRadiusPx = mipCount > 0.5 ? length(u_viewRect.zw) : 256.0;
+	float maxRadiusPx = mipCount > 0.5
+	    ? min(length(u_viewRect.zw), 1024.0) : 256.0;
 	if (radiusPx > maxRadiusPx) {
 		uvRadius *= maxRadiusPx / radiusPx;
 		radiusPx = maxRadiusPx;
@@ -246,8 +251,12 @@ void main()
 						sviewZ = texture2D(s_texAOMip2, suv).x;
 					else if (mip < 3.5)
 						sviewZ = texture2D(s_texAOMip3, suv).x;
-					else
+					else if (mip < 4.5)
 						sviewZ = texture2D(s_texAOMip4, suv).x;
+					else if (mip < 5.5)
+						sviewZ = texture2D(s_texAOMip5, suv).x;
+					else
+						sviewZ = texture2D(s_texAOMip6, suv).x;
 					if (sviewZ < -1.0e4)
 						continue;   // background sentinel
 				}
