@@ -679,7 +679,9 @@ static const int kNaviButtonsOverlayId = 6;  // OverlayNaviButtons
 enum NaviButtonAction {
     NaviBtnNone, NaviBtnTiltUp, NaviBtnTiltDown,
     NaviBtnOrbitLeft, NaviBtnOrbitRight,
-    NaviBtnRollLeft, NaviBtnRollRight
+    NaviBtnRollLeft, NaviBtnRollRight,
+    NaviBtnBackside,  // the corner dot: flip 180° to the opposite side
+    NaviBtnMenu   // the view-menu icon (hover highlight only for now)
 };
 
 /// Map a click on the NaviCube button overlay (the tilt/orbit arrows
@@ -728,6 +730,11 @@ static NaviButtonAction pickNaviButton(float px, float py)
     // annular sector between the cube body and the rim (see
     // NaviCube.cpp createButtonTex TEX_ARROW_LEFT/RIGHT: radius ~1, ~32-72°
     // and its mirror). Angularly disjoint from N/E/W above.
+    // Flip-side dot: the top-right corner (NaviCube.cpp createButtonTex
+    // TEX_DOT_BACKSIDE at design ~(0.9,0.9) -> NDC top-right corner, past the
+    // curved-arrow rim).
+    if (nx > 0.72f && ny > 0.72f)
+        return NaviBtnBackside;
     const float rad = std::sqrt(nx * nx + ny * ny);
     if (rad > 0.72f && rad < 1.10f) {
         const float ang = std::atan2(ny, nx) * 180.0f / bx::kPi;
@@ -736,6 +743,11 @@ static NaviButtonAction pickNaviButton(float px, float py)
         if (ang > 102.0f && ang < 154.0f)
             return NaviBtnRollLeft;     // upper-left curved arrow
     }
+    // View-menu icon: lower-right of the button rect (NaviCube.cpp
+    // createMenuTex translate 12/16,13/16 -> NDC ~(0.5,-0.6)). Approximate
+    // box; disjoint from the |nx|<0.28 south arrow.
+    if (nx > 0.3f && ny < -0.5f)
+        return NaviBtnMenu;
     return NaviBtnNone;
 }
 
@@ -762,6 +774,9 @@ static void applyNaviButton(NaviButtonAction a)
         break;
     case NaviBtnRollRight:
         s_roll += step;
+        break;
+    case NaviBtnBackside:
+        s_yaw += bx::kPi;   // flip 180° to view the opposite side
         break;
     default:
         break;
@@ -790,6 +805,7 @@ static int naviButtonDrawIndex(NaviButtonAction a)
     case NaviBtnOrbitLeft:  return 3;   // TEX_ARROW_WEST
     case NaviBtnRollLeft:   return 4;   // TEX_ARROW_LEFT  (curved)
     case NaviBtnRollRight:  return 5;   // TEX_ARROW_RIGHT (curved)
+    case NaviBtnBackside:   return 6;   // TEX_DOT_BACKSIDE (corner dot)
     default:                return -1;
     }
 }
@@ -809,7 +825,14 @@ static bool updateButtonHover(float px, float py)
             break;
         }
     }
-    int di = btn ? naviButtonDrawIndex(pickNaviButton(px, py)) : -1;
+    int di = -1;
+    if (btn && !btn->draws.empty()) {
+        const NaviButtonAction act = pickNaviButton(px, py);
+        // The view-menu icon is the last button draw (buildCoinButtons adds it
+        // after the arrows and the — here inactive — hilite switch).
+        di = act == NaviBtnMenu ? int(btn->draws.size()) - 1
+                                : naviButtonDrawIndex(act);
+    }
     if (di < 0 || size_t(di) >= btn->draws.size()) {
         clearButtonHover();
         return false;
