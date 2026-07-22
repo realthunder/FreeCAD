@@ -11,7 +11,7 @@ set -e
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../../../.." && pwd)
-shaderc=${1:-$repo/build/conda-debug/src/3rdParty/bgfx/shaderc}
+shaderc=${1:-$repo/build/conda-debug/src/3rdParty/bgfx/cmake/bgfx/shaderc}
 inc=$repo/src/3rdParty/bgfx/bgfx/src
 out=$here/../assets/shaders
 
