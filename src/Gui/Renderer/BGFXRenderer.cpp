@@ -1109,7 +1109,9 @@ static void setDrawTransform(const Render::DrawCall &draw,
                              float autozoomScale,
                              const float *viewMatrix,
                              const float *projMatrix,
-                             float viewportHeight)
+                             float viewportHeight,
+                             const Render::OverlayAnchor *overlayAnchor = nullptr,
+                             float overlayRectHeight = 0.f)
 {
     const auto &autozoom = draw.material.autozoom;
     if (autozoom.empty()) {
@@ -1156,15 +1158,63 @@ static void setDrawTransform(const Render::DrawCall &draw,
             // L*P[5]/d * (H/2) pixels (perspective) or L*P[5]*(H/2) (ortho), so
             // to render kBillboard screen pixels per native glyph pixel:
             //   sf = kBillboard * 2 / (P[5]*H)   [* d for perspective]
-            const bool persp = std::abs(P[15]) < 1e-6f;
-            const float ax = m[12], ay = m[13], az = m[14];
-            const float zview = ax*V[2] + ay*V[6] + az*V[10] + V[14];
-            const float depth = -zview;  // in front of the camera => positive
-            const float p5 = std::abs(P[5]) > 1e-8f ? P[5] : 1.0f;
-            const float kBillboard = 1.35f;  // on-screen px per native glyph px
-            float sfb = kBillboard * 2.0f / (p5 * viewportHeight);
-            if (persp)
-                sfb *= (depth > 1e-4f ? depth : 1e-4f);
+            float sfb;
+            if (overlayAnchor) {
+                // Overlay text (corner axis cross, NaviCube axis labels): the
+                // draw is submitted into the overlay's own mini view, so P/H
+                // above (the main scene projection + full viewport) do not
+                // apply. The orientation substitution still uses the main
+                // viewMatrix — correct, because orientFromScene builds the
+                // overlay view from that same matrix, so the two cancel and the
+                // label faces the viewer. Only the SIZE needs the overlay's own
+                // projection + the label's depth in it.
+                //
+                // Size = screen-CONSTANT pixels (on-screen height ~= N*kGlyph
+                // for an N-pixel glyph), identical in every overlay regardless
+                // of the overlay's own pixel size — so the small axis-cross and
+                // the larger NaviCube render their labels at the same absolute
+                // on-screen size (kGlyph=1 => the label's own font pixel size).
+                // Depth-corrected against the label's ACTUAL depth in the
+                // mini-perspective (not the fixed camera distance), so the size
+                // stays constant as the label orbits — the fixed-distance form
+                // let near-side labels swell.
+                const float H = overlayRectHeight > 0.f ? overlayRectHeight
+                                                        : viewportHeight;
+                float p5o;
+                bool ovPersp;
+                if (overlayAnchor->fovDeg > 0.f) {
+                    p5o = 1.0f / std::tan(overlayAnchor->fovDeg
+                                          * float(M_PI) / 360.0f);
+                    ovPersp = true;
+                }
+                else {
+                    p5o = 2.0f / std::max(overlayAnchor->orthoHeight, 1e-4f);
+                    ovPersp = false;
+                }
+                const float kOverlayGlyph = 1.0f; // on-screen px per glyph px
+                sfb = kOverlayGlyph * 2.0f / (p5o * H);
+                if (ovPersp) {
+                    // Label depth in the overlay view: its 3x3 is the scene view
+                    // rotation (orientFromScene) and its z translation is
+                    // -cameraDistance, so zview = a.(V z-basis) - cameraDistance.
+                    const float ax = m[12], ay = m[13], az = m[14];
+                    const float zov = ax*V[2] + ay*V[6] + az*V[10]
+                                    - overlayAnchor->cameraDistance;
+                    const float depth = -zov;
+                    sfb *= (depth > 1e-4f ? depth : 1e-4f);
+                }
+            }
+            else {
+                const bool persp = std::abs(P[15]) < 1e-6f;
+                const float ax = m[12], ay = m[13], az = m[14];
+                const float zview = ax*V[2] + ay*V[6] + az*V[10] + V[14];
+                const float depth = -zview;  // in front of the camera => positive
+                const float p5 = std::abs(P[5]) > 1e-8f ? P[5] : 1.0f;
+                const float kBillboard = 1.35f;  // on-screen px per native glyph px
+                sfb = kBillboard * 2.0f / (p5 * viewportHeight);
+                if (persp)
+                    sfb *= (depth > 1e-4f ? depth : 1e-4f);
+            }
 
             for (int k = 0; k < 3; ++k) {
                 m[0 + k] = right[k] * sfb;
@@ -4757,7 +4807,9 @@ public:
             bgfx::setUniform(u_linePattern, patParams);
         }
 
-        setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
+        setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height,
+                         overlayView >= 0 ? overlayAnchor : nullptr,
+                         overlayRectHeight);
         if (thickline) {
             // One quad per line segment; a partial (per-edge) index range
             // maps 1:1 onto an instance range (two indices per segment).
@@ -5262,6 +5314,11 @@ public:
     int warmup = 0;
     bool ontop = false;   // route submits to the highlight pass
     int overlayView = -1; // >= 0: route submits into this overlay view
+    // Anchor + rect pixel height of the overlay currently being submitted (set
+    // alongside overlayView); billboard text sizes itself against the overlay's
+    // own mini projection + rect instead of the main scene view.
+    const Render::OverlayAnchor *overlayAnchor = nullptr;
+    float overlayRectHeight = 0.f;
     int msaaSamples = 0;  // sample count the current targets were built with
     // Per-frame world-to-screen scale consumed by autozoom draws
     // (Renderer::setAutoZoomScale).
@@ -7686,11 +7743,34 @@ public:
                     break;
                 }
                 view->overlayView = int(BGFXView::ViewOverlay0) + slot;
+                // Billboard text in an overlay with its OWN mini camera (corner
+                // axis cross, NaviCube axis labels) must size against that
+                // camera. sceneCamera overlays (editing / dimension feeds) draw
+                // with the main view+proj, so their billboard text keeps the
+                // main-scene sizing (overlayAnchor stays null); pixelSpace
+                // overlays carry no billboard text.
+                const Render::OverlayAnchor &anchor = ov.second.anchor;
+                if (!anchor.sceneCamera && !anchor.pixelSpace) {
+                    view->overlayAnchor = &anchor;
+                    // Rect pixel height the overlay renders into (mirrors the
+                    // view-config loop), so fixed-pixel glyph sizing lands.
+                    view->overlayRectHeight =
+                        anchor.corner == Render::OverlayAnchor::FullViewport
+                        ? float(height)
+                        : std::max(1.0f, anchor.sizeFraction
+                                         * float(std::min(width, height)));
+                }
+                else {
+                    view->overlayAnchor = nullptr;
+                    view->overlayRectHeight = 0.f;
+                }
                 for (const auto &draw : ov.second.draws)
                     view->submit(draw, viewMat);
                 ++slot;
             }
             view->overlayView = -1;
+            view->overlayAnchor = nullptr;
+            view->overlayRectHeight = 0.f;
         }
 
         if (oitActive)

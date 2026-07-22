@@ -141,6 +141,7 @@
 #include "NavigationStyle.h"
 #include "Selection.h"
 #include "SoAxisCrossKit.h"
+#include "SoTextImage.h"
 #include "SoFCBackgroundGradient.h"
 #include "SoFCBoundingBox.h"
 #include "SoFCDB.h"
@@ -485,9 +486,6 @@ struct View3DInventorViewer::Private
     };
     OverlayCapture foregroundCapture;
     OverlayCapture axisCrossCapture;
-    // Shared counter-rotation keeping the axis-cross letter strokes
-    // screen-aligned (set to the camera orientation each frame).
-    CoinPtr<SoRotation> axisLetterRotation;
     OverlayCapture graphicsItemsCapture;
     OverlayCapture fpsTextCapture;
     OverlayCapture naviCubeCapture;
@@ -560,47 +558,16 @@ struct View3DInventorViewer::Private
     static void onDragFinish(void *data, SoDragger *d);
 };
 
-// Line-stroke letter shapes for the axis-cross labels, replacing the
-// XPM letter pixmaps of drawAxisCross(): each letter is a few 2px line
-// segments in its local xy plane, centered at the origin. Crisper than
-// rescaled glyph bitmaps and needs no texture.
-static SoSeparator *createAxisLetterGraph(int axis)
-{
-    constexpr float s = 0.11F; // letter half size
-    static const SbVec3f xPts[] = {
-        {-s, -s, 0}, {s, s, 0}, {-s, s, 0}, {s, -s, 0}};
-    static const int32_t xIdx[] = {0, 1, -1, 2, 3, -1};
-    static const SbVec3f yPts[] = {
-        {-s, s, 0}, {0, 0, 0}, {s, s, 0}, {0, -s, 0}};
-    static const int32_t yIdx[] = {0, 1, -1, 2, 1, -1, 1, 3, -1};
-    static const SbVec3f zPts[] = {
-        {-s, s, 0}, {s, s, 0}, {-s, -s, 0}, {s, -s, 0}};
-    static const int32_t zIdx[] = {0, 1, -1, 1, 2, -1, 2, 3, -1};
-    static const SbVec3f *pts[3] = {xPts, yPts, zPts};
-    static const int npts[3] = {4, 4, 4};
-    static const int32_t *idx[3] = {xIdx, yIdx, zIdx};
-    static const int nidx[3] = {6, 9, 9};
-
-    auto sep = new SoSeparator;
-    auto coord = new SoCoordinate3;
-    coord->point.setValues(0, npts[axis], pts[axis]);
-    sep->addChild(coord);
-    auto lines = new SoIndexedLineSet;
-    lines->coordIndex.setValues(0, nidx[axis], idx[axis]);
-    sep->addChild(lines);
-    return sep;
-}
-
 // Coin geometry equivalent of drawArrow()/drawAxisCross(): one arrow along
 // +x (shaft box + crossed head fins), instanced three times with the axis
-// colors and rotations, plus the "X"/"Y"/"Z" labels as line-stroke letters
-// just beyond the arrow tips. The labels share one SoRotation (letterRot)
-// that the viewer sets to the scene camera's orientation each frame,
-// cancelling the anchor's orientFromScene rotation so they stay
-// screen-aligned. Captured through the backend's overlay feed so the
-// corner axis cross renders without the immediate-mode GL path (and in
-// the WASM viewer).
-static SoSeparator *createAxisCrossOverlayGraph(CoinPtr<SoRotation> &letterRot)
+// colors and rotations, plus the "X"/"Y"/"Z" labels as SoTextImage glyph
+// companions just beyond the arrow tips. The labels billboard (backend-side,
+// against the overlay's own mini camera) so they stay screen-aligned under any
+// camera — including the WASM viewer's independent orbit, where the old baked
+// counter-rotation skewed. Captured through the backend's overlay feed so the
+// corner axis cross renders without the immediate-mode GL path (and in the
+// WASM viewer).
+static SoSeparator *createAxisCrossOverlayGraph()
 {
     constexpr float shaftEnd = 1.0F - 1.0F / 3.0F;
     constexpr float s = 0.02F;       // shaft half thickness
@@ -662,25 +629,30 @@ static SoSeparator *createAxisCrossOverlayGraph(CoinPtr<SoRotation> &letterRot)
         root->addChild(sep);
     }
 
-    // Axis labels: black like drawAxisCross()'s letter pixmaps, placed
-    // just beyond each arrow tip, all sharing the screen-alignment
-    // counter-rotation.
-    letterRot = new SoRotation;
+    // Axis labels: black like drawAxisCross()'s letter pixmaps, placed just
+    // beyond each arrow tip. The white glyph atlas is MODULATE-tinted by this
+    // base colour; the SoTextImage companion billboards itself to face the
+    // viewer, so no per-frame counter-rotation is needed.
     auto letterColor = new SoBaseColor;
     letterColor->rgb = SbColor(0.0F, 0.0F, 0.0F);
     root->addChild(letterColor);
-    auto letterStyle = new SoDrawStyle;
-    letterStyle->lineWidth = 2.0F;
-    root->addChild(letterStyle);
+    // Just past each arrow tip (arrows reach 1.0); kept inside the tight
+    // corner frustum so the vertically-centred glyphs do not clip at the edge.
     const SbVec3f tips[3] = {
-        {1.25F, 0, 0}, {0, 1.25F, 0}, {0, 0, 1.25F}};
+        {1.15F, 0, 0}, {0, 1.15F, 0}, {0, 0, 1.15F}};
+    static const char *const letters[3] = {"X", "Y", "Z"};
     for (int i = 0; i < 3; ++i) {
         auto sep = new SoSeparator;
         auto trans = new SoTranslation;
         trans->translation = tips[i];
         sep->addChild(trans);
-        sep->addChild(letterRot);
-        sep->addChild(createAxisLetterGraph(i));
+        Gui::SoTextImage *img = nullptr;
+        SoSeparator *companion = Gui::SoTextImage::createSubGraph(&img);
+        img->string.setValue(letters[i]);
+        img->fontSize = 14.0F;
+        img->justification = Gui::SoTextImage::CENTER;
+        img->vcenter = TRUE;
+        sep->addChild(companion);
         root->addChild(sep);
     }
     return root;
@@ -734,19 +706,10 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
 
     if (owner->axiscrossEnabled) {
         if (!axisCrossCapture.manager)
-            initCapture(axisCrossCapture,
-                        createAxisCrossOverlayGraph(axisLetterRotation));
-        // Screen-align the letter strokes: their shared rotation set to
-        // the camera orientation cancels the anchor's orientFromScene
-        // rotation. (The WASM viewer's local orbit camera can drift from
-        // this desktop-fed rotation — letters skew there until a
-        // billboard hint exists backend-side.)
-        if (auto cam = owner->getSoRenderManager()->getCamera()) {
-            SbRotation orient = cam->orientation.getValue();
-            if (axisLetterRotation
-                && axisLetterRotation->rotation.getValue() != orient)
-                axisLetterRotation->rotation = orient;
-        }
+            initCapture(axisCrossCapture, createAxisCrossOverlayGraph());
+        // The X/Y/Z labels billboard themselves backend-side (against the
+        // overlay's mini camera), so no per-frame counter-rotation is needed;
+        // this also fixes the letters skewing under the WASM viewer's own orbit.
         // Corner mini-perspective anchor matching drawAxisCross(): a square
         // viewport of axiscrossSize percent of the smaller viewport edge in
         // the bottom-right corner, 45 deg FOV, content rotated by the scene
@@ -770,7 +733,6 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         axisCrossCapture.manager.reset();
         axisCrossCapture.applyRoot.reset();
         axisCrossCapture.root.reset();
-        axisLetterRotation.reset();
     }
 
     auto dropCapture = [](OverlayCapture &capture, int id) {
@@ -996,7 +958,6 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
         capture->applyRoot.reset();
         capture->root.reset();
     }
-    axisLetterRotation.reset();
     fpsTexture.reset();
     fpsCoords.reset();
 }

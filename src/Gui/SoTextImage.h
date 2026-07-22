@@ -83,6 +83,11 @@ public:
     SoSFFloat  fontSize;      // pixel size (matches SoText2's on-screen height)
     SoSFEnum   justification; // SoText2::LEFT / RIGHT / CENTER
     SoSFFloat  spacing;       // inter-line spacing multiplier (SoText2::spacing)
+    // When TRUE the glyph block is centred vertically on the origin instead of
+    // growing upward from it (SoText2's default). Used by the overlay axis
+    // labels so a single letter sits ON its axis endpoint rather than above it
+    // (which clipped the top-most label out of the tight corner overlay).
+    SoSFBool   vcenter;
     // Read by SoFCVertexCache (by field name) so the explicit UVs are captured
     // even though no texture unit is enabled on the capture traversal.
     SoSFBool   forceTexCoords;

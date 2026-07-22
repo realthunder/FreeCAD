@@ -63,6 +63,7 @@ SoTextImage::SoTextImage()
     SO_NODE_ADD_FIELD(fontSize, (10.0f));
     SO_NODE_ADD_FIELD(justification, (LEFT));
     SO_NODE_ADD_FIELD(spacing, (1.0f));
+    SO_NODE_ADD_FIELD(vcenter, (FALSE));
     SO_NODE_ADD_FIELD(forceTexCoords, (TRUE));
 
     // Mirror SoText2::Justification so callers can pass its values straight
@@ -215,7 +216,9 @@ void SoTextImage::updateImage()
     const float w = (float)blockW;
     const float h = (float)blockH;
     this->offX = (just == RIGHT) ? -w : (just == CENTER) ? -0.5f * w : 0.f;
-    this->offY = (lines > 1) ? -(float(lines - 1) / (float)lines) * h : 0.f;
+    this->offY = this->vcenter.getValue()
+        ? -0.5f * h  // block centred on the origin
+        : (lines > 1) ? -(float(lines - 1) / (float)lines) * h : 0.f;
 }
 
 void SoTextImage::syncAutoZoom(SoAction* action)
@@ -299,7 +302,8 @@ void SoTextImage::notify(SoNotList* list)
 {
     SoField* f = list->getLastField();
     if (f == &this->string || f == &this->fontName || f == &this->fontSize
-        || f == &this->justification || f == &this->spacing) {
+        || f == &this->justification || f == &this->spacing
+        || f == &this->vcenter) {
         this->imageDirty = true;
         // Re-raster eagerly so the sibling SoTexture2 is current before the next
         // traversal reaches it (texture nodes are visited before this shape).

@@ -59,6 +59,7 @@
 # include <QLineEdit>
 # include <QCheckBox>
 # include <QFontDialog>
+# include <QFontInfo>
 # include <QFontMetrics>
 # include <QGridLayout>
 # include <QCursor>
@@ -85,6 +86,7 @@
 #include "Command.h"
 #include "Action.h"
 #include "MainWindow.h"
+#include "SoTextImage.h"
 #include "View3DInventorViewer.h"
 #include "View3DInventor.h"
 #include "Widgets.h"
@@ -401,7 +403,6 @@ public:
 		float uv = 1.0f;                  // last applied flip factor
 	};
 	CoinPtr<SoSeparator> m_CoinCubeRoot;
-	CoinPtr<SoRotation> m_CoinAxisLetterRot;
 	std::vector<CoinFace> m_CoinFaces;
 	CoinPtr<SoSeparator> m_CoinButtonRoot;
 	std::vector<std::pair<int, SoMaterial*>> m_CoinButtons;
@@ -1208,27 +1209,6 @@ void syncQColor(SoMaterial *mat, const QColor &c)
 // Line-stroke letter shapes for the corner-axes labels, like the viewer's
 // axis-cross overlay letters (custom axis-label texts fall back to X/Y/Z
 // strokes here).
-SoSeparator *createStrokeLetter(int axis, float s)
-{
-	const SbVec3f xPts[] = {{-s,-s,0},{s,s,0},{-s,s,0},{s,-s,0}};
-	static const int32_t xIdx[] = {0,1,-1,2,3,-1};
-	const SbVec3f yPts[] = {{-s,s,0},{0,0,0},{s,s,0},{0,-s,0}};
-	static const int32_t yIdx[] = {0,1,-1,2,1,-1,1,3,-1};
-	const SbVec3f zPts[] = {{-s,s,0},{s,s,0},{-s,-s,0},{s,-s,0}};
-	static const int32_t zIdx[] = {0,1,-1,1,2,-1,2,3,-1};
-	const SbVec3f *pts[3] = {xPts, yPts, zPts};
-	static const int32_t *idx[3] = {xIdx, yIdx, zIdx};
-	static const int nidx[3] = {6, 9, 9};
-
-	auto sep = new SoSeparator;
-	auto coord = new SoCoordinate3;
-	coord->point.setValues(0, 4, pts[axis]);
-	sep->addChild(coord);
-	auto lines = new SoIndexedLineSet;
-	lines->coordIndex.setValues(0, nidx[axis], idx[axis]);
-	sep->addChild(lines);
-	return sep;
-}
 } // namespace
 
 void NaviCubeImplementation::fillCornerAnchor(Render::OverlayAnchor &anchor) const
@@ -1297,18 +1277,37 @@ void NaviCubeImplementation::buildCoinCube()
 		                     float(shared->m_AxisLabelColor.greenF()),
 		                     float(shared->m_AxisLabelColor.blueF()));
 		cs->addChild(lblCol);
-		m_CoinAxisLetterRot = new SoRotation;
+		// X/Y/Z labels as MODULATE-tinted glyph companions that billboard
+		// backend-side to face the viewer (matching the overlay's mini
+		// camera), so they stay upright under any orbit — including the WASM
+		// viewer's own camera, where the old baked counter-rotation skewed.
+		// Rasterised at the user's configured axis-label font (AxisFont /
+		// AxisFontSize) so the ported glyph matches the raw-GL labels and the
+		// preference controls the on-screen size (backend uses one px per glyph
+		// px for overlay text).
+		QFont axisFont = shared->getAxisLabelFont();
+		int axisPx = QFontInfo(axisFont).pixelSize();
+		if (axisPx <= 0)
+			axisPx = QFontMetrics(axisFont).height();
+		SbString axisFamily(axisFont.family().toUtf8().constData());
 		constexpr float a = 1.1f;
 		constexpr float b = -0.2f;
 		const SbVec3f lblPos[3] = {
 			{a + b, -a + b, -a}, {-a + b, a + b, -a}, {-a + b, -a + b, a + b}};
+		static const char *const letters[3] = {"X", "Y", "Z"};
 		for (int i = 0; i < 3; ++i) {
 			auto sep = new SoSeparator;
 			auto trans = new SoTranslation;
 			trans->translation = lblPos[i];
 			sep->addChild(trans);
-			sep->addChild(m_CoinAxisLetterRot);
-			sep->addChild(createStrokeLetter(i, 0.15f));
+			Gui::SoTextImage *img = nullptr;
+			SoSeparator *companion = Gui::SoTextImage::createSubGraph(&img);
+			img->string.setValue(letters[i]);
+			img->fontName.setValue(axisFamily);
+			img->fontSize = float(axisPx);
+			img->justification = Gui::SoTextImage::CENTER;
+			img->vcenter = TRUE;
+			sep->addChild(companion);
 			cs->addChild(sep);
 		}
 		root->addChild(cs);
@@ -1487,7 +1486,6 @@ SoSeparator *NaviCubeImplementation::getOverlayCubeGraph(Render::OverlayAnchor &
 		m_CoinFaces.clear();
 		m_CoinButtons.clear();
 		m_CoinMenuHilite.reset();
-		m_CoinAxisLetterRot.reset();
 		m_CoinGeneration = shared->m_TexGeneration;
 	}
 	if (!m_CoinCubeRoot)
@@ -1498,9 +1496,6 @@ SoSeparator *NaviCubeImplementation::getOverlayCubeGraph(Render::OverlayAnchor &
 	SoCamera *cam = m_View3DInventorViewer->getSoRenderManager()->getCamera();
 	SbRotation orient = cam ? cam->orientation.getValue()
 	                        : SbRotation::identity();
-	if (m_CoinAxisLetterRot
-	    && m_CoinAxisLetterRot->rotation.getValue() != orient)
-		m_CoinAxisLetterRot->rotation = orient;
 
 	// Per-frame sync: hover highlight and the text-readability flip of
 	// drawNaviCube()'s label pass.
