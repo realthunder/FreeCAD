@@ -92,19 +92,48 @@ void main()
 	vec2 uvRadius = 0.5 * radius * vec2(u_proj[0][0], u_proj[1][1]);
 	if (persp)
 		uvRadius /= viewZ;
+	// Cap the marched extent in PIXELS: zoomed in, the world radius can
+	// project to thousands of pixels, and the fixed step count then
+	// samples hundreds of pixels apart — smeared, low-res-looking
+	// shading. Capping keeps the taps dense (contact detail stays crisp
+	// up close) at the cost of very-long-range occlusion; the proper
+	// long-range answer is a prefiltered depth mip chain like XeGTAO's.
+	float radiusPx = max(length(uvRadius * u_viewRect.zw), 1.0e-4);
+	const float maxRadiusPx = 256.0;
+	if (radiusPx > maxRadiusPx) {
+		uvRadius *= maxRadiusPx / radiusPx;
+		radiusPx = maxRadiusPx;
+	}
+	// XeGTAO's pixelTooCloseThreshold (1.3 px) as a minimum step
+	// parameter: sub-pixel samples read the pixel's own quantized depth
+	// and falsely darken flat surfaces.
+	float minS = 1.3 / radiusPx;
 
-	// Spatial noise (deterministic across frames, 4x4 tiled like the
-	// blur): .x rotates the slice fan per pixel, .z (a Bayer ramp)
-	// staggers the step positions.
-	vec3 noiseTexel = texture2D(s_texAONoise,
-	                            v_texcoord0 * u_viewRect.zw / 4.0).xyz;
-	float noiseSlice = noiseTexel.x;
-	float noiseSample = noiseTexel.z;
+	// Per-pixel spatial noise (deterministic across frames): interleaved
+	// gradient noise, decorrelated per use. The 4x4 tiled noise texture
+	// the classic pass uses has only 16 distinct values repeating every
+	// 4 px — around silhouettes the slowly-varying horizon turns that
+	// repetition into concentric ring/moire banding; IGN never tiles, so
+	// the estimation error stays unstructured grain the edge-aware
+	// denoise can average.
+	float noiseSlice = fract(52.9829189 *
+	        fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+	float noiseSample = fract(52.9829189 *
+	        fract(dot(gl_FragCoord.xy + vec2(37.0, 17.0),
+	                  vec2(0.00583715, 0.06711056))));
+
+	// Interaction fast path (u_aoParams.z > 0.5, set by the viewer while
+	// the camera moves): fewer slices/steps so AO stays VISIBLE during
+	// orbit/zoom — noisier, refined automatically once idle restores the
+	// full counts. A uniform, not a target change, so no re-init stall.
+	bool fast = u_aoParams.z > 0.5;
+	int slices = fast ? 2 : GTAO_SLICES;
+	int steps = fast ? 3 : GTAO_STEPS;
 
 	float visibility = 0.0;
-	for (int i = 0; i < GTAO_SLICES; ++i)
+	for (int i = 0; i < slices; ++i)
 	{
-		float phi = (float(i) + noiseSlice) * (3.14159265 / float(GTAO_SLICES));
+		float phi = (float(i) + noiseSlice) * (3.14159265 / float(slices));
 		vec2 omega = vec2(cos(phi), sin(phi));
 
 		// Slice frame: the normal projected into the plane spanned by
@@ -126,23 +155,15 @@ void main()
 		float horizonCos0 = lowHorizonCos0;
 		float horizonCos1 = lowHorizonCos1;
 
-		for (int s = 0; s < GTAO_STEPS; ++s)
+		for (int s = 0; s < steps; ++s)
 		{
 			// Per-slice/step decorrelation (XeGTAO's R1 sequence), and a
 			// squared distribution packing samples toward the center.
 			float stepNoise = fract(noiseSample
-			        + float(i + s * GTAO_STEPS) * GOLDEN);
-			float s01 = (float(s) + stepNoise) / float(GTAO_STEPS);
-			s01 *= s01;
+			        + float(i + s * steps) * GOLDEN);
+			float s01 = (float(s) + stepNoise) / float(steps);
+			s01 = s01 * s01 + minS;   // squared distribution + min offset
 			vec2 off = s01 * omega * uvRadius;
-			// Never sample closer than ~1.3 pixels from the center
-			// (XeGTAO's pixelTooCloseThreshold): sub-pixel samples read
-			// the pixel's own quantized depth, and the near-random
-			// reconstructed direction raises the horizon on perfectly
-			// flat surfaces — a uniform false darkening.
-			float pxLen = length(off * u_viewRect.zw);
-			if (pxLen < 1.3)
-				off *= 1.3 / max(pxLen, 1.0e-4);
 
 			for (int side = 0; side < 2; ++side)
 			{
@@ -181,11 +202,13 @@ void main()
 		               - cos(2.0 * h1 - nAngle)) / 4.0;
 		visibility += projNLen * (iarc0 + iarc1);
 	}
-	visibility /= float(GTAO_SLICES);
+	visibility /= float(slices);
 	// FinalValuePower: mild contrast on the visibility (XeGTAO default
-	// ~2.2), reusing the classic pass's power uniform.
+	// ~2.2), reusing the classic pass's power uniform; then XeGTAO's
+	// 0.03 visibility floor (never fully black).
 	visibility = pow(clamp(visibility, 0.0, 1.0),
 	                 max(u_aoParams.w, 1.0));
+	visibility = max(0.03, visibility);
 
 	float ao = 1.0 - u_aoParams.y * (1.0 - visibility);
 	gl_FragColor = vec4_splat(clamp(ao, 0.0, 1.0));

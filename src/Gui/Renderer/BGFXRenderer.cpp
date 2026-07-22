@@ -1847,6 +1847,8 @@ public:
             : widget->format().samples();
         msaaSamples = samples;
 #endif
+        std::printf("bgfx: view init %ux%u msaa %d\n",
+                    unsigned(width), unsigned(height), msaaSamples);
         // Resolution of the scaled effect targets (reflection re-render, SSAO
         // resolve). effectScale clamps to [0.25, 1]; the targets and their
         // view rects use effW/effH while the main scene / geometry prepass use
@@ -3756,7 +3758,8 @@ public:
     /// R8 target — hemisphere-kernel SSAO (method 0) or XeGTAO-style
     /// horizon-integral GTAO (method 1) — a 4x4 box blur, then the
     /// multiply onto the opaque scene color (dst *= src, alpha kept).
-    void submitAOResolve(float radius, float intensity, int method)
+    void submitAOResolve(float radius, float intensity, int method,
+                         bool fast)
     {
         // Fixed hemisphere kernel (unit radius, z >= 0, clustered near
         // the origin), deterministic across frames like the noise.
@@ -3785,7 +3788,10 @@ public:
         // construction and only takes XeGTAO's mild FinalValuePower (~2.2).
         const bool gtao = method == 1 && bgfx::isValid(m_progGtao);
         const float aoPower = gtao ? 2.2f : 2.5f;
-        float params[4] = {radius, intensity, 0.02f * radius, aoPower};
+        // .z: classic pass depth bias; for GTAO the interaction fast-path
+        // flag (fewer slices/steps while the camera moves).
+        const float paramZ = gtao ? (fast ? 1.0f : 0.0f) : 0.02f * radius;
+        float params[4] = {radius, intensity, paramZ, aoPower};
         bgfx::setUniform(u_aoParams, params);
         if (!gtao)
             bgfx::setUniform(u_aoKernel, kernel, kAOSamples);
@@ -4993,6 +4999,10 @@ public:
             hasFBO = true;
             GLuint colorBuffer = bgfx::getInternal(bgfxColor);
             GLuint depthBuffer = bgfx::getInternal(bgfxDepth);
+            blitColorId = colorBuffer;
+            std::printf("bgfx: blit cache create msaa %d color %u (isTex %d) "
+                        "depth %u\n", msaaSamples, colorBuffer,
+                        int(glIsTexture(colorBuffer)), depthBuffer);
             // The sampleable scene color is a texture (with MSAA it is
             // bgfx's single-sample resolve texture, resolved by the
             // frame-end framebuffer restore), while the write-only depth
@@ -5035,7 +5045,18 @@ public:
                           0, 0, width, height,
                           GL_COLOR_BUFFER_BIT,
                           GL_NEAREST);
-        checkGLError("blit color");
+        if (glGetError() != GL_NO_ERROR) {
+            static int logged = 0;
+            if (logged++ < 4) {
+                GLuint cb = bgfx::getInternal(bgfxColor);
+                std::printf("bgfx: blit color FAILED msaa %d readfbo %u "
+                            "status 0x%x cached-color tex %u (isTex %d) "
+                            "current-internal %u\n",
+                            msaaSamples, fbo,
+                            glCheckFramebufferStatus(GL_READ_FRAMEBUFFER),
+                            blitColorId, int(glIsTexture(blitColorId)), cb);
+            }
+        }
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fboDepth);
         glBlitFramebuffer(0, 0, width, height,
                           0, 0, width, height,
@@ -5386,6 +5407,7 @@ public:
 #else
     GLuint fbo = 0;
     GLuint fboDepth = 0;
+    GLuint blitColorId = 0;
     bool hasFBO = false;
 #endif
 };
@@ -7501,7 +7523,7 @@ public:
         // outline/transparent passes).
         if (ssaoActive)
             view->submitAOResolve(aoRadius, aoconf.intensity,
-                                  aoconf.method);
+                                  aoconf.method, aoconf.fast);
 
         // 1d. Volumetric light shafts: half-res raymarch of the shadow
         // map, bilateral-upsampled and composited onto the opaque scene

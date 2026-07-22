@@ -161,8 +161,16 @@ static void updateQuality()
         return;
     s_degraded = moving;
     Render::AOConfig ao = s_snap.aoconf;
-    if (moving)
-        ao.enabled = false;
+    if (moving) {
+        // GTAO has an in-shader fast path (fewer slices/steps via a
+        // uniform — no target re-init): AO stays visible while the
+        // camera moves and refines once idle. The classic SSAO has no
+        // such path, so it keeps the old drop-AO degradation.
+        if (ao.method == 1)
+            ao.fast = true;
+        else
+            ao.enabled = false;
+    }
     s_renderer->setAOConfig(ao);
 }
 

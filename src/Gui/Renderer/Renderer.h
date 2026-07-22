@@ -298,10 +298,15 @@ struct AOConfig {
     /// Algorithm: 0 = classic hemisphere-kernel SSAO, 1 = GTAO
     /// (ground-truth horizon-based, XeGTAO-style).
     int method = 0;
+    /// Interaction fast path (GTAO only): fewer slices/steps so AO stays
+    /// visible while the camera moves, refined once idle. A per-frame
+    /// hint, not persisted in scene snapshots.
+    bool fast = false;
 
     bool operator==(const AOConfig &o) const {
         return enabled == o.enabled && radius == o.radius
-            && intensity == o.intensity && method == o.method;
+            && intensity == o.intensity && method == o.method
+            && fast == o.fast;
     }
     bool operator!=(const AOConfig &o) const { return !(*this == o); }
 };
