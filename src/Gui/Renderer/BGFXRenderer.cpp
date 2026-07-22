@@ -5418,6 +5418,8 @@ public:
             snap.lightconf = lightconf;
             snap.volconf = volconf;
             snap.waterconf = waterconf;
+            snap.preselconf = preselconf;
+            snap.selconf = selconf;
             snap.autozoomScale = autozoomScale;
             snap.effectResolution = _BGFXLib.effectResolution;
             snap.hatchRGBA = hatchRGBA;
@@ -8227,6 +8229,8 @@ public:
     Render::LightConfig lightconf;
     Render::VolumetricConfig volconf;
     Render::WaterConfig waterconf;
+    Render::PreselHighlightConfig preselconf;
+    Render::PreselHighlightConfig selconf;
     float autozoomScale = 1.0f;
     // CPU copy of the section hatch texture, expanded to RGBA8; the
     // version stamps GPU re-uploads (0 = no image).
@@ -8432,6 +8436,22 @@ void BGFXRenderer::setAOConfig(const AOConfig &config)
 {
     if (pimpl->aoconf != config) {
         pimpl->aoconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setPreselConfig(const PreselHighlightConfig &config)
+{
+    if (pimpl->preselconf != config) {
+        pimpl->preselconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setSelConfig(const PreselHighlightConfig &config)
+{
+    if (pimpl->selconf != config) {
+        pimpl->selconf = config;
         pimpl->sceneDirty = true;
     }
 }

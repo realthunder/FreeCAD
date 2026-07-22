@@ -457,6 +457,30 @@ public:
             }
             dispatchPick(req);
         }
+        // Batched pick: 'B', count byte, then count * (modifiers byte + six
+        // little-endian floats). The viewer batches a burst of client-side
+        // selections into one message; each ray is dispatched in order so the
+        // backend Gui::Selection ends up matching the client, and the queued
+        // GUI-thread picks coalesce into a single scene republish.
+        else if (data.size() >= 2 && data[0] == 'B') {
+            const size_t stride = 1 + 6 * sizeof(float);
+            const uint8_t n = data[1];
+            if (data.size() == 2 + size_t(n) * stride) {
+                size_t off = 2;
+                for (uint8_t i = 0; i < n; ++i) {
+                    ScenePickRequest req;
+                    req.modifiers = data[off];
+                    float v[6];
+                    std::memcpy(v, data.data() + off + 1, sizeof(v));
+                    for (int k = 0; k < 3; ++k) {
+                        req.origin[k] = v[k];
+                        req.dir[k] = v[3 + k];
+                    }
+                    dispatchPick(req);
+                    off += stride;
+                }
+            }
+        }
     }
 #else
     bool start(int) { return false; }

@@ -6,6 +6,7 @@
 // it with an orbit camera (drag = orbit, shift/right-drag = pan,
 // wheel = zoom).
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -13,6 +14,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include <emscripten.h>
 #include <emscripten/fetch.h>
@@ -235,11 +237,18 @@ static void buildCamera(float *viewMtx, float *projMtx)
 //////////////////////////////////////////////////////////////////////
 // Local preselection: CPU raycast against the snapshot meshes
 
+/// Which kind of sub-element a pick resolved to. Mirrors the desktop's
+/// primitive priority (SoFCUnifiedSelection::getPriority): a vertex beats an
+/// edge beats a face when their hit points are essentially coincident.
+enum PickKind { PickNone = 0, PickFace = 1, PickEdge = 2, PickVertex = 3 };
+
 struct PickHit {
     int draw = -1;          ///< index into s_snap.scene
-    int triOffset = -1;     ///< first index of the hit triangle in the
-                            ///< mesh triangle-index buffer
-    float t = 1e30f;        ///< world-space ray parameter
+    PickKind kind = PickNone;
+    int offset = -1;        ///< first index of the hit element in the mesh
+                            ///< index buffer for `kind`: triangle (stride 3),
+                            ///< line segment (stride 2) or point (stride 1)
+    float t = 1e30f;        ///< forward depth of the hit (world units from eye)
 };
 
 /// Ray/AABB slab test in world space.
@@ -296,61 +305,195 @@ static bool rayHitsTriangle(const bx::Vec3 &o, const bx::Vec3 &d,
     return true;
 }
 
-/// Closest triangle-draw hit of the ray through canvas pixel (px, py).
+/// Project a world point to canvas pixels with the current camera, matching
+/// screenRay's frame. Returns false (and leaves outputs unset) when the point
+/// is behind the camera. `depth` is the forward distance from the eye.
+static bool projectToScreen(const bx::Vec3 &p, const CamFrame &f,
+                            const bx::Vec3 &fwd, float th, float aspect,
+                            float &sx, float &sy, float &depth)
+{
+    bx::Vec3 w = bx::sub(p, f.eye);
+    depth = bx::dot(w, fwd);
+    if (depth <= 1e-6f)
+        return false;
+    // screenRay builds the ray from -f.right (rightCam), f.up and fwd, so the
+    // inverse projection uses the same orthonormal basis.
+    const bx::Vec3 rightCam = bx::neg(f.right);
+    const float nx = bx::dot(w, rightCam) / (depth * th * aspect);
+    const float ny = bx::dot(w, f.up) / (depth * th);
+    sx = (nx + 1.0f) * 0.5f * float(s_width);
+    sy = (1.0f - ny) * 0.5f * float(s_height);
+    return true;
+}
+
+/// Squared distance from point (px,py) to the segment (ax,ay)-(bx,by); `u`
+/// gets the closest-point parameter along the segment (clamped to [0,1]).
+static float distToSegment2(float px, float py, float ax, float ay,
+                            float bx_, float by, float &u)
+{
+    const float dx = bx_ - ax, dy = by - ay;
+    const float len2 = dx * dx + dy * dy;
+    u = len2 > 1e-12f ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0.0f;
+    u = std::max(0.0f, std::min(1.0f, u));
+    const float cx = ax + u * dx, cy = ay + u * dy;
+    const float ex = px - cx, ey = py - cy;
+    return ex * ex + ey * ey;
+}
+
+/// Transform a model-space position by dc's model matrix (identity fast path).
+static bx::Vec3 toWorld(const Render::DrawCall &dc, const float *pos)
+{
+    bx::Vec3 p(pos[0], pos[1], pos[2]);
+    return dc.identity ? p : bx::mul(p, dc.model);
+}
+
+/// Nearest face (exact ray/triangle), edge and vertex (screen-space proximity
+/// within the pick radius) of the draw scene at canvas pixel (px, py), then
+/// resolve by the desktop's vertex > edge > face priority — a higher-priority
+/// element wins only when its hit is essentially as near the eye as the
+/// frontmost (SoFCUnifiedSelection::postProcessPickedList).
 static PickHit pickScene(float px, float py)
 {
-    PickHit hit;
     bx::Vec3 orig(bx::InitZero), rdir(bx::InitZero);
     screenRay(px, py, orig, rdir);
+    const CamFrame f = camFrame();
+    const bx::Vec3 fwd = bx::normalize(bx::sub(f.at, f.eye));
+    const float aspect = s_height > 0
+        ? float(s_width) / float(s_height) : 1.0f;
+    const float th = std::tan(0.5f * kFovY * bx::kPi / 180.0f);
+    const float radius = s_snap.preselconf.pickRadius > 0.5f
+        ? s_snap.preselconf.pickRadius : 5.0f;
+    const float rdotf = bx::dot(rdir, fwd);  // ray-param -> forward-depth
+
+    PickHit face, edge, vert;
+    float faceRayT = 1e30f;                  // face nearest, in ray units
+    float edgeDist2 = radius * radius;       // edge/vertex nearest, in px^2
+    float vertDist2 = radius * radius;
+
     for (size_t di = 0; di < s_snap.scene.size(); ++di) {
         const auto &dc = s_snap.scene[di];
-        if (dc.material.type != Render::Material::Triangle || !dc.mesh
-                || !dc.mesh->triangleIndices || !dc.mesh->positions)
+        if (!dc.mesh || !dc.mesh->positions)
             continue;
-        if (dc.bboxMin[0] <= dc.bboxMax[0]
-                && !rayHitsBBox(dc.bboxMin, dc.bboxMax, orig, rdir, hit.t))
-            continue;
-
-        // Cast in model space (transform the ray by the inverse model
-        // matrix); the hit converts back to a world-space t so draws
-        // stay comparable.
-        bx::Vec3 mo = orig, md = rdir;
-        float model[16], inv[16];
-        if (!dc.identity) {
-            std::memcpy(model, dc.model, sizeof(model));
-            bx::mtxInverse(inv, model);
-            mo = bx::mul(orig, inv);        // point transform
-            md = bx::mulXyz0(rdir, inv);    // vector transform
-        }
-
-        const int total = dc.mesh->numTriangleIndices;
-        int start = dc.indexStart;
-        int count = dc.indexCount ? dc.indexCount : total - start;
-        if (start < 0 || start + count > total)
-            continue;
-        const int32_t *idx = dc.mesh->triangleIndices;
         const float *pos = dc.mesh->positions;
-        for (int i = start; i + 2 < start + count; i += 3) {
-            float t;
-            if (!rayHitsTriangle(mo, md, pos + 3 * idx[i],
-                                 pos + 3 * idx[i + 1],
-                                 pos + 3 * idx[i + 2], t))
+
+        if (dc.material.type == Render::Material::Triangle
+                && dc.mesh->triangleIndices) {
+            if (dc.bboxMin[0] <= dc.bboxMax[0]
+                    && !rayHitsBBox(dc.bboxMin, dc.bboxMax, orig, rdir, faceRayT))
                 continue;
-            // Model-space hit point -> world t (handles scaled models).
-            float tw = t;
+            // Cast in model space (transform the ray by the inverse model
+            // matrix); the hit converts back to a world-space ray t so draws
+            // stay comparable.
+            bx::Vec3 mo = orig, md = rdir;
+            float model[16], inv[16];
             if (!dc.identity) {
-                bx::Vec3 mp = bx::add(mo, bx::mul(md, t));
-                bx::Vec3 wp = bx::mul(mp, model);
-                tw = bx::dot(bx::sub(wp, orig), rdir);
+                std::memcpy(model, dc.model, sizeof(model));
+                bx::mtxInverse(inv, model);
+                mo = bx::mul(orig, inv);        // point transform
+                md = bx::mulXyz0(rdir, inv);    // vector transform
             }
-            if (tw > 0.0f && tw < hit.t) {
-                hit.t = tw;
-                hit.draw = int(di);
-                hit.triOffset = i;
+            const int total = dc.mesh->numTriangleIndices;
+            int start = dc.indexStart;
+            int count = dc.indexCount ? dc.indexCount : total - start;
+            if (start < 0 || start + count > total)
+                continue;
+            const int32_t *idx = dc.mesh->triangleIndices;
+            for (int i = start; i + 2 < start + count; i += 3) {
+                float t;
+                if (!rayHitsTriangle(mo, md, pos + 3 * idx[i],
+                                     pos + 3 * idx[i + 1],
+                                     pos + 3 * idx[i + 2], t))
+                    continue;
+                float tw = t;
+                if (!dc.identity) {
+                    bx::Vec3 mp = bx::add(mo, bx::mul(md, t));
+                    bx::Vec3 wp = bx::mul(mp, model);
+                    tw = bx::dot(bx::sub(wp, orig), rdir);
+                }
+                if (tw > 0.0f && tw < faceRayT) {
+                    faceRayT = tw;
+                    face.draw = int(di);
+                    face.kind = PickFace;
+                    face.offset = i;
+                    face.t = tw * rdotf;
+                }
+            }
+        }
+        else if (dc.material.type == Render::Material::Line
+                && dc.mesh->lineIndices) {
+            const int total = dc.mesh->numLineIndices;
+            int start = dc.indexStart;
+            int count = dc.indexCount ? dc.indexCount : total - start;
+            if (start < 0 || start + count > total)
+                continue;
+            const int32_t *idx = dc.mesh->lineIndices;
+            for (int i = start; i + 1 < start + count; i += 2) {
+                float ax, ay, ad, bx2, by, bd;
+                if (!projectToScreen(toWorld(dc, pos + 3 * idx[i]),
+                                     f, fwd, th, aspect, ax, ay, ad))
+                    continue;
+                if (!projectToScreen(toWorld(dc, pos + 3 * idx[i + 1]),
+                                     f, fwd, th, aspect, bx2, by, bd))
+                    continue;
+                float u;
+                float d2 = distToSegment2(px, py, ax, ay, bx2, by, u);
+                if (d2 < edgeDist2) {
+                    edgeDist2 = d2;
+                    edge.draw = int(di);
+                    edge.kind = PickEdge;
+                    edge.offset = i;
+                    // Depth at the screen-space foot u must be interpolated
+                    // perspective-correctly: 1/depth is what varies linearly
+                    // along the projected segment. A plain linear blend of ad,
+                    // bd badly overestimates depth on a foreshortened edge (a
+                    // near-view-aligned ridge), which then reads as "behind"
+                    // the adjacent face and loses the priority test — the edge
+                    // becomes pickable only from outside its faces.
+                    const float invd = (1.0f - u) / ad + u / bd;
+                    edge.t = invd > 1e-9f ? 1.0f / invd : ad;
+                }
+            }
+        }
+        else if (dc.material.type == Render::Material::Point
+                && dc.mesh->pointIndices) {
+            const int total = dc.mesh->numPointIndices;
+            int start = dc.indexStart;
+            int count = dc.indexCount ? dc.indexCount : total - start;
+            if (start < 0 || start + count > total)
+                continue;
+            const int32_t *idx = dc.mesh->pointIndices;
+            for (int i = start; i < start + count; ++i) {
+                float sx, sy, sd;
+                if (!projectToScreen(toWorld(dc, pos + 3 * idx[i]),
+                                     f, fwd, th, aspect, sx, sy, sd))
+                    continue;
+                const float ex = px - sx, ey = py - sy;
+                const float d2 = ex * ex + ey * ey;
+                if (d2 < vertDist2) {
+                    vertDist2 = d2;
+                    vert.draw = int(di);
+                    vert.kind = PickVertex;
+                    vert.offset = i;
+                    vert.t = sd;
+                }
             }
         }
     }
-    return hit;
+
+    // Priority resolution: the frontmost element sets the reference depth; a
+    // vertex, then an edge, is promoted over it when within a small depth
+    // tolerance (coincident), matching the desktop's 0.2-world-unit test
+    // scaled to the scene.
+    float depthMin = 1e30f;
+    if (face.kind) depthMin = std::min(depthMin, face.t);
+    if (edge.kind) depthMin = std::min(depthMin, edge.t);
+    if (vert.kind) depthMin = std::min(depthMin, vert.t);
+    const float tol = std::max(0.2f, 0.01f * s_diag);
+    if (vert.kind && vert.t <= depthMin + tol)
+        return vert;
+    if (edge.kind && edge.t <= depthMin + tol)
+        return edge;
+    return face;
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -858,56 +1001,235 @@ static bool updateButtonHover(float px, float py)
 // with the desktop's highlight feed until the mouse moves again.
 static uint64_t s_hoverKey = 0;
 static int s_hoverPart = -2;
+static PickKind s_hoverKind = PickNone;
 
-static void applyHover(const PickHit &hit)
+/// The sub-element kind a scene draw carries, from its material type.
+static PickKind kindForDraw(const Render::DrawCall &dc)
 {
-    if (hit.draw < 0) {
-        if (s_hoverKey || s_hoverPart != -2) {
-            s_hoverKey = 0;
-            s_hoverPart = -2;
-            s_renderer->clearHighlight();
-        }
-        return;
+    switch (dc.material.type) {
+    case Render::Material::Line:  return PickEdge;
+    case Render::Material::Point: return PickVertex;
+    case Render::Material::Triangle: return PickFace;
+    default: return PickNone;
     }
-    const auto &dc = s_snap.scene[size_t(hit.draw)];
+}
 
-    // Map the hit triangle to its face part where the mesh carries the
-    // per-face table; the whole draw highlights otherwise.
-    int part = -1, partStart = 0, partCount = 0;
-    const auto &parts = dc.mesh->triangleParts;
+/// The element-part table in dc's mesh for the given pick kind.
+static const std::vector<std::pair<int, int>> *
+partsForKind(const Render::DrawCall &dc, PickKind kind)
+{
+    if (!dc.mesh)
+        return nullptr;
+    switch (kind) {
+    case PickEdge:   return &dc.mesh->lineParts;
+    case PickVertex: return &dc.mesh->pointParts;
+    default:         return &dc.mesh->triangleParts;
+    }
+}
+
+/// The part covering index offset `offset` in `parts`, or -1 (whole object)
+/// when the table is empty or nothing matches.
+static int partForOffset(const std::vector<std::pair<int, int>> &parts,
+                         int offset, int &partStart, int &partCount)
+{
+    partStart = 0;
+    partCount = 0;
     for (size_t i = 0; i < parts.size(); ++i) {
-        if (hit.triOffset >= parts[i].first
-                && hit.triOffset < parts[i].first + parts[i].second) {
-            part = int(i);
+        if (offset >= parts[i].first
+                && offset < parts[i].first + parts[i].second) {
             partStart = parts[i].first;
             partCount = parts[i].second;
-            break;
+            return int(i);
         }
     }
-    if (dc.objectKey == s_hoverKey && part == s_hoverPart)
-        return;
-    s_hoverKey = dc.objectKey;
-    s_hoverPart = part;
+    return -1;
+}
 
+/// The element part covering a pick hit in dc's mesh, or -1 (whole object).
+static int partForHit(const Render::DrawCall &dc, const PickHit &hit,
+                      int &partStart, int &partCount)
+{
+    partStart = 0;
+    partCount = 0;
+    const auto *parts = partsForKind(dc, hit.kind);
+    return parts ? partForOffset(*parts, hit.offset, partStart, partCount) : -1;
+}
+
+/// Build a highlight draw for face `part` of `dc` (whole object if part<0),
+/// styled by cfg (color + outline like the desktop backend). Shared by the
+/// hover (preselect) and the client-side selection. cfg is streamed from the
+/// backend (preselconf / selconf), so styling tracks the ViewParams instead
+/// of being hardcoded.
+static Render::DrawCall buildHiliteDraw(
+        const Render::DrawCall &dc, int part, int partStart, int partCount,
+        const Render::PreselHighlightConfig &cfg)
+{
     Render::DrawCall hl = dc;
-    // ViewParams::HighlightColor default; drawn slightly toward the
-    // viewer so the tint wins the depth test against the base face.
-    hl.material.diffuse = 0xE1E114FF;
+    hl.material.diffuse = cfg.color;
     hl.material.pervertexcolor = false;
     hl.material.transparent = false;
     hl.material.texture.reset();
-    hl.material.polygonoffset = true;
-    hl.material.polygonoffsetfactor = -2.0f;
-    hl.material.polygonoffsetunits = -2.0f;
+
+    // Edge / vertex highlight: thicken the hit line segment / point and tint
+    // it, restricted to the element's index range. Pushed toward the viewer so
+    // it wins the depth test against the geometry it sits on.
+    if (dc.material.type == Render::Material::Line
+            || dc.material.type == Render::Material::Point) {
+        hl.material.linecolor = cfg.color;
+        hl.material.emissive = cfg.color;
+        if (dc.material.type == Render::Material::Line)
+            hl.material.linewidth = std::max(dc.material.linewidth, 1.0f) + 2.0f;
+        else
+            hl.material.pointsize = std::max(dc.material.pointsize, 1.0f) + 4.0f;
+        if (part >= 0) {
+            hl.partIndex = part;
+            hl.wholeObject = false;
+            hl.indexStart = partStart;
+            hl.indexCount = partCount;
+        }
+        hl.material.polygonoffset = true;
+        hl.material.polygonoffsetfactor = -2.0f;
+        hl.material.polygonoffsetunits = -2.0f;
+        return hl;
+    }
+
+    // Outline-only needs a resolved face (partIndex >= 0): the renderer draws
+    // the face outline for a draw with faceoutline && partIndex>=0 and skips
+    // the fill when outlineonly is set.
+    const bool outline = part >= 0 && cfg.faceOutline;
     if (part >= 0) {
         hl.partIndex = part;
         hl.wholeObject = false;
         hl.indexStart = partStart;
         hl.indexCount = partCount;
     }
+    if (outline) {
+        hl.material.faceoutline = true;
+        hl.material.outlineonly = cfg.outlineOnly;
+        hl.material.emissive = cfg.color;         // outline colour (spec.color)
+        hl.material.outlinewidth = cfg.outlineWidth;
+    }
+    if (!outline || !cfg.outlineOnly) {
+        // A filled tint is drawn (whole-object, no outline, or outline-with-
+        // fill): push it toward the viewer so it wins the depth test.
+        hl.material.polygonoffset = true;
+        hl.material.polygonoffsetfactor = -2.0f;
+        hl.material.polygonoffsetunits = -2.0f;
+    }
+    return hl;
+}
+
+static void applyHover(const PickHit &hit)
+{
+    if (hit.draw < 0) {
+        if (s_hoverKey || s_hoverPart != -2 || s_hoverKind != PickNone) {
+            s_hoverKey = 0;
+            s_hoverPart = -2;
+            s_hoverKind = PickNone;
+            s_renderer->clearHighlight();
+        }
+        return;
+    }
+    const auto &dc = s_snap.scene[size_t(hit.draw)];
+    int partStart, partCount;
+    int part = partForHit(dc, hit, partStart, partCount);
+    if (dc.objectKey == s_hoverKey && part == s_hoverPart
+            && hit.kind == s_hoverKind)
+        return;
+    s_hoverKey = dc.objectKey;
+    s_hoverPart = part;
+    s_hoverKind = hit.kind;
     Render::DrawCallList draws;
-    draws.push_back(std::move(hl));
+    draws.push_back(buildHiliteDraw(dc, part, partStart, partCount,
+                                    s_snap.preselconf));
     s_renderer->setHighlight(std::move(draws), false);
+}
+
+// ---- Client-side selection (instant; no round trip) --------------------
+// A tap selects locally and shows the selection highlight immediately, then
+// syncs the pick to the backend in the background (batched) only to keep its
+// Gui::Selection in step. The backend's own streamed selection feed is
+// ignored while the client owns selection (see the snapshot replay).
+static const int kClientSelId = Render::SelIdSelected | 0x1;
+
+struct SelItem { uint64_t key; PickKind kind; int part; };
+static std::vector<SelItem> s_sel;
+
+/// Rebuild the local selection highlight from s_sel against the CURRENT scene
+/// and feed it as one selection (kClientSelId). Called on select and after
+/// each snapshot (the scene draws may have been replaced). Each item is drawn
+/// against the scene draw matching both its object and its element kind (the
+/// object's face / edge / vertex draw).
+static void rebuildSelection()
+{
+    Render::DrawCallList draws;
+    for (const auto &dc : s_snap.scene) {
+        if (!dc.mesh)
+            continue;
+        const PickKind dcKind = kindForDraw(dc);
+        if (dcKind == PickNone)
+            continue;
+        for (const auto &it : s_sel) {
+            if (it.key != dc.objectKey || it.kind != dcKind)
+                continue;
+            int partStart = 0, partCount = 0, part = it.part;
+            const auto *parts = partsForKind(dc, dcKind);
+            if (part >= 0 && parts && size_t(part) < parts->size()) {
+                partStart = (*parts)[size_t(part)].first;
+                partCount = (*parts)[size_t(part)].second;
+            }
+            else {
+                part = -1;
+            }
+            draws.push_back(buildHiliteDraw(dc, part, partStart, partCount,
+                                            s_snap.selconf));
+        }
+    }
+    if (draws.empty())
+        s_renderer->removeSelection(kClientSelId);
+    else
+        s_renderer->addSelection(kClientSelId, std::move(draws));
+}
+
+/// Client-side select at canvas pixel: pick locally, update s_sel (Ctrl =
+/// toggle/extend, plain = replace), and show the highlight immediately.
+///
+/// The selection is NOT synced to the backend here: an eager sync makes the
+/// backend re-pick and republish the whole scene, whose echo stalls right
+/// after the (instant) local highlight. Selection stays entirely client-side;
+/// when a modeling operation is added it will submit the accumulated selection
+/// batched together with the operation, so the backend only re-picks once, per
+/// client, at commit time (no per-tap sync delay, no cross-client interference).
+static void selectAt(float px, float py, bool ctrl)
+{
+    PickHit hit = pickScene(px, py);
+    if (hit.draw < 0) {
+        if (!ctrl && !s_sel.empty()) {
+            s_sel.clear();
+            rebuildSelection();
+        }
+        return;
+    }
+    const auto &dc = s_snap.scene[size_t(hit.draw)];
+    int partStart, partCount;
+    int part = partForHit(dc, hit, partStart, partCount);
+    SelItem item{dc.objectKey, hit.kind, part};
+    if (ctrl) {
+        auto same = [&](const SelItem &s) {
+            return s.key == item.key && s.kind == item.kind
+                && s.part == item.part;
+        };
+        auto it = std::find_if(s_sel.begin(), s_sel.end(), same);
+        if (it != s_sel.end())
+            s_sel.erase(it);
+        else
+            s_sel.push_back(item);
+    }
+    else {
+        s_sel.clear();
+        s_sel.push_back(item);
+    }
+    rebuildSelection();
 }
 
 static void fitCamera();
@@ -973,19 +1295,23 @@ static void mainLoop()
 
     if (s_hudOn) {
         char hud[512];
+        // Fixed-width fields + fixed line count so the HUD box never resizes
+        // as the numbers change: the widest line (fps) has constant width, the
+        // variable strings (hover / cam) are truncated, and the cam line is
+        // always present (blank until [v]).
         std::snprintf(hud, sizeof(hud),
-            "fps:   %.1f  (frame %.1f ms, render %.1f ms)\n"
-            "res:   %dx%d  dpr %.2f  effRes %.2f\n"
-            "cam:   yaw %.3f  pitch %.3f  dist %.2f\n"
-            "pan:   %.2f, %.2f   center %.1f, %.1f, %.1f\n"
-            "hover: %s\n"
-            "%s"
+            "fps:  %6.1f  (frame %6.1f ms  render %6.1f ms)\n"
+            "res:  %5d x%5d   dpr %4.2f   effRes %4.2f\n"
+            "cam:  yaw %8.2f  pitch %7.2f  dist %9.2f\n"
+            "pan:  %8.2f,%8.2f  ctr %7.1f,%7.1f,%7.1f\n"
+            "hover: %-30.30s\n"
+            "%-46.46s\n"
             "[d] toggle HUD   [v] copy cam",
             s_frameMs > 0.0 ? 1000.0 / s_frameMs : 0.0, s_frameMs, s_renderMs,
             s_width, s_height, double(s_dpr), double(s_snap.effectResolution),
             s_yaw, s_pitch, s_dist, s_panX, s_panY,
             s_center[0], s_center[1], s_center[2], s_hoverDesc,
-            s_camMsg[0] ? s_camMsg : "");
+            s_camMsg);
         fcviewer_hud(hud);
     }
 }
@@ -1020,22 +1346,6 @@ static void canvasPos(const EmscriptenMouseEvent *e, float &x, float &y)
     clientToCanvas(float(e->clientX), float(e->clientY), x, y);
 }
 
-/// Send a world-ray pick request for canvas pixel (px,py) to the desktop
-/// (the selection echo returns through the scene feed).
-static void sendPickXY(float px, float py, bool ctrl)
-{
-    if (!s_wsOpen)
-        return;
-    bx::Vec3 orig(bx::InitZero), rdir(bx::InitZero);
-    screenRay(px, py, orig, rdir);
-    uint8_t msg[2 + 6 * sizeof(float)];
-    msg[0] = 'P';
-    msg[1] = ctrl ? 1 : 0;
-    float v[6] = {orig.x, orig.y, orig.z, rdir.x, rdir.y, rdir.z};
-    std::memcpy(msg + 2, v, sizeof(v));
-    emscripten_websocket_send_binary(s_ws, msg, sizeof(msg));
-}
-
 /// Resolve a click/tap at canvas pixel (px,py): the NaviCube claims it
 /// first (local orient, then rotate button), otherwise it is a scene pick
 /// sent to the desktop. Shared by the mouse-up and touch-tap paths.
@@ -1062,7 +1372,9 @@ static void doTapPick(float px, float py, bool ctrl)
         interact();
     }
     else {
-        sendPickXY(px, py, ctrl);
+        // Client-side select (instant); the backend is synced in the
+        // background from the queued pick.
+        selectAt(px, py, ctrl);
     }
 }
 
@@ -1128,12 +1440,14 @@ static void updateHover(const EmscriptenMouseEvent *e)
         return new URLSearchParams(window.location.search).has('debugpick')
             ? 1 : 0;
     }) != 0;
+    static const char *kKindName[] = {"none", "face", "edge", "vertex"};
+    const char *kn = kKindName[hit.kind <= PickVertex ? hit.kind : 0];
     if (debugPick)
-        std::printf("fcviewer: pick (%g,%g) -> draw %d tri %d t %g\n",
-                    px, py, hit.draw, hit.triOffset, hit.t);
+        std::printf("fcviewer: pick (%g,%g) -> draw %d %s off %d t %g\n",
+                    px, py, hit.draw, kn, hit.offset, hit.t);
     if (hit.draw >= 0)
         std::snprintf(s_hoverDesc, sizeof(s_hoverDesc),
-                      "scene draw %d tri %d", hit.draw, hit.triOffset);
+                      "scene draw %d %s %d", hit.draw, kn, hit.offset);
     else
         std::snprintf(s_hoverDesc, sizeof(s_hoverDesc), "none");
     applyHover(hit);
@@ -1214,7 +1528,7 @@ static EM_BOOL onKeyDown(int, const EmscriptenKeyboardEvent *e, void *)
                       s_yaw, s_pitch, s_dist, s_center[0], s_center[1],
                       s_center[2], s_panX, s_panY);
         fcviewer_report_cam(buf);
-        std::snprintf(s_camMsg, sizeof(s_camMsg), "cam=%s (copied)\n", buf);
+        std::snprintf(s_camMsg, sizeof(s_camMsg), "cam=%s (copied)", buf);
         return EM_TRUE;
     }
     if (k == 'd' || k == 'D') {
@@ -1389,17 +1703,15 @@ static void applySnapshot(bool fit)
                                   s_snap.hatchWidth, s_snap.hatchHeight);
     Render::DrawCallList draws = s_snap.scene;
     s_renderer->setScene(std::move(draws));
-    std::set<int> ids;
-    for (const auto &sel : s_snap.selections) {
-        ids.insert(sel.first);
-        Render::DrawCallList sdraws = sel.second;
-        s_renderer->addSelection(sel.first, std::move(sdraws));
-    }
-    for (int id : s_selIds) {
-        if (!ids.count(id))
-            s_renderer->removeSelection(id);
-    }
-    s_selIds.swap(ids);
+    // The client owns selection (rebuildSelection below): the backend's own
+    // streamed selection feed is ignored so its slow full re-stream never
+    // drives the visible selection. Any previously applied streamed selection
+    // is dropped.
+    for (int id : s_selIds)
+        s_renderer->removeSelection(id);
+    s_selIds.clear();
+    // Re-apply the local selection against the (possibly replaced) scene draws.
+    rebuildSelection();
     // Overlay feeds (foreground superimposition, corner axis cross):
     // replayed with their declarative anchors — the local renderer
     // re-derives viewport and camera each frame, so overlays re-anchor
@@ -1427,6 +1739,7 @@ static void applySnapshot(bool fit)
     // the hover state so the next mouse move re-applies it.
     s_hoverKey = 0;
     s_hoverPart = -2;
+    s_hoverKind = PickNone;
     s_haveScene = true;
     if (fit) {
         fitCamera();   // derives scene center / dist / s_diag (near-far)
@@ -1631,7 +1944,12 @@ int main()
 
     s_hudOn = EM_ASM_INT({
         var q = new URLSearchParams(window.location.search);
-        return (q.has('hud') || q.has('debugpick')) ? 1 : 0;
+        if (q.has('hud') || q.has('debugpick')) return 1;
+        // Always show the HUD on touch/mobile: there is no keyboard to
+        // toggle it with [d], and it is the only fps readout there.
+        var touch = ('ontouchstart' in window)
+            || (navigator.maxTouchPoints || 0) > 0;
+        return touch ? 1 : 0;
     }) != 0;
 
     emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT,

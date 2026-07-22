@@ -65,6 +65,13 @@ struct SceneSnapshot {
     /// passes (reflection re-render, SSAO resolve); 1.0 = full resolution.
     float effectResolution = 1.0f;
 
+    /// Preselection (hover) and selection highlight styling from ViewParams
+    /// (v10). The standalone/WASM viewer builds both highlights locally (no
+    /// round trip), so it reads these to fill or only outline the hovered /
+    /// selected face like the backend would (color, outline width, etc.).
+    PreselHighlightConfig preselconf;
+    PreselHighlightConfig selconf;
+
     /// Section-cap hatch image, RGBA8 (the renderer stores it
     /// pre-expanded); empty = none.
     std::vector<uint8_t> hatchRGBA;

@@ -82,6 +82,14 @@ struct MeshData {
     /// sceneOutline or a zero outline width (GL: getNonFlatParts()).
     std::vector<std::pair<int, int>> nonFlatParts;
 
+    /// Per-edge-part {start, count} ranges into lineIndices, and per-vertex-
+    /// part ranges into pointIndices (stride 1), filled for the whole-object
+    /// line/point meshes so the browser viewer maps a hovered edge/vertex to
+    /// its element (like triangleParts for faces). Empty when the cache
+    /// carries no such part table.
+    std::vector<std::pair<int, int>> lineParts;
+    std::vector<std::pair<int, int>> pointParts;
+
     /// Solid-geometry knowledge for section capping (SoFCShapeInfo):
     /// 0 = none, 1 = some face parts belong to solids (solidParts holds
     /// their {start, count} ranges into triangleIndices), 2 = the whole
@@ -233,6 +241,30 @@ struct HiddenLineConfig {
             && lineColor == o.lineColor;
     }
     bool operator!=(const HiddenLineConfig &o) const { return !(*this == o); }
+};
+
+/// Preselection (hover) highlight styling, resolved from ViewParams by the
+/// bridge like the other configs. The desktop backend applies it through the
+/// streamed highlight draws; the standalone/WASM viewer, which builds its own
+/// hover highlight locally with no round trip, reads it to decide whether to
+/// fill the hovered face or only outline it — so it tracks the backend's
+/// ShowPreSelectedFaceOutline / NoPreSelFaceHighlightWithOutline settings
+/// instead of hardcoding.
+struct PreselHighlightConfig {
+    uint32_t color = 0xE1E114FF;   ///< ViewParams::HighlightColor, 0xRRGGBBAA
+    float outlineWidth = 2.0f;     ///< resolved face-outline width in pixels
+    bool faceOutline = true;       ///< ViewParams::ShowPreSelectedFaceOutline
+    bool outlineOnly = true;       ///< NoPreSelFaceHighlightWithOutline (no fill)
+    float pickRadius = 5.0f;       ///< ViewParams::PickRadius, screen pixels
+
+    bool operator==(const PreselHighlightConfig &o) const {
+        return color == o.color && outlineWidth == o.outlineWidth
+            && faceOutline == o.faceOutline && outlineOnly == o.outlineOnly
+            && pickRadius == o.pickRadius;
+    }
+    bool operator!=(const PreselHighlightConfig &o) const {
+        return !(*this == o);
+    }
 };
 
 /// Per-frame section (clip plane) fill configuration, mirroring the
@@ -802,6 +834,14 @@ public:
     { (void)config; }
     /// Per-frame water surface (refraction/reflection) configuration.
     virtual void setWaterConfig(const WaterConfig &config)
+    { (void)config; }
+    /// Preselection (hover) highlight styling from ViewParams; carried in
+    /// the snapshot for the standalone/WASM viewer's local hover highlight.
+    virtual void setPreselConfig(const PreselHighlightConfig &config)
+    { (void)config; }
+    /// Selection highlight styling from ViewParams; carried in the snapshot
+    /// for the standalone/WASM viewer's local (client-side) selection.
+    virtual void setSelConfig(const PreselHighlightConfig &config)
     { (void)config; }
     /// Per-frame world-to-screen scale at the world origin consumed by
     /// Material::autozoom draws (Coin: SoAutoZoomTranslation's

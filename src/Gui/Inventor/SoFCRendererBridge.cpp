@@ -695,6 +695,29 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                 }
             }
 
+            // Per-edge / per-vertex ranges for browser-side edge/vertex
+            // preselection, mirroring the triangleParts face table above.
+            // No count API exists for line/point parts, so enumerate until
+            // the range getter reports the part is out of range.
+            if (rmat.type == Render::Material::Line && ventry.partidx < 0
+                    && mesh->lineParts.empty()) {
+                for (int i = 0; ; ++i) {
+                    int start = 0, count = 0;
+                    if (!ventry.cache->getLinePartRange(i, start, count))
+                        break;
+                    mesh->lineParts.emplace_back(start, count);
+                }
+            }
+            if (rmat.type == Render::Material::Point && ventry.partidx < 0
+                    && mesh->pointParts.empty()) {
+                for (int i = 0; ; ++i) {
+                    int start = 0, count = 0;
+                    if (!ventry.cache->getPointPartRange(i, start, count))
+                        break;
+                    mesh->pointParts.emplace_back(start, count);
+                }
+            }
+
             if (rmat.outline && ventry.partidx < 0) {
                 if (rmat.type == Render::Material::Line
                         && !mesh->noSeamLineIndices
@@ -1104,6 +1127,46 @@ RendererBridge::translateWaterConfig(View3DInventor * view)
     res.shadow = viewParamOverride<App::PropertyBool>(
             view, "Render", "WaterShadow",
             RenderParams::getWaterShadow());
+    return res;
+}
+
+// The per-draw face-outline width formula (see the selection block above)
+// with a nominal 1px base line width: the viewer applies it to the hovered /
+// selected face, which carries no explicit outline width.
+static float preselOutlineWidth()
+{
+    float lw = 1.0f;
+    float scale = float(ViewParams::getSelectionLineThicken());
+    if (scale < 1.0f)
+        scale = 1.0f;
+    float w = lw * scale;
+    if (ViewParams::getSelectionLineMaxWidth() > 1.0)
+        w = std::min<float>(w, std::max<float>(lw,
+                float(ViewParams::getSelectionLineMaxWidth())));
+    return std::max(w * 1.5f, lw * float(ViewParams::getOutlineThicken()));
+}
+
+Render::PreselHighlightConfig
+RendererBridge::translatePreselConfig()
+{
+    Render::PreselHighlightConfig res;
+    res.color = (uint32_t)ViewParams::getHighlightColor();
+    res.faceOutline = ViewParams::getShowPreSelectedFaceOutline();
+    res.outlineOnly = ViewParams::getNoPreSelFaceHighlightWithOutline();
+    res.outlineWidth = preselOutlineWidth();
+    res.pickRadius = (float)ViewParams::getPickRadius();
+    return res;
+}
+
+Render::PreselHighlightConfig
+RendererBridge::translateSelConfig()
+{
+    Render::PreselHighlightConfig res;
+    res.color = (uint32_t)ViewParams::getSelectionColor();
+    res.faceOutline = ViewParams::getShowSelectedFaceOutline();
+    res.outlineOnly = ViewParams::getNoSelFaceHighlightWithOutline();
+    res.outlineWidth = preselOutlineWidth();
+    res.pickRadius = (float)ViewParams::getPickRadius();
     return res;
 }
 

@@ -83,6 +83,17 @@ GuiExport Render::VolumetricConfig translateVolumetricConfig(
 /// per-frame config.
 GuiExport Render::WaterConfig translateWaterConfig(View3DInventor * view);
 
+/// Resolve the preselection highlight styling (HighlightColor,
+/// ShowPreSelectedFaceOutline, NoPreSelFaceHighlightWithOutline, outline
+/// width from the selection/outline thicken params) into the backend-neutral
+/// config the standalone/WASM viewer reads for its local hover highlight.
+GuiExport Render::PreselHighlightConfig translatePreselConfig();
+
+/// Same as translatePreselConfig() but for the selection highlight
+/// (SelectionColor, ShowSelectedFaceOutline, NoSelFaceHighlightWithOutline) —
+/// the viewer applies it to its local (client-side) selection.
+GuiExport Render::PreselHighlightConfig translateSelConfig();
+
 /// Resolve the bump mapping settings (Render_BumpScale/Render_Parallax
 /// view properties, RenderParams fallback) into the backend-neutral
 /// per-frame config.

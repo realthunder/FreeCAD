@@ -35,7 +35,9 @@ namespace {
 
 const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // v2: selection/highlight feeds appended (v1 files still load).
-const uint32_t kVersion = 9;
+// v11: per-edge/vertex part tables in the mesh + pickRadius in the
+// presel/sel config, for browser-side edge/vertex picking.
+const uint32_t kVersion = 11;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -136,6 +138,8 @@ void writeMesh(Writer &w, const MeshData &m)
     w.parts(m.solidParts);
     w.b(m.hasTransparency);
     w.b(m.hasOpaqueParts);
+    w.parts(m.lineParts);   // v11
+    w.parts(m.pointParts);  // v11
 }
 
 /// Loader-side mesh: the arrays live in the owned vectors, the base
@@ -151,7 +155,7 @@ struct OwnedMeshData : MeshData {
     std::vector<int32_t> noSeamStore;
 };
 
-std::shared_ptr<const MeshData> readMesh(Reader &r)
+std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version)
 {
     auto mesh = std::make_shared<OwnedMeshData>();
     mesh->cacheId = r.u64();
@@ -209,6 +213,10 @@ std::shared_ptr<const MeshData> readMesh(Reader &r)
     r.parts(mesh->solidParts);
     mesh->hasTransparency = r.b();
     mesh->hasOpaqueParts = r.b();
+    if (version >= 11) {
+        r.parts(mesh->lineParts);
+        r.parts(mesh->pointParts);
+    }
     return mesh;
 }
 
@@ -684,6 +692,15 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         writeDrawList(w, ov.draws, meshIndex, texIndex);
     }
 
+    // v10: preselection + selection highlight config (client-side styling).
+    for (const PreselHighlightConfig *c : {&snap.preselconf, &snap.selconf}) {
+        w.u32(c->color);
+        w.f(c->outlineWidth);
+        w.b(c->faceOutline);
+        w.b(c->outlineOnly);
+        w.f(c->pickRadius);  // v11
+    }
+
     return w.ok;
 }
 
@@ -701,7 +718,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     if (nmesh > 0x100000u)
         r.ok = false;
     for (uint32_t i = 0; r.ok && i < nmesh; ++i)
-        meshes.push_back(readMesh(r));
+        meshes.push_back(readMesh(r, version));
     uint32_t ntex = r.u32();
     TextureTable textures;
     if (ntex > 0x100000u)
@@ -812,6 +829,17 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             a.sceneCamera = version >= 6 ? r.b() : false;
             if (readDrawList(r, ov.draws, meshes, textures, version))
                 snap.overlays.push_back(std::move(ov));
+        }
+    }
+
+    if (version >= 10) {
+        for (PreselHighlightConfig *c : {&snap.preselconf, &snap.selconf}) {
+            c->color = r.u32();
+            c->outlineWidth = r.f();
+            c->faceOutline = r.b();
+            c->outlineOnly = r.b();
+            if (version >= 11)
+                c->pickRadius = r.f();
         }
     }
 
