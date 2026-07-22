@@ -5309,12 +5309,15 @@ public:
     {
         // The pending scene data (whatever its age) is consumed by this
         // frame; needsRedraw() reports false until new data arrives.
-        // feedChanged gates the STANDALONE warmup target rebuild: only a real
-        // geometry feed (setScene) re-arms it, NOT sceneDirty — which cheap
-        // per-frame state (AO toggle on drag, selection/preselect highlight)
-        // also sets, and which would otherwise force a view->init() stall on
-        // every such change.
+        // Two distinct "dirty" signals:
+        //  - feedChanged (setScene only) gates the STANDALONE warmup target
+        //    rebuild, so cheap per-frame state (AO toggle on drag, selection/
+        //    preselect highlight) does NOT force a view->init() stall.
+        //  - dirtyChanged (any change, incl. selection/highlight/config) gates
+        //    the serve republish, so a click-selection round trip still
+        //    streams to the viewer.
         const bool feedChanged = feedDirty;
+        const bool dirtyChanged = sceneDirty;
         (void)feedChanged;
         feedDirty = false;
         sceneDirty = false;
@@ -5464,7 +5467,7 @@ public:
             // with no other geometry) the whole edit graph lives in the editing
             // overlay and the main scene is empty — the datums/leaders must
             // still stream.
-            if (server.running() && (feedChanged || !scenePublished)
+            if (server.running() && (dirtyChanged || !scenePublished)
                     && !(scene.empty() && overlays.empty())) {
                 scenePublished = true;
                 Render::SceneSnapshot snap;
