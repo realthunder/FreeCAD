@@ -5309,8 +5309,14 @@ public:
     {
         // The pending scene data (whatever its age) is consumed by this
         // frame; needsRedraw() reports false until new data arrives.
-        const bool feedChanged = sceneDirty;
+        // feedChanged gates the STANDALONE warmup target rebuild: only a real
+        // geometry feed (setScene) re-arms it, NOT sceneDirty — which cheap
+        // per-frame state (AO toggle on drag, selection/preselect highlight)
+        // also sets, and which would otherwise force a view->init() stall on
+        // every such change.
+        const bool feedChanged = feedDirty;
         (void)feedChanged;
+        feedDirty = false;
         sceneDirty = false;
         renderOk = false;
 
@@ -8232,6 +8238,14 @@ public:
     bool serveStarted = false;  ///< FC_BGFX_SERVE_SCENE start attempted
     bool scenePublished = false;///< at least one payload published
     bool sceneDirty = false;
+    // Distinct from sceneDirty: set ONLY when the scene geometry feed itself
+    // changes (setScene), not on cheap per-frame state (AO toggle, selection
+    // /preselect highlight, effect resolution). The STANDALONE warmup target
+    // rebuild keys off this — re-arming it on every sceneDirty made every
+    // highlight/AO toggle trigger a full view->init() (a hi-DPI multisampled
+    // target realloc = a WebGL stall), felt as a hitch at drag start and on
+    // any preselection.
+    bool feedDirty = false;
     bool hasScene = false;
     bool renderOk = false;
     bool bboxValid = false;
@@ -8300,6 +8314,7 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
     pimpl->scene = std::move(draws);
     pimpl->buildInstanceGroups();
     pimpl->sceneDirty = true;
+    pimpl->feedDirty = true;
     pimpl->updateBBox();
 }
 
