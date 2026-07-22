@@ -109,24 +109,52 @@ void main()
 	// and falsely darken flat surfaces.
 	float minS = 1.3 / radiusPx;
 
-	// Per-pixel spatial noise (deterministic across frames): interleaved
-	// gradient noise, decorrelated per use. The 4x4 tiled noise texture
-	// the classic pass uses has only 16 distinct values repeating every
-	// 4 px — around silhouettes the slowly-varying horizon turns that
-	// repetition into concentric ring/moire banding; IGN never tiles, so
-	// the estimation error stays unstructured grain the edge-aware
-	// denoise can average.
-	float noiseSlice = fract(52.9829189 *
-	        fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-	float noiseSample = fract(52.9829189 *
-	        fract(dot(gl_FragCoord.xy + vec2(37.0, 17.0),
-	                  vec2(0.00583715, 0.06711056))));
+	// Per-pixel spatial noise (deterministic across frames): XeGTAO's
+	// reference noise — a 64x64 Hilbert-curve index through the R2
+	// low-discrepancy sequence. Blue-noise-like and DIRECTIONLESS: the
+	// 4x4 tiled texture banded into rings near silhouettes, and IGN's
+	// iso-values form coherent diagonal lines that printed through as
+	// diagonal stripes on faces whose horizon is sensitive to the step
+	// jitter.
+	uint hx = uint(gl_FragCoord.x) & 63u;
+	uint hy = uint(gl_FragCoord.y) & 63u;
+	uint hindex = 0u;
+	for (uint lvl = 32u; lvl > 0u; lvl /= 2u)
+	{
+		uint rx = (hx & lvl) > 0u ? 1u : 0u;
+		uint ry = (hy & lvl) > 0u ? 1u : 0u;
+		hindex += lvl * lvl * ((3u * rx) ^ ry);
+		if (ry == 0u)
+		{
+			if (rx == 1u)
+			{
+				hx = 63u - hx;
+				hy = 63u - hy;
+			}
+			uint tmp = hx;
+			hx = hy;
+			hy = tmp;
+		}
+	}
+	// R2 sequence over the Hilbert index (XeGTAO_SpatioTemporalNoise
+	// at temporal index 0 — frames must stay deterministic here).
+	vec2 hnoise = fract(0.5 + float(hindex)
+	        * vec2(0.75487766624669276005, 0.5698402909980532659114));
+	float noiseSlice = hnoise.x;
+	float noiseSample = hnoise.y;
 
-	// Interaction fast path (u_aoParams.z > 0.5, set by the viewer while
-	// the camera moves): fewer slices/steps so AO stays VISIBLE during
-	// orbit/zoom — noisier, refined automatically once idle restores the
-	// full counts. A uniform, not a target change, so no re-init stall.
-	bool fast = u_aoParams.z > 0.5;
+	// u_aoParams.z flag bits. Bit0: interaction fast path (fewer
+	// slices/steps so AO stays VISIBLE during orbit/zoom — noisier,
+	// refined once idle; a uniform, not a target change, so no re-init
+	// stall). Bit1: the prepass depth is fp16 (no float32 render target
+	// on this GPU) — widen the coplanarity guard to its quantization
+	// step.
+	float pz = u_aoParams.z;
+	bool fast = mod(pz, 2.0) >= 1.0;
+	// Relative depth-quantization step: fp32 depth is effectively exact
+	// (guard only against true coincidence); fp16 has a ~10-bit
+	// mantissa, deltas below ~2e-3 * viewZ are rounding garbage.
+	float depthEps = pz >= 2.0 ? 2.0e-3 : 1.0e-5;
 	int slices = fast ? 2 : GTAO_SLICES;
 	int steps = fast ? 3 : GTAO_STEPS;
 
@@ -175,7 +203,12 @@ void main()
 				vec3 spos = viewPos(suv, snz.z, persp);
 				vec3 delta = spos - pos;
 				float dist = length(delta);
-				if (dist < 1.0e-6)
+				// Samples closer than the prepass depth quantization
+				// step at this depth are coplanar within measurement
+				// precision, and their delta direction is rounding
+				// garbage — zoomed in it renders as ripple bands along
+				// iso-depth contours.
+				if (dist < depthEps * viewZ)
 					continue;
 				float shc = dot(delta / dist, V);
 				// Distance falloff blends the sample toward the open

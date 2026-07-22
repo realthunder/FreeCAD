@@ -2209,8 +2209,17 @@ public:
             // smoothly. SSAO is resolution-sensitive (contact/crevice detail),
             // so it defaults to full-res rather than sharing effectResolution,
             // whose reduction produced visibly blocky occlusion.
+            // Full-float normal+depth when available: fp16 viewZ (~10-bit
+            // mantissa) quantizes zoomed-in depths so hard that the GTAO
+            // horizon estimate bands along iso-depth contours (ripples on
+            // curved faces, stair strips on oblique flat ones near
+            // contacts). Point-sampled, so fp32 is safe on WebGL2/mobile
+            // (their float32 restriction is LINEAR filtering).
+            aoNormalZFp16 = !(caps->formats[bgfx::TextureFormat::RGBA32F]
+                              & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
             aoNormalZ = bgfx::createTexture2D(width, height, false, 1,
-                bgfx::TextureFormat::RGBA16F, aoFlags);
+                aoNormalZFp16 ? bgfx::TextureFormat::RGBA16F
+                              : bgfx::TextureFormat::RGBA32F, aoFlags);
             aoDepth = bgfx::createTexture2D(width, height, false, 1,
                 bgfx::TextureFormat::D24S8,
                 aoFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
@@ -3788,9 +3797,13 @@ public:
         // construction and only takes XeGTAO's mild FinalValuePower (~2.2).
         const bool gtao = method == 1 && bgfx::isValid(m_progGtao);
         const float aoPower = gtao ? 2.2f : 2.5f;
-        // .z: classic pass depth bias; for GTAO the interaction fast-path
-        // flag (fewer slices/steps while the camera moves).
-        const float paramZ = gtao ? (fast ? 1.0f : 0.0f) : 0.02f * radius;
+        // .z: classic pass depth bias; for GTAO two flag bits — bit0 the
+        // interaction fast path (fewer slices/steps while the camera
+        // moves), bit1 fp16 prepass depth (widens the coplanarity guard
+        // to the fp16 quantization step).
+        const float paramZ = gtao
+            ? (fast ? 1.0f : 0.0f) + (aoNormalZFp16 ? 2.0f : 0.0f)
+            : 0.02f * radius;
         float params[4] = {radius, intensity, paramZ, aoPower};
         bgfx::setUniform(u_aoParams, params);
         if (!gtao)
@@ -5158,6 +5171,7 @@ public:
     uint64_t m_hatchVersion = 0;   // Private's hatch pixel generation
     static constexpr int kAOSamples = 16;
     bgfx::TextureHandle aoNormalZ = BGFX_INVALID_HANDLE;
+    bool aoNormalZFp16 = true;   // prepass depth precision (see init)
     bgfx::TextureHandle aoDepth = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle aoTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle aoBlurTex = BGFX_INVALID_HANDLE;
@@ -6830,10 +6844,18 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
                 bgfx::touch(id);
                 continue;
-#ifdef FC_RENDERER_STANDALONE
             } else if (i == BGFXView::ViewPresent) {
                 // Standalone present: the default backbuffer; the
                 // fullscreen triangle overwrites every pixel.
+                //
+                // On desktop no present is drawn, but the empty view still
+                // targets the default backbuffer ON PURPOSE: bgfx only
+                // resolves an MSAA framebuffer (multisampled renderbuffer
+                // -> resolve texture) when the frame transitions AWAY from
+                // it, and every desktop content view targets bgfxFbo — so
+                // without this trailing view the resolve texture the
+                // composite blit reads stayed stale under MSAA (an empty
+                // viewport).
                 bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
                 bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                                    clearColor, 1.0f, 0);
@@ -6842,7 +6864,6 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-#endif
             } else if (prepassActive && i == BGFXView::ViewAOPrepass) {
                 // Prepass target clears to 0 (.w = 0 marks background
                 // in the AO pass), with its own depth buffer.
