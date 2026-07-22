@@ -1787,7 +1787,11 @@ static void applyScenePayload(const char *data, size_t size)
     Render::SceneSnapshot snap;
     if (Render::loadSceneSnapshot(data + 8, size - 8, snap)) {
         s_sceneVersion = version;
-        bool first = !s_haveScene;
+        // Refit not only on the very first scene: while the camera is
+        // still the auto fit (the user hasn't driven it), a streamed
+        // scene replacing a bundled snapshot reframes too — the old fit
+        // may point at entirely different geometry.
+        bool first = !s_haveScene || !s_userCam;
         s_snap = std::move(snap);
         applySnapshot(first);
         fcviewer_status(nullptr, 0.0, 0.0);
