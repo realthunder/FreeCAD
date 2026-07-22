@@ -25,34 +25,76 @@
     #canvas { display: block; width: 100vw; height: 100vh;
               width: 100dvw; height: 100dvh; border: 0;
               outline: none; touch-action: none; }
-    #status { position: fixed; left: 0; right: 0; top: 50%;
-              transform: translateY(-50%); text-align: center;
-              font-family: sans-serif; font-size: 15px; color: #ccc;
-              pointer-events: none; }
+    /* Discreet loading indicator: a 3px progress bar along the top edge
+       plus a small muted label under it. Indeterminate mode (unknown
+       total) slides a short segment across the bar. */
+    #status { position: fixed; left: 0; right: 0; top: 0;
+              pointer-events: none; z-index: 9999; }
+    #progress { height: 3px; background: rgba(255,255,255,.08); }
+    #progressfill { height: 100%; width: 0; background: #58a6ff;
+                    transition: width .15s linear; }
+    #progress.indet #progressfill { width: 25%;
+                                    animation: fcindet 1.2s linear infinite; }
+    @keyframes fcindet { from { margin-left: -25%; } to { margin-left: 100%; } }
+    #statustext { text-align: center; font-family: sans-serif;
+                  font-size: 11px; color: rgba(204,204,204,.75);
+                  padding-top: 4px; }
   </style>
 </head>
 <body>
   <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
-  <div id="status">Loading…</div>
+  <div id="status">
+    <div id="progress"><div id="progressfill"></div></div>
+    <div id="statustext">Loading…</div>
+  </div>
   <script>
     var canvasElement = document.getElementById('canvas');
-    var statusElement = document.getElementById('status');
     canvasElement.addEventListener('webglcontextlost', function (e) {
       alert('WebGL context lost — please reload.');
       e.preventDefault();
     }, false);
+    // Loading indicator, shared by the emscripten download phase and the
+    // viewer's scene loading (fcviewer_status in main.cpp). text null/''
+    // hides it; total > 0 shows a determinate bar, total == 0 the
+    // indeterminate slide, total < 0 the label only.
+    window.fcviewerStatus = function (text, loaded, total) {
+      var st = document.getElementById('status');
+      if (!text) { st.style.display = 'none'; return; }
+      st.style.display = 'block';
+      document.getElementById('statustext').textContent = text;
+      var bar = document.getElementById('progress');
+      var fill = document.getElementById('progressfill');
+      if (total > 0) {
+        bar.style.display = 'block';
+        bar.classList.remove('indet');
+        fill.style.width = Math.min(100, 100 * loaded / total) + '%';
+      } else if (total === 0) {
+        bar.style.display = 'block';
+        bar.classList.add('indet');
+      } else {
+        bar.style.display = 'none';
+      }
+    };
     var Module = {
       canvas: canvasElement,
       print: function () { console.log.apply(console, arguments); },
       printErr: function () { console.error.apply(console, arguments); },
-      setStatus: function (t) { if (statusElement) statusElement.textContent = t || ''; },
-      monitorRunDependencies: function () {},
-      onRuntimeInitialized: function () {
-        if (statusElement) statusElement.style.display = 'none';
-      }
+      // The .data preloader reports "Downloading data... (loaded/total)";
+      // parse the byte counts into the determinate bar.
+      setStatus: function (t) {
+        if (!t) return;
+        var m = t.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+        if (m)
+          window.fcviewerStatus(m[1].trim(), parseFloat(m[2]), parseFloat(m[4]));
+        else
+          window.fcviewerStatus(t, 0, 0);
+      },
+      monitorRunDependencies: function () {}
+      // No onRuntimeInitialized hide: main() drives the indicator from here
+      // on (scene fetch progress, then hides it once the scene is applied).
     };
     Module.setStatus('Loading…');
-    window.onerror = function () { Module.setStatus('Exception — see console'); };
+    window.onerror = function () { window.fcviewerStatus('Exception — see console', 0, -1); };
   </script>
   {{{ SCRIPT }}}
 </body>

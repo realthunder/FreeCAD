@@ -73,6 +73,14 @@ EM_JS(void, fcviewer_report_cam, (const char *s), {
     try { if (navigator.clipboard) navigator.clipboard.writeText(str); } catch (e) {}
 });
 
+// Discreet loading indicator (thin bar + label along the top edge, see
+// shell.html). text == null hides it; total > 0 shows byte progress,
+// total == 0 the indeterminate slide, total < 0 the label only.
+EM_JS(void, fcviewer_status, (const char *text, double loaded, double total), {
+    if (window.fcviewerStatus)
+        window.fcviewerStatus(text ? UTF8ToString(text) : null, loaded, total);
+});
+
 // On-screen debug HUD: a fixed div over the canvas top-left showing live
 // state (mouse, camera, hover). Passing null hides it.
 EM_JS(void, fcviewer_hud, (const char *s), {
@@ -1772,12 +1780,17 @@ static void applyScenePayload(const char *data, size_t size)
         return;
     uint64_t version = 0;
     std::memcpy(&version, data, sizeof(version));
+    // The WebSocket push loop re-sends the current scene on connect; skip
+    // the echo of a version already applied (the initial HTTP fetch).
+    if (s_haveScene && version == s_sceneVersion)
+        return;
     Render::SceneSnapshot snap;
     if (Render::loadSceneSnapshot(data + 8, size - 8, snap)) {
         s_sceneVersion = version;
         bool first = !s_haveScene;
         s_snap = std::move(snap);
         applySnapshot(first);
+        fcviewer_status(nullptr, 0.0, 0.0);
         std::printf("fcviewer: scene update v%llu, %zu draws, %zu overlays\n",
                     (unsigned long long)version, s_snap.scene.size(),
                     s_snap.overlays.size());
@@ -1888,6 +1901,89 @@ static void startStream()
     startPolling();
 }
 
+//////////////////////////////////////////////////////////////////////
+// Initial scene load with progress: the WebSocket delivers the scene as
+// one opaque message (browsers expose no intra-message progress), but the
+// server's HTTP path sends a Content-Length — so the FIRST scene is
+// fetched over HTTP to drive the top progress bar, then the WebSocket
+// takes over for live updates (its re-push of the same version is
+// skipped by the guard in applyScenePayload).
+
+static std::string s_initialPayload;
+
+static void applyInitialPayload(void *)
+{
+    applyScenePayload(s_initialPayload.data(), s_initialPayload.size());
+    s_initialPayload.clear();
+    if (!s_haveScene)
+        fcviewer_status("Scene load failed", 0.0, -1.0);
+    else
+        fcviewer_status(nullptr, 0.0, 0.0);
+    startStream();
+}
+
+static void onInitFetchProgress(emscripten_fetch_t *fetch)
+{
+    const double got = double(fetch->dataOffset) + double(fetch->numBytes);
+    char label[96];
+    if (fetch->totalBytes > 0)
+        std::snprintf(label, sizeof(label),
+                      "Loading scene\xe2\x80\xa6 %.1f / %.1f MB",
+                      got / 1e6, double(fetch->totalBytes) / 1e6);
+    else
+        std::snprintf(label, sizeof(label),
+                      "Loading scene\xe2\x80\xa6 %.1f MB", got / 1e6);
+    fcviewer_status(label, got, double(fetch->totalBytes));
+}
+
+static void onInitFetchDone(emscripten_fetch_t *fetch)
+{
+    if (fetch->status == 200 && fetch->numBytes > 8) {
+        s_initialPayload.assign(fetch->data, fetch->data + fetch->numBytes);
+        emscripten_fetch_close(fetch);
+        // Let the label paint before the synchronous parse + GPU upload.
+        fcviewer_status("Preparing scene\xe2\x80\xa6", 0.0, 0.0);
+        emscripten_set_timeout(applyInitialPayload, 30, nullptr);
+        return;
+    }
+    // 204 = the desktop has not published a scene yet; anything else =
+    // transfer problem. Either way the live stream delivers the first
+    // scene (the indicator hides when it applies). With a bundled
+    // snapshot already on screen there is nothing to wait for.
+    emscripten_fetch_close(fetch);
+    if (s_haveScene)
+        fcviewer_status(nullptr, 0.0, 0.0);
+    else
+        fcviewer_status("Waiting for scene\xe2\x80\xa6", 0.0, 0.0);
+    startStream();
+}
+
+static void onInitFetchError(emscripten_fetch_t *fetch)
+{
+    emscripten_fetch_close(fetch);
+    if (s_haveScene)
+        fcviewer_status(nullptr, 0.0, 0.0);
+    else
+        fcviewer_status("Waiting for scene\xe2\x80\xa6", 0.0, 0.0);
+    startStream();
+}
+
+static void startInitialFetch()
+{
+    fcviewer_status("Loading scene\xe2\x80\xa6", 0.0, 0.0);
+    emscripten_fetch_attr_t attr;
+    emscripten_fetch_attr_init(&attr);
+    std::strcpy(attr.requestMethod, "GET");
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+    attr.onsuccess = onInitFetchDone;
+    attr.onerror = onInitFetchError;
+    attr.onprogress = onInitFetchProgress;
+    char url[512];
+    std::snprintf(url, sizeof(url), "%s/scene?v=%llu", s_sceneUrl.c_str(),
+                  (unsigned long long)s_sceneVersion);
+    emscripten_fetch(&attr, url);
+}
+
 int main()
 {
     emscripten_set_canvas_element_size("#canvas", s_width, s_height);
@@ -1940,7 +2036,15 @@ int main()
         s_sceneUrl = sceneParam;
         std::free(sceneParam);
         std::printf("fcviewer: streaming from %s\n", s_sceneUrl.c_str());
-        startStream();
+        // First streamed scene over HTTP for the progress bar (any bundled
+        // snapshot stays on screen beneath it); the WebSocket takes over
+        // after.
+        startInitialFetch();
+    }
+    else {
+        // No scene stream — nothing left to wait for; drop the indicator
+        // left from the emscripten download phase.
+        fcviewer_status(nullptr, 0.0, 0.0);
     }
 
     s_hudOn = EM_ASM_INT({
