@@ -148,6 +148,14 @@ void main()
 	vec3 color = base.rgb;
 
 	vec3 n = normalize(v_normal);
+	// Geometric surface normal (before any bump perturbation), oriented toward
+	// the viewer for two-sided surfaces. Used to self-occlude unshadowed effect
+	// lights: a solid's own body shadows its far side, so the fire light must
+	// not reach faces whose GEOMETRIC normal points away from the flame -- the
+	// bump map would otherwise catch that light on the back side.
+	vec3 geoN = n;
+	if (u_params.z > 0.5 && geoN.z < 0.0)
+		geoN = -geoN;
 #ifdef TEXTURE
 	vec2 uv = v_texcoord0;
 	if (u_bumpParams.x > 0.5)
@@ -519,6 +527,11 @@ void main()
 			if (u_fireLight[fi].w <= 0.0)
 				continue;
 			vec3 fl = u_fireLight[fi].xyz - v_vpos;
+			// Self-occlusion: a face whose geometric normal points away from
+			// the flame is shadowed by the object's own body, so this
+			// unshadowed effect light must not light it (no penetrating a solid).
+			if (dot(geoN, fl) <= 0.0)
+				continue;
 			float d2 = dot(fl, fl);
 			vec3 l = normalize(fl);
 			float ndl = dot(n, l);
