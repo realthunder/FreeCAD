@@ -45,8 +45,9 @@ try:
 
     render = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render")
     render.SetString("Type", "bgfx - OpenGL")     # backend factory string
-    render.SetBool("SSAO", True)
-    render.SetBool("Volumetric", True)            # water body + fire + shafts
+    render.SetBool("SSAO", os.environ.get("AO", "1") == "1")
+    render.SetFloat("SSAOIntensity", float(os.environ.get("AOINT", "1.0")))
+    render.SetBool("Volumetric", os.environ.get("VOL", "1") == "1")  # water body + fire + shafts
     render.SetBool("WaterSurface", True)          # refraction + reflection
     render.SetFloat("WaterWaveStrength", 0.25)
     render.SetBool("WaterRefraction", True)
@@ -54,7 +55,9 @@ try:
     render.SetBool("WaterPlanarReflection", True)
     render.SetBool("WaterShadow", True)           # beam shadow on the water
     render.SetBool("GroundReflection", False)
-    render.SetBool("Caustics", False)
+    render.SetBool("Caustics", True)
+    render.SetBool("PBR", os.environ.get("PBR", "1") == "1")  # image-based lighting
+    render.SetFloat("BumpScale", float(os.environ.get("BUMP", "3.0")))  # normal-map strength
 
     doc = FreeCAD.newDocument("WaterFire")
 
@@ -63,15 +66,17 @@ try:
     box.Length, box.Width, box.Height = 48, 48, 7
     box.Placement.Base = FreeCAD.Vector(-24, -24, 0)
 
-    # A metallic cylinder rising through the pool.
+    # A metallic cylinder rising through the pool, set near PostA so the two
+    # form a crevice where AO accumulates -- far enough (y = 8.5) that the fire
+    # plume's base clears the gantry beam (which reaches y = 4).
     cyl = doc.addObject("Part::Cylinder", "Cylinder")
     cyl.Radius, cyl.Height = 3, 20
-    cyl.Placement.Base = FreeCAD.Vector(-12, 10, 0)
+    cyl.Placement.Base = FreeCAD.Vector(-20, 8.5, 0)
 
     # A fire plume on top of the cylinder (base at the cylinder's top z = 20).
     fire = doc.addObject("Part::Cone", "Fire")
     fire.Radius1, fire.Radius2, fire.Height = 3.2, 0.0, 10
-    fire.Placement.Base = FreeCAD.Vector(-12, 10, 20)
+    fire.Placement.Base = FreeCAD.Vector(-20, 8.5, 20)
 
     # A beam suspended over the water on two posts -- the shadow caster.
     beam = doc.addObject("Part::Box", "Beam")
@@ -106,10 +111,34 @@ try:
     fvo.addProperty("App::PropertyFloat", "Render_FireDetail").Render_FireDetail = 0.0
     fvo.addProperty("App::PropertyFloat", "Render_FireSpeed").Render_FireSpeed = 1.0
 
-    for o, col in ((beam, (0.72, 0.55, 0.35)),
-                   (postA, (0.60, 0.46, 0.30)),
-                   (postB, (0.60, 0.46, 0.30))):
-        o.ViewObject.ShapeColor = col
+    # Fuse the beam and both posts (three separate boxes -- effectively a
+    # compound) into a single solid gantry; the cylinder stays separate. AO
+    # then darkens the concave post/beam junctions and the cylinder-to-gantry
+    # gap on one continuous solid.
+    frame = doc.addObject("Part::MultiFuse", "Gantry")
+    frame.Shapes = [beam, postA, postB]
+    doc.recompute()
+    # The base-color texture modulates the material colour, so keep the
+    # gantry white for the wood texture to show its true tones. (A boolean
+    # result carries a per-face DiffuseColor that overrides ShapeColor.)
+    frame.ViewObject.ShapeColor = (1.0, 1.0, 1.0)
+    frame.ViewObject.DiffuseColor = [(1.0, 1.0, 1.0, 0.0)]
+    gvo = frame.ViewObject
+    # Wood-like PBR material: dielectric (no metalness), fairly matte.
+    gvo.addProperty("App::PropertyFloat", "Render_Metallic").Render_Metallic = 0.0
+    gvo.addProperty("App::PropertyFloat", "Render_Roughness").Render_Roughness = 0.8
+    # Wood base-color + normal (bump) maps -- ambientCG Wood058 (CC0). The
+    # PropertyFileIncluded copies each image into the document.
+    wood = os.environ.get(
+        "WOOD_DIR",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "textures"))
+    gvo.addProperty("App::PropertyFileIncluded", "Render_BaseColorTexture"
+                    ).Render_BaseColorTexture = wood + "/Bark012_2K-JPG_Color.jpg"
+    gvo.addProperty("App::PropertyFileIncluded", "Render_NormalMap"
+                    ).Render_NormalMap = wood + "/Bark012_2K-JPG_NormalGL.jpg"
+    # Rough bark tiles fairly small on the gantry.
+    gvo.addProperty("App::PropertyVector", "Render_TextureScale"
+                    ).Render_TextureScale = (0.35, 0.35, 0.0)
 
     doc.recompute()
     note("SCENE BUILT")
