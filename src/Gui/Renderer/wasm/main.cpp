@@ -106,6 +106,7 @@ static float s_center[3] = {0.0f, 0.0f, 0.0f};
 static float s_panX = 0.0f, s_panY = 0.0f;  // pan in camera plane
 static float s_yaw = 0.785f;
 static float s_pitch = 0.5f;
+static float s_roll = 0.0f;   // twist about the view direction (roll arrows)
 static float s_dist = 10.0f;
 static float s_diag = 10.0f;
 // A ?cam= parameter overriding the initial fit (applied after the first
@@ -175,6 +176,15 @@ static CamFrame camFrame()
     CamFrame f;
     f.right = bx::normalize(bx::cross(dir, up));
     f.up = bx::normalize(bx::cross(f.right, dir));
+    // Roll twists the right/up frame about the view direction (the curved
+    // NaviCube arrows). At s_roll == 0 the frame is unchanged.
+    if (s_roll != 0.0f) {
+        const float cr = std::cos(s_roll), sr = std::sin(s_roll);
+        const bx::Vec3 r = bx::add(bx::mul(f.right, cr), bx::mul(f.up, sr));
+        const bx::Vec3 u = bx::sub(bx::mul(f.up, cr), bx::mul(f.right, sr));
+        f.right = r;
+        f.up = u;
+    }
     f.at = bx::Vec3(s_center[0], s_center[1], s_center[2]);
     f.at = bx::add(f.at, bx::add(bx::mul(f.right, s_panX),
                                  bx::mul(f.up, s_panY)));
@@ -194,8 +204,9 @@ static void screenRay(float px, float py, bx::Vec3 &orig, bx::Vec3 &rdir)
     bx::Vec3 fwd = bx::normalize(bx::sub(f.at, f.eye));
     // The camera's right axis is cross(forward, up) — CamFrame::right
     // is its negation (the orbit frame kept the historical pan
-    // convention), so the horizontal ray term flips sign.
-    bx::Vec3 rightCam = bx::normalize(bx::cross(fwd, bx::Vec3(0.0f, 0.0f, 1.0f)));
+    // convention), so the horizontal ray term flips sign. Derived from the
+    // frame (not world-up) so it stays consistent under camera roll.
+    bx::Vec3 rightCam = bx::neg(f.right);
     orig = f.eye;
     rdir = bx::normalize(bx::add(fwd,
         bx::add(bx::mul(rightCam, nx * th * aspect),
@@ -205,10 +216,10 @@ static void screenRay(float px, float py, bx::Vec3 &orig, bx::Vec3 &rdir)
 static void buildCamera(float *viewMtx, float *projMtx)
 {
     CamFrame f = camFrame();
-    bx::Vec3 up(0.0f, 0.0f, 1.0f);
     // Right-handed like the Coin camera the renderer's shading assumes
-    // (camera forward = -z in view space; bx defaults to left-handed).
-    bx::mtxLookAt(viewMtx, f.eye, f.at, up, bx::Handedness::Right);
+    // (camera forward = -z in view space; bx defaults to left-handed). Use the
+    // frame's own up so camera roll is reflected in the view matrix.
+    bx::mtxLookAt(viewMtx, f.eye, f.at, f.up, bx::Handedness::Right);
 
     const float aspect = s_height > 0
         ? float(s_width) / float(s_height) : 1.0f;
@@ -355,6 +366,11 @@ static const int kNaviCubeOverlayId = 5;  // View3DInventorViewer OverlayNaviCub
 // snapshot, so the snapshot replay never clears it.
 static const int kCubeHiliteOverlayId = 20;
 static int s_cubeHiliteDraw = -2;         // cube draw index currently tinted
+// Same idea for the rotate arrows (button overlay): a tinted copy of the
+// hovered arrow's draw, one id higher so it draws after both the cube and
+// the button overlay.
+static const int kNaviButtonHiliteOverlayId = 21;
+static int s_btnHiliteDraw = -2;          // button draw index currently tinted
 
 /// Overlay viewport rect in top-left canvas pixels, mirroring
 /// BGFXRenderer's per-frame anchor placement (corner + margins).
@@ -654,6 +670,7 @@ static void orientToDir(const bx::Vec3 &d)
     // Match the orbit clamp (avoids the up-vector singularity at ±90°).
     s_pitch = bx::clamp(newPitch, -1.55f, 1.55f);
     s_yaw = newYaw;
+    s_roll = 0.0f;   // a face/edge/corner click gives a level, untwisted view
     s_panX = s_panY = 0.0f;
 }
 
@@ -661,7 +678,8 @@ static const int kNaviButtonsOverlayId = 6;  // OverlayNaviButtons
 
 enum NaviButtonAction {
     NaviBtnNone, NaviBtnTiltUp, NaviBtnTiltDown,
-    NaviBtnOrbitLeft, NaviBtnOrbitRight
+    NaviBtnOrbitLeft, NaviBtnOrbitRight,
+    NaviBtnRollLeft, NaviBtnRollRight
 };
 
 /// Map a click on the NaviCube button overlay (the tilt/orbit arrows
@@ -706,6 +724,18 @@ static NaviButtonAction pickNaviButton(float px, float py)
         return NaviBtnOrbitRight;   // east arrow
     if (std::fabs(ny) < lat && nx < -band)
         return NaviBtnOrbitLeft;    // west arrow
+    // The two curved roll arrows sit in the upper-left / upper-right, as an
+    // annular sector between the cube body and the rim (see
+    // NaviCube.cpp createButtonTex TEX_ARROW_LEFT/RIGHT: radius ~1, ~32-72°
+    // and its mirror). Angularly disjoint from N/E/W above.
+    const float rad = std::sqrt(nx * nx + ny * ny);
+    if (rad > 0.72f && rad < 1.10f) {
+        const float ang = std::atan2(ny, nx) * 180.0f / bx::kPi;
+        if (ang > 26.0f && ang < 78.0f)
+            return NaviBtnRollRight;    // upper-right curved arrow
+        if (ang > 102.0f && ang < 154.0f)
+            return NaviBtnRollLeft;     // upper-left curved arrow
+    }
     return NaviBtnNone;
 }
 
@@ -727,9 +757,77 @@ static void applyNaviButton(NaviButtonAction a)
     case NaviBtnOrbitRight:
         s_yaw -= step;
         break;
+    case NaviBtnRollLeft:
+        s_roll -= step;
+        break;
+    case NaviBtnRollRight:
+        s_roll += step;
+        break;
     default:
         break;
     }
+}
+
+/// Drop any active arrow hover tint.
+static void clearButtonHover()
+{
+    if (s_btnHiliteDraw != -2) {
+        s_renderer->removeOverlay(kNaviButtonHiliteOverlayId);
+        s_btnHiliteDraw = -2;
+    }
+}
+
+/// Draw index of the arrow quad for a rotate-button action, matching the
+/// order the button overlay is built in (NaviCube.cpp buildCoinButtons over
+/// m_Buttons: NORTH, SOUTH, EAST, WEST, roll-left, roll-right, dot, menu).
+/// The four handled arrows are the first four draws.
+static int naviButtonDrawIndex(NaviButtonAction a)
+{
+    switch (a) {
+    case NaviBtnTiltUp:     return 0;   // TEX_ARROW_NORTH
+    case NaviBtnTiltDown:   return 1;   // TEX_ARROW_SOUTH
+    case NaviBtnOrbitRight: return 2;   // TEX_ARROW_EAST
+    case NaviBtnOrbitLeft:  return 3;   // TEX_ARROW_WEST
+    case NaviBtnRollLeft:   return 4;   // TEX_ARROW_LEFT  (curved)
+    case NaviBtnRollRight:  return 5;   // TEX_ARROW_RIGHT (curved)
+    default:                return -1;
+    }
+}
+
+/// Hover highlight for the rotate arrows: when the cursor is over a handled
+/// arrow hot-zone, tint that arrow's quad the NaviCube HiliteColor and feed
+/// it as its own overlay. Like updateCubeHover, the arrow texture is kept, so
+/// the tint is clipped to the arrow shape (the shader discards near-zero
+/// alpha). Returns true while the cursor is over a handled arrow so scene
+/// preselection yields to it.
+static bool updateButtonHover(float px, float py)
+{
+    const Render::SceneSnapshot::Overlay *btn = nullptr;
+    for (const auto &ov : s_snap.overlays) {
+        if (ov.id == kNaviButtonsOverlayId) {
+            btn = &ov;
+            break;
+        }
+    }
+    int di = btn ? naviButtonDrawIndex(pickNaviButton(px, py)) : -1;
+    if (di < 0 || size_t(di) >= btn->draws.size()) {
+        clearButtonHover();
+        return false;
+    }
+    if (di != s_btnHiliteDraw) {
+        s_btnHiliteDraw = di;
+        Render::DrawCall hl = btn->draws[size_t(di)];
+        // NaviCube HiliteColor (170,226,255), opaque so the arrow pops over
+        // its normal translucent ButtonColor.
+        hl.material.diffuse = 0xAAE2FFFF;
+        hl.material.pervertexcolor = false;
+        hl.material.transparent = true;
+        Render::DrawCallList draws;
+        draws.push_back(std::move(hl));
+        s_renderer->setOverlay(kNaviButtonHiliteOverlayId, std::move(draws),
+                               btn->anchor);
+    }
+    return true;
 }
 
 // Hover highlight state: a local setHighlight() built from the hit
@@ -989,8 +1087,16 @@ static void updateHover(const EmscriptenMouseEvent *e)
     // NaviCube face hover highlight wins over scene preselection: when the
     // cursor is over the cube, tint the face and clear any scene hover.
     if (updateCubeHover(px, py)) {
+        clearButtonHover();
         std::snprintf(s_hoverDesc, sizeof(s_hoverDesc),
                       "NaviCube draw %d", s_cubeHiliteDraw);
+        applyHover(PickHit{});
+        return;
+    }
+    // Rotate arrows ringing the cube: tint the hovered arrow.
+    if (updateButtonHover(px, py)) {
+        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc),
+                      "NaviCube arrow %d", s_btnHiliteDraw);
         applyHover(PickHit{});
         return;
     }
@@ -1021,6 +1127,7 @@ static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
     s_clickOk = e->button == 0 && !e->shiftKey;
     // The cube geometry is about to move under any active hover tint.
     clearCubeHover();
+    clearButtonHover();
     return EM_TRUE;
 }
 
@@ -1127,6 +1234,7 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
         // cancels it. The cube hover tint isn't used on touch, but clear any
         // stale one before the geometry can move.
         clearCubeHover();
+        clearButtonHover();
         if (e->numTouches == 1 && n == 1) {
             s_tapOk = true;
             s_tapX = x[0];

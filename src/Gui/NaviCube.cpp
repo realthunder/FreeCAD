@@ -1180,7 +1180,14 @@ void NaviCubeImplementation::drawNaviCube(bool pickMode) {
 		return;
 
 	handleResize();
-    if (m_Shared->drawNaviCube(cam, pickMode, m_HiliteId, m_Hit))
+	// Always draw the rotate buttons in the pick pass (they are invisible
+	// there anyway): pickFace() gates the buttons on the stale m_Hit, so the
+	// frame the cursor first crosses into the cube region and lands on an
+	// arrow has no buttons to pick — the arrow never highlights until the
+	// mouse moves again. Forcing them in for picking lets a stationary
+	// landing highlight (and reveal) the arrow immediately. Display is
+	// unaffected (it calls with pickMode == false).
+	if (m_Shared->drawNaviCube(cam, pickMode, m_HiliteId, m_Hit || pickMode))
 		m_View3DInventorViewer->getSoRenderManager()->scheduleRedraw();
 }
 
