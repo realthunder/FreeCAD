@@ -56,6 +56,10 @@
 #include <set>
 
 #undef GL_GLEXT_VERSION
+#ifdef __EMSCRIPTEN__
+#include <cstdlib>
+#include <emscripten/html5.h>
+#endif
 #ifdef FC_RENDERER_STANDALONE
 #include "StandalonePlatform.h"
 #else
@@ -120,6 +124,35 @@ extern "C" int _main_(int, char**) {
 
 namespace
 {
+    /// True when float32 textures cannot be linearly filtered on this GPU.
+    /// On WebGL that needs OES_texture_float_linear, which many mobile GPUs
+    /// lack -- there a linear-filtered float32 (RG32F) texture is *incomplete*
+    /// and every sample reads back (0,0), so a float32 variance shadow map
+    /// makes the whole scene read fully shadowed. bgfx misses this on WebGL2
+    /// (its per-format linear detection is gated on the WebGL1-era
+    /// OES_texture_float extension, which WebGL2 reports as core). Detected
+    /// once from the live context; desktop GL (and any WebGL that advertises
+    /// the extension, e.g. desktop-GPU browsers) filters float32 natively.
+    /// Half-float (RG16F/RGBA16F) linear filtering is separate and far more
+    /// widely available, so the shadow moments drop to RG16F here rather than
+    /// point-sampling RG32F (which speckles the self-shadowed terminator).
+    bool shadowFloat32NotFilterable()
+    {
+        static const bool need = [] {
+#ifdef __EMSCRIPTEN__
+            char *exts = emscripten_webgl_get_supported_extensions();
+            bool has = exts
+                && std::strstr(exts, "OES_texture_float_linear") != nullptr;
+            if (exts)
+                std::free(exts);
+            return !has;
+#else
+            return false;  // desktop GL: float32 linear filtering is core
+#endif
+        }();
+        return need;
+    }
+
 #ifndef FC_RENDERER_STANDALONE
     void freeFramebufferFunc(QOpenGLFunctions *funcs, GLuint id)
     {
@@ -1935,16 +1968,24 @@ public:
         // bleeding at overlapping occluders. RG32F carries the classic
         // c = 42 warp; the RG16F fallback must keep exp(2 c) inside
         // half-float range, so its warp is much weaker (c = 5 — better
-        // than plain VSM, worse than fp32). Float-linear filtering of
-        // 32-bit targets is not guaranteed on WebGL2 — revisit the
-        // preference when the WASM build lands.
+        // than plain VSM, worse than fp32).
         auto shadowFormat = bgfx::TextureFormat::RG32F;
         shadowWarp = 42.0f;
         m_shadow = (bgfx::getCaps()->formats[shadowFormat]
                     & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER) != 0;
-        if (!m_shadow) {
+        // Drop to RG16F both when RG32F is not framebuffer-capable AND when it
+        // is renderable but not linearly filterable (WebGL without
+        // OES_texture_float_linear -- common on mobile): under the VSM's
+        // linear sampling an unfilterable float32 map reads back black (whole
+        // scene shadowed), and point-sampling it instead speckles the
+        // terminator. RG16F stays linearly filtered there (half-float linear
+        // is widely supported), so the moments keep smoothing cleanly. Its
+        // fp16 (z, z^2) lacks precision, so this path always runs the EVSM
+        // warp (c = 5) rather than plain (z, z^2) moments.
+        if (!m_shadow || shadowFloat32NotFilterable()) {
             shadowFormat = bgfx::TextureFormat::RG16F;
             shadowWarp = 5.0f;
+            m_shadowForceWarp = true;
             m_shadow = (bgfx::getCaps()->formats[shadowFormat]
                         & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER) != 0;
         }
@@ -3450,10 +3491,15 @@ public:
         }
         shadowSize = size;
         shadowMapHash = 0;
+        // The variance moments are linearly filtered (VSM samples the
+        // filtered map). The format was already chosen so this is always a
+        // filterable one on this GPU (RG32F where float32 linear is
+        // available, else RG16F -- see the format selection), so the sampler
+        // stays linear everywhere and nothing is point-sampled.
+        const uint64_t shadowSamp = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
         shadowTex = bgfx::createTexture2D(size, size,
             false, 1, shadowFormat,
-            BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP
-            | BGFX_SAMPLER_V_CLAMP);
+            BGFX_TEXTURE_RT | shadowSamp);
         shadowDepth = bgfx::createTexture2D(size, size,
             false, 1, bgfx::TextureFormat::D24S8,
             BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
@@ -3465,8 +3511,7 @@ public:
         // texture; no depth needed for fullscreen passes).
         shadowBlurTex = bgfx::createTexture2D(size, size,
             false, 1, shadowFormat,
-            BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP
-            | BGFX_SAMPLER_V_CLAMP);
+            BGFX_TEXTURE_RT | shadowSamp);
         shadowBlurFbo = bgfx::createFrameBuffer(1, &shadowBlurTex,
                                                 false);
         shadowBlurBackFbo = bgfx::createFrameBuffer(1, &shadowTex,
@@ -5019,6 +5064,9 @@ public:
     uint16_t shadowSize = 0;
     bgfx::TextureFormat::Enum shadowFormat = bgfx::TextureFormat::RG32F;
     bool m_shadow = false;     // shadow resources exist (caps allow it)
+    // The reduced RG16F moment path (float32 not linearly filterable) always
+    // runs the EVSM warp -- fp16 plain (z, z^2) moments are too imprecise.
+    bool m_shadowForceWarp = false;
     float shadowWarp = 42.0f;  // EVSM exponent (by moments format)
     // Per-frame shadow lookup state: warp 0 = plain VSM (Coin
     // parity, SmoothBorder 0), else the EVSM exponent above;
@@ -5594,8 +5642,14 @@ public:
         // the receivers run Coin's exact VsmLookup — the GL Shadow
         // style's soft default penumbra. The exponential warp (and its
         // tighter penumbra) only engages with the blur.
+        // The reduced RG16F moment path (float32 not linearly filterable)
+        // always runs the EVSM warp -- fp16 plain (z, z^2) moments lose too
+        // much precision on the self-shadowed terminator, and the warp is what
+        // makes RG16F usable. Full-precision RG32F keeps Coin's plain-VSM
+        // parity at SmoothBorder 0.
         view->shadowWarpFrame =
-            lightconf.smoothBorder > 0.0f ? view->shadowWarp : 0.0f;
+            (lightconf.smoothBorder > 0.0f || view->m_shadowForceWarp)
+                ? view->shadowWarp : 0.0f;
         view->shadowEpsilon = lightconf.epsilon;
         view->shadowThreshold = lightconf.threshold;
         // Coin's N-tap receiver spread kernel (ShadowSpreadSize /
