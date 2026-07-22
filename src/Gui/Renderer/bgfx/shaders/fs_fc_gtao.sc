@@ -28,10 +28,21 @@ $input v_texcoord0
 
 SAMPLER2D(s_texNormalZ, 0);
 SAMPLER2D(s_texAONoise, 1);
+// Prefiltered depth pyramid (XeGTAO depth MIP chain): level m holds the
+// weighted-downsampled prepass viewZ at full-res >> m. Far horizon taps
+// read the coarse levels — one texel there summarizes the whole footprint
+// between sparse taps, so long-range occlusion survives a fixed step
+// count. Background texels carry the sentinel -6.0e4.
+SAMPLER2D(s_texAOMip1, 2);
+SAMPLER2D(s_texAOMip2, 3);
+SAMPLER2D(s_texAOMip3, 4);
+SAMPLER2D(s_texAOMip4, 5);
 
 uniform vec4 u_aoParams;
-// x = slice count, y = steps per slice side (Render_GTAOSlices/Steps,
-// clamped by the backend).
+// x = slice count, y = steps per slice side (Render_AOSlices/Steps,
+// clamped by the backend), z = depth pyramid level count (0 = none),
+// w = AO-target-to-full-res pixel scale (the pass may run at a reduced
+// Render_AOResolution, but the pyramid halves from FULL resolution).
 uniform vec4 u_aoParams2;
 
 #define HALF_PI 1.5707963267948966
@@ -93,18 +104,24 @@ void main()
 	vec2 uvRadius = 0.5 * radius * vec2(u_proj[0][0], u_proj[1][1]);
 	if (persp)
 		uvRadius /= viewZ;
-	// Cap the marched extent in PIXELS: zoomed in, the world radius can
-	// project to thousands of pixels, and the fixed step count then
+	// Cap the marched extent in PIXELS. With the depth pyramid the far
+	// taps read coarse prefiltered levels, so a long radius stays both
+	// cheap and dense-enough — only cap at the screen diagonal (beyond
+	// it every tap is off-screen anyway). Without the pyramid (R32F/R16F
+	// not renderable) keep the old hard cap: zoomed in, the world radius
+	// can project to thousands of pixels and the fixed step count then
 	// samples hundreds of pixels apart — smeared, low-res-looking
-	// shading. Capping keeps the taps dense (contact detail stays crisp
-	// up close) at the cost of very-long-range occlusion; the proper
-	// long-range answer is a prefiltered depth mip chain like XeGTAO's.
+	// shading.
+	float mipCount = u_aoParams2.z;
 	float radiusPx = max(length(uvRadius * u_viewRect.zw), 1.0e-4);
-	const float maxRadiusPx = 256.0;
+	float maxRadiusPx = mipCount > 0.5 ? length(u_viewRect.zw) : 256.0;
 	if (radiusPx > maxRadiusPx) {
 		uvRadius *= maxRadiusPx / radiusPx;
 		radiusPx = maxRadiusPx;
 	}
+	// Full-res pixels per AO-target pixel: the pyramid level pick needs
+	// full-res tap distances.
+	float pxToFull = max(u_aoParams2.w, 1.0e-6);
 	// XeGTAO's pixelTooCloseThreshold (1.3 px) as a minimum step
 	// parameter: sub-pixel samples read the pixel's own quantized depth
 	// and falsely darken flat surfaces.
@@ -194,14 +211,47 @@ void main()
 			s01 = s01 * s01 + minS;   // squared distribution + min offset
 			vec2 off = s01 * omega * uvRadius;
 
+			// XeGTAO depth MIP pick: taps beyond ~2^3.3 (~10) full-res
+			// pixels step one level per octave of distance
+			// (depthMIPSamplingOffset 3.30).
+			float mip = 0.0;
+			if (mipCount > 0.5)
+				mip = clamp(log2(max(s01 * radiusPx * pxToFull, 1.0))
+				            - 3.3, 0.0, mipCount);
+
 			for (int side = 0; side < 2; ++side)
 			{
 				vec2 suv = side == 0 ? v_texcoord0 + off
 				                     : v_texcoord0 - off;
-				vec4 snz = texture2D(s_texNormalZ, suv);
-				if (snz.w < 0.5)
-					continue;   // background raises no horizon
-				vec3 spos = viewPos(suv, snz.z, persp);
+				// Off-screen taps see nothing (a clamp-sampled edge
+				// texel would streak false horizons inward).
+				if (suv.x < 0.0 || suv.y < 0.0
+				        || suv.x > 1.0 || suv.y > 1.0)
+					continue;
+				float sviewZ;
+				if (mip < 0.5)
+				{
+					// Near taps keep the full-precision prepass (exact
+					// fp32 depth + validity flag).
+					vec4 snz = texture2D(s_texNormalZ, suv);
+					if (snz.w < 0.5)
+						continue;   // background raises no horizon
+					sviewZ = snz.z;
+				}
+				else
+				{
+					if (mip < 1.5)
+						sviewZ = texture2D(s_texAOMip1, suv).x;
+					else if (mip < 2.5)
+						sviewZ = texture2D(s_texAOMip2, suv).x;
+					else if (mip < 3.5)
+						sviewZ = texture2D(s_texAOMip3, suv).x;
+					else
+						sviewZ = texture2D(s_texAOMip4, suv).x;
+					if (sviewZ < -1.0e4)
+						continue;   // background sentinel
+				}
+				vec3 spos = viewPos(suv, sviewZ, persp);
 				vec3 delta = spos - pos;
 				float dist = length(delta);
 				// Samples closer than the prepass depth quantization
