@@ -456,13 +456,19 @@ struct WaterConfig {
     /// (exact), false = screen-space reflection (march). Env cubemap is the
     /// fallback for both.
     bool planarReflection = true;
+    /// Receive the scene light's shadow on the surface (a shadow band on
+    /// the water and a killed sun glint where shadowed). Needs the Shadow
+    /// draw style with an active shadow map (LightConfig::shadow); off =
+    /// the surface stays fully lit regardless of casters.
+    bool shadow = true;
 
     bool operator==(const WaterConfig &o) const {
         return enabled == o.enabled && waveStrength == o.waveStrength
             && waveScale == o.waveScale && waveSpeed == o.waveSpeed
             && absorption == o.absorption && inscatter == o.inscatter
             && refraction == o.refraction && reflection == o.reflection
-            && planarReflection == o.planarReflection;
+            && planarReflection == o.planarReflection
+            && shadow == o.shadow;
     }
     bool operator!=(const WaterConfig &o) const { return !(*this == o); }
 };

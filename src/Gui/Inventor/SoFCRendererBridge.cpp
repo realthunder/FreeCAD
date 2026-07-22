@@ -1101,6 +1101,9 @@ RendererBridge::translateWaterConfig(View3DInventor * view)
     res.planarReflection = viewParamOverride<App::PropertyBool>(
             view, "Render", "WaterPlanarReflection",
             RenderParams::getWaterPlanarReflection());
+    res.shadow = viewParamOverride<App::PropertyBool>(
+            view, "Render", "WaterShadow",
+            RenderParams::getWaterShadow());
     return res;
 }
 

@@ -76,6 +76,7 @@ public:
     bool WaterRefraction;
     bool WaterReflection;
     bool WaterPlanarReflection;
+    bool WaterShadow;
     bool GroundReflection;
     double GroundReflectionIntensity;
 
@@ -138,6 +139,8 @@ public:
         funcs["WaterReflection"] = &RenderParamsP::updateWaterReflection;
         WaterPlanarReflection = this->handle->GetBool("WaterPlanarReflection", true);
         funcs["WaterPlanarReflection"] = &RenderParamsP::updateWaterPlanarReflection;
+        WaterShadow = this->handle->GetBool("WaterShadow", true);
+        funcs["WaterShadow"] = &RenderParamsP::updateWaterShadow;
         GroundReflection = this->handle->GetBool("GroundReflection", false);
         funcs["GroundReflection"] = &RenderParamsP::updateGroundReflection;
         GroundReflectionIntensity = this->handle->GetFloat("GroundReflectionIntensity", 0.4);
@@ -269,6 +272,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateWaterPlanarReflection(RenderParamsP *self) {
         self->WaterPlanarReflection = self->handle->GetBool("WaterPlanarReflection", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterShadow(RenderParamsP *self) {
+        self->WaterShadow = self->handle->GetBool("WaterShadow", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateGroundReflection(RenderParamsP *self) {
@@ -1093,6 +1100,39 @@ void RenderParams::setWaterPlanarReflection(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeWaterPlanarReflection() {
     instance()->handle->RemoveBool("WaterPlanarReflection");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterShadow() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Receive the scene light's shadow on the water surface: a\n"
+"shadow band on the water where a caster blocks the light and\n"
+"the sun glint killed there. Requires the Shadow draw style\n"
+"with an active shadow map; off leaves the surface fully lit.\n"
+"The refracted scene below the surface keeps its own shadow\n"
+"regardless.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getWaterShadow() {
+    return instance()->WaterShadow;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultWaterShadow() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterShadow(const bool &v) {
+    instance()->handle->SetBool("WaterShadow",v);
+    instance()->WaterShadow = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterShadow() {
+    instance()->handle->RemoveBool("WaterShadow");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

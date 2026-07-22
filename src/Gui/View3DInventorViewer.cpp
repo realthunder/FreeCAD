@@ -3952,6 +3952,9 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyBool>(view, "WaterPlanarReflection",
             RenderParams::docWaterPlanarReflection(),
             RenderParams::getWaterPlanarReflection());
+    _renderParam<App::PropertyBool>(view, "WaterShadow",
+            RenderParams::docWaterShadow(),
+            RenderParams::getWaterShadow());
     _renderParam<App::PropertyBool>(view, "GroundReflection",
             RenderParams::docGroundReflection(),
             RenderParams::getGroundReflection());

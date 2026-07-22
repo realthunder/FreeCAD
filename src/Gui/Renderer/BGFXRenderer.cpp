@@ -3783,7 +3783,7 @@ public:
                             float waveStrength, float waveScale,
                             float time, bool depthReject, int reflMode,
                             bool refraction, bool absorb, float absorption,
-                            float inscatter)
+                            float inscatter, bool shadow)
     {
         bool planarRefl = reflMode == 3;
         if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -3840,6 +3840,22 @@ public:
         // Water back-face depth (pool bottom along each ray) for the
         // Beer-Lambert depth absorption of the refraction.
         bgfx::setTexture(4, s_texWaterBack, absorb ? waterBackTex : sceneCopyTex);
+        // Scene-light shadow received on the surface (a shadow band + a
+        // killed glint). Only when the Shadow draw style has an active
+        // shadow map and the water shadow toggle is on; otherwise
+        // u_shadowParams.x = 0 keeps the surface fully lit but the sampler
+        // still needs a valid bind (any texture will do, the shader skips).
+        bool waterShadow = shadow && shadowFrame;
+        static const bool dbgvis =
+            getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
+        float shadowParams[4] = {waterShadow ? 1.0f : 0.0f, shadowEpsilon,
+                                 0.003f, dbgvis ? 1.0f : 0.0f};
+        bgfx::setUniform(u_shadowParams, shadowParams);
+        float evsm[4] = {shadowWarpFrame, shadowThreshold, 0.0f, 0.0f};
+        bgfx::setUniform(u_evsm, evsm);
+        bgfx::setUniform(u_shadowMatrix, shadowMtx);
+        bgfx::setTexture(5, s_texShadow,
+                         waterShadow ? shadowTex : sceneCopyTex);
 
         setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
         // The mesh vertex shader needs the color stream too (bgfx drops
@@ -7136,7 +7152,8 @@ public:
                                          waterSurfReject, waterReflMode,
                                          waterconf.refraction, waterActive,
                                          waterconf.absorption,
-                                         waterconf.inscatter);
+                                         waterconf.inscatter,
+                                         waterconf.shadow);
             if (surfGlass && !cullDraw) {
                 view->submitWaterDepth(draw, false, 1);
                 view->submitWaterDepth(draw, true, 1);

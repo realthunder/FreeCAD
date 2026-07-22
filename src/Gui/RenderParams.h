@@ -440,6 +440,23 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter WaterShadow
+    ///
+    /// Receive the scene light's shadow on the water surface: a
+    /// shadow band on the water where a caster blocks the light and
+    /// the sun glint killed there. Requires the Shadow draw style
+    /// with an active shadow map; off leaves the surface fully lit.
+    /// The refracted scene below the surface keeps its own shadow
+    /// regardless.
+    static const bool & getWaterShadow();
+    static const bool & defaultWaterShadow();
+    static void removeWaterShadow();
+    static void setWaterShadow(const bool &v);
+    static const char *docWaterShadow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter GroundReflection
     ///
     /// Mirror the model in the shadow ground plane of the

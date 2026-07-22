@@ -25,12 +25,54 @@ SAMPLERCUBE(s_texEnv, 1);
 SAMPLER2D(s_texNormalZ, 2);
 SAMPLER2D(s_texRefl, 3);
 SAMPLER2D(s_texWaterBack, 4);  // pool-bottom eye distance in .z, .w = valid
+// Scene-light variance shadow map (same target the mesh receivers sample),
+// bound only when the water surface should receive the scene light's
+// shadow (u_shadowParams.x > 0.5).
+SAMPLER2D(s_texShadow, 5);
 
 uniform vec4 u_matColor;   // rgb = water tint; a > 0.5 = planar refl in s_texRefl
 uniform vec4 u_lightDir;
 uniform vec4 u_lightColor;
 uniform vec4 u_waterSurf;
 uniform vec4 u_waterAbsorb; // x=absorption, y=in-scatter, z=refl mode, w=refract
+// x = the surface receives the scene light's shadow, y = min variance
+// (VSM epsilon), z = EVSM depth bias, w unused.
+uniform vec4 u_shadowParams;
+// x = EVSM warp exponent (0 = plain VSM), y = plain-VSM light-bleed threshold.
+uniform vec4 u_evsm;
+// Maps view space to shadow map uv (xy) + light-window depth (z).
+uniform mat4 u_shadowMatrix;
+
+// One variance shadow map tap at uv against receiver light-window depth z,
+// matching the mesh receivers' fc_shadowTap (Coin SoShadowGroup VsmLookup
+// parity for plain VSM, EVSM warp when the SmoothBorder blur is active).
+float fc_waterShadowTap(vec2 uv, float z)
+{
+	vec2 mo = texture2D(s_texShadow, uv).xy;
+	if (u_evsm.x < 0.5)
+	{
+		if (mo.x >= 0.9999)
+			return 1.0;
+		float lit = z <= mo.x ? 1.0 : 0.0;
+		float va = min(max(mo.y - mo.x * mo.x, 0.0)
+		                   + u_shadowParams.y,
+		               1.0);
+		float dd = mo.x - z;
+		float pmax = va / (va + dd * dd);
+		pmax *= smoothstep(u_evsm.y, 1.0, pmax);
+		return max(lit, pmax);
+	}
+	float p = exp(u_evsm.x * (z - u_shadowParams.z));
+	if (p > mo.x)
+	{
+		float va = max(mo.y - mo.x * mo.x,
+		               u_shadowParams.y * mo.x * mo.x);
+		float dd = p - mo.x;
+		float pmax = va / (va + dd * dd);
+		return clamp((pmax - 0.3) / 0.7, 0.0, 1.0);
+	}
+	return 1.0;
+}
 
 void main()
 {
@@ -204,12 +246,29 @@ void main()
 	float fres = rmode > 0 ? (0.02 + 0.98 * f2 * f2 * f) : 0.0;
 	vec3 color = mix(refr, refl, fres);
 
-	// Sun glint from the scene light on the perturbed normal.
+	// Scene-light shadow cast onto the water surface: sample the same
+	// variance shadow map as the mesh receivers at this fragment's world
+	// position. The refracted floor already carries its own shadow (from
+	// the shaded scene copy), so darken only moderately to read as a
+	// shadow band on the surface without doubling it to black; the sun
+	// glint below is killed outright where shadowed.
+	float shadow = 1.0;
+	if (u_shadowParams.x > 0.5)
+	{
+		vec4 sp = mul(u_shadowMatrix, vec4(v_vpos, 1.0));
+		sp.xyz /= sp.w;  // spot lights render a perspective map
+		if (sp.x > 0.0 && sp.x < 1.0 && sp.y > 0.0 && sp.y < 1.0
+		    && sp.z > 0.0 && sp.z < 1.0)
+			shadow = fc_waterShadowTap(sp.xy, sp.z);
+	}
+	color *= mix(0.6, 1.0, shadow);
+
+	// Sun glint from the scene light on the perturbed normal (shadowed).
 	if (u_lightDir.w > 0.5)
 	{
 		vec3 h = normalize(V - u_lightDir.xyz);
 		color += u_lightColor.rgb
-			* (pow(max(dot(np, h), 0.0), 250.0) * 2.0);
+			* (pow(max(dot(np, h), 0.0), 250.0) * 2.0 * shadow);
 	}
 
 	gl_FragColor = vec4(color, 1.0);

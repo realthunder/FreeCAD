@@ -143,6 +143,13 @@ Params = [
         "cheaper per-pixel ray march that can only reflect on-screen\n"
         "geometry and tapers past it). The environment cubemap is the\n"
         "fallback for both."),
+    ParamBool('WaterShadow',  True, title='Water shadow',
+        doc="Receive the scene light's shadow on the water surface: a\n"
+        "shadow band on the water where a caster blocks the light and\n"
+        "the sun glint killed there. Requires the Shadow draw style\n"
+        "with an active shadow map; off leaves the surface fully lit.\n"
+        "The refracted scene below the surface keeps its own shadow\n"
+        "regardless."),
     ParamBool('GroundReflection',  False, title='Ground reflection',
         doc="Mirror the model in the shadow ground plane of the\n"
         "experimental render engine: the opaque scene is re-rendered\n"
