@@ -1333,6 +1333,11 @@ public:
                             // receivers multiply it into the direct
                             // scene-light term — glass shadows are
                             // softer, tinted when colored
+        ViewShadowTintBlurH, // ShadowSmoothBorder blur of the tint map
+                            // (same separable gaussian as the moments —
+                            // an unblurred tint edge would stay hard
+                            // inside the smoothed penumbra) ...
+        ViewShadowTintBlurV, // ... and vertical back into the tint map
         ViewAOPrepass,      // SSAO depth+normal prepass of opaque scene
                             // triangles into a non-MSAA RGBA16F target
                             // (own framebuffer, own depth)
@@ -1571,14 +1576,15 @@ public:
         aoMapHash = 0;
         camFrameHash = 0;
         for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo,
-                        &shadowTintFbo}) {
+                        &shadowTintFbo, &shadowTintBlurFbo,
+                        &shadowTintBlurBackFbo}) {
             if (bgfx::isValid(*fb)) {
                 bgfx::destroy(*fb);
                 *fb = BGFX_INVALID_HANDLE;
             }
         }
         for (auto tex : {&shadowTex, &shadowDepth, &shadowBlurTex,
-                         &shadowTintTex}) {
+                         &shadowTintTex, &shadowTintBlurTex}) {
             if (bgfx::isValid(*tex)) {
                 bgfx::destroy(*tex);
                 *tex = BGFX_INVALID_HANDLE;
@@ -3644,14 +3650,15 @@ public:
         if (!m_shadow || (size == shadowSize && bgfx::isValid(shadowFbo)))
             return;
         for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo,
-                        &shadowTintFbo}) {
+                        &shadowTintFbo, &shadowTintBlurFbo,
+                        &shadowTintBlurBackFbo}) {
             if (bgfx::isValid(*fb)) {
                 bgfx::destroy(*fb);
                 *fb = BGFX_INVALID_HANDLE;
             }
         }
         for (auto tex : {&shadowTex, &shadowDepth, &shadowBlurTex,
-                         &shadowTintTex}) {
+                         &shadowTintTex, &shadowTintBlurTex}) {
             if (bgfx::isValid(*tex)) {
                 bgfx::destroy(*tex);
                 *tex = BGFX_INVALID_HANDLE;
@@ -3692,6 +3699,16 @@ public:
             | BGFX_SAMPLER_V_CLAMP);
         shadowTintFbo = bgfx::createFrameBuffer(1, &shadowTintTex,
                                                 false);
+        // ShadowSmoothBorder blurs the tint map with the same separable
+        // pass as the moments (ping texture + write-back framebuffer).
+        shadowTintBlurTex = bgfx::createTexture2D(size, size,
+            false, 1, bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP
+            | BGFX_SAMPLER_V_CLAMP);
+        shadowTintBlurFbo = bgfx::createFrameBuffer(
+            1, &shadowTintBlurTex, false);
+        shadowTintBlurBackFbo = bgfx::createFrameBuffer(
+            1, &shadowTintTex, false);
     }
 
     void submitShadowBlur(float smoothBorder)
@@ -3700,22 +3717,42 @@ public:
                 || !bgfx::isValid(shadowBlurFbo)
                 || !bgfx::isValid(shadowBlurBackFbo))
             return;
-        // Base tap step of the 9-tap kernel, scaled by the map size so
-        // the penumbra is a resolution-independent fraction of the
-        // light window (a fixed texel step on a 2048 map covering the
-        // whole scene came out ~4 screen px — invisible): 100 -> 4
-        // texels at a 512 map, 16 at 2048.
-        float step = smoothBorder * 0.04f * float(shadowSize) / 512.0f;
-        float dirH[4] = {step, 0.0f, 0.0f, 0.0f};
+        // Gaussian sigma in texels, scaled by the map size so the
+        // penumbra is a resolution-independent fraction of the light
+        // window (a fixed texel width on a 2048 map covering the whole
+        // scene came out ~4 screen px — invisible): 100 -> 6 texels at
+        // a 512 map, 24 at 2048. The kernel is dense (2-texel bilinear
+        // fetch pairs out to 3 sigma) whatever the width — stretching
+        // a fixed tap count instead replicates the shadow edge at each
+        // tap (staircase ghosting on real GPUs).
+        float sigma = std::max(
+            smoothBorder * 0.06f * float(shadowSize) / 512.0f, 0.5f);
+        float pairs = std::min(std::ceil(sigma * 1.5f), 64.0f);
+        float dirH[4] = {1.0f, 0.0f, sigma, pairs};
         bgfx::setUniform(u_shadowBlur, dirH);
         bgfx::setTexture(0, s_texShadow, shadowTex);
         fullscreen(ViewShadowBlurH, m_progShadowBlur,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-        float dirV[4] = {0.0f, step, 0.0f, 0.0f};
+        float dirV[4] = {0.0f, 1.0f, sigma, pairs};
         bgfx::setUniform(u_shadowBlur, dirV);
         bgfx::setTexture(0, s_texShadow, shadowBlurTex);
         fullscreen(ViewShadowBlurV, m_progShadowBlur,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        // The glass shadow tint map gets the same blur — an unblurred
+        // tint edge would keep a hard (map-texel) border inside the
+        // smoothed penumbra wherever a glass/water caster shadows the
+        // receiver.
+        if (bgfx::isValid(shadowTintBlurFbo)
+                && bgfx::isValid(shadowTintBlurBackFbo)) {
+            bgfx::setUniform(u_shadowBlur, dirH);
+            bgfx::setTexture(0, s_texShadow, shadowTintTex);
+            fullscreen(ViewShadowTintBlurH, m_progShadowBlur,
+                       BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+            bgfx::setUniform(u_shadowBlur, dirV);
+            bgfx::setTexture(0, s_texShadow, shadowTintBlurTex);
+            fullscreen(ViewShadowTintBlurV, m_progShadowBlur,
+                       BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        }
     }
 
     void submitPrepass(const Render::DrawCall &draw)
@@ -5399,6 +5436,9 @@ public:
     bgfx::TextureHandle shadowTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle shadowTintTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle shadowTintFbo = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle shadowTintBlurTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle shadowTintBlurFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle shadowTintBlurBackFbo = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progShadowTint = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texShadowTint = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle shadowDepth = BGFX_INVALID_HANDLE;
@@ -6869,12 +6909,19 @@ public:
                 continue;
             } else if (shadowBlurActive
                        && (i == BGFXView::ViewShadowBlurH
-                           || i == BGFXView::ViewShadowBlurV)) {
+                           || i == BGFXView::ViewShadowBlurV
+                           || i == BGFXView::ViewShadowTintBlurH
+                           || i == BGFXView::ViewShadowTintBlurV)) {
                 // Fullscreen blur passes over the shadow map size; the
                 // triangle overwrites every pixel, so no clear.
                 bgfx::setViewFrameBuffer(id,
                     i == BGFXView::ViewShadowBlurH
-                        ? view->shadowBlurFbo : view->shadowBlurBackFbo);
+                        ? view->shadowBlurFbo
+                    : i == BGFXView::ViewShadowBlurV
+                        ? view->shadowBlurBackFbo
+                    : i == BGFXView::ViewShadowTintBlurH
+                        ? view->shadowTintBlurFbo
+                        : view->shadowTintBlurBackFbo);
                 bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                                    clearColor, 1.0f, 0);
                 bgfx::setViewRect(id, 0, 0, view->shadowSize,
