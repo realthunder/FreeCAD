@@ -214,6 +214,14 @@ RenderSettingsWidget::RenderSettingsWidget(
            "scene depth render when the model or light changes)"));
     grid->addWidget(lightShadowCheck, row, 0, 1, 3);
     ++row;
+    lightShadowExtCheck = new QCheckBox(
+        tr("    extended (all directions)"), this);
+    lightShadowExtCheck->setToolTip(
+        tr("Shadow in every direction from the light (six cube-face "
+           "tiles instead of one downward cone; costs up to six tile "
+           "renders when the model or light changes)"));
+    grid->addWidget(lightShadowExtCheck, row, 0, 1, 3);
+    ++row;
 
     // Texture images (embedded into the document by
     // App::PropertyFileIncluded).
@@ -292,6 +300,7 @@ RenderSettingsWidget::RenderSettingsWidget(
                             fountainSpeedSpin});
     enables(lightCheck, {lightIntensitySpin, lightRangeSpin,
                          lightShadowCheck});
+    enables(lightShadowCheck, {lightShadowExtCheck});
     enables(baseColorCheck, {baseColorEdit});
     enables(normalMapCheck, {normalMapEdit});
     enables(emissiveMapCheck, {emissiveMapEdit});
@@ -392,6 +401,9 @@ void RenderSettingsWidget::load()
         if (auto sh = getProp<App::PropertyBool>(
                     vp, "Render_LightShadow"))
             lightShadowCheck->setChecked(sh->getValue());
+        if (auto ext = getProp<App::PropertyBool>(
+                    vp, "Render_LightShadowExtended"))
+            lightShadowExtCheck->setChecked(ext->getValue());
     }
     if (auto prop = getProp<App::PropertyFileIncluded>(
                 vp, "Render_BaseColorTexture")) {
@@ -687,9 +699,22 @@ void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
                         "The light casts shadows (a cached shadow-map "
                         "tile rendered by the engine)"))
                 prop->setValue(true);
+            if (lightShadowExtCheck->isChecked()) {
+                if (auto prop = ensureProp<App::PropertyBool>(
+                            vp, "App::PropertyBool",
+                            "Render_LightShadowExtended",
+                            "Shadow in every direction from the light "
+                            "(six cube-face tiles instead of one "
+                            "downward cone)"))
+                    prop->setValue(true);
+            }
+            else {
+                removeProp(vp, "Render_LightShadowExtended");
+            }
         }
         else {
             removeProp(vp, "Render_LightShadow");
+            removeProp(vp, "Render_LightShadowExtended");
         }
     }
     else {
@@ -697,6 +722,7 @@ void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
         removeProp(vp, "Render_LightIntensity");
         removeProp(vp, "Render_LightRange");
         removeProp(vp, "Render_LightShadow");
+        removeProp(vp, "Render_LightShadowExtended");
     }
 
     // Texture images: PropertyFileIncluded copies the file into the

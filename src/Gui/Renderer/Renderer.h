@@ -736,6 +736,11 @@ struct Material {
     /// Off by default — a tile costs a scene depth render on every
     /// invalidation.
     bool lightshadow = false;
+    /// Extended (omnidirectional) light shadow: the tile becomes six
+    /// cube faces around the bulb, so geometry in any direction can
+    /// shadow the light (not just below it). Costs up to six cached
+    /// tile renders per invalidation; off by default.
+    bool lightshadowext = false;
 
     /// Texture of a triangle draw (unit 0 only; GL applies further units
     /// on top, a known deviation) with its texture matrix, applied to

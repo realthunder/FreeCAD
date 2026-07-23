@@ -282,6 +282,7 @@ public:
     float lightintensity;
     float lightrange;
     bool lightshadow;
+    bool lightshadowext;
     float polygonoffsetunits;
     float polygonoffsetfactor;
     int16_t annotation;
@@ -435,6 +436,8 @@ public:
         if (lightrange > other.lightrange) return false;
         if (lightshadow < other.lightshadow) return true;
         if (lightshadow > other.lightshadow) return false;
+        if (lightshadowext < other.lightshadowext) return true;
+        if (lightshadowext > other.lightshadowext) return false;
         if (lightmodel < other.lightmodel) return true;
         if (lightmodel > other.lightmodel) return false;
         if (vertexordering < other.vertexordering) return true;

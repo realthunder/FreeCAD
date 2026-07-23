@@ -72,12 +72,19 @@ uniform mat4 u_shadowMatrix;
 #define LOCAL_LIGHTS 8
 uniform vec4 u_localLight[LOCAL_LIGHTS];
 uniform vec4 u_localLightColor[LOCAL_LIGHTS];
-// Bulb shadow atlas (Render_LightShadow): 2x2 plain-VSM tiles, one per
-// bulb slot; u_localLightColor[slot].w > 0.5 flags a valid tile and
-// u_bulbShadowMtx maps camera view space to its uv/depth (perspective —
-// divide by w).
-#define BULB_SHADOW_TILES 4
+// Bulb shadow atlas (Render_LightShadow): 4x4 plain-VSM tiles.
+// u_localLightColor[slot].w > 0.5 flags a shadowed bulb;
+// u_bulbShadowConf[slot] = (first tile, tile count) — 1 tile = the
+// plain downward cone, 6 = world-axis cube faces picked by the
+// dominant axis of the light-to-fragment direction (rotated to world
+// by u_bulbShadowRot). u_bulbShadowMtx maps camera view space to a
+// tile's uv/depth (perspective — divide by w).
+#define BULB_SHADOW_TILES 16
+#define BULB_SHADOW_GRID 4
+#define BULB_SLOTS 4
 uniform mat4 u_bulbShadowMtx[BULB_SHADOW_TILES];
+uniform vec4 u_bulbShadowConf[BULB_SLOTS];
+uniform mat4 u_bulbShadowRot;
 SAMPLER2D(s_texBulbShadow, 8);
 #ifdef TEXTURE
 SAMPLER2D(s_texColor, 0);
@@ -548,26 +555,52 @@ void main()
 				ndl = abs(ndl);
 			ndl = max(ndl, 0.0);
 			float att = 1.0 / (1.0 + d2 * u_localLight[fi].w);
-			// Bulb shadow tile (upper-half slots with the flag):
-			// perspective plain-VSM tap; outside the tile's cone the
-			// light stays unshadowed.
-			if (fi >= LOCAL_LIGHTS - BULB_SHADOW_TILES
+			// Bulb shadow tiles (upper-half slots with the flag):
+			// perspective plain-VSM tap. A plain bulb has one
+			// downward tile (outside its cone the light stays
+			// unshadowed); an extended one six cube faces picked by
+			// the dominant world axis of the fragment direction.
+			if (fi >= LOCAL_LIGHTS - BULB_SLOTS
 			    && u_localLightColor[fi].w > 0.5)
 			{
-				int t = fi - (LOCAL_LIGHTS - BULB_SHADOW_TILES);
+				vec4 conf =
+					u_bulbShadowConf[fi - (LOCAL_LIGHTS - BULB_SLOTS)];
+				int t = int(conf.x + 0.5);
+				vec3 spos = v_vpos;
+				if (conf.y > 1.5)
+				{
+					vec3 dw = mul(u_bulbShadowRot,
+						vec4(v_vpos - u_localLight[fi].xyz,
+						     0.0)).xyz;
+					vec3 ad = abs(dw);
+					if (ad.x >= ad.y && ad.x >= ad.z)
+						t += dw.x > 0.0 ? 0 : 1;
+					else if (ad.y >= ad.z)
+						t += dw.y > 0.0 ? 2 : 3;
+					else
+						t += dw.z > 0.0 ? 4 : 5;
+					// Normal-offset sampling: surfaces grazing a
+					// side face alias badly in its 512-texel map;
+					// lift the receiver by ~1.5 texels' world
+					// footprint (100 deg fov) along the surface
+					// normal before projecting.
+					spos += geoN * (0.007 * sqrt(d2));
+				}
 				vec4 sp = mul(u_bulbShadowMtx[t],
-				              vec4(v_vpos, 1.0));
+				              vec4(spos, 1.0));
 				if (sp.w > 1.0e-4)
 				{
 					sp.xyz /= sp.w;
-					int txi = t - (t / 2) * 2;
-					int tyi = t / 2;
+					int txi = t - (t / BULB_SHADOW_GRID)
+						* BULB_SHADOW_GRID;
+					int tyi = t / BULB_SHADOW_GRID;
+					float ts = 1.0 / float(BULB_SHADOW_GRID);
 					// Tile bounds with a 2-texel guard so the
 					// bilinear tap never bleeds a neighbor tile.
-					float m = 2.0 / 1024.0;
-					vec2 b0 = vec2(0.5 * float(txi) + m,
-					               0.5 * float(tyi) + m);
-					vec2 b1 = b0 + vec2_splat(0.5 - 2.0 * m);
+					float m = 2.0 / (512.0 * float(BULB_SHADOW_GRID));
+					vec2 b0 = vec2(ts * float(txi) + m,
+					               ts * float(tyi) + m);
+					vec2 b1 = b0 + vec2_splat(ts - 2.0 * m);
 					if (sp.x > b0.x && sp.x < b1.x
 					    && sp.y > b0.y && sp.y < b1.y
 					    && sp.z > 0.0 && sp.z < 1.0)

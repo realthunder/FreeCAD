@@ -39,7 +39,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // presel/sel config, for browser-side edge/vertex picking.
 // v13: AO method selector (SSAO / GTAO) in the AO config.
 // v14: GTAO slice/step tuning in the AO config.
-const uint32_t kVersion = 18;
+const uint32_t kVersion = 19;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -328,6 +328,7 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex)
     w.f(m.lightintensity);
     w.f(m.lightrange);
     w.b(m.lightshadow);
+    w.b(m.lightshadowext);   // v19
     texref(m.texture);
     w.floats(m.texmatrix, 16);
     w.b(m.texidentity);
@@ -417,6 +418,8 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex, uint32_t vers
         m.lightintensity = r.f();
         m.lightrange = r.f();
         m.lightshadow = r.b();
+        if (version >= 19)
+            m.lightshadowext = r.b();
     }
     texref(m.texture);
     r.floats(m.texmatrix, 16);

@@ -334,6 +334,7 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->lightintensity = 0.f;
   this->lightrange = 0.f;
   this->lightshadow = false;
+  this->lightshadowext = false;
   this->firespeed = 1.f;
   this->polygonoffsetstyle = 0;
   this->polygonoffsetunits = 0.f;
@@ -1283,6 +1284,8 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
       = material->lightIntensity.getValue();
   PRIVATE(this)->material.lightrange = material->lightRange.getValue();
   PRIVATE(this)->material.lightshadow = material->lightShadow.getValue();
+  PRIVATE(this)->material.lightshadowext
+      = material->lightShadowExtended.getValue();
 }
 
 void

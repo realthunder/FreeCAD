@@ -126,6 +126,10 @@ public:
     /// The light casts shadows (a cached shadow-map tile rendered by
     /// the engine; off by default).
     SoSFBool lightShadow;
+    /// Extended (omnidirectional) light shadow: six cube-face tiles
+    /// instead of the single downward cone (off by default -- costs up
+    /// to six cached tiles per light).
+    SoSFBool lightShadowExtended;
 
 protected:
     ~SoFCRenderMaterial() override = default;

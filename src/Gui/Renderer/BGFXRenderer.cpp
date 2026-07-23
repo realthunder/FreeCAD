@@ -1347,10 +1347,19 @@ public:
         ViewBulbShadow0,    // shadow-map tiles of shadow-casting
         ViewBulbShadow1,    // light-source bodies (Render_LightShadow):
         ViewBulbShadow2,    // plain VSM moments of a wide downward
-        ViewBulbShadow3,    // cone from each bulb, one atlas tile per
-                            // bulb slot, re-rendered only when the
-                            // casters or the bulb change (cached like
-                            // the scene shadow map)
+        ViewBulbShadow3,    // cone from each bulb (one tile), or of
+        ViewBulbShadow4,    // six world-axis cube faces around it when
+        ViewBulbShadow5,    // Render_LightShadowExtended is on. Tiles
+        ViewBulbShadow6,    // allocate sequentially from a 4x4 atlas
+        ViewBulbShadow7,    // grid; each re-renders only when the
+        ViewBulbShadow8,    // casters or the bulb change (cached like
+        ViewBulbShadow9,    // the scene shadow map).
+        ViewBulbShadow10,
+        ViewBulbShadow11,
+        ViewBulbShadow12,
+        ViewBulbShadow13,
+        ViewBulbShadow14,
+        ViewBulbShadow15,
         ViewAOPrepass,      // SSAO depth+normal prepass of opaque scene
                             // triangles into a non-MSAA RGBA16F target
                             // (own framebuffer, own depth)
@@ -1668,7 +1677,8 @@ public:
                          &u_localLight, &u_localLightColor,
                          &s_texBloom, &u_bloomParams,
                          &u_bloomTexel, &u_bloomBlur, &u_sunParams,
-                         &s_texBulbShadow, &u_bulbShadowMtx}) {
+                         &s_texBulbShadow, &u_bulbShadowMtx,
+                         &u_bulbShadowConf, &u_bulbShadowRot}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -2225,14 +2235,14 @@ public:
             // transmittance into a color map beside the moments
             // (multiplicative; receivers sample it at unit 7).
             bulbShadowTex = bgfx::createTexture2D(
-                uint16_t(2 * kBulbShadowTileSize),
-                uint16_t(2 * kBulbShadowTileSize), false, 1,
+                uint16_t(kBulbShadowGrid * kBulbShadowTileSize),
+                uint16_t(kBulbShadowGrid * kBulbShadowTileSize), false, 1,
                 bgfx::TextureFormat::RG16F,
                 BGFX_TEXTURE_RT
                 | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
             bulbShadowDepth = bgfx::createTexture2D(
-                uint16_t(2 * kBulbShadowTileSize),
-                uint16_t(2 * kBulbShadowTileSize), false, 1,
+                uint16_t(kBulbShadowGrid * kBulbShadowTileSize),
+                uint16_t(kBulbShadowGrid * kBulbShadowTileSize), false, 1,
                 bgfx::TextureFormat::D24S8,
                 BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
             bgfx::TextureHandle bsAtt[2] = {bulbShadowTex,
@@ -2243,6 +2253,11 @@ public:
             u_bulbShadowMtx = bgfx::createUniform(
                 "u_bulbShadowMtx", bgfx::UniformType::Mat4,
                 kBulbShadowTiles);
+            u_bulbShadowConf = bgfx::createUniform(
+                "u_bulbShadowConf", bgfx::UniformType::Vec4,
+                kLocalLights - kMediumSlots);
+            u_bulbShadowRot = bgfx::createUniform(
+                "u_bulbShadowRot", bgfx::UniformType::Mat4);
             m_progShadowTint = loadProgram("vs_fc_shadow",
                                            "fs_fc_shadow_tint",
                                            _BGFXLib.resource().c_str());
@@ -4948,6 +4963,9 @@ public:
         if (bgfx::isValid(u_bulbShadowMtx)) {
             bgfx::setUniform(u_bulbShadowMtx, bulbShadowMtx,
                              kBulbShadowTiles);
+            bgfx::setUniform(u_bulbShadowConf, bulbShadowConf,
+                             kLocalLights - kMediumSlots);
+            bgfx::setUniform(u_bulbShadowRot, bulbShadowRotMtx);
             bgfx::setTexture(8, s_texBulbShadow,
                              bgfx::isValid(bulbShadowTex)
                                  ? bulbShadowTex : m_whiteTex);
@@ -5963,7 +5981,11 @@ public:
     // Bulb (Render_LightShadow) shadow atlas: 2x2 tiles of plain VSM
     // moments, one per bulb light slot; a tile re-renders only when its
     // hash (bulb + casters) changes.
-    static constexpr int kBulbShadowTiles = 4;
+    /// Atlas tiles (4x4 grid): a plain-shadow bulb uses one downward
+    /// tile, an extended (Render_LightShadowExtended) bulb six cube
+    /// faces; tiles allocate sequentially per frame.
+    static constexpr int kBulbShadowTiles = 16;
+    static constexpr int kBulbShadowGrid = 4;
     static constexpr uint16_t kBulbShadowTileSize = 512;
     bgfx::TextureHandle bulbShadowTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle bulbShadowDepth = BGFX_INVALID_HANDLE;
@@ -5978,6 +6000,14 @@ public:
     float bulbShadowProjMtx[kBulbShadowTiles][16];
     uint64_t bulbShadowHash[kBulbShadowTiles] = {};
     bool bulbShadowValid[kBulbShadowTiles] = {};
+    /// Per bulb slot: x = first atlas tile, y = tile (face) count —
+    /// 1 = plain downward cone, 6 = cube faces.
+    float bulbShadowConf[kLocalLights - kMediumSlots][4] = {};
+    /// Camera view -> world rotation for the shader's cube-face pick
+    /// (directions only, translation ignored via w = 0).
+    float bulbShadowRotMtx[16] = {};
+    bgfx::UniformHandle u_bulbShadowConf = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_bulbShadowRot = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texVolFront = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolExt = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCaustics = BGFX_INVALID_HANDLE;
@@ -7165,6 +7195,7 @@ public:
         float bulbRangeW[kBulbSlots] = {};
         float bulbDiagW[kBulbSlots] = {};
         bool bulbWantShadow[kBulbSlots] = {};
+        bool bulbWantShadowExt[kBulbSlots] = {};
         int bulbCount = 0;
         {
             int slot = 0;
@@ -7203,6 +7234,7 @@ public:
                 bulbRangeW[slot] = range;
                 bulbDiagW[slot] = diag;
                 bulbWantShadow[slot] = mat.lightshadow;
+                bulbWantShadowExt[slot] = mat.lightshadowext;
                 bulbCount = slot + 1;
                 int li = BGFXView::kMediumSlots + slot++;
                 const float *vm =
@@ -7314,77 +7346,120 @@ public:
             view->shadowMapHash = 0;
         }
 
-        // Bulb shadow tiles (Render_LightShadow): a wide downward
-        // perspective from each shadow-casting bulb into its atlas
-        // tile. The camera-space receiver matrix refreshes every frame;
-        // the tile itself re-renders only when its hash (bulb pose +
-        // caster set) changes — on a static scene the steady-state
-        // cost is zero.
+        // Bulb shadow tiles (Render_LightShadow): each shadow-casting
+        // bulb renders either one wide downward-cone tile, or — with
+        // Render_LightShadowExtended — six world-axis cube faces, into
+        // sequentially allocated atlas tiles. The camera-space receiver
+        // matrices refresh every frame; a tile itself re-renders only
+        // when its hash (bulb pose + face + caster set) changes — on a
+        // static scene the steady-state cost is zero.
         bool bulbShadowRender[BGFXView::kBulbShadowTiles] = {};
         bool anyBulbShadow = false;
         {
             uint64_t casterH = 0;
             const auto *caps = bgfx::getCaps();
-            for (int t = 0; t < BGFXView::kBulbShadowTiles; ++t) {
-                bool want = shadowActive && t < bulbCount
-                    && bulbWantShadow[t] && bulbRangeW[t] > 0.0f
+            // Camera view -> world rotation for the shader's cube-face
+            // pick (directions only; w = 0 drops the translation).
+            bx::mtxInverse(view->bulbShadowRotMtx,
+                reinterpret_cast<const float *>(viewMatrix));
+            // World-axis cube faces, order matched by the shader's
+            // dominant-axis pick: +X -X +Y -Y +Z -Z.
+            static const float kFaceFwd[6][3] = {
+                {1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+            static const float kFaceUp[6][3] = {
+                {0, 0, 1}, {0, 0, 1}, {0, 0, 1},
+                {0, 0, 1}, {0, 1, 0}, {0, 1, 0}};
+            float invV[16];
+            bx::mtxInverse(invV,
+                reinterpret_cast<const float *>(viewMatrix));
+            int nextTile = 0;
+            for (int sl = 0; sl < kBulbSlots; ++sl) {
+                bool want = shadowActive && sl < bulbCount
+                    && bulbWantShadow[sl] && bulbRangeW[sl] > 0.0f
                     && bgfx::isValid(view->bulbShadowFbo);
-                if (!want) {
-                    view->bulbShadowValid[t] = false;
-                    view->bulbShadowHash[t] = 0;
-                    // Inactive: zero the matrix so the shader flag (set
-                    // from validity below) never taps it.
-                    std::memset(view->bulbShadowMtx[t], 0,
-                                sizeof(view->bulbShadowMtx[t]));
+                // 6 cube faces when extended; fall back to the plain
+                // downward tile when the atlas can't fit them all.
+                int faces = want ? (bulbWantShadowExt[sl] ? 6 : 1) : 0;
+                if (faces > BGFXView::kBulbShadowTiles - nextTile)
+                    faces = BGFXView::kBulbShadowTiles - nextTile >= 1
+                        ? 1 : 0;
+                view->bulbShadowConf[sl][0] = float(nextTile);
+                view->bulbShadowConf[sl][1] = float(faces);
+                view->bulbShadowConf[sl][2] = 0.0f;
+                view->bulbShadowConf[sl][3] = 0.0f;
+                if (!faces)
                     continue;
+                // Light camera per face. Near starts outside the bulb
+                // body so the emitter doesn't shadow itself.
+                bx::Vec3 eye(bulbPos[sl][0], bulbPos[sl][1],
+                             bulbPos[sl][2]);
+                float near = bx::max(0.55f * bulbDiagW[sl],
+                                     0.01f * bulbRangeW[sl]);
+                float far = bx::max(1.5f * bulbRangeW[sl], near * 4.0f);
+                // Cube faces cover 90 deg; 100 leaves margin past the
+                // diagonal so the bounds guard never opens a seam.
+                float fovy = faces == 6 ? 100.0f : 130.0f;
+                for (int f = 0; f < faces; ++f) {
+                    int t = nextTile + f;
+                    bx::Vec3 fwd = faces == 6
+                        ? bx::Vec3(kFaceFwd[f][0], kFaceFwd[f][1],
+                                   kFaceFwd[f][2])
+                        : bx::Vec3(0.0f, 0.0f, -1.0f);
+                    bx::Vec3 up = faces == 6
+                        ? bx::Vec3(kFaceUp[f][0], kFaceUp[f][1],
+                                   kFaceUp[f][2])
+                        : bx::Vec3(0.0f, 1.0f, 0.0f);
+                    bx::mtxLookAt(view->bulbShadowViewMtx[t], eye,
+                                  bx::add(eye, fwd), up);
+                    bx::mtxProj(view->bulbShadowProjMtx[t], fovy, 1.0f,
+                                near, far, caps->homogeneousDepth);
+                    // Camera view space -> atlas tile uv/depth.
+                    float tmp[16], tmp2[16];
+                    bx::mtxMul(tmp, invV, view->bulbShadowViewMtx[t]);
+                    bx::mtxMul(tmp2, tmp, view->bulbShadowProjMtx[t]);
+                    const float sc = 0.5f / float(BGFXView::kBulbShadowGrid);
+                    const float sy = caps->originBottomLeft ? sc : -sc;
+                    const float sz = caps->homogeneousDepth ? 0.5f : 1.0f;
+                    const float tz = caps->homogeneousDepth ? 0.5f : 0.0f;
+                    const float tx = sc
+                        + 2.0f * sc * float(t % BGFXView::kBulbShadowGrid);
+                    const float ty = sc
+                        + 2.0f * sc * float(t / BGFXView::kBulbShadowGrid);
+                    const float crop[16] = {
+                        sc,   0.0f, 0.0f, 0.0f,
+                        0.0f, sy,   0.0f, 0.0f,
+                        0.0f, 0.0f, sz,   0.0f,
+                        tx,   ty,   tz,   1.0f,
+                    };
+                    bx::mtxMul(view->bulbShadowMtx[t], tmp2, crop);
+                    // Tile cache: pose + range + face + caster set.
+                    if (!casterH) {
+                        casterH = 1469598103934665603ULL;
+                        hashCasters(casterH);
+                    }
+                    uint64_t h = casterH;
+                    hashBytes(h, bulbPos[sl], sizeof(bulbPos[sl]));
+                    hashBytes(h, &bulbRangeW[sl], sizeof(bulbRangeW[sl]));
+                    hashBytes(h, &f, sizeof(f));
+                    hashBytes(h, &faces, sizeof(faces));
+                    bulbShadowRender[t] = !view->bulbShadowValid[t]
+                        || h != view->bulbShadowHash[t];
+                    view->bulbShadowHash[t] = h;
+                    view->bulbShadowValid[t] = true;
+                    anyBulbShadow = anyBulbShadow || bulbShadowRender[t];
                 }
-                // Light camera: straight down, wide cone. Near starts
-                // outside the bulb body so the emitter doesn't shadow
-                // itself.
-                bx::Vec3 eye(bulbPos[t][0], bulbPos[t][1],
-                             bulbPos[t][2]);
-                bx::mtxLookAt(view->bulbShadowViewMtx[t], eye,
-                              bx::add(eye, bx::Vec3(0.0f, 0.0f, -1.0f)),
-                              bx::Vec3(0.0f, 1.0f, 0.0f));
-                float near = bx::max(0.55f * bulbDiagW[t],
-                                     0.01f * bulbRangeW[t]);
-                float far = bx::max(1.5f * bulbRangeW[t], near * 4.0f);
-                bx::mtxProj(view->bulbShadowProjMtx[t], 130.0f, 1.0f,
-                            near, far, caps->homogeneousDepth);
-                // Camera view space -> atlas tile uv/depth.
-                float invV[16], tmp[16], tmp2[16];
-                bx::mtxInverse(invV,
-                    reinterpret_cast<const float *>(viewMatrix));
-                bx::mtxMul(tmp, invV, view->bulbShadowViewMtx[t]);
-                bx::mtxMul(tmp2, tmp, view->bulbShadowProjMtx[t]);
-                const float sy = caps->originBottomLeft ? 0.25f : -0.25f;
-                const float sz = caps->homogeneousDepth ? 0.5f : 1.0f;
-                const float tz = caps->homogeneousDepth ? 0.5f : 0.0f;
-                const float tx = 0.25f + 0.5f * float(t % 2);
-                const float ty = 0.25f + 0.5f * float(t / 2);
-                const float crop[16] = {
-                    0.25f, 0.0f, 0.0f, 0.0f,
-                    0.0f,  sy,   0.0f, 0.0f,
-                    0.0f,  0.0f, sz,   0.0f,
-                    tx,    ty,   tz,   1.0f,
-                };
-                bx::mtxMul(view->bulbShadowMtx[t], tmp2, crop);
-                // Tile cache: pose + range + the shared caster set.
-                if (!casterH) {
-                    casterH = 1469598103934665603ULL;
-                    hashCasters(casterH);
-                }
-                uint64_t h = casterH;
-                hashBytes(h, bulbPos[t], sizeof(bulbPos[t]));
-                hashBytes(h, &bulbRangeW[t], sizeof(bulbRangeW[t]));
-                bulbShadowRender[t] = !view->bulbShadowValid[t]
-                    || h != view->bulbShadowHash[t];
-                view->bulbShadowHash[t] = h;
-                view->bulbShadowValid[t] = true;
-                anyBulbShadow = anyBulbShadow || bulbShadowRender[t];
-                // Flag the mesh shader to tap this slot's tile.
-                view->localLightColorI[BGFXView::kMediumSlots + t][3]
+                nextTile += faces;
+                // Flag the mesh shader to tap this slot's tiles.
+                view->localLightColorI[BGFXView::kMediumSlots + sl][3]
                     = 1.0f;
+            }
+            // Unused tiles: invalidate and zero so nothing taps them.
+            for (int t = nextTile; t < BGFXView::kBulbShadowTiles; ++t) {
+                view->bulbShadowValid[t] = false;
+                view->bulbShadowHash[t] = 0;
+                std::memset(view->bulbShadowMtx[t], 0,
+                            sizeof(view->bulbShadowMtx[t]));
             }
         }
 
@@ -7668,7 +7743,7 @@ public:
                 bgfx::touch(id);
                 continue;
             } else if (i >= BGFXView::ViewBulbShadow0
-                       && i <= BGFXView::ViewBulbShadow3
+                       && i <= BGFXView::ViewBulbShadow15
                        && bulbShadowRender[i - BGFXView::ViewBulbShadow0]) {
                 // Bulb shadow tile: plain VSM moments cleared to the
                 // far plane (1, 1) through the palette, tile subrect of
@@ -7680,15 +7755,16 @@ public:
                 bgfx::setViewClear(id,
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     1.0f, 0, 3);
-                // The receiver crop matrix addresses tile row t/2 at
-                // v in [0.5*(t/2), 0.5*(t/2)+0.5]. On bottom-left-origin
-                // backends (GL) the view rect's top-left y is flipped to
-                // a GL viewport row from the bottom, so place the tile
-                // in the opposite half for the sampled v to land on it.
+                // The receiver crop matrix addresses tile row t/grid
+                // from the bottom of the atlas. On bottom-left-origin
+                // backends (GL) the view rect's top-left y is flipped
+                // to a GL viewport row from the bottom, so mirror the
+                // row for the sampled v to land on the tile.
+                int grid = BGFXView::kBulbShadowGrid;
                 int tileRow = bgfx::getCaps()->originBottomLeft
-                    ? 1 - t / 2 : t / 2;
+                    ? grid - 1 - t / grid : t / grid;
                 bgfx::setViewRect(id,
-                    uint16_t((t % 2) * BGFXView::kBulbShadowTileSize),
+                    uint16_t((t % grid) * BGFXView::kBulbShadowTileSize),
                     uint16_t(tileRow * BGFXView::kBulbShadowTileSize),
                     BGFXView::kBulbShadowTileSize,
                     BGFXView::kBulbShadowTileSize);

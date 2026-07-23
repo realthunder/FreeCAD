@@ -60,6 +60,7 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_ADD_FIELD(lightIntensity, (0.0f));
     SO_NODE_ADD_FIELD(lightRange, (0.0f));
     SO_NODE_ADD_FIELD(lightShadow, (false));
+    SO_NODE_ADD_FIELD(lightShadowExtended, (false));
 }
 
 SO_NODE_SOURCE(SoFCRenderTexture)

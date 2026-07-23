@@ -90,9 +90,12 @@ try:
 
     # The two shadow-casting point lights, on opposite sides of the pillar:
     # a warm one and a cool one, so the overlapping shadows tint each other.
+    # The warm one sits LOW (below the cross-beam) -- with the extended
+    # (cube-face) shadow it shadows sideways and upward too; with the
+    # plain downward cone only the floor patch beneath it darkens.
     bulbA = doc.addObject("Part::Sphere", "WarmBulb")
     bulbA.Radius = 1.2
-    bulbA.Placement.Base = FreeCAD.Vector(-14, -10, 14)
+    bulbA.Placement.Base = FreeCAD.Vector(-14, -10, 7)
 
     bulbB = doc.addObject("Part::Sphere", "CoolBulb")
     bulbB.Radius = 1.2
@@ -127,6 +130,9 @@ try:
             float(os.environ.get("BULB_RANGE", "0"))
         lvo.addProperty("App::PropertyBool", "Render_LightShadow").Render_LightShadow = (
             os.environ.get("BULB_SHADOW", "1") == "1")
+        lvo.addProperty("App::PropertyBool", "Render_LightShadowExtended"
+                        ).Render_LightShadowExtended = (
+            os.environ.get("BULB_EXT", "1") == "1")
 
     make_light(bulbA, (1.0, 0.72, 0.35))   # warm
     make_light(bulbB, (0.45, 0.65, 1.0))   # cool
