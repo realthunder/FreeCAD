@@ -89,6 +89,8 @@ public:
     double BloomThreshold;
     double BloomIntensity;
     double BloomRadius;
+    bool SunDisc;
+    double SunDiscSize;
     bool GroundReflection;
     double GroundReflectionIntensity;
 
@@ -177,6 +179,10 @@ public:
         funcs["BloomIntensity"] = &RenderParamsP::updateBloomIntensity;
         BloomRadius = this->handle->GetFloat("BloomRadius", 1.0);
         funcs["BloomRadius"] = &RenderParamsP::updateBloomRadius;
+        SunDisc = this->handle->GetBool("SunDisc", false);
+        funcs["SunDisc"] = &RenderParamsP::updateSunDisc;
+        SunDiscSize = this->handle->GetFloat("SunDiscSize", 1.5);
+        funcs["SunDiscSize"] = &RenderParamsP::updateSunDiscSize;
         GroundReflection = this->handle->GetBool("GroundReflection", false);
         funcs["GroundReflection"] = &RenderParamsP::updateGroundReflection;
         GroundReflectionIntensity = this->handle->GetFloat("GroundReflectionIntensity", 0.4);
@@ -360,6 +366,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateBloomRadius(RenderParamsP *self) {
         self->BloomRadius = self->handle->GetFloat("BloomRadius", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSunDisc(RenderParamsP *self) {
+        self->SunDisc = self->handle->GetBool("SunDisc", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSunDiscSize(RenderParamsP *self) {
+        self->SunDiscSize = self->handle->GetFloat("SunDiscSize", 1.5);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateGroundReflection(RenderParamsP *self) {
@@ -1591,6 +1605,66 @@ void RenderParams::setBloomRadius(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeBloomRadius() {
     instance()->handle->RemoveFloat("BloomRadius");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docSunDisc() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Draw a visible sun -- a bright disc with a limb glow -- in\n"
+"the sky along the Shadow draw style's directional scene light,\n"
+"occluded by geometry and feeding the bloom glow. Perspective\n"
+"cameras only; spot lights have no sky direction.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getSunDisc() {
+    return instance()->SunDisc;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultSunDisc() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setSunDisc(const bool &v) {
+    instance()->handle->SetBool("SunDisc",v);
+    instance()->SunDisc = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeSunDisc() {
+    instance()->handle->RemoveBool("SunDisc");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docSunDiscSize() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Angular radius of the sun disc in degrees (the real sun is\n"
+"about 0.27; larger reads better in a CAD scene).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getSunDiscSize() {
+    return instance()->SunDiscSize;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultSunDiscSize() {
+    const static double def = 1.5;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setSunDiscSize(const double &v) {
+    instance()->handle->SetFloat("SunDiscSize",v);
+    instance()->SunDiscSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeSunDiscSize() {
+    instance()->handle->RemoveFloat("SunDiscSize");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

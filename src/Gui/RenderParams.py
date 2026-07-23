@@ -215,6 +215,14 @@ Params = [
     ParamFloat('BloomRadius',  1.0, title='Bloom radius',
         doc="Radius scale of the glow halo. One is the default gaussian\n"
         "footprint; larger blooms wider."),
+    ParamBool('SunDisc',  False, title='Sun disc',
+        doc="Draw a visible sun -- a bright disc with a limb glow -- in\n"
+        "the sky along the Shadow draw style's directional scene light,\n"
+        "occluded by geometry and feeding the bloom glow. Perspective\n"
+        "cameras only; spot lights have no sky direction."),
+    ParamFloat('SunDiscSize',  1.5, title='Sun disc size',
+        doc="Angular radius of the sun disc in degrees (the real sun is\n"
+        "about 0.27; larger reads better in a CAD scene)."),
     ParamBool('GroundReflection',  False, title='Ground reflection',
         doc="Mirror the model in the shadow ground plane of the\n"
         "experimental render engine: the opaque scene is re-rendered\n"

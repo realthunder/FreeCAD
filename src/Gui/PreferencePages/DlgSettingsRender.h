@@ -139,6 +139,12 @@ private:
     Gui::PrefDoubleSpinBox *BloomRadius = nullptr;
 
     // Auto generated code (Tools/params_utils.py:426)
+    QGroupBox * groupScenelightextras = nullptr;
+    Gui::PrefCheckBox *SunDisc = nullptr;
+    QLabel *labelSunDiscSize = nullptr;
+    Gui::PrefDoubleSpinBox *SunDiscSize = nullptr;
+
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupGroundreflection = nullptr;
     Gui::PrefCheckBox *GroundReflection = nullptr;
     QLabel *labelGroundReflectionIntensity = nullptr;

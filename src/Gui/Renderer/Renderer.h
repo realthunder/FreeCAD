@@ -406,6 +406,13 @@ struct LightConfig {
     /// and blend it onto the ground quad by the intensity factor.
     bool groundReflection = false;
     float groundReflectionIntensity = 0.4f;
+    /// Sun disc (RenderParams::SunDisc, backend-only): draw a visible
+    /// sun — a bright disc plus limb glow — in the sky along the
+    /// directional scene light, occluded by geometry and feeding the
+    /// bloom pass. Perspective cameras only (an orthographic sky has no
+    /// per-pixel direction); ignored for spot lights.
+    bool sunDisc = false;
+    float sunDiscSize = 1.5f;  ///< angular radius in degrees
 
     bool operator==(const LightConfig &o) const {
         return valid == o.valid && shadow == o.shadow && spot == o.spot
@@ -430,7 +437,8 @@ struct LightConfig {
             && groundTransparency == o.groundTransparency
             && groundBumpMap == o.groundBumpMap
             && groundReflection == o.groundReflection
-            && groundReflectionIntensity == o.groundReflectionIntensity;
+            && groundReflectionIntensity == o.groundReflectionIntensity
+            && sunDisc == o.sunDisc && sunDiscSize == o.sunDiscSize;
     }
     bool operator!=(const LightConfig &o) const { return !(*this == o); }
 };

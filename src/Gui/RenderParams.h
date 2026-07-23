@@ -639,6 +639,34 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter SunDisc
+    ///
+    /// Draw a visible sun -- a bright disc with a limb glow -- in
+    /// the sky along the Shadow draw style's directional scene light,
+    /// occluded by geometry and feeding the bloom glow. Perspective
+    /// cameras only; spot lights have no sky direction.
+    static const bool & getSunDisc();
+    static const bool & defaultSunDisc();
+    static void removeSunDisc();
+    static void setSunDisc(const bool &v);
+    static const char *docSunDisc();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SunDiscSize
+    ///
+    /// Angular radius of the sun disc in degrees (the real sun is
+    /// about 0.27; larger reads better in a CAD scene).
+    static const double & getSunDiscSize();
+    static const double & defaultSunDiscSize();
+    static void removeSunDiscSize();
+    static void setSunDiscSize(const double &v);
+    static const char *docSunDiscSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter GroundReflection
     ///
     /// Mirror the model in the shadow ground plane of the

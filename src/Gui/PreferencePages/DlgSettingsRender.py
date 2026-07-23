@@ -90,6 +90,11 @@ ParamGroup = (
         'BloomRadius',
     )]),
 
+    ('Scene light extras', [_RenderParams[name] for name in (
+        'SunDisc',
+        'SunDiscSize',
+    )]),
+
     ('Ground reflection', [_RenderParams[name] for name in (
         'GroundReflection',
         'GroundReflectionIntensity',

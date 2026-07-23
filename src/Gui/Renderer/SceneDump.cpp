@@ -478,9 +478,12 @@ void writeLight(Writer &w, const LightConfig &l, const TextureIndex &tex)
     texref(l.groundBumpMap);
     w.b(l.groundReflection);
     w.f(l.groundReflectionIntensity);
+    w.b(l.sunDisc);   // v18
+    w.f(l.sunDiscSize);
 }
 
-void readLight(Reader &r, LightConfig &l, const TextureTable &tex)
+void readLight(Reader &r, LightConfig &l, const TextureTable &tex,
+               uint32_t version)
 {
     auto texref = [&](std::shared_ptr<const TextureImage> &t) {
         int32_t idx = r.i32();
@@ -510,6 +513,10 @@ void readLight(Reader &r, LightConfig &l, const TextureTable &tex)
     texref(l.groundBumpMap);
     l.groundReflection = r.b();
     l.groundReflectionIntensity = r.f();
+    if (version >= 18) {
+        l.sunDisc = r.b();
+        l.sunDiscSize = r.f();
+    }
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -795,7 +802,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.bumpconf.scale = r.f();
     snap.bumpconf.parallax = r.b();
 
-    readLight(r, snap.lightconf, textures);
+    readLight(r, snap.lightconf, textures, version);
 
     VolumetricConfig &vc = snap.volconf;
     vc.enabled = r.b(); vc.intensity = r.f(); vc.density = r.f();

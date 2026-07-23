@@ -3914,6 +3914,11 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "BloomRadius",
             RenderParams::docBloomRadius(),
             RenderParams::getBloomRadius());
+    _renderParam<App::PropertyBool>(view, "SunDisc",
+            RenderParams::docSunDisc(), RenderParams::getSunDisc());
+    _renderParam<App::PropertyFloat>(view, "SunDiscSize",
+            RenderParams::docSunDiscSize(),
+            RenderParams::getSunDiscSize());
     _renderParam<App::PropertyBool>(view, "Caustics",
             RenderParams::docCaustics(), RenderParams::getCaustics());
     _renderParam<App::PropertyFloat>(view, "CausticsIntensity",

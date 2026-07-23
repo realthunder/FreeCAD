@@ -1318,6 +1318,12 @@ public:
     // draw order. Each is a bgfx view sharing the same framebuffer.
     enum PassView {
         ViewBackground = 0, // clear + gradient background quad (clip space)
+        ViewSunDisc,        // visible sun (disc + limb glow) along the
+                            // directional scene light, over the
+                            // background before any geometry — the
+                            // opaque pass overdraws it (occlusion for
+                            // free) and the bloom bright pass picks it
+                            // up. Perspective cameras only
         ViewShadow,         // variance shadow map moments of shadow
                             // casting scene triangles, rendered from the
                             // scene light (own framebuffer, light camera)
@@ -1604,6 +1610,7 @@ public:
                           &m_progVolAccum, &m_progReflMedia,
                           &m_progBloomBright, &m_progBloomEmit,
                           &m_progBloomBlur, &m_progBloomApply,
+                          &m_progSun,
                           &m_progVolApply, &m_progVolExt,
                           &m_progCaustics, &m_progWaterCopy, &m_progWater,
                           &m_progGlass, &m_progGroundRefl}) {
@@ -1647,7 +1654,7 @@ public:
                          &u_shadowBlur, &u_evsm,
                          &u_localLight, &u_localLightColor,
                          &s_texBloom, &u_bloomParams,
-                         &u_bloomTexel, &u_bloomBlur}) {
+                         &u_bloomTexel, &u_bloomBlur, &u_sunParams}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -2004,6 +2011,12 @@ public:
             u_bloomBlur = bgfx::createUniform(
                 "u_bloomBlur", bgfx::UniformType::Vec4);
         }
+
+        // Visible sun disc along the directional scene light.
+        m_progSun = loadProgram("vs_fc_comp", "fs_fc_sun",
+                                _BGFXLib.resource().c_str());
+        u_sunParams = bgfx::createUniform("u_sunParams",
+                                          bgfx::UniformType::Vec4);
 
 #ifdef FC_RENDERER_STANDALONE
         // The standalone present pass copies the scene color onto the
@@ -3019,6 +3032,29 @@ public:
     // neither tested nor written: the buffer keeps the far-plane clear
     // value, matching the GL path where the gradient sits at the far
     // plane.
+    /// Visible sun disc + limb glow along the directional scene light,
+    /// drawn additively over the background (its view precedes all
+    /// geometry, which then overdraws it). u_proj on the view
+    /// reconstructs the pixel direction; the shader outputs nothing for
+    /// orthographic cameras.
+    void submitSunDisc(float sizeDeg)
+    {
+        if (!bgfx::isValid(m_progSun))
+            return;
+        float r = std::max(sizeDeg, 0.05f) * 3.14159265f / 180.0f;
+        float params[4] = {std::cos(r), std::cos(r * 0.7f),
+                           0.05f, 64.0f};
+        bgfx::setUniform(u_sunParams, params);
+        float lightDir[4] = {lightDirView[0], lightDirView[1],
+                             lightDirView[2], 1.0f};
+        bgfx::setUniform(u_lightDir, lightDir);
+        bgfx::setUniform(u_lightColor, lightColorI);
+        fullscreen(ViewSunDisc, m_progSun,
+                   BGFX_STATE_WRITE_RGB
+                   | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
+                                           BGFX_STATE_BLEND_ONE));
+    }
+
     void submitBackground(const Render::Background &bg)
     {
         if (bg.type == Render::Background::Flat)
@@ -5850,6 +5886,8 @@ public:
     bgfx::UniformHandle u_bloomParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_bloomTexel = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_bloomBlur = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progSun = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_sunParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texVolFront = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolExt = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCaustics = BGFX_INVALID_HANDLE;
@@ -7827,6 +7865,19 @@ public:
         view->drawcount = 0;
         view->autozoomScale = autozoomScale;
         view->submitBackground(background);
+        // Visible sun along the directional scene light (needs the
+        // view-space light state the shadow section filled above).
+        if (getenv("FC_BGFX_DEBUG_FEED"))
+            fprintf(stderr,
+                    "bgfx sun: valid=%d spot=%d disc=%d size=%g frame=%d"
+                    " dir=%g,%g,%g\n",
+                    lightconf.valid, lightconf.spot, lightconf.sunDisc,
+                    lightconf.sunDiscSize, view->shadowFrame,
+                    view->lightDirView[0], view->lightDirView[1],
+                    view->lightDirView[2]);
+        if (lightconf.valid && !lightconf.spot && lightconf.sunDisc
+                && view->shadowFrame)
+            view->submitSunDisc(lightconf.sunDiscSize);
         const float *viewMat = reinterpret_cast<const float *>(viewMatrix);
         view->viewMatrix = viewMat;
         view->projMatrix = reinterpret_cast<const float *>(projMatrix);

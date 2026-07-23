@@ -1077,6 +1077,13 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
                 view, "Render", "GroundReflectionIntensity",
                 RenderParams::getGroundReflectionIntensity()));
     }
+    // The visible sun disc is a render-engine extra like the ground
+    // reflection (no Coin counterpart).
+    res.sunDisc = viewParamOverride<App::PropertyBool>(
+            view, "Render", "SunDisc", RenderParams::getSunDisc());
+    res.sunDiscSize = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "SunDiscSize",
+            RenderParams::getSunDiscSize()));
     return res;
 }
 

@@ -467,6 +467,39 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
 
 
     // Auto generated code (Tools/params_utils.py:448)
+    groupScenelightextras = new QGroupBox(this);
+    layout->addWidget(groupScenelightextras);
+    auto layoutHorizScenelightextras = new QHBoxLayout(groupScenelightextras);
+    auto layoutScenelightextras = new QVBoxLayout();
+    layoutHorizScenelightextras->addLayout(layoutScenelightextras);
+    layoutHorizScenelightextras->addStretch();
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutScenelightextras->addLayout(layoutRow);
+    SunDisc = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(SunDisc);
+    SunDisc->setChecked(Gui::RenderParams::defaultSunDisc());
+    SunDisc->setEntryName("SunDisc");
+    SunDisc->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutScenelightextras->addLayout(layoutRow);
+    labelSunDiscSize = new QLabel(this);
+    layoutRow->addWidget(labelSunDiscSize);
+    SunDiscSize = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(SunDiscSize);
+    SunDiscSize->setValue(Gui::RenderParams::defaultSunDiscSize());
+    SunDiscSize->setEntryName("SunDiscSize");
+    SunDiscSize->setParamGrpPath("View/Render");
+
+
+    // Auto generated code (Tools/params_utils.py:448)
     groupGroundreflection = new QGroupBox(this);
     layout->addWidget(groupGroundreflection);
     auto layoutHorizGroundreflection = new QHBoxLayout(groupGroundreflection);
@@ -541,6 +574,8 @@ void DlgSettingsRender::saveSettings()
     BloomThreshold->onSave();
     BloomIntensity->onSave();
     BloomRadius->onSave();
+    SunDisc->onSave();
+    SunDiscSize->onSave();
     GroundReflection->onSave();
     GroundReflectionIntensity->onSave();
 }
@@ -577,6 +612,8 @@ void DlgSettingsRender::loadSettings()
     BloomThreshold->onRestore();
     BloomIntensity->onRestore();
     BloomRadius->onRestore();
+    SunDisc->onRestore();
+    SunDiscSize->onRestore();
     GroundReflection->onRestore();
     GroundReflectionIntensity->onRestore();
 }
@@ -672,6 +709,12 @@ void DlgSettingsRender::retranslateUi()
     BloomRadius->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docBloomRadius()));
     labelBloomRadius->setText(QObject::tr("Bloom radius"));
     labelBloomRadius->setToolTip(BloomRadius->toolTip());
+    groupScenelightextras->setTitle(QObject::tr("Scene light extras"));
+    SunDisc->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docSunDisc()));
+    SunDisc->setText(QObject::tr("Sun disc"));
+    SunDiscSize->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docSunDiscSize()));
+    labelSunDiscSize->setText(QObject::tr("Sun disc size"));
+    labelSunDiscSize->setToolTip(SunDiscSize->toolTip());
     groupGroundreflection->setTitle(QObject::tr("Ground reflection"));
     GroundReflection->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docGroundReflection()));
     GroundReflection->setText(QObject::tr("Ground reflection"));
