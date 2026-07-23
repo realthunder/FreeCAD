@@ -17,7 +17,10 @@ SHADERS="$REPO/src/Gui/Renderer/bgfx/shaders"
 SRC="$REPO/src/Gui/Renderer/bgfx/assets/shaders"
 DST="$BUILD/share/Renderer/bgfx/assets/shaders"
 
-sh "$SHADERS/compile.sh" "$BUILD/src/3rdParty/bgfx/shaderc"
+# NOTE: the real shaderc lives under cmake/bgfx/ — a sibling copy at
+# src/3rdParty/bgfx/shaderc is stale (predates the ESSL fixes) and
+# silently miscompiles the essl profile.
+sh "$SHADERS/compile.sh" "$BUILD/src/3rdParty/bgfx/cmake/bgfx/shaderc"
 
 if [ -d "$DST" ]; then
     for api in glsl spirv essl; do
