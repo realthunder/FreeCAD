@@ -184,8 +184,10 @@ void main()
 		if (x < 0.0)
 			continue;
 		float k = 10.0 / R0;
-		float dk = 3.0 / R0;
-		float env = 1.5 * exp(-x * dk);
+		// Gentle decay: the ring train stays readable out to a few
+		// impact radii beyond the fountain bound before fading.
+		float dk = 1.1 / R0;
+		float env = 1.2 * exp(-x * dk);
 		float ph = x * k - t * 5.0;
 		hq += env * sin(ph);
 		float dh = env * (k * cos(ph) - dk * sin(ph));

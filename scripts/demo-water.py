@@ -96,7 +96,7 @@ try:
     if os.environ.get("FOUNTAIN", "1") == "1":
         fountain = doc.addObject("Part::Cylinder", "Fountain")
         fountain.Radius = float(os.environ.get("FOUNTAIN_R", "4"))
-        fountain.Height = float(os.environ.get("FOUNTAIN_H", "12"))
+        fountain.Height = float(os.environ.get("FOUNTAIN_H", "9"))
         fountain.Placement.Base = FreeCAD.Vector(10, 10, 6.5)
 
     # A beam suspended over the water on two posts -- the shadow caster.
