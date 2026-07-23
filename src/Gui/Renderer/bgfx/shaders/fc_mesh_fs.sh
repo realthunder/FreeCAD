@@ -87,16 +87,18 @@ uniform vec4 u_bulbShadowConf[BULB_SLOTS];
 uniform mat4 u_bulbShadowRot;
 SAMPLER2D(s_texBulbShadow, 8);
 // Screen-space ambient occlusion (the SSAO/GTAO chain result, its own
-// resolution, normalized uv): folded into the ambient / headlight /
-// IBL terms only. The directional scene light and the local effect
-// lights carry their own shadow terms, so the geometric crease
-// darkening must not attenuate light that demonstrably reaches the
-// surface (a fullscreen post-multiply left gray AO bands on faces
-// point-blank lit by a Render_Light bulb). The headlight is the
-// unshadowed view-following fill, ambient-like — AO is the only
-// occlusion it can get. A white stand-in is bound when AO is off or
-// the draw renders outside the main opaque pass (reflection
-// re-render, overlays, on-top, transparent).
+// resolution, normalized uv): folded into the ambient / IBL terms
+// only. The directional scene light and the local effect lights carry
+// their own shadow terms, and the viewer headlight shines along the
+// view ray — a visible fragment is by definition unoccluded toward
+// the camera — so the geometric crease darkening must not attenuate
+// either (a fullscreen post-multiply left gray AO bands on faces
+// point-blank lit by a Render_Light bulb, and AO on the headlight
+// fill re-created them). Exception: the lone-headlight mode (no scene
+// light) keeps the old full multiply — there AO is the only depth cue
+// the viewport has. A white stand-in is bound when AO is off or the
+// draw renders outside the main opaque pass (reflection re-render,
+// overlays, on-top, transparent).
 SAMPLER2D(s_texAOScreen, 9);
 #ifdef TEXTURE
 SAMPLER2D(s_texColor, 0);
@@ -433,9 +435,10 @@ void main()
 			float a = rough * rough;
 			// The unshadowed headlight always contributes (like
 			// the Blinn-Phong path: Coin's SoShadowGroup keeps
-			// the viewer headlight beside the shadow light); it
-			// has no shadow term of its own, so the screen AO
-			// stands in for its occlusion ...
+			// the viewer headlight beside the shadow light). No
+			// AO on it: the headlight shines along the view ray,
+			// and a visible fragment is by definition unoccluded
+			// toward the camera ...
 			vec3 direct;
 			{
 				float d = ndv * ndv * (a * a - 1.0) + 1.0;
@@ -445,7 +448,7 @@ void main()
 					      1.0e-4);
 				direct = (kd * 0.31830989
 						+ f0 * min(D * vis, 4.0))
-					* (ndv * 1.2 * ao);
+					* (ndv * 1.2);
 			}
 			// ... and the shadowed scene light adds on top.
 			if (u_lightDir.w > 0.5)
@@ -529,22 +532,29 @@ void main()
 			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
 			float hspec = pow(max(abs(n.z), 0.0), shininess);
 
-			// AO occludes the ambient + headlight fill (and the
-			// headlight specular); the scene light keeps only its
-			// own shadow term.
+			// AO occludes only the true ambient floor. The
+			// headlight fill shines along the view ray — a
+			// visible fragment is by definition unoccluded toward
+			// the camera, so AO on it is wrong (it re-darkened
+			// bulb-lit contacts: the fill dominates viewer-facing
+			// surfaces). The scene light keeps its own shadow
+			// term.
 			color = base.rgb
-					* (vec3_splat((0.2 * occ + 0.8 * hdl) * ao)
+					* (vec3_splat(0.2 * occ * ao + 0.8 * hdl)
 					+ u_lightColor.rgb * shadowTint
 						* (ndl * shadow))
-				+ u_matSpecular.rgb * (hspec * 0.75 * ao)
+				+ u_matSpecular.rgb * (hspec * 0.75)
 				+ u_matSpecular.rgb * u_lightColor.rgb
 					* shadowTint * (spec * 0.75 * shadow);
 		}
 		else
 		{
-			// headlight along the view axis; AO covers the whole
-			// term — the lone headlight is unshadowed fill, so
-			// this matches the old fullscreen AO multiply.
+			// headlight along the view axis; AO deliberately
+			// covers the whole term here (matching the old
+			// fullscreen multiply) even though a headlight
+			// cannot be occluded — with no other light in this
+			// mode, AO is the viewport's only depth cue and
+			// would otherwise shrink to the 0.2 ambient floor.
 			float ndl = n.z;
 			if (u_params.z > 0.5)
 				ndl = abs(ndl);
