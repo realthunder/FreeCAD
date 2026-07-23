@@ -1569,6 +1569,7 @@ public:
         // resets with it (same for the AO/prepass cache).
         shadowMapHash = 0;
         aoMapHash = 0;
+        camFrameHash = 0;
         for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo,
                         &shadowTintFbo}) {
             if (bgfx::isValid(*fb)) {
@@ -5441,6 +5442,9 @@ public:
     // AO/prepass cache key: camera + viewport + AO params + prepass draw
     // set (see the aoRender hash in render()); 0 = never cached.
     uint64_t aoMapHash = 0;
+    // Camera+viewport of the previous frame (medium-interval and
+    // planar-reflection frame cache — see staticFrame in render()).
+    uint64_t camFrameHash = 0;
     bool m_ssao = false;     // SSAO resources exist (caps allow it)
     // Volumetric light shafts: half-res raymarch of the shadow map
     // bounded by the prepass depth, so both resource sets must exist.
@@ -6782,6 +6786,33 @@ public:
             bx::mtxMul(waterReflShadowMtx, m2, view->shadowMtx);
         }
 
+        // Medium-interval / planar-reflection frame cache: those targets
+        // depend only on the camera, the viewport and the scene draws.
+        // The fire/cloud/water animation lives in the volume raymarch
+        // and the surface shaders, not in the interval depths, and the
+        // mirrored-scene render is static per camera (the water waves
+        // only distort how the surface samples it). Re-render when the
+        // camera or viewport changed or any scene/config change was
+        // applied this frame (dirtyChanged covers every mutation path);
+        // the mirrored scene additionally re-renders whenever the shadow
+        // map did (its shading includes the shadow lookup) and while a
+        // fire burns (the flickering fire effect light shades the
+        // mirrored geometry per frame).
+        static const bool staticNoCache =
+            (getenv("FC_BGFX_NO_STATIC_CACHE") != nullptr);
+        uint64_t camH = 1469598103934665603ULL;
+        hashBytes(camH, reinterpret_cast<const float *>(viewMatrix),
+                  sizeof(float) * 16);
+        hashBytes(camH, reinterpret_cast<const float *>(projMatrix),
+                  sizeof(float) * 16);
+        hashBytes(camH, &width, sizeof(width));
+        hashBytes(camH, &height, sizeof(height));
+        const bool staticFrame = !dirtyChanged && !hlconfig.show
+            && !staticNoCache && camH == view->camFrameHash;
+        view->camFrameHash = camH;
+        const bool mediumRender = !staticFrame;
+        const bool reflRender = !staticFrame || shadowRender || fireActive;
+
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
             uint16_t id = base + i;
             if (i == BGFXView::ViewTransparent && oitActive) {
@@ -6857,8 +6888,9 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if (waterActive && (i == BGFXView::ViewWaterFront
-                                       || i == BGFXView::ViewWaterBack)) {
+            } else if (waterActive && mediumRender
+                       && (i == BGFXView::ViewWaterFront
+                           || i == BGFXView::ViewWaterBack)) {
                 // Water body depth targets: color clears to 0 (.w = 0 =
                 // no water on this pixel); the back-face view keeps the
                 // farthest depth, so its depth buffer clears to 0 and
@@ -6874,8 +6906,9 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if (cloudActive && (i == BGFXView::ViewCloudFront
-                                       || i == BGFXView::ViewCloudBack)) {
+            } else if (cloudActive && mediumRender
+                       && (i == BGFXView::ViewCloudFront
+                           || i == BGFXView::ViewCloudBack)) {
                 // Cloud body interval depth targets, the water depth
                 // target pattern.
                 bool back = i == BGFXView::ViewCloudBack;
@@ -6889,8 +6922,9 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if (fireActive && (i == BGFXView::ViewFireFront
-                                      || i == BGFXView::ViewFireBack)) {
+            } else if (fireActive && mediumRender
+                       && (i == BGFXView::ViewFireFront
+                           || i == BGFXView::ViewFireBack)) {
                 // Fire body interval depth targets, the water depth
                 // target pattern.
                 bool back = i == BGFXView::ViewFireBack;
@@ -6904,8 +6938,9 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if (glassActive && (i == BGFXView::ViewGlassFront
-                                       || i == BGFXView::ViewGlassBack)) {
+            } else if (glassActive && mediumRender
+                       && (i == BGFXView::ViewGlassFront
+                           || i == BGFXView::ViewGlassBack)) {
                 // Glass body absorption interval depth targets, the
                 // water depth target pattern (back keeps the farthest
                 // depth: clear to 0, test GREATER).
@@ -6920,7 +6955,7 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if ((groundReflActive || waterReflActive)
+            } else if ((groundReflActive || waterReflActive) && reflRender
                        && i == BGFXView::ViewGroundRefl) {
                 // Mirrored-scene render: own color (cleared to alpha 0 =
                 // nothing reflected) + depth, the original projection
@@ -7651,12 +7686,12 @@ public:
                     && !firePart)
                 view->submit(draw, viewMat, BGFXView::PassNormal,
                              sceneNoSeam(draw));
-            if (cloudFill && !cullDraw) {
+            if (cloudFill && !cullDraw && mediumRender) {
                 int slot = slotOf(cloudSlots, draw.objectKey);
                 view->submitWaterDepth(draw, false, 2, slot);
                 view->submitWaterDepth(draw, true, 2, slot);
             }
-            if (fireFill && !cullDraw) {
+            if (fireFill && !cullDraw && mediumRender) {
                 int slot = slotOf(fireSlots, draw.objectKey);
                 view->submitWaterDepth(draw, false, 3, slot);
                 view->submitWaterDepth(draw, true, 3, slot);
@@ -7670,8 +7705,13 @@ public:
                                          waterconf.inscatter,
                                          waterconf.shadow);
             if (surfGlass && !cullDraw) {
-                view->submitWaterDepth(draw, false, 1);
-                view->submitWaterDepth(draw, true, 1);
+                // The interval depths cache with the medium targets; the
+                // surface pass reads the per-frame scene copy, so it
+                // always re-renders.
+                if (mediumRender) {
+                    view->submitWaterDepth(draw, false, 1);
+                    view->submitWaterDepth(draw, true, 1);
+                }
                 view->submitGlassSurface(draw, glassReject);
             }
             // Water body draws bound the medium instead of acting as
@@ -7681,7 +7721,7 @@ public:
             // casting so light and shafts enter the water.
             bool isWater = waterActive && isTriangle(draw)
                 && draw.material.water;
-            if (isWater && !cullDraw) {
+            if (isWater && !cullDraw && mediumRender) {
                 int slot = slotOf(waterSlots, draw.objectKey);
                 view->submitWaterDepth(draw, false, 0, slot);
                 view->submitWaterDepth(draw, true, 0, slot);
@@ -7726,7 +7766,7 @@ public:
         // culling is skipped — the mirrored camera sees a different
         // volume; hidden and on-top draws stay out like the water
         // bodies and transparent geometry (single-bounce opaque only).
-        if (groundReflActive || waterReflActive) {
+        if ((groundReflActive || waterReflActive) && reflRender) {
             view->reflPass = true;
             float savedShadowMtx[16];
             std::memcpy(savedShadowMtx, view->shadowMtx,
@@ -7745,11 +7785,12 @@ public:
             std::memcpy(view->shadowMtx, savedShadowMtx,
                         sizeof(savedShadowMtx));
             view->reflPass = false;
-            // Ground blends its reflection with a quad here; the water
-            // surface pass samples reflTex itself (s_texRefl) below.
-            if (groundReflActive)
-                view->submitGroundReflOverlay(bboxMin, bboxMax, lightconf);
         }
+        // Ground blends its (possibly cached) reflection with a quad
+        // every frame; the water surface pass samples reflTex itself
+        // (s_texRefl) below.
+        if (groundReflActive)
+            view->submitGroundReflOverlay(bboxMin, bboxMax, lightconf);
         for (const auto &draw : scene) {
             if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
                     && !isHidden(draw) && !hideFill(draw)) {
