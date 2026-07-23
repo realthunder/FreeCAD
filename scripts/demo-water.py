@@ -53,7 +53,9 @@ try:
     render.SetBool("AO", os.environ.get("AO", "1") == "1")
     render.SetFloat("AOIntensity", float(os.environ.get("AOINT", "1.0")))
     render.SetBool("Volumetric", os.environ.get("VOL", "1") == "1")  # water body + fire + shafts
-    # Air (haze) density of the volumetric medium; 0 = auto (1 / scene radius)
+    # Air (haze) density of the volumetric medium; 0 = auto (1 / scene
+    # radius). The default the per-view Render_VolumetricDensity property
+    # materializes from; tune_shadow below drives the view property.
     render.SetFloat("VolumetricDensity", float(os.environ.get("VOLDENSITY", "0.0")))
     render.SetBool("WaterSurface", True)          # refraction + reflection
     render.SetFloat("WaterWaveStrength", 0.25)
@@ -205,6 +207,11 @@ try:
         try:
             v = FreeCADGui.activeDocument().activeView()
             v.Shadow_SmoothBorder = int(os.environ.get("SHADOWSMOOTH", "40"))
+            # Per-view override of the air haze density (the Render group
+            # global set above is only the default the property
+            # materializes from).
+            if "VOLDENSITY" in os.environ:
+                v.Render_VolumetricDensity = float(os.environ["VOLDENSITY"])
             note("SHADOW SMOOTH %s" % v.Shadow_SmoothBorder)
         except Exception:
             tries[0] += 1
