@@ -242,6 +242,31 @@ void main()
 				|| (p3.w > 0.5 && p3.z < fragZ)
 				|| (p4.w > 0.5 && p4.z < fragZ))
 				ruv = uv;
+			else if (p0.w > 0.5)
+			{
+				// Nearer-than-fragment alone misses FARTHER
+				// protruding geometry (a pillar standing out of
+				// the pool beyond this fragment): its dry pixels
+				// would refract into the water area as a ghost
+				// projection. Reconstruct the sample's world
+				// position from its prepass depth and reject
+				// anything above the surface plane.
+				vec2 sndc = ruv * 2.0 - vec2_splat(1.0);
+				vec3 sv;
+				if (u_proj[2][3] != 0.0)
+					sv = vec3(
+					    (sndc.x + u_proj[2][0]) / u_proj[0][0],
+					    (sndc.y + u_proj[2][1]) / u_proj[1][1],
+					    -1.0) * p0.z;
+				else
+					sv = vec3(
+					    (sndc.x - u_proj[3][0]) / u_proj[0][0],
+					    (sndc.y - u_proj[3][1]) / u_proj[1][1],
+					    -p0.z);
+				vec3 sw = mul(u_invView, vec4(sv, 1.0)).xyz;
+				if (dot(sw - wp, nw) > 0.05)
+					ruv = uv;
+			}
 		}
 		refr = texture2D(s_texScene, ruv).xyz;
 		refr *= mix(vec3_splat(1.0), u_matColor.rgb, 0.2);
