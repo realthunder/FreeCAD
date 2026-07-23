@@ -436,7 +436,7 @@ public:
         funcs["ShadowGroundShading"] = &ViewParamsP::updateShadowGroundShading;
         ShadowExtraRedraw = this->handle->GetBool("ShadowExtraRedraw", true);
         funcs["ShadowExtraRedraw"] = &ViewParamsP::updateShadowExtraRedraw;
-        ShadowSmoothBorder = this->handle->GetInt("ShadowSmoothBorder", 0);
+        ShadowSmoothBorder = this->handle->GetInt("ShadowSmoothBorder", 40);
         funcs["ShadowSmoothBorder"] = &ViewParamsP::updateShadowSmoothBorder;
         ShadowSpreadSize = this->handle->GetInt("ShadowSpreadSize", 0);
         funcs["ShadowSpreadSize"] = &ViewParamsP::updateShadowSpreadSize;
@@ -1014,7 +1014,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShadowSmoothBorder(ViewParamsP *self) {
-        self->ShadowSmoothBorder = self->handle->GetInt("ShadowSmoothBorder", 0);
+        self->ShadowSmoothBorder = self->handle->GetInt("ShadowSmoothBorder", 40);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShadowSpreadSize(ViewParamsP *self) {
@@ -4114,7 +4114,7 @@ const long & ViewParams::getShadowSmoothBorder() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const long & ViewParams::defaultShadowSmoothBorder() {
-    const static long def = 0;
+    const static long def = 40;
     return def;
 }
 

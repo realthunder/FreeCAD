@@ -332,7 +332,7 @@ Params = [
         "on ground will not change shading when viewing in different angle.",
         title='Ground shading'),
     ParamBool('ShadowExtraRedraw',  True),
-    ParamInt('ShadowSmoothBorder',  0,
+    ParamInt('ShadowSmoothBorder',  40,
         "Specifies the blur raidus of the shadow edge. Higher number will result in\n"
         "slower rendering speed on scene change. Use a lower 'Precision' value to\n"
         "counter the effect.",
