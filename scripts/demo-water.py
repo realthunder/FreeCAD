@@ -54,6 +54,10 @@ try:
     render.SetBool("WaterReflection", True)
     render.SetBool("WaterPlanarReflection", True)
     render.SetBool("WaterShadow", True)           # beam shadow on the water
+    # Soft shadow edges (0..100 gaussian over the moments; SHADOWSMOOTH=0
+    # restores hard borders).
+    render.SetInt("ShadowSmoothBorder",
+                  int(os.environ.get("SHADOWSMOOTH", "40")))
     render.SetBool("GroundReflection", False)
     render.SetBool("Caustics", True)
     render.SetBool("PBR", os.environ.get("PBR", "1") == "1")  # image-based lighting
