@@ -38,6 +38,11 @@ try:
     view.SetBool("ShowSelectedFaceOutline", True)
     view.SetBool("NoPreSelFaceHighlightWithOutline", True)
     view.SetBool("NoSelFaceHighlightWithOutline", True)
+    # Global default for the Shadow draw style's SmoothBorder: the style
+    # materializes its Shadow_SmoothBorder view property from this, so it
+    # is soft from the first shadow frame (tune_shadow below then drives
+    # the view property directly).
+    view.SetInt("ShadowSmoothBorder", int(os.environ.get("SHADOWSMOOTH", "40")))
 
     nav = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/NaviCube")
     nav.SetBool("AutoHideButton", False)
@@ -54,10 +59,6 @@ try:
     render.SetBool("WaterReflection", True)
     render.SetBool("WaterPlanarReflection", True)
     render.SetBool("WaterShadow", True)           # beam shadow on the water
-    # Soft shadow edges (0..100 gaussian over the moments; SHADOWSMOOTH=0
-    # restores hard borders).
-    render.SetInt("ShadowSmoothBorder",
-                  int(os.environ.get("SHADOWSMOOTH", "40")))
     render.SetBool("GroundReflection", False)
     render.SetBool("Caustics", True)
     render.SetBool("PBR", os.environ.get("PBR", "1") == "1")  # image-based lighting
@@ -168,8 +169,25 @@ try:
         except Exception:
             note(traceback.format_exc())
 
+    # Soft shadow border via the Shadow draw style's per-view property
+    # (0..100 gaussian over the shadow moments; SHADOWSMOOTH=0 keeps hard
+    # borders). The Shadow_* properties materialize on the view lazily at
+    # the first shadow render, so retry until the assignment sticks.
+    def tune_shadow(tries=[0]):
+        try:
+            v = FreeCADGui.activeDocument().activeView()
+            v.Shadow_SmoothBorder = int(os.environ.get("SHADOWSMOOTH", "40"))
+            note("SHADOW SMOOTH %s" % v.Shadow_SmoothBorder)
+        except Exception:
+            tries[0] += 1
+            if tries[0] < 20:
+                QtCore.QTimer.singleShot(500, tune_shadow)
+            else:
+                note(traceback.format_exc())
+
     QtCore.QTimer.singleShot(2500, setup_view)
     QtCore.QTimer.singleShot(4500, enable_shadow)
+    QtCore.QTimer.singleShot(6000, tune_shadow)
     note("SETUP OK - serving")
 except Exception:
     note(traceback.format_exc())

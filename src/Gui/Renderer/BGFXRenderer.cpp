@@ -3700,9 +3700,12 @@ public:
                 || !bgfx::isValid(shadowBlurFbo)
                 || !bgfx::isValid(shadowBlurBackFbo))
             return;
-        // 100 -> 4 texel base step of the 9-tap kernel (an effective
-        // radius of ~13 texels at full smoothing).
-        float step = smoothBorder * 0.04f;
+        // Base tap step of the 9-tap kernel, scaled by the map size so
+        // the penumbra is a resolution-independent fraction of the
+        // light window (a fixed texel step on a 2048 map covering the
+        // whole scene came out ~4 screen px — invisible): 100 -> 4
+        // texels at a 512 map, 16 at 2048.
+        float step = smoothBorder * 0.04f * float(shadowSize) / 512.0f;
         float dirH[4] = {step, 0.0f, 0.0f, 0.0f};
         bgfx::setUniform(u_shadowBlur, dirH);
         bgfx::setTexture(0, s_texShadow, shadowTex);
@@ -5988,9 +5991,21 @@ public:
         // much precision on the self-shadowed terminator, and the warp is what
         // makes RG16F usable. Full-precision RG32F keeps Coin's plain-VSM
         // parity at SmoothBorder 0.
+        // The warp exponent scales DOWN as the blur widens: a strong
+        // warp (c = 42) reconstructs a near-binary edge from even a
+        // widely blurred moments map — exp(c·z) dwarfs the variance the
+        // blur added, and the penumbra the blur paid for disappears.
+        // Wider smoothing therefore trades warp tightness back toward
+        // plain-VSM softness; the floor of 5 is the reduced-precision
+        // RG16F path's fixed exponent (it needs the warp to be usable
+        // at all).
+        float warp = view->shadowWarp;
+        if (lightconf.smoothBorder > 0.0f)
+            warp = std::max(5.0f,
+                warp / (1.0f + lightconf.smoothBorder * 0.06f));
         view->shadowWarpFrame =
             (lightconf.smoothBorder > 0.0f || view->m_shadowForceWarp)
-                ? view->shadowWarp : 0.0f;
+                ? warp : 0.0f;
         view->shadowEpsilon = lightconf.epsilon;
         view->shadowThreshold = lightconf.threshold;
         // Coin's N-tap receiver spread kernel (ShadowSpreadSize /
