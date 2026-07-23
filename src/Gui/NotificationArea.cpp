@@ -320,16 +320,26 @@ void NotificationAreaObserver::SendLog(const std::string& notifiername, const st
     if (simplifiedstring.isEmpty())
         return;
 
-    if (content == Base::ContentType::Translated) {
-        notificationArea->pushNotification(
-            QString::fromStdString(notifiername), simplifiedstring, level);
-    }
-    else {
-        notificationArea->pushNotification(
-            QString::fromStdString(notifiername),
-            QCoreApplication::translate("Notifications", simplifiedstring.toUtf8()),
-            level);
-    }
+    // Never call into the widget synchronously from the console
+    // observer: the notification display paths (pushNotification,
+    // showInNotificationArea) hold mutexNotification while showing the
+    // NotificationBox window, and creating that window can itself emit
+    // Qt warnings (the Wayland xdg-shell integration warns while
+    // creating the popup surface) that route right back here on the
+    // same thread — a synchronous pushNotification then self-deadlocks
+    // on the mutex, freezing the whole GUI. Queue the push through the
+    // event loop instead: re-entrant messages arrive on a later pass,
+    // and worker-thread messages stop touching widgets off the GUI
+    // thread as a side benefit.
+    auto* area = notificationArea;
+    QString name = QString::fromStdString(notifiername);
+    QString text = content == Base::ContentType::Translated
+        ? simplifiedstring
+        : QCoreApplication::translate("Notifications", simplifiedstring.toUtf8());
+    QMetaObject::invokeMethod(
+        area,
+        [area, name, text, level] { area->pushNotification(name, text, level); },
+        Qt::QueuedConnection);
 }
 
 
