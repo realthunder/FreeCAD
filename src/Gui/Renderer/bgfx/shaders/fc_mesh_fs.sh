@@ -86,6 +86,18 @@ uniform mat4 u_bulbShadowMtx[BULB_SHADOW_TILES];
 uniform vec4 u_bulbShadowConf[BULB_SLOTS];
 uniform mat4 u_bulbShadowRot;
 SAMPLER2D(s_texBulbShadow, 8);
+// Screen-space ambient occlusion (the SSAO/GTAO chain result, its own
+// resolution, normalized uv): folded into the ambient / headlight /
+// IBL terms only. The directional scene light and the local effect
+// lights carry their own shadow terms, so the geometric crease
+// darkening must not attenuate light that demonstrably reaches the
+// surface (a fullscreen post-multiply left gray AO bands on faces
+// point-blank lit by a Render_Light bulb). The headlight is the
+// unshadowed view-following fill, ambient-like — AO is the only
+// occlusion it can get. A white stand-in is bound when AO is off or
+// the draw renders outside the main opaque pass (reflection
+// re-render, overlays, on-top, transparent).
+SAMPLER2D(s_texAOScreen, 9);
 #ifdef TEXTURE
 SAMPLER2D(s_texColor, 0);
 // x = texture environment (0 modulate, 1 decal, 2 blend, 3 replace),
@@ -267,6 +279,11 @@ void main()
 		occ = texture2D(s_texOcclusion, uv).x;
 #endif
 
+	// Screen-space AO factor of the ambient-like terms below (the
+	// white stand-in reads 1 when inapplicable).
+	float ao = texture2D(s_texAOScreen,
+	                     gl_FragCoord.xy * u_viewTexel.xy).x;
+
 	// Variance shadow map factor of the scene light (Chebyshev upper
 	// bound with light-bleed reduction); fragments outside the map stay
 	// lit. Only attenuates the direct light term below. The tint map
@@ -416,7 +433,9 @@ void main()
 			float a = rough * rough;
 			// The unshadowed headlight always contributes (like
 			// the Blinn-Phong path: Coin's SoShadowGroup keeps
-			// the viewer headlight beside the shadow light) ...
+			// the viewer headlight beside the shadow light); it
+			// has no shadow term of its own, so the screen AO
+			// stands in for its occlusion ...
 			vec3 direct;
 			{
 				float d = ndv * ndv * (a * a - 1.0) + 1.0;
@@ -426,7 +445,7 @@ void main()
 					      1.0e-4);
 				direct = (kd * 0.31830989
 						+ f0 * min(D * vis, 4.0))
-					* (ndv * 1.2);
+					* (ndv * 1.2 * ao);
 			}
 			// ... and the shadowed scene light adds on top.
 			if (u_lightDir.w > 0.5)
@@ -481,7 +500,7 @@ void main()
 			vec2 ab = vec2(-1.04, 1.04) * a004 + r4.zw;
 			color = (kd * max(irr, vec3_splat(0.0))
 				+ pref * (f0 * ab.x + vec3_splat(ab.y)))
-				* (u_pbrParams.w * occ) + direct;
+				* (u_pbrParams.w * occ * ao) + direct;
 		}
 		else if (u_lightDir.w > 0.5)
 		{
@@ -510,16 +529,22 @@ void main()
 			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
 			float hspec = pow(max(abs(n.z), 0.0), shininess);
 
-			color = base.rgb * (vec3_splat(0.2 * occ + 0.8 * hdl)
+			// AO occludes the ambient + headlight fill (and the
+			// headlight specular); the scene light keeps only its
+			// own shadow term.
+			color = base.rgb
+					* (vec3_splat((0.2 * occ + 0.8 * hdl) * ao)
 					+ u_lightColor.rgb * shadowTint
 						* (ndl * shadow))
-				+ u_matSpecular.rgb * (hspec * 0.75)
+				+ u_matSpecular.rgb * (hspec * 0.75 * ao)
 				+ u_matSpecular.rgb * u_lightColor.rgb
 					* shadowTint * (spec * 0.75 * shadow);
 		}
 		else
 		{
-			// headlight along the view axis
+			// headlight along the view axis; AO covers the whole
+			// term — the lone headlight is unshadowed fill, so
+			// this matches the old fullscreen AO multiply.
 			float ndl = n.z;
 			if (u_params.z > 0.5)
 				ndl = abs(ndl);
@@ -529,8 +554,8 @@ void main()
 			float shininess = max(u_matSpecular.w * 128.0, 1.0);
 			float spec = pow(max(abs(n.z), 0.0), shininess);
 
-			color = base.rgb * (0.2 * occ + 0.8 * ndl)
-				+ u_matSpecular.rgb * (spec * 0.75);
+			color = (base.rgb * (0.2 * occ + 0.8 * ndl)
+				+ u_matSpecular.rgb * (spec * 0.75)) * ao;
 		}
 
 		// Local effect lights (fire flames, Render_Light bulbs):

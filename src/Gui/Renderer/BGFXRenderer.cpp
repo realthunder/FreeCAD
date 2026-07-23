@@ -1433,14 +1433,16 @@ public:
                             // opaque-loop caps, and the cap parity
                             // marking needs the stencil buffer before
                             // the outline passes leave their marks)
-        ViewAOApply,        // fullscreen multiply of the blurred AO onto
-                            // the opaque scene color (after the caps,
-                            // before outlines/transparency)
+        ViewAOApply,        // RETIRED (kept so the view ids hold): the
+                            // fullscreen AO multiply moved into the
+                            // mesh shaders' ambient terms (aoMeshTex at
+                            // unit 9) so direct scene/bulb light is not
+                            // AO-darkened
         ViewGroundReflApply, // ground reflection overlay: the mirrored
                             // scene blended onto the shadow ground quad
                             // (depth EQUAL against the ground's own
-                            // depth), after the AO multiply so the
-                            // reflection is not AO-darkened twice
+                            // depth); the reflection itself samples no
+                            // screen AO, so it is not AO-darkened twice
         ViewOutline,        // hidden-line stencil outlines of scene draws
                             // (after all opaque geometry so the depth
                             // test sees the whole scene, before the
@@ -1670,7 +1672,7 @@ public:
                 *prog = BGFX_INVALID_HANDLE;
             }
         }
-        for (auto uni : {&s_texShadow, &s_texShadowTint,
+        for (auto uni : {&s_texShadow, &s_texShadowTint, &s_texAOScreen,
                          &u_shadowParams, &u_lightDir,
                          &u_lightPos, &u_lightColor, &u_shadowMatrix,
                          &u_shadowBlur, &u_evsm,
@@ -2171,6 +2173,11 @@ public:
         // float format.
         s_texShadow = bgfx::createUniform("s_texShadow",
                                           bgfx::UniformType::Sampler);
+        // Screen-space AO at unit 9 of the mesh programs: the AO chain
+        // result, multiplied into their ambient/headlight/IBL terms
+        // only (the white stand-in reads as unoccluded).
+        s_texAOScreen = bgfx::createUniform("s_texAOScreen",
+                                            bgfx::UniformType::Sampler);
         u_shadowParams = bgfx::createUniform("u_shadowParams",
                                              bgfx::UniformType::Vec4);
         u_lightDir = bgfx::createUniform("u_lightDir",
@@ -3688,6 +3695,13 @@ public:
             bgfx::setTexture(7, s_texShadowTint,
                              bgfx::isValid(shadowTintTex) ? shadowTintTex
                                                           : m_whiteTex);
+        // The ground is a main-pass opaque draw of the mesh program:
+        // bind the screen AO like any other (the ground stays out of
+        // the AO prepass, so its own pixels read ~1 — matching the
+        // old fullscreen multiply).
+        bgfx::setTexture(9, s_texAOScreen,
+                         bgfx::isValid(aoMeshTex) ? aoMeshTex
+                                                  : m_whiteTex);
 
         // Ground texture (ShadowGroundTexture): tiled every
         // groundTextureSize world units, modulated by the ground color
@@ -4100,29 +4114,14 @@ public:
 
     /// Fullscreen AO resolve chain: occlusion from the prepass into the
     /// R8 target — hemisphere-kernel SSAO (method 0) or XeGTAO-style
-    /// horizon-integral GTAO (method 1) — a 4x4 box blur, then the
-    /// multiply onto the opaque scene color (dst *= src, alpha kept).
+    /// horizon-integral GTAO (method 1) — and a 4x4 box blur / GTAO
+    /// denoise. The result (aoTex for GTAO, aoBlurTex classic) is not
+    /// composited here: the mesh programs sample it at unit 9 and fold
+    /// it into their ambient/headlight/IBL terms only (aoMeshTex), so
+    /// direct scene/bulb light is not AO-darkened.
     void submitAOResolve(float radius, float intensity, int method,
-                         bool fast, int slices, int steps, bool render)
+                         bool fast, int slices, int steps)
     {
-        // Cached AO (see the aoRender hash): the occlusion targets still
-        // hold a valid result for this camera/scene — only the multiply
-        // onto this frame's scene color re-runs. GTAO's denoise chain
-        // ping-pongs its final result back into aoTex; the classic path
-        // ends in aoBlurTex.
-        if (!render) {
-            const bool gtaoCached = method == 1 && bgfx::isValid(m_progGtao)
-                && bgfx::isValid(m_progGtaoBlur);
-            bgfx::setTexture(0, s_texAO, gtaoCached ? aoTex : aoBlurTex);
-            fullscreen(ViewAOApply, m_progSsaoApply,
-                       BGFX_STATE_WRITE_RGB
-                       | BGFX_STATE_BLEND_FUNC_SEPARATE(
-                           BGFX_STATE_BLEND_ZERO,
-                           BGFX_STATE_BLEND_SRC_COLOR,
-                           BGFX_STATE_BLEND_ZERO,
-                           BGFX_STATE_BLEND_ONE));
-            return;
-        }
         // Fixed hemisphere kernel (unit radius, z >= 0, clustered near
         // the origin), deterministic across frames like the noise.
         static const float kernel[kAOSamples][4] = {
@@ -4220,18 +4219,11 @@ public:
             bgfx::setTexture(1, s_texNormalZ, aoNormalZ);
             fullscreen(ViewAOBlur2, m_progGtaoBlur,
                        BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-            bgfx::setTexture(0, s_texAO, aoTex);
         }
         else {
             fullscreen(ViewAOBlur, m_progSsaoBlur,
                        BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-            bgfx::setTexture(0, s_texAO, aoBlurTex);
         }
-        fullscreen(ViewAOApply, m_progSsaoApply,
-                   BGFX_STATE_WRITE_RGB
-                   | BGFX_STATE_BLEND_FUNC_SEPARATE(
-                       BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_SRC_COLOR,
-                       BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_ONE));
     }
 
     /// Volumetric light shaft resolve: raymarch the shadow map through
@@ -4875,7 +4867,7 @@ public:
     }
 
     void setTriangleFrameState(const Render::Material &mat, int pass,
-                               bool mapped)
+                               bool mapped, bool aoDraw)
     {
         float pbrParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         bgfx::TextureHandle env = m_dummyEnvTex;
@@ -4975,6 +4967,13 @@ public:
             bgfx::setTexture(7, s_texShadowTint,
                              shadowFrame && bgfx::isValid(shadowTintTex)
                                  ? shadowTintTex : m_whiteTex);
+        // Screen-space AO into the ambient/headlight/IBL terms — only
+        // for main-pass opaque draws (the old fullscreen multiply ran
+        // on the opaque scene before outlines/transparency; the
+        // reflection re-render and the overlays see other pixels).
+        bgfx::setTexture(9, s_texAOScreen,
+                         aoDraw && bgfx::isValid(aoMeshTex)
+                             ? aoMeshTex : m_whiteTex);
     }
 
     /// True when the cross-object instanced mesh path can run this frame.
@@ -5071,7 +5070,7 @@ public:
         float instParams[4] = {mat.pervertexcolor ? 1.0f : 0.0f,
                                0.0f, 0.0f, 0.0f};
         bgfx::setUniform(u_instParams, instParams);
-        setTriangleFrameState(mat, PassNormal, mapped);
+        setTriangleFrameState(mat, PassNormal, mapped, !transparent);
         if (textured)
             bindTextureStage(mat, bumped, mapped);
 
@@ -5456,7 +5455,9 @@ public:
         // environment sampler (the branch is uniform-selected), so bind
         // the dummy cube whenever the branch is off for this draw.
         if (mat.type == Render::Material::Triangle)
-            setTriangleFrameState(mat, pass, mapped);
+            setTriangleFrameState(mat, pass, mapped,
+                                  passView == ViewOpaque
+                                      && pass != PassDepthOnly);
 
         // Clipped draws use the discard shader variants; the unclipped
         // programs contain no discard so the rest of the scene keeps
@@ -5913,6 +5914,13 @@ public:
     bgfx::ProgramHandle m_progShadowBlur = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_shadowBlur = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texShadow = BGFX_INVALID_HANDLE;
+    // Screen-space AO sampler of the mesh programs (unit 9) and the
+    // frame's AO chain result to bind there — invalid when AO is off
+    // this frame (the white stand-in binds instead). Set by render()
+    // before the scene submits; the AO views run before ViewOpaque, so
+    // the opaque pass samples this frame's result.
+    bgfx::UniformHandle s_texAOScreen = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle aoMeshTex = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_shadowParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_lightDir = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_lightPos = BGFX_INVALID_HANDLE;
@@ -6646,6 +6654,17 @@ public:
             if (aoRadius <= 0.0f)
                 ssaoActive = false;
         }
+        // The mesh programs fold the AO chain result into their
+        // ambient/headlight/IBL terms (sampled at unit 9, bound per
+        // draw in setTriangleFrameState). GTAO's denoise ping-pongs
+        // its final result back into aoTex; the classic path ends in
+        // aoBlurTex. Invalid = AO off, the white stand-in binds.
+        view->aoMeshTex = BGFX_INVALID_HANDLE;
+        if (ssaoActive)
+            view->aoMeshTex = aoconf.method == 1
+                    && bgfx::isValid(view->m_progGtao)
+                    && bgfx::isValid(view->m_progGtaoBlur)
+                ? view->aoTex : view->aoBlurTex;
 
         // Volumetric light shafts raymarch the shadow map with ray ends
         // from the SSAO prepass, so they need the shadow pass active
@@ -8106,26 +8125,26 @@ public:
             }
             // The SSAO generate/blur passes render into aoTex/aoBlurTex at
             // their own Render_SSAOResolution (ssaoW/ssaoH, default full-res
-            // and independent of the reflection scale); their apply pass reads
-            // the blurred AO back at full res. The reduced-resolution
-            // reflection re-render sets its own rect in its own branch above.
+            // and independent of the reflection scale); the mesh draws
+            // sample the result back at normalized uv. The
+            // reduced-resolution reflection re-render sets its own rect
+            // in its own branch above.
             bool aoResolveView = i == BGFXView::ViewAOGen
                 || i == BGFXView::ViewAOBlur
                 || i == BGFXView::ViewAOBlur2;
             bgfx::setViewRect(id, 0, 0,
                 aoResolveView ? view->ssaoW : width,
                 aoResolveView ? view->ssaoH : height);
-            // The background quad, the OIT composite triangle and the
-            // fullscreen AO blur/apply triangles are submitted in clip
-            // space; the AO generation pass keeps the scene projection
-            // for its predefined u_proj (position reconstruction).
+            // The background quad and the OIT composite triangle are
+            // submitted in clip space; the AO generation pass keeps the
+            // scene projection for its predefined u_proj (position
+            // reconstruction).
             // The GTAO denoise passes (AOBlur/AOBlur2) keep the scene
             // projection like the gen pass: their plane-aware bilateral
             // weight reconstructs view positions from u_proj (the shared
             // fullscreen vertex shader ignores the matrices).
             if (i == BGFXView::ViewBackground
-                    || i == BGFXView::ViewOITComposite
-                    || i == BGFXView::ViewAOApply)
+                    || i == BGFXView::ViewOITComposite)
                 bgfx::setViewTransform(id, nullptr, nullptr);
             else
                 bgfx::setViewTransform(id, viewMatrix, projMatrix);
@@ -8839,13 +8858,15 @@ public:
                                  hatchWidth, hatchHeight);
         submitSectionCaps(view, reinterpret_cast<const float *>(projMatrix));
 
-        // 1c. SSAO resolve: generate, blur, and multiply the AO onto the
-        // opaque scene (the AO views sit between the caps and the
-        // outline/transparent passes).
-        if (ssaoActive)
+        // 1c. SSAO resolve: generate and blur the AO (the gen/blur
+        // views run before ViewOpaque, whose mesh draws sample the
+        // result into their ambient terms — see aoMeshTex). A cached
+        // frame (aoRender false) skips the chain outright: the targets
+        // still hold this camera/scene's result.
+        if (ssaoActive && aoRender)
             view->submitAOResolve(aoRadius, aoconf.intensity,
                                   aoconf.method, aoconf.fast,
-                                  aoconf.slices, aoconf.steps, aoRender);
+                                  aoconf.slices, aoconf.steps);
 
         // 1d. Volumetric light shafts: half-res raymarch of the shadow
         // map, bilateral-upsampled and composited onto the opaque scene
