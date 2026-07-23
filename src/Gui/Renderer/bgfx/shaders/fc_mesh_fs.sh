@@ -586,8 +586,8 @@ void main()
 					// normal, scaled up as the light grazes the
 					// surface (the offset a texel needs grows with
 					// the depth slope), before projecting.
-					float slope = 1.0 + 2.0
-						* (1.0 - clamp(dot(geoN, l), 0.0, 1.0));
+					float slope = 1.0
+						+ (1.0 - clamp(dot(geoN, l), 0.0, 1.0));
 					spos += geoN * (0.007 * sqrt(d2) * slope);
 				}
 				vec4 sp = mul(u_bulbShadowMtx[t],
@@ -615,18 +615,34 @@ void main()
 						// filter here (VSM moments average
 						// soundly; the 2-texel bounds guard
 						// covers the spread).
-						float so = 1.5
+						// 0.75 texel: wider spreads smear the
+						// depth step at contact silhouettes into
+						// a speckle band (bilinear mixes caster
+						// and receiver depths). Far-plane texels
+						// (cleared to 1,1) carry no occluder --
+						// averaging them in dilutes the moments at
+						// silhouette borders into speckle, so only
+						// valid taps count.
+						float so = 0.75
 							/ (512.0 * float(BULB_SHADOW_GRID));
-						vec2 mo = (texture2D(s_texBulbShadow,
-							sp.xy + vec2(-so, -so)).xy
-							+ texture2D(s_texBulbShadow,
-							sp.xy + vec2(so, -so)).xy
-							+ texture2D(s_texBulbShadow,
-							sp.xy + vec2(-so, so)).xy
-							+ texture2D(s_texBulbShadow,
-							sp.xy + vec2(so, so)).xy) * 0.25;
-						if (mo.x < 0.9999)
+						vec2 moSum = vec2_splat(0.0);
+						float moW = 0.0;
+						vec2 mt;
+						mt = texture2D(s_texBulbShadow,
+							sp.xy + vec2(-so, -so)).xy;
+						if (mt.x < 0.9999) { moSum += mt; moW += 1.0; }
+						mt = texture2D(s_texBulbShadow,
+							sp.xy + vec2(so, -so)).xy;
+						if (mt.x < 0.9999) { moSum += mt; moW += 1.0; }
+						mt = texture2D(s_texBulbShadow,
+							sp.xy + vec2(-so, so)).xy;
+						if (mt.x < 0.9999) { moSum += mt; moW += 1.0; }
+						mt = texture2D(s_texBulbShadow,
+							sp.xy + vec2(so, so)).xy;
+						if (mt.x < 0.9999) { moSum += mt; moW += 1.0; }
+						if (moW > 0.5)
 						{
+							vec2 mo = moSum / moW;
 							float lit = sp.z <= mo.x
 								? 1.0 : 0.0;
 							// Coin VsmLookup shape with the
