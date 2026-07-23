@@ -327,6 +327,7 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex)
     w.b(m.lightsource);   // v18
     w.f(m.lightintensity);
     w.f(m.lightrange);
+    w.b(m.lightshadow);
     texref(m.texture);
     w.floats(m.texmatrix, 16);
     w.b(m.texidentity);
@@ -415,6 +416,7 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex, uint32_t vers
         m.lightsource = r.b();
         m.lightintensity = r.f();
         m.lightrange = r.f();
+        m.lightshadow = r.b();
     }
     texref(m.texture);
     r.floats(m.texmatrix, 16);

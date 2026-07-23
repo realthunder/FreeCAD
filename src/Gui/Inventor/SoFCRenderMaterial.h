@@ -123,6 +123,9 @@ public:
     /// Point-light range in world units (intensity halves over it);
     /// <= 0 = automatic (from the body bounds).
     SoSFFloat lightRange;
+    /// The light casts shadows (a cached shadow-map tile rendered by
+    /// the engine; off by default).
+    SoSFBool lightShadow;
 
 protected:
     ~SoFCRenderMaterial() override = default;

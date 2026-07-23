@@ -72,6 +72,13 @@ uniform mat4 u_shadowMatrix;
 #define LOCAL_LIGHTS 8
 uniform vec4 u_localLight[LOCAL_LIGHTS];
 uniform vec4 u_localLightColor[LOCAL_LIGHTS];
+// Bulb shadow atlas (Render_LightShadow): 2x2 plain-VSM tiles, one per
+// bulb slot; u_localLightColor[slot].w > 0.5 flags a valid tile and
+// u_bulbShadowMtx maps camera view space to its uv/depth (perspective —
+// divide by w).
+#define BULB_SHADOW_TILES 4
+uniform mat4 u_bulbShadowMtx[BULB_SHADOW_TILES];
+SAMPLER2D(s_texBulbShadow, 8);
 #ifdef TEXTURE
 SAMPLER2D(s_texColor, 0);
 // x = texture environment (0 modulate, 1 decal, 2 blend, 3 replace),
@@ -541,6 +548,46 @@ void main()
 				ndl = abs(ndl);
 			ndl = max(ndl, 0.0);
 			float att = 1.0 / (1.0 + d2 * u_localLight[fi].w);
+			// Bulb shadow tile (upper-half slots with the flag):
+			// perspective plain-VSM tap; outside the tile's cone the
+			// light stays unshadowed.
+			if (fi >= LOCAL_LIGHTS - BULB_SHADOW_TILES
+			    && u_localLightColor[fi].w > 0.5)
+			{
+				int t = fi - (LOCAL_LIGHTS - BULB_SHADOW_TILES);
+				vec4 sp = mul(u_bulbShadowMtx[t],
+				              vec4(v_vpos, 1.0));
+				if (sp.w > 1.0e-4)
+				{
+					sp.xyz /= sp.w;
+					int txi = t - (t / 2) * 2;
+					int tyi = t / 2;
+					// Tile bounds with a 2-texel guard so the
+					// bilinear tap never bleeds a neighbor tile.
+					float m = 2.0 / 1024.0;
+					vec2 b0 = vec2(0.5 * float(txi) + m,
+					               0.5 * float(tyi) + m);
+					vec2 b1 = b0 + vec2_splat(0.5 - 2.0 * m);
+					if (sp.x > b0.x && sp.x < b1.x
+					    && sp.y > b0.y && sp.y < b1.y
+					    && sp.z > 0.0 && sp.z < 1.0)
+					{
+						vec2 mo = texture2D(s_texBulbShadow,
+						                    sp.xy).xy;
+						if (mo.x < 0.9999)
+						{
+							float lit = sp.z <= mo.x
+								? 1.0 : 0.0;
+							float va = max(mo.y - mo.x * mo.x,
+							               0.0) + 1.0e-5;
+							float dd = mo.x - sp.z;
+							float pmax = va / (va + dd * dd);
+							pmax *= smoothstep(0.2, 1.0, pmax);
+							att *= max(lit, pmax);
+						}
+					}
+				}
+			}
 			vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
 			float shininess = max(u_matSpecular.w * 128.0, 1.0);
 			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);

@@ -477,6 +477,10 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     bool light = lightProp && lightProp->getValue();
     float lightIntensity = light ? floatProp("Render_LightIntensity") : 0.0f;
     float lightRange = light ? floatProp("Render_LightRange") : 0.0f;
+    auto lightShadowProp = Base::freecad_dynamic_cast<App::PropertyBool>(
+            getPropertyByName("Render_LightShadow"));
+    bool lightShadow = light && lightShadowProp
+        && lightShadowProp->getValue();
 
     if (metallic < 0.0f && roughness < 0.0f && !water && !glass
             && !cloud && !fire && !fountain && !light) {
@@ -527,6 +531,7 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     pcRenderMaterial->lightIntensity = lightIntensity < 0.0f
         ? 0.0f : lightIntensity;
     pcRenderMaterial->lightRange = lightRange < 0.0f ? 0.0f : lightRange;
+    pcRenderMaterial->lightShadow = lightShadow;
 }
 
 void ViewProviderGeometryObject::updateRenderProperty(const char *name)

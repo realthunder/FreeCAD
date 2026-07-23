@@ -730,6 +730,12 @@ struct Material {
     bool lightsource = false;
     float lightintensity = 0.0f;
     float lightrange = 0.0f;
+    /// The light-source body casts shadows from its point light: the
+    /// backend renders a cached shadow-map tile for it (a downward
+    /// wide-cone view; static scenes re-render it only on change).
+    /// Off by default — a tile costs a scene depth render on every
+    /// invalidation.
+    bool lightshadow = false;
 
     /// Texture of a triangle draw (unit 0 only; GL applies further units
     /// on top, a known deviation) with its texture matrix, applied to

@@ -545,6 +545,7 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.lightsource = m.lightsource;
         res.lightintensity = m.lightintensity;
         res.lightrange = m.lightrange;
+        res.lightshadow = m.lightshadow;
     }
 
     // Bump map of triangle draws, unit 0 only like textures (the GL

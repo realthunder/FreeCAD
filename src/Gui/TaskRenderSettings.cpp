@@ -208,6 +208,12 @@ RenderSettingsWidget::RenderSettingsWidget(
         tr("Point-light range in model units; 0 = automatic from the "
            "shape size"));
     ++row;
+    lightShadowCheck = new QCheckBox(tr("    cast light shadows"), this);
+    lightShadowCheck->setToolTip(
+        tr("The light casts shadows (a cached shadow-map tile; costs a "
+           "scene depth render when the model or light changes)"));
+    grid->addWidget(lightShadowCheck, row, 0, 1, 3);
+    ++row;
 
     // Texture images (embedded into the document by
     // App::PropertyFileIncluded).
@@ -284,7 +290,8 @@ RenderSettingsWidget::RenderSettingsWidget(
                         fireSpeedSpin});
     enables(fountainCheck, {fountainDensitySpin, fountainDetailSpin,
                             fountainSpeedSpin});
-    enables(lightCheck, {lightIntensitySpin, lightRangeSpin});
+    enables(lightCheck, {lightIntensitySpin, lightRangeSpin,
+                         lightShadowCheck});
     enables(baseColorCheck, {baseColorEdit});
     enables(normalMapCheck, {normalMapEdit});
     enables(emissiveMapCheck, {emissiveMapEdit});
@@ -382,6 +389,9 @@ void RenderSettingsWidget::load()
         if (auto rng = getProp<App::PropertyFloat>(
                     vp, "Render_LightRange"))
             lightRangeSpin->setValue(rng->getValue());
+        if (auto sh = getProp<App::PropertyBool>(
+                    vp, "Render_LightShadow"))
+            lightShadowCheck->setChecked(sh->getValue());
     }
     if (auto prop = getProp<App::PropertyFileIncluded>(
                 vp, "Render_BaseColorTexture")) {
@@ -671,11 +681,22 @@ void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
         applyOptional(lightRangeSpin->value(), "Render_LightRange",
                       "Point-light range in model units; 0 = automatic "
                       "from the shape size");
+        if (lightShadowCheck->isChecked()) {
+            if (auto prop = ensureProp<App::PropertyBool>(
+                        vp, "App::PropertyBool", "Render_LightShadow",
+                        "The light casts shadows (a cached shadow-map "
+                        "tile rendered by the engine)"))
+                prop->setValue(true);
+        }
+        else {
+            removeProp(vp, "Render_LightShadow");
+        }
     }
     else {
         removeProp(vp, "Render_Light");
         removeProp(vp, "Render_LightIntensity");
         removeProp(vp, "Render_LightRange");
+        removeProp(vp, "Render_LightShadow");
     }
 
     // Texture images: PropertyFileIncluded copies the file into the

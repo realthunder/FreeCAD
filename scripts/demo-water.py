@@ -116,7 +116,7 @@ try:
     if os.environ.get("BULB", "1") == "1":
         bulb = doc.addObject("Part::Sphere", "Bulb")
         bulb.Radius = 1.2
-        bulb.Placement.Base = FreeCAD.Vector(0, 0.5, 18)
+        bulb.Placement.Base = FreeCAD.Vector(12, 0.5, 27)
 
     # A beam suspended over the water on two posts -- the shadow caster.
     beam = doc.addObject("Part::Box", "Beam")
@@ -159,6 +159,8 @@ try:
             float(os.environ.get("BULB_INTENSITY", "3.0"))
         lvo.addProperty("App::PropertyFloat", "Render_LightRange").Render_LightRange = \
             float(os.environ.get("BULB_RANGE", "0"))
+        lvo.addProperty("App::PropertyBool", "Render_LightShadow").Render_LightShadow = (
+            os.environ.get("BULB_SHADOW", "1") == "1")
 
     if fountain is not None:
         wvo = fountain.ViewObject

@@ -85,6 +85,7 @@ private:
     QCheckBox *lightCheck = nullptr;
     QDoubleSpinBox *lightIntensitySpin = nullptr;
     QDoubleSpinBox *lightRangeSpin = nullptr;
+    QCheckBox *lightShadowCheck = nullptr;
     QCheckBox *baseColorCheck = nullptr;
     QLineEdit *baseColorEdit = nullptr;
     QCheckBox *normalMapCheck = nullptr;
