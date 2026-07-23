@@ -2241,10 +2241,19 @@ public:
             // Glass shadow tint: glass casters render their light
             // transmittance into a color map beside the moments
             // (multiplicative; receivers sample it at unit 7).
+            // The tiles store PLAIN (z, z^2) moments, so they take the
+            // directional map's resolved format: RG32F wherever it is
+            // renderable and linearly filterable. fp16 moments made the
+            // Chebyshev variance (mo.y - mo.x^2, a cancellation of two
+            // nearly equal numbers) drown in quantization noise near
+            // contacts — a resolution-independent speckle band hugging
+            // every contact terminator. The RG16F fallback (mobile
+            // WebGL without float32-linear) compensates with a raised
+            // variance floor (bulbShadowConf.w).
             bulbShadowTex = bgfx::createTexture2D(
                 uint16_t(kBulbShadowGrid * kBulbShadowTileSize),
                 uint16_t(kBulbShadowGrid * kBulbShadowTileSize), false, 1,
-                bgfx::TextureFormat::RG16F,
+                shadowFormat,
                 BGFX_TEXTURE_RT
                 | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
             bulbShadowDepth = bgfx::createTexture2D(
@@ -5698,6 +5707,10 @@ public:
             std::vector<unsigned char> color(width * height * 4);
             glReadPixels(0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT,
                          depth.data());
+            // The color lives in the bgfx color FBO — the read binding
+            // still points at the depth-only FBO here (color would read
+            // back all zero).
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
             glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE,
                          color.data());
             long n = 0, r = 0, g = 0, b = 0;
@@ -5713,6 +5726,31 @@ public:
                     "bgfx fbo %dx%d: %ld geometry pixels, avg color %ld,%ld,%ld\n",
                     width, height, n,
                     n ? r/n : -1, n ? g/n : -1, n ? b/n : -1);
+            // FC_BGFX_DEBUG_DUMP_FRAME=<path>: also write the color
+            // readback as a binary PPM (overwritten each frame) — the
+            // only way to see what the DESKTOP GL path actually
+            // renders; the streamed viewer renders the scene with its
+            // own (WASM) backend, so stream screenshots cannot show
+            // desktop-specific artifacts.
+            static const char *dump = getenv("FC_BGFX_DEBUG_DUMP_FRAME");
+            if (dump && *dump) {
+                if (FILE *fp = fopen(dump, "wb")) {
+                    fprintf(fp, "P6\n%d %d\n255\n", width, height);
+                    // glReadPixels rows are bottom-up; PPM top-down.
+                    std::vector<unsigned char> row(size_t(width) * 3);
+                    for (int y = height - 1; y >= 0; --y) {
+                        const unsigned char *src =
+                            color.data() + size_t(y) * width * 4;
+                        for (int x = 0; x < width; ++x) {
+                            row[size_t(x)*3] = src[size_t(x)*4];
+                            row[size_t(x)*3 + 1] = src[size_t(x)*4 + 1];
+                            row[size_t(x)*3 + 2] = src[size_t(x)*4 + 2];
+                        }
+                        fwrite(row.data(), 1, row.size(), fp);
+                    }
+                    fclose(fp);
+                }
+            }
         }
         glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
     }
@@ -7406,7 +7444,14 @@ public:
                 view->bulbShadowConf[sl][0] = float(nextTile);
                 view->bulbShadowConf[sl][1] = float(faces);
                 view->bulbShadowConf[sl][2] = 0.0f;
-                view->bulbShadowConf[sl][3] = 0.0f;
+                // .w = the format-dependent variance floor of the
+                // plain-VSM tap: fp16 moments quantize the z^2 moment
+                // to ~2^-12 steps, so the RG16F fallback needs a floor
+                // well above that noise or the Chebyshev test speckles
+                // along contact terminators.
+                view->bulbShadowConf[sl][3] =
+                    view->shadowFormat == bgfx::TextureFormat::RG32F
+                        ? 1.0e-5f : 3.0e-4f;
                 if (!faces)
                     continue;
                 // Light camera per face. Near starts outside the bulb

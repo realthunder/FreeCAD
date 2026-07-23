@@ -683,9 +683,14 @@ void main()
 							// Coin VsmLookup shape with the
 							// tunable minimum variance
 							// (ShadowEpsilon, u_shadowParams.y).
+							// conf.w = the format-dependent floor:
+							// fp16 tiles quantize the z^2 moment,
+							// so their variance needs a floor
+							// above that quantization noise.
 							float va = max(mo.y - mo.x * mo.x,
 							               0.0)
-								+ max(u_shadowParams.y, 1.0e-5);
+								+ max(u_shadowParams.y,
+								      max(conf.w, 1.0e-5));
 							float dd = mo.x - sp.z;
 							float pmax = va / (va + dd * dd);
 							pmax *= smoothstep(0.2, 1.0, pmax);
