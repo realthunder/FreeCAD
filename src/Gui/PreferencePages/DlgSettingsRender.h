@@ -129,6 +129,16 @@ private:
     Gui::PrefDoubleSpinBox *WaterWaveSpeed = nullptr;
 
     // Auto generated code (Tools/params_utils.py:426)
+    QGroupBox * groupBloom = nullptr;
+    Gui::PrefCheckBox *Bloom = nullptr;
+    QLabel *labelBloomThreshold = nullptr;
+    Gui::PrefDoubleSpinBox *BloomThreshold = nullptr;
+    QLabel *labelBloomIntensity = nullptr;
+    Gui::PrefDoubleSpinBox *BloomIntensity = nullptr;
+    QLabel *labelBloomRadius = nullptr;
+    Gui::PrefDoubleSpinBox *BloomRadius = nullptr;
+
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupGroundreflection = nullptr;
     Gui::PrefCheckBox *GroundReflection = nullptr;
     QLabel *labelGroundReflectionIntensity = nullptr;

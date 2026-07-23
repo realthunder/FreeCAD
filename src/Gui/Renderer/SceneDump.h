@@ -60,6 +60,7 @@ struct SceneSnapshot {
     LightConfig lightconf;
     VolumetricConfig volconf;
     WaterConfig waterconf;
+    BloomConfig bloomconf;      ///< v18; defaulted on older snapshots
     float autozoomScale = 1.0f;
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect
     /// passes (reflection re-render, SSAO resolve); 1.0 = full resolution.

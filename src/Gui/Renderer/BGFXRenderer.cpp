@@ -1462,6 +1462,24 @@ public:
                             // solids, after the transparent bucket like
                             // GL's grouped section pass; stencil-cleared
                             // because the outline views left marks
+        ViewBloomBright,    // bloom bright pass: the finished scene
+                            // (opaque + water + transparent, before the
+                            // on-top/UI buckets) box-downsampled to the
+                            // quarter-res halo source, thresholded with
+                            // a soft knee
+        ViewBloomEmit,      // light-source bodies (Render_Light)
+                            // re-rendered additively into the halo
+                            // source at their HDR emission color
+                            // (diffuse * intensity), depth-rejected
+                            // against the prepass — the halo scales
+                            // with the intensity even though the LDR
+                            // scene clips their own pixels
+        ViewBloomBlurH,     // separable gaussian of the halo source:
+                            // horizontal into the ping target ...
+        ViewBloomBlurV,     // ... and vertical back into the source
+        ViewBloomApply,     // the blurred halo added onto the scene
+                            // (blend ONE/ONE, scaled by the bloom
+                            // intensity)
         ViewOnTop,          // scene geometry with on-top materials
         ViewHighlight,      // selection-on-top and preselection highlight
         ViewOverlay0,       // overlay feeds (Renderer::setOverlay — the
@@ -1530,6 +1548,7 @@ public:
         aoMipCount = 0;
         // Volumetric resources: the framebuffers before their textures.
         for (auto fb : {&volFbo, &volHistFbo,
+                        &bloomFbo, &bloomBlurFbo,
                         &waterFrontFbo, &waterBackFbo,
                         &glassFrontFbo, &glassBackFbo,
                         &cloudFrontFbo, &cloudBackFbo,
@@ -1542,6 +1561,7 @@ public:
         }
         for (auto tex : {&volTex, &volFrontTex,
                          &volHistTex, &volHistFrontTex,
+                         &bloomTex, &bloomBlurTex,
                          &waterFrontTex, &waterBackTex,
                          &waterFrontDepth, &waterBackDepth,
                          &glassFrontTex, &glassBackTex,
@@ -1582,6 +1602,8 @@ public:
                           &m_progSsaoBlur, &m_progSsaoApply,
                           &m_progVol,
                           &m_progVolAccum, &m_progReflMedia,
+                          &m_progBloomBright, &m_progBloomEmit,
+                          &m_progBloomBlur, &m_progBloomApply,
                           &m_progVolApply, &m_progVolExt,
                           &m_progCaustics, &m_progWaterCopy, &m_progWater,
                           &m_progGlass, &m_progGroundRefl}) {
@@ -1623,7 +1645,9 @@ public:
                          &u_shadowParams, &u_lightDir,
                          &u_lightPos, &u_lightColor, &u_shadowMatrix,
                          &u_shadowBlur, &u_evsm,
-                         &u_fireLight, &u_fireLightColor}) {
+                         &u_localLight, &u_localLightColor,
+                         &s_texBloom, &u_bloomParams,
+                         &u_bloomTexel, &u_bloomBlur}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -1944,6 +1968,43 @@ public:
         for (uint16_t i = 0; i < NUM_VIEWS; ++i)
             bgfx::setViewFrameBuffer(viewId + i, bgfxFbo);
 
+        // Bloom (glow) chain: quarter-res RGBA16F halo source + blur
+        // ping target (small enough to keep unconditionally; the passes
+        // only run while the bloom config is enabled).
+        {
+            uint16_t qw = uint16_t(std::max(1, int(width) / 4));
+            uint16_t qh = uint16_t(std::max(1, int(height) / 4));
+            const uint64_t bloomFlags = BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+            bloomTex = bgfx::createTexture2D(qw, qh, false, 1,
+                bgfx::TextureFormat::RGBA16F, bloomFlags);
+            bloomBlurTex = bgfx::createTexture2D(qw, qh, false, 1,
+                bgfx::TextureFormat::RGBA16F, bloomFlags);
+            bloomFbo = bgfx::createFrameBuffer(1, &bloomTex, false);
+            bloomBlurFbo = bgfx::createFrameBuffer(1, &bloomBlurTex,
+                                                   false);
+            m_progBloomBright = loadProgram("vs_fc_comp",
+                                            "fs_fc_bloom_bright",
+                                            _BGFXLib.resource().c_str());
+            m_progBloomEmit = loadProgram("vs_fc_mesh",
+                                          "fs_fc_bloom_emit",
+                                          _BGFXLib.resource().c_str());
+            m_progBloomBlur = loadProgram("vs_fc_comp",
+                                          "fs_fc_bloom_blur",
+                                          _BGFXLib.resource().c_str());
+            m_progBloomApply = loadProgram("vs_fc_comp",
+                                           "fs_fc_bloom_apply",
+                                           _BGFXLib.resource().c_str());
+            s_texBloom = bgfx::createUniform("s_texBloom",
+                                             bgfx::UniformType::Sampler);
+            u_bloomParams = bgfx::createUniform(
+                "u_bloomParams", bgfx::UniformType::Vec4);
+            u_bloomTexel = bgfx::createUniform(
+                "u_bloomTexel", bgfx::UniformType::Vec4);
+            u_bloomBlur = bgfx::createUniform(
+                "u_bloomBlur", bgfx::UniformType::Vec4);
+        }
+
 #ifdef FC_RENDERER_STANDALONE
         // The standalone present pass copies the scene color onto the
         // default backbuffer (no Qt framebuffer to GL-blit into).
@@ -2084,12 +2145,12 @@ public:
         u_shadowMatrix = bgfx::createUniform("u_shadowMatrix",
                                              bgfx::UniformType::Mat4);
         u_evsm = bgfx::createUniform("u_evsm", bgfx::UniformType::Vec4);
-        u_fireLight = bgfx::createUniform("u_fireLight",
+        u_localLight = bgfx::createUniform("u_localLight",
                                           bgfx::UniformType::Vec4,
-                                          kMediumSlots);
-        u_fireLightColor = bgfx::createUniform("u_fireLightColor",
+                                          kLocalLights);
+        u_localLightColor = bgfx::createUniform("u_localLightColor",
                                                bgfx::UniformType::Vec4,
-                                               kMediumSlots);
+                                               kLocalLights);
         // EVSM: the moments store an exponential warp of the light
         // window depth (exp(c z), exp(c z)^2), which curbs VSM's light
         // bleeding at overlapping occluders. RG32F carries the classic
@@ -4225,6 +4286,99 @@ public:
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
     }
 
+    /// Bloom (glow) chain: bright-pass downsample of the finished scene
+    /// into the quarter-res halo source, the light-source bodies added
+    /// on top at their HDR emission color, a separable gaussian, and
+    /// the additive composite back onto the scene.
+    void submitBloom(float threshold, float intensity, float radius,
+                     const std::vector<const Render::DrawCall *> &bulbs)
+    {
+        if (!bgfx::isValid(m_progBloomBright)
+                || !bgfx::isValid(bloomFbo))
+            return;
+        float qw = std::max(1.0f, std::floor(width / 4.0f));
+        float qh = std::max(1.0f, std::floor(height / 4.0f));
+        float texel[4] = {1.0f / width, 1.0f / height,
+                          1.0f / qw, 1.0f / qh};
+        // w = soft knee width as a fraction of the threshold.
+        float params[4] = {threshold, intensity, radius, 0.5f};
+        bgfx::setUniform(u_bloomParams, params);
+        bgfx::setUniform(u_bloomTexel, texel);
+        bgfx::setTexture(0, s_texScene, bgfxColor);
+        fullscreen(ViewBloomBright, m_progBloomBright,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+
+        // Light-source bodies re-rendered additively at diffuse *
+        // intensity; the manual depth reject needs the prepass, without
+        // it the bodies still glow via the bright pass alone.
+        if (bgfx::isValid(m_progBloomEmit) && bgfx::isValid(aoNormalZ)) {
+            for (const auto *draw : bulbs) {
+                if (!draw->mesh || !draw->mesh->triangleIndices)
+                    continue;
+                GpuMesh *gpu = getMesh(*draw->mesh);
+                if (!bgfx::isValid(gpu->geom->vbh)
+                        || !bgfx::isValid(gpu->geom->tri))
+                    continue;
+                const Render::Material &mat = draw->material;
+                float color[4];
+                unpackColor(mat.diffuse, color);
+                float inten = mat.lightintensity > 0.0f
+                    ? mat.lightintensity : 1.0f;
+                for (int j = 0; j < 3; ++j)
+                    color[j] *= inten;
+                bgfx::setUniform(u_matColor, color);
+                bgfx::setUniform(u_bloomTexel, texel);
+                // vs_fc_mesh reads u_params.w as an NDC depth bias (see
+                // the water surface pass) — zero it explicitly.
+                float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                bgfx::setUniform(u_params, zero);
+                bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
+                setDrawTransform(*draw, autozoomScale, viewMatrix,
+                                 projMatrix, (float)height);
+                setMeshVertexBuffers(gpu, *draw->mesh);
+                if (draw->indexCount > 0)
+                    bgfx::setIndexBuffer(gpu->geom->tri,
+                                         uint32_t(draw->indexStart),
+                                         uint32_t(draw->indexCount));
+                else
+                    bgfx::setIndexBuffer(gpu->geom->tri);
+                uint64_t state = BGFX_STATE_WRITE_RGB
+                    | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
+                                            BGFX_STATE_BLEND_ONE);
+                if (mat.culling && !mat.twoside)
+                    state |= mat.ccw ? BGFX_STATE_CULL_CW
+                                     : BGFX_STATE_CULL_CCW;
+                bgfx::setState(state);
+                bgfx::submit(viewId + ViewBloomEmit, m_progBloomEmit);
+                ++drawcount;
+            }
+        }
+
+        // Separable gaussian over the halo source (dense bilinear-pair
+        // kernel, the shadow blur pattern; u_viewTexel is the quarter
+        // res of these views).
+        float sigma = 6.0f * std::max(radius, 0.01f);
+        float pairs = std::min(64.0f, std::ceil(sigma * 1.5f));
+        float blurH[4] = {1.0f, 0.0f, sigma, pairs};
+        bgfx::setUniform(u_bloomBlur, blurH);
+        bgfx::setTexture(0, s_texBloom, bloomTex);
+        fullscreen(ViewBloomBlurH, m_progBloomBlur,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        float blurV[4] = {0.0f, 1.0f, sigma, pairs};
+        bgfx::setUniform(u_bloomBlur, blurV);
+        bgfx::setTexture(0, s_texBloom, bloomBlurTex);
+        fullscreen(ViewBloomBlurV, m_progBloomBlur,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+
+        // Additive composite onto the scene, scaled by the intensity.
+        bgfx::setUniform(u_bloomParams, params);
+        bgfx::setTexture(0, s_texBloom, bloomTex);
+        fullscreen(ViewBloomApply, m_progBloomApply,
+                   BGFX_STATE_WRITE_RGB
+                   | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
+                                           BGFX_STATE_BLEND_ONE));
+    }
+
     /// Re-render a water body draw as the animated water surface:
     /// screen-space refraction from the scene copy, Fresnel-blended
     /// environment reflection and a sun glint (fs_fc_water). Draws
@@ -4675,20 +4829,21 @@ public:
         bgfx::setUniform(u_lightPos,
                          shadowFrame ? lightPosView : noSpot);
         bgfx::setUniform(u_shadowParams, shadowParams);
-        // Fire body effect light: frame-wide state computed in render()
-        // (zeroed w when no fire body burns); set on every mesh submit
-        // because bgfx uniforms are global per program. Overlays (NaviCube,
-        // axis cross, …) are UI chrome and must not flicker with the
-        // scene's fire light, so they get a zeroed fire light.
+        // Local effect lights (fire flames + Render_Light bulbs):
+        // frame-wide state computed in render() (zeroed w on inactive
+        // slots); set on every mesh submit because bgfx uniforms are
+        // global per program. Overlays (NaviCube, axis cross, …) are UI
+        // chrome and must not flicker with the scene's effect lights,
+        // so they get a zeroed array.
         if (overlayView >= 0) {
-            static const float noFire[kMediumSlots][4] = {};
-            bgfx::setUniform(u_fireLight, noFire, kMediumSlots);
+            static const float noLights[kLocalLights][4] = {};
+            bgfx::setUniform(u_localLight, noLights, kLocalLights);
         }
         else {
-            bgfx::setUniform(u_fireLight, fireLightView, kMediumSlots);
+            bgfx::setUniform(u_localLight, localLightView, kLocalLights);
         }
-        bgfx::setUniform(u_fireLightColor, fireLightColorI,
-                         kMediumSlots);
+        bgfx::setUniform(u_localLightColor, localLightColorI,
+                         kLocalLights);
         bgfx::setTexture(3, s_texShadow, shadow);
         if (bgfx::isValid(s_texShadowTint))
             bgfx::setTexture(7, s_texShadowTint,
@@ -4772,6 +4927,10 @@ public:
         // UI overlays (NaviCube faces, etc.) are flat chrome with baked
         // textures: light them uniformly so faces don't darken by angle.
         if (overlayView >= 0)
+            shaded = false;
+        // Light-source bodies render unshaded at their diffuse color (a
+        // glowing bulb face is its own light, not a lit surface).
+        if (mat.lightsource)
             shaded = false;
         params[1] = shaded ? 1.0f : 0.0f;
         // GL parity (applyMaterial ~745): transparent draws are lit on
@@ -5140,6 +5299,10 @@ public:
             || (shadowFrame && (mat.shadowstyle & 2));
         // UI overlays render unlit (see the instanced path above).
         if (overlayView >= 0)
+            shaded = false;
+        // Light-source bodies render unshaded at their diffuse color (a
+        // glowing bulb face is its own light, not a lit surface).
+        if (mat.lightsource)
             shaded = false;
         params[1] = mat.type == Render::Material::Line
             ? qMax(1.0f, std::floor(mat.linewidth + 0.5f))
@@ -5535,8 +5698,12 @@ public:
     // Appearance slots per medium kind: distinct bodies get their own
     // parameter slot (uniform array entry), looked up per pixel via
     // the slot index in the interval targets. Must match MEDIUM_SLOTS
-    // in fc_volume.sh and FIRE_LIGHTS in fc_mesh_fs.sh.
+    // in fc_volume.sh.
     static constexpr int kMediumSlots = 4;
+    // Local effect lights (LOCAL_LIGHTS in fc_mesh_fs.sh): the first
+    // kMediumSlots entries carry the fire body flame lights, the rest
+    // the light-source bodies (Render_Light bulbs).
+    static constexpr int kLocalLights = 2 * kMediumSlots;
     bgfx::ProgramHandle m_progPrepassInst = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSsao = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progGtao = BGFX_INVALID_HANDLE;
@@ -5638,10 +5805,10 @@ public:
     // position in view space, w = 1 / range^2 (0 = slot inactive this
     // frame). The colors arrive premultiplied by intensity and the
     // animation-clock flicker.
-    bgfx::UniformHandle u_fireLight = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle u_fireLightColor = BGFX_INVALID_HANDLE;
-    float fireLightView[kMediumSlots][4] = {};
-    float fireLightColorI[kMediumSlots][4] = {};
+    bgfx::UniformHandle u_localLight = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_localLightColor = BGFX_INVALID_HANDLE;
+    float localLightView[kLocalLights][4] = {};
+    float localLightColorI[kLocalLights][4] = {};
     float shadowMtx[16];       // camera view space -> shadow uv/depth
     // Cached shadow map: hash of the light camera + caster set of the
     // moments currently in shadowTex; the caster pass (and blur) only
@@ -5670,6 +5837,19 @@ public:
     bgfx::ProgramHandle m_progVolApply = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolAccum = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progReflMedia = BGFX_INVALID_HANDLE;
+    // Bloom (glow) chain: quarter-res halo source + blur ping target.
+    bgfx::TextureHandle bloomTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle bloomBlurTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle bloomFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle bloomBlurFbo = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progBloomBright = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progBloomEmit = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progBloomBlur = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progBloomApply = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texBloom = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_bloomParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_bloomTexel = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_bloomBlur = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texVolFront = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolExt = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCaustics = BGFX_INVALID_HANDLE;
@@ -5933,6 +6113,7 @@ public:
             snap.lightconf = lightconf;
             snap.volconf = volconf;
             snap.waterconf = waterconf;
+            snap.bloomconf = bloomconf;
             snap.preselconf = preselconf;
             snap.selconf = selconf;
             snap.autozoomScale = autozoomScale;
@@ -6813,7 +6994,7 @@ public:
             const FireSlot &fs = fireSlot[slot];
             if (!(fireActive && !noFireLight && fs.valid
                   && fs.diag > 0.0f)) {
-                view->fireLightView[slot][3] = 0.0f;
+                view->localLightView[slot][3] = 0.0f;
                 continue;
             }
             const float *vm = reinterpret_cast<const float *>(viewMatrix);
@@ -6821,12 +7002,12 @@ public:
             // up axis, the ramp's bright zone) came out of the fire
             // scan's taper frame.
             for (int j = 0; j < 3; ++j)
-                view->fireLightView[slot][j] = fs.lightWorld[0] * vm[j]
+                view->localLightView[slot][j] = fs.lightWorld[0] * vm[j]
                     + fs.lightWorld[1] * vm[4 + j]
                     + fs.lightWorld[2] * vm[8 + j]
                     + vm[12 + j];
             float range = 2.5f * fs.diag;
-            view->fireLightView[slot][3] = 1.0f / (range * range);
+            view->localLightView[slot][3] = 1.0f / (range * range);
             // Flicker: a few incommensurate sines on the flame clock
             // (same 2.0 rise rate as the noise scroll), amplitude kept
             // above zero so the fire never blacks out. The slot index
@@ -6839,11 +7020,67 @@ public:
             float glow = fs.intensity * flicker;
             // fireRamp(0.6) of the volume shader: the flame's dominant
             // orange.
-            view->fireLightColorI[slot][0] = 1.00f * glow;
-            view->fireLightColorI[slot][1] = 0.72f * glow;
-            view->fireLightColorI[slot][2] = 0.13f * glow;
-            view->fireLightColorI[slot][3] = 0.0f;
+            view->localLightColorI[slot][0] = 1.00f * glow;
+            view->localLightColorI[slot][1] = 0.72f * glow;
+            view->localLightColorI[slot][2] = 0.13f * glow;
+            view->localLightColorI[slot][3] = 0.0f;
         }
+        // Light-source bodies (Render_Light): the upper half of the
+        // local-light array — an unshadowed point light at each body's
+        // bounds center, color = diffuse * intensity, steady (no
+        // flicker). The draws are also collected for the bloom emit
+        // pass (their HDR halo source re-render).
+        std::vector<const Render::DrawCall *> bulbDraws;
+        {
+            int slot = 0;
+            std::unordered_set<uint64_t> bulbObjects;
+            for (const auto &draw : scene) {
+                const auto &mat = draw.material;
+                if (!mat.lightsource || mat.ontop
+                        || mat.type != Render::Material::Triangle)
+                    continue;
+                bulbDraws.push_back(&draw);
+                if (slot >= BGFXView::kLocalLights
+                                - BGFXView::kMediumSlots)
+                    continue;
+                // One light per object (a body's face/edge draws share
+                // the object key).
+                if (draw.objectKey
+                        && !bulbObjects.insert(draw.objectKey).second)
+                    continue;
+                float dx = draw.bboxMax[0] - draw.bboxMin[0];
+                float dy = draw.bboxMax[1] - draw.bboxMin[1];
+                float dz = draw.bboxMax[2] - draw.bboxMin[2];
+                float diag = (dx >= 0.0f && dy >= 0.0f && dz >= 0.0f)
+                    ? std::sqrt(dx * dx + dy * dy + dz * dz) : 0.0f;
+                if (diag <= 0.0f)
+                    continue;
+                float cx = 0.5f * (draw.bboxMin[0] + draw.bboxMax[0]);
+                float cy = 0.5f * (draw.bboxMin[1] + draw.bboxMax[1]);
+                float cz = 0.5f * (draw.bboxMin[2] + draw.bboxMax[2]);
+                float intensity = mat.lightintensity > 0.0f
+                    ? mat.lightintensity : 1.0f;
+                float range = mat.lightrange > 0.0f ? mat.lightrange
+                                                    : 8.0f * diag;
+                int li = BGFXView::kMediumSlots + slot++;
+                const float *vm =
+                    reinterpret_cast<const float *>(viewMatrix);
+                for (int j = 0; j < 3; ++j)
+                    view->localLightView[li][j] = cx * vm[j]
+                        + cy * vm[4 + j] + cz * vm[8 + j] + vm[12 + j];
+                view->localLightView[li][3] = 1.0f / (range * range);
+                float color[4];
+                unpackColor(mat.diffuse, color);
+                for (int j = 0; j < 3; ++j)
+                    view->localLightColorI[li][j] = color[j] * intensity;
+                view->localLightColorI[li][3] = 0.0f;
+            }
+            for (; slot < BGFXView::kLocalLights - BGFXView::kMediumSlots;
+                 ++slot)
+                view->localLightView[BGFXView::kMediumSlots + slot][3]
+                    = 0.0f;
+        }
+        bool bloomActive = bloomconf.enabled;
         float waterWaveStrength = waterconf.waveStrength;
         float waterWaveScale = waterconf.waveScale;
         if (waterWaveScale <= 0.0f)
@@ -7205,6 +7442,34 @@ public:
                     uint16_t(std::max(1, int(width) / 2)),
                     uint16_t(std::max(1, int(height) / 2)));
                 bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (bloomActive
+                       && (i == BGFXView::ViewBloomBright
+                           || i == BGFXView::ViewBloomEmit
+                           || i == BGFXView::ViewBloomBlurH
+                           || i == BGFXView::ViewBloomBlurV)
+                       && bgfx::isValid(view->bloomFbo)) {
+                // Quarter-res bloom chain: bright/emit into the halo
+                // source, blur ping-pongs through the second target.
+                // The fullscreen passes overwrite every pixel but the
+                // emit pass blends into the bright result, so only the
+                // source clears (via the bright overwrite) — no view
+                // clear needed anywhere. The emit pass renders the
+                // light bodies under the scene camera.
+                bgfx::setViewFrameBuffer(id,
+                    i == BGFXView::ViewBloomBlurH
+                        ? view->bloomBlurFbo : view->bloomFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0,
+                    uint16_t(std::max(1, int(width) / 4)),
+                    uint16_t(std::max(1, int(height) / 4)));
+                if (i == BGFXView::ViewBloomEmit)
+                    bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                else
+                    bgfx::setViewTransform(id, nullptr, nullptr);
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
@@ -8285,6 +8550,13 @@ public:
                 || (animLive && waterconf.waveSpeed != 0.0f);
         }
 
+        // 1g. Bloom: bright-pass + light-source emit + blur + additive
+        // composite, over the finished scene (its views sit after the
+        // transparent/water buckets, before the on-top/UI passes).
+        if (bloomActive)
+            view->submitBloom(bloomconf.threshold, bloomconf.intensity,
+                              bloomconf.radius, bulbDraws);
+
         // 2. Selection whole-object fills; positive ids are on-top
         // selections (SoFCRenderer::addSelection). Their lines/points are
         // deferred to the two-pass loop when it runs; single-part (e.g.
@@ -9074,6 +9346,7 @@ public:
     Render::LightConfig lightconf;
     Render::VolumetricConfig volconf;
     Render::WaterConfig waterconf;
+    Render::BloomConfig bloomconf;
     Render::PreselHighlightConfig preselconf;
     Render::PreselHighlightConfig selconf;
     float autozoomScale = 1.0f;
@@ -9352,6 +9625,14 @@ void BGFXRenderer::setWaterConfig(const WaterConfig &config)
 {
     if (pimpl->waterconf != config) {
         pimpl->waterconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setBloomConfig(const BloomConfig &config)
+{
+    if (pimpl->bloomconf != config) {
+        pimpl->bloomconf = config;
         pimpl->sceneDirty = true;
     }
 }

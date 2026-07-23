@@ -586,6 +586,59 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter Bloom
+    ///
+    /// Bleed a blurred glow halo from bright pixels and from
+    /// light-source bodies (objects with the Render_Light property)
+    /// over their surroundings.
+    static const bool & getBloom();
+    static const bool & defaultBloom();
+    static void removeBloom();
+    static void setBloom(const bool &v);
+    static const char *docBloom();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BloomThreshold
+    ///
+    /// Scene brightness above which a pixel feeds the glow halo
+    /// (with a soft knee below it). Light-source bodies always feed
+    /// it regardless, scaled by their intensity.
+    static const double & getBloomThreshold();
+    static const double & defaultBloomThreshold();
+    static void removeBloomThreshold();
+    static void setBloomThreshold(const double &v);
+    static const char *docBloomThreshold();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BloomIntensity
+    ///
+    /// Brightness multiplier of the composited glow halo.
+    static const double & getBloomIntensity();
+    static const double & defaultBloomIntensity();
+    static void removeBloomIntensity();
+    static void setBloomIntensity(const double &v);
+    static const char *docBloomIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BloomRadius
+    ///
+    /// Radius scale of the glow halo. One is the default gaussian
+    /// footprint; larger blooms wider.
+    static const double & getBloomRadius();
+    static const double & defaultBloomRadius();
+    static void removeBloomRadius();
+    static void setBloomRadius(const double &v);
+    static const char *docBloomRadius();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter GroundReflection
     ///
     /// Mirror the model in the shadow ground plane of the

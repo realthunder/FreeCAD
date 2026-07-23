@@ -61,16 +61,17 @@ uniform vec4 u_lightColor;
 // 0 single tap, 1 Coin's 4-tap dithered kernel, N >= 3 an N x N grid.
 uniform vec4 u_evsm;
 uniform mat4 u_shadowMatrix;
-// Fire body effect lights: unshadowed point lights at the flame
-// centroids (one entry per fire body appearance slot), added on top of
+// Local effect lights: unshadowed point lights added on top of
 // whatever lighting model runs (the usual engine effect-light shortcut
-// — no shadow map from them). xyz = light position in view space,
-// w = 1 / range^2 (0 = inactive slot).
-// u_fireLightColor[].rgb arrives premultiplied by the fire intensity
-// and the CPU-clock flicker.
-#define FIRE_LIGHTS 4
-uniform vec4 u_fireLight[FIRE_LIGHTS];
-uniform vec4 u_fireLightColor[FIRE_LIGHTS];
+// — no shadow map from them). The first half of the array carries the
+// fire body flame lights (color premultiplied by the fire intensity
+// and the CPU-clock flicker), the second half the light-source bodies
+// (Render_Light bulbs, color premultiplied by their intensity).
+// xyz = light position in view space, w = 1 / range^2 (0 = inactive
+// slot).
+#define LOCAL_LIGHTS 8
+uniform vec4 u_localLight[LOCAL_LIGHTS];
+uniform vec4 u_localLightColor[LOCAL_LIGHTS];
 #ifdef TEXTURE
 SAMPLER2D(s_texColor, 0);
 // x = texture environment (0 modulate, 1 decal, 2 blend, 3 replace),
@@ -518,17 +519,18 @@ void main()
 				+ u_matSpecular.rgb * (spec * 0.75);
 		}
 
-		// Fire body effect lights: diffuse plus a Blinn specular from
-		// each flame centroid, distance-attenuated. They add to every
-		// lit branch (the PBR path takes them as a plain Lambert add —
-		// a full BRDF evaluation is not worth it for an effect light).
-		for (int fi = 0; fi < FIRE_LIGHTS; ++fi)
+		// Local effect lights (fire flames, Render_Light bulbs):
+		// diffuse plus a Blinn specular from each light position,
+		// distance-attenuated. They add to every lit branch (the PBR
+		// path takes them as a plain Lambert add — a full BRDF
+		// evaluation is not worth it for an effect light).
+		for (int fi = 0; fi < LOCAL_LIGHTS; ++fi)
 		{
-			if (u_fireLight[fi].w <= 0.0)
+			if (u_localLight[fi].w <= 0.0)
 				continue;
-			vec3 fl = u_fireLight[fi].xyz - v_vpos;
+			vec3 fl = u_localLight[fi].xyz - v_vpos;
 			// Self-occlusion: a face whose geometric normal points away from
-			// the flame is shadowed by the object's own body, so this
+			// the light is shadowed by the object's own body, so this
 			// unshadowed effect light must not light it (no penetrating a solid).
 			if (dot(geoN, fl) <= 0.0)
 				continue;
@@ -538,13 +540,13 @@ void main()
 			if (u_params.z > 0.5)
 				ndl = abs(ndl);
 			ndl = max(ndl, 0.0);
-			float att = 1.0 / (1.0 + d2 * u_fireLight[fi].w);
+			float att = 1.0 / (1.0 + d2 * u_localLight[fi].w);
 			vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
 			float shininess = max(u_matSpecular.w * 128.0, 1.0);
 			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
-			color += base.rgb * u_fireLightColor[fi].rgb
+			color += base.rgb * u_localLightColor[fi].rgb
 					* (ndl * att)
-				+ u_matSpecular.rgb * u_fireLightColor[fi].rgb
+				+ u_matSpecular.rgb * u_localLightColor[fi].rgb
 					* (spec * att * 0.75);
 		}
 	}

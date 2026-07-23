@@ -3903,6 +3903,17 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "VolumetricDensity",
             RenderParams::docVolumetricDensity(),
             RenderParams::getVolumetricDensity());
+    _renderParam<App::PropertyBool>(view, "Bloom",
+            RenderParams::docBloom(), RenderParams::getBloom());
+    _renderParam<App::PropertyFloat>(view, "BloomThreshold",
+            RenderParams::docBloomThreshold(),
+            RenderParams::getBloomThreshold());
+    _renderParam<App::PropertyFloat>(view, "BloomIntensity",
+            RenderParams::docBloomIntensity(),
+            RenderParams::getBloomIntensity());
+    _renderParam<App::PropertyFloat>(view, "BloomRadius",
+            RenderParams::docBloomRadius(),
+            RenderParams::getBloomRadius());
     _renderParam<App::PropertyBool>(view, "Caustics",
             RenderParams::docCaustics(), RenderParams::getCaustics());
     _renderParam<App::PropertyFloat>(view, "CausticsIntensity",

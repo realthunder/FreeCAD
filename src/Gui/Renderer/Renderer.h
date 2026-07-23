@@ -532,6 +532,29 @@ struct WaterConfig {
     bool operator!=(const WaterConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame bloom (glow) configuration. While enabled, pixels brighter
+/// than the threshold bleed a blurred halo over their surroundings, and
+/// light-source bodies (Material::lightsource) add their diffuse color
+/// times lightintensity to the halo source — an emitter reads as
+/// glowing instead of clipping to a flat bright shape.
+struct BloomConfig {
+    bool enabled = false;
+    /// Scene luminance above which a pixel feeds the halo (soft knee
+    /// below it). The scene target is LDR, so 1 disables everything but
+    /// the light-source bodies' own contribution.
+    float threshold = 0.9f;
+    float intensity = 1.0f;  ///< halo brightness multiplier
+    /// Halo radius scale (1 = default gaussian footprint, larger blooms
+    /// wider).
+    float radius = 1.0f;
+
+    bool operator==(const BloomConfig &o) const {
+        return enabled == o.enabled && threshold == o.threshold
+            && intensity == o.intensity && radius == o.radius;
+    }
+    bool operator!=(const BloomConfig &o) const { return !(*this == o); }
+};
+
 /// Per-frame physically based shading configuration (like AOConfig there
 /// is no GL-renderer counterpart). While enabled, lit triangle surfaces
 /// use a metallic/roughness BRDF with image based lighting from a
@@ -686,6 +709,19 @@ struct Material {
     float fountaindensity = 0.0f;
     float fountaindetail = 0.0f;
     float fountainspeed = 1.0f;
+
+    /// Light-source body flag of a triangle draw (SoFCRenderMaterial,
+    /// typically fed from a ViewProvider Render_Light property): the
+    /// geometry renders unshaded at its diffuse color (a glowing bulb /
+    /// sun disc), feeds the bloom pass at lightintensity (an HDR
+    /// multiplier — the halo scales with it even though the scene
+    /// target clips at 1), and acts as an unshadowed point light on
+    /// lit surfaces around it (the fire-light shortcut — no shadow map
+    /// from it). lightintensity <= 0 = 1; lightrange <= 0 = automatic
+    /// (from the draw bounds).
+    bool lightsource = false;
+    float lightintensity = 0.0f;
+    float lightrange = 0.0f;
 
     /// Texture of a triangle draw (unit 0 only; GL applies further units
     /// on top, a known deviation) with its texture matrix, applied to
@@ -882,6 +918,9 @@ public:
     { (void)config; }
     /// Per-frame water surface (refraction/reflection) configuration.
     virtual void setWaterConfig(const WaterConfig &config)
+    { (void)config; }
+    /// Per-frame bloom (glow) configuration.
+    virtual void setBloomConfig(const BloomConfig &config)
     { (void)config; }
     /// Preselection (hover) highlight styling from ViewParams; carried in
     /// the snapshot for the standalone/WASM viewer's local hover highlight.

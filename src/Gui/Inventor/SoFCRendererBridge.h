@@ -83,6 +83,10 @@ GuiExport Render::VolumetricConfig translateVolumetricConfig(
 /// per-frame config.
 GuiExport Render::WaterConfig translateWaterConfig(View3DInventor * view);
 
+/// Resolve the bloom (glow) settings (Render_Bloom* view properties,
+/// RenderParams fallback) into the backend-neutral per-frame config.
+GuiExport Render::BloomConfig translateBloomConfig(View3DInventor * view);
+
 /// Resolve the preselection highlight styling (HighlightColor,
 /// ShowPreSelectedFaceOutline, NoPreSelFaceHighlightWithOutline, outline
 /// width from the selection/outline thicken params) into the backend-neutral

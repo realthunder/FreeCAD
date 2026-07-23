@@ -274,6 +274,13 @@ public:
     float fountaindensity;
     float fountaindetail;
     float fountainspeed;
+    /// Light-source body flag/parameters captured from
+    /// SoFCRenderMaterial: external backends render the shapes unshaded
+    /// at their diffuse color, feed them to the bloom pass and shine
+    /// them as an unshadowed point light (bulb, sun disc).
+    bool lightsource;
+    float lightintensity;
+    float lightrange;
     float polygonoffsetunits;
     float polygonoffsetfactor;
     int16_t annotation;
@@ -419,6 +426,12 @@ public:
         if (fountaindetail > other.fountaindetail) return false;
         if (fountainspeed < other.fountainspeed) return true;
         if (fountainspeed > other.fountainspeed) return false;
+        if (lightsource < other.lightsource) return true;
+        if (lightsource > other.lightsource) return false;
+        if (lightintensity < other.lightintensity) return true;
+        if (lightintensity > other.lightintensity) return false;
+        if (lightrange < other.lightrange) return true;
+        if (lightrange > other.lightrange) return false;
         if (lightmodel < other.lightmodel) return true;
         if (lightmodel > other.lightmodel) return false;
         if (vertexordering < other.vertexordering) return true;

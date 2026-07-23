@@ -202,6 +202,19 @@ Params = [
         "surface point scaled by this factor. Zero pins the shadow\n"
         "boundary to the flat surface (a straight edge), one is the\n"
         "physical wave height, larger values exaggerate the ripple."),
+    ParamBool('Bloom',  False, title='Bloom',
+        doc="Bleed a blurred glow halo from bright pixels and from\n"
+        "light-source bodies (objects with the Render_Light property)\n"
+        "over their surroundings."),
+    ParamFloat('BloomThreshold',  0.9, title='Bloom threshold',
+        doc="Scene brightness above which a pixel feeds the glow halo\n"
+        "(with a soft knee below it). Light-source bodies always feed\n"
+        "it regardless, scaled by their intensity."),
+    ParamFloat('BloomIntensity',  1.0, title='Bloom intensity',
+        doc="Brightness multiplier of the composited glow halo."),
+    ParamFloat('BloomRadius',  1.0, title='Bloom radius',
+        doc="Radius scale of the glow halo. One is the default gaussian\n"
+        "footprint; larger blooms wider."),
     ParamBool('GroundReflection',  False, title='Ground reflection',
         doc="Mirror the model in the shadow ground plane of the\n"
         "experimental render engine: the opaque scene is re-rendered\n"

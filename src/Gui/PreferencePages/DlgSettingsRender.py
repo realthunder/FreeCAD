@@ -83,6 +83,13 @@ ParamGroup = (
         'WaterWaveSpeed',
     )]),
 
+    ('Bloom', [_RenderParams[name] for name in (
+        'Bloom',
+        'BloomThreshold',
+        'BloomIntensity',
+        'BloomRadius',
+    )]),
+
     ('Ground reflection', [_RenderParams[name] for name in (
         'GroundReflection',
         'GroundReflectionIntensity',

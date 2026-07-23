@@ -82,6 +82,9 @@ private:
     QDoubleSpinBox *fountainDensitySpin = nullptr;
     QDoubleSpinBox *fountainDetailSpin = nullptr;
     QDoubleSpinBox *fountainSpeedSpin = nullptr;
+    QCheckBox *lightCheck = nullptr;
+    QDoubleSpinBox *lightIntensitySpin = nullptr;
+    QDoubleSpinBox *lightRangeSpin = nullptr;
     QCheckBox *baseColorCheck = nullptr;
     QLineEdit *baseColorEdit = nullptr;
     QCheckBox *normalMapCheck = nullptr;

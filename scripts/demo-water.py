@@ -69,6 +69,10 @@ try:
     # packs more, smaller rings (rain only)
     render.SetInt("WaterRippleType", int(os.environ.get("RIPPLE", "0")))
     render.SetFloat("WaterRippleDensity", float(os.environ.get("DENSITY", "1.0")))
+    # Bloom glow (bright pixels + Render_Light bodies)
+    render.SetBool("Bloom", os.environ.get("BLOOM", "1") == "1")
+    render.SetFloat("BloomIntensity", float(os.environ.get("BLOOM_INTENSITY", "1.0")))
+    render.SetFloat("BloomRadius", float(os.environ.get("BLOOM_RADIUS", "1.0")))
     render.SetBool("GroundReflection", False)
     render.SetBool("Caustics", True)
     render.SetBool("PBR", os.environ.get("PBR", "1") == "1")  # image-based lighting
@@ -103,6 +107,14 @@ try:
         fountain.Height = float(os.environ.get("FOUNTAIN_H", "9"))
         fountain.Placement.Base = FreeCAD.Vector(10, 10, 6.5)
 
+    # A warm light bulb on the beam's underside (Render_Light: unshaded
+    # emitter + bloom halo + unshadowed point light). BULB=0 removes it.
+    bulb = None
+    if os.environ.get("BULB", "1") == "1":
+        bulb = doc.addObject("Part::Sphere", "Bulb")
+        bulb.Radius = 1.2
+        bulb.Placement.Base = FreeCAD.Vector(0, 0.5, 18)
+
     # A beam suspended over the water on two posts -- the shadow caster.
     beam = doc.addObject("Part::Box", "Beam")
     beam.Length, beam.Width, beam.Height = 44, 7, 4
@@ -135,6 +147,15 @@ try:
     fvo.addProperty("App::PropertyFloat", "Render_FireIntensity").Render_FireIntensity = 0.0
     fvo.addProperty("App::PropertyFloat", "Render_FireDetail").Render_FireDetail = 0.0
     fvo.addProperty("App::PropertyFloat", "Render_FireSpeed").Render_FireSpeed = 1.0
+
+    if bulb is not None:
+        lvo = bulb.ViewObject
+        lvo.ShapeColor = (1.0, 0.85, 0.55)
+        lvo.addProperty("App::PropertyBool", "Render_Light").Render_Light = True
+        lvo.addProperty("App::PropertyFloat", "Render_LightIntensity").Render_LightIntensity = \
+            float(os.environ.get("BULB_INTENSITY", "3.0"))
+        lvo.addProperty("App::PropertyFloat", "Render_LightRange").Render_LightRange = \
+            float(os.environ.get("BULB_RANGE", "0"))
 
     if fountain is not None:
         wvo = fountain.ViewObject

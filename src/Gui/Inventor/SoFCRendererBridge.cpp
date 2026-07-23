@@ -542,6 +542,9 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.fountaindensity = m.fountaindensity;
         res.fountaindetail = m.fountaindetail;
         res.fountainspeed = m.fountainspeed;
+        res.lightsource = m.lightsource;
+        res.lightintensity = m.lightintensity;
+        res.lightrange = m.lightrange;
     }
 
     // Bump map of triangle draws, unit 0 only like textures (the GL
@@ -1146,6 +1149,24 @@ RendererBridge::translateWaterConfig(View3DInventor * view)
     res.rippleDensity = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "WaterRippleDensity",
             RenderParams::getWaterRippleDensity()));
+    return res;
+}
+
+Render::BloomConfig
+RendererBridge::translateBloomConfig(View3DInventor * view)
+{
+    Render::BloomConfig res;
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "Bloom", RenderParams::getBloom());
+    res.threshold = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "BloomThreshold",
+            RenderParams::getBloomThreshold()));
+    res.intensity = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "BloomIntensity",
+            RenderParams::getBloomIntensity()));
+    res.radius = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "BloomRadius",
+            RenderParams::getBloomRadius()));
     return res;
 }
 

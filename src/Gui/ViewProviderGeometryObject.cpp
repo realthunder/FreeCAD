@@ -467,8 +467,19 @@ void ViewProviderGeometryObject::updateRenderMaterial()
             fountainSpeed = v;
     }
 
+    // Render_Light renders the shape as a light-source body: unshaded
+    // at its diffuse color, glowing through the render engine's bloom
+    // pass and shining as an unshadowed point light on nearby lit
+    // surfaces; intensity <= 0 = 1, range <= 0 = automatic (from the
+    // shape bounds).
+    auto lightProp = Base::freecad_dynamic_cast<App::PropertyBool>(
+            getPropertyByName("Render_Light"));
+    bool light = lightProp && lightProp->getValue();
+    float lightIntensity = light ? floatProp("Render_LightIntensity") : 0.0f;
+    float lightRange = light ? floatProp("Render_LightRange") : 0.0f;
+
     if (metallic < 0.0f && roughness < 0.0f && !water && !glass
-            && !cloud && !fire && !fountain) {
+            && !cloud && !fire && !fountain && !light) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);
             if (idx >= 0)
@@ -512,6 +523,10 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     pcRenderMaterial->fountainDetail = fountainDetail < 0.0f
         ? 0.0f : fountainDetail;
     pcRenderMaterial->fountainSpeed = fountainSpeed;
+    pcRenderMaterial->lightSource = light;
+    pcRenderMaterial->lightIntensity = lightIntensity < 0.0f
+        ? 0.0f : lightIntensity;
+    pcRenderMaterial->lightRange = lightRange < 0.0f ? 0.0f : lightRange;
 }
 
 void ViewProviderGeometryObject::updateRenderProperty(const char *name)

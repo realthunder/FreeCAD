@@ -112,6 +112,17 @@ public:
     SoSFFloat fountainDetail;
     /// Flow speed multiplier of the animated spray.
     SoSFFloat fountainSpeed;
+    /// The shapes form a light-source body: rendered unshaded at the
+    /// diffuse color, fed to the render engine's bloom pass at
+    /// lightIntensity, and shining as an unshadowed point light on lit
+    /// surfaces around it (bulb, sun disc).
+    SoSFBool lightSource;
+    /// Emission strength (HDR bloom multiplier and point-light
+    /// brightness); <= 0 = 1.
+    SoSFFloat lightIntensity;
+    /// Point-light range in world units (intensity halves over it);
+    /// <= 0 = automatic (from the body bounds).
+    SoSFFloat lightRange;
 
 protected:
     ~SoFCRenderMaterial() override = default;

@@ -71,6 +71,7 @@ public:
     virtual void setLightConfig(const LightConfig &config) override;
     virtual void setVolumetricConfig(const VolumetricConfig &config) override;
     virtual void setWaterConfig(const WaterConfig &config) override;
+    virtual void setBloomConfig(const BloomConfig &config) override;
     virtual void setPreselConfig(const PreselHighlightConfig &config) override;
     virtual void setSelConfig(const PreselHighlightConfig &config) override;
     virtual void setAutoZoomScale(float scale) override;

@@ -194,6 +194,21 @@ RenderSettingsWidget::RenderSettingsWidget(
     fountainSpeedSpin->setToolTip(tr("Flow animation speed multiplier"));
     ++row;
 
+    // Light-source body: unshaded emitter + bloom + unshadowed point
+    // light.
+    lightCheck = addOverride(tr("Light source"));
+    lightIntensitySpin = addSpin(1, 0.0, 1.0e6, 0.5, 2);
+    lightIntensitySpin->setSpecialValueText(tr("auto intensity"));
+    lightIntensitySpin->setToolTip(
+        tr("Emission strength (bloom halo and point-light brightness); "
+           "0 = 1"));
+    lightRangeSpin = addSpin(2, 0.0, 1.0e6, 1.0, 1);
+    lightRangeSpin->setSpecialValueText(tr("auto range"));
+    lightRangeSpin->setToolTip(
+        tr("Point-light range in model units; 0 = automatic from the "
+           "shape size"));
+    ++row;
+
     // Texture images (embedded into the document by
     // App::PropertyFileIncluded).
     auto addFile = [&](const QString &text, QCheckBox *&check,
@@ -269,6 +284,7 @@ RenderSettingsWidget::RenderSettingsWidget(
                         fireSpeedSpin});
     enables(fountainCheck, {fountainDensitySpin, fountainDetailSpin,
                             fountainSpeedSpin});
+    enables(lightCheck, {lightIntensitySpin, lightRangeSpin});
     enables(baseColorCheck, {baseColorEdit});
     enables(normalMapCheck, {normalMapEdit});
     enables(emissiveMapCheck, {emissiveMapEdit});
@@ -357,6 +373,15 @@ void RenderSettingsWidget::load()
         if (auto spd = getProp<App::PropertyFloat>(
                     vp, "Render_FountainSpeed"))
             fountainSpeedSpin->setValue(spd->getValue());
+    }
+    if (auto prop = getProp<App::PropertyBool>(vp, "Render_Light")) {
+        lightCheck->setChecked(prop->getValue());
+        if (auto inten = getProp<App::PropertyFloat>(
+                    vp, "Render_LightIntensity"))
+            lightIntensitySpin->setValue(inten->getValue());
+        if (auto rng = getProp<App::PropertyFloat>(
+                    vp, "Render_LightRange"))
+            lightRangeSpin->setValue(rng->getValue());
     }
     if (auto prop = getProp<App::PropertyFileIncluded>(
                 vp, "Render_BaseColorTexture")) {
@@ -618,6 +643,39 @@ void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
         removeProp(vp, "Render_FountainDensity");
         removeProp(vp, "Render_FountainDetail");
         removeProp(vp, "Render_FountainSpeed");
+    }
+
+    // Light-source body flag + optional intensity/range.
+    if (lightCheck->isChecked()) {
+        if (auto prop = ensureProp<App::PropertyBool>(
+                    vp, "App::PropertyBool", "Render_Light",
+                    "Render the shape as a light-source body: unshaded "
+                    "emitter with a bloom halo, shining as an "
+                    "unshadowed point light on nearby surfaces"))
+            prop->setValue(true);
+        auto applyOptional = [vp](double value, const char *name,
+                                  const char *doc) {
+            if (value > 0.0) {
+                if (auto prop = ensureProp<App::PropertyFloat>(
+                            vp, "App::PropertyFloat", name, doc))
+                    prop->setValue(value);
+            }
+            else {
+                removeProp(vp, name);
+            }
+        };
+        applyOptional(lightIntensitySpin->value(),
+                      "Render_LightIntensity",
+                      "Emission strength (bloom halo and point-light "
+                      "brightness); 0 = 1");
+        applyOptional(lightRangeSpin->value(), "Render_LightRange",
+                      "Point-light range in model units; 0 = automatic "
+                      "from the shape size");
+    }
+    else {
+        removeProp(vp, "Render_Light");
+        removeProp(vp, "Render_LightIntensity");
+        removeProp(vp, "Render_LightRange");
     }
 
     // Texture images: PropertyFileIncluded copies the file into the

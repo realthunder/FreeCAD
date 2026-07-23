@@ -408,6 +408,65 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
 
 
     // Auto generated code (Tools/params_utils.py:448)
+    groupBloom = new QGroupBox(this);
+    layout->addWidget(groupBloom);
+    auto layoutHorizBloom = new QHBoxLayout(groupBloom);
+    auto layoutBloom = new QVBoxLayout();
+    layoutHorizBloom->addLayout(layoutBloom);
+    layoutHorizBloom->addStretch();
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutBloom->addLayout(layoutRow);
+    Bloom = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(Bloom);
+    Bloom->setChecked(Gui::RenderParams::defaultBloom());
+    Bloom->setEntryName("Bloom");
+    Bloom->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutBloom->addLayout(layoutRow);
+    labelBloomThreshold = new QLabel(this);
+    layoutRow->addWidget(labelBloomThreshold);
+    BloomThreshold = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(BloomThreshold);
+    BloomThreshold->setValue(Gui::RenderParams::defaultBloomThreshold());
+    BloomThreshold->setEntryName("BloomThreshold");
+    BloomThreshold->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutBloom->addLayout(layoutRow);
+    labelBloomIntensity = new QLabel(this);
+    layoutRow->addWidget(labelBloomIntensity);
+    BloomIntensity = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(BloomIntensity);
+    BloomIntensity->setValue(Gui::RenderParams::defaultBloomIntensity());
+    BloomIntensity->setEntryName("BloomIntensity");
+    BloomIntensity->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutBloom->addLayout(layoutRow);
+    labelBloomRadius = new QLabel(this);
+    layoutRow->addWidget(labelBloomRadius);
+    BloomRadius = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(BloomRadius);
+    BloomRadius->setValue(Gui::RenderParams::defaultBloomRadius());
+    BloomRadius->setEntryName("BloomRadius");
+    BloomRadius->setParamGrpPath("View/Render");
+
+
+    // Auto generated code (Tools/params_utils.py:448)
     groupGroundreflection = new QGroupBox(this);
     layout->addWidget(groupGroundreflection);
     auto layoutHorizGroundreflection = new QHBoxLayout(groupGroundreflection);
@@ -478,6 +537,10 @@ void DlgSettingsRender::saveSettings()
     WaterWaveStrength->onSave();
     WaterWaveScale->onSave();
     WaterWaveSpeed->onSave();
+    Bloom->onSave();
+    BloomThreshold->onSave();
+    BloomIntensity->onSave();
+    BloomRadius->onSave();
     GroundReflection->onSave();
     GroundReflectionIntensity->onSave();
 }
@@ -510,6 +573,10 @@ void DlgSettingsRender::loadSettings()
     WaterWaveStrength->onRestore();
     WaterWaveScale->onRestore();
     WaterWaveSpeed->onRestore();
+    Bloom->onRestore();
+    BloomThreshold->onRestore();
+    BloomIntensity->onRestore();
+    BloomRadius->onRestore();
     GroundReflection->onRestore();
     GroundReflectionIntensity->onRestore();
 }
@@ -593,6 +660,18 @@ void DlgSettingsRender::retranslateUi()
     WaterWaveSpeed->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docWaterWaveSpeed()));
     labelWaterWaveSpeed->setText(QObject::tr("Wave speed"));
     labelWaterWaveSpeed->setToolTip(WaterWaveSpeed->toolTip());
+    groupBloom->setTitle(QObject::tr("Bloom"));
+    Bloom->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docBloom()));
+    Bloom->setText(QObject::tr("Bloom"));
+    BloomThreshold->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docBloomThreshold()));
+    labelBloomThreshold->setText(QObject::tr("Bloom threshold"));
+    labelBloomThreshold->setToolTip(BloomThreshold->toolTip());
+    BloomIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docBloomIntensity()));
+    labelBloomIntensity->setText(QObject::tr("Bloom intensity"));
+    labelBloomIntensity->setToolTip(BloomIntensity->toolTip());
+    BloomRadius->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docBloomRadius()));
+    labelBloomRadius->setText(QObject::tr("Bloom radius"));
+    labelBloomRadius->setToolTip(BloomRadius->toolTip());
     groupGroundreflection->setTitle(QObject::tr("Ground reflection"));
     GroundReflection->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docGroundReflection()));
     GroundReflection->setText(QObject::tr("Ground reflection"));

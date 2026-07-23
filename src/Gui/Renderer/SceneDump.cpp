@@ -39,7 +39,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // presel/sel config, for browser-side edge/vertex picking.
 // v13: AO method selector (SSAO / GTAO) in the AO config.
 // v14: GTAO slice/step tuning in the AO config.
-const uint32_t kVersion = 17;
+const uint32_t kVersion = 18;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -324,6 +324,9 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex)
     w.f(m.fountaindensity);
     w.f(m.fountaindetail);
     w.f(m.fountainspeed);
+    w.b(m.lightsource);   // v18
+    w.f(m.lightintensity);
+    w.f(m.lightrange);
     texref(m.texture);
     w.floats(m.texmatrix, 16);
     w.b(m.texidentity);
@@ -407,6 +410,11 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex, uint32_t vers
         m.fountaindensity = r.f();
         m.fountaindetail = r.f();
         m.fountainspeed = r.f();
+    }
+    if (version >= 18) {
+        m.lightsource = r.b();
+        m.lightintensity = r.f();
+        m.lightrange = r.f();
     }
     texref(m.texture);
     r.floats(m.texmatrix, 16);
@@ -669,6 +677,11 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     // v16: ripple type + rain drop density.
     w.i32(wc.rippleType); w.f(wc.rippleDensity);
 
+    // v18: bloom.
+    const BloomConfig &blc = snap.bloomconf;
+    w.b(blc.enabled); w.f(blc.threshold); w.f(blc.intensity);
+    w.f(blc.radius);
+
     w.f(snap.autozoomScale);
     w.f(snap.effectResolution);
     w.f(snap.ssaoResolution);
@@ -800,6 +813,13 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     }
     if (version >= 16) {
         wc.rippleType = r.i32(); wc.rippleDensity = r.f();
+    }
+
+    snap.bloomconf = BloomConfig();
+    if (version >= 18) {
+        BloomConfig &blc = snap.bloomconf;
+        blc.enabled = r.b(); blc.threshold = r.f();
+        blc.intensity = r.f(); blc.radius = r.f();
     }
 
     snap.autozoomScale = r.f();

@@ -330,6 +330,9 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->fountaindensity = 0.f;
   this->fountaindetail = 0.f;
   this->fountainspeed = 1.f;
+  this->lightsource = false;
+  this->lightintensity = 0.f;
+  this->lightrange = 0.f;
   this->firespeed = 1.f;
   this->polygonoffsetstyle = 0;
   this->polygonoffsetunits = 0.f;
@@ -1274,6 +1277,10 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
       = material->fountainDetail.getValue();
   PRIVATE(this)->material.fountainspeed
       = material->fountainSpeed.getValue();
+  PRIVATE(this)->material.lightsource = material->lightSource.getValue();
+  PRIVATE(this)->material.lightintensity
+      = material->lightIntensity.getValue();
+  PRIVATE(this)->material.lightrange = material->lightRange.getValue();
 }
 
 void

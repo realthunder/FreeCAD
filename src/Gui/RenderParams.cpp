@@ -85,6 +85,10 @@ public:
     long WaterRippleType;
     double WaterRippleDensity;
     double WaterShadowWobble;
+    bool Bloom;
+    double BloomThreshold;
+    double BloomIntensity;
+    double BloomRadius;
     bool GroundReflection;
     double GroundReflectionIntensity;
 
@@ -165,6 +169,14 @@ public:
         funcs["WaterRippleDensity"] = &RenderParamsP::updateWaterRippleDensity;
         WaterShadowWobble = this->handle->GetFloat("WaterShadowWobble", 1.0);
         funcs["WaterShadowWobble"] = &RenderParamsP::updateWaterShadowWobble;
+        Bloom = this->handle->GetBool("Bloom", false);
+        funcs["Bloom"] = &RenderParamsP::updateBloom;
+        BloomThreshold = this->handle->GetFloat("BloomThreshold", 0.9);
+        funcs["BloomThreshold"] = &RenderParamsP::updateBloomThreshold;
+        BloomIntensity = this->handle->GetFloat("BloomIntensity", 1.0);
+        funcs["BloomIntensity"] = &RenderParamsP::updateBloomIntensity;
+        BloomRadius = this->handle->GetFloat("BloomRadius", 1.0);
+        funcs["BloomRadius"] = &RenderParamsP::updateBloomRadius;
         GroundReflection = this->handle->GetBool("GroundReflection", false);
         funcs["GroundReflection"] = &RenderParamsP::updateGroundReflection;
         GroundReflectionIntensity = this->handle->GetFloat("GroundReflectionIntensity", 0.4);
@@ -332,6 +344,22 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateWaterShadowWobble(RenderParamsP *self) {
         self->WaterShadowWobble = self->handle->GetFloat("WaterShadowWobble", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateBloom(RenderParamsP *self) {
+        self->Bloom = self->handle->GetBool("Bloom", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateBloomThreshold(RenderParamsP *self) {
+        self->BloomThreshold = self->handle->GetFloat("BloomThreshold", 0.9);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateBloomIntensity(RenderParamsP *self) {
+        self->BloomIntensity = self->handle->GetFloat("BloomIntensity", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateBloomRadius(RenderParamsP *self) {
+        self->BloomRadius = self->handle->GetFloat("BloomRadius", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateGroundReflection(RenderParamsP *self) {
@@ -1446,6 +1474,123 @@ void RenderParams::setWaterShadowWobble(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeWaterShadowWobble() {
     instance()->handle->RemoveFloat("WaterShadowWobble");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docBloom() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Bleed a blurred glow halo from bright pixels and from\n"
+"light-source bodies (objects with the Render_Light property)\n"
+"over their surroundings.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getBloom() {
+    return instance()->Bloom;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultBloom() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setBloom(const bool &v) {
+    instance()->handle->SetBool("Bloom",v);
+    instance()->Bloom = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeBloom() {
+    instance()->handle->RemoveBool("Bloom");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docBloomThreshold() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Scene brightness above which a pixel feeds the glow halo\n"
+"(with a soft knee below it). Light-source bodies always feed\n"
+"it regardless, scaled by their intensity.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getBloomThreshold() {
+    return instance()->BloomThreshold;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultBloomThreshold() {
+    const static double def = 0.9;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setBloomThreshold(const double &v) {
+    instance()->handle->SetFloat("BloomThreshold",v);
+    instance()->BloomThreshold = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeBloomThreshold() {
+    instance()->handle->RemoveFloat("BloomThreshold");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docBloomIntensity() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Brightness multiplier of the composited glow halo.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getBloomIntensity() {
+    return instance()->BloomIntensity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultBloomIntensity() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setBloomIntensity(const double &v) {
+    instance()->handle->SetFloat("BloomIntensity",v);
+    instance()->BloomIntensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeBloomIntensity() {
+    instance()->handle->RemoveFloat("BloomIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docBloomRadius() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Radius scale of the glow halo. One is the default gaussian\n"
+"footprint; larger blooms wider.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getBloomRadius() {
+    return instance()->BloomRadius;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultBloomRadius() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setBloomRadius(const double &v) {
+    instance()->handle->SetFloat("BloomRadius",v);
+    instance()->BloomRadius = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeBloomRadius() {
+    instance()->handle->RemoveFloat("BloomRadius");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
