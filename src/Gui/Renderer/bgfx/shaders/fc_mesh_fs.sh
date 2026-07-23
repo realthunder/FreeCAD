@@ -583,8 +583,12 @@ void main()
 					// side face alias badly in its 512-texel map;
 					// lift the receiver by ~1.5 texels' world
 					// footprint (100 deg fov) along the surface
-					// normal before projecting.
-					spos += geoN * (0.007 * sqrt(d2));
+					// normal, scaled up as the light grazes the
+					// surface (the offset a texel needs grows with
+					// the depth slope), before projecting.
+					float slope = 1.0 + 2.0
+						* (1.0 - clamp(dot(geoN, l), 0.0, 1.0));
+					spos += geoN * (0.007 * sqrt(d2) * slope);
 				}
 				vec4 sp = mul(u_bulbShadowMtx[t],
 				              vec4(spos, 1.0));
@@ -605,14 +609,32 @@ void main()
 					    && sp.y > b0.y && sp.y < b1.y
 					    && sp.z > 0.0 && sp.z < 1.0)
 					{
-						vec2 mo = texture2D(s_texBulbShadow,
-						                    sp.xy).xy;
+						// 2x2 spread of bilinear taps = a 3x3
+						// tent over the moments — the tiles skip
+						// the scene map's smooth-border blur, so
+						// filter here (VSM moments average
+						// soundly; the 2-texel bounds guard
+						// covers the spread).
+						float so = 1.5
+							/ (512.0 * float(BULB_SHADOW_GRID));
+						vec2 mo = (texture2D(s_texBulbShadow,
+							sp.xy + vec2(-so, -so)).xy
+							+ texture2D(s_texBulbShadow,
+							sp.xy + vec2(so, -so)).xy
+							+ texture2D(s_texBulbShadow,
+							sp.xy + vec2(-so, so)).xy
+							+ texture2D(s_texBulbShadow,
+							sp.xy + vec2(so, so)).xy) * 0.25;
 						if (mo.x < 0.9999)
 						{
 							float lit = sp.z <= mo.x
 								? 1.0 : 0.0;
+							// Coin VsmLookup shape with the
+							// tunable minimum variance
+							// (ShadowEpsilon, u_shadowParams.y).
 							float va = max(mo.y - mo.x * mo.x,
-							               0.0) + 1.0e-5;
+							               0.0)
+								+ max(u_shadowParams.y, 1.0e-5);
 							float dd = mo.x - sp.z;
 							float pmax = va / (va + dd * dd);
 							pmax *= smoothstep(0.2, 1.0, pmax);
