@@ -28,6 +28,11 @@ $input v_texcoord0
 #include <bgfx_shader.sh>
 #include "fc_volume.sh"
 
+// xy = half-res texel (unused here), z = per-frame jitter phase of the
+// temporal accumulation (golden-ratio sequence; 0 when accumulation is
+// off), w unused. The apply pass re-sets this uniform for itself.
+uniform vec4 u_volTexel;
+
 #define VOL_STEPS 32
 
 SAMPLER2D(s_texNormalZ, 0);
@@ -97,7 +102,7 @@ void main()
 		// speckle averages out in the bilateral upsample instead.
 		float jitter = fract(sin(dot(gl_FragCoord.xy,
 		                             vec2(12.9898, 78.233)))
-		                     * 43758.5453);
+		                     * 43758.5453 + u_volTexel.z);
 		float density = u_volParams.x;
 		float dt = (t1 - t0) / float(VOL_STEPS);
 		// Per-channel eye-ward transmittance over the in-medium

@@ -1389,6 +1389,11 @@ public:
                             // medium, bounded by the prepass depth (own
                             // half-res framebuffer, scene transforms for
                             // position reconstruction)
+        ViewVolAccum,       // temporal accumulation of the raymarch:
+                            // current outputs blended into the history
+                            // targets (constant-factor blend, reset to
+                            // full replace on camera/scene change); the
+                            // apply passes read the history
         ViewGroundRefl,     // ground reflection: the opaque scene
                             // re-rendered with the world mirrored about
                             // the shadow ground plane (own framebuffer,
@@ -1522,7 +1527,8 @@ public:
         }
         aoMipCount = 0;
         // Volumetric resources: the framebuffers before their textures.
-        for (auto fb : {&volFbo, &waterFrontFbo, &waterBackFbo,
+        for (auto fb : {&volFbo, &volHistFbo,
+                        &waterFrontFbo, &waterBackFbo,
                         &glassFrontFbo, &glassBackFbo,
                         &cloudFrontFbo, &cloudBackFbo,
                         &fireFrontFbo, &fireBackFbo,
@@ -1533,6 +1539,7 @@ public:
             }
         }
         for (auto tex : {&volTex, &volFrontTex,
+                         &volHistTex, &volHistFrontTex,
                          &waterFrontTex, &waterBackTex,
                          &waterFrontDepth, &waterBackDepth,
                          &glassFrontTex, &glassBackTex,
@@ -1572,6 +1579,7 @@ public:
                           &m_progGtao, &m_progGtaoBlur, &m_progGtaoDepth,
                           &m_progSsaoBlur, &m_progSsaoApply,
                           &m_progVol, &m_progVolFront,
+                          &m_progVolAccum,
                           &m_progVolApply, &m_progVolExt,
                           &m_progCaustics, &m_progWaterCopy, &m_progWater,
                           &m_progGlass, &m_progGroundRefl}) {
@@ -2418,10 +2426,30 @@ public:
                 | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
             bgfx::TextureHandle volAtt[2] = {volTex, volFrontTex};
             volFbo = bgfx::createFrameBuffer(2, volAtt, false);
+            // History pair for the temporal accumulation; sampling
+            // flags mirror the current-frame targets (the main apply
+            // does its own bilateral upsample from point taps, the
+            // front apply reads linearly).
+            volHistTex = bgfx::createTexture2D(hw, hh, false, 1,
+                bgfx::TextureFormat::RGBA16F,
+                BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+                | BGFX_SAMPLER_MIP_POINT
+                | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            volHistFrontTex = bgfx::createTexture2D(hw, hh, false, 1,
+                bgfx::TextureFormat::RGBA16F,
+                BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            bgfx::TextureHandle volHistAtt[2] = {volHistTex,
+                                                 volHistFrontTex};
+            volHistFbo = bgfx::createFrameBuffer(2, volHistAtt, false);
             m_progVol = loadProgram("vs_fc_comp", "fs_fc_volume",
                                     _BGFXLib.resource().c_str());
             m_progVolFront = loadProgram("vs_fc_comp",
                                          "fs_fc_volume_front",
+                                         _BGFXLib.resource().c_str());
+            m_progVolAccum = loadProgram("vs_fc_comp",
+                                         "fs_fc_volume_accum",
                                          _BGFXLib.resource().c_str());
             s_texVolFront = bgfx::createUniform(
                 "s_texVolFront", bgfx::UniformType::Sampler);
@@ -3874,7 +3902,7 @@ public:
     /// One clip-space triangle covering the viewport, submitted to a
     /// fullscreen resolve pass (uniforms/textures are set by the caller).
     void fullscreen(uint16_t pass, bgfx::ProgramHandle prog,
-                    uint64_t state)
+                    uint64_t state, uint32_t blendFactor = 0)
     {
         TransientVertex::init();
         if (bgfx::getAvailTransientVertexBuffer(
@@ -3888,7 +3916,7 @@ public:
         v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
         v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
         bgfx::setVertexBuffer(0, &tvb);
-        bgfx::setState(state);
+        bgfx::setState(state, blendFactor);
         bgfx::submit(viewId + pass, prog);
         ++drawcount;
     }
@@ -4038,7 +4066,7 @@ public:
     /// add: dst = inscatter + transmittance * scene.
     void submitVolumetric(float density, float intensity, float maxDist,
                           const float medium[4], bool water,
-                          bool surfaceSplit,
+                          bool surfaceSplit, float accum,
                           const float waterSigma[][4],
                           const float cloudParams[][4],
                           const float fireParams[][4],
@@ -4082,8 +4110,35 @@ public:
         bgfx::setTexture(5, s_texCloudBack, cloudBackTex);
         bgfx::setTexture(6, s_texFireFront, fireFrontTex);
         bgfx::setTexture(7, s_texFireBack, fireBackTex);
+        // Per-frame jitter phase (golden-ratio sequence) so the
+        // accumulated frames sample different march offsets; the apply
+        // pass re-sets u_volTexel with its own values below.
+        float phase[4] = {0.0f, 0.0f,
+                          accum < 1.0f
+                              ? float(frame % 4096) * 0.618034f : 0.0f,
+                          0.0f};
+        bgfx::setUniform(u_volTexel, phase);
         fullscreen(ViewVolGen, m_progVol,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+
+        // Temporal accumulation: blend the fresh raymarch into the
+        // history pair (hist = cur * k + hist * (1 - k)); the apply
+        // passes read the history. k = 1 replaces it outright (camera
+        // or scene changed).
+        if (bgfx::isValid(m_progVolAccum)
+                && bgfx::isValid(volHistFbo)) {
+            uint32_t k8 = uint32_t(
+                bx::clamp(accum, 0.0f, 1.0f) * 255.0f + 0.5f);
+            uint32_t kRgba = (k8 << 24) | (k8 << 16) | (k8 << 8) | k8;
+            bgfx::setTexture(0, s_texVol, volTex);
+            bgfx::setTexture(1, s_texVolFront, volFrontTex);
+            fullscreen(ViewVolAccum, m_progVolAccum,
+                       BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                       | BGFX_STATE_BLEND_FUNC(
+                           BGFX_STATE_BLEND_FACTOR,
+                           BGFX_STATE_BLEND_INV_FACTOR),
+                       kRgba);
+        }
 
         // Analytic per-channel surface extinction (multiply; the
         // sequential apply view keeps it before the inscatter add).
@@ -4117,7 +4172,9 @@ public:
         bgfx::setUniform(u_volMedium, medium);
         bgfx::setUniform(u_volTexel, texel);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
-        bgfx::setTexture(1, s_texVol, volTex);
+        bgfx::setTexture(1, s_texVol,
+                         bgfx::isValid(volHistTex) ? volHistTex
+                                                   : volTex);
         fullscreen(ViewVolApply, m_progVolApply,
                    BGFX_STATE_WRITE_RGB
                    | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
@@ -4132,7 +4189,9 @@ public:
         if (!bgfx::isValid(m_progVolFront)
                 || !bgfx::isValid(volFrontTex))
             return;
-        bgfx::setTexture(0, s_texVolFront, volFrontTex);
+        bgfx::setTexture(0, s_texVolFront,
+                         bgfx::isValid(volHistFrontTex)
+                             ? volHistFrontTex : volFrontTex);
         bgfx::setTexture(1, s_texWaterFront, waterFrontTex);
         bgfx::setTexture(2, s_texNormalZ, aoNormalZ);
         fullscreen(ViewVolFrontApply, m_progVolFront,
@@ -5572,10 +5631,17 @@ public:
     bool m_vol = false;      // volumetric resources exist
     bgfx::TextureHandle volTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle volFrontTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle volHistTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle volHistFrontTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle volFbo = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle volHistFbo = BGFX_INVALID_HANDLE;
+    /// Consecutive static frames feeding the volumetric temporal
+    /// accumulation (0 = replace history this frame).
+    int volAccumFrames = 0;
     bgfx::ProgramHandle m_progVol = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolApply = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolFront = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progVolAccum = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texVolFront = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolExt = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCaustics = BGFX_INVALID_HANDLE;
@@ -7081,6 +7147,21 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
+            } else if (volActive && i == BGFXView::ViewVolAccum
+                       && bgfx::isValid(view->volHistFbo)) {
+                // History accumulation target, same half-res rect as
+                // the raymarch; the blended quad overwrites (or blends
+                // into) every pixel, so no clear.
+                bgfx::setViewFrameBuffer(id, view->volHistFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0,
+                    uint16_t(std::max(1, int(width) / 2)),
+                    uint16_t(std::max(1, int(height) / 2)));
+                bgfx::setViewTransform(id, nullptr, nullptr);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
             } else if (volActive && i == BGFXView::ViewVolGen) {
                 // Half-res raymarch target; the fullscreen triangle
                 // overwrites every pixel, and the scene transforms stay
@@ -8085,9 +8166,25 @@ public:
                 std::memcpy(fireFrames[s], fsl.frame,
                             sizeof(fsl.frame));
             }
+            // Temporal accumulation factor: while the camera holds
+            // still, successive jittered marches blend into the
+            // history (k = 1/frames, floored so animated media keep
+            // ~1/16 of fresh signal per frame); any camera or scene
+            // change replaces the history outright — no reprojection,
+            // no ghosting, interaction just returns to single-frame
+            // noise.
+            if (!staticFrame)
+                view->volAccumFrames = 0;
+            else if (view->volAccumFrames < 1024)
+                ++view->volAccumFrames;
+            float volAccum = view->volAccumFrames == 0
+                ? 1.0f
+                : std::max(1.0f / float(view->volAccumFrames + 1),
+                           1.0f / 16.0f);
             view->submitVolumetric(volDensity, volconf.intensity,
                                    volMaxDist, volMedium,
                                    waterActive, waterSurfActive,
+                                   volAccum,
                                    waterSigma, cloudParams,
                                    fireParams, fireParams2, fireFrames,
                                    fountainGeom, fountainFrame);
