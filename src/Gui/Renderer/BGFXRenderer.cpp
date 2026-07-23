@@ -1634,6 +1634,10 @@ public:
         shadowMapHash = 0;
         aoMapHash = 0;
         camFrameHash = 0;
+        for (int t = 0; t < kBulbShadowTiles; ++t) {
+            bulbShadowValid[t] = false;
+            bulbShadowHash[t] = 0;
+        }
         for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo,
                         &shadowTintFbo, &shadowTintBlurFbo,
                         &shadowTintBlurBackFbo}) {
@@ -7676,9 +7680,16 @@ public:
                 bgfx::setViewClear(id,
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     1.0f, 0, 3);
+                // The receiver crop matrix addresses tile row t/2 at
+                // v in [0.5*(t/2), 0.5*(t/2)+0.5]. On bottom-left-origin
+                // backends (GL) the view rect's top-left y is flipped to
+                // a GL viewport row from the bottom, so place the tile
+                // in the opposite half for the sampled v to land on it.
+                int tileRow = bgfx::getCaps()->originBottomLeft
+                    ? 1 - t / 2 : t / 2;
                 bgfx::setViewRect(id,
                     uint16_t((t % 2) * BGFXView::kBulbShadowTileSize),
-                    uint16_t((t / 2) * BGFXView::kBulbShadowTileSize),
+                    uint16_t(tileRow * BGFXView::kBulbShadowTileSize),
                     BGFXView::kBulbShadowTileSize,
                     BGFXView::kBulbShadowTileSize);
                 bgfx::setViewTransform(id, view->bulbShadowViewMtx[t],
@@ -8615,6 +8626,15 @@ public:
                     && !mediumExempt(draw.material)
                     && !casterInstancedThisFrame(drawIdx))
                 view->submitShadowCaster(draw);
+            // Bulb shadow tiles re-rendering this frame take every
+            // caster individually (no instanced caster path there).
+            if (anyBulbShadow && isTriangle(draw)
+                    && (draw.material.shadowstyle & 1)
+                    && !mediumExempt(draw.material)) {
+                for (int t = 0; t < BGFXView::kBulbShadowTiles; ++t)
+                    if (bulbShadowRender[t])
+                        view->submitBulbShadowCaster(draw, t);
+            }
             // Glass casts through the tint map instead of the moments:
             // a softer shadow, tinted when the glass is colored.
             if (shadowRender && isTriangle(draw)
