@@ -5982,30 +5982,25 @@ public:
             view->ensureShadowTargets(desired);
             shadowActive = bgfx::isValid(view->shadowFbo);
         }
-        // At SmoothBorder 0 the map stores plain (z, z^2) moments and
-        // the receivers run Coin's exact VsmLookup — the GL Shadow
-        // style's soft default penumbra. The exponential warp (and its
-        // tighter penumbra) only engages with the blur.
+        // On RG32F the map stores plain (z, z^2) moments and the
+        // receivers run Coin's exact VsmLookup — the GL Shadow style's
+        // soft penumbra — at every SmoothBorder setting.
         // The reduced RG16F moment path (float32 not linearly filterable)
         // always runs the EVSM warp -- fp16 plain (z, z^2) moments lose too
         // much precision on the self-shadowed terminator, and the warp is what
-        // makes RG16F usable. Full-precision RG32F keeps Coin's plain-VSM
-        // parity at SmoothBorder 0.
-        // The warp exponent scales DOWN as the blur widens: a strong
-        // warp (c = 42) reconstructs a near-binary edge from even a
-        // widely blurred moments map — exp(c·z) dwarfs the variance the
-        // blur added, and the penumbra the blur paid for disappears.
-        // Wider smoothing therefore trades warp tightness back toward
-        // plain-VSM softness; the floor of 5 is the reduced-precision
-        // RG16F path's fixed exponent (it needs the warp to be usable
-        // at all).
-        float warp = view->shadowWarp;
-        if (lightconf.smoothBorder > 0.0f)
-            warp = std::max(5.0f,
-                warp / (1.0f + lightconf.smoothBorder * 0.06f));
+        // makes RG16F usable.
+        // The warp is fundamentally at odds with the blur: even a
+        // scaled-down exponent reconstructs a near-binary edge from a
+        // widely blurred moments map — exp(c·z) at the receiver dwarfs
+        // the variance the blur added within a texel or two, and the
+        // penumbra the blur paid for disappears. RG32F therefore stays
+        // plain VSM (warp 0) with the blur too: blurring plain (z, z²)
+        // widens the variance across the edge, which is exactly the
+        // penumbra gradient. Only the reduced-precision RG16F path
+        // keeps its fixed warp (plain fp16 moments are unusable on the
+        // self-shadowed terminator), so its smoothing stays tighter.
         view->shadowWarpFrame =
-            (lightconf.smoothBorder > 0.0f || view->m_shadowForceWarp)
-                ? warp : 0.0f;
+            view->m_shadowForceWarp ? view->shadowWarp : 0.0f;
         view->shadowEpsilon = lightconf.epsilon;
         view->shadowThreshold = lightconf.threshold;
         // Coin's N-tap receiver spread kernel (ShadowSpreadSize /
