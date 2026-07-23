@@ -109,6 +109,21 @@ void main()
 	vec3 npw = normalize(nw - t1 * grad.x - t2 * grad.y);
 	vec3 np = normalize(mul(u_view, vec4(npw, 0.0)).xyz);
 
+	// Wave HEIGHT matching the slope sum above (same octaves/phases,
+	// sin where the gradient took the cos, without the frequency
+	// factor); the q-space slope was used as a world-space slope, so
+	// dividing by the q scale keeps the implied height consistent with
+	// the rendered normals. Displacing the shadow tap by it makes the
+	// shadow band ripple with the waves instead of lying rigid on an
+	// animated surface.
+	float hq = 0.0;
+	hq += 0.50 * sin(dot(q, d0) * 6.28 + t);
+	hq += 0.25 * sin(dot(q, d1) * 13.1 - t * 1.6);
+	hq += 0.20 * sin(dot(q, d2) * 22.9 + t * 2.3);
+	hq += 0.15 * sin(dot(q, d3) * 41.3 - t * 3.1);
+	float waveH = hq * u_waterSurf.x * 0.02
+	    / max(u_waterSurf.y, 1.0e-4);
+
 	// Screen-space refraction: offset the scene sample by the wave
 	// normal delta (the flat surface samples straight through, so the
 	// unperturbed result matches the plain transparent look shifted
@@ -255,7 +270,11 @@ void main()
 	float shadow = 1.0;
 	if (u_shadowParams.x > 0.5)
 	{
-		vec4 sp = mul(u_shadowMatrix, vec4(v_vpos, 1.0));
+		// Tap at the wave-displaced surface point (height along the
+		// geometric normal): the shadow boundary wobbles in step with
+		// the ripple field.
+		vec4 sp = mul(u_shadowMatrix,
+		              vec4(v_vpos + n * waveH, 1.0));
 		sp.xyz /= sp.w;  // spot lights render a perspective map
 		if (sp.x > 0.0 && sp.x < 1.0 && sp.y > 0.0 && sp.y < 1.0
 		    && sp.z > 0.0 && sp.z < 1.0)
