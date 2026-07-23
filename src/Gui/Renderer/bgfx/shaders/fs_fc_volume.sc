@@ -90,7 +90,14 @@ void main()
 	// look and only the bodies standing over the water composite onto
 	// it.
 	float Tf = 1.0;
-	bool split = u_volParams.w > 1.5 && water.y > water.x;
+	// Split only when the water surface is actually the visible front
+	// along this ray: with opaque geometry IN FRONT of the water entry
+	// (a pillar standing between the eye and the pool) the surface
+	// pass never draws the pixel and the front apply skips it — the
+	// whole march must stay in the main output or the media in front
+	// of that pillar vanish into an object-shaped hole.
+	bool split = u_volParams.w > 1.5 && water.y > water.x
+	    && water.x < tEnd;
 	if (t1 > t0)
 	{
 		// Dithered start offset decorrelating the banding of the
