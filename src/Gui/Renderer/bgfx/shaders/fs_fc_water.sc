@@ -29,6 +29,13 @@ SAMPLER2D(s_texWaterBack, 4);  // pool-bottom eye distance in .z, .w = valid
 // bound only when the water surface should receive the scene light's
 // shadow (u_shadowParams.x > 0.5).
 SAMPLER2D(s_texShadow, 5);
+// Front-segment volumetric target (fs_fc_volume output 1, half res):
+// inscatter of the media stretch between the eye and the water entry in
+// rgb, its transmittance in a. Composited here, in the surface pass
+// itself, so exactly the drawn pixels get it — a separate fullscreen
+// apply pass depth-gating against the prepass disagrees with this
+// pass's own depth test along the waterline and dots a phantom edge.
+SAMPLER2D(s_texVolFront, 6);
 
 uniform vec4 u_matColor;   // rgb = water tint; a > 0.5 = planar refl in s_texRefl
 uniform vec4 u_lightDir;
@@ -49,6 +56,9 @@ uniform vec4 u_waterRipple;
 // radius (0 = slot inactive). Continuous ring trains added on top of
 // either ripple type.
 uniform vec4 u_waterSplash[4];
+// xy = half-res texel size of the front volumetric target, zw = its
+// size in texels; x <= 0 = no front volumetric this frame.
+uniform vec4 u_volTexel;
 
 // Per-cell random pair/scalar for the rain drop field.
 vec2 fc_rainHash2(vec2 cell)
@@ -397,6 +407,68 @@ void main()
 		vec3 h = normalize(V - u_lightDir.xyz);
 		color += u_lightColor.rgb
 			* (pow(max(dot(np, h), 0.0), 250.0) * 2.0 * shadow);
+	}
+
+	// Front-segment volumetric composite: the media stretch between the
+	// eye and the water entry (air haze, a fountain plume or fire
+	// standing over the pool) extinguishes and inscatters over the
+	// finished surface color — the same treatment the ext/apply passes
+	// give the opaque scene, so no brightness step appears along the
+	// waterline or an occluder's silhouette. Validity-weighted 4-tap
+	// upsample of the half-res target: texels that did NOT split hold
+	// the exact identity (0,0,0,1) and plain filtering would average it
+	// in — a dark rim right along the split boundary.
+	if (u_volTexel.x > 0.0)
+	{
+		vec2 pos = uv * u_volTexel.zw - vec2_splat(0.5);
+		vec2 base = floor(pos);
+		vec2 f = pos - base;
+		vec4 wb = vec4((1.0 - f.x) * (1.0 - f.y),
+		               f.x * (1.0 - f.y),
+		               (1.0 - f.x) * f.y, f.x * f.y);
+		vec4 acc = vec4_splat(0.0);
+		vec4 accB = vec4_splat(0.0);
+		float wsum = 0.0;
+		for (int i = 0; i < 4; ++i)
+		{
+			vec2 offs = vec2(i == 1 || i == 3 ? 1.0 : 0.0,
+			                 i >= 2 ? 1.0 : 0.0);
+			vec2 tuv = (base + offs + vec2_splat(0.5))
+				* u_volTexel.xy;
+			vec4 s = texture2D(s_texVolFront, tuv);
+			// A texel that split always carries a transmittance
+			// below 1 (air haze at least) or some inscatter.
+			float valid = (s.a < 0.999
+			               || max(s.r, max(s.g, s.b)) > 0.0)
+				? 1.0 : 0.0;
+			acc += s * (wb[i] * valid);
+			accB += s * wb[i];
+			wsum += wb[i] * valid;
+		}
+		if (wsum <= 1.0e-6)
+		{
+			// Right against an occluder's silhouette the whole 2x2
+			// neighborhood can be non-split (the half-res rays hit
+			// the occluder before the water): search the 3x3 ring
+			// around the nearest texel so the surface sliver still
+			// picks up the front haze instead of standing out as a
+			// saturated dot.
+			vec2 c = floor(uv * u_volTexel.zw) + vec2_splat(0.5);
+			for (int j = 0; j < 9; ++j)
+			{
+				vec2 offs = vec2(float(j - (j / 3) * 3 - 1),
+				                 float(j / 3 - 1));
+				vec4 s = texture2D(s_texVolFront,
+				                   (c + offs) * u_volTexel.xy);
+				float valid = (s.a < 0.999
+				               || max(s.r, max(s.g, s.b)) > 0.0)
+					? 1.0 : 0.0;
+				acc += s * valid;
+				wsum += valid;
+			}
+		}
+		vec4 fr = wsum > 1.0e-6 ? acc / wsum : accB;
+		color = fr.rgb + color * fr.a;
 	}
 
 	gl_FragColor = vec4(color, 1.0);

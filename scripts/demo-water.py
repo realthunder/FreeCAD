@@ -53,6 +53,8 @@ try:
     render.SetBool("AO", os.environ.get("AO", "1") == "1")
     render.SetFloat("AOIntensity", float(os.environ.get("AOINT", "1.0")))
     render.SetBool("Volumetric", os.environ.get("VOL", "1") == "1")  # water body + fire + shafts
+    # Air (haze) density of the volumetric medium; 0 = auto (1 / scene radius)
+    render.SetFloat("VolumetricDensity", float(os.environ.get("VOLDENSITY", "0.0")))
     render.SetBool("WaterSurface", True)          # refraction + reflection
     render.SetFloat("WaterWaveStrength", 0.25)
     render.SetBool("WaterRefraction", True)

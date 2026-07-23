@@ -1442,14 +1442,11 @@ public:
                             // surface: screen-space refraction from the
                             // copy, Fresnel environment reflection, sun
                             // glint; replaces their transparent-bucket
-                            // rendering while the surface is enabled
-        ViewVolFrontApply,  // volumetric front-segment apply: the
-                            // raymarch's in-front-of-the-water
-                            // inscatter composited over the just-drawn
-                            // water surface (dst = inscatter + dst *
-                            // transmittance) — else a fountain plume /
-                            // fire over the pool reads as behind the
-                            // surface
+                            // rendering while the surface is enabled.
+                            // The pass composites the raymarch's
+                            // in-front-of-the-water inscatter itself —
+                            // else a fountain plume / fire over the
+                            // pool reads as behind the surface
         ViewGlassSurface,   // glass body draws re-rendered as glass:
                             // screen-space refraction (IOR + normal),
                             // per-channel thickness absorption from the
@@ -1583,7 +1580,7 @@ public:
                           &m_progPrepassInst, &m_progSsao,
                           &m_progGtao, &m_progGtaoBlur, &m_progGtaoDepth,
                           &m_progSsaoBlur, &m_progSsaoApply,
-                          &m_progVol, &m_progVolFront,
+                          &m_progVol,
                           &m_progVolAccum, &m_progReflMedia,
                           &m_progVolApply, &m_progVolExt,
                           &m_progCaustics, &m_progWaterCopy, &m_progWater,
@@ -2450,9 +2447,6 @@ public:
             volHistFbo = bgfx::createFrameBuffer(2, volHistAtt, false);
             m_progVol = loadProgram("vs_fc_comp", "fs_fc_volume",
                                     _BGFXLib.resource().c_str());
-            m_progVolFront = loadProgram("vs_fc_comp",
-                                         "fs_fc_volume_front",
-                                         _BGFXLib.resource().c_str());
             m_progVolAccum = loadProgram("vs_fc_comp",
                                          "fs_fc_volume_accum",
                                          _BGFXLib.resource().c_str());
@@ -4087,8 +4081,8 @@ public:
         static const float noSigma[kMediumSlots][4] = {};
         // w: 0 = no water medium, 1 = water, 2 = water + the surface
         // re-renders after the apply — the raymarch then splits its
-        // output at the water entry so the front segment can composite
-        // over the surface (ViewVolFrontApply).
+        // output at the water entry so the surface pass can composite
+        // the front segment over itself.
         float params[4] = {density, intensity, maxDist,
                            water ? (surfaceSplit ? 2.0f : 1.0f)
                                  : 0.0f};
@@ -4190,25 +4184,6 @@ public:
                                            BGFX_STATE_BLEND_ONE));
     }
 
-    /// Front-segment volumetric apply (after the water surface pass):
-    /// dst = front inscatter + dst * front transmittance, gated in the
-    /// shader to pixels where the surface drew.
-    void submitVolumetricFront()
-    {
-        if (!bgfx::isValid(m_progVolFront)
-                || !bgfx::isValid(volFrontTex))
-            return;
-        bgfx::setTexture(0, s_texVolFront,
-                         bgfx::isValid(volHistFrontTex)
-                             ? volHistFrontTex : volFrontTex);
-        bgfx::setTexture(1, s_texWaterFront, waterFrontTex);
-        bgfx::setTexture(2, s_texNormalZ, aoNormalZ);
-        fullscreen(ViewVolFrontApply, m_progVolFront,
-                   BGFX_STATE_WRITE_RGB
-                   | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
-                                           BGFX_STATE_BLEND_SRC_ALPHA));
-    }
-
     /// Water caustics splat: additive fullscreen pass over the prepass
     /// surfaces inside the water body interval, in its own view before
     /// the volumetric apply (the extinction multiply then absorbs the
@@ -4262,7 +4237,7 @@ public:
                             float inscatter, bool shadow,
                             float shadowWobble,
                             int rippleType, float rippleDensity,
-                            const float (*splash)[4])
+                            const float (*splash)[4], bool volFront)
     {
         bool planarRefl = reflMode == 3;
         if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -4346,6 +4321,22 @@ public:
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setTexture(5, s_texShadow,
                          waterShadow ? shadowTex : sceneCopyTex);
+        // Front-segment volumetric target (raymarch output 1, or its
+        // temporal-accumulation history): the media stretch between the
+        // eye and the water entry, composited by this pass itself so
+        // exactly the drawn pixels get it. u_volTexel.x <= 0 = off (the
+        // sampler still needs a valid bind, the shader skips the read).
+        bool haveVolFront = volFront && bgfx::isValid(volFrontTex);
+        float hw = std::max(1.0f, std::floor(width / 2.0f));
+        float hh = std::max(1.0f, std::floor(height / 2.0f));
+        float volTexel[4] = {haveVolFront ? 1.0f / hw : 0.0f,
+                             1.0f / hh, hw, hh};
+        bgfx::setUniform(u_volTexel, volTexel);
+        bgfx::setTexture(6, s_texVolFront,
+                         haveVolFront
+                             ? (bgfx::isValid(volHistFrontTex)
+                                    ? volHistFrontTex : volFrontTex)
+                             : sceneCopyTex);
 
         setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
         // The mesh vertex shader needs the color stream too (bgfx drops
@@ -5677,7 +5668,6 @@ public:
     int volAccumFrames = 0;
     bgfx::ProgramHandle m_progVol = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolApply = BGFX_INVALID_HANDLE;
-    bgfx::ProgramHandle m_progVolFront = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolAccum = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progReflMedia = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texVolFront = BGFX_INVALID_HANDLE;
@@ -8054,7 +8044,8 @@ public:
                                          waterconf.rippleType,
                                          waterconf.rippleDensity,
                                          volActive && cloudActive
-                                             ? fountainSplash : nullptr);
+                                             ? fountainSplash : nullptr,
+                                         volActive && waterActive);
             if (surfGlass && !cullDraw) {
                 // The interval depths cache with the medium targets; the
                 // surface pass reads the per-frame scene copy, so it
@@ -8257,8 +8248,6 @@ public:
                                    waterSigma, cloudParams,
                                    fireParams, fireParams2, fireFrames,
                                    fountainGeom, fountainFrame);
-            if (waterActive && waterSurfActive)
-                view->submitVolumetricFront();
         }
 
         // 1e. Water caustics: additive light-space pattern splat over

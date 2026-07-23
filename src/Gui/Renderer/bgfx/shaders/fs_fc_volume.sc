@@ -84,11 +84,13 @@ void main()
 	vec3 emission = vec3_splat(0.0);
 	vec3 scatterF = vec3_splat(0.0);
 	vec3 emissionF = vec3_splat(0.0);
-	// Transmittance of the front MEDIA (fountain/cloud/fire bodies in
-	// front of the water entry) alone — the plain air stretch stays in
-	// the main output like before the split, so the surface keeps its
-	// look and only the bodies standing over the water composite onto
-	// it.
+	// Transmittance of the WHOLE front stretch (plain air haze included,
+	// not just the fountain/cloud/fire bodies): the front apply then
+	// gives the re-rendered surface exactly the extinction + inscatter
+	// the opaque scene gets from the ext/apply passes — anything else
+	// leaves a brightness step along the split boundary (a phantom
+	// "edge" at an occluder's silhouette or at the waterline, clearly
+	// visible through a fountain plume).
 	float Tf = 1.0;
 	// Split only when the water surface is actually the visible front
 	// along this ray: with opaque geometry IN FRONT of the water entry
@@ -121,8 +123,7 @@ void main()
 			bool inWater = t > water.x && t < water.y;
 			bool inCloud = t > cloud.x && t < cloud.y;
 			bool inFire = t > fire.x && t < fire.y;
-			bool front = split && t < water.x
-			    && (inCloud || inFire);
+			bool front = split && t < water.x;
 			vec3 sigT = inWater ? u_waterSigma[ws].xyz
 			                    : vec3_splat(density);
 			float sigS = inWater ? u_waterSigma[ws].w : density;
@@ -225,8 +226,16 @@ void main()
 		}
 	}
 
-	gl_FragData[0] = vec4(u_lightColor.rgb * scatter * u_volParams.y
-	                          + emission,
+	// Main output carries the TOTAL inscatter (front + behind): every
+	// consumer of it is a pixel where the water surface did not draw
+	// (no split at full res), which wants the full integral — and the
+	// target then stays continuous across the split boundary, so the
+	// apply pass's bilateral upsample doesn't build a rim there. The
+	// front output alone is split-only (composited over the re-rendered
+	// surface, whose pixels the main apply gets overwritten on).
+	gl_FragData[0] = vec4(u_lightColor.rgb * (scatter + scatterF)
+	                          * u_volParams.y
+	                          + emission + emissionF,
 	                      tEnd);
 	gl_FragData[1] = vec4(u_lightColor.rgb * scatterF * u_volParams.y
 	                          + emissionF,
