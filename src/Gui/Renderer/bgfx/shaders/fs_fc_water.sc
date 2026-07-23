@@ -270,11 +270,14 @@ void main()
 	float shadow = 1.0;
 	if (u_shadowParams.x > 0.5)
 	{
-		// Tap at the wave-displaced surface point (height along the
-		// geometric normal): the shadow boundary wobbles in step with
-		// the ripple field.
+		// Tap at the wave-displaced surface point, scaled by the
+		// wobble factor (u_evsm.z, WaterShadowWobble): the shadow
+		// boundary wobbles in step with the ripple field. Displacing
+		// along the perturbed normal adds a slope-proportional
+		// lateral component, so exaggerated wobble ripples sideways
+		// too instead of only up and down. 0 = straight boundary.
 		vec4 sp = mul(u_shadowMatrix,
-		              vec4(v_vpos + n * waveH, 1.0));
+		              vec4(v_vpos + np * (waveH * u_evsm.z), 1.0));
 		sp.xyz /= sp.w;  // spot lights render a perspective map
 		if (sp.x > 0.0 && sp.x < 1.0 && sp.y > 0.0 && sp.y < 1.0
 		    && sp.z > 0.0 && sp.z < 1.0)

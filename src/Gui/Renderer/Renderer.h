@@ -505,6 +505,11 @@ struct WaterConfig {
     /// draw style with an active shadow map (LightConfig::shadow); off =
     /// the surface stays fully lit regardless of casters.
     bool shadow = true;
+    /// How much the received shadow wobbles with the wave field: the
+    /// shadow map is tapped at the wave-displaced surface point scaled
+    /// by this factor. 0 = straight boundary on the flat surface, 1 =
+    /// physical wave height, larger exaggerates the ripple.
+    float shadowWobble = 1.0f;
 
     bool operator==(const WaterConfig &o) const {
         return enabled == o.enabled && waveStrength == o.waveStrength
@@ -512,7 +517,7 @@ struct WaterConfig {
             && absorption == o.absorption && inscatter == o.inscatter
             && refraction == o.refraction && reflection == o.reflection
             && planarReflection == o.planarReflection
-            && shadow == o.shadow;
+            && shadow == o.shadow && shadowWobble == o.shadowWobble;
     }
     bool operator!=(const WaterConfig &o) const { return !(*this == o); }
 };

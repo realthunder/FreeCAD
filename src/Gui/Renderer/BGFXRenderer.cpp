@@ -4127,7 +4127,8 @@ public:
                             float waveStrength, float waveScale,
                             float time, bool depthReject, int reflMode,
                             bool refraction, bool absorb, float absorption,
-                            float inscatter, bool shadow)
+                            float inscatter, bool shadow,
+                            float shadowWobble)
     {
         bool planarRefl = reflMode == 3;
         if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -4195,7 +4196,11 @@ public:
         float shadowParams[4] = {waterShadow ? 1.0f : 0.0f, shadowEpsilon,
                                  0.003f, dbgvis ? 1.0f : 0.0f};
         bgfx::setUniform(u_shadowParams, shadowParams);
-        float evsm[4] = {shadowWarpFrame, shadowThreshold, 0.0f, 0.0f};
+        // The water pass has no receiver spread kernel, so u_evsm.z
+        // carries the shadow wobble factor instead (the mesh receivers
+        // use .zw for the Coin spread parameters).
+        float evsm[4] = {shadowWarpFrame, shadowThreshold,
+                         shadowWobble, 0.0f};
         bgfx::setUniform(u_evsm, evsm);
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setTexture(5, s_texShadow,
@@ -7760,7 +7765,8 @@ public:
                                          waterconf.refraction, waterActive,
                                          waterconf.absorption,
                                          waterconf.inscatter,
-                                         waterconf.shadow);
+                                         waterconf.shadow,
+                                         waterconf.shadowWobble);
             if (surfGlass && !cullDraw) {
                 // The interval depths cache with the medium targets; the
                 // surface pass reads the per-frame scene copy, so it

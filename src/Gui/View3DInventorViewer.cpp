@@ -3944,6 +3944,9 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyBool>(view, "WaterShadow",
             RenderParams::docWaterShadow(),
             RenderParams::getWaterShadow());
+    _renderParam<App::PropertyFloat>(view, "WaterShadowWobble",
+            RenderParams::docWaterShadowWobble(),
+            RenderParams::getWaterShadowWobble());
     _renderParam<App::PropertyBool>(view, "GroundReflection",
             RenderParams::docGroundReflection(),
             RenderParams::getGroundReflection());

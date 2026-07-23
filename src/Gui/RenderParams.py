@@ -185,6 +185,12 @@ Params = [
         "with an active shadow map; off leaves the surface fully lit.\n"
         "The refracted scene below the surface keeps its own shadow\n"
         "regardless."),
+    ParamFloat('WaterShadowWobble',  1.0, title='Shadow wobble',
+        doc="How much the shadow band on the water surface wobbles with\n"
+        "the wave field: the shadow is looked up at the wave-displaced\n"
+        "surface point scaled by this factor. Zero pins the shadow\n"
+        "boundary to the flat surface (a straight edge), one is the\n"
+        "physical wave height, larger values exaggerate the ripple."),
     ParamBool('GroundReflection',  False, title='Ground reflection',
         doc="Mirror the model in the shadow ground plane of the\n"
         "experimental render engine: the opaque scene is re-rendered\n"

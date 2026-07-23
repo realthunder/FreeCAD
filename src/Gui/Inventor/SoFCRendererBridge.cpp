@@ -1133,6 +1133,9 @@ RendererBridge::translateWaterConfig(View3DInventor * view)
     res.shadow = viewParamOverride<App::PropertyBool>(
             view, "Render", "WaterShadow",
             RenderParams::getWaterShadow());
+    res.shadowWobble = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "WaterShadowWobble",
+            RenderParams::getWaterShadowWobble()));
     return res;
 }
 

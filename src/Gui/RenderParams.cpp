@@ -82,6 +82,7 @@ public:
     bool WaterReflection;
     bool WaterPlanarReflection;
     bool WaterShadow;
+    double WaterShadowWobble;
     bool GroundReflection;
     double GroundReflectionIntensity;
 
@@ -156,6 +157,8 @@ public:
         funcs["WaterPlanarReflection"] = &RenderParamsP::updateWaterPlanarReflection;
         WaterShadow = this->handle->GetBool("WaterShadow", true);
         funcs["WaterShadow"] = &RenderParamsP::updateWaterShadow;
+        WaterShadowWobble = this->handle->GetFloat("WaterShadowWobble", 1.0);
+        funcs["WaterShadowWobble"] = &RenderParamsP::updateWaterShadowWobble;
         GroundReflection = this->handle->GetBool("GroundReflection", false);
         funcs["GroundReflection"] = &RenderParamsP::updateGroundReflection;
         GroundReflectionIntensity = this->handle->GetFloat("GroundReflectionIntensity", 0.4);
@@ -311,6 +314,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateWaterShadow(RenderParamsP *self) {
         self->WaterShadow = self->handle->GetBool("WaterShadow", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterShadowWobble(RenderParamsP *self) {
+        self->WaterShadowWobble = self->handle->GetFloat("WaterShadowWobble", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateGroundReflection(RenderParamsP *self) {
@@ -1331,6 +1338,38 @@ void RenderParams::setWaterShadow(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeWaterShadow() {
     instance()->handle->RemoveBool("WaterShadow");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterShadowWobble() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How much the shadow band on the water surface wobbles with\n"
+"the wave field: the shadow is looked up at the wave-displaced\n"
+"surface point scaled by this factor. Zero pins the shadow\n"
+"boundary to the flat surface (a straight edge), one is the\n"
+"physical wave height, larger values exaggerate the ripple.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getWaterShadowWobble() {
+    return instance()->WaterShadowWobble;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultWaterShadowWobble() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterShadowWobble(const double &v) {
+    instance()->handle->SetFloat("WaterShadowWobble",v);
+    instance()->WaterShadowWobble = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterShadowWobble() {
+    instance()->handle->RemoveFloat("WaterShadowWobble");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

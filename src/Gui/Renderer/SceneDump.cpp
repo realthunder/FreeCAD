@@ -39,7 +39,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // presel/sel config, for browser-side edge/vertex picking.
 // v13: AO method selector (SSAO / GTAO) in the AO config.
 // v14: GTAO slice/step tuning in the AO config.
-const uint32_t kVersion = 14;
+const uint32_t kVersion = 15;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -652,6 +652,10 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     const WaterConfig &wc = snap.waterconf;
     w.b(wc.enabled); w.f(wc.waveStrength); w.f(wc.waveScale);
     w.f(wc.waveSpeed);
+    // v15: the rest of WaterConfig (was defaulted on the viewer side).
+    w.f(wc.absorption); w.f(wc.inscatter);
+    w.b(wc.refraction); w.b(wc.reflection); w.b(wc.planarReflection);
+    w.b(wc.shadow); w.f(wc.shadowWobble);
 
     w.f(snap.autozoomScale);
     w.f(snap.effectResolution);
@@ -776,6 +780,12 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     WaterConfig &wc = snap.waterconf;
     wc.enabled = r.b(); wc.waveStrength = r.f(); wc.waveScale = r.f();
     wc.waveSpeed = r.f();
+    if (version >= 15) {
+        wc.absorption = r.f(); wc.inscatter = r.f();
+        wc.refraction = r.b(); wc.reflection = r.b();
+        wc.planarReflection = r.b();
+        wc.shadow = r.b(); wc.shadowWobble = r.f();
+    }
 
     snap.autozoomScale = r.f();
     snap.effectResolution = version >= 9 ? r.f() : 1.0f;

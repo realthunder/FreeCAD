@@ -540,6 +540,22 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter WaterShadowWobble
+    ///
+    /// How much the shadow band on the water surface wobbles with
+    /// the wave field: the shadow is looked up at the wave-displaced
+    /// surface point scaled by this factor. Zero pins the shadow
+    /// boundary to the flat surface (a straight edge), one is the
+    /// physical wave height, larger values exaggerate the ripple.
+    static const double & getWaterShadowWobble();
+    static const double & defaultWaterShadowWobble();
+    static void removeWaterShadowWobble();
+    static void setWaterShadowWobble(const double &v);
+    static const char *docWaterShadowWobble();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter GroundReflection
     ///
     /// Mirror the model in the shadow ground plane of the
