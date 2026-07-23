@@ -148,10 +148,24 @@ static bool s_degraded = false;
 // then the camera is the auto fit, so a viewport/orientation change re-fits.
 static bool s_userCam = false;
 
+// Idle frame skip: frames still owed after the last change. Camera
+// input, resize, snapshot/config application and HUD toggles all mark
+// frames dirty; a small run (not 1) lets updateQuality restore full AO
+// once the interaction settles and the smoothed HUD numbers update.
+// Renderer-side changes (hover/selection highlights, config sets) are
+// caught via Renderer::isSceneDirty() in mainLoop instead.
+static int s_dirtyFrames = 8;
+
+static void markDirty()
+{
+    s_dirtyFrames = 8;
+}
+
 static void interact()
 {
     s_lastInteract = emscripten_get_now();
     s_userCam = true;
+    markDirty();
 }
 
 static void updateQuality()
@@ -1259,6 +1273,49 @@ static double s_lastFrameNow = 0.0;
 static double s_frameMs = 0.0;   // smoothed frame period
 static double s_renderMs = 0.0;  // smoothed render()-call CPU time
 
+// Fixed-width fields + fixed line count so the HUD box never resizes
+// as the numbers change: the widest line (fps) has constant width, the
+// variable strings (hover / cam) are truncated, and the cam line is
+// always present (blank until [v]). The bld: line = build stamp (mobile
+// caches serve stale builds; verify at a glance) + whether the AO depth
+// prepass / pyramid run fp32 on this GPU or fell back to fp16 (fp16
+// quantization bands the AO). `idle` replaces the fps value while the
+// idle frame skip holds the last presented frame.
+static void updateHud(bool idle)
+{
+    if (!s_hudOn)
+        return;
+    char fpsv[16];
+    if (idle)
+        std::snprintf(fpsv, sizeof(fpsv), "  idle");
+    else
+        std::snprintf(fpsv, sizeof(fpsv), "%6.1f",
+                      s_frameMs > 0.0 ? 1000.0 / s_frameMs : 0.0);
+    const bgfx::Caps *caps = bgfx::getCaps();
+    const bool rgba32f = 0 != (caps->formats[bgfx::TextureFormat::RGBA32F]
+                               & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+    const bool r32f = 0 != (caps->formats[bgfx::TextureFormat::R32F]
+                            & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+    char hud[640];
+    std::snprintf(hud, sizeof(hud),
+        "fps:  %s  (frame %6.1f ms  render %6.1f ms)\n"
+        "res:  %5d x%5d   dpr %4.2f   effRes %4.2f\n"
+        "bld:  %.11s %.8s   prepass %s  aomip %s\n"
+        "cam:  yaw %8.2f  pitch %7.2f  dist %9.2f\n"
+        "pan:  %8.2f,%8.2f  ctr %7.1f,%7.1f,%7.1f\n"
+        "hover: %-30.30s\n"
+        "%-46.46s\n"
+        "[d] toggle HUD   [v] copy cam",
+        fpsv, s_frameMs, s_renderMs,
+        s_width, s_height, double(s_dpr), double(s_snap.effectResolution),
+        __DATE__, __TIME__,
+        rgba32f ? "fp32" : "fp16", r32f ? "fp32" : "fp16",
+        s_yaw, s_pitch, s_dist, s_panX, s_panY,
+        s_center[0], s_center[1], s_center[2], s_hoverDesc,
+        s_camMsg);
+    fcviewer_hud(hud);
+}
+
 static void mainLoop()
 {
     const double frameNow = emscripten_get_now();
@@ -1287,9 +1344,28 @@ static void mainLoop()
         // whole model stays visible in the new aspect.
         if (!s_userCam)
             fitCamera();
+        markDirty();
     }
 
     updateQuality();
+
+    // Idle frame skip: static camera, no pending renderer change, no
+    // time-animated effects — a new frame would be pixel-identical to
+    // the presented one, so skip the render (mobile battery/thermal;
+    // the canvas keeps showing the last frame). Interaction restores
+    // rendering instantly via markDirty; renderer-side changes (hover
+    // and selection highlights, configs, a fresh scene feed, the idle
+    // AO refine from updateQuality) surface through isSceneDirty; water
+    // and fire keep rendering through isSceneAnimated. The HUD shows
+    // `idle` in the fps field while frames are held.
+    if (s_dirtyFrames > 0) {
+        --s_dirtyFrames;
+    } else if (s_renderer && !s_renderer->isSceneDirty()
+               && !s_renderer->isSceneAnimated()) {
+        updateHud(true);
+        s_lastFrameNow = 0.0;   // keep the idle gap out of the fps EMA
+        return;
+    }
 
     float viewMtx[16], projMtx[16];
     buildCamera(viewMtx, projMtx);
@@ -1310,39 +1386,7 @@ static void mainLoop()
     const double rdt = emscripten_get_now() - renderT0;
     s_renderMs = s_renderMs > 0.0 ? s_renderMs * 0.9 + rdt * 0.1 : rdt;
 
-    if (s_hudOn) {
-        char hud[512];
-        // Fixed-width fields + fixed line count so the HUD box never resizes
-        // as the numbers change: the widest line (fps) has constant width, the
-        // variable strings (hover / cam) are truncated, and the cam line is
-        // always present (blank until [v]).
-        // Build stamp + float-target caps: tells at a glance whether the
-        // page runs the current viewer build (mobile caches bite) and
-        // whether the AO depth prepass / pyramid run fp32 or fell back
-        // to fp16 on this GPU (fp16 quantization bands the AO).
-        const bgfx::Caps *caps = bgfx::getCaps();
-        const bool rgba32f = 0 != (caps->formats[bgfx::TextureFormat::RGBA32F]
-                                   & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
-        const bool r32f = 0 != (caps->formats[bgfx::TextureFormat::R32F]
-                                & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
-        std::snprintf(hud, sizeof(hud),
-            "fps:  %6.1f  (frame %6.1f ms  render %6.1f ms)\n"
-            "res:  %5d x%5d   dpr %4.2f   effRes %4.2f\n"
-            "bld:  %.11s %.8s   prepass %s  aomip %s\n"
-            "cam:  yaw %8.2f  pitch %7.2f  dist %9.2f\n"
-            "pan:  %8.2f,%8.2f  ctr %7.1f,%7.1f,%7.1f\n"
-            "hover: %-30.30s\n"
-            "%-46.46s\n"
-            "[d] toggle HUD   [v] copy cam",
-            s_frameMs > 0.0 ? 1000.0 / s_frameMs : 0.0, s_frameMs, s_renderMs,
-            s_width, s_height, double(s_dpr), double(s_snap.effectResolution),
-            __DATE__, __TIME__,
-            rgba32f ? "fp32" : "fp16", r32f ? "fp32" : "fp16",
-            s_yaw, s_pitch, s_dist, s_panX, s_panY,
-            s_center[0], s_center[1], s_center[2], s_hoverDesc,
-            s_camMsg);
-        fcviewer_hud(hud);
-    }
+    updateHud(false);
 }
 
 static float panScale()
@@ -1558,12 +1602,14 @@ static EM_BOOL onKeyDown(int, const EmscriptenKeyboardEvent *e, void *)
                       s_center[2], s_panX, s_panY);
         fcviewer_report_cam(buf);
         std::snprintf(s_camMsg, sizeof(s_camMsg), "cam=%s (copied)", buf);
+        markDirty();
         return EM_TRUE;
     }
     if (k == 'd' || k == 'D') {
         s_hudOn = !s_hudOn;
         if (!s_hudOn)
             fcviewer_hud(nullptr);
+        markDirty();
         return EM_TRUE;
     }
     return EM_FALSE;
@@ -1713,6 +1759,7 @@ static void fitCamera()
 /// the camera (streamed updates keep the user's).
 static void applySnapshot(bool fit)
 {
+    markDirty();
     s_renderer->setBackground(s_snap.background);
     s_renderer->setHiddenLineConfig(s_snap.hlconfig);
     s_renderer->setSectionConfig(s_snap.secconf);

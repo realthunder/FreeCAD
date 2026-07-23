@@ -835,6 +835,17 @@ public:
     { (void)config; }
     /// Per-frame ambient occlusion configuration.
     virtual void setAOConfig(const AOConfig &config) { (void)config; }
+    /// Whether the last rendered frame contained time-animated content
+    /// (water waves, fire, clouds, caustics) — a repeat frame with the
+    /// same camera and scene would differ. Clients that skip rendering
+    /// while idle must keep rendering while this is true; the default
+    /// is conservatively true.
+    virtual bool isSceneAnimated() const { return true; }
+    /// Whether scene/config changes are pending that the next render
+    /// would pick up (selection, highlight, configs, a new scene feed).
+    /// Clients that skip rendering while idle must render while this is
+    /// true; the default is conservatively true.
+    virtual bool isSceneDirty() const { return true; }
     /// Per-frame physically based shading configuration.
     virtual void setPBRConfig(const PBRConfig &config) { (void)config; }
     /// Per-frame bump/normal mapping configuration.

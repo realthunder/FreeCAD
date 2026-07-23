@@ -1566,8 +1566,9 @@ public:
         }
         // Shadow resources: the framebuffers before their textures. The
         // recreated moments texture starts empty, so the cached-map hash
-        // resets with it.
+        // resets with it (same for the AO/prepass cache).
         shadowMapHash = 0;
+        aoMapHash = 0;
         for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo,
                         &shadowTintFbo}) {
             if (bgfx::isValid(*fb)) {
@@ -3821,8 +3822,26 @@ public:
     /// horizon-integral GTAO (method 1) — a 4x4 box blur, then the
     /// multiply onto the opaque scene color (dst *= src, alpha kept).
     void submitAOResolve(float radius, float intensity, int method,
-                         bool fast, int slices, int steps)
+                         bool fast, int slices, int steps, bool render)
     {
+        // Cached AO (see the aoRender hash): the occlusion targets still
+        // hold a valid result for this camera/scene — only the multiply
+        // onto this frame's scene color re-runs. GTAO's denoise chain
+        // ping-pongs its final result back into aoTex; the classic path
+        // ends in aoBlurTex.
+        if (!render) {
+            const bool gtaoCached = method == 1 && bgfx::isValid(m_progGtao)
+                && bgfx::isValid(m_progGtaoBlur);
+            bgfx::setTexture(0, s_texAO, gtaoCached ? aoTex : aoBlurTex);
+            fullscreen(ViewAOApply, m_progSsaoApply,
+                       BGFX_STATE_WRITE_RGB
+                       | BGFX_STATE_BLEND_FUNC_SEPARATE(
+                           BGFX_STATE_BLEND_ZERO,
+                           BGFX_STATE_BLEND_SRC_COLOR,
+                           BGFX_STATE_BLEND_ZERO,
+                           BGFX_STATE_BLEND_ONE));
+            return;
+        }
         // Fixed hemisphere kernel (unit radius, z >= 0, clustered near
         // the origin), deterministic across frames like the noise.
         static const float kernel[kAOSamples][4] = {
@@ -5419,6 +5438,9 @@ public:
     // moments currently in shadowTex; the caster pass (and blur) only
     // re-runs when it changes. 0 = nothing rendered yet.
     uint64_t shadowMapHash = 0;
+    // AO/prepass cache key: camera + viewport + AO params + prepass draw
+    // set (see the aoRender hash in render()); 0 = never cached.
+    uint64_t aoMapHash = 0;
     bool m_ssao = false;     // SSAO resources exist (caps allow it)
     // Volumetric light shafts: half-res raymarch of the shadow map
     // bounded by the prepass depth, so both resource sets must exist.
@@ -6424,6 +6446,12 @@ public:
                         fs.detail);
         }
         bool fireActive = hasFireBody && volActive;
+        // Time-animated content (fire flicker, cloud drift, water waves,
+        // caustics): a client's idle frame skip must keep rendering
+        // while any of these replay per frame; everything else in the
+        // frame is camera/scene-driven and a repeat frame is identical.
+        sceneAnimated = fireActive || cloudActive || waterSurfActive
+            || (volActive && waterActive);
         if (getenv("FC_BGFX_DEBUG_FEED"))
             fprintf(stderr, "bgfx fire: body=%d active=%d\n",
                     hasFireBody, fireActive);
@@ -6618,6 +6646,74 @@ public:
         bool glassReject = glassActive && !noWaterReject;
         bool prepassActive = ssaoActive || volActive || waterSurfReject
             || glassReject;
+
+        // AO/prepass cache (same pattern as the shadow-map hash above):
+        // the depth/normal prepass and the whole AO resolve chain
+        // (pyramid, gen, denoise) depend only on the camera, the
+        // viewport, the AO parameters and the prepass draw set — never
+        // on time. When none of those changed, skip them all and keep
+        // last frame's targets: animated effects (water waves, fire)
+        // re-render every frame but read the cached prepass/AO, so a
+        // static camera pays only the cheap AO apply multiply. The
+        // interaction fast path needs no special casing — aoconf.fast
+        // flips the hash (and the camera moves anyway), and the first
+        // idle frame recomputes at full quality and re-primes the
+        // cache.
+        static const bool aoNoCache =
+            (getenv("FC_BGFX_NO_AO_CACHE") != nullptr);
+        bool aoRender = prepassActive;
+        if (prepassActive && !hlconfig.show && !aoNoCache) {
+            uint64_t h = 1469598103934665603ULL;
+            hashBytes(h, reinterpret_cast<const float *>(viewMatrix),
+                      sizeof(float) * 16);
+            hashBytes(h, reinterpret_cast<const float *>(projMatrix),
+                      sizeof(float) * 16);
+            hashBytes(h, &width, sizeof(width));
+            hashBytes(h, &height, sizeof(height));
+            hashBytes(h, &view->ssaoW, sizeof(view->ssaoW));
+            hashBytes(h, &view->ssaoH, sizeof(view->ssaoH));
+            hashBytes(h, &aoRadius, sizeof(aoRadius));
+            hashBytes(h, &aoconf.intensity, sizeof(aoconf.intensity));
+            hashBytes(h, &aoconf.method, sizeof(aoconf.method));
+            hashBytes(h, &aoconf.fast, sizeof(aoconf.fast));
+            hashBytes(h, &aoconf.slices, sizeof(aoconf.slices));
+            hashBytes(h, &aoconf.steps, sizeof(aoconf.steps));
+            const bool consumers[4] = {ssaoActive, volActive,
+                                       waterSurfReject, glassReject};
+            hashBytes(h, consumers, sizeof(consumers));
+            for (const auto &draw : scene) {
+                const auto &mat = draw.material;
+                // The prepass draw filter (see the submit below):
+                // opaque scene triangles, media bodies exempt.
+                const bool transp = mat.transparent
+                    || (mat.pervertexcolor && draw.mesh
+                        && draw.mesh->hasTransparency);
+                if (mat.type != Render::Material::Triangle
+                        || transp || mediumExempt(mat)
+                        || !draw.mesh)
+                    continue;
+                hashBytes(h, &draw.mesh->cacheId,
+                          sizeof(draw.mesh->cacheId));
+                if (!draw.identity)
+                    hashBytes(h, draw.model, sizeof(float) * 16);
+                hashBytes(h, &draw.indexStart, sizeof(draw.indexStart));
+                hashBytes(h, &draw.indexCount, sizeof(draw.indexCount));
+                if (mat.numclipplanes) {
+                    hashBytes(h, &mat.numclipplanes, 1);
+                    hashBytes(h, &mat.clipconcave, 1);
+                    hashBytes(h, mat.clipplanes,
+                              sizeof(float) * 4 * mat.numclipplanes);
+                }
+                if (!mat.autozoom.empty())
+                    hashBytes(h, &autozoomScale, sizeof(autozoomScale));
+            }
+            aoRender = h != view->aoMapHash;
+            if (aoRender)
+                view->aoMapHash = h;
+        } else if (prepassActive) {
+            view->aoMapHash = 0;
+        }
+        const bool prepassRender = prepassActive && aoRender;
 
         // Ground reflection: mirror the world about the shadow ground
         // plane (z = scene bbox bottom, the plane the ground quad sits
@@ -6985,7 +7081,7 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if (prepassActive && i == BGFXView::ViewAOPrepass) {
+            } else if (prepassRender && i == BGFXView::ViewAOPrepass) {
                 // Prepass target clears to 0 (.w = 0 marks background
                 // in the AO pass), with its own depth buffer.
                 bgfx::setViewFrameBuffer(id, view->aoPrepassFbo);
@@ -6998,7 +7094,7 @@ public:
                 // clip-space fullscreen triangle into its own half-stepped
                 // single-channel target (no-op views otherwise).
                 const int m = i - BGFXView::ViewAODepthMip1;
-                if (!ssaoActive || m >= view->aoMipCount) {
+                if (!ssaoActive || !aoRender || m >= view->aoMipCount) {
                     // Inactive: keep the view on the scene FBO (no draws,
                     // no clear) so it does not force a mid-frame MSAA
                     // resolve by touching another target.
@@ -7018,9 +7114,10 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if (ssaoActive && (i == BGFXView::ViewAOGen
-                                      || i == BGFXView::ViewAOBlur
-                                      || i == BGFXView::ViewAOBlur2)) {
+            } else if (ssaoActive && aoRender
+                       && (i == BGFXView::ViewAOGen
+                           || i == BGFXView::ViewAOBlur
+                           || i == BGFXView::ViewAOBlur2)) {
                 // Fullscreen passes overwrite their whole target.
                 // ViewAOBlur2 ping-pongs the denoise back into aoTex.
                 bgfx::setViewFrameBuffer(id,
@@ -7437,7 +7534,7 @@ public:
                     // Transparent geometry neither occludes nor receives
                     // AO — it stays out of the prepass like the per-draw
                     // path.
-                    if (prepassActive && !isTransp(proto)
+                    if (prepassRender && !isTransp(proto)
                             && view->submitPrepassInstanced(
                                 proto, instData.data(),
                                 uint32_t(vis.size()))) {
@@ -7594,7 +7691,7 @@ public:
             // nor receives AO; the multiply pass runs before the
             // transparent bucket). The volumetric raymarch shares it as
             // its ray-end depth source.
-            if (prepassActive && isTriangle(draw) && !isTransp(draw)
+            if (prepassRender && isTriangle(draw) && !isTransp(draw)
                     && !mediumExempt(draw.material) && !cullDraw
                     && !prepassInstancedThisFrame(drawIdx))
                 view->submitPrepass(draw);
@@ -7620,7 +7717,7 @@ public:
             view->submitShadowBlur(lightconf.smoothBorder);
         if (shadowActive && lightconf.ground && bboxValid) {
             view->submitShadowGround(bboxMin, bboxMax, lightconf,
-                                     volActive);
+                                     volActive && aoRender);
         }
         // Ground reflection: the opaque scene triangles re-submit into
         // the mirrored view through the ordinary submit path (redirected
@@ -7698,7 +7795,7 @@ public:
         if (ssaoActive)
             view->submitAOResolve(aoRadius, aoconf.intensity,
                                   aoconf.method, aoconf.fast,
-                                  aoconf.slices, aoconf.steps);
+                                  aoconf.slices, aoconf.steps, aoRender);
 
         // 1d. Volumetric light shafts: half-res raymarch of the shadow
         // map, bilateral-upsampled and composited onto the opaque scene
@@ -8579,6 +8676,11 @@ public:
     bool serveStarted = false;  ///< FC_BGFX_SERVE_SCENE start attempted
     bool scenePublished = false;///< at least one payload published
     bool sceneDirty = false;
+    // Whether the last rendered frame contained time-animated content
+    // (fire/cloud/water/caustics) — see the assignment in render().
+    // Defaults to true so a client's idle skip never engages before the
+    // first frame has classified the scene.
+    bool sceneAnimated = true;
     // Distinct from sceneDirty: set ONLY when the scene geometry feed itself
     // changes (setScene), not on cheap per-frame state (AO toggle, selection
     // /preselect highlight, effect resolution). The STANDALONE warmup target
@@ -8764,6 +8866,16 @@ void BGFXRenderer::setSectionConfig(const SectionConfig &config)
         pimpl->secconf = config;
         pimpl->sceneDirty = true;
     }
+}
+
+bool BGFXRenderer::isSceneAnimated() const
+{
+    return pimpl->sceneAnimated;
+}
+
+bool BGFXRenderer::isSceneDirty() const
+{
+    return pimpl->sceneDirty;
 }
 
 void BGFXRenderer::setAOConfig(const AOConfig &config)
