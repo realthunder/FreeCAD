@@ -11,8 +11,16 @@ $input v_texcoord0
  * interval the per-channel water extinction/scattering replaces the
  * air density, so deep shafts tint toward the water color.
  *
- * Output: rgb = inscattered radiance, a = the pixel's surface ray
- * length (consumed by the bilateral upsample of the apply pass).
+ * Output 0: rgb = inscattered radiance BEHIND the water surface entry
+ * (everything, when the pixel has no water body or no split is
+ * requested), a = the pixel's surface ray length (consumed by the
+ * bilateral upsample of the apply pass).
+ * Output 1: rgb = inscattered radiance IN FRONT of the water surface
+ * entry, a = the front stretch's transmittance. Composited over the
+ * re-rendered water surface by the front apply pass — without the
+ * split, a fountain plume (or fire) standing over the water would be
+ * overdrawn by the surface and read as behind it. Split only when
+ * u_volParams.w > 1.5 (water + surface re-render active).
  *
  * u_lightColor: rgb = scene light color * light intensity
  */
@@ -69,14 +77,27 @@ void main()
 	}
 	vec3 scatter = vec3_splat(0.0);
 	vec3 emission = vec3_splat(0.0);
+	vec3 scatterF = vec3_splat(0.0);
+	vec3 emissionF = vec3_splat(0.0);
+	// Transmittance of the front MEDIA (fountain/cloud/fire bodies in
+	// front of the water entry) alone — the plain air stretch stays in
+	// the main output like before the split, so the surface keeps its
+	// look and only the bodies standing over the water composite onto
+	// it.
+	float Tf = 1.0;
+	bool split = u_volParams.w > 1.5 && water.y > water.x;
 	if (t1 > t0)
 	{
-		// Dithered start offset (interleaved gradient noise)
-		// decorrelates the banding of the fixed step count between
-		// neighboring pixels; deterministic across frames.
-		float jitter = fract(52.9829189
-			* fract(dot(gl_FragCoord.xy,
-			            vec2(0.06711056, 0.00583715))));
+		// Dithered start offset decorrelating the banding of the
+		// fixed step count between neighboring pixels; deterministic
+		// across frames. White-noise hash, NOT interleaved gradient
+		// noise: IGN's coherent 45-degree stripe structure needs
+		// temporal accumulation to dissolve and reads as diagonal
+		// strips across dense media (fire, fountain spray); random
+		// speckle averages out in the bilateral upsample instead.
+		float jitter = fract(sin(dot(gl_FragCoord.xy,
+		                             vec2(12.9898, 78.233)))
+		                     * 43758.5453);
 		float density = u_volParams.x;
 		float dt = (t1 - t0) / float(VOL_STEPS);
 		// Per-channel eye-ward transmittance over the in-medium
@@ -86,12 +107,16 @@ void main()
 		{
 			float t = t0 + (float(i) + jitter) * dt;
 			bool inWater = t > water.x && t < water.y;
+			bool inCloud = t > cloud.x && t < cloud.y;
+			bool inFire = t > fire.x && t < fire.y;
+			bool front = split && t < water.x
+			    && (inCloud || inFire);
 			vec3 sigT = inWater ? u_waterSigma[ws].xyz
 			                    : vec3_splat(density);
 			float sigS = inWater ? u_waterSigma[ws].w : density;
 			float phase = 1.0;
 			float ambient = 0.0;
-			if (t > cloud.x && t < cloud.y)
+			if (inCloud)
 			{
 				// Cloud stretch: FBM density in a stable
 				// world frame replaces the air density, faded
@@ -142,7 +167,7 @@ void main()
 				ambient = u_cloudParams[cs].w > 1.5 ? 0.45
 				                                    : 0.25;
 			}
-			if (t > fire.x && t < fire.y)
+			if (inFire)
 			{
 				// Fire stretch: emissive medium — the rising
 				// FBM temperature field mapped through the
@@ -162,18 +187,36 @@ void main()
 				float ftemp = fireTempAt(fwp, u_fireFrame[fs],
 				                         u_fireParams[fs],
 				                         u_fireParams2[fs]) * ffade;
-				emission += fireRamp(ftemp)
+				vec3 fe = fireRamp(ftemp)
 					* (u_fireParams[fs].x * dt) * T;
+				if (front)
+					emissionF += fe;
+				else
+					emission += fe;
 				sigT += vec3_splat(u_fireParams2[fs].z * ftemp);
 			}
-			scatter += (shadowVis(origin + dir * t) * phase
-			            + ambient)
+			vec3 sc = (shadowVis(origin + dir * t) * phase
+			           + ambient)
 				* (sigS * dt) * T;
 			T *= exp(-sigT * dt);
+			if (front)
+			{
+				scatterF += sc;
+				// The media are scalar (spray / soot), so one
+				// channel represents their transmittance.
+				Tf *= exp(-sigT.g * dt);
+			}
+			else
+			{
+				scatter += sc;
+			}
 		}
 	}
 
-	gl_FragColor = vec4(u_lightColor.rgb * scatter * u_volParams.y
-	                        + emission,
-	                    tEnd);
+	gl_FragData[0] = vec4(u_lightColor.rgb * scatter * u_volParams.y
+	                          + emission,
+	                      tEnd);
+	gl_FragData[1] = vec4(u_lightColor.rgb * scatterF * u_volParams.y
+	                          + emissionF,
+	                      Tf);
 }
