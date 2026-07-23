@@ -42,6 +42,17 @@ uniform vec4 u_shadowParams;
 uniform vec4 u_evsm;
 // Maps view space to shadow map uv (xy) + light-window depth (z).
 uniform mat4 u_shadowMatrix;
+// x = ripple type (0 = directional waves, 1 = rain drops),
+// y = rain drop density (cells per wave-frequency unit).
+uniform vec4 u_waterRipple;
+
+// Per-cell random pair/scalar for the rain drop field.
+vec2 fc_rainHash2(vec2 cell)
+{
+	vec2 h = vec2(dot(cell, vec2(127.1, 311.7)),
+	              dot(cell, vec2(269.5, 183.3)));
+	return fract(sin(h) * 43758.5453);
+}
 
 // One variance shadow map tap at uv against receiver light-window depth z,
 // matching the mesh receivers' fc_shadowTap (Coin SoShadowGroup VsmLookup
@@ -94,33 +105,73 @@ void main()
 	vec2 q = vec2(dot(wp, t1), dot(wp, t2)) * u_waterSurf.y;
 	float t = u_waterSurf.z;
 
-	// Sum of four directional slope waves (analytic height gradient),
-	// octaves of increasing frequency and speed.
-	vec2 d0 = vec2(0.86, 0.5);
-	vec2 d1 = vec2(-0.5, 0.86);
-	vec2 d2 = vec2(0.26, -0.97);
-	vec2 d3 = vec2(-0.97, -0.26);
+	// The wave field: a q-space height gradient (grad, world-space
+	// slope after the strength scale below) and the matching
+	// dimensionless height (hq). Two ripple types share the outputs
+	// so refraction, glint and the shadow wobble follow either.
 	vec2 grad = vec2_splat(0.0);
-	grad += d0 * (0.50 * cos(dot(q, d0) * 6.28 + t) * 6.28);
-	grad += d1 * (0.25 * cos(dot(q, d1) * 13.1 - t * 1.6) * 13.1);
-	grad += d2 * (0.20 * cos(dot(q, d2) * 22.9 + t * 2.3) * 22.9);
-	grad += d3 * (0.15 * cos(dot(q, d3) * 41.3 - t * 3.1) * 41.3);
+	float hq = 0.0;
+	if (u_waterRipple.x < 0.5)
+	{
+		// Directional waves: sum of four slope waves (analytic
+		// height gradient), octaves of increasing frequency and
+		// speed. hq takes the sin where the gradient took the cos,
+		// without the frequency factor.
+		vec2 d0 = vec2(0.86, 0.5);
+		vec2 d1 = vec2(-0.5, 0.86);
+		vec2 d2 = vec2(0.26, -0.97);
+		vec2 d3 = vec2(-0.97, -0.26);
+		grad += d0 * (0.50 * cos(dot(q, d0) * 6.28 + t) * 6.28);
+		grad += d1 * (0.25 * cos(dot(q, d1) * 13.1 - t * 1.6) * 13.1);
+		grad += d2 * (0.20 * cos(dot(q, d2) * 22.9 + t * 2.3) * 22.9);
+		grad += d3 * (0.15 * cos(dot(q, d3) * 41.3 - t * 3.1) * 41.3);
+		hq += 0.50 * sin(dot(q, d0) * 6.28 + t);
+		hq += 0.25 * sin(dot(q, d1) * 13.1 - t * 1.6);
+		hq += 0.20 * sin(dot(q, d2) * 22.9 + t * 2.3);
+		hq += 0.15 * sin(dot(q, d3) * 41.3 - t * 3.1);
+	}
+	else
+	{
+		// Rain drops: the surface tiles into hashed cells (density =
+		// cells per q unit), each cycling a drop at a random spot and
+		// phase — an expanding damped ring of ~3 wavelengths. The 3x3
+		// neighborhood covers rings crossing cell borders. The radial
+		// derivative is analytic; the chain rule back to q space
+		// multiplies by the density.
+		// Base scale: ~3 cells per q unit at density 1 (the q frame
+		// is ~4 units across the water diagonal), so default density
+		// reads as rain rather than a couple of giant rings.
+		float D = max(u_waterRipple.y, 0.01) * 3.0;
+		vec2 gq = q * D;
+		vec2 cell0 = floor(gq);
+		for (int j = -1; j <= 1; ++j)
+		{
+			for (int k = -1; k <= 1; ++k)
+			{
+				vec2 cell = cell0 + vec2(float(j), float(k));
+				vec2 rnd = fc_rainHash2(cell);
+				float ph = fc_rainHash2(cell + 17.31).x;
+				float age = fract(t * 0.35 + ph);
+				vec2 dvec = gq - (cell + rnd);
+				float rc = max(length(dvec), 1.0e-4);
+				float x = rc * 18.0 - age * 12.0;
+				float env = 2.5 * (1.0 - age) * exp(-2.0 * rc)
+				    * smoothstep(0.0, 0.08, age);
+				hq += env * sin(x);
+				float dh = env * (18.0 * cos(x) - 2.0 * sin(x));
+				grad += (dvec / rc) * (dh * D);
+			}
+		}
+	}
 	grad *= u_waterSurf.x * 0.02;
 	vec3 npw = normalize(nw - t1 * grad.x - t2 * grad.y);
 	vec3 np = normalize(mul(u_view, vec4(npw, 0.0)).xyz);
 
-	// Wave HEIGHT matching the slope sum above (same octaves/phases,
-	// sin where the gradient took the cos, without the frequency
-	// factor); the q-space slope was used as a world-space slope, so
-	// dividing by the q scale keeps the implied height consistent with
-	// the rendered normals. Displacing the shadow tap by it makes the
-	// shadow band ripple with the waves instead of lying rigid on an
-	// animated surface.
-	float hq = 0.0;
-	hq += 0.50 * sin(dot(q, d0) * 6.28 + t);
-	hq += 0.25 * sin(dot(q, d1) * 13.1 - t * 1.6);
-	hq += 0.20 * sin(dot(q, d2) * 22.9 + t * 2.3);
-	hq += 0.15 * sin(dot(q, d3) * 41.3 - t * 3.1);
+	// Wave HEIGHT: the q-space slope was used as a world-space slope,
+	// so dividing by the q scale keeps the implied height consistent
+	// with the rendered normals. Displacing the shadow tap by it makes
+	// the shadow band ripple with the waves instead of lying rigid on
+	// an animated surface.
 	float waveH = hq * u_waterSurf.x * 0.02
 	    / max(u_waterSurf.y, 1.0e-4);
 

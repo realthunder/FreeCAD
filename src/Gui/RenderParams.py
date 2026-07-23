@@ -185,6 +185,17 @@ Params = [
         "with an active shadow map; off leaves the surface fully lit.\n"
         "The refracted scene below the surface keeps its own shadow\n"
         "regardless."),
+    ParamInt('WaterRippleType',  0, title='Ripple type',
+        proxy=ParamComboBox(items=['Waves (directional)', 'Rain (drops)']),
+        doc="The animated ripple pattern on the water surface. 0 = waves:\n"
+        "the default sum of directional wind waves. 1 = rain: circular\n"
+        "rings expanding from randomly placed, randomly timed drop\n"
+        "impacts, as on a pond in rainfall."),
+    ParamFloat('WaterRippleDensity',  1.0, title='Ripple density',
+        doc="Drop density of the rain ripple type: how many drop cells\n"
+        "fit per wave-scale unit. Higher rains harder - more, smaller\n"
+        "rings; lower gives sparse large rings. The wave ripple type\n"
+        "ignores it."),
     ParamFloat('WaterShadowWobble',  1.0, title='Shadow wobble',
         doc="How much the shadow band on the water surface wobbles with\n"
         "the wave field: the shadow is looked up at the wave-displaced\n"

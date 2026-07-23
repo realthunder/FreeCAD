@@ -1543,7 +1543,7 @@ public:
                          &u_volTexel, &s_texWaterFront, &s_texWaterBack,
                          &u_waterSigma, &u_causticParams,
                          &s_texScene, &s_texRefl, &u_waterSurf,
-                         &u_waterAbsorb, &u_reflParams,
+                         &u_waterAbsorb, &u_waterRipple, &u_reflParams,
                          &s_texGlassFront, &s_texGlassBack,
                          &u_glassParams,
                          &s_texCloudFront, &s_texCloudBack,
@@ -2527,6 +2527,8 @@ public:
         u_waterSurf = bgfx::createUniform("u_waterSurf",
                                           bgfx::UniformType::Vec4);
         u_waterAbsorb = bgfx::createUniform("u_waterAbsorb",
+                                            bgfx::UniformType::Vec4);
+        u_waterRipple = bgfx::createUniform("u_waterRipple",
                                             bgfx::UniformType::Vec4);
         // The surface shader's refraction depth reject samples the SSAO
         // prepass; without those resources the sampler uniform still
@@ -4128,7 +4130,8 @@ public:
                             float time, bool depthReject, int reflMode,
                             bool refraction, bool absorb, float absorption,
                             float inscatter, bool shadow,
-                            float shadowWobble)
+                            float shadowWobble,
+                            int rippleType, float rippleDensity)
     {
         bool planarRefl = reflMode == 3;
         if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -4166,6 +4169,8 @@ public:
         float absorbP[4] = {absorption, inscatter, float(reflMode),
                              refraction ? 1.0f : 0.0f};
         bgfx::setUniform(u_waterAbsorb, absorbP);
+        float ripple[4] = {float(rippleType), rippleDensity, 0.0f, 0.0f};
+        bgfx::setUniform(u_waterRipple, ripple);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2],
                              shadowFrame ? 1.0f : 0.0f};
@@ -5568,6 +5573,7 @@ public:
     bgfx::UniformHandle s_texRefl = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_waterSurf = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_waterAbsorb = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_waterRipple = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_reflParams = BGFX_INVALID_HANDLE;
     // Redirect submit() into the ground reflection view (mirrored
     // camera, flipped culling).
@@ -7766,7 +7772,9 @@ public:
                                          waterconf.absorption,
                                          waterconf.inscatter,
                                          waterconf.shadow,
-                                         waterconf.shadowWobble);
+                                         waterconf.shadowWobble,
+                                         waterconf.rippleType,
+                                         waterconf.rippleDensity);
             if (surfGlass && !cullDraw) {
                 // The interval depths cache with the medium targets; the
                 // surface pass reads the per-frame scene copy, so it

@@ -1136,6 +1136,12 @@ RendererBridge::translateWaterConfig(View3DInventor * view)
     res.shadowWobble = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "WaterShadowWobble",
             RenderParams::getWaterShadowWobble()));
+    res.rippleType = int(viewParamOverride<App::PropertyEnumeration>(
+            view, "Render", "WaterRippleType",
+            RenderParams::getWaterRippleType()));
+    res.rippleDensity = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "WaterRippleDensity",
+            RenderParams::getWaterRippleDensity()));
     return res;
 }
 

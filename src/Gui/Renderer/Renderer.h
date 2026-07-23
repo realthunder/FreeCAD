@@ -510,6 +510,14 @@ struct WaterConfig {
     /// by this factor. 0 = straight boundary on the flat surface, 1 =
     /// physical wave height, larger exaggerates the ripple.
     float shadowWobble = 1.0f;
+    /// The animated ripple pattern: 0 = directional waves (the default
+    /// four-octave slope-wave sum), 1 = rain drops (hashed cells each
+    /// cycling an expanding circular ring).
+    int rippleType = 0;
+    /// Rain drop density: cells per wave-frequency unit — higher packs
+    /// more, smaller rings on the same surface. Directional waves
+    /// ignore it.
+    float rippleDensity = 1.0f;
 
     bool operator==(const WaterConfig &o) const {
         return enabled == o.enabled && waveStrength == o.waveStrength
@@ -517,7 +525,9 @@ struct WaterConfig {
             && absorption == o.absorption && inscatter == o.inscatter
             && refraction == o.refraction && reflection == o.reflection
             && planarReflection == o.planarReflection
-            && shadow == o.shadow && shadowWobble == o.shadowWobble;
+            && shadow == o.shadow && shadowWobble == o.shadowWobble
+            && rippleType == o.rippleType
+            && rippleDensity == o.rippleDensity;
     }
     bool operator!=(const WaterConfig &o) const { return !(*this == o); }
 };

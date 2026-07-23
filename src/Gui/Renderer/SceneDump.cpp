@@ -39,7 +39,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // presel/sel config, for browser-side edge/vertex picking.
 // v13: AO method selector (SSAO / GTAO) in the AO config.
 // v14: GTAO slice/step tuning in the AO config.
-const uint32_t kVersion = 15;
+const uint32_t kVersion = 16;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -656,6 +656,8 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.f(wc.absorption); w.f(wc.inscatter);
     w.b(wc.refraction); w.b(wc.reflection); w.b(wc.planarReflection);
     w.b(wc.shadow); w.f(wc.shadowWobble);
+    // v16: ripple type + rain drop density.
+    w.i32(wc.rippleType); w.f(wc.rippleDensity);
 
     w.f(snap.autozoomScale);
     w.f(snap.effectResolution);
@@ -785,6 +787,9 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         wc.refraction = r.b(); wc.reflection = r.b();
         wc.planarReflection = r.b();
         wc.shadow = r.b(); wc.shadowWobble = r.f();
+    }
+    if (version >= 16) {
+        wc.rippleType = r.i32(); wc.rippleDensity = r.f();
     }
 
     snap.autozoomScale = r.f();

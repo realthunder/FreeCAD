@@ -61,6 +61,10 @@ try:
     render.SetBool("WaterShadow", True)           # beam shadow on the water
     # Shadow wobble with the wave field (0 = straight band, 1 = physical)
     render.SetFloat("WaterShadowWobble", float(os.environ.get("WOBBLE", "1.0")))
+    # Ripple pattern: 0 = directional waves, 1 = rain drops; DENSITY
+    # packs more, smaller rings (rain only)
+    render.SetInt("WaterRippleType", int(os.environ.get("RIPPLE", "0")))
+    render.SetFloat("WaterRippleDensity", float(os.environ.get("DENSITY", "1.0")))
     render.SetBool("GroundReflection", False)
     render.SetBool("Caustics", True)
     render.SetBool("PBR", os.environ.get("PBR", "1") == "1")  # image-based lighting

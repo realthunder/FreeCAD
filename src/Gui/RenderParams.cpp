@@ -82,6 +82,8 @@ public:
     bool WaterReflection;
     bool WaterPlanarReflection;
     bool WaterShadow;
+    long WaterRippleType;
+    double WaterRippleDensity;
     double WaterShadowWobble;
     bool GroundReflection;
     double GroundReflectionIntensity;
@@ -157,6 +159,10 @@ public:
         funcs["WaterPlanarReflection"] = &RenderParamsP::updateWaterPlanarReflection;
         WaterShadow = this->handle->GetBool("WaterShadow", true);
         funcs["WaterShadow"] = &RenderParamsP::updateWaterShadow;
+        WaterRippleType = this->handle->GetInt("WaterRippleType", 0);
+        funcs["WaterRippleType"] = &RenderParamsP::updateWaterRippleType;
+        WaterRippleDensity = this->handle->GetFloat("WaterRippleDensity", 1.0);
+        funcs["WaterRippleDensity"] = &RenderParamsP::updateWaterRippleDensity;
         WaterShadowWobble = this->handle->GetFloat("WaterShadowWobble", 1.0);
         funcs["WaterShadowWobble"] = &RenderParamsP::updateWaterShadowWobble;
         GroundReflection = this->handle->GetBool("GroundReflection", false);
@@ -314,6 +320,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateWaterShadow(RenderParamsP *self) {
         self->WaterShadow = self->handle->GetBool("WaterShadow", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterRippleType(RenderParamsP *self) {
+        self->WaterRippleType = self->handle->GetInt("WaterRippleType", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterRippleDensity(RenderParamsP *self) {
+        self->WaterRippleDensity = self->handle->GetFloat("WaterRippleDensity", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateWaterShadowWobble(RenderParamsP *self) {
@@ -1338,6 +1352,68 @@ void RenderParams::setWaterShadow(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeWaterShadow() {
     instance()->handle->RemoveBool("WaterShadow");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterRippleType() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"The animated ripple pattern on the water surface. 0 = waves:\n"
+"the default sum of directional wind waves. 1 = rain: circular\n"
+"rings expanding from randomly placed, randomly timed drop\n"
+"impacts, as on a pond in rainfall.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getWaterRippleType() {
+    return instance()->WaterRippleType;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultWaterRippleType() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterRippleType(const long &v) {
+    instance()->handle->SetInt("WaterRippleType",v);
+    instance()->WaterRippleType = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterRippleType() {
+    instance()->handle->RemoveInt("WaterRippleType");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterRippleDensity() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Drop density of the rain ripple type: how many drop cells\n"
+"fit per wave-scale unit. Higher rains harder - more, smaller\n"
+"rings; lower gives sparse large rings. The wave ripple type\n"
+"ignores it.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getWaterRippleDensity() {
+    return instance()->WaterRippleDensity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultWaterRippleDensity() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterRippleDensity(const double &v) {
+    instance()->handle->SetFloat("WaterRippleDensity",v);
+    instance()->WaterRippleDensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterRippleDensity() {
+    instance()->handle->RemoveFloat("WaterRippleDensity");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

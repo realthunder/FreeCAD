@@ -540,6 +540,36 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter WaterRippleType
+    ///
+    /// The animated ripple pattern on the water surface. 0 = waves:
+    /// the default sum of directional wind waves. 1 = rain: circular
+    /// rings expanding from randomly placed, randomly timed drop
+    /// impacts, as on a pond in rainfall.
+    static const long & getWaterRippleType();
+    static const long & defaultWaterRippleType();
+    static void removeWaterRippleType();
+    static void setWaterRippleType(const long &v);
+    static const char *docWaterRippleType();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WaterRippleDensity
+    ///
+    /// Drop density of the rain ripple type: how many drop cells
+    /// fit per wave-scale unit. Higher rains harder - more, smaller
+    /// rings; lower gives sparse large rings. The wave ripple type
+    /// ignores it.
+    static const double & getWaterRippleDensity();
+    static const double & defaultWaterRippleDensity();
+    static void removeWaterRippleDensity();
+    static void setWaterRippleDensity(const double &v);
+    static const char *docWaterRippleDensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter WaterShadowWobble
     ///
     /// How much the shadow band on the water surface wobbles with

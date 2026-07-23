@@ -3947,6 +3947,21 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "WaterShadowWobble",
             RenderParams::docWaterShadowWobble(),
             RenderParams::getWaterShadowWobble());
+    // Enumeration property: like Render_AOMethod, _renderParam can't
+    // create it (the generic helper sets the default value before the
+    // enum strings exist), so materialize it explicitly.
+    if (!view->getPropertyByName("Render_WaterRippleType")) {
+        static const char* _rippleTypeEnums[] = {"Waves", "Rain", nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_WaterRippleType", "Render",
+                                         RenderParams::docWaterRippleType()));
+        prop->setEnums(_rippleTypeEnums);
+        prop->setValue(long(RenderParams::getWaterRippleType()));
+    }
+    _renderParam<App::PropertyFloat>(view, "WaterRippleDensity",
+            RenderParams::docWaterRippleDensity(),
+            RenderParams::getWaterRippleDensity());
     _renderParam<App::PropertyBool>(view, "GroundReflection",
             RenderParams::docGroundReflection(),
             RenderParams::getGroundReflection());
