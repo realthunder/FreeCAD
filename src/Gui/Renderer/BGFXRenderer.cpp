@@ -1399,6 +1399,11 @@ public:
                             // the shadow ground plane (own framebuffer,
                             // flipped culling, reflected shadow matrix);
                             // the overlay view blends it onto the ground
+        ViewReflMedia,      // fountain/fire bodies composited into the
+                            // mirrored-scene texture (analytic cylinder
+                            // raymarch from the mirror camera) so the
+                            // water/ground reflection shows the plume
+                            // and flame, not what stands behind them
         ViewOpaque,         // opaque triangles, lines, points
         ViewSectionCap,     // stencil section caps of clipped opaque
                             // solids (GL: _renderSection; before the
@@ -1579,7 +1584,7 @@ public:
                           &m_progGtao, &m_progGtaoBlur, &m_progGtaoDepth,
                           &m_progSsaoBlur, &m_progSsaoApply,
                           &m_progVol, &m_progVolFront,
-                          &m_progVolAccum,
+                          &m_progVolAccum, &m_progReflMedia,
                           &m_progVolApply, &m_progVolExt,
                           &m_progCaustics, &m_progWaterCopy, &m_progWater,
                           &m_progGlass, &m_progGroundRefl}) {
@@ -2625,6 +2630,10 @@ public:
             | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
         bgfx::TextureHandle ratt[2] = {reflTex, reflDepth};
         reflFbo = bgfx::createFrameBuffer(2, ratt, false);
+        if (!bgfx::isValid(m_progReflMedia))
+            m_progReflMedia = loadProgram("vs_fc_comp",
+                                          "fs_fc_refl_media",
+                                          _BGFXLib.resource().c_str());
         m_progGroundRefl = loadProgram("vs_fc_mesh", "fs_fc_groundrefl",
                                        _BGFXLib.resource().c_str());
         u_reflParams = bgfx::createUniform("u_reflParams",
@@ -4435,6 +4444,34 @@ public:
         ++drawcount;
     }
 
+    /// Composite the fountain/fire media into the mirrored-scene
+    /// reflection texture (premultiplied over): the analytic cylinder
+    /// raymarch runs with the mirror-view transforms bound.
+    void submitReflMedia(const float cloudParams[][4],
+                         const float fireParams[][4],
+                         const float fireParams2[][4],
+                         const float fireFrames[][16],
+                         const float fountainParams[][4],
+                         const float fountainFrames[][16])
+    {
+        if (!bgfx::isValid(m_progReflMedia))
+            return;
+        bgfx::setUniform(u_cloudParams, cloudParams, kMediumSlots);
+        bgfx::setUniform(u_fireParams, fireParams, kMediumSlots);
+        bgfx::setUniform(u_fireParams2, fireParams2, kMediumSlots);
+        bgfx::setUniform(u_fireFrame, fireFrames, kMediumSlots);
+        bgfx::setUniform(u_fountainParams, fountainParams,
+                         kMediumSlots);
+        bgfx::setUniform(u_fountainFrame, fountainFrames,
+                         kMediumSlots);
+        bgfx::setUniform(u_lightColor, lightColorI);
+        fullscreen(ViewReflMedia, m_progReflMedia,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                   | BGFX_STATE_BLEND_FUNC(
+                       BGFX_STATE_BLEND_ONE,
+                       BGFX_STATE_BLEND_INV_SRC_ALPHA));
+    }
+
     /// Blend the mirrored-scene render onto the shadow ground quad:
     /// the same quad geometry and vertex shader as the ground draw, so
     /// the EQUAL depth test hits exactly the ground pixels still
@@ -5642,6 +5679,7 @@ public:
     bgfx::ProgramHandle m_progVolApply = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolFront = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolAccum = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progReflMedia = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texVolFront = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolExt = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCaustics = BGFX_INVALID_HANDLE;
@@ -6645,7 +6683,7 @@ public:
         // frame and effect-light anchor.
         struct FireSlot {
             float emission = 0.0f, detail = 0.0f, speed = 1.0f;
-            float invHeight = 0.0f, soot = 0.0f;
+            float invHeight = 0.0f, invRadius = 0.0f, soot = 0.0f;
             float intensity = 1.0f, diag = 0.0f;
             // World -> fire-local frame (z = the body placement's up
             // axis, origin at the bottom center) and the effect-light
@@ -6701,8 +6739,10 @@ public:
             float base[3], up[3];
             float height = 0.0f, radius = 0.0f;
             if (buildBodyFrame(draw, fs.frame, base, up, height,
-                               radius))
+                               radius)) {
                 fs.invHeight = 1.0f / height;
+                fs.invRadius = 1.0f / radius;
+            }
             // The effect light sits a third up the flame — the ramp's
             // bright zone — along the body's up axis.
             for (int j = 0; j < 3; ++j)
@@ -7078,7 +7118,8 @@ public:
             && !staticNoCache && camH == view->camFrameHash;
         view->camFrameHash = camH;
         const bool mediumRender = !staticFrame;
-        const bool reflRender = !staticFrame || shadowRender || fireActive;
+        const bool reflRender = !staticFrame || shadowRender || fireActive
+            || cloudActive;
 
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
             uint16_t id = base + i;
@@ -7241,6 +7282,22 @@ public:
                     0x00000000u, back ? 0.0f : 1.0f, 0);
                 bgfx::setViewRect(id, 0, 0, width, height);
                 bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if ((groundReflActive || waterReflActive) && reflRender
+                       && volActive && (cloudActive || fireActive)
+                       && i == BGFXView::ViewReflMedia) {
+                // Media composite over the just-rendered mirror scene:
+                // same target/rect/transforms, no clear (premultiplied
+                // over blend).
+                bgfx::setViewFrameBuffer(id, view->reflFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, view->effW, view->effH);
+                bgfx::setViewTransform(id,
+                    groundReflActive ? reflViewMtx : waterReflViewMtx,
+                    projMatrix);
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
@@ -8060,6 +8117,42 @@ public:
         // culling is skipped — the mirrored camera sees a different
         // volume; hidden and on-top draws stay out like the water
         // bodies and transparent geometry (single-bounce opaque only).
+        // Marshalled per-slot medium parameters: consumed by the
+        // reflection media pass right below and by the volumetric
+        // raymarch submit later in the frame.
+        float cloudParams[kSlots][4] = {};
+        float fireParams[kSlots][4] = {};
+        float fireParams2[kSlots][4] = {};
+        float fireFrames[kSlots][16] = {};
+        if (volActive) {
+            for (int s = 0; s < kSlots; ++s) {
+                if (cloudActive && cloudSlot[s][3] > 0.0f) {
+                    cloudParams[s][0] = cloudSlot[s][0];
+                    cloudParams[s][1] = cloudSlot[s][1];
+                    cloudParams[s][2] = animTime * cloudSlot[s][2];
+                    // w keeps the flavor: 1 = cloud FBM, 2 = fountain.
+                    cloudParams[s][3] = cloudSlot[s][3];
+                    animatedFrame = animatedFrame
+                        || (animLive && cloudSlot[s][2] != 0.0f);
+                }
+                const FireSlot &fsl = fireSlot[s];
+                if (fireActive && fsl.valid) {
+                    // The 2.0 rise rate makes the flame climb a couple
+                    // of noise cells per second at the default speed.
+                    fireParams[s][0] = fsl.emission;
+                    fireParams[s][1] = fsl.detail;
+                    fireParams[s][2] = animTime * fsl.speed * 2.0f;
+                    fireParams[s][3] = 1.0f;
+                    fireParams2[s][0] = fsl.invRadius;
+                    fireParams2[s][1] = fsl.invHeight;
+                    fireParams2[s][2] = fsl.soot;
+                    animatedFrame = animatedFrame
+                        || (animLive && fsl.speed != 0.0f);
+                }
+                std::memcpy(fireFrames[s], fsl.frame,
+                            sizeof(fsl.frame));
+            }
+        }
         if ((groundReflActive || waterReflActive) && reflRender) {
             view->reflPass = true;
             float savedShadowMtx[16];
@@ -8079,6 +8172,12 @@ public:
             std::memcpy(view->shadowMtx, savedShadowMtx,
                         sizeof(savedShadowMtx));
             view->reflPass = false;
+            // The reflection shows the fountain plume / flame too: an
+            // analytic media march composited over the mirrored scene.
+            if (volActive && (cloudActive || fireActive))
+                view->submitReflMedia(cloudParams, fireParams,
+                                      fireParams2, fireFrames,
+                                      fountainGeom, fountainFrame);
         }
         // Ground blends its (possibly cached) reflection with a quad
         // every frame; the water surface pass samples reflTex itself
@@ -8136,36 +8235,6 @@ public:
         // map, bilateral-upsampled and composited onto the opaque scene
         // after the outlines, before the transparent bucket.
         if (volActive) {
-            float cloudParams[kSlots][4] = {};
-            float fireParams[kSlots][4] = {};
-            float fireParams2[kSlots][4] = {};
-            float fireFrames[kSlots][16] = {};
-            for (int s = 0; s < kSlots; ++s) {
-                if (cloudActive && cloudSlot[s][3] > 0.0f) {
-                    cloudParams[s][0] = cloudSlot[s][0];
-                    cloudParams[s][1] = cloudSlot[s][1];
-                    cloudParams[s][2] = animTime * cloudSlot[s][2];
-                    // w keeps the flavor: 1 = cloud FBM, 2 = fountain.
-                    cloudParams[s][3] = cloudSlot[s][3];
-                    animatedFrame = animatedFrame
-                        || (animLive && cloudSlot[s][2] != 0.0f);
-                }
-                const FireSlot &fsl = fireSlot[s];
-                if (fireActive && fsl.valid) {
-                    // The 2.0 rise rate makes the flame climb a couple
-                    // of noise cells per second at the default speed.
-                    fireParams[s][0] = fsl.emission;
-                    fireParams[s][1] = fsl.detail;
-                    fireParams[s][2] = animTime * fsl.speed * 2.0f;
-                    fireParams[s][3] = 1.0f;
-                    fireParams2[s][1] = fsl.invHeight;
-                    fireParams2[s][2] = fsl.soot;
-                    animatedFrame = animatedFrame
-                        || (animLive && fsl.speed != 0.0f);
-                }
-                std::memcpy(fireFrames[s], fsl.frame,
-                            sizeof(fsl.frame));
-            }
             // Temporal accumulation factor: while the camera holds
             // still, successive jittered marches blend into the
             // history (k = 1/frames, floored so animated media keep

@@ -32,10 +32,11 @@
  * u_fireParams[s]: x = flame emission density (1/world units), y =
  *               noise domain scale (1/world units), z = rise time,
  *               w > 0.5 = slot active
- * u_fireParams2[s]: y = 1 / body extent along its up axis (the flame
- *               taper frame), z = soot extinction density (1/world
- *               units; a mild absorption that follows the temperature
- *               field, 0 = none), x/w unused
+ * u_fireParams2[s]: x = 1 / body lateral radius (the reflection media
+ *               pass's analytic cylinder bound), y = 1 / body extent
+ *               along its up axis (the flame taper frame), z = soot
+ *               extinction density (1/world units; a mild absorption
+ *               that follows the temperature field, 0 = none), w unused
  * u_fireFrame[s]: world -> fire-local transform — z rises along the
  *               body placement's up axis (not world z), origin at the
  *               bottom center of the body, unit world scale. The
