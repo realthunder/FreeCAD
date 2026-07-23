@@ -99,6 +99,19 @@ public:
     SoSFFloat fireDetail;
     /// Rise speed multiplier of the animated noise domain.
     SoSFFloat fireSpeed;
+    /// The shapes form a fountain body: the closed volume becomes a
+    /// water-spray scattering medium of the render engine's volumetric
+    /// lighting pass (a rising jet plus a parabolic fall envelope with
+    /// streak noise); the body geometry itself is not rendered.
+    SoSFBool fountain;
+    /// Spray extinction density (1/world units); <= 0 = automatic
+    /// (from the body bounds).
+    SoSFFloat fountainDensity;
+    /// Noise domain scale in inverse world units; <= 0 = automatic
+    /// (streaks across the body).
+    SoSFFloat fountainDetail;
+    /// Flow speed multiplier of the animated spray.
+    SoSFFloat fountainSpeed;
 
 protected:
     ~SoFCRenderMaterial() override = default;

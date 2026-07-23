@@ -45,6 +45,10 @@ uniform mat4 u_shadowMatrix;
 // x = ripple type (0 = directional waves, 1 = rain drops),
 // y = rain drop density (cells per wave-frequency unit).
 uniform vec4 u_waterRipple;
+// Fountain splash sources: xyz = world base center, w = impact ring
+// radius (0 = slot inactive). Continuous ring trains added on top of
+// either ripple type.
+uniform vec4 u_waterSplash[4];
 
 // Per-cell random pair/scalar for the rain drop field.
 vec2 fc_rainHash2(vec2 cell)
@@ -162,6 +166,30 @@ void main()
 				grad += (dvec / rc) * (dh * D);
 			}
 		}
+	}
+	// Fountain splash rings: a continuous ring train travelling out
+	// from each active source's impact circle, on top of either
+	// ripple type. Amplitude and wavelength scale with the impact
+	// radius; the radial derivative converts to the q-space slope
+	// convention via the wave frequency.
+	for (int si = 0; si < 4; ++si)
+	{
+		float R0 = u_waterSplash[si].w;
+		if (R0 <= 0.0)
+			continue;
+		vec3 dw = wp - u_waterSplash[si].xyz;
+		vec2 dq = vec2(dot(dw, t1), dot(dw, t2));
+		float rw = max(length(dq), 1.0e-4);
+		float x = rw - R0 * 0.6;
+		if (x < 0.0)
+			continue;
+		float k = 10.0 / R0;
+		float dk = 3.0 / R0;
+		float env = 1.5 * exp(-x * dk);
+		float ph = x * k - t * 5.0;
+		hq += env * sin(ph);
+		float dh = env * (k * cos(ph) - dk * sin(ph));
+		grad += (dq / rw) * (dh / max(u_waterSurf.y, 1.0e-4));
 	}
 	grad *= u_waterSurf.x * 0.02;
 	vec3 npw = normalize(nw - t1 * grad.x - t2 * grad.y);

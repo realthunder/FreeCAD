@@ -326,6 +326,10 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->fire = false;
   this->fireintensity = 0.f;
   this->firedetail = 0.f;
+  this->fountain = false;
+  this->fountaindensity = 0.f;
+  this->fountaindetail = 0.f;
+  this->fountainspeed = 1.f;
   this->firespeed = 1.f;
   this->polygonoffsetstyle = 0;
   this->polygonoffsetunits = 0.f;
@@ -1263,6 +1267,13 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
       = material->fireIntensity.getValue();
   PRIVATE(this)->material.firedetail = material->fireDetail.getValue();
   PRIVATE(this)->material.firespeed = material->fireSpeed.getValue();
+  PRIVATE(this)->material.fountain = material->fountain.getValue();
+  PRIVATE(this)->material.fountaindensity
+      = material->fountainDensity.getValue();
+  PRIVATE(this)->material.fountaindetail
+      = material->fountainDetail.getValue();
+  PRIVATE(this)->material.fountainspeed
+      = material->fountainSpeed.getValue();
 }
 
 void

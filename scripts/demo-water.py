@@ -89,6 +89,16 @@ try:
     fire.Radius1, fire.Radius2, fire.Height = 3.2, 0.0, 10
     fire.Placement.Base = FreeCAD.Vector(-20, 8.5, 20)
 
+    # A fountain plume rising out of the pool (bounding solid for the
+    # volumetric spray; the geometry itself is not rendered). FOUNTAIN=0
+    # removes it.
+    fountain = None
+    if os.environ.get("FOUNTAIN", "1") == "1":
+        fountain = doc.addObject("Part::Cylinder", "Fountain")
+        fountain.Radius = float(os.environ.get("FOUNTAIN_R", "4"))
+        fountain.Height = float(os.environ.get("FOUNTAIN_H", "12"))
+        fountain.Placement.Base = FreeCAD.Vector(10, 10, 6.5)
+
     # A beam suspended over the water on two posts -- the shadow caster.
     beam = doc.addObject("Part::Box", "Beam")
     beam.Length, beam.Width, beam.Height = 44, 7, 4
@@ -121,6 +131,16 @@ try:
     fvo.addProperty("App::PropertyFloat", "Render_FireIntensity").Render_FireIntensity = 0.0
     fvo.addProperty("App::PropertyFloat", "Render_FireDetail").Render_FireDetail = 0.0
     fvo.addProperty("App::PropertyFloat", "Render_FireSpeed").Render_FireSpeed = 1.0
+
+    if fountain is not None:
+        wvo = fountain.ViewObject
+        wvo.ShapeColor = (0.85, 0.92, 1.0)
+        wvo.addProperty("App::PropertyBool", "Render_Fountain").Render_Fountain = True
+        wvo.addProperty("App::PropertyFloat", "Render_FountainDensity").Render_FountainDensity = \
+            float(os.environ.get("FOUNTAIN_DENSITY", "0"))
+        wvo.addProperty("App::PropertyFloat", "Render_FountainDetail").Render_FountainDetail = 0.0
+        wvo.addProperty("App::PropertyFloat", "Render_FountainSpeed").Render_FountainSpeed = \
+            float(os.environ.get("FOUNTAIN_SPEED", "1.0"))
 
     # Fuse the beam and both posts (three separate boxes -- effectively a
     # compound) into a single solid gantry; the cylinder stays separate. AO

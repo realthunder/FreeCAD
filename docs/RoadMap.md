@@ -58,6 +58,11 @@ API — before any expensive machinery is committed underneath it.
     let the WebGPU maturity curve break the tie.
   - Large-model rendering (culling / LOD / instancing / batching) is a **scene-management**
     effort *above* the backend — the real perf lever, orthogonal to backend choice.
+  - **Particle system** (low priority): GPU-simulated ballistic particles (billboards,
+    sim pass, depth-sorted blending, emitter state streamed to the WASM viewer) as the
+    close-range upgrade for the procedural volumetric effects (fire, fountain spray,
+    splashes). The volumetric plumes stay the mid/far representation; particles layer on
+    top without replacing them.
 
 ### 2. Headless engine + parallel/distributed compute
 - Turn the **entire non-GUI side into a headless document server**; the GUI becomes a

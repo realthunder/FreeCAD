@@ -1550,7 +1550,9 @@ public:
                          &u_cloudParams,
                          &s_texFireFront, &s_texFireBack,
                          &u_fireParams, &u_fireParams2,
-                         &u_fireFrame, &u_mediumSlot}) {
+                         &u_fireFrame, &u_fountainParams,
+                         &u_fountainFrame, &u_waterSplash,
+                         &u_mediumSlot}) {
             if (bgfx::isValid(*uni)) {
                 bgfx::destroy(*uni);
                 *uni = BGFX_INVALID_HANDLE;
@@ -2505,6 +2507,12 @@ public:
             u_fireFrame = bgfx::createUniform("u_fireFrame",
                                               bgfx::UniformType::Mat4,
                                               kMediumSlots);
+            u_fountainParams = bgfx::createUniform(
+                "u_fountainParams", bgfx::UniformType::Vec4,
+                kMediumSlots);
+            u_fountainFrame = bgfx::createUniform(
+                "u_fountainFrame", bgfx::UniformType::Mat4,
+                kMediumSlots);
         }
 
         // Water surface refraction: the scene color copies into a
@@ -2530,6 +2538,9 @@ public:
                                             bgfx::UniformType::Vec4);
         u_waterRipple = bgfx::createUniform("u_waterRipple",
                                             bgfx::UniformType::Vec4);
+        u_waterSplash = bgfx::createUniform("u_waterSplash",
+                                            bgfx::UniformType::Vec4,
+                                            kMediumSlots);
         // The surface shader's refraction depth reject samples the SSAO
         // prepass; without those resources the sampler uniform still
         // has to exist for the (disabled) stage binding.
@@ -4009,7 +4020,9 @@ public:
                           const float cloudParams[][4],
                           const float fireParams[][4],
                           const float fireParams2[][4],
-                          const float fireFrames[][16])
+                          const float fireFrames[][16],
+                          const float fountainParams[][4],
+                          const float fountainFrames[][16])
     {
         static const float noSigma[kMediumSlots][4] = {};
         float params[4] = {density, intensity, maxDist,
@@ -4022,6 +4035,8 @@ public:
         bgfx::setUniform(u_fireParams, fireParams, kMediumSlots);
         bgfx::setUniform(u_fireParams2, fireParams2, kMediumSlots);
         bgfx::setUniform(u_fireFrame, fireFrames, kMediumSlots);
+        bgfx::setUniform(u_fountainParams, fountainParams, kMediumSlots);
+        bgfx::setUniform(u_fountainFrame, fountainFrames, kMediumSlots);
         bgfx::setUniform(u_lightColor, lightColorI);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2], 1.0f};
@@ -4052,6 +4067,8 @@ public:
         bgfx::setUniform(u_fireParams, fireParams, kMediumSlots);
         bgfx::setUniform(u_fireParams2, fireParams2, kMediumSlots);
         bgfx::setUniform(u_fireFrame, fireFrames, kMediumSlots);
+        bgfx::setUniform(u_fountainParams, fountainParams, kMediumSlots);
+        bgfx::setUniform(u_fountainFrame, fountainFrames, kMediumSlots);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         bgfx::setTexture(1, s_texWaterFront, waterFrontTex);
         bgfx::setTexture(2, s_texWaterBack, waterBackTex);
@@ -4131,7 +4148,8 @@ public:
                             bool refraction, bool absorb, float absorption,
                             float inscatter, bool shadow,
                             float shadowWobble,
-                            int rippleType, float rippleDensity)
+                            int rippleType, float rippleDensity,
+                            const float (*splash)[4])
     {
         bool planarRefl = reflMode == 3;
         if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -4171,6 +4189,11 @@ public:
         bgfx::setUniform(u_waterAbsorb, absorbP);
         float ripple[4] = {float(rippleType), rippleDensity, 0.0f, 0.0f};
         bgfx::setUniform(u_waterRipple, ripple);
+        // Fountain splash sources: xyz = world base center, w = impact
+        // ring radius (0 = slot inactive).
+        static const float noSplash[kMediumSlots][4] = {};
+        bgfx::setUniform(u_waterSplash, splash ? splash : noSplash,
+                         kMediumSlots);
         float lightDir[4] = {lightDirView[0], lightDirView[1],
                              lightDirView[2],
                              shadowFrame ? 1.0f : 0.0f};
@@ -5574,6 +5597,9 @@ public:
     bgfx::UniformHandle u_waterSurf = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_waterAbsorb = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_waterRipple = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_waterSplash = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_fountainParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_fountainFrame = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_reflParams = BGFX_INVALID_HANDLE;
     // Redirect submit() into the ground reflection view (mirrored
     // camera, flipped culling).
@@ -6298,20 +6324,120 @@ public:
         if (getenv("FC_BGFX_DEBUG_FEED"))
             fprintf(stderr, "bgfx glass: body=%d active=%d\n",
                     hasGlassBody, glassActive);
+        // Body-local "up" frame shared by the fire taper and fountain
+        // flow frames: up = the model placement's local z axis (world z
+        // for identity transforms), the model x axis Gram-Schmidt'd
+        // into a lateral right vector. The world AABB corners projected
+        // onto the basis give the bottom-center origin, the up-extent
+        // and the max lateral half-extent (conservative for tilted
+        // bodies -- a flow frame, not a fit). Row-vector convention
+        // like the shadow matrix: lp = [wp, 1] * M with the frame axes
+        // as columns.
+        auto buildBodyFrame = [](const Render::DrawCall &draw,
+                                 float frame[16], float base[3],
+                                 float up[3], float &height,
+                                 float &radius) -> bool {
+            for (int j = 0; j < 3; ++j) {
+                base[j] = 0.0f;
+                up[j] = 0.0f;
+            }
+            height = 0.0f;
+            radius = 0.0f;
+            float u[3] = {0.0f, 0.0f, 1.0f};
+            float r[3] = {1.0f, 0.0f, 0.0f};
+            if (!draw.identity) {
+                for (int j = 0; j < 3; ++j) {
+                    u[j] = draw.model[8 + j];
+                    r[j] = draw.model[j];
+                }
+                float ul = std::sqrt(u[0]*u[0] + u[1]*u[1] + u[2]*u[2]);
+                if (ul > 1.0e-6f)
+                    for (int j = 0; j < 3; ++j)
+                        u[j] /= ul;
+                else
+                    u[0] = 0.0f, u[1] = 0.0f, u[2] = 1.0f;
+                float ru = r[0]*u[0] + r[1]*u[1] + r[2]*u[2];
+                for (int j = 0; j < 3; ++j)
+                    r[j] -= ru * u[j];
+                float rl = std::sqrt(r[0]*r[0] + r[1]*r[1] + r[2]*r[2]);
+                if (rl > 1.0e-6f) {
+                    for (int j = 0; j < 3; ++j)
+                        r[j] /= rl;
+                } else {
+                    // up nearly parallel to the model x axis: any
+                    // stable perpendicular does for the lateral frame.
+                    r[0] = -u[2]; r[1] = 0.0f; r[2] = u[0];
+                    rl = std::sqrt(r[0]*r[0] + r[2]*r[2]);
+                    if (rl > 1.0e-6f) {
+                        r[0] /= rl; r[2] /= rl;
+                    } else {
+                        r[0] = 1.0f; r[2] = 0.0f;
+                    }
+                }
+            }
+            float f[3] = {u[1]*r[2] - u[2]*r[1],
+                          u[2]*r[0] - u[0]*r[2],
+                          u[0]*r[1] - u[1]*r[0]};
+            float pmin[3], pmax[3];
+            for (int c = 0; c < 8; ++c) {
+                float wp[3] = {
+                    (c & 1) ? draw.bboxMax[0] : draw.bboxMin[0],
+                    (c & 2) ? draw.bboxMax[1] : draw.bboxMin[1],
+                    (c & 4) ? draw.bboxMax[2] : draw.bboxMin[2]};
+                float pr[3] = {
+                    wp[0]*r[0] + wp[1]*r[1] + wp[2]*r[2],
+                    wp[0]*f[0] + wp[1]*f[1] + wp[2]*f[2],
+                    wp[0]*u[0] + wp[1]*u[1] + wp[2]*u[2]};
+                for (int j = 0; j < 3; ++j) {
+                    if (c == 0 || pr[j] < pmin[j]) pmin[j] = pr[j];
+                    if (c == 0 || pr[j] > pmax[j]) pmax[j] = pr[j];
+                }
+            }
+            height = pmax[2] - pmin[2];
+            radius = 0.5f * std::max(pmax[0] - pmin[0],
+                                     pmax[1] - pmin[1]);
+            // Bottom center of the body in the frame, back in world
+            // coordinates (r/f/u are an orthonormal world basis).
+            float rc = 0.5f * (pmin[0] + pmax[0]);
+            float fc = 0.5f * (pmin[1] + pmax[1]);
+            for (int j = 0; j < 3; ++j) {
+                base[j] = rc * r[j] + fc * f[j] + pmin[2] * u[j];
+                up[j] = u[j];
+                frame[j * 4 + 0] = r[j];
+                frame[j * 4 + 1] = f[j];
+                frame[j * 4 + 2] = u[j];
+                frame[j * 4 + 3] = 0.0f;
+            }
+            frame[12] = -rc;
+            frame[13] = -fc;
+            frame[14] = -pmin[2];
+            frame[15] = 1.0f;
+            return height > 1.0e-6f && radius > 1.0e-6f;
+        };
         // Cloud bodies (Material::cloud): the closed volume raymarches
         // as a procedural-density medium of the volumetric pass and the
         // geometry itself is not rendered. Each body gets an appearance
         // slot like the water medium (bodies beyond the slot count
         // share slot 0); density/detail auto = from the body's own
-        // bounds.
+        // bounds. Fountain bodies (Material::fountain) share the cloud
+        // medium channel -- same interval targets and slots -- with the
+        // slot's w flagging the fountain density field (2.0) instead of
+        // the cloud FBM (1.0), plus a flow frame and geometry entry.
         bool hasCloudBody = false;
-        // Per slot: x = density, y = detail, z = speed, w = valid.
+        // Per slot: x = density, y = detail, z = speed, w = flavor
+        // (0 = inactive, 1 = cloud, 2 = fountain).
         float cloudSlot[kSlots][4] = {};
+        float fountainFrame[kSlots][16] = {};
+        // Per slot: x = 1/height, y = 1/lateral radius.
+        float fountainGeom[kSlots][4] = {};
+        // Per slot splash source for the water surface: xyz = world
+        // base center, w = impact ring radius (0 = inactive).
+        float fountainSplash[kSlots][4] = {};
         std::unordered_map<uint64_t, int> cloudSlots;
         int cloudSlotCount = 0;
         for (const auto &draw : scene) {
             const auto &mat = draw.material;
-            if (!mat.cloud || mat.ontop
+            if ((!mat.cloud && !mat.fountain) || mat.ontop
                     || mat.type != Render::Material::Triangle)
                 continue;
             if (cloudSlots.count(draw.objectKey))
@@ -6327,6 +6453,41 @@ public:
             float dz = draw.bboxMax[2] - draw.bboxMin[2];
             float diag = (dx >= 0.0f && dy >= 0.0f && dz >= 0.0f)
                 ? std::sqrt(dx * dx + dy * dy + dz * dz) : 0.0f;
+            if (mat.fountain) {
+                // Fountain body: spray density field in the body's
+                // flow frame; denser auto defaults than the cloud
+                // (spray is a tight plume, not a room-filling puff).
+                float height = 0.0f, radius = 0.0f;
+                float base[3], up[3];
+                if (!buildBodyFrame(draw, fountainFrame[slot], base,
+                                    up, height, radius))
+                    continue;   // degenerate: slot stays inactive
+                float density = mat.fountaindensity;
+                if (density <= 0.0f && diag > 0.0f)
+                    density = 40.0f / diag;
+                float detail = mat.fountaindetail;
+                if (detail <= 0.0f && diag > 0.0f)
+                    detail = 12.0f / diag;
+                if (density <= 0.0f || detail <= 0.0f)
+                    continue;
+                cloudSlot[slot][0] = density;
+                cloudSlot[slot][1] = detail;
+                cloudSlot[slot][2] = mat.fountainspeed;
+                cloudSlot[slot][3] = 2.0f;
+                fountainGeom[slot][0] = 1.0f / height;
+                fountainGeom[slot][1] = 1.0f / radius;
+                fountainSplash[slot][0] = base[0];
+                fountainSplash[slot][1] = base[1];
+                fountainSplash[slot][2] = base[2];
+                fountainSplash[slot][3] = radius * 0.85f;
+                hasCloudBody = true;
+                if (getenv("FC_BGFX_DEBUG_FEED"))
+                    fprintf(stderr,
+                            "bgfx fountain slot=%d dens=%g detail=%g"
+                            " h=%g r=%g\n",
+                            slot, density, detail, height, radius);
+                continue;
+            }
             float density = mat.clouddensity;
             if (density <= 0.0f && diag > 0.0f)
                 density = 6.0f / diag;
@@ -6356,7 +6517,8 @@ public:
         if (cloudActive) {
             for (const auto &draw : scene) {
                 const auto &mat = draw.material;
-                if (mat.cloud && !mat.ontop && draw.objectKey
+                if ((mat.cloud || mat.fountain) && !mat.ontop
+                        && draw.objectKey
                         && mat.type == Render::Material::Triangle)
                     cloudObjects.insert(draw.objectKey);
             }
@@ -6420,87 +6582,17 @@ public:
                 (getenv("FC_BGFX_NO_FIRESOOT") != nullptr);
             if (!noSoot && diag > 0.0f)
                 fs.soot = 1.5f / diag;
-            // The taper frame comes from the body's placement, not
-            // world z: up = the model's local z axis, with its x axis
-            // Gram-Schmidt'd into a lateral right vector. The world
-            // AABB corners projected onto the frame give the bottom
-            // center and the up-extent (conservative for tilted
-            // bodies — a taper frame, not a fit).
-            float u[3] = {0.0f, 0.0f, 1.0f};
-            float r[3] = {1.0f, 0.0f, 0.0f};
-            if (!draw.identity) {
-                for (int j = 0; j < 3; ++j) {
-                    u[j] = draw.model[8 + j];
-                    r[j] = draw.model[j];
-                }
-                float ul = std::sqrt(u[0]*u[0] + u[1]*u[1] + u[2]*u[2]);
-                if (ul > 1.0e-6f)
-                    for (int j = 0; j < 3; ++j)
-                        u[j] /= ul;
-                else
-                    u[0] = 0.0f, u[1] = 0.0f, u[2] = 1.0f;
-                float ru = r[0]*u[0] + r[1]*u[1] + r[2]*u[2];
-                for (int j = 0; j < 3; ++j)
-                    r[j] -= ru * u[j];
-                float rl = std::sqrt(r[0]*r[0] + r[1]*r[1] + r[2]*r[2]);
-                if (rl > 1.0e-6f) {
-                    for (int j = 0; j < 3; ++j)
-                        r[j] /= rl;
-                } else {
-                    // up nearly parallel to the model x axis: any
-                    // stable perpendicular does for the lateral frame.
-                    r[0] = -u[2]; r[1] = 0.0f; r[2] = u[0];
-                    rl = std::sqrt(r[0]*r[0] + r[2]*r[2]);
-                    if (rl > 1.0e-6f) {
-                        r[0] /= rl; r[2] /= rl;
-                    } else {
-                        r[0] = 1.0f; r[2] = 0.0f;
-                    }
-                }
-            }
-            float f[3] = {u[1]*r[2] - u[2]*r[1],
-                          u[2]*r[0] - u[0]*r[2],
-                          u[0]*r[1] - u[1]*r[0]};
-            float pmin[3], pmax[3];
-            for (int c = 0; c < 8; ++c) {
-                float wp[3] = {
-                    (c & 1) ? draw.bboxMax[0] : draw.bboxMin[0],
-                    (c & 2) ? draw.bboxMax[1] : draw.bboxMin[1],
-                    (c & 4) ? draw.bboxMax[2] : draw.bboxMin[2]};
-                float pr[3] = {
-                    wp[0]*r[0] + wp[1]*r[1] + wp[2]*r[2],
-                    wp[0]*f[0] + wp[1]*f[1] + wp[2]*f[2],
-                    wp[0]*u[0] + wp[1]*u[1] + wp[2]*u[2]};
-                for (int j = 0; j < 3; ++j) {
-                    if (c == 0 || pr[j] < pmin[j]) pmin[j] = pr[j];
-                    if (c == 0 || pr[j] > pmax[j]) pmax[j] = pr[j];
-                }
-            }
-            float height = pmax[2] - pmin[2];
-            fs.invHeight = height > 0.0f ? 1.0f / height : 0.0f;
-            // Bottom center of the body in the frame, back in world
-            // coordinates (r/f/u are an orthonormal world basis).
-            float rc = 0.5f * (pmin[0] + pmax[0]);
-            float fc = 0.5f * (pmin[1] + pmax[1]);
-            float base[3];
-            for (int j = 0; j < 3; ++j)
-                base[j] = rc * r[j] + fc * f[j] + pmin[2] * u[j];
-            // Row-vector convention like the shadow matrix: lp =
-            // [wp, 1] * M with the frame axes as columns.
-            for (int j = 0; j < 3; ++j) {
-                fs.frame[j * 4 + 0] = r[j];
-                fs.frame[j * 4 + 1] = f[j];
-                fs.frame[j * 4 + 2] = u[j];
-                fs.frame[j * 4 + 3] = 0.0f;
-            }
-            fs.frame[12] = -(rc);
-            fs.frame[13] = -(fc);
-            fs.frame[14] = -pmin[2];
-            fs.frame[15] = 1.0f;
+            // The taper frame comes from the body's placement (shared
+            // buildBodyFrame helper above).
+            float base[3], up[3];
+            float height = 0.0f, radius = 0.0f;
+            if (buildBodyFrame(draw, fs.frame, base, up, height,
+                               radius))
+                fs.invHeight = 1.0f / height;
             // The effect light sits a third up the flame — the ramp's
             // bright zone — along the body's up axis.
             for (int j = 0; j < 3; ++j)
-                fs.lightWorld[j] = base[j] + 0.35f * height * u[j];
+                fs.lightWorld[j] = base[j] + 0.35f * height * up[j];
             fs.valid = fs.emission > 0.0f && fs.detail > 0.0f
                 && fs.invHeight > 0.0f;
             hasFireBody = hasFireBody || fs.valid;
@@ -6641,7 +6733,7 @@ public:
         auto mediumExempt = [&](const Render::Material &mat) {
             return (waterExempt && mat.water)
                 || (glassActive && mat.glass)
-                || (cloudActive && mat.cloud)
+                || (cloudActive && (mat.cloud || mat.fountain))
                 || (fireActive && mat.fire);
         };
         bool shadowRender = shadowActive;
@@ -6661,7 +6753,7 @@ public:
                 if (mat.type != Render::Material::Triangle
                         || !(mat.shadowstyle & 1)
                         || (waterExempt && mat.water)
-                        || (cloudActive && mat.cloud)
+                        || (cloudActive && (mat.cloud || mat.fountain))
                         || (fireActive && mat.fire)
                         || !draw.mesh)
                     continue;
@@ -7736,7 +7828,7 @@ public:
             // render — the volume raymarches as a medium instead. The
             // triangles rasterize the interval depth targets only.
             bool cloudFill = cloudActive && isTriangle(draw)
-                && draw.material.cloud;
+                && (draw.material.cloud || draw.material.fountain);
             bool cloudPart = cloudActive
                 && (cloudFill
                     || (!isTriangle(draw) && draw.objectKey
@@ -7774,7 +7866,9 @@ public:
                                          waterconf.shadow,
                                          waterconf.shadowWobble,
                                          waterconf.rippleType,
-                                         waterconf.rippleDensity);
+                                         waterconf.rippleDensity,
+                                         volActive && cloudActive
+                                             ? fountainSplash : nullptr);
             if (surfGlass && !cullDraw) {
                 // The interval depths cache with the medium targets; the
                 // surface pass reads the per-frame scene copy, so it
@@ -7922,7 +8016,8 @@ public:
                     cloudParams[s][0] = cloudSlot[s][0];
                     cloudParams[s][1] = cloudSlot[s][1];
                     cloudParams[s][2] = animTime * cloudSlot[s][2];
-                    cloudParams[s][3] = 1.0f;
+                    // w keeps the flavor: 1 = cloud FBM, 2 = fountain.
+                    cloudParams[s][3] = cloudSlot[s][3];
                     animatedFrame = animatedFrame
                         || (animLive && cloudSlot[s][2] != 0.0f);
                 }
@@ -7945,7 +8040,8 @@ public:
             view->submitVolumetric(volDensity, volconf.intensity,
                                    volMaxDist, volMedium,
                                    waterActive, waterSigma, cloudParams,
-                                   fireParams, fireParams2, fireFrames);
+                                   fireParams, fireParams2, fireFrames,
+                                   fountainGeom, fountainFrame);
         }
 
         // 1e. Water caustics: additive light-space pattern splat over

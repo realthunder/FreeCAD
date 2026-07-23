@@ -52,6 +52,14 @@ uniform vec4 u_cloudParams[MEDIUM_SLOTS];
 uniform vec4 u_fireParams[MEDIUM_SLOTS];
 uniform vec4 u_fireParams2[MEDIUM_SLOTS];
 uniform mat4 u_fireFrame[MEDIUM_SLOTS];
+// Fountain bodies share the cloud medium channel (targets, slots and
+// u_cloudParams entry); u_cloudParams[s].w = 2 flags the fountain
+// density field instead of the cloud FBM.
+// u_fountainParams[s]: x = 1 / body height, y = 1 / lateral radius
+// u_fountainFrame[s]: world -> fountain-local flow frame (z up along
+//               the body placement's up axis, origin bottom center).
+uniform vec4 u_fountainParams[MEDIUM_SLOTS];
+uniform mat4 u_fountainFrame[MEDIUM_SLOTS];
 
 // Appearance slot index stamped into a medium interval sample's .x by
 // the depth writer; the front sample wins, the back sample covers the
@@ -172,6 +180,49 @@ float cloudFBM(vec3 wp, vec4 cp)
 float cloudDensityAt(vec3 wp, vec4 cp)
 {
 	return cp.x * smoothstep(0.4, 0.75, cloudFBM(wp, cp));
+}
+
+// Water-spray density of a fountain body at a world position: a
+// rising jet column plus the parabolic fall envelope (the ballistic
+// sheet water follows leaving the jet), modulated by streak noise
+// advected up the jet and down the outer fall. cp = the slot's
+// u_cloudParams entry (x = density, y = noise scale, z = flow time),
+// fp = its u_fountainParams entry.
+float fountainDensityAt(vec3 wp, mat4 frame, vec4 cp, vec4 fp)
+{
+	vec3 lp = mul(frame, vec4(wp, 1.0)).xyz;
+	float h = clamp(lp.z * fp.x, 0.0, 1.0);
+	float rr = length(lp.xy) * fp.y;
+	// Jet column, widening slightly as it rises; brightest core.
+	float rj = rr / (0.09 + 0.08 * h);
+	float jet = 1.5 * exp(-rj * rj) * (1.1 - 0.4 * h * h);
+	// Fall envelope: a thin ballistic sheet peaking over the jet and
+	// landing at the rim — densest at the tip-over arc near the top,
+	// fading as the water falls and spreads.
+	float dr = clamp((rr - 0.10) / 0.90, 0.0, 1.0);
+	float hs = 1.0 - dr * dr;
+	float ds = (h - hs) * 6.0;
+	float sheet = exp(-ds * ds) * smoothstep(0.04, 0.18, rr);
+	// The crown: dense white water at the tip-over arc right above
+	// the jet; below it the sheet exists only as separate falling
+	// streams (radial noise, constant along rays from the axis,
+	// slowly rotating) — a real fountain sheds arcs, not a dome.
+	float crown = smoothstep(0.55, 0.95, hs);
+	vec3 sd = vec3(lp.xy * (2.5 / max(rr, 0.05)), cp.z * 0.15);
+	float streaks = smoothstep(0.4, 0.75, cloudNoise(sd * cp.y * 4.0));
+	sheet *= crown + (1.0 - crown)
+	    * (0.05 + 2.2 * streaks * streaks) * (1.0 - 0.5 * dr);
+	float shape = max(jet, sheet);
+	// Streak noise: vertically stretched, scrolling up inside the
+	// jet and down (faster) along the outer fall.
+	float flow = mix(1.0, -1.5, smoothstep(0.12, 0.3, rr));
+	vec3 p = lp * cp.y;
+	p.z = p.z * 0.35 - cp.z * flow;
+	float n = 0.5 * cloudNoise(p)
+		+ 0.25 * cloudNoise(p * 2.03)
+		+ 0.125 * cloudNoise(p * 4.09);
+	n /= 0.875;
+	return cp.x * shape * (0.2 + 0.8 * smoothstep(0.3, 0.7, n));
 }
 
 // Fire body interval of the ray from its depth target pair, slot in

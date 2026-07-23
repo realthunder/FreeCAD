@@ -448,8 +448,27 @@ void ViewProviderGeometryObject::updateRenderMaterial()
             fireSpeed = v;
     }
 
+    // Render_Fountain turns the closed shape into a water-spray
+    // scattering medium of the volumetric lighting pass (a rising jet
+    // plus a parabolic fall envelope; the body geometry itself is not
+    // rendered); density/detail <= 0 = automatic, speed scales the
+    // flow animation.
+    auto fountainProp = Base::freecad_dynamic_cast<App::PropertyBool>(
+            getPropertyByName("Render_Fountain"));
+    bool fountain = fountainProp && fountainProp->getValue();
+    float fountainDensity =
+        fountain ? floatProp("Render_FountainDensity") : 0.0f;
+    float fountainDetail =
+        fountain ? floatProp("Render_FountainDetail") : 0.0f;
+    float fountainSpeed = 1.0f;
+    if (fountain) {
+        float v = floatProp("Render_FountainSpeed");
+        if (v >= 0.0f)
+            fountainSpeed = v;
+    }
+
     if (metallic < 0.0f && roughness < 0.0f && !water && !glass
-            && !cloud && !fire) {
+            && !cloud && !fire && !fountain) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);
             if (idx >= 0)
@@ -487,6 +506,12 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     pcRenderMaterial->fireDetail = fireDetail < 0.0f ? 0.0f
                                                      : fireDetail;
     pcRenderMaterial->fireSpeed = fireSpeed;
+    pcRenderMaterial->fountain = fountain;
+    pcRenderMaterial->fountainDensity = fountainDensity < 0.0f
+        ? 0.0f : fountainDensity;
+    pcRenderMaterial->fountainDetail = fountainDetail < 0.0f
+        ? 0.0f : fountainDetail;
+    pcRenderMaterial->fountainSpeed = fountainSpeed;
 }
 
 void ViewProviderGeometryObject::updateRenderProperty(const char *name)

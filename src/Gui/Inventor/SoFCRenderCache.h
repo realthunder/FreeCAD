@@ -267,6 +267,13 @@ public:
     float fireintensity;
     float firedetail;
     float firespeed;
+    /// Fountain body flag/parameters captured from SoFCRenderMaterial:
+    /// external backends raymarch the shapes' closed volume as a
+    /// water-spray scattering medium instead of rendering the geometry.
+    bool fountain;
+    float fountaindensity;
+    float fountaindetail;
+    float fountainspeed;
     float polygonoffsetunits;
     float polygonoffsetfactor;
     int16_t annotation;
@@ -404,6 +411,14 @@ public:
         if (firedetail > other.firedetail) return false;
         if (firespeed < other.firespeed) return true;
         if (firespeed > other.firespeed) return false;
+        if (fountain < other.fountain) return true;
+        if (fountain > other.fountain) return false;
+        if (fountaindensity < other.fountaindensity) return true;
+        if (fountaindensity > other.fountaindensity) return false;
+        if (fountaindetail < other.fountaindetail) return true;
+        if (fountaindetail > other.fountaindetail) return false;
+        if (fountainspeed < other.fountainspeed) return true;
+        if (fountainspeed > other.fountainspeed) return false;
         if (lightmodel < other.lightmodel) return true;
         if (lightmodel > other.lightmodel) return false;
         if (vertexordering < other.vertexordering) return true;

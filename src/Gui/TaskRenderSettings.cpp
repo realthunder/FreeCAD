@@ -177,6 +177,23 @@ RenderSettingsWidget::RenderSettingsWidget(
     fireSpeedSpin->setToolTip(tr("Rise animation speed multiplier"));
     ++row;
 
+    // Fountain body of the volumetric lighting pass.
+    fountainCheck = addOverride(tr("Fountain body"));
+    fountainDensitySpin = addSpin(1, 0.0, 1.0e6, 0.1, 2);
+    fountainDensitySpin->setSpecialValueText(tr("auto density"));
+    fountainDensitySpin->setToolTip(
+        tr("Spray density in inverse model units; 0 = automatic"));
+    fountainDetailSpin = addSpin(2, 0.0, 1.0e6, 0.01, 2);
+    fountainDetailSpin->setSpecialValueText(tr("auto detail"));
+    fountainDetailSpin->setToolTip(
+        tr("Noise detail scale in inverse model units; 0 = automatic"));
+    ++row;
+    fountainSpeedSpin = addSpin(1, 0.0, 100.0, 0.1, 2);
+    fountainSpeedSpin->setPrefix(tr("flow "));
+    fountainSpeedSpin->setValue(1.0);
+    fountainSpeedSpin->setToolTip(tr("Flow animation speed multiplier"));
+    ++row;
+
     // Texture images (embedded into the document by
     // App::PropertyFileIncluded).
     auto addFile = [&](const QString &text, QCheckBox *&check,
@@ -250,6 +267,8 @@ RenderSettingsWidget::RenderSettingsWidget(
                          cloudSpeedSpin});
     enables(fireCheck, {fireIntensitySpin, fireDetailSpin,
                         fireSpeedSpin});
+    enables(fountainCheck, {fountainDensitySpin, fountainDetailSpin,
+                            fountainSpeedSpin});
     enables(baseColorCheck, {baseColorEdit});
     enables(normalMapCheck, {normalMapEdit});
     enables(emissiveMapCheck, {emissiveMapEdit});
@@ -326,6 +345,18 @@ void RenderSettingsWidget::load()
         if (auto spd = getProp<App::PropertyFloat>(
                     vp, "Render_FireSpeed"))
             fireSpeedSpin->setValue(spd->getValue());
+    }
+    if (auto prop = getProp<App::PropertyBool>(vp, "Render_Fountain")) {
+        fountainCheck->setChecked(prop->getValue());
+        if (auto dens = getProp<App::PropertyFloat>(
+                    vp, "Render_FountainDensity"))
+            fountainDensitySpin->setValue(dens->getValue());
+        if (auto det = getProp<App::PropertyFloat>(
+                    vp, "Render_FountainDetail"))
+            fountainDetailSpin->setValue(det->getValue());
+        if (auto spd = getProp<App::PropertyFloat>(
+                    vp, "Render_FountainSpeed"))
+            fountainSpeedSpin->setValue(spd->getValue());
     }
     if (auto prop = getProp<App::PropertyFileIncluded>(
                 vp, "Render_BaseColorTexture")) {
@@ -543,6 +574,50 @@ void RenderSettingsWidget::apply(ViewProviderGeometryObject *vp)
         removeProp(vp, "Render_FireIntensity");
         removeProp(vp, "Render_FireDetail");
         removeProp(vp, "Render_FireSpeed");
+    }
+
+    // Fountain body flag + optional density/detail/speed.
+    if (fountainCheck->isChecked()) {
+        if (auto prop = ensureProp<App::PropertyBool>(
+                    vp, "App::PropertyBool", "Render_Fountain",
+                    "Render the closed shape as a fountain spray body "
+                    "of the render engine's volumetric lighting"))
+            prop->setValue(true);
+        auto applyOptional = [vp](double value, const char *name,
+                                  const char *doc) {
+            if (value > 0.0) {
+                if (auto prop = ensureProp<App::PropertyFloat>(
+                            vp, "App::PropertyFloat", name, doc))
+                    prop->setValue(value);
+            }
+            else {
+                removeProp(vp, name);
+            }
+        };
+        applyOptional(fountainDensitySpin->value(),
+                      "Render_FountainDensity",
+                      "Spray density in inverse model units; "
+                      "0 = automatic");
+        applyOptional(fountainDetailSpin->value(),
+                      "Render_FountainDetail",
+                      "Fountain noise detail scale in inverse model "
+                      "units; 0 = automatic");
+        if (fountainSpeedSpin->value() != 1.0) {
+            if (auto prop = ensureProp<App::PropertyFloat>(
+                        vp, "App::PropertyFloat",
+                        "Render_FountainSpeed",
+                        "Fountain flow animation speed multiplier"))
+                prop->setValue(fountainSpeedSpin->value());
+        }
+        else {
+            removeProp(vp, "Render_FountainSpeed");
+        }
+    }
+    else {
+        removeProp(vp, "Render_Fountain");
+        removeProp(vp, "Render_FountainDensity");
+        removeProp(vp, "Render_FountainDetail");
+        removeProp(vp, "Render_FountainSpeed");
     }
 
     // Texture images: PropertyFileIncluded copies the file into the

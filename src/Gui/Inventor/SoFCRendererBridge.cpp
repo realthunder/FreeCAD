@@ -538,6 +538,10 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.fireintensity = m.fireintensity;
         res.firedetail = m.firedetail;
         res.firespeed = m.firespeed;
+        res.fountain = m.fountain;
+        res.fountaindensity = m.fountaindensity;
+        res.fountaindetail = m.fountaindetail;
+        res.fountainspeed = m.fountainspeed;
     }
 
     // Bump map of triangle draws, unit 0 only like textures (the GL

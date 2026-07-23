@@ -78,6 +78,10 @@ private:
     QDoubleSpinBox *fireIntensitySpin = nullptr;
     QDoubleSpinBox *fireDetailSpin = nullptr;
     QDoubleSpinBox *fireSpeedSpin = nullptr;
+    QCheckBox *fountainCheck = nullptr;
+    QDoubleSpinBox *fountainDensitySpin = nullptr;
+    QDoubleSpinBox *fountainDetailSpin = nullptr;
+    QDoubleSpinBox *fountainSpeedSpin = nullptr;
     QCheckBox *baseColorCheck = nullptr;
     QLineEdit *baseColorEdit = nullptr;
     QCheckBox *normalMapCheck = nullptr;

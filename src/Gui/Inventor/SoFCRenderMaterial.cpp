@@ -52,6 +52,10 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_ADD_FIELD(fireIntensity, (0.0f));
     SO_NODE_ADD_FIELD(fireDetail, (0.0f));
     SO_NODE_ADD_FIELD(fireSpeed, (1.0f));
+    SO_NODE_ADD_FIELD(fountain, (false));
+    SO_NODE_ADD_FIELD(fountainDensity, (0.0f));
+    SO_NODE_ADD_FIELD(fountainDetail, (0.0f));
+    SO_NODE_ADD_FIELD(fountainSpeed, (1.0f));
 }
 
 SO_NODE_SOURCE(SoFCRenderTexture)

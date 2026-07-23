@@ -107,12 +107,40 @@ void main()
 				                       cloud.y - t)
 					/ max(0.2 * (cloud.y - cloud.x),
 					      1.0e-3), 0.0, 1.0);
-				float cd = cloudDensityAt(wp,
-				                          u_cloudParams[cs]) * fade;
+				// w = 2 flags a fountain body riding the cloud
+				// channel: spray density field instead of FBM.
+				// The fountain's jet and fall sheet are thin
+				// against the frame-wide step, so average four
+				// sub-taps across the step — the cloud FBM is
+				// broad and keeps the single tap.
+				float cd;
+				if (u_cloudParams[cs].w > 1.5)
+				{
+					vec3 wd = mul(u_invView,
+					              vec4(dir, 0.0)).xyz * dt;
+					cd = 0.0;
+					for (int k = 0; k < 4; ++k)
+						cd += fountainDensityAt(
+						    wp + wd * (float(k) * 0.25
+						               - 0.375),
+						    u_fountainFrame[cs],
+						    u_cloudParams[cs],
+						    u_fountainParams[cs]);
+					cd *= 0.25 * fade;
+				}
+				else
+				{
+					cd = cloudDensityAt(
+					    wp, u_cloudParams[cs]) * fade;
+				}
 				sigT = vec3_splat(cd * 0.6);
 				sigS = cd;
 				phase = cloudPhase;
-				ambient = 0.25;
+				// Spray scatters more ambient light than the
+				// cloud puff (fine droplets, multiple
+				// scattering) — keeps the fountain white.
+				ambient = u_cloudParams[cs].w > 1.5 ? 0.45
+				                                    : 0.25;
 			}
 			if (t > fire.x && t < fire.y)
 			{

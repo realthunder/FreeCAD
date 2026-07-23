@@ -69,7 +69,11 @@ void main()
 				0.0, 1.0);
 			// The 0.6 matches the raymarch's reduced eye-ward
 			// extinction.
-			od += cloudDensityAt(wp, u_cloudParams[cs])
+			od += (u_cloudParams[cs].w > 1.5
+			       ? fountainDensityAt(wp, u_fountainFrame[cs],
+			                           u_cloudParams[cs],
+			                           u_fountainParams[cs])
+			       : cloudDensityAt(wp, u_cloudParams[cs]))
 				* fade * 0.6 * cdt;
 		}
 		depth += vec3_splat(od);

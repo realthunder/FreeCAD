@@ -39,7 +39,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // presel/sel config, for browser-side edge/vertex picking.
 // v13: AO method selector (SSAO / GTAO) in the AO config.
 // v14: GTAO slice/step tuning in the AO config.
-const uint32_t kVersion = 16;
+const uint32_t kVersion = 17;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -320,6 +320,10 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex)
     w.f(m.fireintensity);
     w.f(m.firedetail);
     w.f(m.firespeed);
+    w.b(m.fountain);
+    w.f(m.fountaindensity);
+    w.f(m.fountaindetail);
+    w.f(m.fountainspeed);
     texref(m.texture);
     w.floats(m.texmatrix, 16);
     w.b(m.texidentity);
@@ -398,6 +402,12 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex, uint32_t vers
     m.fireintensity = r.f();
     m.firedetail = r.f();
     m.firespeed = r.f();
+    if (version >= 17) {
+        m.fountain = r.b();
+        m.fountaindensity = r.f();
+        m.fountaindetail = r.f();
+        m.fountainspeed = r.f();
+    }
     texref(m.texture);
     r.floats(m.texmatrix, 16);
     m.texidentity = r.b();

@@ -676,6 +676,16 @@ struct Material {
     float fireintensity = 0.0f;
     float firedetail = 0.0f;
     float firespeed = 1.0f;
+    /// Fountain body: the closed volume raymarches as a water-spray
+    /// scattering medium of the volumetric pass (a rising jet plus a
+    /// parabolic fall envelope with streak noise, splash rings fed to
+    /// the water surface below) and the geometry itself is not
+    /// rendered. fountaindensity/fountaindetail <= 0 = automatic (from
+    /// the draw bounds); fountainspeed scales the flow animation.
+    bool fountain = false;
+    float fountaindensity = 0.0f;
+    float fountaindetail = 0.0f;
+    float fountainspeed = 1.0f;
 
     /// Texture of a triangle draw (unit 0 only; GL applies further units
     /// on top, a known deviation) with its texture matrix, applied to
