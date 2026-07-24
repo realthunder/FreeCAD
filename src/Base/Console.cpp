@@ -31,6 +31,7 @@
 #endif
 #include <cstring>
 #include <functional>
+#include <list>
 #endif
 
 #include "Interpreter.h"
@@ -513,6 +514,22 @@ PyMethodDef ConsoleSingleton::Methods[] = {
      METH_VARARGS,
      "GetObservers() -> list of str\n\n"
      "Get the names of the current logging interfaces."},
+    {"AttachObserver",
+     ConsoleSingleton::sPyAttachObserver,
+     METH_VARARGS,
+     "AttachObserver(callable) -> None\n\n"
+     "Attach a Python observer to the console. The callable is invoked as\n"
+     "callable(notifier, message, level) for every console message, where level\n"
+     "is one of 'Log', 'Message', 'Warning', 'Error', 'Critical', 'Notification'.\n"
+     "It may be called from any thread (with the GIL held) and must not touch\n"
+     "the GUI; console output from within the callable is not re-delivered.\n\n"
+     "callable : a callable taking (str, str, str)."},
+    {"DetachObserver",
+     ConsoleSingleton::sPyDetachObserver,
+     METH_VARARGS,
+     "DetachObserver(callable) -> None\n\n"
+     "Detach a Python observer previously attached with AttachObserver().\n\n"
+     "callable : the same callable (or one comparing equal to it)."},
     {nullptr, nullptr, 0, nullptr} /* Sentinel */
 };
 
@@ -834,6 +851,124 @@ PyObject* ConsoleSingleton::sPyGetObservers(PyObject* /*self*/, PyObject* args)
         return Py::new_reference_to(list);
     }
     PY_CATCH
+}
+
+namespace
+{
+/** Forwards console messages to a Python callable.
+ *  SendLog may fire on any thread, so the callable is invoked under the GIL
+ *  only and must not touch the GUI. A per-thread guard drops messages emitted
+ *  from inside the callable itself, so an observer that prints cannot recurse.
+ */
+class PyConsoleObserver: public ILogger
+{
+public:
+    explicit PyConsoleObserver(PyObject* callable)
+        : callback(callable)
+    {
+        Py_INCREF(callback);
+        // receive every category; filtering is the callable's business
+        bNotification = true;
+    }
+
+    ~PyConsoleObserver() override
+    {
+        PyGILStateLocker lock;
+        Py_DECREF(callback);
+    }
+
+    const char* Name() override
+    {
+        return "PythonObserver";
+    }
+
+    void SendLog(const std::string& notifiername,
+                 const std::string& msg,
+                 LogStyle level,
+                 IntendedRecipient /*recipient*/,
+                 ContentType /*content*/) override
+    {
+        static thread_local bool reentrant = false;
+        if (reentrant) {
+            return;
+        }
+        reentrant = true;
+        PyGILStateLocker lock;
+        const char* levelname = nullptr;
+        switch (level) {
+            case LogStyle::Log:
+                levelname = "Log";
+                break;
+            case LogStyle::Message:
+                levelname = "Message";
+                break;
+            case LogStyle::Warning:
+                levelname = "Warning";
+                break;
+            case LogStyle::Error:
+                levelname = "Error";
+                break;
+            case LogStyle::Critical:
+                levelname = "Critical";
+                break;
+            case LogStyle::Notification:
+                levelname = "Notification";
+                break;
+        }
+        PyObject* res =
+            PyObject_CallFunction(callback, "sss", notifiername.c_str(), msg.c_str(), levelname);
+        if (!res) {
+            // report through sys.unraisablehook, never back into the console
+            PyErr_WriteUnraisable(callback);
+        }
+        Py_XDECREF(res);
+        reentrant = false;
+    }
+
+    PyObject* callback;
+};
+
+// live Python observers; only mutated from Python calls, i.e. under the GIL
+std::list<PyConsoleObserver*> _pyObservers;
+}  // namespace
+
+PyObject* ConsoleSingleton::sPyAttachObserver(PyObject* /*self*/, PyObject* args)
+{
+    PyObject* callable {};
+    if (!PyArg_ParseTuple(args, "O", &callable)) {
+        return nullptr;
+    }
+    if (!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "AttachObserver: argument must be callable");
+        return nullptr;
+    }
+    auto observer = new PyConsoleObserver(callable);
+    _pyObservers.push_back(observer);
+    Instance().AttachObserver(observer);
+    Py_Return;
+}
+
+PyObject* ConsoleSingleton::sPyDetachObserver(PyObject* /*self*/, PyObject* args)
+{
+    PyObject* callable {};
+    if (!PyArg_ParseTuple(args, "O", &callable)) {
+        return nullptr;
+    }
+    // match by equality, not identity: bound methods are recreated per access
+    for (auto it = _pyObservers.begin(); it != _pyObservers.end(); ++it) {
+        int eq = PyObject_RichCompareBool((*it)->callback, callable, Py_EQ);
+        if (eq < 0) {
+            return nullptr;
+        }
+        if (eq) {
+            Instance().DetachObserver(*it);
+            delete *it;
+            _pyObservers.erase(it);
+            Py_Return;
+        }
+    }
+    PyErr_SetString(PyExc_ValueError, "DetachObserver: observer not attached");
+    return nullptr;
 }
 
 Base::ILogger::~ILogger() = default;

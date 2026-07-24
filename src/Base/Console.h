@@ -869,6 +869,8 @@ private:
     static PyObject* sPySetStatus(PyObject* self, PyObject* args);
     static PyObject* sPyGetStatus(PyObject* self, PyObject* args);
     static PyObject* sPyGetObservers(PyObject* self, PyObject* args);
+    static PyObject* sPyAttachObserver(PyObject* self, PyObject* args);
+    static PyObject* sPyDetachObserver(PyObject* self, PyObject* args);
 
     bool _bVerbose {true};
     bool _bCanRefresh {true};
