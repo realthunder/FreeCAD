@@ -559,6 +559,20 @@ App::Property* ViewProviderGeometryObject::addDynamicProperty(
         const char* type, const char* name, const char* group,
         const char* doc, short attr, bool ro, bool hidden)
 {
+    // Convention: a property named "<Prefix>_<Rest>" belongs in the
+    // "<Prefix>" group. When no group is given (e.g. a Render_* property
+    // added from Python or the property editor with the group omitted),
+    // derive it from the name prefix so the property lands in its proper
+    // group instead of the default one.
+    std::string derivedGroup;
+    if ((!group || !*group) && name) {
+        if (const char* us = strchr(name, '_')) {
+            if (us != name) {
+                derivedGroup.assign(name, us);
+                group = derivedGroup.c_str();
+            }
+        }
+    }
     auto prop = inherited::addDynamicProperty(type, name, group, doc,
                                               attr, ro, hidden);
     // A freshly added Render_* property applies right away: writes of
