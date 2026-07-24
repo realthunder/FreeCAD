@@ -7,6 +7,7 @@
 // wheel = zoom).
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -2132,6 +2133,31 @@ static void startPolling()
     doPoll();
 }
 
+// This bundle's build stamp (fcviewer.stamp next to the page, written
+// post-link — see stamp.cmake), reported in the hello so the backend
+// can reload pages running a superseded build. Empty until fetched.
+static std::string s_buildStamp;
+
+/// Version handshake: tell the server which snapshot format this build
+/// reads (it answers with a reload when the served format is newer),
+/// which bundle build it is (reload on stamp mismatch), and register
+/// as a control-channel viewer (dumpFrame). Re-sent when the build
+/// stamp arrives after the socket opened.
+static void sendHello()
+{
+    char hello[160];
+    if (!s_buildStamp.empty())
+        std::snprintf(hello, sizeof(hello),
+                      "{\"cmd\":\"hello\",\"snapshot\":%u,"
+                      "\"build\":\"%s\"}",
+                      Render::sceneDumpVersion(), s_buildStamp.c_str());
+    else
+        std::snprintf(hello, sizeof(hello),
+                      "{\"cmd\":\"hello\",\"snapshot\":%u}",
+                      Render::sceneDumpVersion());
+    emscripten_websocket_send_utf8_text(s_ws, hello);
+}
+
 static EM_BOOL onWsOpen(int, const EmscriptenWebSocketOpenEvent *, void *)
 {
     s_wsOpen = true;
@@ -2145,14 +2171,7 @@ static EM_BOOL onWsOpen(int, const EmscriptenWebSocketOpenEvent *, void *)
     }
     s_wsEverOpen = true;
     s_reconnectAttempts = 0;
-    // Version handshake: tell the server which snapshot format this
-    // build reads (it answers with a reload when the served format is
-    // newer) and register as a control-channel viewer (dumpFrame).
-    char hello[96];
-    std::snprintf(hello, sizeof(hello),
-                  "{\"cmd\":\"hello\",\"snapshot\":%u}",
-                  Render::sceneDumpVersion());
-    emscripten_websocket_send_utf8_text(s_ws, hello);
+    sendHello();
     return EM_TRUE;
 }
 
@@ -2325,6 +2344,38 @@ static void onInitFetchError(emscripten_fetch_t *fetch)
     startStream();
 }
 
+/// Fetch this bundle's build stamp (sits next to the page, served
+/// no-store like the bundle itself). Arriving after the socket opened
+/// re-sends the hello so the backend still learns the build.
+static void fetchBuildStamp()
+{
+    emscripten_fetch_attr_t attr;
+    emscripten_fetch_attr_init(&attr);
+    std::strcpy(attr.requestMethod, "GET");
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+    attr.onsuccess = [](emscripten_fetch_t *fetch) {
+        if (fetch->status == 200 && fetch->numBytes > 0) {
+            std::string stamp;
+            for (uint64_t i = 0; i < fetch->numBytes && i < 40; ++i) {
+                char c = fetch->data[i];
+                if (std::isalnum(static_cast<unsigned char>(c)))
+                    stamp += c;
+            }
+            if (!stamp.empty()) {
+                s_buildStamp = stamp;
+                std::printf("fcviewer: build %s\n", stamp.c_str());
+                if (s_wsOpen)
+                    sendHello();
+            }
+        }
+        emscripten_fetch_close(fetch);
+    };
+    attr.onerror = [](emscripten_fetch_t *fetch) {
+        emscripten_fetch_close(fetch);
+    };
+    emscripten_fetch(&attr, "fcviewer.stamp");
+}
+
 static void startInitialFetch()
 {
     fcviewer_status("Loading scene\xe2\x80\xa6", 0.0, 0.0);
@@ -2396,6 +2447,7 @@ int main()
         // First streamed scene over HTTP for the progress bar (any bundled
         // snapshot stays on screen beneath it); the WebSocket takes over
         // after.
+        fetchBuildStamp();
         startInitialFetch();
     }
     else {

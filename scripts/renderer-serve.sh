@@ -32,6 +32,7 @@ sleep 1
 
 setsid nohup env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb \
   FC_BGFX_SERVE_SCENE="$PORT" FC_MCP_PORT="$MCP_PORT" \
+  FC_BGFX_VIEWER_BUILD="${FC_BGFX_VIEWER_BUILD:-$REPO/build/wasm}" \
   xvfb-run -a -s "-screen 0 1280x1024x24" \
   "$REPO/.conda/run.sh" "$REPO/build/conda-debug/bin/FreeCAD" \
   "$SCENE" ${EXTRA[@]+"${EXTRA[@]}"} > "$LOG" 2>&1 </dev/null &

@@ -115,3 +115,12 @@ set_property(TARGET fcviewer APPEND PROPERTY
     ${CMAKE_CURRENT_SOURCE_DIR}/shell.html)
 
 set_target_properties(fcviewer PROPERTIES SUFFIX ".html")
+
+# Build stamp next to the bundle: the page reports it in the hello
+# handshake and the backend (FC_BGFX_VIEWER_BUILD pointing here) pushes
+# a reload to any open page whose stamp no longer matches — see
+# stamp.cmake.
+add_custom_command(TARGET fcviewer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -DOUT=${CMAKE_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/stamp.cmake
+    COMMENT "Stamping fcviewer bundle")

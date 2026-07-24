@@ -38,6 +38,7 @@
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -151,6 +152,10 @@ public:
         int fd = -1;
         std::vector<std::string> pendingText; ///< queued control JSONs
         bool viewer = false;   ///< sent a hello — answers control requests
+        std::string build;     ///< bundle build stamp from the hello
+        /// The stamp a reload was already pushed for — one push per
+        /// bundle generation, no loops.
+        std::string reloadPushed;
         /// WebSocket fragmentation reassembly (a browser may split a
         /// large dumpFrame upload into continuation frames).
         std::string fragData;
@@ -225,6 +230,85 @@ public:
             return false;
         out = std::strtoll(json.c_str() + pos + 1, nullptr, 10);
         return true;
+    }
+
+    static bool jsonStr(const std::string &json, const char *key,
+                        std::string &out)
+    {
+        std::string needle = std::string("\"") + key + "\"";
+        auto pos = json.find(needle);
+        if (pos == std::string::npos)
+            return false;
+        pos = json.find(':', pos + needle.size());
+        auto open = pos == std::string::npos
+            ? std::string::npos : json.find('"', pos + 1);
+        auto close = open == std::string::npos
+            ? std::string::npos : json.find('"', open + 1);
+        if (close == std::string::npos)
+            return false;
+        out = json.substr(open + 1, close - open - 1);
+        return true;
+    }
+
+    /// Expected viewer bundle build stamp: the fcviewer.stamp file the
+    /// WASM build writes next to the bundle (see wasm/stamp.cmake),
+    /// located via FC_BGFX_VIEWER_BUILD. Cached by mtime so the
+    /// periodic per-connection checks stay cheap; empty = feature off
+    /// (env unset or no stamp file). A rebuild while this backend is
+    /// serving changes the file, and connected viewers get their
+    /// reload within a poll interval.
+    std::mutex stampMutex;
+    std::string stampCache;
+    time_t stampMtime = 0;
+    std::string viewerStamp()
+    {
+        static const char *dir = std::getenv("FC_BGFX_VIEWER_BUILD");
+        if (!dir || !*dir)
+            return std::string();
+        std::string path = std::string(dir) + "/fcviewer.stamp";
+        std::lock_guard<std::mutex> guard(stampMutex);
+        struct stat st;
+        if (::stat(path.c_str(), &st) != 0) {
+            stampCache.clear();
+            stampMtime = 0;
+            return stampCache;
+        }
+        if (st.st_mtime == stampMtime)
+            return stampCache;
+        stampCache.clear();
+        if (std::FILE *f = std::fopen(path.c_str(), "rb")) {
+            char buf[64];
+            size_t n = std::fread(buf, 1, sizeof(buf), f);
+            std::fclose(f);
+            for (size_t i = 0; i < n; ++i)
+                if (std::isalnum(static_cast<unsigned char>(buf[i])))
+                    stampCache += buf[i];
+        }
+        stampMtime = st.st_mtime;
+        return stampCache;
+    }
+
+    /// Queue a cache-busting reload for a viewer whose reported bundle
+    /// build no longer matches the on-disk stamp (once per stamp; the
+    /// page-side bust-parameter guard also refuses repeats). Caller
+    /// holds no lock.
+    void pushReloadIfStale(Conn &conn)
+    {
+        std::string expected = viewerStamp();
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            if (expected.empty() || conn.build.empty()
+                    || conn.build == expected
+                    || conn.reloadPushed == expected)
+                return;
+            char msg[96];
+            std::snprintf(msg, sizeof(msg),
+                          "{\"cmd\":\"reload\",\"cacheBust\":\"%s\"}",
+                          expected.c_str());
+            conn.pendingText.push_back(msg);
+            conn.reloadPushed = expected;
+        }
+        std::printf("fcviewer server: viewer build stale, reload pushed\n");
     }
 
     void dispatchPick(const ScenePickRequest &req)
@@ -453,7 +537,16 @@ public:
     {
         uint64_t sent = 0;
         std::string inbuf;
+        int stampTick = 0;
         for (;;) {
+            // Live bundle-stamp check (~every 5s at the 200ms poll):
+            // a WASM rebuild while this backend serves pushes the
+            // reload to already-connected pages, not just fresh hellos.
+            if (++stampTick >= 25) {
+                stampTick = 0;
+                if (conn.viewer)
+                    pushReloadIfStale(conn);
+            }
             std::vector<uint8_t> body;
             {
                 std::lock_guard<std::mutex> guard(mutex);
@@ -598,7 +691,12 @@ public:
                 {
                     std::lock_guard<std::mutex> guard(connMutex);
                     conn.viewer = true;
+                    jsonStr(json, "build", conn.build);
                 }
+                // Bundle build stamp check: reload pages running a
+                // superseded viewer build (any rebuild, not just
+                // snapshot-format bumps).
+                pushReloadIfStale(conn);
                 // Version handshake (docs/RenderDebug.md §4.4): a viewer
                 // built for an older snapshot format cannot parse what
                 // this backend publishes — tell it to reload itself with
