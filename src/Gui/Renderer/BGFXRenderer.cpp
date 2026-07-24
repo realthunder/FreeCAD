@@ -65,7 +65,13 @@
 #else
 #include <QColor>
 #include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFile>
 #include <QImage>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QTimer>
 #include <QVariant>
 #include <QOffscreenSurface>
 #include <QOpenGLFramebufferObject>
@@ -74,6 +80,7 @@
 #include <QOpenGLWidget>
 #include <QWindow>
 #include <QDebug>
+#include <Base/Console.h>
 #endif
 
 // #if !defined(FC_OS_MACOSX)
@@ -452,6 +459,44 @@ public:
         if (bgfx::isValid(entry.handle))
             bgfx::setUniform(entry.handle, data, num);
     }
+
+#ifndef FC_RENDERER_STANDALONE
+    /// Runtime user-shader compile cache (docs/RenderDebug.md §6.3):
+    /// bgfx consumes precompiled binaries, so user .sc source compiles
+    /// through the host shaderc into a disk cache keyed on SHA1(source
+    /// × target profile), and the linked programs cache here by source
+    /// identity. Compilation is ASYNCHRONOUS: render() only consults
+    /// the caches (a QProcess vfork inside the widget paint path both
+    /// hitches the frame and corrupts Qt's repaint bookkeeping —
+    /// learned the hard way), missing bins schedule a compile on the
+    /// event loop, and a finished compile bumps userCompileGeneration
+    /// so idle-skip clients re-render. A failed compile is remembered
+    /// and reported once — the pass just stays off. Desktop builds
+    /// only: the WASM viewer has no host compiler (server-side compile
+    /// is the planned §6.3 browser-tier route).
+    struct UserProgram {
+        bgfx::ProgramHandle prog = BGFX_INVALID_HANDLE;
+        bool failed = false;
+    };
+    std::map<std::string, UserProgram> userPrograms;
+    /// Per-shader compile bookkeeping, keyed by SHA1(source×profile×type).
+    std::set<std::string> userShaderInflight;
+    std::set<std::string> userShaderFailed;
+    /// Bumped when an async compile finishes (either way); mirrored into
+    /// each renderer's dirty state so the next frame retries the lookup.
+    int userCompileGeneration = 0;
+
+    /// Disk-cache / async-compile step for one user shader.
+    /// Returns 0 with \a binPath set when the bin is ready, 1 while a
+    /// compile is in flight, 2 when compilation failed (reported once).
+    int ensureUserShaderBin(const std::string &source, bool fragment,
+                            QString &binPath);
+    /// Resolve a user post program from ready bins: user fragment source
+    /// + either a user vertex source or the stock full-screen vs_fc_comp.
+    /// Invalid while a compile is pending; entry.failed on real failure.
+    bgfx::ProgramHandle getUserPostProgram(const std::string &vsSource,
+                                           const std::string &fsSource);
+#endif
 
 #ifdef FC_RENDERER_STANDALONE
     /// Native window handle bgfx initializes on (Emscripten: the canvas
@@ -1566,6 +1611,15 @@ public:
         ViewBloomApply,     // the blurred halo added onto the scene
                             // (blend ONE/ONE, scaled by the bloom
                             // intensity)
+        ViewUserPostCopy,   // user "post" shader (docs/RenderDebug.md §6)
+                            // input: resolve/copy of the composited scene
+                            // color into userPostTex, so the user pass can
+                            // read and write color without feedback
+        ViewUserPost,       // the user post-stage program drawn fullscreen
+                            // back into the scene target — after bloom, so
+                            // it sees the final composited color, before
+                            // ViewDebug/on-top/highlight/overlays so debug
+                            // visualization and UI still draw on top
         ViewDebug,          // render debugging buffer visualization
                             // (docs/RenderDebug.md): when the RenderDebug
                             // view mode is active, a fullscreen blit
@@ -4672,6 +4726,27 @@ public:
     {
         bgfx::setTexture(0, s_texScene, bgfxColor);
         fullscreen(ViewWaterCopy, m_progWaterCopy,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+    }
+
+    /// User "post" stage (docs/RenderDebug.md §6): resolve the composited
+    /// scene color into the water-refraction copy target (safe to share —
+    /// this view runs after every reader of the mid-frame water copy),
+    /// then draw the user program fullscreen back over the scene reading
+    /// the copy. Its uniforms ride the dynamic name binding shared with
+    /// the RenderDebug parameters, and like there the updates must be
+    /// recorded with the consuming draw (see submitDebug).
+    void submitUserPost(const Render::UserShaderConfig::Shader &shader,
+                        bgfx::ProgramHandle prog)
+    {
+        bgfx::setTexture(0, s_texScene, bgfxColor);
+        fullscreen(ViewUserPostCopy, m_progWaterCopy,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        for (const auto &p : shader.params)
+            _BGFXLib.setUserUniform(p.name, p.values.data(),
+                                    uint16_t(p.values.size() / 4));
+        bgfx::setTexture(0, s_texScene, sceneCopyTex);
+        fullscreen(ViewUserPost, prog,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
     }
 
@@ -7975,6 +8050,27 @@ public:
         } else if (prepassActive) {
             view->aoMapHash = 0;
         }
+        // User "post" stage shader (docs/RenderDebug.md §6): the last
+        // captured post-stage program wins; resolved through the runtime
+        // shaderc compile cache (desktop builds — the viewer tier waits
+        // on server-side compile). A failed compile keeps the pass off.
+        const Render::UserShaderConfig::Shader *userPost = nullptr;
+        for (const auto &s : usershaderconf.shaders) {
+            if (s.stage == "post" && !s.fragmentSource.empty())
+                userPost = &s;
+        }
+        bgfx::ProgramHandle userPostProg = BGFX_INVALID_HANDLE;
+#ifndef FC_RENDERER_STANDALONE
+        userShaderGen = _BGFXLib.userCompileGeneration;
+        if (userPost)
+            userPostProg = _BGFXLib.getUserPostProgram(
+                userPost->vertexSource, userPost->fragmentSource);
+#endif
+        const bool userPostActive = userPost
+            && bgfx::isValid(userPostProg)
+            && bgfx::isValid(view->sceneCopyFbo)
+            && bgfx::isValid(view->m_progWaterCopy);
+
         const bool prepassRender = prepassActive && aoRender;
 
         // Debug scene re-render (docs/RenderDebug.md modes 6/8): the
@@ -8341,6 +8437,30 @@ public:
                 // switch also resolves a multisampled scene attachment
                 // before the surface pass samples the copy.
                 bgfx::setViewFrameBuffer(id, view->sceneCopyFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
+                bgfx::setViewTransform(id, nullptr, nullptr);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (userPostActive && i == BGFXView::ViewUserPostCopy) {
+                // User post input: resolve/copy of the composited (post
+                // bloom) scene color into the shared sceneCopy target;
+                // like the water copy, the framebuffer switch resolves a
+                // multisampled scene attachment before the copy samples.
+                bgfx::setViewFrameBuffer(id, view->sceneCopyFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
+                bgfx::setViewTransform(id, nullptr, nullptr);
+                bgfx::setViewMode(id, bgfx::ViewMode::Default);
+                bgfx::touch(id);
+                continue;
+            } else if (userPostActive && i == BGFXView::ViewUserPost) {
+                // The user post program draws fullscreen back into the
+                // scene target.
+                bgfx::setViewFrameBuffer(id, view->bgfxFbo);
                 bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                                    clearColor, 1.0f, 0);
                 bgfx::setViewRect(id, 0, 0, width, height);
@@ -9375,6 +9495,13 @@ public:
             view->submitBloom(bloomconf.threshold, bloomconf.intensity,
                               bloomconf.radius, bulbDraws);
 
+        // 1g'. User post-stage shader (docs/RenderDebug.md §6): copy the
+        // composited color, then the user program draws fullscreen over
+        // the scene reading the copy — before the debug visualization
+        // and the on-top/highlight/overlay passes.
+        if (userPostActive)
+            view->submitUserPost(*userPost, userPostProg);
+
         // 1h. Render debugging buffer visualization (docs/RenderDebug.md):
         // overwrite the scene color with the selected intermediate target.
         // Depth (mode 1) normalizes by the farthest scene-bbox corner in
@@ -10187,6 +10314,10 @@ public:
     Render::WaterConfig waterconf;
     Render::BloomConfig bloomconf;
     Render::RenderDebugConfig debugconf;
+    Render::UserShaderConfig usershaderconf;
+    /// Snapshot of _BGFXLib.userCompileGeneration taken by render();
+    /// isSceneDirty() reports dirty while they differ (async compile).
+    int userShaderGen = 0;
     Render::PreselHighlightConfig preselconf;
     Render::PreselHighlightConfig selconf;
     float autozoomScale = 1.0f;
@@ -10457,6 +10588,13 @@ bool BGFXRenderer::isSceneAnimated() const
 
 bool BGFXRenderer::isSceneDirty() const
 {
+#ifndef FC_RENDERER_STANDALONE
+    // A finished async user-shader compile must wake idle-skip clients
+    // so the pass appears (or the error fallback settles) without user
+    // interaction; render() re-snapshots the generation.
+    if (pimpl->userShaderGen != _BGFXLib.userCompileGeneration)
+        return true;
+#endif
     return pimpl->sceneDirty;
 }
 
@@ -10537,6 +10675,22 @@ void BGFXRenderer::setRenderDebugConfig(const RenderDebugConfig &config)
     if (pimpl->debugconf != config) {
         pimpl->debugconf = config;
         pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setUserShaderConfig(const UserShaderConfig &config)
+{
+    if (pimpl->usershaderconf == config)
+        return;
+    pimpl->usershaderconf = config;
+    pimpl->sceneDirty = true;
+    for (const auto &s : config.shaders) {
+        if (s.stage != "post") {
+            static std::set<std::string> warned;
+            if (warned.insert(s.stage).second)
+                RENDER_WARN("user shader stage '" << s.stage.c_str()
+                            << "' not supported by this backend");
+        }
     }
 }
 
@@ -10726,6 +10880,240 @@ BGFXView *BGFXRendererLibP::getView(QOpenGLWidget *widget, RendererType::Enum ty
     return view.get();
 }
 
+#ifndef FC_RENDERER_STANDALONE
+// Map the active bgfx backend to the shaderc CLI target flags and the
+// bin subdirectory the stock shader pack uses (BGFXShaders.cmake keeps
+// the flag pairs in sync).
+static bool shadercTarget(std::string &platform, std::string &profile,
+                          std::string &apiDir)
+{
+    switch (bgfx::getRendererType()) {
+    case bgfx::RendererType::OpenGL:
+        platform = "linux"; profile = "140"; apiDir = "glsl"; return true;
+    case bgfx::RendererType::Vulkan:
+        platform = "linux"; profile = "spirv"; apiDir = "spirv"; return true;
+    case bgfx::RendererType::OpenGLES:
+        platform = "android"; profile = "300_es"; apiDir = "essl"; return true;
+    case bgfx::RendererType::Metal:
+        platform = "osx"; profile = "metal"; apiDir = "metal"; return true;
+    default:
+        return false;
+    }
+}
+
+// Load a compiled shader binary into bgfx (the bgfx_utils loader with
+// an explicit full path instead of the name/asset-root convention).
+static bgfx::ShaderHandle loadShaderFile(const std::string &path)
+{
+    QFile f(QString::fromStdString(path));
+    if (!f.open(QIODevice::ReadOnly))
+        return BGFX_INVALID_HANDLE;
+    QByteArray data = f.readAll();
+    if (data.isEmpty())
+        return BGFX_INVALID_HANDLE;
+    const bgfx::Memory *mem = bgfx::copy(data.constData(),
+                                         uint32_t(data.size()) + 1);
+    mem->data[mem->size - 1] = '\0';
+    return bgfx::createShader(mem);
+}
+
+int
+BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
+                                      bool fragment, QString &binPath)
+{
+    std::string platform, profile, apiDir;
+    if (!shadercTarget(platform, profile, apiDir)) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            Base::Console().Error("user shaders: no shaderc target for "
+                                  "the active bgfx backend\n");
+        }
+        return 2;
+    }
+
+    QByteArray keyed(source.c_str(), int(source.size()));
+    keyed.append('\1');
+    keyed.append(profile.c_str());
+    keyed.append(fragment ? 'f' : 'v');
+    QString hash = QString::fromLatin1(
+        QCryptographicHash::hash(keyed, QCryptographicHash::Sha1).toHex());
+    std::string hashKey = hash.toStdString();
+
+    QString cacheDir =
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+        + QStringLiteral("/BGFXUserShaders");
+    QDir().mkpath(cacheDir);
+    binPath = cacheDir + QLatin1Char('/') + hash + QStringLiteral(".bin");
+    if (QFile::exists(binPath))
+        return 0;
+    if (userShaderFailed.count(hashKey))
+        return 2;
+    if (userShaderInflight.count(hashKey))
+        return 1;
+
+    // The compile inputs: the stock varying/include set shipped next to
+    // the compiled bins (BGFXShaders.cmake copies shaders/src there), so
+    // user source can include the fc_*.sh helpers and bgfx_shader.sh.
+    std::string srcDir = shaderPath() + "shaders/src";
+    if (!QFile::exists(QString::fromStdString(srcDir + "/varying.def.sc")))
+        srcDir = resource() + "shaders/src";
+    std::string shaderc;
+    if (const char *env = std::getenv("FC_BGFX_SHADERC"))
+        shaderc = env;
+#ifdef FC_BGFX_SHADERC_PATH
+    if (shaderc.empty())
+        shaderc = FC_BGFX_SHADERC_PATH;
+#endif
+    std::string err;
+    if (!QFile::exists(QString::fromStdString(srcDir + "/varying.def.sc")))
+        err = "user shaders: shader include tree not found at " + srcDir
+            + " (rebuild Renderer_assets)";
+    else if (shaderc.empty()
+             || !QFile::exists(QString::fromStdString(shaderc)))
+        err = "user shaders: shaderc not found ("
+            + (shaderc.empty() ? std::string("set FC_BGFX_SHADERC")
+                               : shaderc) + ")";
+
+    QString srcPath =
+        cacheDir + QLatin1Char('/') + hash + QStringLiteral(".sc");
+    if (err.empty()) {
+        QFile srcFile(srcPath);
+        if (!srcFile.open(QIODevice::WriteOnly | QIODevice::Truncate)
+                || srcFile.write(source.c_str(), qint64(source.size()))
+                   != qint64(source.size()))
+            err = "user shaders: cannot write " + srcPath.toStdString();
+    }
+    if (!err.empty()) {
+        userShaderFailed.insert(hashKey);
+        Base::Console().Error("%s\n", err.c_str());
+        return 2;
+    }
+
+    // Never spawn the compiler from here: this runs inside the widget
+    // paint traversal, and a blocking QProcess there both hitches the
+    // frame and re-enters Qt's repaint machinery. Queue the launch onto
+    // the event loop instead; the finished handler records the outcome
+    // and bumps the generation so the next frame picks the bin up.
+    userShaderInflight.insert(hashKey);
+    QStringList args = {
+        QStringLiteral("-f"), srcPath,
+        QStringLiteral("-o"), binPath,
+        QStringLiteral("--type"),
+        fragment ? QStringLiteral("f") : QStringLiteral("v"),
+        QStringLiteral("--platform"), QString::fromUtf8(platform.c_str()),
+        QStringLiteral("-p"), QString::fromUtf8(profile.c_str()),
+        QStringLiteral("-i"), QString::fromUtf8(srcDir.c_str()),
+        QStringLiteral("--varyingdef"),
+        QString::fromUtf8((srcDir + "/varying.def.sc").c_str()),
+    };
+    QString cmd = QString::fromUtf8(shaderc.c_str());
+    QString bin = binPath;
+    auto self = this;
+    QTimer::singleShot(0, [self, cmd, args, bin, hashKey]() {
+        auto proc = new QProcess;
+        QObject::connect(proc,
+            qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            [self, proc, bin, hashKey](int code,
+                                       QProcess::ExitStatus status) {
+                if (status != QProcess::NormalExit || code != 0) {
+                    QFile::remove(bin);
+                    self->userShaderFailed.insert(hashKey);
+                    std::string err = (proc->readAllStandardError()
+                        + proc->readAllStandardOutput()).toStdString();
+                    Base::Console().Error(
+                        "user shader compile failed:\n%s\n",
+                        err.empty() ? "shaderc failed" : err.c_str());
+                }
+                self->userShaderInflight.erase(hashKey);
+                ++self->userCompileGeneration;
+                proc->deleteLater();
+            });
+        QObject::connect(proc,
+            qOverload<QProcess::ProcessError>(&QProcess::errorOccurred),
+            [self, proc, hashKey](QProcess::ProcessError) {
+                if (proc->state() != QProcess::NotRunning)
+                    return;   // finished() will report
+                self->userShaderFailed.insert(hashKey);
+                self->userShaderInflight.erase(hashKey);
+                ++self->userCompileGeneration;
+                Base::Console().Error(
+                    "user shader compile failed: cannot run shaderc\n");
+                proc->deleteLater();
+            });
+        // Watchdog: a hung compiler must not pin the pass in the
+        // "compiling" state forever.
+        QTimer::singleShot(20000, proc, [proc]() {
+            if (proc->state() != QProcess::NotRunning)
+                proc->kill();
+        });
+        proc->start(cmd, args);
+    });
+    return 1;
+}
+
+bgfx::ProgramHandle
+BGFXRendererLibP::getUserPostProgram(const std::string &vsSource,
+                                     const std::string &fsSource)
+{
+    QByteArray keyed(fsSource.c_str(), int(fsSource.size()));
+    keyed.append('\1');
+    keyed.append(vsSource.c_str(), int(vsSource.size()));
+    std::string key =
+        QCryptographicHash::hash(keyed, QCryptographicHash::Sha1)
+            .toHex().toStdString();
+    auto &entry = userPrograms[key];
+    if (bgfx::isValid(entry.prog) || entry.failed)
+        return entry.prog;
+
+    QString fsBin, vsBin;
+    int fsState = ensureUserShaderBin(fsSource, true, fsBin);
+    int vsState = vsSource.empty()
+        ? 0 : ensureUserShaderBin(vsSource, false, vsBin);
+    if (fsState == 2 || vsState == 2) {
+        // The per-shader compile already reported the error once.
+        entry.failed = true;
+        return BGFX_INVALID_HANDLE;
+    }
+    if (fsState == 1 || vsState == 1)
+        return BGFX_INVALID_HANDLE;   // still compiling — retry next frame
+
+    bgfx::ShaderHandle fsh = loadShaderFile(fsBin.toStdString());
+    if (!bgfx::isValid(fsh)) {
+        entry.failed = true;
+        Base::Console().Error("user shader: compiled binary unloadable: "
+                              "%s\n", fsBin.toStdString().c_str());
+        return BGFX_INVALID_HANDLE;
+    }
+    bgfx::ShaderHandle vsh = BGFX_INVALID_HANDLE;
+    if (vsSource.empty()) {
+        std::string platform, profile, apiDir;
+        if (shadercTarget(platform, profile, apiDir)) {
+            vsh = loadShaderFile(shaderPath() + "shaders/" + apiDir
+                                 + "/vs_fc_comp.bin");
+            if (!bgfx::isValid(vsh))
+                vsh = loadShaderFile(resource() + "shaders/" + apiDir
+                                     + "/vs_fc_comp.bin");
+        }
+    }
+    else {
+        vsh = loadShaderFile(vsBin.toStdString());
+    }
+    if (!bgfx::isValid(vsh)) {
+        entry.failed = true;
+        bgfx::destroy(fsh);
+        Base::Console().Error("user shader: vertex stage unloadable\n");
+        return BGFX_INVALID_HANDLE;
+    }
+    // The program owns both shader handles (destroyShaders = true).
+    entry.prog = bgfx::createProgram(vsh, fsh, true);
+    entry.failed = !bgfx::isValid(entry.prog);
+    if (entry.failed)
+        Base::Console().Error("user shader: program link failed\n");
+    return entry.prog;
+}
+#endif // !FC_RENDERER_STANDALONE
+
 BGFXRendererLibP::~BGFXRendererLibP()
 {
     // This destructor runs at library unload, when Qt is partially or fully
@@ -10753,6 +11141,13 @@ void BGFXRendererLibP::shutdown()
             bgfx::destroy(v.second.handle);
     }
     userUniforms.clear();
+#ifndef FC_RENDERER_STANDALONE
+    for (auto &v : userPrograms) {
+        if (bgfx::isValid(v.second.prog))
+            bgfx::destroy(v.second.prog);
+    }
+    userPrograms.clear();
+#endif
     bgfx::shutdown();
 #ifndef FC_RENDERER_STANDALONE
     if (window) {

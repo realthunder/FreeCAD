@@ -37,7 +37,10 @@
 #include <Inventor/nodes/SoShape.h>
 #include <Inventor/nodes/SoResetTransform.h>
 #include <Inventor/nodes/SoBumpMap.h>
+#include <Inventor/nodes/SoShaderProgram.h>
 #include "SoFCRenderMaterial.h"
+#include "SoFCRendererBridge.h"
+#include "../Renderer/Renderer.h"
 #include <Inventor/nodes/SoTexture2Transform.h>
 #include <Inventor/nodes/SoTexture3Transform.h>
 #include <Inventor/nodes/SoTextureMatrixTransform.h>
@@ -246,6 +249,7 @@ public:
   static SoCallbackAction::Response postBumpMap(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postRenderMaterial(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postRenderTexture(void *, SoCallbackAction *action, const SoNode * node);
+  static SoCallbackAction::Response postShaderProgram(void *, SoCallbackAction *action, const SoNode * node);
   static void addTriangle(void *,
                           SoCallbackAction * action,
                           const SoPrimitiveVertex * v0,
@@ -404,6 +408,12 @@ public:
   
   SbFCVector<RenderCachePtr> stack;
   SbFCVector<SbFCUniqueId> selnodeid;
+  // User shader programs (SoShaderProgram nodes) captured during the
+  // current cache-rebuild traversal (docs/RenderDebug.md §6). Note that
+  // a program inside a still-valid cached separator is pruned with its
+  // subtree, so scene-level programs belong at the top level of the
+  // scene graph.
+  Render::UserShaderConfig usershaders;
   SbFCUniqueId sceneid;
   boost::container::flat_set<const SoNode *> nodeset;
   const SoNode * prunenode;
@@ -516,6 +526,10 @@ void SoFCRenderCacheManagerP::initAction()
   // backends only (a plain SoNode, so Coin's texture handling and the
   // unit-0 texture capture above never see it).
   this->action->addPostCallback(Gui::SoFCRenderTexture::getClassTypeId(), &postRenderTexture, this);
+  // User shader programs (docs/RenderDebug.md §6): captured directly for
+  // the external backends; Coin's own GL path consumes these nodes in its
+  // GL traversal independently (and skips BGFX_SC sources).
+  this->action->addPostCallback(SoShaderProgram::getClassTypeId(), &postShaderProgram, this);
   this->action->addPostCallback(SoResetTransform::getClassTypeId(), &postResetTransform, this);
   this->action->addPostCallback(SoTextureMatrixTransform::getClassTypeId(), &postTextureTransform, this);
   this->action->addPostCallback(SoTexture2Transform::getClassTypeId(), &postTextureTransform, this);
@@ -1116,9 +1130,13 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
     PRIVATE(this)->stack.resize(1, cache);
     PRIVATE(this)->initAction();
     PRIVATE(this)->override_selectstyle = false;
+    PRIVATE(this)->usershaders.shaders.clear();
     PRIVATE(this)->action->apply(path->getTail());
     cache->close(state);
     PRIVATE(this)->renderer->setScene(cache);
+    PRIVATE(this)->renderer->setUserShaders(
+        std::move(PRIVATE(this)->usershaders));
+    PRIVATE(this)->usershaders = {};
     PRIVATE(this)->stack.clear();
     PRIVATE(this)->selnodeid.clear();
   }
@@ -1145,9 +1163,15 @@ SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
   PRIVATE(this)->stack.resize(1, cache);
   PRIVATE(this)->initAction();
   PRIVATE(this)->override_selectstyle = false;
+  PRIVATE(this)->usershaders.shaders.clear();
   PRIVATE(this)->action->apply(root);
   cache->close(state);
   PRIVATE(this)->renderer->setScene(cache);
+  // Not routed anywhere in overlay mode (render() is a no-op there), but
+  // kept symmetric with render() so the capture state never goes stale.
+  PRIVATE(this)->renderer->setUserShaders(
+      std::move(PRIVATE(this)->usershaders));
+  PRIVATE(this)->usershaders = {};
   PRIVATE(this)->stack.clear();
   PRIVATE(this)->selnodeid.clear();
 }
@@ -1434,6 +1458,20 @@ SoFCRenderCacheManagerP::postRenderMaterial(void *userdata,
 
   assert(node);
   self->stack.back()->addRenderMaterial(action->getState(), node);
+  return SoCallbackAction::CONTINUE;
+}
+
+SoCallbackAction::Response
+SoFCRenderCacheManagerP::postShaderProgram(void *userdata,
+                                           SoCallbackAction *action,
+                                           const SoNode * node)
+{
+  (void)action;
+  SoFCRenderCacheManagerP *self = reinterpret_cast<SoFCRenderCacheManagerP*>(userdata);
+  assert(node);
+  Render::UserShaderConfig::Shader shader;
+  if (RendererBridge::translateShaderProgram(node, shader))
+    self->usershaders.shaders.push_back(std::move(shader));
   return SoCallbackAction::CONTINUE;
 }
 

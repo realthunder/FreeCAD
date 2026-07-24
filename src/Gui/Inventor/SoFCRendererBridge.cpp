@@ -26,6 +26,7 @@
 #include <cstring>
 #include <map>
 #include <set>
+#include <sstream>
 #include <unordered_map>
 
 #include <QImage>
@@ -34,6 +35,8 @@
 #include <App/PropertyGeo.h>
 #include <App/PropertyStandard.h>
 #include <Base/Console.h>
+#include <Base/FileInfo.h>
+#include <Base/Stream.h>
 
 #include <Inventor/SbBox3f.h>
 #include <Inventor/SbPlane.h>
@@ -54,6 +57,11 @@
 #include <Inventor/elements/SoLightElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/nodes/SoTexture2.h>
+#include <Inventor/nodes/SoShaderProgram.h>
+#include <Inventor/nodes/SoShaderObject.h>
+#include <Inventor/nodes/SoVertexShader.h>
+#include <Inventor/nodes/SoFragmentShader.h>
+#include <Inventor/nodes/SoShaderParameter.h>
 
 #include "SoAutoZoomTranslation.h"
 #include "SoFCRendererBridge.h"
@@ -950,6 +958,126 @@ RendererBridge::translateRenderDebugConfig(View3DInventor * view)
         }
     }
     return res;
+}
+
+// Extract a typed SoShaderParameter value as floats; empty = unsupported.
+static std::vector<float> shaderParamValues(const SoNode * node)
+{
+    std::vector<float> res;
+    if (auto p = dynamic_cast<const SoShaderParameter1f*>(node))
+        res = {p->value.getValue()};
+    else if (auto p = dynamic_cast<const SoShaderParameter1i*>(node))
+        res = {float(p->value.getValue())};
+    else if (auto p = dynamic_cast<const SoShaderParameter2f*>(node)) {
+        const SbVec2f &v = p->value.getValue();
+        res = {v[0], v[1]};
+    }
+    else if (auto p = dynamic_cast<const SoShaderParameter3f*>(node)) {
+        const SbVec3f &v = p->value.getValue();
+        res = {v[0], v[1], v[2]};
+    }
+    else if (auto p = dynamic_cast<const SoShaderParameter4f*>(node)) {
+        const SbVec4f &v = p->value.getValue();
+        res = {v[0], v[1], v[2], v[3]};
+    }
+    else if (auto p = dynamic_cast<const SoShaderParameterArray1f*>(node)) {
+        for (int i = 0; i < p->value.getNum(); ++i)
+            res.push_back(p->value[i]);
+    }
+    else if (auto p = dynamic_cast<const SoShaderParameterArray2f*>(node)) {
+        for (int i = 0; i < p->value.getNum(); ++i) {
+            res.push_back(p->value[i][0]);
+            res.push_back(p->value[i][1]);
+        }
+    }
+    else if (auto p = dynamic_cast<const SoShaderParameterArray3f*>(node)) {
+        for (int i = 0; i < p->value.getNum(); ++i) {
+            res.push_back(p->value[i][0]);
+            res.push_back(p->value[i][1]);
+            res.push_back(p->value[i][2]);
+        }
+    }
+    else if (auto p = dynamic_cast<const SoShaderParameterArray4f*>(node)) {
+        for (int i = 0; i < p->value.getNum(); ++i)
+            for (int c = 0; c < 4; ++c)
+                res.push_back(p->value[i][c]);
+    }
+    return res;
+}
+
+// Fetch a shader object's bgfx .sc source: inline for BGFX_SC, read from
+// disk for FILENAME with a .sc suffix. Empty = not consumable.
+static std::string shaderObjectSource(const SoShaderObject * obj)
+{
+    SbString src = obj->sourceProgram.getValue();
+    if (src.getLength() == 0)
+        return {};
+    int type = obj->sourceType.getValue();
+    if (type == SoShaderObject::BGFX_SC)
+        return src.getString();
+    if (type == SoShaderObject::FILENAME) {
+        int len = src.getLength();
+        if (len <= 3 || src.getSubString(len - 3) != ".sc")
+            return {};
+        Base::FileInfo fi(src.getString());
+        Base::ifstream file(fi);
+        if (!file) {
+            FC_WARN("user shader source not found: " << src.getString());
+            return {};
+        }
+        std::stringstream ss;
+        ss << file.rdbuf();
+        return ss.str();
+    }
+    return {};
+}
+
+bool
+RendererBridge::translateShaderProgram(const SoNode * node,
+                                       Render::UserShaderConfig::Shader & out)
+{
+    auto prog = dynamic_cast<const SoShaderProgram*>(node);
+    if (!prog)
+        return false;
+    out.stage = prog->stage.getValue().getString();
+    for (int i = 0; i < prog->shaderObject.getNum(); ++i) {
+        SoNode * child = prog->shaderObject[i];
+        auto obj = dynamic_cast<SoShaderObject*>(child);
+        if (!obj || !obj->isActive.getValue())
+            continue;
+        std::string src = shaderObjectSource(obj);
+        if (src.empty())
+            continue;
+        if (obj->isOfType(SoVertexShader::getClassTypeId()))
+            out.vertexSource = std::move(src);
+        else if (obj->isOfType(SoFragmentShader::getClassTypeId()))
+            out.fragmentSource = std::move(src);
+        else
+            continue;   // geometry shaders: not consumable by bgfx
+        for (int j = 0; j < obj->parameter.getNum(); ++j) {
+            auto pnode = obj->parameter[j];
+            auto sp = dynamic_cast<const SoShaderParameter*>(pnode);
+            if (!sp || sp->name.getValue().getLength() == 0)
+                continue;
+            Render::RenderDebugConfig::UserParam param;
+            param.name = sp->name.getValue().getString();
+            param.values = shaderParamValues(pnode);
+            if (param.values.empty()) {
+                static std::set<std::string> warned;
+                if (warned.insert(param.name).second)
+                    FC_WARN("user shader parameter " << param.name
+                            << ": unsupported parameter node type "
+                            << pnode->getTypeId().getName().getString());
+                continue;
+            }
+            param.values.resize((param.values.size() + 3) & ~size_t(3),
+                                0.0f);
+            out.params.push_back(std::move(param));
+        }
+    }
+    // A post program only needs a fragment stage (the backend supplies
+    // the full-screen vertex shader); nothing at all means nothing to do.
+    return !out.fragmentSource.empty() || !out.vertexSource.empty();
 }
 
 Render::LightConfig

@@ -35,6 +35,7 @@ class SoFCRendererP;
 namespace Render {
 class Renderer;
 struct OverlayAnchor;
+struct UserShaderConfig;
 }
 
 namespace Gui {
@@ -73,6 +74,11 @@ public:
   void render(SoGLRenderAction * action);
 
   void setScene(const Gui::CoinPtr<SoFCRenderCache> & cache);
+
+  /// User shader programs captured from scene SoShaderProgram nodes by
+  /// the render cache manager during the last cache rebuild; mirrored to
+  /// the external backend each render (docs/RenderDebug.md §6).
+  void setUserShaders(Render::UserShaderConfig && config);
 
   typedef SoFCRenderCache::VertexCacheMap VertexCacheMap;
 

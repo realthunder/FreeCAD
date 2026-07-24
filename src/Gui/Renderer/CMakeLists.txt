@@ -95,7 +95,18 @@ if(BUILD_BGFX)
         OUTDIR    ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders
         PROFILES  glsl spirv essl
         DEPENDS   shaderc)
-    ADD_CUSTOM_TARGET(Renderer_assets ALL DEPENDS ${Renderer_ShaderBins})
+    # The compile inputs travel with the bins (assets/shaders/src) so the
+    # runtime user-shader compile has its include root + varying def, and
+    # the Renderer knows where the in-tree shaderc landed (env
+    # FC_BGFX_SHADERC overrides at runtime).
+    fc_bgfx_copy_shader_src(Renderer_ShaderSrc
+        SHADERDIR ${CMAKE_CURRENT_SOURCE_DIR}/bgfx/shaders
+        BGFXINC   ${CMAKE_SOURCE_DIR}/src/3rdParty/bgfx/bgfx/src
+        OUTDIR    ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders)
+    target_compile_definitions(${Library} PRIVATE
+        FC_BGFX_SHADERC_PATH="$<TARGET_FILE:shaderc>")
+    ADD_CUSTOM_TARGET(Renderer_assets ALL
+        DEPENDS ${Renderer_ShaderBins} ${Renderer_ShaderSrc})
     add_dependencies(${Library} Renderer_assets)
     install(DIRECTORY
         ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders/

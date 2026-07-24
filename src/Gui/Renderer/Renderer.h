@@ -359,6 +359,45 @@ struct RenderDebugConfig {
     bool operator!=(const RenderDebugConfig &o) const { return !(*this == o); }
 };
 
+/// User-loadable shaders (docs/RenderDebug.md §6): programs authored on
+/// Coin SoShaderProgram nodes in the scene graph, captured by the render
+/// cache manager and attached to named backend pipeline stages. The
+/// first supported stage is "post" — a full-screen fragment pass over
+/// the composited scene color, drawn before the on-top/highlight/overlay
+/// passes. Compilation is the backend's job (bgfx: runtime shaderc
+/// compile cache); a shader that fails to compile is skipped with an
+/// error report, never a black screen.
+struct UserShaderConfig {
+    struct Shader {
+        /// Pipeline stage name from SoShaderProgram::stage. Backends map
+        /// known names and warn-and-skip unknown ones.
+        std::string stage;
+        /// bgfx .sc sources (SoShaderObject sourceType BGFX_SC, or
+        /// FILENAME with a .sc suffix — the capture reads the file). An
+        /// empty vertex source means the stage's built-in vertex shader
+        /// (for "post": the full-screen triangle, input v_texcoord0).
+        std::string vertexSource;
+        std::string fragmentSource;
+        /// SoShaderParameter values attached to the shader objects,
+        /// packed like RenderDebugConfig::UserParam (values zero-padded
+        /// to vec4 lanes; names are uniform names, "u_" prefix and all).
+        std::vector<RenderDebugConfig::UserParam> params;
+
+        bool operator==(const Shader &o) const {
+            return stage == o.stage && vertexSource == o.vertexSource
+                && fragmentSource == o.fragmentSource && params == o.params;
+        }
+        bool operator!=(const Shader &o) const { return !(*this == o); }
+    };
+    /// In traversal order; a later shader on the same stage wins.
+    std::vector<Shader> shaders;
+
+    bool operator==(const UserShaderConfig &o) const {
+        return shaders == o.shaders;
+    }
+    bool operator!=(const UserShaderConfig &o) const { return !(*this == o); }
+};
+
 /// One-shot frame capture request (docs/RenderDebug.md §4): armed via
 /// Renderer::requestFrameDump, executed by the next rendered frame.
 struct FrameDumpRequest {
@@ -988,6 +1027,10 @@ public:
     virtual void setAOConfig(const AOConfig &config) { (void)config; }
     /// Per-frame render debugging configuration (docs/RenderDebug.md).
     virtual void setRenderDebugConfig(const RenderDebugConfig &config)
+    { (void)config; }
+    /// User-loadable shaders captured from scene SoShaderProgram nodes
+    /// (docs/RenderDebug.md §6).
+    virtual void setUserShaderConfig(const UserShaderConfig &config)
     { (void)config; }
     /// Whether the last rendered frame contained time-animated content
     /// (water waves, fire, clouds, caustics) — a repeat frame with the

@@ -58,3 +58,31 @@ function(fc_bgfx_compile_shaders outvar)
     endforeach()
     set(${outvar} ${_bins} PARENT_SCOPE)
 endfunction()
+
+# Ship the shader compile inputs next to the compiled bins, into
+# OUTDIR/src: varying.def.sc, every fc *.sh include and the bgfx shader
+# headers. The runtime user-shader compile (docs/RenderDebug.md §6.3 —
+# BGFXRenderer invoking shaderc on SoShaderProgram source) uses this
+# directory as its single include root and varying definition, so user
+# source can `#include <bgfx_shader.sh>` and the fc_*.sh helpers like the
+# stock shaders do.
+function(fc_bgfx_copy_shader_src outvar)
+    cmake_parse_arguments(ARG "" "SHADERDIR;BGFXINC;OUTDIR" "" ${ARGN})
+    file(GLOB _incs ${ARG_SHADERDIR}/*.sh)
+    list(APPEND _incs ${ARG_SHADERDIR}/varying.def.sc
+                      ${ARG_BGFXINC}/bgfx_shader.sh
+                      ${ARG_BGFXINC}/bgfx_compute.sh)
+    set(_outs)
+    foreach(_src ${_incs})
+        get_filename_component(_name ${_src} NAME)
+        set(_out ${ARG_OUTDIR}/src/${_name})
+        add_custom_command(OUTPUT ${_out}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${ARG_OUTDIR}/src
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_src} ${_out}
+            DEPENDS ${_src}
+            COMMENT "shader src ${_name}"
+            VERBATIM)
+        list(APPEND _outs ${_out})
+    endforeach()
+    set(${outvar} ${_outs} PARENT_SCOPE)
+endfunction()

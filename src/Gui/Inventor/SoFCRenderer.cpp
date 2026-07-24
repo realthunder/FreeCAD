@@ -325,6 +325,11 @@ public:
   int overlayid = 0;
   Render::OverlayAnchor overlayanchor;
 
+  // User shader programs captured from scene SoShaderProgram nodes on the
+  // last cache rebuild (docs/RenderDebug.md §6); pushed to the external
+  // backend with the other per-frame configs.
+  Render::UserShaderConfig usershaders;
+
   char stats[512];
   int drawcallcount;
 
@@ -858,6 +863,12 @@ SoFCRenderer::setExternalRenderer(Render::Renderer * renderer,
   if (auto hatch = PRIVATE(this)->hatchtexture)
     renderer->setHatchImage(hatch->data.data(), hatch->nc,
                             hatch->width, hatch->height);
+}
+
+void
+SoFCRenderer::setUserShaders(Render::UserShaderConfig && config)
+{
+  PRIVATE(this)->usershaders = std::move(config);
 }
 
 void
@@ -2293,6 +2304,7 @@ SoFCRenderer::render(SoGLRenderAction * action)
         RendererBridge::translateAOConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setRenderDebugConfig(
         RendererBridge::translateRenderDebugConfig(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setUserShaderConfig(PRIVATE(this)->usershaders);
     PRIVATE(this)->external->setPBRConfig(
         RendererBridge::translatePBRConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setBumpConfig(

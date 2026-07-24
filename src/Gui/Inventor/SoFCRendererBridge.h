@@ -68,6 +68,14 @@ GuiExport Render::SectionConfig translateSectionConfig();
 GuiExport Render::AOConfig translateAOConfig(View3DInventor * view);
 GuiExport Render::RenderDebugConfig translateRenderDebugConfig(View3DInventor * view);
 
+/// Capture one scene SoShaderProgram node into a user shader entry
+/// (docs/RenderDebug.md §6): stage name, bgfx .sc sources (inline
+/// BGFX_SC, or FILENAME with a .sc suffix — read here), and the
+/// attached SoShaderParameter values packed into vec4 lanes. Returns
+/// false when the node is inactive or carries no consumable source.
+GuiExport bool translateShaderProgram(const SoNode * node,
+                                      Render::UserShaderConfig::Shader & out);
+
 /// Resolve the physically based shading settings (Render_PBR* view
 /// properties, RenderParams fallback) into the backend-neutral per-frame
 /// config.

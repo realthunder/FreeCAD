@@ -450,6 +450,26 @@ material flags — a selector plus a parameter block driving either a branch in
 the program-selection tree (for `material`-stage shaders) or a dedicated
 pass (for `post`-stage shaders, mirroring the water-pass pattern).
 
+Implementation notes from the first slice (post stage):
+
+- **Scene placement.** A scene-level (`post`) program must sit at the top
+  level of the scene graph: the cache manager only re-traverses invalid
+  caches, so a program nested inside a still-valid cached separator is
+  pruned with its subtree and vanishes from the capture on the next
+  rebuild.
+- **Compile off the paint path.** The backend render runs inside the Qt
+  widget repaint; spawning the compiler there (blocking `QProcess`)
+  hitches the frame and re-enters Qt's repaint machinery. Compiles are
+  asynchronous: `render()` only consults the bin/program caches, missing
+  bins queue a compile onto the event loop, and a finished compile bumps
+  a generation that re-dirties the scene for idle-skip clients.
+- **pivy ABI.** Adding fields to Coin node classes (the `stage` field)
+  changes their object size — a pivy built against older Coin headers
+  then heap-overflows on `coin.SoShaderProgram()` (the allocation size is
+  baked into the wrapper). Rebuild pivy whenever the coin fork changes a
+  node's layout; the pivy-feedstock needs the same bump for distribution
+  images.
+
 ### 6.3 Compilation reality
 
 The bgfx backend consumes **precompiled per-API binaries** (`.sc` → `shaderc`
@@ -513,7 +533,7 @@ runtime GLSL compiler. Coin's nodes carry *source*. Reconciliation:
 | 3 | **DONE** — verification harness (`scripts/render-verify.sh` + `render_verify.py` + `render_diff.py` + `wasm-hold.js`): named-view or golden-sidecar restaging, xvfb/`--gpu`/`--viewer` capture legs, first-divergent-stage diffing with heatmaps | phases 1–2 |
 | 4 | **DONE** — dynamic name→uniform binding (`RenderDebug_*` props → like-named vec4 uniforms, snapshot v21) + `u_userParams[4]` fallback pool (lane 0 = debug output scale/bias); shader hot-reload (`FC_BGFX_SHADER_DIR` + `reloadShaders()`); `View3DInventor.addProperty/removeProperty` Python API | phase 1 |
 | 5 | **DONE** — view modes 5–8 (ShadowTile coverage, Overdraw counting pass on the repurposed `ViewDebugScene` slot, ShadowFilter precision probe, UV re-render; snapshot v22); self-labeling burn-in (`RenderDebug_Label`) | 1, 4 |
-| 6 | user-loadable shaders (Coin node model, `post` stage first) | 4; shader compile cache (§6.3) |
+| 6 | **first slice DONE** — user-loadable shaders on the Coin node model, `post` stage (coin fork: `SoShaderProgram::stage` + `BGFX_SC` source type; capture: cache-manager post-callback → `Render::UserShaderConfig` → `setUserShaderConfig`; backend: async shaderc compile cache + `ViewUserPostCopy`/`ViewUserPost` full-screen pass; sandboxed failure verified). Remaining: `material` stage, per-object attachment, browser tier (server-side compile), property-bound parameters (§6.4) | 4; shader compile cache (§6.3) |
 
 Phases 1+2 are the minimum end-to-end slice: set a mode from Python, capture
 a real-GPU frame with metadata, diff it.
