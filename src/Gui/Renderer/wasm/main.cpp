@@ -2105,8 +2105,30 @@ static void onPollError(emscripten_fetch_t *fetch)
     schedulePoll();
 }
 
+static bool connectWs();
+static int s_pollTick = 0;
+
 static void doPoll(void * = nullptr)
 {
+    if (s_wsOpen) {
+        // A WebSocket retry succeeded: the socket carries the stream
+        // (and the control channel) from here on.
+        std::printf("fcviewer: websocket recovered, polling stops\n");
+        s_polling = false;
+        return;
+    }
+    // Periodic WebSocket retry (~10s at the 500ms poll): a socket that
+    // failed transiently at page load (proxy/port-forward hiccup) must
+    // not demote the page to polling forever — the control channel
+    // (dumpFrame, config, reload pushes) only rides the socket.
+    if (++s_pollTick >= 20) {
+        s_pollTick = 0;
+        if (s_ws > 0) {
+            emscripten_websocket_delete(s_ws);
+            s_ws = 0;
+        }
+        connectWs();
+    }
     emscripten_fetch_attr_t attr;
     emscripten_fetch_attr_init(&attr);
     std::strcpy(attr.requestMethod, "GET");
@@ -2223,6 +2245,15 @@ static void onWsDown()
                       s_reconnectAttempts);
     fcviewer_status(label, 0.0, 0.0);
     s_reconnectPending = true;
+    // Exponential backoff, 2s -> 30s cap: a backend restart takes
+    // 60-90s (xvfb + scene build), so the 10-attempt default must span
+    // minutes, not seconds (10 attempts ~ 2 minutes; the infinite
+    // debug budget settles at one try per 30s).
+    double delay = 2000.0;
+    for (long i = 1; i < s_reconnectAttempts && delay < 30000.0; ++i)
+        delay *= 1.4;
+    if (delay > 30000.0)
+        delay = 30000.0;
     emscripten_set_timeout([](void *) {
         s_reconnectPending = false;
         if (s_ws > 0) {
@@ -2232,7 +2263,7 @@ static void onWsDown()
         }
         if (!connectWs())
             onWsDown();   // socket creation failed: burn an attempt
-    }, 2000, nullptr);
+    }, int(delay), nullptr);
 }
 
 static EM_BOOL onWsError(int, const EmscriptenWebSocketErrorEvent *, void *)
