@@ -39,7 +39,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // presel/sel config, for browser-side edge/vertex picking.
 // v13: AO method selector (SSAO / GTAO) in the AO config.
 // v14: GTAO slice/step tuning in the AO config.
-const uint32_t kVersion = 20;
+const uint32_t kVersion = 21;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -767,6 +767,15 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.i32(snap.debugconf.viewMode);
     w.b(snap.debugconf.freezeFrame);
 
+    // v21: dynamically bound named shader parameters (§2.5).
+    w.u32(uint32_t(snap.debugconf.userParams.size()));
+    for (const auto &p : snap.debugconf.userParams) {
+        w.u32(uint32_t(p.name.size()));
+        w.raw(p.name.data(), p.name.size());
+        w.u32(uint32_t(p.values.size()));
+        w.floats(p.values.data(), p.values.size());
+    }
+
     return w.ok;
 }
 
@@ -933,6 +942,23 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     if (version >= 20) {
         snap.debugconf.viewMode = r.i32();
         snap.debugconf.freezeFrame = r.b();
+    }
+    if (version >= 21) {
+        uint32_t n = r.u32();
+        if (n > 0x10000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < n; ++i) {
+            RenderDebugConfig::UserParam p;
+            uint32_t len = r.u32();
+            if (!r.ok || len > 0x1000u) { r.ok = false; break; }
+            p.name.resize(len);
+            r.raw(&p.name[0], len);
+            uint32_t nv = r.u32();
+            if (!r.ok || nv > 0x10000u) { r.ok = false; break; }
+            p.values.resize(nv);
+            r.floats(p.values.data(), nv);
+            snap.debugconf.userParams.push_back(std::move(p));
+        }
     }
 
     return r.ok;

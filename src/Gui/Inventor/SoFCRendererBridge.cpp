@@ -25,11 +25,15 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <set>
 #include <unordered_map>
 
 #include <QImage>
 
 #include <App/PropertyFile.h>
+#include <App/PropertyGeo.h>
+#include <App/PropertyStandard.h>
+#include <Base/Console.h>
 
 #include <Inventor/SbBox3f.h>
 #include <Inventor/SbPlane.h>
@@ -59,6 +63,8 @@
 #include "../ViewParams.h"
 #include "../RenderParams.h"
 #include "../View3DInventor.h"
+
+FC_LOG_LEVEL_INIT("Renderer", true, true)
 
 using namespace Gui;
 
@@ -881,6 +887,67 @@ RendererBridge::translateRenderDebugConfig(View3DInventor * view)
     res.freezeFrame = viewParamOverride<App::PropertyBool>(
             view, "RenderDebug", "FreezeFrame",
             RenderParams::getDebugFreezeFrame());
+
+    // Dynamic named shader parameters (docs/RenderDebug.md §2.5): every
+    // further RenderDebug_* property becomes a like-named vec4(-array)
+    // uniform — RenderDebug_myKnob feeds "uniform vec4 u_myKnob"; list
+    // properties span multiple vec4 lanes (RenderDebug_userParams with
+    // 16 floats fills the stock shaders' u_userParams[4] fallback
+    // pool). The property map is name-ordered, keeping the vector
+    // deterministic for the config-change comparison.
+    if (view) {
+        static const char prefix[] = "RenderDebug_";
+        static const size_t prefixLen = sizeof(prefix) - 1;
+        std::map<std::string, App::Property*> props;
+        view->getPropertyMap(props);
+        for (const auto &v : props) {
+            if (v.first.compare(0, prefixLen, prefix) != 0)
+                continue;
+            std::string name = v.first.substr(prefixLen);
+            if (name.empty() || name == "ViewMode" || name == "FreezeFrame")
+                continue;
+            Render::RenderDebugConfig::UserParam param;
+            param.name = name.compare(0, 2, "u_") == 0 ? name : "u_" + name;
+            App::Property *prop = v.second;
+            if (auto p = dynamic_cast<App::PropertyBool*>(prop))
+                param.values = {p->getValue() ? 1.0f : 0.0f};
+            else if (auto p = dynamic_cast<App::PropertyEnumeration*>(prop))
+                param.values = {float(p->getValue())};
+            else if (auto p = dynamic_cast<App::PropertyInteger*>(prop))
+                param.values = {float(p->getValue())};
+            else if (auto p = dynamic_cast<App::PropertyFloat*>(prop))
+                param.values = {float(p->getValue())};
+            else if (auto p = dynamic_cast<App::PropertyColor*>(prop)) {
+                App::Color c = p->getValue();
+                param.values = {c.r, c.g, c.b, c.a};
+            }
+            else if (auto p = dynamic_cast<App::PropertyVector*>(prop)) {
+                Base::Vector3d vec = p->getValue();
+                param.values = {float(vec.x), float(vec.y), float(vec.z)};
+            }
+            else if (auto p = dynamic_cast<App::PropertyFloatList*>(prop)) {
+                for (double d : p->getValues())
+                    param.values.push_back(float(d));
+            }
+            else if (auto p = dynamic_cast<App::PropertyIntegerList*>(prop)) {
+                for (long l : p->getValues())
+                    param.values.push_back(float(l));
+            }
+            else {
+                static std::set<std::string> warned;
+                if (warned.insert(v.first).second)
+                    FC_WARN("render debug parameter " << v.first
+                            << ": unsupported property type "
+                            << prop->getTypeId().getName());
+                continue;
+            }
+            if (param.values.empty())
+                continue;
+            param.values.resize((param.values.size() + 3) & ~size_t(3),
+                                0.0f);
+            res.userParams.push_back(std::move(param));
+        }
+    }
     return res;
 }
 

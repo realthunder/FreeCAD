@@ -23,6 +23,12 @@ SAMPLER2D(s_texNormalZ, 0);
 SAMPLER2D(s_texAO, 2);
 
 uniform vec4 u_debugParams;
+// Bootstrap fallback pool of the dynamic named-parameter binding
+// (docs/RenderDebug.md §2.5): lanes a no-compiler tier (stock WASM
+// binaries) can map RenderDebug_userParams onto. Lane 0 here is an
+// output transform — x = scale, y = bias (backend default 1/0), to
+// amplify subtle differences in captured debug buffers.
+uniform vec4 u_userParams[4];
 
 // Inverse of the prepass octEncode (fc_prepass_fs.sh).
 vec3 octDecode(vec2 f)
@@ -90,5 +96,6 @@ void main()
 		}
 		rgb = vec3_splat(vis);
 	}
+	rgb = rgb * u_userParams[0].x + vec3_splat(u_userParams[0].y);
 	gl_FragColor = vec4(rgb, 1.0);
 }

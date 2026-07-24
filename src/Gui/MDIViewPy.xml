@@ -13,6 +13,25 @@
       <Author Licence="LGPL" Name="Zheng Lei" EMail="realthunder.dev@gmail.com" />
       <UserDocu>This is the MDIView base class</UserDocu>
     </Documentation>
+    <Methode Name="addProperty" Keyword="true">
+      <Documentation>
+        <UserDocu>addProperty(type, name, doc=None, hidden=False)
+
+Add a dynamic property to this view. The property-editor group is
+derived from the name's prefix before the first '_' (the
+&lt;Group&gt;_&lt;Name&gt; convention of the per-view render properties), so e.g.
+addProperty('App::PropertyFloatList', 'RenderDebug_userParams') lands in
+the RenderDebug group and is picked up by the render config feed
+(docs/RenderDebug.md section 2.5).</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="removeProperty">
+      <Documentation>
+        <UserDocu>removeProperty(name)
+
+Remove a dynamic property previously added with addProperty().</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="message">
       <Documentation>
         <UserDocu>Send message to this view</UserDocu>

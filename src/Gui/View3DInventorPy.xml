@@ -211,6 +211,17 @@ pixels — the cheap numeric assertions for render smoke tests
 (docs/RenderDebug.md section 4.2).</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="reloadShaders">
+      <Documentation>
+        <UserDocu>reloadShaders()
+
+Reload the external render backend's shader programs from disk on the
+next rendered frame (docs/RenderDebug.md section 3). With
+FC_BGFX_SHADER_DIR pointing at a development asset tree, recompiling a
+shader (src/Gui/Renderer/bgfx/shaders/compile.sh) followed by this call
+is a live edit-save-see loop — no restart.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getCamera">
       <Documentation>
         <UserDocu>getCamera()</UserDocu>

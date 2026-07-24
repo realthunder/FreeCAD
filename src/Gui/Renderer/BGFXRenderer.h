@@ -87,6 +87,7 @@ public:
     virtual bool requestFrameDump(const FrameDumpRequest &req) override;
     virtual bool frameDumpPending() const override;
     virtual bool getRenderStats(RenderStats &stats) const override;
+    virtual bool reloadShaders() override;
     /// Scene render-target sample count (0/1 = off). Takes effect when the
     /// view next (re)creates its targets (detected at the top of render()).
     virtual void setMSAASamples(int samples) override;

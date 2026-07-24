@@ -935,6 +935,23 @@ PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)
     } PY_CATCH
 }
 
+PyObject* View3DInventorPy::reloadShaders(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    try {
+        View3DInventorViewer *viewer = getView3DInventorPtr()->getViewer();
+        Render::Renderer *renderer = viewer->getExternalRenderer();
+        if (!renderer)
+            throw Py::RuntimeError("No external renderer active on this view");
+        if (!renderer->reloadShaders())
+            throw Py::RuntimeError("Render backend has no shader reload");
+        if (auto rm = viewer->getSoRenderManager())
+            rm->scheduleRedraw();
+        Py_Return;
+    } PY_CATCH
+}
+
 PyObject* View3DInventorPy::getRenderStats(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))

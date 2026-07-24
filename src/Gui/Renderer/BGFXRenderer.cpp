@@ -398,6 +398,61 @@ public:
         return RendererFactory::resourcePath() + "bgfx/assets/";
     }
 
+    /// Asset root the shader programs load from: FC_BGFX_SHADER_DIR
+    /// (a directory containing shaders/{glsl,essl,spirv}/) overrides
+    /// the installed resource tree, so a developer can point at the
+    /// source tree's compile.sh output and hot-reload from there
+    /// (docs/RenderDebug.md §3).
+    std::string shaderPath()
+    {
+        static const std::string overridePath = [] {
+            const char *dir = std::getenv("FC_BGFX_SHADER_DIR");
+            std::string s = dir ? dir : "";
+            if (!s.empty() && s.back() != '/')
+                s += '/';
+            return s;
+        }();
+        return overridePath.empty() ? resource() : overridePath;
+    }
+
+    /// Shader hot-reload generation (docs/RenderDebug.md §3): bumped by
+    /// BGFXRenderer::reloadShaders(); a view whose captured generation
+    /// lags re-inits at the top of its next render(), reloading every
+    /// program from shaderPath().
+    int shaderGeneration = 0;
+
+    /// Dynamically bound named uniforms (docs/RenderDebug.md §2.5):
+    /// name -> handle + vec4 count, resolved lazily. bgfx registers
+    /// uniforms by name, refcounted, and resizes a same-name uniform
+    /// upward on re-create, so growth is just another createUniform
+    /// (the old reference is released to keep the count balanced).
+    /// The handle MUST default to BGFX_INVALID_HANDLE — a
+    /// value-initialized handle is idx 0, a live uniform, and
+    /// destroying it underflows someone else's refcount.
+    struct UserUniform {
+        bgfx::UniformHandle handle = BGFX_INVALID_HANDLE;
+        uint16_t num = 0;
+    };
+    std::map<std::string, UserUniform> userUniforms;
+
+    void setUserUniform(const std::string &name, const float *data,
+                        uint16_t num)
+    {
+        if (!num)
+            return;
+        auto &entry = userUniforms[name];
+        if (!bgfx::isValid(entry.handle) || entry.num < num) {
+            bgfx::UniformHandle h = bgfx::createUniform(
+                name.c_str(), bgfx::UniformType::Vec4, num);
+            if (bgfx::isValid(entry.handle))
+                bgfx::destroy(entry.handle);
+            entry.handle = h;
+            entry.num = num;
+        }
+        if (bgfx::isValid(entry.handle))
+            bgfx::setUniform(entry.handle, data, num);
+    }
+
 #ifdef FC_RENDERER_STANDALONE
     /// Native window handle bgfx initializes on (Emscripten: the canvas
     /// CSS selector) and the current output size, fed by the host app
@@ -1968,6 +2023,7 @@ public:
 #endif
         std::printf("bgfx: view init %ux%u msaa %d\n",
                     unsigned(width), unsigned(height), msaaSamples);
+        shaderGen = _BGFXLib.shaderGeneration;
         // Resolution of the scaled effect targets (reflection re-render, SSAO
         // resolve). effectScale clamps to [0.25, 1]; the targets and their
         // view rects use effW/effH while the main scene / geometry prepass use
@@ -2033,16 +2089,16 @@ public:
                                                    false);
             m_progBloomBright = loadProgram("vs_fc_comp",
                                             "fs_fc_bloom_bright",
-                                            _BGFXLib.resource().c_str());
+                                            _BGFXLib.shaderPath().c_str());
             m_progBloomEmit = loadProgram("vs_fc_mesh",
                                           "fs_fc_bloom_emit",
-                                          _BGFXLib.resource().c_str());
+                                          _BGFXLib.shaderPath().c_str());
             m_progBloomBlur = loadProgram("vs_fc_comp",
                                           "fs_fc_bloom_blur",
-                                          _BGFXLib.resource().c_str());
+                                          _BGFXLib.shaderPath().c_str());
             m_progBloomApply = loadProgram("vs_fc_comp",
                                            "fs_fc_bloom_apply",
-                                           _BGFXLib.resource().c_str());
+                                           _BGFXLib.shaderPath().c_str());
             s_texBloom = bgfx::createUniform("s_texBloom",
                                              bgfx::UniformType::Sampler);
             u_bloomParams = bgfx::createUniform(
@@ -2055,7 +2111,7 @@ public:
 
         // Visible sun disc along the directional scene light.
         m_progSun = loadProgram("vs_fc_comp", "fs_fc_sun",
-                                _BGFXLib.resource().c_str());
+                                _BGFXLib.shaderPath().c_str());
         u_sunParams = bgfx::createUniform("u_sunParams",
                                           bgfx::UniformType::Vec4);
 
@@ -2063,25 +2119,25 @@ public:
         // The standalone present pass copies the scene color onto the
         // default backbuffer (no Qt framebuffer to GL-blit into).
         m_progPresent = loadProgram("vs_fc_comp", "fs_fc_copy",
-                                    _BGFXLib.resource().c_str());
+                                    _BGFXLib.shaderPath().c_str());
         if (!bgfx::isValid(s_texScene))
             s_texScene = bgfx::createUniform("s_texScene",
                                              bgfx::UniformType::Sampler);
 #endif
 
         m_progMesh = loadProgram("vs_fc_mesh", "fs_fc_mesh",
-                                 _BGFXLib.resource().c_str());
+                                 _BGFXLib.shaderPath().c_str());
         m_progFlat = loadProgram("vs_fc_flat", "fs_fc_flat",
-                                 _BGFXLib.resource().c_str());
+                                 _BGFXLib.shaderPath().c_str());
         m_progMeshClip = loadProgram("vs_fc_mesh_clip", "fs_fc_mesh_clip",
-                                     _BGFXLib.resource().c_str());
+                                     _BGFXLib.shaderPath().c_str());
         m_progFlatClip = loadProgram("vs_fc_flat_clip", "fs_fc_flat_clip",
-                                     _BGFXLib.resource().c_str());
+                                     _BGFXLib.shaderPath().c_str());
         m_progMeshTex = loadProgram("vs_fc_mesh_tex", "fs_fc_mesh_tex",
-                                    _BGFXLib.resource().c_str());
+                                    _BGFXLib.shaderPath().c_str());
         m_progMeshTexClip = loadProgram("vs_fc_mesh_tex_clip",
                                         "fs_fc_mesh_tex_clip",
-                                        _BGFXLib.resource().c_str());
+                                        _BGFXLib.shaderPath().c_str());
         s_texColor = bgfx::createUniform("s_texColor",
                                          bgfx::UniformType::Sampler);
         u_texMatrix = bgfx::createUniform("u_texMatrix",
@@ -2105,26 +2161,26 @@ public:
             // instanced submit carrying {model matrix, diffuse} per
             // instance.
             m_progMeshInst = loadProgram("vs_fc_mesh_inst", "fs_fc_mesh",
-                                         _BGFXLib.resource().c_str());
+                                         _BGFXLib.shaderPath().c_str());
             m_progMeshInstTex = loadProgram("vs_fc_mesh_tex_inst",
                                             "fs_fc_mesh_tex",
-                                            _BGFXLib.resource().c_str());
+                                            _BGFXLib.shaderPath().c_str());
             u_instParams = bgfx::createUniform("u_instParams",
                                                bgfx::UniformType::Vec4);
             m_progLine = loadProgram("vs_fc_line", "fs_fc_flat",
-                                     _BGFXLib.resource().c_str());
+                                     _BGFXLib.shaderPath().c_str());
             m_progLineClip = loadProgram("vs_fc_line_clip", "fs_fc_flat_clip",
-                                         _BGFXLib.resource().c_str());
+                                         _BGFXLib.shaderPath().c_str());
             m_progLinePat = loadProgram("vs_fc_line_pat", "fs_fc_line_pat",
-                                        _BGFXLib.resource().c_str());
+                                        _BGFXLib.shaderPath().c_str());
             m_progLinePatClip = loadProgram("vs_fc_line_pat_clip",
                                             "fs_fc_line_pat_clip",
-                                            _BGFXLib.resource().c_str());
+                                            _BGFXLib.shaderPath().c_str());
             m_progPoint = loadProgram("vs_fc_point", "fs_fc_flat",
-                                      _BGFXLib.resource().c_str());
+                                      _BGFXLib.shaderPath().c_str());
             m_progPointClip = loadProgram("vs_fc_point_clip",
                                           "fs_fc_flat_clip",
-                                          _BGFXLib.resource().c_str());
+                                          _BGFXLib.shaderPath().c_str());
             LineQuadVertex::init();
             static const LineQuadVertex quad[4] = {
                 {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
@@ -2141,9 +2197,9 @@ public:
         // Section caps: the cap quad fill with hatch texture modulation.
         // The stencil mark and cleanup passes reuse the flat programs.
         m_progCap = loadProgram("vs_fc_cap", "fs_fc_cap",
-                                _BGFXLib.resource().c_str());
+                                _BGFXLib.shaderPath().c_str());
         m_progCapClip = loadProgram("vs_fc_cap_clip", "fs_fc_cap_clip",
-                                    _BGFXLib.resource().c_str());
+                                    _BGFXLib.shaderPath().c_str());
         s_texHatch = bgfx::createUniform("s_texHatch",
                                          bgfx::UniformType::Sampler);
         // 1x1 white stand-in so the cap program samples neutrally when
@@ -2240,17 +2296,17 @@ public:
             this->shadowFormat = shadowFormat;
             shadowSize = 0;  // targets created on first use
             m_progShadow = loadProgram("vs_fc_shadow", "fs_fc_shadow",
-                                       _BGFXLib.resource().c_str());
+                                       _BGFXLib.shaderPath().c_str());
             m_progShadowClip = loadProgram("vs_fc_shadow_clip",
                                            "fs_fc_shadow_clip",
-                                           _BGFXLib.resource().c_str());
+                                           _BGFXLib.shaderPath().c_str());
             if (m_instancing)
                 m_progShadowInst = loadProgram("vs_fc_shadow_inst",
                                                "fs_fc_shadow",
-                                               _BGFXLib.resource().c_str());
+                                               _BGFXLib.shaderPath().c_str());
             m_progShadowBlur = loadProgram("vs_fc_comp",
                                            "fs_fc_shadow_blur",
-                                           _BGFXLib.resource().c_str());
+                                           _BGFXLib.shaderPath().c_str());
             u_shadowBlur = bgfx::createUniform("u_shadowBlur",
                                                bgfx::UniformType::Vec4);
             // Glass shadow tint: glass casters render their light
@@ -2291,7 +2347,7 @@ public:
                 "u_bulbShadowRot", bgfx::UniformType::Mat4);
             m_progShadowTint = loadProgram("vs_fc_shadow",
                                            "fs_fc_shadow_tint",
-                                           _BGFXLib.resource().c_str());
+                                           _BGFXLib.shaderPath().c_str());
             s_texShadowTint = bgfx::createUniform(
                 "s_texShadowTint", bgfx::UniformType::Sampler);
         }
@@ -2354,29 +2410,29 @@ public:
                         BGFX_RESOLVE_NONE);
             oitFbo = bgfx::createFrameBuffer(3, att, false);
             m_progMeshOit = loadProgram("vs_fc_mesh", "fs_fc_mesh_oit",
-                                        _BGFXLib.resource().c_str());
+                                        _BGFXLib.shaderPath().c_str());
             m_progMeshOitClip = loadProgram("vs_fc_mesh_clip",
                                             "fs_fc_mesh_oit_clip",
-                                            _BGFXLib.resource().c_str());
+                                            _BGFXLib.shaderPath().c_str());
             m_progMeshOitTex = loadProgram("vs_fc_mesh_tex",
                                            "fs_fc_mesh_oit_tex",
-                                           _BGFXLib.resource().c_str());
+                                           _BGFXLib.shaderPath().c_str());
             m_progMeshOitTexClip = loadProgram("vs_fc_mesh_tex_clip",
                                                "fs_fc_mesh_oit_tex_clip",
-                                               _BGFXLib.resource().c_str());
+                                               _BGFXLib.shaderPath().c_str());
             if (m_instancing) {
                 // WBOIT accumulation is order-independent, so transparent
                 // instance groups are legal — but only while OIT runs
                 // (the sorted fallback needs per-draw depth keys).
                 m_progMeshInstOit = loadProgram("vs_fc_mesh_inst",
                                                 "fs_fc_mesh_oit",
-                                                _BGFXLib.resource().c_str());
+                                                _BGFXLib.shaderPath().c_str());
                 m_progMeshInstOitTex = loadProgram("vs_fc_mesh_tex_inst",
                                                    "fs_fc_mesh_oit_tex",
-                                                   _BGFXLib.resource().c_str());
+                                                   _BGFXLib.shaderPath().c_str());
             }
             m_progComp = loadProgram("vs_fc_comp", "fs_fc_comp",
-                                     _BGFXLib.resource().c_str());
+                                     _BGFXLib.shaderPath().c_str());
             s_texAccum = bgfx::createUniform("s_texAccum",
                                              bgfx::UniformType::Sampler);
             s_texReveal = bgfx::createUniform("s_texReveal",
@@ -2385,7 +2441,7 @@ public:
 
         // Render debugging buffer visualization (docs/RenderDebug.md).
         m_progDebug = loadProgram("vs_fc_comp", "fs_fc_debug",
-                                  _BGFXLib.resource().c_str());
+                                  _BGFXLib.shaderPath().c_str());
         u_debugParams = bgfx::createUniform("u_debugParams",
                                             bgfx::UniformType::Vec4);
 
@@ -2462,7 +2518,7 @@ public:
             if (aoMipCount) {
                 m_progGtaoDepth = loadProgram("vs_fc_comp",
                                               "fs_fc_gtao_depths",
-                                              _BGFXLib.resource().c_str());
+                                              _BGFXLib.shaderPath().c_str());
                 if (!bgfx::isValid(m_progGtaoDepth))
                     aoMipCount = 0;
             }
@@ -2474,34 +2530,34 @@ public:
                     mipSamplerNames[m], bgfx::UniformType::Sampler);
 
             m_progPrepass = loadProgram("vs_fc_prepass", "fs_fc_prepass",
-                                        _BGFXLib.resource().c_str());
+                                        _BGFXLib.shaderPath().c_str());
             m_progPrepassClip = loadProgram("vs_fc_prepass_clip",
                                             "fs_fc_prepass_clip",
-                                            _BGFXLib.resource().c_str());
+                                            _BGFXLib.shaderPath().c_str());
             // Medium interval depth writers: prepass layout with the
             // body's appearance slot in .x.
             m_progMedDepth = loadProgram("vs_fc_prepass",
                                          "fs_fc_meddepth",
-                                         _BGFXLib.resource().c_str());
+                                         _BGFXLib.shaderPath().c_str());
             m_progMedDepthClip = loadProgram("vs_fc_prepass_clip",
                                              "fs_fc_meddepth_clip",
-                                             _BGFXLib.resource().c_str());
+                                             _BGFXLib.shaderPath().c_str());
             u_mediumSlot = bgfx::createUniform("u_mediumSlot",
                                                bgfx::UniformType::Vec4);
             if (m_instancing)
                 m_progPrepassInst = loadProgram("vs_fc_prepass_inst",
                                                 "fs_fc_prepass",
-                                                _BGFXLib.resource().c_str());
+                                                _BGFXLib.shaderPath().c_str());
             m_progSsao = loadProgram("vs_fc_comp", "fs_fc_ssao",
-                                     _BGFXLib.resource().c_str());
+                                     _BGFXLib.shaderPath().c_str());
             m_progGtao = loadProgram("vs_fc_comp", "fs_fc_gtao",
-                                     _BGFXLib.resource().c_str());
+                                     _BGFXLib.shaderPath().c_str());
             m_progGtaoBlur = loadProgram("vs_fc_comp", "fs_fc_gtao_blur",
-                                         _BGFXLib.resource().c_str());
+                                         _BGFXLib.shaderPath().c_str());
             m_progSsaoBlur = loadProgram("vs_fc_comp", "fs_fc_ssao_blur",
-                                         _BGFXLib.resource().c_str());
+                                         _BGFXLib.shaderPath().c_str());
             m_progSsaoApply = loadProgram("vs_fc_comp", "fs_fc_ssao_apply",
-                                          _BGFXLib.resource().c_str());
+                                          _BGFXLib.shaderPath().c_str());
             s_texNormalZ = bgfx::createUniform("s_texNormalZ",
                                                bgfx::UniformType::Sampler);
             s_texAONoise = bgfx::createUniform("s_texAONoise",
@@ -2605,15 +2661,15 @@ public:
                                                  volHistFrontTex};
             volHistFbo = bgfx::createFrameBuffer(2, volHistAtt, false);
             m_progVol = loadProgram("vs_fc_comp", "fs_fc_volume",
-                                    _BGFXLib.resource().c_str());
+                                    _BGFXLib.shaderPath().c_str());
             m_progVolAccum = loadProgram("vs_fc_comp",
                                          "fs_fc_volume_accum",
-                                         _BGFXLib.resource().c_str());
+                                         _BGFXLib.shaderPath().c_str());
             s_texVolFront = bgfx::createUniform(
                 "s_texVolFront", bgfx::UniformType::Sampler);
             m_progVolApply = loadProgram("vs_fc_comp",
                                          "fs_fc_volume_apply",
-                                         _BGFXLib.resource().c_str());
+                                         _BGFXLib.shaderPath().c_str());
             s_texVol = bgfx::createUniform("s_texVol",
                                            bgfx::UniformType::Sampler);
             u_volParams = bgfx::createUniform("u_volParams",
@@ -2646,7 +2702,7 @@ public:
             bgfx::TextureHandle batt[2] = {waterBackTex, waterBackDepth};
             waterBackFbo = bgfx::createFrameBuffer(2, batt, false);
             m_progVolExt = loadProgram("vs_fc_comp", "fs_fc_volume_ext",
-                                       _BGFXLib.resource().c_str());
+                                       _BGFXLib.shaderPath().c_str());
             s_texWaterFront = bgfx::createUniform(
                 "s_texWaterFront", bgfx::UniformType::Sampler);
             s_texWaterBack = bgfx::createUniform(
@@ -2657,7 +2713,7 @@ public:
             // Water caustics: a fullscreen light-space pattern splat
             // over the prepass surfaces inside the water interval.
             m_progCaustics = loadProgram("vs_fc_comp", "fs_fc_caustics",
-                                         _BGFXLib.resource().c_str());
+                                         _BGFXLib.shaderPath().c_str());
             u_causticParams = bgfx::createUniform(
                 "u_causticParams", bgfx::UniformType::Vec4,
                 kMediumSlots);
@@ -2733,9 +2789,9 @@ public:
             | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
         sceneCopyFbo = bgfx::createFrameBuffer(1, &sceneCopyTex, false);
         m_progWaterCopy = loadProgram("vs_fc_comp", "fs_fc_copy",
-                                      _BGFXLib.resource().c_str());
+                                      _BGFXLib.shaderPath().c_str());
         m_progWater = loadProgram("vs_fc_mesh", "fs_fc_water",
-                                  _BGFXLib.resource().c_str());
+                                  _BGFXLib.shaderPath().c_str());
         s_texScene = bgfx::createUniform("s_texScene",
                                          bgfx::UniformType::Sampler);
         s_texRefl = bgfx::createUniform("s_texRefl",
@@ -2760,7 +2816,7 @@ public:
         // absorption interval targets of the SSAO resource set (the
         // glass pass is gated on both).
         m_progGlass = loadProgram("vs_fc_mesh", "fs_fc_glass",
-                                  _BGFXLib.resource().c_str());
+                                  _BGFXLib.shaderPath().c_str());
         s_texGlassFront = bgfx::createUniform("s_texGlassFront",
                                               bgfx::UniformType::Sampler);
         s_texGlassBack = bgfx::createUniform("s_texGlassBack",
@@ -2786,9 +2842,9 @@ public:
         if (!bgfx::isValid(m_progReflMedia))
             m_progReflMedia = loadProgram("vs_fc_comp",
                                           "fs_fc_refl_media",
-                                          _BGFXLib.resource().c_str());
+                                          _BGFXLib.shaderPath().c_str());
         m_progGroundRefl = loadProgram("vs_fc_mesh", "fs_fc_groundrefl",
-                                       _BGFXLib.resource().c_str());
+                                       _BGFXLib.shaderPath().c_str());
         u_reflParams = bgfx::createUniform("u_reflParams",
                                            bgfx::UniformType::Vec4);
     }
@@ -3651,15 +3707,37 @@ public:
     /// depth/normal (modes 1/2), the AO term (3), or the shadow term
     /// re-evaluated from the prepass position (4). Runs before the
     /// on-top/highlight/overlay passes so those still draw on top.
-    void submitDebug(int mode, float maxDepth, int aoMethod,
-                     bool shadowValid)
+    void submitDebug(const Render::RenderDebugConfig &conf, float maxDepth,
+                     int aoMethod, bool shadowValid)
     {
         if (!bgfx::isValid(m_progDebug) || !bgfx::isValid(aoNormalZ))
             return;
-        float params[4] = {float(mode),
+        float params[4] = {float(conf.viewMode),
                            maxDepth > 0.0f ? 1.0f / maxDepth : 1.0f,
                            shadowValid ? 1.0f : 0.0f, 0.0f};
         bgfx::setUniform(u_debugParams, params);
+        // Dynamically bound named uniforms (docs/RenderDebug.md §2.5),
+        // set against this pass's draw: uniform updates recorded before
+        // an EMPTY submit (bgfx::touch, the view clears) are discarded
+        // with the dropped draw, so the push must precede a real draw.
+        // The u_userParams bootstrap pool merges the user value onto
+        // its identity default (x = output scale, y = bias) and is set
+        // exactly once — a second setUniform of one handle before the
+        // same submit is fatal in bgfx debug builds.
+        {
+            float pool[16] = {1.0f};
+            for (const auto &p : conf.userParams) {
+                if (p.name == "u_userParams") {
+                    std::memcpy(pool, p.values.data(),
+                                std::min(p.values.size(), size_t(16))
+                                    * sizeof(float));
+                    continue;
+                }
+                _BGFXLib.setUserUniform(p.name, p.values.data(),
+                                        uint16_t(p.values.size() / 4));
+            }
+            _BGFXLib.setUserUniform("u_userParams", pool, 4);
+        }
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         // The finished AO term: GTAO denoises back into aoTex, the
         // classic blur lands in aoBlurTex (see submitAOResolve).
@@ -6261,6 +6339,8 @@ public:
     const Render::OverlayAnchor *overlayAnchor = nullptr;
     float overlayRectHeight = 0.f;
     int msaaSamples = 0;  // sample count the current targets were built with
+    int shaderGen = 0;    // _BGFXLib.shaderGeneration the programs were
+                          // loaded at; a lag re-inits the view (hot-reload)
     // Per-frame world-to-screen scale consumed by autozoom draws
     // (Renderer::setAutoZoomScale).
     float autozoomScale = 1.0f;
@@ -6352,6 +6432,7 @@ public:
                 || _BGFXLib.standaloneSamples != view->msaaSamples
                 || _BGFXLib.effectResolution != view->effectScale
                 || _BGFXLib.ssaoResolution != view->ssaoScale
+                || _BGFXLib.shaderGeneration != view->shaderGen
                 || warmupReinit) {
             if (_BGFXLib.standaloneWidth != view->width
                     || _BGFXLib.standaloneHeight != view->height)
@@ -6368,6 +6449,7 @@ public:
                 || widget->height() != int(view->height)
                 || _BGFXLib.effectResolution != view->effectScale
                 || _BGFXLib.ssaoResolution != view->ssaoScale
+                || _BGFXLib.shaderGeneration != view->shaderGen
                 || (_BGFXLib.desktopSamples >= 0
                     && _BGFXLib.desktopSamples != view->msaaSamples))
             view->init();
@@ -9134,7 +9216,7 @@ public:
                     maxDepth = std::max(maxDepth, -viewZ);
                 }
             }
-            view->submitDebug(debugconf.viewMode, maxDepth, aoconf.method,
+            view->submitDebug(debugconf, maxDepth, aoconf.method,
                               shadowActive && bgfx::isValid(view->shadowTex));
         }
 
@@ -10029,6 +10111,16 @@ bool BGFXRenderer::getRenderStats(RenderStats &stats) const
     return stats.valid;
 }
 
+bool BGFXRenderer::reloadShaders()
+{
+    // Every view re-inits (and reloads its programs from shaderPath())
+    // at the top of its next render(); force that frame past the
+    // idle skip.
+    ++_BGFXLib.shaderGeneration;
+    pimpl->sceneDirty = true;
+    return true;
+}
+
 bool BGFXRenderer::animating() const
 {
     return pimpl->animatedFrame;
@@ -10481,6 +10573,11 @@ void BGFXRendererLibP::shutdown()
     // Must make the context current before shutdown bgfx, or else it seems to
     // mess up with the other context that is currently active
     makeCurrent();
+    for (auto &v : userUniforms) {
+        if (bgfx::isValid(v.second.handle))
+            bgfx::destroy(v.second.handle);
+    }
+    userUniforms.clear();
     bgfx::shutdown();
 #ifndef FC_RENDERER_STANDALONE
     if (window) {

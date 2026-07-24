@@ -330,8 +330,31 @@ struct RenderDebugConfig {
     /// golden-image comparison.
     bool freezeFrame = false;
 
+    /// A dynamically bound named shader parameter (docs/RenderDebug.md
+    /// §2.5): any RenderDebug_* view property beyond the fixed knobs
+    /// becomes a like-named vec4(-array) uniform — RenderDebug_myKnob
+    /// feeds "uniform vec4 u_myKnob". The backend resolves the name to
+    /// a uniform handle lazily; a value only reaches a shader that
+    /// declares the uniform, so unknown names are harmless.
+    struct UserParam {
+        /// Uniform name, "u_" prefix included.
+        std::string name;
+        /// Values packed into vec4 lanes; size is a multiple of 4
+        /// (zero-padded), size/4 = the uniform's vec4 array count.
+        std::vector<float> values;
+
+        bool operator==(const UserParam &o) const {
+            return name == o.name && values == o.values;
+        }
+        bool operator!=(const UserParam &o) const { return !(*this == o); }
+    };
+    /// Sorted by name (the bridge enumerates a name-ordered property
+    /// map), so equality is order-stable.
+    std::vector<UserParam> userParams;
+
     bool operator==(const RenderDebugConfig &o) const {
-        return viewMode == o.viewMode && freezeFrame == o.freezeFrame;
+        return viewMode == o.viewMode && freezeFrame == o.freezeFrame
+            && userParams == o.userParams;
     }
     bool operator!=(const RenderDebugConfig &o) const { return !(*this == o); }
 };
@@ -1045,6 +1068,13 @@ public:
     /// false while none has run.
     virtual bool getRenderStats(RenderStats &stats) const
     { (void)stats; return false; }
+    /// Reload the backend's shader programs from disk on the next
+    /// rendered frame (docs/RenderDebug.md §3): with FC_BGFX_SHADER_DIR
+    /// pointing at a development asset tree, recompiling a shader
+    /// (shaders/compile.sh) followed by this call is a live
+    /// edit-save-see loop. Returns false when the backend has no
+    /// reloadable shaders (default).
+    virtual bool reloadShaders() { return false; }
     /// True if scene data changed after the last render() and another
     /// frame should be scheduled.
     virtual bool needsRedraw() const { return false; }

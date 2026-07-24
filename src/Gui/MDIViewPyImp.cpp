@@ -48,6 +48,52 @@ int MDIViewPy::setCustomAttributes(const char* /*attr*/, PyObject * /*obj*/)
     return 0;
 }
 
+PyObject* MDIViewPy::addProperty(PyObject *args, PyObject *kwds)
+{
+    char *sType;
+    char *sName;
+    char *sDoc = nullptr;
+    PyObject *hidden = Py_False;
+    static char *kwlist[] = {"type", "name", "doc", "hidden", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "ss|sO", kwlist,
+                                     &sType, &sName, &sDoc, &hidden))
+        return nullptr;
+    try {
+        // The <Group>_<Name> convention of the per-view render
+        // properties: derive the editor group from the name prefix
+        // (leading underscore excluded), like
+        // ViewProviderGeometryObject::addDynamicProperty.
+        std::string group;
+        const char *name = sName;
+        if (const char *us = strchr(name, '_')) {
+            if (us != name)
+                group.assign(name, us);
+        }
+        auto prop = getMDIViewPtr()->addDynamicProperty(
+                sType, sName, group.empty() ? nullptr : group.c_str(),
+                sDoc);
+        if (!prop)
+            throw Py::RuntimeError(std::string("Cannot add property: ")
+                                   + sName);
+        if (PyObject_IsTrue(hidden) > 0)
+            prop->setStatus(App::Property::Hidden, true);
+        Py_Return;
+    } PY_CATCH
+}
+
+PyObject* MDIViewPy::removeProperty(PyObject *args)
+{
+    char *sName;
+    if (!PyArg_ParseTuple(args, "s", &sName))
+        return nullptr;
+    try {
+        if (!getMDIViewPtr()->removeDynamicProperty(sName))
+            throw Py::RuntimeError(std::string("No such dynamic property: ")
+                                   + sName);
+        Py_Return;
+    } PY_CATCH
+}
+
 PyObject* MDIViewPy::message(PyObject *args)
 {
     return sendMessage(args);

@@ -1,9 +1,10 @@
 # Render Debugging & Verification Architecture
 
-Status: phases **1–2 implemented** (RenderDebug view properties + bgfx
+Status: phases **1–4 implemented** (RenderDebug view properties + bgfx
 buffer visualization/freeze-frame; `saveRenderDump`/`getRenderStats` +
-sidecar JSON; browser `dumpFrame`/`reload` control channel). Phases 3+
-are design.
+sidecar JSON; browser `dumpFrame`/`reload` control channel; the
+verification harness under `scripts/`; dynamic named uniform binding +
+`u_userParams` pool + shader hot-reload). Phases 5+ are design.
 
 This document defines (1) the governing policy for render-debugging code in this
 repo, (2) the debug-parameter protocol that rides the existing render-property
@@ -108,9 +109,13 @@ Setting a knob from Python is then one line, live, on any target:
 
 ```python
 view = Gui.ActiveDocument.ActiveView
-view.addDynamicProperty("App::PropertyInteger", "RenderDebug_ViewMode")  # group auto-derived
+view.addProperty("App::PropertyInteger", "RenderDebug_ViewMode")  # group auto-derived
 view.RenderDebug_ViewMode = 2   # world-space normals
 ```
+
+(`MDIView.addProperty`/`removeProperty` — available on every MDI view,
+mirroring the DocumentObject API; the editor group is derived from the
+name prefix before the first `_`.)
 
 ### 2.3 `RenderDebug_ViewMode` — buffer visualization
 
@@ -165,21 +170,41 @@ restricted to a pre-declared set, because nothing in the stack requires it:
   new uniform into an existing `.bin`. Since shaders are compiled on demand
   (§3 hot-reload, §6.3 compile cache), declaring a uniform is just an edit
   to the shader source.
-- The C++ side is data-driven, not per-uniform code: the renderer keeps a
-  name→`UniformHandle` map, populated lazily. Each frame it enumerates the
-  bound parameter sources — `RenderDebug_*` view properties now,
-  `SoShaderParameter` nodes for user shaders later — and `setUniform`s each
-  by name. Adding a knob is therefore: declare `uniform vec4 u_myKnob;` in
-  the shader + add a like-named property. No FreeCAD recompile, no
+- The C++ side is data-driven, not per-uniform code (implemented): the
+  bridge enumerates every `RenderDebug_*` view property beyond the fixed
+  knobs into `RenderDebugConfig::userParams` — the uniform name is
+  `"u_" + <Name>` (or `<Name>` verbatim when it already starts with
+  `u_`), so `RenderDebug_myKnob` feeds `uniform vec4 u_myKnob`.
+  Supported property types: Bool/Integer/Enumeration/Float → the x
+  lane; Color → rgba; Vector → xyz; Float/IntegerList → consecutive
+  lanes, zero-padded to vec4 arrays. Unsupported types warn once and
+  are skipped. The backend resolves names to handles lazily
+  (`setUserUniform`) and pushes the values against the debug-pass draw.
+  Adding a knob is therefore: declare `uniform vec4 u_myKnob;` in the
+  shader + add a like-named property. No FreeCAD recompile, no
   registration step.
 - Residual constraint (bgfx, not us): uniform types are vec4 / matrix /
   sampler — scalars pack into vec4 lanes regardless of mechanism.
+- **Binding is per-draw, not per-frame** (bgfx reality, learned the hard
+  way): uniform updates recorded before an *empty* submit —
+  `bgfx::touch`, i.e. the view clears — are discarded together with the
+  dropped draw, so a frame-start "set everything once" push silently
+  never reaches the GPU. Values must be set against a real draw that
+  precedes (or is) their consumer. The stock push therefore lives with
+  the debug-pass submit; a user-shader stage (§6) sets its parameters
+  when binding its own pass.
 
-**Bootstrap fallback.** One regime cannot compile on demand: a target
-running stock precompiled binaries with no compile service (the browser
-tier until §6.3's server-side compile lands). For that case only, the stock
-debug-capable shaders reserve a small `uniform vec4 u_userParams[4]` pool
-that properties can map onto by lane. It is a compatibility floor, not the
+**Bootstrap fallback (implemented).** One regime cannot compile on
+demand: a target running stock precompiled binaries with no compile
+service (the browser tier until §6.3's server-side compile lands). For
+that case only, the stock debug-capable shaders reserve a small
+`uniform vec4 u_userParams[4]` pool that properties map onto by lane —
+a `RenderDebug_userParams` float-list property fills it (16 lanes),
+riding the same dynamic binding. The debug composite shader applies
+lane 0 as an output transform (`x` = scale, `y` = bias, backend
+default 1/0), which amplifies subtle differences in captured debug
+buffers. The pool value travels in the scene snapshot (v21), so a
+stock WASM viewer honors it. It is a compatibility floor, not the
 architecture — once every tier can reach a compiler, the pool is just
 another set of named uniforms.
 
@@ -191,14 +216,20 @@ not as a debug-only hack.
 
 ## 3. Shader hot-reload (developer loop)
 
-Editing a `.sc` shader currently means recompile + restart. For a debug
-architecture whose whole point is short iteration:
+Editing a `.sc` shader used to mean recompile + restart. Implemented:
 
-- A `RenderDebug_ShaderReload` trigger (or `FC_BGFX_SHADER_DIR` env override for the
-  asset search path + a file watcher) recompiles changed shaders via
-  `shaderc` and recreates the affected bgfx programs without restarting.
-- Desktop-only at first (shaderc is a host tool); the WASM story arrives with
-  the user-shader feature's server-side compile step (section 6.3).
+- `FC_BGFX_SHADER_DIR=<dir>` points the shader loads at an alternate
+  asset root (a directory containing `shaders/{glsl,essl,spirv}/`) —
+  e.g. the source tree's `compile.sh` output, or a scratch copy.
+- `View3DInventor.reloadShaders()` reloads every program from disk on
+  the next rendered frame (a shader-generation bump forces the view
+  re-init that already owns program lifetime). The loop is:
+  edit `.sc` → `sh compile.sh` (or invoke `shaderc` for one file) →
+  `view.reloadShaders()` — no restart, verified byte-exact reversible.
+- Desktop-only for now (shaderc is a host tool); the WASM story arrives
+  with the user-shader feature's server-side compile step (section 6.3).
+  A file watcher on the override dir could remove the explicit reload
+  call later.
 
 This converts "hack the shader to print a color" from a rebuild cycle into an
 edit-save-see loop, while keeping the shader *source* the artifact — which is
@@ -452,7 +483,7 @@ runtime GLSL compiler. Coin's nodes carry *source*. Reconciliation:
 | 1 | **DONE** — `Render::RenderDebugConfig` + `translateRenderDebugConfig` + `u_debugParams`; `RenderDebug_ViewMode` modes 1–4 (existing targets only); `RenderDebug_FreezeFrame` | nothing — pure spine reuse |
 | 2 | **DONE** — `saveRenderDump` Python API + sidecar JSON + `getRenderStats`; absorb `FC_BGFX_DEBUG_*` env gates; browser `dumpFrame` WS protocol + version-handshake/self `reload` (§4.4) | phase 1 (mode override) |
 | 3 | **DONE** — verification harness (`scripts/render-verify.sh` + `render_verify.py` + `render_diff.py` + `wasm-hold.js`): named-view or golden-sidecar restaging, xvfb/`--gpu`/`--viewer` capture legs, first-divergent-stage diffing with heatmaps | phases 1–2 |
-| 4 | dynamic name→uniform binding (+ `u_userParams` fallback pool for no-compiler tiers); shader hot-reload | phase 1 |
+| 4 | **DONE** — dynamic name→uniform binding (`RenderDebug_*` props → like-named vec4 uniforms, snapshot v21) + `u_userParams[4]` fallback pool (lane 0 = debug output scale/bias); shader hot-reload (`FC_BGFX_SHADER_DIR` + `reloadShaders()`); `View3DInventor.addProperty/removeProperty` Python API | phase 1 |
 | 5 | remaining view modes (overdraw, mip); self-labeling burn-in | 1, 4 |
 | 6 | user-loadable shaders (Coin node model, `post` stage first) | 4; shader compile cache (§6.3) |
 
