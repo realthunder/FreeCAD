@@ -3712,6 +3712,11 @@ bool View3DInventorViewer::hasExternalRenderer() const
     return _pimpl->renderer != nullptr;
 }
 
+Render::Renderer *View3DInventorViewer::getExternalRenderer() const
+{
+    return _pimpl->renderer.get();
+}
+
 bool View3DInventorViewer::applyRendererAntiAliasing()
 {
     if (!_pimpl->renderer)

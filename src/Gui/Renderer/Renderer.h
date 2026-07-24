@@ -336,6 +336,33 @@ struct RenderDebugConfig {
     bool operator!=(const RenderDebugConfig &o) const { return !(*this == o); }
 };
 
+/// One-shot frame capture request (docs/RenderDebug.md §4): armed via
+/// Renderer::requestFrameDump, executed by the next rendered frame.
+struct FrameDumpRequest {
+    /// Image output path; the writer picks the format from the
+    /// extension (.ppm = raw PPM, anything else via Qt's image
+    /// writers). Empty = statistics-only readback, no file.
+    std::string path;
+    /// RenderDebug view-mode override for the captured frame only
+    /// (RenderDebugConfig::viewMode); -1 keeps the active mode.
+    int mode = -1;
+};
+
+/// Readback statistics of a captured frame — the cheap numeric
+/// assertions of docs/RenderDebug.md §4.2 ("the scene is not black",
+/// "N pixels covered") that smoke tests prefer over pixel diffs.
+struct RenderStats {
+    int width = 0;
+    int height = 0;
+    /// Pixels whose depth is in front of the far plane (< 0.999),
+    /// i.e. covered by geometry; -1 when no depth was read.
+    long long geometryPixels = -1;
+    /// Average color of the geometry pixels, 0-255 per channel;
+    /// -1 when no geometry pixel exists.
+    float avgColor[3] = {-1.0f, -1.0f, -1.0f};
+    bool valid = false;
+};
+
 /// Per-frame bump/normal mapping configuration (like AOConfig there is
 /// no GL-renderer counterpart; the GL renderer never draws scene bump
 /// maps). Applies to triangle draws carrying a Material::bumpmap.
@@ -1002,6 +1029,22 @@ public:
     virtual void setHatchImage(const void *data, int nc,
                                int width, int height)
     { (void)data; (void)nc; (void)width; (void)height; }
+    /// Arm a one-shot frame capture (docs/RenderDebug.md §4): the next
+    /// rendered frame reads back the backend's scene color target
+    /// (pre-composite) and, if the request carries a path, writes the
+    /// image there; the readback statistics land in getRenderStats()
+    /// either way. Returns false when the backend has no capture path
+    /// (default, and the standalone build where the host reads the
+    /// backbuffer itself).
+    virtual bool requestFrameDump(const FrameDumpRequest &req)
+    { (void)req; return false; }
+    /// True while an armed frame dump has not been consumed by a
+    /// rendered frame yet — the caller pumps frames until this clears.
+    virtual bool frameDumpPending() const { return false; }
+    /// Statistics of the last frame readback (a consumed frame dump);
+    /// false while none has run.
+    virtual bool getRenderStats(RenderStats &stats) const
+    { (void)stats; return false; }
     /// True if scene data changed after the last render() and another
     /// frame should be scheduled.
     virtual bool needsRedraw() const { return false; }

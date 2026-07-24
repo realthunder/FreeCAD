@@ -80,6 +80,13 @@ public:
                                int width, int height) override;
     virtual bool needsRedraw() const override;
     virtual bool canSkipInternal() const override;
+    /// One-shot capture of the bgfx scene color FBO (the true desktop
+    /// GL readback, pre-Coin-composite); executes inside the next
+    /// frame's blit. Standalone builds return false — the host reads
+    /// its own backbuffer (wasm dumpFrame protocol).
+    virtual bool requestFrameDump(const FrameDumpRequest &req) override;
+    virtual bool frameDumpPending() const override;
+    virtual bool getRenderStats(RenderStats &stats) const override;
     /// Scene render-target sample count (0/1 = off). Takes effect when the
     /// view next (re)creates its targets (detected at the top of render()).
     virtual void setMSAASamples(int samples) override;

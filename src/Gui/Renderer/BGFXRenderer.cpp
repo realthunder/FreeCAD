@@ -65,6 +65,7 @@
 #else
 #include <QColor>
 #include <QCoreApplication>
+#include <QImage>
 #include <QVariant>
 #include <QOffscreenSurface>
 #include <QOpenGLFramebufferObject>
@@ -5689,7 +5690,41 @@ public:
         ++drawcount;
     }
 #else
-    void blit()
+    /// Write \a color (tightly packed RGBA8, glReadPixels bottom-up
+    /// rows) to \a path: raw PPM for a .ppm extension, else through
+    /// Qt's image writers (PNG etc.).
+    static bool writeDumpImage(const std::string &path,
+                               const unsigned char *color,
+                               int width, int height)
+    {
+        auto ext = path.rfind('.');
+        if (ext != std::string::npos
+                && path.compare(ext, std::string::npos, ".ppm") == 0) {
+            FILE *fp = fopen(path.c_str(), "wb");
+            if (!fp)
+                return false;
+            fprintf(fp, "P6\n%d %d\n255\n", width, height);
+            // glReadPixels rows are bottom-up; PPM top-down.
+            std::vector<unsigned char> row(size_t(width) * 3);
+            for (int y = height - 1; y >= 0; --y) {
+                const unsigned char *src = color + size_t(y) * width * 4;
+                for (int x = 0; x < width; ++x) {
+                    row[size_t(x)*3] = src[size_t(x)*4];
+                    row[size_t(x)*3 + 1] = src[size_t(x)*4 + 1];
+                    row[size_t(x)*3 + 2] = src[size_t(x)*4 + 2];
+                }
+                fwrite(row.data(), 1, row.size(), fp);
+            }
+            fclose(fp);
+            return true;
+        }
+        QImage img(color, width, height, width * 4,
+                   QImage::Format_RGBA8888);
+        return img.mirrored().save(QString::fromStdString(path));
+    }
+
+    void blit(const Render::FrameDumpRequest *dump,
+              Render::RenderStats *stats)
     {
         GLint prevFbo;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint *) &prevFbo);
@@ -5762,8 +5797,15 @@ public:
                           GL_NEAREST);
         checkGLError("blit depth");
 
+        // Frame readback: the grandfathered per-frame env gates
+        // (FC_BGFX_DEBUG_READBACK stderr stats + FC_BGFX_DEBUG_DUMP_FRAME
+        // PPM) and the one-shot requestFrameDump captures share one
+        // read; this is the only view of what the DESKTOP GL path
+        // actually renders — the streamed viewer renders with its own
+        // (WASM) backend, so stream screenshots cannot show
+        // desktop-specific artifacts.
         static const bool readback = (getenv("FC_BGFX_DEBUG_READBACK") != nullptr);
-        if (readback) {
+        if (readback || dump) {
             std::vector<float> depth(width * height);
             std::vector<unsigned char> color(width * height * 4);
             glReadPixels(0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT,
@@ -5783,35 +5825,29 @@ public:
                     b += color[i*4 + 2];
                 }
             }
-            fprintf(stderr,
-                    "bgfx fbo %dx%d: %ld geometry pixels, avg color %ld,%ld,%ld\n",
-                    width, height, n,
-                    n ? r/n : -1, n ? g/n : -1, n ? b/n : -1);
-            // FC_BGFX_DEBUG_DUMP_FRAME=<path>: also write the color
-            // readback as a binary PPM (overwritten each frame) — the
-            // only way to see what the DESKTOP GL path actually
-            // renders; the streamed viewer renders the scene with its
-            // own (WASM) backend, so stream screenshots cannot show
-            // desktop-specific artifacts.
-            static const char *dump = getenv("FC_BGFX_DEBUG_DUMP_FRAME");
-            if (dump && *dump) {
-                if (FILE *fp = fopen(dump, "wb")) {
-                    fprintf(fp, "P6\n%d %d\n255\n", width, height);
-                    // glReadPixels rows are bottom-up; PPM top-down.
-                    std::vector<unsigned char> row(size_t(width) * 3);
-                    for (int y = height - 1; y >= 0; --y) {
-                        const unsigned char *src =
-                            color.data() + size_t(y) * width * 4;
-                        for (int x = 0; x < width; ++x) {
-                            row[size_t(x)*3] = src[size_t(x)*4];
-                            row[size_t(x)*3 + 1] = src[size_t(x)*4 + 1];
-                            row[size_t(x)*3 + 2] = src[size_t(x)*4 + 2];
-                        }
-                        fwrite(row.data(), 1, row.size(), fp);
-                    }
-                    fclose(fp);
-                }
+            if (stats) {
+                stats->width = width;
+                stats->height = height;
+                stats->geometryPixels = n;
+                stats->avgColor[0] = n ? float(r) / float(n) : -1.0f;
+                stats->avgColor[1] = n ? float(g) / float(n) : -1.0f;
+                stats->avgColor[2] = n ? float(b) / float(n) : -1.0f;
+                stats->valid = true;
             }
+            if (readback) {
+                fprintf(stderr,
+                        "bgfx fbo %dx%d: %ld geometry pixels, avg color %ld,%ld,%ld\n",
+                        width, height, n,
+                        n ? r/n : -1, n ? g/n : -1, n ? b/n : -1);
+                static const char *envDump = getenv("FC_BGFX_DEBUG_DUMP_FRAME");
+                if (envDump && *envDump)
+                    writeDumpImage(envDump, color.data(), width, height);
+            }
+            if (dump && !dump->path.empty()
+                    && !writeDumpImage(dump->path, color.data(),
+                                       width, height))
+                fprintf(stderr, "bgfx: frame dump write failed: %s\n",
+                        dump->path.c_str());
         }
         glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
     }
@@ -9368,7 +9404,8 @@ public:
         _BGFXLib.makeCurrent();
         bgfx::frame();
         widget->makeCurrent();
-        view->blit();
+        view->blit(dumpPending ? &pendingDump : nullptr, &lastStats);
+        dumpPending = false;
 #endif
 
         if (!hasScene && !scene.empty())
@@ -9904,6 +9941,11 @@ public:
     const void *hatchKey = nullptr;
     uint64_t hatchVersion = 0;
     bool hlWholeOnTop = false;
+    /// One-shot frame capture (requestFrameDump), consumed by the next
+    /// frame's blit; lastStats keeps that readback's statistics.
+    Render::FrameDumpRequest pendingDump;
+    bool dumpPending = false;
+    Render::RenderStats lastStats;
     bool sceneDumped = false;   ///< FC_BGFX_DUMP_SCENE fired
     int dumpFrames = 0;         ///< non-empty frames seen (dump delay)
     bool serveStarted = false;  ///< FC_BGFX_SERVE_SCENE start attempted
@@ -9944,7 +9986,47 @@ bool BGFXRenderer::render(const QColor &col,
                           const void * viewMatrix,
                           const void * projMatrix)
 {
-    return pimpl->render(col, viewMatrix, projMatrix);
+    // A pending frame dump may override the RenderDebug view mode for
+    // just the captured frame (docs/RenderDebug.md §4.2) — swap it in
+    // around the render so every consumer (the debug pass, the forced
+    // SSAO chain) sees it, then restore.
+    int savedMode = -1;
+    if (pimpl->dumpPending && pimpl->pendingDump.mode >= 0
+            && pimpl->pendingDump.mode != pimpl->debugconf.viewMode) {
+        savedMode = pimpl->debugconf.viewMode;
+        pimpl->debugconf.viewMode = pimpl->pendingDump.mode;
+    }
+    bool ok = pimpl->render(col, viewMatrix, projMatrix);
+    if (savedMode >= 0)
+        pimpl->debugconf.viewMode = savedMode;
+    return ok;
+}
+
+bool BGFXRenderer::requestFrameDump(const FrameDumpRequest &req)
+{
+#ifdef FC_RENDERER_STANDALONE
+    // The standalone host owns the backbuffer and reads it back itself
+    // (the wasm viewer's dumpFrame protocol).
+    (void)req;
+    return false;
+#else
+    pimpl->pendingDump = req;
+    pimpl->dumpPending = true;
+    // The capture needs a real frame — defeat the idle skip.
+    pimpl->sceneDirty = true;
+    return true;
+#endif
+}
+
+bool BGFXRenderer::frameDumpPending() const
+{
+    return pimpl->dumpPending;
+}
+
+bool BGFXRenderer::getRenderStats(RenderStats &stats) const
+{
+    stats = pimpl->lastStats;
+    return stats.valid;
 }
 
 bool BGFXRenderer::animating() const

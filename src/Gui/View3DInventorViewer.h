@@ -77,6 +77,10 @@ class SoFCDisplayMode;
 
 namespace Quarter = SIM::Coin3D::Quarter;
 
+namespace Render {
+class Renderer;
+}
+
 namespace Gui {
 
 class ViewProvider;
@@ -508,6 +512,10 @@ public:
     /// the cached-image rubber-band optimization) must keep Native
     /// rendering so backend frames — and their overlay feeds — stay live.
     bool hasExternalRenderer() const;
+    /// The active external render backend, null when none — the
+    /// frame-capture Python API (saveRenderDump/getRenderStats) arms
+    /// one-shot readbacks on it (docs/RenderDebug.md §4).
+    Render::Renderer *getExternalRenderer() const;
     /// Apply the current AntiAliasing preference to the external render
     /// backend (if any) and schedule a redraw. Returns true when a backend
     /// handled it — the caller then skips the Coin view-clone that a plain-GL

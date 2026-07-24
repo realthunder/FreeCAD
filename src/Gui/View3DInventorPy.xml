@@ -177,6 +177,40 @@ scale: sets distance from camera to origin, and height of the screen in model
         <UserDocu>saveVectorGraphic()</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="saveRenderDump" Keyword="true">
+      <Documentation>
+        <UserDocu>saveRenderDump(path, source='renderer', mode=None, metadata=True)
+
+One-shot render frame capture with reproducibility metadata
+(docs/RenderDebug.md section 4). Returns the written image path
+(source='viewer': list of paths, one per connected viewer).
+
+source='renderer':    readback of the external render backend's scene
+                      color target (the true desktop-GPU frame, before
+                      the Coin composite).
+source='framebuffer': the composited frame (saveImage path).
+source='viewer':      push a dumpFrame request to every WASM viewer
+                      connected to the scene-streaming server; each
+                      viewer reads back its canvas on its own GPU and
+                      uploads the pixels.
+
+mode: temporary RenderDebug_ViewMode for the captured frame only
+      (renderer/viewer sources).
+metadata: write a '&lt;path&gt;.json' sidecar (camera, viewport, backend,
+      active Render_*/RenderDebug_* values) so the frame can be re-staged.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getRenderStats">
+      <Documentation>
+        <UserDocu>getRenderStats()
+
+Capture one frame of the external render backend and return its readback
+statistics as a dict: width, height, geometryPixels (pixels covered by
+geometry, i.e. depth in front of the far plane) and avgColor of those
+pixels — the cheap numeric assertions for render smoke tests
+(docs/RenderDebug.md section 4.2).</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getCamera">
       <Documentation>
         <UserDocu>getCamera()</UserDocu>

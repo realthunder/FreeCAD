@@ -34,7 +34,16 @@
 #endif
 
 #include <QtOpenGL.h>
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include "Camera.h"
+#include "Renderer/Renderer.h"
+#include "Renderer/SceneServer.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderExtern.h"
 #include "Application.h"
@@ -64,6 +73,7 @@
 #include <Base/VectorPy.h>
 #include <Base/GeometryPyCXX.h>
 
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectPy.h>
@@ -651,6 +661,309 @@ PyObject* View3DInventorPy::saveVectorGraphic(PyObject *args)
     } PY_CATCH
 
     Py_Return;
+}
+
+/// Pump paint events until the armed one-shot frame dump is consumed
+/// by a rendered frame (docs/RenderDebug.md §4.2); false on timeout.
+static bool pumpFrameDump(View3DInventorViewer *viewer,
+                          Render::Renderer *renderer)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (renderer->frameDumpPending() && timer.elapsed() < 5000) {
+        if (auto rm = viewer->getSoRenderManager())
+            rm->scheduleRedraw();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    return !renderer->frameDumpPending();
+}
+
+/// JSON value of a view property for the capture sidecar: native for
+/// bool/int/float/string properties, str() otherwise.
+static QJsonValue propertyJsonValue(App::Property *prop)
+{
+    Py::Object val(prop->getPyObject(), true);
+    if (PyBool_Check(val.ptr()))
+        return QJsonValue(val.isTrue());
+    if (PyLong_Check(val.ptr()))
+        return QJsonValue(double(PyLong_AsLongLong(val.ptr())));
+    if (PyFloat_Check(val.ptr()))
+        return QJsonValue(PyFloat_AsDouble(val.ptr()));
+    Py::Object str(PyObject_Str(val.ptr()), true);
+    return QJsonValue(QString::fromUtf8(
+                Py::String(str).as_std_string("utf-8").c_str()));
+}
+
+/// The reproducibility sidecar of a render dump (docs/RenderDebug.md
+/// §4.2): everything needed to re-stage the captured frame — camera,
+/// viewport, backend identity and the active render/debug view
+/// properties — written as <imagePath>.json.
+static void writeRenderDumpSidecar(View3DInventor *view,
+                                   const std::string &imagePath,
+                                   const char *source, int mode,
+                                   const Render::RenderStats *stats)
+{
+    View3DInventorViewer *viewer = view->getViewer();
+    QJsonObject root;
+
+    QJsonObject capture;
+    capture[QStringLiteral("file")] = QString::fromUtf8(imagePath.c_str());
+    capture[QStringLiteral("source")] = QString::fromUtf8(source);
+    if (mode >= 0)
+        capture[QStringLiteral("mode")] = mode;
+    capture[QStringLiteral("time")] =
+        QDateTime::currentDateTime().toString(Qt::ISODate);
+    root[QStringLiteral("capture")] = capture;
+
+    // The full Inventor camera definition — setCamera() re-stages it.
+    SoOutput out;
+    char buffer[2048];
+    out.setBuffer(buffer, sizeof(buffer), nullptr);
+    SoWriteAction wa(&out);
+    if (SoCamera *cam = viewer->getSoRenderManager()->getCamera()) {
+        wa.apply(cam);
+        root[QStringLiteral("camera")] = QString::fromUtf8(buffer);
+    }
+
+    auto glWidget = viewer->getGLWidget();
+    if (glWidget) {
+        QJsonArray vp;
+        vp.append(glWidget->width());
+        vp.append(glWidget->height());
+        root[QStringLiteral("viewportSize")] = vp;
+        root[QStringLiteral("devicePixelRatio")] =
+            glWidget->devicePixelRatioF();
+    }
+    if (auto renderer = viewer->getExternalRenderer())
+        root[QStringLiteral("backend")] =
+            QString::fromUtf8(renderer->type().c_str());
+    root[QStringLiteral("msaa")] = View3DInventorViewer::getNumSamples();
+
+    const auto &config = App::Application::Config();
+    auto cfg = [&config](const char *key) {
+        auto it = config.find(key);
+        return it != config.end()
+            ? QString::fromUtf8(it->second.c_str()) : QString();
+    };
+    QJsonObject build;
+    build[QStringLiteral("version")] = cfg("BuildVersionMajor")
+        + QStringLiteral(".") + cfg("BuildVersionMinor");
+    build[QStringLiteral("revision")] = cfg("BuildRevision");
+    root[QStringLiteral("build")] = build;
+
+    if (stats && stats->valid) {
+        QJsonObject st;
+        st[QStringLiteral("width")] = stats->width;
+        st[QStringLiteral("height")] = stats->height;
+        st[QStringLiteral("geometryPixels")] =
+            double(stats->geometryPixels);
+        QJsonArray avg;
+        avg.append(stats->avgColor[0]);
+        avg.append(stats->avgColor[1]);
+        avg.append(stats->avgColor[2]);
+        st[QStringLiteral("avgColor")] = avg;
+        root[QStringLiteral("stats")] = st;
+    }
+
+    // Every render-engine view property, so the capture carries its
+    // full staging state (the harness re-applies these 1:1).
+    static const char *prefixes[] = {
+        "Render_", "RenderDebug_", "Shadow_", "HiddenLine_"};
+    QJsonObject props;
+    std::map<std::string, App::Property*> propMap;
+    view->getPropertyMap(propMap);
+    for (const auto &v : propMap) {
+        for (const char *prefix : prefixes) {
+            if (v.first.compare(0, strlen(prefix), prefix) == 0) {
+                props[QString::fromUtf8(v.first.c_str())] =
+                    propertyJsonValue(v.second);
+                break;
+            }
+        }
+    }
+    root[QStringLiteral("properties")] = props;
+
+    QFile file(QString::fromUtf8((imagePath + ".json").c_str()));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        throw Py::RuntimeError("Cannot write sidecar JSON: "
+                               + imagePath + ".json");
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+}
+
+PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)
+{
+    char *cPath;
+    char *cSource = "renderer";
+    PyObject *modeObj = Py_None;
+    PyObject *metaObj = Py_True;
+    static char *kwlist[] = {"path", "source", "mode", "metadata", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "et|sOO", kwlist,
+                                     "utf-8", &cPath, &cSource,
+                                     &modeObj, &metaObj))
+        return nullptr;
+
+    std::string path(cPath);
+    PyMem_Free(cPath);
+    std::string source(cSource);
+    int mode = -1;
+    if (modeObj != Py_None) {
+        mode = int(PyLong_AsLong(modeObj));
+        if (PyErr_Occurred())
+            return nullptr;
+    }
+    bool metadata = PyObject_IsTrue(metaObj) > 0;
+
+    try {
+        QFileInfo fi(QString::fromUtf8(path.c_str()));
+        if (!fi.absoluteDir().exists())
+            throw Py::RuntimeError("Directory where to save image doesn't exist");
+
+        View3DInventor *view = getView3DInventorPtr();
+        View3DInventorViewer *viewer = view->getViewer();
+
+        if (source == "renderer") {
+            Render::Renderer *renderer = viewer->getExternalRenderer();
+            if (!renderer)
+                throw Py::RuntimeError("No external renderer active on this view");
+            Render::FrameDumpRequest req;
+            req.path = path;
+            req.mode = mode;
+            if (!renderer->requestFrameDump(req))
+                throw Py::RuntimeError("Render backend has no frame capture");
+            if (!pumpFrameDump(viewer, renderer))
+                throw Py::RuntimeError("Frame capture timed out");
+            Render::RenderStats stats;
+            renderer->getRenderStats(stats);
+            if (metadata)
+                writeRenderDumpSidecar(view, path, "renderer", mode,
+                                       &stats);
+            return Py::new_reference_to(Py::String(path));
+        }
+
+        if (source == "framebuffer") {
+            if (mode >= 0)
+                throw Py::ValueError("mode override is not supported for "
+                                     "source='framebuffer' (it captures the "
+                                     "composited frame as staged)");
+            // savePicture's framebuffer path sizes an FBO from these
+            // (no -1 = current-size convention there).
+            auto glWidget = viewer->getGLWidget();
+            if (!glWidget)
+                throw Py::RuntimeError("View has no GL widget");
+            const qreal dpr = glWidget->devicePixelRatioF();
+            QImage img;
+            viewer->savePicture(int(glWidget->width() * dpr),
+                                int(glWidget->height() * dpr),
+                                View3DInventorViewer::getNumSamples(),
+                                QColor(), img);
+            if (img.isNull()
+                    || !img.save(QString::fromUtf8(path.c_str())))
+                throw Py::RuntimeError("Cannot write image: " + path);
+            if (metadata)
+                writeRenderDumpSidecar(view, path, "framebuffer", -1,
+                                       nullptr);
+            return Py::new_reference_to(Py::String(path));
+        }
+
+        if (source == "viewer") {
+            auto &server = Render::SceneStreamServer::instance();
+            if (!server.running())
+                throw Py::RuntimeError("Scene-streaming server not running "
+                                       "(FC_BGFX_SERVE_SCENE)");
+            std::vector<Render::ViewerFrameDump> dumps;
+            Py_BEGIN_ALLOW_THREADS
+            server.requestFrameDumps(mode, 10000, dumps);
+            Py_END_ALLOW_THREADS
+            if (dumps.empty())
+                throw Py::RuntimeError("No connected viewer answered the "
+                                       "dumpFrame request");
+
+            // One image per connected viewer: the single-viewer capture
+            // keeps the given path, more get a -<n> suffix; the sidecar
+            // is the viewer's own metadata (its GPU, canvas, applied
+            // debug state) plus the request context.
+            Py::List paths;
+            auto dot = path.rfind('.');
+            std::string base = dot == std::string::npos
+                ? path : path.substr(0, dot);
+            std::string ext = dot == std::string::npos
+                ? std::string() : path.substr(dot);
+            for (size_t i = 0; i < dumps.size(); ++i) {
+                const auto &dump = dumps[i];
+                std::string file = dumps.size() == 1 ? path
+                    : base + "-" + std::to_string(i) + ext;
+                QImage img(dump.rgba.data(), dump.width, dump.height,
+                           dump.width * 4, QImage::Format_RGBA8888);
+                // WebGL readback rows are bottom-up like desktop GL.
+                if (!img.mirrored().save(QString::fromUtf8(file.c_str())))
+                    throw Py::RuntimeError("Cannot write image: " + file);
+                if (metadata) {
+                    QJsonObject root;
+                    if (!dump.meta.empty()) {
+                        QJsonDocument doc = QJsonDocument::fromJson(
+                            QByteArray(dump.meta.data(),
+                                       int(dump.meta.size())));
+                        if (doc.isObject())
+                            root = doc.object();
+                    }
+                    QJsonObject capture;
+                    capture[QStringLiteral("file")] =
+                        QString::fromUtf8(file.c_str());
+                    capture[QStringLiteral("source")] =
+                        QStringLiteral("viewer");
+                    if (mode >= 0)
+                        capture[QStringLiteral("mode")] = mode;
+                    capture[QStringLiteral("time")] =
+                        QDateTime::currentDateTime().toString(Qt::ISODate);
+                    root[QStringLiteral("capture")] = capture;
+                    QFile sidecar(QString::fromUtf8(
+                                (file + ".json").c_str()));
+                    if (!sidecar.open(QIODevice::WriteOnly
+                                      | QIODevice::Truncate))
+                        throw Py::RuntimeError("Cannot write sidecar JSON: "
+                                               + file + ".json");
+                    sidecar.write(QJsonDocument(root).toJson(
+                                QJsonDocument::Indented));
+                }
+                paths.append(Py::String(file));
+            }
+            return Py::new_reference_to(paths);
+        }
+
+        throw Py::ValueError("source must be 'renderer', 'framebuffer' "
+                             "or 'viewer'");
+    } PY_CATCH
+}
+
+PyObject* View3DInventorPy::getRenderStats(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    try {
+        View3DInventorViewer *viewer = getView3DInventorPtr()->getViewer();
+        Render::Renderer *renderer = viewer->getExternalRenderer();
+        if (!renderer)
+            throw Py::RuntimeError("No external renderer active on this view");
+        Render::FrameDumpRequest req;    // stats-only readback, no file
+        if (!renderer->requestFrameDump(req))
+            throw Py::RuntimeError("Render backend has no frame capture");
+        if (!pumpFrameDump(viewer, renderer))
+            throw Py::RuntimeError("Frame capture timed out");
+        Render::RenderStats stats;
+        if (!renderer->getRenderStats(stats))
+            throw Py::RuntimeError("No readback statistics available");
+        Py::Dict dict;
+        dict.setItem("width", Py::Long(stats.width));
+        dict.setItem("height", Py::Long(stats.height));
+        dict.setItem("geometryPixels",
+                     Py::Long(long(stats.geometryPixels)));
+        Py::Tuple avg(3);
+        avg.setItem(0, Py::Float(stats.avgColor[0]));
+        avg.setItem(1, Py::Float(stats.avgColor[1]));
+        avg.setItem(2, Py::Float(stats.avgColor[2]));
+        dict.setItem("avgColor", avg);
+        return Py::new_reference_to(dict);
+    } PY_CATCH
 }
 
 PyObject* View3DInventorPy::getCameraNode(PyObject *args)
