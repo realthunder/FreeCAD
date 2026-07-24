@@ -74,7 +74,7 @@ GuiExport Render::RenderDebugConfig translateRenderDebugConfig(View3DInventor * 
 /// attached SoShaderParameter values packed into vec4 lanes. Returns
 /// false when the node is inactive or carries no consumable source.
 GuiExport bool translateShaderProgram(const SoNode * node,
-                                      Render::UserShaderConfig::Shader & out);
+                                      Render::UserShader & out);
 
 /// Resolve the physically based shading settings (Render_PBR* view
 /// properties, RenderParams fallback) into the backend-neutral per-frame

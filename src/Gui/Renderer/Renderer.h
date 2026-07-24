@@ -367,30 +367,39 @@ struct RenderDebugConfig {
 /// passes. Compilation is the backend's job (bgfx: runtime shaderc
 /// compile cache); a shader that fails to compile is skipped with an
 /// error report, never a black screen.
-struct UserShaderConfig {
-    struct Shader {
-        /// Pipeline stage name from SoShaderProgram::stage. Backends map
-        /// known names and warn-and-skip unknown ones.
-        std::string stage;
-        /// bgfx .sc sources (SoShaderObject sourceType BGFX_SC, or
-        /// FILENAME with a .sc suffix — the capture reads the file). An
-        /// empty vertex source means the stage's built-in vertex shader
-        /// (for "post": the full-screen triangle, input v_texcoord0).
-        std::string vertexSource;
-        std::string fragmentSource;
-        /// SoShaderParameter values attached to the shader objects,
-        /// packed like RenderDebugConfig::UserParam (values zero-padded
-        /// to vec4 lanes; names are uniform names, "u_" prefix and all).
-        std::vector<RenderDebugConfig::UserParam> params;
+/// One user shader program (standalone so the render cache can hold a
+/// shared_ptr to a "material"-stage program inside its per-draw
+/// Material without pulling in the whole config).
+struct UserShader {
+    /// Pipeline stage name from SoShaderProgram::stage. Backends map
+    /// known names and warn-and-skip unknown ones.
+    std::string stage;
+    /// bgfx .sc sources (SoShaderObject sourceType BGFX_SC, or
+    /// FILENAME with a .sc suffix — the capture reads the file). An
+    /// empty vertex source means the stage's built-in vertex shader
+    /// (for "post": the full-screen triangle, input v_texcoord0; for
+    /// "material": the stock mesh vertex stage, outputs v_normal,
+    /// v_color0, v_vpos).
+    std::string vertexSource;
+    std::string fragmentSource;
+    /// SoShaderParameter values attached to the shader objects,
+    /// packed like RenderDebugConfig::UserParam (values zero-padded
+    /// to vec4 lanes; names are uniform names, "u_" prefix and all).
+    std::vector<RenderDebugConfig::UserParam> params;
 
-        bool operator==(const Shader &o) const {
-            return stage == o.stage && vertexSource == o.vertexSource
-                && fragmentSource == o.fragmentSource && params == o.params;
-        }
-        bool operator!=(const Shader &o) const { return !(*this == o); }
-    };
+    bool operator==(const UserShader &o) const {
+        return stage == o.stage && vertexSource == o.vertexSource
+            && fragmentSource == o.fragmentSource && params == o.params;
+    }
+    bool operator!=(const UserShader &o) const { return !(*this == o); }
+};
+
+struct UserShaderConfig {
+    using Shader = UserShader;
     /// In traversal order; a later shader on the same stage wins.
-    std::vector<Shader> shaders;
+    /// Only scene-level stages ("post") ride here — "material"-stage
+    /// programs attach per object through Material::usershader instead.
+    std::vector<UserShader> shaders;
 
     bool operator==(const UserShaderConfig &o) const {
         return shaders == o.shaders;
@@ -851,6 +860,15 @@ struct Material {
     /// shadow the light (not just below it). Costs up to six cached
     /// tile renders per invalidation; off by default.
     bool lightshadowext = false;
+
+    /// User "material"-stage shader of a triangle draw (a scene
+    /// SoShaderProgram node with stage="material" captured in the same
+    /// render cache as the shape, docs/RenderDebug.md §6): the backend
+    /// substitutes the program for the standard mesh fragment stage in
+    /// the beauty passes (depth prepass, shadows and picking keep the
+    /// stock shaders). Shared with the producing cache; pointer
+    /// identity doubles as the draw-batch key.
+    std::shared_ptr<const UserShader> usershader;
 
     /// Texture of a triangle draw (unit 0 only; GL applies further units
     /// on top, a known deviation) with its texture matrix, applied to

@@ -470,6 +470,30 @@ Implementation notes from the first slice (post stage):
   node's layout; the pivy-feedstock needs the same bump for distribution
   images.
 
+Implementation notes from the second slice (`material` stage):
+
+- **Per-object attachment = the SoFCRenderMaterial placement rules.** A
+  `stage="material"` program is routed by the cache-manager callback into
+  the *enclosing* render cache (`SoFCRenderCache::setUserShader`) instead
+  of the scene-level list: it applies to the shapes captured after it in
+  the same cache (insert it like `ViewProviderGeometryObject` inserts
+  `SoFCRenderMaterial` — child 0 of the view provider root) and, like the
+  water/glass flags, does **not** merge from a parent cache into child
+  caches. The translated program rides the cache `Material` as a
+  `shared_ptr<Render::UserShader>` whose pointer identity keys draw
+  batching (`operator<`) — a node edit invalidates the cache and
+  re-translates.
+- **Fragment stage only replaces the beauty shading.** The user program
+  substitutes for the mesh program in the scene beauty passes (opaque /
+  sorted-transparent / ground reflection) with the stock `vs_fc_mesh`
+  vertex stage when the program carries none (fragment contract: `$input
+  v_normal, v_color0, v_vpos`). The depth prepass, shadow casters,
+  picking, highlight/on-top and WBOIT draws keep the stock programs (the
+  user contract is one color output), section-clip discard is not applied
+  to user programs, and a draw with a user shader is excluded from the
+  cross-object instancing path. While the async compile is pending or
+  failed the standard program stands in — never a black object.
+
 ### 6.3 Compilation reality
 
 The bgfx backend consumes **precompiled per-API binaries** (`.sc` → `shaderc`
@@ -533,7 +557,7 @@ runtime GLSL compiler. Coin's nodes carry *source*. Reconciliation:
 | 3 | **DONE** — verification harness (`scripts/render-verify.sh` + `render_verify.py` + `render_diff.py` + `wasm-hold.js`): named-view or golden-sidecar restaging, xvfb/`--gpu`/`--viewer` capture legs, first-divergent-stage diffing with heatmaps | phases 1–2 |
 | 4 | **DONE** — dynamic name→uniform binding (`RenderDebug_*` props → like-named vec4 uniforms, snapshot v21) + `u_userParams[4]` fallback pool (lane 0 = debug output scale/bias); shader hot-reload (`FC_BGFX_SHADER_DIR` + `reloadShaders()`); `View3DInventor.addProperty/removeProperty` Python API | phase 1 |
 | 5 | **DONE** — view modes 5–8 (ShadowTile coverage, Overdraw counting pass on the repurposed `ViewDebugScene` slot, ShadowFilter precision probe, UV re-render; snapshot v22); self-labeling burn-in (`RenderDebug_Label`) | 1, 4 |
-| 6 | **first slice DONE** — user-loadable shaders on the Coin node model, `post` stage (coin fork: `SoShaderProgram::stage` + `BGFX_SC` source type; capture: cache-manager post-callback → `Render::UserShaderConfig` → `setUserShaderConfig`; backend: async shaderc compile cache + `ViewUserPostCopy`/`ViewUserPost` full-screen pass; sandboxed failure verified). Remaining: `material` stage, per-object attachment, browser tier (server-side compile), property-bound parameters (§6.4) | 4; shader compile cache (§6.3) |
+| 6 | **first slice DONE** — user-loadable shaders on the Coin node model, `post` stage (coin fork: `SoShaderProgram::stage` + `BGFX_SC` source type; capture: cache-manager post-callback → `Render::UserShaderConfig` → `setUserShaderConfig`; backend: async shaderc compile cache + `ViewUserPostCopy`/`ViewUserPost` full-screen pass; sandboxed failure verified). **second slice DONE** — `material` stage with per-object attachment (`Material::usershader` through the render-cache chain, stock `vs_fc_mesh` pairing, beauty passes only, instancing exclusion). Remaining: browser tier (server-side compile + snapshot transport), property-bound parameters (§6.4), material-stage lighting helper library | 4; shader compile cache (§6.3) |
 
 Phases 1+2 are the minimum end-to-end slice: set a mode from Python, capture
 a real-GPU frame with metadata, diff it.

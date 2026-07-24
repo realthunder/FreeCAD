@@ -335,6 +335,7 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->lightrange = 0.f;
   this->lightshadow = false;
   this->lightshadowext = false;
+  this->usershader.reset();
   this->firespeed = 1.f;
   this->polygonoffsetstyle = 0;
   this->polygonoffsetunits = 0.f;
@@ -1286,6 +1287,19 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
   PRIVATE(this)->material.lightshadow = material->lightShadow.getValue();
   PRIVATE(this)->material.lightshadowext
       = material->lightShadowExtended.getValue();
+}
+
+void
+SoFCRenderCache::setUserShader(SoState * state,
+                               std::shared_ptr<const Render::UserShader> shader)
+{
+  PRIVATE(this)->checkState(state);
+
+  // A user "material"-stage shader program (docs/RenderDebug.md §6),
+  // translated by the cache manager. Like SoFCRenderMaterial it applies
+  // to the shapes captured after it in this cache and does not merge
+  // into child caches; only external backends consume it.
+  PRIVATE(this)->material.usershader = std::move(shader);
 }
 
 void
@@ -2307,6 +2321,7 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
     bboxmaterial.occlusionmaps.clear();
     bboxmaterial.metallicroughnessmaps.clear();
     bboxmaterial.texturematrices.clear();
+    bboxmaterial.usershader.reset();
 
     res[bboxmaterial].emplace_back(cache, matrix, false, false, CacheKeyPtr());
   }

@@ -491,11 +491,14 @@ public:
     /// compile is in flight, 2 when compilation failed (reported once).
     int ensureUserShaderBin(const std::string &source, bool fragment,
                             QString &binPath);
-    /// Resolve a user post program from ready bins: user fragment source
-    /// + either a user vertex source or the stock full-screen vs_fc_comp.
-    /// Invalid while a compile is pending; entry.failed on real failure.
-    bgfx::ProgramHandle getUserPostProgram(const std::string &vsSource,
-                                           const std::string &fsSource);
+    /// Resolve a user program from ready bins: user fragment source +
+    /// either a user vertex source or the named stock vertex stage
+    /// ("vs_fc_comp" for the post stage's full-screen triangle,
+    /// "vs_fc_mesh" for the material stage). Invalid while a compile is
+    /// pending; entry.failed on real failure.
+    bgfx::ProgramHandle getUserProgram(const std::string &vsSource,
+                                       const std::string &fsSource,
+                                       const char *stockVs);
 #endif
 
 #ifdef FC_RENDERER_STANDALONE
@@ -4736,7 +4739,7 @@ public:
     /// the copy. Its uniforms ride the dynamic name binding shared with
     /// the RenderDebug parameters, and like there the updates must be
     /// recorded with the consuming draw (see submitDebug).
-    void submitUserPost(const Render::UserShaderConfig::Shader &shader,
+    void submitUserPost(const Render::UserShader &shader,
                         bgfx::ProgramHandle prog)
     {
         bgfx::setTexture(0, s_texScene, bgfxColor);
@@ -5916,28 +5919,55 @@ public:
             depth = bx::floatToBits(bx::max(-eyez, 0.0f));
         }
 
-        bgfx::submit(viewId + passView,
-                     mat.type == Render::Material::Triangle
-                         ? (oitDraw
-                             ? (clipped
-                                 ? (textured ? m_progMeshOitTexClip
-                                             : m_progMeshOitClip)
-                                 : (textured ? m_progMeshOitTex
-                                             : m_progMeshOit))
-                             : (clipped
-                                 ? (textured ? m_progMeshTexClip
-                                             : m_progMeshClip)
-                                 : (textured ? m_progMeshTex
-                                             : m_progMesh)))
-                         : thickline
-                             ? (patterned
-                                 ? (clipped ? m_progLinePatClip
-                                            : m_progLinePat)
-                                 : (clipped ? m_progLineClip : m_progLine))
-                             : thickpoint
-                                 ? (clipped ? m_progPointClip : m_progPoint)
-                                 : (clipped ? m_progFlatClip : m_progFlat),
-                     depth);
+        bgfx::ProgramHandle prog =
+            mat.type == Render::Material::Triangle
+                ? (oitDraw
+                    ? (clipped
+                        ? (textured ? m_progMeshOitTexClip
+                                    : m_progMeshOitClip)
+                        : (textured ? m_progMeshOitTex
+                                    : m_progMeshOit))
+                    : (clipped
+                        ? (textured ? m_progMeshTexClip
+                                    : m_progMeshClip)
+                        : (textured ? m_progMeshTex
+                                    : m_progMesh)))
+                : thickline
+                    ? (patterned
+                        ? (clipped ? m_progLinePatClip
+                                   : m_progLinePat)
+                        : (clipped ? m_progLineClip : m_progLine))
+                    : thickpoint
+                        ? (clipped ? m_progPointClip : m_progPoint)
+                        : (clipped ? m_progFlatClip : m_progFlat);
+
+#ifndef FC_RENDERER_STANDALONE
+        // User "material"-stage shader (docs/RenderDebug.md §6): replace
+        // the mesh fragment stage in the scene beauty passes only — the
+        // depth prepass, shadow casters and the highlight/on-top views
+        // keep the stock programs, and a WBOIT draw keeps the stock OIT
+        // outputs (the user contract is a single color output). While
+        // the async compile is pending (or failed), the standard
+        // program stands in — never a black object. Parameter uniforms
+        // must be recorded with the consuming draw (see submitDebug).
+        if (mat.usershader && !mat.usershader->fragmentSource.empty()
+                && mat.type == Render::Material::Triangle
+                && pass == PassNormal && !oitDraw
+                && (passView == ViewOpaque || passView == ViewTransparent
+                    || passView == ViewGroundRefl)) {
+            bgfx::ProgramHandle uprog = _BGFXLib.getUserProgram(
+                mat.usershader->vertexSource,
+                mat.usershader->fragmentSource, "vs_fc_mesh");
+            if (bgfx::isValid(uprog)) {
+                for (const auto &p : mat.usershader->params)
+                    _BGFXLib.setUserUniform(p.name, p.values.data(),
+                                            uint16_t(p.values.size() / 4));
+                prog = uprog;
+            }
+        }
+#endif
+
+        bgfx::submit(viewId + passView, prog, depth);
         ++drawcount;
     }
 
@@ -8054,7 +8084,7 @@ public:
         // captured post-stage program wins; resolved through the runtime
         // shaderc compile cache (desktop builds — the viewer tier waits
         // on server-side compile). A failed compile keeps the pass off.
-        const Render::UserShaderConfig::Shader *userPost = nullptr;
+        const Render::UserShader *userPost = nullptr;
         for (const auto &s : usershaderconf.shaders) {
             if (s.stage == "post" && !s.fragmentSource.empty())
                 userPost = &s;
@@ -8063,8 +8093,9 @@ public:
 #ifndef FC_RENDERER_STANDALONE
         userShaderGen = _BGFXLib.userCompileGeneration;
         if (userPost)
-            userPostProg = _BGFXLib.getUserPostProgram(
-                userPost->vertexSource, userPost->fragmentSource);
+            userPostProg = _BGFXLib.getUserProgram(
+                userPost->vertexSource, userPost->fragmentSource,
+                "vs_fc_comp");
 #endif
         const bool userPostActive = userPost
             && bgfx::isValid(userPostProg)
@@ -10162,6 +10193,7 @@ public:
             && !m.glass
             && !m.cloud
             && !m.fire
+            && !m.usershader
             && !m.faceoutline;
     }
 
@@ -11053,12 +11085,19 @@ BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
 }
 
 bgfx::ProgramHandle
-BGFXRendererLibP::getUserPostProgram(const std::string &vsSource,
-                                     const std::string &fsSource)
+BGFXRendererLibP::getUserProgram(const std::string &vsSource,
+                                 const std::string &fsSource,
+                                 const char *stockVs)
 {
     QByteArray keyed(fsSource.c_str(), int(fsSource.size()));
     keyed.append('\1');
     keyed.append(vsSource.c_str(), int(vsSource.size()));
+    if (vsSource.empty()) {
+        // The stock vertex stage is part of the program identity: the
+        // same fragment source pairs differently per stage.
+        keyed.append('\1');
+        keyed.append(stockVs);
+    }
     std::string key =
         QCryptographicHash::hash(keyed, QCryptographicHash::Sha1)
             .toHex().toStdString();
@@ -11089,11 +11128,11 @@ BGFXRendererLibP::getUserPostProgram(const std::string &vsSource,
     if (vsSource.empty()) {
         std::string platform, profile, apiDir;
         if (shadercTarget(platform, profile, apiDir)) {
-            vsh = loadShaderFile(shaderPath() + "shaders/" + apiDir
-                                 + "/vs_fc_comp.bin");
+            std::string bin = std::string("/") + stockVs + ".bin";
+            vsh = loadShaderFile(shaderPath() + "shaders/" + apiDir + bin);
             if (!bgfx::isValid(vsh))
                 vsh = loadShaderFile(resource() + "shaders/" + apiDir
-                                     + "/vs_fc_comp.bin");
+                                     + bin);
         }
     }
     else {

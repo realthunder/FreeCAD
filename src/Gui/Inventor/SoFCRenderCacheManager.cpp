@@ -1466,12 +1466,22 @@ SoFCRenderCacheManagerP::postShaderProgram(void *userdata,
                                            SoCallbackAction *action,
                                            const SoNode * node)
 {
-  (void)action;
   SoFCRenderCacheManagerP *self = reinterpret_cast<SoFCRenderCacheManagerP*>(userdata);
   assert(node);
-  Render::UserShaderConfig::Shader shader;
-  if (RendererBridge::translateShaderProgram(node, shader))
-    self->usershaders.shaders.push_back(std::move(shader));
+  Render::UserShader shader;
+  if (RendererBridge::translateShaderProgram(node, shader)) {
+    // "material"-stage programs attach to the shapes captured after
+    // them in the enclosing cache (the SoFCRenderMaterial placement
+    // rules); scene-level stages ("post") ride the manager list.
+    if (shader.stage == "material") {
+      if (!self->stack.empty())
+        self->stack.back()->setUserShader(
+            action->getState(),
+            std::make_shared<Render::UserShader>(std::move(shader)));
+    }
+    else
+      self->usershaders.shaders.push_back(std::move(shader));
+  }
   return SoCallbackAction::CONTINUE;
 }
 

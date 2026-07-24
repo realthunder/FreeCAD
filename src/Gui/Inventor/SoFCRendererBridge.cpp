@@ -561,6 +561,9 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.lightrange = m.lightrange;
         res.lightshadow = m.lightshadow;
         res.lightshadowext = m.lightshadowext;
+        // User "material"-stage shader (docs/RenderDebug.md §6); the
+        // shared translation's pointer identity is the batch key.
+        res.usershader = m.usershader;
     }
 
     // Bump map of triangle draws, unit 0 only like textures (the GL
@@ -1034,7 +1037,7 @@ static std::string shaderObjectSource(const SoShaderObject * obj)
 
 bool
 RendererBridge::translateShaderProgram(const SoNode * node,
-                                       Render::UserShaderConfig::Shader & out)
+                                       Render::UserShader & out)
 {
     auto prog = dynamic_cast<const SoShaderProgram*>(node);
     if (!prog)

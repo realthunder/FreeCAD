@@ -38,6 +38,10 @@
 #include "SoFCRenderCacheManager.h"
 #include "SoAutoZoomTranslation.h"
 
+namespace Render {
+struct UserShader;
+}
+
 class SoFCVertexCache;
 class SoFCRenderCacheP;
 class SoState;
@@ -283,6 +287,11 @@ public:
     float lightrange;
     bool lightshadow;
     bool lightshadowext;
+    /// User "material"-stage shader captured from a scene
+    /// SoShaderProgram node in this cache (docs/RenderDebug.md §6);
+    /// only external backends consume it. Pointer identity is the
+    /// draw-batch key (a re-capture makes a new translation).
+    std::shared_ptr<const Render::UserShader> usershader;
     float polygonoffsetunits;
     float polygonoffsetfactor;
     int16_t annotation;
@@ -438,6 +447,8 @@ public:
         if (lightshadow > other.lightshadow) return false;
         if (lightshadowext < other.lightshadowext) return true;
         if (lightshadowext > other.lightshadowext) return false;
+        if (usershader.get() < other.usershader.get()) return true;
+        if (usershader.get() > other.usershader.get()) return false;
         if (lightmodel < other.lightmodel) return true;
         if (lightmodel > other.lightmodel) return false;
         if (vertexordering < other.vertexordering) return true;
@@ -605,6 +616,13 @@ public:
 
   void addRenderMaterial(SoState * state, const SoNode * material);
   void addRenderTexture(SoState * state, const SoNode * texture);
+  /// Attach a user "material"-stage shader program (a scene
+  /// SoShaderProgram node translated by the cache manager,
+  /// docs/RenderDebug.md §6) to the shapes captured after it in this
+  /// cache — the SoFCRenderMaterial placement rules apply (same cache
+  /// as the shapes, no parent-to-child merge).
+  void setUserShader(SoState * state,
+                     std::shared_ptr<const Render::UserShader> shader);
 
   void addClipPlane(SoState * state, const SoClipPlane * light);
 
