@@ -18,10 +18,6 @@ if(BUILD_BGFX)
     list(APPEND Renderer_CPP_SRCS BGFXRenderer.cpp)
     list(APPEND Renderer_HPP_SRCS BGFXRenderer.h)
     list(APPEND Renderer_LIBS bgfx bx bimg example-common)
-
-    file(GLOB_RECURSE Assets RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} bgfx/assets/*)
-    list(APPEND Renderer_Assets ${Assets})
-
 endif(BUILD_BGFX)
 
 if(BUILD_DILIGENT)
@@ -83,17 +79,35 @@ else(WIN32)
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif(WIN32)
 
+if(BUILD_BGFX)
+    # The bgfx shaders compile at build time from source (no committed
+    # .bin files) with the in-tree shaderc, straight into the build
+    # tree's resource path. All three profiles are produced: the desktop
+    # renderer loads glsl or spirv per backend, and the Emscripten
+    # viewer build reuses this machinery for its essl pack (see
+    # wasm/CMakeLists.txt). Building the library (thus any target
+    # linking it, e.g. FreeCADGui) refreshes the compiled shaders too.
+    include(${CMAKE_CURRENT_SOURCE_DIR}/BGFXShaders.cmake)
+    fc_bgfx_compile_shaders(Renderer_ShaderBins
+        SHADERC   $<TARGET_FILE:shaderc>
+        SHADERDIR ${CMAKE_CURRENT_SOURCE_DIR}/bgfx/shaders
+        BGFXINC   ${CMAKE_SOURCE_DIR}/src/3rdParty/bgfx/bgfx/src
+        OUTDIR    ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders
+        PROFILES  glsl spirv essl
+        DEPENDS   shaderc)
+    ADD_CUSTOM_TARGET(Renderer_assets ALL DEPENDS ${Renderer_ShaderBins})
+    add_dependencies(${Library} Renderer_assets)
+    install(DIRECTORY
+        ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders)
+endif(BUILD_BGFX)
+
 if (Renderer_Assets)
     install(FILES ${Renderer_Assets} DESTINATION ${CMAKE_INSTALL_DATADIR}/Renderer)
 
-    ADD_CUSTOM_TARGET(Renderer_assets ALL SOURCES ${Renderer_Assets})
-    fc_copy_sources(Renderer_assets
+    ADD_CUSTOM_TARGET(Renderer_assets_static ALL SOURCES ${Renderer_Assets})
+    fc_copy_sources(Renderer_assets_static
                     "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer"
                     ${Renderer_Assets})
-    # Building the library (thus any target linking it, e.g. FreeCADGui)
-    # refreshes the copied assets too — a plain --target FreeCADGui after
-    # shaders/compile.sh must not leave stale .bins in the build tree.
-    # Note the asset list itself is a configure-time GLOB: an all-new
-    # shader file still needs a cmake reconfigure to be picked up.
-    add_dependencies(${Library} Renderer_assets)
+    add_dependencies(${Library} Renderer_assets_static)
 endif (Renderer_Assets)

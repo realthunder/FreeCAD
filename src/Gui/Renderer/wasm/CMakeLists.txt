@@ -61,6 +61,30 @@ target_include_directories(fcviewer PRIVATE
 
 target_link_libraries(fcviewer PRIVATE bgfx bimg bx)
 
+# The shaders compile at build time from source (no committed .bin
+# files). An Emscripten build cannot build the host shaderc tool itself,
+# so it uses one from a native build tree — the conda-debug desktop
+# build by default; point FCVIEWER_SHADERC elsewhere if that build does
+# not exist.
+set(FCVIEWER_SHADERC
+    "${FC_SRC}/../build/conda-debug/src/3rdParty/bgfx/cmake/bgfx/shaderc"
+    CACHE FILEPATH "Host shaderc binary for essl shader compilation")
+if(NOT EXISTS ${FCVIEWER_SHADERC})
+    message(FATAL_ERROR
+        "host shaderc not found: ${FCVIEWER_SHADERC}\n"
+        "Build the desktop tree first (it builds shaderc), or set "
+        "-DFCVIEWER_SHADERC=/path/to/shaderc.")
+endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/../BGFXShaders.cmake)
+fc_bgfx_compile_shaders(fcviewer_shader_bins
+    SHADERC   ${FCVIEWER_SHADERC}
+    SHADERDIR ${FC_SRC}/Gui/Renderer/bgfx/shaders
+    BGFXINC   ${FC_SRC}/3rdParty/bgfx/bgfx/src
+    OUTDIR    ${CMAKE_BINARY_DIR}/assets/shaders
+    PROFILES  essl)
+add_custom_target(fcviewer_shaders DEPENDS ${fcviewer_shader_bins})
+add_dependencies(fcviewer fcviewer_shaders)
+
 target_link_options(fcviewer PRIVATE
     -sMAX_WEBGL_VERSION=2
     -sMIN_WEBGL_VERSION=2
@@ -71,7 +95,7 @@ target_link_options(fcviewer PRIVATE
     -sEXIT_RUNTIME=0
     # Compiled essl shaders at the resource path the renderer resolves
     # (setResourcePath("/assets") + "bgfx/assets/shaders/essl/...").
-    "SHELL:--preload-file ${FC_SRC}/Gui/Renderer/bgfx/assets/shaders/essl@/assets/bgfx/assets/shaders/essl"
+    "SHELL:--preload-file ${CMAKE_BINARY_DIR}/assets/shaders/essl@/assets/bgfx/assets/shaders/essl"
     # Mobile-friendly HTML shell (viewport meta + full-viewport, touch-action
     # canvas) instead of the stock desktop emscripten template.
     "SHELL:--shell-file ${CMAKE_CURRENT_SOURCE_DIR}/shell.html"
@@ -85,9 +109,7 @@ if(FCVIEWER_SCENE)
         "SHELL:--preload-file ${FCVIEWER_SCENE}@/scene.fcsd")
 endif()
 
-# Relink when shader bins or the snapshot change.
-file(GLOB fcviewer_shader_bins
-    ${FC_SRC}/Gui/Renderer/bgfx/assets/shaders/essl/*.bin)
+# Relink (repack fcviewer.data) when shader bins or the snapshot change.
 set_property(TARGET fcviewer APPEND PROPERTY
     LINK_DEPENDS ${fcviewer_shader_bins} ${FCVIEWER_SCENE}
     ${CMAKE_CURRENT_SOURCE_DIR}/shell.html)

@@ -46,7 +46,7 @@ Module inclusion is controlled by `BUILD_<MODULE>` options (`BUILD_GUI`, `BUILD_
 Lives in `src/Gui/Renderer/`, built as the `FreeCADRenderer` shared lib (always linked into `Gui`):
 - `Renderer.h` / `Renderer.cpp` — backend-agnostic interface (`Render::Renderer`, `RendererLib`) and the `RendererFactory` singleton. Backends self-register at static init and are selected at runtime by type string.
 - `BGFXRenderer.cpp` — the **bgfx** backend (the one to develop). `DiligentRenderer.cpp` — a parallel DiligentEngine backend. Enabled with `-DBUILD_BGFX=ON` / `-DBUILD_DILIGENT=ON`.
-- Vendored engines: `src/3rdParty/bgfx/` (git submodule, built SHARED), `src/3rdParty/Diligent/`. Shaders: `src/Gui/Renderer/bgfx/assets/shaders/`.
+- Vendored engines: `src/3rdParty/bgfx/` (git submodule, built SHARED), `src/3rdParty/Diligent/`. Shaders: **source only** at `src/Gui/Renderer/bgfx/shaders/` — the `.bin` files are build artifacts compiled by the in-tree `shaderc` (`ninja Renderer_assets`; the WASM viewer build compiles its own essl pack), nothing is committed.
 
 **Integration with Coin3D**: the renderer runs **alongside** Coin, not replacing it. In `src/Gui/View3DInventorViewer.cpp`, `setRendererType()` (~3163) creates the renderer (only when render-cache mode == 3, i.e. `ViewParams::getRenderCache()==3`), and `renderScene()` (~3181) calls `renderer->render(...)` **first** into the shared Qt GL context, then Coin's `SoGLRenderAction` composites the scene graph on top.
 

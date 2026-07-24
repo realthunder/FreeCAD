@@ -227,18 +227,31 @@ not as a debug-only hack.
 
 Editing a `.sc` shader used to mean recompile + restart. Implemented:
 
+- **Shaders are distributed by source**: the repository carries only
+  `.sc`/`.sh`; every `.bin` is a build artifact. The desktop build
+  compiles all profiles with the in-tree `shaderc`
+  (`BGFXShaders.cmake` → `ninja Renderer_assets`, incremental per
+  shader) into the build tree's resource path; the WASM viewer build
+  compiles+packs its own essl set with a host `shaderc`
+  (`FCVIEWER_SHADERC`). No committed binaries, no stale-copy step.
 - `FC_BGFX_SHADER_DIR=<dir>` points the shader loads at an alternate
   asset root (a directory containing `shaders/{glsl,essl,spirv}/`) —
-  e.g. the source tree's `compile.sh` output, or a scratch copy.
+  e.g. `bgfx/shaders/compile.sh`'s output (default
+  `build/shaders-dev`), for A/B shader experiments that must not touch
+  the build tree.
 - `View3DInventor.reloadShaders()` reloads every program from disk on
   the next rendered frame (a shader-generation bump forces the view
   re-init that already owns program lifetime). The loop is:
-  edit `.sc` → `sh compile.sh` (or invoke `shaderc` for one file) →
-  `view.reloadShaders()` — no restart, verified byte-exact reversible.
+  edit `.sc` → `ninja Renderer_assets` (or `compile.sh` into the
+  override root) → `view.reloadShaders()` — no restart, verified
+  byte-exact reversible.
 - Desktop-only for now (shaderc is a host tool); the WASM story arrives
   with the user-shader feature's server-side compile step (section 6.3).
   A file watcher on the override dir could remove the explicit reload
-  call later.
+  call later. True runtime JIT of the built-ins (ship source + shaderc
+  in the distribution, compile on demand through the §6.3 cache) is a
+  phase-6 option on top of this — the build-time compile stays as the
+  fallback and the commit-time error gate either way.
 
 This converts "hack the shader to print a color" from a rebuild cycle into an
 edit-save-see loop, while keeping the shader *source* the artifact — which is
