@@ -45,6 +45,16 @@ static uint64_t s_sceneVersion = 0;
 static EMSCRIPTEN_WEBSOCKET_T s_ws = 0;
 static bool s_wsOpen = false;
 static bool s_polling = false;
+// Dropped-stream reconnect state: once the WebSocket has been open, a
+// close/error schedules reconnect attempts (status text along the top)
+// instead of the HTTP-polling fallback reserved for no-WebSocket
+// environments. The budget defaults to 10 attempts; the backend can
+// raise it (or set -1 = infinite, a debugging aid) with a pushed
+// {"cmd":"config","reconnect":N} control message.
+long s_reconnectLimit = 10;
+static bool s_wsEverOpen = false;
+static long s_reconnectAttempts = 0;
+static bool s_reconnectPending = false;
 
 // One-shot in-page frame capture (docs/RenderDebug.md §4.4): armed by
 // a {cmd:"dumpFrame"} control message on the scene WebSocket. The next
@@ -2048,6 +2058,18 @@ static void handleControlMessage(const char *json)
         std::printf("fcviewer: dumpFrame request %ld (mode %ld)\n",
                     id, mode);
     }
+    else if (std::strstr(json, "\"cmd\":\"config\"")) {
+        // Server-pushed viewer policy (currently just the reconnect
+        // budget: attempts after a dropped stream; -1 = infinite, a
+        // backend debugging aid via FC_BGFX_VIEWER_RECONNECT).
+        const char *p = std::strstr(json, "\"reconnect\"");
+        const char *colon = p ? std::strchr(p, ':') : nullptr;
+        if (colon) {
+            s_reconnectLimit = std::strtol(colon + 1, nullptr, 10);
+            std::printf("fcviewer: reconnect budget %ld\n",
+                        s_reconnectLimit);
+        }
+    }
     else if (std::strstr(json, "\"cmd\":\"reload\"")) {
         char bust[64] = "";
         const char *p = std::strstr(json, "\"cacheBust\"");
@@ -2113,7 +2135,16 @@ static void startPolling()
 static EM_BOOL onWsOpen(int, const EmscriptenWebSocketOpenEvent *, void *)
 {
     s_wsOpen = true;
-    std::printf("fcviewer: websocket connected\n");
+    if (s_reconnectAttempts > 0) {
+        std::printf("fcviewer: reconnected after %ld attempt(s)\n",
+                    s_reconnectAttempts);
+        fcviewer_status(nullptr, 0.0, 0.0);
+    }
+    else {
+        std::printf("fcviewer: websocket connected\n");
+    }
+    s_wsEverOpen = true;
+    s_reconnectAttempts = 0;
     // Version handshake: tell the server which snapshot format this
     // build reads (it answers with a reload when the served format is
     // newer) and register as a control-channel viewer (dumpFrame).
@@ -2136,44 +2167,95 @@ static EM_BOOL onWsMessage(int, const EmscriptenWebSocketMessageEvent *e,
     return EM_TRUE;
 }
 
+static bool connectWs();
+
+/// The WebSocket dropped (or never came up). Before the first
+/// successful open this falls back to HTTP polling (no-WebSocket
+/// environments); afterwards it schedules reconnect attempts with the
+/// status bar narrating, up to s_reconnectLimit (-1 = infinite).
+static void onWsDown()
+{
+    if (!s_wsOpen && s_reconnectPending)
+        return;
+    bool wasOpen = s_wsOpen;
+    s_wsOpen = false;
+    if (!s_wsEverOpen) {
+        startPolling();
+        return;
+    }
+    if (wasOpen)
+        std::printf("fcviewer: scene stream lost\n");
+    if (s_reconnectLimit >= 0 && s_reconnectAttempts >= s_reconnectLimit) {
+        std::printf("fcviewer: giving up after %ld reconnect attempts\n",
+                    s_reconnectAttempts);
+        fcviewer_status("Disconnected \xe2\x80\x94 reload to retry",
+                        0.0, -1.0);
+        return;
+    }
+    ++s_reconnectAttempts;
+    char label[64];
+    if (s_reconnectLimit >= 0)
+        std::snprintf(label, sizeof(label),
+                      "Reconnecting\xe2\x80\xa6 (%ld/%ld)",
+                      s_reconnectAttempts, s_reconnectLimit);
+    else
+        std::snprintf(label, sizeof(label),
+                      "Reconnecting\xe2\x80\xa6 (%ld)",
+                      s_reconnectAttempts);
+    fcviewer_status(label, 0.0, 0.0);
+    s_reconnectPending = true;
+    emscripten_set_timeout([](void *) {
+        s_reconnectPending = false;
+        if (s_ws > 0) {
+            emscripten_websocket_close(s_ws, 1000, "reconnect");
+            emscripten_websocket_delete(s_ws);
+            s_ws = 0;
+        }
+        if (!connectWs())
+            onWsDown();   // socket creation failed: burn an attempt
+    }, 2000, nullptr);
+}
+
 static EM_BOOL onWsError(int, const EmscriptenWebSocketErrorEvent *, void *)
 {
-    s_wsOpen = false;
-    startPolling();
+    onWsDown();
     return EM_TRUE;
 }
 
 static EM_BOOL onWsClose(int, const EmscriptenWebSocketCloseEvent *, void *)
 {
-    s_wsOpen = false;
-    startPolling();
+    onWsDown();
     return EM_TRUE;
+}
+
+/// Open the scene-stream WebSocket and hook the callbacks. Returns
+/// false when WebSockets are unavailable or creation failed.
+static bool connectWs()
+{
+    if (!emscripten_websocket_is_supported())
+        return false;
+    std::string url = s_sceneUrl;
+    if (url.rfind("http", 0) == 0)
+        url = "ws" + url.substr(4);   // http(s):// -> ws(s)://
+    url += "/scene";
+    EmscriptenWebSocketCreateAttributes attr = {
+        url.c_str(), nullptr, EM_TRUE};
+    s_ws = emscripten_websocket_new(&attr);
+    if (s_ws <= 0)
+        return false;
+    emscripten_websocket_set_onopen_callback(s_ws, nullptr, onWsOpen);
+    emscripten_websocket_set_onmessage_callback(s_ws, nullptr,
+                                                onWsMessage);
+    emscripten_websocket_set_onerror_callback(s_ws, nullptr, onWsError);
+    emscripten_websocket_set_onclose_callback(s_ws, nullptr, onWsClose);
+    return true;
 }
 
 /// Connect the live scene stream (WebSocket first, polling fallback).
 static void startStream()
 {
-    std::string url = s_sceneUrl;
-    if (url.rfind("http", 0) == 0)
-        url = "ws" + url.substr(4);   // http(s):// -> ws(s)://
-    url += "/scene";
-    if (emscripten_websocket_is_supported()) {
-        EmscriptenWebSocketCreateAttributes attr = {
-            url.c_str(), nullptr, EM_TRUE};
-        s_ws = emscripten_websocket_new(&attr);
-        if (s_ws > 0) {
-            emscripten_websocket_set_onopen_callback(s_ws, nullptr,
-                                                     onWsOpen);
-            emscripten_websocket_set_onmessage_callback(s_ws, nullptr,
-                                                        onWsMessage);
-            emscripten_websocket_set_onerror_callback(s_ws, nullptr,
-                                                      onWsError);
-            emscripten_websocket_set_onclose_callback(s_ws, nullptr,
-                                                      onWsClose);
-            return;
-        }
-    }
-    startPolling();
+    if (!connectWs())
+        startPolling();
 }
 
 //////////////////////////////////////////////////////////////////////

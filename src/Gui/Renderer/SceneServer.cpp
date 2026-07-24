@@ -613,6 +613,23 @@ public:
                     std::lock_guard<std::mutex> guard(connMutex);
                     conn.pendingText.push_back(msg);
                 }
+                // Viewer policy push: the dropped-stream reconnect
+                // budget (viewer default 10). FC_BGFX_VIEWER_RECONNECT
+                // overrides it; -1 = infinite retries, a debugging aid
+                // for long unattended sessions.
+                static const long reconnect = [] {
+                    const char *env =
+                        std::getenv("FC_BGFX_VIEWER_RECONNECT");
+                    return env ? std::strtol(env, nullptr, 10) : 10L;
+                }();
+                if (reconnect != 10) {
+                    char msg[64];
+                    std::snprintf(msg, sizeof(msg),
+                                  "{\"cmd\":\"config\",\"reconnect\":%ld}",
+                                  reconnect);
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.pendingText.push_back(msg);
+                }
             }
             return;
         }
