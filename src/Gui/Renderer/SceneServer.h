@@ -43,6 +43,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 #include "Renderer.h"
@@ -54,6 +55,17 @@ struct ScenePickRequest {
     float origin[3];
     float dir[3];
     uint32_t modifiers = 0;   ///< bit 0 = ctrl (toggle selection)
+};
+
+/// One viewer's answer to a dumpFrame control request
+/// (docs/RenderDebug.md §4.4): its canvas pixels read back in-page on
+/// the device's real GPU, plus the viewer's own metadata JSON (canvas
+/// size, WEBGL_debug_renderer_info, applied RenderDebug state).
+struct ViewerFrameDump {
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> rgba;   ///< tightly packed RGBA8, bottom-up rows
+    std::string meta;            ///< viewer-supplied JSON (may be empty)
 };
 
 class RendererExport SceneStreamServer {
@@ -72,6 +84,21 @@ public:
     /// server connection thread — the handler must marshal to the GUI
     /// thread itself before touching any scene graph.
     void setPickHandler(std::function<void(const ScenePickRequest &)> handler);
+
+    /// Queue a JSON control message (WebSocket text frame) to every
+    /// connected viewer — the browser side of the debug/capture
+    /// protocol (docs/RenderDebug.md §4.4): dumpFrame, reload. Sent by
+    /// each connection's own push loop (within its poll interval).
+    void broadcastControl(const std::string &json);
+
+    /// Push a dumpFrame request to every connected viewer and block
+    /// until each answered or \a timeoutMs elapsed; partial results
+    /// are returned on timeout. \a mode >= 0 asks the viewers to
+    /// capture with that RenderDebug view mode for the dumped frame.
+    /// Returns the number of dumps collected (0 when no viewer is
+    /// connected, or when another collection is still in flight).
+    int requestFrameDumps(int mode, int timeoutMs,
+                          std::vector<ViewerFrameDump> &dumps);
 
 private:
     SceneStreamServer() = default;

@@ -21,6 +21,8 @@
 #include <emscripten/html5.h>
 #include <emscripten/websocket.h>
 
+#include <GLES3/gl3.h>
+
 #include <bgfx/bgfx.h>
 #include <bx/math.h>
 
@@ -43,6 +45,18 @@ static uint64_t s_sceneVersion = 0;
 static EMSCRIPTEN_WEBSOCKET_T s_ws = 0;
 static bool s_wsOpen = false;
 static bool s_polling = false;
+
+// One-shot in-page frame capture (docs/RenderDebug.md §4.4): armed by
+// a {cmd:"dumpFrame"} control message on the scene WebSocket. The next
+// rendered frame is read back with glReadPixels — this device's real
+// GPU, unlike any server-side screenshot — and uploaded as a binary
+// 'D' frame tagged with the request id.
+struct FrameDumpReq {
+    bool armed = false;
+    uint32_t id = 0;
+    int mode = -1;   ///< RenderDebug view-mode override, -1 = as staged
+};
+static FrameDumpReq s_dumpReq;
 
 EM_JS(char *, fcviewer_scene_param, (), {
     var p = new URLSearchParams(window.location.search).get('scene');
@@ -106,6 +120,47 @@ EM_JS(void, fcviewer_canvas_origin, (double *out), {
     var r = document.getElementById('canvas').getBoundingClientRect();
     HEAPF64[out >> 3] = r.left;
     HEAPF64[(out >> 3) + 1] = r.top;
+});
+
+// GL renderer identity for capture metadata: the unmasked WebGL
+// renderer string (the device's real GPU) plus the user agent.
+EM_JS(char *, fcviewer_gl_info, (), {
+    try {
+        var canvas = document.getElementById('canvas');
+        var gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        var info = "";
+        if (gl) {
+            var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            info = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)
+                       : gl.getParameter(gl.RENDERER);
+        }
+        var s = info + ' | ' + navigator.userAgent;
+        var len = lengthBytesUTF8(s) + 1;
+        var buf = _malloc(len);
+        stringToUTF8(s, buf, len);
+        return buf;
+    } catch (e) {
+        return 0;
+    }
+});
+
+// Self-reload with a cache-busting query parameter (a bare reload may
+// reuse a stale cached .wasm/.js bundle). Refuses a repeat reload for
+// the same bust token, so a bad build cannot cause a reload loop.
+EM_JS(void, fcviewer_reload, (const char *bust), {
+    var b = UTF8ToString(bust);
+    try {
+        var u = new URL(window.location.href);
+        if (u.searchParams.get('bust') === b) {
+            console.warn('fcviewer: reload for ' + b
+                         + ' already applied, refusing a loop');
+            return;
+        }
+        u.searchParams.set('bust', b);
+        window.location.replace(u.toString());
+    } catch (e) {
+        window.location.reload();
+    }
 });
 
 static int s_width = 1024;    // drawing-buffer size, device px (css * dpr)
@@ -1316,6 +1371,74 @@ static void updateHud(bool idle)
     fcviewer_hud(hud);
 }
 
+static std::string jsonEscape(const char *s)
+{
+    std::string out;
+    for (; s && *s; ++s) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '"' || c == '\\') {
+            out += '\\';
+            out += char(c);
+        }
+        else if (c < 0x20) {
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+            out += buf;
+        }
+        else {
+            out += char(c);
+        }
+    }
+    return out;
+}
+
+/// Read back the presented frame (called right after render(), same
+/// RAF tick — the drawing buffer is not preserved across ticks) and
+/// upload it: 'D', u32 request id, u32 metadata length, metadata
+/// JSON, u32 width, u32 height, RGBA8 pixels bottom-up (little-endian
+/// throughout, matching the scene server's parser).
+static void captureAndSendFrame(uint32_t id, int mode)
+{
+    if (!s_wsOpen || s_width <= 0 || s_height <= 0)
+        return;
+    char *info = fcviewer_gl_info();
+    std::string meta = "{\"canvasSize\":[" + std::to_string(s_width) + ","
+        + std::to_string(s_height) + "]"
+        + ",\"devicePixelRatio\":" + std::to_string(s_dpr)
+        + ",\"snapshotFormat\":"
+        + std::to_string(Render::sceneDumpVersion())
+        + ",\"sceneVersion\":" + std::to_string(s_sceneVersion)
+        + ",\"viewMode\":"
+        + std::to_string(mode >= 0 ? mode : s_snap.debugconf.viewMode)
+        + ",\"freezeFrame\":"
+        + (s_snap.debugconf.freezeFrame ? "true" : "false")
+        + ",\"renderer\":\"" + (info ? jsonEscape(info) : std::string())
+        + "\"}";
+    std::free(info);
+
+    const size_t npix = size_t(s_width) * size_t(s_height) * 4;
+    std::vector<uint8_t> buf(1 + 4 + 4 + meta.size() + 8 + npix);
+    uint8_t *p = buf.data();
+    p[0] = 'D';
+    uint32_t v = id;
+    std::memcpy(p + 1, &v, 4);
+    v = uint32_t(meta.size());
+    std::memcpy(p + 5, &v, 4);
+    std::memcpy(p + 9, meta.data(), meta.size());
+    size_t off = 9 + meta.size();
+    v = uint32_t(s_width);
+    std::memcpy(p + off, &v, 4);
+    v = uint32_t(s_height);
+    std::memcpy(p + off + 4, &v, 4);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, s_width, s_height, GL_RGBA, GL_UNSIGNED_BYTE,
+                 p + off + 8);
+    emscripten_websocket_send_binary(s_ws, buf.data(), buf.size());
+    std::printf("fcviewer: dumpFrame %u uploaded %dx%d (mode %d)\n",
+                id, s_width, s_height, mode);
+}
+
 static void mainLoop()
 {
     const double frameNow = emscripten_get_now();
@@ -1348,6 +1471,16 @@ static void mainLoop()
     }
 
     updateQuality();
+
+    // One-shot dumpFrame capture: the mode override applies to just
+    // this frame's debug pass, then the staged config is restored
+    // after the readback below.
+    const bool dumping = s_dumpReq.armed;
+    if (dumping && s_dumpReq.mode >= 0) {
+        Render::RenderDebugConfig conf = s_snap.debugconf;
+        conf.viewMode = s_dumpReq.mode;
+        s_renderer->setRenderDebugConfig(conf);
+    }
 
     // Idle frame skip: static camera, no pending renderer change, no
     // time-animated effects — a new frame would be pixel-identical to
@@ -1385,6 +1518,13 @@ static void mainLoop()
     s_renderer->render(bg, viewMtx, projMtx);
     const double rdt = emscripten_get_now() - renderT0;
     s_renderMs = s_renderMs > 0.0 ? s_renderMs * 0.9 + rdt * 0.1 : rdt;
+
+    if (dumping) {
+        s_dumpReq.armed = false;
+        captureAndSendFrame(s_dumpReq.id, s_dumpReq.mode);
+        if (s_dumpReq.mode >= 0)
+            s_renderer->setRenderDebugConfig(s_snap.debugconf);
+    }
 
     updateHud(false);
 }
@@ -1870,7 +2010,58 @@ static void applyScenePayload(const char *data, size_t size)
                     s_snap.overlays.size());
     }
     else {
+        // A payload in a newer serializer format than this build can
+        // read means the backend was rebuilt: refresh ourselves with a
+        // cache-busting reload (works over WebSocket and polling both).
+        uint32_t v = Render::sceneSnapshotVersion(data + 8, size - 8);
+        if (v > Render::sceneDumpVersion()) {
+            std::printf("fcviewer: scene format v%u newer than built "
+                        "v%u, reloading\n", v, Render::sceneDumpVersion());
+            char bust[32];
+            std::snprintf(bust, sizeof(bust), "v%u", v);
+            fcviewer_reload(bust);
+            return;
+        }
         std::printf("fcviewer: scene update parse FAILED\n");
+    }
+}
+
+/// JSON control messages pushed by the scene server as WebSocket text
+/// frames (docs/RenderDebug.md §4.4). The messages are tiny and
+/// self-generated, so field extraction is by simple search.
+static void handleControlMessage(const char *json)
+{
+    if (std::strstr(json, "\"cmd\":\"dumpFrame\"")) {
+        long id = 0, mode = -1;
+        const char *p = std::strstr(json, "\"id\"");
+        const char *colon = p ? std::strchr(p, ':') : nullptr;
+        if (colon)
+            id = std::strtol(colon + 1, nullptr, 10);
+        p = std::strstr(json, "\"mode\"");
+        colon = p ? std::strchr(p, ':') : nullptr;
+        if (colon)
+            mode = std::strtol(colon + 1, nullptr, 10);
+        s_dumpReq.armed = true;
+        s_dumpReq.id = uint32_t(id);
+        s_dumpReq.mode = int(mode);
+        markDirty();
+        std::printf("fcviewer: dumpFrame request %ld (mode %ld)\n",
+                    id, mode);
+    }
+    else if (std::strstr(json, "\"cmd\":\"reload\"")) {
+        char bust[64] = "";
+        const char *p = std::strstr(json, "\"cacheBust\"");
+        const char *colon = p ? std::strchr(p + 11, ':') : nullptr;
+        const char *open = colon ? std::strchr(colon, '"') : nullptr;
+        if (open) {
+            const char *close = std::strchr(open + 1, '"');
+            if (close && close - open - 1 < long(sizeof(bust))) {
+                std::memcpy(bust, open + 1, size_t(close - open - 1));
+                bust[close - open - 1] = '\0';
+            }
+        }
+        std::printf("fcviewer: reload requested (bust '%s')\n", bust);
+        fcviewer_reload(bust);
     }
 }
 
@@ -1923,6 +2114,14 @@ static EM_BOOL onWsOpen(int, const EmscriptenWebSocketOpenEvent *, void *)
 {
     s_wsOpen = true;
     std::printf("fcviewer: websocket connected\n");
+    // Version handshake: tell the server which snapshot format this
+    // build reads (it answers with a reload when the served format is
+    // newer) and register as a control-channel viewer (dumpFrame).
+    char hello[96];
+    std::snprintf(hello, sizeof(hello),
+                  "{\"cmd\":\"hello\",\"snapshot\":%u}",
+                  Render::sceneDumpVersion());
+    emscripten_websocket_send_utf8_text(s_ws, hello);
     return EM_TRUE;
 }
 
@@ -1932,6 +2131,8 @@ static EM_BOOL onWsMessage(int, const EmscriptenWebSocketMessageEvent *e,
     if (!e->isText)
         applyScenePayload(reinterpret_cast<const char *>(e->data),
                           size_t(e->numBytes));
+    else
+        handleControlMessage(reinterpret_cast<const char *>(e->data));
     return EM_TRUE;
 }
 

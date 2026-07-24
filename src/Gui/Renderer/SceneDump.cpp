@@ -594,6 +594,21 @@ bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
 
 //////////////////////////////////////////////////////////////////////
 
+uint32_t Render::sceneDumpVersion()
+{
+    return kVersion;
+}
+
+uint32_t Render::sceneSnapshotVersion(const void *data, size_t size)
+{
+    if (!data || size < 8)
+        return 0;
+    uint32_t magic, version;
+    std::memcpy(&magic, data, 4);
+    std::memcpy(&version, static_cast<const char *>(data) + 4, 4);
+    return magic == kMagic ? version : 0;
+}
+
 static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
 {
     Writer w;

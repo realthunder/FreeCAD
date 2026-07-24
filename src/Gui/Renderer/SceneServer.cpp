@@ -20,9 +20,12 @@
  ****************************************************************************/
 
 #include "SceneServer.h"
+#include "SceneDump.h"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -140,6 +143,89 @@ public:
 
     std::mutex handlerMutex;
     std::function<void(const ScenePickRequest &)> pickHandler;
+
+    /// One live WebSocket connection, registered by its wsLoop. All
+    /// sends stay on that loop's thread: control messages are queued
+    /// here and drained by the loop within its poll interval.
+    struct Conn {
+        int fd = -1;
+        std::vector<std::string> pendingText; ///< queued control JSONs
+        bool viewer = false;   ///< sent a hello — answers control requests
+        /// WebSocket fragmentation reassembly (a browser may split a
+        /// large dumpFrame upload into continuation frames).
+        std::string fragData;
+        uint8_t fragOpcode = 0;
+    };
+    std::mutex connMutex;
+    std::vector<Conn *> conns;
+    std::condition_variable dumpCv;    ///< guarded by connMutex
+    /// In-flight dumpFrame collection (one at a time).
+    struct DumpCollect {
+        uint32_t id = 0;
+        size_t expected = 0;
+        std::vector<ViewerFrameDump> dumps;
+    };
+    DumpCollect *dumpCollect = nullptr;
+    uint32_t dumpIdCounter = 0;
+
+    void broadcastControl(const std::string &json)
+    {
+        std::lock_guard<std::mutex> guard(connMutex);
+        for (Conn *conn : conns) {
+            if (conn->viewer)
+                conn->pendingText.push_back(json);
+        }
+    }
+
+    int requestFrameDumps(int mode, int timeoutMs,
+                          std::vector<ViewerFrameDump> &out)
+    {
+        std::unique_lock<std::mutex> lock(connMutex);
+        if (dumpCollect)
+            return 0;   // another collection still in flight
+        size_t expected = 0;
+        for (Conn *conn : conns) {
+            if (conn->viewer)
+                ++expected;
+        }
+        if (!expected)
+            return 0;
+        DumpCollect collect;
+        collect.id = ++dumpIdCounter;
+        collect.expected = expected;
+        dumpCollect = &collect;
+        char msg[96];
+        std::snprintf(msg, sizeof(msg),
+                      "{\"cmd\":\"dumpFrame\",\"id\":%u,\"mode\":%d}",
+                      collect.id, mode);
+        for (Conn *conn : conns) {
+            if (conn->viewer)
+                conn->pendingText.push_back(msg);
+        }
+        dumpCv.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+                        [&collect]() {
+                            return collect.dumps.size() >= collect.expected;
+                        });
+        dumpCollect = nullptr;
+        out = std::move(collect.dumps);
+        return int(out.size());
+    }
+
+    /// Minimal JSON field extraction for the tiny, self-generated
+    /// control messages (no JSON dependency in this lib).
+    static bool jsonInt(const std::string &json, const char *key,
+                        long long &out)
+    {
+        std::string needle = std::string("\"") + key + "\"";
+        auto pos = json.find(needle);
+        if (pos == std::string::npos)
+            return false;
+        pos = json.find(':', pos + needle.size());
+        if (pos == std::string::npos)
+            return false;
+        out = std::strtoll(json.c_str() + pos + 1, nullptr, 10);
+        return true;
+    }
 
     void dispatchPick(const ScenePickRequest &req)
     {
@@ -347,6 +433,24 @@ public:
     /// close).
     void wsLoop(int fd)
     {
+        Conn conn;
+        conn.fd = fd;
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            conns.push_back(&conn);
+        }
+        wsLoopBody(fd, conn);
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            conns.erase(std::find(conns.begin(), conns.end(), &conn));
+            // A collection waiting on this viewer would otherwise sit
+            // out its full timeout.
+            dumpCv.notify_all();
+        }
+    }
+
+    void wsLoopBody(int fd, Conn &conn)
+    {
         uint64_t sent = 0;
         std::string inbuf;
         for (;;) {
@@ -366,6 +470,18 @@ public:
                     && !sendFrame(fd, 2, body.data(), body.size()))
                 return;
 
+            // Drain queued control messages (dumpFrame/reload) — sends
+            // stay on this connection's thread.
+            std::vector<std::string> texts;
+            {
+                std::lock_guard<std::mutex> guard(connMutex);
+                texts.swap(conn.pendingText);
+            }
+            for (const std::string &text : texts) {
+                if (!sendFrame(fd, 1, text.data(), text.size()))
+                    return;
+            }
+
             pollfd p = {};
             p.fd = fd;
             p.events = POLLIN;
@@ -373,12 +489,12 @@ public:
             if (r < 0)
                 return;
             if (r > 0) {
-                char buf[4096];
+                char buf[65536];
                 ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
                 if (n <= 0)
                     return;
                 inbuf.append(buf, size_t(n));
-                if (!consumeFrames(fd, inbuf))
+                if (!consumeFrames(fd, conn, inbuf))
                     return;
             }
         }
@@ -386,13 +502,14 @@ public:
 
     /// Parse complete client frames off the front of \a inbuf; false
     /// ends the connection (close frame or protocol error).
-    bool consumeFrames(int fd, std::string &inbuf)
+    bool consumeFrames(int fd, Conn &conn, std::string &inbuf)
     {
         for (;;) {
             if (inbuf.size() < 2)
                 return true;
             const uint8_t *p =
                 reinterpret_cast<const uint8_t *>(inbuf.data());
+            bool fin = (p[0] & 0x80) != 0;
             uint8_t opcode = p[0] & 0x0f;
             bool masked = (p[1] & 0x80) != 0;
             uint64_t len = p[1] & 0x7f;
@@ -411,8 +528,11 @@ public:
                     len = (len << 8) | p[off + i];
                 off += 8;
             }
-            if (!masked || len > 65536)
-                return false;   // client frames must be masked; ours are tiny
+            // Client frames must be masked. The cap accommodates a
+            // dumpFrame pixel upload (a hi-DPI phone canvas is ~10MB
+            // of RGBA).
+            if (!masked || len > (64u << 20))
+                return false;
             uint8_t mask[4];
             if (inbuf.size() < off + 4 + len)
                 return true;
@@ -432,17 +552,116 @@ public:
                 if (!sendFrame(fd, 10, data.data(), data.size()))
                     return false;
                 break;
+            case 0:     // continuation of a fragmented message
+                if (!conn.fragOpcode)
+                    break;      // stray continuation: ignore
+                conn.fragData.append(
+                        reinterpret_cast<const char *>(data.data()),
+                        data.size());
+                if (conn.fragData.size() > (64u << 20))
+                    return false;
+                if (fin) {
+                    handleMessage(conn, conn.fragOpcode == 1,
+                                  reinterpret_cast<const uint8_t *>(
+                                      conn.fragData.data()),
+                                  conn.fragData.size());
+                    conn.fragData.clear();
+                    conn.fragOpcode = 0;
+                }
+                break;
             case 1:
             case 2:
-                handleMessage(data);
+                if (!fin) {     // a browser may fragment large uploads
+                    conn.fragOpcode = opcode;
+                    conn.fragData.assign(
+                            reinterpret_cast<const char *>(data.data()),
+                            data.size());
+                    break;
+                }
+                handleMessage(conn, opcode == 1, data.data(), data.size());
                 break;
-            default:    // pong / continuation: ignore
+            default:    // pong: ignore
                 break;
             }
         }
     }
 
-    void handleMessage(const std::vector<uint8_t> &data)
+    /// A complete client message: JSON control text (hello, and the
+    /// dumpFrame answers' metadata rides binary), or one of the binary
+    /// viewer events.
+    void handleMessage(Conn &conn, bool text,
+                       const uint8_t *bytes, size_t size)
+    {
+        if (text) {
+            std::string json(reinterpret_cast<const char *>(bytes), size);
+            if (json.find("\"cmd\":\"hello\"") != std::string::npos) {
+                {
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.viewer = true;
+                }
+                // Version handshake (docs/RenderDebug.md §4.4): a viewer
+                // built for an older snapshot format cannot parse what
+                // this backend publishes — tell it to reload itself with
+                // a cache-busting query parameter.
+                long long snapshot = 0;
+                if (jsonInt(json, "snapshot", snapshot)
+                        && snapshot < (long long)sceneDumpVersion()) {
+                    char msg[96];
+                    std::snprintf(msg, sizeof(msg),
+                                  "{\"cmd\":\"reload\",\"cacheBust\":\"v%u\"}",
+                                  sceneDumpVersion());
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.pendingText.push_back(msg);
+                }
+            }
+            return;
+        }
+        if (size > 0 && bytes[0] == 'D') {
+            handleFrameDump(bytes, size);
+            return;
+        }
+        std::vector<uint8_t> data(bytes, bytes + size);
+        handleEvent(data);
+    }
+
+    /// A viewer's dumpFrame answer: 'D', u32 request id, u32 metadata
+    /// length, the metadata JSON, u32 width, u32 height, then
+    /// width*height RGBA8 pixels (bottom-up rows) — all little-endian.
+    void handleFrameDump(const uint8_t *bytes, size_t size)
+    {
+        auto u32At = [bytes](size_t off) {
+            uint32_t v;
+            std::memcpy(&v, bytes + off, 4);
+            return v;
+        };
+        if (size < 1 + 4 + 4)
+            return;
+        uint32_t id = u32At(1);
+        uint32_t metaLen = u32At(5);
+        size_t off = 9;
+        if (size < off + metaLen + 8)
+            return;
+        ViewerFrameDump dump;
+        dump.meta.assign(reinterpret_cast<const char *>(bytes) + off,
+                         metaLen);
+        off += metaLen;
+        dump.width = int(u32At(off));
+        dump.height = int(u32At(off + 4));
+        off += 8;
+        if (dump.width <= 0 || dump.height <= 0
+                || size - off < size_t(dump.width) * dump.height * 4)
+            return;
+        dump.rgba.assign(bytes + off,
+                         bytes + off + size_t(dump.width) * dump.height * 4);
+
+        std::lock_guard<std::mutex> guard(connMutex);
+        if (dumpCollect && dumpCollect->id == id) {
+            dumpCollect->dumps.push_back(std::move(dump));
+            dumpCv.notify_all();
+        }
+    }
+
+    void handleEvent(const std::vector<uint8_t> &data)
     {
         // Pick request: 'P', flags byte, six little-endian floats
         // (world ray origin + direction).
@@ -528,4 +747,15 @@ void SceneStreamServer::setPickHandler(
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->handlerMutex);
     p->pickHandler = std::move(handler);
+}
+
+void SceneStreamServer::broadcastControl(const std::string &json)
+{
+    ensure()->broadcastControl(json);
+}
+
+int SceneStreamServer::requestFrameDumps(int mode, int timeoutMs,
+                                         std::vector<ViewerFrameDump> &dumps)
+{
+    return ensure()->requestFrameDumps(mode, timeoutMs, dumps);
 }

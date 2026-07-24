@@ -1,6 +1,9 @@
 # Render Debugging & Verification Architecture
 
-Status: **draft for review** — nothing here is implemented yet unless marked otherwise.
+Status: phases **1–2 implemented** (RenderDebug view properties + bgfx
+buffer visualization/freeze-frame; `saveRenderDump`/`getRenderStats` +
+sidecar JSON; browser `dumpFrame`/`reload` control channel). Phases 3+
+are design.
 
 This document defines (1) the governing policy for render-debugging code in this
 repo, (2) the debug-parameter protocol that rides the existing render-property
@@ -446,8 +449,8 @@ runtime GLSL compiler. Coin's nodes carry *source*. Reconciliation:
 
 | phase | contents | depends on |
 |---|---|---|
-| 1 | `Render::RenderDebugConfig` + `translateRenderDebugConfig` + `u_debugParams`; `RenderDebug_ViewMode` modes 1–4 (existing targets only); `RenderDebug_FreezeFrame` | nothing — pure spine reuse |
-| 2 | `saveRenderDump` Python API + sidecar JSON + `getRenderStats`; absorb `FC_BGFX_DEBUG_*` env gates; browser `dumpFrame` WS protocol (§4.4) | phase 1 (mode override) |
+| 1 | **DONE** — `Render::RenderDebugConfig` + `translateRenderDebugConfig` + `u_debugParams`; `RenderDebug_ViewMode` modes 1–4 (existing targets only); `RenderDebug_FreezeFrame` | nothing — pure spine reuse |
+| 2 | **DONE** — `saveRenderDump` Python API + sidecar JSON + `getRenderStats`; absorb `FC_BGFX_DEBUG_*` env gates; browser `dumpFrame` WS protocol + version-handshake/self `reload` (§4.4) | phase 1 (mode override) |
 | 3 | verification harness: scene/camera manifests, desktop + browser legs, per-stage diffing | phases 1–2 |
 | 4 | dynamic name→uniform binding (+ `u_userParams` fallback pool for no-compiler tiers); shader hot-reload | phase 1 |
 | 5 | remaining view modes (overdraw, mip); self-labeling burn-in | 1, 4 |
