@@ -43,6 +43,8 @@ class RunResult(TypedDict):
 
     stdout: str
     stderr: str
+    console: list             # FreeCAD console messages emitted during the run,
+                              # each "Level: message" (Error/Warning/Message/Log/...)
     result: Optional[str]     # repr of the final expression, if code was one
     exception: Optional[str]  # traceback string if the code raised
 
@@ -162,6 +164,25 @@ def _exec_code(code: str) -> RunResult:
     sys.stdout, sys.stderr = out, err
     result_repr = None
     exception = None
+
+    # FreeCAD.Console output (PrintError & co., and C++ Base::Console messages)
+    # does not pass through sys.stdout/stderr — it fans out to Base::ILogger
+    # observers. Hook one for the duration of the run so the caller sees it.
+    console_msgs: list = []
+
+    def _console_observer(notifier, msg, level):
+        prefix = f"{level}: " if level not in ("Message",) else ""
+        origin = f"[{notifier}] " if notifier else ""
+        console_msgs.append(f"{prefix}{origin}{msg.rstrip()}")
+
+    console_hooked = False
+    try:
+        import FreeCAD
+        if hasattr(FreeCAD.Console, "AttachObserver"):  # older binaries lack it
+            FreeCAD.Console.AttachObserver(_console_observer)
+            console_hooked = True
+    except Exception:
+        pass
     try:
         module = ast.parse(code, "<mcp-console>", "exec")
         last_expr = None
@@ -181,9 +202,15 @@ def _exec_code(code: str) -> RunResult:
         exception = traceback.format_exc()
     finally:
         sys.stdout, sys.stderr = old_out, old_err
+        if console_hooked:
+            try:
+                FreeCAD.Console.DetachObserver(_console_observer)
+            except Exception:
+                pass
     return {
         "stdout": out.getvalue(),
         "stderr": err.getvalue(),
+        "console": console_msgs,
         "result": result_repr,
         "exception": exception,
     }
@@ -373,8 +400,10 @@ modules as well. Follow up with run_python help(<name>) for the full text.
 
 _RUN_PYTHON_DESCRIPTION = """\
 Execute Python inside the running FreeCAD process and return captured stdout,
-stderr, the repr of the final expression (when the code is an expression), and a
-traceback string if it raised.
+stderr, FreeCAD console messages (PrintError/PrintWarning/... and C++
+Base::Console output, which bypass sys.stdout/stderr), the repr of the final
+expression (when the code is an expression), and a traceback string if it
+raised.
 
 The interpreter session is PERSISTENT across calls (like a REPL) and runs on
 FreeCAD's main thread, so it is safe to create documents, build geometry, and
