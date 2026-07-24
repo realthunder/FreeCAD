@@ -670,12 +670,22 @@ static bool pumpFrameDump(View3DInventorViewer *viewer,
 {
     QElapsedTimer timer;
     timer.start();
-    while (renderer->frameDumpPending() && timer.elapsed() < 5000) {
+    for (;;) {
+        // Processing events can run scene/view scripts that destroy and
+        // recreate the external renderer (e.g. a renderer-type or MSAA
+        // parameter change) — re-validate the pointer every iteration
+        // instead of touching a potentially dangling one.
+        Render::Renderer *current = viewer->getExternalRenderer();
+        if (!current || current != renderer)
+            return false;
+        if (!renderer->frameDumpPending())
+            return true;
+        if (timer.elapsed() >= 5000)
+            return false;
         if (auto rm = viewer->getSoRenderManager())
             rm->scheduleRedraw();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
-    return !renderer->frameDumpPending();
 }
 
 /// JSON value of a view property for the capture sidecar: native for
