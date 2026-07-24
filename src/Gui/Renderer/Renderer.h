@@ -315,6 +315,27 @@ struct AOConfig {
     bool operator!=(const AOConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame render debugging configuration (docs/RenderDebug.md).
+/// Resolved by the bridge each render from the RenderDebug_* view
+/// properties / global RenderParams defaults, like AOConfig.
+struct RenderDebugConfig {
+    /// Buffer visualization routed to the screen instead of the shaded
+    /// scene: 0 = off, 1 = linearized depth, 2 = view-space normals,
+    /// 3 = ambient occlusion term, 4 = shadow term. The on-top,
+    /// highlight and overlay passes still draw on top.
+    int viewMode = 0;
+    /// Freeze every intentionally time- or history-dependent input
+    /// (temporal accumulation/jitter, water/fire animation time) so a
+    /// repeat frame renders identically — the determinism switch for
+    /// golden-image comparison.
+    bool freezeFrame = false;
+
+    bool operator==(const RenderDebugConfig &o) const {
+        return viewMode == o.viewMode && freezeFrame == o.freezeFrame;
+    }
+    bool operator!=(const RenderDebugConfig &o) const { return !(*this == o); }
+};
+
 /// Per-frame bump/normal mapping configuration (like AOConfig there is
 /// no GL-renderer counterpart; the GL renderer never draws scene bump
 /// maps). Applies to triangle draws carrying a Material::bumpmap.
@@ -915,6 +936,9 @@ public:
     { (void)config; }
     /// Per-frame ambient occlusion configuration.
     virtual void setAOConfig(const AOConfig &config) { (void)config; }
+    /// Per-frame render debugging configuration (docs/RenderDebug.md).
+    virtual void setRenderDebugConfig(const RenderDebugConfig &config)
+    { (void)config; }
     /// Whether the last rendered frame contained time-animated content
     /// (water waves, fire, clouds, caustics) — a repeat frame with the
     /// same camera and scene would differ. Clients that skip rendering

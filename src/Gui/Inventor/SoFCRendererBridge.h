@@ -66,6 +66,7 @@ GuiExport Render::SectionConfig translateSectionConfig();
 /// them like the Shadow draw style's Shadow_* properties), with the
 /// global RenderParams as fallback.
 GuiExport Render::AOConfig translateAOConfig(View3DInventor * view);
+GuiExport Render::RenderDebugConfig translateRenderDebugConfig(View3DInventor * view);
 
 /// Resolve the physically based shading settings (Render_PBR* view
 /// properties, RenderParams fallback) into the backend-neutral per-frame

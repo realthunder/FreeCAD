@@ -691,6 +691,40 @@ public:
     static void setGroundReflectionIntensity(const double &v);
     static const char *docGroundReflectionIntensity();
     //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugViewMode
+    ///
+    /// Render debugging buffer visualization (docs/RenderDebug.md).
+    /// Routes an intermediate render target to the screen instead of the
+    /// shaded scene: 1 = linearized scene depth, 2 = view-space normals,
+    /// 3 = ambient occlusion term only, 4 = shadow term only. 0 renders
+    /// normally. The on-top, highlight and overlay passes still draw on
+    /// top so the view stays navigable.
+    static const long & getDebugViewMode();
+    static const long & defaultDebugViewMode();
+    static void removeDebugViewMode();
+    static void setDebugViewMode(const long &v);
+    static const char *docDebugViewMode();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugFreezeFrame
+    ///
+    /// Freeze every intentionally time- or history-dependent render
+    /// input: temporal accumulation and per-frame sampling jitter, and
+    /// time-driven animation (water waves, fire). Two frames of the same
+    /// scene, camera and parameters then render identically -- the
+    /// determinism switch for golden-image comparison
+    /// (docs/RenderDebug.md).
+    static const bool & getDebugFreezeFrame();
+    static const bool & defaultDebugFreezeFrame();
+    static void removeDebugFreezeFrame();
+    static void setDebugFreezeFrame(const bool &v);
+    static const char *docDebugFreezeFrame();
+    //@}
 //[[[end]]]
 
     /// Called on any parameter change: re-selects the renderer backend on

@@ -2291,6 +2291,8 @@ SoFCRenderer::render(SoGLRenderAction * action)
         RendererBridge::translateSectionConfig());
     PRIVATE(this)->external->setAOConfig(
         RendererBridge::translateAOConfig(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setRenderDebugConfig(
+        RendererBridge::translateRenderDebugConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setPBRConfig(
         RendererBridge::translatePBRConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setBumpConfig(

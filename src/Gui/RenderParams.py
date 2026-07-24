@@ -230,6 +230,21 @@ Params = [
         "effective while the Shadow draw style shows a ground plane."),
     ParamFloat('GroundReflectionIntensity',  0.4, title='Reflection intensity',
         doc="Blend factor of the mirrored model on the ground plane."),
+    ParamInt('DebugViewMode',  0, title='Debug view mode',
+        proxy=ParamComboBox(items=['Off', 'Depth', 'Normal', 'AO', 'Shadow']),
+        doc="Render debugging buffer visualization (docs/RenderDebug.md).\n"
+        "Routes an intermediate render target to the screen instead of the\n"
+        "shaded scene: 1 = linearized scene depth, 2 = view-space normals,\n"
+        "3 = ambient occlusion term only, 4 = shadow term only. 0 renders\n"
+        "normally. The on-top, highlight and overlay passes still draw on\n"
+        "top so the view stays navigable."),
+    ParamBool('DebugFreezeFrame',  False, title='Debug freeze frame',
+        doc="Freeze every intentionally time- or history-dependent render\n"
+        "input: temporal accumulation and per-frame sampling jitter, and\n"
+        "time-driven animation (water waves, fire). Two frames of the same\n"
+        "scene, camera and parameters then render identically -- the\n"
+        "determinism switch for golden-image comparison\n"
+        "(docs/RenderDebug.md)."),
 ]
 
 def declare_begin():

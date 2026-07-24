@@ -871,6 +871,19 @@ RendererBridge::translateAOConfig(View3DInventor * view)
     return res;
 }
 
+Render::RenderDebugConfig
+RendererBridge::translateRenderDebugConfig(View3DInventor * view)
+{
+    Render::RenderDebugConfig res;
+    res.viewMode = int(viewParamOverride<App::PropertyEnumeration>(
+            view, "RenderDebug", "ViewMode",
+            RenderParams::getDebugViewMode()));
+    res.freezeFrame = viewParamOverride<App::PropertyBool>(
+            view, "RenderDebug", "FreezeFrame",
+            RenderParams::getDebugFreezeFrame());
+    return res;
+}
+
 Render::LightConfig
 RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
 {

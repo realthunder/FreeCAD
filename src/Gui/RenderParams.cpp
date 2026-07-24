@@ -93,6 +93,8 @@ public:
     double SunDiscSize;
     bool GroundReflection;
     double GroundReflectionIntensity;
+    long DebugViewMode;
+    bool DebugFreezeFrame;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -187,6 +189,10 @@ public:
         funcs["GroundReflection"] = &RenderParamsP::updateGroundReflection;
         GroundReflectionIntensity = this->handle->GetFloat("GroundReflectionIntensity", 0.4);
         funcs["GroundReflectionIntensity"] = &RenderParamsP::updateGroundReflectionIntensity;
+        DebugViewMode = this->handle->GetInt("DebugViewMode", 0);
+        funcs["DebugViewMode"] = &RenderParamsP::updateDebugViewMode;
+        DebugFreezeFrame = this->handle->GetBool("DebugFreezeFrame", false);
+        funcs["DebugFreezeFrame"] = &RenderParamsP::updateDebugFreezeFrame;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -382,6 +388,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateGroundReflectionIntensity(RenderParamsP *self) {
         self->GroundReflectionIntensity = self->handle->GetFloat("GroundReflectionIntensity", 0.4);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugViewMode(RenderParamsP *self) {
+        self->DebugViewMode = self->handle->GetInt("DebugViewMode", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugFreezeFrame(RenderParamsP *self) {
+        self->DebugFreezeFrame = self->handle->GetBool("DebugFreezeFrame", false);
     }
 };
 
@@ -1724,6 +1738,72 @@ void RenderParams::setGroundReflectionIntensity(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeGroundReflectionIntensity() {
     instance()->handle->RemoveFloat("GroundReflectionIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugViewMode() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Render debugging buffer visualization (docs/RenderDebug.md).\n"
+"Routes an intermediate render target to the screen instead of the\n"
+"shaded scene: 1 = linearized scene depth, 2 = view-space normals,\n"
+"3 = ambient occlusion term only, 4 = shadow term only. 0 renders\n"
+"normally. The on-top, highlight and overlay passes still draw on\n"
+"top so the view stays navigable.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getDebugViewMode() {
+    return instance()->DebugViewMode;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultDebugViewMode() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugViewMode(const long &v) {
+    instance()->handle->SetInt("DebugViewMode",v);
+    instance()->DebugViewMode = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugViewMode() {
+    instance()->handle->RemoveInt("DebugViewMode");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugFreezeFrame() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Freeze every intentionally time- or history-dependent render\n"
+"input: temporal accumulation and per-frame sampling jitter, and\n"
+"time-driven animation (water waves, fire). Two frames of the same\n"
+"scene, camera and parameters then render identically -- the\n"
+"determinism switch for golden-image comparison\n"
+"(docs/RenderDebug.md).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugFreezeFrame() {
+    return instance()->DebugFreezeFrame;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugFreezeFrame() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugFreezeFrame(const bool &v) {
+    instance()->handle->SetBool("DebugFreezeFrame",v);
+    instance()->DebugFreezeFrame = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugFreezeFrame() {
+    instance()->handle->RemoveBool("DebugFreezeFrame");
 }
 //[[[end]]]
 

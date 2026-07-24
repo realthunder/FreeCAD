@@ -1443,7 +1443,8 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
             Base::StateLocker guard(_applyingOverride);
             applyOverrideMode();
         }
-        else if (boost::starts_with(prop.getName(),"Render_")) {
+        else if (boost::starts_with(prop.getName(),"Render_")
+                 || boost::starts_with(prop.getName(),"RenderDebug_")) {
             // Per-view render engine settings; the per-frame config feed
             // re-reads them, so a redraw is enough.
             getSoRenderManager()->scheduleRedraw();
@@ -3984,6 +3985,29 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "GroundReflectionIntensity",
             RenderParams::docGroundReflectionIntensity(),
             RenderParams::getGroundReflectionIntensity());
+
+    // RenderDebug_* debugging knobs (docs/RenderDebug.md): materialized
+    // hidden -- not user settings; the property editor's 'Show all'
+    // reveals them, and scripts/the verification harness set them.
+    if (!view->getPropertyByName("RenderDebug_ViewMode")) {
+        static const char* _debugViewModeEnums[] =
+            {"Off", "Depth", "Normal", "AO", "Shadow", nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "RenderDebug_ViewMode", "RenderDebug",
+                                         RenderParams::docDebugViewMode()));
+        prop->setEnums(_debugViewModeEnums);
+        prop->setValue(long(RenderParams::getDebugViewMode()));
+        prop->setStatus(App::Property::Hidden, true);
+    }
+    if (!view->getPropertyByName("RenderDebug_FreezeFrame")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "RenderDebug_FreezeFrame", "RenderDebug",
+                                         RenderParams::docDebugFreezeFrame()));
+        prop->setValue(RenderParams::getDebugFreezeFrame());
+        prop->setStatus(App::Property::Hidden, true);
+    }
 }
 
 // #define ENABLE_GL_DEPTH_RANGE
