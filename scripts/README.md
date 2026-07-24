@@ -10,6 +10,10 @@ architecture and `docs/DevEnvironment.md` for the build stacks.
 | `renderer-serve.sh [scene.py] [port]` | Headless (Xvfb, **software GL**) FreeCAD streaming a scene for the WASM viewer — for agents/CI or no-display hosts. |
 | `wasm-viewer.sh [http] [scene]` | Serve the built WASM viewer over HTTP and print the URL to open it against a scene backend. |
 | `wasm-shot.js <url> <out.png>` | Screenshot the WASM viewer at a chosen `?cam=` via headless Chromium (swiftshader) — a separate client, never touches a live view. |
+| `wasm-hold.js <url> [ms]` | Hold a headless-Chromium page on the WASM viewer so the backend can drive the `dumpFrame` capture protocol (`saveRenderDump(source="viewer")`). |
+| `render-verify.sh capture\|diff …` | **Render verification harness** (docs/RenderDebug.md §5): capture staged (camera × `RenderDebug_ViewMode`) frame sets from an isolated FreeCAD (xvfb default, `--gpu` real-GPU leg, `--viewer` browser leg), and diff two capture sets per pipeline stage. |
+| `render_verify.py` | In-FreeCAD capture driver used by `render-verify.sh` — stages cameras (named views, or 1:1 restage from golden sidecar JSONs) and calls `saveRenderDump` per mode. |
+| `render_diff.py` | Stage-ordered capture-set comparer: reports the **first divergent pipeline stage** (depth → normal → ao → shadow → beauty) with difference heatmaps. |
 | `compile-shaders.sh [build_dir]` | Recompile the bgfx shaders and refresh the build-tree copies so a shader edit takes effect without a full `ninja`. |
 | `demo-water.py` | Example scene (water pool + metallic cylinder + fire plume) exercising volumetric / SSAO / shadow / water-surface / caustics. |
 
@@ -38,3 +42,18 @@ scripts/wasm-viewer.sh 8000 8077          # open the printed URL
 scripts/compile-shaders.sh                # refresh desktop bins
 source ~/works/sw/emsdk/emsdk_env.sh && cmake --build build/wasm   # for the browser
 ```
+
+## Verifying a renderer change
+
+```sh
+# bless a golden set once (before the change)
+scripts/render-verify.sh capture /path/goldens
+
+# after the change: restage from the goldens' sidecars, capture, per-stage diff
+scripts/render-verify.sh capture /tmp/rv --golden /path/goldens
+```
+
+A regression is reported against the first pipeline stage whose buffer
+diverges, not just the final image. Add `--gpu` for a real-GPU leg (opens a
+window on the desktop) and `--viewer` for the browser leg — see the header
+of `render-verify.sh` and docs/RenderDebug.md §5.
