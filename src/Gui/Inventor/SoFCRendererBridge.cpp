@@ -904,7 +904,8 @@ RendererBridge::translateRenderDebugConfig(View3DInventor * view)
             if (v.first.compare(0, prefixLen, prefix) != 0)
                 continue;
             std::string name = v.first.substr(prefixLen);
-            if (name.empty() || name == "ViewMode" || name == "FreezeFrame")
+            if (name.empty() || name == "ViewMode" || name == "FreezeFrame"
+                    || name == "Label")   // the §4.3 burn-in toggle
                 continue;
             Render::RenderDebugConfig::UserParam param;
             param.name = name.compare(0, 2, "u_") == 0 ? name : "u_" + name;

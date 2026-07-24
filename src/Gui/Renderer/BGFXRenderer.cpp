@@ -1489,11 +1489,17 @@ public:
                             // opaque-loop caps, and the cap parity
                             // marking needs the stencil buffer before
                             // the outline passes leave their marks)
-        ViewAOApply,        // RETIRED (kept so the view ids hold): the
-                            // fullscreen AO multiply moved into the
-                            // mesh shaders' ambient terms (aoMeshTex at
-                            // unit 9) so direct scene/bulb light is not
-                            // AO-darkened
+        ViewDebugScene,     // debug scene re-render (docs/RenderDebug.md
+                            // modes 6/8): scene triangle fills
+                            // re-rasterized into a dedicated full-res
+                            // target — additive fragment counting for
+                            // the overdraw heatmap, or depth-tested
+                            // texcoord output for the UV mode; the
+                            // ViewDebug blit samples the result.
+                            // (Repurposes the retired AO-apply slot —
+                            // the fullscreen AO multiply moved into the
+                            // mesh shaders' ambient terms, aoMeshTex at
+                            // unit 9.)
         ViewGroundReflApply, // ground reflection overlay: the mirrored
                             // scene blended onto the shadow ground quad
                             // (depth EQUAL against the ground's own
@@ -1617,7 +1623,8 @@ public:
             v.second.destroy();
         textures.clear();
         // SSAO resources: framebuffers before the textures they reference.
-        for (auto fb : {&aoPrepassFbo, &aoGenFbo, &aoBlurFbo,
+        for (auto fb : {&debugSceneFbo,
+                        &aoPrepassFbo, &aoGenFbo, &aoBlurFbo,
                         &aoMipFbo[0], &aoMipFbo[1], &aoMipFbo[2],
                         &aoMipFbo[3], &aoMipFbo[4], &aoMipFbo[5]}) {
             if (bgfx::isValid(*fb)) {
@@ -1625,7 +1632,8 @@ public:
                 *fb = BGFX_INVALID_HANDLE;
             }
         }
-        for (auto tex : {&aoNormalZ, &aoDepth, &aoTex, &aoBlurTex,
+        for (auto tex : {&debugSceneTex, &debugSceneDepth,
+                         &aoNormalZ, &aoDepth, &aoTex, &aoBlurTex,
                          &aoNoiseTex, &aoMipTex[0], &aoMipTex[1],
                          &aoMipTex[2], &aoMipTex[3], &aoMipTex[4],
                          &aoMipTex[5]}) {
@@ -1738,7 +1746,7 @@ public:
             }
         }
         for (auto uni : {&s_texShadow, &s_texShadowTint, &s_texAOScreen,
-                         &u_debugParams,
+                         &u_debugParams, &s_texDebugScene,
                          &u_shadowParams, &u_lightDir,
                          &u_lightPos, &u_lightColor, &u_shadowMatrix,
                          &u_shadowBlur, &u_evsm,
@@ -1898,6 +1906,14 @@ public:
         if (bgfx::isValid(m_progDebug)) {
             bgfx::destroy(m_progDebug);
             m_progDebug = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progDebugScene)) {
+            bgfx::destroy(m_progDebugScene);
+            m_progDebugScene = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progDebugSceneClip)) {
+            bgfx::destroy(m_progDebugSceneClip);
+            m_progDebugSceneClip = BGFX_INVALID_HANDLE;
         }
         if (bgfx::isValid(m_progCap)) {
             bgfx::destroy(m_progCap);
@@ -2444,6 +2460,14 @@ public:
                                   _BGFXLib.shaderPath().c_str());
         u_debugParams = bgfx::createUniform("u_debugParams",
                                             bgfx::UniformType::Vec4);
+        m_progDebugScene = loadProgram("vs_fc_debug_scene",
+                                       "fs_fc_debug_scene",
+                                       _BGFXLib.shaderPath().c_str());
+        m_progDebugSceneClip = loadProgram("vs_fc_debug_scene_clip",
+                                           "fs_fc_debug_scene_clip",
+                                           _BGFXLib.shaderPath().c_str());
+        s_texDebugScene = bgfx::createUniform("s_texDebugScene",
+                                              bgfx::UniformType::Sampler);
 
         // SSAO: depth+normal prepass + AO generation/blur targets, all
         // non-MSAA at viewport size (the multiply pass samples at pixel
@@ -3704,8 +3728,10 @@ public:
 
     /// Render debugging buffer visualization (docs/RenderDebug.md):
     /// overwrite the scene color with an intermediate target — prepass
-    /// depth/normal (modes 1/2), the AO term (3), or the shadow term
-    /// re-evaluated from the prepass position (4). Runs before the
+    /// depth/normal (modes 1/2), the AO term (3), the shadow term
+    /// re-evaluated from the prepass position (4), the shadow tile
+    /// coverage (5), the overdraw/UV re-render (6/8), or the shadow
+    /// filtering-precision probe (7). Runs before the
     /// on-top/highlight/overlay passes so those still draw on top.
     void submitDebug(const Render::RenderDebugConfig &conf, float maxDepth,
                      int aoMethod, bool shadowValid)
@@ -3714,7 +3740,8 @@ public:
             return;
         float params[4] = {float(conf.viewMode),
                            maxDepth > 0.0f ? 1.0f / maxDepth : 1.0f,
-                           shadowValid ? 1.0f : 0.0f, 0.0f};
+                           shadowValid ? 1.0f : 0.0f,
+                           float(shadowSize)};
         bgfx::setUniform(u_debugParams, params);
         // Dynamically bound named uniforms (docs/RenderDebug.md §2.5),
         // set against this pass's draw: uniform updates recorded before
@@ -3761,6 +3788,27 @@ public:
         else {
             bgfx::setTexture(1, s_texShadow, m_whiteTex);
         }
+        // The tile-coverage mode (5) replicates the mesh receivers'
+        // bulb-tile selection: it needs the local-light state and the
+        // atlas matrices with this draw (frame-global pushes recorded
+        // against other submits do not reach this program).
+        if (bgfx::isValid(u_bulbShadowMtx)) {
+            bgfx::setUniform(u_localLight, localLightView, kLocalLights);
+            bgfx::setUniform(u_localLightColor, localLightColorI,
+                             kLocalLights);
+            bgfx::setUniform(u_bulbShadowMtx, bulbShadowMtx,
+                             kBulbShadowTiles);
+            bgfx::setUniform(u_bulbShadowConf, bulbShadowConf,
+                             kLocalLights - kMediumSlots);
+            bgfx::setUniform(u_bulbShadowRot, bulbShadowRotMtx);
+            bgfx::setTexture(3, s_texBulbShadow,
+                             bgfx::isValid(bulbShadowTex)
+                                 ? bulbShadowTex : m_whiteTex);
+        }
+        if (bgfx::isValid(s_texDebugScene))
+            bgfx::setTexture(4, s_texDebugScene,
+                             bgfx::isValid(debugSceneTex)
+                                 ? debugSceneTex : m_whiteTex);
         fullscreen(ViewDebug, m_progDebug,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
     }
@@ -4183,6 +4231,93 @@ public:
         bgfx::setState(state);
         bgfx::submit(viewId + ViewAOPrepass,
                      clipped ? m_progPrepassClip : m_progPrepass);
+        ++drawcount;
+    }
+
+    /// Debug scene re-render target (docs/RenderDebug.md modes 6/8),
+    /// created on first use at viewport size; every reset/resize path
+    /// destroys it with the other offscreen targets.
+    bool ensureDebugScene()
+    {
+        if (!bgfx::isValid(m_progDebugScene))
+            return false;
+        if (bgfx::isValid(debugSceneFbo) && debugSceneW == width
+                && debugSceneH == height)
+            return true;
+        if (bgfx::isValid(debugSceneFbo)) {
+            bgfx::destroy(debugSceneFbo);
+            debugSceneFbo = BGFX_INVALID_HANDLE;
+        }
+        for (auto tex : {&debugSceneTex, &debugSceneDepth}) {
+            if (bgfx::isValid(*tex)) {
+                bgfx::destroy(*tex);
+                *tex = BGFX_INVALID_HANDLE;
+            }
+        }
+        const bgfx::Caps *caps = bgfx::getCaps();
+        if (!(caps->formats[bgfx::TextureFormat::RGBA16F]
+              & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER))
+            return false;
+        // RGBA16F: the overdraw counts accumulate additively well past
+        // 8-bit range, and the UV mode wants more than 8-bit texcoords.
+        // POINT-sampled — the blit reads pixel centers 1:1.
+        const uint64_t flags = 0
+            | BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT
+            | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP
+            | BGFX_SAMPLER_V_CLAMP;
+        debugSceneTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA16F, flags);
+        debugSceneDepth = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::D24S8,
+            flags | BGFX_TEXTURE_RT_WRITE_ONLY);
+        bgfx::TextureHandle att[2] = {debugSceneTex, debugSceneDepth};
+        debugSceneFbo = bgfx::createFrameBuffer(2, att, false);
+        debugSceneW = width;
+        debugSceneH = height;
+        return bgfx::isValid(debugSceneFbo);
+    }
+
+    /// Rasterize one scene triangle draw into the debug scene target
+    /// (docs/RenderDebug.md): mode 6 accumulates a fragment count with
+    /// the depth test off (additive blend — the overdraw heatmap
+    /// source); mode 8 writes the depth-tested texcoords (the UV view).
+    /// Transform, clip planes and culling replicate the color fill like
+    /// the AO prepass does.
+    void submitDebugScene(const Render::DrawCall &draw, int mode)
+    {
+        if (!draw.mesh || !draw.mesh->triangleIndices)
+            return;
+        GpuMesh *gpu = getMesh(*draw.mesh);
+        if (!bgfx::isValid(gpu->geom->vbh) || !bgfx::isValid(gpu->geom->tri))
+            return;
+
+        const Render::Material &mat = draw.material;
+        bool clipped = mat.numclipplanes > 0;
+        setClipUniforms(mat);
+        float params[4] = {float(mode), 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_debugParams, params);
+        setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
+                         (float)height);
+        bgfx::setVertexBuffer(0, gpu->geom->vbh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->geom->tri);
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+        if (mode == 6)
+            state |= BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
+                                           BGFX_STATE_BLEND_ONE);
+        else
+            state |= BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
+        if (mat.culling && !mat.twoside)
+            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
+        bgfx::setState(state);
+        bgfx::submit(viewId + ViewDebugScene,
+                     clipped ? m_progDebugSceneClip : m_progDebugScene);
         ++drawcount;
     }
 
@@ -5992,8 +6127,20 @@ public:
     /// Debug buffer-visualization blit (docs/RenderDebug.md).
     bgfx::ProgramHandle m_progDebug = BGFX_INVALID_HANDLE;
     /// x = view mode, y = 1/max linear view depth (depth normalization),
-    /// z = shadow-state valid this frame, w unused.
+    /// z = shadow-state valid this frame, w = scene shadow map size in
+    /// texels (the mode-7 filtering probe).
     bgfx::UniformHandle u_debugParams = BGFX_INVALID_HANDLE;
+    /// Debug scene re-render (modes 6/8): the counting/UV rasterization
+    /// of the scene fills into their own full-res target, read back by
+    /// the visualization blit.
+    bgfx::ProgramHandle m_progDebugScene = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progDebugSceneClip = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texDebugScene = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle debugSceneTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle debugSceneDepth = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle debugSceneFbo = BGFX_INVALID_HANDLE;
+    uint16_t debugSceneW = 0;
+    uint16_t debugSceneH = 0;
     bgfx::UniformHandle s_texAccum = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texReveal = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCap = BGFX_INVALID_HANDLE;
@@ -6614,9 +6761,13 @@ public:
         // The debug buffer visualization (docs/RenderDebug.md) reads the
         // prepass normal/depth and AO targets: force the SSAO chain on
         // while a mode that needs it is active, scene geometry
-        // permitting (same opaque-triangle test as above).
-        if (!ssaoActive && view->m_ssao && debugconf.viewMode >= 1
-                && debugconf.viewMode <= 3) {
+        // permitting (same opaque-triangle test as above). Modes 4/5/7
+        // reconstruct positions from the prepass depth, so they force
+        // it too (mode 4 previously relied on another prepass consumer
+        // being active).
+        if (!ssaoActive && view->m_ssao
+                && ((debugconf.viewMode >= 1 && debugconf.viewMode <= 5)
+                    || debugconf.viewMode == 7)) {
             for (const auto &draw : scene) {
                 if (!draw.material.ontop
                         && draw.material.type == Render::Material::Triangle
@@ -7826,6 +7977,13 @@ public:
         }
         const bool prepassRender = prepassActive && aoRender;
 
+        // Debug scene re-render (docs/RenderDebug.md modes 6/8): the
+        // counting/UV rasterization runs every frame while its mode is
+        // active — debug-only work, no caching.
+        const bool debugSceneRender = (debugconf.viewMode == 6
+                                       || debugconf.viewMode == 8)
+            && view->ensureDebugScene();
+
         // Ground reflection: mirror the world about the shadow ground
         // plane (z = scene bbox bottom, the plane the ground quad sits
         // on) and re-render the opaque scene with the original camera —
@@ -8321,6 +8479,14 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
+            } else if (debugSceneRender && i == BGFXView::ViewDebugScene) {
+                // Fresh count/UV target every frame: the overdraw
+                // counts accumulate from zero, .w = 0 marks pixels the
+                // UV re-render did not cover.
+                bgfx::setViewFrameBuffer(id, view->debugSceneFbo);
+                bgfx::setViewClear(id,
+                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                    0x00000000u, 1.0f, 0);
             } else if (prepassRender && i == BGFXView::ViewAOPrepass) {
                 // Prepass target clears to 0 (.w = 0 marks background
                 // in the AO pass), with its own depth buffer.
@@ -8969,6 +9135,15 @@ public:
                     && !mediumExempt(draw.material) && !cullDraw
                     && !prepassInstancedThisFrame(drawIdx))
                 view->submitPrepass(draw);
+            // Debug scene re-render (modes 6/8): every triangle fill
+            // that rasterizes in the main color passes — opaque,
+            // transparent and the water/glass surface re-renders alike;
+            // cloud/fire bodies raymarch instead of rasterizing, so
+            // they stay out. Instanced members count per-draw (same
+            // fragments either way).
+            if (debugSceneRender && isTriangle(draw) && !cullDraw
+                    && !cloudFill && !fireFill)
+                view->submitDebugScene(draw, debugconf.viewMode);
             // Shadow casters — transparent geometry casts like an opaque
             // one, matching Coin's SoShadowGroup (its depth-map pass
             // ignores alpha); water is the one exception (light must

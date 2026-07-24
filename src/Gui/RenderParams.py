@@ -231,13 +231,17 @@ Params = [
     ParamFloat('GroundReflectionIntensity',  0.4, title='Reflection intensity',
         doc="Blend factor of the mirrored model on the ground plane."),
     ParamInt('DebugViewMode',  0, title='Debug view mode',
-        proxy=ParamComboBox(items=['Off', 'Depth', 'Normal', 'AO', 'Shadow']),
+        proxy=ParamComboBox(items=['Off', 'Depth', 'Normal', 'AO', 'Shadow',
+                                   'ShadowTile', 'Overdraw', 'ShadowFilter',
+                                   'UV']),
         doc="Render debugging buffer visualization (docs/RenderDebug.md).\n"
         "Routes an intermediate render target to the screen instead of the\n"
         "shaded scene: 1 = linearized scene depth, 2 = view-space normals,\n"
-        "3 = ambient occlusion term only, 4 = shadow term only. 0 renders\n"
-        "normally. The on-top, highlight and overlay passes still draw on\n"
-        "top so the view stays navigable."),
+        "3 = ambient occlusion term only, 4 = shadow term only, 5 = shadow\n"
+        "map / bulb-tile coverage as color, 6 = overdraw heatmap, 7 =\n"
+        "shadow-moment filtering-precision probe, 8 = UV / texcoord.\n"
+        "0 renders normally. The on-top, highlight and overlay passes\n"
+        "still draw on top so the view stays navigable."),
     ParamBool('DebugFreezeFrame',  False, title='Debug freeze frame',
         doc="Freeze every intentionally time- or history-dependent render\n"
         "input: temporal accumulation and per-frame sampling jitter, and\n"
@@ -245,6 +249,12 @@ Params = [
         "scene, camera and parameters then render identically -- the\n"
         "determinism switch for golden-image comparison\n"
         "(docs/RenderDebug.md)."),
+    ParamBool('DebugLabel',  False, title='Debug capture label',
+        doc="Burn a self-describing label into a corner of the rendered\n"
+        "frame while render debugging: the active debug view mode, the\n"
+        "freeze-frame state and any custom RenderDebug_* parameter values.\n"
+        "A captured PNG then documents its own settings without its\n"
+        "sidecar (docs/RenderDebug.md)."),
 ]
 
 def declare_begin():

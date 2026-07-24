@@ -475,6 +475,7 @@ struct View3DInventorViewer::Private
         OverlayNaviButtons = 6,
         OverlayEditing = 7,
         OverlayDimensions = 8,
+        OverlayDebugLabel = 9,
     };
     struct OverlayCapture {
         CoinPtr<SoNode> root;
@@ -511,6 +512,13 @@ struct View3DInventorViewer::Private
     CoinPtr<SoCoordinate3> fpsCoords;
     std::string fpsFedText;
     SbVec2s fpsFedVp {0, 0};
+    // Render-debug capture burn-in (docs/RenderDebug.md §4.3): the
+    // self-describing corner label fed while RenderDebug_Label is on.
+    OverlayCapture debugLabelCapture;
+    CoinPtr<SoTexture2> debugLabelTexture;
+    CoinPtr<SoCoordinate3> debugLabelCoords;
+    std::string debugLabelFedText;
+    SbVec2s debugLabelFedVp {0, 0};
 
     Private(View3DInventorViewer *owner)
         :view(qobject_cast<View3DInventor*>(owner->parent()))
@@ -851,6 +859,155 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
         dropCapture(fpsTextCapture, OverlayFpsText);
         fpsTexture.reset();
         fpsCoords.reset();
+    }
+
+    // Render-debug capture burn-in (docs/RenderDebug.md §4.3): with
+    // RenderDebug_Label on, a corner label names the active debug view
+    // mode, the freeze state and every custom RenderDebug_* parameter
+    // value, so a captured frame documents its settings without its
+    // sidecar. Rides the overlay feed like the fps readout — the WASM
+    // viewer burns the same label into its own captures.
+    std::string debugLabel;
+    if (view) {
+        auto lbl = dynamic_cast<App::PropertyBool*>(
+                view->getPropertyByName("RenderDebug_Label"));
+        if (lbl && lbl->getValue()) {
+            std::ostringstream ss;
+            ss << "RenderDebug ";
+            if (auto p = dynamic_cast<App::PropertyEnumeration*>(
+                    view->getPropertyByName("RenderDebug_ViewMode")))
+                ss << (p->isValid() ? p->getValueAsString() : "?");
+            if (auto p = dynamic_cast<App::PropertyBool*>(
+                    view->getPropertyByName("RenderDebug_FreezeFrame")))
+                if (p->getValue())
+                    ss << " freeze";
+            // Custom named parameters (the same set the bridge feeds as
+            // uniforms), name=value.
+            std::map<std::string, App::Property*> props;
+            view->getPropertyMap(props);
+            for (const auto &v : props) {
+                if (v.first.compare(0, 12, "RenderDebug_") != 0)
+                    continue;
+                std::string name = v.first.substr(12);
+                if (name.empty() || name == "ViewMode"
+                        || name == "FreezeFrame" || name == "Label")
+                    continue;
+                ss << ' ' << name << '=';
+                App::Property *prop = v.second;
+                auto num = [&ss](double d) {
+                    char buf[32];
+                    snprintf(buf, sizeof(buf), "%g", d);
+                    ss << buf;
+                };
+                if (auto p = dynamic_cast<App::PropertyBool*>(prop))
+                    ss << (p->getValue() ? "1" : "0");
+                else if (auto p = dynamic_cast<App::PropertyEnumeration*>(prop))
+                    ss << p->getValue();
+                else if (auto p = dynamic_cast<App::PropertyInteger*>(prop))
+                    ss << p->getValue();
+                else if (auto p = dynamic_cast<App::PropertyFloat*>(prop))
+                    num(p->getValue());
+                else if (auto p = dynamic_cast<App::PropertyColor*>(prop)) {
+                    App::Color c = p->getValue();
+                    ss << '[';
+                    num(c.r); ss << ','; num(c.g); ss << ',';
+                    num(c.b); ss << ']';
+                }
+                else if (auto p = dynamic_cast<App::PropertyVector*>(prop)) {
+                    Base::Vector3d vec = p->getValue();
+                    ss << '[';
+                    num(vec.x); ss << ','; num(vec.y); ss << ',';
+                    num(vec.z); ss << ']';
+                }
+                else if (auto p = dynamic_cast<App::PropertyFloatList*>(prop)) {
+                    ss << '[';
+                    for (int i = 0; i < p->getSize(); ++i) {
+                        if (i) ss << ',';
+                        num(p->getValues()[i]);
+                    }
+                    ss << ']';
+                }
+                else if (auto p = dynamic_cast<App::PropertyIntegerList*>(prop)) {
+                    ss << '[';
+                    for (int i = 0; i < p->getSize(); ++i) {
+                        if (i) ss << ',';
+                        ss << p->getValues()[i];
+                    }
+                    ss << ']';
+                }
+                else
+                    ss << '?';
+            }
+            debugLabel = ss.str();
+        }
+    }
+    if (!debugLabel.empty()) {
+        if (!debugLabelCapture.manager) {
+            auto root = new SoSeparator;
+            auto lightModel = new SoLightModel;
+            lightModel->model = SoLightModel::BASE_COLOR;
+            root->addChild(lightModel);
+            debugLabelTexture = new SoTexture2;
+            root->addChild(debugLabelTexture);
+            debugLabelCoords = new SoCoordinate3;
+            root->addChild(debugLabelCoords);
+            auto texCoords = new SoTextureCoordinate2;
+            const SbVec2f uvs[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+            texCoords->point.setValues(0, 4, uvs);
+            root->addChild(texCoords);
+            auto quad = new SoIndexedFaceSet;
+            static const int32_t quadIdx[] = {0, 1, 2, 3, -1};
+            quad->coordIndex.setValues(0, 5, quadIdx);
+            quad->textureCoordIndex.setValues(0, 5, quadIdx);
+            root->addChild(quad);
+            initCapture(debugLabelCapture, root);
+            debugLabelFedText.clear();
+            debugLabelFedVp = SbVec2s(0, 0);
+        }
+        const SbVec2s vpsize = owner->getSoRenderManager()
+            ->getViewportRegion().getViewportSizePixels();
+        if (debugLabelFedText != debugLabel || debugLabelFedVp != vpsize) {
+            QFont font(QStringLiteral("monospace"));
+            font.setPixelSize(14);
+            QFontMetrics fm(font);
+            QString text = QString::fromUtf8(debugLabel.c_str());
+            int tw = fm.horizontalAdvance(text) + 2;
+            int th = fm.height() + 2;
+            QImage img(tw, th, QImage::Format_RGBA8888);
+            img.fill(Qt::transparent);
+            {
+                QPainter painter(&img);
+                painter.setFont(font);
+                // Orange, distinct from the yellow fps readout.
+                painter.setPen(QColor(255, 160, 0));
+                painter.drawText(1, 1 + fm.ascent(), text);
+            }
+            // Coin images are bottom-up, QImage is top-down.
+            img = img.mirrored();
+            debugLabelTexture->image.setValue(SbVec2s(short(tw), short(th)),
+                                              4, img.constBits());
+            // One percent in from the top-left corner (the fps readout
+            // keeps the bottom-left).
+            float x = 0.01F * float(vpsize[0]);
+            float yTop = 0.01F * float(vpsize[1]);
+            const SbVec3f quadPts[4] = {
+                {x, yTop + float(th), 0},
+                {x + float(tw), yTop + float(th), 0},
+                {x + float(tw), yTop, 0},
+                {x, yTop, 0},
+            };
+            debugLabelCoords->point.setValues(0, 4, quadPts);
+            debugLabelFedText = debugLabel;
+            debugLabelFedVp = vpsize;
+        }
+        debugLabelCapture.manager->setExternalOverlay(
+            renderer.get(), OverlayDebugLabel, pixelAnchor);
+        captureAction.apply(debugLabelCapture.applyRoot);
+    }
+    else {
+        dropCapture(debugLabelCapture, OverlayDebugLabel);
+        debugLabelTexture.reset();
+        debugLabelCoords.reset();
     }
 
     // NaviCube (phase C): the rotating cube and the viewport-fixed
@@ -3996,7 +4153,8 @@ void View3DInventorViewer::initRenderProperties()
     // reveals them, and scripts/the verification harness set them.
     if (!view->getPropertyByName("RenderDebug_ViewMode")) {
         static const char* _debugViewModeEnums[] =
-            {"Off", "Depth", "Normal", "AO", "Shadow", nullptr};
+            {"Off", "Depth", "Normal", "AO", "Shadow", "ShadowTile",
+             "Overdraw", "ShadowFilter", "UV", nullptr};
         auto prop = static_cast<App::PropertyEnumeration*>(
                 view->addDynamicProperty("App::PropertyEnumeration",
                                          "RenderDebug_ViewMode", "RenderDebug",
@@ -4011,6 +4169,14 @@ void View3DInventorViewer::initRenderProperties()
                                          "RenderDebug_FreezeFrame", "RenderDebug",
                                          RenderParams::docDebugFreezeFrame()));
         prop->setValue(RenderParams::getDebugFreezeFrame());
+        prop->setStatus(App::Property::Hidden, true);
+    }
+    if (!view->getPropertyByName("RenderDebug_Label")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "RenderDebug_Label", "RenderDebug",
+                                         RenderParams::docDebugLabel()));
+        prop->setValue(RenderParams::getDebugLabel());
         prop->setStatus(App::Property::Hidden, true);
     }
 }

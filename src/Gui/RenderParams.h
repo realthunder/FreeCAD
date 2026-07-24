@@ -699,9 +699,11 @@ public:
     /// Render debugging buffer visualization (docs/RenderDebug.md).
     /// Routes an intermediate render target to the screen instead of the
     /// shaded scene: 1 = linearized scene depth, 2 = view-space normals,
-    /// 3 = ambient occlusion term only, 4 = shadow term only. 0 renders
-    /// normally. The on-top, highlight and overlay passes still draw on
-    /// top so the view stays navigable.
+    /// 3 = ambient occlusion term only, 4 = shadow term only, 5 = shadow
+    /// map / bulb-tile coverage as color, 6 = overdraw heatmap, 7 =
+    /// shadow-moment filtering-precision probe, 8 = UV / texcoord.
+    /// 0 renders normally. The on-top, highlight and overlay passes
+    /// still draw on top so the view stays navigable.
     static const long & getDebugViewMode();
     static const long & defaultDebugViewMode();
     static void removeDebugViewMode();
@@ -724,6 +726,22 @@ public:
     static void removeDebugFreezeFrame();
     static void setDebugFreezeFrame(const bool &v);
     static const char *docDebugFreezeFrame();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugLabel
+    ///
+    /// Burn a self-describing label into a corner of the rendered
+    /// frame while render debugging: the active debug view mode, the
+    /// freeze-frame state and any custom RenderDebug_* parameter values.
+    /// A captured PNG then documents its own settings without its
+    /// sidecar (docs/RenderDebug.md).
+    static const bool & getDebugLabel();
+    static const bool & defaultDebugLabel();
+    static void removeDebugLabel();
+    static void setDebugLabel(const bool &v);
+    static const char *docDebugLabel();
     //@}
 //[[[end]]]
 

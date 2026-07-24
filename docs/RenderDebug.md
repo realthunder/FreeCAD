@@ -123,24 +123,33 @@ The workhorse knob: a single integer that routes an intermediate render target
 or derived quantity to the screen, instead of N per-artifact tint hacks. This
 is the "view mode" dropdown every production engine ships.
 
-| value | shows | diagnoses |
-|---|---|---|
-| 0 | off (normal shading) | — |
-| 1 | linearized depth | prepass, precision, far-plane issues |
-| 2 | world-space normals | tessellation/normal-generation bugs |
-| 3 | AO term only | GTAO artifacts, resolution-scaling seams |
-| 4 | shadow term only | acne/peter-panning, EVSM bleeding |
-| 5 | shadow cascade / tile index as color | cascade selection, bulb-tile coverage |
-| 6 | overdraw heatmap | transparency sorting, instancing regressions |
-| 7 | texture mip / derivative visualization | filtering-precision issues (the RG16F stipple class) |
-| 8 | UV / texcoord | mapping bugs |
+| value | name | shows | diagnoses |
+|---|---|---|---|
+| 0 | Off | off (normal shading) | — |
+| 1 | Depth | linearized depth | prepass, precision, far-plane issues |
+| 2 | Normal | view-space normals | tessellation/normal-generation bugs |
+| 3 | AO | AO term only | GTAO artifacts, resolution-scaling seams |
+| 4 | Shadow | shadow term only | acne/peter-panning, EVSM bleeding |
+| 5 | ShadowTile | scene-shadow-map coverage (gray) + bulb atlas tile index as color | shadow projection reach, bulb-tile coverage/selection |
+| 6 | Overdraw | overdraw heatmap (dedicated counting re-render, additive, depth test off) | transparency sorting, instancing regressions |
+| 7 | ShadowFilter | shadow-moment filtering-precision probe: hardware bilinear vs the same four texels blended at full shader precision, amplified; B = the variance term | filtering-precision issues (exactly the RG16F stipple class) |
+| 8 | UV | UV / texcoord of the visible surface (depth-tested re-render) | mapping bugs |
 
 Implementation shape: the mode rides `u_debugParams.x`; the final composite
-shader ends in a mode `switch` that samples the relevant intermediate target.
-Most listed targets (depth pyramid, AO, shadow) already exist as textures for
-the effect passes, so early modes are mostly *routing*, not new rendering.
-Modes that need a dedicated pass (overdraw counting) can arrive later; the
-enum is append-only.
+shader (`fs_fc_debug.sc`) ends in a mode `switch` that samples the relevant
+intermediate target. Modes 1–5/7 are pure routing over targets that already
+exist for the effect passes (modes 4/5/7 reconstruct the view-space position
+from the prepass depth, so they force the prepass on like 1–3). Modes 6/8
+share a dedicated *debug scene re-render* pass (`ViewDebugScene`, repurposing
+the retired AO-apply view slot): every main-pass triangle fill re-rasterizes
+into a full-res RGBA16F target — additive with the depth test off for the
+fragment count, depth-tested texcoord output for UV. The enum is append-only.
+
+Mode-specific tuning rides the `u_userParams[0]` bootstrap lane: `.z`
+overrides the overdraw full-red count (default 8) and the mode-7 probe
+amplification (default 4096); `.x/.y` stay the generic output scale/bias.
+(This renderer has a single scene shadow map — no cascades — so mode 5's
+"cascade index" reduces to scene-map coverage plus the 4x4 bulb tile atlas.)
 
 **Why this matters for verification:** a golden-image diff of the final frame
 says "something changed". A diff of mode 2 vs mode 3 vs mode 4 *localizes* the
@@ -286,9 +295,15 @@ for smoke tests and are far more robust than pixel diffs.
 
 ### 4.3 Self-labeling captures
 
-Reusing the existing `SoTextImage` overlay machinery, an optional burn-in of
-the active view-mode name + key parameter values into a screen corner, so a
-PNG in a bug report is self-describing even without its sidecar.
+An optional burn-in of the active view-mode name + key parameter values into
+a screen corner, so a PNG in a bug report is self-describing even without its
+sidecar. Implemented as the Hidden `RenderDebug_Label` boolean (default off —
+goldens stay label-free unless asked): while on, the viewer feeds an
+orange monospace text quad (the fps-readout machinery, one percent in from
+the top-left) through the standard overlay feed — the WASM viewer therefore
+burns the same label into its own `dumpFrame` captures. The text names the
+view mode, the freeze state, and every custom `RenderDebug_*` parameter as
+`name=value`.
 
 ### 4.4 Live capture from a running browser (the third leg)
 
@@ -484,7 +499,7 @@ runtime GLSL compiler. Coin's nodes carry *source*. Reconciliation:
 | 2 | **DONE** — `saveRenderDump` Python API + sidecar JSON + `getRenderStats`; absorb `FC_BGFX_DEBUG_*` env gates; browser `dumpFrame` WS protocol + version-handshake/self `reload` (§4.4) | phase 1 (mode override) |
 | 3 | **DONE** — verification harness (`scripts/render-verify.sh` + `render_verify.py` + `render_diff.py` + `wasm-hold.js`): named-view or golden-sidecar restaging, xvfb/`--gpu`/`--viewer` capture legs, first-divergent-stage diffing with heatmaps | phases 1–2 |
 | 4 | **DONE** — dynamic name→uniform binding (`RenderDebug_*` props → like-named vec4 uniforms, snapshot v21) + `u_userParams[4]` fallback pool (lane 0 = debug output scale/bias); shader hot-reload (`FC_BGFX_SHADER_DIR` + `reloadShaders()`); `View3DInventor.addProperty/removeProperty` Python API | phase 1 |
-| 5 | remaining view modes (overdraw, mip); self-labeling burn-in | 1, 4 |
+| 5 | **DONE** — view modes 5–8 (ShadowTile coverage, Overdraw counting pass on the repurposed `ViewDebugScene` slot, ShadowFilter precision probe, UV re-render; snapshot v22); self-labeling burn-in (`RenderDebug_Label`) | 1, 4 |
 | 6 | user-loadable shaders (Coin node model, `post` stage first) | 4; shader compile cache (§6.3) |
 
 Phases 1+2 are the minimum end-to-end slice: set a mode from Python, capture

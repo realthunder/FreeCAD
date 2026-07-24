@@ -39,7 +39,9 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // presel/sel config, for browser-side edge/vertex picking.
 // v13: AO method selector (SSAO / GTAO) in the AO config.
 // v14: GTAO slice/step tuning in the AO config.
-const uint32_t kVersion = 21;
+// 22: RenderDebug view modes 5-8 (shader + pass support the viewer
+//     binary must have — the bump forces stale pages to self-reload).
+const uint32_t kVersion = 22;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()

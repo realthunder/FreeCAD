@@ -95,6 +95,7 @@ public:
     double GroundReflectionIntensity;
     long DebugViewMode;
     bool DebugFreezeFrame;
+    bool DebugLabel;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -193,6 +194,8 @@ public:
         funcs["DebugViewMode"] = &RenderParamsP::updateDebugViewMode;
         DebugFreezeFrame = this->handle->GetBool("DebugFreezeFrame", false);
         funcs["DebugFreezeFrame"] = &RenderParamsP::updateDebugFreezeFrame;
+        DebugLabel = this->handle->GetBool("DebugLabel", false);
+        funcs["DebugLabel"] = &RenderParamsP::updateDebugLabel;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -396,6 +399,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugFreezeFrame(RenderParamsP *self) {
         self->DebugFreezeFrame = self->handle->GetBool("DebugFreezeFrame", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugLabel(RenderParamsP *self) {
+        self->DebugLabel = self->handle->GetBool("DebugLabel", false);
     }
 };
 
@@ -1746,9 +1753,11 @@ const char *RenderParams::docDebugViewMode() {
 "Render debugging buffer visualization (docs/RenderDebug.md).\n"
 "Routes an intermediate render target to the screen instead of the\n"
 "shaded scene: 1 = linearized scene depth, 2 = view-space normals,\n"
-"3 = ambient occlusion term only, 4 = shadow term only. 0 renders\n"
-"normally. The on-top, highlight and overlay passes still draw on\n"
-"top so the view stays navigable.");
+"3 = ambient occlusion term only, 4 = shadow term only, 5 = shadow\n"
+"map / bulb-tile coverage as color, 6 = overdraw heatmap, 7 =\n"
+"shadow-moment filtering-precision probe, 8 = UV / texcoord.\n"
+"0 renders normally. The on-top, highlight and overlay passes\n"
+"still draw on top so the view stays navigable.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1804,6 +1813,38 @@ void RenderParams::setDebugFreezeFrame(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeDebugFreezeFrame() {
     instance()->handle->RemoveBool("DebugFreezeFrame");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugLabel() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Burn a self-describing label into a corner of the rendered\n"
+"frame while render debugging: the active debug view mode, the\n"
+"freeze-frame state and any custom RenderDebug_* parameter values.\n"
+"A captured PNG then documents its own settings without its\n"
+"sidecar (docs/RenderDebug.md).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugLabel() {
+    return instance()->DebugLabel;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugLabel() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugLabel(const bool &v) {
+    instance()->handle->SetBool("DebugLabel",v);
+    instance()->DebugLabel = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugLabel() {
+    instance()->handle->RemoveBool("DebugLabel");
 }
 //[[[end]]]
 
