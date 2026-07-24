@@ -1773,6 +1773,7 @@ static void applySnapshot(bool fit)
     s_renderer->setVolumetricConfig(s_snap.volconf);
     s_renderer->setWaterConfig(s_snap.waterconf);
     s_renderer->setBloomConfig(s_snap.bloomconf);
+    s_renderer->setRenderDebugConfig(s_snap.debugconf);
     s_renderer->setAutoZoomScale(s_snap.autozoomScale);
     s_renderer->setEffectResolution(s_snap.effectResolution);
     s_renderer->setSSAOResolution(s_snap.ssaoResolution);

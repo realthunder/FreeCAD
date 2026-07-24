@@ -39,7 +39,7 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // presel/sel config, for browser-side edge/vertex picking.
 // v13: AO method selector (SSAO / GTAO) in the AO config.
 // v14: GTAO slice/step tuning in the AO config.
-const uint32_t kVersion = 19;
+const uint32_t kVersion = 20;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -748,6 +748,10 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(c->pickRadius);  // v11
     }
 
+    // v20: render debugging config (docs/RenderDebug.md).
+    w.i32(snap.debugconf.viewMode);
+    w.b(snap.debugconf.freezeFrame);
+
     return w.ok;
 }
 
@@ -908,6 +912,12 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             if (version >= 11)
                 c->pickRadius = r.f();
         }
+    }
+
+    snap.debugconf = RenderDebugConfig();
+    if (version >= 20) {
+        snap.debugconf.viewMode = r.i32();
+        snap.debugconf.freezeFrame = r.b();
     }
 
     return r.ok;

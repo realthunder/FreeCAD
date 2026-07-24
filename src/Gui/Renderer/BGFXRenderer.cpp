@@ -1504,6 +1504,15 @@ public:
         ViewBloomApply,     // the blurred halo added onto the scene
                             // (blend ONE/ONE, scaled by the bloom
                             // intensity)
+        ViewDebug,          // render debugging buffer visualization
+                            // (docs/RenderDebug.md): when the RenderDebug
+                            // view mode is active, a fullscreen blit
+                            // overwrites the scene color with an
+                            // intermediate target (prepass depth/normal,
+                            // AO term, shadow term) — before the
+                            // on-top/highlight/overlay passes so those
+                            // still draw on top and the view stays
+                            // navigable
         ViewOnTop,          // scene geometry with on-top materials
         ViewHighlight,      // selection-on-top and preselection highlight
         ViewOverlay0,       // overlay feeds (Renderer::setOverlay — the
@@ -1673,6 +1682,7 @@ public:
             }
         }
         for (auto uni : {&s_texShadow, &s_texShadowTint, &s_texAOScreen,
+                         &u_debugParams,
                          &u_shadowParams, &u_lightDir,
                          &u_lightPos, &u_lightColor, &u_shadowMatrix,
                          &u_shadowBlur, &u_evsm,
@@ -1828,6 +1838,10 @@ public:
         if (bgfx::isValid(m_progComp)) {
             bgfx::destroy(m_progComp);
             m_progComp = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_progDebug)) {
+            bgfx::destroy(m_progDebug);
+            m_progDebug = BGFX_INVALID_HANDLE;
         }
         if (bgfx::isValid(m_progCap)) {
             bgfx::destroy(m_progCap);
@@ -2367,6 +2381,12 @@ public:
             s_texReveal = bgfx::createUniform("s_texReveal",
                                               bgfx::UniformType::Sampler);
         }
+
+        // Render debugging buffer visualization (docs/RenderDebug.md).
+        m_progDebug = loadProgram("vs_fc_comp", "fs_fc_debug",
+                                  _BGFXLib.resource().c_str());
+        u_debugParams = bgfx::createUniform("u_debugParams",
+                                            bgfx::UniformType::Vec4);
 
         // SSAO: depth+normal prepass + AO generation/blur targets, all
         // non-MSAA at viewport size (the multiply pass samples at pixel
@@ -3623,6 +3643,47 @@ public:
                                     BGFX_STATE_BLEND_SRC_ALPHA));
         bgfx::submit(viewId + ViewOITComposite, m_progComp);
         ++drawcount;
+    }
+
+    /// Render debugging buffer visualization (docs/RenderDebug.md):
+    /// overwrite the scene color with an intermediate target — prepass
+    /// depth/normal (modes 1/2), the AO term (3), or the shadow term
+    /// re-evaluated from the prepass position (4). Runs before the
+    /// on-top/highlight/overlay passes so those still draw on top.
+    void submitDebug(int mode, float maxDepth, int aoMethod,
+                     bool shadowValid)
+    {
+        if (!bgfx::isValid(m_progDebug) || !bgfx::isValid(aoNormalZ))
+            return;
+        float params[4] = {float(mode),
+                           maxDepth > 0.0f ? 1.0f / maxDepth : 1.0f,
+                           shadowValid ? 1.0f : 0.0f, 0.0f};
+        bgfx::setUniform(u_debugParams, params);
+        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
+        // The finished AO term: GTAO denoises back into aoTex, the
+        // classic blur lands in aoBlurTex (see submitAOResolve).
+        bgfx::TextureHandle ao = aoMethod == 1 ? aoTex : aoBlurTex;
+        bgfx::setTexture(2, s_texAO,
+                         bgfx::isValid(ao) ? ao : m_whiteTex);
+        if (shadowValid) {
+            // The shadow-map sampling state of fc_volume_shadow.sh —
+            // the same set the volumetric/caustics passes bind.
+            float lightDir[4] = {lightDirView[0], lightDirView[1],
+                                 lightDirView[2], 1.0f};
+            float evsm[4] = {shadowWarpFrame, shadowThreshold,
+                             shadowSpreadUv, shadowSpreadMode};
+            bgfx::setUniform(u_evsm, evsm);
+            bgfx::setUniform(u_lightDir, lightDir);
+            bgfx::setUniform(u_lightPos, lightPosView);
+            bgfx::setUniform(u_lightColor, lightColorI);
+            bgfx::setUniform(u_shadowMatrix, shadowMtx);
+            bgfx::setTexture(1, s_texShadow, shadowTex);
+        }
+        else {
+            bgfx::setTexture(1, s_texShadow, m_whiteTex);
+        }
+        fullscreen(ViewDebug, m_progDebug,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
     }
 
     /// SSAO depth+normal prepass of one opaque scene triangle draw:
@@ -5814,6 +5875,11 @@ public:
     bgfx::ProgramHandle m_progMeshOit = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMeshOitClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progComp = BGFX_INVALID_HANDLE;
+    /// Debug buffer-visualization blit (docs/RenderDebug.md).
+    bgfx::ProgramHandle m_progDebug = BGFX_INVALID_HANDLE;
+    /// x = view mode, y = 1/max linear view depth (depth normalization),
+    /// z = shadow-state valid this frame, w unused.
+    bgfx::UniformHandle u_debugParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texAccum = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texReveal = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCap = BGFX_INVALID_HANDLE;
@@ -6318,6 +6384,7 @@ public:
             snap.volconf = volconf;
             snap.waterconf = waterconf;
             snap.bloomconf = bloomconf;
+            snap.debugconf = debugconf;
             snap.preselconf = preselconf;
             snap.selconf = selconf;
             snap.autozoomScale = autozoomScale;
@@ -6425,6 +6492,23 @@ public:
         if (pbrconf.enabled && !hlconfig.show) {
             view->ensureEnvironment();
             pbrActive = bgfx::isValid(view->m_envTex);
+        }
+        // The debug buffer visualization (docs/RenderDebug.md) reads the
+        // prepass normal/depth and AO targets: force the SSAO chain on
+        // while a mode that needs it is active, scene geometry
+        // permitting (same opaque-triangle test as above).
+        if (!ssaoActive && view->m_ssao && debugconf.viewMode >= 1
+                && debugconf.viewMode <= 3) {
+            for (const auto &draw : scene) {
+                if (!draw.material.ontop
+                        && draw.material.type == Render::Material::Triangle
+                        && !draw.material.transparent
+                        && !(draw.material.pervertexcolor && draw.mesh
+                             && draw.mesh->hasTransparency)) {
+                    ssaoActive = true;
+                    break;
+                }
+            }
         }
         view->pbrFrame = pbrActive;
         view->pbrMetallic = pbrconf.metallic;
@@ -7196,6 +7280,16 @@ public:
             animTime = std::chrono::duration<float>(
                            animclock::now() - start).count();
             animLive = true;
+        }
+        // The RenderDebug freeze-frame determinism switch
+        // (docs/RenderDebug.md): a frozen clock renders every
+        // time-animated effect (water waves, fire, caustics, splashes)
+        // at t = 0, and animLive stays false so idle viewers stop
+        // re-rendering — two frames of the same scene/camera/params
+        // are then identical.
+        if (debugconf.freezeFrame) {
+            animTime = 0.0f;
+            animLive = false;
         }
         // Fire lights the scene: an unshadowed point light per fire
         // body slot at the flame centroid, its brightness flickered on
@@ -8928,7 +9022,12 @@ public:
                 view->volAccumFrames = 0;
             else if (view->volAccumFrames < 1024)
                 ++view->volAccumFrames;
-            float volAccum = view->volAccumFrames == 0
+            // The freeze-frame determinism switch (docs/RenderDebug.md)
+            // replaces the history outright every frame: k = 1 also
+            // zeroes the golden-ratio jitter phase (accum < 1 gates it),
+            // so a repeat frame raymarches identically.
+            float volAccum = debugconf.freezeFrame ? 1.0f
+                : view->volAccumFrames == 0
                 ? 1.0f
                 : std::max(1.0f / float(view->volAccumFrames + 1),
                            1.0f / 16.0f);
@@ -8982,6 +9081,26 @@ public:
         if (bloomActive)
             view->submitBloom(bloomconf.threshold, bloomconf.intensity,
                               bloomconf.radius, bulbDraws);
+
+        // 1h. Render debugging buffer visualization (docs/RenderDebug.md):
+        // overwrite the scene color with the selected intermediate target.
+        // Depth (mode 1) normalizes by the farthest scene-bbox corner in
+        // view space so the whole model spans the visible ramp.
+        if (debugconf.viewMode > 0) {
+            float maxDepth = 0.0f;
+            if (bboxValid) {
+                for (int c = 0; c < 8; ++c) {
+                    float x = (c & 1) ? bboxMax[0] : bboxMin[0];
+                    float y = (c & 2) ? bboxMax[1] : bboxMin[1];
+                    float z = (c & 4) ? bboxMax[2] : bboxMin[2];
+                    float viewZ = viewMat[2] * x + viewMat[6] * y
+                        + viewMat[10] * z + viewMat[14];
+                    maxDepth = std::max(maxDepth, -viewZ);
+                }
+            }
+            view->submitDebug(debugconf.viewMode, maxDepth, aoconf.method,
+                              shadowActive && bgfx::isValid(view->shadowTex));
+        }
 
         // 2. Selection whole-object fills; positive ids are on-top
         // selections (SoFCRenderer::addSelection). Their lines/points are
@@ -9773,6 +9892,7 @@ public:
     Render::VolumetricConfig volconf;
     Render::WaterConfig waterconf;
     Render::BloomConfig bloomconf;
+    Render::RenderDebugConfig debugconf;
     Render::PreselHighlightConfig preselconf;
     Render::PreselHighlightConfig selconf;
     float autozoomScale = 1.0f;
@@ -10059,6 +10179,14 @@ void BGFXRenderer::setBloomConfig(const BloomConfig &config)
 {
     if (pimpl->bloomconf != config) {
         pimpl->bloomconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setRenderDebugConfig(const RenderDebugConfig &config)
+{
+    if (pimpl->debugconf != config) {
+        pimpl->debugconf = config;
         pimpl->sceneDirty = true;
     }
 }
