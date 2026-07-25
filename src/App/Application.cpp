@@ -107,6 +107,7 @@
 #include "LinkBaseExtensionPy.h"
 #include "MaterialObject.h"
 #include "MeasureDistance.h"
+#include "ShaderObject.h"
 #include "Origin.h"
 #include "OriginFeature.h"
 #include "OriginGroupExtension.h"
@@ -2247,6 +2248,12 @@ void Application::initTypes()
     App::MeasureDistance           ::init();
     App::MaterialObject            ::init();
     App::MaterialObjectPython      ::init();
+    App::ShaderProgram             ::init();
+    App::ShaderProgramPython       ::init();
+    App::Shader                    ::init();
+    App::ShaderPython              ::init();
+    App::Appearance                ::init();
+    App::AppearancePython          ::init();
     App::TextDocument              ::init();
     App::Placement                 ::init();
     App::PlacementPython           ::init();

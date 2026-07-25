@@ -546,6 +546,63 @@ runtime GLSL compiler. Coin's nodes carry *source*. Reconciliation:
   Compile errors are surfaced through the report view (and the control
   channel on the browser tier).
 
+### 6.5 Document object model (settled 2026-07-25)
+
+The user-facing carrier of shaders is a family of three document objects.
+All three keep their `DocumentObject` class in `src/App/` — the headless
+server tier and `FreeCADCmd` must restore both library and working documents
+— with all behavior, Coin node ownership and editors on the Gui side.
+Rationale for a dedicated binder object (instead of a link property on
+consumers): FreeCAD object hierarchy is not scene-graph hierarchy — objects
+may have no scene graph of their own, and one object may modify another's
+visuals. Hierarchy-dependent application ("this instance of a linked body,
+not all instances") needs full instance paths, which only a
+`PropertyXLinkSubList` on a document object can carry; and cross-document
+shader libraries require `PropertyXLink`, which must be owned by a
+`DocumentObject` anyway.
+
+- **App::ShaderProgram** — one stage-tagged program: multi-dialect source
+  variants (§6.3), the stage name, and its parameter set (`Foo_Bar` dynamic
+  properties per §6.4).
+- **App::Shader** — groups a list of ShaderProgram objects into one logical
+  effect/material. One effect legitimately needs several programs: a cutout
+  or displacing material needs matching depth-prepass and shadow-caster
+  programs, a toon look = `material` shading + `post` outline, multi-pass
+  post chains (blur, bloom) are N programs in sequence. Inert on its own —
+  opening a shader-library document applies nothing. **Preview:** a
+  `PropertyEnumeration` demo shape (None / Box / Sphere / Cylinder / Cone)
+  with basic sizing properties lets the Shader's own view provider display
+  the effect on a demo shape — Coin's builtin primitive nodes (`SoCube`,
+  `SoSphere`, `SoCylinder`, `SoCone`; sizing properties map onto the node
+  fields), no mesh generation of our own (verify the render-cache capture
+  handles `generatePrimitives`-tessellated shapes; else fall back to a tiny
+  `SoIndexedFaceSet` tessellation). Complex-shape previews use a normal
+  Appearance binding instead.
+- **App::Appearance** — the binder that activates shading: a
+  `PropertyXLinkSubList` of targets carrying full instance paths, plus an
+  XLink to a Shader object, possibly in another document (user-built shader
+  libraries). An Appearance with an empty target list applies the shader's
+  scene-level (`post`) programs globally — one uniform activation mechanism
+  for both stages. Like-named dynamic properties on the Appearance override
+  the shader's parameter values for that binding only ("same toon shader,
+  different tint for these instances").
+
+Application semantics ride the existing hierarchy-dependent material
+override machinery: a new `FLAG_USER_SHADER` in
+`SoFCRenderCache::Material::overrideflags` merges parent→child from the
+bound path's cache into descendants — unlike the direct-node attachment of
+the second slice, which stays self-scoped (no merge); both modes coexist.
+Precedence on nested paths follows the existing merge convention (outer
+override wins); identical-path collisions are tie-broken by
+`App::DocumentObject::TreeRank` (the persisted tree-ordering key).
+Element-level scoping (target subnames ending in `Face3`, as the
+per-instance color override already supports) is an explicit follow-up, not
+part of the first slice. The injection mechanism (secondary context along a
+resolved `SoPath` vs a path-keyed override table on
+`SoFCRenderCacheManager`) is decided after reading the `OverrideMaterial`
+flow; lean = the cache-manager table (capture-side, keeps the
+headless/WASM tier simple).
+
 ---
 
 ## 7. Implementation phasing

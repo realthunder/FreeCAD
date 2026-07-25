@@ -175,6 +175,7 @@ SET(Document_CPP_SRCS
     VRMLObject.cpp
     MaterialObject.cpp
     MergeDocuments.cpp
+    ShaderObject.cpp
     TextDocument.cpp
     Link.cpp
     LinkParams.cpp
@@ -225,6 +226,7 @@ SET(Document_HPP_SRCS
     VRMLObject.h
     MaterialObject.h
     MergeDocuments.h
+    ShaderObject.h
     TextDocument.h
     Link.h
     SavedView.h

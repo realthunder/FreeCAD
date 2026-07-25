@@ -123,6 +123,7 @@
 #include "ViewProviderLinkPy.h"
 #include "ViewProviderMaterialObject.h"
 #include "ViewProviderMeasureDistance.h"
+#include "ViewProviderShaderObject.h"
 #include "ViewProviderOrigin.h"
 #include "ViewProviderOriginFeature.h"
 #include "ViewProviderOriginGroup.h"
@@ -2127,6 +2128,12 @@ void Application::initTypes()
     Gui::ViewProviderOrigin                     ::init();
     Gui::ViewProviderMaterialObject             ::init();
     Gui::ViewProviderMaterialObjectPython       ::init();
+    Gui::ViewProviderShaderProgram              ::init();
+    Gui::ViewProviderShaderProgramPython        ::init();
+    Gui::ViewProviderShader                     ::init();
+    Gui::ViewProviderShaderPython               ::init();
+    Gui::ViewProviderAppearance                 ::init();
+    Gui::ViewProviderAppearancePython           ::init();
     Gui::ViewProviderTextDocument               ::init();
     Gui::ViewProviderLinkObserver               ::init();
     Gui::LinkView                               ::init();
