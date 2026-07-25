@@ -452,9 +452,29 @@ ViewProviderAppearance::ViewProviderAppearance() = default;
 
 ViewProviderAppearance::~ViewProviderAppearance() = default;
 
+// Like-named (Param_*) dynamic properties on the Appearance override the
+// program's parameter values for this binding only (§6.4); a parameter
+// the program does not carry is added, so a binding can set uniforms the
+// shader source declares without a matching property on the program
+// object.
+static void applyParamOverrides(App::Appearance *obj,
+                                Render::UserShader &shader)
+{
+    for (auto &v : collectParamProps(obj)) {
+        auto it = std::find_if(shader.params.begin(), shader.params.end(),
+                               [&](const auto &p) {
+                                   return p.name == v.first;
+                               });
+        if (it != shader.params.end())
+            it->values = std::move(v.second);
+        else
+            shader.params.push_back({std::move(v.first),
+                                     std::move(v.second)});
+    }
+}
+
 // The effect's object-scoped shader: the first non-"post" program of the
 // bound App::Shader, translated off its view provider's Coin node.
-// (Scene-level "post" activation is a follow-up slice.)
 static std::shared_ptr<const Render::UserShader>
 resolveUserShader(App::Appearance *obj)
 {
@@ -473,26 +493,39 @@ resolveUserShader(App::Appearance *obj)
         if (!RendererBridge::translateShaderProgram(vp->getShaderNode(),
                                                     shader))
             continue;
-        // Like-named dynamic properties on the Appearance override the
-        // program's parameter values for this binding only (§6.4); a
-        // parameter the program does not carry is added, so a binding can
-        // set uniforms the shader source declares without a matching
-        // property on the program object.
-        for (auto &v : collectParamProps(obj)) {
-            auto it = std::find_if(shader.params.begin(),
-                                   shader.params.end(),
-                                   [&](const auto &p) {
-                                       return p.name == v.first;
-                                   });
-            if (it != shader.params.end())
-                it->values = std::move(v.second);
-            else
-                shader.params.push_back({std::move(v.first),
-                                         std::move(v.second)});
-        }
+        applyParamOverrides(obj, shader);
         return std::make_shared<Render::UserShader>(std::move(shader));
     }
     return nullptr;
+}
+
+// The effect's scene-level programs: every "post"-stage program of the
+// bound App::Shader in Programs order, with this Appearance's parameter
+// overrides applied. Activated by an Appearance with an empty target
+// list (§6.5).
+static std::vector<Render::UserShader>
+resolvePostShaders(App::Appearance *obj)
+{
+    std::vector<Render::UserShader> res;
+    auto shobj = dynamic_cast<App::Shader*>(obj->Shader.getValue());
+    if (!shobj)
+        return res;
+    for (auto prog : shobj->Programs.getValues()) {
+        auto progObj = dynamic_cast<App::ShaderProgram*>(prog);
+        if (!progObj || strcmp(progObj->Stage.getValue(), "post") != 0)
+            continue;
+        auto vp = dynamic_cast<ViewProviderShaderProgram*>(
+                Application::Instance->getViewProvider(progObj));
+        if (!vp || !vp->getShaderNode())
+            continue;
+        Render::UserShader shader;
+        if (!RendererBridge::translateShaderProgram(vp->getShaderNode(),
+                                                    shader))
+            continue;
+        applyParamOverrides(obj, shader);
+        res.push_back(std::move(shader));
+    }
+    return res;
 }
 
 // Flatten Targets into (object, subname-without-element) pairs; element
@@ -536,8 +569,9 @@ void ViewProviderAppearance::beforeDelete()
             it->second.erase(this);
             if (it->second.empty())
                 _AppearanceRegistry.erase(it);
-            else
-                rebuildAllBindings(doc);
+            // Runs on the emptied registry too — the views' scene-level
+            // shader list must clear with the last Appearance.
+            rebuildAllBindings(doc);
         }
     }
     ViewProviderDocumentObject::beforeDelete();
@@ -624,11 +658,14 @@ void ViewProviderAppearance::rebuildAllBindings(App::Document *doc)
     if (!doc || _RebuildingBindings)
         return;
     Base::StateLocker guard(_RebuildingBindings);
+    // A missing registry entry (last Appearance deleted) still runs the
+    // tail: the views' scene-level shader list must clear too.
     auto it = _AppearanceRegistry.find(doc);
-    if (it == _AppearanceRegistry.end())
-        return;
+    std::vector<ViewProviderAppearance*> vps;
+    if (it != _AppearanceRegistry.end())
+        vps.assign(it->second.begin(), it->second.end());
 
-    for (auto vp : it->second)
+    for (auto vp : vps)
         vp->clearBindings();
 
     // Winner per target: highest TreeRank; equal ranks fall back to the
@@ -636,12 +673,19 @@ void ViewProviderAppearance::rebuildAllBindings(App::Document *doc)
     std::map<std::string, ViewProviderAppearance*> winners;
     std::map<ViewProviderAppearance*,
              std::vector<std::pair<App::DocumentObject*, std::string>>> targets;
-    for (auto vp : it->second) {
+    // Empty-target Appearances activate scene-level (§6.5)
+    std::vector<App::Appearance*> sceneObjs;
+    for (auto vp : vps) {
         // Not isVisible(): that resolves through isShow(), which these
         // view providers pin to true for the tree.
         auto obj = dynamic_cast<App::Appearance*>(vp->getObject());
         if (!obj || !vp->Visibility.getValue())
             continue;
+        if (obj->Targets.getSubListValues().empty()) {
+            if (obj->Shader.getValue())
+                sceneObjs.push_back(obj);
+            continue;
+        }
         auto tgts = collectTargets(obj);
         for (const auto &t : tgts) {
             std::string key = t.first->getFullName() + "." + t.second;
@@ -669,6 +713,40 @@ void ViewProviderAppearance::rebuildAllBindings(App::Document *doc)
                 winning.push_back(t);
         }
         v.first->applyBindings(winning);
+    }
+
+    // Scene-level activation: the empty-target Appearances' post-stage
+    // programs, ordered ascending by TreeRank (name fallback) so the
+    // highest-ranked Appearance lands last — the winning slot of the
+    // backend's "last shader on a stage wins" rule, matching the
+    // per-target precedence direction.
+    std::sort(sceneObjs.begin(), sceneObjs.end(),
+              [](App::Appearance *a, App::Appearance *b) {
+                  long ra = a->TreeRank.getValue();
+                  long rb = b->TreeRank.getValue();
+                  if (ra != rb)
+                      return ra < rb;
+                  return strcmp(a->getNameInDocument(),
+                                b->getNameInDocument()) < 0;
+              });
+    std::vector<Render::UserShader> sceneShaders;
+    for (auto obj : sceneObjs) {
+        auto post = resolvePostShaders(obj);
+        sceneShaders.insert(sceneShaders.end(),
+                            std::make_move_iterator(post.begin()),
+                            std::make_move_iterator(post.end()));
+    }
+    if (auto gdoc = Application::Instance->getDocument(doc)) {
+        for (auto view :
+                gdoc->getMDIViewsOfType(View3DInventor::getClassTypeId())) {
+            auto viewer = static_cast<View3DInventor*>(view)->getViewer();
+            auto mgr = viewer ? viewer->getRenderCacheManager() : nullptr;
+            if (!mgr)
+                continue;
+            auto copy = sceneShaders;
+            mgr->setAppearanceShaders(std::move(copy));
+            viewer->getSoRenderManager()->scheduleRedraw();
+        }
     }
 }
 

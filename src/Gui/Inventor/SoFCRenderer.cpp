@@ -329,6 +329,21 @@ public:
   // last cache rebuild (docs/RenderDebug.md §6); pushed to the external
   // backend with the other per-frame configs.
   Render::UserShaderConfig usershaders;
+  // Scene-level shaders from empty-target App::Appearance bindings
+  // (§6.5), independent of scene recapture.
+  std::vector<Render::UserShader> appearanceshaders;
+  // What the backend gets: captured node shaders first, appearance
+  // shaders after (the last shader on a stage wins). Rebuilt on either
+  // setter instead of per frame.
+  Render::UserShaderConfig mergedshaders;
+
+  void mergeUserShaders()
+  {
+    mergedshaders = usershaders;
+    mergedshaders.shaders.insert(mergedshaders.shaders.end(),
+                                 appearanceshaders.begin(),
+                                 appearanceshaders.end());
+  }
 
   char stats[512];
   int drawcallcount;
@@ -869,6 +884,14 @@ void
 SoFCRenderer::setUserShaders(Render::UserShaderConfig && config)
 {
   PRIVATE(this)->usershaders = std::move(config);
+  PRIVATE(this)->mergeUserShaders();
+}
+
+void
+SoFCRenderer::setAppearanceShaders(std::vector<Render::UserShader> && shaders)
+{
+  PRIVATE(this)->appearanceshaders = std::move(shaders);
+  PRIVATE(this)->mergeUserShaders();
 }
 
 void
@@ -2304,7 +2327,7 @@ SoFCRenderer::render(SoGLRenderAction * action)
         RendererBridge::translateAOConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setRenderDebugConfig(
         RendererBridge::translateRenderDebugConfig(PRIVATE(this)->externalview));
-    PRIVATE(this)->external->setUserShaderConfig(PRIVATE(this)->usershaders);
+    PRIVATE(this)->external->setUserShaderConfig(PRIVATE(this)->mergedshaders);
     PRIVATE(this)->external->setPBRConfig(
         RendererBridge::translatePBRConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setBumpConfig(

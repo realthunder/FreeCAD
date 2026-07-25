@@ -121,6 +121,13 @@ public:
 
   void removeShaderOverride(const std::string & key);
 
+  /** Scene-level user shaders from empty-target App::Appearance bindings
+   * (docs/RenderDebug.md §6.5): replaces the whole list, appended after
+   * the node-captured shaders in the backend config so the activation
+   * wins the "last shader on a stage" rule. Pass an empty list to clear.
+   */
+  void setAppearanceShaders(std::vector<Render::UserShader> && shaders);
+
   int clearSelection(bool alt = false);
 
   bool isOnTop(const std::string & key, bool altonly = true) const;

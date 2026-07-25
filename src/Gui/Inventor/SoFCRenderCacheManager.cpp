@@ -1115,6 +1115,13 @@ SoFCRenderCacheManager::addShaderOverride(
 }
 
 void
+SoFCRenderCacheManager::setAppearanceShaders(
+    std::vector<Render::UserShader> && shaders)
+{
+  PRIVATE(this)->renderer->setAppearanceShaders(std::move(shaders));
+}
+
+void
 SoFCRenderCacheManager::removeShaderOverride(const std::string & key)
 {
   auto it = PRIVATE(this)->shadercaches.find(key);
