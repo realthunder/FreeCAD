@@ -171,7 +171,7 @@ def create_appearance():
     sh.Programs = [prog]
     sh.Demo = "None"
     ap = doc.addObject("App::Appearance", "Look")
-    ap.Shader = sh
+    ap.ElementList = [sh]  # shader-only group = scene-level post
     doc.recompute()
     _shared["prog"] = prog
     _shared["ap"] = ap

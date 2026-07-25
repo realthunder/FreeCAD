@@ -223,61 +223,57 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
     ViewProviderDocumentObject::updateData(prop);
 }
 
-void ViewProviderShaderProgram::updateShaderNode()
+// Materialize an App::ShaderProgram plus resolved parameter values onto a
+// Coin shader-node triple. Shared between the program view provider's own
+// (library) node and the per-binding clones an Appearance builds to bake
+// in its parameter overrides. All field writes are diffed so a no-op sync
+// does not touch the nodes.
+static void syncShaderNodes(App::ShaderProgram *obj,
+        SoShaderProgram *program,
+        SoVertexShader *vshader,
+        SoFragmentShader *fshader,
+        const std::vector<std::pair<std::string, std::vector<float>>> &params,
+        std::map<std::string, CoinPtr<SoShaderParameterArray1f>> &paramNodes)
 {
-    auto obj = dynamic_cast<App::ShaderProgram*>(getObject());
-    if (!obj)
-        return;
-
     SbName stage(obj->Stage.getValue());
-    if (pcShaderProgram->stage.getValue() != stage)
-        pcShaderProgram->stage = stage;
+    if (program->stage.getValue() != stage)
+        program->stage = stage;
 
     int32_t sourcetype = obj->Dialect.getValue() == 0 ? SoShaderObject::BGFX_SC
                                                       : SoShaderObject::GLSL_PROGRAM;
     const char *vs = obj->VertexProgram.getValue();
     const char *fs = obj->FragmentProgram.getValue();
 
-    if (pcVertexShader->sourceType.getValue() != sourcetype)
-        pcVertexShader->sourceType = sourcetype;
-    if (pcVertexShader->sourceProgram.getValue() != vs)
-        pcVertexShader->sourceProgram = vs;
-    if (pcFragmentShader->sourceType.getValue() != sourcetype)
-        pcFragmentShader->sourceType = sourcetype;
-    if (pcFragmentShader->sourceProgram.getValue() != fs)
-        pcFragmentShader->sourceProgram = fs;
+    if (vshader->sourceType.getValue() != sourcetype)
+        vshader->sourceType = sourcetype;
+    if (vshader->sourceProgram.getValue() != vs)
+        vshader->sourceProgram = vs;
+    if (fshader->sourceType.getValue() != sourcetype)
+        fshader->sourceType = sourcetype;
+    if (fshader->sourceProgram.getValue() != fs)
+        fshader->sourceProgram = fs;
 
     SoNode *nodes[2];
     int num = 0;
     if (vs && vs[0])
-        nodes[num++] = pcVertexShader;
+        nodes[num++] = vshader;
     if (fs && fs[0])
-        nodes[num++] = pcFragmentShader;
-    bool changed = pcShaderProgram->shaderObject.getNum() != num;
+        nodes[num++] = fshader;
+    bool changed = program->shaderObject.getNum() != num;
     for (int i = 0; !changed && i < num; ++i)
-        changed = pcShaderProgram->shaderObject[i] != nodes[i];
+        changed = program->shaderObject[i] != nodes[i];
     if (changed) {
-        pcShaderProgram->shaderObject.setNum(num);
+        program->shaderObject.setNum(num);
         for (int i = 0; i < num; ++i)
-            pcShaderProgram->shaderObject.set1Value(i, nodes[i]);
+            program->shaderObject.set1Value(i, nodes[i]);
     }
 
-    // which shader object carries the parameters depends on the sources
-    syncParameters();
-}
-
-void ViewProviderShaderProgram::syncParameters()
-{
-    auto obj = dynamic_cast<App::ShaderProgram*>(getObject());
-    if (!obj)
-        return;
-
-    // One SoShaderParameterArray1f per parameter property (the values are
-    // already vec4-padded floats, so one node type covers every property
-    // type), updated in place so a value edit notifies the enclosing
-    // render caches without relisting the parameter field.
+    // One SoShaderParameterArray1f per parameter (the values are already
+    // vec4-padded floats, so one node type covers every property type),
+    // updated in place so a value edit notifies the enclosing render
+    // caches without relisting the parameter field.
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> next;
-    for (auto &v : collectParamProps(obj)) {
+    for (const auto &v : params) {
         auto &node = next[v.first];
         if (!node) {
             auto it = paramNodes.find(v.first);
@@ -302,9 +298,8 @@ void ViewProviderShaderProgram::syncParameters()
     // The parameters ride the fragment shader object (always present for
     // a consumable program); a vertex-only program keeps them on the
     // vertex shader object.
-    SoShaderObject *target = pcFragmentShader;
-    SoShaderObject *other = pcVertexShader;
-    const char *fs = obj->FragmentProgram.getValue();
+    SoShaderObject *target = fshader;
+    SoShaderObject *other = vshader;
     if (!fs || !fs[0])
         std::swap(target, other);
     if (other->parameter.getNum())
@@ -322,6 +317,21 @@ void ViewProviderShaderProgram::syncParameters()
         for (auto &v : paramNodes)
             target->parameter.set1Value(i++, v.second);
     }
+}
+
+void ViewProviderShaderProgram::updateShaderNode()
+{
+    auto obj = dynamic_cast<App::ShaderProgram*>(getObject());
+    if (!obj)
+        return;
+    syncShaderNodes(obj, pcShaderProgram, pcVertexShader, pcFragmentShader,
+                    collectParamProps(obj), paramNodes);
+}
+
+void ViewProviderShaderProgram::syncParameters()
+{
+    // field writes are diffed, so a full sync is the parameter sync
+    updateShaderNode();
 }
 
 // ----------------------------------------------------------------------------
@@ -440,13 +450,187 @@ void ViewProviderShader::updateDemo()
 
 // ----------------------------------------------------------------------------
 
-PROPERTY_SOURCE(Gui::ViewProviderAppearance, Gui::ViewProviderDocumentObject)
+PROPERTY_SOURCE(Gui::ViewProviderAppearance, Gui::ViewProviderLink)
 
 namespace {
-// Active Appearance view providers per document, for TreeRank precedence
+// Active Appearance view providers per document, for precedence
 std::map<App::Document*, std::set<ViewProviderAppearance*>> _AppearanceRegistry;
 bool _RebuildingBindings;
+
+// Scope=Instance bindings depend on the whole document's structure — any
+// object edit can create or remove an occurrence of a registered chain —
+// so documents with active Appearances get their signals hooked, with
+// rebuilds coalesced through the event loop.
+struct DocumentHooks {
+    boost::signals2::scoped_connection newObj;
+    boost::signals2::scoped_connection delObj;
+    boost::signals2::scoped_connection changedObj;
+    // whether the last rebuild registered any chains: without chains a
+    // link-property edit elsewhere cannot affect the bindings, and the
+    // rebuild churn (node reinsertion → recapture) is not worth it
+    bool hasChains = false;
+};
+std::map<App::Document*, DocumentHooks> _DocumentHooks;
+std::set<std::string> _PendingRebuilds;
+
+void scheduleRebuild(App::Document *doc)
+{
+    if (!doc || _RebuildingBindings)
+        return;
+    std::string name = doc->getName();
+    if (!_PendingRebuilds.insert(name).second)
+        return;
+    QTimer::singleShot(0, [name]() {
+        _PendingRebuilds.erase(name);
+        if (auto doc = App::GetApplication().getDocument(name.c_str()))
+            ViewProviderAppearance::rebuildAllBindings(doc);
+    });
 }
+
+void ensureDocumentHooks(App::Document *doc)
+{
+    if (_DocumentHooks.count(doc))
+        return;
+    auto &hooks = _DocumentHooks[doc];
+    hooks.newObj = doc->signalNewObject.connect(
+        [doc](const App::DocumentObject &) { scheduleRebuild(doc); });
+    hooks.delObj = doc->signalDeletedObject.connect(
+        [doc](const App::DocumentObject &) { scheduleRebuild(doc); });
+    hooks.changedObj = doc->signalChangedObject.connect(
+        [doc](const App::DocumentObject &, const App::Property &prop) {
+            auto it = _DocumentHooks.find(doc);
+            if (it == _DocumentHooks.end() || !it->second.hasChains)
+                return;
+            // only link topology can change the occurrence set
+            if (prop.isDerivedFrom(App::PropertyLinkBase::getClassTypeId()))
+                scheduleRebuild(doc);
+        });
+}
+
+App::DocumentObject *canonObject(App::DocumentObject *obj)
+{
+    auto linked = obj->getLinkedObject(true);
+    return linked ? linked : obj;
+}
+
+bool isShaderFamily(App::DocumentObject *obj)
+{
+    return obj->isDerivedFrom(App::Shader::getClassTypeId())
+        || obj->isDerivedFrom(App::ShaderProgram::getClassTypeId());
+}
+
+// The resolved object sequence a scene child contributes to occurrence
+// matching: a subname link expands to the objects along its resolved path
+// — skipping the link's own root, the suffix-anchored matching rule —
+// anything else to its final linked object.
+void appendExpansion(App::DocumentObject *obj,
+                     std::vector<App::DocumentObject*> &seq)
+{
+    if (auto ext = obj->getExtensionByType<App::LinkBaseExtension>(true)) {
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyXLink>(
+                    ext->getLinkedObjectProperty())) {
+            auto linked = prop->getValue();
+            const char *sub = prop->getSubName();
+            if (linked && sub && sub[0]) {
+                for (auto o : linked->getSubObjectList(sub))
+                    seq.push_back(canonObject(o));
+                return;
+            }
+        }
+    }
+    seq.push_back(canonObject(obj));
+}
+
+// A Scope=Instance target child's registered chain
+struct ChainBinding {
+    std::vector<App::DocumentObject*> chain;
+    ViewProviderAppearance *vp;
+    App::Appearance *obj;
+};
+
+// Longest chain wins, then TreeRank (higher wins), then name
+bool betterBinding(const ChainBinding &a, const ChainBinding &b)
+{
+    if (a.chain.size() != b.chain.size())
+        return a.chain.size() > b.chain.size();
+    long ra = a.obj->TreeRank.getValue();
+    long rb = b.obj->TreeRank.getValue();
+    if (ra != rb)
+        return ra > rb;
+    return strcmp(a.obj->getNameInDocument(),
+                  b.obj->getNameInDocument()) > 0;
+}
+
+/** Depth-first scan of the document's logical scene occurrences.
+ *
+ * Every document object is a base (each object owns a top-level scene
+ * instance; claimed or hidden instances capture empty and cost nothing at
+ * render). Descent expands each object into its resolved sequence, so an
+ * occurrence path "under" a subname link — whose scene graph shows only
+ * the resolved tail with a baked transform — still matches the chain of
+ * intermediate objects it resolves through. A match stops the descent:
+ * the override applies to the whole subtree (outer binding wins over any
+ * deeper match, the settled nested-precedence rule).
+ */
+struct OccurrenceScan {
+    const std::vector<ChainBinding> &chains;
+    std::map<const ChainBinding*,
+             std::vector<std::pair<App::DocumentObject*, std::string>>> matches;
+    std::vector<App::DocumentObject*> seq;
+    std::set<App::DocumentObject*> onPath;
+    size_t visited = 0;
+    bool capped = false;
+    static constexpr size_t maxVisited = 100000;
+    static constexpr int maxDepth = 24;
+
+    explicit OccurrenceScan(const std::vector<ChainBinding> &chains)
+        : chains(chains)
+    {}
+
+    const ChainBinding *matchAt() const {
+        const ChainBinding *best = nullptr;
+        for (const auto &cb : chains) {
+            const auto &c = cb.chain;
+            if (c.empty() || c.size() > seq.size())
+                continue;
+            if (!std::equal(c.begin(), c.end(), seq.end() - c.size()))
+                continue;
+            if (!best || betterBinding(cb, *best))
+                best = &cb;
+        }
+        return best;
+    }
+
+    void visit(App::DocumentObject *base, App::DocumentObject *obj,
+               std::string &subname, int depth)
+    {
+        if (++visited > maxVisited) {
+            capped = true;
+            return;
+        }
+        size_t seqlen = seq.size();
+        appendExpansion(obj, seq);
+        if (auto m = matchAt())
+            matches[m].emplace_back(base, subname);
+        else if (depth < maxDepth && !onPath.count(obj)) {
+            onPath.insert(obj);
+            for (const auto &s : obj->getSubObjects()) {
+                if (s.empty())
+                    continue;
+                auto child = obj->getSubObject(s.c_str());
+                if (!child || isShaderFamily(canonObject(child)))
+                    continue;
+                size_t sublen = subname.size();
+                subname += s;
+                visit(base, child, subname, depth + 1);
+                subname.resize(sublen);
+            }
+            onPath.erase(obj);
+        }
+        seq.resize(seqlen);
+    }
+};
+} // namespace
 
 ViewProviderAppearance::ViewProviderAppearance() = default;
 
@@ -478,7 +662,7 @@ static void applyParamOverrides(App::Appearance *obj,
 static std::shared_ptr<const Render::UserShader>
 resolveUserShader(App::Appearance *obj)
 {
-    auto shobj = dynamic_cast<App::Shader*>(obj->Shader.getValue());
+    auto shobj = obj->resolveShader();
     if (!shobj)
         return nullptr;
     for (auto prog : shobj->Programs.getValues()) {
@@ -501,13 +685,13 @@ resolveUserShader(App::Appearance *obj)
 
 // The effect's scene-level programs: every "post"-stage program of the
 // bound App::Shader in Programs order, with this Appearance's parameter
-// overrides applied. Activated by an Appearance with an empty target
-// list (§6.5).
+// overrides applied. Activated by an Appearance with no target children
+// (§6.5).
 static std::vector<Render::UserShader>
 resolvePostShaders(App::Appearance *obj)
 {
     std::vector<Render::UserShader> res;
-    auto shobj = dynamic_cast<App::Shader*>(obj->Shader.getValue());
+    auto shobj = obj->resolveShader();
     if (!shobj)
         return res;
     for (auto prog : shobj->Programs.getValues()) {
@@ -528,34 +712,21 @@ resolvePostShaders(App::Appearance *obj)
     return res;
 }
 
-// Flatten Targets into (object, subname-without-element) pairs; element
-// scope is an explicit follow-up.
-static std::vector<std::pair<App::DocumentObject*, std::string>>
-collectTargets(App::Appearance *obj)
-{
-    std::vector<std::pair<App::DocumentObject*, std::string>> res;
-    for (auto &link : obj->Targets.getSubListValues()) {
-        auto target = link.getValue();
-        if (!target || !target->getNameInDocument())
-            continue;
-        const auto &subs = link.getSubValues();
-        if (subs.empty()) {
-            res.emplace_back(target, std::string());
-            continue;
-        }
-        for (const auto &sub : subs)
-            res.emplace_back(target,
-                App::SubObjectT(target, sub.c_str()).getSubNameNoElement());
-    }
-    return res;
-}
-
 void ViewProviderAppearance::attach(App::DocumentObject *obj)
 {
-    ViewProviderDocumentObject::attach(obj);
+    ViewProviderLink::attach(obj);
     ensureDynPropConnections();
+    ensureDocumentHooks(obj->getDocument());
     _AppearanceRegistry[obj->getDocument()].insert(this);
-    rebuildAllBindings(obj->getDocument());
+    if (!obj->isRestoring())
+        rebuildAllBindings(obj->getDocument());
+}
+
+void ViewProviderAppearance::finishRestoring()
+{
+    ViewProviderLink::finishRestoring();
+    if (auto obj = getObject())
+        rebuildAllBindings(obj->getDocument());
 }
 
 void ViewProviderAppearance::beforeDelete()
@@ -567,35 +738,38 @@ void ViewProviderAppearance::beforeDelete()
         auto it = _AppearanceRegistry.find(doc);
         if (it != _AppearanceRegistry.end()) {
             it->second.erase(this);
-            if (it->second.empty())
+            if (it->second.empty()) {
                 _AppearanceRegistry.erase(it);
+                _DocumentHooks.erase(doc);
+            }
             // Runs on the emptied registry too — the views' scene-level
             // shader list must clear with the last Appearance.
             rebuildAllBindings(doc);
         }
     }
-    ViewProviderDocumentObject::beforeDelete();
+    ViewProviderLink::beforeDelete();
 }
 
 void ViewProviderAppearance::updateData(const App::Property *prop)
 {
+    ViewProviderLink::updateData(prop);
     auto obj = dynamic_cast<App::Appearance*>(getObject());
     // dynamic properties are per-binding parameter overrides (§6.4)
-    if (obj && (prop == &obj->Targets
-                || prop == &obj->Shader
+    if (obj && !obj->isRestoring()
+            && (prop == &obj->ElementList
+                || prop == &obj->Scope
                 || prop == &obj->TreeRank
                 || (prop && prop->getName()
                     && obj->getDynamicPropertyByName(prop->getName())
                         == prop)))
         rebuildAllBindings(obj->getDocument());
-    ViewProviderDocumentObject::updateData(prop);
 }
 
 void ViewProviderAppearance::onChanged(const App::Property *prop)
 {
-    ViewProviderDocumentObject::onChanged(prop);
+    ViewProviderLink::onChanged(prop);
     // Hiding an Appearance deactivates its bindings (the next-ranked
-    // Appearance on the same target takes over).
+    // binding on the same target takes over).
     if (prop == &Visibility && getObject())
         rebuildAllBindings(getObject()->getDocument());
 }
@@ -609,9 +783,15 @@ void ViewProviderAppearance::clearBindings()
             mgr->removeShaderOverride(v.second);
     }
     bound.clear();
+    for (auto &v : attached) {
+        int idx = v.first->findChild(v.second);
+        if (idx >= 0)
+            v.first->removeChild(idx);
+    }
+    attached.clear();
 }
 
-void ViewProviderAppearance::applyBindings(
+void ViewProviderAppearance::applyPathBindings(
         const std::vector<std::pair<App::DocumentObject*,
                                     std::string>> &targets)
 {
@@ -647,9 +827,84 @@ void ViewProviderAppearance::applyBindings(
             key += t.first->getFullName();
             key += '.';
             key += t.second;
+            FC_LOG("AP bind " << key << " pathlen " << path->getLength());
             mgr->addShaderOverride(key, path, shader);
             bound.emplace_back(viewer, std::move(key));
         }
+    }
+}
+
+SoShaderProgram *ViewProviderAppearance::ownProgramNode()
+{
+    auto obj = dynamic_cast<App::Appearance*>(getObject());
+    auto shobj = obj ? obj->resolveShader() : nullptr;
+    App::ShaderProgram *progObj = nullptr;
+    if (shobj) {
+        // Direct attachment inserts a real node into target graphs, and
+        // the capture callback routes only "material"-stage programs into
+        // the enclosing cache — anything else would leak into the
+        // scene-level list, so the stage filter is strict here.
+        for (auto prog : shobj->Programs.getValues()) {
+            auto p = dynamic_cast<App::ShaderProgram*>(prog);
+            if (p && strcmp(p->Stage.getValue(), "material") == 0) {
+                progObj = p;
+                break;
+            }
+        }
+    }
+    if (!progObj)
+        return nullptr;
+
+    if (!pcOwnProgram) {
+        pcOwnProgram = new SoShaderProgram;
+        pcOwnVertexShader = new SoVertexShader;
+        pcOwnFragmentShader = new SoFragmentShader;
+    }
+
+    // The program's parameters overridden per binding by this
+    // Appearance's like-named Param_* dynamic properties (§6.4); an
+    // override the program does not declare is appended.
+    auto params = collectParamProps(progObj);
+    for (auto &v : collectParamProps(obj)) {
+        auto it = std::find_if(params.begin(), params.end(),
+                               [&](const auto &p) {
+                                   return p.first == v.first;
+                               });
+        if (it != params.end())
+            it->second = std::move(v.second);
+        else
+            params.push_back(std::move(v));
+    }
+    std::sort(params.begin(), params.end(),
+              [](const auto &a, const auto &b) { return a.first < b.first; });
+
+    syncShaderNodes(progObj, pcOwnProgram, pcOwnVertexShader,
+                    pcOwnFragmentShader, params, ownParamNodes);
+    return pcOwnProgram;
+}
+
+void ViewProviderAppearance::applyDirectBindings(
+        const std::vector<App::DocumentObject*> &targets)
+{
+    if (targets.empty())
+        return;
+    auto node = ownProgramNode();
+    if (!node)
+        return;
+    for (auto t : targets) {
+        auto vpd = dynamic_cast<ViewProviderDocumentObject*>(
+                Application::Instance->getViewProvider(t));
+        if (!vpd || !vpd->getRoot())
+            continue;
+        SoGroup *root = vpd->getRoot();
+        if (root->findChild(node) >= 0)
+            continue;
+        // Child 0: captured into the target's own render cache ahead of
+        // everything, then merged down through all child caches and every
+        // instance (the shared-snapshot + mergeMaterial path).
+        FC_LOG("AP attach " << t->getFullName());
+        root->insertChild(node, 0);
+        attached.emplace_back(root, node);
     }
 }
 
@@ -668,54 +923,90 @@ void ViewProviderAppearance::rebuildAllBindings(App::Document *doc)
     for (auto vp : vps)
         vp->clearBindings();
 
-    // Winner per target: highest TreeRank; equal ranks fall back to the
-    // object name for determinism.
-    std::map<std::string, ViewProviderAppearance*> winners;
-    std::map<ViewProviderAppearance*,
-             std::vector<std::pair<App::DocumentObject*, std::string>>> targets;
-    // Empty-target Appearances activate scene-level (§6.5)
+    // Shader-only Appearances activate scene-level post programs (§6.5)
     std::vector<App::Appearance*> sceneObjs;
+    // Scope=Object: winner per resolved final target object
+    std::map<App::DocumentObject*, ViewProviderAppearance*> directWinners;
+    // Scope=Instance: registered chains, matched over occurrences below
+    std::vector<ChainBinding> chains;
+
     for (auto vp : vps) {
-        // Not isVisible(): that resolves through isShow(), which these
-        // view providers pin to true for the tree.
         auto obj = dynamic_cast<App::Appearance*>(vp->getObject());
         if (!obj || !vp->Visibility.getValue())
             continue;
-        if (obj->Targets.getSubListValues().empty()) {
-            if (obj->Shader.getValue())
-                sceneObjs.push_back(obj);
+        if (!obj->resolveShader())
+            continue;
+        auto targets = obj->getTargets();
+        if (targets.empty()) {
+            sceneObjs.push_back(obj);
             continue;
         }
-        auto tgts = collectTargets(obj);
-        for (const auto &t : tgts) {
-            std::string key = t.first->getFullName() + "." + t.second;
-            auto r = winners.emplace(key, vp);
-            if (r.second)
+        if (obj->scopeMode() == App::Appearance::ScopeMode::Object) {
+            for (auto t : targets) {
+                auto resolved = canonObject(t);
+                if (isShaderFamily(resolved))
+                    continue;
+                auto r = directWinners.emplace(resolved, vp);
+                if (r.second)
+                    continue;
+                auto other = dynamic_cast<App::Appearance*>(
+                        r.first->second->getObject());
+                long rank = obj->TreeRank.getValue();
+                long otherrank = other ? other->TreeRank.getValue() : 0;
+                if (rank > otherrank
+                        || (rank == otherrank && other
+                            && strcmp(obj->getNameInDocument(),
+                                      other->getNameInDocument()) > 0))
+                    r.first->second = vp;
+            }
+        }
+        else {
+            for (auto t : targets) {
+                ChainBinding cb;
+                appendExpansion(t, cb.chain);
+                if (cb.chain.empty()
+                        || isShaderFamily(cb.chain.back()))
+                    continue;
+                cb.vp = vp;
+                cb.obj = obj;
+                chains.push_back(std::move(cb));
+            }
+        }
+    }
+
+    {
+        std::map<ViewProviderAppearance*,
+                 std::vector<App::DocumentObject*>> directTargets;
+        for (const auto &v : directWinners)
+            directTargets[v.second].push_back(v.first);
+        for (auto &v : directTargets)
+            v.first->applyDirectBindings(v.second);
+    }
+
+    if (!chains.empty()) {
+        OccurrenceScan scan(chains);
+        for (auto obj : doc->getObjects()) {
+            if (isShaderFamily(canonObject(obj)))
                 continue;
-            auto other = dynamic_cast<App::Appearance*>(
-                    r.first->second->getObject());
-            long rank = obj->TreeRank.getValue();
-            long otherrank = other ? other->TreeRank.getValue() : 0;
-            if (rank > otherrank
-                    || (rank == otherrank && other
-                        && strcmp(obj->getNameInDocument(),
-                                  other->getNameInDocument()) > 0))
-                r.first->second = vp;
+            std::string subname;
+            scan.visit(obj, obj, subname, 0);
         }
-        targets[vp] = std::move(tgts);
+        if (scan.capped)
+            FC_WARN("Appearance occurrence scan of " << doc->getName()
+                    << " truncated at " << OccurrenceScan::maxVisited
+                    << " nodes — some occurrences may be unbound");
+        for (auto &m : scan.matches) {
+            for (auto &t : m.second)
+                FC_LOG("AP occurrence " << m.first->obj->getNameInDocument()
+                        << " -> " << t.first->getFullName() << " . " << t.second);
+            m.first->vp->applyPathBindings(m.second);
+        }
     }
 
-    for (auto &v : targets) {
-        std::vector<std::pair<App::DocumentObject*, std::string>> winning;
-        for (const auto &t : v.second) {
-            std::string key = t.first->getFullName() + "." + t.second;
-            if (winners[key] == v.first)
-                winning.push_back(t);
-        }
-        v.first->applyBindings(winning);
-    }
+    if (auto h = _DocumentHooks.find(doc); h != _DocumentHooks.end())
+        h->second.hasChains = !chains.empty();
 
-    // Scene-level activation: the empty-target Appearances' post-stage
+    // Scene-level activation: the shader-only Appearances' post-stage
     // programs, ordered ascending by TreeRank (name fallback) so the
     // highest-ranked Appearance lands last — the winning slot of the
     // backend's "last shader on a stage wins" rule, matching the

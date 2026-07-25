@@ -72,15 +72,48 @@ Shader::Shader()
 
 // ----------------------------------------------------------------------------
 
-PROPERTY_SOURCE(App::Appearance, App::DocumentObject)
+PROPERTY_SOURCE(App::Appearance, App::LinkGroup)
+
+const char* Appearance::ScopeEnums[] = {"Object", "Instance", nullptr};
 
 Appearance::Appearance()
 {
-    ADD_PROPERTY_TYPE(Targets, (nullptr), "Appearance", Prop_None,
-            "Objects the shader applies to, with full instance paths;\n"
-            "leave empty to apply scene-level (post) programs globally");
-    ADD_PROPERTY_TYPE(Shader, (nullptr), "Appearance", Prop_None,
-            "The shader to apply, possibly from a library document");
+    Scope.setEnums(ScopeEnums);
+    ADD_PROPERTY_TYPE(Scope, ((long)0), "Appearance", Prop_None,
+            "How the shader applies to the target children:\n"
+            "Object: attach directly to each target's resolved object —\n"
+            "  cheap, all instances everywhere, inherited by children\n"
+            "Instance: override every scene occurrence whose resolved\n"
+            "  chain ends in the target link's chain (suffix-anchored)");
+}
+
+Shader *Appearance::resolveShader(DocumentObject **shaderChild) const
+{
+    if (shaderChild)
+        *shaderChild = nullptr;
+    for (auto child : ElementList.getValues()) {
+        if (!child || !child->isAttachedToDocument())
+            continue;
+        auto resolved = child->getLinkedObject(true);
+        if (auto shader = Base::freecad_dynamic_cast<Shader>(resolved)) {
+            if (shaderChild)
+                *shaderChild = child;
+            return shader;
+        }
+    }
+    return nullptr;
+}
+
+std::vector<DocumentObject *> Appearance::getTargets() const
+{
+    DocumentObject *shaderChild = nullptr;
+    resolveShader(&shaderChild);
+    std::vector<DocumentObject *> res;
+    for (auto child : ElementList.getValues()) {
+        if (child && child != shaderChild && child->isAttachedToDocument())
+            res.push_back(child);
+    }
+    return res;
 }
 
 // Python features ------------------------------------------------------------

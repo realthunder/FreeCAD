@@ -7,9 +7,11 @@
 #
 #   desktop  xvfb GUI suites over the document-object model:
 #            user_shader_params.py (§6.4 Param_* property binding,
-#            Appearance overrides, stale-uniform restore) and
+#            Appearance overrides, stale-uniform restore),
 #            user_shader_post.py (§6.5 scene-level post activation,
-#            TreeRank precedence, deactivation paths).
+#            TreeRank precedence, deactivation paths) and
+#            user_shader_instancing.py (§6.5 LinkGroup Appearance:
+#            Scope=Instance chains vs Scope=Object merge-down attachment).
 #   viewer   browser-tier suites: backend serving demo-lights
 #            (FC_BGFX_SERVE_SCENE) + no-store http on build/wasm + a
 #            headless-Chromium holder (scripts/wasm-hold.js), driven
@@ -147,6 +149,7 @@ EOF
 if [ "$cmd" = desktop ] || [ "$cmd" = all ]; then
     run_desktop user_shader_params.py params
     run_desktop user_shader_post.py post
+    run_desktop user_shader_instancing.py instancing
 fi
 
 if [ "$cmd" = viewer ] || [ "$cmd" = all ]; then

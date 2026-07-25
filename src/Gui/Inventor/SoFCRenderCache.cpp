@@ -805,6 +805,13 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
     return res;
   }
 
+  // A user "material"-stage shader inherits down the whole subtree with
+  // link material-override semantics: the outer (parent) shader wins over
+  // any shader set deeper inside. Lines/points are excluded above so their
+  // batching keys stay unaffected (backends swap the mesh program only).
+  if (parent.usershader)
+    res.usershader = parent.usershader;
+
   copyMaterial(res, parent, &Material::materialbinding, Material::FLAG_MATERIAL_BINDING, Material::FLAG_MATERIAL_BINDING);
 
   copyMaterial(res, parent, &Material::ambient, Material::FLAG_AMBIENT, Material::FLAG_AMBIENT);
@@ -1296,9 +1303,10 @@ SoFCRenderCache::setUserShader(SoState * state,
   PRIVATE(this)->checkState(state);
 
   // A user "material"-stage shader program (docs/RenderDebug.md §6),
-  // translated by the cache manager. Like SoFCRenderMaterial it applies
-  // to the shapes captured after it in this cache and does not merge
-  // into child caches; only external backends consume it.
+  // translated by the cache manager. It applies to the shapes captured
+  // after it in this cache and, unlike SoFCRenderMaterial, merges down
+  // into child caches (outer shader wins — link material-override
+  // semantics, see mergeMaterial); only external backends consume it.
   PRIVATE(this)->material.usershader = std::move(shader);
 }
 

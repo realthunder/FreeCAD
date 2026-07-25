@@ -2248,12 +2248,6 @@ void Application::initTypes()
     App::MeasureDistance           ::init();
     App::MaterialObject            ::init();
     App::MaterialObjectPython      ::init();
-    App::ShaderProgram             ::init();
-    App::ShaderProgramPython       ::init();
-    App::Shader                    ::init();
-    App::ShaderPython              ::init();
-    App::Appearance                ::init();
-    App::AppearancePython          ::init();
     App::TextDocument              ::init();
     App::Placement                 ::init();
     App::PlacementPython           ::init();
@@ -2268,6 +2262,13 @@ void Application::initTypes()
     App::LinkElementPython         ::init();
     App::LinkGroup                 ::init();
     App::LinkGroupPython           ::init();
+    // Appearance derives LinkGroup — the shader family inits after Link
+    App::ShaderProgram             ::init();
+    App::ShaderProgramPython       ::init();
+    App::Shader                    ::init();
+    App::ShaderPython              ::init();
+    App::Appearance                ::init();
+    App::AppearancePython          ::init();
     App::SavedView                 ::init();
 
     // Expression classes

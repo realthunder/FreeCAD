@@ -2128,17 +2128,18 @@ void Application::initTypes()
     Gui::ViewProviderOrigin                     ::init();
     Gui::ViewProviderMaterialObject             ::init();
     Gui::ViewProviderMaterialObjectPython       ::init();
+    Gui::ViewProviderTextDocument               ::init();
+    Gui::ViewProviderLinkObserver               ::init();
+    Gui::LinkView                               ::init();
+    Gui::ViewProviderLink                       ::init();
+    Gui::ViewProviderLinkPython                 ::init();
+    // ViewProviderAppearance derives ViewProviderLink — init after it
     Gui::ViewProviderShaderProgram              ::init();
     Gui::ViewProviderShaderProgramPython        ::init();
     Gui::ViewProviderShader                     ::init();
     Gui::ViewProviderShaderPython               ::init();
     Gui::ViewProviderAppearance                 ::init();
     Gui::ViewProviderAppearancePython           ::init();
-    Gui::ViewProviderTextDocument               ::init();
-    Gui::ViewProviderLinkObserver               ::init();
-    Gui::LinkView                               ::init();
-    Gui::ViewProviderLink                       ::init();
-    Gui::ViewProviderLinkPython                 ::init();
     Gui::AxisOrigin                             ::init();
     Gui::ViewProviderSavedView                  ::init();
     Gui::ViewProviderDatum                      ::init();

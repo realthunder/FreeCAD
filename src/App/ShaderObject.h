@@ -25,6 +25,7 @@
 
 #include "DocumentObject.h"
 #include "FeaturePython.h"
+#include "Link.h"
 #include "PropertyGeo.h"
 #include "PropertyLinks.h"
 #include "PropertyStandard.h"
@@ -105,32 +106,64 @@ private:
 using ShaderPython = App::FeaturePythonT<Shader>;
 
 
-/** Binds a Shader to a list of target objects, activating the effect (§6.5).
+/** Groups a Shader with the target objects it applies to (§6.5).
  *
- * Targets carry full instance paths (hierarchy-dependent application: one
- * instance of a linked object, not all instances). The Shader may live in
- * another document, so users can build shader library documents. An empty
- * target list applies the shader's scene-level (post) programs globally.
- * Like-named dynamic properties override the shader's parameter values for
- * this binding only. Identical-path collisions between Appearance objects
- * are tie-broken by TreeRank.
+ * A link group whose children carry both the effect and its scope: the
+ * shader is the first child that resolves (through any chain of links) to
+ * an App::Shader — use an App::Link child to pull the effect from a shader
+ * library document — and every other child is a target. Plain children are
+ * claimed into the group in the tree; use App::Link children to bind
+ * objects without restructuring the document, and to carry instance
+ * context (a link whose subname path points into an assembly).
+ *
+ * Scope selects how targets are resolved:
+ * - "Object" (default): the shader attaches directly to each target's
+ *   resolved final object — cheap, applies to every instance of that
+ *   object everywhere, and is inherited by all of the object's children
+ *   (link material-override semantics).
+ * - "Instance": each target contributes its resolved object chain (e.g.
+ *   Link001 -> A1.A2.Box registers [A1, A2, Box]); the shader applies to
+ *   every scene occurrence whose resolved chain ends in that chain —
+ *   suffix-anchored, per-occurrence override (persistent-selection
+ *   style; costs scale with occurrence count, and matched draws leave
+ *   the instancing fast path).
+ *
+ * No target children = the shader's post-stage programs apply scene-wide.
+ * Like-named dynamic properties override shader parameters per binding.
+ * Overlaps: longest chain wins, then TreeRank, then name.
  */
-class AppExport Appearance : public DocumentObject
+class AppExport Appearance : public LinkGroup
 {
     PROPERTY_HEADER_WITH_OVERRIDE(App::Appearance);
 
 public:
     Appearance();
 
-    /// Full-path targets the shader applies to; empty = scene level
-    PropertyXLinkSubList Targets;
-    /// The Shader object to apply, possibly from another document
-    PropertyXLink Shader;
+    /// Target scope: whole object (direct attachment) vs matched
+    /// occurrences (per-instance chain override); element scope reserved
+    PropertyEnumeration Scope;
+
+    /// Scope enum indices
+    enum class ScopeMode {
+        Object = 0,
+        Instance = 1,
+    };
+    ScopeMode scopeMode() const {
+        return static_cast<ScopeMode>(Scope.getValue());
+    }
+
+    /// The first child resolving to an App::Shader, or null
+    Shader *resolveShader(DocumentObject **shaderChild = nullptr) const;
+    /// All children other than the shader child (the binding targets)
+    std::vector<DocumentObject *> getTargets() const;
 
     const char* getViewProviderName() const override
     {
         return "Gui::ViewProviderAppearance";
     }
+
+private:
+    static const char* ScopeEnums[];
 };
 
 using AppearancePython = App::FeaturePythonT<Appearance>;

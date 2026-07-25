@@ -117,7 +117,7 @@ def run():
         sh.Programs = [prog]
         sh.Demo = "None"
         ap = doc.addObject("App::Appearance", "Look")
-        ap.Shader = sh
+        ap.ElementList = [sh]  # shader-only group = scene-level post
         doc.recompute()
         wait_compile()
         inv = cap("q_invert")
@@ -158,12 +158,12 @@ def run():
         pump()
 
         # a targeted Appearance does not apply post programs
-        ap.Targets = [(ball, "")]
+        ap.ElementList = [sh, ball]
         pump()
         targeted = cap("q_targeted")
         ok = byte_equal(base, targeted, "targeted appearance = no post")
         log("ASSERT post-needs-empty-targets: %s" % ("PASS" if ok else "FAIL"))
-        ap.Targets = []
+        ap.ElementList = [sh]
         pump()
 
         # two empty-target appearances: higher TreeRank (later) wins
@@ -176,7 +176,7 @@ def run():
         sh2.Programs = [prog2]
         sh2.Demo = "None"
         ap2 = doc.addObject("App::Appearance", "Look2")
-        ap2.Shader = sh2
+        ap2.ElementList = [sh2]
         doc.recompute()
         wait_compile()
         two = cap("q_two")

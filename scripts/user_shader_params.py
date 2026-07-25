@@ -106,8 +106,7 @@ def run():
         sh.Programs = [prog]
         sh.Demo = "None"
         ap = doc.addObject("App::Appearance", "Look")
-        ap.Shader = sh
-        ap.Targets = [(box, "")]
+        ap.ElementList = [sh, box]  # child 0 = effect, rest = targets
         doc.recompute()
         wait_compile()
         cap("p_attached")  # uniforms unset -> zero-filled, not asserted
@@ -171,8 +170,7 @@ def run():
 
         # 6. per-binding: second Appearance, same shader, own override
         ap2 = doc.addObject("App::Appearance", "Look2")
-        ap2.Shader = sh
-        ap2.Targets = [(ball, "")]
+        ap2.ElementList = [sh, ball]
         ap2.addProperty("App::PropertyColor", "Param_Tint")
         ap2.Param_Tint = (1.0, 1.0, 0.0)
         doc.recompute()

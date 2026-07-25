@@ -580,11 +580,10 @@ server tier and `FreeCADCmd` must restore both library and working documents
 Rationale for a dedicated binder object (instead of a link property on
 consumers): FreeCAD object hierarchy is not scene-graph hierarchy — objects
 may have no scene graph of their own, and one object may modify another's
-visuals. Hierarchy-dependent application ("this instance of a linked body,
-not all instances") needs full instance paths, which only a
-`PropertyXLinkSubList` on a document object can carry; and cross-document
-shader libraries require `PropertyXLink`, which must be owned by a
-`DocumentObject` anyway.
+visuals. Instance context ("this occurrence of a linked body, not all
+instances") needs a link path, which only a link object or property owned
+by a `DocumentObject` can carry — cross-document shader libraries likewise
+need XLink machinery owned by a document object.
 
 - **App::ShaderProgram** — one stage-tagged program: multi-dialect source
   variants (§6.3), the stage name, and its parameter set (`Foo_Bar` dynamic
@@ -603,23 +602,68 @@ shader libraries require `PropertyXLink`, which must be owned by a
   handles `generatePrimitives`-tessellated shapes; else fall back to a tiny
   `SoIndexedFaceSet` tessellation). Complex-shape previews use a normal
   Appearance binding instead.
-- **App::Appearance** — the binder that activates shading: a
-  `PropertyXLinkSubList` of targets carrying full instance paths, plus an
-  XLink to a Shader object, possibly in another document (user-built shader
-  libraries). An Appearance with an empty target list applies the shader's
-  scene-level (`post`) programs globally — one uniform activation mechanism
-  for both stages. Like-named dynamic properties on the Appearance override
-  the shader's parameter values for that binding only ("same toon shader,
-  different tint for these instances").
+- **App::Appearance** — the binder that activates shading, an
+  `App::LinkGroup` whose children carry both the effect and its scope. The
+  shader is the first child that resolves (through any chain of links) to
+  an `App::Shader` — use an `App::Link` child to pull the effect from a
+  shader-library document. Every other child is a target. Plain children
+  are claimed into the group in the tree; the convention for binding
+  without restructuring the document — and for carrying instance context
+  at all — is an `App::Link` child (a link whose subname path points into
+  an assembly). The children render like any link group's, so a target
+  link child also shows an instance carrying the effect; a shader-only
+  Appearance (no target children) applies the effect's scene-level
+  (`post`) programs globally — one uniform activation mechanism for both
+  stages. Like-named dynamic properties on the Appearance override the
+  shader's parameter values for that binding only ("same toon shader,
+  different tint for these instances"). A `Scope` enumeration
+  selects between the two application modes below (default `Object`;
+  `Element` is the reserved follow-up value).
 
-Application rides the **per-path selection side channel**, not a material
-merge: `getVertexCaches` memoizes one `vcachemap` per render cache shared
-by every path through it, so a path-scoped override cannot ride
-`Material::overrideflags` merge-down (that slot is per-cache, path-blind).
-Instead `SoFCRenderCacheManager::addShaderOverride(key, nodepath, shader)`
-mirrors the element-color-override machinery (`selcaches`): a path-keyed
-sensor rebuilds a whole-object `VertexCacheMap` for the bound instance path
-— `SoFCRenderCache::buildWholeCacheMap`, which keeps the original geometry
+**Scope=Object — direct attachment, the cheap mode.** Each target is
+resolved to its final object and the binding's own `SoShaderProgram` node
+(per-binding parameter overrides baked in) is inserted at child 0 of that
+object's view-provider root. The capture callback folds it into the
+object's own render cache (`SoFCRenderCache::setUserShader` →
+`Material::usershader`), and `mergeMaterial` merges it **down through all
+child caches, outer shader wins** — exactly the link material-override
+semantics (`SoFCSelectionRoot::setColorOverride` → `overrideflags`).
+Because view-provider snapshots share the root's children, every instance
+everywhere picks it up, in every view, at zero per-frame cost; a group or
+assembly target shades all its children. Position inside the owning cache
+is irrelevant (override semantics, not Coin's after-the-node material
+rule). Note the one asymmetry: a subname shortcut link (`Link → 
+A1."A2.Box."`) renders only the tail object's snapshot with a baked
+transform — it bypasses the intermediate objects' nodes, so a shader
+attached to `A2` does not reach that shortcut's Box (it is an instance of
+Box, not of A2).
+
+**Scope=Instance — per-occurrence chain override, the sparse mode.** Each
+target child contributes its **resolved object chain**: a link child
+`Link001 → A1."Assembly2.Box."` registers `[A1, A2, Box]` (the link's own
+root deliberately excluded), a plain child registers `[itself]` (= every
+occurrence). The binding registry then enumerates the document's logical
+occurrences — depth-first over every object's `getSubObjects()`, each
+visited object expanded to its resolved sequence so occurrences *inside*
+subname shortcuts still match the chain they resolve through — and every
+occurrence whose resolved sequence **ends with** a registered chain
+(suffix-anchored: `Assembly3.A1.A2.Box` matches, `A4.A2.Box` does not)
+gets a per-path override. A match stops the descent: the override covers
+the whole subtree, so an outer binding wins over any deeper match.
+Occurrence overlap between Appearances: longest chain wins, then
+`App::DocumentObject::TreeRank`, then name. Document signals (object
+add/remove, link property changes) re-run the scan, coalesced through the
+event loop and only while chains are registered.
+
+The per-occurrence override rides the **per-path selection side channel**,
+not a material merge: `getVertexCaches` memoizes one `vcachemap` per
+render cache shared by every path through it, so a path-scoped override
+cannot ride `Material::overrideflags` merge-down (that slot is per-cache,
+path-blind). Instead `SoFCRenderCacheManager::addShaderOverride(key,
+nodepath, shader)` mirrors the element-color-override machinery
+(`selcaches`): a path-keyed sensor rebuilds a whole-object
+`VertexCacheMap` for the bound instance path —
+`SoFCRenderCache::buildWholeCacheMap`, which keeps the original geometry
 and materials (normals intact; the highlight-index caches
 `buildHighlightCache` substitutes carry none) — stamps `usershader` on its
 triangle materials, and registers it as a **non-on-top whole-object
@@ -628,28 +672,23 @@ substituted while the base draws are suppressed by the whole-object key
 (GL: `selectionkeys`/`draw_entry.skip`; bgfx: `hiddenKeys`). The backend
 keeps the replaced geometry in the shadow-caster, depth-prepass,
 debug-scene and ground-reflection passes (stock programs), so only the
-beauty shading changes. The Appearance view provider resolves its targets
-per 3D view (`appendDetailPath` + `getDetailPath`) and re-registers on
-edits; a per-document registry picks one winner per identical target —
-tie-broken by `App::DocumentObject::TreeRank` (the persisted tree-ordering
-key), object name as the deterministic fallback. Element-level scoping
-(target subnames ending in `Face3`) is an explicit follow-up and slots
-into the same channel via the `SoDetail`-scoped `ElementEntry` pipeline.
-The direct-node attachment of the second slice stays self-scoped and
-unchanged; both modes coexist.
+beauty shading changes. Occurrence paths are materialized per 3D view
+(`appendDetailPath` + `getDetailPath`). Element-level scoping (target
+subnames ending in `Face3`) is an explicit follow-up and slots into the
+same channel via the `SoDetail`-scoped `ElementEntry` pipeline.
 
-Scene-level activation is the same registry: a visible Appearance with an
-empty target list contributes its Shader's `post`-stage programs (with
-its parameter overrides applied) to a per-view list the renderer appends
+Scene-level activation is the same registry: a visible shader-only
+Appearance contributes its Shader's `post`-stage programs (with its
+parameter overrides applied) to a per-view list the renderer appends
 after the node-captured shaders — `SoFCRenderer::setAppearanceShaders`,
 forwarded through the render cache manager, replaced wholesale on every
 binding rebuild and independent of scene recapture. Appending last makes
 a document-object activation win the backend's "last shader on a stage"
-rule over raw scene nodes; multiple empty-target Appearances order
+rule over raw scene nodes; multiple shader-only Appearances order
 ascending by TreeRank (name fallback), so the highest-ranked one wins,
 matching the per-target precedence direction. A targeted Appearance
-applies only object-scoped programs — post programs need the empty
-target list.
+applies only object-scoped programs — post programs need a shader-only
+group.
 
 Found on the way (fixed): clearing a `PropertyXLink*` property to empty
 never notified — `Property::hasSetValue`'s `isSame(_old)` optimization
@@ -669,7 +708,7 @@ now compare name-level identity.
 | 3 | **DONE** — verification harness (`scripts/render-verify.sh` + `render_verify.py` + `render_diff.py` + `wasm-hold.js`): named-view or golden-sidecar restaging, xvfb/`--gpu`/`--viewer` capture legs, first-divergent-stage diffing with heatmaps | phases 1–2 |
 | 4 | **DONE** — dynamic name→uniform binding (`RenderDebug_*` props → like-named vec4 uniforms, snapshot v21) + `u_userParams[4]` fallback pool (lane 0 = debug output scale/bias); shader hot-reload (`FC_BGFX_SHADER_DIR` + `reloadShaders()`); `View3DInventor.addProperty/removeProperty` Python API | phase 1 |
 | 5 | **DONE** — view modes 5–8 (ShadowTile coverage, Overdraw counting pass on the repurposed `ViewDebugScene` slot, ShadowFilter precision probe, UV re-render; snapshot v22); self-labeling burn-in (`RenderDebug_Label`) | 1, 4 |
-| 6 | **first slice DONE** — user-loadable shaders on the Coin node model, `post` stage (coin fork: `SoShaderProgram::stage` + `BGFX_SC` source type; capture: cache-manager post-callback → `Render::UserShaderConfig` → `setUserShaderConfig`; backend: async shaderc compile cache + `ViewUserPostCopy`/`ViewUserPost` full-screen pass; sandboxed failure verified). **second slice DONE** — `material` stage with per-object attachment (`Material::usershader` through the render-cache chain, stock `vs_fc_mesh` pairing, beauty passes only, instancing exclusion). **third slice DONE** — browser tier (server-side compile through the async shaderc cache, snapshot v23 user-shader table, viewer loads shipped bins). **fourth slice DONE** — §6.5 document object model (App::ShaderProgram/Shader/Appearance + view providers, path-keyed shader overrides through the render cache manager) and §6.4 property-bound parameters (`Group_Name` dynamic props → SoShaderParameter nodes → uniforms with the consuming draws; Appearance per-binding overrides; stale-uniform zeroing). **fifth slice DONE** — scene-level Appearance activation (empty-target Appearance → `setAppearanceShaders` per view, TreeRank-ordered, wins over raw scene nodes). Remaining: element-scoped targets, new-view rebind hook, material-stage lighting helper library | 4; shader compile cache (§6.3) |
+| 6 | **first slice DONE** — user-loadable shaders on the Coin node model, `post` stage (coin fork: `SoShaderProgram::stage` + `BGFX_SC` source type; capture: cache-manager post-callback → `Render::UserShaderConfig` → `setUserShaderConfig`; backend: async shaderc compile cache + `ViewUserPostCopy`/`ViewUserPost` full-screen pass; sandboxed failure verified). **second slice DONE** — `material` stage with per-object attachment (`Material::usershader` through the render-cache chain, stock `vs_fc_mesh` pairing, beauty passes only, instancing exclusion). **third slice DONE** — browser tier (server-side compile through the async shaderc cache, snapshot v23 user-shader table, viewer loads shipped bins). **fourth slice DONE** — §6.5 document object model (App::ShaderProgram/Shader/Appearance + view providers, path-keyed shader overrides through the render cache manager) and §6.4 property-bound parameters (`Group_Name` dynamic props → SoShaderParameter nodes → uniforms with the consuming draws; Appearance per-binding overrides; stale-uniform zeroing). **fifth slice DONE** — scene-level Appearance activation (shader-only Appearance → `setAppearanceShaders` per view, TreeRank-ordered, wins over raw scene nodes). **sixth slice DONE** — Appearance reworked as an `App::LinkGroup` (children = shader + targets, `Scope` enum {Object, Instance}: direct merge-down attachment vs suffix-anchored per-occurrence chain overrides via the logical occurrence scan). Remaining: element-scoped targets, new-view rebind hook (Scope=Instance only — direct attachment is view-independent), material-stage lighting helper library | 4; shader compile cache (§6.3) |
 
 Phases 1+2 are the minimum end-to-end slice: set a mode from Python, capture
 a real-GPU frame with metadata, diff it.

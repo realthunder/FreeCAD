@@ -29,6 +29,7 @@
 
 #include "InventorBase.h"
 #include "ViewProviderDocumentObject.h"
+#include "ViewProviderLink.h"
 #include "ViewProviderPythonFeature.h"
 
 class SoShaderProgram;
@@ -36,6 +37,7 @@ class SoShaderParameterArray1f;
 class SoVertexShader;
 class SoFragmentShader;
 class SoSeparator;
+class SoGroup;
 
 namespace Gui {
 
@@ -116,16 +118,30 @@ using ViewProviderShaderPython = ViewProviderPythonFeatureT<ViewProviderShader>;
 
 /** View provider of App::Appearance: activates the bound shader.
  *
- * Resolves each Targets sublink to a full instance SoPath per 3D view and
- * registers it with the view's render cache manager
- * (SoFCRenderCacheManager::addShaderOverride) — the per-path selection
- * side channel replaces the base draws of exactly that instance with
- * shader-carrying ones. Identical-target collisions between Appearance
- * objects are resolved by TreeRank (higher wins) in a per-document
- * registry. Scene-level ("post") program activation and element-scoped
- * targets are follow-up slices.
+ * The Appearance is a link group (docs/RenderDebug.md §6.5): the shader is
+ * the first child resolving to an App::Shader, every other child a target.
+ * The children render like any link group's, so a target link child also
+ * shows an instance carrying the effect.
+ *
+ * Scope=Object (direct attachment): each target's resolved final
+ * object gets the effect's material-stage program node inserted at its
+ * view-provider root — captured once into the object's own render cache
+ * and merged down through all child caches (link material-override
+ * semantics), it applies to every instance everywhere at zero per-frame
+ * cost, in every 3D view.
+ *
+ * Scope=Instance (per-occurrence override): each target contributes its
+ * resolved object chain; every scene occurrence whose resolved chain ends
+ * in a registered chain gets a per-path shader override via the view's
+ * render cache manager (SoFCRenderCacheManager::addShaderOverride) — the
+ * persistent-selection side channel; costs scale with occurrences.
+ *
+ * Collisions: longest chain wins, then TreeRank (higher wins), then name,
+ * in a per-document registry. Shader-only Appearances activate the
+ * effect's post-stage programs scene-wide. Element-scoped targets are a
+ * follow-up slice.
  */
-class GuiExport ViewProviderAppearance : public ViewProviderDocumentObject
+class GuiExport ViewProviderAppearance : public ViewProviderLink
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderAppearance);
 
@@ -134,23 +150,36 @@ public:
     ~ViewProviderAppearance() override;
 
     void attach(App::DocumentObject *obj) override;
+    void finishRestoring() override;
     void beforeDelete() override;
     void updateData(const App::Property *prop) override;
     void onChanged(const App::Property *prop) override;
 
-    bool isShow() const override {return true;}
-
-    /// Re-evaluate every Appearance binding of a document (TreeRank precedence)
+    /// Re-evaluate every Appearance binding of a document (chain-length +
+    /// TreeRank precedence)
     static void rebuildAllBindings(App::Document *doc);
 
 private:
     void clearBindings();
-    /// Register this appearance's winning targets with every 3D view
-    void applyBindings(const std::vector<std::pair<App::DocumentObject*,
-                                                   std::string>> &targets);
+    /// Scope=Instance: register per-path overrides with every 3D view
+    void applyPathBindings(const std::vector<std::pair<App::DocumentObject*,
+                                                       std::string>> &targets);
+    /// Scope=Object: insert the effect's material program node at the
+    /// resolved targets' view-provider roots
+    void applyDirectBindings(const std::vector<App::DocumentObject*> &targets);
+    /// (Re)build this binding's own shader node (per-binding parameter
+    /// overrides baked in) from the effect's first material-stage program
+    SoShaderProgram *ownProgramNode();
 
     // (viewer, override key) registered with that viewer's cache manager
     std::vector<std::pair<QPointer<View3DInventorViewer>, std::string>> bound;
+    // (target VP root, program node) inserted for direct attachment
+    std::vector<std::pair<CoinPtr<SoGroup>, CoinPtr<SoNode>>> attached;
+    // this binding's own program node for direct attachment
+    CoinPtr<SoShaderProgram> pcOwnProgram;
+    CoinPtr<SoVertexShader> pcOwnVertexShader;
+    CoinPtr<SoFragmentShader> pcOwnFragmentShader;
+    std::map<std::string, CoinPtr<SoShaderParameterArray1f>> ownParamNodes;
 };
 
 using ViewProviderAppearancePython = ViewProviderPythonFeatureT<ViewProviderAppearance>;
