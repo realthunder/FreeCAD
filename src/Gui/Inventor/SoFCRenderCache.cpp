@@ -1850,17 +1850,81 @@ bool makeDistinctColor(uint32_t &res, uint32_t color, uint32_t other) {
 }
 
 SoFCRenderCache::VertexCacheMap
-SoFCRenderCache::buildWholeCacheMap(int order)
+SoFCRenderCache::buildWholeCacheMap(int order, const SoDetail * detail)
 {
+  // Face-element scope: pick the face indices out of the detail. Only
+  // face elements can carry a material-stage shader; a non-face detail
+  // yields an empty map.
+  const SoFaceDetail * fd = nullptr;
+  const SoFCDetail * d = nullptr;
+  void * fctx = nullptr;
+  if (detail) {
+    if (detail->isOfType(SoFaceDetail::getClassTypeId())) {
+      fd = static_cast<const SoFaceDetail*>(detail);
+      if (fd->isOfType(SoFCFaceDetail::getClassTypeId()))
+        fctx = static_cast<const SoFCFaceDetail*>(fd)->getContext();
+    }
+    else if (detail->isOfType(SoFCDetail::getClassTypeId())) {
+      d = static_cast<const SoFCDetail*>(detail);
+      fctx = d->getContext(SoFCDetail::Face);
+      if (d->getIndices(SoFCDetail::Face).empty())
+        return {};
+    }
+    else
+      return {};
+  }
+
   VertexCacheMap res;
   for (auto & child : getVertexCaches(false)) {
+    if (detail && child.first.type != Material::Triangle)
+      continue;
     for (auto & ventry : child.second) {
-      if (ventry.skipcount || ventry.mergecount)
+      if (detail) {
+        // Partial rendering works on the original per-shape caches, not
+        // the merged composites (the buildHighlightCache convention).
+        if (ventry.mergecount)
+          continue;
+        if (fctx && fctx != ventry.cache->getNode())
+          continue;
+      }
+      else if (ventry.skipcount || ventry.mergecount)
         continue;
       Material material = child.first;
       material.order = order;
       material.depthfunc = SoDepthBuffer::LEQUAL;
-      res[material].push_back(ventry);
+      if (!detail) {
+        res[material].push_back(ventry);
+        continue;
+      }
+
+      VertexCacheEntry newentry(ventry);
+      if (fd) {
+        if (fd->getPartIndex() < 0)
+          continue;
+        newentry.partidx = fd->getPartIndex();
+      }
+      else {
+        const auto & indices = d->getIndices(SoFCDetail::Face);
+        if (indices.size() == 1 && *indices.begin() >= 0)
+          newentry.partidx = *indices.begin();
+        else if (indices.size() > 1) {
+          newentry.cache = new SoFCVertexCache(*newentry.cache);
+          newentry.cache->addTriangles(indices);
+        }
+        else
+          continue;
+      }
+      // The element entry is partial, so the base draw is not
+      // key-suppressed and the face renders twice at identical depth.
+      // A small negative polygon offset lets the shader-carrying copy
+      // win regardless of draw order (bgfx sorts within a view; GL
+      // draws selections after the scene either way).
+      material.polygonoffsetstyle = SoPolygonOffsetElement::FILLED;
+      material.polygonoffsetfactor =
+        -ViewParams::getRenderHighlightPolygonOffsetFactor();
+      material.polygonoffsetunits =
+        -ViewParams::getRenderHighlightPolygonOffsetUnits();
+      res[material].push_back(newentry);
     }
   }
   return res;

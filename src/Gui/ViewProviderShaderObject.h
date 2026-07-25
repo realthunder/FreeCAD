@@ -136,10 +136,16 @@ using ViewProviderShaderPython = ViewProviderPythonFeatureT<ViewProviderShader>;
  * render cache manager (SoFCRenderCacheManager::addShaderOverride) — the
  * persistent-selection side channel; costs scale with occurrences.
  *
+ * Scope=Element: as Instance, but a target subname ending in a face
+ * element (Face3) restricts the override to that face — a partial entry
+ * rendered over the untouched base draw (no suppression), biased to win
+ * the depth contest. Face elements only.
+ *
  * Collisions: longest chain wins, then TreeRank (higher wins), then name,
- * in a per-document registry. Shader-only Appearances activate the
- * effect's post-stage programs scene-wide. Element-scoped targets are a
- * follow-up slice.
+ * in a per-document registry; element-scoped bindings coexist with a
+ * whole-occurrence winner (and with each other, one winner per element)
+ * and draw over it. Shader-only Appearances activate the effect's
+ * post-stage programs scene-wide.
  */
 class GuiExport ViewProviderAppearance : public ViewProviderLink
 {
@@ -161,9 +167,12 @@ public:
 
 private:
     void clearBindings();
-    /// Scope=Instance: register per-path overrides with every 3D view
+    /// Scope=Instance/Element: register per-path overrides with every
+    /// 3D view; a non-empty element restricts each override to that
+    /// face of the occurrence
     void applyPathBindings(const std::vector<std::pair<App::DocumentObject*,
-                                                       std::string>> &targets);
+                                                       std::string>> &targets,
+                           const std::string &element = std::string());
     /// Scope=Object: insert the effect's material program node at the
     /// resolved targets' view-provider roots
     void applyDirectBindings(const std::vector<App::DocumentObject*> &targets);

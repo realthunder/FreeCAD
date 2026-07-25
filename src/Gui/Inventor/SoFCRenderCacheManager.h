@@ -114,10 +114,16 @@ public:
    * the same-key suppression, scoped to exactly this path (one instance
    * of a linked object, not all instances). One path per key; a repeated
    * key updates the shader/path in place.
+   *
+   * With a face detail (Scope=Element) the override covers just that
+   * face: a partial entry rendered over the untouched base draw (no
+   * suppression), original geometry and normals, small negative polygon
+   * offset. The detail is copied.
    */
   void addShaderOverride(const std::string & key,
                          SoPath * nodepath,
-                         const std::shared_ptr<const Render::UserShader> & shader);
+                         const std::shared_ptr<const Render::UserShader> & shader,
+                         const SoDetail * detail = nullptr);
 
   void removeShaderOverride(const std::string & key);
 

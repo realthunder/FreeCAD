@@ -658,8 +658,14 @@ public:
    * carry no usable normals) and no color override. Only the draw order
    * and depth func change, so the entries can replace the key-suppressed
    * base draws in place.
+   *
+   * With a face detail (Scope=Element) the map holds just that face's
+   * triangles out of the original cache (partial-index rendering, real
+   * normals). These entries are partial, so the base draw stays; a small
+   * negative polygon offset makes the face win the depth contest over
+   * its coincident base copy on draw-order-agnostic backends.
    */
-  VertexCacheMap buildWholeCacheMap(int order);
+  VertexCacheMap buildWholeCacheMap(int order, const SoDetail * detail = nullptr);
 
   void open(SoState * state,
             int selectstyle = Material::Full,

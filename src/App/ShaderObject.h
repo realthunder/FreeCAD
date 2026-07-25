@@ -127,6 +127,11 @@ using ShaderPython = App::FeaturePythonT<Shader>;
  *   suffix-anchored, per-occurrence override (persistent-selection
  *   style; costs scale with occurrence count, and matched draws leave
  *   the instancing fast path).
+ * - "Element": like Instance, but a target subname ending in a face
+ *   element (e.g. A1.A2.Box.Face3) restricts the override to that face
+ *   of each matched occurrence; a target without an element part
+ *   behaves like Instance. Face elements only — edge/vertex elements
+ *   have no material stage to replace.
  *
  * No target children = the shader's post-stage programs apply scene-wide.
  * Like-named dynamic properties override shader parameters per binding.
@@ -139,14 +144,16 @@ class AppExport Appearance : public LinkGroup
 public:
     Appearance();
 
-    /// Target scope: whole object (direct attachment) vs matched
-    /// occurrences (per-instance chain override); element scope reserved
+    /// Target scope: whole object (direct attachment), matched
+    /// occurrences (per-instance chain override), or a single face
+    /// element of each matched occurrence
     PropertyEnumeration Scope;
 
     /// Scope enum indices
     enum class ScopeMode {
         Object = 0,
         Instance = 1,
+        Element = 2,
     };
     ScopeMode scopeMode() const {
         return static_cast<ScopeMode>(Scope.getValue());

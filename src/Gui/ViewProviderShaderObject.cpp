@@ -522,18 +522,34 @@ bool isShaderFamily(App::DocumentObject *obj)
 // The resolved object sequence a scene child contributes to occurrence
 // matching: a subname link expands to the objects along its resolved path
 // — skipping the link's own root, the suffix-anchored matching rule —
-// anything else to its final linked object.
+// anything else to its final linked object. A non-null element out
+// parameter (Scope=Element target registration) splits a trailing
+// element reference (e.g. Face3) off the subname before expansion.
 void appendExpansion(App::DocumentObject *obj,
-                     std::vector<App::DocumentObject*> &seq)
+                     std::vector<App::DocumentObject*> &seq,
+                     std::string *element = nullptr)
 {
+    if (element)
+        element->clear();
     if (auto ext = obj->getExtensionByType<App::LinkBaseExtension>(true)) {
         if (auto prop = Base::freecad_dynamic_cast<App::PropertyXLink>(
                     ext->getLinkedObjectProperty())) {
             auto linked = prop->getValue();
             const char *sub = prop->getSubName();
             if (linked && sub && sub[0]) {
-                for (auto o : linked->getSubObjectList(sub))
-                    seq.push_back(canonObject(o));
+                std::string subNoElement = sub;
+                if (element) {
+                    App::SubObjectT ref(linked, sub);
+                    *element = ref.getOldElementName();
+                    subNoElement = ref.getSubNameNoElement();
+                }
+                if (!subNoElement.empty()) {
+                    for (auto o : linked->getSubObjectList(subNoElement.c_str()))
+                        seq.push_back(canonObject(o));
+                    return;
+                }
+                // element-only subname: the chain is the linked object
+                seq.push_back(canonObject(linked));
                 return;
             }
         }
@@ -541,9 +557,12 @@ void appendExpansion(App::DocumentObject *obj,
     seq.push_back(canonObject(obj));
 }
 
-// A Scope=Instance target child's registered chain
+// A Scope=Instance/Element target child's registered chain
 struct ChainBinding {
     std::vector<App::DocumentObject*> chain;
+    // Scope=Element: the face element (e.g. "Face3") of the matched
+    // occurrence the override is restricted to; empty = whole occurrence
+    std::string element;
     ViewProviderAppearance *vp;
     App::Appearance *obj;
 };
@@ -587,18 +606,32 @@ struct OccurrenceScan {
         : chains(chains)
     {}
 
-    const ChainBinding *matchAt() const {
-        const ChainBinding *best = nullptr;
+    // Whole-occurrence bindings compete for one winner; element-scoped
+    // bindings coexist with it and with each other, one winner per
+    // element (a face override refines a whole-occurrence shader).
+    void matchesAt(std::vector<const ChainBinding*> &out) const {
+        const ChainBinding *whole = nullptr;
+        std::map<std::string, const ChainBinding*> byElement;
         for (const auto &cb : chains) {
             const auto &c = cb.chain;
             if (c.empty() || c.size() > seq.size())
                 continue;
             if (!std::equal(c.begin(), c.end(), seq.end() - c.size()))
                 continue;
-            if (!best || betterBinding(cb, *best))
-                best = &cb;
+            if (cb.element.empty()) {
+                if (!whole || betterBinding(cb, *whole))
+                    whole = &cb;
+            }
+            else {
+                auto &slot = byElement[cb.element];
+                if (!slot || betterBinding(cb, *slot))
+                    slot = &cb;
+            }
         }
-        return best;
+        if (whole)
+            out.push_back(whole);
+        for (const auto &v : byElement)
+            out.push_back(v.second);
     }
 
     void visit(App::DocumentObject *base, App::DocumentObject *obj,
@@ -610,8 +643,12 @@ struct OccurrenceScan {
         }
         size_t seqlen = seq.size();
         appendExpansion(obj, seq);
-        if (auto m = matchAt())
-            matches[m].emplace_back(base, subname);
+        std::vector<const ChainBinding*> found;
+        matchesAt(found);
+        if (!found.empty()) {
+            for (auto m : found)
+                matches[m].emplace_back(base, subname);
+        }
         else if (depth < maxDepth && !onPath.count(obj)) {
             onPath.insert(obj);
             for (const auto &s : obj->getSubObjects()) {
@@ -793,7 +830,8 @@ void ViewProviderAppearance::clearBindings()
 
 void ViewProviderAppearance::applyPathBindings(
         const std::vector<std::pair<App::DocumentObject*,
-                                    std::string>> &targets)
+                                    std::string>> &targets,
+        const std::string &element)
 {
     auto obj = dynamic_cast<App::Appearance*>(getObject());
     if (!obj || targets.empty())
@@ -814,21 +852,33 @@ void ViewProviderAppearance::applyPathBindings(
                     Application::Instance->getViewProvider(t.first));
             if (!vpd)
                 continue;
+            // Scope=Element: the element ref appended to the occurrence
+            // subname resolves through to the tail shape's SoDetail
+            std::string sub = t.second;
+            sub += element;
             CoinPtr<SoPath> path = new SoPath(10);
             viewer->appendDetailPath(path, vpd);
             SoDetail *det = nullptr;
-            bool ok = vpd->getDetailPath(t.second.c_str(),
+            bool ok = vpd->getDetailPath(sub.c_str(),
                     static_cast<SoFullPath*>(path.get()), true, det);
-            delete det;
-            if (!ok || !path->getLength())
+            if (!ok || !path->getLength()) {
+                delete det;
                 continue;
+            }
+            if (!element.empty() && !det) {
+                FC_WARN("Appearance " << obj->getFullName()
+                        << ": no detail for element "
+                        << t.first->getFullName() << "." << sub);
+                continue;
+            }
             std::string key = obj->getFullName();
             key += '|';
             key += t.first->getFullName();
             key += '.';
-            key += t.second;
+            key += sub;
             FC_LOG("AP bind " << key << " pathlen " << path->getLength());
-            mgr->addShaderOverride(key, path, shader);
+            mgr->addShaderOverride(key, path, shader, det);
+            delete det;
             bound.emplace_back(viewer, std::move(key));
         }
     }
@@ -961,9 +1011,12 @@ void ViewProviderAppearance::rebuildAllBindings(App::Document *doc)
             }
         }
         else {
+            bool elementScope =
+                obj->scopeMode() == App::Appearance::ScopeMode::Element;
             for (auto t : targets) {
                 ChainBinding cb;
-                appendExpansion(t, cb.chain);
+                appendExpansion(t, cb.chain,
+                                elementScope ? &cb.element : nullptr);
                 if (cb.chain.empty()
                         || isShaderFamily(cb.chain.back()))
                     continue;
@@ -995,11 +1048,19 @@ void ViewProviderAppearance::rebuildAllBindings(App::Document *doc)
             FC_WARN("Appearance occurrence scan of " << doc->getName()
                     << " truncated at " << OccurrenceScan::maxVisited
                     << " nodes — some occurrences may be unbound");
-        for (auto &m : scan.matches) {
-            for (auto &t : m.second)
-                FC_LOG("AP occurrence " << m.first->obj->getNameInDocument()
-                        << " -> " << t.first->getFullName() << " . " << t.second);
-            m.first->vp->applyPathBindings(m.second);
+        // Whole-occurrence bindings before element ones: element entries
+        // then register later selection ids, so a face override draws
+        // after (over) a whole-occurrence shader on the same occurrence.
+        for (int round = 0; round < 2; ++round) {
+            for (auto &m : scan.matches) {
+                if (m.first->element.empty() != (round == 0))
+                    continue;
+                for (auto &t : m.second)
+                    FC_LOG("AP occurrence " << m.first->obj->getNameInDocument()
+                            << " -> " << t.first->getFullName() << " . "
+                            << t.second << m.first->element);
+                m.first->vp->applyPathBindings(m.second, m.first->element);
+            }
         }
     }
 

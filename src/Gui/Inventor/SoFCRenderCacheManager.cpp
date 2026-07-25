@@ -788,9 +788,12 @@ SoFCRenderCacheManagerP::updateSelection(void * userdata, SoSensor * _sensor)
       flags |= SoFCRenderCache::AltGroup;
     if (elentry.usershader)
       // Shader overrides replace the base draws in place: original
-      // geometry and materials (normals intact), shader stamped on.
+      // geometry and materials (normals intact), shader stamped on. A
+      // face detail (Scope=Element) narrows the map to that face,
+      // rendered over the untouched base draw instead of replacing it.
       elentry.vcachemap = applyUserShader(
-          sensor->cache->buildWholeCacheMap(elentry.id), elentry.usershader);
+          sensor->cache->buildWholeCacheMap(elentry.id, elentry.detail.get()),
+          elentry.usershader);
     else
       elentry.vcachemap = sensor->cache->buildHighlightCache(
           self->sharedcache, elentry.id, elentry.detail.get(), elentry.color, flags);
@@ -1067,7 +1070,8 @@ void
 SoFCRenderCacheManager::addShaderOverride(
     const std::string & key,
     SoPath * nodepath,
-    const std::shared_ptr<const Render::UserShader> & shader)
+    const std::shared_ptr<const Render::UserShader> & shader,
+    const SoDetail * detail)
 {
   if (!nodepath || !nodepath->getLength() || !shader)
     return;
@@ -1100,6 +1104,7 @@ SoFCRenderCacheManager::addShaderOverride(
   auto & elentry = sensor->elements[std::string()];
   elentry.usershader = shader;
   elentry.color = 0;
+  elentry.detail.reset(detail ? detail->copy() : nullptr);
   if (!elentry.id) {
     // Non-on-top encoding (the addSelection convention): the entry
     // renders in the normal scene passes and suppresses the base draw

@@ -74,7 +74,7 @@ Shader::Shader()
 
 PROPERTY_SOURCE(App::Appearance, App::LinkGroup)
 
-const char* Appearance::ScopeEnums[] = {"Object", "Instance", nullptr};
+const char* Appearance::ScopeEnums[] = {"Object", "Instance", "Element", nullptr};
 
 Appearance::Appearance()
 {
@@ -84,7 +84,9 @@ Appearance::Appearance()
             "Object: attach directly to each target's resolved object —\n"
             "  cheap, all instances everywhere, inherited by children\n"
             "Instance: override every scene occurrence whose resolved\n"
-            "  chain ends in the target link's chain (suffix-anchored)");
+            "  chain ends in the target link's chain (suffix-anchored)\n"
+            "Element: like Instance, but a target subname ending in a\n"
+            "  face element (e.g. Face3) shades only that face");
 }
 
 Shader *Appearance::resolveShader(DocumentObject **shaderChild) const
