@@ -4453,6 +4453,34 @@ void PropertyXLink::copyTo(PropertyXLink &other,
     other._Flags = _Flags;
 }
 
+void PropertyXLink::getLinkIdentity(std::string &doc, std::string &obj) const
+{
+    if (_pcLink && _pcLink->isAttachedToDocument()) {
+        doc = _pcLink->getDocument()->getName();
+        obj = _pcLink->getNameInDocument();
+    }
+    else {
+        doc = docName;
+        obj = objectName;
+    }
+}
+
+bool PropertyXLink::isSame(const Property &other) const
+{
+    if (&other == this)
+        return true;
+    if (!other.isDerivedFrom(PropertyXLink::getClassTypeId())
+            || getScope() != static_cast<const PropertyLinkBase*>(&other)->getScope())
+        return false;
+    auto &o = static_cast<const PropertyXLink&>(other);
+    std::string doc, obj, otherDoc, otherObj;
+    getLinkIdentity(doc, obj);
+    o.getLinkIdentity(otherDoc, otherObj);
+    return doc == otherDoc && obj == otherObj
+        && filePath == o.filePath
+        && _SubList == o._SubList;
+}
+
 Property *PropertyXLink::Copy() const
 {
     std::unique_ptr<PropertyXLink> p(new PropertyXLink);
@@ -5436,6 +5464,25 @@ void PropertyXLinkSubList::setAllowPartial(bool enable) {
     setFlag(LinkAllowPartial,enable);
     for(auto &l : _Links)
         l.setAllowPartial(enable);
+}
+
+bool PropertyXLinkSubList::isSame(const Property &other) const
+{
+    if (&other == this)
+        return true;
+    if (!other.isDerivedFrom(PropertyXLinkSubList::getClassTypeId())
+            || getScope() != static_cast<const PropertyLinkBase*>(&other)->getScope())
+        return false;
+    auto &o = static_cast<const PropertyXLinkSubList&>(other);
+    if (_Links.size() != o._Links.size())
+        return false;
+    auto it = _Links.begin();
+    auto it2 = o._Links.begin();
+    for (; it != _Links.end(); ++it, ++it2) {
+        if (!it->isSame(*it2))
+            return false;
+    }
+    return true;
 }
 
 void PropertyXLinkSubList::hasSetChildValue(Property &) {

@@ -1265,6 +1265,23 @@ protected:
 
     void copyTo(PropertyXLink &other, App::DocumentObject *linked=nullptr, std::vector<std::string> *subs=nullptr) const;
 
+public:
+    /** Name-level comparison.
+     *
+     * The generic PropertyLinkBase::isSame() compares live getLinks()
+     * results, but a copyBeforeChange() snapshot of an XLink holds only
+     * document/object names (copyTo() never copies the live pointer), so
+     * its getLinks() is always empty — clearing the property then compares
+     * "same" as the populated snapshot and the change is silently dropped
+     * by Property::hasSetValue().
+     */
+    bool isSame(const Property &other) const override;
+
+protected:
+    /// The doc/object name pair copyTo() persists, from either a live
+    /// link or a name-only snapshot
+    void getLinkIdentity(std::string &doc, std::string &obj) const;
+
     void aboutToSetValue() override;
 
     void hasSetValue() override;
@@ -1325,6 +1342,9 @@ public:
 
     void afterRestore() override;
     void onContainerRestored() override;
+
+    /// Name-level comparison (see PropertyXLink::isSame)
+    bool isSame(const Property &other) const override;
 
     int getSize() const;
 
