@@ -888,6 +888,56 @@ RendererBridge::translateAOConfig(View3DInventor * view)
     return res;
 }
 
+bool
+RendererBridge::translateShaderParamValues(const App::Property * prop,
+                                           std::vector<float> & values)
+{
+    std::vector<float> res;
+    if (auto p = dynamic_cast<const App::PropertyBool*>(prop))
+        res = {p->getValue() ? 1.0f : 0.0f};
+    else if (auto p = dynamic_cast<const App::PropertyEnumeration*>(prop))
+        res = {float(p->getValue())};
+    else if (auto p = dynamic_cast<const App::PropertyInteger*>(prop))
+        res = {float(p->getValue())};
+    else if (auto p = dynamic_cast<const App::PropertyFloat*>(prop))
+        res = {float(p->getValue())};
+    else if (auto p = dynamic_cast<const App::PropertyColor*>(prop)) {
+        App::Color c = p->getValue();
+        res = {c.r, c.g, c.b, c.a};
+    }
+    else if (auto p = dynamic_cast<const App::PropertyVector*>(prop)) {
+        Base::Vector3d vec = p->getValue();
+        res = {float(vec.x), float(vec.y), float(vec.z)};
+    }
+    else if (auto p = dynamic_cast<const App::PropertyFloatList*>(prop)) {
+        for (double d : p->getValues())
+            res.push_back(float(d));
+    }
+    else if (auto p = dynamic_cast<const App::PropertyIntegerList*>(prop)) {
+        for (long l : p->getValues())
+            res.push_back(float(l));
+    }
+    else
+        return false;
+    if (res.empty())
+        return false;
+    res.resize((res.size() + 3) & ~size_t(3), 0.0f);
+    values = std::move(res);
+    return true;
+}
+
+std::string
+RendererBridge::shaderParamUniformName(const char * propName)
+{
+    std::string name(propName ? propName : "");
+    auto pos = name.find('_');
+    if (pos != std::string::npos && pos > 0)
+        name = name.substr(pos + 1);
+    if (name.compare(0, 2, "u_") != 0)
+        name = "u_" + name;
+    return name;
+}
+
 Render::RenderDebugConfig
 RendererBridge::translateRenderDebugConfig(View3DInventor * view)
 {
@@ -921,31 +971,7 @@ RendererBridge::translateRenderDebugConfig(View3DInventor * view)
             Render::RenderDebugConfig::UserParam param;
             param.name = name.compare(0, 2, "u_") == 0 ? name : "u_" + name;
             App::Property *prop = v.second;
-            if (auto p = dynamic_cast<App::PropertyBool*>(prop))
-                param.values = {p->getValue() ? 1.0f : 0.0f};
-            else if (auto p = dynamic_cast<App::PropertyEnumeration*>(prop))
-                param.values = {float(p->getValue())};
-            else if (auto p = dynamic_cast<App::PropertyInteger*>(prop))
-                param.values = {float(p->getValue())};
-            else if (auto p = dynamic_cast<App::PropertyFloat*>(prop))
-                param.values = {float(p->getValue())};
-            else if (auto p = dynamic_cast<App::PropertyColor*>(prop)) {
-                App::Color c = p->getValue();
-                param.values = {c.r, c.g, c.b, c.a};
-            }
-            else if (auto p = dynamic_cast<App::PropertyVector*>(prop)) {
-                Base::Vector3d vec = p->getValue();
-                param.values = {float(vec.x), float(vec.y), float(vec.z)};
-            }
-            else if (auto p = dynamic_cast<App::PropertyFloatList*>(prop)) {
-                for (double d : p->getValues())
-                    param.values.push_back(float(d));
-            }
-            else if (auto p = dynamic_cast<App::PropertyIntegerList*>(prop)) {
-                for (long l : p->getValues())
-                    param.values.push_back(float(l));
-            }
-            else {
+            if (!translateShaderParamValues(prop, param.values)) {
                 static std::set<std::string> warned;
                 if (warned.insert(v.first).second)
                     FC_WARN("render debug parameter " << v.first
@@ -953,10 +979,6 @@ RendererBridge::translateRenderDebugConfig(View3DInventor * view)
                             << prop->getTypeId().getName());
                 continue;
             }
-            if (param.values.empty())
-                continue;
-            param.values.resize((param.values.size() + 3) & ~size_t(3),
-                                0.0f);
             res.userParams.push_back(std::move(param));
         }
     }

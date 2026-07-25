@@ -23,6 +23,8 @@
 #ifndef GUI_ViewProviderShaderObject_H
 #define GUI_ViewProviderShaderObject_H
 
+#include <map>
+
 #include <QPointer>
 
 #include "InventorBase.h"
@@ -30,6 +32,7 @@
 #include "ViewProviderPythonFeature.h"
 
 class SoShaderProgram;
+class SoShaderParameterArray1f;
 class SoVertexShader;
 class SoFragmentShader;
 class SoSeparator;
@@ -61,12 +64,19 @@ public:
     /// The shared shader program node consumers insert into their graphs
     SoShaderProgram *getShaderNode() const;
 
+    /// Re-materialize the object's Param_* dynamic properties as
+    /// SoShaderParameter nodes on the shader objects (§6.4)
+    void syncParameters();
+
 private:
     void updateShaderNode();
 
     CoinPtr<SoShaderProgram> pcShaderProgram;
     CoinPtr<SoVertexShader> pcVertexShader;
     CoinPtr<SoFragmentShader> pcFragmentShader;
+    // uniform name -> parameter node, updated in place so a value edit
+    // notifies without relisting the parameter field
+    std::map<std::string, CoinPtr<SoShaderParameterArray1f>> paramNodes;
 };
 
 using ViewProviderShaderProgramPython = ViewProviderPythonFeatureT<ViewProviderShaderProgram>;

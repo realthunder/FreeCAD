@@ -460,6 +460,39 @@ public:
             bgfx::setUniform(entry.handle, data, num);
     }
 
+    /// Record a user shader's parameters for its consuming draw
+    /// (docs/RenderDebug.md §6.4), zeroing every other dynamically
+    /// bound uniform: uniform values persist backend-side between
+    /// frames, so a parameter dropped from the list would otherwise
+    /// keep feeding its stale value to a program that declares it.
+    /// Zeroing is safe for the frame's other consumers — every user
+    /// draw and the debug lane re-record their own parameters with
+    /// their own submits — and engine uniforms have their own handles
+    /// outside this map, so they are never touched.
+    void pushUserParams(const Render::UserShader &shader)
+    {
+        std::vector<float> zeros;
+        for (auto &v : userUniforms) {
+            if (!bgfx::isValid(v.second.handle))
+                continue;
+            bool inParams = false;
+            for (const auto &p : shader.params) {
+                if (p.name == v.first) {
+                    inParams = true;
+                    break;
+                }
+            }
+            if (inParams)
+                continue;
+            if (zeros.size() < v.second.num * 4u)
+                zeros.resize(v.second.num * 4u, 0.0f);
+            bgfx::setUniform(v.second.handle, zeros.data(), v.second.num);
+        }
+        for (const auto &p : shader.params)
+            setUserUniform(p.name, p.values.data(),
+                           uint16_t(p.values.size() / 4));
+    }
+
     /// Runtime user-shader program cache (docs/RenderDebug.md §6.3).
     /// Desktop builds: user .sc source compiles through the host
     /// shaderc into a disk cache keyed on SHA1(source × target), and
@@ -4759,9 +4792,7 @@ public:
         bgfx::setTexture(0, s_texScene, bgfxColor);
         fullscreen(ViewUserPostCopy, m_progWaterCopy,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-        for (const auto &p : shader.params)
-            _BGFXLib.setUserUniform(p.name, p.values.data(),
-                                    uint16_t(p.values.size() / 4));
+        _BGFXLib.pushUserParams(shader);
         bgfx::setTexture(0, s_texScene, sceneCopyTex);
         fullscreen(ViewUserPost, prog,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
@@ -5973,9 +6004,7 @@ public:
             bgfx::ProgramHandle uprog = _BGFXLib.getUserProgram(
                 *mat.usershader, "vs_fc_mesh");
             if (bgfx::isValid(uprog)) {
-                for (const auto &p : mat.usershader->params)
-                    _BGFXLib.setUserUniform(p.name, p.values.data(),
-                                            uint16_t(p.values.size() / 4));
+                _BGFXLib.pushUserParams(*mat.usershader);
                 prog = uprog;
             }
         }

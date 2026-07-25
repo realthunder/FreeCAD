@@ -35,9 +35,9 @@ namespace App
 /** One stage-tagged shader program of a user effect (docs/RenderDebug.md §6.5).
  *
  * Carries the source of a single program for one renderer pipeline stage.
- * Shader parameters are user-added dynamic properties following the
- * <Group>_<Name> naming protocol (§6.4). Grouped into an effect by
- * App::Shader; applies to nothing by itself.
+ * Shader parameters are user-added dynamic properties in the "Param"
+ * group — Param_<Name> feeds "uniform vec4 u_<Name>" (§6.4). Grouped
+ * into an effect by App::Shader; applies to nothing by itself.
  */
 class AppExport ShaderProgram : public DocumentObject
 {

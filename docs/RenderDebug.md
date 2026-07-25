@@ -521,10 +521,26 @@ runtime GLSL compiler. Coin's nodes carry *source*. Reconciliation:
 
 ### 6.4 Design constraints (fixed)
 
-- **Property binding via the protocol.** An `SoShaderParameter` named
-  `Foo_Bar` binds to the like-named dynamic property; the dynamic
-  name→uniform binding from section 2.5 is the transport. Editing the property updates
-  the uniform live — the parametric loop reaching into shading.
+- **Property binding via the protocol.** A dynamic property in the
+  `Param` group of an `App::ShaderProgram` is a shader parameter: its view
+  provider materializes it as an `SoShaderParameter` node on the shared
+  Coin shader object, named by the section-2.5 rule (group prefix
+  dropped, `u_` prepended — `Param_Tint` feeds `uniform vec4 u_Tint`),
+  valued by the same property→vec4-lane packing as the `RenderDebug_*`
+  view properties (one shared bridge helper). Only `Param_*` binds —
+  dynamic properties in other groups stay ordinary properties.
+  Editing the property updates the uniform live — the
+  parametric loop reaching into shading — and every consumer of the node
+  (demo preview, Appearance bindings, the direct scene-graph route, the
+  browser tier via the snapshot's shader table) sees it, because the
+  parameters ride the captured `UserShader` and are recorded with the
+  consuming draws. Like-named dynamic properties on an `App::Appearance`
+  override the program's values for that binding only; a parameter the
+  program does not carry is added, so a binding can drive any uniform the
+  shader source declares. The backend zeroes every dynamically bound
+  uniform that is not in the consuming draw's parameter list — uniform
+  values persist backend-side between frames, so a removed parameter
+  would otherwise keep feeding its stale value.
 - **Predefined stages, not arbitrary hooks.** Users pick named attachment
   points: `post` (full-screen pass over composited color — simplest, first),
   `material` (replace surface shading for an object), later possibly
@@ -631,7 +647,7 @@ now compare name-level identity.
 | 3 | **DONE** — verification harness (`scripts/render-verify.sh` + `render_verify.py` + `render_diff.py` + `wasm-hold.js`): named-view or golden-sidecar restaging, xvfb/`--gpu`/`--viewer` capture legs, first-divergent-stage diffing with heatmaps | phases 1–2 |
 | 4 | **DONE** — dynamic name→uniform binding (`RenderDebug_*` props → like-named vec4 uniforms, snapshot v21) + `u_userParams[4]` fallback pool (lane 0 = debug output scale/bias); shader hot-reload (`FC_BGFX_SHADER_DIR` + `reloadShaders()`); `View3DInventor.addProperty/removeProperty` Python API | phase 1 |
 | 5 | **DONE** — view modes 5–8 (ShadowTile coverage, Overdraw counting pass on the repurposed `ViewDebugScene` slot, ShadowFilter precision probe, UV re-render; snapshot v22); self-labeling burn-in (`RenderDebug_Label`) | 1, 4 |
-| 6 | **first slice DONE** — user-loadable shaders on the Coin node model, `post` stage (coin fork: `SoShaderProgram::stage` + `BGFX_SC` source type; capture: cache-manager post-callback → `Render::UserShaderConfig` → `setUserShaderConfig`; backend: async shaderc compile cache + `ViewUserPostCopy`/`ViewUserPost` full-screen pass; sandboxed failure verified). **second slice DONE** — `material` stage with per-object attachment (`Material::usershader` through the render-cache chain, stock `vs_fc_mesh` pairing, beauty passes only, instancing exclusion). Remaining: browser tier (server-side compile + snapshot transport), property-bound parameters (§6.4), material-stage lighting helper library | 4; shader compile cache (§6.3) |
+| 6 | **first slice DONE** — user-loadable shaders on the Coin node model, `post` stage (coin fork: `SoShaderProgram::stage` + `BGFX_SC` source type; capture: cache-manager post-callback → `Render::UserShaderConfig` → `setUserShaderConfig`; backend: async shaderc compile cache + `ViewUserPostCopy`/`ViewUserPost` full-screen pass; sandboxed failure verified). **second slice DONE** — `material` stage with per-object attachment (`Material::usershader` through the render-cache chain, stock `vs_fc_mesh` pairing, beauty passes only, instancing exclusion). **third slice DONE** — browser tier (server-side compile through the async shaderc cache, snapshot v23 user-shader table, viewer loads shipped bins). **fourth slice DONE** — §6.5 document object model (App::ShaderProgram/Shader/Appearance + view providers, path-keyed shader overrides through the render cache manager) and §6.4 property-bound parameters (`Group_Name` dynamic props → SoShaderParameter nodes → uniforms with the consuming draws; Appearance per-binding overrides; stale-uniform zeroing). Remaining: scene-level (`post`) Appearance activation, element-scoped targets, new-view rebind hook, material-stage lighting helper library | 4; shader compile cache (§6.3) |
 
 Phases 1+2 are the minimum end-to-end slice: set a mode from Python, capture
 a real-GPU frame with metadata, diff it.

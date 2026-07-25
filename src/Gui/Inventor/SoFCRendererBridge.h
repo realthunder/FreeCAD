@@ -26,6 +26,10 @@
 #include "SoFCRenderCache.h"
 #include "../Renderer/Renderer.h"
 
+namespace App {
+class Property;
+}
+
 namespace Gui {
 
 class View3DInventor;
@@ -67,6 +71,20 @@ GuiExport Render::SectionConfig translateSectionConfig();
 /// global RenderParams as fallback.
 GuiExport Render::AOConfig translateAOConfig(View3DInventor * view);
 GuiExport Render::RenderDebugConfig translateRenderDebugConfig(View3DInventor * view);
+
+/// Extract a property value as floats zero-padded to vec4 lanes — the
+/// dynamic-property shader parameter protocol (docs/RenderDebug.md §2.5,
+/// §6.4) shared by the RenderDebug_* view properties, App::ShaderProgram
+/// parameter properties and App::Appearance per-binding overrides.
+/// Returns false (values untouched) for unsupported property types.
+GuiExport bool translateShaderParamValues(const App::Property * prop,
+                                          std::vector<float> & values);
+
+/// Uniform name of a Group_Name shader parameter property (§6.4): the
+/// part after the first '_' (the group prefix used for property-editor
+/// grouping is dropped), prefixed with "u_" unless already so —
+/// "Param_Tint" → "u_Tint", "RenderDebug_userParams" → "u_userParams".
+GuiExport std::string shaderParamUniformName(const char * propName);
 
 /// Capture one scene SoShaderProgram node into a user shader entry
 /// (docs/RenderDebug.md §6): stage name, bgfx .sc sources (inline
