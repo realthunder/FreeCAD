@@ -958,6 +958,14 @@ void ViewProviderAppearance::applyDirectBindings(
     }
 }
 
+void ViewProviderAppearance::onViewCreated(App::Document *doc)
+{
+    // Deferred + coalesced: the caller is still constructing the view,
+    // and a restore may open several views at once.
+    if (doc && _AppearanceRegistry.count(doc))
+        scheduleRebuild(doc);
+}
+
 void ViewProviderAppearance::rebuildAllBindings(App::Document *doc)
 {
     if (!doc || _RebuildingBindings)

@@ -165,6 +165,12 @@ public:
     /// TreeRank precedence)
     static void rebuildAllBindings(App::Document *doc);
 
+    /// A 3D view was created for the document: per-view registrations
+    /// (Scope=Instance/Element path overrides, the scene-level post
+    /// list) must reach the new view's cache manager too. Schedules a
+    /// coalesced rebuild; no-op for documents without Appearances.
+    static void onViewCreated(App::Document *doc);
+
 private:
     void clearBindings();
     /// Scope=Instance/Element: register per-path overrides with every

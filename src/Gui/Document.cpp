@@ -70,6 +70,7 @@
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderDocumentObjectGroup.h"
 #include "ViewProviderLink.h"
+#include "ViewProviderShaderObject.h"
 #include "WaitCursor.h"
 
 
@@ -2138,6 +2139,7 @@ MDIView *Document::createView(const Base::Type& typeId)
 
         getMainWindow()->addWindow(view3D);
         setModified(false);
+        ViewProviderAppearance::onViewCreated(getDocument());
         return view3D;
     }
     return nullptr;
@@ -2178,6 +2180,7 @@ Gui::MDIView* Document::cloneView(Gui::MDIView* oldview)
             view3D->getViewer()->setEditingViewProvider(d->_editViewProvider, d->_editMode);
         }
 
+        ViewProviderAppearance::onViewCreated(getDocument());
         return view3D;
     }
 
