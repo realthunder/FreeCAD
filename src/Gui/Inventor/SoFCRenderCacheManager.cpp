@@ -107,7 +107,28 @@ struct ElementEntry {
   int id;
   uint32_t color;
   VertexCacheMap vcachemap;
+  // Set for shader-override entries (addShaderOverride): the rebuilt
+  // vcachemap's triangle materials carry this shader.
+  std::shared_ptr<const Render::UserShader> usershader;
 };
+
+// Re-key the map so its triangle materials carry the user shader; the
+// non-on-top whole-object entry then draws in the normal scene passes
+// with the shader substituted, while the base draw is key-suppressed.
+static VertexCacheMap
+applyUserShader(const VertexCacheMap & vcachemap,
+                const std::shared_ptr<const Render::UserShader> & shader)
+{
+  VertexCacheMap res;
+  for (auto & v : vcachemap) {
+    Material material = v.first;
+    if (material.type == Material::Triangle)
+      material.usershader = shader;
+    auto & entries = res[material];
+    entries.insert(entries.end(), v.second.begin(), v.second.end());
+  }
+  return res;
+}
 
 class SelectionSensor : public SoNodeSensor {
 public:
@@ -400,6 +421,10 @@ public:
   VertexCachePtr vcache;
 
   std::unordered_map<std::string, SelectionPathMap> selcaches;
+  // Path-keyed user-shader overrides (addShaderOverride): same sensor
+  // machinery as selcaches, kept separate so selection bookkeeping
+  // (clearSelection, isOnTop, ...) never touches them.
+  std::unordered_map<std::string, SelectionPathMap> shadercaches;
   SbFCMap<int, CoinPtr<SoPath> > selpaths;
 
   SbFCMap<int, VertexCachePtr> sharedcache;
@@ -599,6 +624,7 @@ SoFCRenderCacheManager::clear()
   PRIVATE(this)->cachetable.clear();
   PRIVATE(this)->vcachetable.clear();
   PRIVATE(this)->selcaches.clear();
+  PRIVATE(this)->shadercaches.clear();
   PRIVATE(this)->selpaths.clear();
   PRIVATE(this)->renderer->clear();
   PRIVATE(this)->latepicktable.clear();
@@ -760,8 +786,14 @@ SoFCRenderCacheManagerP::updateSelection(void * userdata, SoSensor * _sensor)
       flags |= SoFCRenderCache::WholeOnTop;
     if (elentry.id & SoFCRenderer::SelIdAlt)
       flags |= SoFCRenderCache::AltGroup;
-    elentry.vcachemap = sensor->cache->buildHighlightCache(
-        self->sharedcache, elentry.id, elentry.detail.get(), elentry.color, flags);
+    if (elentry.usershader)
+      // Shader overrides replace the base draws in place: original
+      // geometry and materials (normals intact), shader stamped on.
+      elentry.vcachemap = applyUserShader(
+          sensor->cache->buildWholeCacheMap(elentry.id), elentry.usershader);
+    else
+      elentry.vcachemap = sensor->cache->buildHighlightCache(
+          self->sharedcache, elentry.id, elentry.detail.get(), elentry.color, flags);
 
     self->renderer->addSelection(elentry.id, elentry.vcachemap);
     if (elentry.vcachemap.size() == 1
@@ -1029,6 +1061,70 @@ SoFCRenderCacheManager::removeSelection(const std::string & key,
 
   if (paths.empty())
     PRIVATE(this)->selcaches.erase(it);
+}
+
+void
+SoFCRenderCacheManager::addShaderOverride(
+    const std::string & key,
+    SoPath * nodepath,
+    const std::shared_ptr<const Render::UserShader> & shader)
+{
+  if (!nodepath || !nodepath->getLength() || !shader)
+    return;
+
+  auto & paths = PRIVATE(this)->shadercaches[key];
+  SelectionSensor * sensor;
+  PathPtr selpath;
+  auto it = paths.find(nodepath);
+  if (it != paths.end()) {
+    sensor = &it->second;
+    selpath = it->first;
+  }
+  else {
+    // One path per key: a binding addresses one instance path. A key
+    // re-added with a different path replaces the old binding.
+    if (!paths.empty()) {
+      for (auto & v : paths) {
+        for (auto & elentry : v.second.elements)
+          PRIVATE(this)->renderer->removeSelection(elentry.second.id);
+      }
+      paths.clear();
+    }
+    selpath = nodepath->copy();
+    sensor = &paths[selpath];
+    sensor->attachPath(selpath);
+    sensor->setFunction(&SoFCRenderCacheManagerP::updateSelection);
+    sensor->setData(PRIVATE(this));
+  }
+
+  auto & elentry = sensor->elements[std::string()];
+  elentry.usershader = shader;
+  elentry.color = 0;
+  if (!elentry.id) {
+    // Non-on-top encoding (the addSelection convention): the entry
+    // renders in the normal scene passes and suppresses the base draw
+    // through the whole-object key, replacing instead of overlaying.
+    int id = ++PRIVATE(this)->selid;
+    elentry.id = id | (-1 - SoFCRenderer::SelIdMask);
+  }
+
+  // (Re)build through the shared sensor callback: capture the cache at
+  // the path, build the whole-object vcachemap, apply the shader and
+  // hand it to the renderer.
+  SoFCRenderCacheManagerP::updateSelection(PRIVATE(this), sensor);
+}
+
+void
+SoFCRenderCacheManager::removeShaderOverride(const std::string & key)
+{
+  auto it = PRIVATE(this)->shadercaches.find(key);
+  if (it == PRIVATE(this)->shadercaches.end())
+    return;
+  for (auto & v : it->second) {
+    for (auto & elentry : v.second.elements)
+      PRIVATE(this)->renderer->removeSelection(elentry.second.id);
+  }
+  PRIVATE(this)->shadercaches.erase(it);
 }
 
 int

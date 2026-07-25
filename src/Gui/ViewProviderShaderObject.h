@@ -23,6 +23,8 @@
 #ifndef GUI_ViewProviderShaderObject_H
 #define GUI_ViewProviderShaderObject_H
 
+#include <QPointer>
+
 #include "InventorBase.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderPythonFeature.h"
@@ -33,6 +35,8 @@ class SoFragmentShader;
 class SoSeparator;
 
 namespace Gui {
+
+class View3DInventorViewer;
 
 /** View provider of App::ShaderProgram (docs/RenderDebug.md §6.5).
  *
@@ -100,8 +104,16 @@ private:
 using ViewProviderShaderPython = ViewProviderPythonFeatureT<ViewProviderShader>;
 
 
-/** View provider of App::Appearance. Placeholder: binding activation
- * (path-keyed shader override capture) is implemented in the next slice.
+/** View provider of App::Appearance: activates the bound shader.
+ *
+ * Resolves each Targets sublink to a full instance SoPath per 3D view and
+ * registers it with the view's render cache manager
+ * (SoFCRenderCacheManager::addShaderOverride) — the per-path selection
+ * side channel replaces the base draws of exactly that instance with
+ * shader-carrying ones. Identical-target collisions between Appearance
+ * objects are resolved by TreeRank (higher wins) in a per-document
+ * registry. Scene-level ("post") program activation and element-scoped
+ * targets are follow-up slices.
  */
 class GuiExport ViewProviderAppearance : public ViewProviderDocumentObject
 {
@@ -111,7 +123,24 @@ public:
     ViewProviderAppearance();
     ~ViewProviderAppearance() override;
 
+    void attach(App::DocumentObject *obj) override;
+    void beforeDelete() override;
+    void updateData(const App::Property *prop) override;
+    void onChanged(const App::Property *prop) override;
+
     bool isShow() const override {return true;}
+
+    /// Re-evaluate every Appearance binding of a document (TreeRank precedence)
+    static void rebuildAllBindings(App::Document *doc);
+
+private:
+    void clearBindings();
+    /// Register this appearance's winning targets with every 3D view
+    void applyBindings(const std::vector<std::pair<App::DocumentObject*,
+                                                   std::string>> &targets);
+
+    // (viewer, override key) registered with that viewer's cache manager
+    std::vector<std::pair<QPointer<View3DInventorViewer>, std::string>> bound;
 };
 
 using ViewProviderAppearancePython = ViewProviderPythonFeatureT<ViewProviderAppearance>;

@@ -587,21 +587,38 @@ shader libraries require `PropertyXLink`, which must be owned by a
   the shader's parameter values for that binding only ("same toon shader,
   different tint for these instances").
 
-Application semantics ride the existing hierarchy-dependent material
-override machinery: a new `FLAG_USER_SHADER` in
-`SoFCRenderCache::Material::overrideflags` merges parent→child from the
-bound path's cache into descendants — unlike the direct-node attachment of
-the second slice, which stays self-scoped (no merge); both modes coexist.
-Precedence on nested paths follows the existing merge convention (outer
-override wins); identical-path collisions are tie-broken by
-`App::DocumentObject::TreeRank` (the persisted tree-ordering key).
-Element-level scoping (target subnames ending in `Face3`, as the
-per-instance color override already supports) is an explicit follow-up, not
-part of the first slice. The injection mechanism (secondary context along a
-resolved `SoPath` vs a path-keyed override table on
-`SoFCRenderCacheManager`) is decided after reading the `OverrideMaterial`
-flow; lean = the cache-manager table (capture-side, keeps the
-headless/WASM tier simple).
+Application rides the **per-path selection side channel**, not a material
+merge: `getVertexCaches` memoizes one `vcachemap` per render cache shared
+by every path through it, so a path-scoped override cannot ride
+`Material::overrideflags` merge-down (that slot is per-cache, path-blind).
+Instead `SoFCRenderCacheManager::addShaderOverride(key, nodepath, shader)`
+mirrors the element-color-override machinery (`selcaches`): a path-keyed
+sensor rebuilds a whole-object `VertexCacheMap` for the bound instance path
+— `SoFCRenderCache::buildWholeCacheMap`, which keeps the original geometry
+and materials (normals intact; the highlight-index caches
+`buildHighlightCache` substitutes carry none) — stamps `usershader` on its
+triangle materials, and registers it as a **non-on-top whole-object
+selection entry**: it renders in the normal scene passes with the shader
+substituted while the base draws are suppressed by the whole-object key
+(GL: `selectionkeys`/`draw_entry.skip`; bgfx: `hiddenKeys`). The backend
+keeps the replaced geometry in the shadow-caster, depth-prepass,
+debug-scene and ground-reflection passes (stock programs), so only the
+beauty shading changes. The Appearance view provider resolves its targets
+per 3D view (`appendDetailPath` + `getDetailPath`) and re-registers on
+edits; a per-document registry picks one winner per identical target —
+tie-broken by `App::DocumentObject::TreeRank` (the persisted tree-ordering
+key), object name as the deterministic fallback. Element-level scoping
+(target subnames ending in `Face3`) is an explicit follow-up and slots
+into the same channel via the `SoDetail`-scoped `ElementEntry` pipeline.
+The direct-node attachment of the second slice stays self-scoped and
+unchanged; both modes coexist.
+
+Found on the way (fixed): clearing a `PropertyXLink*` property to empty
+never notified — `Property::hasSetValue`'s `isSame(_old)` optimization
+compares live `getLinks()`, but a `copyBeforeChange()` snapshot of an
+XLink stores only names (`copyTo`), so empty-after vs populated-before
+compared "same". `PropertyXLink::isSame`/`PropertyXLinkSubList::isSame`
+now compare name-level identity.
 
 ---
 

@@ -1828,6 +1828,11 @@ void View3DInventorViewer::appendDetailPath(SoPath *path, ViewProvider *vp)
     }
 }
 
+SoFCRenderCacheManager *View3DInventorViewer::getRenderCacheManager() const
+{
+    return selectionRoot ? selectionRoot->getRenderManager() : nullptr;
+}
+
 void View3DInventorViewer::setEditingTransform(const Base::Matrix4D &mat)
 {
     // NOLINTBEGIN

@@ -9216,6 +9216,20 @@ public:
                         && (draw.material.shadowstyle & 1)
                         && glassActive && draw.material.glass)
                     view->submitShadowTint(draw);
+                // Likewise the depth+normal prepass and the debug scene
+                // re-render: the replacing draw (e.g. a shader override,
+                // docs/RenderDebug.md §6.5) only substitutes the beauty
+                // fill — depth, AO, volumetrics and the debug modes must
+                // keep seeing the geometry.
+                if (!draw.material.ontop && isTriangle(draw)
+                        && !isTransp(draw)
+                        && !mediumExempt(draw.material)) {
+                    if (prepassRender && !culled(draw)
+                            && !prepassInstancedThisFrame(drawIdx))
+                        view->submitPrepass(draw);
+                    if (debugSceneRender && !culled(draw))
+                        view->submitDebugScene(draw, debugconf.viewMode);
+                }
                 continue;
             }
             if (hideFill(draw) || hidePoints(draw))
@@ -9421,6 +9435,22 @@ public:
                         || mediumExempt(mat))
                     continue;
                 view->submit(draw, viewMat);
+            }
+            // Non-on-top whole-object selection fills replace hidden
+            // scene draws (shader overrides, §6.5) — mirror them into
+            // the reflection so the object doesn't vanish from it.
+            for (const auto &sel : selections) {
+                if (sel.first > 0)
+                    continue;
+                for (const auto &draw : sel.second) {
+                    if (!isTriangle(draw) || draw.partIndex >= 0
+                            || !draw.wholeObject || isTransp(draw)
+                            || hideFill(draw)
+                            || mediumExempt(draw.material)
+                            || isDup(draw))
+                        continue;
+                    view->submit(draw, viewMat);
+                }
             }
             std::memcpy(view->shadowMtx, savedShadowMtx,
                         sizeof(savedShadowMtx));

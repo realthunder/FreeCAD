@@ -652,6 +652,15 @@ public:
                                      uint32_t color,
                                      int flags = 0);
 
+  /** The user-shader-override variant of buildHighlightCache
+   * (docs/RenderDebug.md §6.5): the whole object's original geometry and
+   * materials untouched — no highlight-index cache substitution (those
+   * carry no usable normals) and no color override. Only the draw order
+   * and depth func change, so the entries can replace the key-suppressed
+   * base draws in place.
+   */
+  VertexCacheMap buildWholeCacheMap(int order);
+
   void open(SoState * state,
             int selectstyle = Material::Full,
             bool initmaterial = true);

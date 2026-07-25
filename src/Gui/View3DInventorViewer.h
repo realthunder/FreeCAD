@@ -54,6 +54,7 @@ class SoTranslation;
 class SoTransform;
 class SoText2;
 class SoGetBoundingBoxAction;
+class SoFCRenderCacheManager;
 
 class SoSeparator;
 class SoDetail;
@@ -564,6 +565,10 @@ public:
     const SoPathList *getLatePickPaths() const;
 
     void appendDetailPath(SoPath *path, ViewProvider *vp);
+
+    /// The render cache manager of this view's selection root (null
+    /// when the render-cache bridge is inactive)
+    SoFCRenderCacheManager *getRenderCacheManager() const;
 
     struct Private;
     friend struct Private;

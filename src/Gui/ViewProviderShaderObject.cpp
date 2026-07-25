@@ -36,13 +36,38 @@
 # include <Inventor/nodes/SoVertexShader.h>
 #endif
 
+#include <App/Document.h>
+#include <App/DocumentObserver.h>
 #include <App/ShaderObject.h>
+#include <Base/Tools.h>
 
 #include "ViewProviderShaderObject.h"
 #include "Application.h"
+#include "Document.h"
+#include "Inventor/SoFCRenderCache.h"
+#include "Inventor/SoFCVertexCache.h"
+#include "Inventor/SoFCRenderCacheManager.h"
+#include "Inventor/SoFCRendererBridge.h"
+#include "Renderer/Renderer.h"
+#include "View3DInventor.h"
+#include "View3DInventorViewer.h"
 
 
 using namespace Gui;
+
+// Appearance bindings hold a translated copy of the shader (not the Coin
+// node), so program/effect edits must re-resolve the bindings of every
+// Appearance referencing the given App::Shader.
+static void pokeAppearancesOfShader(App::DocumentObject *shaderObj)
+{
+    std::set<App::Document*> docs;
+    for (auto parent : shaderObj->getInList()) {
+        if (parent && parent->isDerivedFrom(App::Appearance::getClassTypeId()))
+            docs.insert(parent->getDocument());
+    }
+    for (auto doc : docs)
+        ViewProviderAppearance::rebuildAllBindings(doc);
+}
 
 // ----------------------------------------------------------------------------
 
@@ -86,16 +111,17 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
                 || prop == &obj->VertexProgram
                 || prop == &obj->FragmentProgram)) {
         updateShaderNode();
-        if (prop == &obj->Stage) {
-            // stage decides whether the demo preview includes the program
-            for (auto parent : obj->getInList()) {
-                if (!parent->isDerivedFrom(App::Shader::getClassTypeId()))
-                    continue;
+        for (auto parent : obj->getInList()) {
+            if (!parent->isDerivedFrom(App::Shader::getClassTypeId()))
+                continue;
+            if (prop == &obj->Stage) {
+                // stage decides whether the demo preview includes the program
                 auto vp = dynamic_cast<ViewProviderShader*>(
                         Application::Instance->getViewProvider(parent));
                 if (vp)
                     vp->updateDemo();
             }
+            pokeAppearancesOfShader(parent);
         }
     }
     ViewProviderDocumentObject::updateData(prop);
@@ -178,6 +204,8 @@ void ViewProviderShader::updateData(const App::Property *prop)
                 || prop == &obj->DemoRadius
                 || prop == &obj->DemoHeight))
         updateDemo();
+    if (obj && prop == &obj->Programs)
+        pokeAppearancesOfShader(obj);
     ViewProviderDocumentObject::updateData(prop);
 }
 
@@ -257,9 +285,211 @@ void ViewProviderShader::updateDemo()
 
 PROPERTY_SOURCE(Gui::ViewProviderAppearance, Gui::ViewProviderDocumentObject)
 
+namespace {
+// Active Appearance view providers per document, for TreeRank precedence
+std::map<App::Document*, std::set<ViewProviderAppearance*>> _AppearanceRegistry;
+bool _RebuildingBindings;
+}
+
 ViewProviderAppearance::ViewProviderAppearance() = default;
 
 ViewProviderAppearance::~ViewProviderAppearance() = default;
+
+// The effect's object-scoped shader: the first non-"post" program of the
+// bound App::Shader, translated off its view provider's Coin node.
+// (Scene-level "post" activation is a follow-up slice.)
+static std::shared_ptr<const Render::UserShader>
+resolveUserShader(App::Appearance *obj)
+{
+    auto shobj = dynamic_cast<App::Shader*>(obj->Shader.getValue());
+    if (!shobj)
+        return nullptr;
+    for (auto prog : shobj->Programs.getValues()) {
+        auto progObj = dynamic_cast<App::ShaderProgram*>(prog);
+        if (!progObj || strcmp(progObj->Stage.getValue(), "post") == 0)
+            continue;
+        auto vp = dynamic_cast<ViewProviderShaderProgram*>(
+                Application::Instance->getViewProvider(progObj));
+        if (!vp || !vp->getShaderNode())
+            continue;
+        Render::UserShader shader;
+        if (RendererBridge::translateShaderProgram(vp->getShaderNode(), shader))
+            return std::make_shared<Render::UserShader>(std::move(shader));
+    }
+    return nullptr;
+}
+
+// Flatten Targets into (object, subname-without-element) pairs; element
+// scope is an explicit follow-up.
+static std::vector<std::pair<App::DocumentObject*, std::string>>
+collectTargets(App::Appearance *obj)
+{
+    std::vector<std::pair<App::DocumentObject*, std::string>> res;
+    for (auto &link : obj->Targets.getSubListValues()) {
+        auto target = link.getValue();
+        if (!target || !target->getNameInDocument())
+            continue;
+        const auto &subs = link.getSubValues();
+        if (subs.empty()) {
+            res.emplace_back(target, std::string());
+            continue;
+        }
+        for (const auto &sub : subs)
+            res.emplace_back(target,
+                App::SubObjectT(target, sub.c_str()).getSubNameNoElement());
+    }
+    return res;
+}
+
+void ViewProviderAppearance::attach(App::DocumentObject *obj)
+{
+    ViewProviderDocumentObject::attach(obj);
+    _AppearanceRegistry[obj->getDocument()].insert(this);
+    rebuildAllBindings(obj->getDocument());
+}
+
+void ViewProviderAppearance::beforeDelete()
+{
+    auto obj = getObject();
+    App::Document *doc = obj ? obj->getDocument() : nullptr;
+    clearBindings();
+    if (doc) {
+        auto it = _AppearanceRegistry.find(doc);
+        if (it != _AppearanceRegistry.end()) {
+            it->second.erase(this);
+            if (it->second.empty())
+                _AppearanceRegistry.erase(it);
+            else
+                rebuildAllBindings(doc);
+        }
+    }
+    ViewProviderDocumentObject::beforeDelete();
+}
+
+void ViewProviderAppearance::updateData(const App::Property *prop)
+{
+    auto obj = dynamic_cast<App::Appearance*>(getObject());
+    if (obj && (prop == &obj->Targets
+                || prop == &obj->Shader
+                || prop == &obj->TreeRank))
+        rebuildAllBindings(obj->getDocument());
+    ViewProviderDocumentObject::updateData(prop);
+}
+
+void ViewProviderAppearance::onChanged(const App::Property *prop)
+{
+    ViewProviderDocumentObject::onChanged(prop);
+    // Hiding an Appearance deactivates its bindings (the next-ranked
+    // Appearance on the same target takes over).
+    if (prop == &Visibility && getObject())
+        rebuildAllBindings(getObject()->getDocument());
+}
+
+void ViewProviderAppearance::clearBindings()
+{
+    for (auto &v : bound) {
+        if (!v.first)
+            continue;
+        if (auto mgr = v.first->getRenderCacheManager())
+            mgr->removeShaderOverride(v.second);
+    }
+    bound.clear();
+}
+
+void ViewProviderAppearance::applyBindings(
+        const std::vector<std::pair<App::DocumentObject*,
+                                    std::string>> &targets)
+{
+    auto obj = dynamic_cast<App::Appearance*>(getObject());
+    if (!obj || targets.empty())
+        return;
+    auto shader = resolveUserShader(obj);
+    if (!shader)
+        return;
+    auto gdoc = Application::Instance->getDocument(obj->getDocument());
+    if (!gdoc)
+        return;
+    for (auto view : gdoc->getMDIViewsOfType(View3DInventor::getClassTypeId())) {
+        auto viewer = static_cast<View3DInventor*>(view)->getViewer();
+        auto mgr = viewer ? viewer->getRenderCacheManager() : nullptr;
+        if (!mgr)
+            continue;
+        for (const auto &t : targets) {
+            auto vpd = dynamic_cast<ViewProviderDocumentObject*>(
+                    Application::Instance->getViewProvider(t.first));
+            if (!vpd)
+                continue;
+            CoinPtr<SoPath> path = new SoPath(10);
+            viewer->appendDetailPath(path, vpd);
+            SoDetail *det = nullptr;
+            bool ok = vpd->getDetailPath(t.second.c_str(),
+                    static_cast<SoFullPath*>(path.get()), true, det);
+            delete det;
+            if (!ok || !path->getLength())
+                continue;
+            std::string key = obj->getFullName();
+            key += '|';
+            key += t.first->getFullName();
+            key += '.';
+            key += t.second;
+            mgr->addShaderOverride(key, path, shader);
+            bound.emplace_back(viewer, std::move(key));
+        }
+    }
+}
+
+void ViewProviderAppearance::rebuildAllBindings(App::Document *doc)
+{
+    if (!doc || _RebuildingBindings)
+        return;
+    Base::StateLocker guard(_RebuildingBindings);
+    auto it = _AppearanceRegistry.find(doc);
+    if (it == _AppearanceRegistry.end())
+        return;
+
+    for (auto vp : it->second)
+        vp->clearBindings();
+
+    // Winner per target: highest TreeRank; equal ranks fall back to the
+    // object name for determinism.
+    std::map<std::string, ViewProviderAppearance*> winners;
+    std::map<ViewProviderAppearance*,
+             std::vector<std::pair<App::DocumentObject*, std::string>>> targets;
+    for (auto vp : it->second) {
+        // Not isVisible(): that resolves through isShow(), which these
+        // view providers pin to true for the tree.
+        auto obj = dynamic_cast<App::Appearance*>(vp->getObject());
+        if (!obj || !vp->Visibility.getValue())
+            continue;
+        auto tgts = collectTargets(obj);
+        for (const auto &t : tgts) {
+            std::string key = t.first->getFullName() + "." + t.second;
+            auto r = winners.emplace(key, vp);
+            if (r.second)
+                continue;
+            auto other = dynamic_cast<App::Appearance*>(
+                    r.first->second->getObject());
+            long rank = obj->TreeRank.getValue();
+            long otherrank = other ? other->TreeRank.getValue() : 0;
+            if (rank > otherrank
+                    || (rank == otherrank && other
+                        && strcmp(obj->getNameInDocument(),
+                                  other->getNameInDocument()) > 0))
+                r.first->second = vp;
+        }
+        targets[vp] = std::move(tgts);
+    }
+
+    for (auto &v : targets) {
+        std::vector<std::pair<App::DocumentObject*, std::string>> winning;
+        for (const auto &t : v.second) {
+            std::string key = t.first->getFullName() + "." + t.second;
+            if (winners[key] == v.first)
+                winning.push_back(t);
+        }
+        v.first->applyBindings(winning);
+    }
+}
 
 // Python features ------------------------------------------------------------
 

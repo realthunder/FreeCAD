@@ -1842,6 +1842,23 @@ bool makeDistinctColor(uint32_t &res, uint32_t color, uint32_t other) {
 }
 
 SoFCRenderCache::VertexCacheMap
+SoFCRenderCache::buildWholeCacheMap(int order)
+{
+  VertexCacheMap res;
+  for (auto & child : getVertexCaches(false)) {
+    for (auto & ventry : child.second) {
+      if (ventry.skipcount || ventry.mergecount)
+        continue;
+      Material material = child.first;
+      material.order = order;
+      material.depthfunc = SoDepthBuffer::LEQUAL;
+      res[material].push_back(ventry);
+    }
+  }
+  return res;
+}
+
+SoFCRenderCache::VertexCacheMap
 SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
                                      int order,
                                      const SoDetail * detail,

@@ -38,6 +38,7 @@ class SoDetail;
 namespace Render {
 class Renderer;
 struct OverlayAnchor;
+struct UserShader;
 }
 
 namespace Gui {
@@ -104,6 +105,21 @@ public:
   void removeSelection(const std::string & key,
                        const std::string & element,
                        bool alt = false);
+
+  /** Apply a user shader to the whole object at a full instance path
+   * (docs/RenderDebug.md §6.5, the Appearance binding).
+   *
+   * Rides the per-path selection side channel: a non-on-top whole-object
+   * entry whose materials carry the shader replaces the base draws via
+   * the same-key suppression, scoped to exactly this path (one instance
+   * of a linked object, not all instances). One path per key; a repeated
+   * key updates the shader/path in place.
+   */
+  void addShaderOverride(const std::string & key,
+                         SoPath * nodepath,
+                         const std::shared_ptr<const Render::UserShader> & shader);
+
+  void removeShaderOverride(const std::string & key);
 
   int clearSelection(bool alt = false);
 
