@@ -117,6 +117,10 @@ inline const T &qMax(const T &a, const T &b)
 bgfx::ProgramHandle loadProgram(const bx::StringView &vsName,
                                 const bx::StringView &fsName,
                                 const char *path = nullptr);
+/// Single-shader flavor of the same loader (a stock vertex stage to
+/// pair with a snapshot-shipped user fragment binary).
+bgfx::ShaderHandle loadShader(const bx::StringView &name,
+                              const char *path = nullptr);
 
 #endif // FC_RENDERER_STANDALONE
 

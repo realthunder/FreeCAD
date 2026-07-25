@@ -387,9 +387,33 @@ struct UserShader {
     /// to vec4 lanes; names are uniform names, "u_" prefix and all).
     std::vector<RenderDebugConfig::UserParam> params;
 
+    /// One server-compiled binary variant of this shader for a viewer
+    /// tier that has no compiler of its own (docs/RenderDebug.md §6.3).
+    /// The profile is the shaderc profile label the consuming backend
+    /// matches against its own ("300_es" = the WebGL/WASM viewer,
+    /// "140" = the native GL standalone viewer). An empty vsBin means
+    /// the stage's stock vertex shader from the viewer's asset pack.
+    struct Compiled {
+        std::string profile;
+        std::vector<uint8_t> vsBin;
+        std::vector<uint8_t> fsBin;
+
+        bool operator==(const Compiled &o) const {
+            return profile == o.profile && vsBin == o.vsBin
+                && fsBin == o.fsBin;
+        }
+        bool operator!=(const Compiled &o) const { return !(*this == o); }
+    };
+    /// Transport payload attached at snapshot-serialization time
+    /// (SceneSnapshot::shaderBins); empty on the desktop's own config
+    /// feed. Part of equality on purpose: a viewer must re-apply a
+    /// config whose sources it already has once the bins arrive.
+    std::vector<Compiled> compiled;
+
     bool operator==(const UserShader &o) const {
         return stage == o.stage && vertexSource == o.vertexSource
-            && fragmentSource == o.fragmentSource && params == o.params;
+            && fragmentSource == o.fragmentSource && params == o.params
+            && compiled == o.compiled;
     }
     bool operator!=(const UserShader &o) const { return !(*this == o); }
 };

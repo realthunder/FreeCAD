@@ -460,45 +460,59 @@ public:
             bgfx::setUniform(entry.handle, data, num);
     }
 
-#ifndef FC_RENDERER_STANDALONE
-    /// Runtime user-shader compile cache (docs/RenderDebug.md §6.3):
-    /// bgfx consumes precompiled binaries, so user .sc source compiles
-    /// through the host shaderc into a disk cache keyed on SHA1(source
-    /// × target profile), and the linked programs cache here by source
-    /// identity. Compilation is ASYNCHRONOUS: render() only consults
-    /// the caches (a QProcess vfork inside the widget paint path both
-    /// hitches the frame and corrupts Qt's repaint bookkeeping —
-    /// learned the hard way), missing bins schedule a compile on the
-    /// event loop, and a finished compile bumps userCompileGeneration
-    /// so idle-skip clients re-render. A failed compile is remembered
-    /// and reported once — the pass just stays off. Desktop builds
-    /// only: the WASM viewer has no host compiler (server-side compile
-    /// is the planned §6.3 browser-tier route).
+    /// Runtime user-shader program cache (docs/RenderDebug.md §6.3).
+    /// Desktop builds: user .sc source compiles through the host
+    /// shaderc into a disk cache keyed on SHA1(source × target), and
+    /// the linked programs cache here by source identity. Compilation
+    /// is ASYNCHRONOUS: render() only consults the caches (a QProcess
+    /// vfork inside the widget paint path both hitches the frame and
+    /// corrupts Qt's repaint bookkeeping — learned the hard way),
+    /// missing bins schedule a compile on the event loop, and a
+    /// finished compile bumps userCompileGeneration so idle-skip
+    /// clients re-render. A failed compile is remembered and reported
+    /// once — the pass just stays off.
+    /// Standalone/WASM builds have no host compiler: programs load
+    /// from the profile-matched precompiled variants the snapshot
+    /// carries (UserShader::compiled, server-side compile), cached
+    /// here keyed on the binary payloads.
     struct UserProgram {
         bgfx::ProgramHandle prog = BGFX_INVALID_HANDLE;
         bool failed = false;
     };
     std::map<std::string, UserProgram> userPrograms;
-    /// Per-shader compile bookkeeping, keyed by SHA1(source×profile×type).
+    /// Resolve a user program: user fragment stage + either a user
+    /// vertex stage or the named stock vertex stage ("vs_fc_comp" for
+    /// the post stage's full-screen triangle, "vs_fc_mesh" for the
+    /// material stage). Invalid while a compile is pending (desktop)
+    /// or while no shipped binary matches the active backend
+    /// (standalone); entry.failed on real failure.
+    bgfx::ProgramHandle getUserProgram(const Render::UserShader &shader,
+                                       const char *stockVs);
+#ifndef FC_RENDERER_STANDALONE
+    /// Per-shader compile bookkeeping, keyed by SHA1(source×target×type).
     std::set<std::string> userShaderInflight;
     std::set<std::string> userShaderFailed;
     /// Bumped when an async compile finishes (either way); mirrored into
-    /// each renderer's dirty state so the next frame retries the lookup.
+    /// each renderer's dirty state so the next frame retries the lookup
+    /// (and the scene server republishes with the fresh bins).
     int userCompileGeneration = 0;
 
-    /// Disk-cache / async-compile step for one user shader.
+    /// Disk-cache / async-compile step for one user shader. The default
+    /// target is the active bgfx backend; \a platform / \a profile
+    /// override it for cross-compiles (the viewer tiers).
     /// Returns 0 with \a binPath set when the bin is ready, 1 while a
     /// compile is in flight, 2 when compilation failed (reported once).
     int ensureUserShaderBin(const std::string &source, bool fragment,
-                            QString &binPath);
-    /// Resolve a user program from ready bins: user fragment source +
-    /// either a user vertex source or the named stock vertex stage
-    /// ("vs_fc_comp" for the post stage's full-screen triangle,
-    /// "vs_fc_mesh" for the material stage). Invalid while a compile is
-    /// pending; entry.failed on real failure.
-    bgfx::ProgramHandle getUserProgram(const std::string &vsSource,
-                                       const std::string &fsSource,
-                                       const char *stockVs);
+                            QString &binPath,
+                            const char *platform = nullptr,
+                            const char *profile = nullptr);
+    /// Server-side compile for the viewer tiers (docs/RenderDebug.md
+    /// §6.3): compile \a shader for each viewer target through the
+    /// async disk cache and append every READY variant to \a out.
+    /// Pending compiles republish on the next userCompileGeneration
+    /// bump; failed ones are dropped (reported once by the compile).
+    void viewerShaderBins(const Render::UserShader &shader,
+                          std::vector<Render::UserShader::Compiled> &out);
 #endif
 
 #ifdef FC_RENDERER_STANDALONE
@@ -5941,23 +5955,23 @@ public:
                         ? (clipped ? m_progPointClip : m_progPoint)
                         : (clipped ? m_progFlatClip : m_progFlat);
 
-#ifndef FC_RENDERER_STANDALONE
         // User "material"-stage shader (docs/RenderDebug.md §6): replace
         // the mesh fragment stage in the scene beauty passes only — the
         // depth prepass, shadow casters and the highlight/on-top views
         // keep the stock programs, and a WBOIT draw keeps the stock OIT
         // outputs (the user contract is a single color output). While
-        // the async compile is pending (or failed), the standard
-        // program stands in — never a black object. Parameter uniforms
-        // must be recorded with the consuming draw (see submitDebug).
+        // the async compile is pending (or failed) — or, on the viewer
+        // tier, until a republished snapshot ships the server-compiled
+        // binary — the standard program stands in, never a black
+        // object. Parameter uniforms must be recorded with the
+        // consuming draw (see submitDebug).
         if (mat.usershader && !mat.usershader->fragmentSource.empty()
                 && mat.type == Render::Material::Triangle
                 && pass == PassNormal && !oitDraw
                 && (passView == ViewOpaque || passView == ViewTransparent
                     || passView == ViewGroundRefl)) {
             bgfx::ProgramHandle uprog = _BGFXLib.getUserProgram(
-                mat.usershader->vertexSource,
-                mat.usershader->fragmentSource, "vs_fc_mesh");
+                *mat.usershader, "vs_fc_mesh");
             if (bgfx::isValid(uprog)) {
                 for (const auto &p : mat.usershader->params)
                     _BGFXLib.setUserUniform(p.name, p.values.data(),
@@ -5965,7 +5979,6 @@ public:
                 prog = uprog;
             }
         }
-#endif
 
         bgfx::submit(viewId + passView, prog, depth);
         ++drawcount;
@@ -6648,7 +6661,16 @@ public:
         //    the serve republish, so a click-selection round trip still
         //    streams to the viewer.
         const bool feedChanged = feedDirty;
-        const bool dirtyChanged = sceneDirty;
+        bool dirtyChanged = sceneDirty;
+#ifndef FC_RENDERER_STANDALONE
+        // A finished async user-shader compile is a change too: the
+        // frame caches must refresh and — with the scene server up —
+        // the snapshot must republish so viewers receive the freshly
+        // compiled binaries (userShaderGen re-snapshots below, in the
+        // post-pass setup).
+        if (userShaderGen != _BGFXLib.userCompileGeneration)
+            dirtyChanged = true;
+#endif
         (void)feedChanged;
         feedDirty = false;
         sceneDirty = false;
@@ -6755,6 +6777,19 @@ public:
             snap.waterconf = waterconf;
             snap.bloomconf = bloomconf;
             snap.debugconf = debugconf;
+            snap.usershaderconf = usershaderconf;
+#ifndef FC_RENDERER_STANDALONE
+            // Server-side compile hook (docs/RenderDebug.md §6.3): the
+            // serializer asks for the viewer-tier binaries of every
+            // unique user shader it writes. Ready variants attach to
+            // the snapshot; pending compiles republish when they
+            // finish (dirtyChanged above).
+            snap.shaderBins =
+                [](const Render::UserShader &s,
+                   std::vector<Render::UserShader::Compiled> &out) {
+                    _BGFXLib.viewerShaderBins(s, out);
+                };
+#endif
             snap.preselconf = preselconf;
             snap.selconf = selconf;
             snap.autozoomScale = autozoomScale;
@@ -8081,9 +8116,10 @@ public:
             view->aoMapHash = 0;
         }
         // User "post" stage shader (docs/RenderDebug.md §6): the last
-        // captured post-stage program wins; resolved through the runtime
-        // shaderc compile cache (desktop builds — the viewer tier waits
-        // on server-side compile). A failed compile keeps the pass off.
+        // captured post-stage program wins; resolved through the
+        // runtime shaderc compile cache on desktop builds and from the
+        // snapshot-shipped server-compiled binaries on the viewer
+        // tier. A failed compile keeps the pass off.
         const Render::UserShader *userPost = nullptr;
         for (const auto &s : usershaderconf.shaders) {
             if (s.stage == "post" && !s.fragmentSource.empty())
@@ -8092,11 +8128,10 @@ public:
         bgfx::ProgramHandle userPostProg = BGFX_INVALID_HANDLE;
 #ifndef FC_RENDERER_STANDALONE
         userShaderGen = _BGFXLib.userCompileGeneration;
-        if (userPost)
-            userPostProg = _BGFXLib.getUserProgram(
-                userPost->vertexSource, userPost->fragmentSource,
-                "vs_fc_comp");
 #endif
+        if (userPost)
+            userPostProg = _BGFXLib.getUserProgram(*userPost,
+                                                   "vs_fc_comp");
         const bool userPostActive = userPost
             && bgfx::isValid(userPostProg)
             && bgfx::isValid(view->sceneCopyFbo)
@@ -10912,10 +10947,11 @@ BGFXView *BGFXRendererLibP::getView(QOpenGLWidget *widget, RendererType::Enum ty
     return view.get();
 }
 
-#ifndef FC_RENDERER_STANDALONE
 // Map the active bgfx backend to the shaderc CLI target flags and the
 // bin subdirectory the stock shader pack uses (BGFXShaders.cmake keeps
-// the flag pairs in sync).
+// the flag pairs in sync). The profile string doubles as the label a
+// viewer matches against the precompiled variants a snapshot ships
+// (UserShader::Compiled::profile).
 static bool shadercTarget(std::string &platform, std::string &profile,
                           std::string &apiDir)
 {
@@ -10933,6 +10969,7 @@ static bool shadercTarget(std::string &platform, std::string &profile,
     }
 }
 
+#ifndef FC_RENDERER_STANDALONE
 // Load a compiled shader binary into bgfx (the bgfx_utils loader with
 // an explicit full path instead of the name/asset-root convention).
 static bgfx::ShaderHandle loadShaderFile(const std::string &path)
@@ -10951,10 +10988,15 @@ static bgfx::ShaderHandle loadShaderFile(const std::string &path)
 
 int
 BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
-                                      bool fragment, QString &binPath)
+                                      bool fragment, QString &binPath,
+                                      const char *platformOverride,
+                                      const char *profileOverride)
 {
     std::string platform, profile, apiDir;
-    if (!shadercTarget(platform, profile, apiDir)) {
+    if (platformOverride && profileOverride) {
+        platform = platformOverride;
+        profile = profileOverride;
+    } else if (!shadercTarget(platform, profile, apiDir)) {
         static bool warned = false;
         if (!warned) {
             warned = true;
@@ -10965,6 +11007,11 @@ BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
     }
 
     QByteArray keyed(source.c_str(), int(source.size()));
+    keyed.append('\1');
+    // The platform is part of the target identity: shaderc emits
+    // different essl for asm.js (the WASM viewer pack) than for
+    // android even at the same profile.
+    keyed.append(platform.c_str());
     keyed.append('\1');
     keyed.append(profile.c_str());
     keyed.append(fragment ? 'f' : 'v');
@@ -11084,11 +11131,54 @@ BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
     return 1;
 }
 
+void
+BGFXRendererLibP::viewerShaderBins(
+    const Render::UserShader &shader,
+    std::vector<Render::UserShader::Compiled> &out)
+{
+    if (shader.fragmentSource.empty())
+        return;
+    // The viewer targets: the WASM/WebGL viewer (whose stock pack is
+    // built asm.js/300_es — BGFXShaders.cmake) and the native GL
+    // standalone viewer. Each ships as one Compiled variant labeled
+    // with the profile the viewer matches at load time.
+    static const struct { const char *platform, *profile; } targets[] = {
+        {"asm.js", "300_es"},
+        {"linux", "140"},
+    };
+    auto readAll = [](const QString &path, std::vector<uint8_t> &bytes) {
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly))
+            return false;
+        QByteArray data = f.readAll();
+        bytes.assign(data.begin(), data.end());
+        return !bytes.empty();
+    };
+    for (const auto &t : targets) {
+        Render::UserShader::Compiled c;
+        c.profile = t.profile;
+        QString fsBin, vsBin;
+        if (ensureUserShaderBin(shader.fragmentSource, true, fsBin,
+                                t.platform, t.profile) != 0)
+            continue;
+        if (!shader.vertexSource.empty()
+                && ensureUserShaderBin(shader.vertexSource, false, vsBin,
+                                       t.platform, t.profile) != 0)
+            continue;
+        if (!readAll(fsBin, c.fsBin))
+            continue;
+        if (!vsBin.isEmpty() && !readAll(vsBin, c.vsBin))
+            continue;
+        out.push_back(std::move(c));
+    }
+}
+
 bgfx::ProgramHandle
-BGFXRendererLibP::getUserProgram(const std::string &vsSource,
-                                 const std::string &fsSource,
+BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
                                  const char *stockVs)
 {
+    const std::string &vsSource = shader.vertexSource;
+    const std::string &fsSource = shader.fragmentSource;
     QByteArray keyed(fsSource.c_str(), int(fsSource.size()));
     keyed.append('\1');
     keyed.append(vsSource.c_str(), int(vsSource.size()));
@@ -11151,6 +11241,77 @@ BGFXRendererLibP::getUserProgram(const std::string &vsSource,
         Base::Console().Error("user shader: program link failed\n");
     return entry.prog;
 }
+
+#else // FC_RENDERER_STANDALONE
+
+bgfx::ProgramHandle
+BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
+                                 const char *stockVs)
+{
+    // No compiler in this tier: resolve from the precompiled variants
+    // the snapshot ships (server-side compile, docs/RenderDebug.md
+    // §6.3). Until the backend's compile finishes and a republished
+    // snapshot carries the matching variant, there is nothing to load
+    // and the stock program stands in.
+    std::string platform, profile, apiDir;
+    if (!shadercTarget(platform, profile, apiDir))
+        return BGFX_INVALID_HANDLE;
+    const Render::UserShader::Compiled *variant = nullptr;
+    for (const auto &c : shader.compiled) {
+        if (c.profile == profile && !c.fsBin.empty()) {
+            variant = &c;
+            break;
+        }
+    }
+    if (!variant)
+        return BGFX_INVALID_HANDLE;
+
+    // Cache on the binary payloads themselves: snapshot reloads build
+    // fresh UserShader instances, but identical bins keep hitting the
+    // same linked program.
+    std::string key = profile;
+    key += '\1';
+    key += stockVs;
+    key += '\1';
+    key.append(reinterpret_cast<const char *>(variant->fsBin.data()),
+               variant->fsBin.size());
+    key += '\1';
+    if (!variant->vsBin.empty())
+        key.append(reinterpret_cast<const char *>(variant->vsBin.data()),
+                   variant->vsBin.size());
+    auto &entry = userPrograms[key];
+    if (bgfx::isValid(entry.prog) || entry.failed)
+        return entry.prog;
+
+    auto shaderFromBin = [](const std::vector<uint8_t> &bin) {
+        const bgfx::Memory *mem = bgfx::alloc(uint32_t(bin.size()) + 1);
+        std::memcpy(mem->data, bin.data(), bin.size());
+        mem->data[bin.size()] = '\0';
+        return bgfx::createShader(mem);
+    };
+    bgfx::ShaderHandle fsh = shaderFromBin(variant->fsBin);
+    if (!bgfx::isValid(fsh)) {
+        entry.failed = true;
+        fprintf(stderr, "user shader: shipped fragment binary "
+                        "unloadable (profile %s)\n", profile.c_str());
+        return BGFX_INVALID_HANDLE;
+    }
+    bgfx::ShaderHandle vsh = variant->vsBin.empty()
+        ? loadShader(stockVs, shaderPath().c_str())
+        : shaderFromBin(variant->vsBin);
+    if (!bgfx::isValid(vsh)) {
+        entry.failed = true;
+        bgfx::destroy(fsh);
+        fprintf(stderr, "user shader: vertex stage unloadable\n");
+        return BGFX_INVALID_HANDLE;
+    }
+    entry.prog = bgfx::createProgram(vsh, fsh, true);
+    entry.failed = !bgfx::isValid(entry.prog);
+    if (entry.failed)
+        fprintf(stderr, "user shader: program link failed\n");
+    return entry.prog;
+}
+
 #endif // !FC_RENDERER_STANDALONE
 
 BGFXRendererLibP::~BGFXRendererLibP()
@@ -11180,13 +11341,11 @@ void BGFXRendererLibP::shutdown()
             bgfx::destroy(v.second.handle);
     }
     userUniforms.clear();
-#ifndef FC_RENDERER_STANDALONE
     for (auto &v : userPrograms) {
         if (bgfx::isValid(v.second.prog))
             bgfx::destroy(v.second.prog);
     }
     userPrograms.clear();
-#endif
     bgfx::shutdown();
 #ifndef FC_RENDERER_STANDALONE
     if (window) {

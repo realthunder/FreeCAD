@@ -29,6 +29,8 @@
 /// viewer. Little-endian, versioned; both sides of a transfer must be
 /// built from the same serializer version.
 
+#include <functional>
+
 #include "Renderer.h"
 
 namespace Render {
@@ -62,6 +64,20 @@ struct SceneSnapshot {
     WaterConfig waterconf;
     BloomConfig bloomconf;      ///< v18; defaulted on older snapshots
     RenderDebugConfig debugconf; ///< v20; defaulted on older snapshots
+    /// User shaders (docs/RenderDebug.md §6; v23; empty on older
+    /// snapshots): the scene-level post-stage list. "material"-stage
+    /// programs ride the draw materials (Material::usershader) through
+    /// a deduplicated shader table in the stream. Serialization
+    /// includes the server-compiled viewer binaries
+    /// (UserShader::compiled) so the compiler-less viewer tiers can
+    /// load the programs.
+    UserShaderConfig usershaderconf;
+    /// Save-side hook: called once per unique user shader written, to
+    /// append server-compiled binary variants for the viewer tiers
+    /// beyond whatever the shader already carries. Unset when loading
+    /// (and in tiers with no compiler).
+    std::function<void(const UserShader &,
+                       std::vector<UserShader::Compiled> &)> shaderBins;
     float autozoomScale = 1.0f;
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect
     /// passes (reflection re-render, SSAO resolve); 1.0 = full resolution.

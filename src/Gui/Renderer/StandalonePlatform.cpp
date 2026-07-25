@@ -42,6 +42,8 @@ const char *shaderApiDir()
     }
 }
 
+} // anonymous namespace
+
 bgfx::ShaderHandle loadShader(const bx::StringView &name, const char *path)
 {
     std::string file(path ? path : "");
@@ -73,8 +75,6 @@ bgfx::ShaderHandle loadShader(const bx::StringView &name, const char *path)
     bgfx::setName(handle, name.getPtr(), name.getLength());
     return handle;
 }
-
-} // anonymous namespace
 
 bgfx::ProgramHandle loadProgram(const bx::StringView &vsName,
                                 const bx::StringView &fsName,

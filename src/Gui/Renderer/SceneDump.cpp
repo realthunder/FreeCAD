@@ -41,7 +41,10 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // v14: GTAO slice/step tuning in the AO config.
 // 22: RenderDebug view modes 5-8 (shader + pass support the viewer
 //     binary must have — the bump forces stale pages to self-reload).
-const uint32_t kVersion = 22;
+// 23: user shaders (docs/RenderDebug.md §6.3): deduplicated shader
+//     table (sources + params + server-compiled viewer binaries),
+//     post-stage config list, per-material shader reference.
+const uint32_t kVersion = 23;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -66,6 +69,16 @@ struct Writer {
     void i32(int32_t v) { num<int32_t>(v); }
     void u64(uint64_t v) { num<uint64_t>(v); }
     void floats(const float *v, size_t n) { raw(v, n * sizeof(float)); }
+    void str(const std::string &s)
+    {
+        u32(uint32_t(s.size()));
+        raw(s.data(), s.size());
+    }
+    void bytes(const std::vector<uint8_t> &v)
+    {
+        u32(uint32_t(v.size()));
+        raw(v.data(), v.size());
+    }
     void parts(const std::vector<std::pair<int, int>> &v)
     {
         u32(uint32_t(v.size()));
@@ -96,6 +109,20 @@ struct Reader {
     int32_t i32() { return num<int32_t>(); }
     uint64_t u64() { return num<uint64_t>(); }
     void floats(float *v, size_t n) { raw(v, n * sizeof(float)); }
+    void str(std::string &s, uint32_t maxLen = 0x1000000u)
+    {
+        uint32_t len = u32();
+        if (!ok || len > maxLen) { ok = false; return; }
+        s.resize(len);
+        raw(len ? &s[0] : nullptr, len);
+    }
+    void bytes(std::vector<uint8_t> &v, uint32_t maxLen = 0x2000000u)
+    {
+        uint32_t len = u32();
+        if (!ok || len > maxLen) { ok = false; return; }
+        v.resize(len);
+        raw(v.data(), len);
+    }
     void parts(std::vector<std::pair<int, int>> &v)
     {
         uint32_t n = u32();
@@ -268,7 +295,80 @@ std::shared_ptr<const TextureImage> readTexture(Reader &r)
 typedef std::map<const TextureImage *, int32_t> TextureIndex;
 typedef std::vector<std::shared_ptr<const TextureImage>> TextureTable;
 
-void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex)
+//////////////////////////////////////////////////////////////////////
+// User shaders (v23): a deduplicated table referenced by index from
+// the post-stage config list and the draw materials. Each entry
+// carries its sources, parameters and the server-compiled viewer
+// binaries (UserShader::Compiled).
+
+typedef std::map<const UserShader *, int32_t> ShaderIndex;
+typedef std::vector<std::shared_ptr<const UserShader>> ShaderTable;
+
+void writeUserShader(
+    Writer &w, const UserShader &s,
+    const std::function<void(const UserShader &,
+                             std::vector<UserShader::Compiled> &)> &bins)
+{
+    w.str(s.stage);
+    w.str(s.vertexSource);
+    w.str(s.fragmentSource);
+    w.u32(uint32_t(s.params.size()));
+    for (const auto &p : s.params) {
+        w.str(p.name);
+        w.u32(uint32_t(p.values.size()));
+        w.floats(p.values.data(), p.values.size());
+    }
+    // The shader's own variants plus whatever the save-side compile
+    // hook has ready, first entry per profile wins on the viewer.
+    std::vector<UserShader::Compiled> compiled = s.compiled;
+    if (bins)
+        bins(s, compiled);
+    w.u32(uint32_t(compiled.size()));
+    for (const auto &c : compiled) {
+        w.str(c.profile);
+        w.bytes(c.vsBin);
+        w.bytes(c.fsBin);
+    }
+}
+
+std::shared_ptr<const UserShader> readUserShader(Reader &r)
+{
+    auto s = std::make_shared<UserShader>();
+    r.str(s->stage, 0x100u);
+    r.str(s->vertexSource);
+    r.str(s->fragmentSource);
+    uint32_t np = r.u32();
+    if (!r.ok || np > 0x10000u) {
+        r.ok = false;
+        return s;
+    }
+    s->params.resize(np);
+    for (auto &p : s->params) {
+        r.str(p.name, 0x1000u);
+        uint32_t nv = r.u32();
+        if (!r.ok || nv > 0x10000u) {
+            r.ok = false;
+            return s;
+        }
+        p.values.resize(nv);
+        r.floats(p.values.data(), nv);
+    }
+    uint32_t nc = r.u32();
+    if (!r.ok || nc > 0x100u) {
+        r.ok = false;
+        return s;
+    }
+    s->compiled.resize(nc);
+    for (auto &c : s->compiled) {
+        r.str(c.profile, 0x100u);
+        r.bytes(c.vsBin);
+        r.bytes(c.fsBin);
+    }
+    return s;
+}
+
+void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex,
+                   const ShaderIndex &shaders)
 {
     auto texref = [&](const std::shared_ptr<const TextureImage> &t) {
         auto it = tex.find(t.get());
@@ -352,9 +452,14 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex)
     w.b(m.clipconcave);
     for (int i = 0; i < Material::MaxClipPlanes; ++i)
         w.floats(m.clipplanes[i], 4);
+    // v23: user "material"-stage shader, by shader-table index.
+    auto sit = m.usershader ? shaders.find(m.usershader.get())
+                            : shaders.end();
+    w.i32(sit == shaders.end() ? -1 : sit->second);
 }
 
-void readMaterial(Reader &r, Material &m, const TextureTable &tex, uint32_t version)
+void readMaterial(Reader &r, Material &m, const TextureTable &tex,
+                  const ShaderTable &shaders, uint32_t version)
 {
     auto texref = [&](std::shared_ptr<const TextureImage> &t) {
         int32_t idx = r.i32();
@@ -451,6 +556,11 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex, uint32_t vers
     m.clipconcave = r.b();
     for (int i = 0; i < Material::MaxClipPlanes; ++i)
         r.floats(m.clipplanes[i], 4);
+    if (version >= 23) {
+        int32_t si = r.i32();
+        if (si >= 0 && size_t(si) < shaders.size())
+            m.usershader = shaders[size_t(si)];
+    }
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -533,9 +643,9 @@ typedef std::map<const MeshData *, int32_t> MeshIndex;
 typedef std::vector<std::shared_ptr<const MeshData>> MeshTable;
 
 void writeDraw(Writer &w, const DrawCall &d, const MeshIndex &meshIndex,
-               const TextureIndex &texIndex)
+               const TextureIndex &texIndex, const ShaderIndex &shaderIndex)
 {
-    writeMaterial(w, d.material, texIndex);
+    writeMaterial(w, d.material, texIndex, shaderIndex);
     auto it = d.mesh ? meshIndex.find(d.mesh.get()) : meshIndex.end();
     w.i32(it == meshIndex.end() ? -1 : it->second);
     w.floats(d.model, 16);
@@ -550,9 +660,10 @@ void writeDraw(Writer &w, const DrawCall &d, const MeshIndex &meshIndex,
 }
 
 void readDraw(Reader &r, DrawCall &d, const MeshTable &meshes,
-              const TextureTable &textures, uint32_t version)
+              const TextureTable &textures, const ShaderTable &shaders,
+              uint32_t version)
 {
-    readMaterial(r, d.material, textures, version);
+    readMaterial(r, d.material, textures, shaders, version);
     int32_t mi = r.i32();
     if (mi >= 0 && size_t(mi) < meshes.size())
         d.mesh = meshes[size_t(mi)];
@@ -568,15 +679,17 @@ void readDraw(Reader &r, DrawCall &d, const MeshTable &meshes,
 }
 
 void writeDrawList(Writer &w, const DrawCallList &draws,
-                   const MeshIndex &meshIndex, const TextureIndex &texIndex)
+                   const MeshIndex &meshIndex, const TextureIndex &texIndex,
+                   const ShaderIndex &shaderIndex)
 {
     w.u32(uint32_t(draws.size()));
     for (const auto &d : draws)
-        writeDraw(w, d, meshIndex, texIndex);
+        writeDraw(w, d, meshIndex, texIndex, shaderIndex);
 }
 
 bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
-                  const TextureTable &textures, uint32_t version)
+                  const TextureTable &textures, const ShaderTable &shaders,
+                  uint32_t version)
 {
     uint32_t n = r.u32();
     if (!r.ok || n > 0x1000000u) {
@@ -586,7 +699,7 @@ bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
     draws.clear();
     for (uint32_t i = 0; r.ok && i < n; ++i) {
         DrawCall d;
-        readDraw(r, d, meshes, textures, version);
+        readDraw(r, d, meshes, textures, shaders, version);
         draws.push_back(std::move(d));
     }
     return r.ok;
@@ -628,6 +741,14 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
                                   int32_t(textures.size())).second)
             textures.push_back(t.get());
     };
+    // Unique user shader table (v23): material-stage shaders from the
+    // draws plus the scene-level post-stage list.
+    ShaderIndex shaderIndex;
+    std::vector<const UserShader *> shaders;
+    auto addShader = [&](const UserShader *s) {
+        if (s && shaderIndex.emplace(s, int32_t(shaders.size())).second)
+            shaders.push_back(s);
+    };
     auto addDraws = [&](const DrawCallList &draws) {
         for (const auto &d : draws) {
             if (d.mesh && meshIndex.emplace(d.mesh.get(),
@@ -638,6 +759,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
             addTex(d.material.emissivemap);
             addTex(d.material.occlusionmap);
             addTex(d.material.metallicroughnessmap);
+            addShader(d.material.usershader.get());
         }
     };
     addDraws(snap.scene);
@@ -648,6 +770,8 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         addDraws(ov.draws);
     addTex(snap.lightconf.groundTexture);
     addTex(snap.lightconf.groundBumpMap);
+    for (const auto &s : snap.usershaderconf.shaders)
+        addShader(&s);
 
     w.u32(uint32_t(meshes.size()));
     for (auto *m : meshes)
@@ -656,7 +780,16 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     for (auto *t : textures)
         writeTexture(w, *t);
 
-    writeDrawList(w, snap.scene, meshIndex, texIndex);
+    // v23: the user shader table (before the draws that reference it)
+    // + the post-stage config list as table indices.
+    w.u32(uint32_t(shaders.size()));
+    for (auto *s : shaders)
+        writeUserShader(w, *s, snap.shaderBins);
+    w.u32(uint32_t(snap.usershaderconf.shaders.size()));
+    for (const auto &s : snap.usershaderconf.shaders)
+        w.i32(shaderIndex[&s]);
+
+    writeDrawList(w, snap.scene, meshIndex, texIndex, shaderIndex);
 
     // Background + per-frame configs.
     w.u8(snap.background.type);
@@ -731,9 +864,9 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.u32(uint32_t(snap.selections.size()));
     for (const auto &sel : snap.selections) {
         w.i32(sel.first);
-        writeDrawList(w, sel.second, meshIndex, texIndex);
+        writeDrawList(w, sel.second, meshIndex, texIndex, shaderIndex);
     }
-    writeDrawList(w, snap.highlight, meshIndex, texIndex);
+    writeDrawList(w, snap.highlight, meshIndex, texIndex, shaderIndex);
     w.b(snap.highlightWholeOnTop);
 
     // v3: overlay feeds (appended so the v2 prefix layout is unchanged).
@@ -753,7 +886,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(a.marginX);    // v5
         w.f(a.marginY);
         w.b(a.sceneCamera); // v6
-        writeDrawList(w, ov.draws, meshIndex, texIndex);
+        writeDrawList(w, ov.draws, meshIndex, texIndex, shaderIndex);
     }
 
     // v10: preselection + selection highlight config (client-side styling).
@@ -803,7 +936,26 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     for (uint32_t i = 0; r.ok && i < ntex; ++i)
         textures.push_back(readTexture(r));
 
-    readDrawList(r, snap.scene, meshes, textures, version);
+    // v23: user shader table + post-stage list (see saveSnapshotFp).
+    ShaderTable shaders;
+    snap.usershaderconf = UserShaderConfig();
+    if (version >= 23) {
+        uint32_t ns = r.u32();
+        if (!r.ok || ns > 0x10000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < ns; ++i)
+            shaders.push_back(readUserShader(r));
+        uint32_t npost = r.u32();
+        if (!r.ok || npost > 0x10000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < npost; ++i) {
+            int32_t si = r.i32();
+            if (si >= 0 && size_t(si) < shaders.size())
+                snap.usershaderconf.shaders.push_back(*shaders[size_t(si)]);
+        }
+    }
+
+    readDrawList(r, snap.scene, meshes, textures, shaders, version);
 
     snap.background.type = r.u8();
     snap.background.fromColor = r.u32();
@@ -894,10 +1046,10 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         for (uint32_t i = 0; r.ok && i < nsel; ++i) {
             int id = r.i32();
             DrawCallList draws;
-            if (readDrawList(r, draws, meshes, textures, version))
+            if (readDrawList(r, draws, meshes, textures, shaders, version))
                 snap.selections.emplace_back(id, std::move(draws));
         }
-        readDrawList(r, snap.highlight, meshes, textures, version);
+        readDrawList(r, snap.highlight, meshes, textures, shaders, version);
         snap.highlightWholeOnTop = r.b();
     }
 
@@ -924,7 +1076,8 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 a.marginY = r.f();
             }
             a.sceneCamera = version >= 6 ? r.b() : false;
-            if (readDrawList(r, ov.draws, meshes, textures, version))
+            if (readDrawList(r, ov.draws, meshes, textures, shaders,
+                             version))
                 snap.overlays.push_back(std::move(ov));
         }
     }

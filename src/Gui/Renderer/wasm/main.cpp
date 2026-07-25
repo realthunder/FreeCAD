@@ -1925,6 +1925,10 @@ static void applySnapshot(bool fit)
     s_renderer->setWaterConfig(s_snap.waterconf);
     s_renderer->setBloomConfig(s_snap.bloomconf);
     s_renderer->setRenderDebugConfig(s_snap.debugconf);
+    // User shaders (docs/RenderDebug.md §6.3): the post-stage list;
+    // material-stage programs ride the scene draw materials. Programs
+    // load from the server-compiled binaries the snapshot carries.
+    s_renderer->setUserShaderConfig(s_snap.usershaderconf);
     s_renderer->setAutoZoomScale(s_snap.autozoomScale);
     s_renderer->setEffectResolution(s_snap.effectResolution);
     s_renderer->setSSAOResolution(s_snap.ssaoResolution);
