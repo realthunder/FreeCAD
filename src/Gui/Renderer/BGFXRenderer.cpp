@@ -525,6 +525,9 @@ public:
     /// Per-shader compile bookkeeping, keyed by SHA1(source×target×type).
     std::set<std::string> userShaderInflight;
     std::set<std::string> userShaderFailed;
+    // include-tree content hash per source dir, part of the compile
+    // cache key (shipped-helper edits must miss stale cached bins)
+    std::map<std::string, QByteArray> userShaderSrcFingerprints;
     /// Bumped when an async compile finishes (either way); mirrored into
     /// each renderer's dirty state so the next frame retries the lookup
     /// (and the scene server republishes with the fresh bins).
@@ -11065,6 +11068,35 @@ BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
         return 2;
     }
 
+    // The compile inputs: the stock varying/include set shipped next to
+    // the compiled bins (BGFXShaders.cmake copies shaders/src there), so
+    // user source can include the fc_*.sh helpers and bgfx_shader.sh.
+    std::string srcDir = shaderPath() + "shaders/src";
+    if (!QFile::exists(QString::fromStdString(srcDir + "/varying.def.sc")))
+        srcDir = resource() + "shaders/src";
+
+    // The include tree is part of the compile identity: the cache
+    // persists across builds, and a shipped-helper edit (e.g.
+    // fc_user_lighting.sh) must miss the stale bins. Content-hashed
+    // once per source dir per session.
+    auto fpIt = userShaderSrcFingerprints.find(srcDir);
+    if (fpIt == userShaderSrcFingerprints.end()) {
+        QCryptographicHash fp(QCryptographicHash::Sha1);
+        const auto entries = QDir(QString::fromStdString(srcDir))
+            .entryInfoList({QStringLiteral("*.sh"), QStringLiteral("*.sc")},
+                           QDir::Files, QDir::Name);
+        for (const auto &fi : entries) {
+            fp.addData(fi.fileName().toUtf8());
+            fp.addData(QByteArrayView("\1", 1));
+            QFile f(fi.absoluteFilePath());
+            if (f.open(QIODevice::ReadOnly))
+                fp.addData(&f);
+            fp.addData(QByteArrayView("\1", 1));
+        }
+        fpIt = userShaderSrcFingerprints.emplace(srcDir,
+                                                 fp.result()).first;
+    }
+
     QByteArray keyed(source.c_str(), int(source.size()));
     keyed.append('\1');
     // The platform is part of the target identity: shaderc emits
@@ -11074,6 +11106,8 @@ BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
     keyed.append('\1');
     keyed.append(profile.c_str());
     keyed.append(fragment ? 'f' : 'v');
+    keyed.append('\1');
+    keyed.append(fpIt->second);
     QString hash = QString::fromLatin1(
         QCryptographicHash::hash(keyed, QCryptographicHash::Sha1).toHex());
     std::string hashKey = hash.toStdString();
@@ -11090,12 +11124,6 @@ BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
     if (userShaderInflight.count(hashKey))
         return 1;
 
-    // The compile inputs: the stock varying/include set shipped next to
-    // the compiled bins (BGFXShaders.cmake copies shaders/src there), so
-    // user source can include the fc_*.sh helpers and bgfx_shader.sh.
-    std::string srcDir = shaderPath() + "shaders/src";
-    if (!QFile::exists(QString::fromStdString(srcDir + "/varying.def.sc")))
-        srcDir = resource() + "shaders/src";
     std::string shaderc;
     if (const char *env = std::getenv("FC_BGFX_SHADERC"))
         shaderc = env;

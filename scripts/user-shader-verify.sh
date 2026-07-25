@@ -12,8 +12,10 @@
 #            TreeRank precedence, deactivation paths) and
 #            user_shader_instancing.py (§6.5 LinkGroup Appearance:
 #            Scope=Instance chains vs Scope=Object merge-down attachment)
-#            and user_shader_element.py (§6.5 Scope=Element face-level
-#            overrides, element-over-whole coexistence).
+#            user_shader_element.py (§6.5 Scope=Element face-level
+#            overrides, element-over-whole coexistence) and
+#            user_shader_lighting.py (fc_user_lighting.sh helper:
+#            stock-identity reproduction + lit custom albedo).
 #   viewer   browser-tier suites: backend serving demo-lights
 #            (FC_BGFX_SERVE_SCENE) + no-store http on build/wasm + a
 #            headless-Chromium holder (scripts/wasm-hold.js), driven
@@ -153,6 +155,7 @@ if [ "$cmd" = desktop ] || [ "$cmd" = all ]; then
     run_desktop user_shader_post.py post
     run_desktop user_shader_instancing.py instancing
     run_desktop user_shader_element.py element
+    run_desktop user_shader_lighting.py lighting
 fi
 
 if [ "$cmd" = viewer ] || [ "$cmd" = all ]; then

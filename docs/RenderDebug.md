@@ -502,6 +502,23 @@ Implementation notes from the second slice (`material` stage):
   to user programs, and a draw with a user shader is excluded from the
   cross-object instancing path. While the async compile is pending or
   failed the standard program stands in — never a black object.
+- **Lighting helper library.** A user material program that only wants a
+  custom base color should not lose the engine's lighting. The stock
+  mesh shading is factored into `fc_mesh_lighting.sh` (uniforms,
+  samplers and `fcShadeFragment()` — headlight or shadowed scene light,
+  Render_Light bulbs incl. their shadow tiles, fire lights, screen-space
+  AO, the PBR branch), consumed by the stock `fc_mesh_fs.sh` and by the
+  user-facing `fc_user_lighting.sh`: `gl_FragColor =
+  fcLightFragment(base, v_normal, v_vpos)` shades any albedo exactly
+  like the standard renderer (`fcStockBase()` returns the draw's stock
+  base color, so the identity form reproduces stock rendering). bgfx
+  uniforms/samplers are global by name, so the values and textures the
+  engine records with the draw feed the include's declarations
+  unchanged; `gl_FragCoord` rides a macro because shaderc's spirv path
+  resolves it only inside `main()`. The includes ship in
+  `assets/shaders/src`, and the user-shader compile cache key carries a
+  content hash of that include tree, so a shipped-helper change never
+  reuses stale cached bins.
 
 ### 6.3 Compilation reality
 
@@ -724,7 +741,7 @@ now compare name-level identity.
 | 3 | **DONE** — verification harness (`scripts/render-verify.sh` + `render_verify.py` + `render_diff.py` + `wasm-hold.js`): named-view or golden-sidecar restaging, xvfb/`--gpu`/`--viewer` capture legs, first-divergent-stage diffing with heatmaps | phases 1–2 |
 | 4 | **DONE** — dynamic name→uniform binding (`RenderDebug_*` props → like-named vec4 uniforms, snapshot v21) + `u_userParams[4]` fallback pool (lane 0 = debug output scale/bias); shader hot-reload (`FC_BGFX_SHADER_DIR` + `reloadShaders()`); `View3DInventor.addProperty/removeProperty` Python API | phase 1 |
 | 5 | **DONE** — view modes 5–8 (ShadowTile coverage, Overdraw counting pass on the repurposed `ViewDebugScene` slot, ShadowFilter precision probe, UV re-render; snapshot v22); self-labeling burn-in (`RenderDebug_Label`) | 1, 4 |
-| 6 | **first slice DONE** — user-loadable shaders on the Coin node model, `post` stage (coin fork: `SoShaderProgram::stage` + `BGFX_SC` source type; capture: cache-manager post-callback → `Render::UserShaderConfig` → `setUserShaderConfig`; backend: async shaderc compile cache + `ViewUserPostCopy`/`ViewUserPost` full-screen pass; sandboxed failure verified). **second slice DONE** — `material` stage with per-object attachment (`Material::usershader` through the render-cache chain, stock `vs_fc_mesh` pairing, beauty passes only, instancing exclusion). **third slice DONE** — browser tier (server-side compile through the async shaderc cache, snapshot v23 user-shader table, viewer loads shipped bins). **fourth slice DONE** — §6.5 document object model (App::ShaderProgram/Shader/Appearance + view providers, path-keyed shader overrides through the render cache manager) and §6.4 property-bound parameters (`Group_Name` dynamic props → SoShaderParameter nodes → uniforms with the consuming draws; Appearance per-binding overrides; stale-uniform zeroing). **fifth slice DONE** — scene-level Appearance activation (shader-only Appearance → `setAppearanceShaders` per view, TreeRank-ordered, wins over raw scene nodes). **sixth slice DONE** — Appearance reworked as an `App::LinkGroup` (children = shader + targets, `Scope` enum {Object, Instance}: direct merge-down attachment vs suffix-anchored per-occurrence chain overrides via the logical occurrence scan). **seventh slice DONE** — element-scoped targets (`Scope=Element`: face-level per-occurrence overrides through the same path channel, partial entries over the untouched base draw) and the new-view rebind hook (a 3D view created after the bindings exist gets the per-view registrations through a coalesced rebuild). Remaining: material-stage lighting helper library | 4; shader compile cache (§6.3) |
+| 6 | **first slice DONE** — user-loadable shaders on the Coin node model, `post` stage (coin fork: `SoShaderProgram::stage` + `BGFX_SC` source type; capture: cache-manager post-callback → `Render::UserShaderConfig` → `setUserShaderConfig`; backend: async shaderc compile cache + `ViewUserPostCopy`/`ViewUserPost` full-screen pass; sandboxed failure verified). **second slice DONE** — `material` stage with per-object attachment (`Material::usershader` through the render-cache chain, stock `vs_fc_mesh` pairing, beauty passes only, instancing exclusion). **third slice DONE** — browser tier (server-side compile through the async shaderc cache, snapshot v23 user-shader table, viewer loads shipped bins). **fourth slice DONE** — §6.5 document object model (App::ShaderProgram/Shader/Appearance + view providers, path-keyed shader overrides through the render cache manager) and §6.4 property-bound parameters (`Group_Name` dynamic props → SoShaderParameter nodes → uniforms with the consuming draws; Appearance per-binding overrides; stale-uniform zeroing). **fifth slice DONE** — scene-level Appearance activation (shader-only Appearance → `setAppearanceShaders` per view, TreeRank-ordered, wins over raw scene nodes). **sixth slice DONE** — Appearance reworked as an `App::LinkGroup` (children = shader + targets, `Scope` enum {Object, Instance}: direct merge-down attachment vs suffix-anchored per-occurrence chain overrides via the logical occurrence scan). **seventh slice DONE** — element-scoped targets (`Scope=Element`: face-level per-occurrence overrides through the same path channel, partial entries over the untouched base draw) and the new-view rebind hook (a 3D view created after the bindings exist gets the per-view registrations through a coalesced rebuild). **eighth slice DONE** — the material-stage lighting helper library (`fc_mesh_lighting.sh` core shared with the stock mesh shader, user-facing `fc_user_lighting.sh`, include-tree hash in the compile cache key). Phase complete | 4; shader compile cache (§6.3) |
 
 Phases 1+2 are the minimum end-to-end slice: set a mode from Python, capture
 a real-GPU frame with metadata, diff it.
