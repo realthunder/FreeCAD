@@ -1,26 +1,58 @@
 # scripts/
 
 Developer helper scripts for the bgfx render-cache backend
-(`src/Gui/Renderer/`). See `docs/ShaderDesign.md` for the renderer/shader
-architecture and `docs/DevEnvironment.md` for the build stacks.
+(`src/Gui/Renderer/`). See `docs/RenderDebug.md` for the render
+debugging / user-shader architecture, `docs/ShaderDesign.md` for the
+renderer/shader design, and `docs/DevEnvironment.md` for the build
+stacks.
+
+## Launching & serving
 
 | Script | What it does |
 |--------|--------------|
 | `renderer-desktop.sh [scene.py] [port]` | Launch the desktop GUI on the **WSLg real GPU** (Mesa d3d12 over `/dev/dxg`) with the bgfx backend; optionally stream the scene on `FC_BGFX_SERVE_SCENE=<port>`. |
-| `renderer-serve.sh [scene.py] [port]` | Headless (Xvfb, **software GL**) FreeCAD streaming a scene for the WASM viewer — for agents/CI or no-display hosts. |
-| `wasm-viewer.sh [http] [scene]` | Serve the built WASM viewer over HTTP and print the URL to open it against a scene backend. |
+| `renderer-serve.sh [scene.py] [port]` | Headless (Xvfb, **software GL**) FreeCAD streaming a scene for the WASM viewer — for agents/CI or no-display hosts. Also starts the MCP debug console (`mcp-console.py`). |
+| `wasm-viewer.sh [http] [scene]` | Serve the built WASM viewer over HTTP (`Cache-Control: no-store` — never a stale bundle) and print the URL to open it against a scene backend. |
+| `mcp-console.py` | In-FreeCAD script starting the **MCP debug console** (`freecad.mcp_console`: `run_python` / `search_api` over streamable-HTTP, default port 8765, `FC_MCP_PORT` overrides, `FC_MCP_PORT=0` disables) so an AI agent can drive the live process. |
+
+## Browser-side tools (headless Chromium)
+
+| Script | What it does |
+|--------|--------------|
 | `wasm-shot.js <url> <out.png>` | Screenshot the WASM viewer at a chosen `?cam=` via headless Chromium (swiftshader) — a separate client, never touches a live view. |
 | `wasm-hold.js <url> [ms]` | Hold a headless-Chromium page on the WASM viewer so the backend can drive the `dumpFrame` capture protocol (`saveRenderDump(source="viewer")`). |
+
+## Verification harnesses
+
+| Script | What it does |
+|--------|--------------|
 | `render-verify.sh capture\|diff …` | **Render verification harness** (docs/RenderDebug.md §5): capture staged (camera × `RenderDebug_ViewMode`) frame sets from an isolated FreeCAD (xvfb default, `--gpu` real-GPU leg, `--viewer` browser leg), and diff two capture sets per pipeline stage. |
 | `render_verify.py` | In-FreeCAD capture driver used by `render-verify.sh` — stages cameras (named views, or 1:1 restage from golden sidecar JSONs) and calls `saveRenderDump` per mode. |
 | `render_diff.py` | Stage-ordered capture-set comparer: reports the **first divergent pipeline stage** (depth → normal → ao → shadow → beauty) with difference heatmaps. |
-| `user-shader-verify.sh desktop\|viewer\|all …` | **User-shader harness** (docs/RenderDebug.md §6.4/§6.5): the desktop leg runs the document-object-model GUI suites under xvfb; the viewer leg re-runs the shader pipeline against a live headless-Chromium WASM viewer (needs `build/wasm` + `PUPPETEER_PATH`). |
-| `user_shader_params.py` | In-FreeCAD suite: `Param_*` dynamic properties on `App::ShaderProgram` → uniforms, `App::Appearance` per-binding overrides, byte-exact restores. |
-| `user_shader_post.py` | In-FreeCAD suite: scene-level post activation by empty-target `App::Appearance` — TreeRank precedence, hide/re-target/delete restores. |
-| `user_shader_viewer.py` | Browser-tier suite (scene-graph route): post + material `SoShaderProgram` nodes reach a connected WASM viewer via the snapshot shader table. |
-| `user_shader_viewer_appearance.py` | Browser-tier suite (document-object route): an empty-target Appearance's post shader reaches the WASM viewer, params propagate, hide restores. |
-| `compile-shaders.sh [build_dir]` | Recompile the bgfx shaders and refresh the build-tree copies so a shader edit takes effect without a full `ninja`. |
-| `demo-water.py` | Example scene (water pool + metallic cylinder + fire plume) exercising volumetric / SSAO / shadow / water-surface / caustics. |
+| `user-shader-verify.sh desktop\|viewer\|all …` | **User-shader harness** (docs/RenderDebug.md §6.4/§6.5): runs the four suites below from isolated FreeCAD instances and judges their result files. The viewer leg needs `build/wasm` + `PUPPETEER_PATH`. |
+| `user_shader_params.py` | In-FreeCAD suite: `Param_*` dynamic properties on `App::ShaderProgram` → uniforms on the consuming draws, `App::Appearance` per-binding overrides, non-`Param` groups ignored, byte-exact restores. |
+| `user_shader_post.py` | In-FreeCAD suite: scene-level post activation by an empty-target `App::Appearance` — TreeRank precedence and every deactivation path (override removal, hide, re-target, delete). |
+| `user_shader_viewer.py` | Browser-tier suite (scene-graph route): post + material `SoShaderProgram` nodes reach a connected WASM viewer through the server-side compile + snapshot shader table; broken-shader fallback and removal restore. |
+| `user_shader_viewer_appearance.py` | Browser-tier suite (document-object route): an empty-target Appearance's post shader reaches the WASM viewer, parameter edits propagate, hiding restores. |
+
+## Demo scenes
+
+All three run persistently (no auto-close) so they can be viewed on the
+desktop or streamed to the WASM viewer; pass them to
+`renderer-desktop.sh` / `renderer-serve.sh`.
+
+| Script | What it does |
+|--------|--------------|
+| `demo-lights.py` | Two colored shadow-casting point-light bulbs (warm/cool) over a pillar + cross-beam on a matte floor — the default verification scene (bulb shadows, bloom, AO; env knobs `SUN`, `BULB_*`, `BLOOM`, `AO`, `VOL`, `SHADOWSMOOTH`). |
+| `demo-ao.py` | SSAO/GTAO isolation scene: every other effect off, matte objects in mutual contact with tight concave corners where ambient occlusion reads strongest. |
+| `demo-water.py` | Full-effect showcase: water pool (refraction, planar reflection, caustics, water shadow), bark-textured gantry (PBR + normal map), metallic cylinder, fire plume with volumetric lighting. |
+| `textures/` | CC0 texture assets used by the demo scenes (ambientCG Bark012 color + normal maps; see its README). |
+
+## Shader rebuilds
+
+| Script | What it does |
+|--------|--------------|
+| `compile-shaders.sh [build_dir]` | Recompile the bgfx shaders and refresh the build-tree copies so a shader edit takes effect without a full `ninja` (wrapper around `ninja Renderer_assets`). |
 
 ## Real GPU vs software
 
@@ -56,9 +88,16 @@ scripts/render-verify.sh capture /path/goldens
 
 # after the change: restage from the goldens' sidecars, capture, per-stage diff
 scripts/render-verify.sh capture /tmp/rv --golden /path/goldens
+
+# and keep the user-shader feature green (desktop leg; add viewer with
+# build/wasm + PUPPETEER_PATH)
+scripts/user-shader-verify.sh desktop /tmp/us
 ```
 
 A regression is reported against the first pipeline stage whose buffer
 diverges, not just the final image. Add `--gpu` for a real-GPU leg (opens a
 window on the desktop) and `--viewer` for the browser leg — see the header
-of `render-verify.sh` and docs/RenderDebug.md §5.
+of `render-verify.sh` and docs/RenderDebug.md §5. The two harnesses are
+complementary: `render-verify.sh` guards the stock pipeline against
+goldens, `user-shader-verify.sh` exercises the user-shader feature
+end-to-end.
