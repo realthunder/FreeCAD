@@ -11075,9 +11075,15 @@ BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
     // the event loop instead; the finished handler records the outcome
     // and bumps the generation so the next frame picks the bin up.
     userShaderInflight.insert(hashKey);
+    // shaderc writes its output incrementally: compiling straight into
+    // binPath races the exists() fast path above with a partial file (a
+    // load failure then negative-caches the program for the session).
+    // Compile to a sidecar and rename on success — the .bin only ever
+    // appears complete.
+    QString tmpPath = binPath + QStringLiteral(".tmp");
     QStringList args = {
         QStringLiteral("-f"), srcPath,
-        QStringLiteral("-o"), binPath,
+        QStringLiteral("-o"), tmpPath,
         QStringLiteral("--type"),
         fragment ? QStringLiteral("f") : QStringLiteral("v"),
         QStringLiteral("--platform"), QString::fromUtf8(platform.c_str()),
@@ -11088,21 +11094,31 @@ BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
     };
     QString cmd = QString::fromUtf8(shaderc.c_str());
     QString bin = binPath;
+    QString tmp = tmpPath;
     auto self = this;
-    QTimer::singleShot(0, [self, cmd, args, bin, hashKey]() {
+    QTimer::singleShot(0, [self, cmd, args, bin, tmp, hashKey]() {
         auto proc = new QProcess;
         QObject::connect(proc,
             qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
-            [self, proc, bin, hashKey](int code,
-                                       QProcess::ExitStatus status) {
+            [self, proc, bin, tmp, hashKey](int code,
+                                            QProcess::ExitStatus status) {
                 if (status != QProcess::NormalExit || code != 0) {
-                    QFile::remove(bin);
+                    QFile::remove(tmp);
                     self->userShaderFailed.insert(hashKey);
                     std::string err = (proc->readAllStandardError()
                         + proc->readAllStandardOutput()).toStdString();
                     Base::Console().Error(
                         "user shader compile failed:\n%s\n",
                         err.empty() ? "shaderc failed" : err.c_str());
+                }
+                else {
+                    QFile::remove(bin);
+                    if (!QFile::rename(tmp, bin)) {
+                        self->userShaderFailed.insert(hashKey);
+                        Base::Console().Error(
+                            "user shader compile: cannot move %s into "
+                            "place\n", tmp.toStdString().c_str());
+                    }
                 }
                 self->userShaderInflight.erase(hashKey);
                 ++self->userCompileGeneration;
@@ -11210,6 +11226,9 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
     bgfx::ShaderHandle fsh = loadShaderFile(fsBin.toStdString());
     if (!bgfx::isValid(fsh)) {
         entry.failed = true;
+        // Drop the cache entry (e.g. truncated by a crashed compile) so
+        // the next session recompiles instead of trusting it again.
+        QFile::remove(fsBin);
         Base::Console().Error("user shader: compiled binary unloadable: "
                               "%s\n", fsBin.toStdString().c_str());
         return BGFX_INVALID_HANDLE;
@@ -11231,6 +11250,8 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
     if (!bgfx::isValid(vsh)) {
         entry.failed = true;
         bgfx::destroy(fsh);
+        if (!vsSource.empty())
+            QFile::remove(vsBin);
         Base::Console().Error("user shader: vertex stage unloadable\n");
         return BGFX_INVALID_HANDLE;
     }
