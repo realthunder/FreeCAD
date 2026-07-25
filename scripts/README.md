@@ -14,6 +14,11 @@ architecture and `docs/DevEnvironment.md` for the build stacks.
 | `render-verify.sh capture\|diff …` | **Render verification harness** (docs/RenderDebug.md §5): capture staged (camera × `RenderDebug_ViewMode`) frame sets from an isolated FreeCAD (xvfb default, `--gpu` real-GPU leg, `--viewer` browser leg), and diff two capture sets per pipeline stage. |
 | `render_verify.py` | In-FreeCAD capture driver used by `render-verify.sh` — stages cameras (named views, or 1:1 restage from golden sidecar JSONs) and calls `saveRenderDump` per mode. |
 | `render_diff.py` | Stage-ordered capture-set comparer: reports the **first divergent pipeline stage** (depth → normal → ao → shadow → beauty) with difference heatmaps. |
+| `user-shader-verify.sh desktop\|viewer\|all …` | **User-shader harness** (docs/RenderDebug.md §6.4/§6.5): the desktop leg runs the document-object-model GUI suites under xvfb; the viewer leg re-runs the shader pipeline against a live headless-Chromium WASM viewer (needs `build/wasm` + `PUPPETEER_PATH`). |
+| `user_shader_params.py` | In-FreeCAD suite: `Param_*` dynamic properties on `App::ShaderProgram` → uniforms, `App::Appearance` per-binding overrides, byte-exact restores. |
+| `user_shader_post.py` | In-FreeCAD suite: scene-level post activation by empty-target `App::Appearance` — TreeRank precedence, hide/re-target/delete restores. |
+| `user_shader_viewer.py` | Browser-tier suite (scene-graph route): post + material `SoShaderProgram` nodes reach a connected WASM viewer via the snapshot shader table. |
+| `user_shader_viewer_appearance.py` | Browser-tier suite (document-object route): an empty-target Appearance's post shader reaches the WASM viewer, params propagate, hide restores. |
 | `compile-shaders.sh [build_dir]` | Recompile the bgfx shaders and refresh the build-tree copies so a shader edit takes effect without a full `ninja`. |
 | `demo-water.py` | Example scene (water pool + metallic cylinder + fire plume) exercising volumetric / SSAO / shadow / water-surface / caustics. |
 

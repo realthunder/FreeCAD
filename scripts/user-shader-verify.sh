@@ -1,0 +1,164 @@
+#!/bin/bash
+# User-shader verification harness (docs/RenderDebug.md §6.4/§6.5).
+#
+# Runs the user-loadable-shader suites from isolated FreeCAD instances
+# (private XDG dirs + user.cfg, own ports, no global pkill — never
+# touches the live desktop session or a serving backend):
+#
+#   desktop  xvfb GUI suites over the document-object model:
+#            user_shader_params.py (§6.4 Param_* property binding,
+#            Appearance overrides, stale-uniform restore) and
+#            user_shader_post.py (§6.5 scene-level post activation,
+#            TreeRank precedence, deactivation paths).
+#   viewer   browser-tier suites: backend serving demo-lights
+#            (FC_BGFX_SERVE_SCENE) + no-store http on build/wasm + a
+#            headless-Chromium holder (scripts/wasm-hold.js), driven
+#            through saveRenderDump(source='viewer').
+#            user_shader_viewer.py (scene-graph route: post + material
+#            SoShaderProgram nodes) and user_shader_viewer_appearance.py
+#            (document-object route: empty-target Appearance).
+#            Needs build/wasm and puppeteer (PUPPETEER_PATH).
+#   all      both legs.
+#
+# Usage:
+#   scripts/user-shader-verify.sh desktop|viewer|all <outdir> [options]
+#
+# options:
+#   --port N / --http N   viewer leg scene / http ports (default 8177/8178)
+#   --timeout N           per-suite timeout seconds (default 420)
+#
+# A suite passes when its result file ends with DONE and contains no
+# FAIL/ABORT lines; the exit code reflects all suites run.
+set -u
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+RUN="$REPO/.conda/run.sh"
+
+cmd=${1:-}
+case "$cmd" in desktop|viewer|all) ;; *)
+    sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 2;;
+esac
+shift
+OUT=${1:?needs an output dir}
+shift
+PORT=8177 HTTP=8178 TIMEOUT=420
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --port)    PORT=$2; shift 2;;
+        --http)    HTTP=$2; shift 2;;
+        --timeout) TIMEOUT=$2; shift 2;;
+        *) echo "unknown option: $1"; exit 2;;
+    esac
+done
+
+mkdir -p "$OUT"
+OUT=$(cd "$OUT" && pwd)
+FAILED=0
+
+PIDS=()
+cleanup() {
+    for pid in "${PIDS[@]:-}"; do
+        [ -n "$pid" ] && kill -- -"$pid" 2>/dev/null
+    done
+    PIDS=()
+}
+trap cleanup EXIT
+
+judge() { # <result-file> <name>
+    echo "---- $2 ($1)"
+    cat "$1" 2>/dev/null
+    if ! grep -q "^DONE$" "$1" 2>/dev/null; then
+        echo "== $2 FAILED (no DONE)"; FAILED=1
+    elif grep -q "FAIL\|^ABORT\|EXCEPTION" "$1"; then
+        echo "== $2 HAD FAILURES"; FAILED=1
+    else
+        echo "== $2 OK"
+    fi
+}
+
+run_desktop() { # <driver.py> <name>
+    local sub="$OUT/$2" iso
+    iso="$sub/.iso"
+    mkdir -p "$iso/cache" "$iso/config"
+    rm -f "$iso/cache/FreeCAD/Cache/FreeCAD_"*.lock 2>/dev/null
+    echo "desktop suite $2 (log: $sub/run.log)"
+    env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb \
+        XDG_CACHE_HOME="$iso/cache" XDG_CONFIG_HOME="$iso/config" \
+        US_OUT="$sub" US_RESULT="$sub/result.txt" \
+        xvfb-run -a -s "-screen 0 1920x1080x24" \
+        timeout -k 5 "$TIMEOUT" \
+        "$RUN" "$REPO/build/conda-debug/bin/FreeCAD" \
+        --user-cfg "$iso/user.cfg" \
+        "$REPO/scripts/$1" > "$sub/run.log" 2>&1
+    judge "$sub/result.txt" "$2"
+}
+
+run_viewer() { # <driver.py> <name>
+    local sub="$OUT/$2" iso
+    iso="$sub/.iso"
+    mkdir -p "$sub" "$iso/cache" "$iso/config"
+    rm -f "$iso/cache/FreeCAD/Cache/FreeCAD_"*.lock 2>/dev/null
+    : > "$sub/result.txt"
+    echo "viewer suite $2 (log: $sub/run.log)"
+
+    setsid nohup env -u WAYLAND_DISPLAY \
+        XDG_CACHE_HOME="$iso/cache" XDG_CONFIG_HOME="$iso/config" \
+        US_OUT="$sub" US_RESULT="$sub/result.txt" \
+        FC_BGFX_SERVE_SCENE=$PORT \
+        QT_QPA_PLATFORM=xcb \
+        xvfb-run -a -s "-screen 0 1280x1024x24" \
+        "$RUN" "$REPO/build/conda-debug/bin/FreeCAD" \
+        --user-cfg "$iso/user.cfg" \
+        "$REPO/scripts/demo-lights.py" "$REPO/scripts/$1" \
+        > "$sub/run.log" 2>&1 </dev/null &
+    PIDS+=($!)
+
+    # no-store like wasm-viewer.sh: never serve a stale cached bundle.
+    setsid nohup python3 - "$HTTP" "$REPO/build/wasm" > "$sub/http.log" 2>&1 <<'EOF' &
+import http.server, os, sys
+os.chdir(sys.argv[2])
+class H(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+EOF
+    PIDS+=($!)
+
+    for _ in $(seq 90); do
+        (exec 3<>/dev/tcp/127.0.0.1/$PORT) 2>/dev/null && { exec 3>&-; break; }
+        sleep 1
+    done
+    local url="http://127.0.0.1:$HTTP/fcviewer.html?scene=http://127.0.0.1:$PORT&cam=0.6,0.3,70,0,0,5,0,0"
+    setsid nohup env \
+        LD_LIBRARY_PATH="$REPO/.conda/freecad/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        node "$REPO/scripts/wasm-hold.js" "$url" $((TIMEOUT * 1000)) \
+        > "$sub/hold.log" 2>&1 </dev/null &
+    PIDS+=($!)
+    echo "viewer holder on $url"
+
+    for _ in $(seq "$TIMEOUT"); do
+        grep -q "^DONE$\|^ABORT" "$sub/result.txt" 2>/dev/null && break
+        sleep 1
+    done
+    cleanup
+    judge "$sub/result.txt" "$2"
+}
+
+if [ "$cmd" = desktop ] || [ "$cmd" = all ]; then
+    run_desktop user_shader_params.py params
+    run_desktop user_shader_post.py post
+fi
+
+if [ "$cmd" = viewer ] || [ "$cmd" = all ]; then
+    [ -f "$REPO/build/wasm/fcviewer.html" ] || {
+        echo "viewer leg needs build/wasm/fcviewer.html"; exit 2; }
+    [ -n "${PUPPETEER_PATH:-}" ] || {
+        echo "viewer leg needs PUPPETEER_PATH (a node_modules/puppeteer)"
+        exit 2; }
+    run_viewer user_shader_viewer.py viewer
+    run_viewer user_shader_viewer_appearance.py viewer-appearance
+fi
+
+trap - EXIT
+[ "$FAILED" = 0 ] && echo "ALL SUITES OK" || echo "SUITES FAILED"
+exit $FAILED
