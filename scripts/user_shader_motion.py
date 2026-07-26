@@ -14,6 +14,10 @@ BGFX_SC -> bridge -> getUserProgram) and the u_fcTime animation clock:
   (Known artifacts, by design: stock line/point draws keep the stock
   VS so wireframes stay put, and Coin's auto near/far planes fit the
   undisplaced bbox so large displacements clip.)
+- blend-additive / blend-restore: App::ShaderProgram Blend/DepthWrite
+  ride the reserved "fc_state" parameter to the backend, which
+  re-records the beauty-draw state (background bleeds through an
+  additive write); Default/true restores the stock state byte-exact.
 - vs-motion: sweeping Param_Offset produces distinct frames each step
   (CPU-driven animation through the VS).
 - time-animates: a VS referencing u_fcTime (engine clock, seconds in
@@ -184,6 +188,33 @@ def run():
         n = changed_count(stockvs, ident)
         log("custom-VS identity changed px vs stock-VS (tol 3): %d" % n)
         log("ASSERT vs-identity: %s" % ("PASS" if n == 0 else "FAIL"))
+
+        # ---- render-state override (fc_state): additive blend ----
+        # Additive adds the fragment onto the background, so the box
+        # region keeps the background's red component (a flat opaque
+        # green write leaves red near 0).
+        import numpy as np
+        prog.Blend = "Additive"
+        prog.DepthWrite = False
+        doc.recompute()
+        settle()
+        add = cap("m_additive")
+        d = changed_count(ident, add)
+        ia, ib = load(ident), load(add)
+        green = (ia[:, :, 1] > ia[:, :, 0] + 40) \
+            & (ia[:, :, 1] > ia[:, :, 2] + 40)
+        red_flat = float(ia[:, :, 0][green].mean())
+        red_add = float(ib[:, :, 0][green].mean())
+        log("additive changed px: %d; box-region mean red flat=%.1f "
+            "additive=%.1f" % (d, red_flat, red_add))
+        ok = d > 500 and red_add > red_flat + 15
+        log("ASSERT blend-additive: %s" % ("PASS" if ok else "FAIL"))
+        prog.Blend = "Default"
+        prog.DepthWrite = True
+        doc.recompute()
+        settle()
+        ok = byte_equal(ident, cap("m_blend_off"), "blend restore")
+        log("ASSERT blend-restore: %s" % ("PASS" if ok else "FAIL"))
 
         # ---- displacement through the VS ----
         prog.Param_Offset = (0.0, 0.0, 12.0)

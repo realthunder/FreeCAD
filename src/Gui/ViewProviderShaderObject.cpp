@@ -202,7 +202,9 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
                 || prop == &obj->Stage
                 || prop == &obj->Dialect
                 || prop == &obj->VertexProgram
-                || prop == &obj->FragmentProgram)) {
+                || prop == &obj->FragmentProgram
+                || prop == &obj->Blend
+                || prop == &obj->DepthWrite)) {
         if (dynParam)
             syncParameters();
         else
@@ -272,8 +274,18 @@ static void syncShaderNodes(App::ShaderProgram *obj,
     // vec4-padded floats, so one node type covers every property type),
     // updated in place so a value edit notifies the enclosing render
     // caches without relisting the parameter field.
+    // A non-default render state (Blend/DepthWrite) rides the same
+    // channel as a reserved "fc_state" parameter — no uniform prefix, the
+    // backend consumes it as draw state at the user-draw submit instead
+    // (docs/RenderDebug.md §6.2) — so it reaches every consumer of the
+    // node (Appearance clones, snapshot transport) with no new fields.
+    auto allParams = params;
+    if (obj->Blend.getValue() != 0 || !obj->DepthWrite.getValue())
+        allParams.emplace_back("fc_state", std::vector<float>{
+                float(obj->Blend.getValue()),
+                obj->DepthWrite.getValue() ? 1.0f : 0.0f, 0.0f, 0.0f});
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> next;
-    for (const auto &v : params) {
+    for (const auto &v : allParams) {
         auto &node = next[v.first];
         if (!node) {
             auto it = paramNodes.find(v.first);

@@ -55,6 +55,11 @@ public:
     PropertyString VertexProgram;
     /// Fragment stage source
     PropertyString FragmentProgram;
+    /// Blend override of the material-stage beauty draw
+    /// (Default keeps the draw's stock state)
+    PropertyEnumeration Blend;
+    /// Depth write of the material-stage beauty draw
+    PropertyBool DepthWrite;
 
     const char* getViewProviderName() const override
     {
@@ -63,6 +68,7 @@ public:
 
 private:
     static const char* DialectEnums[];
+    static const char* BlendEnums[];
 };
 
 using ShaderProgramPython = App::FeaturePythonT<ShaderProgram>;

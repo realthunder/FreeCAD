@@ -33,6 +33,8 @@ using namespace App;
 PROPERTY_SOURCE(App::ShaderProgram, App::DocumentObject)
 
 const char* ShaderProgram::DialectEnums[] = {"BGFX_SC", "GLSL", nullptr};
+const char* ShaderProgram::BlendEnums[] = {"Default", "Alpha", "Additive",
+                                           nullptr};
 
 ShaderProgram::ShaderProgram()
 {
@@ -47,6 +49,15 @@ ShaderProgram::ShaderProgram()
             "stock vertex stage of the target pipeline stage");
     ADD_PROPERTY_TYPE(FragmentProgram, (""), "Shader", Prop_None,
             "Fragment stage source");
+    Blend.setEnums(BlendEnums);
+    ADD_PROPERTY_TYPE(Blend, ((long)0), "Shader", Prop_None,
+            "Blend override of the material-stage beauty draw:\n"
+            "Default keeps the draw's stock state, Alpha blends by the\n"
+            "fragment's alpha, Additive adds onto the framebuffer\n"
+            "(typical for particles/glow)");
+    ADD_PROPERTY_TYPE(DepthWrite, (true), "Shader", Prop_None,
+            "Whether the material-stage beauty draw writes depth;\n"
+            "turn off for blended effects that should not occlude");
 }
 
 // ----------------------------------------------------------------------------

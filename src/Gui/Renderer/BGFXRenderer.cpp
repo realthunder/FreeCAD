@@ -6040,6 +6040,29 @@ public:
                 if (_BGFXLib.userTime[1] != 0.0f
                         && userShaderAnimated(*mat.usershader))
                     _BGFXLib.userAnimatedDraw = true;
+                // Reserved "fc_state" parameter = render-state override
+                // of the beauty draw (App::ShaderProgram Blend /
+                // DepthWrite, docs/RenderDebug.md §6.2): re-record the
+                // state — bgfx keeps the last setState before submit.
+                for (const auto &p : mat.usershader->params) {
+                    if (p.name != "fc_state" || p.values.size() < 2)
+                        continue;
+                    uint64_t ustate = state;
+                    if (p.values[1] == 0.0f)
+                        ustate &= ~BGFX_STATE_WRITE_Z;
+                    int blend = int(p.values[0]);
+                    if (blend == 1) {
+                        ustate &= ~BGFX_STATE_BLEND_MASK;
+                        ustate |= BGFX_STATE_BLEND_ALPHA;
+                    }
+                    else if (blend == 2) {
+                        ustate &= ~BGFX_STATE_BLEND_MASK;
+                        ustate |= BGFX_STATE_BLEND_ADD;
+                    }
+                    if (ustate != state)
+                        bgfx::setState(ustate, blendRt);
+                    break;
+                }
             }
         }
 

@@ -513,6 +513,18 @@ Implementation notes from the second slice (`material` stage):
   point draws stay at the undisplaced geometry, and Coin's auto near/far
   planes fit the undisplaced bounding box, so a large displacement can
   clip (an emitter-bounds story comes with the particle framework).
+- **Render-state override.** `App::ShaderProgram` carries `Blend`
+  (Default / Alpha / Additive) and `DepthWrite` properties for the
+  material-stage beauty draw — the states particles and glow effects
+  need. A non-default combination rides the existing parameter channel
+  as a reserved `SoShaderParameter` named `fc_state` (no `u_` prefix —
+  it is not a uniform contract), so it reaches Appearance per-binding
+  clones and the snapshot transport with no new node fields; the
+  backend consumes it at the user-draw submit by re-recording the draw
+  state. The stock passes (prepass, shadow, pick) are untouched, and a
+  blended override stays in its stock draw bucket — cross-object
+  blend-vs-transparency ordering is the emitter framework's problem,
+  not this override's.
 - **Animation clock `u_fcTime`.** The engine records `uniform vec4
   u_fcTime` with every consuming user draw (material and post): `.x` =
   seconds on the shared effect clock (the one driving water/fire/
