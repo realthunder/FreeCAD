@@ -424,9 +424,17 @@ struct UserShaderConfig {
     /// Only scene-level stages ("post") ride here — "material"-stage
     /// programs attach per object through Material::usershader instead.
     std::vector<UserShader> shaders;
+    /// Assembled volume-splice variants (docs/RenderEngine.md §5.11),
+    /// snapshot v24 transport only: the backend serializer assembles
+    /// the same medium-splice programs its frame loop would, compiles
+    /// the viewer-tier binaries and ships them here; a compiler-less
+    /// tier that assembles the identical source adopts the shipped
+    /// entry (with its binaries) instead. Empty on the desktop's own
+    /// config feed.
+    std::vector<UserShader> splices;
 
     bool operator==(const UserShaderConfig &o) const {
-        return shaders == o.shaders;
+        return shaders == o.shaders && splices == o.splices;
     }
     bool operator!=(const UserShaderConfig &o) const { return !(*this == o); }
 };

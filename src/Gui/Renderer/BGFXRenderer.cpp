@@ -276,6 +276,39 @@ static bool userShaderAnimated(const UserShader &shader)
 /// UserShader (stock vs_fc_comp vertex stage, merged parameter list)
 /// for the shared compile cache, or null when no slot carries a user
 /// medium.
+/// Collect the volume-stage user medium of every fire / cloud slot
+/// from a draw list, replicating exactly the slot assignment of the
+/// frame loop's fire and cloud/fountain body scans (dedup by object
+/// key in draw order, bodies beyond the slot count share slot 0 and
+/// carry no user medium). Shared between the frame loop and the
+/// snapshot serializer so the assembled splice sources match
+/// byte-for-byte across tiers — the viewer adopts shipped binaries by
+/// source equality.
+static void
+collectMediumUsers(const Render::DrawCallList &scene,
+                   std::shared_ptr<const Render::UserShader> *fireUsers,
+                   std::shared_ptr<const Render::UserShader> *cloudUsers,
+                   int nslots)
+{
+    std::unordered_set<uint64_t> fireSeen, cloudSeen;
+    int nfire = 0, ncloud = 0;
+    for (const auto &draw : scene) {
+        const auto &mat = draw.material;
+        if (mat.ontop || mat.type != Render::Material::Triangle)
+            continue;
+        auto user = (mat.usershader && mat.usershader->stage == "volume"
+                     && !mat.usershader->fragmentSource.empty())
+            ? mat.usershader : nullptr;
+        if (mat.fire && fireSeen.insert(draw.objectKey).second
+                && nfire < nslots)
+            fireUsers[nfire++] = user;
+        if ((mat.cloud || mat.fountain)
+                && cloudSeen.insert(draw.objectKey).second
+                && ncloud < nslots)
+            cloudUsers[ncloud++] = user;
+    }
+}
+
 static std::shared_ptr<const Render::UserShader>
 assembleMediumVariant(const char *body,
                       const std::shared_ptr<const Render::UserShader> *fireUsers,
@@ -7019,6 +7052,23 @@ public:
                    std::vector<Render::UserShader::Compiled> &out) {
                     _BGFXLib.viewerShaderBins(s, out);
                 };
+            // v24: assemble the volume-splice variants exactly as the
+            // frame loop would (shared collectMediumUsers keeps the
+            // sources byte-identical) so the shader table carries their
+            // viewer binaries; the viewer adopts them by source match.
+            {
+                constexpr int kSlots = BGFXView::kMediumSlots;
+                std::shared_ptr<const Render::UserShader> fu[kSlots];
+                std::shared_ptr<const Render::UserShader> cu[kSlots];
+                collectMediumUsers(snap.scene, fu, cu, kSlots);
+                for (const char *body :
+                         {"fc_volume_fs.sh", "fc_volume_ext_fs.sh",
+                          "fc_refl_media_fs.sh"}) {
+                    if (auto s = assembleMediumVariant(body, fu, cu,
+                                                       kSlots))
+                        snap.usershaderconf.splices.push_back(*s);
+                }
+            }
 #endif
             snap.preselconf = preselconf;
             snap.selconf = selconf;
@@ -7713,9 +7763,6 @@ public:
             }
             int slot = cloudSlotCount++;
             cloudSlots.emplace(draw.objectKey, slot);
-            if (mat.usershader && mat.usershader->stage == "volume"
-                    && !mat.usershader->fragmentSource.empty())
-                cloudSlotUser[slot] = mat.usershader;
             float dx = draw.bboxMax[0] - draw.bboxMin[0];
             float dy = draw.bboxMax[1] - draw.bboxMin[1];
             float dz = draw.bboxMax[2] - draw.bboxMin[2];
@@ -7831,9 +7878,6 @@ public:
                 continue;
             }
             FireSlot &fs = fireSlot[fireSlotCount];
-            if (mat.usershader && mat.usershader->stage == "volume"
-                    && !mat.usershader->fragmentSource.empty())
-                fireSlotUser[fireSlotCount] = mat.usershader;
             fireSlots.emplace(draw.objectKey, fireSlotCount++);
             float dx = draw.bboxMax[0] - draw.bboxMin[0];
             float dy = draw.bboxMax[1] - draw.bboxMin[1];
@@ -7885,6 +7929,9 @@ public:
         // compile itself is async through the shared user-shader cache,
         // stock media stand in until the binaries land.
         {
+            if (fireActive || cloudActive)
+                collectMediumUsers(scene, fireSlotUser, cloudSlotUser,
+                                   kSlots);
             if (!fireActive)
                 for (int i = 0; i < kSlots; ++i)
                     fireSlotUser[i].reset();
@@ -7907,6 +7954,34 @@ public:
                 view->volUserRefl = assembleMediumVariant(
                     "fc_refl_media_fs.sh", fireSlotUser, cloudSlotUser,
                     kSlots);
+#ifdef FC_RENDERER_STANDALONE
+                // Compiler-less tier: adopt the snapshot-shipped
+                // assembled variant (server-compiled binaries) when its
+                // source matches what was just assembled — source
+                // equality guarantees the same slot binding
+                // (docs/RenderEngine.md §5.11 transport).
+                auto adopt =
+                    [this](std::shared_ptr<const Render::UserShader> &s,
+                           const char *tag) {
+                    if (!s)
+                        return;
+                    for (const auto &sp : usershaderconf.splices) {
+                        if (sp.fragmentSource == s->fragmentSource) {
+                            std::printf("fcviewer: splice %s adopted "
+                                        "(%zu bins)\n",
+                                        tag, sp.compiled.size());
+                            s = std::make_shared<Render::UserShader>(sp);
+                            return;
+                        }
+                    }
+                    std::printf("fcviewer: splice %s NOT shipped "
+                                "(%zu candidates)\n",
+                                tag, usershaderconf.splices.size());
+                };
+                adopt(view->volUserVol, "vol");
+                adopt(view->volUserExt, "ext");
+                adopt(view->volUserRefl, "refl");
+#endif
             }
         }
         // Time-animated content (fire flicker, cloud drift, water waves,
@@ -11492,6 +11567,12 @@ BGFXRendererLibP::viewerShaderBins(
     std::vector<Render::UserShader::Compiled> &out)
 {
     if (shader.fragmentSource.empty())
+        return;
+    // A raw volume-stage source is a medium FUNCTION, not a whole
+    // program — it can never compile standalone on any tier. Its
+    // compiled form ships as the assembled splice variants instead
+    // (UserShaderConfig::splices, stage "volume-splice").
+    if (shader.stage == "volume")
         return;
     // The viewer targets: the WASM/WebGL viewer (whose stock pack is
     // built asm.js/300_es — BGFXShaders.cmake) and the native GL

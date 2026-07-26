@@ -1911,6 +1911,14 @@ static void fitCamera()
 static void applySnapshot(bool fit)
 {
     markDirty();
+    // One line per apply — the streamed updates were previously
+    // silent, which made "did the page get the republish?" guesswork.
+    std::printf("fcviewer: apply snapshot: %zu draws, %zu post, "
+                "%zu splices%s\n",
+                s_snap.scene.size(),
+                s_snap.usershaderconf.shaders.size(),
+                s_snap.usershaderconf.splices.size(),
+                fit ? " (fit)" : "");
     s_renderer->setBackground(s_snap.background);
     s_renderer->setHiddenLineConfig(s_snap.hlconfig);
     s_renderer->setSectionConfig(s_snap.secconf);

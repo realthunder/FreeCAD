@@ -44,7 +44,10 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // 23: user shaders (docs/RenderDebug.md §6.3): deduplicated shader
 //     table (sources + params + server-compiled viewer binaries),
 //     post-stage config list, per-material shader reference.
-const uint32_t kVersion = 23;
+// 24: assembled volume-splice variants (docs/RenderEngine.md §5.11)
+//     as extra shader-table entries + index list, so compiler-less
+//     tiers can adopt the server-compiled binaries by source match.
+const uint32_t kVersion = 24;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -772,6 +775,8 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     addTex(snap.lightconf.groundBumpMap);
     for (const auto &s : snap.usershaderconf.shaders)
         addShader(&s);
+    for (const auto &s : snap.usershaderconf.splices)
+        addShader(&s);
 
     w.u32(uint32_t(meshes.size()));
     for (auto *m : meshes)
@@ -787,6 +792,10 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         writeUserShader(w, *s, snap.shaderBins);
     w.u32(uint32_t(snap.usershaderconf.shaders.size()));
     for (const auto &s : snap.usershaderconf.shaders)
+        w.i32(shaderIndex[&s]);
+    // v24: the assembled volume-splice variants as table indices.
+    w.u32(uint32_t(snap.usershaderconf.splices.size()));
+    for (const auto &s : snap.usershaderconf.splices)
         w.i32(shaderIndex[&s]);
 
     writeDrawList(w, snap.scene, meshIndex, texIndex, shaderIndex);
@@ -952,6 +961,19 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             int32_t si = r.i32();
             if (si >= 0 && size_t(si) < shaders.size())
                 snap.usershaderconf.shaders.push_back(*shaders[size_t(si)]);
+        }
+        // v24: assembled volume-splice variants (adopted by source
+        // match in the compiler-less tiers).
+        if (version >= 24) {
+            uint32_t nspl = r.u32();
+            if (!r.ok || nspl > 0x10000u)
+                r.ok = false;
+            for (uint32_t i = 0; r.ok && i < nspl; ++i) {
+                int32_t si = r.i32();
+                if (si >= 0 && size_t(si) < shaders.size())
+                    snap.usershaderconf.splices.push_back(
+                        *shaders[size_t(si)]);
+            }
         }
     }
 

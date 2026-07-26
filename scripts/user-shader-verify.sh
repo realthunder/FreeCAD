@@ -31,8 +31,10 @@
 #            headless-Chromium holder (scripts/wasm-hold.js), driven
 #            through saveRenderDump(source='viewer').
 #            user_shader_viewer.py (scene-graph route: post + material
-#            SoShaderProgram nodes) and user_shader_viewer_appearance.py
-#            (document-object route: empty-target Appearance).
+#            SoShaderProgram nodes), user_shader_viewer_appearance.py
+#            (document-object route: empty-target Appearance) and
+#            user_shader_volume_viewer.py (v24 volume-splice transport:
+#            green medium visible in the browser).
 #            Needs build/wasm and puppeteer (PUPPETEER_PATH).
 #   all      both legs.
 #
@@ -41,7 +43,7 @@
 #
 # options:
 #   --port N / --http N   viewer leg scene / http ports (default 8177/8178)
-#   --timeout N           per-suite timeout seconds (default 420)
+#   --timeout N           per-suite timeout seconds (default 900)
 #
 # A suite passes when its result file ends with DONE and contains no
 # FAIL/ABORT lines; the exit code reflects all suites run.
@@ -56,7 +58,7 @@ esac
 shift
 OUT=${1:?needs an output dir}
 shift
-PORT=8177 HTTP=8178 TIMEOUT=420
+PORT=8177 HTTP=8178 TIMEOUT=900
 while [ $# -gt 0 ]; do
     case "$1" in
         --port)    PORT=$2; shift 2;;
@@ -181,6 +183,7 @@ if [ "$cmd" = viewer ] || [ "$cmd" = all ]; then
         exit 2; }
     run_viewer user_shader_viewer.py viewer
     run_viewer user_shader_viewer_appearance.py viewer-appearance
+    run_viewer user_shader_volume_viewer.py viewer-volume
 fi
 
 trap - EXIT

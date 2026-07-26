@@ -180,7 +180,7 @@ scene-level list.
 |---|---|---|---|
 | `material` | the mesh program of the draw | beauty only: `ViewOpaque`, non-OIT `ViewTransparent`, `ViewGroundRefl` | depth prepass, shadow casting, picking, highlight/on-top, WBOIT, section clip |
 | `water` | `fs_fc_water`, the water-surface program — and binding one **activates** the water treatment (the target becomes a water body as if `Render_Water` were set: surface routing, scene copy, planar reflection, back depth, medium exemptions) | `ViewWaterSurface` | everything the stock water body leaves untouched; with the water pass set inactive (hidden-line, water shading disabled) the body renders stock |
-| `volume` | the fire-channel medium of the body's slot — a per-point **medium function** (field + ramp), not a raymarch; binding one **activates** the fire treatment (proxy volume raymarches, geometry not drawn). The engine reassembles the shared volumetric raymarch / extinction / reflection-media programs with the user functions dispatched for the slot | `ViewVolGen`, `ViewVolApply`, `ViewReflMedia` | the march itself, temporal accumulation, cross-media compositing; with volumetrics inactive (no Shadow draw style) the body renders stock. Browser tier renders the stock flame (no splice transport yet) |
+| `volume` | the fire-channel medium of the body's slot — a per-point **medium function** (field + ramp), not a raymarch; binding one **activates** the fire treatment (proxy volume raymarches, geometry not drawn). The engine reassembles the shared volumetric raymarch / extinction / reflection-media programs with the user functions dispatched for the slot | `ViewVolGen`, `ViewVolApply`, `ViewReflMedia` | the march itself, temporal accumulation, cross-media compositing; with volumetrics inactive (no Shadow draw style) the body renders stock. Browser tier: the snapshot (v24) ships the assembled splice variants with server-compiled binaries; the viewer assembles the same sources locally and adopts the shipped entry by source match — stock flame stands in until the async compile republishes |
 | `particle` | the mesh program of generated particle seed quads (§5.8 layout; the program's `Emitter*` properties drive per-target seed generation on Object-scope bindings). Lives in its own cache and survives the outer-wins user-shader merge-down, so it coexists with the effect's main program | beauty passes, like `material` | like `material`; never the effect's main program |
 | `post` | — (inserted) | `ViewUserPostCopy` + `ViewUserPost`, after bloom, before debug/on-top | everything else |
 
@@ -588,8 +588,10 @@ particle companions (**done** — Embers / WaterSpray / Droplets,
 target-fit emitters). Rain ships as a **particle-only** package — no
 main-stage program at all, the enabled streak emitter is the whole
 treatment, demonstrating that the particle framework carries an
-effect by itself. Remaining follow-ups: the browser-tier splice
-transport, Instance-scope particle emitters.
+effect by itself. The browser-tier splice transport is **done**
+(snapshot v24: assembled variants + viewer binaries in the shader
+table, adopted by source match). Remaining follow-up: Instance-scope
+particle emitters.
 
 ## 6. Render debugging facilities
 
