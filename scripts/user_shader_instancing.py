@@ -24,6 +24,11 @@ as a column cluster of the base capture (mid-height rows only, which
 excludes the navicube and the appearance's own instance parked high on
 Z) instead of trusting fitAll's framing.
 
+A trailing Scope="Instance" leg binds a particle-only effect (no main
+program) to the same chain: occurrence-fit emitter seeds must appear
+on every matched occurrence and nowhere else, and deletion must
+restore byte-exact.
+
 Env: US_OUT (output dir, default this file's dir), US_RESULT (result
 file, default <US_OUT>/instancing.txt).
 """
@@ -39,6 +44,32 @@ RED_FS = """$input v_normal, v_color0, v_vpos
 void main()
 {
     gl_FragColor = vec4(1.0, 0.1, 0.1, 1.0);
+}
+"""
+
+# Static green billboards inside the emitter box: deterministic (no
+# u_fcTime), no travel, so EmitterMargin can stay 0 and the seeds add
+# no bounds growth (no near/far shift vs the base capture).
+PART_VS = """$input a_position, a_normal, a_color0
+$output v_normal, v_color0, v_vpos
+#include <bgfx_shader.sh>
+void main()
+{
+    vec4 vpos = mul(u_modelView, vec4(a_position, 1.0));
+    vpos.xy += a_normal.xy * 0.8;
+    gl_Position = mul(u_proj, vpos);
+    v_normal = vec3(a_normal.xy, 1.0);
+    v_color0 = vec4(0.1, 1.0, 0.2, 1.0);
+    v_vpos = vpos.xyz;
+}
+"""
+
+PART_FS = """$input v_normal, v_color0, v_vpos
+#include <bgfx_shader.sh>
+void main()
+{
+    float r = dot(v_normal.xy, v_normal.xy);
+    gl_FragColor = v_color0 * max(0.0, 1.0 - r);
 }
 """
 
@@ -232,6 +263,46 @@ def run():
         cleared = cap("i_deleted")
         ok = byte_equal(base, cleared, "deletion restore")
         log("ASSERT delete-restore: %s" % ("PASS" if ok else "FAIL"))
+
+        # --- Scope=Instance particle emitters: a particle-ONLY effect
+        # (no main program — the rain pattern) bound to the same chain
+        # must grow occurrence-fit seed billboards on every matched
+        # occurrence and nowhere else.
+        progp = doc.addObject("App::ShaderProgram", "PartProg")
+        progp.Stage = "particle"
+        progp.VertexProgram = PART_VS
+        progp.FragmentProgram = PART_FS
+        progp.Blend = "Additive"
+        progp.DepthWrite = False
+        progp.EmitterCount = 250
+        progp.EmitterSeed = 7
+        # hover above the box top: seeds inside the solid would be
+        # depth-occluded to edge slivers from the front view
+        progp.EmitterSpread = FreeCAD.Vector(0.9, 0.9, 0.3)
+        progp.EmitterOffset = FreeCAD.Vector(0.0, 0.0, 0.7)
+        progp.EmitterMargin = 0.0
+        shp = doc.addObject("App::Shader", "PartFx")
+        shp.Programs = [progp]
+        shp.Demo = "None"
+        tgt3 = doc.addObject("App::Link", "TargetLink2")
+        tgt3.LinkedObject = (a1, ["Assembly2.Box."])
+        tgt3.Placement.Base = FreeCAD.Vector(0, 0, 60)
+        app = doc.addObject("App::Appearance", "PartLook")
+        app.Scope = "Instance"
+        app.ElementList = [shp, tgt3]
+        doc.recompute()
+        settle()
+        part = cap("i_particles")
+        counts = cluster_changes(base, part, clusters)
+        assert_clusters("instance-particles", counts,
+                        [True, True, True, False])
+
+        doc.removeObject(app.Name)
+        doc.removeObject(tgt3.Name)
+        settle()
+        partoff = cap("i_particles_off")
+        ok = byte_equal(base, partoff, "particle delete restore")
+        log("ASSERT particle-delete-restore: %s" % ("PASS" if ok else "FAIL"))
 
         log("DONE")
     except Exception:

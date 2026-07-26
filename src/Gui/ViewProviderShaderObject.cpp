@@ -704,6 +704,10 @@ struct DocumentHooks {
     // link-property edit elsewhere cannot affect the bindings, and the
     // rebuild churn (node reinsertion → recapture) is not worth it
     bool hasChains = false;
+    // whether any registered chain carries particle emitter programs:
+    // their occurrence-fit seeds are real top-of-root geometry that
+    // must follow visibility, so Visibility edits rebuild too
+    bool hasEmitterChains = false;
 };
 std::map<App::Document*, DocumentHooks> _DocumentHooks;
 std::set<std::string> _PendingRebuilds;
@@ -736,8 +740,12 @@ void ensureDocumentHooks(App::Document *doc)
             auto it = _DocumentHooks.find(doc);
             if (it == _DocumentHooks.end() || !it->second.hasChains)
                 return;
-            // only link topology can change the occurrence set
-            if (prop.isDerivedFrom(App::PropertyLinkBase::getClassTypeId()))
+            // only link topology can change the occurrence set —
+            // except occurrence-fit emitter seeds, which follow
+            // visibility
+            if (prop.isDerivedFrom(App::PropertyLinkBase::getClassTypeId())
+                    || (it->second.hasEmitterChains && prop.getName()
+                        && strcmp(prop.getName(), "Visibility") == 0))
                 scheduleRebuild(doc);
         });
 }
@@ -1066,6 +1074,58 @@ void ViewProviderAppearance::clearBindings()
     attached.clear();
 }
 
+// The effect's enabled particle companion programs (EmitterCount > 0,
+// stage "particle", docs/RenderEngine.md §5.11) — never the main
+// program, each gets seed geometry fit to a target's bounds.
+static std::vector<App::ShaderProgram*>
+collectEmitterPrograms(App::Appearance *obj)
+{
+    std::vector<App::ShaderProgram*> res;
+    auto shobj = obj ? obj->resolveShader() : nullptr;
+    if (!shobj)
+        return res;
+    for (auto prog : shobj->Programs.getValues()) {
+        auto p = dynamic_cast<App::ShaderProgram*>(prog);
+        if (p && p->Enabled.getValue()
+              && p->EmitterCount.getValue() > 0
+              && p->Stage.getValue() == StageParticle)
+            res.push_back(p);
+    }
+    return res;
+}
+
+// One emitter program's seed sub-root fit to the given target bounds.
+// Own SoFCSelectionRoot: setUserShader stamps the CACHE material
+// (last-set wins within a cache), so the seeds need their own render
+// cache or the effect's main program recaptures them; the "particle"
+// stage then survives the parent merge-down (SoFCRenderCache
+// mergeMaterial).
+static SoFCSelectionRoot *buildEmitterRoot(App::ShaderProgram *p,
+                                           const SbBox3f &box)
+{
+    auto pvp = dynamic_cast<ViewProviderShaderProgram*>(
+            Application::Instance->getViewProvider(p));
+    if (!pvp || !pvp->getShaderNode())
+        return nullptr;
+    SbVec3f bmin = box.getMin(), bmax = box.getMax();
+    SbVec3f c = (bmin + bmax) * 0.5f, ext = bmax - bmin;
+    const auto &spread = p->EmitterSpread.getValue();
+    const auto &offset = p->EmitterOffset.getValue();
+    c += SbVec3f(float(offset.x) * ext[0],
+                 float(offset.y) * ext[1],
+                 float(offset.z) * ext[2]);
+    SbVec3f half(0.5f * float(spread.x) * ext[0],
+                 0.5f * float(spread.y) * ext[1],
+                 0.5f * float(spread.z) * ext[2]);
+    auto sep = new SoFCSelectionRoot;
+    sep->addChild(pvp->getShaderNode());
+    buildEmitterSeedNodes(sep, int(p->EmitterCount.getValue()),
+                          uint32_t(p->EmitterSeed.getValue()),
+                          c - half, c + half,
+                          float(p->EmitterMargin.getValue()));
+    return sep;
+}
+
 void ViewProviderAppearance::applyPathBindings(
         const std::vector<std::pair<App::DocumentObject*,
                                     std::string>> &targets,
@@ -1075,10 +1135,80 @@ void ViewProviderAppearance::applyPathBindings(
     if (!obj || targets.empty())
         return;
     auto shader = resolveUserShader(obj);
-    if (!shader)
+    // Particle companions fit per occurrence; an element-scoped binding
+    // restricts to a face — no emitters there. A particle-only effect
+    // (no main program, e.g. the bundled rain) is a valid binding.
+    std::vector<App::ShaderProgram*> emitters;
+    if (element.empty())
+        emitters = collectEmitterPrograms(obj);
+    if (!shader && emitters.empty())
         return;
     auto gdoc = Application::Instance->getDocument(obj->getDocument());
     if (!gdoc)
+        return;
+    // Emitter seeds are scene nodes, view-independent: one sub-root per
+    // occurrence × program at the BASE object's root child 0. The base
+    // is the occurrence's top-level scene instance, so the seeds render
+    // once per occurrence, and hide with the base's root (a claimed
+    // base's root is not in the scene at all). Bounds by App-side
+    // resolution: getSubObject accumulates every placement along the
+    // occurrence subname (including the final object's), getLinkedObject
+    // then follows link tails (a subname link's baked path transform is
+    // accumulated too), and the tail view provider's placement-free bbox
+    // under that matrix is the occurrence's doc-frame bounds — the same
+    // frame a base-root child-0 separator's coordinates live in. (Not an
+    // SoGetBoundingBoxAction over the bound path: IN_PATH traversal
+    // unions every earlier sibling of each path node — whole-scene
+    // bounds, not the occurrence's.)
+    for (const auto &t : targets) {
+        if (emitters.empty())
+            break;
+        auto vpd = dynamic_cast<ViewProviderDocumentObject*>(
+                Application::Instance->getViewProvider(t.first));
+        if (!vpd || !vpd->getRoot())
+            continue;
+        // A hidden occurrence draws no shader override either — its
+        // caches capture empty — but the seeds are real top-of-root
+        // geometry, so visibility must be checked here (rebuilds on
+        // Visibility edits come from the document hooks).
+        if (gdoc->isClaimed3D(vpd) || !vpd->isVisible())
+            continue;
+        if (!t.second.empty()
+                && t.first->isElementVisibleEx(t.second.c_str()) == 0)
+            continue;
+        Base::Matrix4D mat;
+        auto sobj = t.first->getSubObject(t.second.c_str(), nullptr,
+                                          &mat, true);
+        Base::BoundBox3d bb;
+        if (sobj) {
+            if (auto linked = sobj->getLinkedObject(true, &mat, false))
+                sobj = linked;
+            if (auto svp = dynamic_cast<ViewProviderDocumentObject*>(
+                        Application::Instance->getViewProvider(sobj)))
+                bb = svp->getBoundingBox(nullptr, &mat, false);
+        }
+        if (!bb.IsValid()) {
+            FC_WARN("particle emitter: empty bounds on "
+                    << t.first->getFullName() << "." << t.second
+                    << ", seeds skipped");
+            continue;
+        }
+        SbBox3f box(float(bb.MinX), float(bb.MinY), float(bb.MinZ),
+                    float(bb.MaxX), float(bb.MaxY), float(bb.MaxZ));
+        SoGroup *root = vpd->getRoot();
+        for (auto p : emitters) {
+            if (auto sep = buildEmitterRoot(p, box)) {
+                FC_LOG("AP emitter occurrence " << t.first->getFullName()
+                       << "." << t.second << " for " << p->getFullName()
+                       << " box (" << bb.MinX << "," << bb.MinY << ","
+                       << bb.MinZ << ")-(" << bb.MaxX << "," << bb.MaxY
+                       << "," << bb.MaxZ << ")");
+                root->insertChild(sep, 0);
+                attached.emplace_back(root, sep);
+            }
+        }
+    }
+    if (!shader)
         return;
     for (auto view : gdoc->getMDIViewsOfType(View3DInventor::getClassTypeId())) {
         auto viewer = static_cast<View3DInventor*>(view)->getViewer();
@@ -1182,21 +1312,11 @@ void ViewProviderAppearance::applyDirectBindings(
     if (targets.empty())
         return;
     auto node = ownProgramNode();
-    // Particle companion programs of the effect (EmitterCount > 0,
-    // docs/RenderEngine.md §5.11): each gets seed geometry generated
-    // per target below, fit to the target's bounding box.
+    // Particle companion programs of the effect: each gets seed
+    // geometry generated per target below, fit to the target's
+    // bounding box.
     auto obj = dynamic_cast<App::Appearance*>(getObject());
-    auto shobj = obj ? obj->resolveShader() : nullptr;
-    std::vector<App::ShaderProgram*> emitters;
-    if (shobj) {
-        for (auto prog : shobj->Programs.getValues()) {
-            auto p = dynamic_cast<App::ShaderProgram*>(prog);
-            if (p && p->Enabled.getValue()
-                  && p->EmitterCount.getValue() > 0
-                  && p->Stage.getValue() == StageParticle)
-                emitters.push_back(p);
-        }
-    }
+    auto emitters = collectEmitterPrograms(obj);
     if (!node && emitters.empty())
         return;
     for (auto t : targets) {
@@ -1233,36 +1353,12 @@ void ViewProviderAppearance::applyDirectBindings(
                << box.getMin()[0] << "," << box.getMin()[1] << ","
                << box.getMin()[2] << ")-(" << box.getMax()[0] << ","
                << box.getMax()[1] << "," << box.getMax()[2] << ")");
+        // Inserted at child 0 (root frame, matching the bounds).
         for (auto p : emitters) {
-            SbVec3f bmin = box.getMin(), bmax = box.getMax();
-            SbVec3f c = (bmin + bmax) * 0.5f, ext = bmax - bmin;
-            const auto &spread = p->EmitterSpread.getValue();
-            const auto &offset = p->EmitterOffset.getValue();
-            c += SbVec3f(float(offset.x) * ext[0],
-                         float(offset.y) * ext[1],
-                         float(offset.z) * ext[2]);
-            SbVec3f half(0.5f * float(spread.x) * ext[0],
-                         0.5f * float(spread.y) * ext[1],
-                         0.5f * float(spread.z) * ext[2]);
-            auto pvp = dynamic_cast<ViewProviderShaderProgram*>(
-                    Application::Instance->getViewProvider(p));
-            if (!pvp || !pvp->getShaderNode())
-                continue;
-            // Own SoFCSelectionRoot: setUserShader stamps the CACHE
-            // material (last-set wins within a cache), so the seeds
-            // need their own render cache or the effect's main program
-            // recaptures them; the "particle" stage then survives the
-            // parent merge-down (SoFCRenderCache mergeMaterial).
-            // Inserted at child 0 (root frame, matching the bounds).
-            auto sep = new SoFCSelectionRoot;
-            sep->addChild(pvp->getShaderNode());
-            buildEmitterSeedNodes(
-                sep, int(p->EmitterCount.getValue()),
-                uint32_t(p->EmitterSeed.getValue()),
-                c - half, c + half,
-                float(p->EmitterMargin.getValue()));
-            root->insertChild(sep, 0);
-            attached.emplace_back(root, sep);
+            if (auto sep = buildEmitterRoot(p, box)) {
+                root->insertChild(sep, 0);
+                attached.emplace_back(root, sep);
+            }
         }
     }
 }
@@ -1381,8 +1477,14 @@ void ViewProviderAppearance::rebuildAllBindings(App::Document *doc)
         }
     }
 
-    if (auto h = _DocumentHooks.find(doc); h != _DocumentHooks.end())
+    if (auto h = _DocumentHooks.find(doc); h != _DocumentHooks.end()) {
         h->second.hasChains = !chains.empty();
+        h->second.hasEmitterChains = std::any_of(
+            chains.begin(), chains.end(), [](const ChainBinding &cb) {
+                return cb.element.empty()
+                    && !collectEmitterPrograms(cb.obj).empty();
+            });
+    }
 
     // Scene-level activation: the shader-only Appearances' post-stage
     // programs, ordered ascending by TreeRank (name fallback) so the

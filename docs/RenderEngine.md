@@ -181,7 +181,7 @@ scene-level list.
 | `material` | the mesh program of the draw | beauty only: `ViewOpaque`, non-OIT `ViewTransparent`, `ViewGroundRefl` | depth prepass, shadow casting, picking, highlight/on-top, WBOIT, section clip |
 | `water` | `fs_fc_water`, the water-surface program — and binding one **activates** the water treatment (the target becomes a water body as if `Render_Water` were set: surface routing, scene copy, planar reflection, back depth, medium exemptions) | `ViewWaterSurface` | everything the stock water body leaves untouched; with the water pass set inactive (hidden-line, water shading disabled) the body renders stock |
 | `volume` | the fire-channel medium of the body's slot — a per-point **medium function** (field + ramp), not a raymarch; binding one **activates** the fire treatment (proxy volume raymarches, geometry not drawn). The engine reassembles the shared volumetric raymarch / extinction / reflection-media programs with the user functions dispatched for the slot | `ViewVolGen`, `ViewVolApply`, `ViewReflMedia` | the march itself, temporal accumulation, cross-media compositing; with volumetrics inactive (no Shadow draw style) the body renders stock. Browser tier: the snapshot (v24) ships the assembled splice variants with server-compiled binaries; the viewer assembles the same sources locally and adopts the shipped entry by source match — stock flame stands in until the async compile republishes |
-| `particle` | the mesh program of generated particle seed quads (§5.8 layout; the program's `Emitter*` properties drive per-target seed generation on Object-scope bindings). Lives in its own cache and survives the outer-wins user-shader merge-down, so it coexists with the effect's main program | beauty passes, like `material` | like `material`; never the effect's main program |
+| `particle` | the mesh program of generated particle seed quads (§5.8 layout; the program's `Emitter*` properties drive seed generation per target on Object-scope bindings and per matched occurrence on Instance-scope bindings). Lives in its own cache and survives the outer-wins user-shader merge-down, so it coexists with the effect's main program | beauty passes, like `material` | like `material`; never the effect's main program |
 | `post` | — (inserted) | `ViewUserPostCopy` + `ViewUserPost`, after bloom, before debug/on-top | everything else |
 
 While a compile is pending or failed, the stock program stands in —
@@ -567,13 +567,18 @@ property.
 
 **Particle companions — target-fit emitters.** *Implemented*: a
 program with `EmitterCount > 0` is a particle companion (never the
-effect's main program). On an Object-scope binding, each such enabled
-program gets its own seed-quad geometry generated per target
-(`buildEmitterSeedNodes`, the §5.8 seed layout), fit to the target's
-bounding box scaled/offset by `EmitterSpread`/`EmitterOffset` (in
-bbox-size units — spray sits on the pool's top face, embers over the
-flame body) and attached with the program in an own separator at the
-target's view-provider root. `EmitterMargin` adds travel headroom as
+effect's main program). Each such enabled program gets its own
+seed-quad geometry generated per target (`buildEmitterSeedNodes`, the
+§5.8 seed layout), fit to the target's bounding box scaled/offset by
+`EmitterSpread`/`EmitterOffset` (in bbox-size units — spray sits on
+the pool's top face, embers over the flame body). On an Object-scope
+binding the seeds attach with the program in an own separator at the
+target's view-provider root (so every instance of the target carries
+them); on an Instance-scope binding they are generated per matched
+occurrence — bounds from the occurrence chain's accumulated transform
+— and attach at the occurrence's top-level scene instance, so only
+the bound occurrence(s) emit. Element-scope bindings carry no
+emitters (a face restriction has no emitter volume). `EmitterMargin` adds travel headroom as
 inert corner quads folded into the geometry's bounds, so the auto
 near/far fit does not clip displaced billboards. Bundled: `Embers` on
 the fire effect, `WaterSpray` on the water effect — both additive,
@@ -590,8 +595,9 @@ main-stage program at all, the enabled streak emitter is the whole
 treatment, demonstrating that the particle framework carries an
 effect by itself. The browser-tier splice transport is **done**
 (snapshot v24: assembled variants + viewer binaries in the shader
-table, adopted by source match). Remaining follow-up: Instance-scope
-particle emitters.
+table, adopted by source match). Instance-scope particle emitters are
+**done** (occurrence-fit seeds, particle-only effects bind at
+Instance scope too).
 
 ## 6. Render debugging facilities
 
