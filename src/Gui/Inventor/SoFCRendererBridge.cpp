@@ -561,9 +561,17 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.lightrange = m.lightrange;
         res.lightshadow = m.lightshadow;
         res.lightshadowext = m.lightshadowext;
-        // User "material"-stage shader (docs/RenderDebug.md §6); the
-        // shared translation's pointer identity is the batch key.
+        // User "material"/"water"-stage shader (docs/RenderDebug.md §6);
+        // the shared translation's pointer identity is the batch key.
         res.usershader = m.usershader;
+        // Binding a "water"-stage effect IS the water activation
+        // (docs/RenderEngine.md §5.11): the draw becomes a water body
+        // exactly as if Render_Water were set, so the whole pass set
+        // (body detection, scene copy, planar reflection, back depth,
+        // medium exemptions) engages unchanged, with the user program
+        // replacing fs_fc_water at the surface submit.
+        if (res.usershader && res.usershader->stage == "water")
+            res.water = true;
     }
 
     // Bump map of triangle draws, unit 0 only like textures (the GL

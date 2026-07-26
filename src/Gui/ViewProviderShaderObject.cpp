@@ -975,12 +975,13 @@ SoShaderProgram *ViewProviderAppearance::ownProgramNode()
     App::ShaderProgram *progObj = nullptr;
     if (shobj) {
         // Direct attachment inserts a real node into target graphs, and
-        // the capture callback routes only "material"-stage programs into
-        // the enclosing cache — anything else would leak into the
-        // scene-level list, so the stage filter is strict here.
+        // the capture callback routes only "material"/"water"-stage
+        // programs into the enclosing cache — anything else would leak
+        // into the scene-level list, so the stage filter is strict here.
         for (auto prog : shobj->Programs.getValues()) {
             auto p = dynamic_cast<App::ShaderProgram*>(prog);
-            if (p && strcmp(p->Stage.getValue(), "material") == 0) {
+            if (p && (strcmp(p->Stage.getValue(), "material") == 0
+                      || strcmp(p->Stage.getValue(), "water") == 0)) {
                 progObj = p;
                 break;
             }

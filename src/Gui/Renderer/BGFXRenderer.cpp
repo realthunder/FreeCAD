@@ -5050,7 +5050,27 @@ public:
         if (mat.culling && !mat.twoside)
             state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
         bgfx::setState(state);
-        bgfx::submit(viewId + ViewWaterSurface, m_progWater);
+        // User "water"-stage shader (docs/RenderEngine.md §5.11): the
+        // user fragment program replaces fs_fc_water for this body —
+        // every uniform and sampler recorded above stays available (the
+        // fc_water_surface.sh core declares them; bgfx uniforms are
+        // global by name). While the async compile is pending or failed
+        // the stock surface stands in, never a black body.
+        bgfx::ProgramHandle prog = m_progWater;
+        if (mat.usershader && !mat.usershader->fragmentSource.empty()
+                && mat.usershader->stage == "water") {
+            bgfx::ProgramHandle uprog = _BGFXLib.getUserProgram(
+                *mat.usershader, "vs_fc_mesh");
+            if (bgfx::isValid(uprog)) {
+                _BGFXLib.pushUserParams(*mat.usershader);
+                prog = uprog;
+                if (_BGFXLib.userTime[1] != 0.0f
+                        && userShaderAnimated(*mat.usershader))
+                    _BGFXLib.userAnimatedDraw = true;
+                applyUserState(*mat.usershader, state, 0);
+            }
+        }
+        bgfx::submit(viewId + ViewWaterSurface, prog);
         ++drawcount;
     }
 
@@ -6028,6 +6048,7 @@ public:
         // object. Parameter uniforms must be recorded with the
         // consuming draw (see submitDebug).
         if (mat.usershader && !mat.usershader->fragmentSource.empty()
+                && mat.usershader->stage == "material"
                 && mat.type == Render::Material::Triangle
                 && pass == PassNormal && !oitDraw
                 && (passView == ViewOpaque || passView == ViewTransparent
@@ -6040,34 +6061,40 @@ public:
                 if (_BGFXLib.userTime[1] != 0.0f
                         && userShaderAnimated(*mat.usershader))
                     _BGFXLib.userAnimatedDraw = true;
-                // Reserved "fc_state" parameter = render-state override
-                // of the beauty draw (App::ShaderProgram Blend /
-                // DepthWrite, docs/RenderDebug.md §6.2): re-record the
-                // state — bgfx keeps the last setState before submit.
-                for (const auto &p : mat.usershader->params) {
-                    if (p.name != "fc_state" || p.values.size() < 2)
-                        continue;
-                    uint64_t ustate = state;
-                    if (p.values[1] == 0.0f)
-                        ustate &= ~BGFX_STATE_WRITE_Z;
-                    int blend = int(p.values[0]);
-                    if (blend == 1) {
-                        ustate &= ~BGFX_STATE_BLEND_MASK;
-                        ustate |= BGFX_STATE_BLEND_ALPHA;
-                    }
-                    else if (blend == 2) {
-                        ustate &= ~BGFX_STATE_BLEND_MASK;
-                        ustate |= BGFX_STATE_BLEND_ADD;
-                    }
-                    if (ustate != state)
-                        bgfx::setState(ustate, blendRt);
-                    break;
-                }
+                applyUserState(*mat.usershader, state, blendRt);
             }
         }
 
         bgfx::submit(viewId + passView, prog, depth);
         ++drawcount;
+    }
+
+    /// Reserved "fc_state" parameter = render-state override of a user
+    /// shader's beauty draw (App::ShaderProgram Blend / DepthWrite,
+    /// docs/RenderDebug.md §6.2): re-record the state — bgfx keeps the
+    /// last setState before submit.
+    static void applyUserState(const Render::UserShader &shader,
+                               uint64_t state, uint32_t blendRt)
+    {
+        for (const auto &p : shader.params) {
+            if (p.name != "fc_state" || p.values.size() < 2)
+                continue;
+            uint64_t ustate = state;
+            if (p.values[1] == 0.0f)
+                ustate &= ~BGFX_STATE_WRITE_Z;
+            int blend = int(p.values[0]);
+            if (blend == 1) {
+                ustate &= ~BGFX_STATE_BLEND_MASK;
+                ustate |= BGFX_STATE_BLEND_ALPHA;
+            }
+            else if (blend == 2) {
+                ustate &= ~BGFX_STATE_BLEND_MASK;
+                ustate |= BGFX_STATE_BLEND_ADD;
+            }
+            if (ustate != state)
+                bgfx::setState(ustate, blendRt);
+            break;
+        }
     }
 
     static uint64_t depthFuncState(uint8_t func)

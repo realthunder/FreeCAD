@@ -19,7 +19,9 @@
 #            user_shader_motion.py (user vertex stage: identity,
 #            Param-driven displacement, u_fcTime animation + freeze) and
 #            user_shader_particles.py (Emitter seed quads + billboard
-#            VS + additive state = stateless GPU particles).
+#            VS + additive state = stateless GPU particles) and
+#            user_shader_water.py ("water" stage: activation-by-binding,
+#            fc_user_water.sh stock identity, tint, fallback).
 #   viewer   browser-tier suites: backend serving demo-lights
 #            (FC_BGFX_SERVE_SCENE) + no-store http on build/wasm + a
 #            headless-Chromium holder (scripts/wasm-hold.js), driven
@@ -162,6 +164,7 @@ if [ "$cmd" = desktop ] || [ "$cmd" = all ]; then
     run_desktop user_shader_lighting.py lighting
     run_desktop user_shader_motion.py motion
     run_desktop user_shader_particles.py particles
+    run_desktop user_shader_water.py water
 fi
 
 if [ "$cmd" = viewer ] || [ "$cmd" = all ]; then

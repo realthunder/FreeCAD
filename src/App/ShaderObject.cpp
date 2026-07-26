@@ -40,7 +40,9 @@ ShaderProgram::ShaderProgram()
 {
     ADD_PROPERTY_TYPE(Stage, ("material"), "Shader", Prop_None,
             "Renderer pipeline stage this program attaches to,\n"
-            "e.g. 'material' (surface shading) or 'post' (full screen pass)");
+            "e.g. 'material' (surface shading), 'water' (water-surface\n"
+            "shading, makes the bound object a water body) or 'post'\n"
+            "(full screen pass)");
     Dialect.setEnums(DialectEnums);
     ADD_PROPERTY_TYPE(Dialect, ((long)0), "Shader", Prop_None,
             "Source dialect of the program text");

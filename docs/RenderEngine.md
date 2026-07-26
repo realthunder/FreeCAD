@@ -177,6 +177,7 @@ scene-level list.
 | Stage | Replaces | Passes affected | Untouched |
 |---|---|---|---|
 | `material` | the mesh program of the draw | beauty only: `ViewOpaque`, non-OIT `ViewTransparent`, `ViewGroundRefl` | depth prepass, shadow casting, picking, highlight/on-top, WBOIT, section clip |
+| `water` | `fs_fc_water`, the water-surface program — and binding one **activates** the water treatment (the target becomes a water body as if `Render_Water` were set: surface routing, scene copy, planar reflection, back depth, medium exemptions) | `ViewWaterSurface` | everything the stock water body leaves untouched; with the water pass set inactive (hidden-line, water shading disabled) the body renders stock |
 | `post` | — (inserted) | `ViewUserPostCopy` + `ViewUserPost`, after bloom, before debug/on-top | everything else |
 
 While a compile is pending or failed, the stock program stands in —
@@ -237,6 +238,26 @@ void main() { gl_FragColor = texture2D(s_texScene, v_texcoord0); }
 
 The vertex stage is the stock fullscreen triangle (`vs_fc_comp`);
 supplying a custom VS is allowed but rarely useful.
+
+**Water fragment program** (bind with an **Object-scope** Appearance —
+a water body is whole-object by nature; Instance/Element bindings of a
+water-stage program fall back to standard rendering)
+
+```glsl
+$input v_normal, v_color0, v_vpos
+#include <bgfx_shader.sh>
+#include "fc_user_water.sh"
+void main() { gl_FragColor = fcWaterFragment(v_normal, v_vpos); }
+```
+
+The identity form reproduces the stock water surface exactly.
+`fc_water_surface.sh` (which the helper includes) declares every
+uniform and sampler the engine records with the surface draw —
+refraction scene copy, planar reflection, water back depth, shadow
+map, front volumetric — so custom effects can combine
+`fcWaterShadeFragment` with their own `Param_*` uniforms or sample the
+inputs directly. While a compile is pending or failed the stock
+surface stands in, and the body *stays* a water body.
 
 ### 5.4 Public uniforms and samplers
 
