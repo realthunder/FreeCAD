@@ -1,0 +1,27 @@
+{
+  "label": "Fountain",
+  "description": "Renders the bound solid as a water-spray fountain: the closed shape raymarches as a scattering plume in its placement's flow frame and feeds splash rings on an underlying water surface. Identical to the built-in Render_Fountain treatment, activated by binding. Needs the Shadow draw style (the volumetric pass hosts the medium). Bind with an Object-scope Appearance to the proxy solid.",
+  "viewProps": {"Render_Volumetric": true},
+  "programs": [
+    {
+      "name": "FountainMedium",
+      "stage": "volume",
+      "fragment": "fountain_medium.sc",
+      "enabled": true
+    },
+    {
+      "name": "Droplets",
+      "stage": "particle",
+      "vertex": "droplets_vs.sc",
+      "fragment": "droplets_fs.sc",
+      "blend": "Additive",
+      "depthwrite": false,
+      "enabled": false,
+      "emitter": {"count": 180, "seed": 11,
+                  "spread": [0.3, 0.3, 0.3],
+                  "offset": [0.0, 0.0, 0.6],
+                  "margin": 1.2},
+      "params": {"Arc": 3.0, "Size": 0.2}
+    }
+  ]
+}

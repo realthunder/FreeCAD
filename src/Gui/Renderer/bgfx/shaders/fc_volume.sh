@@ -355,15 +355,52 @@ vec3 fcFireRampAt(int s, float t)
 	return fcStockFireRamp(s, t);
 }
 
-// Cloud channel: scattering density at a world position — the fountain
+// Stock cloud-channel scattering density of a slot — the fountain
 // spray field when the slot flags one (u_cloudParams[s].w > 1.5), the
-// FBM puff otherwise.
-float fcCloudFieldAt(int s, vec3 wp)
+// FBM puff otherwise. Also the authoring API a user scatter medium
+// uses to build on the stock field (fc_user_volume.sh: the identity
+// medium is fcStockCloudField of its own slot).
+float fcStockCloudField(int s, vec3 wp)
 {
 	return u_cloudParams[s].w > 1.5
 	    ? fountainDensityAt(wp, u_fountainFrame[s], u_cloudParams[s],
 	                        u_fountainParams[s])
 	    : cloudDensityAt(wp, u_cloudParams[s]);
+}
+
+// User scatter-channel splice hooks, mirroring the fire hooks above:
+// FC_USER_SCATTER_<slot> prototypes fcUserScatter_<slot> and the user
+// source (its fcMediumScatter macro-renamed to the slot's dispatch
+// target) is appended after this file.
+#ifdef FC_USER_SCATTER_0
+float fcUserScatter_0(vec3 wp);
+#endif
+#ifdef FC_USER_SCATTER_1
+float fcUserScatter_1(vec3 wp);
+#endif
+#ifdef FC_USER_SCATTER_2
+float fcUserScatter_2(vec3 wp);
+#endif
+#ifdef FC_USER_SCATTER_3
+float fcUserScatter_3(vec3 wp);
+#endif
+
+// Cloud channel: scattering density at a world position.
+float fcCloudFieldAt(int s, vec3 wp)
+{
+#ifdef FC_USER_SCATTER_0
+	if (s == 0) return fcUserScatter_0(wp);
+#endif
+#ifdef FC_USER_SCATTER_1
+	if (s == 1) return fcUserScatter_1(wp);
+#endif
+#ifdef FC_USER_SCATTER_2
+	if (s == 2) return fcUserScatter_2(wp);
+#endif
+#ifdef FC_USER_SCATTER_3
+	if (s == 3) return fcUserScatter_3(wp);
+#endif
+	return fcStockCloudField(s, wp);
 }
 
 // Entry/exit distances of the ray through the medium sphere, entry

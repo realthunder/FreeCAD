@@ -291,6 +291,23 @@ field animation rides the engine's flame clock through
 distinct user media in one scene the sources share one translation
 unit — keep helper names unique.
 
+Defining **`fcMediumScatter`** instead selects the **scattering
+channel**: the body becomes a fountain body (flow frame from the
+placement, splash rings on an underlying water surface) whose spray
+density the function supplies —
+
+```glsl
+float fcMediumScatter(vec3 wp)  // scattering density at a point
+{
+    return fcStockCloudField(FC_MEDIUM_SLOT, wp);
+}
+```
+
+— the identity form reproducing the stock fountain byte-exact. The
+channel is chosen by which contract functions the source defines:
+`fcMediumScatter` = scatter/fountain, `fcMediumField` +
+`fcMediumRamp` = emissive/fire.
+
 bgfx uniforms and samplers are **global by name**: declaring one of
 these in a user program picks up the value/texture the engine records
 with the consuming draw. Three stability classes:
@@ -564,12 +581,12 @@ depth-write off, stateless (`u_fcTime` + seed attributes), tuned via
 `Param_Rise`/`Param_Size`.
 
 Implementation order: water stage (identity program == stock water —
-**done**), volume stage (identity == stock fire — **done** for the
-emissive fire channel), packages + factory + `Enabled` (**done** —
-water and fire ship), particle companions (**done** — Embers /
-WaterSpray, target-fit emitters). Remaining follow-ups: the fountain
-package (needs the scattering medium channel), the browser-tier
-splice transport, Instance-scope particle emitters.
+**done**), volume stage (identity == stock fire / stock fountain —
+**done** for both the emissive and scattering channels), packages +
+factory + `Enabled` (**done** — water, fire and fountain ship),
+particle companions (**done** — Embers / WaterSpray / Droplets,
+target-fit emitters). Remaining follow-ups: the browser-tier splice
+transport, Instance-scope particle emitters.
 
 ## 6. Render debugging facilities
 

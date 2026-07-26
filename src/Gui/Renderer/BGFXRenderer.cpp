@@ -265,49 +265,69 @@ static bool userShaderAnimated(const UserShader &shader)
 /// Assemble a user volume-stage medium splice (docs/RenderEngine.md
 /// §5.11): a variant of one of the volumetric fragment bodies
 /// (fc_volume_fs.sh / fc_volume_ext_fs.sh / fc_refl_media_fs.sh) with
-/// the user medium functions dispatched for their fire slots. The
-/// prelude defines FC_USER_FIRE_<slot> (fc_volume.sh prototypes and
-/// dispatches on it); each user source is appended after the body
-/// include — so it sees every helper — with fcMediumField/fcMediumRamp
-/// macro-renamed to the slot's dispatch targets and FC_MEDIUM_SLOT set
-/// to its slot index. Returns a synthetic UserShader (stock vs_fc_comp
-/// vertex stage, merged parameter list) for the shared compile cache,
-/// or null when no slot carries a user medium.
+/// the user medium functions dispatched for their fire (emissive) and
+/// cloud (scatter) slots. The prelude defines FC_USER_FIRE_<slot> /
+/// FC_USER_SCATTER_<slot> (fc_volume.sh prototypes and dispatches on
+/// them); each user source is appended after the body include — so it
+/// sees every helper — with its contract functions (fcMediumField/
+/// fcMediumRamp on the fire channel, fcMediumScatter on the cloud
+/// channel) macro-renamed to the slot's dispatch targets and
+/// FC_MEDIUM_SLOT set to its slot index. Returns a synthetic
+/// UserShader (stock vs_fc_comp vertex stage, merged parameter list)
+/// for the shared compile cache, or null when no slot carries a user
+/// medium.
 static std::shared_ptr<const Render::UserShader>
 assembleMediumVariant(const char *body,
-                      const std::shared_ptr<const Render::UserShader> *users,
+                      const std::shared_ptr<const Render::UserShader> *fireUsers,
+                      const std::shared_ptr<const Render::UserShader> *scatterUsers,
                       int nslots)
 {
     bool any = false;
     for (int i = 0; i < nslots; ++i)
-        any = any || (users[i] != nullptr);
+        any = any || fireUsers[i] || scatterUsers[i];
     if (!any)
         return nullptr;
     auto res = std::make_shared<Render::UserShader>();
     res->stage = "volume-splice";
     std::string &s = res->fragmentSource;
     s = "$input v_texcoord0\n\n#include <bgfx_shader.sh>\n";
-    for (int i = 0; i < nslots; ++i)
-        if (users[i])
+    for (int i = 0; i < nslots; ++i) {
+        if (fireUsers[i])
             s += "#define FC_USER_FIRE_" + std::to_string(i) + "\n";
+        if (scatterUsers[i])
+            s += "#define FC_USER_SCATTER_" + std::to_string(i) + "\n";
+    }
     s += "#include \"";
     s += body;
     s += "\"\n";
+    auto mergeParams = [&res](const Render::UserShader &u) {
+        for (const auto &p : u.params) {
+            if (p.name == "fc_state")
+                continue;
+            res->params.push_back(p);
+        }
+    };
     for (int i = 0; i < nslots; ++i) {
-        if (!users[i])
+        if (!fireUsers[i])
             continue;
         std::string n = std::to_string(i);
         s += "#define fcMediumField fcUserField_" + n + "\n";
         s += "#define fcMediumRamp fcUserRamp_" + n + "\n";
         s += "#define FC_MEDIUM_SLOT " + n + "\n";
-        s += users[i]->fragmentSource;
+        s += fireUsers[i]->fragmentSource;
         s += "\n#undef fcMediumField\n#undef fcMediumRamp\n"
              "#undef FC_MEDIUM_SLOT\n";
-        for (const auto &p : users[i]->params) {
-            if (p.name == "fc_state")
-                continue;
-            res->params.push_back(p);
-        }
+        mergeParams(*fireUsers[i]);
+    }
+    for (int i = 0; i < nslots; ++i) {
+        if (!scatterUsers[i])
+            continue;
+        std::string n = std::to_string(i);
+        s += "#define fcMediumScatter fcUserScatter_" + n + "\n";
+        s += "#define FC_MEDIUM_SLOT " + n + "\n";
+        s += scatterUsers[i]->fragmentSource;
+        s += "\n#undef fcMediumScatter\n#undef FC_MEDIUM_SLOT\n";
+        mergeParams(*scatterUsers[i]);
     }
     return res;
 }
@@ -6648,16 +6668,18 @@ public:
     /// accumulation (0 = replace history this frame).
     int volAccumFrames = 0;
     /// User volume-stage medium splice (docs/RenderEngine.md §5.11):
-    /// synthetic shaders assembled per frame from the fire slots bound
-    /// to a user medium function — variants of the volumetric
-    /// raymarch / extinction / reflection-media programs with the
-    /// user field/ramp dispatched for those slots. Null = all media
-    /// stock. volUserKey tracks the slot-source tuple so the strings
-    /// only reassemble when a binding changes.
+    /// synthetic shaders assembled per frame from the fire and cloud
+    /// slots bound to a user medium function — variants of the
+    /// volumetric raymarch / extinction / reflection-media programs
+    /// with the user field/ramp (fire channel) and scatter density
+    /// (cloud channel) dispatched for those slots. Null = all media
+    /// stock. volUserKey tracks the slot-source tuple (fire slots then
+    /// cloud slots) so the strings only reassemble when a binding
+    /// changes.
     std::shared_ptr<const Render::UserShader> volUserVol;
     std::shared_ptr<const Render::UserShader> volUserExt;
     std::shared_ptr<const Render::UserShader> volUserRefl;
-    std::array<const void *, 4> volUserKey {};
+    std::array<const void *, 8> volUserKey {};
     bgfx::ProgramHandle m_progVol = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolApply = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolAccum = BGFX_INVALID_HANDLE;
@@ -7674,6 +7696,10 @@ public:
         float fountainSplash[kSlots][4] = {};
         std::unordered_map<uint64_t, int> cloudSlots;
         int cloudSlotCount = 0;
+        // Cloud slots bound to a user "volume"-stage scatter medium
+        // (docs/RenderEngine.md §5.11) — feeds the spliced program
+        // variants assembled with the fire-slot users below.
+        std::shared_ptr<const Render::UserShader> cloudSlotUser[kSlots];
         for (const auto &draw : scene) {
             const auto &mat = draw.material;
             if ((!mat.cloud && !mat.fountain) || mat.ontop
@@ -7687,6 +7713,9 @@ public:
             }
             int slot = cloudSlotCount++;
             cloudSlots.emplace(draw.objectKey, slot);
+            if (mat.usershader && mat.usershader->stage == "volume"
+                    && !mat.usershader->fragmentSource.empty())
+                cloudSlotUser[slot] = mat.usershader;
             float dx = draw.bboxMax[0] - draw.bboxMin[0];
             float dy = draw.bboxMax[1] - draw.bboxMin[1];
             float dz = draw.bboxMax[2] - draw.bboxMin[2];
@@ -7859,17 +7888,25 @@ public:
             if (!fireActive)
                 for (int i = 0; i < kSlots; ++i)
                     fireSlotUser[i].reset();
-            std::array<const void *, 4> key {};
-            for (int i = 0; i < kSlots && i < 4; ++i)
+            if (!cloudActive)
+                for (int i = 0; i < kSlots; ++i)
+                    cloudSlotUser[i].reset();
+            std::array<const void *, 8> key {};
+            for (int i = 0; i < kSlots && i < 4; ++i) {
                 key[i] = fireSlotUser[i].get();
+                key[i + 4] = cloudSlotUser[i].get();
+            }
             if (key != view->volUserKey) {
                 view->volUserKey = key;
                 view->volUserVol = assembleMediumVariant(
-                    "fc_volume_fs.sh", fireSlotUser, kSlots);
+                    "fc_volume_fs.sh", fireSlotUser, cloudSlotUser,
+                    kSlots);
                 view->volUserExt = assembleMediumVariant(
-                    "fc_volume_ext_fs.sh", fireSlotUser, kSlots);
+                    "fc_volume_ext_fs.sh", fireSlotUser, cloudSlotUser,
+                    kSlots);
                 view->volUserRefl = assembleMediumVariant(
-                    "fc_refl_media_fs.sh", fireSlotUser, kSlots);
+                    "fc_refl_media_fs.sh", fireSlotUser, cloudSlotUser,
+                    kSlots);
             }
         }
         // Time-animated content (fire flicker, cloud drift, water waves,

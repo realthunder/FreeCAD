@@ -573,11 +573,20 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         if (res.usershader && res.usershader->stage == "water")
             res.water = true;
         // Likewise a "volume"-stage medium function makes the draw a
-        // fire body (the emissive medium channel): the proxy volume
-        // raymarches in the shared volumetric pass, which dispatches
-        // the user field/ramp for the body's slot.
-        if (res.usershader && res.usershader->stage == "volume")
-            res.fire = true;
+        // medium body: the proxy volume raymarches in the shared
+        // volumetric pass, which dispatches the user functions for the
+        // body's slot. The source picks its channel by contract
+        // function — fcMediumScatter = the scattering channel (a
+        // fountain body: flow frame + splash machinery engage),
+        // fcMediumField/fcMediumRamp = the emissive channel (a fire
+        // body).
+        if (res.usershader && res.usershader->stage == "volume") {
+            if (res.usershader->fragmentSource.find("fcMediumScatter")
+                    != std::string::npos)
+                res.fountain = true;
+            else
+                res.fire = true;
+        }
     }
 
     // Bump map of triangle draws, unit 0 only like textures (the GL
