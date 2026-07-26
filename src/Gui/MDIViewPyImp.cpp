@@ -69,9 +69,23 @@ PyObject* MDIViewPy::addProperty(PyObject *args, PyObject *kwds)
             if (us != name)
                 group.assign(name, us);
         }
-        auto prop = getMDIViewPtr()->addDynamicProperty(
-                sType, sName, group.empty() ? nullptr : group.c_str(),
-                sDoc);
+        // Idempotent on the pre-created per-view render properties: a
+        // view initializes its Render_*/Shadow_*/... set up front, so a
+        // script re-adding one gets the existing property back instead
+        // of an "already exists" error — unless the type disagrees.
+        auto view = getMDIViewPtr();
+        auto prop = view->getPropertyByName(sName);
+        if (prop) {
+            if (strcmp(prop->getTypeId().getName(), sType) != 0)
+                throw Py::TypeError(std::string("Property ") + sName
+                        + " already exists with type "
+                        + prop->getTypeId().getName());
+        }
+        else {
+            prop = view->addDynamicProperty(
+                    sType, sName, group.empty() ? nullptr : group.c_str(),
+                    sDoc);
+        }
         if (!prop)
             throw Py::RuntimeError(std::string("Cannot add property: ")
                                    + sName);
