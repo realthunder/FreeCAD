@@ -219,15 +219,15 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 					// SpreadSampleSize >= 1: an N x N grid,
 					// N = min(2 * size + 1, 8) with Coin's
 					// integer-centered offsets.
-					int n_ = int(u_evsm.w + 0.5);
-					int cen = n_ / 2;
+					int ntap = int(u_evsm.w + 0.5);
+					int cen = ntap / 2;
 					for (int j = 0; j < 8; ++j)
 					{
-						if (j >= n_)
+						if (j >= ntap)
 							break;
 						for (int k = 0; k < 8; ++k)
 						{
-							if (k >= n_)
+							if (k >= ntap)
 								break;
 							shadow += fc_shadowTap(
 							    sp.xy
@@ -237,7 +237,7 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 							    sp.z);
 						}
 					}
-					shadow /= float(n_ * n_);
+					shadow /= float(ntap * ntap);
 				}
 			}
 			else
