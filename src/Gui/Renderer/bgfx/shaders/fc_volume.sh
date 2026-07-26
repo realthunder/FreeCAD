@@ -271,6 +271,41 @@ vec3 fireRamp(float t)
 	            smoothstep(0.45, 1.0, t) * 0.65);
 }
 
+// ---- Medium-function seam (docs/RenderEngine.md §5.11) --------------
+// Every pass that evaluates a body's medium (the volumetric raymarch,
+// the extinction sub-march, the planar-reflection media pass) goes
+// through these slot-aware wrappers instead of the field primitives
+// above. A user "volume"-stage shader replaces the field / ramp of its
+// body's slot in a spliced shader variant; the stock paths compile to
+// exactly the primitive calls.
+
+// Fire channel: temperature-like scalar field in [0,1] at a world
+// position. Drives the emission ramp below and the soot extinction
+// (u_fireParams2[s].z * field) at the call sites.
+float fcFireFieldAt(int s, vec3 wp)
+{
+	return fireTempAt(wp, u_fireFrame[s], u_fireParams[s],
+	                  u_fireParams2[s]);
+}
+
+// Fire channel: radiance color of a field value (per unit length,
+// scaled by the intensity u_fireParams[s].x at the call sites).
+vec3 fcFireRampAt(int s, float t)
+{
+	return fireRamp(t);
+}
+
+// Cloud channel: scattering density at a world position — the fountain
+// spray field when the slot flags one (u_cloudParams[s].w > 1.5), the
+// FBM puff otherwise.
+float fcCloudFieldAt(int s, vec3 wp)
+{
+	return u_cloudParams[s].w > 1.5
+	    ? fountainDensityAt(wp, u_fountainFrame[s], u_cloudParams[s],
+	                        u_fountainParams[s])
+	    : cloudDensityAt(wp, u_cloudParams[s]);
+}
+
 // Entry/exit distances of the ray through the medium sphere, entry
 // clamped to the eye; (0, -1) when the ray misses.
 vec2 volMedium(vec3 origin, vec3 dir)

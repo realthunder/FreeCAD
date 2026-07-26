@@ -69,11 +69,7 @@ void main()
 				0.0, 1.0);
 			// The 0.6 matches the raymarch's reduced eye-ward
 			// extinction.
-			od += (u_cloudParams[cs].w > 1.5
-			       ? fountainDensityAt(wp, u_fountainFrame[cs],
-			                           u_cloudParams[cs],
-			                           u_fountainParams[cs])
-			       : cloudDensityAt(wp, u_cloudParams[cs]))
+			od += fcCloudFieldAt(cs, wp)
 				* fade * 0.6 * cdt;
 		}
 		depth += vec3_splat(od);
@@ -102,9 +98,7 @@ void main()
 				/ max(0.2 * (fire.y - fire.x), 1.0e-3),
 				0.0, 1.0);
 			od += u_fireParams2[fs].z
-				* fireTempAt(wp, u_fireFrame[fs],
-				             u_fireParams[fs],
-				             u_fireParams2[fs]) * fade * fdt;
+				* fcFireFieldAt(fs, wp) * fade * fdt;
 		}
 		depth += vec3_splat(od);
 	}

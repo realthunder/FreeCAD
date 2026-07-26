@@ -158,18 +158,15 @@ void main()
 					              vec4(dir, 0.0)).xyz * dt;
 					cd = 0.0;
 					for (int k = 0; k < 4; ++k)
-						cd += fountainDensityAt(
+						cd += fcCloudFieldAt(cs,
 						    wp + wd * (float(k) * 0.25
-						               - 0.375),
-						    u_fountainFrame[cs],
-						    u_cloudParams[cs],
-						    u_fountainParams[cs]);
+						               - 0.375));
 					cd *= 0.25 * fade;
 				}
 				else
 				{
-					cd = cloudDensityAt(
-					    wp, u_cloudParams[cs]) * fade;
+					cd = fcCloudFieldAt(
+					    cs, wp) * fade;
 				}
 				sigT = vec3_splat(cd * 0.6);
 				sigS = cd;
@@ -197,10 +194,8 @@ void main()
 				float ffade = clamp(min(t - fire.x, fire.y - t)
 					/ max(0.2 * (fire.y - fire.x),
 					      1.0e-3), 0.0, 1.0);
-				float ftemp = fireTempAt(fwp, u_fireFrame[fs],
-				                         u_fireParams[fs],
-				                         u_fireParams2[fs]) * ffade;
-				vec3 fe = fireRamp(ftemp)
+				float ftemp = fcFireFieldAt(fs, fwp) * ffade;
+				vec3 fe = fcFireRampAt(fs, ftemp)
 					* (u_fireParams[fs].x * dt) * T;
 				if (front)
 					emissionF += fe;

@@ -89,9 +89,7 @@ void main()
 			vec3 wp = ow + dw * t;
 			if (fountain)
 			{
-				float cd = fountainDensityAt(
-				    wp, frame, u_cloudParams[s],
-				    u_fountainParams[s]);
+				float cd = fcCloudFieldAt(s, wp);
 				color += (u_lightColor.rgb * 0.45
 				          + vec3_splat(0.35))
 					* (cd * dt) * T;
@@ -99,10 +97,8 @@ void main()
 			}
 			else
 			{
-				float ft = fireTempAt(wp, frame,
-				                      u_fireParams[s],
-				                      u_fireParams2[s]);
-				color += fireRamp(ft)
+				float ft = fcFireFieldAt(s, wp);
+				color += fcFireRampAt(s, ft)
 					* (u_fireParams[s].x * dt) * T;
 				T *= exp(-u_fireParams2[s].z * ft * dt);
 			}
