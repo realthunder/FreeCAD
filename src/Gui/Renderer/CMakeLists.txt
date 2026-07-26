@@ -105,8 +105,30 @@ if(BUILD_BGFX)
         OUTDIR    ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders)
     target_compile_definitions(${Library} PRIVATE
         FC_BGFX_SHADERC_PATH="$<TARGET_FILE:shaderc>")
+    # Bundled effect packages (docs/RenderEngine.md §5.11): one folder
+    # per effect (effect.json manifest + .sc sources), copied verbatim —
+    # the freecad.rendereffects factory instantiates them into user
+    # documents, and the runtime user-shader compile builds the sources.
+    file(GLOB_RECURSE FC_EFFECT_FILES RELATIVE
+         ${CMAKE_CURRENT_SOURCE_DIR}/effects
+         ${CMAKE_CURRENT_SOURCE_DIR}/effects/*)
+    set(Renderer_EffectFiles)
+    foreach(_f ${FC_EFFECT_FILES})
+        set(_out ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/effects/${_f})
+        add_custom_command(OUTPUT ${_out}
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${CMAKE_CURRENT_SOURCE_DIR}/effects/${_f} ${_out}
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/effects/${_f}
+            COMMENT "effect ${_f}"
+            VERBATIM)
+        list(APPEND Renderer_EffectFiles ${_out})
+    endforeach()
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/effects/
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/Renderer/effects)
+
     ADD_CUSTOM_TARGET(Renderer_assets ALL
-        DEPENDS ${Renderer_ShaderBins} ${Renderer_ShaderSrc})
+        DEPENDS ${Renderer_ShaderBins} ${Renderer_ShaderSrc}
+                ${Renderer_EffectFiles})
     add_dependencies(${Library} Renderer_assets)
     install(DIRECTORY
         ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders/

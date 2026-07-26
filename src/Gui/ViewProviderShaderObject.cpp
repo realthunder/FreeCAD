@@ -70,6 +70,16 @@ FC_LOG_LEVEL_INIT("Gui", true, true)
 
 using namespace Gui;
 
+// Stage identifiers as interned SbNames: comparing a program's Stage is
+// one intern plus pointer compares (SbName's permanent-address name
+// hash), the idiomatic Coin identifier pattern.
+namespace {
+const SbName StageMaterial("material");
+const SbName StageWater("water");
+const SbName StageVolume("volume");
+const SbName StagePost("post");
+}
+
 // Appearance bindings hold a translated copy of the shader (not the Coin
 // node), so program/effect edits must re-resolve the bindings of every
 // Appearance referencing the given App::Shader.
@@ -211,7 +221,8 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
                 || prop == &obj->VertexProgram
                 || prop == &obj->FragmentProgram
                 || prop == &obj->Blend
-                || prop == &obj->DepthWrite)) {
+                || prop == &obj->DepthWrite
+                || prop == &obj->Enabled)) {
         if (dynParam)
             syncParameters();
         else
@@ -219,8 +230,9 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
         for (auto parent : obj->getInList()) {
             if (!parent->isDerivedFrom(App::Shader::getClassTypeId()))
                 continue;
-            if (prop == &obj->Stage) {
-                // stage decides whether the demo preview includes the program
+            if (prop == &obj->Stage || prop == &obj->Enabled) {
+                // stage / enablement decide whether the demo preview
+                // includes the program
                 auto vp = dynamic_cast<ViewProviderShader*>(
                         Application::Instance->getViewProvider(parent));
                 if (vp)
@@ -416,7 +428,8 @@ void ViewProviderShader::updateDemo()
     // anyway (pruned from recapture inside a valid cached separator).
     for (auto prog : obj->Programs.getValues()) {
         auto progObj = dynamic_cast<App::ShaderProgram*>(prog);
-        if (!progObj || strcmp(progObj->Stage.getValue(), "post") == 0)
+        if (!progObj || SbName(progObj->Stage.getValue()) == StagePost
+                || !progObj->Enabled.getValue())
             continue;
         auto vp = dynamic_cast<ViewProviderShaderProgram*>(
                 Application::Instance->getViewProvider(progObj));
@@ -788,7 +801,8 @@ resolveUserShader(App::Appearance *obj)
         return nullptr;
     for (auto prog : shobj->Programs.getValues()) {
         auto progObj = dynamic_cast<App::ShaderProgram*>(prog);
-        if (!progObj || strcmp(progObj->Stage.getValue(), "post") == 0)
+        if (!progObj || SbName(progObj->Stage.getValue()) == StagePost
+                || !progObj->Enabled.getValue())
             continue;
         auto vp = dynamic_cast<ViewProviderShaderProgram*>(
                 Application::Instance->getViewProvider(progObj));
@@ -817,7 +831,8 @@ resolvePostShaders(App::Appearance *obj)
         return res;
     for (auto prog : shobj->Programs.getValues()) {
         auto progObj = dynamic_cast<App::ShaderProgram*>(prog);
-        if (!progObj || strcmp(progObj->Stage.getValue(), "post") != 0)
+        if (!progObj || SbName(progObj->Stage.getValue()) != StagePost
+                || !progObj->Enabled.getValue())
             continue;
         auto vp = dynamic_cast<ViewProviderShaderProgram*>(
                 Application::Instance->getViewProvider(progObj));
@@ -980,9 +995,11 @@ SoShaderProgram *ViewProviderAppearance::ownProgramNode()
         // into the scene-level list, so the stage filter is strict here.
         for (auto prog : shobj->Programs.getValues()) {
             auto p = dynamic_cast<App::ShaderProgram*>(prog);
-            if (p && (strcmp(p->Stage.getValue(), "material") == 0
-                      || strcmp(p->Stage.getValue(), "water") == 0
-                      || strcmp(p->Stage.getValue(), "volume") == 0)) {
+            if (!p || !p->Enabled.getValue())
+                continue;
+            SbName st(p->Stage.getValue());
+            if (st == StageMaterial || st == StageWater
+                || st == StageVolume) {
                 progObj = p;
                 break;
             }

@@ -60,6 +60,11 @@ public:
     PropertyEnumeration Blend;
     /// Depth write of the material-stage beauty draw
     PropertyBool DepthWrite;
+    /// Whether the program takes part when its Shader resolves; a
+    /// disabled program is skipped everywhere (the switch a bundled
+    /// effect's optional companion programs — e.g. particles — ship
+    /// turned off on)
+    PropertyBool Enabled;
 
     const char* getViewProviderName() const override
     {

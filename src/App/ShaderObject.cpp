@@ -61,6 +61,10 @@ ShaderProgram::ShaderProgram()
     ADD_PROPERTY_TYPE(DepthWrite, (true), "Shader", Prop_None,
             "Whether the material-stage beauty draw writes depth;\n"
             "turn off for blended effects that should not occlude");
+    ADD_PROPERTY_TYPE(Enabled, (true), "Shader", Prop_None,
+            "Whether the program takes part when its Shader is bound;\n"
+            "disabled programs are skipped everywhere (the toggle for\n"
+            "an effect's optional companion programs, e.g. particles)");
 }
 
 // ----------------------------------------------------------------------------

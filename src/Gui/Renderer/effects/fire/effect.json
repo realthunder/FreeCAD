@@ -1,0 +1,13 @@
+{
+  "label": "Fire",
+  "description": "Renders the bound solid as a flame volume: the closed shape raymarches as an emissive medium with soot absorption and casts flickering light on nearby surfaces. Identical to the built-in Render_Fire treatment, activated by binding. Needs the Shadow draw style (the volumetric pass hosts the medium). Bind with an Object-scope Appearance to the proxy solid.",
+  "viewProps": {"Render_Volumetric": true},
+  "programs": [
+    {
+      "name": "FireMedium",
+      "stage": "volume",
+      "fragment": "fire_medium.sc",
+      "enabled": true
+    }
+  ]
+}

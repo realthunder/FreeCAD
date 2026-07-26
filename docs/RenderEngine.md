@@ -145,10 +145,12 @@ section is the *authoring reference*.
 ### 5.1 Object model
 
 - **`App::ShaderProgram`** — one program for one pipeline stage.
-  Properties: `Stage` ("material", "post"), `Dialect` (BGFX_SC /
-  GLSL), `VertexProgram`, `FragmentProgram` (source text), `Blend`
-  (Default / Alpha / Additive), `DepthWrite`, plus user-added
-  `Param_<Name>` dynamic properties (§5.5).
+  Properties: `Stage` ("material", "water", "volume", "post"),
+  `Dialect` (BGFX_SC / GLSL), `VertexProgram`, `FragmentProgram`
+  (source text), `Blend` (Default / Alpha / Additive), `DepthWrite`,
+  `Enabled` (false = skipped wherever its Shader resolves — the
+  toggle for an effect's optional companion programs), plus
+  user-added `Param_<Name>` dynamic properties (§5.5).
 - **`App::Shader`** — an effect: a list of ShaderProgram objects (one
   per stage a multi-program effect needs). Carries the demo-preview
   shape (`Demo` = None/Box/Sphere/Cylinder/Cone/**Emitter**, §5.8) —
@@ -519,6 +521,15 @@ a resources `effects/` directory, one folder per effect: a manifest
 `.sc` sources that `#include` the shipped helper libs. A user-level
 effects directory is scanned the same way, so a user-authored effect
 is just another folder. No bundled `.FCStd` library document.
+*Implemented*: packages live at `src/Gui/Renderer/effects/<name>/`
+(installed to `share/Renderer/effects`, user dir
+`<appdata>/Renderer/effects` wins on name clashes); the factory is
+`freecad.rendereffects` (`list_effects()` / `activate(name, targets)`
+/ `deactivate(look)`); the manifest schema is documented in that
+module. Manifest `viewProps` switch required boolean view toggles on
+at activation (e.g. `Render_WaterSurface`, which defaults off).
+Bundled so far: `water`, `fire` — both byte-identical to their stock
+`Render_*` treatments.
 
 **Persistence — copy on activation.** Activating an effect
 instantiates its `ShaderProgram`/`Shader` objects (and the binding
@@ -528,8 +539,11 @@ tier); picking up a newer bundled version is an explicit re-import,
 never an implicit central upgrade. No XLink into a shipped library
 document.
 
-**Per-program toggle — `Enabled`.** `App::ShaderProgram` gains a
-generic `Enabled` boolean the Appearance resolver honors; each bundled
+**Per-program toggle — `Enabled`.** *Implemented*:
+`App::ShaderProgram.Enabled` (default true) is honored everywhere a
+Shader's program list resolves — object/water/volume binding, post
+lists, direct attachment, the demo preview — and toggling it re-poke's
+the bindings. Each bundled
 effect ships its particle companion program (spray, sparks, embers —
 riding the §5.8 particle framework) disabled by default, and enabling
 the particle effect is flipping that property. The emitter also needs
@@ -541,7 +555,8 @@ Implementation order: water stage (identity program == stock water —
 **done**), volume stage (identity == stock fire — **done** for the
 emissive fire channel; the scattering channel for the fountain spray
 and the browser-tier splice transport are follow-ups), packages +
-factory + `Enabled`, then the particle companions.
+factory + `Enabled` (**done** — water and fire ship), then the
+particle companions and the fountain package.
 
 ## 6. Render debugging facilities
 

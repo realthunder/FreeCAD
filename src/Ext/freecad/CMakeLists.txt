@@ -33,6 +33,10 @@ configure_file(utils.py ${NAMESPACE_DIR}/utils.py)
 configure_file(mcp_console/__init__.py ${NAMESPACE_DIR}/mcp_console/__init__.py COPYONLY)
 configure_file(mcp_console/server.py ${NAMESPACE_DIR}/mcp_console/server.py COPYONLY)
 
+# Render-effect factory: instantiates the bundled effect packages
+# (share/Renderer/effects) into user documents (docs/RenderEngine.md §5.11)
+configure_file(rendereffects/__init__.py ${NAMESPACE_DIR}/rendereffects/__init__.py COPYONLY)
+
 if (INSTALL_TO_SITEPACKAGES)
     SET(SITE_PACKAGE_DIR ${PYTHON_MAIN_DIR}/freecad)
 else ()
@@ -55,6 +59,13 @@ INSTALL(
         mcp_console/server.py
     DESTINATION
         ${SITE_PACKAGE_DIR}/mcp_console
+)
+
+INSTALL(
+    FILES
+        rendereffects/__init__.py
+    DESTINATION
+        ${SITE_PACKAGE_DIR}/rendereffects
 )
 
 add_subdirectory(fc_cadquery)

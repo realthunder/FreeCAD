@@ -1,0 +1,13 @@
+{
+  "label": "Water surface",
+  "description": "Renders the bound solid as an animated water body: screen-space refraction with depth absorption, planar/environment reflection, sun glint and received shadows. Identical to the built-in Render_Water treatment, activated by binding. Bind with an Object-scope Appearance to the water solid.",
+  "viewProps": {"Render_WaterSurface": true},
+  "programs": [
+    {
+      "name": "WaterSurface",
+      "stage": "water",
+      "fragment": "water_surface.sc",
+      "enabled": true
+    }
+  ]
+}

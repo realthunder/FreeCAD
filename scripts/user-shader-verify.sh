@@ -23,7 +23,9 @@
 #            user_shader_water.py ("water" stage: activation-by-binding,
 #            fc_user_water.sh stock identity, tint, fallback) and
 #            user_shader_volume.py ("volume" stage: medium-function
-#            splice, identity fire, green ramp, fallback).
+#            splice, identity fire, green ramp, fallback) and
+#            user_shader_effects.py (bundled effect packages +
+#            freecad.rendereffects factory + Enabled toggle).
 #   viewer   browser-tier suites: backend serving demo-lights
 #            (FC_BGFX_SERVE_SCENE) + no-store http on build/wasm + a
 #            headless-Chromium holder (scripts/wasm-hold.js), driven
@@ -168,6 +170,7 @@ if [ "$cmd" = desktop ] || [ "$cmd" = all ]; then
     run_desktop user_shader_particles.py particles
     run_desktop user_shader_water.py water
     run_desktop user_shader_volume.py volume
+    run_desktop user_shader_effects.py effects
 fi
 
 if [ "$cmd" = viewer ] || [ "$cmd" = all ]; then
