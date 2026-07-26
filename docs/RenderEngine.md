@@ -178,6 +178,7 @@ scene-level list.
 |---|---|---|---|
 | `material` | the mesh program of the draw | beauty only: `ViewOpaque`, non-OIT `ViewTransparent`, `ViewGroundRefl` | depth prepass, shadow casting, picking, highlight/on-top, WBOIT, section clip |
 | `water` | `fs_fc_water`, the water-surface program — and binding one **activates** the water treatment (the target becomes a water body as if `Render_Water` were set: surface routing, scene copy, planar reflection, back depth, medium exemptions) | `ViewWaterSurface` | everything the stock water body leaves untouched; with the water pass set inactive (hidden-line, water shading disabled) the body renders stock |
+| `volume` | the fire-channel medium of the body's slot — a per-point **medium function** (field + ramp), not a raymarch; binding one **activates** the fire treatment (proxy volume raymarches, geometry not drawn). The engine reassembles the shared volumetric raymarch / extinction / reflection-media programs with the user functions dispatched for the slot | `ViewVolGen`, `ViewVolApply`, `ViewReflMedia` | the march itself, temporal accumulation, cross-media compositing; with volumetrics inactive (no Shadow draw style) the body renders stock. Browser tier renders the stock flame (no splice transport yet) |
 | `post` | — (inserted) | `ViewUserPostCopy` + `ViewUserPost`, after bloom, before debug/on-top | everything else |
 
 While a compile is pending or failed, the stock program stands in —
@@ -259,7 +260,33 @@ map, front volumetric — so custom effects can combine
 inputs directly. While a compile is pending or failed the stock
 surface stands in, and the body *stays* a water body.
 
-### 5.4 Public uniforms and samplers
+**Volume medium program** (bind with an **Object-scope** Appearance;
+the body becomes an emissive volume — the fire channel)
+
+```glsl
+float fcMediumField(vec3 wp)   // temperature-like scalar in [0,1]
+{
+    return fcStockFireField(FC_MEDIUM_SLOT, wp);
+}
+vec3 fcMediumRamp(float t)     // radiance color of a field value
+{
+    return fcStockFireRamp(FC_MEDIUM_SLOT, t);
+}
+```
+
+Unlike the other stages this is **not a whole program**: the source
+defines exactly these two functions (plus any helpers/`uniform`
+declarations) and is spliced into the engine's volumetric shaders —
+the engine keeps owning the ray integration, soot extinction, temporal
+accumulation and cross-media compositing (the Blender/Godot volume
+model). No `$input`/`main()`/`#include` lines. `FC_MEDIUM_SLOT` is the
+body's medium slot; every `fc_volume.sh` helper (`fcStockFireField`,
+`fcStockFireRamp`, `cloudNoise`, …) is available, so the identity form
+above reproduces the stock flame byte-exact. `wp` is world-space;
+field animation rides the engine's flame clock through
+`fcStockFireField`, or `u_fcTime` for custom motion. With several
+distinct user media in one scene the sources share one translation
+unit — keep helper names unique.
 
 bgfx uniforms and samplers are **global by name**: declaring one of
 these in a user program picks up the value/texture the engine records
@@ -456,11 +483,20 @@ stages join `material`/`post`:
   copy, water-back depth) and binds their outputs
   (reflection/refraction/back-depth samplers) for the user program,
   which replaces `fs_fc_water` for that draw.
-- **`volume`** — a raymarch fragment program over a closed proxy
-  volume (fire, fountain, future smoke/clouds): the proxy geometry is
-  not rendered itself; scene depth is guaranteed bound, blend state
-  honored, and the ray entry/exit convention comes from the helper
-  lib.
+- **`volume`** — a per-point **medium function**, not a raymarch:
+  fire/fountain shading lives in the shared half-res multi-slot
+  volumetric raymarch (`fs_fc_volume.sc` — temporal accumulation,
+  fire-over-water segment compositing), so there is no per-body
+  program to swap. Following the industry shape (Blender volume
+  closures, Godot `fog` shaders, Unreal/Unity volume materials: the
+  engine owns the march, user code supplies density/emission at a
+  sample point), a volume-stage program supplies a medium function
+  (world position, time, body params → emission + extinction); the
+  backend assembles a variant of the stock volumetric shader
+  dispatching it for the bound body's slot through the user-compile
+  cache. The stock fire and fountain media are re-expressed through
+  the same seam, so the bundled effects reproduce stock byte-exact
+  and cross-media compositing keeps working.
 
 The engine keeps owning pass orchestration; a stage name is a *slot*
 identifier and the helper-lib function API (`fc_user_water.sh`,
@@ -501,8 +537,10 @@ a travel-margin bounds property so displaced particles are not clipped
 by the near/far fit computed from the undisplaced bounding box
 (§5.3).
 
-Implementation order: water stage (identity program == stock water),
-volume stage (identity == stock fire; fountain likewise), packages +
+Implementation order: water stage (identity program == stock water —
+**done**), volume stage (identity == stock fire — **done** for the
+emissive fire channel; the scattering channel for the fountain spray
+and the browser-tier splice transport are follow-ups), packages +
 factory + `Enabled`, then the particle companions.
 
 ## 6. Render debugging facilities

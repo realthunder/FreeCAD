@@ -262,6 +262,56 @@ static bool userShaderAnimated(const UserShader &shader)
         || shader.fragmentSource.find("u_fcTime") != std::string::npos;
 }
 
+/// Assemble a user volume-stage medium splice (docs/RenderEngine.md
+/// §5.11): a variant of one of the volumetric fragment bodies
+/// (fc_volume_fs.sh / fc_volume_ext_fs.sh / fc_refl_media_fs.sh) with
+/// the user medium functions dispatched for their fire slots. The
+/// prelude defines FC_USER_FIRE_<slot> (fc_volume.sh prototypes and
+/// dispatches on it); each user source is appended after the body
+/// include — so it sees every helper — with fcMediumField/fcMediumRamp
+/// macro-renamed to the slot's dispatch targets and FC_MEDIUM_SLOT set
+/// to its slot index. Returns a synthetic UserShader (stock vs_fc_comp
+/// vertex stage, merged parameter list) for the shared compile cache,
+/// or null when no slot carries a user medium.
+static std::shared_ptr<const Render::UserShader>
+assembleMediumVariant(const char *body,
+                      const std::shared_ptr<const Render::UserShader> *users,
+                      int nslots)
+{
+    bool any = false;
+    for (int i = 0; i < nslots; ++i)
+        any = any || (users[i] != nullptr);
+    if (!any)
+        return nullptr;
+    auto res = std::make_shared<Render::UserShader>();
+    res->stage = "volume-splice";
+    std::string &s = res->fragmentSource;
+    s = "$input v_texcoord0\n\n#include <bgfx_shader.sh>\n";
+    for (int i = 0; i < nslots; ++i)
+        if (users[i])
+            s += "#define FC_USER_FIRE_" + std::to_string(i) + "\n";
+    s += "#include \"";
+    s += body;
+    s += "\"\n";
+    for (int i = 0; i < nslots; ++i) {
+        if (!users[i])
+            continue;
+        std::string n = std::to_string(i);
+        s += "#define fcMediumField fcUserField_" + n + "\n";
+        s += "#define fcMediumRamp fcUserRamp_" + n + "\n";
+        s += "#define FC_MEDIUM_SLOT " + n + "\n";
+        s += users[i]->fragmentSource;
+        s += "\n#undef fcMediumField\n#undef fcMediumRamp\n"
+             "#undef FC_MEDIUM_SLOT\n";
+        for (const auto &p : users[i]->params) {
+            if (p.name == "fc_state")
+                continue;
+            res->params.push_back(p);
+        }
+    }
+    return res;
+}
+
 class BGFXRendererLibP {
 public:
     BGFXRendererLibP() {
@@ -4704,7 +4754,22 @@ public:
                               ? float(frame % 4096) * 0.618034f : 0.0f,
                           0.0f};
         bgfx::setUniform(u_volTexel, phase);
-        fullscreen(ViewVolGen, m_progVol,
+        // User medium splice (docs/RenderEngine.md §5.11): the
+        // assembled raymarch variant replaces the stock program while
+        // its async compile is done; stock media stand in meanwhile.
+        bgfx::ProgramHandle progVol = m_progVol;
+        if (volUserVol) {
+            bgfx::ProgramHandle p = _BGFXLib.getUserProgram(
+                *volUserVol, "vs_fc_comp");
+            if (bgfx::isValid(p)) {
+                _BGFXLib.pushUserParams(*volUserVol);
+                progVol = p;
+                if (_BGFXLib.userTime[1] != 0.0f
+                        && userShaderAnimated(*volUserVol))
+                    _BGFXLib.userAnimatedDraw = true;
+            }
+        }
+        fullscreen(ViewVolGen, progVol,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 
         // Temporal accumulation: blend the fresh raymarch into the
@@ -4745,7 +4810,16 @@ public:
         bgfx::setTexture(4, s_texCloudBack, cloudBackTex);
         bgfx::setTexture(5, s_texFireFront, fireFrontTex);
         bgfx::setTexture(6, s_texFireBack, fireBackTex);
-        fullscreen(ViewVolApply, m_progVolExt,
+        bgfx::ProgramHandle progExt = m_progVolExt;
+        if (volUserExt) {
+            bgfx::ProgramHandle p = _BGFXLib.getUserProgram(
+                *volUserExt, "vs_fc_comp");
+            if (bgfx::isValid(p)) {
+                _BGFXLib.pushUserParams(*volUserExt);
+                progExt = p;
+            }
+        }
+        fullscreen(ViewVolApply, progExt,
                    BGFX_STATE_WRITE_RGB
                    | BGFX_STATE_BLEND_FUNC_SEPARATE(
                        BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_SRC_COLOR,
@@ -5173,7 +5247,16 @@ public:
         bgfx::setUniform(u_fountainFrame, fountainFrames,
                          kMediumSlots);
         bgfx::setUniform(u_lightColor, lightColorI);
-        fullscreen(ViewReflMedia, m_progReflMedia,
+        bgfx::ProgramHandle progRefl = m_progReflMedia;
+        if (volUserRefl) {
+            bgfx::ProgramHandle p = _BGFXLib.getUserProgram(
+                *volUserRefl, "vs_fc_comp");
+            if (bgfx::isValid(p)) {
+                _BGFXLib.pushUserParams(*volUserRefl);
+                progRefl = p;
+            }
+        }
+        fullscreen(ViewReflMedia, progRefl,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                    | BGFX_STATE_BLEND_FUNC(
                        BGFX_STATE_BLEND_ONE,
@@ -6563,6 +6646,17 @@ public:
     /// Consecutive static frames feeding the volumetric temporal
     /// accumulation (0 = replace history this frame).
     int volAccumFrames = 0;
+    /// User volume-stage medium splice (docs/RenderEngine.md §5.11):
+    /// synthetic shaders assembled per frame from the fire slots bound
+    /// to a user medium function — variants of the volumetric
+    /// raymarch / extinction / reflection-media programs with the
+    /// user field/ramp dispatched for those slots. Null = all media
+    /// stock. volUserKey tracks the slot-source tuple so the strings
+    /// only reassemble when a binding changes.
+    std::shared_ptr<const Render::UserShader> volUserVol;
+    std::shared_ptr<const Render::UserShader> volUserExt;
+    std::shared_ptr<const Render::UserShader> volUserRefl;
+    std::array<const void *, 4> volUserKey {};
     bgfx::ProgramHandle m_progVol = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolApply = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolAccum = BGFX_INVALID_HANDLE;
@@ -7691,6 +7785,10 @@ public:
         FireSlot fireSlot[kSlots];
         std::unordered_map<uint64_t, int> fireSlots;
         int fireSlotCount = 0;
+        // Fire slots bound to a user "volume"-stage medium function
+        // (docs/RenderEngine.md §5.11) — feeds the spliced program
+        // variants assembled after the loop.
+        std::shared_ptr<const Render::UserShader> fireSlotUser[kSlots];
         for (const auto &draw : scene) {
             const auto &mat = draw.material;
             if (!mat.fire || mat.ontop
@@ -7703,6 +7801,9 @@ public:
                 continue;
             }
             FireSlot &fs = fireSlot[fireSlotCount];
+            if (mat.usershader && mat.usershader->stage == "volume"
+                    && !mat.usershader->fragmentSource.empty())
+                fireSlotUser[fireSlotCount] = mat.usershader;
             fireSlots.emplace(draw.objectKey, fireSlotCount++);
             float dx = draw.bboxMax[0] - draw.bboxMin[0];
             float dy = draw.bboxMax[1] - draw.bboxMin[1];
@@ -7749,6 +7850,27 @@ public:
                         fs.detail);
         }
         bool fireActive = hasFireBody && volActive;
+        // Assemble (or drop) the user medium splice variants when the
+        // slot→user-source tuple changed since the last frame; the
+        // compile itself is async through the shared user-shader cache,
+        // stock media stand in until the binaries land.
+        {
+            if (!fireActive)
+                for (int i = 0; i < kSlots; ++i)
+                    fireSlotUser[i].reset();
+            std::array<const void *, 4> key {};
+            for (int i = 0; i < kSlots && i < 4; ++i)
+                key[i] = fireSlotUser[i].get();
+            if (key != view->volUserKey) {
+                view->volUserKey = key;
+                view->volUserVol = assembleMediumVariant(
+                    "fc_volume_fs.sh", fireSlotUser, kSlots);
+                view->volUserExt = assembleMediumVariant(
+                    "fc_volume_ext_fs.sh", fireSlotUser, kSlots);
+                view->volUserRefl = assembleMediumVariant(
+                    "fc_refl_media_fs.sh", fireSlotUser, kSlots);
+            }
+        }
         // Time-animated content (fire flicker, cloud drift, water waves,
         // caustics): a client's idle frame skip must keep rendering
         // while any of these replay per frame; everything else in the

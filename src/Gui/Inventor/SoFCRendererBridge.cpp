@@ -572,6 +572,12 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         // replacing fs_fc_water at the surface submit.
         if (res.usershader && res.usershader->stage == "water")
             res.water = true;
+        // Likewise a "volume"-stage medium function makes the draw a
+        // fire body (the emissive medium channel): the proxy volume
+        // raymarches in the shared volumetric pass, which dispatches
+        // the user field/ramp for the body's slot.
+        if (res.usershader && res.usershader->stage == "volume")
+            res.fire = true;
     }
 
     // Bump map of triangle draws, unit 0 only like textures (the GL

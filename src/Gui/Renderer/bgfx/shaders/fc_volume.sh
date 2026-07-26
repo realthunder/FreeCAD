@@ -279,20 +279,80 @@ vec3 fireRamp(float t)
 // body's slot in a spliced shader variant; the stock paths compile to
 // exactly the primitive calls.
 
+// Stock fire-channel field/ramp of a slot, also the authoring API a
+// user medium function uses to build on the stock flame
+// (fc_user_volume.sh: the identity medium is
+// fcStockFireField/fcStockFireRamp of its own slot).
+float fcStockFireField(int s, vec3 wp)
+{
+	return fireTempAt(wp, u_fireFrame[s], u_fireParams[s],
+	                  u_fireParams2[s]);
+}
+
+vec3 fcStockFireRamp(int s, float t)
+{
+	return fireRamp(t);
+}
+
+// User volume-stage splice hooks: the assembled shader variant
+// prototypes fcUserField_<slot>/fcUserRamp_<slot> and defines
+// FC_USER_FIRE_<slot> before including this file; the user source
+// (defining the functions) is appended after, so it can use every
+// helper above. Without the defines this compiles to the stock calls.
+#ifdef FC_USER_FIRE_0
+float fcUserField_0(vec3 wp);
+vec3 fcUserRamp_0(float t);
+#endif
+#ifdef FC_USER_FIRE_1
+float fcUserField_1(vec3 wp);
+vec3 fcUserRamp_1(float t);
+#endif
+#ifdef FC_USER_FIRE_2
+float fcUserField_2(vec3 wp);
+vec3 fcUserRamp_2(float t);
+#endif
+#ifdef FC_USER_FIRE_3
+float fcUserField_3(vec3 wp);
+vec3 fcUserRamp_3(float t);
+#endif
+
 // Fire channel: temperature-like scalar field in [0,1] at a world
 // position. Drives the emission ramp below and the soot extinction
 // (u_fireParams2[s].z * field) at the call sites.
 float fcFireFieldAt(int s, vec3 wp)
 {
-	return fireTempAt(wp, u_fireFrame[s], u_fireParams[s],
-	                  u_fireParams2[s]);
+#ifdef FC_USER_FIRE_0
+	if (s == 0) return fcUserField_0(wp);
+#endif
+#ifdef FC_USER_FIRE_1
+	if (s == 1) return fcUserField_1(wp);
+#endif
+#ifdef FC_USER_FIRE_2
+	if (s == 2) return fcUserField_2(wp);
+#endif
+#ifdef FC_USER_FIRE_3
+	if (s == 3) return fcUserField_3(wp);
+#endif
+	return fcStockFireField(s, wp);
 }
 
 // Fire channel: radiance color of a field value (per unit length,
 // scaled by the intensity u_fireParams[s].x at the call sites).
 vec3 fcFireRampAt(int s, float t)
 {
-	return fireRamp(t);
+#ifdef FC_USER_FIRE_0
+	if (s == 0) return fcUserRamp_0(t);
+#endif
+#ifdef FC_USER_FIRE_1
+	if (s == 1) return fcUserRamp_1(t);
+#endif
+#ifdef FC_USER_FIRE_2
+	if (s == 2) return fcUserRamp_2(t);
+#endif
+#ifdef FC_USER_FIRE_3
+	if (s == 3) return fcUserRamp_3(t);
+#endif
+	return fcStockFireRamp(s, t);
 }
 
 // Cloud channel: scattering density at a world position — the fountain

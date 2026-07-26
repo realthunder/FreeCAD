@@ -981,7 +981,8 @@ SoShaderProgram *ViewProviderAppearance::ownProgramNode()
         for (auto prog : shobj->Programs.getValues()) {
             auto p = dynamic_cast<App::ShaderProgram*>(prog);
             if (p && (strcmp(p->Stage.getValue(), "material") == 0
-                      || strcmp(p->Stage.getValue(), "water") == 0)) {
+                      || strcmp(p->Stage.getValue(), "water") == 0
+                      || strcmp(p->Stage.getValue(), "volume") == 0)) {
                 progObj = p;
                 break;
             }
