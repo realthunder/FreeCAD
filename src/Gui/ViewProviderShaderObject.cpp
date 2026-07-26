@@ -27,10 +27,17 @@
 # include <algorithm>
 # include <set>
 # include <QTimer>
+# include <random>
+
 # include <Inventor/nodes/SoCone.h>
 # include <Inventor/nodes/SoCube.h>
 # include <Inventor/nodes/SoCylinder.h>
 # include <Inventor/nodes/SoFragmentShader.h>
+# include <Inventor/nodes/SoCoordinate3.h>
+# include <Inventor/nodes/SoIndexedFaceSet.h>
+# include <Inventor/nodes/SoMaterialBinding.h>
+# include <Inventor/nodes/SoNormal.h>
+# include <Inventor/nodes/SoNormalBinding.h>
 # include <Inventor/nodes/SoMaterial.h>
 # include <Inventor/nodes/SoRotation.h>
 # include <Inventor/nodes/SoSeparator.h>
@@ -381,7 +388,9 @@ void ViewProviderShader::updateData(const App::Property *prop)
                 || prop == &obj->Demo
                 || prop == &obj->DemoSize
                 || prop == &obj->DemoRadius
-                || prop == &obj->DemoHeight))
+                || prop == &obj->DemoHeight
+                || prop == &obj->EmitterCount
+                || prop == &obj->EmitterSeed))
         updateDemo();
     if (obj && prop == &obj->Programs)
         pokeAppearancesOfShader(obj);
@@ -453,6 +462,69 @@ void ViewProviderShader::updateDemo()
             cone->height = (float)obj->DemoHeight.getValue();
             pcDemoRoot->addChild(cone);
         }
+        break;
+    }
+    case 5: { // Emitter: N degenerate seed quads (particle groundwork)
+        // Each particle is one quad whose 4 vertices coincide at a
+        // random anchor inside the DemoSize spread box — zero area, so
+        // stock rendering shows nothing. A particle vertex shader
+        // expands them into billboards from the seed attributes:
+        // a_normal.xy = corner (±1), a_normal.z = the particle's 0..1
+        // index, a_color0 = the per-particle random seed
+        // (docs/RenderDebug.md §6.2). Deterministic per
+        // seed/count/spread so captures stay reproducible.
+        // Explicit element nodes, not SoVertexProperty — the render
+        // cache does not capture vertex-property-fed shapes.
+        int count = int(std::max(1L, obj->EmitterCount.getValue()));
+        const auto &size = obj->DemoSize.getValue();
+        std::mt19937 gen(uint32_t(obj->EmitterSeed.getValue()));
+        std::uniform_real_distribution<float> uni(0.0f, 1.0f);
+        auto coords = new SoCoordinate3;
+        auto norms = new SoNormal;
+        auto pmat = new SoMaterial;
+        coords->point.setNum(count * 4);
+        norms->vector.setNum(count * 4);
+        pmat->diffuseColor.setNum(count * 4);
+        SbVec3f *verts = coords->point.startEditing();
+        SbVec3f *normals = norms->vector.startEditing();
+        SbColor *colors = pmat->diffuseColor.startEditing();
+        auto ifs = new SoIndexedFaceSet;
+        ifs->coordIndex.setNum(count * 5);
+        int32_t *idx = ifs->coordIndex.startEditing();
+        static const float corner[4][2] = {{-1, -1}, {1, -1},
+                                           {1, 1}, {-1, 1}};
+        for (int i = 0; i < count; ++i) {
+            SbVec3f anchor((uni(gen) - 0.5f) * float(size.x),
+                           (uni(gen) - 0.5f) * float(size.y),
+                           (uni(gen) - 0.5f) * float(size.z));
+            uint32_t seed = uint32_t(gen());
+            SbColor seedc(float((seed >> 24) & 0xff) / 255.0f,
+                          float((seed >> 16) & 0xff) / 255.0f,
+                          float((seed >> 8) & 0xff) / 255.0f);
+            float f = count > 1 ? float(i) / float(count - 1) : 0.0f;
+            for (int c = 0; c < 4; ++c) {
+                verts[i * 4 + c] = anchor;
+                normals[i * 4 + c] =
+                    SbVec3f(corner[c][0], corner[c][1], f);
+                colors[i * 4 + c] = seedc;
+                idx[i * 5 + c] = i * 4 + c;
+            }
+            idx[i * 5 + 4] = -1;
+        }
+        coords->point.finishEditing();
+        norms->vector.finishEditing();
+        pmat->diffuseColor.finishEditing();
+        ifs->coordIndex.finishEditing();
+        auto nbind = new SoNormalBinding;
+        nbind->value = SoNormalBinding::PER_VERTEX_INDEXED;
+        auto mbind = new SoMaterialBinding;
+        mbind->value = SoMaterialBinding::PER_VERTEX_INDEXED;
+        pcDemoRoot->addChild(coords);
+        pcDemoRoot->addChild(norms);
+        pcDemoRoot->addChild(nbind);
+        pcDemoRoot->addChild(pmat);
+        pcDemoRoot->addChild(mbind);
+        pcDemoRoot->addChild(ifs);
         break;
     }
     default:

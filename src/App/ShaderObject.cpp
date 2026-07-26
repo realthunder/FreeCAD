@@ -64,7 +64,8 @@ ShaderProgram::ShaderProgram()
 
 PROPERTY_SOURCE(App::Shader, App::DocumentObject)
 
-const char* Shader::DemoEnums[] = {"None", "Box", "Sphere", "Cylinder", "Cone", nullptr};
+const char* Shader::DemoEnums[] = {"None", "Box", "Sphere", "Cylinder", "Cone",
+                                   "Emitter", nullptr};
 
 Shader::Shader()
 {
@@ -79,6 +80,11 @@ Shader::Shader()
             "Radius of the Sphere/Cylinder/Cone demo shape");
     ADD_PROPERTY_TYPE(DemoHeight, (10.0), "Demo", Prop_None,
             "Height of the Cylinder/Cone demo shape");
+    ADD_PROPERTY_TYPE(EmitterCount, ((long)500), "Demo", Prop_None,
+            "Number of particle seed quads of the Emitter demo shape");
+    ADD_PROPERTY_TYPE(EmitterSeed, ((long)0), "Demo", Prop_None,
+            "Random seed of the Emitter demo shape (deterministic\n"
+            "for a given seed/count/spread)");
 }
 
 // ----------------------------------------------------------------------------

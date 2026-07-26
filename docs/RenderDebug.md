@@ -525,6 +525,19 @@ Implementation notes from the second slice (`material` stage):
   blended override stays in its stock draw bucket — cross-object
   blend-vs-transparency ordering is the emitter framework's problem,
   not this override's.
+- **Emitter seed geometry.** `App::Shader` `Demo="Emitter"` generates
+  the particle seed mesh: `EmitterCount` quads whose 4 vertices
+  coincide at a random anchor inside the `DemoSize` spread box
+  (deterministic per `EmitterSeed`). Zero area means the stock
+  pipeline shows nothing; a particle vertex shader expands them into
+  billboards from the seed attributes — `a_normal.xy` = corner (±1),
+  `a_normal.z` = the particle's 0..1 index, `a_color0` = the
+  per-particle random seed, `a_position` = the anchor. Combined with
+  `u_fcTime`, `Param_*` uniforms and the Blend/DepthWrite override,
+  position-as-`f(seed, t)` gives stateless GPU particles on every tier
+  with no engine-side simulation. The mesh is built from explicit
+  element nodes (`SoCoordinate3`/`SoNormal`/`SoMaterial`) — the render
+  cache does not capture `SoVertexProperty`-fed shapes.
 - **Animation clock `u_fcTime`.** The engine records `uniform vec4
   u_fcTime` with every consuming user draw (material and post): `.x` =
   seconds on the shared effect clock (the one driving water/fire/

@@ -17,7 +17,9 @@
 #            user_shader_lighting.py (fc_user_lighting.sh helper:
 #            stock-identity reproduction + lit custom albedo) and
 #            user_shader_motion.py (user vertex stage: identity,
-#            Param-driven displacement, u_fcTime animation + freeze).
+#            Param-driven displacement, u_fcTime animation + freeze) and
+#            user_shader_particles.py (Emitter seed quads + billboard
+#            VS + additive state = stateless GPU particles).
 #   viewer   browser-tier suites: backend serving demo-lights
 #            (FC_BGFX_SERVE_SCENE) + no-store http on build/wasm + a
 #            headless-Chromium holder (scripts/wasm-hold.js), driven
@@ -159,6 +161,7 @@ if [ "$cmd" = desktop ] || [ "$cmd" = all ]; then
     run_desktop user_shader_element.py element
     run_desktop user_shader_lighting.py lighting
     run_desktop user_shader_motion.py motion
+    run_desktop user_shader_particles.py particles
 fi
 
 if [ "$cmd" = viewer ] || [ "$cmd" = all ]; then

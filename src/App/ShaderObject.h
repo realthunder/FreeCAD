@@ -91,7 +91,7 @@ public:
 
     /// The ShaderProgram objects forming this effect
     PropertyLinkList Programs;
-    /// Built-in preview shape (None/Box/Sphere/Cylinder/Cone)
+    /// Built-in preview shape (None/Box/Sphere/Cylinder/Cone/Emitter)
     PropertyEnumeration Demo;
     /// Box demo dimensions
     PropertyVector DemoSize;
@@ -99,6 +99,10 @@ public:
     PropertyFloat DemoRadius;
     /// Cylinder/Cone demo height
     PropertyFloat DemoHeight;
+    /// Number of particle seed quads of the Emitter demo shape
+    PropertyInteger EmitterCount;
+    /// Random seed of the Emitter demo shape
+    PropertyInteger EmitterSeed;
 
     const char* getViewProviderName() const override
     {
