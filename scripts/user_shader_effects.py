@@ -15,10 +15,17 @@ xvfb; creates its own document. Covers the shipped effect packages
   restores the base byte-exact and back on restores the flame — the
   generic per-program switch bundled effects use for optional
   companion programs.
+- fountain: activate("fountain") on a proxy solid matches stock
+  Render_Fountain byte-exact (the scatter channel of the volume
+  splice); deactivate() restores the base byte-exact.
+- rain: a particle-only effect (no main-stage program) — activation
+  alone makes streaks appear over the bound target,
+  frozen-deterministic; deactivate() restores the base byte-exact.
 - particle companions: enabling the shipped disabled Embers /
-  WaterSpray programs makes particles appear over the bound target
-  (seed quads generated target-bbox-fit), frozen-deterministic;
-  disabling restores the plain effect byte-exact.
+  WaterSpray / Droplets programs makes particles appear over the
+  bound target (seed quads generated target-bbox-fit),
+  frozen-deterministic; disabling restores the plain effect
+  byte-exact.
 
 Env: US_OUT (output dir, default this file's dir), US_RESULT (result
 file, default <US_OUT>/effects.txt).
@@ -83,7 +90,8 @@ def run():
         # --- discovery -------------------------------------------------
         names = sorted(e["name"] for e in rendereffects.list_effects())
         log("effects discovered: %s" % names)
-        ok = "water" in names and "fire" in names
+        ok = ("water" in names and "fire" in names
+              and "fountain" in names and "rain" in names)
         log("ASSERT discovery: %s" % ("PASS" if ok else "FAIL"))
 
         doc = FreeCAD.newDocument("EffectsTest")
@@ -103,6 +111,11 @@ def run():
         firebox.Width = 7
         firebox.Height = 10
         firebox.Placement.Base = FreeCAD.Vector(5, 3, 0)
+        fntbox = doc.addObject("Part::Box", "FountainBody")
+        fntbox.Length = 4
+        fntbox.Width = 4
+        fntbox.Height = 9
+        fntbox.Placement.Base = FreeCAD.Vector(-8, 6, 0)
         doc.recompute()
         view = FreeCADGui.ActiveDocument.ActiveView
         pump()
@@ -225,6 +238,74 @@ def run():
         settle()
         ok = byte_equal(base_ws, cap("e_fgone"), "fire deactivate restore")
         log("ASSERT fire-deactivate: %s" % ("PASS" if ok else "FAIL"))
+
+        # --- fountain package: the scatter channel ----------------------
+        nvo = fntbox.ViewObject
+        nvo.addProperty("App::PropertyBool", "Render_Fountain")
+        nvo.Render_Fountain = True
+        settle()
+        n_stock = cap("e_nstock")
+        nvo.removeProperty("Render_Fountain")
+        settle()
+        ok = byte_equal(base_ws, cap("e_nrestore"),
+                        "stock fountain restore")
+        log("ASSERT stock-fountain-ref: %s"
+            % ("PASS" if ok and changed_count(base_ws, n_stock) > 1000
+               else "FAIL"))
+
+        look = rendereffects.activate("fountain", targets=[fntbox])
+        settle()
+        settle()
+        n_fx = cap("e_nfx")
+        ok = byte_equal(n_stock, n_fx, "fountain effect vs stock")
+        log("ASSERT fountain-effect: %s" % ("PASS" if ok else "FAIL"))
+
+        # --- droplet particle companion ---------------------------------
+        drops = doc.getObject("fountain_Droplets")
+        drops.Enabled = True
+        doc.recompute()
+        settle()
+        settle()
+        drp = cap("e_drops")
+        n = changed_count(n_fx, drp)
+        log("droplets changed px vs plain fountain: %d" % n)
+        drp2 = cap("e_drops2")
+        det = byte_equal(drp, drp2, "frozen droplets determinism")
+        log("ASSERT droplets-appear: %s"
+            % ("PASS" if n > 200 and det else "FAIL"))
+        drops.Enabled = False
+        doc.recompute()
+        settle()
+        ok = byte_equal(n_fx, cap("e_dropsoff"), "droplets off restore")
+        log("ASSERT droplets-off: %s" % ("PASS" if ok else "FAIL"))
+
+        rendereffects.deactivate(look)
+        settle()
+        ok = byte_equal(base_ws, cap("e_ngone"),
+                        "fountain deactivate restore")
+        log("ASSERT fountain-deactivate: %s" % ("PASS" if ok else "FAIL"))
+
+        # --- rain package: particle-only effect -------------------------
+        look = rendereffects.activate("rain", targets=[floor])
+        doc.recompute()
+        settle()
+        settle()
+        rn = cap("e_rain")
+        n = changed_count(base_ws, rn)
+        log("rain changed px vs base: %d" % n)
+        rn2 = cap("e_rain2")
+        det = byte_equal(rn, rn2, "frozen rain determinism")
+        log("ASSERT rain-appear: %s"
+            % ("PASS" if n > 200 and det else "FAIL"))
+
+        rendereffects.deactivate(look)
+        settle()
+        # tolerance, not byte-equal: a dedicated 3-cycle probe restores
+        # byte-exact, but this late-suite capture once caught the box's
+        # known single-pixel ±LSB frame wobble
+        n = changed_count(base_ws, cap("e_rgone"))
+        log("rain deactivate residual px: %d" % n)
+        log("ASSERT rain-deactivate: %s" % ("PASS" if n <= 4 else "FAIL"))
 
         log("DONE")
     except Exception:

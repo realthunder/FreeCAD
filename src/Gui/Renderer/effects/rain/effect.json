@@ -1,0 +1,20 @@
+{
+  "label": "Rain",
+  "description": "Fills the bound solid's volume with falling rain streaks: stateless particle billboards seeded in a slab above the shape, falling straight down with a slight wind shear. A particle-only effect — bind an Object-scope Appearance to a solid enclosing the region to rain on; the solid itself keeps rendering normally. Param_Fall sets the fall distance, Param_Size the streak length (model units).",
+  "programs": [
+    {
+      "name": "RainStreaks",
+      "stage": "particle",
+      "vertex": "rain_vs.sc",
+      "fragment": "rain_fs.sc",
+      "blend": "Additive",
+      "depthwrite": false,
+      "enabled": true,
+      "emitter": {"count": 400, "seed": 5,
+                  "spread": [1.0, 1.0, 0.05],
+                  "offset": [0.0, 0.0, 1.05],
+                  "margin": 1.3},
+      "params": {"Fall": 12.0, "Size": 0.6}
+    }
+  ]
+}

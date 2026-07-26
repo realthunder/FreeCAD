@@ -585,7 +585,10 @@ Implementation order: water stage (identity program == stock water —
 **done** for both the emissive and scattering channels), packages +
 factory + `Enabled` (**done** — water, fire and fountain ship),
 particle companions (**done** — Embers / WaterSpray / Droplets,
-target-fit emitters). Remaining follow-ups: the browser-tier splice
+target-fit emitters). Rain ships as a **particle-only** package — no
+main-stage program at all, the enabled streak emitter is the whole
+treatment, demonstrating that the particle framework carries an
+effect by itself. Remaining follow-ups: the browser-tier splice
 transport, Instance-scope particle emitters.
 
 ## 6. Render debugging facilities
