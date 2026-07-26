@@ -44,6 +44,13 @@ Usage::
     look = rendereffects.activate("water", targets=[doc.Pool])
     doc.water_WaterSurface.Enabled = False   # a program toggle
     rendereffects.deactivate(look)
+
+    # Standalone on the Shader's built-in demo geometry, no target:
+    fx = rendereffects.instantiate("fire")
+    fx.Demo = "Box"
+    fx.DemoPlacement = FreeCAD.Placement(
+        FreeCAD.Vector(8, 6, 4.5), FreeCAD.Rotation())
+    rendereffects.deactivate(fx)
 """
 
 import json
@@ -99,18 +106,44 @@ def _find(name):
                      % (name, ", ".join(_effect_dirs()) or "nothing"))
 
 
-def activate(name, targets=None, doc=None, scope="Object"):
-    """Instantiate effect `name` into `doc` and bind it to `targets`.
+def _apply_view_props(manifest):
+    # Boolean view switches the effect depends on (e.g. the global
+    # water-surface toggle, default off) — set on the active 3D view.
+    props = manifest.get("viewProps") or {}
+    if not props:
+        return
+    try:
+        import FreeCADGui
+        view = FreeCADGui.ActiveDocument.ActiveView if \
+            FreeCADGui.ActiveDocument else None
+    except Exception:
+        view = None
+    if view is not None:
+        for k, v in props.items():
+            try:
+                setattr(view, k, bool(v))
+            except Exception as e:
+                FreeCAD.Console.PrintWarning(
+                    "rendereffects: view prop %s: %s\n" % (k, e))
+    else:
+        FreeCAD.Console.PrintWarning(
+            "rendereffects: no active 3D view, set %s manually\n"
+            % ", ".join(props))
 
-    Returns the created App::Appearance. `targets` empty/None with a
-    post-stage effect gives the scene-level activation. The effect
-    objects are copies — self-contained in the document.
+
+def instantiate(name, doc=None, view_props=True):
+    """Copy effect `name` into `doc` WITHOUT a binding Appearance.
+
+    Creates the App::ShaderProgram objects plus the grouping
+    App::Shader and returns the Shader — for standalone use on its
+    built-in demo geometry: set the Shader's Demo shape and
+    DemoPlacement and the effect renders on it, enabled particle
+    companions included, no target object needed.
     """
     path = _find(name)
     manifest = _read_manifest(path)
-    targets = list(targets or [])
     if doc is None:
-        doc = targets[0].Document if targets else FreeCAD.ActiveDocument
+        doc = FreeCAD.ActiveDocument
     if doc is None:
         raise ValueError("rendereffects: no document")
 
@@ -153,46 +186,45 @@ def activate(name, targets=None, doc=None, scope="Object"):
     shader.Label = manifest.get("label", name)
     shader.Programs = progs
     shader.Demo = "None"
+    if view_props:
+        _apply_view_props(manifest)
+    return shader
+
+
+def activate(name, targets=None, doc=None, scope="Object"):
+    """Instantiate effect `name` into `doc` and bind it to `targets`.
+
+    Returns the created App::Appearance. `targets` empty/None with a
+    post-stage effect gives the scene-level activation. The effect
+    objects are copies — self-contained in the document.
+    """
+    targets = list(targets or [])
+    if doc is None:
+        doc = targets[0].Document if targets else FreeCAD.ActiveDocument
+    shader = instantiate(name, doc=doc)
+    doc = shader.Document
 
     look = doc.addObject("App::Appearance", name + "_Look")
     look.Scope = scope
     look.ElementList = [shader] + targets
     doc.recompute()
-
-    # Boolean view switches the effect depends on (e.g. the global
-    # water-surface toggle, default off) — set on the active 3D view.
-    props = manifest.get("viewProps") or {}
-    if props:
-        try:
-            import FreeCADGui
-            view = FreeCADGui.ActiveDocument.ActiveView if \
-                FreeCADGui.ActiveDocument else None
-        except Exception:
-            view = None
-        if view is not None:
-            for k, v in props.items():
-                try:
-                    setattr(view, k, bool(v))
-                except Exception as e:
-                    FreeCAD.Console.PrintWarning(
-                        "rendereffects: view prop %s: %s\n" % (k, e))
-        else:
-            FreeCAD.Console.PrintWarning(
-                "rendereffects: no active 3D view, set %s manually\n"
-                % ", ".join(props))
     return look
 
 
 def deactivate(look):
-    """Remove an activated effect: the Appearance, its Shader and the
-    Shader's programs (targets are left alone)."""
+    """Remove an activated effect — accepts the App::Appearance from
+    activate() or the bare App::Shader from instantiate(); removes it
+    with the Shader's programs (targets are left alone)."""
     doc = look.Document
     shader = None
-    for child in look.ElementList:
-        if child.isDerivedFrom("App::Shader"):
-            shader = child
-            break
-    doc.removeObject(look.Name)
+    if look.isDerivedFrom("App::Shader"):
+        shader = look
+    else:
+        for child in look.ElementList:
+            if child.isDerivedFrom("App::Shader"):
+                shader = child
+                break
+        doc.removeObject(look.Name)
     if shader is not None:
         progs = list(shader.Programs)
         doc.removeObject(shader.Name)

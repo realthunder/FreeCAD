@@ -42,6 +42,7 @@
 # include <Inventor/nodes/SoMaterial.h>
 # include <Inventor/nodes/SoRotation.h>
 # include <Inventor/nodes/SoSeparator.h>
+# include <Inventor/nodes/SoTransform.h>
 # include <Inventor/nodes/SoShaderParameter.h>
 # include <Inventor/nodes/SoShaderProgram.h>
 # include <Inventor/nodes/SoSphere.h>
@@ -325,9 +326,15 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
         for (auto parent : obj->getInList()) {
             if (!parent->isDerivedFrom(App::Shader::getClassTypeId()))
                 continue;
-            if (prop == &obj->Stage || prop == &obj->Enabled) {
+            if (prop == &obj->Stage || prop == &obj->Enabled
+                    || prop == &obj->EmitterCount
+                    || prop == &obj->EmitterSeed
+                    || prop == &obj->EmitterSpread
+                    || prop == &obj->EmitterOffset
+                    || prop == &obj->EmitterMargin) {
                 // stage / enablement decide whether the demo preview
-                // includes the program
+                // includes the program; the emitter props shape its
+                // demo seed sub-root
                 auto vp = dynamic_cast<ViewProviderShader*>(
                         Application::Instance->getViewProvider(parent));
                 if (vp)
@@ -493,6 +500,8 @@ void ViewProviderShader::updateData(const App::Property *prop)
     auto obj = dynamic_cast<App::Shader*>(getObject());
     if (obj && (prop == &obj->Programs
                 || prop == &obj->Demo
+                || prop == &obj->DemoPlacement
+                || prop == &obj->DemoColor
                 || prop == &obj->DemoSize
                 || prop == &obj->DemoRadius
                 || prop == &obj->DemoHeight
@@ -516,15 +525,40 @@ void ViewProviderShader::updateDemo()
     if (demo == 0) // None
         return;
 
+    // Demo placement first, so several standalone demo shaders can
+    // compose a scene; applies to the shape and the particle emitter
+    // sub-roots alike.
+    const auto &plc = obj->DemoPlacement.getValue();
+    if (!plc.isIdentity()) {
+        auto xf = new SoTransform;
+        const auto &pos = plc.getPosition();
+        const auto &rot = plc.getRotation();
+        double q0, q1, q2, q3;
+        rot.getValue(q0, q1, q2, q3);
+        xf->translation = SbVec3f(float(pos.x), float(pos.y),
+                                  float(pos.z));
+        xf->rotation = SbRotation(float(q0), float(q1), float(q2),
+                                  float(q3));
+        pcDemoRoot->addChild(xf);
+    }
+
     // Shader programs ahead of the shape: the SoFCRenderMaterial placement
     // rules — they apply to the shapes captured after them in this cache.
     // Scene-level ("post") programs are skipped: activating those is the
     // Appearance object's job, and nested placement would be unreliable
     // anyway (pruned from recapture inside a valid cached separator).
+    // Particle companions are skipped too on the real demo shapes:
+    // setUserShader stamps the cache material (last-set wins), so they
+    // would clobber the main program — they get their own emitter
+    // sub-roots fit to the demo bounds below. The Emitter demo IS the
+    // seed geometry, there they stay in the main chain.
     for (auto prog : obj->Programs.getValues()) {
         auto progObj = dynamic_cast<App::ShaderProgram*>(prog);
         if (!progObj || progObj->Stage.getValue() == StagePost
                 || !progObj->Enabled.getValue())
+            continue;
+        if (demo != 5 && progObj->Stage.getValue() == StageParticle
+                && progObj->EmitterCount.getValue() > 0)
             continue;
         auto vp = dynamic_cast<ViewProviderShaderProgram*>(
                 Application::Instance->getViewProvider(progObj));
@@ -535,7 +569,8 @@ void ViewProviderShader::updateDemo()
     // Demo shapes carry no view-provider material chain; without an
     // explicit material the captured diffuse goes dark.
     auto mat = new SoMaterial;
-    mat->diffuseColor = SbColor(0.8f, 0.8f, 0.8f);
+    const auto &col = obj->DemoColor.getValue();
+    mat->diffuseColor = SbColor(col.r, col.g, col.b);
     pcDemoRoot->addChild(mat);
 
     switch (demo) {
@@ -555,21 +590,25 @@ void ViewProviderShader::updateDemo()
         break;
     }
     case 3: case 4: { // Cylinder / Cone: Coin's axis is +Y, rotate to Z-up
+        // Own separator so the rotation does not leak into the particle
+        // emitter sub-roots appended after the shape.
+        auto sep = new SoSeparator;
         auto rot = new SoRotation;
         rot->rotation = SbRotation(SbVec3f(1, 0, 0), (float)(M_PI / 2));
-        pcDemoRoot->addChild(rot);
+        sep->addChild(rot);
         if (demo == 3) {
             auto cyl = new SoCylinder;
             cyl->radius = (float)obj->DemoRadius.getValue();
             cyl->height = (float)obj->DemoHeight.getValue();
-            pcDemoRoot->addChild(cyl);
+            sep->addChild(cyl);
         }
         else {
             auto cone = new SoCone;
             cone->bottomRadius = (float)obj->DemoRadius.getValue();
             cone->height = (float)obj->DemoHeight.getValue();
-            pcDemoRoot->addChild(cone);
+            sep->addChild(cone);
         }
+        pcDemoRoot->addChild(sep);
         break;
     }
     case 5: { // Emitter: N degenerate seed quads (particle groundwork)
@@ -587,6 +626,60 @@ void ViewProviderShader::updateDemo()
     }
     default:
         break;
+    }
+
+    if (demo == 5)
+        return;
+
+    // Enabled particle companions on a real demo shape: each gets its
+    // own SoFCSelectionRoot (own render cache — the main program owns
+    // this cache's material slot) with seed quads fit to the analytic
+    // demo bounds, honoring the program's spread/offset/margin exactly
+    // like an Appearance binding fits them to a target's bounding box.
+    SbVec3f half(0, 0, 0);
+    switch (demo) {
+    case 1: { // Box
+        const auto &size = obj->DemoSize.getValue();
+        half = SbVec3f(float(size.x) * 0.5f, float(size.y) * 0.5f,
+                       float(size.z) * 0.5f);
+        break;
+    }
+    case 2: { // Sphere
+        float r = float(obj->DemoRadius.getValue());
+        half = SbVec3f(r, r, r);
+        break;
+    }
+    case 3: case 4: { // Cylinder / Cone (Z-up after the rotation)
+        float r = float(obj->DemoRadius.getValue());
+        half = SbVec3f(r, r, float(obj->DemoHeight.getValue()) * 0.5f);
+        break;
+    }
+    }
+    for (auto prog : obj->Programs.getValues()) {
+        auto p = dynamic_cast<App::ShaderProgram*>(prog);
+        if (!p || !p->Enabled.getValue()
+               || p->EmitterCount.getValue() <= 0
+               || p->Stage.getValue() != StageParticle)
+            continue;
+        auto pvp = dynamic_cast<ViewProviderShaderProgram*>(
+                Application::Instance->getViewProvider(p));
+        if (!pvp || !pvp->getShaderNode())
+            continue;
+        const auto &spread = p->EmitterSpread.getValue();
+        const auto &offset = p->EmitterOffset.getValue();
+        SbVec3f ext = half * 2.0f;
+        SbVec3f c(float(offset.x) * ext[0], float(offset.y) * ext[1],
+                  float(offset.z) * ext[2]);
+        SbVec3f h(0.5f * float(spread.x) * ext[0],
+                  0.5f * float(spread.y) * ext[1],
+                  0.5f * float(spread.z) * ext[2]);
+        auto sep = new SoFCSelectionRoot;
+        sep->addChild(pvp->getShaderNode());
+        buildEmitterSeedNodes(sep, int(p->EmitterCount.getValue()),
+                              uint32_t(p->EmitterSeed.getValue()),
+                              c - h, c + h,
+                              float(p->EmitterMargin.getValue()));
+        pcDemoRoot->addChild(sep);
     }
 }
 

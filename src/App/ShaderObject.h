@@ -115,6 +115,12 @@ public:
     PropertyLinkList Programs;
     /// Built-in preview shape (None/Box/Sphere/Cylinder/Cone/Emitter)
     PropertyEnumeration Demo;
+    /// Placement of the preview shape, so several standalone demo
+    /// shaders can compose a scene
+    PropertyPlacement DemoPlacement;
+    /// Diffuse color of the preview shape (e.g. the body color a
+    /// water demo absorbs toward)
+    PropertyColor DemoColor;
     /// Box demo dimensions
     PropertyVector DemoSize;
     /// Sphere/Cylinder/Cone demo radius

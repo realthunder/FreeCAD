@@ -101,6 +101,11 @@ Shader::Shader()
     Demo.setEnums(DemoEnums);
     ADD_PROPERTY_TYPE(Demo, ((long)2), "Demo", Prop_None,  // default Sphere
             "Built-in shape for previewing the effect");
+    ADD_PROPERTY_TYPE(DemoPlacement, (Base::Placement()), "Demo", Prop_None,
+            "Placement of the demo shape, so several standalone demo\n"
+            "shaders can compose a scene");
+    ADD_PROPERTY_TYPE(DemoColor, (0.8f, 0.8f, 0.8f), "Demo", Prop_None,
+            "Diffuse color of the demo shape");
     ADD_PROPERTY_TYPE(DemoSize, (Base::Vector3d(10.0, 10.0, 10.0)), "Demo", Prop_None,
             "Dimensions of the Box demo shape");
     ADD_PROPERTY_TYPE(DemoRadius, (5.0), "Demo", Prop_None,
