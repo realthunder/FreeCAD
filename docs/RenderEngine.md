@@ -420,6 +420,70 @@ serving backend). The golden-image harness
 freeze-frame. Policy: every framework change lands with a suite, no
 throwaway probes (`docs/RenderDebug.md` §0).
 
+### 5.11 Effect library (design settled 2026-07-26, implementation pending)
+
+The built-in water / fire / fountain effects will be re-expressed as
+pre-bundled user shaders — the real-world test of the whole framework
+and the template for adding effects later. Decisions:
+
+**Stage model — fixed named stages, graph-ready naming.** Two new
+stages join `material`/`post`:
+
+- **`water`** — the surface fragment program of a water body. When a
+  bound draw carries a water-stage program, the engine runs the water
+  pass set it owns today (planar-reflection re-render, scene-color
+  copy, water-back depth) and binds their outputs
+  (reflection/refraction/back-depth samplers) for the user program,
+  which replaces `fs_fc_water` for that draw.
+- **`volume`** — a raymarch fragment program over a closed proxy
+  volume (fire, fountain, future smoke/clouds): the proxy geometry is
+  not rendered itself; scene depth is guaranteed bound, blend state
+  honored, and the ray entry/exit convention comes from the helper
+  lib.
+
+The engine keeps owning pass orchestration; a stage name is a *slot*
+identifier and the helper-lib function API (`fc_user_water.sh`,
+`fc_user_volume.sh`, alongside `fc_user_lighting.sh`) is the authoring
+contract — engine-recorded uniforms stay semi-stable per §5.4. A
+future generalization to user-declared passes (a render graph) may
+come later; stage names and helper contracts are chosen so existing
+effects would survive it as pre-wired slots.
+
+**Activation = binding.** An `App::Appearance` binding a Shader with a
+water-stage program *makes the target a water body*; no separate
+switch. The legacy per-object `Render_Water`/`Render_Fire`/
+`Render_Fountain` view properties remain as a parallel path; effect
+tuning for the bundled effects moves to `Param_*` properties on the
+ShaderProgram (overridable per binding as usual).
+
+**Packaging — effect-package directories + factory.** Effects ship as
+a resources `effects/` directory, one folder per effect: a manifest
+(programs, stages, defaults, which programs start disabled) plus plain
+`.sc` sources that `#include` the shipped helper libs. A user-level
+effects directory is scanned the same way, so a user-authored effect
+is just another folder. No bundled `.FCStd` library document.
+
+**Persistence — copy on activation.** Activating an effect
+instantiates its `ShaderProgram`/`Shader` objects (and the binding
+`Appearance`) *into the user's document*. Documents stay
+self-contained and portable (shared files, other installs, the WASM
+tier); picking up a newer bundled version is an explicit re-import,
+never an implicit central upgrade. No XLink into a shipped library
+document.
+
+**Per-program toggle — `Enabled`.** `App::ShaderProgram` gains a
+generic `Enabled` boolean the Appearance resolver honors; each bundled
+effect ships its particle companion program (spray, sparks, embers —
+riding the §5.8 particle framework) disabled by default, and enabling
+the particle effect is flipping that property. The emitter also needs
+a travel-margin bounds property so displaced particles are not clipped
+by the near/far fit computed from the undisplaced bounding box
+(§5.3).
+
+Implementation order: water stage (identity program == stock water),
+volume stage (identity == stock fire; fountain likewise), packages +
+factory + `Enabled`, then the particle companions.
+
 ## 6. Render debugging facilities
 
 Full design in `docs/RenderDebug.md`; the short tour. Governing policy
@@ -489,11 +553,9 @@ phone).
   shows the artifacts listed in §5.3. An emitter-bounds story (bbox
   padding for displaced geometry) comes with the particle framework's
   next phase.
-- Stages are currently `material` and `post`. Splitting the built-in
-  water/fire/fountain effects into pre-bundled user shaders will need
-  additional stages (water's reflection/refraction passes) and a
-  packaging/discovery story for a shipped effect library — design
-  pending.
+- Stages are currently `material` and `post`; the `water`/`volume`
+  stages and the shipped effect library are designed (§5.11) but not
+  yet implemented.
 - WBOIT draws cannot take a user fragment program (the OIT output
   contract is not a single color).
 - Per-draw texture slots for user shaders (custom images) are not yet
