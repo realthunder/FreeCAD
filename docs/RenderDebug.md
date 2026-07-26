@@ -502,6 +502,28 @@ Implementation notes from the second slice (`material` stage):
   to user programs, and a draw with a user shader is excluded from the
   cross-object instancing path. While the async compile is pending or
   failed the standard program stands in — never a black object.
+- **User vertex stage.** A program carrying a vertex source replaces the
+  stock `vs_fc_mesh` pairing (vertex contract: `$input a_position,
+  a_normal, a_color0` / `$output v_normal, v_color0, v_vpos`; the
+  predefined `u_modelViewProj`/`u_modelView` chain and the engine's
+  `u_params` are available — bgfx uniforms are global by name). This is
+  the displacement/particle route: positions are a pure function of the
+  vertex attributes, `Param_*` uniforms and the clock below. Two known
+  consequences of the stock passes keeping their own programs: line and
+  point draws stay at the undisplaced geometry, and Coin's auto near/far
+  planes fit the undisplaced bounding box, so a large displacement can
+  clip (an emitter-bounds story comes with the particle framework).
+- **Animation clock `u_fcTime`.** The engine records `uniform vec4
+  u_fcTime` with every consuming user draw (material and post): `.x` =
+  seconds on the shared effect clock (the one driving water/fire/
+  caustics), `.y` = 1 while the clock advances, `.z/.w` reserved. A user
+  shader whose source references `u_fcTime` is thereby *animated* — the
+  reference itself is the opt-in, no declared flag — and keeps the
+  viewer's redraw loop alive exactly like the stock timed effects
+  (`animating()` → `scheduleRedraw`). `RenderDebug_FreezeFrame` pins the
+  clock to 0 with `.y` = 0 and stops the self-scheduling, so frozen
+  captures of time-animated shaders stay byte-deterministic (the golden
+  harness contract).
 - **Lighting helper library.** A user material program that only wants a
   custom base color should not lose the engine's lighting. The stock
   mesh shading is factored into `fc_mesh_lighting.sh` (uniforms,

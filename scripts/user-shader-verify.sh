@@ -15,7 +15,9 @@
 #            user_shader_element.py (§6.5 Scope=Element face-level
 #            overrides, element-over-whole coexistence) and
 #            user_shader_lighting.py (fc_user_lighting.sh helper:
-#            stock-identity reproduction + lit custom albedo).
+#            stock-identity reproduction + lit custom albedo) and
+#            user_shader_motion.py (user vertex stage: identity,
+#            Param-driven displacement, u_fcTime animation + freeze).
 #   viewer   browser-tier suites: backend serving demo-lights
 #            (FC_BGFX_SERVE_SCENE) + no-store http on build/wasm + a
 #            headless-Chromium holder (scripts/wasm-hold.js), driven
@@ -156,6 +158,7 @@ if [ "$cmd" = desktop ] || [ "$cmd" = all ]; then
     run_desktop user_shader_instancing.py instancing
     run_desktop user_shader_element.py element
     run_desktop user_shader_lighting.py lighting
+    run_desktop user_shader_motion.py motion
 fi
 
 if [ "$cmd" = viewer ] || [ "$cmd" = all ]; then

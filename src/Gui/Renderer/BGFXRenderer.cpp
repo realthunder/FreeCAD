@@ -253,6 +253,15 @@ class BGFXView;
 
 namespace Render {
 
+/// A user shader is animated when its source references the engine
+/// clock uniform u_fcTime — no declared flag anywhere, the reference
+/// itself is the opt-in (docs/RenderDebug.md §6).
+static bool userShaderAnimated(const UserShader &shader)
+{
+    return shader.vertexSource.find("u_fcTime") != std::string::npos
+        || shader.fragmentSource.find("u_fcTime") != std::string::npos;
+}
+
 class BGFXRendererLibP {
 public:
     BGFXRendererLibP() {
@@ -442,6 +451,19 @@ public:
     };
     std::map<std::string, UserUniform> userUniforms;
 
+    /// Animation clock for user shaders (u_fcTime): x = seconds on the
+    /// shared effect clock (0 while RenderDebug freeze-frame holds), y =
+    /// 1 while the clock advances, z/w reserved. Stamped per frame by
+    /// the renderer, recorded with every consuming user draw.
+    bgfx::UniformHandle timeUniform = BGFX_INVALID_HANDLE;
+    float userTime[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    /// The current frame submitted a live time-referencing user draw
+    /// (reset each frame, folded into the renderer's animatedFrame so
+    /// the viewer keeps scheduling redraws while a user shader
+    /// animates). Lives here because the draw-submitting view code has
+    /// no path back to the renderer pimpl.
+    bool userAnimatedDraw = false;
+
     void setUserUniform(const std::string &name, const float *data,
                         uint16_t num)
     {
@@ -471,6 +493,10 @@ public:
     /// outside this map, so they are never touched.
     void pushUserParams(const Render::UserShader &shader)
     {
+        if (!bgfx::isValid(timeUniform))
+            timeUniform = bgfx::createUniform("u_fcTime",
+                                              bgfx::UniformType::Vec4);
+        bgfx::setUniform(timeUniform, userTime);
         std::vector<float> zeros;
         for (auto &v : userUniforms) {
             if (!bgfx::isValid(v.second.handle))
@@ -4799,6 +4825,8 @@ public:
         bgfx::setTexture(0, s_texScene, sceneCopyTex);
         fullscreen(ViewUserPost, prog,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        if (_BGFXLib.userTime[1] != 0.0f && userShaderAnimated(shader))
+            _BGFXLib.userAnimatedDraw = true;
     }
 
     /// Bloom (glow) chain: bright-pass downsample of the finished scene
@@ -6009,6 +6037,9 @@ public:
             if (bgfx::isValid(uprog)) {
                 _BGFXLib.pushUserParams(*mat.usershader);
                 prog = uprog;
+                if (_BGFXLib.userTime[1] != 0.0f
+                        && userShaderAnimated(*mat.usershader))
+                    _BGFXLib.userAnimatedDraw = true;
             }
         }
 
@@ -7732,6 +7763,13 @@ public:
             animTime = 0.0f;
             animLive = false;
         }
+        // Publish the clock to user shaders: u_fcTime is recorded with
+        // every consuming user draw (pushUserParams), and a user shader
+        // referencing it keeps the animation loop alive like the stock
+        // timed effects below.
+        _BGFXLib.userTime[0] = animTime;
+        _BGFXLib.userTime[1] = animLive ? 1.0f : 0.0f;
+        _BGFXLib.userAnimatedDraw = false;
         // Fire lights the scene: an unshadowed point light per fire
         // body slot at the flame centroid, its brightness flickered on
         // the shared animation clock (frozen clocks stay deterministic)
@@ -9931,6 +9969,10 @@ public:
                     selections.size(), highlight.size(),
                     dupDraws.size(), view->drawcount);
 
+        // A submitted live time-referencing user draw keeps the
+        // animation loop alive like the stock timed effects.
+        animatedFrame = animatedFrame || _BGFXLib.userAnimatedDraw;
+
         renderOk = true;
         hasScene = !scene.empty();
         return true;
@@ -11449,6 +11491,10 @@ void BGFXRendererLibP::shutdown()
             bgfx::destroy(v.second.handle);
     }
     userUniforms.clear();
+    if (bgfx::isValid(timeUniform)) {
+        bgfx::destroy(timeUniform);
+        timeUniform = BGFX_INVALID_HANDLE;
+    }
     for (auto &v : userPrograms) {
         if (bgfx::isValid(v.second.prog))
             bgfx::destroy(v.second.prog);
