@@ -29,6 +29,7 @@
 # include <QTimer>
 # include <random>
 
+# include <Inventor/actions/SoGetBoundingBoxAction.h>
 # include <Inventor/nodes/SoCone.h>
 # include <Inventor/nodes/SoCube.h>
 # include <Inventor/nodes/SoCylinder.h>
@@ -57,6 +58,7 @@
 #include "ViewProviderShaderObject.h"
 #include "Application.h"
 #include "Document.h"
+#include "SoFCUnifiedSelection.h"
 #include "Inventor/SoFCRenderCache.h"
 #include "Inventor/SoFCVertexCache.h"
 #include "Inventor/SoFCRenderCacheManager.h"
@@ -70,14 +72,102 @@ FC_LOG_LEVEL_INIT("Gui", true, true)
 
 using namespace Gui;
 
-// Stage identifiers as interned SbNames: comparing a program's Stage is
-// one intern plus pointer compares (SbName's permanent-address name
-// hash), the idiomatic Coin identifier pattern.
+// Stage identifiers as interned SbNames: SbName's char* equality
+// operators compare a program's Stage string against the one interned
+// entry directly — no strcmp calls at the call sites, and no interning
+// of arbitrary property values into the permanent name table.
 namespace {
 const SbName StageMaterial("material");
 const SbName StageWater("water");
 const SbName StageVolume("volume");
+const SbName StageParticle("particle");
 const SbName StagePost("post");
+}
+
+// Particle seed geometry (docs/RenderDebug.md §6.2, RenderEngine.md
+// §5.8/§5.11): count degenerate quads whose 4 vertices coincide at a
+// random anchor inside [bmin, bmax] — zero area, so stock rendering
+// shows nothing; a particle vertex stage expands them into billboards
+// from the seed attributes (a_normal.xy = corner ±1, a_normal.z = the
+// particle's 0..1 index, a_color0 = the per-particle random seed).
+// Deterministic per seed/count/box. Explicit element nodes, not
+// SoVertexProperty — the render cache does not capture
+// vertex-property-fed shapes. margin > 0 adds two INERT quads (zero
+// billboard corners — invisible even expanded) at the margin-expanded
+// box corners, so the geometry's own bounds cover the billboard travel
+// and the auto near/far fit does not clip displaced particles.
+static void buildEmitterSeedNodes(SoGroup *parent, int count,
+                                  uint32_t seedval,
+                                  const SbVec3f &bmin, const SbVec3f &bmax,
+                                  float margin)
+{
+    count = std::max(1, count);
+    int bounds = margin > 0.0f ? 2 : 0;
+    int total = count + bounds;
+    std::mt19937 gen(seedval);
+    std::uniform_real_distribution<float> uni(0.0f, 1.0f);
+    auto coords = new SoCoordinate3;
+    auto norms = new SoNormal;
+    auto pmat = new SoMaterial;
+    coords->point.setNum(total * 4);
+    norms->vector.setNum(total * 4);
+    pmat->diffuseColor.setNum(total * 4);
+    SbVec3f *verts = coords->point.startEditing();
+    SbVec3f *normals = norms->vector.startEditing();
+    SbColor *colors = pmat->diffuseColor.startEditing();
+    auto ifs = new SoIndexedFaceSet;
+    ifs->coordIndex.setNum(total * 5);
+    int32_t *idx = ifs->coordIndex.startEditing();
+    static const float corner[4][2] = {{-1, -1}, {1, -1},
+                                       {1, 1}, {-1, 1}};
+    SbVec3f ext = bmax - bmin;
+    for (int i = 0; i < count; ++i) {
+        SbVec3f anchor(bmin[0] + uni(gen) * ext[0],
+                       bmin[1] + uni(gen) * ext[1],
+                       bmin[2] + uni(gen) * ext[2]);
+        uint32_t seed = uint32_t(gen());
+        SbColor seedc(float((seed >> 24) & 0xff) / 255.0f,
+                      float((seed >> 16) & 0xff) / 255.0f,
+                      float((seed >> 8) & 0xff) / 255.0f);
+        float f = count > 1 ? float(i) / float(count - 1) : 0.0f;
+        for (int c = 0; c < 4; ++c) {
+            verts[i * 4 + c] = anchor;
+            normals[i * 4 + c] =
+                SbVec3f(corner[c][0], corner[c][1], f);
+            colors[i * 4 + c] = seedc;
+            idx[i * 5 + c] = i * 4 + c;
+        }
+        idx[i * 5 + 4] = -1;
+    }
+    if (bounds) {
+        float pad = margin * ext.length();
+        SbVec3f cmin = bmin - SbVec3f(pad, pad, pad);
+        SbVec3f cmax = bmax + SbVec3f(pad, pad, pad);
+        for (int b = 0; b < 2; ++b) {
+            int i = count + b;
+            for (int c = 0; c < 4; ++c) {
+                verts[i * 4 + c] = b ? cmax : cmin;
+                normals[i * 4 + c] = SbVec3f(0.0f, 0.0f, 0.0f);
+                colors[i * 4 + c] = SbColor(0.0f, 0.0f, 0.0f);
+                idx[i * 5 + c] = i * 4 + c;
+            }
+            idx[i * 5 + 4] = -1;
+        }
+    }
+    coords->point.finishEditing();
+    norms->vector.finishEditing();
+    pmat->diffuseColor.finishEditing();
+    ifs->coordIndex.finishEditing();
+    auto nbind = new SoNormalBinding;
+    nbind->value = SoNormalBinding::PER_VERTEX_INDEXED;
+    auto mbind = new SoMaterialBinding;
+    mbind->value = SoMaterialBinding::PER_VERTEX_INDEXED;
+    parent->addChild(coords);
+    parent->addChild(norms);
+    parent->addChild(nbind);
+    parent->addChild(pmat);
+    parent->addChild(mbind);
+    parent->addChild(ifs);
 }
 
 // Appearance bindings hold a translated copy of the shader (not the Coin
@@ -222,7 +312,12 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
                 || prop == &obj->FragmentProgram
                 || prop == &obj->Blend
                 || prop == &obj->DepthWrite
-                || prop == &obj->Enabled)) {
+                || prop == &obj->Enabled
+                || prop == &obj->EmitterCount
+                || prop == &obj->EmitterSeed
+                || prop == &obj->EmitterSpread
+                || prop == &obj->EmitterOffset
+                || prop == &obj->EmitterMargin)) {
         if (dynParam)
             syncParameters();
         else
@@ -428,7 +523,7 @@ void ViewProviderShader::updateDemo()
     // anyway (pruned from recapture inside a valid cached separator).
     for (auto prog : obj->Programs.getValues()) {
         auto progObj = dynamic_cast<App::ShaderProgram*>(prog);
-        if (!progObj || SbName(progObj->Stage.getValue()) == StagePost
+        if (!progObj || progObj->Stage.getValue() == StagePost
                 || !progObj->Enabled.getValue())
             continue;
         auto vp = dynamic_cast<ViewProviderShaderProgram*>(
@@ -478,66 +573,16 @@ void ViewProviderShader::updateDemo()
         break;
     }
     case 5: { // Emitter: N degenerate seed quads (particle groundwork)
-        // Each particle is one quad whose 4 vertices coincide at a
-        // random anchor inside the DemoSize spread box — zero area, so
-        // stock rendering shows nothing. A particle vertex shader
-        // expands them into billboards from the seed attributes:
-        // a_normal.xy = corner (±1), a_normal.z = the particle's 0..1
-        // index, a_color0 = the per-particle random seed
-        // (docs/RenderDebug.md §6.2). Deterministic per
-        // seed/count/spread so captures stay reproducible.
-        // Explicit element nodes, not SoVertexProperty — the render
-        // cache does not capture vertex-property-fed shapes.
-        int count = int(std::max(1L, obj->EmitterCount.getValue()));
+        // Shared seed builder (buildEmitterSeedNodes above); anchors
+        // spread over the DemoSize box centered on the origin, with
+        // the standard travel-headroom bounds quads.
         const auto &size = obj->DemoSize.getValue();
-        std::mt19937 gen(uint32_t(obj->EmitterSeed.getValue()));
-        std::uniform_real_distribution<float> uni(0.0f, 1.0f);
-        auto coords = new SoCoordinate3;
-        auto norms = new SoNormal;
-        auto pmat = new SoMaterial;
-        coords->point.setNum(count * 4);
-        norms->vector.setNum(count * 4);
-        pmat->diffuseColor.setNum(count * 4);
-        SbVec3f *verts = coords->point.startEditing();
-        SbVec3f *normals = norms->vector.startEditing();
-        SbColor *colors = pmat->diffuseColor.startEditing();
-        auto ifs = new SoIndexedFaceSet;
-        ifs->coordIndex.setNum(count * 5);
-        int32_t *idx = ifs->coordIndex.startEditing();
-        static const float corner[4][2] = {{-1, -1}, {1, -1},
-                                           {1, 1}, {-1, 1}};
-        for (int i = 0; i < count; ++i) {
-            SbVec3f anchor((uni(gen) - 0.5f) * float(size.x),
-                           (uni(gen) - 0.5f) * float(size.y),
-                           (uni(gen) - 0.5f) * float(size.z));
-            uint32_t seed = uint32_t(gen());
-            SbColor seedc(float((seed >> 24) & 0xff) / 255.0f,
-                          float((seed >> 16) & 0xff) / 255.0f,
-                          float((seed >> 8) & 0xff) / 255.0f);
-            float f = count > 1 ? float(i) / float(count - 1) : 0.0f;
-            for (int c = 0; c < 4; ++c) {
-                verts[i * 4 + c] = anchor;
-                normals[i * 4 + c] =
-                    SbVec3f(corner[c][0], corner[c][1], f);
-                colors[i * 4 + c] = seedc;
-                idx[i * 5 + c] = i * 4 + c;
-            }
-            idx[i * 5 + 4] = -1;
-        }
-        coords->point.finishEditing();
-        norms->vector.finishEditing();
-        pmat->diffuseColor.finishEditing();
-        ifs->coordIndex.finishEditing();
-        auto nbind = new SoNormalBinding;
-        nbind->value = SoNormalBinding::PER_VERTEX_INDEXED;
-        auto mbind = new SoMaterialBinding;
-        mbind->value = SoMaterialBinding::PER_VERTEX_INDEXED;
-        pcDemoRoot->addChild(coords);
-        pcDemoRoot->addChild(norms);
-        pcDemoRoot->addChild(nbind);
-        pcDemoRoot->addChild(pmat);
-        pcDemoRoot->addChild(mbind);
-        pcDemoRoot->addChild(ifs);
+        SbVec3f half(float(size.x) * 0.5f, float(size.y) * 0.5f,
+                     float(size.z) * 0.5f);
+        buildEmitterSeedNodes(pcDemoRoot,
+                              int(std::max(1L, obj->EmitterCount.getValue())),
+                              uint32_t(obj->EmitterSeed.getValue()),
+                              -half, half, 0.5f);
         break;
     }
     default:
@@ -801,9 +846,10 @@ resolveUserShader(App::Appearance *obj)
         return nullptr;
     for (auto prog : shobj->Programs.getValues()) {
         auto progObj = dynamic_cast<App::ShaderProgram*>(prog);
-        if (!progObj || SbName(progObj->Stage.getValue()) == StagePost
-                || !progObj->Enabled.getValue())
-            continue;
+        if (!progObj || progObj->Stage.getValue() == StagePost
+                || !progObj->Enabled.getValue()
+                || progObj->EmitterCount.getValue() > 0)
+            continue;   // particle companions are never the main program
         auto vp = dynamic_cast<ViewProviderShaderProgram*>(
                 Application::Instance->getViewProvider(progObj));
         if (!vp || !vp->getShaderNode())
@@ -831,7 +877,7 @@ resolvePostShaders(App::Appearance *obj)
         return res;
     for (auto prog : shobj->Programs.getValues()) {
         auto progObj = dynamic_cast<App::ShaderProgram*>(prog);
-        if (!progObj || SbName(progObj->Stage.getValue()) != StagePost
+        if (!progObj || progObj->Stage.getValue() != StagePost
                 || !progObj->Enabled.getValue())
             continue;
         auto vp = dynamic_cast<ViewProviderShaderProgram*>(
@@ -995,9 +1041,10 @@ SoShaderProgram *ViewProviderAppearance::ownProgramNode()
         // into the scene-level list, so the stage filter is strict here.
         for (auto prog : shobj->Programs.getValues()) {
             auto p = dynamic_cast<App::ShaderProgram*>(prog);
-            if (!p || !p->Enabled.getValue())
-                continue;
-            SbName st(p->Stage.getValue());
+            if (!p || !p->Enabled.getValue()
+                   || p->EmitterCount.getValue() > 0)
+                continue;   // particle companions are never the main program
+            const char *st = p->Stage.getValue();
             if (st == StageMaterial || st == StageWater
                 || st == StageVolume) {
                 progObj = p;
@@ -1042,7 +1089,22 @@ void ViewProviderAppearance::applyDirectBindings(
     if (targets.empty())
         return;
     auto node = ownProgramNode();
-    if (!node)
+    // Particle companion programs of the effect (EmitterCount > 0,
+    // docs/RenderEngine.md §5.11): each gets seed geometry generated
+    // per target below, fit to the target's bounding box.
+    auto obj = dynamic_cast<App::Appearance*>(getObject());
+    auto shobj = obj ? obj->resolveShader() : nullptr;
+    std::vector<App::ShaderProgram*> emitters;
+    if (shobj) {
+        for (auto prog : shobj->Programs.getValues()) {
+            auto p = dynamic_cast<App::ShaderProgram*>(prog);
+            if (p && p->Enabled.getValue()
+                  && p->EmitterCount.getValue() > 0
+                  && p->Stage.getValue() == StageParticle)
+                emitters.push_back(p);
+        }
+    }
+    if (!node && emitters.empty())
         return;
     for (auto t : targets) {
         auto vpd = dynamic_cast<ViewProviderDocumentObject*>(
@@ -1050,14 +1112,65 @@ void ViewProviderAppearance::applyDirectBindings(
         if (!vpd || !vpd->getRoot())
             continue;
         SoGroup *root = vpd->getRoot();
-        if (root->findChild(node) >= 0)
+        if (node && root->findChild(node) < 0) {
+            // Child 0: captured into the target's own render cache ahead
+            // of everything, then merged down through all child caches and
+            // every instance (the shared-snapshot + mergeMaterial path).
+            FC_LOG("AP attach " << t->getFullName());
+            root->insertChild(node, 0);
+            attached.emplace_back(root, node);
+        }
+        if (emitters.empty())
             continue;
-        // Child 0: captured into the target's own render cache ahead of
-        // everything, then merged down through all child caches and every
-        // instance (the shared-snapshot + mergeMaterial path).
-        FC_LOG("AP attach " << t->getFullName());
-        root->insertChild(node, 0);
-        attached.emplace_back(root, node);
+        // Target bounds in the root frame (the same frame a child-0
+        // separator's coordinates live in — before the placement
+        // transform child applies to later siblings, so the
+        // placement-inclusive view-provider bbox matches). A bare
+        // SoGetBoundingBoxAction on the root would come back empty:
+        // the geometry hides inside the display-mode SoFCSwitch.
+        Base::BoundBox3d bb = vpd->getBoundingBox();
+        if (!bb.IsValid()) {
+            FC_WARN("particle emitter: empty bounds on "
+                    << t->getFullName() << ", seeds skipped");
+            continue;
+        }
+        SbBox3f box(float(bb.MinX), float(bb.MinY), float(bb.MinZ),
+                    float(bb.MaxX), float(bb.MaxY), float(bb.MaxZ));
+        FC_LOG("AP emitter bounds " << t->getFullName() << " ("
+               << box.getMin()[0] << "," << box.getMin()[1] << ","
+               << box.getMin()[2] << ")-(" << box.getMax()[0] << ","
+               << box.getMax()[1] << "," << box.getMax()[2] << ")");
+        for (auto p : emitters) {
+            SbVec3f bmin = box.getMin(), bmax = box.getMax();
+            SbVec3f c = (bmin + bmax) * 0.5f, ext = bmax - bmin;
+            const auto &spread = p->EmitterSpread.getValue();
+            const auto &offset = p->EmitterOffset.getValue();
+            c += SbVec3f(float(offset.x) * ext[0],
+                         float(offset.y) * ext[1],
+                         float(offset.z) * ext[2]);
+            SbVec3f half(0.5f * float(spread.x) * ext[0],
+                         0.5f * float(spread.y) * ext[1],
+                         0.5f * float(spread.z) * ext[2]);
+            auto pvp = dynamic_cast<ViewProviderShaderProgram*>(
+                    Application::Instance->getViewProvider(p));
+            if (!pvp || !pvp->getShaderNode())
+                continue;
+            // Own SoFCSelectionRoot: setUserShader stamps the CACHE
+            // material (last-set wins within a cache), so the seeds
+            // need their own render cache or the effect's main program
+            // recaptures them; the "particle" stage then survives the
+            // parent merge-down (SoFCRenderCache mergeMaterial).
+            // Inserted at child 0 (root frame, matching the bounds).
+            auto sep = new SoFCSelectionRoot;
+            sep->addChild(pvp->getShaderNode());
+            buildEmitterSeedNodes(
+                sep, int(p->EmitterCount.getValue()),
+                uint32_t(p->EmitterSeed.getValue()),
+                c - half, c + half,
+                float(p->EmitterMargin.getValue()));
+            root->insertChild(sep, 0);
+            attached.emplace_back(root, sep);
+        }
     }
 }
 

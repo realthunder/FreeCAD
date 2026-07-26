@@ -132,6 +132,18 @@ def activate(name, targets=None, doc=None, scope="Object"):
         if "depthwrite" in pm:
             prog.DepthWrite = bool(pm["depthwrite"])
         prog.Enabled = bool(pm.get("enabled", True))
+        em = pm.get("emitter")
+        if em:
+            # particle companion: seed quads generated at each bound
+            # target, fit to its bounding box
+            prog.EmitterCount = int(em.get("count", 200))
+            prog.EmitterSeed = int(em.get("seed", 1))
+            if "spread" in em:
+                prog.EmitterSpread = FreeCAD.Vector(*em["spread"])
+            if "offset" in em:
+                prog.EmitterOffset = FreeCAD.Vector(*em["offset"])
+            if "margin" in em:
+                prog.EmitterMargin = float(em["margin"])
         for pname, pval in (pm.get("params") or {}).items():
             prog.addProperty("App::PropertyFloat", "Param_" + pname)
             setattr(prog, "Param_" + pname, float(pval))

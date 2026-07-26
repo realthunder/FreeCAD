@@ -6131,7 +6131,8 @@ public:
         // object. Parameter uniforms must be recorded with the
         // consuming draw (see submitDebug).
         if (mat.usershader && !mat.usershader->fragmentSource.empty()
-                && mat.usershader->stage == "material"
+                && (mat.usershader->stage == "material"
+                    || mat.usershader->stage == "particle")
                 && mat.type == Render::Material::Triangle
                 && pass == PassNormal && !oitDraw
                 && (passView == ViewOpaque || passView == ViewTransparent

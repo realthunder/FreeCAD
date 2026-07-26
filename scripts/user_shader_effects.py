@@ -15,6 +15,10 @@ xvfb; creates its own document. Covers the shipped effect packages
   restores the base byte-exact and back on restores the flame — the
   generic per-program switch bundled effects use for optional
   companion programs.
+- particle companions: enabling the shipped disabled Embers /
+  WaterSpray programs makes particles appear over the bound target
+  (seed quads generated target-bbox-fit), frozen-deterministic;
+  disabling restores the plain effect byte-exact.
 
 Env: US_OUT (output dir, default this file's dir), US_RESULT (result
 file, default <US_OUT>/effects.txt).
@@ -152,6 +156,23 @@ def run():
         ok = byte_equal(w_stock, w_fx, "water effect vs stock")
         log("ASSERT water-effect: %s"
             % ("PASS" if ok and ok_prop else "FAIL"))
+
+        # --- spray particle companion ----------------------------------
+        spray = doc.getObject("water_WaterSpray")
+        spray.Enabled = True
+        doc.recompute()
+        settle()
+        settle()
+        spr = cap("e_spray")
+        n = changed_count(w_fx, spr)
+        log("spray changed px vs plain water: %d" % n)
+        log("ASSERT spray-appear: %s" % ("PASS" if n > 150 else "FAIL"))
+        spray.Enabled = False
+        doc.recompute()
+        settle()
+        ok = byte_equal(w_fx, cap("e_sprayoff"), "spray off restore")
+        log("ASSERT spray-off: %s" % ("PASS" if ok else "FAIL"))
+
         rendereffects.deactivate(look)
         settle()
         ok = byte_equal(base_ws, cap("e_wgone"), "water deactivate restore")
@@ -164,6 +185,25 @@ def run():
         f_fx = cap("e_ffx")
         ok = byte_equal(f_stock, f_fx, "fire effect vs stock")
         log("ASSERT fire-effect: %s" % ("PASS" if ok else "FAIL"))
+
+        # --- ember particle companion ----------------------------------
+        embers = doc.getObject("fire_Embers")
+        embers.Enabled = True
+        doc.recompute()
+        settle()
+        settle()
+        emb = cap("e_embers")
+        n = changed_count(f_fx, emb)
+        log("embers changed px vs plain fire: %d" % n)
+        emb2 = cap("e_embers2")
+        det = byte_equal(emb, emb2, "frozen embers determinism")
+        log("ASSERT embers-appear: %s"
+            % ("PASS" if n > 200 and det else "FAIL"))
+        embers.Enabled = False
+        doc.recompute()
+        settle()
+        ok = byte_equal(f_fx, cap("e_embersoff"), "embers off restore")
+        log("ASSERT embers-off: %s" % ("PASS" if ok else "FAIL"))
 
         prog = doc.getObject("fire_FireMedium")
         prog.Enabled = False

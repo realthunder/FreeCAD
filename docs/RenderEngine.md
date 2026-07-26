@@ -181,6 +181,7 @@ scene-level list.
 | `material` | the mesh program of the draw | beauty only: `ViewOpaque`, non-OIT `ViewTransparent`, `ViewGroundRefl` | depth prepass, shadow casting, picking, highlight/on-top, WBOIT, section clip |
 | `water` | `fs_fc_water`, the water-surface program — and binding one **activates** the water treatment (the target becomes a water body as if `Render_Water` were set: surface routing, scene copy, planar reflection, back depth, medium exemptions) | `ViewWaterSurface` | everything the stock water body leaves untouched; with the water pass set inactive (hidden-line, water shading disabled) the body renders stock |
 | `volume` | the fire-channel medium of the body's slot — a per-point **medium function** (field + ramp), not a raymarch; binding one **activates** the fire treatment (proxy volume raymarches, geometry not drawn). The engine reassembles the shared volumetric raymarch / extinction / reflection-media programs with the user functions dispatched for the slot | `ViewVolGen`, `ViewVolApply`, `ViewReflMedia` | the march itself, temporal accumulation, cross-media compositing; with volumetrics inactive (no Shadow draw style) the body renders stock. Browser tier renders the stock flame (no splice transport yet) |
+| `particle` | the mesh program of generated particle seed quads (§5.8 layout; the program's `Emitter*` properties drive per-target seed generation on Object-scope bindings). Lives in its own cache and survives the outer-wins user-shader merge-down, so it coexists with the effect's main program | beauty passes, like `material` | like `material`; never the effect's main program |
 | `post` | — (inserted) | `ViewUserPostCopy` + `ViewUserPost`, after bloom, before debug/on-top | everything else |
 
 While a compile is pending or failed, the stock program stands in —
@@ -543,20 +544,32 @@ document.
 `App::ShaderProgram.Enabled` (default true) is honored everywhere a
 Shader's program list resolves — object/water/volume binding, post
 lists, direct attachment, the demo preview — and toggling it re-poke's
-the bindings. Each bundled
-effect ships its particle companion program (spray, sparks, embers —
-riding the §5.8 particle framework) disabled by default, and enabling
-the particle effect is flipping that property. The emitter also needs
-a travel-margin bounds property so displaced particles are not clipped
-by the near/far fit computed from the undisplaced bounding box
-(§5.3).
+the bindings. Each bundled effect ships its particle companion program
+disabled by default; enabling the particle effect is flipping that
+property.
+
+**Particle companions — target-fit emitters.** *Implemented*: a
+program with `EmitterCount > 0` is a particle companion (never the
+effect's main program). On an Object-scope binding, each such enabled
+program gets its own seed-quad geometry generated per target
+(`buildEmitterSeedNodes`, the §5.8 seed layout), fit to the target's
+bounding box scaled/offset by `EmitterSpread`/`EmitterOffset` (in
+bbox-size units — spray sits on the pool's top face, embers over the
+flame body) and attached with the program in an own separator at the
+target's view-provider root. `EmitterMargin` adds travel headroom as
+inert corner quads folded into the geometry's bounds, so the auto
+near/far fit does not clip displaced billboards. Bundled: `Embers` on
+the fire effect, `WaterSpray` on the water effect — both additive,
+depth-write off, stateless (`u_fcTime` + seed attributes), tuned via
+`Param_Rise`/`Param_Size`.
 
 Implementation order: water stage (identity program == stock water —
 **done**), volume stage (identity == stock fire — **done** for the
-emissive fire channel; the scattering channel for the fountain spray
-and the browser-tier splice transport are follow-ups), packages +
-factory + `Enabled` (**done** — water and fire ship), then the
-particle companions and the fountain package.
+emissive fire channel), packages + factory + `Enabled` (**done** —
+water and fire ship), particle companions (**done** — Embers /
+WaterSpray, target-fit emitters). Remaining follow-ups: the fountain
+package (needs the scattering medium channel), the browser-tier
+splice transport, Instance-scope particle emitters.
 
 ## 6. Render debugging facilities
 

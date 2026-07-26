@@ -65,6 +65,23 @@ public:
     /// effect's optional companion programs — e.g. particles — ship
     /// turned off on)
     PropertyBool Enabled;
+    /// > 0 marks a PARTICLE companion program: when the effect is
+    /// bound with Object scope, this many seed quads are generated at
+    /// each target, fit to the target's bounding box, and rendered
+    /// with this program (the billboard vertex stage expands them).
+    /// A particle program never becomes the effect's main program.
+    PropertyInteger EmitterCount;
+    /// Random seed of the generated particles
+    PropertyInteger EmitterSeed;
+    /// Seed box size as factors of the target bounding box size
+    PropertyVector EmitterSpread;
+    /// Seed box center offset in target-bounding-box-size units
+    /// (e.g. z = 0.5 centers the box on the target's top face)
+    PropertyVector EmitterOffset;
+    /// Travel headroom as a fraction of the seed box diagonal, folded
+    /// into the generated geometry's bounds so displaced billboards
+    /// are not clipped by the auto near/far planes
+    PropertyFloat EmitterMargin;
 
     const char* getViewProviderName() const override
     {

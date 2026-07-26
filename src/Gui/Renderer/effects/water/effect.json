@@ -8,6 +8,20 @@
       "stage": "water",
       "fragment": "water_surface.sc",
       "enabled": true
+    },
+    {
+      "name": "WaterSpray",
+      "stage": "particle",
+      "vertex": "spray_vs.sc",
+      "fragment": "spray_fs.sc",
+      "blend": "Additive",
+      "depthwrite": false,
+      "enabled": false,
+      "emitter": {"count": 220, "seed": 7,
+                  "spread": [0.85, 0.85, 0.15],
+                  "offset": [0.0, 0.0, 0.5],
+                  "margin": 0.8},
+      "params": {"Rise": 2.5, "Size": 0.3}
     }
   ]
 }

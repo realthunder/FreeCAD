@@ -62,6 +62,7 @@
 #include "../ViewParams.h"
 #include "../SoFCUnifiedSelection.h"
 #include "SoFCRenderCache.h"
+#include "Renderer/Renderer.h"
 #include "SoFCRenderMaterial.h"
 #include "SoFCVertexCache.h"
 #include "SoFCDetail.h"
@@ -809,7 +810,12 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
   // link material-override semantics: the outer (parent) shader wins over
   // any shader set deeper inside. Lines/points are excluded above so their
   // batching keys stay unaffected (backends swap the mesh program only).
-  if (parent.usershader)
+  // Exception: a "particle"-stage shader marks generated particle seed
+  // geometry (its own SoFCSelectionRoot cache under a bound target,
+  // docs/RenderEngine.md §5.11) — the effect's main program must not
+  // recapture the seeds, so the inner particle program survives.
+  if (parent.usershader
+      && (!res.usershader || res.usershader->stage != "particle"))
     res.usershader = parent.usershader;
 
   copyMaterial(res, parent, &Material::materialbinding, Material::FLAG_MATERIAL_BINDING, Material::FLAG_MATERIAL_BINDING);

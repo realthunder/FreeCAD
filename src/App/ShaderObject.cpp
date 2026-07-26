@@ -43,7 +43,9 @@ ShaderProgram::ShaderProgram()
             "e.g. 'material' (surface shading), 'water' (water-surface\n"
             "shading, makes the bound object a water body), 'volume'\n"
             "(per-point medium function, makes the bound object an\n"
-            "emissive volume body) or 'post' (full screen pass)");
+            "emissive volume body), 'particle' (billboard program of\n"
+            "generated seed quads, with the Emitter properties) or\n"
+            "'post' (full screen pass)");
     Dialect.setEnums(DialectEnums);
     ADD_PROPERTY_TYPE(Dialect, ((long)0), "Shader", Prop_None,
             "Source dialect of the program text");
@@ -65,6 +67,24 @@ ShaderProgram::ShaderProgram()
             "Whether the program takes part when its Shader is bound;\n"
             "disabled programs are skipped everywhere (the toggle for\n"
             "an effect's optional companion programs, e.g. particles)");
+    ADD_PROPERTY_TYPE(EmitterCount, ((long)0), "Emitter", Prop_None,
+            "> 0 marks a particle companion program: this many seed\n"
+            "quads are generated at each Object-scope bound target,\n"
+            "fit to the target's bounding box, and rendered with this\n"
+            "program's billboard vertex stage");
+    ADD_PROPERTY_TYPE(EmitterSeed, ((long)1), "Emitter", Prop_None,
+            "Random seed of the generated particles");
+    ADD_PROPERTY_TYPE(EmitterSpread, (Base::Vector3d(1.0, 1.0, 1.0)),
+            "Emitter", Prop_None,
+            "Seed box size as factors of the target bounding box size");
+    ADD_PROPERTY_TYPE(EmitterOffset, (Base::Vector3d(0.0, 0.0, 0.0)),
+            "Emitter", Prop_None,
+            "Seed box center offset in target-bounding-box-size units\n"
+            "(z = 0.5 centers the box on the target's top face)");
+    ADD_PROPERTY_TYPE(EmitterMargin, (0.5), "Emitter", Prop_None,
+            "Travel headroom as a fraction of the seed box diagonal,\n"
+            "folded into the generated bounds so displaced billboards\n"
+            "are not clipped by the auto near/far planes");
 }
 
 // ----------------------------------------------------------------------------

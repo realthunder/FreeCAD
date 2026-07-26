@@ -1578,14 +1578,15 @@ SoFCRenderCacheManagerP::postShaderProgram(void *userdata,
   assert(node);
   Render::UserShader shader;
   if (RendererBridge::translateShaderProgram(node, shader)) {
-    // "material"-, "water"- and "volume"-stage programs attach to the
-    // shapes captured after them in the enclosing cache (the
-    // SoFCRenderMaterial placement rules); scene-level stages ("post")
-    // ride the manager list. A "water"/"volume"-stage program
+    // "material"-, "water"-, "volume"- and "particle"-stage programs
+    // attach to the shapes captured after them in the enclosing cache
+    // (the SoFCRenderMaterial placement rules); scene-level stages
+    // ("post") ride the manager list. A "water"/"volume"-stage program
     // additionally marks the shapes as a water/fire body downstream
-    // (RendererBridge translateMaterial).
+    // (RendererBridge translateMaterial); a "particle"-stage program
+    // survives the parent merge-down (SoFCRenderCache mergeMaterial).
     if (shader.stage == "material" || shader.stage == "water"
-        || shader.stage == "volume") {
+        || shader.stage == "volume" || shader.stage == "particle") {
       if (!self->stack.empty())
         self->stack.back()->setUserShader(
             action->getState(),
