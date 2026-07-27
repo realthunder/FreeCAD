@@ -1583,6 +1583,8 @@ void View3DInventorViewer::setDocument(Gui::Document* pcDocument)
     }
 }
 
+static void syncEnvImageEmbed(View3DInventor *view);
+
 void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
 {
     if(!prop.getName() || prop.testStatus(App::Property::User3) || !_pimpl->view)
@@ -1602,6 +1604,11 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
         }
         else if (boost::starts_with(prop.getName(),"Render_")
                  || boost::starts_with(prop.getName(),"RenderDebug_")) {
+            // The embedded environment-image copy follows the path and
+            // the embed toggle.
+            if (!strcmp(prop.getName(), "Render_PBREnvImage")
+                    || !strcmp(prop.getName(), "Render_PBREnvEmbed"))
+                syncEnvImageEmbed(_pimpl->view);
             // Per-view render engine settings; the per-frame config feed
             // re-reads them, so a redraw is enough.
             getSoRenderManager()->scheduleRedraw();
@@ -4003,6 +4010,50 @@ void View3DInventorViewer::pickAndSelect(const SbVec3f &origin,
     root->unref();
 }
 
+/// Keep the embedded environment-image copy in step with the path and
+/// the embed toggle. App::PropertyFileIncluded has no reference
+/// counting — each property owns its own copy in the document's
+/// transient directory — so the copy is only made while the toggle is
+/// on, and dropped again when it goes off.
+static void syncEnvImageEmbed(View3DInventor *view)
+{
+    // While restoring, the path and the embedded copy arrive as
+    // separate properties in file order — acting on the first would
+    // re-copy the image (and mark the document modified) just by
+    // opening it.
+    if (!view || view->isRestoring())
+        return;
+    auto data = Base::freecad_dynamic_cast<App::PropertyFileIncluded>(
+            view->getPropertyByName("Render_PBREnvImageData"));
+    auto path = Base::freecad_dynamic_cast<App::PropertyFile>(
+            view->getPropertyByName("Render_PBREnvImage"));
+    auto embed = Base::freecad_dynamic_cast<App::PropertyBool>(
+            view->getPropertyByName("Render_PBREnvEmbed"));
+    if (!data || !path || !embed)
+        return;
+    const char *src = path->getValue();
+    if (!embed->getValue() || !src || !src[0]) {
+        if (!data->isEmpty())
+            data->setValue("");
+        return;
+    }
+    // Keep the copy we already have when it is the same image, or when
+    // the source is gone — a restored document holds the copy but not
+    // the original path (the source name is runtime state, so after a
+    // restore it reads empty).
+    if (!data->isEmpty()
+            && (data->getOriginalFileName() == src
+                || !Base::FileInfo(src).exists()))
+        return;
+    try {
+        data->setValue(src);
+    }
+    catch (const Base::Exception &e) {
+        FC_WARN("cannot embed environment image " << src << ": "
+                << e.what());
+    }
+}
+
 void View3DInventorViewer::initRenderProperties()
 {
     // Materialize the per-view render engine settings as Render_* dynamic
@@ -4059,6 +4110,27 @@ void View3DInventorViewer::initRenderProperties()
             applyUnitConstraint);
     _renderParam<App::PropertyFloat>(view, "PBREnvIntensity",
             RenderParams::docPBREnvIntensity(), RenderParams::getPBREnvIntensity());
+    // The environment image is a plain path; Render_PBREnvEmbed
+    // optionally copies it into the document (Render_PBREnvImageData),
+    // which then takes precedence — see syncEnvImageEmbed().
+    _renderParam<App::PropertyFile>(view, "PBREnvImage",
+            RenderParams::docPBREnvImage(),
+            RenderParams::getPBREnvImage().c_str());
+    _renderParam<App::PropertyBool>(view, "PBREnvEmbed",
+            RenderParams::docPBREnvEmbed(), RenderParams::getPBREnvEmbed());
+    if (!view->getPropertyByName("Render_PBREnvImageData")) {
+        view->addDynamicProperty("App::PropertyFileIncluded",
+                "Render_PBREnvImageData", "Render",
+                "Copy of the environment image stored in the document "
+                "(filled while Render_PBREnvEmbed is set).");
+    }
+    // No sync here on purpose: a restored document already carries its
+    // copy, and re-embedding it would mark the document modified just
+    // by opening it. The copy follows explicit property changes only
+    // (View3DInventorViewer::onViewPropertyChanged).
+    _renderParam<App::PropertyBool>(view, "PBREnvBackground",
+            RenderParams::docPBREnvBackground(),
+            RenderParams::getPBREnvBackground());
     _renderParam<App::PropertyFloat>(view, "BumpScale",
             RenderParams::docBumpScale(), RenderParams::getBumpScale());
     _renderParam<App::PropertyBool>(view, "Parallax",

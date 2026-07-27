@@ -47,7 +47,9 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // 24: assembled volume-splice variants (docs/RenderEngine.md §5.11)
 //     as extra shader-table entries + index list, so compiler-less
 //     tiers can adopt the server-compiled binaries by source match.
-const uint32_t kVersion = 24;
+// 25: PBRConfig::envBackground + envImage (the environment drawn as
+//     the background; a user image replacing the procedural one).
+const uint32_t kVersion = 25;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -771,6 +773,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     addDraws(snap.highlight);
     for (const auto &ov : snap.overlays)
         addDraws(ov.draws);
+    addTex(snap.pbrconf.envImage);
     addTex(snap.lightconf.groundTexture);
     addTex(snap.lightconf.groundBumpMap);
     for (const auto &s : snap.usershaderconf.shaders)
@@ -827,6 +830,11 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.f(snap.pbrconf.metallic);
     w.f(snap.pbrconf.roughness);
     w.f(snap.pbrconf.envIntensity);
+    w.b(snap.pbrconf.envBackground);
+    {
+        auto it = texIndex.find(snap.pbrconf.envImage.get());
+        w.i32(it == texIndex.end() ? -1 : it->second);
+    }
 
     w.f(snap.bumpconf.scale);
     w.b(snap.bumpconf.parallax);
@@ -1007,6 +1015,12 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.pbrconf.metallic = r.f();
     snap.pbrconf.roughness = r.f();
     snap.pbrconf.envIntensity = r.f();
+    snap.pbrconf.envBackground = version >= 25 ? r.b() : false;
+    if (version >= 25) {
+        int32_t idx = r.i32();
+        if (idx >= 0 && size_t(idx) < textures.size())
+            snap.pbrconf.envImage = textures[size_t(idx)];
+    }
 
     snap.bumpconf.scale = r.f();
     snap.bumpconf.parallax = r.b();

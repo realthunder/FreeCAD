@@ -63,6 +63,9 @@ public:
     double PBRMetallic;
     double PBRRoughness;
     double PBREnvIntensity;
+    std::string PBREnvImage;
+    bool PBREnvEmbed;
+    bool PBREnvBackground;
     double BumpScale;
     bool Parallax;
     bool Volumetric;
@@ -130,6 +133,12 @@ public:
         funcs["PBRRoughness"] = &RenderParamsP::updatePBRRoughness;
         PBREnvIntensity = this->handle->GetFloat("PBREnvIntensity", 1.0);
         funcs["PBREnvIntensity"] = &RenderParamsP::updatePBREnvIntensity;
+        PBREnvImage = this->handle->GetASCII("PBREnvImage", "");
+        funcs["PBREnvImage"] = &RenderParamsP::updatePBREnvImage;
+        PBREnvEmbed = this->handle->GetBool("PBREnvEmbed", false);
+        funcs["PBREnvEmbed"] = &RenderParamsP::updatePBREnvEmbed;
+        PBREnvBackground = this->handle->GetBool("PBREnvBackground", false);
+        funcs["PBREnvBackground"] = &RenderParamsP::updatePBREnvBackground;
         BumpScale = this->handle->GetFloat("BumpScale", 1.0);
         funcs["BumpScale"] = &RenderParamsP::updateBumpScale;
         Parallax = this->handle->GetBool("Parallax", true);
@@ -271,6 +280,18 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvIntensity(RenderParamsP *self) {
         self->PBREnvIntensity = self->handle->GetFloat("PBREnvIntensity", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updatePBREnvImage(RenderParamsP *self) {
+        self->PBREnvImage = self->handle->GetASCII("PBREnvImage", "");
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updatePBREnvEmbed(RenderParamsP *self) {
+        self->PBREnvEmbed = self->handle->GetBool("PBREnvEmbed", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updatePBREnvBackground(RenderParamsP *self) {
+        self->PBREnvBackground = self->handle->GetBool("PBREnvBackground", false);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateBumpScale(RenderParamsP *self) {
@@ -845,6 +866,102 @@ void RenderParams::setPBREnvIntensity(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removePBREnvIntensity() {
     instance()->handle->RemoveFloat("PBREnvIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docPBREnvImage() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Image file used as the image based lighting environment,\n"
+"replacing the built-in procedural studio environment. A 2:1\n"
+"image is read as equirectangular (lat-long), anything squarer\n"
+"as a sphere map — the same convention as the Texture mapping\n"
+"dialog's Environment mode, so the same file works in both.\n"
+"Empty falls back to that dialog's current image, then to the\n"
+"procedural environment.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const std::string & RenderParams::getPBREnvImage() {
+    return instance()->PBREnvImage;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const std::string & RenderParams::defaultPBREnvImage() {
+    const static std::string def = "";
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setPBREnvImage(const std::string &v) {
+    instance()->handle->SetASCII("PBREnvImage",v);
+    instance()->PBREnvImage = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removePBREnvImage() {
+    instance()->handle->RemoveASCII("PBREnvImage");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docPBREnvEmbed() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Store a copy of the environment image inside the document,\n"
+"so it travels with the file instead of depending on the\n"
+"original path. The copy lives in the view's\n"
+"Render_PBREnvImageData property and takes precedence over the\n"
+"image path while set.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getPBREnvEmbed() {
+    return instance()->PBREnvEmbed;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultPBREnvEmbed() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setPBREnvEmbed(const bool &v) {
+    instance()->handle->SetBool("PBREnvEmbed",v);
+    instance()->PBREnvEmbed = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removePBREnvEmbed() {
+    instance()->handle->RemoveBool("PBREnvEmbed");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docPBREnvBackground() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Show the image based lighting environment itself as the view\n"
+"background while PBR shading is active, so reflective surfaces\n"
+"visibly mirror their surroundings.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getPBREnvBackground() {
+    return instance()->PBREnvBackground;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultPBREnvBackground() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setPBREnvBackground(const bool &v) {
+    instance()->handle->SetBool("PBREnvBackground",v);
+    instance()->PBREnvBackground = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removePBREnvBackground() {
+    instance()->handle->RemoveBool("PBREnvBackground");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

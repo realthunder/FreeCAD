@@ -725,10 +725,21 @@ struct PBRConfig {
     /// material's shininess).
     float roughness = 0.0f;
     float envIntensity = 1.0f;  ///< environment lighting brightness
+    /// Draw the environment itself as the visible background (replaces
+    /// the background gradient while PBR is active).
+    bool envBackground = false;
+    /// User environment image replacing the built-in procedural studio
+    /// environment; null = procedural. A 2:1 image is read as
+    /// equirectangular (lat-long), anything squarer as a GL sphere map
+    /// — the same convention as the Texture mapping dialog's
+    /// Environment mode (SoTextureCoordinateEnvironment), so the same
+    /// file works in both.
+    std::shared_ptr<const TextureImage> envImage;
 
     bool operator==(const PBRConfig &o) const {
         return enabled == o.enabled && metallic == o.metallic
-            && roughness == o.roughness && envIntensity == o.envIntensity;
+            && roughness == o.roughness && envIntensity == o.envIntensity
+            && envBackground == o.envBackground && envImage == o.envImage;
     }
     bool operator!=(const PBRConfig &o) const { return !(*this == o); }
 };

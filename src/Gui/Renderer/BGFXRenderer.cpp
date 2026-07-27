@@ -1939,7 +1939,7 @@ public:
                           &m_progVolAccum, &m_progReflMedia,
                           &m_progBloomBright, &m_progBloomEmit,
                           &m_progBloomBlur, &m_progBloomApply,
-                          &m_progSun,
+                          &m_progSun, &m_progEnvBg,
                           &m_progVolApply, &m_progVolExt,
                           &m_progCaustics, &m_progWaterCopy, &m_progWater,
                           &m_progGlass, &m_progGroundRefl}) {
@@ -2366,6 +2366,10 @@ public:
                                 _BGFXLib.shaderPath().c_str());
         u_sunParams = bgfx::createUniform("u_sunParams",
                                           bgfx::UniformType::Vec4);
+
+        // PBR environment drawn as the visible background.
+        m_progEnvBg = loadProgram("vs_fc_comp", "fs_fc_env",
+                                  _BGFXLib.shaderPath().c_str());
 
 #ifdef FC_RENDERER_STANDALONE
         // The standalone present pass copies the scene color onto the
@@ -3109,11 +3113,92 @@ public:
                                            bgfx::UniformType::Vec4);
     }
 
-    // Radiance of the fixed procedural studio environment for a world
-    // direction (Z up, unit length): a vertical ground/horizon/sky
-    // gradient plus three broad light lobes (key/fill/rim). All values
-    // are fixed — frames stay deterministic. Modest HDR range.
-    static void envRadiance(const float d[3], float out[3])
+    /// Radiance of the environment for a world direction (Z up, unit
+    /// length). With a user image (PBRConfig::envImage) that image is
+    /// sampled — a 2:1 image as equirectangular (lat-long), anything
+    /// squarer as a GL sphere map, the convention the Texture mapping
+    /// dialog's Environment mode uses for the same file. Otherwise the
+    /// fixed procedural studio environment: a vertical
+    /// ground/horizon/sky gradient plus three broad light lobes
+    /// (key/fill/rim), all values fixed so frames stay deterministic.
+    /// Modest HDR range either way.
+    void envRadiance(const float d[3], float out[3]) const
+    {
+        if (m_envImage && m_envImage->width > 0 && m_envImage->height > 0
+                && m_envImage->numComponents > 0) {
+            sampleEnvImage(*m_envImage, d, out);
+            return;
+        }
+        envRadianceProcedural(d, out);
+    }
+
+    /// Bilinear lookup of a user environment image along a world
+    /// direction. Coin's SoTextureCoordinateEnvironment (and fixed
+    /// function GL_SPHERE_MAP) maps a reflection vector to the unit
+    /// disc of a sphere/light-probe image, so a roughly square image is
+    /// read that way; a 2:1 image is the usual lat-long panorama. The
+    /// image is Y-up in world terms: Z is up in FreeCAD.
+    static void sampleEnvImage(const Render::TextureImage &img,
+                               const float d[3], float out[3])
+    {
+        float u, v;
+        if (img.width >= img.height * 3 / 2) {
+            // Equirectangular: azimuth around Z, elevation from Z.
+            u = 0.5f + std::atan2(d[1], d[0]) / (2.0f * bx::kPi);
+            v = std::acos(bx::clamp(d[2], -1.0f, 1.0f)) / bx::kPi;
+        }
+        else {
+            // Sphere map: the classic m = 2*sqrt(dx^2+dy^2+(dz+1)^2)
+            // parametrization with the view axis along -Y (the front
+            // view), so the image center faces the default camera.
+            float rx = d[0], ry = d[2], rz = -d[1];
+            float m = 2.0f * std::sqrt(rx*rx + ry*ry + (rz + 1.0f)
+                                       * (rz + 1.0f));
+            if (m < 1e-6f)
+                m = 1e-6f;
+            u = rx / m + 0.5f;
+            v = 1.0f - (ry / m + 0.5f);
+        }
+        // Wrap horizontally (a panorama seam is continuous), clamp
+        // vertically (poles).
+        u -= std::floor(u);
+        v = bx::clamp(v, 0.0f, 1.0f);
+        // Rows are bottom-up like GL, v runs top-down.
+        float fx = u * img.width - 0.5f;
+        float fy = (1.0f - v) * img.height - 0.5f;
+        int x0 = int(std::floor(fx)), y0 = int(std::floor(fy));
+        float tx = fx - x0, ty = fy - y0;
+        const int nc = img.numComponents;
+        auto texel = [&](int x, int y, float c[3]) {
+            x = ((x % img.width) + img.width) % img.width;
+            y = bx::clamp(y, 0, img.height - 1);
+            const uint8_t *p = img.pixels.data()
+                + (size_t(y) * img.width + x) * nc;
+            if (nc >= 3) {
+                c[0] = p[0] / 255.0f;
+                c[1] = p[1] / 255.0f;
+                c[2] = p[2] / 255.0f;
+            }
+            else {
+                c[0] = c[1] = c[2] = p[0] / 255.0f;
+            }
+        };
+        float c00[3], c10[3], c01[3], c11[3];
+        texel(x0, y0, c00);
+        texel(x0 + 1, y0, c10);
+        texel(x0, y0 + 1, c01);
+        texel(x0 + 1, y0 + 1, c11);
+        for (int i = 0; i < 3; ++i) {
+            float a = c00[i] + (c10[i] - c00[i]) * tx;
+            float b = c01[i] + (c11[i] - c01[i]) * tx;
+            // sRGB-ish decode: the shading math is linear, and an 8-bit
+            // photo is gamma encoded.
+            float lin = a + (b - a) * ty;
+            out[i] = lin * lin;
+        }
+    }
+
+    static void envRadianceProcedural(const float d[3], float out[3])
     {
         // The ground stays fairly bright: metals reflect the lower
         // hemisphere over most of a model's side faces, and a dark
@@ -3179,6 +3264,10 @@ public:
         if (m_envBuilt)
             return;
         m_envBuilt = true;
+        if (bgfx::isValid(m_envTex)) {
+            bgfx::destroy(m_envTex);
+            m_envTex = BGFX_INVALID_HANDLE;
+        }
         const auto *caps = bgfx::getCaps();
         if (!(caps->formats[bgfx::TextureFormat::RGBA16F]
                 & BGFX_CAPS_FORMAT_TEXTURE_CUBE))
@@ -3454,6 +3543,26 @@ public:
                    BGFX_STATE_WRITE_RGB
                    | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
                                            BGFX_STATE_BLEND_ONE));
+    }
+
+    /// PBR environment background (PBRConfig::envBackground): the IBL
+    /// cubemap drawn as the visible background instead of the gradient
+    /// quad. The background view keeps the scene view/proj for this
+    /// (the fullscreen vertex shader ignores them; the fragment shader
+    /// reconstructs each pixel's world direction from the predefined
+    /// u_proj/u_invView). A soft cubemap lod keeps the studio lobes
+    /// from reading as hard clipped discs.
+    void submitEnvBackground()
+    {
+        if (!bgfx::isValid(m_progEnvBg) || !bgfx::isValid(m_envTex))
+            return;
+        float params[4] = {0.0f, 2.0f, 0.0f,
+                           std::max(pbrEnvIntensity, 0.0f)};
+        bgfx::setUniform(u_pbrParams, params);
+        bgfx::setTexture(1, s_texEnv, m_envTex);
+        fullscreen(ViewBackground, m_progEnvBg,
+                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                   | BGFX_STATE_MSAA);
     }
 
     void submitBackground(const Render::Background &bg)
@@ -6587,6 +6696,9 @@ public:
     bgfx::UniformHandle u_pbrParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_envSH = BGFX_INVALID_HANDLE;
     float envSH[kEnvSH][4];
+    /// User environment image the built cubemap came from (null = the
+    /// procedural studio environment); a change invalidates the build.
+    std::shared_ptr<const Render::TextureImage> m_envImage;
     bool m_envBuilt = false;   // build attempted (m_envTex may still be
                                // invalid when the caps disallow it)
     bool pbrFrame = false;     // PBR active for the frame being submitted
@@ -6732,6 +6844,7 @@ public:
     bgfx::UniformHandle u_bloomBlur = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSun = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_sunParams = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progEnvBg = BGFX_INVALID_HANDLE;
     // Bulb (Render_LightShadow) shadow atlas: 2x2 tiles of plain VSM
     // moments, one per bulb light slot; a tile re-renders only when its
     // hash (bulb + casters) changes.
@@ -7175,6 +7288,12 @@ public:
         // disables it like SSAO (a technical drawing mode).
         bool pbrActive = false;
         if (pbrconf.enabled && !hlconfig.show) {
+            // A changed environment image invalidates the built cubemap
+            // (and its irradiance SH) — rebuild on the next ensure.
+            if (view->m_envImage != pbrconf.envImage) {
+                view->m_envImage = pbrconf.envImage;
+                view->m_envBuilt = false;
+            }
             view->ensureEnvironment();
             pbrActive = bgfx::isValid(view->m_envTex);
         }
@@ -9107,7 +9226,11 @@ public:
             // projection like the gen pass: their plane-aware bilateral
             // weight reconstructs view positions from u_proj (the shared
             // fullscreen vertex shader ignores the matrices).
-            if (i == BGFXView::ViewBackground
+            // The environment background keeps the scene matrices on
+            // the background view: its fragment shader reconstructs
+            // per-pixel world directions from u_proj/u_invView.
+            if ((i == BGFXView::ViewBackground
+                    && !(pbrActive && pbrconf.envBackground))
                     || i == BGFXView::ViewOITComposite)
                 bgfx::setViewTransform(id, nullptr, nullptr);
             else
@@ -9137,7 +9260,10 @@ public:
         ++view->frame;
         view->drawcount = 0;
         view->autozoomScale = autozoomScale;
-        view->submitBackground(background);
+        if (pbrActive && pbrconf.envBackground)
+            view->submitEnvBackground();
+        else
+            view->submitBackground(background);
         // Visible sun along the directional scene light (needs the
         // view-space light state the shadow section filled above).
         if (getenv("FC_BGFX_DEBUG_FEED"))

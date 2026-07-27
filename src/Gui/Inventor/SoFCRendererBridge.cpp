@@ -31,6 +31,7 @@
 
 #include <QImage>
 
+#include <App/Application.h>
 #include <App/PropertyFile.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyStandard.h>
@@ -1128,6 +1129,50 @@ RendererBridge::translateShaderProgram(const SoNode * node,
     return !out.fragmentSource.empty() || !out.vertexSource.empty();
 }
 
+/// Image file (ground texture/bump map, PBR environment) decoded once
+/// per path with Qt and cached — the backend keys GPU uploads on the
+/// stable textureId. keepGray preserves grayscale images as one
+/// component: a bump map's component count is what tells a height field
+/// (1/2) from a tangent-space normal map (3/4).
+static std::shared_ptr<const Render::TextureImage>
+loadParamImage(const std::string &path, bool keepGray)
+{
+    if (path.empty())
+        return nullptr;
+    static std::map<std::pair<std::string, bool>,
+                    std::shared_ptr<const Render::TextureImage>> cache;
+    auto key = std::make_pair(path, keepGray);
+    auto it = cache.find(key);
+    if (it == cache.end()) {
+        std::shared_ptr<Render::TextureImage> tex;
+        QImage img;
+        if (img.load(QString::fromUtf8(path.c_str()))) {
+            bool alpha = img.hasAlphaChannel();
+            bool gray = keepGray && !alpha && img.isGrayscale();
+            img = img.convertToFormat(
+                gray ? QImage::Format_Grayscale8
+                     : alpha ? QImage::Format_RGBA8888
+                             : QImage::Format_RGB888);
+            // Render::TextureImage rows are bottom-up like GL.
+            img = img.mirrored(false, true);
+            tex = std::make_shared<Render::TextureImage>();
+            // Outside the Coin node-id space the scene textures key on.
+            static uint64_t nextId = 0;
+            tex->textureId = 0x8000000000000000ULL + ++nextId;
+            tex->width = img.width();
+            tex->height = img.height();
+            tex->numComponents = gray ? 1 : alpha ? 4 : 3;
+            int rowLen = img.width() * tex->numComponents;
+            tex->pixels.resize(size_t(rowLen) * img.height());
+            for (int y = 0; y < img.height(); ++y)
+                std::memcpy(tex->pixels.data() + size_t(y) * rowLen,
+                            img.constScanLine(y), rowLen);
+        }
+        it = cache.emplace(key, std::move(tex)).first;
+    }
+    return it->second;
+}
+
 Render::LightConfig
 RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
 {
@@ -1252,52 +1297,7 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
         else {
             texpath = ViewParams::getShadowGroundTexture();
         }
-        // Image files decoded once per path with Qt and cached — the
-        // backend keys GPU uploads on the stable textureId. keepGray
-        // preserves grayscale images as one component: a bump map's
-        // component count is what tells a height field (1/2) from a
-        // tangent-space normal map (3/4).
-        auto loadImage = [](const std::string &path, bool keepGray)
-                -> std::shared_ptr<const Render::TextureImage> {
-            if (path.empty())
-                return nullptr;
-            static std::map<std::pair<std::string, bool>,
-                            std::shared_ptr<const Render::TextureImage>>
-                cache;
-            auto key = std::make_pair(path, keepGray);
-            auto it = cache.find(key);
-            if (it == cache.end()) {
-                std::shared_ptr<Render::TextureImage> tex;
-                QImage img;
-                if (img.load(QString::fromUtf8(path.c_str()))) {
-                    bool alpha = img.hasAlphaChannel();
-                    bool gray = keepGray && !alpha && img.isGrayscale();
-                    img = img.convertToFormat(
-                        gray ? QImage::Format_Grayscale8
-                             : alpha ? QImage::Format_RGBA8888
-                                     : QImage::Format_RGB888);
-                    // Render::TextureImage rows are bottom-up like GL.
-                    img = img.mirrored(false, true);
-                    tex = std::make_shared<Render::TextureImage>();
-                    // Outside the Coin node-id space the scene textures
-                    // key on.
-                    static uint64_t nextId = 0;
-                    tex->textureId = 0x8000000000000000ULL + ++nextId;
-                    tex->width = img.width();
-                    tex->height = img.height();
-                    tex->numComponents = gray ? 1 : alpha ? 4 : 3;
-                    int rowLen = img.width() * tex->numComponents;
-                    tex->pixels.resize(size_t(rowLen) * img.height());
-                    for (int y = 0; y < img.height(); ++y)
-                        std::memcpy(tex->pixels.data()
-                                        + size_t(y) * rowLen,
-                                    img.constScanLine(y), rowLen);
-                }
-                it = cache.emplace(key, std::move(tex)).first;
-            }
-            return it->second;
-        };
-        res.groundTexture = loadImage(texpath, false);
+        res.groundTexture = loadParamImage(texpath, false);
         if (res.groundTexture) {
             res.groundTextureSize =
                 float(viewParamOverride<App::PropertyFloat>(
@@ -1325,7 +1325,7 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
         else {
             bumppath = ViewParams::getShadowGroundBumpMap();
         }
-        res.groundBumpMap = loadImage(bumppath, true);
+        res.groundBumpMap = loadParamImage(bumppath, true);
         // Ground reflection is a render-engine extra (no Coin shadow
         // ground counterpart), so it lives in the Render_* family.
         res.groundReflection = viewParamOverride<App::PropertyBool>(
@@ -1499,6 +1499,34 @@ RendererBridge::translatePBRConfig(View3DInventor * view)
             view, "Render", "PBRRoughness", RenderParams::getPBRRoughness()));
     res.envIntensity = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "PBREnvIntensity", RenderParams::getPBREnvIntensity()));
+    res.envBackground = viewParamOverride<App::PropertyBool>(
+            view, "Render", "PBREnvBackground",
+            RenderParams::getPBREnvBackground());
+    // User environment image. With no explicit path, fall back to the
+    // image the Texture mapping dialog (Std_TextureMapping) holds — its
+    // Environment mode sphere-maps that same file over the scene
+    // through Coin, so picking one there also lights the backend.
+    std::string envpath;
+    // An embedded copy (Render_PBREnvEmbed) wins: it travels with the
+    // document, while the path may not resolve on another machine.
+    if (auto prop = viewPropOverride<App::PropertyFileIncluded>(
+                view, "Render", "PBREnvImageData")) {
+        if (prop->getValue())
+            envpath = prop->getValue();
+    }
+    if (envpath.empty()) {
+        if (auto prop = viewPropOverride<App::PropertyFile>(
+                    view, "Render", "PBREnvImage")) {
+            if (prop->getValue())
+                envpath = prop->getValue();
+        }
+        else {
+            envpath = RenderParams::getPBREnvImage();
+        }
+    }
+    if (envpath.empty())
+        envpath = App::GetApplication().Config()["TextureImage"];
+    res.envImage = loadParamImage(envpath, false);
     return res;
 }
 

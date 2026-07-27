@@ -106,6 +106,11 @@ public:
     void viewAll() override;
     const char *getName(void) const override;
     void onChanged(const App::Property *prop) override;
+    void Restore(Base::XMLReader &reader) override;
+    /// True while the view's properties are being restored: property
+    /// changes are then the file's own content, not user edits, so
+    /// handlers that would write back to the document must stand down.
+    bool isRestoring() const { return _restoring; }
 
     void bindCamera(SoCamera *camera, bool sync=false);
     void syncCamera(View3DInventor *view);
@@ -204,6 +209,7 @@ protected:
 private:
     View3DInventorViewer * _viewer;
     View3DInventorPy *_viewerPy;
+    bool _restoring = false;
     QTimer * stopSpinTimer;
     QStackedWidget* stack;
     std::unique_ptr<View3DSettings> viewSettings;

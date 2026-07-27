@@ -1206,6 +1206,12 @@ void View3DInventor::customEvent(QEvent * e)
     }
 }
 
+void View3DInventor::Restore(Base::XMLReader &reader)
+{
+    Base::StateLocker guard(_restoring);
+    MDIView::Restore(reader);
+}
+
 void View3DInventor::onChanged(const App::Property *prop)
 {
     if (_viewer) {

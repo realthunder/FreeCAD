@@ -82,7 +82,8 @@ Each frame is a fixed sequence of bgfx views (`BGFXView::PassView`)
 sharing one framebuffer (auxiliary passes own theirs). Groups, in
 order:
 
-1. **Background** — clear, gradient quad, optional sun disc.
+1. **Background** — clear, gradient quad (or the PBR environment
+   itself, see below), optional sun disc.
 2. **Shadow block** — variance shadow map (EVSM moments) of the scene
    light + separable blur; glass-caster tint map + blur; up to 10
    bulb-shadow tiles (4×4 VSM atlas, cached until casters change).
@@ -135,6 +136,34 @@ self-scheduled redraws; two frozen frames are byte-identical.
   the base draw by key. The user-shader Appearance bindings reuse this
   channel (negative ids = normal-pass rendering with base
   suppression).
+
+### Environment (image based lighting)
+
+PBR shading (`Render_PBR`) is lit by a prefiltered environment cubemap
+plus its irradiance SH, built once per view on the CPU and rebuilt when
+the source changes:
+
+- Default source is the built-in procedural studio environment (Z-up
+  ground/horizon/sky gradient + three light lobes), fixed so frames stay
+  deterministic.
+- `Render_PBREnvImage` replaces it with a user image. A 2:1 image is
+  read as equirectangular (lat-long), anything squarer as a GL sphere
+  map — the convention Coin's `SoTextureCoordinateEnvironment` uses, so
+  the same file works in the Tools → Texture mapping dialog's
+  *Environment* mode. With the property empty the renderer falls back to
+  that dialog's current image (`Config()["TextureImage"]`), then to the
+  procedural environment.
+- `Render_PBREnvBackground` draws the environment itself as the view
+  background instead of the gradient quad, so reflective surfaces
+  visibly mirror their surroundings. The background pass keeps the scene
+  matrices for it (`fs_fc_env` reconstructs per-pixel world directions
+  from `u_proj`/`u_invView`); orthographic cameras get a fixed 45°
+  virtual field of view since they have no per-pixel ray fan.
+
+Note that FreeCAD has no other environment mechanism to honor: Coin's
+`SoSceneTextureCubeMap` exists as a node class but is never instantiated
+in the tree, and the Texture mapping dialog is the only place a user
+picks an environment image today.
 
 ## 5. User shader framework
 

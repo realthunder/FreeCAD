@@ -274,6 +274,54 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter PBREnvImage
+    ///
+    /// Image file used as the image based lighting environment,
+    /// replacing the built-in procedural studio environment. A 2:1
+    /// image is read as equirectangular (lat-long), anything squarer
+    /// as a sphere map — the same convention as the Texture mapping
+    /// dialog's Environment mode, so the same file works in both.
+    /// Empty falls back to that dialog's current image, then to the
+    /// procedural environment.
+    static const std::string & getPBREnvImage();
+    static const std::string & defaultPBREnvImage();
+    static void removePBREnvImage();
+    static void setPBREnvImage(const std::string &v);
+    static const char *docPBREnvImage();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PBREnvEmbed
+    ///
+    /// Store a copy of the environment image inside the document,
+    /// so it travels with the file instead of depending on the
+    /// original path. The copy lives in the view's
+    /// Render_PBREnvImageData property and takes precedence over the
+    /// image path while set.
+    static const bool & getPBREnvEmbed();
+    static const bool & defaultPBREnvEmbed();
+    static void removePBREnvEmbed();
+    static void setPBREnvEmbed(const bool &v);
+    static const char *docPBREnvEmbed();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PBREnvBackground
+    ///
+    /// Show the image based lighting environment itself as the view
+    /// background while PBR shading is active, so reflective surfaces
+    /// visibly mirror their surroundings.
+    static const bool & getPBREnvBackground();
+    static const bool & defaultPBREnvBackground();
+    static void removePBREnvBackground();
+    static void setPBREnvBackground(const bool &v);
+    static const char *docPBREnvBackground();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter BumpScale
     ///
     /// Strength of bump/normal mapped surfaces (SoBumpMap) of the

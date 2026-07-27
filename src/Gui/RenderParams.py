@@ -109,6 +109,24 @@ Params = [
         "Zero means automatic (derived from each material's shininess)."),
     ParamFloat('PBREnvIntensity',  1.0, title='Environment brightness',
         doc="Brightness of the image based lighting environment."),
+    ParamString('PBREnvImage', '', title='Environment image',
+        doc="Image file used as the image based lighting environment,\n"
+        "replacing the built-in procedural studio environment. A 2:1\n"
+        "image is read as equirectangular (lat-long), anything squarer\n"
+        "as a sphere map — the same convention as the Texture mapping\n"
+        "dialog's Environment mode, so the same file works in both.\n"
+        "Empty falls back to that dialog's current image, then to the\n"
+        "procedural environment."),
+    ParamBool('PBREnvEmbed', False, title='Embed environment image',
+        doc="Store a copy of the environment image inside the document,\n"
+        "so it travels with the file instead of depending on the\n"
+        "original path. The copy lives in the view's\n"
+        "Render_PBREnvImageData property and takes precedence over the\n"
+        "image path while set."),
+    ParamBool('PBREnvBackground', False, title='Environment background',
+        doc="Show the image based lighting environment itself as the view\n"
+        "background while PBR shading is active, so reflective surfaces\n"
+        "visibly mirror their surroundings."),
     ParamFloat('BumpScale',  1.0, title='Bump strength',
         doc="Strength of bump/normal mapped surfaces (SoBumpMap) of the\n"
         "experimental render engine: scales the slope of normal maps and\n"

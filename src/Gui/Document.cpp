@@ -1921,7 +1921,14 @@ void Document::SaveDocFile (Base::Writer &writer) const
     }
     d->_savedViews = std::move(cameraInfo);
 
+    // A view saves into a string that is embedded in GuiDocument.xml and
+    // replayed from memory on restore (see slotFinishRestoreDocument),
+    // so a view property cannot use the writer's separate-file channel —
+    // there is no zip on either side of that string. Force the inline
+    // XML form instead, which App::PropertyFileIncluded answers with
+    // base64 content the memory reader can restore.
     Base::StringWriter stringWriter;
+    stringWriter.setForceXML(4);
     for (auto view : view3Ds) {
         writer.Stream() << writer.ind() << "<View3D id=\"" << view->getID() << "\">";
         stringWriter.clear();
