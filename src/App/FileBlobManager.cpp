@@ -106,13 +106,16 @@ std::string FileBlobManager::hashFile(const char* path)
     return hash.result().toHex().constData();
 }
 
-std::string FileBlobManager::blobDir(const std::string& hash) const
+std::string FileBlobManager::blobDir() const
 {
     const std::string root = transientPath() + "/blobs";
     Base::FileInfo(root).createDirectory();
-    const std::string dir = root + "/" + hash;
-    Base::FileInfo(dir).createDirectory();
-    return dir;
+    return root;
+}
+
+std::string FileBlobManager::blobPath(const std::string& hash) const
+{
+    return blobDir() + "/" + hash;
 }
 
 std::string FileBlobManager::uniquePath(const std::string& name) const
@@ -126,13 +129,8 @@ std::string FileBlobManager::uniquePath(const std::string& name) const
     return fi.filePath();
 }
 
-std::string FileBlobManager::key(const std::string& hash, const std::string& name)
-{
-    return hash + "/" + name;
-}
-
 FileBlobHandle FileBlobManager::make(const std::string& hash, const std::string& path,
-                                     const std::string& name, uint64_t size)
+                                     uint64_t size)
 {
     // Not shared_ptr's make_shared: the constructor is private to keep blobs
     // creatable only through the manager that owns their lifetime.
@@ -140,23 +138,22 @@ FileBlobHandle FileBlobManager::make(const std::string& hash, const std::string&
     blob->_owner = this;
     blob->_hash = hash;
     blob->_path = path;
-    blob->_baseName = name;
     blob->_size = size;
-    _blobs[key(hash, name)] = blob;
+    _blobs[hash] = blob;
     return blob;
 }
 
-FileBlobHandle FileBlobManager::find(const std::string& hash, const std::string& name) const
+FileBlobHandle FileBlobManager::find(const std::string& hash) const
 {
     std::lock_guard<std::mutex> guard(_mutex);
-    auto it = _blobs.find(key(hash, name));
+    auto it = _blobs.find(hash);
     if (it == _blobs.end()) {
         return {};
     }
     return it->second.lock();
 }
 
-FileBlobHandle FileBlobManager::insertFile(const char* srcPath, const char* name)
+FileBlobHandle FileBlobManager::insertFile(const char* srcPath)
 {
     Base::FileInfo src(srcPath);
     if (!src.exists()) {
@@ -172,24 +169,16 @@ FileBlobHandle FileBlobManager::insertFile(const char* srcPath, const char* name
         throw Base::FileSystemError(str.str());
     }
 
-    const std::string baseName = (name && name[0] != '\0') ? name : src.fileName();
-
     std::lock_guard<std::mutex> guard(_mutex);
-    auto it = _blobs.find(key(hash, baseName));
+    auto it = _blobs.find(hash);
     if (it != _blobs.end()) {
         if (auto existing = it->second.lock()) {
-            // Same content under the same name: share it outright.
+            // Content already stored: share it, whatever the caller calls it.
             return existing;
         }
     }
 
-    // Same content under a different name is a separate blob, stored as its
-    // own copy. The name is caller-visible -- it becomes the archive entry
-    // name and carries the extension consumers sniff -- so it cannot be
-    // collapsed onto the first name that happened to arrive. De-duplicating
-    // those bytes would need hard links, which are not portable enough to be
-    // worth it for a case this rare.
-    const std::string dst = blobDir(hash) + "/" + baseName;
+    const std::string dst = blobPath(hash);
     if (!src.copyTo(dst.c_str())) {
         std::stringstream str;
         str << "FileBlobManager: cannot copy " << srcPath << " to " << dst;
@@ -201,10 +190,10 @@ FileBlobHandle FileBlobManager::insertFile(const char* srcPath, const char* name
     Base::FileInfo fi(dst);
     fi.setPermissions(Base::FileInfo::ReadOnly);
 
-    return make(hash, dst, baseName, fileSize(dst.c_str()));
+    return make(hash, dst, fileSize(dst.c_str()));
 }
 
-FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* name)
+FileBlobHandle FileBlobManager::adoptFile(const char* path)
 {
     Base::FileInfo fi(path);
     if (!fi.exists()) {
@@ -220,13 +209,11 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* name)
         throw Base::FileSystemError(str.str());
     }
 
-    const std::string baseName = (name && name[0] != '\0') ? name : fi.fileName();
-
     std::lock_guard<std::mutex> guard(_mutex);
-    auto it = _blobs.find(key(hash, baseName));
+    auto it = _blobs.find(hash);
     if (it != _blobs.end()) {
         if (auto existing = it->second.lock()) {
-            // Already stored under this name: drop the incoming duplicate.
+            // Content already stored: drop the incoming duplicate.
             if (existing->path() != fi.filePath()) {
                 fi.setPermissions(Base::FileInfo::ReadWrite);
                 fi.deleteFile();
@@ -235,10 +222,9 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* name)
         }
     }
 
-    // An adopted file is a scratch file or freshly restored content sitting at
-    // a staging path. Move it to its canonical location so it carries the name
-    // callers expect rather than the temporary's.
-    const std::string dst = blobDir(hash) + "/" + baseName;
+    // An adopted file is a scratch file, or freshly restored content sitting
+    // at a staging path. Move it to its content-addressed location.
+    const std::string dst = blobPath(hash);
     if (fi.filePath() != dst) {
         fi.setPermissions(Base::FileInfo::ReadWrite);
         if (!fi.renameFile(dst.c_str())) {
@@ -250,7 +236,7 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* name)
     }
 
     fi.setPermissions(Base::FileInfo::ReadOnly);
-    return make(hash, fi.filePath(), baseName, fileSize(fi.filePath().c_str()));
+    return make(hash, fi.filePath(), fileSize(fi.filePath().c_str()));
 }
 
 std::vector<FileBlobHandle> FileBlobManager::blobs() const
@@ -270,7 +256,7 @@ void FileBlobManager::release(FileBlob* blob)
 {
     std::lock_guard<std::mutex> guard(_mutex);
 
-    auto it = _blobs.find(key(blob->_hash, blob->_baseName));
+    auto it = _blobs.find(blob->_hash);
     if (it != _blobs.end()) {
         if (auto live = it->second.lock()) {
             // A replacement blob already owns this key, and therefore this

@@ -119,28 +119,27 @@ void PropertyFileIncluded::setValue(const char* sFile, const char* sName)
         auto &manager = blobManager();
         const std::string pathTrans = manager.transientPath();
 
-        // Without an explicit name, a property that already holds a file keeps
-        // the name it is stored under -- assigning new content does not rename
-        // the stored file to whatever the source happened to be called.
+        // The name is this property's own, not the blob's: an explicit one
+        // wins, otherwise a property that already holds a file keeps the name
+        // it is stored under, and only a fresh one takes the source's name.
         std::string name = (sName && sName[0] != '\0') ? sName : std::string();
         if (name.empty())
-            name = _BaseFileName;
+            name = _BaseFileName.empty() ? file.fileName() : _BaseFileName;
 
         // A writable file already sitting in the transient directory is a
         // scratch file handed over by getExchangeTempFile(): claim it instead
         // of copying. Read-only ones belong to another blob and must not move.
         FileBlobHandle blob;
         if (file.dirPath() == pathTrans && file.isWritable())
-            blob = manager.adoptFile(sFile, name.c_str());
+            blob = manager.adoptFile(sFile);
         else
-            blob = manager.insertFile(sFile, name.c_str());
-
-        // keep the path to the original file
-        _OriginalName = sFile;
+            blob = manager.insertFile(sFile);
 
         aboutToSetValue();
         _blob = std::move(blob);
-        _BaseFileName = _blob->baseName();
+        // keep the path to the original file
+        _OriginalName = sFile;
+        _BaseFileName = name;
         hasSetValue();
     }
     else if (_blob) {
@@ -275,6 +274,13 @@ void PropertyFileIncluded::setPyObject(PyObject *value)
     }
 }
 
+std::string PropertyFileIncluded::originalAttribute() const
+{
+    if (_OriginalName.empty())
+        return {};
+    return std::string(" original=\"") + encodeAttribute(_OriginalName) + "\"";
+}
+
 void PropertyFileIncluded::Save (Base::Writer &writer) const
 {
     // when saving a document under a new file name the transient directory
@@ -282,13 +288,12 @@ void PropertyFileIncluded::Save (Base::Writer &writer) const
     if (_blob && !Base::FileInfo(_blob->path()).exists()) {
         auto &manager = blobManager();
         // Saving under a new name gives the document a new transient
-        // directory, so the stored absolute path is stale. The content is
-        // unchanged, so the file is at the same place relative to the new
-        // transient root.
-        Base::FileInfo fi(manager.blobDir(_blob->hash()) + "/" + _blob->baseName());
+        // directory, so the stored absolute path is stale. The content, and
+        // therefore its name, is unchanged.
+        Base::FileInfo fi(manager.blobPath(_blob->hash()));
         if (!fi.exists()) {
-            // Content saved by an older layout sat directly in the transient
-            // directory.
+            // Content written by an older version sat directly in the
+            // transient directory under its file name.
             fi.setFile(manager.transientPath() + "/" + _BaseFileName);
         }
         if (fi.exists())
@@ -297,9 +302,9 @@ void PropertyFileIncluded::Save (Base::Writer &writer) const
 
     if (writer.isForceXML()>3) {
         if (_blob) {
-            Base::FileInfo file(_blob->path());
             writer.Stream() << writer.ind() << "<FileIncluded data=\""
-                            << encodeAttribute(file.fileName()) << "\">\n";
+                            << encodeAttribute(_BaseFileName) << "\""
+                            << originalAttribute() << ">\n";
             // write the file in the XML stream
             writer.insertBinFile(_blob->path().c_str());
             writer.Stream() << writer.ind() <<"</FileIncluded>\n";
@@ -311,11 +316,13 @@ void PropertyFileIncluded::Save (Base::Writer &writer) const
     else {
         // instead initiate an extra file
         if (_blob) {
-            Base::FileInfo file(_blob->path());
-            std::string filename = writer.addFile(file.fileName().c_str(), this);
+            // The entry is named after this property, not after the blob: the
+            // file on disk is named by content hash and is shared.
+            std::string filename = writer.addFile(_BaseFileName.c_str(), this);
             filename = encodeAttribute(filename);
             writer.Stream() << writer.ind() << "<FileIncluded file=\""
-                            << filename << "\"/>\n";
+                            << filename << "\""
+                            << originalAttribute() << "/>\n";
         }
         else {
             writer.Stream() << writer.ind() << "<FileIncluded file=\"\"/>\n";
@@ -335,6 +342,8 @@ void PropertyFileIncluded::Restore(Base::XMLReader &reader)
             // claims the blob. Only note where it is going: two objects
             // restoring the same archive entry must not collide on disk.
             _BaseFileName = file;
+            _OriginalName = reader.hasAttribute("original")
+                ? reader.getAttribute("original") : "";
             _pendingPath = blobManager().uniquePath(file);
         }
     }
@@ -343,6 +352,8 @@ void PropertyFileIncluded::Restore(Base::XMLReader &reader)
         string file (reader.getAttribute("data") );
         if (!file.empty()) {
             auto &manager = blobManager();
+            const std::string original = reader.hasAttribute("original")
+                ? reader.getAttribute("original") : "";
             const std::string path = manager.uniquePath(file);
             reader.readBase64(path.c_str());
             reader.readEndElement("FileIncluded");
@@ -350,8 +361,9 @@ void PropertyFileIncluded::Restore(Base::XMLReader &reader)
             aboutToSetValue();
             // adoptFile() de-duplicates: restoring the same content twice
             // keeps one file and hands back the same blob.
-            _blob = manager.adoptFile(path.c_str(), file.c_str());
-            _BaseFileName = _blob->baseName();
+            _blob = manager.adoptFile(path.c_str());
+            _BaseFileName = file;
+            _OriginalName = original;
             hasSetValue();
         }
     }
@@ -397,8 +409,7 @@ void PropertyFileIncluded::RestoreDocFile(Base::Reader &reader)
     // Hand the file to the store. Two objects referencing identical content --
     // copy&paste inside a document, for instance -- collapse onto one blob
     // here, which is what the old read-only sentinel check used to approximate.
-    _blob = blobManager().adoptFile(path.c_str(), _BaseFileName.c_str());
-    _BaseFileName = _blob->baseName();
+    _blob = blobManager().adoptFile(path.c_str());
     hasSetValue();
 }
 
@@ -415,15 +426,12 @@ bool PropertyFileIncluded::isSame(const Property &other) const
     if (getTypeId() != other.getTypeId())
         return false;
     auto prop = static_cast<decltype(this)>(&other);
-    if (_BaseFileName != prop->_BaseFileName)
+    if (_BaseFileName != prop->_BaseFileName || _OriginalName != prop->_OriginalName)
         return false;
     if (_blob == prop->_blob)
         return true;
     if (!_blob || !prop->_blob)
         return false;
-    // Content, not provenance: _OriginalName is runtime only and is empty
-    // after a restore, so comparing it made two restored properties holding
-    // identical content look different.
     return _blob->hash() == prop->_blob->hash();
 }
 
@@ -431,8 +439,9 @@ Property *PropertyFileIncluded::Copy() const
 {
     std::unique_ptr<PropertyFileIncluded> prop(new PropertyFileIncluded());
 
-    // remember the base name
+    // remember the names -- they belong to the property, not the blob
     prop->_BaseFileName = _BaseFileName;
+    prop->_OriginalName = _OriginalName;
     // Sharing the blob is the whole point: an undo snapshot of a 50MB texture
     // now costs a reference, not 50MB. The file outlives whichever of the two
     // properties dies first.
@@ -451,12 +460,13 @@ void PropertyFileIncluded::Paste(const Property &from)
         // Blobs never migrate between stores; pasting across documents imports
         // the content into this document's own transient directory.
         if (blob->owner() != &manager)
-            blob = manager.insertFile(blob->path().c_str(), prop._BaseFileName.c_str());
+            blob = manager.insertFile(blob->path().c_str());
     }
 
     aboutToSetValue();
     _blob = std::move(blob);
-    _BaseFileName = _blob ? _blob->baseName() : prop._BaseFileName;
+    _BaseFileName = prop._BaseFileName;
+    _OriginalName = prop._OriginalName;
     hasSetValue();
 }
 

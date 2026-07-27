@@ -1627,7 +1627,10 @@ class DocumentFileIncludeCases(unittest.TestCase):
         file.close()
         # applying the file
         self.L1.File = (file.name, "Test.txt")
-        self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
+        # The stored file is named by content hash and shared between
+        # properties, so its path says nothing about the name -- the name the
+        # value was given is the property's own, and is what it saves under.
+        self.assertTrue(os.path.exists(self.L1.File))
         # read again
         file = open(self.L1.File, "r")
         self.assertTrue(file.read() == "test No1")
@@ -1638,13 +1641,13 @@ class DocumentFileIncludeCases(unittest.TestCase):
         # applying the file
         self.Doc.openTransaction("Transaction2")
         self.L1.File = file.name
-        self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
+        self.assertTrue(os.path.exists(self.L1.File))
         # read again
         file = open(self.L1.File, "r")
         self.assertTrue(file.read() == "test No2")
         file.close()
         self.Doc.undo()
-        self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
+        self.assertTrue(os.path.exists(self.L1.File))
         # read again
         file = open(self.L1.File, "r")
         self.assertTrue(file.read() == "test No1")
@@ -1653,13 +1656,13 @@ class DocumentFileIncludeCases(unittest.TestCase):
         # read again
         self.assertTrue(self.L1.File == "")
         self.Doc.redo()
-        self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
+        self.assertTrue(os.path.exists(self.L1.File))
         # read again
         file = open(self.L1.File, "r")
         self.assertTrue(file.read() == "test No1")
         file.close()
         self.Doc.redo()
-        self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
+        self.assertTrue(os.path.exists(self.L1.File))
         # read again
         file = open(self.L1.File, "r")
         self.assertTrue(file.read() == "test No2")
@@ -1675,7 +1678,7 @@ class DocumentFileIncludeCases(unittest.TestCase):
         res = file.read()
         FreeCAD.Console.PrintLog(res + "\n")
         self.assertTrue(res == "test No2")
-        self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
+        self.assertTrue(os.path.exists(self.L1.File))
         file.close()
 
         # test for bug #94 (File overlap in PropertyFileIncluded)

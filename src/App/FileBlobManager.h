@@ -46,6 +46,11 @@ class FileBlobManager;
  * ~PropertyFileIncluded deleted its file unconditionally, so two properties
  * could never name the same file and Copy() had to duplicate the bytes.
  *
+ * A blob is pure content: it is identified by, and stored under, the hash of
+ * its bytes. Names belong to the referring property, which persists its own
+ * file name and original path, so any number of properties can share one blob
+ * while each keeps the name the user gave it.
+ *
  * Blobs are immutable. Changing a property's file always produces a new blob;
  * the file on disk is kept read-only to enforce that.
  */
@@ -64,8 +69,6 @@ public:
     const std::string& hash() const { return _hash; }
     /// Absolute path in the owning document's transient directory.
     const std::string& path() const { return _path; }
-    /// Name the blob is saved under, and the base for its transient file name.
-    const std::string& baseName() const { return _baseName; }
     uint64_t size() const { return _size; }
 
 private:
@@ -75,7 +78,6 @@ private:
     FileBlobManager* _owner {nullptr};
     std::string _hash;
     std::string _path;
-    std::string _baseName;
     uint64_t _size {0};
 };
 
@@ -105,24 +107,20 @@ public:
 
     /** Take a copy of an external file into the store.
      *
-     * Returns a handle to an existing blob when the same content is already
-     * stored under the same name, so importing the same image twice costs one
-     * file on disk. Same content under a *different* name is a distinct blob
-     * with its own copy: the name is visible to callers and is what the file
-     * is saved under, so it cannot be collapsed onto another name.
-     * @param srcPath   file to import; must exist
-     * @param name      preferred save name; defaults to srcPath's file name
+     * Returns a handle to the existing blob when the content is already
+     * stored, whatever the referring properties call it, so importing the
+     * same image twice costs one file on disk.
      */
-    FileBlobHandle insertFile(const char* srcPath, const char* name = nullptr);
+    FileBlobHandle insertFile(const char* srcPath);
 
-    /** Adopt a file that is already inside the transient directory, without
-     * copying it. Used by the restore path, which streams archive content
-     * straight to its final location.
+    /** Adopt a file that is already inside the transient directory, moving it
+     * to its content-addressed location. Used by the restore path, which
+     * streams archive content to a staging path first.
      */
-    FileBlobHandle adoptFile(const char* path, const char* name = nullptr);
+    FileBlobHandle adoptFile(const char* path);
 
-    /// Existing blob for a content hash and name, or null. Never creates.
-    FileBlobHandle find(const std::string& hash, const std::string& name) const;
+    /// Existing blob for a content hash, or null. Never creates.
+    FileBlobHandle find(const std::string& hash) const;
 
     /// Every live blob, i.e. exactly the set a save must write.
     std::vector<FileBlobHandle> blobs() const;
@@ -152,23 +150,17 @@ public:
     /// yet because it has still to be streamed in.
     std::string uniquePath(const std::string& name) const;
 
-    /** Directory a blob's file lives in, one per content hash.
-     *
-     * Blobs are stored as <transient>/blobs/<hash>/<name> rather than flat in
-     * the transient directory, so a file always carries its real name even
-     * when another blob is already using that name -- which happens routinely
-     * now that an undo snapshot keeps the previous content alive.
-     */
-    std::string blobDir(const std::string& hash) const;
+    /// Directory holding the content-addressed files, created on demand.
+    std::string blobDir() const;
+
+    /// Where the content with this hash lives: <transient>/blobs/<hash>.
+    std::string blobPath(const std::string& hash) const;
 
 private:
     friend class FileBlob;
     /// Called from ~FileBlob: drop the map entry and unlink the file.
     void release(FileBlob* blob);
-    FileBlobHandle make(const std::string& hash, const std::string& path,
-                        const std::string& name, uint64_t size);
-    /// Map key: content plus name, since both are visible to callers.
-    static std::string key(const std::string& hash, const std::string& name);
+    FileBlobHandle make(const std::string& hash, const std::string& path, uint64_t size);
 
     Document* _doc {nullptr};
     mutable std::mutex _mutex;

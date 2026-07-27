@@ -120,13 +120,17 @@ void FeaturePage::onDocumentRestored()
     Base::FileInfo templateInfo(Template.getValue());
     if (!templateInfo.exists()) {
         Base::FileInfo fi(Template.getValue());
-        if (fi.fileName().empty()) {
-            fi.setFile(PageResult.getValue());
+        std::string name = fi.fileName();
+        if (name.empty()) {
+            // Ask the property what its file is called rather than reading the
+            // name off its storage path: an included file is stored by content
+            // hash and shared, so its path says nothing about the name.
+            name = PageResult.getBaseFileName();
         }
         std::string path =
-            App::Application::getResourceDir() + "Mod/Drawing/Templates/" + fi.fileName();
+            App::Application::getResourceDir() + "Mod/Drawing/Templates/" + name;
         // try to find the template in user dir/Templates first
-        Base::FileInfo tempfi(App::Application::getUserAppDataDir() + "Templates/" + fi.fileName());
+        Base::FileInfo tempfi(App::Application::getUserAppDataDir() + "Templates/" + name);
         if (tempfi.exists()) {
             path = tempfi.filePath();
         }

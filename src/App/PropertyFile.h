@@ -112,7 +112,14 @@ public:
       * the File.
       */
     std::string getExchangeTempFile() const;
+    /** Path the content was originally read from.
+     *
+     * Persisted with the document, so it survives a restore and stays this
+     * property's own -- blobs are shared by content, names are not.
+     */
     std::string getOriginalFileName() const;
+    /// Name this property stores its file under, i.e. the archive entry name.
+    const std::string &getBaseFileName() const {return _BaseFileName;}
 
     bool isEmpty() const {return !_blob;}
 
@@ -134,6 +141,8 @@ protected:
      * a process-wide temporary store for a property with no document.
      */
     FileBlobManager &blobManager() const;
+    /// Serialized form of the original path, omitted when unknown.
+    std::string originalAttribute() const;
 
 protected:
     /// Reference to the file. Its destruction is what deletes the file, once

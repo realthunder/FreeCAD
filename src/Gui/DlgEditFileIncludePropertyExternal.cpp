@@ -56,8 +56,15 @@ int DlgEditFileIncludePropertyExternal::processFile()
     QFileInfo file(QString::fromUtf8(Prop.getValue()));
     assert(file.exists());
 
+    // Hand the editor the property's own file name, not the storage name: an
+    // included file is stored by content hash and shared between properties,
+    // so its path carries no name (and no extension for the editor to match).
+    QString name = QString::fromUtf8(Prop.getBaseFileName().c_str());
+    if (name.isEmpty())
+        name = file.fileName();
+
     QDir tmp = QString::fromUtf8(App::Application::getUserCachePath().c_str());
-    QString TempFile = tmp.absoluteFilePath(file.fileName());
+    QString TempFile = tmp.absoluteFilePath(name);
     QFile::remove(TempFile);
 
     QFile::copy(file.absoluteFilePath(), TempFile);
