@@ -414,6 +414,13 @@ void FileWriter::putNextEntry(const char* file, const char *obj)
 {
     Writer::putNextEntry(file,obj);
 
+    // Opening a stream that is already open fails and leaves the old file
+    // selected, so everything written to the new entry would silently go to
+    // the previous one -- or nowhere, once the stream is in a failed state.
+    // writeFiles() closes between entries itself; anything writing two entries
+    // in a row (the included-file blobs) relies on this.
+    this->FileStream.close();
+
     std::string fileName = DirName + "/" + file;
     this->FileStream.open(fileName.c_str(), std::ios::out | std::ios::binary | std::ios::trunc);
     this->FileStream << std::setprecision(std::numeric_limits<double>::digits10 + 1);

@@ -28,6 +28,9 @@
 #include "Base64.h"
 #include "FCGlobal.h"
 
+#include <array>
+#include <cstdint>
+
 #include <boost/iostreams/concepts.hpp>
 #include <boost/iostreams/device/file.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
@@ -137,7 +140,13 @@ struct base64_encoder
         pos += end - buf;
         bio::write(dev, buf, end - buf);
         buffer.clear();
-        return n;
+        // Every input character has been taken: the ones that do not fill a
+        // group yet are held in `pending` and encoded by the next write or by
+        // close(). Reporting only the encoded ones makes the caller send the
+        // tail a second time, which appends it to `pending` and encodes it
+        // twice -- so any content whose length is not a multiple of 3 came out
+        // corrupt.
+        return res;
     }
 
     std::size_t line_size;

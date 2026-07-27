@@ -3,6 +3,7 @@ target_sources(
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/Axis.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Base64.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/Base64Filter.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Bitmask.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/BoundBox.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Builder3D.cpp
