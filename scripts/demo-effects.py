@@ -10,14 +10,15 @@ scene. The only real solid is the terrace slab the effects need as a
 shadow/light receiver. Saves the document and optionally captures a
 screenshot.
 
-The effect programs are copied into the document on activation, so the
-saved .FCStd is self-contained. View-level activation state does NOT
-persist with the document: after reopening, switch the view to the
-Shadow draw style and set Render_Volumetric / Render_WaterSurface on
-the view (or just re-run this script, which sets them).
+The effect programs are copied into the document on activation, and
+the view-level activation state (DrawStyle, Render_Volumetric,
+Render_WaterSurface, camera) persists in the document's <View3D>
+blocks — the saved .FCStd restores fully self-contained. Only the
+renderer selection itself (RenderCache=3 + Render Type "bgfx") is a
+user preference, not document state.
 
 Usage: FreeCAD scripts/demo-effects.py            (GUI or xvfb)
-Env:   FX_DOC   save path (default ~/effects-showcase.FCStd)
+Env:   FX_DOC   save path (default data/examples/render/effects-showcase.FCStd)
        FX_SHOT  screenshot path (optional, saveRenderDump)
        FX_EXIT  "1" = exit after save/shot (for scripted runs)
 """
@@ -31,9 +32,9 @@ FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt(
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render").SetString(
     "Type", "bgfx - OpenGL")
 
-DOC = os.environ.get("FX_DOC",
-                     os.path.join(os.path.expanduser("~"),
-                                  "effects-showcase.FCStd"))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DOC = os.environ.get("FX_DOC", os.path.join(
+    REPO, "data", "examples", "render", "effects-showcase.FCStd"))
 SHOT = os.environ.get("FX_SHOT", "")
 EXIT = os.environ.get("FX_EXIT", "") == "1"
 
@@ -120,6 +121,7 @@ def build():
         settle()
         settle()
 
+        os.makedirs(os.path.dirname(DOC), exist_ok=True)
         doc.saveAs(DOC)
         FreeCAD.Console.PrintMessage("showcase saved: %s\n" % DOC)
         if SHOT:
