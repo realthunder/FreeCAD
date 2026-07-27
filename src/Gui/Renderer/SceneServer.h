@@ -77,8 +77,17 @@ public:
     bool start(int port);
     bool running() const;
 
-    /// Replace the served payload and bump the version.
+    /// Replace the served payload and bump the version. Also rolls the
+    /// out-of-band blob generations: whatever the new payload did not
+    /// name (nor the one before it) is dropped.
     void publish(std::vector<uint8_t> &&payload);
+
+    /// Register one out-of-band payload, addressed by content key and
+    /// answered by GET /blob?key= (SceneDump.h, v26). Called by the
+    /// serializer's texture sink while building the payload that the
+    /// following publish() installs, so the blob is servable before any
+    /// viewer can learn its key.
+    void publishBlob(const std::string &key, std::vector<uint8_t> &&data);
 
     /// Install the consumer of viewer pick requests. Called on a
     /// server connection thread — the handler must marshal to the GUI

@@ -76,6 +76,43 @@ user-shader table (sources, parameters, compiled variants); the
 snapshot version gates format changes and the viewer self-reloads on a
 newer payload.
 
+#### Out-of-band texture payloads (v26)
+
+A snapshot is republished whenever any feed changes — down to a
+selection pick — while the embedded images in it almost never change
+with it. So on the streaming transport the texture pixels leave the
+stream: each texture is written as its header plus a **content key**
+(SHA-1 of the pixel bytes, 40 hex characters), and the payload is
+handed to a sink that the scene server serves separately at
+`GET /blob?key=<key>`.
+
+The viewer resolves a key from, in order, its resident cache, its
+IndexedDB store, then the network — and writes what it fetched back to
+IndexedDB, so the cost survives a page reload, not just a republish. A
+staged snapshot is applied only once **every** key it names is in hand:
+applying progressively would hand the backend a texture it has already
+keyed a GPU upload on under the same `textureId`, which it would not
+re-upload. A key that cannot be fetched renders that texture untextured
+rather than stalling the scene, and is retried on the next publish.
+
+Content addressing is what makes the caches sound: a key names those
+bytes and no others, so an entry is valid forever and needs no
+invalidation protocol. It is deliberately *not* `textureId`, which
+guarantees only "same id, same pixels" **within one process** and so
+could never back a store that outlives the page.
+
+Deferral is a property of the transport, not of the format: the sink is
+set only by the streaming publisher, so a snapshot captured to a file
+(`FC_BGFX_DUMP_SCENE`, the bundled `/scene.fcsd`) stays self-contained
+and needs no server to load. The server keeps a blob for the current
+and previous publish; older ones are dropped, since a scene's textures
+are bounded but a session's history is not.
+
+This is the browser-tier half of the content-addressed storage in
+`docs/FileBlobsManager.md` — the same idea (identity is the bytes,
+lifetime follows the references) applied to the wire instead of the
+`.FCStd`.
+
 ## 3. Frame anatomy
 
 Each frame is a fixed sequence of bgfx views (`BGFXView::PassView`)

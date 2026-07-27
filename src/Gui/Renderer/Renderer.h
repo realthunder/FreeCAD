@@ -128,6 +128,17 @@ struct TextureImage {
     uint8_t model = Modulate;
     /// rgb used by the Blend model, packed 0xRRGGBBAA.
     uint32_t blendColor = 0;
+
+    /// Content key of the pixel payload — SHA-1 of `pixels`, as 40 hex
+    /// characters; empty until the serializer computes it. This is the
+    /// address the streaming tier fetches and caches the pixels under
+    /// (`GET /blob?key=`), so it must depend on the bytes alone and not
+    /// on `textureId`, which is only process-stable.
+    mutable std::string contentKey;
+    /// Set on a texture that arrived key-only: `pixels` is empty and
+    /// must be filled from the key before the texture can be uploaded.
+    /// Only a streamed snapshot defers; a bundled one is self-contained.
+    bool deferred = false;
 };
 
 /// Window background drawn behind the scene, mirroring the Coin-side

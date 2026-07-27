@@ -49,7 +49,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     tiers can adopt the server-compiled binaries by source match.
 // 25: PBRConfig::envBackground + envImage (the environment drawn as
 //     the background; a user image replacing the procedural one).
-const uint32_t kVersion = 25;
+// 26: texture entries carry a content key (SHA-1 of the pixels) and a
+//     deferred flag: the streaming transport writes the key alone and
+//     serves the payload out of band, so a republish stops re-sending
+//     every embedded image and the viewer caches each key.
+const uint32_t kVersion = 26;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -257,29 +261,122 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version)
 }
 
 //////////////////////////////////////////////////////////////////////
+// Content key
+
+/// SHA-1 (RFC 3174) of a byte range, as 40 lowercase hex characters.
+/// Self-contained on purpose: this file also compiles into the wasm
+/// viewer, which links neither Qt nor any crypto library, and both
+/// tiers must address a payload identically.
+std::string sha1Hex(const uint8_t *data, size_t size)
+{
+    uint32_t h[5] = {0x67452301u, 0xEFCDAB89u, 0x98BADCFEu, 0x10325476u,
+                     0xC3D2E1F0u};
+    auto rol = [](uint32_t v, int n) {
+        return uint32_t((v << n) | (v >> (32 - n)));
+    };
+    // The message is processed as 64-byte blocks; the tail block(s) hold
+    // the 0x80 terminator, zero padding and the 64-bit bit count.
+    uint64_t bits = uint64_t(size) * 8;
+    size_t total = size + 1;
+    total += (56 - total % 64 + 64) % 64;
+    total += 8;
+    for (size_t base = 0; base < total; base += 64) {
+        uint8_t block[64];
+        for (size_t i = 0; i < 64; ++i) {
+            size_t pos = base + i;
+            if (pos < size)
+                block[i] = data[pos];
+            else if (pos == size)
+                block[i] = 0x80;
+            else if (pos < total - 8)
+                block[i] = 0;
+            else
+                block[i] = uint8_t(bits >> ((total - 1 - pos) * 8));
+        }
+        uint32_t wv[80];
+        for (int i = 0; i < 16; ++i)
+            wv[i] = (uint32_t(block[i * 4]) << 24)
+                    | (uint32_t(block[i * 4 + 1]) << 16)
+                    | (uint32_t(block[i * 4 + 2]) << 8)
+                    | uint32_t(block[i * 4 + 3]);
+        for (int i = 16; i < 80; ++i)
+            wv[i] = rol(wv[i - 3] ^ wv[i - 8] ^ wv[i - 14] ^ wv[i - 16], 1);
+        uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
+        for (int i = 0; i < 80; ++i) {
+            uint32_t f, k;
+            if (i < 20) { f = (b & c) | (~b & d); k = 0x5A827999u; }
+            else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1u; }
+            else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDCu; }
+            else { f = b ^ c ^ d; k = 0xCA62C1D6u; }
+            uint32_t t = rol(a, 5) + f + e + k + wv[i];
+            e = d; d = c; c = rol(b, 30); b = a; a = t;
+        }
+        h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
+    }
+    static const char *hex = "0123456789abcdef";
+    std::string out(40, '0');
+    for (int i = 0; i < 20; ++i) {
+        uint8_t byte = uint8_t(h[i / 4] >> ((3 - i % 4) * 8));
+        out[i * 2] = hex[byte >> 4];
+        out[i * 2 + 1] = hex[byte & 0xf];
+    }
+    return out;
+}
+
+//////////////////////////////////////////////////////////////////////
 // Texture payload
 
-void writeTexture(Writer &w, const TextureImage &t)
+/// \a blobs unset (a bundled snapshot) writes the pixels inline as
+/// before; set (the streaming transport) writes the key alone and hands
+/// the payload over to be served out of band.
+void writeTexture(Writer &w, const TextureImage &t,
+                  const SceneSnapshot::TextureBlobSink &blobs)
 {
+    // An empty texture has nothing to fetch, so it stays inline whatever
+    // the transport: deferring it would cost a round trip for no bytes.
+    bool defer = bool(blobs) && !t.pixels.empty();
+    if (t.contentKey.size() != 40 && !t.pixels.empty())
+        t.contentKey = sha1Hex(t.pixels.data(), t.pixels.size());
+
     w.u64(t.textureId);
     w.i32(t.width);
     w.i32(t.height);
     w.i32(t.numComponents);
-    w.u32(uint32_t(t.pixels.size()));
-    w.raw(t.pixels.data(), t.pixels.size());
+    w.u8(defer ? 1 : 0);
+    w.u32(uint32_t(t.contentKey.size()));
+    w.raw(t.contentKey.data(), t.contentKey.size());
+    if (defer)
+        w.u32(0);
+    else {
+        w.u32(uint32_t(t.pixels.size()));
+        w.raw(t.pixels.data(), t.pixels.size());
+    }
     w.u8(t.wrapS);
     w.u8(t.wrapT);
     w.u8(t.model);
     w.u32(t.blendColor);
+
+    if (defer)
+        blobs(t.contentKey, std::vector<uint8_t>(t.pixels));
 }
 
-std::shared_ptr<const TextureImage> readTexture(Reader &r)
+std::shared_ptr<TextureImage> readTexture(Reader &r, uint32_t version)
 {
     auto tex = std::make_shared<TextureImage>();
     tex->textureId = r.u64();
     tex->width = r.i32();
     tex->height = r.i32();
     tex->numComponents = r.i32();
+    if (version >= 26) {
+        tex->deferred = r.u8() != 0;
+        uint32_t klen = r.u32();
+        if (!r.ok || klen > 128) {
+            r.ok = false;
+            return nullptr;
+        }
+        tex->contentKey.resize(klen);
+        r.raw(&tex->contentKey[0], klen);
+    }
     uint32_t n = r.u32();
     if (!r.ok || n > 0x20000000u) {
         r.ok = false;
@@ -786,7 +883,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         writeMesh(w, *m);
     w.u32(uint32_t(textures.size()));
     for (auto *t : textures)
-        writeTexture(w, *t);
+        writeTexture(w, *t, snap.textureBlobs);
 
     // v23: the user shader table (before the draws that reference it)
     // + the post-stage config list as table indices.
@@ -950,8 +1047,13 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     TextureTable textures;
     if (ntex > 0x100000u)
         r.ok = false;
-    for (uint32_t i = 0; r.ok && i < ntex; ++i)
-        textures.push_back(readTexture(r));
+    snap.deferredTextures.clear();
+    for (uint32_t i = 0; r.ok && i < ntex; ++i) {
+        auto tex = readTexture(r, version);
+        if (tex && tex->deferred)
+            snap.deferredTextures.push_back(tex);
+        textures.push_back(tex);
+    }
 
     // v23: user shader table + post-stage list (see saveSnapshotFp).
     ShaderTable shaders;

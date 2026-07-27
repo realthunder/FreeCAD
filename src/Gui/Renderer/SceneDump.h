@@ -78,6 +78,23 @@ struct SceneSnapshot {
     /// (and in tiers with no compiler).
     std::function<void(const UserShader &,
                        std::vector<UserShader::Compiled> &)> shaderBins;
+
+    /// Save-side hook enabling out-of-band texture payloads (v26): when
+    /// set, a texture is written as its header plus its content key,
+    /// and the pixels are handed here instead of into the stream. The
+    /// streaming transport uses it so a republish — which happens on
+    /// every feed change, including a selection pick — no longer
+    /// re-sends every embedded image; the viewer fetches each key once
+    /// and caches it. Unset for a bundled snapshot, which must stay
+    /// self-contained.
+    typedef std::function<void(const std::string &key,
+                               std::vector<uint8_t> &&pixels)> TextureBlobSink;
+    TextureBlobSink textureBlobs;
+    /// Load-side counterpart: the textures that arrived key-only. Their
+    /// `pixels` must be filled and `deferred` cleared before the
+    /// snapshot is fed to a backend — these alias the entries the draw
+    /// materials point at, so filling them in place is enough.
+    std::vector<std::shared_ptr<TextureImage>> deferredTextures;
     float autozoomScale = 1.0f;
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect
     /// passes (reflection re-render, SSAO resolve); 1.0 = full resolution.

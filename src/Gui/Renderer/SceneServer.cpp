@@ -28,7 +28,9 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -141,6 +143,41 @@ public:
     uint64_t version = 0;
     int listenFd = -1;
     bool started = false;
+
+    /// Out-of-band texture payloads, addressed by content key and
+    /// served over GET /blob?key= — the snapshot only names them
+    /// (SceneDump.h, v26). Immutable by construction, so a viewer may
+    /// cache one forever.
+    std::map<std::string, std::vector<uint8_t>> blobs;
+    /// Keys named by the publish in flight, then by the last two
+    /// publishes. Anything older is dropped: a scene's textures are
+    /// bounded, but a session's history is not. Two generations of
+    /// grace so a viewer still fetching for the previous snapshot
+    /// while a new one is published does not race into a 404.
+    std::set<std::string> pendingKeys, currentKeys, previousKeys;
+
+    void addBlob(const std::string &key, std::vector<uint8_t> &&data)
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        pendingKeys.insert(key);
+        // Content addressed: an existing entry is already this payload.
+        blobs.emplace(key, std::move(data));
+    }
+
+    /// Roll the generations and drop what neither of them names.
+    /// Called with \a mutex held, from publish().
+    void retireBlobs()
+    {
+        previousKeys = std::move(currentKeys);
+        currentKeys = std::move(pendingKeys);
+        pendingKeys.clear();
+        for (auto it = blobs.begin(); it != blobs.end();) {
+            if (currentKeys.count(it->first) || previousKeys.count(it->first))
+                ++it;
+            else
+                it = blobs.erase(it);
+        }
+    }
 
     std::mutex handlerMutex;
     std::function<void(const ScenePickRequest &)> pickHandler;
@@ -390,15 +427,55 @@ public:
         if (req.compare(0, 4, "GET ") != 0)
             return;
         std::string path = req.substr(4, req.find(' ', 4) - 4);
+        std::string query;
+        auto q = path.find('?');
+        if (q != std::string::npos) {
+            query = path.substr(q + 1);
+            path.resize(q);
+        }
+
+        // /blob?key=<content key>: one out-of-band texture payload
+        // (SceneDump.h, v26). Content addressed and immutable, so the
+        // answer is cacheable forever — that is the whole point, a
+        // republish must not re-send the pixels.
+        if (path == "/blob") {
+            std::vector<uint8_t> body;
+            bool found = false;
+            std::string key = queryValue(query, "key");
+            if (isBlobKey(key)) {
+                std::lock_guard<std::mutex> guard(mutex);
+                auto it = blobs.find(key);
+                if (it != blobs.end()) {
+                    body = it->second;
+                    found = true;
+                }
+            }
+            if (!found) {
+                static const char notFound[] =
+                    "HTTP/1.1 404 Not Found\r\n"
+                    "Access-Control-Allow-Origin: *\r\n"
+                    "Content-Length: 0\r\nConnection: close\r\n\r\n";
+                sendAll(fd, notFound, sizeof(notFound) - 1);
+                return;
+            }
+            char head[256];
+            int n = std::snprintf(head, sizeof(head),
+                "HTTP/1.1 200 OK\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Content-Type: application/octet-stream\r\n"
+                "Cache-Control: public, max-age=31536000, immutable\r\n"
+                "Content-Length: %zu\r\n"
+                "Connection: close\r\n\r\n", body.size());
+            if (sendAll(fd, head, size_t(n)))
+                sendAll(fd, body.data(), body.size());
+            return;
+        }
 
         // /scene?v=<version>: 204 while the client is current.
         uint64_t clientVersion = ~uint64_t(0);
-        auto q = path.find("?v=");
-        if (q != std::string::npos) {
-            clientVersion = std::strtoull(path.c_str() + q + 3,
-                                          nullptr, 10);
-            path.resize(q);
-        }
+        std::string v = queryValue(query, "v");
+        if (!v.empty())
+            clientVersion = std::strtoull(v.c_str(), nullptr, 10);
         if (path != "/scene" && path != "/scene.fcsd") {
             static const char notFound[] =
                 "HTTP/1.1 404 Not Found\r\n"
@@ -441,6 +518,40 @@ public:
             "Connection: close\r\n\r\n", body.size());
         if (sendAll(fd, head, size_t(n)))
             sendAll(fd, body.data(), body.size());
+    }
+
+    /// One `name=value` out of a request-target query string. The
+    /// values in play are hex keys and decimal versions, so no
+    /// percent-decoding is needed.
+    static std::string queryValue(const std::string &query,
+                                  const char *name)
+    {
+        std::string needle = std::string(name) + "=";
+        size_t pos = 0;
+        while (pos <= query.size()) {
+            size_t end = query.find('&', pos);
+            if (end == std::string::npos)
+                end = query.size();
+            if (query.compare(pos, needle.size(), needle) == 0)
+                return query.substr(pos + needle.size(),
+                                    end - pos - needle.size());
+            pos = end + 1;
+        }
+        return {};
+    }
+
+    /// A well-formed content key: 40 lowercase hex characters. Checked
+    /// before it reaches the store so a malformed request can never be
+    /// anything but a 404.
+    static bool isBlobKey(const std::string &key)
+    {
+        if (key.size() != 40)
+            return false;
+        for (char c : key) {
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+                return false;
+        }
+        return true;
     }
 
     /// Case-insensitive lookup of one request-header value.
@@ -854,6 +965,13 @@ void SceneStreamServer::publish(std::vector<uint8_t> &&payload)
     std::lock_guard<std::mutex> guard(p->mutex);
     p->payload = std::move(payload);
     ++p->version;
+    p->retireBlobs();
+}
+
+void SceneStreamServer::publishBlob(const std::string &key,
+                                    std::vector<uint8_t> &&data)
+{
+    ensure()->addBlob(key, std::move(data));
 }
 
 void SceneStreamServer::setPickHandler(

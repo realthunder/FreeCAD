@@ -7240,6 +7240,14 @@ public:
                 scenePublished = true;
                 Render::SceneSnapshot snap;
                 makeSnapshot(snap);
+                // Texture pixels leave the stream and are served out of
+                // band instead (SceneDump.h, v26): a republish fires on
+                // every feed change, down to a selection pick, and the
+                // embedded images do not change with it.
+                snap.textureBlobs = [&server](const std::string &key,
+                                              std::vector<uint8_t> &&pixels) {
+                    server.publishBlob(key, std::move(pixels));
+                };
                 std::vector<uint8_t> payload;
                 if (Render::saveSceneSnapshot(payload, snap))
                     server.publish(std::move(payload));

@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -2002,6 +2003,202 @@ static void applySnapshot(bool fit)
     }
 }
 
+/// Install a fully resolved snapshot as the scene being rendered.
+static void commitSnapshot(Render::SceneSnapshot &&snap, uint64_t version)
+{
+    s_sceneVersion = version;
+    // Refit not only on the very first scene: while the camera is
+    // still the auto fit (the user hasn't driven it), a streamed
+    // scene replacing a bundled snapshot reframes too — the old fit
+    // may point at entirely different geometry.
+    bool first = !s_haveScene || !s_userCam;
+    s_snap = std::move(snap);
+    applySnapshot(first);
+    fcviewer_status(nullptr, 0.0, 0.0);
+    std::printf("fcviewer: scene update v%llu, %zu draws, %zu overlays\n",
+                (unsigned long long)version, s_snap.scene.size(),
+                s_snap.overlays.size());
+}
+
+//////////////////////////////////////////////////////////////////////
+// Deferred texture payloads (SceneDump.h, v26)
+//
+// A streamed snapshot names its textures by content key instead of
+// carrying the pixels, because a republish fires on every feed change
+// — down to a selection pick — while the embedded images do not
+// change with it. The pixels are fetched once per key from
+// GET /blob?key=, then kept here and in IndexedDB, so a republish
+// costs nothing and a page reload costs nothing either.
+//
+// Resolution is all-or-nothing per snapshot: the staged snapshot is
+// only applied once every key it names is in hand. Progressive
+// application would mean handing the backend a texture it has already
+// keyed a GPU upload on under the same textureId, which it would not
+// re-upload.
+
+/// db_name for the emscripten IndexedDB helpers. Content addressed, so
+/// one store serves every document and every backend.
+static const char *kBlobDb = "fcviewer-blobs";
+
+typedef std::shared_ptr<std::vector<uint8_t>> BlobData;
+static std::map<std::string, BlobData> s_blobCache;
+/// Keys with a load in flight (IndexedDB or HTTP), so a second
+/// deferred texture naming the same key does not start a second one.
+static std::set<std::string> s_blobInFlight;
+/// Keys this snapshot could not obtain. Cleared whenever a new
+/// snapshot is staged: one retry per publish, never a fetch loop.
+static std::set<std::string> s_blobFailed;
+
+static Render::SceneSnapshot s_pendingSnap;
+static uint64_t s_pendingVersion = 0;
+static bool s_pendingValid = false;
+
+static void resolvePending();
+
+/// Memory the resident payload cache may hold. Past it, everything the
+/// applied scene does not name is dropped — IndexedDB still has it, so
+/// the cost of being wrong is one local read, not a download.
+static const size_t kBlobCacheBudget = 192u * 1024 * 1024;
+
+static void pruneBlobCache()
+{
+    size_t total = 0;
+    for (const auto &entry : s_blobCache)
+        total += entry.second ? entry.second->size() : 0;
+    if (total <= kBlobCacheBudget)
+        return;
+    std::set<std::string> inUse;
+    for (const auto &tex : s_snap.deferredTextures) {
+        if (tex)
+            inUse.insert(tex->contentKey);
+    }
+    for (auto it = s_blobCache.begin(); it != s_blobCache.end();) {
+        if (inUse.count(it->first))
+            ++it;
+        else
+            it = s_blobCache.erase(it);
+    }
+}
+
+/// Cache a payload (from either source) and let the staged snapshot
+/// make progress.
+static void blobResolved(const std::string &key, BlobData data,
+                         bool fromDb)
+{
+    s_blobInFlight.erase(key);
+    s_blobCache[key] = data;
+    if (!fromDb && data) {
+        // Persist for the next page load. The store is keyed by content
+        // hash, so this never overwrites anything with different bytes.
+        emscripten_idb_async_store(
+            kBlobDb, key.c_str(), data->data(), int(data->size()),
+            nullptr, [](void *) {},
+            [](void *) {
+                std::printf("fcviewer: blob store to IndexedDB failed\n");
+            });
+    }
+    resolvePending();
+}
+
+static void blobFailed(const std::string &key)
+{
+    s_blobInFlight.erase(key);
+    s_blobFailed.insert(key);
+    std::printf("fcviewer: blob %s unavailable, texture dropped\n",
+                key.c_str());
+    resolvePending();
+}
+
+static void fetchBlob(const std::string &key)
+{
+    if (s_sceneUrl.empty()) {
+        blobFailed(key);
+        return;
+    }
+    emscripten_fetch_attr_t attr;
+    emscripten_fetch_attr_init(&attr);
+    std::strcpy(attr.requestMethod, "GET");
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+    attr.userData = new std::string(key);
+    attr.onsuccess = [](emscripten_fetch_t *fetch) {
+        std::unique_ptr<std::string> key(
+            static_cast<std::string *>(fetch->userData));
+        auto data = std::make_shared<std::vector<uint8_t>>(
+            fetch->data, fetch->data + fetch->numBytes);
+        emscripten_fetch_close(fetch);
+        blobResolved(*key, data, false);
+    };
+    attr.onerror = [](emscripten_fetch_t *fetch) {
+        std::unique_ptr<std::string> key(
+            static_cast<std::string *>(fetch->userData));
+        emscripten_fetch_close(fetch);
+        blobFailed(*key);
+    };
+    std::string url = s_sceneUrl + "/blob?key=" + key;
+    emscripten_fetch(&attr, url.c_str());
+}
+
+/// IndexedDB first — a reload or a revisit skips the network entirely.
+static void requestBlob(const std::string &key)
+{
+    if (!s_blobInFlight.insert(key).second)
+        return;
+    emscripten_idb_async_load(
+        kBlobDb, key.c_str(), new std::string(key),
+        [](void *arg, void *ptr, int num) {
+            std::unique_ptr<std::string> key(static_cast<std::string *>(arg));
+            auto bytes = static_cast<uint8_t *>(ptr);
+            auto data = std::make_shared<std::vector<uint8_t>>(
+                bytes, bytes + num);
+            std::free(ptr);
+            blobResolved(*key, data, true);
+        },
+        [](void *arg) {
+            // Not stored yet (the common first-visit case) or the store
+            // is unavailable: go to the network.
+            std::unique_ptr<std::string> key(static_cast<std::string *>(arg));
+            fetchBlob(*key);
+        });
+}
+
+/// Fill in what the staged snapshot still needs; apply it once nothing
+/// is outstanding.
+static void resolvePending()
+{
+    if (!s_pendingValid)
+        return;
+    size_t missing = 0, total = 0;
+    for (const auto &tex : s_pendingSnap.deferredTextures) {
+        if (!tex || !tex->deferred)
+            continue;
+        ++total;
+        auto it = s_blobCache.find(tex->contentKey);
+        if (it != s_blobCache.end()) {
+            tex->pixels = *it->second;
+            tex->deferred = false;
+            continue;
+        }
+        if (s_blobFailed.count(tex->contentKey)) {
+            // Render it untextured rather than stalling the scene.
+            tex->deferred = false;
+            continue;
+        }
+        ++missing;
+        requestBlob(tex->contentKey);
+    }
+    if (missing) {
+        fcviewer_status("loading textures", double(total - missing),
+                        double(total));
+        return;
+    }
+    Render::SceneSnapshot snap = std::move(s_pendingSnap);
+    uint64_t version = s_pendingVersion;
+    s_pendingValid = false;
+    s_pendingSnap = Render::SceneSnapshot();
+    commitSnapshot(std::move(snap), version);
+    pruneBlobCache();
+}
+
 //////////////////////////////////////////////////////////////////////
 // Scene streaming: WebSocket push, HTTP polling fallback
 
@@ -2019,18 +2216,14 @@ static void applyScenePayload(const char *data, size_t size)
         return;
     Render::SceneSnapshot snap;
     if (Render::loadSceneSnapshot(data + 8, size - 8, snap)) {
-        s_sceneVersion = version;
-        // Refit not only on the very first scene: while the camera is
-        // still the auto fit (the user hasn't driven it), a streamed
-        // scene replacing a bundled snapshot reframes too — the old fit
-        // may point at entirely different geometry.
-        bool first = !s_haveScene || !s_userCam;
-        s_snap = std::move(snap);
-        applySnapshot(first);
-        fcviewer_status(nullptr, 0.0, 0.0);
-        std::printf("fcviewer: scene update v%llu, %zu draws, %zu overlays\n",
-                    (unsigned long long)version, s_snap.scene.size(),
-                    s_snap.overlays.size());
+        // Textures the payload only named are fetched before the
+        // snapshot is applied; with none outstanding (the usual case,
+        // every key already cached) this commits inline.
+        s_pendingSnap = std::move(snap);
+        s_pendingVersion = version;
+        s_pendingValid = true;
+        s_blobFailed.clear();
+        resolvePending();
     }
     else {
         // A payload in a newer serializer format than this build can

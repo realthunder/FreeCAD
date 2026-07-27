@@ -364,8 +364,8 @@ the case-by-case matrix.
 
 ## 12. Future work
 
-The save options are done (§6.1). Next is the browser-tier fetch. The rest is
-staged -- worth doing, not scheduled.
+The save options are done (§6.1) and so is the browser-tier fetch (below). The
+rest is staged -- worth doing, not scheduled.
 
 - **Any file save through the manager, not just included files.** The store is
   already type-agnostic (`insertFile(path) → handle`, hash identity, refcounted
@@ -383,9 +383,14 @@ staged -- worth doing, not scheduled.
   append-only cache in its own directory (never inside a document's transient
   dir, which is wiped on close), referenced by copy where linking is
   unavailable. Best-effort by construction.
-- **Lazy blob fetch in the browser tier.** Content addressing means the viewer
-  can request `blobs/<hash>` on demand instead of receiving every embedded file
-  up front.
+- ~~**Lazy blob fetch in the browser tier.**~~ **Done**, for the renderer's
+  streamed textures: a snapshot names them by content key and the viewer
+  fetches each once from `GET /blob?key=`, caching it in memory and in
+  IndexedDB (`docs/RenderEngine.md` §2, "Out-of-band texture payloads").
+  That tier addresses *rendered* content, which reaches the viewer through
+  `SceneDump` rather than through the document archive; wiring the document's
+  own blobs to the same fetch belongs with the thin client
+  (`docs/ThinClient.md`), which is what would carry them.
 - **RPC-shaped manager API** (`insert(path|bytes)→key`, `acquire(key)→handle`,
   `open(key)→stream`) for the out-of-process document goal; `getValue()→path`
   stays as the legacy accessor.
