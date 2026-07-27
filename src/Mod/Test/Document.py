@@ -1715,7 +1715,10 @@ class DocumentFileIncludeCases(unittest.TestCase):
         self.assertTrue(os.path.exists(L4.File))
         self.assertTrue(os.path.exists(L5.File))
         self.assertTrue(os.path.exists(L6.File))
-        self.assertTrue(L5.File != L6.File)
+        # L5 and L6 were given the same content under the same name, so they
+        # now share one reference counted file instead of getting a copy each.
+        # The file outlives whichever of them is released first.
+        self.assertTrue(L5.File == L6.File)
         # copy file from L5 which is in the same directory
         L7 = doc2.addObject("App::DocumentObjectFileIncluded", "FileObject3")
         L7.File = (L5.File, "Copy.txt")

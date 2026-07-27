@@ -2537,6 +2537,16 @@ const char* Document::getProgramVersion() const
     return d->programVersion.c_str();
 }
 
+FileBlobManager& Document::getFileBlobManager() const
+{
+    // Created on demand rather than in the constructor: the manager resolves
+    // paths against TransientDir, which is not set up yet at that point.
+    if (!d->fileBlobs) {
+        d->fileBlobs = std::make_unique<FileBlobManager>(const_cast<Document*>(this));
+    }
+    return *d->fileBlobs;
+}
+
 const char* Document::getFileName() const
 {
     return testStatus(TempDoc) ? TransientDir.getValue()

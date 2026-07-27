@@ -53,6 +53,7 @@ namespace App
     class Document;
     class DocumentPy; // the python document class
     class Application;
+    class FileBlobManager;
     class Transaction;
     class StringHasher;
     using StringHasherRef = Base::Reference<StringHasher>;
@@ -256,6 +257,12 @@ public:
     const char *getFileName() const;
     /// Get program version the project file was created with
     const char* getProgramVersion() const;
+    /** Store of the files referenced by this document's PropertyFileIncluded.
+     *
+     * Owns their lifetime by reference count, and is the single consumer of
+     * the writer's file channel for them. See App::FileBlobManager.
+     */
+    FileBlobManager& getFileBlobManager() const;
     //@}
 
     void Save (Base::Writer &writer) const override;

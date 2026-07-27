@@ -30,6 +30,7 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObserver.h>
 #include <App/StringHasher.h>
+#include <App/FileBlobManager.h>
 #include <CXX/Objects.hxx>
 #include <boost/bimap.hpp>
 #include <boost/graph/adjacency_list.hpp>
@@ -90,6 +91,8 @@ struct DocumentP
     unsigned int UndoMaxStackSize;
     std::string programVersion;
     mutable HasherMap hashers;
+    /// Lifetime of the files behind this document's PropertyFileIncluded.
+    mutable std::unique_ptr<App::FileBlobManager> fileBlobs;
 #ifdef USE_OLD_DAG
     DependencyList DepList;
     std::map<DocumentObject*, Vertex> VertexObjectList;

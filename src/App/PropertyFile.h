@@ -26,6 +26,7 @@
 
 #include <string>
 
+#include "FileBlobManager.h"
 #include "PropertyStandard.h"
 
 
@@ -113,7 +114,11 @@ public:
     std::string getExchangeTempFile() const;
     std::string getOriginalFileName() const;
 
-    bool isEmpty() const {return _cValue.empty();}
+    bool isEmpty() const {return !_blob;}
+
+    /// The blob this property references, or null. Holding the handle keeps
+    /// the file alive independently of this property.
+    const FileBlobHandle &getBlob() const {return _blob;}
 
     void setFilter(std::string filter);
     std::string getFilter() const;
@@ -122,10 +127,21 @@ protected:
     // get the transient path if the property is in a DocumentObject
     std::string getDocTransientPath() const;
     std::string getUniqueFileName(const std::string&, const std::string&) const;
-    void aboutToSetValue() override;
+    /** Store owning the referenced file's lifetime.
+     *
+     * The owner document's manager when there is one, so that a view's
+     * property shares the same store as the document's objects. Falls back to
+     * a process-wide temporary store for a property with no document.
+     */
+    FileBlobManager &blobManager() const;
 
 protected:
-    mutable std::string _cValue;
+    /// Reference to the file. Its destruction is what deletes the file, once
+    /// no other property, undo snapshot or clipboard entry still holds it.
+    mutable FileBlobHandle _blob;
+    /// Path written by Restore() and claimed by RestoreDocFile() once the
+    /// archive content has actually been streamed to it.
+    mutable std::string _pendingPath;
     mutable std::string _BaseFileName;
     mutable std::string _OriginalName;
 
