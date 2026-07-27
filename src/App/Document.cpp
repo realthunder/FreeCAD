@@ -1245,6 +1245,12 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
     }
 
     Base::ZipWriter writer(out);
+    writer.setSchemaVersion(getSaveSchemaVersion());
+    // Only the exported objects' files: a clipboard buffer has no business
+    // carrying content belonging to the rest of the document.
+    getFileBlobManager().beginSave();
+    collectFileBlobs(obj);
+
     writer.putNextEntry("Document.xml");
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n";
     writer.Stream() << R"(<Document SchemaVersion=")" << getSaveSchemaVersion() 
@@ -1259,6 +1265,10 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
 
     // writing the object types
     writeObjects(obj, writer);
+
+    // The exported objects' included files, before anything the file channel
+    // adds -- same layout as a document save.
+    getFileBlobManager().writeBlobs(writer);
 
     // Hook for others to add further data.
     signalExportObjects(obj, writer);
@@ -1668,6 +1678,10 @@ Document::importObjects(Base::XMLReader& reader)
         reader.FileVersion = 0;
     }
 
+    // The imported objects' included files come in the same archive; they
+    // become this document's content, counted against this document's store.
+    getFileBlobManager().beginRestore(reader);
+
     Base::ReaderContext rctx(getName());
     std::vector<App::DocumentObject*> objs = readObjects(reader);
     for(auto o : objs) {
@@ -1692,10 +1706,17 @@ Document::importObjects(Base::XMLReader& reader)
 
     reader.readEndElement("Document");
 
+    // readFiles() runs from this signal, so the content is in the store by
+    // the time it returns and the importing properties can be served.
     signalImportObjects(objs, reader);
+    getFileBlobManager().dispatchPending();
+
     afterRestore(objs,true);
 
     signalFinishImportObjects(objs);
+    // No later referrer can appear for an import: there is no view document
+    // replay, so the hold has done its job.
+    getFileBlobManager().endRestore();
 
     for(auto o : objs) {
         if(o && o->isAttachedToDocument())
@@ -2256,7 +2277,10 @@ void Document::save(Base::Writer &writer, bool archive) const {
     }
 
     writer.setSchemaVersion(getSaveSchemaVersion());
+    // Collect before anything is written: the included files go into the
+    // archive ahead of the objects and views that refer to them.
     getFileBlobManager().beginSave();
+    collectFileBlobs();
 
     writer.putNextEntry("Document.xml");
 
@@ -2272,12 +2296,12 @@ void Document::save(Base::Writer &writer, bool archive) const {
                     << "-->\n";
     Document::Save(writer);
 
+    // The included files, one entry per distinct content, straight behind
+    // Document.xml and ahead of every entry the file channel will add.
+    getFileBlobManager().writeBlobs(writer);
+
     // Special handling for Gui document.
     signalSaveDocument(writer);
-
-    // Register the shared blob entries now that every property that refers to
-    // one has been written. Must precede writeFiles(), which consumes the list.
-    getFileBlobManager().addFilesToWriter(writer);
 
     // write additional files
     writer.writeFiles();
@@ -2366,6 +2390,11 @@ void Document::restore(Base::XMLReader &reader,
     GetApplication().signalStartRestoreDocument(*this);
     setStatus(Document::Restoring, true);
 
+    // Claim the included-file entries out of the archive. The properties that
+    // refer to them queue up as they are parsed and are served once the
+    // entries have been drained, which readFiles() does before anything else.
+    getFileBlobManager().beginRestore(reader);
+
     d->partialLoadObjects.clear();
     for(auto &name : objNames)
         d->partialLoadObjects.emplace(name,true);
@@ -2388,6 +2417,12 @@ void Document::restore(Base::XMLReader &reader,
     signalRestoreDocument(reader);
 
     reader.readFiles();
+
+    // Hand the restored content to the properties waiting for it. Referrers
+    // that appear later -- a view document replayed from its embedded string
+    // -- take theirs straight from the store, which holds it until
+    // afterRestore() lets go.
+    getFileBlobManager().dispatchPending();
 
     for(auto &f : reader.getFilenames()) {
         FC_TRACE("document " << getName() << " file: " << f);
@@ -2412,6 +2447,11 @@ bool Document::afterRestore(bool checkPartial) {
     }
     setStatus(Document::Restoring, false);
     GetApplication().signalFinishRestoreDocument(*this);
+    // The last point a referrer can turn up: the Gui document replays its
+    // embedded view documents from this signal. Whatever is still unclaimed
+    // belongs to nothing and goes. Deliberately not reached on the partial
+    // reload path above, which still has a restore ahead of it.
+    getFileBlobManager().endRestore();
     return true;
 }
 
@@ -2598,6 +2638,34 @@ FileBlobManager& Document::getFileBlobManager() const
         d->fileBlobs = std::make_unique<FileBlobManager>(const_cast<Document*>(this));
     }
     return *d->fileBlobs;
+}
+
+void Document::collectFileBlobs(const std::vector<App::DocumentObject*>& objs) const
+{
+    auto &manager = getFileBlobManager();
+
+    auto collect = [&manager](const PropertyContainer *container) {
+        if (!container) {
+            return;
+        }
+        std::vector<Property*> props;
+        container->getPropertyList(props);
+        for (auto prop : props) {
+            if (auto file = Base::freecad_dynamic_cast<PropertyFileIncluded>(prop)) {
+                manager.noteReferenced(file->getBlob());
+            }
+        }
+    };
+
+    collect(this);
+    for (auto obj : objs.empty() ? d->objectArray : objs) {
+        collect(obj);
+    }
+
+    // The view tier answers for itself: its properties are written later than
+    // the content is, and a view's own properties are not reachable from here
+    // at all.
+    signalCollectFiles(manager, objs);
 }
 
 const char* Document::getFileName() const

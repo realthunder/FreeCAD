@@ -42,7 +42,9 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectGroup.h>
+#include <App/FileBlobManager.h>
 #include <App/GeoFeatureGroupExtension.h>
+#include <App/PropertyFile.h>
 #include <App/Transactions.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/Console.h>
@@ -142,6 +144,7 @@ struct DocumentP
     Connection connectRenObject;
     Connection connectActObject;
     Connection connectSaveDocument;
+    Connection connectCollectFiles;
     Connection connectRestDocument;
     Connection connectStartLoadDocument;
     Connection connectFinishLoadDocument;
@@ -229,6 +232,8 @@ Document::Document(App::Document* pcDocument,Application * app)
         (d->connectActObject, false);
     d->connectSaveDocument = pcDocument->signalSaveDocument.connect
         (std::bind(&Gui::Document::Save, this, sp::_1));
+    d->connectCollectFiles = pcDocument->signalCollectFiles.connect
+        (std::bind(&Gui::Document::collectFiles, this, sp::_1, sp::_2));
     d->connectRestDocument = pcDocument->signalRestoreDocument.connect
         (std::bind(&Gui::Document::Restore, this, sp::_1));
     d->connectStartLoadDocument = App::GetApplication().signalStartRestoreDocument.connect
@@ -325,6 +330,7 @@ Document::~Document()
     d->connectRenObject.disconnect();
     d->connectActObject.disconnect();
     d->connectSaveDocument.disconnect();
+    d->connectCollectFiles.disconnect();
     d->connectRestDocument.disconnect();
     d->connectStartLoadDocument.disconnect();
     d->connectFinishLoadDocument.disconnect();
@@ -1533,6 +1539,46 @@ unsigned int Document::getMemSize () const
     return size;
 }
 
+void Document::collectFiles(App::FileBlobManager &manager,
+                            const std::vector<App::DocumentObject*> &objs) const
+{
+    auto collect = [&manager](const App::PropertyContainer *container) {
+        if (!container) {
+            return;
+        }
+        std::vector<App::Property*> props;
+        container->getPropertyList(props);
+        for (auto prop : props) {
+            if (auto file = Base::freecad_dynamic_cast<App::PropertyFileIncluded>(prop)) {
+                manager.noteReferenced(file->getBlob());
+            }
+        }
+    };
+
+    if (objs.empty()) {
+        for (const auto &v : d->_ViewProviderMap) {
+            collect(v.second);
+        }
+        // A view's own properties -- the embedded environment image lives
+        // here. They are written into a string inside GuiDocument.xml and
+        // replayed from memory, so they can never register an archive entry
+        // themselves; this is the only place their content is picked up.
+        for (auto view : d->baseViews) {
+            collect(view);
+        }
+    }
+    else {
+        // An export carries the selected objects only. Views belong to the
+        // document, not to any object, so they stay behind.
+        for (auto obj : objs) {
+            auto it = d->_ViewProviderMap.find(obj);
+            if (it != d->_ViewProviderMap.end()) {
+                collect(it->second);
+            }
+        }
+    }
+}
+
 /**
  * Adds a separate XML file to the projects file that contains information about the view providers.
  */
@@ -1922,13 +1968,19 @@ void Document::SaveDocFile (Base::Writer &writer) const
     d->_savedViews = std::move(cameraInfo);
 
     // A view saves into a string that is embedded in GuiDocument.xml and
-    // replayed from memory on restore (see slotFinishRestoreDocument),
-    // so a view property cannot use the writer's separate-file channel —
-    // there is no zip on either side of that string. Force the inline
-    // XML form instead, which App::PropertyFileIncluded answers with
-    // base64 content the memory reader can restore.
+    // replayed from memory on restore (see slotFinishRestoreDocument), so a
+    // view property cannot use the writer's separate-file channel — there is
+    // no zip on either side of that string. Force the inline XML form, which
+    // App::PropertyFileIncluded answers with base64 content the memory reader
+    // can restore.
+    //
+    // Included files are the exception: the document's blob store has already
+    // written their content as its own archive entries (the save-time collect
+    // pass reaches views for exactly this reason), so passing the schema on
+    // lets those properties store a hash instead of a copy of the file.
     Base::StringWriter stringWriter;
     stringWriter.setForceXML(4);
+    stringWriter.setSchemaVersion(writer.getSchemaVersion());
     for (auto view : view3Ds) {
         writer.Stream() << writer.ind() << "<View3D id=\"" << view->getID() << "\">";
         stringWriter.clear();

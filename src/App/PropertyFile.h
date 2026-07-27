@@ -127,6 +127,15 @@ public:
     /// the file alive independently of this property.
     const FileBlobHandle &getBlob() const {return _blob;}
 
+    /** Take the content the manager restored on this property's behalf.
+     *
+     * Called by FileBlobManager once the archive entry holding the content
+     * has been read, or straight away when it had been read already. Not a
+     * value change: it completes the restore of a value the document already
+     * had, so it must not touch the document.
+     */
+    void assignRestoredBlob(const FileBlobHandle &blob);
+
     void setFilter(std::string filter);
     std::string getFilter() const;
 
@@ -143,8 +152,6 @@ protected:
     FileBlobManager &blobManager() const;
     /// Serialized form of the original path, omitted when unknown.
     std::string originalAttribute() const;
-    /// Resolve a hash noted by Restore() once the content has been streamed in.
-    void bindPendingBlob() const;
 
 protected:
     /// Reference to the file. Its destruction is what deletes the file, once
@@ -153,9 +160,10 @@ protected:
     /// Path written by Restore() and claimed by RestoreDocFile() once the
     /// archive content has actually been streamed to it.
     mutable std::string _pendingPath;
-    /// Hash read by Restore(), resolved lazily: the archive entry holding the
-    /// content is streamed in after the properties have been restored.
-    mutable std::string _pendingHash;
+    /// Manager this property is queued with, waiting for its content. Held so
+    /// the queue entry can be withdrawn without asking the container, which
+    /// may already be halfway through its own destruction.
+    FileBlobManager *_pendingManager {nullptr};
     mutable std::string _BaseFileName;
     mutable std::string _OriginalName;
 

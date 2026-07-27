@@ -39,6 +39,7 @@ namespace App
 
 class Document;
 class FileBlobManager;
+class PropertyFileIncluded;
 
 /** One content-addressed file living in a document's transient directory.
  *
@@ -98,10 +99,8 @@ using FileBlobHandle = std::shared_ptr<FileBlob>;
  * sidesteps Base::Writer::addFile renaming colliding names and ZipReader
  * matching entries to consumers sequentially by name.
  */
-class AppExport FileBlobManager : public Base::Persistence
+class AppExport FileBlobManager
 {
-    TYPESYSTEM_HEADER_WITH_OVERRIDE();
-
 public:
     explicit FileBlobManager(Document* doc);
     ~FileBlobManager();
@@ -156,36 +155,51 @@ public:
 
     /** @name Archive blob table (schema 5 and later)
      *
-     * The manager is the sole file-channel consumer for these files: it writes
-     * one archive entry per blob, named by content hash, and properties
-     * serialize only that hash. Several properties referring to the same
-     * content therefore share one entry, which the old one-entry-per-property
-     * scheme could not express -- Writer::addFile renames a colliding name,
-     * and ZipReader matches entries to consumers sequentially by name.
+     * Blobs deliberately do not travel through Writer::addFile/writeFiles.
+     * That channel matches entries to consumers by walking both lists forward
+     * in step, so it can only carry content owned by exactly one property in
+     * exactly one place; shared content cannot satisfy that ordering and was
+     * silently dropped when it tried. The manager writes its own entries
+     * instead, named "blobs/<hash>", directly behind Document.xml, and claims
+     * them again on restore through Base::XMLReader's archive handler.
      */
     //@{
+    /// Prefix of the archive entries holding stored content.
+    static const char* archivePrefix();
+
     /// Start collecting the blobs a save actually references.
     void beginSave();
     /// Record that the document being written refers to this blob.
     void noteReferenced(const FileBlobHandle& blob);
-    /// Register an archive entry per collected blob. Call before writeFiles().
-    void addFilesToWriter(Base::Writer& writer);
-    /// Ask for this content to be restored; registers one entry per hash.
-    void requestRestore(const std::string& hash, Base::XMLReader& reader);
+    /** Write one entry per collected blob.
+     *
+     * Must run while the writer is between entries and before anything
+     * registers a file of its own, i.e. straight after Document.xml.
+     */
+    void writeBlobs(Base::Writer& writer);
+
+    /// Claim this document's blob entries out of the archive being read.
+    void beginRestore(Base::XMLReader& reader);
+    /** Note that a property refers to this content.
+     *
+     * The property is handed its blob as soon as the content is available:
+     * immediately when it has already been read (a view property restored
+     * from a replayed string long after the archive was closed), otherwise at
+     * dispatchPending() once the entries have been drained.
+     */
+    void addPendingReferrer(const std::string& hash, PropertyFileIncluded* prop);
+    /// Withdraw a referrer that died before it could be served.
+    void removePendingReferrer(PropertyFileIncluded* prop);
+    /// Hand every waiting referrer its blob.
+    void dispatchPending();
     /** Drop the manager's own hold on restored content.
      *
-     * Restored blobs are held until a property binds to them: nothing else
-     * references the content between the archive being read and the properties
-     * resolving their hashes, so without this the blob would die -- and take
-     * its file with it -- the moment RestoreDocFile() returned.
+     * Restored blobs are held from the moment they are read until the last
+     * point a referrer can appear -- which is after the finish-restore signal,
+     * because that is when embedded view documents are replayed. What is still
+     * held then is content no property claimed, and it goes.
      */
-    void releaseRestored(const std::string& hash);
-
-    void SaveDocFile(Base::Writer& writer) const override;
-    void RestoreDocFile(Base::Reader& reader) override;
-    void Save(Base::Writer&) const override {}
-    void Restore(Base::XMLReader&) override {}
-    unsigned int getMemSize() const override { return 0; }
+    void endRestore();
     //@}
 
     /// Directory holding the content-addressed files, created on demand.
@@ -198,15 +212,21 @@ private:
     friend class FileBlob;
     /// Called from ~FileBlob: drop the map entry and unlink the file.
     void release(FileBlob* blob);
+    /// Stream one archive entry into the store, keyed by what it contains.
+    void readBlobEntry(Base::Reader& entry);
+    /// Take copies of the content of an unpacked project's blob directory.
+    void restoreFromDirectory(const std::string& dir);
+    /// Keep restored content alive until its referrers have been served.
+    void hold(FileBlobHandle blob);
     FileBlobHandle make(const std::string& hash, const std::string& path, uint64_t size);
 
     Document* _doc {nullptr};
     mutable std::mutex _mutex;
-    /// Blobs this save references, keyed by hash; also the SaveDocFile lookup.
+    /// Blobs this save references, keyed by hash.
     mutable std::unordered_map<std::string, FileBlobHandle> _saveSet;
-    /// Hashes already registered for restore, so one entry has one consumer.
-    std::unordered_set<std::string> _restoreSet;
-    /// Keeps restored content alive until a property binds to it.
+    /// Properties waiting for content that is still to be read.
+    std::vector<std::pair<std::string, PropertyFileIncluded*>> _pending;
+    /// Keeps restored content alive until every referrer has been served.
     std::unordered_map<std::string, FileBlobHandle> _restoreHold;
     std::unordered_map<std::string, std::weak_ptr<FileBlob>> _blobs;
 };

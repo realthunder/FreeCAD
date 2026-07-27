@@ -456,7 +456,9 @@ std::string Base::XMLReader::readCharacters()
 
 void Base::XMLReader::readFiles()
 {
-    if(FileList.size()) {
+    // An archive handler is reason enough to walk the entries even when no
+    // reader registered for one: shared content is claimed by the handler.
+    if(FileList.size() || hasArchiveHandler()) {
         assert(!_reader->getParent());
         _reader->readFiles(*this);
     }
@@ -760,7 +762,28 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
     const auto &FileList = xmlReader.getFileList();
     std::size_t it = 0;
     Base::SequencerLauncher seq("Importing project files...", FileList.size());
-    while (entry->isValid() && it < FileList.size()) {
+    while (entry->isValid()) {
+        // Entries nobody registered for may still have an owner -- shared
+        // included files are written once and referred to from anywhere, so
+        // they cannot take part in the ordered match below. Offer them first;
+        // a consumed entry leaves the match cursor where it was.
+        if (xmlReader.hasArchiveHandler()) {
+            Base::ZipReader zipreader(_stream, entry->getName(), &xmlReader);
+            if (xmlReader.handleArchiveEntry(entry->getName(), zipreader)) {
+                try {
+                    entry = _stream.getNextEntry();
+                }
+                catch (const std::exception&) {
+                    break;
+                }
+                continue;
+            }
+        }
+
+        if (it >= FileList.size()) {
+            break;
+        }
+
         auto jt = it;
         // Check if the current entry is registered, otherwise check the next registered files as soon as
         // both file names match

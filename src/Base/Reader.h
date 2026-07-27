@@ -27,6 +27,7 @@
 #include <map>
 #include <memory>
 #include <sstream>
+#include <functional>
 #include <string>
 
 #include <xercesc/framework/XMLPScanToken.hpp>
@@ -292,6 +293,27 @@ public:
     };
     const std::vector<FileEntry> &getFileList() const;
 
+    /** Consumer for archive entries that belong to no registered reader.
+     *
+     * readFiles() matches entries to consumers by walking both lists forward
+     * in step, which requires the archive to hold them in registration order.
+     * Content that is not owned by a single property cannot satisfy that --
+     * shared included files are written once but referred to from anywhere --
+     * so such entries are offered to this handler first, and one that returns
+     * true consumes the entry without disturbing the match cursor.
+     */
+    using ArchiveHandler = std::function<bool(const std::string &, Base::Reader &)>;
+    void setArchiveHandler(ArchiveHandler handler) { _archiveHandler = std::move(handler); }
+    /// Offer an entry to the handler; true when it took it.
+    bool handleArchiveEntry(const std::string &name, Base::Reader &reader) const {
+        return _archiveHandler && _archiveHandler(name, reader);
+    }
+    bool hasArchiveHandler() const { return static_cast<bool>(_archiveHandler); }
+
+    /// Reader this parser draws from, or null. Its getDirectory() tells a
+    /// consumer whether the document is an archive or an unpacked directory.
+    Base::Reader *getReader() const { return _reader; }
+
     /// get all registered file names
     const std::vector<std::string>& getFilenames() const;
     bool isRegistered(Base::Persistence* Object) const;
@@ -396,6 +418,7 @@ protected:
     bool _verbose {true};
 
     std::vector<FileEntry> FileList;
+    ArchiveHandler _archiveHandler;
     std::vector<std::string> FileNames;
 
     std::vector<int*> Guards;
@@ -417,6 +440,8 @@ public:
     const std::string &getFileName() const;
     int getFileVersion() const;
     int getDocumentSchema() const;
+    /// Directory the document is read from, for readers backed by one.
+    virtual std::string getDirectory() const { return {}; }
 
     friend class XMLReader;
 
@@ -446,6 +471,8 @@ class BaseExport FileReader : public Base::Reader
 {
 public:
     FileReader(const Base::FileInfo &fi, const std::string &name = std::string(), XMLReader *parent=nullptr);
+
+    std::string getDirectory() const override { return _dir; }
 
 protected:
     void readFiles(XMLReader &reader) override;

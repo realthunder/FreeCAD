@@ -35,6 +35,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/FileBlobManager.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Stream.h>
@@ -186,9 +187,19 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
                 // is not reentrant. See PropertyPartShape::SaveDocFile
                 writer.setMode("BinaryBrep");
 
+                // Included files go in as their own entries, shared by
+                // content. In this uncompressed mode that is what keeps a
+                // recovery cycle cheap: content already written is skipped,
+                // the same way shouldWrite() skips unchanged property files.
+                writer.setSchemaVersion(doc->getSaveSchemaVersion());
+                doc->getFileBlobManager().beginSave();
+                doc->collectFileBlobs();
+
                 writer.putNextEntry("Document.xml");
 
                 doc->Save(writer);
+
+                doc->getFileBlobManager().writeBlobs(writer);
 
                 // Special handling for Gui document.
                 doc->signalSaveDocument(writer);
@@ -210,9 +221,15 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
 
                     writer.setComment("AutoRecovery file");
                     writer.setLevel(1); // apparently the fastest compression
+                    writer.setSchemaVersion(doc->getSaveSchemaVersion());
+                    doc->getFileBlobManager().beginSave();
+                    doc->collectFileBlobs();
+
                     writer.putNextEntry("Document.xml");
 
                     doc->Save(writer);
+
+                    doc->getFileBlobManager().writeBlobs(writer);
 
                     // Special handling for Gui document.
                     doc->signalSaveDocument(writer);

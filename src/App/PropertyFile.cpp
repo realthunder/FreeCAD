@@ -56,8 +56,15 @@ PropertyFileIncluded::PropertyFileIncluded() = default;
 
 // The file is owned by the blob, which outlives this property whenever an undo
 // snapshot, the clipboard or another property still references the same
-// content. Releasing the handle is all that is needed here.
-PropertyFileIncluded::~PropertyFileIncluded() = default;
+// content. Releasing the handle is all that is needed here -- except when the
+// property is still queued for content it will now never take, which happens
+// when an object fails to be created partway through a restore.
+PropertyFileIncluded::~PropertyFileIncluded()
+{
+    if (_pendingManager) {
+        _pendingManager->removePendingReferrer(this);
+    }
+}
 
 FileBlobManager &PropertyFileIncluded::blobManager() const
 {
@@ -151,32 +158,24 @@ void PropertyFileIncluded::setValue(const char* sFile, const char* sName)
     }
 }
 
-void PropertyFileIncluded::bindPendingBlob() const
+void PropertyFileIncluded::assignRestoredBlob(const FileBlobHandle& blob)
 {
-    if (_blob || _pendingHash.empty()) {
-        return;
-    }
-    auto &manager = blobManager();
-    _blob = manager.find(_pendingHash);
-    if (_blob) {
-        // This property now owns a reference, so the manager's restore-time
-        // hold is no longer what keeps the content alive.
-        manager.releaseRestored(_pendingHash);
-        _pendingHash.clear();
-    }
+    // No aboutToSetValue()/hasSetValue(): this completes a restore rather than
+    // changing anything, and touching the document here would mark it modified
+    // just by being opened.
+    _blob = blob;
+    _pendingManager = nullptr;
 }
 
 const char* PropertyFileIncluded::getValue() const
 {
     static const std::string empty;
-    bindPendingBlob();
     return _blob ? _blob->path().c_str() : empty.c_str();
 }
 
 PyObject *PropertyFileIncluded::getPyObject()
 {
     static const std::string empty;
-    bindPendingBlob();
     const std::string &value = _blob ? _blob->path() : empty;
     PyObject *p = PyUnicode_DecodeUTF8(value.c_str(),value.size(),nullptr);
     if (!p) {
@@ -317,14 +316,17 @@ void PropertyFileIncluded::Save (Base::Writer &writer) const
             manager.repath(_blob, fi.filePath());
     }
 
-    bindPendingBlob();
-
     // Schema 5 and later: the manager writes one archive entry per blob and
     // this property stores only the hash, so referrers sharing content share
     // the entry. Writers that produce a self-contained stream of their own
     // leave the schema unset and keep the per-property entry below.
     if (writer.getSchemaVersion() >= 5) {
         if (_blob) {
+            // The save-time collect pass has noted this blob already. Note it
+            // again anyway: this costs nothing, and it keeps a property that
+            // is written through some path the collect pass does not walk
+            // from losing its content, since the entries are written after
+            // Document.xml.
             blobManager().noteReferenced(_blob);
             writer.Stream() << writer.ind() << "<FileIncluded hash=\""
                             << encodeAttribute(_blob->hash()) << "\" name=\""
@@ -376,10 +378,12 @@ void PropertyFileIncluded::Restore(Base::XMLReader &reader)
         _OriginalName = reader.hasAttribute("original")
             ? reader.getAttribute("original") : "";
         if (!hash.empty()) {
-            // The content arrives with the archive entry the manager owns;
-            // bindPendingBlob() picks it up on first use.
-            _pendingHash = hash;
-            blobManager().requestRestore(hash, reader);
+            // The manager owns the content and hands it over: at once if it
+            // has been read already, otherwise when the archive entries have
+            // been drained. Either way this property never has to go looking.
+            auto &manager = blobManager();
+            _pendingManager = &manager;
+            manager.addPendingReferrer(hash, this);
         }
     }
     else if (reader.hasAttribute("file")) {

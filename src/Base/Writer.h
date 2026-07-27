@@ -328,6 +328,12 @@ public:
      */
     virtual bool shouldWrite(const std::string& name, const Base::Persistence* Object) const;
 
+    /// Directory the entries are written into.
+    const std::string& getDirName() const
+    {
+        return DirName;
+    }
+
     FileWriter(const FileWriter&) = delete;
     FileWriter(FileWriter&&) = delete;
     FileWriter& operator=(const FileWriter&) = delete;

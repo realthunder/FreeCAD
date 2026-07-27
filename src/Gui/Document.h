@@ -160,6 +160,14 @@ public:
     bool saveCopy();
     /// Save all open document
     static void saveAll();
+    /** Report the included files of the view tier to the document's store.
+     *
+     * View provider and view properties are written after their content is,
+     * and a view's properties are not reachable from the App document at all,
+     * so a save asks for them up front through App::Document::signalCollectFiles.
+     */
+    void collectFiles(App::FileBlobManager &manager,
+                      const std::vector<App::DocumentObject*> &objs) const;
     /// This method is used to save properties or very small amounts of data to an XML document.
     void Save (Base::Writer &writer) const override;
     /// This method is used to restore properties from an XML document.

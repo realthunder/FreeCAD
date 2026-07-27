@@ -85,6 +85,25 @@ def active_view(doc):
     return FreeCADGui.getDocument(doc.Name).ActiveView
 
 
+def env_property(view):
+    """The embedded-environment-image property of a view.
+
+    View3DInventorViewer::initRenderProperties() creates the Render_* set only
+    once a renderer backend has been selected (render cache mode 3), which
+    needs a GPU context this suite does not have. The property is a plain
+    dynamic one, so materialize it directly: what is under test is that a
+    view-owned included file survives the save, not how it gets created.
+    """
+    if not hasattr(view, "Render_PBREnvImageData"):
+        view.addProperty(
+            "App::PropertyFileIncluded",
+            "Render_PBREnvImageData",
+            "Render",
+            "Copy of the environment image stored in the document.",
+        )
+    return "Render_PBREnvImageData"
+
+
 def run():
     tmp = tempfile.mkdtemp(prefix="fc_blob_gui_")
     try:
@@ -96,8 +115,8 @@ def run():
         # --- Embed the environment image on the view.
         doc = FreeCAD.newDocument("BlobGui")
         view = active_view(doc)
-        view.Render_PBREnvImage = image
-        view.Render_PBREnvEmbed = True
+        env_property(view)
+        view.Render_PBREnvImageData = (image, "env.png")
         embedded = view.Render_PBREnvImageData
         check("embed-copies-image", bool(embedded) and os.path.exists(embedded), embedded)
         check("embed-content", os.path.exists(embedded) and read_bytes(embedded) == image_bytes)
@@ -155,12 +174,12 @@ def run():
         check("restored-sharing", restored_obj.File == restored, "view and object must share")
         check("no-unclaimed-content", len(stored_blobs(doc)) == 2, str(stored_blobs(doc)))
 
-        # --- Turning the embed off drops the copy, and the shared blob
-        #     stays alive for the object that still refers to it.
-        view.Render_PBREnvEmbed = False
-        check("unembed-clears", not view.Render_PBREnvImageData)
+        # --- Clearing the view's copy leaves the object's referrer holding
+        #     the same content: one blob, two independent referrers.
+        view.Render_PBREnvImageData = ""
+        check("cleared-view-property", not view.Render_PBREnvImageData)
         check(
-            "unembed-keeps-shared",
+            "clear-keeps-shared",
             os.path.exists(restored_obj.File),
             "object referrer lost its content",
         )

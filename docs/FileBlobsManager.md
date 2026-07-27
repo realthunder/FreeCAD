@@ -158,7 +158,10 @@ Sequence:
 3. Stream `Document.xml`. Properties write hash/name/original; they register
    nothing.
 4. `manager.writeBlobs(writer)` — one `putNextEntry("blobs/<hash>")` plus
-   content per collected blob.
+   content per collected blob, in hash order so a given document always
+   produces the same archive. It is a no-op below schema 5, where the
+   properties carry self-contained copies of their own and these entries would
+   be weight no reader ever asks for.
 5. Everything else as before (`signalSaveDocument`, `writeFiles`).
 
 Discovery is by traversal, not by liveness: blobs referenced *only* by an undo
@@ -223,10 +226,10 @@ View-side properties reach the same per-document manager, with two wrinkles:
   is already in the store, so `Restore()` acquires it immediately. The nested
   `StringWriter` is given the outer writer's schema version so the property
   emits the hash form; without it, the property falls back to inline base64.
-- **`Gui::MDIView` does not override `getOwnerDocument()`**, so
-  `PropertyFileIncluded::blobManager()` currently resolves View3D properties to
-  the *application* default store rather than the document's. It must override
-  it, or view blobs are stored outside the document and never saved.
+- **Store resolution already works**: `Gui::BaseView` derives from
+  `App::PropertyContainer` and overrides `getOwnerDocument()` (`Gui/View.h:87`),
+  so `PropertyFileIncluded::blobManager()` resolves a View3D property to the
+  owning document's store, not the process-wide fallback.
 
 Ordinary `ViewProviderDocumentObject` properties (e.g. the texture images added
 by `TaskRenderSettings`) need nothing special: they already resolve to the App
@@ -258,11 +261,22 @@ restored property compared unequal to itself.
 2. `~FileBlobManager` must detach all blobs (`_owner = nullptr`) before its
    members die, or a blob destroyed during teardown calls `release()` on a
    half-destroyed manager. This crashed once.
+2b. **No handle may be destroyed while `_mutex` is held.** `~FileBlob` calls
+   `release()`, which takes that same non-recursive mutex, so dropping the last
+   reference under the lock deadlocks the thread against itself — a single
+   thread parked in `futex_do_wait`. This is not hypothetical: `beginSave()`
+   clearing `_saveSet` did exactly that whenever a property had replaced its
+   content since the previous save, and it hung every second save of such a
+   document. Containers that may hold the last reference are swapped into a
+   local declared *before* the lock guard, so they die after it is released.
 3. Restored content always has an owner: the temp hold covers the window
    between the archive read and the last possible referrer.
 4. Blobs are immutable; the stored file is read-only.
 5. `saveAs` changes `TransientDir`, so every stored path goes stale and must be
-   repaired (`repath`) in blob layout, not the old flat one.
+   repaired (`repath`) in blob layout, not the old flat one. The repair belongs
+   to the **manager**, immediately before it writes: the property-side repair
+   in `PropertyFileIncluded::Save()` only runs in time for App-tier properties,
+   since the view tier is written after the content is.
 6. One archive entry per distinct content, ever.
 
 ## 11. Test coverage
@@ -277,6 +291,17 @@ the case-by-case matrix.
 
 ## 12. Future work
 
+- **Any file save through the manager, not just included files.** The store is
+  already type-agnostic (`insertFile(path) → handle`, hash identity, refcounted
+  lifetime); what is still `PropertyFileIncluded`-shaped is the referrer side:
+  `addPendingReferrer` takes that concrete type, and the collect pass filters on
+  it. Generalizing means a small referrer interface -- take the handle, and
+  withdraw on destruction -- which the collect pass and dispatch use instead.
+  Names stay on the consumer, as `_BaseFileName` does today, so one stored file
+  can serve referrers that each call it something different. The thing to settle
+  first is identity for generated content: a shape's bytes are what would be
+  hashed, so the writer's mode becomes part of the address (`BinaryBrep` and
+  ASCII hash differently) -- which is why the save options below come first.
 - **Cross-document dedup tier.** An application-level, content-addressed,
   append-only cache in its own directory (never inside a document's transient
   dir, which is wiped on close), referenced by copy where linking is

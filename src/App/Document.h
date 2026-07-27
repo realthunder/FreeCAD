@@ -183,6 +183,17 @@ public:
      */
     boost::signals2::signal<void (Base::Writer   &)> signalSaveDocument;
     boost::signals2::signal<void (Base::XMLReader&)> signalRestoreDocument;
+    /** signal collecting the included files a save must carry
+     *
+     * Emitted before anything is written, because the content is written
+     * before the parts of the document that refer to it. Handlers report every
+     * App::PropertyFileIncluded they own to the manager; the object list is
+     * the subset being written, or empty for the whole document. The Gui
+     * document answers for its view providers and its views, which is what
+     * lets a view-only file be saved at all.
+     */
+    boost::signals2::signal<void (App::FileBlobManager&,
+                                  const std::vector<App::DocumentObject*>&)> signalCollectFiles;
     boost::signals2::signal<void (const std::vector<App::DocumentObject*>&,
                                   Base::Writer   &)> signalExportObjects;
     boost::signals2::signal<void (const std::vector<App::DocumentObject*>&,
@@ -267,10 +278,19 @@ public:
     const char* getProgramVersion() const;
     /** Store of the files referenced by this document's PropertyFileIncluded.
      *
-     * Owns their lifetime by reference count, and is the single consumer of
-     * the writer's file channel for them. See App::FileBlobManager.
+     * Owns their lifetime by reference count, and writes and reads their
+     * archive entries itself. See App::FileBlobManager.
      */
     FileBlobManager& getFileBlobManager() const;
+
+    /** Tell the manager which included files a save has to carry.
+     *
+     * Walks the properties of the given objects -- all of them when the list
+     * is empty -- and broadcasts signalCollectFiles for the view tier. Runs
+     * before anything is written: the content goes into the archive ahead of
+     * everything that refers to it.
+     */
+    void collectFileBlobs(const std::vector<App::DocumentObject*>& objs = {}) const;
 
     /** Schema versions this build can write, ascending, newest last.
      *

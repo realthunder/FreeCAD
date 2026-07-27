@@ -223,6 +223,7 @@ class BlobRefCountCases(BlobTestCase):
 
     def testUndoRestoresPreviousContent(self):
         doc = self.newDocument()
+        doc.UndoMode = 1
         obj = self.fileObject(doc, "File1", b"first")
         doc.openTransaction("replace")
         obj.File = self.sourceFile("second.src", b"second")
@@ -235,6 +236,7 @@ class BlobRefCountCases(BlobTestCase):
 
     def testUndoOfDeleteRestoresContent(self):
         doc = self.newDocument()
+        doc.UndoMode = 1
         obj = self.fileObject(doc, "File1", b"payload")
         doc.openTransaction("remove")
         doc.removeObject(obj.Name)
@@ -245,6 +247,7 @@ class BlobRefCountCases(BlobTestCase):
     def testTransactionSnapshotDoesNotDuplicate(self):
         """Copy() is a refcount increment: undo state costs no extra file."""
         doc = self.newDocument()
+        doc.UndoMode = 1
         obj = self.fileObject(doc, "File1", b"payload")
         doc.openTransaction("touch")
         obj.Label = "renamed"
