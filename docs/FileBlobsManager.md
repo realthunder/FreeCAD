@@ -291,6 +291,9 @@ the case-by-case matrix.
 
 ## 12. Future work
 
+Agreed order: the save options first, then the browser-tier fetch. The rest is
+staged -- worth doing, not scheduled.
+
 - **Any file save through the manager, not just included files.** The store is
   already type-agnostic (`insertFile(path) → handle`, hash identity, refcounted
   lifetime); what is still `PropertyFileIncluded`-shaped is the referrer side:
