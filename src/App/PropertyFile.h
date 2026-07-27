@@ -143,6 +143,8 @@ protected:
     FileBlobManager &blobManager() const;
     /// Serialized form of the original path, omitted when unknown.
     std::string originalAttribute() const;
+    /// Resolve a hash noted by Restore() once the content has been streamed in.
+    void bindPendingBlob() const;
 
 protected:
     /// Reference to the file. Its destruction is what deletes the file, once
@@ -151,6 +153,9 @@ protected:
     /// Path written by Restore() and claimed by RestoreDocFile() once the
     /// archive content has actually been streamed to it.
     mutable std::string _pendingPath;
+    /// Hash read by Restore(), resolved lazily: the archive entry holding the
+    /// content is streamed in after the properties have been restored.
+    mutable std::string _pendingHash;
     mutable std::string _BaseFileName;
     mutable std::string _OriginalName;
 

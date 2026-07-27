@@ -1022,7 +1022,7 @@ std::string Document::getTransientDirectoryName(const std::string& uuid, const s
 
 // Newest schema version this build writes. Every entry of
 // getWritableSchemaVersions() is a shape the writer can still produce.
-#define FC_DOC_SCHEMA_VER 4
+#define FC_DOC_SCHEMA_VER 5
 
 void Document::Save (Base::Writer &writer) const
 {
@@ -2255,6 +2255,9 @@ void Document::save(Base::Writer &writer, bool archive) const {
         writer.setSplitXML(SplitXML.getValue());
     }
 
+    writer.setSchemaVersion(getSaveSchemaVersion());
+    getFileBlobManager().beginSave();
+
     writer.putNextEntry("Document.xml");
 
     if (PreferBinary.getValue()) {
@@ -2271,6 +2274,10 @@ void Document::save(Base::Writer &writer, bool archive) const {
 
     // Special handling for Gui document.
     signalSaveDocument(writer);
+
+    // Register the shared blob entries now that every property that refers to
+    // one has been written. Must precede writeFiles(), which consumes the list.
+    getFileBlobManager().addFilesToWriter(writer);
 
     // write additional files
     writer.writeFiles();
@@ -2557,7 +2564,9 @@ const std::vector<long>& Document::getWritableSchemaVersions()
     // Only what the writer can actually produce. Older versions the reader
     // still accepts are deliberately absent: offering to write a shape we
     // cannot build would fail silently at the worst moment.
-    static const std::vector<long> versions {FC_DOC_SCHEMA_VER};
+    // 4 = one archive entry per PropertyFileIncluded. 5 = one entry per
+    // distinct content, shared by every property referring to it.
+    static const std::vector<long> versions {4, FC_DOC_SCHEMA_VER};
     return versions;
 }
 

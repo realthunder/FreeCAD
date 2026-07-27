@@ -192,6 +192,16 @@ void Writer::setFileVersion(int version)
     fileVersion = version;
 }
 
+void Writer::setSchemaVersion(int version)
+{
+    schemaVersion = version;
+}
+
+int Writer::getSchemaVersion() const
+{
+    return schemaVersion;
+}
+
 int Writer::getFileVersion() const
 {
     return fileVersion;

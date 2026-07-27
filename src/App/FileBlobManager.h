@@ -28,9 +28,11 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <FCGlobal.h>
+#include <Base/Persistence.h>
 
 namespace App
 {
@@ -96,8 +98,10 @@ using FileBlobHandle = std::shared_ptr<FileBlob>;
  * sidesteps Base::Writer::addFile renaming colliding names and ZipReader
  * matching entries to consumers sequentially by name.
  */
-class AppExport FileBlobManager
+class AppExport FileBlobManager : public Base::Persistence
 {
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
 public:
     explicit FileBlobManager(Document* doc);
     ~FileBlobManager();
@@ -150,6 +154,40 @@ public:
     /// yet because it has still to be streamed in.
     std::string uniquePath(const std::string& name) const;
 
+    /** @name Archive blob table (schema 5 and later)
+     *
+     * The manager is the sole file-channel consumer for these files: it writes
+     * one archive entry per blob, named by content hash, and properties
+     * serialize only that hash. Several properties referring to the same
+     * content therefore share one entry, which the old one-entry-per-property
+     * scheme could not express -- Writer::addFile renames a colliding name,
+     * and ZipReader matches entries to consumers sequentially by name.
+     */
+    //@{
+    /// Start collecting the blobs a save actually references.
+    void beginSave();
+    /// Record that the document being written refers to this blob.
+    void noteReferenced(const FileBlobHandle& blob);
+    /// Register an archive entry per collected blob. Call before writeFiles().
+    void addFilesToWriter(Base::Writer& writer);
+    /// Ask for this content to be restored; registers one entry per hash.
+    void requestRestore(const std::string& hash, Base::XMLReader& reader);
+    /** Drop the manager's own hold on restored content.
+     *
+     * Restored blobs are held until a property binds to them: nothing else
+     * references the content between the archive being read and the properties
+     * resolving their hashes, so without this the blob would die -- and take
+     * its file with it -- the moment RestoreDocFile() returned.
+     */
+    void releaseRestored(const std::string& hash);
+
+    void SaveDocFile(Base::Writer& writer) const override;
+    void RestoreDocFile(Base::Reader& reader) override;
+    void Save(Base::Writer&) const override {}
+    void Restore(Base::XMLReader&) override {}
+    unsigned int getMemSize() const override { return 0; }
+    //@}
+
     /// Directory holding the content-addressed files, created on demand.
     std::string blobDir() const;
 
@@ -164,6 +202,12 @@ private:
 
     Document* _doc {nullptr};
     mutable std::mutex _mutex;
+    /// Blobs this save references, keyed by hash; also the SaveDocFile lookup.
+    mutable std::unordered_map<std::string, FileBlobHandle> _saveSet;
+    /// Hashes already registered for restore, so one entry has one consumer.
+    std::unordered_set<std::string> _restoreSet;
+    /// Keeps restored content alive until a property binds to it.
+    std::unordered_map<std::string, FileBlobHandle> _restoreHold;
     std::unordered_map<std::string, std::weak_ptr<FileBlob>> _blobs;
 };
 

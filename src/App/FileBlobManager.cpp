@@ -28,6 +28,9 @@
 #include <QFileInfo>
 
 #include <Base/Console.h>
+#include <Base/Reader.h>
+#include <Base/Stream.h>
+#include <Base/Writer.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
 #include <Base/Uuid.h>
@@ -36,6 +39,8 @@
 #include "Document.h"
 
 using namespace App;
+
+TYPESYSTEM_SOURCE_ABSTRACT(App::FileBlobManager, Base::Persistence)
 
 // ---------------------------------------------------------------------------
 // FileBlob
@@ -56,7 +61,33 @@ FileBlobManager::FileBlobManager(Document* doc)
     : _doc(doc)
 {}
 
-FileBlobManager::~FileBlobManager() = default;
+FileBlobManager::~FileBlobManager()
+{
+    // Blobs can outlive the manager -- an undo snapshot or the clipboard may
+    // still hold one -- and the save set holds strong references of its own.
+    // Detach them all first so ~FileBlob does not call release() on a manager
+    // whose members are already being destroyed. Nothing leaks: the document's
+    // transient directory is removed wholesale when it closes.
+    std::lock_guard<std::mutex> guard(_mutex);
+    for (auto& entry : _blobs) {
+        if (auto blob = entry.second.lock()) {
+            blob->_owner = nullptr;
+        }
+    }
+    for (auto& entry : _saveSet) {
+        if (entry.second) {
+            entry.second->_owner = nullptr;
+        }
+    }
+    for (auto& entry : _restoreHold) {
+        if (entry.second) {
+            entry.second->_owner = nullptr;
+        }
+    }
+    _restoreHold.clear();
+    _saveSet.clear();
+    _blobs.clear();
+}
 
 FileBlobManager& FileBlobManager::defaultManager()
 {
@@ -104,6 +135,111 @@ std::string FileBlobManager::hashFile(const char* path)
         return {};
     }
     return hash.result().toHex().constData();
+}
+
+void FileBlobManager::beginSave()
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    _saveSet.clear();
+}
+
+void FileBlobManager::noteReferenced(const FileBlobHandle& blob)
+{
+    if (!blob) {
+        return;
+    }
+    std::lock_guard<std::mutex> guard(_mutex);
+    _saveSet[blob->hash()] = blob;
+}
+
+void FileBlobManager::addFilesToWriter(Base::Writer& writer)
+{
+    std::vector<FileBlobHandle> pending;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        pending.reserve(_saveSet.size());
+        for (const auto& entry : _saveSet) {
+            pending.push_back(entry.second);
+        }
+    }
+    // One entry per blob, named by hash: unique by construction, so the name
+    // the writer hands back is the one asked for and the properties' stored
+    // hashes stay valid.
+    for (const auto& blob : pending) {
+        writer.addFile(blob->hash().c_str(), this);
+    }
+}
+
+void FileBlobManager::SaveDocFile(Base::Writer& writer) const
+{
+    const std::string hash = writer.getCurrentFileName();
+    FileBlobHandle blob;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        auto it = _saveSet.find(hash);
+        if (it != _saveSet.end()) {
+            blob = it->second;
+        }
+    }
+    if (!blob) {
+        std::stringstream str;
+        str << "FileBlobManager::SaveDocFile(): no blob for entry " << hash;
+        throw Base::FileSystemError(str.str());
+    }
+
+    Base::ifstream from(Base::FileInfo(blob->path()), std::ios::in | std::ios::binary);
+    if (!from) {
+        std::stringstream str;
+        str << "FileBlobManager::SaveDocFile(): file '" << blob->path()
+            << "' in transient directory doesn't exist.";
+        throw Base::FileSystemError(str.str());
+    }
+    writer.Stream() << from.rdbuf();
+}
+
+void FileBlobManager::requestRestore(const std::string& hash, Base::XMLReader& reader)
+{
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        // One consumer per entry: several properties share the content, but
+        // the archive holds it once and it is streamed in once.
+        if (!_restoreSet.insert(hash).second) {
+            return;
+        }
+    }
+    reader.addFile(hash.c_str(), this);
+}
+
+void FileBlobManager::RestoreDocFile(Base::Reader& reader)
+{
+    const std::string hash = reader.getFileName();
+    const std::string staging = uniquePath(hash + ".part");
+
+    {
+        Base::ofstream to(Base::FileInfo(staging), std::ios::out | std::ios::binary | std::ios::trunc);
+        if (!to) {
+            std::stringstream str;
+            str << "FileBlobManager::RestoreDocFile(): cannot create " << staging;
+            throw Base::FileSystemError(str.str());
+        }
+        reader >> to.rdbuf();
+    }
+
+    // adoptFile() re-hashes and relocates. It also detects content that is
+    // already stored, which is what makes a re-save of an unchanged document
+    // cost nothing.
+    FileBlobHandle blob = adoptFile(staging.c_str());
+
+    // Hold it: the properties that refer to this content resolve their hashes
+    // lazily, so until then nothing else owns the blob.
+    std::lock_guard<std::mutex> guard(_mutex);
+    _restoreHold[blob->hash()] = std::move(blob);
+}
+
+void FileBlobManager::releaseRestored(const std::string& hash)
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    _restoreHold.erase(hash);
 }
 
 std::string FileBlobManager::blobDir() const

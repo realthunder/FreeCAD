@@ -79,6 +79,15 @@ public:
     void setFileVersion(int);
     int getFileVersion() const;
 
+    /** Document schema version being written, 0 when unknown.
+     *
+     * Only the document save path sets this. Writers that produce a
+     * self-contained stream of their own -- object export, for one -- leave it
+     * at 0 and get the format that does not depend on a document-wide table.
+     */
+    void setSchemaVersion(int);
+    int getSchemaVersion() const;
+
     /// put the next entry with a give name
     virtual void putNextEntry(const char *filename, const char *objName=nullptr);
 
@@ -199,6 +208,7 @@ protected:
     short indent_size {2};
     char indBuf[65] {};
 
+    int schemaVersion {0};
     int forceXML {0};
     bool splitXML {false};
     bool preferBinary {true};

@@ -151,15 +151,32 @@ void PropertyFileIncluded::setValue(const char* sFile, const char* sName)
     }
 }
 
+void PropertyFileIncluded::bindPendingBlob() const
+{
+    if (_blob || _pendingHash.empty()) {
+        return;
+    }
+    auto &manager = blobManager();
+    _blob = manager.find(_pendingHash);
+    if (_blob) {
+        // This property now owns a reference, so the manager's restore-time
+        // hold is no longer what keeps the content alive.
+        manager.releaseRestored(_pendingHash);
+        _pendingHash.clear();
+    }
+}
+
 const char* PropertyFileIncluded::getValue() const
 {
     static const std::string empty;
+    bindPendingBlob();
     return _blob ? _blob->path().c_str() : empty.c_str();
 }
 
 PyObject *PropertyFileIncluded::getPyObject()
 {
     static const std::string empty;
+    bindPendingBlob();
     const std::string &value = _blob ? _blob->path() : empty;
     PyObject *p = PyUnicode_DecodeUTF8(value.c_str(),value.size(),nullptr);
     if (!p) {
@@ -300,6 +317,26 @@ void PropertyFileIncluded::Save (Base::Writer &writer) const
             manager.repath(_blob, fi.filePath());
     }
 
+    bindPendingBlob();
+
+    // Schema 5 and later: the manager writes one archive entry per blob and
+    // this property stores only the hash, so referrers sharing content share
+    // the entry. Writers that produce a self-contained stream of their own
+    // leave the schema unset and keep the per-property entry below.
+    if (writer.getSchemaVersion() >= 5) {
+        if (_blob) {
+            blobManager().noteReferenced(_blob);
+            writer.Stream() << writer.ind() << "<FileIncluded hash=\""
+                            << encodeAttribute(_blob->hash()) << "\" name=\""
+                            << encodeAttribute(_BaseFileName) << "\""
+                            << originalAttribute() << "/>\n";
+        }
+        else {
+            writer.Stream() << writer.ind() << "<FileIncluded hash=\"\"/>\n";
+        }
+        return;
+    }
+
     if (writer.isForceXML()>3) {
         if (_blob) {
             writer.Stream() << writer.ind() << "<FileIncluded data=\""
@@ -333,7 +370,19 @@ void PropertyFileIncluded::Save (Base::Writer &writer) const
 void PropertyFileIncluded::Restore(Base::XMLReader &reader)
 {
     reader.readElement("FileIncluded");
-    if (reader.hasAttribute("file")) {
+    if (reader.hasAttribute("hash")) {
+        const std::string hash = reader.getAttribute("hash");
+        _BaseFileName = reader.hasAttribute("name") ? reader.getAttribute("name") : "";
+        _OriginalName = reader.hasAttribute("original")
+            ? reader.getAttribute("original") : "";
+        if (!hash.empty()) {
+            // The content arrives with the archive entry the manager owns;
+            // bindPendingBlob() picks it up on first use.
+            _pendingHash = hash;
+            blobManager().requestRestore(hash, reader);
+        }
+    }
+    else if (reader.hasAttribute("file")) {
         string file (reader.getAttribute("file") );
         if (!file.empty()) {
             // initiate a file read
