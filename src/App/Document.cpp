@@ -945,6 +945,19 @@ Document::Document(const char* documentName)
             "Prefer binary format when saving object data.\n"
             "This can result in smaller file but bad for version control.");
     PreferBinary.setValue(DocumentParams::getPreferBinary());
+    ADD_PROPERTY_TYPE(SaveSchemaVersion,(getCurrentSchemaVersion()),"Format",Prop_None,
+            "Document schema version to write.\n"
+            "Lower it to keep the document readable by an older FreeCAD, at\n"
+            "the cost of what the newer versions added. Only versions this\n"
+            "build can still write are accepted.");
+    {
+        const auto &versions = getWritableSchemaVersions();
+        static App::PropertyIntegerConstraint::Constraints schemaRange;
+        schemaRange.LowerBound = versions.front();
+        schemaRange.UpperBound = versions.back();
+        schemaRange.StepSize = 1;
+        SaveSchemaVersion.setConstraints(&schemaRange);
+    }
 }
 
 Document::~Document()
@@ -1007,6 +1020,8 @@ std::string Document::getTransientDirectoryName(const std::string& uuid, const s
 // Exported functions
 //--------------------------------------------------------------------------
 
+// Newest schema version this build writes. Every entry of
+// getWritableSchemaVersions() is a shape the writer can still produce.
 #define FC_DOC_SCHEMA_VER 4
 
 void Document::Save (Base::Writer &writer) const
@@ -1014,7 +1029,7 @@ void Document::Save (Base::Writer &writer) const
     d->hashers.clear();
     addStringHasher(d->Hasher);
 
-    writer.Stream() << "<Document SchemaVersion=\"" << FC_DOC_SCHEMA_VER 
+    writer.Stream() << "<Document SchemaVersion=\"" << getSaveSchemaVersion() 
                     << "\" ProgramVersion=\""
                     << App::Application::Config()["BuildVersionMajor"] << "."
                     << App::Application::Config()["BuildVersionMinor"] << "R"
@@ -1232,7 +1247,7 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
     Base::ZipWriter writer(out);
     writer.putNextEntry("Document.xml");
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n";
-    writer.Stream() << R"(<Document SchemaVersion=")" << FC_DOC_SCHEMA_VER 
+    writer.Stream() << R"(<Document SchemaVersion=")" << getSaveSchemaVersion() 
                         << R"(" ProgramVersion=")"
                         << App::Application::Config()["BuildVersionMajor"] << "."
                         << App::Application::Config()["BuildVersionMinor"] << "R"
@@ -1372,7 +1387,7 @@ void Document::SaveDocFile(Base::Writer &writer) const {
     else {
         writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
                         << "<!-- FreeCAD DocumentObject -->\n"
-                        << "<Document SchemaVersion=\"" << FC_DOC_SCHEMA_VER
+                        << "<Document SchemaVersion=\"" << getSaveSchemaVersion()
                         << "\" FileVersion=\"" << writer.getFileVersion()
                         << "\">\n";
         writeObject(writer,obj);
@@ -2535,6 +2550,35 @@ App::Document *Document::getOwnerDocument() const {
 const char* Document::getProgramVersion() const
 {
     return d->programVersion.c_str();
+}
+
+const std::vector<long>& Document::getWritableSchemaVersions()
+{
+    // Only what the writer can actually produce. Older versions the reader
+    // still accepts are deliberately absent: offering to write a shape we
+    // cannot build would fail silently at the worst moment.
+    static const std::vector<long> versions {FC_DOC_SCHEMA_VER};
+    return versions;
+}
+
+long Document::getCurrentSchemaVersion()
+{
+    return getWritableSchemaVersions().back();
+}
+
+long Document::getSaveSchemaVersion() const
+{
+    const long requested = SaveSchemaVersion.getValue();
+    const auto &versions = getWritableSchemaVersions();
+    if (std::find(versions.begin(), versions.end(), requested) != versions.end()) {
+        return requested;
+    }
+
+    // Refuse quietly-wrong output: a version we cannot write must not be
+    // approximated by writing a different one and calling it that.
+    FC_WARN("Document " << getName() << ": cannot write schema version "
+            << requested << ", using " << getCurrentSchemaVersion());
+    return getCurrentSchemaVersion();
 }
 
 FileBlobManager& Document::getFileBlobManager() const

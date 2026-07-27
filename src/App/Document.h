@@ -131,6 +131,14 @@ public:
     PropertyBool SplitXML;
     /// Prefer binary format when saving
     PropertyBool PreferBinary;
+    /** Document schema version to write.
+     *
+     * Restoring understands every version this build knows; writing is only
+     * possible for the versions the writer can still produce, which is what
+     * getWritableSchemaVersions() lists. Lower it to keep a document readable
+     * by an older FreeCAD, at the cost of whatever the newer versions added.
+     */
+    PropertyIntegerConstraint SaveSchemaVersion;
     /// Specify user defined thumbnail
     PropertyFile ThumbnailFile;
     /// Indicate whether to auto update thumbnail on saving document
@@ -263,6 +271,18 @@ public:
      * the writer's file channel for them. See App::FileBlobManager.
      */
     FileBlobManager& getFileBlobManager() const;
+
+    /** Schema versions this build can write, ascending, newest last.
+     *
+     * Explicit rather than a range: a version is writable only where the
+     * writer can still produce that shape, which is not true of every version
+     * the reader accepts.
+     */
+    static const std::vector<long>& getWritableSchemaVersions();
+    /// Newest writable schema version.
+    static long getCurrentSchemaVersion();
+    /// Schema version this document will be written with.
+    long getSaveSchemaVersion() const;
     //@}
 
     void Save (Base::Writer &writer) const override;
