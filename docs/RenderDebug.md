@@ -395,6 +395,23 @@ shape of everything above, so its contract is stated here:
   pipeline stage whose buffer diverges, not just the final image.
 - **Sidecars are the test manifest.** A stored golden is its PNG + JSON; the
   harness re-stages from the JSON, so goldens survive default-value changes.
+- ⚠️ **Bless goldens from a restaged capture, not from a fresh one.** The
+  sidecar stores the camera as Coin ASCII, which keeps about 8 significant
+  digits, so a restaged camera is never bit-identical to the freshly staged one
+  it came from -- `orientation` and `nearDistance` differ in their last digit or
+  two. Most stages absorb that, but `ViewMode` 7 (the shadow-moment
+  filtering-precision probe) is threshold-banded and flips ~0.3% of its pixels
+  (max delta 147), which reads as a regression forever after. Restage-vs-restage
+  is byte-exact because both sides then share the same already-rounded camera,
+  and the rounding is idempotent after one pass. So: capture once, re-capture
+  with `--golden` pointing at that first set, and bless *the second* directory.
+- ⚠️ **Always pass the full `--modes` list.** The default is `0,1,2,3,4`; a
+  golden set holding 0-8 then compares only five stages and prints the rest as a
+  `modes only on one side` *note*, not a failure -- a silently partial pass.
+- ⚠️ **`--gpu` needs a real Wayland socket.** From a shell without
+  `/run/user/$(id -u)` (agent sessions), set
+  `XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir` or Qt finds no platform plugin and the
+  capture aborts.
 
 This closes the "no reliable way to verify rendering" gap: the SwiftShader
 blindspot is covered by the desktop leg being a *real-GPU readback* of the
