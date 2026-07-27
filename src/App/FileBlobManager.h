@@ -149,6 +149,15 @@ public:
      */
     void repath(const FileBlobHandle& blob, const std::string& path);
 
+    /** Re-anchor every stored path after the transient directory has moved.
+     *
+     * The directory is renamed with its contents, so the content is still
+     * there and still under its own hash -- only the recorded paths are stale.
+     * Restoring an unpacked project hits this: the blobs are copied in before
+     * Document.xml restores the Uid, which is what names the directory.
+     */
+    void relocate();
+
     /// Staging path in the transient dir, for content whose hash is not known
     /// yet because it has still to be streamed in.
     std::string uniquePath(const std::string& name) const;
@@ -167,8 +176,28 @@ public:
     /// Prefix of the archive entries holding stored content.
     static const char* archivePrefix();
 
-    /// Start collecting the blobs a save actually references.
-    void beginSave();
+    /// Where a save puts the content the document refers to.
+    enum class BlobFormat
+    {
+        /// Below schema 5: nothing, the properties carry their own copies.
+        None,
+        /// One archive entry per distinct content, named by hash.
+        Entries,
+        /// A base64 table inside Document.xml, ahead of the object data.
+        InlineXml,
+    };
+
+    /** Start collecting the blobs a save actually references.
+     *
+     * The writer decides the format here, once, before anything referring to
+     * the content has been written -- so every referrer serializes the same
+     * way whatever the answer is, and only this manager has to care.
+     */
+    void beginSave(Base::Writer& writer);
+    /// Format chosen for the save in progress.
+    BlobFormat blobFormat() const;
+    /// Whether this save writes a `<Blobs>` element, i.e. there is one to read.
+    bool hasInlineBlobs() const;
     /// Record that the document being written refers to this blob.
     void noteReferenced(const FileBlobHandle& blob);
     /** Write one entry per collected blob.
@@ -177,6 +206,16 @@ public:
      * registers a file of its own, i.e. straight after Document.xml.
      */
     void writeBlobs(Base::Writer& writer);
+
+    /** Write the collected content as a base64 table inside Document.xml.
+     *
+     * Must run at the head of the document element, ahead of everything that
+     * can refer to it. A no-op unless the format is InlineXml.
+     */
+    void writeInlineBlobs(Base::Writer& writer);
+
+    /// Read back a `<Blobs>` table, storing each entry under its own hash.
+    void restoreInlineBlobs(Base::XMLReader& reader);
 
     /// Claim this document's blob entries out of the archive being read.
     void beginRestore(Base::XMLReader& reader);
@@ -210,6 +249,9 @@ public:
 
 private:
     friend class FileBlob;
+    /// The collected save set in hash order, so a document always writes the
+    /// same file for the same content.
+    std::vector<FileBlobHandle> collected() const;
     /// Called from ~FileBlob: drop the map entry and unlink the file.
     void release(FileBlob* blob);
     /// Stream one archive entry into the store, keyed by what it contains.
@@ -222,6 +264,8 @@ private:
 
     Document* _doc {nullptr};
     mutable std::mutex _mutex;
+    /// Format the save in progress writes its content in, see beginSave().
+    BlobFormat _format {BlobFormat::None};
     /// Blobs this save references, keyed by hash.
     mutable std::unordered_map<std::string, FileBlobHandle> _saveSet;
     /// Properties waiting for content that is still to be read.

@@ -192,7 +192,7 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
                 // recovery cycle cheap: content already written is skipped,
                 // the same way shouldWrite() skips unchanged property files.
                 writer.setSchemaVersion(doc->getSaveSchemaVersion());
-                doc->getFileBlobManager().beginSave();
+                doc->getFileBlobManager().beginSave(writer);
                 doc->collectFileBlobs();
 
                 writer.putNextEntry("Document.xml");
@@ -222,7 +222,7 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
                     writer.setComment("AutoRecovery file");
                     writer.setLevel(1); // apparently the fastest compression
                     writer.setSchemaVersion(doc->getSaveSchemaVersion());
-                    doc->getFileBlobManager().beginSave();
+                    doc->getFileBlobManager().beginSave(writer);
                     doc->collectFileBlobs();
 
                     writer.putNextEntry("Document.xml");

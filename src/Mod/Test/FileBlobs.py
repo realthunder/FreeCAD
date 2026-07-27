@@ -33,6 +33,7 @@ grouped by the concern they pin down:
 Run headless with:  FreeCADCmd -t FileBlobs
 """
 
+import base64
 import hashlib
 import os
 import shutil
@@ -98,6 +99,12 @@ class BlobTestCase(unittest.TestCase):
     def projectPath(self, name="project.FCStd"):
         return os.path.join(self.tmp, name)
 
+    def directoryPath(self, name="project_dir"):
+        """An unpacked project: a directory save, which is a different writer."""
+        path = os.path.join(self.tmp, name)
+        os.makedirs(path)
+        return path
+
     # -- assertions --------------------------------------------------------
 
     def assertContent(self, obj, expected):
@@ -120,6 +127,22 @@ class BlobTestCase(unittest.TestCase):
 
     def documentXml(self, project):
         return zipfile.ZipFile(project).read("Document.xml").decode("utf-8")
+
+    def directoryBlobs(self, project):
+        blobdir = os.path.join(project, BLOB_DIR)
+        if not os.path.isdir(blobdir):
+            return []
+        return sorted(os.listdir(blobdir))
+
+    def directoryXml(self, project):
+        """Every XML file of an unpacked project, joined -- SplitXML decides
+        which of them an object's properties ended up in."""
+        parts = []
+        for name in sorted(os.listdir(project)):
+            if name.endswith(".xml"):
+                with open(os.path.join(project, name), "rb") as handle:
+                    parts.append(handle.read().decode("utf-8", "replace"))
+        return "\n".join(parts)
 
     @staticmethod
     def sha1(content):
@@ -461,6 +484,219 @@ class BlobPersistenceCases(BlobTestCase):
         doc = self.newDocument()
         doc.SaveSchemaVersion = 99
         self.assertIn(doc.SaveSchemaVersion, (4, 5))
+
+
+# ---------------------------------------------------------------------------
+# the document's save options (docs §6.1)
+# ---------------------------------------------------------------------------
+
+
+class BlobSaveOptionCases(BlobTestCase):
+    """ForceXML, SplitXML and PreferBinary against the blob path.
+
+    ForceXML and SplitXML only take effect for a directory save, so most of
+    these save an unpacked project -- which is also the writer autosave
+    recovery uses.
+    """
+
+    def testDirectoryRoundTrip(self):
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"unpacked", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.directoryBlobs(project), [self.sha1(b"unpacked")])
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File1"), b"unpacked")
+
+    def testDirectorySharedContentIsOneFile(self):
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"shared", saveName="a.txt")
+        self.fileObject(doc, "File2", b"shared", saveName="b.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(len(self.directoryBlobs(project)), 1)
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File1"), b"shared")
+        self.assertContent(reopened.getObject("File2"), b"shared")
+        self.assertEqual(len(self.storedBlobs(reopened)), 1)
+
+    def testDirectoryResaveKeepsStoredContent(self):
+        """Content addressing makes an existing file proof of equality, so a
+        re-save skips it -- and must not lose it by skipping."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"unchanged", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        stored = os.path.join(project, BLOB_DIR, self.sha1(b"unchanged"))
+        stamp = os.stat(stored).st_mtime_ns
+        doc.save()
+        self.assertTrue(os.path.exists(stored))
+        self.assertEqual(os.stat(stored).st_mtime_ns, stamp, "unchanged blob rewritten")
+
+    def testSplitXmlRoundTrip(self):
+        """Object data in per-object XML files: those are written after the
+        blobs, so only the up-front collect pass can have caught them."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"split", saveName="a.txt")
+        doc.SplitXML = True
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertIn("File1.xml", os.listdir(project))
+        self.assertEqual(self.directoryBlobs(project), [self.sha1(b"split")])
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File1"), b"split")
+
+    def testNoSplitXmlRoundTrip(self):
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"joined", saveName="a.txt")
+        doc.SplitXML = False
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertNotIn("File1.xml", os.listdir(project))
+        self.assertEqual(self.directoryBlobs(project), [self.sha1(b"joined")])
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File1"), b"joined")
+
+    def testForceXmlInlinesContent(self):
+        """Above level 3 the document carries its content itself: the same
+        table, written as base64 inside Document.xml instead of as entries."""
+        doc = self.newDocument()
+        content = b"inlined"
+        self.fileObject(doc, "File1", content, saveName="a.txt")
+        doc.ForceXML = 4
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.directoryBlobs(project), [])
+        xml = self.directoryXml(project)
+        self.assertIn('<Blobs Count="1">', xml)
+        self.assertIn('<Blob hash="%s"' % self.sha1(content), xml)
+        self.assertIn(base64.b64encode(content).decode(), xml)
+        # The property form does not change with the option.
+        self.assertIn('<FileIncluded hash="%s"' % self.sha1(content), xml)
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File1"), content)
+
+    def testForceXmlBlobsPrecedeTheObjects(self):
+        """The table has to be ahead of everything that can refer to it."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"ordered", saveName="a.txt")
+        doc.SplitXML = False
+        doc.ForceXML = 4
+        project = self.directoryPath()
+        doc.saveAs(project)
+        with open(os.path.join(project, "Document.xml")) as handle:
+            xml = handle.read()
+        self.assertLess(xml.index("<Blobs "), xml.index("<Properties "))
+        self.assertLess(xml.index("</Blobs>"), xml.index("<Objects "))
+
+    def testForceXmlKeepsContentShared(self):
+        """Inlining is a different place for the table, not a reason to give
+        up sharing: one entry for two properties, in the file and after it."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"shared", saveName="a.txt")
+        self.fileObject(doc, "File2", b"shared", saveName="b.txt")
+        doc.ForceXML = 4
+        project = self.directoryPath()
+        doc.saveAs(project)
+        xml = self.directoryXml(project)
+        self.assertIn('<Blobs Count="1">', xml)
+        self.assertEqual(xml.count("<Blob hash="), 1)
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File1"), b"shared")
+        self.assertContent(reopened.getObject("File2"), b"shared")
+        self.assertEqual(len(self.storedBlobs(reopened)), 1)
+
+    def testForceXmlBinaryIntegrity(self):
+        """Every remainder of the base64 group, since the table is base64."""
+        for length in (1, 2, 3, 4, 5, 255):
+            content = bytes(bytearray((i % 251) for i in range(length)))
+            doc = self.newDocument("BlobDoc%d" % length)
+            self.fileObject(doc, "File1", content, saveName="a.bin")
+            doc.ForceXML = 4
+            project = self.directoryPath("inline_%d" % length)
+            doc.saveAs(project)
+            name = doc.Name
+            FreeCAD.closeDocument(name)
+            self.docs.remove(name)
+            reopened = self.openDocument(project)
+            name = reopened.Name
+            self.assertContent(reopened.getObject("File1"), content)
+            FreeCAD.closeDocument(name)
+            self.docs.remove(name)
+
+    def testForceXmlKeepsPropertyNames(self):
+        """Sharing content must not merge the names, inline form included: the
+        stored file is named by hash, so the name lives on the property and has
+        to survive the round trip."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"shared", saveName="alpha.txt")
+        self.fileObject(doc, "File2", b"shared", saveName="beta.txt")
+        doc.ForceXML = 4
+        project = self.directoryPath()
+        doc.saveAs(project)
+        xml = self.directoryXml(project)
+        self.assertIn('name="alpha.txt"', xml)
+        self.assertIn('name="beta.txt"', xml)
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        resaved = self.directoryPath("resaved_dir")
+        reopened.saveAs(resaved)
+        again = self.directoryXml(resaved)
+        self.assertIn('name="alpha.txt"', again)
+        self.assertIn('name="beta.txt"', again)
+
+    def testForceXmlBelowFourKeepsBlobEntries(self):
+        """Level 3 -- the default -- is not a request for inline content."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"entries", saveName="a.txt")
+        doc.ForceXML = 3
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.directoryBlobs(project), [self.sha1(b"entries")])
+        self.assertIn("<FileIncluded hash=", self.directoryXml(project))
+
+    def testForceXmlDoesNotReachTheArchive(self):
+        """ForceXML is a directory-save option; a packed project ignores it."""
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"packed", saveName="a.txt")
+        doc.ForceXML = 4
+        project = self.projectPath()
+        doc.saveAs(project)
+        self.assertEqual(self.blobEntries(project), ["%s/%s" % (BLOB_DIR, self.sha1(b"packed"))])
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File1"), b"packed")
+
+    def testPreferBinaryLeavesContentAlone(self):
+        """Stored content is opaque bytes: the option picks a format for
+        generated data, and there is nothing to pick for a file."""
+        doc = self.newDocument()
+        content = bytes(bytearray(range(256)))
+        self.fileObject(doc, "File1", content, saveName="a.bin")
+        doc.PreferBinary = True
+        project = self.projectPath()
+        doc.saveAs(project)
+        self.assertEqual(self.blobEntries(project), ["%s/%s" % (BLOB_DIR, self.sha1(content))])
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File1"), content)
+
+    def testPreferBinaryInDirectoryRoundTrip(self):
+        doc = self.newDocument()
+        self.fileObject(doc, "File1", b"binary mode", saveName="a.bin")
+        doc.PreferBinary = True
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.directoryBlobs(project), [self.sha1(b"binary mode")])
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File1"), b"binary mode")
 
 
 # ---------------------------------------------------------------------------

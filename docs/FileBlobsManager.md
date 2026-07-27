@@ -134,6 +134,10 @@ Directory mode (`FileWriter` / `FileReader`, used by autosave recovery and by
 `Document.xml`-in-a-folder projects) is the same layout as plain files under
 `blobs/`, where ordering has no meaning at all.
 
+This is one of two places the table can go; §6.1 covers the other, a base64
+`<Blobs>` element inside `Document.xml` for a save that was asked for pure XML.
+The table is the same either way, and so is everything that refers to it.
+
 ## 6. Save protocol
 
 Three call sites drive a document-level save, and all three get the same
@@ -172,6 +176,74 @@ In directory mode the manager skips a blob whose target file already exists —
 content addressing makes existence proof of equality. That is what makes
 autosave cheap: today every autosave tick rewrites every embedded file, mirroring
 what `RecoveryWriter::shouldWrite` already does for ordinary property files.
+
+## 6.1 The document's save options
+
+`ForceXML`, `SplitXML` and `PreferBinary` are document properties that steer the
+writer. Only `PreferBinary` reaches a packed project; the other two are applied
+by `Document::save` on the directory path alone, which is what their property
+descriptions have always said.
+
+| Option | Effect on the blob path |
+| --- | --- |
+| `ForceXML` > 3 | The table moves *into* `Document.xml` as base64, ahead of the object data. No archive entries. |
+| `ForceXML` <= 3 | The table is archive entries, as in §5. Level 3 is the default. |
+| `SplitXML` | Nothing. Per-object XML files are written *after* the blobs, and the up-front collect pass is what covers them. |
+| `PreferBinary` | Nothing. Stored content is opaque bytes; the option chooses a format for generated data, and a file has no format to choose. |
+
+**Only the place changes, never the sharing.** A demand for pure XML is a
+demand about *where* content is written, not a reason to give up one copy per
+distinct content. So the manager writes the same table in a different place:
+
+```xml
+<Document SchemaVersion="5" ... StringHasher="1" Blobs="1">
+  <Blobs Count="2">
+    <Blob hash="<sha1>" size="4096">…base64…</Blob>
+    <Blob hash="<sha1>" size="8192">…base64…</Blob>
+  </Blobs>
+  <StringHasher .../>
+  <Properties …>   <!-- everything that can refer to a hash comes after -->
+```
+
+The element sits at the head of the document element, ahead of the document's
+own properties, the objects, and the view tier in `GuiDocument.xml` — so §4's
+ordering question never arises here either. Its presence is announced by a
+`Blobs` attribute on `<Document>`, the same way `StringHasher` is, because the
+reader has to know whether to read past it. Restore stores each blob under the
+hash of what actually arrived and holds it, and the referrers that follow
+resolve immediately through the ordinary pending/dispatch path (§7).
+
+**Referrers do not care.** `PropertyFileIncluded::Save` writes a hash whenever
+the schema is 5 or later and never asks how the content travels. That is what
+lets a `View3D` property work unchanged: it serializes through a `StringWriter`
+that sets `ForceXML` to 4 itself (§8), and its content is in the enclosing
+save's table either way. `beginSave(writer)` picks the format once —
+`None` below schema 5, `InlineXml` above `ForceXML` 3, `Entries` otherwise —
+and `writeBlobs()` / `writeInlineBlobs()` each do nothing unless it is theirs.
+
+Two things had to be repaired before the inline form worked at all, both older
+than this store and both reachable from anything else that writes one:
+
+- `Base::base64_encoder::write()` reported only the bytes it had encoded, not
+  the ones it had taken, so boost re-sent the tail it was holding and the filter
+  encoded it twice. Content whose length was not a multiple of three came out
+  corrupt — one byte too many at `% 3 == 1`, badly mangled at `% 3 == 2`. It now
+  reports everything it consumed. `tests/src/Base/Base64Filter.cpp` checks the
+  filter against `base64_encode` for every length up to 200.
+- `Base::FileWriter::putNextEntry()` opened the new entry's stream without
+  closing the previous one, which silently fails and leaves everything written
+  to it going nowhere. `writeFiles()` closed between entries itself, so nothing
+  hit this until the manager wrote two entries in a row: every directory save —
+  and every uncompressed autosave recovery — dropped its blob content and
+  reloaded with empty properties. It now closes first.
+
+**Directory mode** has one more wrinkle of its own. An unpacked project is read
+before `Document.xml` restores the `Uid`, and the `Uid` is what names the
+transient directory — so the store is filled under one directory and the
+document then renames it. The content moves with the directory and keeps its
+hash; only the recorded paths go stale, which `relocate()` repairs from the
+rename in `Document::onChanged`. The packed path never sees this: there the
+entries are read during `readFiles()`, long after the `Uid` has settled.
 
 ## 7. Restore protocol
 
@@ -283,15 +355,16 @@ restored property compared unequal to itself.
 
 `src/Mod/Test/FileBlobs.py` (headless, `FreeCADCmd -t FileBlobs`) covers
 storage/dedup, refcount lifetime, undo/redo, persistence round-trips including
-the §4 ordering regression, archive shape, schema-4 fallback, `saveAs`, and the
-export/import path via `copyObject`. `scripts/file-blob-verify.sh` adds the GUI
+the §4 ordering regression, archive shape, schema-4 fallback, `saveAs`, the
+save options of §6.1 over both writers, and the export/import path via
+`copyObject`. `scripts/file-blob-verify.sh` adds the GUI
 legs that need a `View3DInventor`: the embedded environment image round-trip and
 the assertion that it saves as a hash rather than base64. See those files for
 the case-by-case matrix.
 
 ## 12. Future work
 
-Agreed order: the save options first, then the browser-tier fetch. The rest is
+The save options are done (§6.1). Next is the browser-tier fetch. The rest is
 staged -- worth doing, not scheduled.
 
 - **Any file save through the manager, not just included files.** The store is
@@ -304,13 +377,12 @@ staged -- worth doing, not scheduled.
   can serve referrers that each call it something different. The thing to settle
   first is identity for generated content: a shape's bytes are what would be
   hashed, so the writer's mode becomes part of the address (`BinaryBrep` and
-  ASCII hash differently) -- which is why the save options below come first.
+  ASCII hash differently). §6.1 settles what the existing options mean on this
+  path, which is the groundwork for that.
 - **Cross-document dedup tier.** An application-level, content-addressed,
   append-only cache in its own directory (never inside a document's transient
   dir, which is wiped on close), referenced by copy where linking is
   unavailable. Best-effort by construction.
-- **Remaining save options on the blob path**: `ForceXML` level, `PreferBinary`,
-  `SplitXML`.
 - **Lazy blob fetch in the browser tier.** Content addressing means the viewer
   can request `blobs/<hash>` on demand instead of receiving every embedded file
   up front.

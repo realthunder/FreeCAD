@@ -763,8 +763,19 @@ void Document::onChanged(const Property* prop)
             if (TransDirOld.exists()) {
                 if (!TransDirOld.renameFile(new_dir.c_str()))
                     Base::Console().Warning("Failed to rename '%s' to '%s'\n", old_dir.c_str(), new_dir.c_str());
-                else
+                else {
                     this->TransientDir.setValue(new_dir);
+                    // The stored files moved with the directory, so only their
+                    // recorded paths are stale. Restoring an unpacked project
+                    // arrives here with content already read: the blobs are
+                    // copied in before Document.xml restores the Uid, and the
+                    // Uid is what names the directory. Only an existing store
+                    // needs this: creating one here, while the document is
+                    // still being constructed, is what the manager's lazy
+                    // construction avoids.
+                    if (d->fileBlobs)
+                        d->fileBlobs->relocate();
+                }
             }
             else {
                 if (!TransDirNew.createDirectories())
@@ -1034,11 +1045,21 @@ void Document::Save (Base::Writer &writer) const
                     << App::Application::Config()["BuildVersionMajor"] << "."
                     << App::Application::Config()["BuildVersionMinor"] << "R"
                     << App::Application::Config()["BuildRevision"]
-                    << "\" FileVersion=\"" << writer.getFileVersion() 
+                    << "\" FileVersion=\"" << writer.getFileVersion()
                     << "\" Uid=\"" << Uid.getValueStr()
-                    << "\" StringHasher=\"1\">\n";
-    
+                    << "\" StringHasher=\"1\"";
+    // Announced the same way the string hasher is, because the reader has to
+    // know whether the element is there before it can read past it.
+    if (getFileBlobManager().hasInlineBlobs())
+        writer.Stream() << " Blobs=\"1\"";
+    writer.Stream() << ">\n";
+
     writer.incInd();
+
+    // The included files, ahead of everything that can refer to them -- the
+    // document's own properties included. Writes nothing unless this save was
+    // asked for pure XML; otherwise they are archive entries of their own.
+    getFileBlobManager().writeInlineBlobs(writer);
 
     // NOTE: DO NOT save the main string hasher as separate file, because it is
     // required by many objects, which assume the string hasher is fully
@@ -1090,7 +1111,20 @@ void Document::Restore(Base::XMLReader &reader)
     if (reader.hasAttribute("Uid"))
         Uid.setValue(reader.getAttribute("Uid"));
 
-    if (reader.hasAttribute("StringHasher")) {
+    // Both flags belong to the document element, and reading an element of
+    // its own below replaces the attributes -- so take them while they are
+    // still there.
+    const bool hasInlineBlobs = reader.hasAttribute("Blobs");
+    const bool hasStringHasher = reader.hasAttribute("StringHasher");
+
+    // Content carried inside the XML comes first, so everything parsed from
+    // here on finds what it refers to already in the store. The Uid is set
+    // above, which means the transient directory it names is already the
+    // final one.
+    if (hasInlineBlobs)
+        getFileBlobManager().restoreInlineBlobs(reader);
+
+    if (hasStringHasher) {
         Base::ReaderContext rctx("StringHasher");
         d->Hasher->Restore(reader);
     } else {
@@ -1248,7 +1282,7 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
     writer.setSchemaVersion(getSaveSchemaVersion());
     // Only the exported objects' files: a clipboard buffer has no business
     // carrying content belonging to the rest of the document.
-    getFileBlobManager().beginSave();
+    getFileBlobManager().beginSave(writer);
     collectFileBlobs(obj);
 
     writer.putNextEntry("Document.xml");
@@ -2279,7 +2313,7 @@ void Document::save(Base::Writer &writer, bool archive) const {
     writer.setSchemaVersion(getSaveSchemaVersion());
     // Collect before anything is written: the included files go into the
     // archive ahead of the objects and views that refer to them.
-    getFileBlobManager().beginSave();
+    getFileBlobManager().beginSave(writer);
     collectFileBlobs();
 
     writer.putNextEntry("Document.xml");

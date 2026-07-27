@@ -320,6 +320,10 @@ void PropertyFileIncluded::Save (Base::Writer &writer) const
     // this property stores only the hash, so referrers sharing content share
     // the entry. Writers that produce a self-contained stream of their own
     // leave the schema unset and keep the per-property entry below.
+    //
+    // Where the manager puts that content -- its own archive entries, or a
+    // base64 table inside Document.xml when the writer is asked for pure XML
+    // -- is the manager's business and does not change what is written here.
     if (writer.getSchemaVersion() >= 5) {
         if (_blob) {
             // The save-time collect pass has noted this blob already. Note it

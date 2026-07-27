@@ -118,6 +118,19 @@ void FileBlobManager::repath(const FileBlobHandle& blob, const std::string& path
     blob->_path = path;
 }
 
+void FileBlobManager::relocate()
+{
+    for (const auto& blob : blobs()) {
+        if (Base::FileInfo(blob->path()).exists()) {
+            continue;
+        }
+        Base::FileInfo moved(blobPath(blob->hash()));
+        if (moved.exists()) {
+            repath(blob, moved.filePath());
+        }
+    }
+}
+
 namespace
 {
 /// Base::FileInfo::size() is not implemented on this platform, so use Qt.
@@ -146,7 +159,7 @@ const char* FileBlobManager::archivePrefix()
     return "blobs/";
 }
 
-void FileBlobManager::beginSave()
+void FileBlobManager::beginSave(Base::Writer& writer)
 {
     // Declared before the lock, so it dies after the lock is released.
     // Dropping the last reference to a blob runs ~FileBlob, which calls
@@ -156,6 +169,32 @@ void FileBlobManager::beginSave()
     std::unordered_map<std::string, FileBlobHandle> expiring;
     std::lock_guard<std::mutex> guard(_mutex);
     expiring.swap(_saveSet);
+    // Decided once, before a single referrer has been written. Below schema 5
+    // the properties still carry their own copies; above ForceXML level 3 the
+    // caller wants a document that carries its content inside the XML, which
+    // is a different place to put the same table, not a reason to give up
+    // sharing it.
+    if (writer.getSchemaVersion() < 5) {
+        _format = BlobFormat::None;
+    }
+    else if (writer.isForceXML() > 3) {
+        _format = BlobFormat::InlineXml;
+    }
+    else {
+        _format = BlobFormat::Entries;
+    }
+}
+
+FileBlobManager::BlobFormat FileBlobManager::blobFormat() const
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    return _format;
+}
+
+bool FileBlobManager::hasInlineBlobs() const
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    return _format == BlobFormat::InlineXml && !_saveSet.empty();
 }
 
 void FileBlobManager::noteReferenced(const FileBlobHandle& blob)
@@ -171,15 +210,8 @@ void FileBlobManager::noteReferenced(const FileBlobHandle& blob)
     slot = blob;
 }
 
-void FileBlobManager::writeBlobs(Base::Writer& writer)
+std::vector<FileBlobHandle> FileBlobManager::collected() const
 {
-    // Shared entries are a schema 5 shape. Written for an older version, the
-    // properties carry their own self-contained copies and these entries would
-    // be dead weight the reader never asks for.
-    if (writer.getSchemaVersion() < 5) {
-        return;
-    }
-
     std::vector<FileBlobHandle> pending;
     {
         std::lock_guard<std::mutex> guard(_mutex);
@@ -188,26 +220,30 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
             pending.push_back(entry.second);
         }
     }
-    // Hash order, so the same document always produces the same archive.
+    // Hash order, so the same document always produces the same file.
     std::sort(pending.begin(), pending.end(),
               [](const FileBlobHandle& a, const FileBlobHandle& b) {
                   return a->hash() < b->hash();
               });
+    return pending;
+}
+
+void FileBlobManager::writeBlobs(Base::Writer& writer)
+{
+    // Entries are one of the two places the content can go; writeInlineBlobs()
+    // has already written it if the answer was the other one. Below schema 5
+    // there is no table at all and the properties carry their own copies.
+    if (blobFormat() != BlobFormat::Entries) {
+        return;
+    }
+
+    std::vector<FileBlobHandle> pending = collected();
 
     // Saving under a new name gives the document a new transient directory,
-    // which leaves every stored path stale. The content is unchanged, so the
-    // blob is still at its content-addressed location under the new root.
-    // Repaired here rather than in the property, because the properties of the
-    // view tier are written after this point and would be repaired too late.
-    for (const auto& blob : pending) {
-        if (Base::FileInfo(blob->path()).exists()) {
-            continue;
-        }
-        Base::FileInfo moved(blobPath(blob->hash()));
-        if (moved.exists()) {
-            repath(blob, moved.filePath());
-        }
-    }
+    // which leaves every stored path stale. Repaired here rather than in the
+    // property, because the properties of the view tier are written after this
+    // point and would be repaired too late.
+    relocate();
 
     // A directory writer needs the subdirectory to exist before an entry can
     // be opened inside it; it also lets an unchanged blob be skipped outright,
@@ -235,6 +271,66 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
         writer.putNextEntry((std::string(archivePrefix()) + blob->hash()).c_str());
         writer.Stream() << from.rdbuf();
     }
+}
+
+void FileBlobManager::writeInlineBlobs(Base::Writer& writer)
+{
+    if (blobFormat() != BlobFormat::InlineXml) {
+        return;
+    }
+
+    std::vector<FileBlobHandle> pending = collected();
+    if (pending.empty()) {
+        return;
+    }
+
+    // Same reason as in writeBlobs(): a save under a new name has moved the
+    // files, and the view tier is written after this point.
+    relocate();
+
+    writer.Stream() << writer.ind() << "<Blobs Count=\"" << pending.size() << "\">\n";
+    writer.incInd();
+    for (const auto& blob : pending) {
+        if (!Base::FileInfo(blob->path()).exists()) {
+            std::stringstream str;
+            str << "FileBlobManager::writeInlineBlobs(): file '" << blob->path()
+                << "' in transient directory doesn't exist.";
+            throw Base::FileSystemError(str.str());
+        }
+        writer.Stream() << writer.ind() << "<Blob hash=\"" << blob->hash() << "\" size=\""
+                        << blob->size() << "\">\n";
+        writer.insertBinFile(blob->path().c_str());
+        writer.Stream() << writer.ind() << "</Blob>\n";
+    }
+    writer.decInd();
+    writer.Stream() << writer.ind() << "</Blobs>\n";
+}
+
+void FileBlobManager::restoreInlineBlobs(Base::XMLReader& reader)
+{
+    reader.readElement("Blobs");
+    const int count = reader.getAttributeAsInteger("Count");
+    for (int i = 0; i < count; ++i) {
+        reader.readElement("Blob");
+        const std::string hash = reader.getAttribute("hash");
+        const std::string staging = uniquePath("blob.part");
+        reader.readBase64(staging.c_str());
+        reader.readEndElement("Blob");
+        try {
+            // Stored under the hash of what actually arrived, not the one the
+            // file claims: the properties looking it up were written from the
+            // same content, so agreeing with them is what matters.
+            FileBlobHandle blob = adoptFile(staging.c_str());
+            if (blob && blob->hash() != hash) {
+                FC_WARN("Included file " << hash << " does not match its content");
+            }
+            hold(blob);
+        }
+        catch (const Base::Exception& e) {
+            FC_ERR("Failed to read included file " << hash << ": " << e.what());
+        }
+    }
+    reader.readEndElement("Blobs");
 }
 
 void FileBlobManager::beginRestore(Base::XMLReader& reader)
