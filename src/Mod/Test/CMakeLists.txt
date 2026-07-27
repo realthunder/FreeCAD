@@ -4,6 +4,7 @@ SET(Test_SRCS
     Init.py
     BaseTests.py
     Document.py
+    FileBlobs.py
     Metadata.py
     StringHasher.py
     Menu.py

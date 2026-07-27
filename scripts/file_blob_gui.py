@@ -1,0 +1,179 @@
+"""View-tier included-file blob suite (docs/FileBlobsManager.md §8).
+
+In-FreeCAD driver run by file-blob-verify.sh (desktop leg) under xvfb;
+creates its own documents. Covers the parts the headless suite
+(src/Mod/Test/FileBlobs.py) cannot reach, i.e. everything that needs a
+View3DInventor or a view provider:
+
+- The embedded environment image (Render_PBREnvEmbed copying into
+  Render_PBREnvImageData) survives save/restore. This is the property
+  that forced base64 inlining before the manager owned the blobs: a
+  View3D is serialized into a string embedded in GuiDocument.xml and
+  replayed from memory after the archive is consumed.
+- It saves as a hash reference, not inline base64.
+- A view blob and an App-tier property holding the same image share one
+  archive entry -- the collect broadcast spans both tiers.
+- A dynamic PropertyFileIncluded on a view provider (the shape the
+  TaskRenderSettings texture properties take) round-trips too.
+- The restored document's blob store holds exactly the referenced
+  content: the restore hold is cleared, but only for what nobody claimed.
+
+Env: US_OUT (output dir, default this file's dir), US_RESULT (result
+file, default <US_OUT>/blob_gui.txt).
+"""
+import hashlib
+import os
+import tempfile
+import traceback
+import zipfile
+
+import FreeCAD
+import FreeCADGui
+from PySide.QtCore import QTimer
+from PySide.QtGui import QColor, QImage
+
+OUT = os.environ.get("US_OUT", os.path.dirname(os.path.abspath(__file__)))
+RESULT = os.environ.get("US_RESULT", os.path.join(OUT, "blob_gui.txt"))
+BLOB_DIR = "blobs"
+
+results = []
+
+
+def log(msg):
+    print(msg)
+    results.append(msg)
+
+
+def check(name, ok, detail=""):
+    log("ASSERT %s: %s%s" % (name, "PASS" if ok else "FAIL", (" " + detail) if detail else ""))
+    return ok
+
+
+def sha1(path):
+    with open(path, "rb") as handle:
+        return hashlib.sha1(handle.read()).hexdigest()
+
+
+def read_bytes(path):
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def blob_entries(project):
+    names = zipfile.ZipFile(project).namelist()
+    return [n for n in names if n.startswith(BLOB_DIR + "/")]
+
+
+def gui_xml(project):
+    return zipfile.ZipFile(project).read("GuiDocument.xml").decode("utf-8", "replace")
+
+
+def stored_blobs(doc):
+    blobdir = os.path.join(doc.TransientDir, BLOB_DIR)
+    return sorted(os.listdir(blobdir)) if os.path.isdir(blobdir) else []
+
+
+def make_image(path, color=(40, 120, 200)):
+    """A real (if tiny) PNG, so the renderer can load what we embed."""
+    image = QImage(8, 8, QImage.Format_RGB32)
+    image.fill(QColor(*color))
+    image.save(path, "PNG")
+    return path
+
+
+def active_view(doc):
+    return FreeCADGui.getDocument(doc.Name).ActiveView
+
+
+def run():
+    tmp = tempfile.mkdtemp(prefix="fc_blob_gui_")
+    try:
+        image = make_image(os.path.join(tmp, "env.png"))
+        image_hash = sha1(image)
+        image_bytes = read_bytes(image)
+        project = os.path.join(tmp, "viewblob.FCStd")
+
+        # --- Embed the environment image on the view.
+        doc = FreeCAD.newDocument("BlobGui")
+        view = active_view(doc)
+        view.Render_PBREnvImage = image
+        view.Render_PBREnvEmbed = True
+        embedded = view.Render_PBREnvImageData
+        check("embed-copies-image", bool(embedded) and os.path.exists(embedded), embedded)
+        check("embed-content", os.path.exists(embedded) and read_bytes(embedded) == image_bytes)
+        check(
+            "embed-stored-by-hash",
+            os.path.basename(embedded) == image_hash,
+            os.path.basename(embedded),
+        )
+
+        # --- An App-tier property holding the same image shares the blob.
+        obj = doc.addObject("App::DocumentObjectFileIncluded", "Texture")
+        obj.File = (image, "env.png")
+        check("view-and-object-share", obj.File == embedded, "%s vs %s" % (obj.File, embedded))
+
+        # --- A view provider property (the TaskRenderSettings shape).
+        box = doc.addObject("App::FeaturePython", "Shaded")
+        vp = box.ViewObject
+        vp.addProperty("App::PropertyFileIncluded", "Render_Texture", "Render")
+        second = make_image(os.path.join(tmp, "tex.png"), (200, 60, 60))
+        vp.Render_Texture = (second, "tex.png")
+        check("viewprovider-property", os.path.exists(vp.Render_Texture))
+
+        doc.recompute()
+        doc.saveAs(project)
+
+        # --- Archive shape: one entry per distinct content, hash reference.
+        entries = blob_entries(project)
+        check("one-entry-per-content", len(entries) == 2, str(entries))
+        check("env-entry-present", "%s/%s" % (BLOB_DIR, image_hash) in entries, str(entries))
+        xml = gui_xml(project)
+        check("view-saves-hash", image_hash in xml)
+        check(
+            "view-not-base64",
+            "PNG" not in xml and "iVBOR" not in xml,
+            "GuiDocument.xml still carries inline image data",
+        )
+
+        # --- Round-trip.
+        FreeCAD.closeDocument(doc.Name)
+        doc = FreeCAD.openDocument(project)
+        view = active_view(doc)
+        restored = view.Render_PBREnvImageData
+        check("restored-view-blob", bool(restored) and os.path.exists(restored), str(restored))
+        check(
+            "restored-view-content",
+            os.path.exists(restored) and read_bytes(restored) == image_bytes,
+        )
+        restored_obj = doc.getObject("Texture")
+        check(
+            "restored-object-content",
+            os.path.exists(restored_obj.File) and read_bytes(restored_obj.File) == image_bytes,
+        )
+        restored_vp = doc.getObject("Shaded").ViewObject
+        check("restored-viewprovider", os.path.exists(restored_vp.Render_Texture))
+        check("restored-sharing", restored_obj.File == restored, "view and object must share")
+        check("no-unclaimed-content", len(stored_blobs(doc)) == 2, str(stored_blobs(doc)))
+
+        # --- Turning the embed off drops the copy, and the shared blob
+        #     stays alive for the object that still refers to it.
+        view.Render_PBREnvEmbed = False
+        check("unembed-clears", not view.Render_PBREnvImageData)
+        check(
+            "unembed-keeps-shared",
+            os.path.exists(restored_obj.File),
+            "object referrer lost its content",
+        )
+        FreeCAD.closeDocument(doc.Name)
+
+        log("DONE")
+    except Exception:
+        traceback.print_exc()
+        log("EXCEPTION")
+    finally:
+        with open(RESULT, "w") as handle:
+            handle.write("\n".join(results) + "\n")
+        os._exit(0)
+
+
+QTimer.singleShot(1500, run)

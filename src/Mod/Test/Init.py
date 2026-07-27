@@ -28,6 +28,7 @@ FreeCAD.__unit_test__ += [
     "BaseTests",
     "UnitTests",
     "Document",
+    "FileBlobs",
     "Metadata",
     "StringHasher",
     "UnicodeTests",
