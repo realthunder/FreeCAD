@@ -250,6 +250,18 @@ struct SceneSnapshot {
     /// `DrawCall::materialIndex`. `finalize` stitches both into the
     /// feeds and is run once, after the last chunk.
     std::vector<DrawCallList> groups;
+    /// Which entries of `groups` hold draws that have arrived and not
+    /// yet been taken. Assembly happens by moving, so without this it
+    /// could only run once — and it has to run every time a chunk
+    /// lands, because a scene is drawn while it is still arriving
+    /// (docs/SceneStreaming.md §6). An empty group is a real answer (a
+    /// feed that went empty), which is why arrival is a flag rather
+    /// than a count.
+    std::vector<uint8_t> groupFilled;
+    /// The draws no object owns, kept apart from `scene` so that the
+    /// feed can be rebuilt from the model as often as needed instead of
+    /// being the thing that accumulates.
+    DrawCallList keyless;
     std::vector<Material> materials;
     std::function<void(SceneSnapshot &snap)> finalize;
     float autozoomScale = 1.0f;

@@ -626,6 +626,45 @@ TEST(SceneDump, deltaAgainstAnUnheldVersionIsRefused)
         << "a consumer holding nothing must be told to ask for a full root";
 }
 
+/// A scene has to be drawable while it is still arriving, so assembly
+/// runs again on every chunk that lands. Running it twice must
+/// therefore be running it once: the feeds take each group exactly
+/// once, and the scene is rebuilt from the model rather than
+/// accumulated onto whatever was there.
+TEST(SceneDump, assemblingTwiceIsAssemblingOnce)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    Render::SceneObjectModel model;
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(),
+                                          loaded));
+    ASSERT_TRUE(resolve(loaded, store));
+    ASSERT_TRUE(Render::applySceneObjects(loaded, model));
+
+    const size_t draws = loaded.scene.size();
+    const size_t overlayDraws = loaded.overlays.empty()
+        ? 0 : loaded.overlays[0].draws.size();
+    expectScene(loaded);
+
+    // Everything that already landed lands again: finalize and the
+    // merge both re-run, as they do when a later chunk arrives.
+    loaded.finalize(loaded);
+    ASSERT_TRUE(Render::applySceneObjects(loaded, model));
+    EXPECT_EQ(loaded.scene.size(), draws) << "the feed must not accumulate";
+    EXPECT_EQ(loaded.overlays.empty() ? 0 : loaded.overlays[0].draws.size(),
+              overlayDraws) << "a feed must not be emptied by a second pass";
+    EXPECT_EQ(model.version, 1u);
+    expectScene(loaded);
+}
+
 /// A server holds published bytes, not the scene behind them, so the
 /// only way it can answer a viewer that is behind is by rewriting the
 /// object list of a payload it already has. That rewrite has to produce

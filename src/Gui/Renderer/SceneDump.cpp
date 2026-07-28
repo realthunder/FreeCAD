@@ -1714,9 +1714,11 @@ void readGroup(Reader &r, SceneSnapshot &snap, const LoaderPtr &st,
 {
     size_t slot = snap.groups.size();
     snap.groups.emplace_back();
+    snap.groupFilled.push_back(0);
     st->targets.push_back(target);
     if (r.u8() == 0) {
         readGroupChunk(r, snap.groups[slot], snap, st);
+        snap.groupFilled[slot] = 1;
         return;
     }
     std::string key;
@@ -1738,8 +1740,11 @@ void readGroup(Reader &r, SceneSnapshot &snap, const LoaderPtr &st,
         bool ok = readChunk(data, size, [&](Reader &cr) {
             readGroupChunk(cr, draws, target, st);
         });
-        if (ok)
+        if (ok) {
             target.groups[slot] = std::move(draws);
+            if (slot < target.groupFilled.size())
+                target.groupFilled[slot] = 1;
+        }
         return ok;
     };
     snap.deferredChunks.push_back(std::move(c));
@@ -1764,15 +1769,21 @@ void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
         // that changed, and assembling the feed needs the ones it did
         // not carry too — which only a consumer holding a model across
         // publishes has (applySceneObjects).
-        s.scene.clear();
+        // A feed takes a group only once, and only when it has actually
+        // arrived: this runs again on every chunk that lands, and a
+        // group already handed over is an empty one, not an empty feed.
+        // Scene groups are left where they are for the model to take.
         for (size_t i = 0; i < st->targets.size() && i < s.groups.size(); ++i) {
             const GroupTarget &t = st->targets[i];
+            if (t.kind == GroupTarget::Scene
+                    || i >= s.groupFilled.size() || !s.groupFilled[i])
+                continue;
             DrawCallList &draws = s.groups[i];
             switch (t.kind) {
             case GroupTarget::Scene:
                 break;
             case GroupTarget::Keyless:
-                s.scene = std::move(draws);
+                s.keyless = std::move(draws);
                 break;
             case GroupTarget::Overlay:
                 if (t.index < s.overlays.size())
@@ -1786,6 +1797,7 @@ void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
                 s.highlight = std::move(draws);
                 break;
             }
+            s.groupFilled[i] = 0;
         }
 
         auto apply = [&s](DrawCallList &draws) {
@@ -2546,28 +2558,51 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
         // right — so the caller has to be given a full root.
         return false;
     }
-    if (!snap.baseVersion)
-        model.objects.clear();      // a complete list replaces the model
+    if (!snap.baseVersion) {
+        // A complete list replaces the model — by retiring what it does
+        // not name, not by emptying it. The difference matters once
+        // this runs more than once for the same publish: clearing would
+        // throw away the draws an earlier pass already took, and the
+        // chunks that carried them are long since consumed.
+        std::set<uint64_t> named;
+        for (const auto &up : snap.objectUpdates)
+            named.insert(up.entry.objectKey);
+        for (auto it = model.objects.begin(); it != model.objects.end();) {
+            if (named.count(it->first))
+                ++it;
+            else
+                it = model.objects.erase(it);
+        }
+    }
     for (uint64_t key : snap.objectsRemoved)
         model.objects.erase(key);
     for (auto &up : snap.objectUpdates) {
         auto &obj = model.objects[up.entry.objectKey];
         obj.entry = up.entry;
-        if (up.group < snap.groups.size())
+        // The entry is what the root said and is always current; the
+        // draws are what a chunk carried and may not have arrived yet.
+        // Taking them only once, and only when they did, is what lets
+        // this run again as the rest of the publish lands — an object
+        // still waiting keeps what it was last drawn as rather than
+        // being emptied (docs/SceneStreaming.md §6).
+        if (up.group < snap.groups.size() && up.group < snap.groupFilled.size()
+                && snap.groupFilled[up.group]) {
             obj.draws = std::move(snap.groups[up.group]);
+            snap.groupFilled[up.group] = 0;
+        }
     }
     model.version = snap.manifestVersion;
 
     // The feed, in objectKey order, then the draws the producer could
-    // not name — which finalize() left in `scene` because they belong
-    // to no object and are re-sent whole every publish.
+    // not name — which belong to no object and are re-sent whole every
+    // publish. Rebuilt from the model rather than accumulated, so that
+    // building it twice is building it once.
     DrawCallList scene;
     for (const auto &entry : model.objects) {
         const DrawCallList &draws = entry.second.draws;
         scene.insert(scene.end(), draws.begin(), draws.end());
     }
-    scene.insert(scene.end(), std::make_move_iterator(snap.scene.begin()),
-                 std::make_move_iterator(snap.scene.end()));
+    scene.insert(scene.end(), snap.keyless.begin(), snap.keyless.end());
     snap.scene = std::move(scene);
     return true;
 }
