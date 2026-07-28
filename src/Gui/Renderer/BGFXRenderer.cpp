@@ -7275,6 +7275,14 @@ public:
                     meshKeys[cacheId] = {key, uint32_t(chunk.size())};
                     server.publishBlob(key, std::move(chunk));
                 };
+                // The deduplicated material table (v31) is one blob:
+                // it is rebuilt and hashed every publish, but its bytes
+                // only leave the process when it actually changed.
+                snap.materialBlobs = [&server](const std::string &key,
+                                               std::vector<uint8_t> &&bytes) {
+                    if (!server.retainBlob(key))
+                        server.publishBlob(key, std::move(bytes));
+                };
                 std::vector<uint8_t> payload;
                 if (Render::saveSceneSnapshot(payload, snap))
                     server.publish(std::move(payload));

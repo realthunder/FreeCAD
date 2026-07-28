@@ -65,7 +65,14 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     ~347 of a draw's 463 bytes and repeats heavily — an assembly
 //     whose thousands of parts share a dozen appearances writes each
 //     of them thousands of times.
-const uint32_t kVersion = 29;
+// 30: the matrices the format itself documents as "valid when
+//     !identity" (draw model, material texture, autozoom) are written
+//     only when they are not, and only the clip planes a material
+//     actually uses are written instead of all MaxClipPlanes slots.
+// 31: the material table can be served out of band under its content
+//     key, like the mesh chunks — deduplication makes it the largest
+//     section, and it rarely changes from one publish to the next.
+const uint32_t kVersion = 31;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -183,6 +190,15 @@ static bool writeChunk(std::vector<uint8_t> &out,
 static bool readChunk(const void *data, size_t size,
                       const std::function<void(Reader &)> &fn);
 std::string sha1Hex(const uint8_t *data, size_t size);
+
+/// Fill a 4x4 with the identity: the matrices skipped by v30 are not
+/// default-initialized in Renderer.h, so a consumer that reads one
+/// despite its flag must still find something sane.
+void setIdentity(float m[16])
+{
+    std::memset(m, 0, 16 * sizeof(float));
+    m[0] = m[5] = m[10] = m[15] = 1.0f;
+}
 
 //////////////////////////////////////////////////////////////////////
 // Mesh payload
@@ -639,17 +655,22 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex,
     w.b(m.lightshadow);
     w.b(m.lightshadowext);   // v19
     texref(m.texture);
-    w.floats(m.texmatrix, 16);
+    // v30: the flag first, then the matrix only when it says there is
+    // one — Material documents texmatrix as valid only when
+    // !texidentity, and most materials are untextured.
     w.b(m.texidentity);
+    if (!m.texidentity)
+        w.floats(m.texmatrix, 16);
     texref(m.bumpmap);
     texref(m.emissivemap);
     texref(m.occlusionmap);
     texref(m.metallicroughnessmap);
     w.u32(uint32_t(m.autozoom.size()));
     for (const auto &az : m.autozoom) {
-        w.floats(az.matrix, 16);
+        w.b(az.identity);           // v30: matrix only when it is one
+        if (!az.identity)
+            w.floats(az.matrix, 16);
         w.f(az.scaleFactor);
-        w.b(az.identity);
         w.b(az.resetmatrix);
         w.b(az.billboard);  // v7
         w.b(az.datumFlip);  // v8
@@ -657,7 +678,10 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex,
     }
     w.u8(m.numclipplanes);
     w.b(m.clipconcave);
-    for (int i = 0; i < Material::MaxClipPlanes; ++i)
+    // v30: the planes in use, not all MaxClipPlanes slots.
+    int nclip = m.numclipplanes < Material::MaxClipPlanes
+        ? int(m.numclipplanes) : Material::MaxClipPlanes;
+    for (int i = 0; i < nclip; ++i)
         w.floats(m.clipplanes[i], 4);
     // v23: user "material"-stage shader, by shader-table index.
     auto sit = m.usershader ? shaders.find(m.usershader.get())
@@ -736,8 +760,17 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex,
             m.lightshadowext = r.b();
     }
     texref(m.texture);
-    r.floats(m.texmatrix, 16);
-    m.texidentity = r.b();
+    if (version >= 30) {
+        m.texidentity = r.b();
+        if (!m.texidentity)
+            r.floats(m.texmatrix, 16);
+        else
+            setIdentity(m.texmatrix);
+    }
+    else {
+        r.floats(m.texmatrix, 16);
+        m.texidentity = r.b();
+    }
     texref(m.bumpmap);
     texref(m.emissivemap);
     texref(m.occlusionmap);
@@ -749,9 +782,19 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex,
     }
     m.autozoom.resize(naz);
     for (auto &az : m.autozoom) {
-        r.floats(az.matrix, 16);
-        az.scaleFactor = r.f();
-        az.identity = r.b();
+        if (version >= 30) {
+            az.identity = r.b();
+            if (!az.identity)
+                r.floats(az.matrix, 16);
+            else
+                setIdentity(az.matrix);
+            az.scaleFactor = r.f();
+        }
+        else {
+            r.floats(az.matrix, 16);
+            az.scaleFactor = r.f();
+            az.identity = r.b();
+        }
         az.resetmatrix = r.b();
         az.billboard = version >= 7 ? r.b() : false;
         if (version >= 8) {
@@ -761,8 +804,17 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex,
     }
     m.numclipplanes = r.u8();
     m.clipconcave = r.b();
-    for (int i = 0; i < Material::MaxClipPlanes; ++i)
+    int nclip = Material::MaxClipPlanes;
+    if (version >= 30) {
+        nclip = m.numclipplanes < Material::MaxClipPlanes
+            ? int(m.numclipplanes) : Material::MaxClipPlanes;
+    }
+    for (int i = 0; i < nclip; ++i)
         r.floats(m.clipplanes[i], 4);
+    // The array is not default-initialized, so the slots the stream
+    // does not describe have to be cleared rather than left as noise.
+    for (int i = nclip; i < Material::MaxClipPlanes; ++i)
+        std::memset(m.clipplanes[i], 0, sizeof(m.clipplanes[i]));
     if (version >= 23) {
         int32_t si = r.i32();
         if (si >= 0 && size_t(si) < shaders.size())
@@ -857,8 +909,11 @@ void writeDraw(Writer &w, const DrawCall &d, const MeshIndex &meshIndex,
     w.i32(mit == matIndex.end() ? -1 : mit->second);
     auto it = d.mesh ? meshIndex.find(d.mesh.get()) : meshIndex.end();
     w.i32(it == meshIndex.end() ? -1 : it->second);
-    w.floats(d.model, 16);
+    // v30: as for the material matrices, the flag first and the matrix
+    // only when there is one.
     w.b(d.identity);
+    if (!d.identity)
+        w.floats(d.model, 16);
     w.u64(d.objectKey);
     w.b(d.wholeObject);
     w.i32(d.partIndex);
@@ -875,17 +930,26 @@ void readDraw(Reader &r, DrawCall &d, const MeshTable &meshes,
               const MaterialTable &materials, uint32_t version)
 {
     if (version >= 29) {
-        int32_t mati = r.i32();
-        if (mati >= 0 && size_t(mati) < materials.size())
-            d.material = materials[size_t(mati)];
+        d.materialIndex = r.i32();
+        if (d.materialIndex >= 0 && size_t(d.materialIndex) < materials.size())
+            d.material = materials[size_t(d.materialIndex)];
     }
     else
         readMaterial(r, d.material, textures, shaders, version);
     int32_t mi = r.i32();
     if (mi >= 0 && size_t(mi) < meshes.size())
         d.mesh = meshes[size_t(mi)];
-    r.floats(d.model, 16);
-    d.identity = r.b();
+    if (version >= 30) {
+        d.identity = r.b();
+        if (!d.identity)
+            r.floats(d.model, 16);
+        else
+            setIdentity(d.model);
+    }
+    else {
+        r.floats(d.model, 16);
+        d.identity = r.b();
+    }
     d.objectKey = r.u64();
     d.wholeObject = r.b();
     d.partIndex = r.i32();
@@ -1056,9 +1120,25 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         collect(snap.highlight);
         for (const auto &ov : snap.overlays)
             collect(ov.draws);
-        w.u32(uint32_t(table.size()));
-        for (const auto &bytes : table)
-            w.raw(bytes.data(), bytes.size());
+        std::vector<uint8_t> blob;
+        writeChunk(blob, [&table](Writer &cw) {
+            cw.u32(uint32_t(table.size()));
+            for (const auto &bytes : table)
+                cw.raw(bytes.data(), bytes.size());
+        });
+        if (snap.materialBlobs) {
+            // v31: the key alone; the publisher decides whether the
+            // bytes still have to be sent.
+            std::string key = sha1Hex(blob.data(), blob.size());
+            w.u8(1);
+            w.str(key);
+            w.u32(uint32_t(blob.size()));
+            snap.materialBlobs(key, std::move(blob));
+        }
+        else {
+            w.u8(0);
+            w.raw(blob.data(), blob.size());
+        }
     }
 
     writeDrawList(w, snap.scene, meshIndex, matIndex);
@@ -1254,13 +1334,55 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     }
 
     MaterialTable materials;
+    snap.deferredMaterials = SceneSnapshot::DeferredMaterials();
     if (version >= 29) {
-        uint32_t nmat = r.u32();
-        if (!r.ok || nmat > 0x1000000u)
-            r.ok = false;
-        for (uint32_t i = 0; r.ok && i < nmat; ++i) {
-            materials.emplace_back();
-            readMaterial(r, materials.back(), textures, shaders, version);
+        bool deferred = false;
+        if (version >= 31)
+            deferred = r.u8() != 0;
+        if (deferred) {
+            r.str(snap.deferredMaterials.key, 128);
+            snap.deferredMaterials.size = r.u32();
+            snap.deferredMaterials.fill =
+                [textures, shaders, version](SceneSnapshot &target,
+                                             const void *data, size_t size) {
+                MaterialTable table;
+                if (!readChunk(data, size, [&](Reader &cr) {
+                        uint32_t nmat = cr.u32();
+                        if (!cr.ok || nmat > 0x1000000u) {
+                            cr.ok = false;
+                            return;
+                        }
+                        for (uint32_t i = 0; cr.ok && i < nmat; ++i) {
+                            table.emplace_back();
+                            readMaterial(cr, table.back(), textures, shaders,
+                                         version);
+                        }
+                    }))
+                    return false;
+                auto apply = [&table](DrawCallList &draws) {
+                    for (auto &d : draws) {
+                        if (d.materialIndex >= 0
+                                && size_t(d.materialIndex) < table.size())
+                            d.material = table[size_t(d.materialIndex)];
+                    }
+                };
+                apply(target.scene);
+                apply(target.highlight);
+                for (auto &sel : target.selections)
+                    apply(sel.second);
+                for (auto &ov : target.overlays)
+                    apply(ov.draws);
+                return true;
+            };
+        }
+        else {
+            uint32_t nmat = r.u32();
+            if (!r.ok || nmat > 0x1000000u)
+                r.ok = false;
+            for (uint32_t i = 0; r.ok && i < nmat; ++i) {
+                materials.emplace_back();
+                readMaterial(r, materials.back(), textures, shaders, version);
+            }
         }
     }
 

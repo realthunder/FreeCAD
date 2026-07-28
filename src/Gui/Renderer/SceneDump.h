@@ -91,6 +91,28 @@ struct SceneSnapshot {
                                std::vector<uint8_t> &&pixels)> TextureBlobSink;
     TextureBlobSink textureBlobs;
 
+    /// Save-side hook for the material table (v31): when set, the
+    /// table is written as its content key and the bytes are handed
+    /// here. Deduplication already collapsed the materials of every
+    /// draw into it, and that result rarely changes between publishes
+    /// — so this is what stops a republish re-sending it. The whole
+    /// table is one blob rather than one per material: a material is a
+    /// couple of hundred bytes, which a 40-byte key plus a request
+    /// would barely improve on.
+    TextureBlobSink materialBlobs;
+    /// Load-side counterpart: set when the table arrived as a key
+    /// alone (`key` empty otherwise). `fill` parses the fetched bytes
+    /// and hands each draw its material, so it takes the snapshot at
+    /// call time — a staged snapshot gets moved before it is applied,
+    /// which a captured pointer would not survive.
+    struct DeferredMaterials {
+        std::string key;
+        uint32_t size = 0;
+        std::function<bool(SceneSnapshot &snap,
+                           const void *data, size_t size)> fill;
+    };
+    DeferredMaterials deferredMaterials;
+
     /// Save-side hook enabling out-of-band mesh payloads (v28) — the
     /// mesh counterpart of textureBlobs, with two differences that
     /// follow from meshes being many and small rather than few and

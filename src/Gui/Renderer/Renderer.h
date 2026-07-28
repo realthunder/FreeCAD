@@ -1002,6 +1002,11 @@ struct Material {
 /// One draw of (a part of) a mesh with a material and model transform.
 struct DrawCall {
     Material material;
+    /// Index of `material` in the snapshot's material table, or -1.
+    /// Load-side only (SceneDump v31): when the table itself is served
+    /// out of band, it is what lets the draws be built before their
+    /// materials have arrived. Never set by the live desktop feed.
+    int32_t materialIndex = -1;
     std::shared_ptr<const MeshData> mesh;
     float model[16];        ///< GL-style layout, valid when !identity
     bool identity = true;

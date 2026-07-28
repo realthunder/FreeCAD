@@ -2,8 +2,9 @@
 
 Status: phase 1 implemented, phase 2 onward is specification. The leaf tier is
 done — textures (snapshot v26, `c4337904f9`), the hatch image (v27, `ebddfc0fdd`)
-and mesh chunks with batched pull (v28) are all content-addressed and served out
-of band, which took the reference scene from 425 KB to 39 KB per publish. The
+mesh chunks with batched pull (v28), and the deduplicated material table
+(v29-v31) are all content-addressed and served out of band, which took the
+reference scene from 425 KB to 10.8 KB per publish. The
 manifest tree and delta sync (§4-§5) are not built yet.
 
 Companions: [RenderEngine.md](./RenderEngine.md) §2 (the snapshot format and the
@@ -386,6 +387,7 @@ to remove.
 | 1b | meshes → content keys, batched pull (**done**, v28) | ~35 KB |
 | 1c | camera out of the scene payload | **not needed, see below** |
 | 2a | material dedup (**done**, v29) | 27.7 KB |
+| 2a′ | trimmed records + table out of band (**done**, v30/v31) | 10.8 KB |
 | 2b | L0/L1/L2 manifests, delta sync | ~1 KB steady state |
 | 3 | mesh-complete submission + bbox proxies | model appears while it loads |
 | 4 | frustum-ordered fetch, distance eviction | large models usable |
@@ -461,11 +463,37 @@ hand-written comparison over ~60 fields would. Measured on the same scene,
 38 distinct materials back 71 draws: **38,601 B → 27,669 B**, scene draws
 8,176 → 2,128 B and overlay draws 24,702 → 6,390 B.
 
-The table is now the largest section (13,428 B, 48%) and is re-sent whole on
-every publish, which points at the two things left from §1: each material is
-still 353 B because `writeMaterial` always emits 96 B of clip planes and a 64 B
-texture matrix regardless of use, and the table itself wants to be content-keyed
-like the mesh chunks so an unchanged publish stops re-sending it. Phase 2 is where the
+That made the table the largest section, so the two things §1 named were done
+with it:
+
+**Trimming the records (v30).** The format documents three matrices as valid
+only when a companion flag says so — a draw's model matrix, a material's texture
+matrix, an autozoom entry's matrix — and wrote all of them unconditionally.
+Each is now preceded by its flag and written only when it means something, and a
+material writes the clip planes it uses instead of all `MaxClipPlanes` slots.
+The table fell from 13,428 B to **7,412 B** (353 → 195 B per material) and the
+draws shrank again. The skipped matrices are not default-initialized in
+`Renderer.h`, so the reader fills them with the identity rather than leaving a
+consumer that ignores the flag reading noise.
+
+**Serving the table out of band (v31).** Deduplication makes the table the same
+kind of object as a mesh chunk — large, shared, and unchanged between most
+publishes — so it is written as its content key and served like one. The whole
+table is a single blob rather than one per material: at ~195 B a material, a
+40-byte key plus a request would barely be an improvement. It is rebuilt and
+hashed every publish (that cost is unavoidable, the table has to be built to
+know it is unchanged), but its bytes only leave the process when the hash moves,
+because the publisher calls `retainBlob()` first.
+
+Because the table can now arrive after the draws that use it, a draw carries its
+table index (`DrawCall::materialIndex`, load side only) and the fill takes the
+snapshot **at call time** — a staged snapshot is moved before it is applied, and
+a captured pointer would not survive that.
+
+Together: **27,669 B → 10,834 B**. The reference scene is now 3,483 B of mesh
+keys, 3,126 B of overlay draws, 1,936 B of scene draws and 1,752 B of texture
+keys — no section is dominant, and what remains is the per-draw record itself,
+which is what §4's compact draw record and the manifest tree address. Phase 2 is where the
 complexity lands, and it is what the thin client needs — the phases before it
 shrink a small scene, but only the manifest tree makes a *big* model tractable.
 

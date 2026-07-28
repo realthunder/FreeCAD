@@ -2117,6 +2117,8 @@ static void pruneBlobCache()
     }
     for (const auto &mesh : s_snap.deferredMeshes)
         inUse.insert(mesh.key);
+    if (!s_snap.deferredMaterials.key.empty())
+        inUse.insert(s_snap.deferredMaterials.key);
     for (auto it = s_blobCache.begin(); it != s_blobCache.end();) {
         if (inUse.count(it->first))
             ++it;
@@ -2369,6 +2371,28 @@ static void resolvePending()
         }
         ++missing;
         requestBlob(tex->contentKey);
+    }
+    // The material table (v31): one blob, so one request of its own.
+    if (s_pendingSnap.deferredMaterials.fill) {
+        const std::string &key = s_pendingSnap.deferredMaterials.key;
+        ++total;
+        auto it = s_blobCache.find(key);
+        if (it != s_blobCache.end() && it->second) {
+            if (!s_pendingSnap.deferredMaterials.fill(
+                    s_pendingSnap, it->second->data(), it->second->size()))
+                std::printf("fcviewer: material table %s malformed\n",
+                            key.c_str());
+            s_pendingSnap.deferredMaterials.fill = nullptr;
+        }
+        else if (s_blobFailed.count(key)) {
+            // Every draw keeps its default material rather than the
+            // scene stalling on one blob.
+            s_pendingSnap.deferredMaterials.fill = nullptr;
+        }
+        else {
+            ++missing;
+            requestBlob(key);
+        }
     }
     // Mesh chunks (v28), pulled in batches. `fill` cleared marks an
     // entry done: the MeshData it names is the one the draws already
