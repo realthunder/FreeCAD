@@ -427,6 +427,11 @@ rebuilt by the same per-object path a delta uses, splicing its slot rather than
 re-serialising the feed. The index is needed for eviction regardless, so the
 ladder is not what pays for it.
 
+> **As built (phase 3), the index does not exist yet.** The assembly pass
+> rebuilds the whole feed from the model on every arrival, which is correct
+> and simple but O(scene) per chunk; the index is the optimization of that,
+> and it lands with the eviction that requires it. See §11 phase 3.
+
 Two consequences for the consumer, and they are the only behavioural changes:
 
 - **Commit early.** `commitResolved` must run on the first useful arrival with
@@ -561,7 +566,7 @@ to remove.
 | 2b-1 | draw groups → content-keyed chunks, leaves keyed (**done**, v33) | 1.4 KB |
 | 2b-2 | root delta-encoded, history + resync (**format + viewer done**, v34) | ~1 KB steady state |
 | 2b-3 | commit early, assemble per arrival (**done**) | the model draws while it arrives |
-| 3 | the box rung: per-mesh submission, `standIn` bit, coarse picking | model appears while it loads |
+| 3 | the box rung: per-mesh submission, `standIn` bit, coarse picking (**done**) | model appears while it loads |
 | 4 | frustum-ordered fetch, ladder-descending eviction | large models usable |
 | 5 | LOD rungs per mesh (§7) | large models *fast* |
 
@@ -814,6 +819,62 @@ that a viewer connecting or resyncing mid-chain can be brought up to date
 without the producer having to republish. Until that lands the publisher writes
 full roots only, which every consumer can apply, so the wire is correct and
 merely no smaller than 2b-1 left it.
+
+### 3 — the box rung, as built
+
+The ladder landed as §6 describes it, and it cost less than the section
+allows for, because three of the mechanisms it budgets for turned out to be
+consequences of what was already there rather than things to build:
+
+- **The per-mesh bounds were already on the wire.** A draw record carries
+  world-space `bboxMin`/`bboxMax`, so the middle rung needed no format change
+  at all — no snapshot version, no new chunk type. The rung is chosen where
+  the feed is assembled (`appendAtBestRung`, SceneDump.cpp).
+- **Refinement needed no trigger.** 2b-3 already re-runs the assembly pass on
+  every arrival and rebuilds the feed from the model, so a rung improves by
+  the same path a delta takes. The reverse index §6 names is therefore *not*
+  what makes the ladder work; it is a cost optimization (the rebuild is
+  O(scene) per arrival) and is what eviction will need, so it stays with
+  phase 4 where it is paid for.
+- **Picking followed the rung by itself.** Element lookup resolves through
+  the mesh's part tables, an empty table already means the whole object, and
+  a synthesized box has no part table. No branch on `standIn` was needed.
+
+Two rungs exist below the real mesh rather than one, and they are exactly the
+two manifest levels: the root alone gives one box per object in the default
+appearance, and the group manifest resolves it into one box per mesh in the
+object's own colours. The first is what makes a model appear at all on a cold
+load — without it a viewer holding the root still shows nothing until the
+first group manifests and material tables land.
+
+**One box per mesh, not per draw.** A mesh is named once per face part, and
+every one of those draws carries the bounds of the same geometry, so a box
+apiece is one silhouette drawn many times over. Only surfaces stand in: a box
+over an edge or vertex mesh adds a second, solid silhouette and reads as
+neither the wireframe nor the shape.
+
+**The dropped passes live in the material, not in the backend.** `standIn` is
+carried for picking and for a future "what is still loading" tint, but the
+three behaviours §6 asks for are expressed by what the synthesized material
+says — cast bit cleared, outline/hidden-line/capping cleared, depth and
+shadow *receipt* kept. The caster predicate alone appears at eight sites in
+the bgfx backend, and a rule stated once where the box is built cannot be
+forgotten at one of them.
+
+A pleasant accident: every stand-in shares one mesh id, so the backend's
+existing instancing path collapses the whole coarse scene into few draws.
+
+Measured on `scripts/demo-varied.py` at 200 objects (7 MB of geometry) with
+the page throttled, `?stream` reporting each pass: the model appears at once
+as 200 boxes, correctly framed, then climbs monotonically to 600 draws with
+none coarse. It never shows less than it knows.
+
+**Not done, and deliberately.** The §6 timing parameters
+(`Render_CoarseGeometry`, `Render_CoarseGrace`, `Render_CoarseFade`) are not
+implemented: a grace period and a cross-fade are worth tuning against a real
+model over a real link, and on loopback every rung is invisible anyway. The
+AO coupling §6 flags — stand-ins in the depth prepass darkening their own
+edges — has not been judged against a real model either.
 
 ## 12. Open questions
 
