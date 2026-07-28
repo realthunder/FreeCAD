@@ -411,7 +411,7 @@ to remove.
 | 2a | material dedup (**done**, v29) | 27.7 KB |
 | 2a′ | trimmed records + table out of band (**done**, v30/v31) | 10.8 KB |
 | 2b-1 | draw groups → content-keyed chunks, leaves keyed (**done**, v33) | 1.4 KB |
-| 2b-2 | root delta-encoded, history + resync | ~1 KB steady state |
+| 2b-2 | root delta-encoded, history + resync (**format + viewer done**, v34) | ~1 KB steady state |
 | 2b-3 | progressive fidelity off the manifest boxes | frames before geometry |
 | 3 | mesh-complete submission + bbox proxies | model appears while it loads |
 | 4 | frustum-ordered fetch, distance eviction | large models usable |
@@ -632,6 +632,40 @@ split is deliberate: 2b-1 is a serializer change with a mechanical viewer
 counterpart, while 2b-2 adds server-side history and a resync path, which is
 where the protocol can actually go wrong. Landing them together would make a
 sync bug indistinguishable from a chunking bug.
+
+### 2b-2 — the delta, so far
+
+The format and the consumer are done; the publisher does not yet send a delta.
+
+**Snapshot v34** gives the manifest root a `manifestVersion` and the
+`baseVersion` its object list is encoded against. With `baseVersion` 0 the list
+is complete; otherwise it carries the objects that changed and the keys of the
+ones that went away, and nothing else. An object counts as changed exactly when
+its group manifest key changed — the key covers the whole group, bounding box
+included, so there is nothing else that could have moved. Both lists are sorted
+by `objectKey`, which makes the diff one linear pass.
+
+**Objects are now ordered by identity, not by first appearance.** A delta names
+only what moved, so the consumer reassembles the feed from what it already
+holds, and the order has to be one both sides reach without being told it —
+and the same whether a scene arrived as one root or as a root and a chain of
+deltas. This changes the draw order the backend sees; the backend sorts draws
+for rendering anyway, and the reference scene renders identically.
+
+**The consumer holds a `SceneObjectModel` across publishes**, because a snapshot
+is one publish and a delta describes only part of one. `applySceneObjects()`
+merges a publish into it and rebuilds the scene feed; it refuses a delta against
+a version the model does not hold, since the objects such a delta says nothing
+about are exactly the ones it assumes are already right. The viewer then asks
+for a full root rather than applying anything.
+
+What is left is the publishing half: the producer deciding full versus delta and
+keeping the previous object list to diff against, and the server keeping the
+bounded history §5 describes — the last full root plus the deltas since it — so
+that a viewer connecting or resyncing mid-chain can be brought up to date
+without the producer having to republish. Until that lands the publisher writes
+full roots only, which every consumer can apply, so the wire is correct and
+merely no smaller than 2b-1 left it.
 
 ## 12. Open questions
 

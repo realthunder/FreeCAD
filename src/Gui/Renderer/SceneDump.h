@@ -30,6 +30,7 @@
 /// built from the same serializer version.
 
 #include <functional>
+#include <map>
 
 #include "Renderer.h"
 
@@ -173,6 +174,46 @@ struct SceneSnapshot {
     };
     std::vector<DeferredChunk> deferredChunks;
 
+    //////////////////////////////////////////////////////////////////
+    // Delta publishing (v34, docs/SceneStreaming.md §5)
+
+    /// One object as the root manifest names it: its identity, the box
+    /// that lets a consumer act on it before its geometry arrives, and
+    /// the key of the manifest describing it.
+    struct ObjectEntry {
+        uint64_t objectKey = 0;
+        float bbox[6] = {0, 0, 0, 0, 0, 0};
+        std::string key;    ///< the group manifest's content key
+        uint32_t size = 0;
+    };
+
+    /// Which publish this one is, and which it is encoded against.
+    /// `baseVersion` 0 means the object list is complete; otherwise it
+    /// carries only what changed since that version, and a consumer
+    /// holding anything else has to be given a full root instead.
+    uint64_t manifestVersion = 0;
+    uint64_t baseVersion = 0;
+
+    /// Save side. `baseObjects` is the object list of `baseVersion` —
+    /// set it, with a non-zero baseVersion, to publish a delta. The
+    /// writer records this publish's list in `objectEntries` for the
+    /// next one to be encoded against, which is why the publisher keeps
+    /// it rather than the serializer: only the publisher knows which
+    /// versions a consumer might still hold.
+    std::vector<ObjectEntry> baseObjects;
+    std::vector<ObjectEntry> *objectEntries = nullptr;
+
+    /// Load side: what this publish says about the object list — the
+    /// entries it carries (all of them for a full root, the changed
+    /// ones for a delta) and, for a delta, the objects it retires.
+    /// `group` indexes `groups` for the draws.
+    struct ObjectUpdate {
+        ObjectEntry entry;
+        size_t group = 0;
+    };
+    std::vector<ObjectUpdate> objectUpdates;
+    std::vector<uint64_t> objectsRemoved;
+
     /// Load-side staging for the manifest layout. The draws of each
     /// group land in `groups` at the index the root named them at —
     /// not appended as they arrive — so the feed order a backend sees
@@ -211,6 +252,33 @@ struct SceneSnapshot {
     /// Clear/background color at capture, packed 0xRRGGBBAA.
     uint32_t clearColor = 0x333333ff;
 };
+
+/// A consumer's view of the objects across publishes. A delta names
+/// only what changed, so somebody has to remember the rest — and it
+/// cannot be the snapshot, which is one publish. Keyed by objectKey and
+/// therefore in a fixed order, so the draw order a backend sees is the
+/// same however the objects arrived: as one full root, or as a full
+/// root and a chain of deltas.
+struct SceneObjectModel {
+    struct Object {
+        SceneSnapshot::ObjectEntry entry;
+        DrawCallList draws;
+    };
+    std::map<uint64_t, Object> objects;
+    /// The version the model holds, i.e. what a delta must be based on.
+    uint64_t version = 0;
+};
+
+/// Merge a loaded publish into \a model and rebuild `snap.scene` from
+/// the result. Returns false when the publish is a delta against a
+/// version the model does not hold — the caller has to ask for a full
+/// root, and must not apply the snapshot.
+///
+/// Call after every deferred payload has been filled and finalize()
+/// has run: the draws being merged in are the ones those payloads
+/// produced.
+RendererExport bool applySceneObjects(SceneSnapshot &snap,
+                                      SceneObjectModel &model);
 
 RendererExport bool saveSceneSnapshot(const char *path,
                                       const SceneSnapshot &snap);

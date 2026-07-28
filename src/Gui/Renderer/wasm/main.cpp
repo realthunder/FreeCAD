@@ -34,6 +34,11 @@
 
 static std::unique_ptr<Render::Renderer> s_renderer;
 static Render::SceneSnapshot s_snap;
+/// The objects this viewer holds, carried across publishes: a delta
+/// names only what changed, and the rest of the scene has to come from
+/// somewhere (SceneDump.h). Reset whenever the stream restarts, so a
+/// reconnect cannot apply a delta onto a model from a previous run.
+static Render::SceneObjectModel s_objects;
 static bool s_haveScene = false;
 static std::set<int> s_selIds;
 static std::set<int> s_overlayIds;
@@ -2141,6 +2146,7 @@ static bool s_blobStoreReset = false;
 static bool s_commitScheduled = false;
 
 static void commitResolved();
+static void requestFullScene();
 
 static void resetBlobStore()
 {
@@ -2431,8 +2437,20 @@ static void commitResolved()
     // The manifest layout stages a group's draws in a fixed slot and
     // its materials in a table; this is the pass that puts both where
     // the backend expects them (SceneDump.h).
-    if (snap.finalize)
+    if (snap.finalize) {
         snap.finalize(snap);
+        // Then the objects, which the snapshot alone cannot assemble:
+        // a delta names only what changed, so the feed is built from
+        // the model this viewer carries between publishes.
+        if (!Render::applySceneObjects(snap, s_objects)) {
+            std::printf("fcviewer: publish is a delta against v%llu, "
+                        "holding v%llu — asking for a full scene\n",
+                        (unsigned long long)snap.baseVersion,
+                        (unsigned long long)s_objects.version);
+            requestFullScene();
+            return;
+        }
+    }
     commitSnapshot(std::move(snap), version);
     pruneBlobCache();
 }
@@ -2933,6 +2951,33 @@ static void fetchBuildStamp()
         emscripten_fetch_close(fetch);
     };
     emscripten_fetch(&attr, "fcviewer.stamp");
+}
+
+/// Ask the backend for a scene this viewer can apply from nothing.
+/// Dropping the model first is what makes the answer usable — a full
+/// root replaces it wholesale — and asking from version 0 is what says
+/// "send it whether or not you think I am current".
+///
+/// The backend publishes only full roots today, so this is the path a
+/// viewer takes after a reconnect rather than a routine one. Serving a
+/// full root on demand once deltas go on the wire is the server-side
+/// half of the phase (docs/SceneStreaming.md §5).
+static void requestFullScene()
+{
+    s_objects = Render::SceneObjectModel();
+    s_pendingValid = false;
+    s_pendingSnap = Render::SceneSnapshot();
+    s_sceneVersion = 0;
+    s_haveScene = false;
+    emscripten_fetch_attr_t attr;
+    emscripten_fetch_attr_init(&attr);
+    std::strcpy(attr.requestMethod, "GET");
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+    attr.onsuccess = onInitFetchDone;
+    attr.onerror = onInitFetchError;
+    char url[512];
+    std::snprintf(url, sizeof(url), "%s/scene?v=0", s_sceneUrl.c_str());
+    emscripten_fetch(&attr, url);
 }
 
 static void startInitialFetch()

@@ -85,7 +85,12 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     and materials and shaders become individually keyed leaves. An
 //     unchanged object then costs its root entry and nothing else,
 //     where before every publish re-sent every draw.
-const uint32_t kVersion = 33;
+// 34: the manifest root carries its version and the version it is
+//     encoded against, and its object list can be a delta — the
+//     objects that changed and the ones that went away, against a
+//     list the consumer already holds. Naming every object cost 79 B
+//     each on every publish, which is what a big model actually pays.
+const uint32_t kVersion = 34;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -1155,7 +1160,7 @@ typedef std::vector<const DrawCall *> DrawRefs;
 
 /// Where a group's draws belong once every chunk is in.
 struct GroupTarget {
-    enum Kind { Scene, Overlay, Selection, Highlight };
+    enum Kind { Scene, Keyless, Overlay, Selection, Highlight };
     int kind = Scene;
     size_t index = 0;
 };
@@ -1341,6 +1346,34 @@ void writeGroupChunk(Writer &w, const DrawRefs &draws, uint64_t objectKey,
 /// — and inline when it is not. Selection and highlight are per-viewer
 /// and change on every pick, and a round trip for a handful of draws
 /// costs more than the draws.
+/// Build an out-of-band group: serialize it, hash it, hand it over,
+/// and report the key and size it is now addressed by. Separate from
+/// writing, because the root names a scene object's group in an entry
+/// that a delta may or may not go on to send.
+bool storeGroup(const DrawRefs &draws, uint64_t objectKey,
+                ManifestWriter &st, SceneSnapshot::ObjectEntry &entry)
+{
+    std::vector<uint8_t> chunk;
+    if (!writeChunk(chunk, [&](Writer &cw) {
+            writeGroupChunk(cw, draws, objectKey, st);
+        }))
+        return false;
+    entry.objectKey = objectKey;
+    groupBBox(draws, entry.bbox);
+    entry.key = sha1Hex(chunk.data(), chunk.size());
+    entry.size = uint32_t(chunk.size());
+    st.snap->chunkBlobs(entry.key, std::move(chunk));
+    return true;
+}
+
+/// A reference to a group that was stored out of band.
+void writeGroupRef(Writer &w, const SceneSnapshot::ObjectEntry &entry)
+{
+    w.u8(1);
+    w.str(entry.key);
+    w.u32(entry.size);
+}
+
 void writeGroup(Writer &w, const DrawRefs &draws, uint64_t objectKey,
                 ManifestWriter &st, bool outOfBand)
 {
@@ -1349,38 +1382,85 @@ void writeGroup(Writer &w, const DrawRefs &draws, uint64_t objectKey,
         writeGroupChunk(w, draws, objectKey, st);
         return;
     }
-    std::vector<uint8_t> chunk;
-    if (!writeChunk(chunk, [&](Writer &cw) {
-            writeGroupChunk(cw, draws, objectKey, st);
-        })) {
+    SceneSnapshot::ObjectEntry entry;
+    if (!storeGroup(draws, objectKey, st, entry)) {
         w.ok = false;
         return;
     }
-    std::string key = sha1Hex(chunk.data(), chunk.size());
-    w.u8(1);
-    w.str(key);
-    w.u32(uint32_t(chunk.size()));
-    st.snap->chunkBlobs(key, std::move(chunk));
+    writeGroupRef(w, entry);
 }
 
-/// The scene feed cut into objects, in first-appearance order so the
-/// cut does not move when nothing about the scene did. Draws the
-/// producer could not name (objectKey 0) have no identity to cache
-/// under and are left for the root to carry inline.
-void groupScene(const DrawCallList &scene, std::vector<uint64_t> &order,
+/// The scene feed cut into objects, **in objectKey order**. Order by
+/// identity rather than by first appearance, because a delta names
+/// only what changed and the consumer reassembles the rest from what
+/// it already holds — so the order has to be one both sides can arrive
+/// at without being told it, and has to be the same whether a scene
+/// came as one full root or as a root and a chain of deltas.
+///
+/// Draws the producer could not name (objectKey 0) have no identity to
+/// cache under and are left for the root to carry inline.
+void groupScene(const DrawCallList &scene,
                 std::map<uint64_t, DrawRefs> &byKey, DrawRefs &keyless)
 {
     for (const auto &d : scene) {
-        if (!d.objectKey) {
+        if (!d.objectKey)
             keyless.push_back(&d);
-            continue;
+        else
+            byKey[d.objectKey].push_back(&d);
+    }
+}
+
+/// The whole object list: what a viewer needs when it holds nothing,
+/// and the only form a bundled or first-connect root can take.
+void writeObjectList(Writer &w,
+                     const std::vector<SceneSnapshot::ObjectEntry> &entries)
+{
+    w.u32(0);   // nothing retired: this list replaces whatever was held
+    w.u32(uint32_t(entries.size()));
+    for (const auto &e : entries) {
+        w.u64(e.objectKey);
+        w.floats(e.bbox, 6);
+        writeGroupRef(w, e);
+    }
+}
+
+/// The difference against \a base — both sorted by objectKey, so this
+/// is one linear pass. An object is unchanged exactly when its group
+/// manifest key is unchanged: the key covers the whole group, bounding
+/// box included, so there is nothing else that could have moved.
+void writeObjectDelta(Writer &w,
+                      const std::vector<SceneSnapshot::ObjectEntry> &entries,
+                      const std::vector<SceneSnapshot::ObjectEntry> &base)
+{
+    std::vector<uint64_t> removed;
+    std::vector<const SceneSnapshot::ObjectEntry *> changed;
+    size_t i = 0, j = 0;
+    while (i < entries.size() || j < base.size()) {
+        if (j >= base.size()
+                || (i < entries.size()
+                    && entries[i].objectKey < base[j].objectKey)) {
+            changed.push_back(&entries[i++]);      // new object
         }
-        auto it = byKey.find(d.objectKey);
-        if (it == byKey.end()) {
-            order.push_back(d.objectKey);
-            it = byKey.emplace(d.objectKey, DrawRefs()).first;
+        else if (i >= entries.size()
+                 || base[j].objectKey < entries[i].objectKey) {
+            removed.push_back(base[j++].objectKey);
         }
-        it->second.push_back(&d);
+        else {
+            if (entries[i].key != base[j].key)
+                changed.push_back(&entries[i]);
+            ++i;
+            ++j;
+        }
+    }
+
+    w.u32(uint32_t(removed.size()));
+    for (uint64_t key : removed)
+        w.u64(key);
+    w.u32(uint32_t(changed.size()));
+    for (const auto *e : changed) {
+        w.u64(e->objectKey);
+        w.floats(e->bbox, 6);
+        writeGroupRef(w, *e);
     }
 }
 
@@ -1596,7 +1676,8 @@ bool readGroupChunk(Reader &r, DrawCallList &out, SceneSnapshot &snap,
 /// up at a fixed index in snap.groups, so the order a backend sees does
 /// not depend on the order the chunks came back in.
 void readGroup(Reader &r, SceneSnapshot &snap, const LoaderPtr &st,
-               const GroupTarget &target)
+               const GroupTarget &target,
+               SceneSnapshot::ObjectEntry *entry = nullptr)
 {
     size_t slot = snap.groups.size();
     snap.groups.emplace_back();
@@ -1608,6 +1689,10 @@ void readGroup(Reader &r, SceneSnapshot &snap, const LoaderPtr &st,
     std::string key;
     r.str(key, 128);
     uint32_t size = r.u32();
+    if (entry) {
+        entry->key = key;
+        entry->size = size;
+    }
     if (!r.ok)
         return;
     SceneSnapshot::DeferredChunk c;
@@ -1641,15 +1726,20 @@ void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
         for (const auto &sh : st->postSplices)
             s.usershaderconf.splices.push_back(*sh);
 
-        DrawCallList scene;
+        // Everything but the scene objects goes to its feed. The
+        // objects stay where they are: a delta carries only the ones
+        // that changed, and assembling the feed needs the ones it did
+        // not carry too — which only a consumer holding a model across
+        // publishes has (applySceneObjects).
+        s.scene.clear();
         for (size_t i = 0; i < st->targets.size() && i < s.groups.size(); ++i) {
             const GroupTarget &t = st->targets[i];
             DrawCallList &draws = s.groups[i];
             switch (t.kind) {
             case GroupTarget::Scene:
-                scene.insert(scene.end(),
-                             std::make_move_iterator(draws.begin()),
-                             std::make_move_iterator(draws.end()));
+                break;
+            case GroupTarget::Keyless:
+                s.scene = std::move(draws);
                 break;
             case GroupTarget::Overlay:
                 if (t.index < s.overlays.size())
@@ -1664,8 +1754,6 @@ void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
                 break;
             }
         }
-        s.scene = std::move(scene);
-        s.groups.clear();
 
         auto apply = [&s](DrawCallList &draws) {
             for (auto &d : draws) {
@@ -1676,12 +1764,17 @@ void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
         };
         apply(s.scene);
         apply(s.highlight);
+        // The object groups are patched in place, where they wait for
+        // the model to take them.
+        for (auto &group : s.groups)
+            apply(group);
         for (auto &sel : s.selections)
             apply(sel.second);
         for (auto &ov : s.overlays)
             apply(ov.draws);
     };
 }
+
 
 } // anonymous namespace
 
@@ -1719,6 +1812,12 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     // has to stay one self-contained document.
     const bool manifest = bool(snap.chunkBlobs);
     w.u8(manifest ? 1 : 0);
+    if (manifest) {
+        // v34: which publish this is, and which one its object list is
+        // a difference against (0 = none, the list is complete).
+        w.u64(snap.manifestVersion);
+        w.u64(snap.baseVersion);
+    }
 
     // Unique mesh and texture tables referenced by index from the
     // draws. Monolithic layout only: the manifest layout has no global
@@ -1785,24 +1884,35 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         for (const auto &s : snap.usershaderconf.splices)
             refs.shader(w, &s);
 
-        // The scene cut into one content-keyed group per object, in
-        // first-appearance order so the cut does not move when the
-        // scene did not. Draws the producer could not name have no
-        // identity to cache under and ride along in a group of their
-        // own, written inline.
-        std::vector<uint64_t> order;
+        // The scene cut into one content-keyed group per object.
+        // Draws the producer could not name have no identity to cache
+        // under and ride along in a group of their own, written inline.
         std::map<uint64_t, DrawRefs> byKey;
         DrawRefs keyless;
-        groupScene(snap.scene, order, byKey, keyless);
-        w.u32(uint32_t(order.size()));
-        for (uint64_t key : order) {
-            const DrawRefs &group = byKey[key];
-            float bbox[6];
-            groupBBox(group, bbox);
-            w.u64(key);
-            w.floats(bbox, 6);
-            writeGroup(w, group, key, mst, true);
+        groupScene(snap.scene, byKey, keyless);
+
+        // Every group is built either way — it has to be, to know
+        // whether it changed — but a delta only *sends* the entries
+        // that moved, and the chunk sink only takes bytes the
+        // publisher does not already hold.
+        std::vector<SceneSnapshot::ObjectEntry> entries;
+        entries.reserve(byKey.size());
+        for (const auto &group : byKey) {
+            SceneSnapshot::ObjectEntry entry;
+            if (!storeGroup(group.second, group.first, mst, entry)) {
+                w.ok = false;
+                break;
+            }
+            entries.push_back(std::move(entry));
         }
+
+        if (!snap.baseVersion)
+            writeObjectList(w, entries);
+        else
+            writeObjectDelta(w, entries, snap.baseObjects);
+        if (snap.objectEntries)
+            *snap.objectEntries = entries;
+
         writeGroup(w, keyless, 0, mst, false);
     }
     else {
@@ -2108,7 +2218,15 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     if (magic != kMagic || version < 1 || version > kVersion)
         return false;
     const bool manifest = version >= 33 && r.u8() != 0;
+    snap.manifestVersion = 0;
+    snap.baseVersion = 0;
+    if (manifest && version >= 34) {
+        snap.manifestVersion = r.u64();
+        snap.baseVersion = r.u64();
+    }
 
+    snap.objectUpdates.clear();
+    snap.objectsRemoved.clear();
     snap.deferredChunks.clear();
     snap.groups.clear();
     snap.materials.clear();
@@ -2148,20 +2266,33 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 st->postSplices.push_back(s);
         }
 
+        // v34: what this publish retires, then what it carries. A full
+        // root retires nothing and carries everything.
+        uint32_t nremoved = version >= 34 ? r.u32() : 0;
+        if (!r.ok || nremoved > 0x1000000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < nremoved; ++i)
+            snap.objectsRemoved.push_back(r.u64());
+
         uint32_t nobj = r.u32();
         if (!r.ok || nobj > 0x1000000u)
             r.ok = false;
         for (uint32_t i = 0; r.ok && i < nobj; ++i) {
-            r.u64();            // objectKey
-            float bbox[6];
-            r.floats(bbox, 6);  // 2b-3 will draw a proxy from this
+            SceneSnapshot::ObjectUpdate up;
+            up.entry.objectKey = r.u64();
+            r.floats(up.entry.bbox, 6);
+            up.group = snap.groups.size();
             GroupTarget t;
             t.kind = GroupTarget::Scene;
-            readGroup(r, snap, st, t);
+            // The group's key is what readGroup consumes next; keep it
+            // so the model can tell an unchanged object from a changed
+            // one without re-reading the chunk.
+            readGroup(r, snap, st, t, &up.entry);
+            snap.objectUpdates.push_back(std::move(up));
         }
         if (r.ok) {
             GroupTarget t;
-            t.kind = GroupTarget::Scene;
+            t.kind = GroupTarget::Keyless;
             readGroup(r, snap, st, t);   // the draws with no objectKey
         }
         setManifestFinalize(snap, st);
@@ -2360,6 +2491,41 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     }
 
     return r.ok;
+}
+
+bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
+{
+    if (snap.baseVersion && snap.baseVersion != model.version) {
+        // A difference against something this consumer does not hold.
+        // There is nothing to be salvaged from it — the entries it does
+        // not mention are exactly the ones it assumes are already
+        // right — so the caller has to be given a full root.
+        return false;
+    }
+    if (!snap.baseVersion)
+        model.objects.clear();      // a complete list replaces the model
+    for (uint64_t key : snap.objectsRemoved)
+        model.objects.erase(key);
+    for (auto &up : snap.objectUpdates) {
+        auto &obj = model.objects[up.entry.objectKey];
+        obj.entry = up.entry;
+        if (up.group < snap.groups.size())
+            obj.draws = std::move(snap.groups[up.group]);
+    }
+    model.version = snap.manifestVersion;
+
+    // The feed, in objectKey order, then the draws the producer could
+    // not name — which finalize() left in `scene` because they belong
+    // to no object and are re-sent whole every publish.
+    DrawCallList scene;
+    for (const auto &entry : model.objects) {
+        const DrawCallList &draws = entry.second.draws;
+        scene.insert(scene.end(), draws.begin(), draws.end());
+    }
+    scene.insert(scene.end(), std::make_move_iterator(snap.scene.begin()),
+                 std::make_move_iterator(snap.scene.end()));
+    snap.scene = std::move(scene);
+    return true;
 }
 
 bool Render::saveSceneSnapshot(const char *path, const SceneSnapshot &snap)

@@ -215,6 +215,25 @@ void attachSinks(Render::SceneSnapshot& snap, BlobStore& store)
     return ::testing::AssertionSuccess();
 }
 
+/// Resolve, then merge into \a model — what a streaming consumer does,
+/// and the only way the scene feed gets assembled under the manifest
+/// layout, since a publish may not carry every object.
+::testing::AssertionResult resolveInto(Render::SceneSnapshot& snap,
+                                       const BlobStore& store,
+                                       Render::SceneObjectModel& model)
+{
+    auto res = resolve(snap, store);
+    if (!res) {
+        return res;
+    }
+    if (snap.finalize && !Render::applySceneObjects(snap, model)) {
+        return ::testing::AssertionFailure()
+            << "delta against version " << snap.baseVersion
+            << ", model holds " << model.version;
+    }
+    return ::testing::AssertionSuccess();
+}
+
 /// The invariants a reloaded scene has to satisfy whichever layout
 /// carried it.
 void expectScene(const Render::SceneSnapshot& snap)
@@ -319,7 +338,8 @@ TEST(SceneDump, manifestRoundTrip)
         Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
     EXPECT_FALSE(loaded.deferredChunks.empty())
         << "the manifest layout names its payloads rather than carrying them";
-    ASSERT_TRUE(resolve(loaded, store));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
     expectScene(loaded);
 }
 
@@ -438,6 +458,8 @@ TEST(SceneDump, entriesDecideWhatCanBeGivenUpOn)
     EXPECT_EQ(abandoned, 2u) << "both textures were reached and abandoned";
     ASSERT_TRUE(loaded.finalize);
     loaded.finalize(loaded);
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(Render::applySceneObjects(loaded, model));
 
     // The scene is whole; only the images are missing.
     EXPECT_EQ(loaded.scene.size(), 4u);
@@ -449,4 +471,157 @@ TEST(SceneDump, entriesDecideWhatCanBeGivenUpOn)
             EXPECT_TRUE(d.material.texture->pixels.empty());
         }
     }
+}
+
+/// A delta names only what moved. Publishing an unchanged scene against
+/// the version a viewer holds should carry no objects at all, and one
+/// repainted object should carry exactly itself.
+TEST(SceneDump, deltaCarriesOnlyWhatChanged)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+
+    // Publish 1: a full root, and the entries to encode the next
+    // against.
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> full;
+    ASSERT_TRUE(Render::saveSceneSnapshot(full, snap));
+    // The two objects of the *scene* feed. The overlay is its own feed
+    // and its draws are not scene objects, however they are keyed.
+    ASSERT_EQ(entries.size(), 2u);
+
+    Render::SceneObjectModel model;
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(full.data(), full.size(), loaded));
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+    expectScene(loaded);
+    EXPECT_EQ(model.version, 1u);
+
+    // Publish 2: nothing changed.
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries2;
+    snap.baseObjects = entries;
+    snap.baseVersion = 1;
+    snap.manifestVersion = 2;
+    snap.objectEntries = &entries2;
+    std::vector<uint8_t> quiet;
+    ASSERT_TRUE(Render::saveSceneSnapshot(quiet, snap));
+    EXPECT_LT(quiet.size(), full.size())
+        << "a delta of nothing must be smaller than naming every object";
+
+    Render::SceneSnapshot loaded2;
+    ASSERT_TRUE(Render::loadSceneSnapshot(quiet.data(), quiet.size(), loaded2));
+    EXPECT_TRUE(loaded2.objectUpdates.empty())
+        << "an unchanged scene carries no object entries";
+    EXPECT_TRUE(loaded2.objectsRemoved.empty());
+    ASSERT_TRUE(resolveInto(loaded2, store, model));
+    EXPECT_EQ(model.version, 2u);
+    // The feed is whole even though the publish described none of it.
+    expectScene(loaded2);
+
+    // Publish 3: repaint one object.
+    for (auto& d : snap.scene) {
+        if (d.objectKey == 0x2222) {
+            d.material.diffuse = 0x123456ff;
+        }
+    }
+    snap.baseObjects = entries2;
+    snap.baseVersion = 2;
+    snap.manifestVersion = 3;
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries3;
+    snap.objectEntries = &entries3;
+    std::vector<uint8_t> repaint;
+    ASSERT_TRUE(Render::saveSceneSnapshot(repaint, snap));
+
+    Render::SceneSnapshot loaded3;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(repaint.data(), repaint.size(), loaded3));
+    ASSERT_EQ(loaded3.objectUpdates.size(), 1u)
+        << "only the repainted object";
+    EXPECT_EQ(loaded3.objectUpdates[0].entry.objectKey, 0x2222u);
+    EXPECT_TRUE(loaded3.objectsRemoved.empty());
+    ASSERT_TRUE(resolveInto(loaded3, store, model));
+    expectScene(loaded3);
+    for (const auto& d : loaded3.scene) {
+        if (d.objectKey == 0x2222) {
+            EXPECT_EQ(d.material.diffuse, 0x123456ffu);
+        }
+    }
+}
+
+/// An object that goes away has to be retired by name: nothing else in
+/// a delta would say it is gone.
+TEST(SceneDump, deltaRetiresObjectsThatWentAway)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> full;
+    ASSERT_TRUE(Render::saveSceneSnapshot(full, snap));
+
+    Render::SceneObjectModel model;
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(full.data(), full.size(), loaded));
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+    ASSERT_EQ(loaded.scene.size(), 4u);
+
+    // Drop object 0x2222 from the feed.
+    Render::DrawCallList kept;
+    for (const auto& d : snap.scene) {
+        if (d.objectKey != 0x2222) {
+            kept.push_back(d);
+        }
+    }
+    snap.scene = kept;
+    snap.baseObjects = entries;
+    snap.baseVersion = 1;
+    snap.manifestVersion = 2;
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries2;
+    snap.objectEntries = &entries2;
+    std::vector<uint8_t> delta;
+    ASSERT_TRUE(Render::saveSceneSnapshot(delta, snap));
+
+    Render::SceneSnapshot loaded2;
+    ASSERT_TRUE(Render::loadSceneSnapshot(delta.data(), delta.size(), loaded2));
+    ASSERT_EQ(loaded2.objectsRemoved.size(), 1u);
+    EXPECT_EQ(loaded2.objectsRemoved[0], 0x2222u);
+    EXPECT_TRUE(loaded2.objectUpdates.empty());
+    ASSERT_TRUE(resolveInto(loaded2, store, model));
+
+    EXPECT_EQ(loaded2.scene.size(), 3u);
+    for (const auto& d : loaded2.scene) {
+        EXPECT_NE(d.objectKey, 0x2222u) << "a retired object still drawn";
+    }
+}
+
+/// A delta against a version the consumer does not hold cannot be
+/// applied at all — the objects it says nothing about are exactly the
+/// ones it assumes are already right.
+TEST(SceneDump, deltaAgainstAnUnheldVersionIsRefused)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 7;
+    snap.objectEntries = &entries;
+    snap.baseObjects = entries;
+    snap.baseVersion = 6;   // a version no fresh consumer holds
+    std::vector<uint8_t> delta;
+    ASSERT_TRUE(Render::saveSceneSnapshot(delta, snap));
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(delta.data(), delta.size(), loaded));
+    ASSERT_TRUE(resolve(loaded, store));
+
+    Render::SceneObjectModel fresh;
+    EXPECT_FALSE(Render::applySceneObjects(loaded, fresh))
+        << "a consumer holding nothing must be told to ask for a full root";
 }
