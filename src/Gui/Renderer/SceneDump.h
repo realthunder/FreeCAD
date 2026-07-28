@@ -91,27 +91,21 @@ struct SceneSnapshot {
                                std::vector<uint8_t> &&pixels)> TextureBlobSink;
     TextureBlobSink textureBlobs;
 
-    /// Save-side hook for the material table (v31): when set, the
-    /// table is written as its content key and the bytes are handed
-    /// here. Deduplication already collapsed the materials of every
-    /// draw into it, and that result rarely changes between publishes
-    /// — so this is what stops a republish re-sending it. The whole
-    /// table is one blob rather than one per material: a material is a
-    /// couple of hundred bytes, which a 40-byte key plus a request
-    /// would barely improve on.
-    TextureBlobSink materialBlobs;
-    /// Load-side counterpart: set when the table arrived as a key
-    /// alone (`key` empty otherwise). `fill` parses the fetched bytes
-    /// and hands each draw its material, so it takes the snapshot at
-    /// call time — a staged snapshot gets moved before it is applied,
-    /// which a captured pointer would not survive.
-    struct DeferredMaterials {
-        std::string key;
-        uint32_t size = 0;
-        std::function<bool(SceneSnapshot &snap,
-                           const void *data, size_t size)> fill;
-    };
-    DeferredMaterials deferredMaterials;
+    /// Save-side hook for the chunks the manifest layout is built from
+    /// (v33): the draw-group manifests themselves, the materials and
+    /// the user shaders. **Setting it is what selects that layout** —
+    /// a bundled snapshot leaves it unset and stays one self-contained
+    /// document with global tables, which is the only thing a
+    /// `.fcsd` capture can be.
+    ///
+    /// It supersedes v31's single material-table blob. That table was
+    /// referenced by a global index, and a global index is exactly the
+    /// false invalidation the manifest tree exists to avoid: inserting
+    /// one material renumbers every group manifest that follows it.
+    /// So a material is keyed individually, like a mesh.
+    typedef std::function<void(const std::string &key,
+                               std::vector<uint8_t> &&bytes)> ChunkBlobSink;
+    ChunkBlobSink chunkBlobs;
 
     /// Save-side hook enabling out-of-band mesh payloads (v28) — the
     /// mesh counterpart of textureBlobs, with two differences that
@@ -141,23 +135,40 @@ struct SceneSnapshot {
         explicit operator bool() const { return bool(reuse) && bool(store); }
     };
     MeshBlobSink meshBlobs;
-    /// Load-side counterpart: the meshes that arrived as a key alone.
-    /// Each entry parses a fetched chunk into the MeshData the draw
-    /// calls already point at — through `fill`, because the loader
-    /// owns that storage and its type is private to the serializer.
-    /// A snapshot must not be fed to a backend before every entry is
-    /// filled.
-    struct DeferredMesh {
+
+    /// Load-side counterpart of every out-of-band payload but a
+    /// texture: a group manifest, a mesh, a material, a shader. `fill`
+    /// parses the fetched bytes into storage the loader owns (its types
+    /// are private to the serializer), and **may name further
+    /// deferrals of its own** — a group names its meshes and materials,
+    /// a material names its textures — so a consumer resolves in rounds
+    /// until nothing is outstanding rather than in one pass. It takes
+    /// the snapshot at call time: a staged snapshot is moved before it
+    /// is applied, which a captured pointer would not survive.
+    ///
+    /// A snapshot must not be fed to a backend until every entry is
+    /// filled and finalize() has run.
+    struct DeferredChunk {
         std::string key;
-        /// Chunk size in bytes, known before the fetch so the viewer
-        /// can pack batches to a byte budget. A chunk larger than the
-        /// budget is not a special case — it simply ends up alone in
-        /// its batch.
+        /// Chunk size in bytes, known before the fetch so pulls can be
+        /// packed to a byte budget. A chunk larger than the budget is
+        /// not a special case — it simply ends up alone in its batch.
         uint32_t size = 0;
-        std::shared_ptr<MeshData> mesh;
-        std::function<bool(const void *chunk, size_t size)> fill;
+        std::function<bool(SceneSnapshot &snap,
+                           const void *data, size_t size)> fill;
     };
-    std::vector<DeferredMesh> deferredMeshes;
+    std::vector<DeferredChunk> deferredChunks;
+
+    /// Load-side staging for the manifest layout. The draws of each
+    /// group land in `groups` at the index the root named them at —
+    /// not appended as they arrive — so the feed order a backend sees
+    /// does not depend on the order chunks came back in. `materials`
+    /// is the same idea for the materials draws reference by
+    /// `DrawCall::materialIndex`. `finalize` stitches both into the
+    /// feeds and is run once, after the last chunk.
+    std::vector<DrawCallList> groups;
+    std::vector<Material> materials;
+    std::function<void(SceneSnapshot &snap)> finalize;
     /// Load-side counterpart: the textures that arrived key-only. Their
     /// `pixels` must be filled and `deferred` cleared before the
     /// snapshot is fed to a backend — these alias the entries the draw

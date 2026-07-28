@@ -2131,25 +2131,6 @@ static bool s_batchScheduled = false;
 /// snapshot is re-examined once at the end rather than per blob.
 static bool s_batchApplying = false;
 
-/// Backend ids for streamed meshes, assigned locally per content key.
-/// The stream no longer carries cacheId — it is a counter that changes
-/// on every re-tessellation, identical or not — and keying the GPU
-/// upload on the content instead is what lets an unchanged mesh skip
-/// the upload as well as the fetch. Two entries with the same key
-/// (identical geometry the backend happens to hold twice) collapse
-/// onto one id and so upload once. Ids start above anything the
-/// backend mints itself, so the inline meshes of a bundled snapshot,
-/// which still carry their own ids, can never collide with these.
-static uint64_t meshIdFor(const std::string &key)
-{
-    static std::map<std::string, uint64_t> ids;
-    static uint64_t seq = 0x8000000000000000ull;
-    auto it = ids.find(key);
-    if (it != ids.end())
-        return it->second;
-    return ids[key] = ++seq;
-}
-
 /// A cached payload that will not parse means the store is stale or
 /// damaged — most often written by a build whose chunk layout this one
 /// no longer agrees with. The store is a pure optimization, so throw
@@ -2200,10 +2181,8 @@ static void pruneBlobCache()
         if (tex)
             inUse.insert(tex->contentKey);
     }
-    for (const auto &mesh : s_snap.deferredMeshes)
-        inUse.insert(mesh.key);
-    if (!s_snap.deferredMaterials.key.empty())
-        inUse.insert(s_snap.deferredMaterials.key);
+    for (const auto &chunk : s_snap.deferredChunks)
+        inUse.insert(chunk.key);
     for (auto it = s_blobCache.begin(); it != s_blobCache.end();) {
         if (inUse.count(it->first))
             ++it;
@@ -2365,7 +2344,9 @@ static void flushBatch()
         emscripten_fetch_close(fetch);
         applyBatch(nullptr, 0, req->keys);
     };
-    std::printf("fcviewer: mesh batch, %zu keys, %zu bytes\n",
+    // Not just meshes since v33: group manifests, materials and
+    // shaders are all many-and-small and share this path.
+    std::printf("fcviewer: chunk batch, %zu keys, %zu bytes\n",
                 req->keys.size(), bytes);
     std::string url = s_sceneUrl + "/blobs";
     emscripten_fetch(&attr, url.c_str());
@@ -2447,6 +2428,11 @@ static void commitResolved()
     uint64_t version = s_pendingVersion;
     s_pendingValid = false;
     s_pendingSnap = Render::SceneSnapshot();
+    // The manifest layout stages a group's draws in a fixed slot and
+    // its materials in a table; this is the pass that puts both where
+    // the backend expects them (SceneDump.h).
+    if (snap.finalize)
+        snap.finalize(snap);
     commitSnapshot(std::move(snap), version);
     pruneBlobCache();
 }
@@ -2459,6 +2445,50 @@ static void resolvePending()
         return;
     size_t missing = 0, total = 0;
     bool incomplete = false;
+
+    // Out-of-band chunks (v33: group manifests, meshes, materials,
+    // shaders), pulled in batches. A fill can name further chunks — a
+    // group names its meshes and materials, a material names its
+    // textures — so this runs in rounds until one resolves nothing
+    // new, rather than in a single pass.
+    bool progress = true;
+    while (progress) {
+        progress = false;
+        for (size_t i = 0; i < s_pendingSnap.deferredChunks.size(); ++i) {
+            auto &entry = s_pendingSnap.deferredChunks[i];
+            if (!entry.fill)
+                continue;
+            auto it = s_blobCache.find(entry.key);
+            if (it == s_blobCache.end() || !it->second) {
+                if (s_blobFailed.count(entry.key)) {
+                    incomplete = true;
+                    entry.fill = nullptr;
+                }
+                continue;
+            }
+            // Take the callable and clear the slot before running it:
+            // it may append entries, and a reference into the vector
+            // does not survive that.
+            auto fill = entry.fill;
+            entry.fill = nullptr;
+            if (fill(s_pendingSnap, it->second->data(), it->second->size()))
+                progress = true;
+            else {
+                resetBlobStore();
+                incomplete = true;
+            }
+        }
+    }
+    total += s_pendingSnap.deferredChunks.size();
+    for (auto &entry : s_pendingSnap.deferredChunks) {
+        if (!entry.fill)
+            continue;
+        ++missing;
+        requestBlob(entry.key, entry.size ? entry.size : 1);
+    }
+
+    // Textures last: they are named by the material chunks above, so
+    // the set is only complete once those have been parsed.
     for (const auto &tex : s_pendingSnap.deferredTextures) {
         if (!tex || !tex->deferred)
             continue;
@@ -2477,57 +2507,6 @@ static void resolvePending()
         }
         ++missing;
         requestBlob(tex->contentKey);
-    }
-    // The material table (v31): one blob, so one request of its own.
-    if (s_pendingSnap.deferredMaterials.fill) {
-        const std::string &key = s_pendingSnap.deferredMaterials.key;
-        ++total;
-        auto it = s_blobCache.find(key);
-        if (it != s_blobCache.end() && it->second) {
-            if (s_pendingSnap.deferredMaterials.fill(
-                    s_pendingSnap, it->second->data(), it->second->size()))
-                s_pendingSnap.deferredMaterials.fill = nullptr;
-            else {
-                resetBlobStore();
-                incomplete = true;
-                s_pendingSnap.deferredMaterials.fill = nullptr;
-            }
-        }
-        else if (s_blobFailed.count(key)) {
-            incomplete = true;
-            s_pendingSnap.deferredMaterials.fill = nullptr;
-        }
-        else {
-            ++missing;
-            requestBlob(key);
-        }
-    }
-    // Mesh chunks (v28), pulled in batches. `fill` cleared marks an
-    // entry done: the MeshData it names is the one the draws already
-    // point at, so filling it in place is all that is needed.
-    for (auto &entry : s_pendingSnap.deferredMeshes) {
-        if (!entry.fill || !entry.mesh)
-            continue;
-        ++total;
-        auto it = s_blobCache.find(entry.key);
-        if (it != s_blobCache.end() && it->second) {
-            if (entry.fill(it->second->data(), it->second->size())) {
-                entry.mesh->cacheId = meshIdFor(entry.key);
-                entry.fill = nullptr;
-                continue;
-            }
-            resetBlobStore();
-            incomplete = true;
-            entry.fill = nullptr;
-            continue;
-        }
-        if (s_blobFailed.count(entry.key)) {
-            incomplete = true;
-            entry.fill = nullptr;
-            continue;
-        }
-        ++missing;
-        requestBlob(entry.key, entry.size ? entry.size : 1);
     }
     if (missing) {
         fcviewer_status("loading scene", double(total - missing),

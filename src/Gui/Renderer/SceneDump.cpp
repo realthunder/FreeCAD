@@ -27,6 +27,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 using namespace Render;
@@ -76,14 +77,22 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     to a chunk's layout changes the content key of every chunk and
 //     a cached one can never be parsed by a reader that disagrees
 //     with it (the key covers the format, not just the payload).
-const uint32_t kVersion = 32;
+// 33: two layouts, chosen by a flag after the version and by whether
+//     the writer was given a chunk sink. The monolithic one is
+//     unchanged and is what a bundled .fcsd capture must be. The
+//     manifest one (docs/SceneStreaming.md §4) has no global tables at
+//     all: draws are grouped by objectKey into content-keyed chunks,
+//     and materials and shaders become individually keyed leaves. An
+//     unchanged object then costs its root entry and nothing else,
+//     where before every publish re-sent every draw.
+const uint32_t kVersion = 33;
 
-/// Layout revision of the out-of-band chunks (mesh chunk, material
-/// table). Written as the first field of each chunk, so it is part of
-/// what the content key hashes: bump it whenever a chunk's own layout
-/// changes and every key changes with it, which retires the entries
-/// cached by older builds instead of letting them be misread.
-const uint32_t kChunkVersion = 1;
+/// Layout revision of the out-of-band chunks (mesh, material, shader,
+/// group manifest). Written as the first field of each chunk, so it is
+/// part of what the content key hashes: bump it whenever a chunk's own
+/// layout changes and every key changes with it, which retires the
+/// entries cached by older builds instead of letting them be misread.
+const uint32_t kChunkVersion = 2;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -201,6 +210,8 @@ static bool writeChunk(std::vector<uint8_t> &out,
 static bool readChunk(const void *data, size_t size,
                       const std::function<void(Reader &)> &fn);
 std::string sha1Hex(const uint8_t *data, size_t size);
+/// Defined with the manifest layout, which is what makes it necessary.
+uint64_t meshIdFromKey(const std::string &key);
 
 /// Fill a 4x4 with the identity: the matrices skipped by v30 are not
 /// default-initialized in Renderer.h, so a consumer that reads one
@@ -379,17 +390,19 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
 {
     auto mesh = std::make_shared<OwnedMeshData>();
     if (version >= 28 && r.u8() != 0) {
-        SceneSnapshot::DeferredMesh entry;
+        SceneSnapshot::DeferredChunk entry;
         r.str(entry.key, 128);
         entry.size = r.u32();
         if (!r.ok)
             return nullptr;
-        entry.mesh = mesh;
+        mesh->cacheId = meshIdFromKey(entry.key);
         // Parse with the version of the snapshot that named the chunk,
         // not this build's: a viewer newer than the payload reads it
         // as it is, and only a payload newer than the viewer makes the
         // viewer reload.
-        entry.fill = [mesh, version](const void *data, size_t size) {
+        entry.fill = [mesh, version](SceneSnapshot &, const void *data,
+                                     size_t size) {
+            uint64_t id = mesh->cacheId;
             bool ok = readChunk(data, size, [&mesh, version](Reader &cr) {
                 readMeshChunk(cr, mesh.get(), version);
             });
@@ -399,9 +412,10 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
                 // the end. Empty is the only safe failure.
                 *mesh = OwnedMeshData();
             }
+            mesh->cacheId = id;
             return ok;
         };
-        snap.deferredMeshes.push_back(std::move(entry));
+        snap.deferredChunks.push_back(std::move(entry));
         return mesh;
     }
     mesh->cacheId = r.u64();
@@ -478,8 +492,15 @@ std::string sha1Hex(const uint8_t *data, size_t size)
 /// \a blobs unset (a bundled snapshot) writes the pixels inline as
 /// before; set (the streaming transport) writes the key alone and hands
 /// the payload over to be served out of band.
+///
+/// \a sent, when given, is the set of keys already handed over during
+/// this write. The manifest layout has no global texture table, so the
+/// same image is described once per material that uses it — cheap,
+/// since only the ~70-byte header repeats, but the payload must not be
+/// copied out of the renderer's texture again for each of them.
 void writeTexture(Writer &w, const TextureImage &t,
-                  const SceneSnapshot::TextureBlobSink &blobs)
+                  const SceneSnapshot::TextureBlobSink &blobs,
+                  std::set<std::string> *sent = nullptr)
 {
     // An empty texture has nothing to fetch, so it stays inline whatever
     // the transport: deferring it would cost a round trip for no bytes.
@@ -505,7 +526,7 @@ void writeTexture(Writer &w, const TextureImage &t,
     w.u8(t.model);
     w.u32(t.blendColor);
 
-    if (defer)
+    if (defer && (!sent || sent->insert(t.contentKey).second))
         blobs(t.contentKey, std::vector<uint8_t>(t.pixels));
 }
 
@@ -619,12 +640,63 @@ std::shared_ptr<const UserShader> readUserShader(Reader &r)
     return s;
 }
 
-void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex,
-                   const ShaderIndex &shaders)
+//////////////////////////////////////////////////////////////////////
+
+/// How a record places a reference to something it does not itself
+/// contain. The monolithic layout writes an index into a global table;
+/// the manifest layout writes the thing inline (a texture header) or
+/// its content key (pixels, a shader), because a chunk whose bytes
+/// depend on a position in a table outside it would be invalidated by
+/// every insertion anywhere in that table — the false invalidation the
+/// manifest tree exists to avoid (docs/SceneStreaming.md §3).
+struct RefWriter {
+    std::function<void(Writer &,
+                       const std::shared_ptr<const TextureImage> &)> tex;
+    std::function<void(Writer &, const UserShader *)> shader;
+};
+struct RefReader {
+    std::function<void(Reader &,
+                       std::shared_ptr<const TextureImage> &)> tex;
+    std::function<void(Reader &,
+                       std::shared_ptr<const UserShader> &)> shader;
+};
+
+/// The monolithic pair: an index into the snapshot's global tables.
+RefWriter tableRefWriter(const TextureIndex &tex, const ShaderIndex &shaders)
 {
-    auto texref = [&](const std::shared_ptr<const TextureImage> &t) {
+    RefWriter refs;
+    refs.tex = [&tex](Writer &w, const std::shared_ptr<const TextureImage> &t) {
         auto it = tex.find(t.get());
         w.i32(it == tex.end() ? -1 : it->second);
+    };
+    refs.shader = [&shaders](Writer &w, const UserShader *s) {
+        auto it = s ? shaders.find(s) : shaders.end();
+        w.i32(it == shaders.end() ? -1 : it->second);
+    };
+    return refs;
+}
+
+RefReader tableRefReader(const TextureTable &tex, const ShaderTable &shaders)
+{
+    RefReader refs;
+    refs.tex = [&tex](Reader &r, std::shared_ptr<const TextureImage> &t) {
+        int32_t idx = r.i32();
+        if (idx >= 0 && size_t(idx) < tex.size())
+            t = tex[size_t(idx)];
+    };
+    refs.shader = [&shaders](Reader &r,
+                             std::shared_ptr<const UserShader> &s) {
+        int32_t idx = r.i32();
+        if (idx >= 0 && size_t(idx) < shaders.size())
+            s = shaders[size_t(idx)];
+    };
+    return refs;
+}
+
+void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
+{
+    auto texref = [&](const std::shared_ptr<const TextureImage> &t) {
+        refs.tex(w, t);
     };
 
     w.u8(m.type);
@@ -712,19 +784,15 @@ void writeMaterial(Writer &w, const Material &m, const TextureIndex &tex,
         ? int(m.numclipplanes) : Material::MaxClipPlanes;
     for (int i = 0; i < nclip; ++i)
         w.floats(m.clipplanes[i], 4);
-    // v23: user "material"-stage shader, by shader-table index.
-    auto sit = m.usershader ? shaders.find(m.usershader.get())
-                            : shaders.end();
-    w.i32(sit == shaders.end() ? -1 : sit->second);
+    // v23: the user "material"-stage shader.
+    refs.shader(w, m.usershader.get());
 }
 
-void readMaterial(Reader &r, Material &m, const TextureTable &tex,
-                  const ShaderTable &shaders, uint32_t version)
+void readMaterial(Reader &r, Material &m, const RefReader &refs,
+                  uint32_t version)
 {
     auto texref = [&](std::shared_ptr<const TextureImage> &t) {
-        int32_t idx = r.i32();
-        if (idx >= 0 && size_t(idx) < tex.size())
-            t = tex[size_t(idx)];
+        refs.tex(r, t);
     };
 
     m.type = r.u8();
@@ -844,21 +912,17 @@ void readMaterial(Reader &r, Material &m, const TextureTable &tex,
     // does not describe have to be cleared rather than left as noise.
     for (int i = nclip; i < Material::MaxClipPlanes; ++i)
         std::memset(m.clipplanes[i], 0, sizeof(m.clipplanes[i]));
-    if (version >= 23) {
-        int32_t si = r.i32();
-        if (si >= 0 && size_t(si) < shaders.size())
-            m.usershader = shaders[size_t(si)];
-    }
+    if (version >= 23)
+        refs.shader(r, m.usershader);
 }
 
 //////////////////////////////////////////////////////////////////////
 // Configs
 
-void writeLight(Writer &w, const LightConfig &l, const TextureIndex &tex)
+void writeLight(Writer &w, const LightConfig &l, const RefWriter &refs)
 {
     auto texref = [&](const std::shared_ptr<const TextureImage> &t) {
-        auto it = tex.find(t.get());
-        w.i32(it == tex.end() ? -1 : it->second);
+        refs.tex(w, t);
     };
     w.b(l.valid);
     w.b(l.spot);
@@ -887,13 +951,11 @@ void writeLight(Writer &w, const LightConfig &l, const TextureIndex &tex)
     w.f(l.sunDiscSize);
 }
 
-void readLight(Reader &r, LightConfig &l, const TextureTable &tex,
+void readLight(Reader &r, LightConfig &l, const RefReader &refs,
                uint32_t version)
 {
     auto texref = [&](std::shared_ptr<const TextureImage> &t) {
-        int32_t idx = r.i32();
-        if (idx >= 0 && size_t(idx) < tex.size())
-            t = tex[size_t(idx)];
+        refs.tex(r, t);
     };
     l.valid = r.b();
     l.spot = r.b();
@@ -930,14 +992,24 @@ void readLight(Reader &r, LightConfig &l, const TextureTable &tex,
 typedef std::map<const MeshData *, int32_t> MeshIndex;
 typedef std::vector<std::shared_ptr<const MeshData>> MeshTable;
 
-void writeDraw(Writer &w, const DrawCall &d, const MeshIndex &meshIndex,
-               const MaterialIndex &matIndex)
+/// A draw's references to its mesh and its material. Both are shared
+/// heavily, so both are placed indirectly — into the snapshot's global
+/// tables in the monolithic layout, into the enclosing group's local
+/// key lists in the manifest one.
+struct DrawRefWriter {
+    std::function<void(Writer &,
+                       const std::shared_ptr<const MeshData> &)> mesh;
+    std::function<void(Writer &, const DrawCall &)> material;
+};
+struct DrawRefReader {
+    std::function<void(Reader &, std::shared_ptr<const MeshData> &)> mesh;
+    std::function<void(Reader &, DrawCall &)> material;
+};
+
+void writeDraw(Writer &w, const DrawCall &d, const DrawRefWriter &refs)
 {
-    // v29: an index into the deduplicated material table.
-    auto mit = matIndex.find(&d);
-    w.i32(mit == matIndex.end() ? -1 : mit->second);
-    auto it = d.mesh ? meshIndex.find(d.mesh.get()) : meshIndex.end();
-    w.i32(it == meshIndex.end() ? -1 : it->second);
+    refs.material(w, d);
+    refs.mesh(w, d.mesh);
     // v30: as for the material matrices, the flag first and the matrix
     // only when there is one.
     w.b(d.identity);
@@ -954,20 +1026,11 @@ void writeDraw(Writer &w, const DrawCall &d, const MeshIndex &meshIndex,
 
 typedef std::vector<Material> MaterialTable;
 
-void readDraw(Reader &r, DrawCall &d, const MeshTable &meshes,
-              const TextureTable &textures, const ShaderTable &shaders,
-              const MaterialTable &materials, uint32_t version)
+void readDraw(Reader &r, DrawCall &d, const DrawRefReader &refs,
+              uint32_t version)
 {
-    if (version >= 29) {
-        d.materialIndex = r.i32();
-        if (d.materialIndex >= 0 && size_t(d.materialIndex) < materials.size())
-            d.material = materials[size_t(d.materialIndex)];
-    }
-    else
-        readMaterial(r, d.material, textures, shaders, version);
-    int32_t mi = r.i32();
-    if (mi >= 0 && size_t(mi) < meshes.size())
-        d.mesh = meshes[size_t(mi)];
+    refs.material(r, d);
+    refs.mesh(r, d.mesh);
     if (version >= 30) {
         d.identity = r.b();
         if (!d.identity)
@@ -989,11 +1052,11 @@ void readDraw(Reader &r, DrawCall &d, const MeshTable &meshes,
 }
 
 void writeDrawList(Writer &w, const DrawCallList &draws,
-                   const MeshIndex &meshIndex, const MaterialIndex &matIndex)
+                   const DrawRefWriter &refs)
 {
     w.u32(uint32_t(draws.size()));
     for (const auto &d : draws)
-        writeDraw(w, d, meshIndex, matIndex);
+        writeDraw(w, d, refs);
 }
 
 /// Serialize every draw's material once, keeping the distinct ones.
@@ -1001,8 +1064,7 @@ void writeDrawList(Writer &w, const DrawCallList &draws,
 /// two materials that write the same bytes restore identically — and
 /// needs no hand-written comparison over ~60 fields to stay in step
 /// with the format.
-void collectMaterials(const DrawCallList &draws, const TextureIndex &texIndex,
-                      const ShaderIndex &shaderIndex,
+void collectMaterials(const DrawCallList &draws, const RefWriter &refs,
                       std::vector<std::vector<uint8_t>> &table,
                       std::map<std::vector<uint8_t>, int32_t> &seen,
                       MaterialIndex &matIndex)
@@ -1010,7 +1072,7 @@ void collectMaterials(const DrawCallList &draws, const TextureIndex &texIndex,
     for (const auto &d : draws) {
         std::vector<uint8_t> bytes;
         if (!writeChunk(bytes, [&](Writer &cw) {
-                writeMaterial(cw, d.material, texIndex, shaderIndex);
+                writeMaterial(cw, d.material, refs);
             }))
             continue;
         auto it = seen.find(bytes);
@@ -1022,9 +1084,8 @@ void collectMaterials(const DrawCallList &draws, const TextureIndex &texIndex,
     }
 }
 
-bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
-                  const TextureTable &textures, const ShaderTable &shaders,
-                  const MaterialTable &materials, uint32_t version)
+bool readDrawList(Reader &r, DrawCallList &draws, const DrawRefReader &refs,
+                  uint32_t version)
 {
     uint32_t n = r.u32();
     if (!r.ok || n > 0x1000000u) {
@@ -1034,10 +1095,553 @@ bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
     draws.clear();
     for (uint32_t i = 0; r.ok && i < n; ++i) {
         DrawCall d;
-        readDraw(r, d, meshes, textures, shaders, materials, version);
+        readDraw(r, d, refs, version);
         draws.push_back(std::move(d));
     }
     return r.ok;
+}
+
+//////////////////////////////////////////////////////////////////////
+// Manifest layout (v33) — docs/SceneStreaming.md §4
+//
+// No global tables: draws are cut into groups, a group is addressed by
+// the hash of its own bytes, and everything a group references is
+// either inside it or named by a content key. What that buys is that
+// an object nobody touched costs its root entry and nothing else.
+
+/// The unit written and cached: the draws of one object, of one
+/// overlay, or of a volatile feed. Pointers, because grouping the
+/// scene must not copy every draw (a DrawCall carries a Material) on
+/// every publish.
+typedef std::vector<const DrawCall *> DrawRefs;
+
+/// Where a group's draws belong once every chunk is in.
+struct GroupTarget {
+    enum Kind { Scene, Overlay, Selection, Highlight };
+    int kind = Scene;
+    size_t index = 0;
+};
+
+/// Backend id for a streamed mesh, derived from its content key. The
+/// stream does not carry cacheId — it is a counter, bumped by every
+/// re-tessellation whether the geometry changed or not — so the id
+/// that keys the GPU upload is taken from the content instead, and an
+/// unchanged mesh then skips the upload as well as the fetch. The top
+/// bit is set so these can never collide with the ids a bundled
+/// snapshot carries inline.
+uint64_t meshIdFromKey(const std::string &key)
+{
+    uint64_t id = 0;
+    for (size_t i = 0; i < key.size() && i < 15; ++i) {
+        char c = key[i];
+        uint64_t v = c >= 'a' ? uint64_t(c - 'a' + 10)
+                              : uint64_t(c - '0');
+        id = (id << 4) | (v & 0xf);
+    }
+    return id | 0x8000000000000000ull;
+}
+
+//////////////////////////////////////////////////////////////////////
+// Manifest writer
+
+/// Per-publish memos. Every leaf is hashed at most once even though
+/// the layout has it described once per group that uses it: the
+/// shader compile hook is expensive, a material is serialized to be
+/// hashed at all, and a texture payload is a copy out of the
+/// renderer's image.
+struct ManifestWriter {
+    const SceneSnapshot *snap = nullptr;
+    RefWriter refs;
+    std::set<std::string> texSent;
+    std::map<const UserShader *, std::pair<std::string, uint32_t>> shaderKeys;
+    std::map<std::vector<uint8_t>, std::pair<std::string, uint32_t>> matKeys;
+};
+
+void initManifestWriter(ManifestWriter &st, const SceneSnapshot &snap)
+{
+    st.snap = &snap;
+    // A texture is described where it is used — the header repeats per
+    // material, the payload does not.
+    st.refs.tex = [&st](Writer &w,
+                        const std::shared_ptr<const TextureImage> &t) {
+        if (!t) {
+            w.u8(0);
+            return;
+        }
+        w.u8(1);
+        writeTexture(w, *t, st.snap->textureBlobs, &st.texSent);
+    };
+    st.refs.shader = [&st](Writer &w, const UserShader *s) {
+        if (!s) {
+            w.u8(0);
+            return;
+        }
+        w.u8(1);
+        auto it = st.shaderKeys.find(s);
+        if (it == st.shaderKeys.end()) {
+            std::vector<uint8_t> chunk;
+            writeChunk(chunk, [&st, s](Writer &cw) {
+                cw.u32(kChunkVersion);
+                writeUserShader(cw, *s, st.snap->shaderBins);
+            });
+            std::string key = sha1Hex(chunk.data(), chunk.size());
+            auto entry = std::make_pair(key, uint32_t(chunk.size()));
+            it = st.shaderKeys.emplace(s, entry).first;
+            st.snap->chunkBlobs(key, std::move(chunk));
+        }
+        w.str(it->second.first);
+        w.u32(it->second.second);
+    };
+}
+
+/// The content key of a material, hashing its serialized bytes —
+/// exact by construction, where a hand-written comparison over ~60
+/// fields would drift out of step with the format.
+std::pair<std::string, uint32_t> materialKey(ManifestWriter &st,
+                                             const Material &m)
+{
+    std::vector<uint8_t> chunk;
+    if (!writeChunk(chunk, [&st, &m](Writer &cw) {
+            cw.u32(kChunkVersion);
+            writeMaterial(cw, m, st.refs);
+        }))
+        return {};
+    auto it = st.matKeys.find(chunk);
+    if (it != st.matKeys.end())
+        return it->second;
+    auto entry = std::make_pair(sha1Hex(chunk.data(), chunk.size()),
+                                uint32_t(chunk.size()));
+    st.matKeys.emplace(chunk, entry);
+    st.snap->chunkBlobs(entry.first, std::move(chunk));
+    return entry;
+}
+
+/// The group's world bounds — what lets a viewer act on a group it
+/// does not have yet: frame the model before the first triangle, order
+/// the fetch by what is on screen, stand a proxy box in for it. The
+/// root carries it per object so it is known before the chunk arrives,
+/// and the chunk repeats it so that it stays self-contained.
+void groupBBox(const DrawRefs &draws, float bbox[6])
+{
+    for (int i = 0; i < 3; ++i) {
+        bbox[i] = 1e30f;
+        bbox[3 + i] = -1e30f;
+    }
+    for (const DrawCall *d : draws) {
+        for (int i = 0; i < 3; ++i) {
+            if (d->bboxMin[i] < bbox[i])
+                bbox[i] = d->bboxMin[i];
+            if (d->bboxMax[i] > bbox[3 + i])
+                bbox[3 + i] = d->bboxMax[i];
+        }
+    }
+}
+
+/// One group's payload: the local lists of what its draws reference,
+/// then the draws indexing into those lists. Local, so the chunk names
+/// nothing by a position outside itself — a global index would make
+/// every insertion anywhere renumber, and renumbering invalidates
+/// caches that did not change.
+void writeGroupChunk(Writer &w, const DrawRefs &draws, uint64_t objectKey,
+                     ManifestWriter &st)
+{
+    std::vector<const MeshData *> meshes;
+    MeshIndex meshIndex;
+    std::vector<std::pair<std::string, uint32_t>> materials;
+    std::map<std::string, int32_t> matLocal;
+    std::map<const DrawCall *, int32_t> drawMat;
+    for (const DrawCall *d : draws) {
+        if (d->mesh
+                && meshIndex.emplace(d->mesh.get(),
+                                     int32_t(meshes.size())).second)
+            meshes.push_back(d->mesh.get());
+        auto key = materialKey(st, d->material);
+        int32_t local = -1;
+        if (!key.first.empty()) {
+            auto it = matLocal.find(key.first);
+            if (it == matLocal.end()) {
+                it = matLocal.emplace(key.first,
+                                      int32_t(materials.size())).first;
+                materials.push_back(key);
+            }
+            local = it->second;
+        }
+        drawMat.emplace(d, local);
+    }
+
+    float bbox[6];
+    groupBBox(draws, bbox);
+    w.u32(kChunkVersion);
+    w.u64(objectKey);
+    w.floats(bbox, 6);
+    w.u32(uint32_t(meshes.size()));
+    for (auto *m : meshes)
+        writeMesh(w, *m, st.snap->meshBlobs);
+    w.u32(uint32_t(materials.size()));
+    for (const auto &m : materials) {
+        w.str(m.first);
+        w.u32(m.second);
+    }
+
+    DrawRefWriter drefs;
+    drefs.mesh = [&meshIndex](Writer &ww,
+                              const std::shared_ptr<const MeshData> &m) {
+        auto it = m ? meshIndex.find(m.get()) : meshIndex.end();
+        ww.i32(it == meshIndex.end() ? -1 : it->second);
+    };
+    drefs.material = [&drawMat](Writer &ww, const DrawCall &d) {
+        auto it = drawMat.find(&d);
+        ww.i32(it == drawMat.end() ? -1 : it->second);
+    };
+    w.u32(uint32_t(draws.size()));
+    for (const DrawCall *d : draws)
+        writeDraw(w, *d, drefs);
+}
+
+/// A group goes out of band when it is worth caching across publishes
+/// — a scene object or an overlay, both of which usually do not change
+/// — and inline when it is not. Selection and highlight are per-viewer
+/// and change on every pick, and a round trip for a handful of draws
+/// costs more than the draws.
+void writeGroup(Writer &w, const DrawRefs &draws, uint64_t objectKey,
+                ManifestWriter &st, bool outOfBand)
+{
+    if (!outOfBand) {
+        w.u8(0);
+        writeGroupChunk(w, draws, objectKey, st);
+        return;
+    }
+    std::vector<uint8_t> chunk;
+    if (!writeChunk(chunk, [&](Writer &cw) {
+            writeGroupChunk(cw, draws, objectKey, st);
+        })) {
+        w.ok = false;
+        return;
+    }
+    std::string key = sha1Hex(chunk.data(), chunk.size());
+    w.u8(1);
+    w.str(key);
+    w.u32(uint32_t(chunk.size()));
+    st.snap->chunkBlobs(key, std::move(chunk));
+}
+
+/// The scene feed cut into objects, in first-appearance order so the
+/// cut does not move when nothing about the scene did. Draws the
+/// producer could not name (objectKey 0) have no identity to cache
+/// under and are left for the root to carry inline.
+void groupScene(const DrawCallList &scene, std::vector<uint64_t> &order,
+                std::map<uint64_t, DrawRefs> &byKey, DrawRefs &keyless)
+{
+    for (const auto &d : scene) {
+        if (!d.objectKey) {
+            keyless.push_back(&d);
+            continue;
+        }
+        auto it = byKey.find(d.objectKey);
+        if (it == byKey.end()) {
+            order.push_back(d.objectKey);
+            it = byKey.emplace(d.objectKey, DrawRefs()).first;
+        }
+        it->second.push_back(&d);
+    }
+}
+
+//////////////////////////////////////////////////////////////////////
+// Manifest loader
+
+/// Shared across every chunk parse of one snapshot: what has already
+/// been slotted, so a leaf two groups both name is fetched, parsed and
+/// uploaded once, and where each group's draws belong at the end.
+struct ManifestLoader {
+    uint32_t version = kVersion;
+    std::map<std::string, int32_t> matSlots;
+    std::map<std::string, std::shared_ptr<OwnedMeshData>> meshes;
+    std::map<std::string, std::shared_ptr<UserShader>> shaders;
+    std::map<std::string, std::shared_ptr<TextureImage>> textures;
+    std::vector<GroupTarget> targets;
+    /// The scene-level user shader lists, held as the shared objects
+    /// their chunks will fill rather than copied into the config at
+    /// read time — at read time they are still empty.
+    std::vector<std::shared_ptr<const UserShader>> postShaders;
+    std::vector<std::shared_ptr<const UserShader>> postSplices;
+};
+
+typedef std::shared_ptr<ManifestLoader> LoaderPtr;
+
+RefReader manifestRefReader(const LoaderPtr &st, SceneSnapshot &snap);
+
+/// One mesh reference inside a group: the counterpart of writeMesh.
+std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
+                                            const LoaderPtr &st)
+{
+    if (r.u8() == 0) {
+        auto mesh = std::make_shared<OwnedMeshData>();
+        mesh->cacheId = r.u64();
+        readMeshChunk(r, mesh.get(), st->version);
+        return r.ok ? mesh : nullptr;
+    }
+    std::string key;
+    r.str(key, 128);
+    uint32_t size = r.u32();
+    if (!r.ok)
+        return nullptr;
+    auto it = st->meshes.find(key);
+    if (it != st->meshes.end())
+        return it->second;
+    auto mesh = std::make_shared<OwnedMeshData>();
+    mesh->cacheId = meshIdFromKey(key);
+    st->meshes.emplace(key, mesh);
+    SceneSnapshot::DeferredChunk c;
+    c.key = key;
+    c.size = size;
+    uint32_t version = st->version;
+    c.fill = [mesh, version](SceneSnapshot &, const void *data, size_t size) {
+        uint64_t id = mesh->cacheId;
+        bool ok = readChunk(data, size, [&mesh, version](Reader &cr) {
+            readMeshChunk(cr, mesh.get(), version);
+        });
+        if (!ok) {
+            // A partial parse leaves a vertex count with no arrays
+            // behind it, which a backend would read straight past the
+            // end of. Empty is the only safe failure.
+            *mesh = OwnedMeshData();
+        }
+        mesh->cacheId = id;
+        return ok;
+    };
+    snap.deferredChunks.push_back(std::move(c));
+    return mesh;
+}
+
+/// The snapshot slot a material key occupies, deferring its chunk the
+/// first time the key is seen. Draws carry the slot rather than the
+/// material itself, because the chunk may well arrive after them.
+int32_t materialSlot(SceneSnapshot &snap, const LoaderPtr &st,
+                     const std::string &key, uint32_t size)
+{
+    auto it = st->matSlots.find(key);
+    if (it != st->matSlots.end())
+        return it->second;
+    int32_t slot = int32_t(snap.materials.size());
+    snap.materials.emplace_back();
+    st->matSlots.emplace(key, slot);
+    SceneSnapshot::DeferredChunk c;
+    c.key = key;
+    c.size = size;
+    c.fill = [st, slot](SceneSnapshot &target, const void *data, size_t size) {
+        return readChunk(data, size, [&](Reader &cr) {
+            if (cr.u32() != kChunkVersion) {
+                cr.ok = false;
+                return;
+            }
+            if (size_t(slot) >= target.materials.size()) {
+                cr.ok = false;
+                return;
+            }
+            RefReader refs = manifestRefReader(st, target);
+            readMaterial(cr, target.materials[size_t(slot)], refs,
+                         st->version);
+        });
+    };
+    snap.deferredChunks.push_back(std::move(c));
+    return slot;
+}
+
+RefReader manifestRefReader(const LoaderPtr &st, SceneSnapshot &snap)
+{
+    RefReader refs;
+    refs.tex = [st, &snap](Reader &r,
+                           std::shared_ptr<const TextureImage> &t) {
+        if (r.u8() == 0)
+            return;
+        auto tex = readTexture(r, st->version);
+        if (!tex)
+            return;
+        if (!tex->contentKey.empty()) {
+            auto it = st->textures.find(tex->contentKey);
+            if (it != st->textures.end()) {
+                t = it->second;
+                return;
+            }
+            st->textures.emplace(tex->contentKey, tex);
+        }
+        if (tex->deferred)
+            snap.deferredTextures.push_back(tex);
+        t = tex;
+    };
+    refs.shader = [st, &snap](Reader &r,
+                              std::shared_ptr<const UserShader> &s) {
+        if (r.u8() == 0)
+            return;
+        std::string key;
+        r.str(key, 128);
+        uint32_t size = r.u32();
+        if (!r.ok)
+            return;
+        auto it = st->shaders.find(key);
+        if (it == st->shaders.end()) {
+            auto sh = std::make_shared<UserShader>();
+            it = st->shaders.emplace(key, sh).first;
+            SceneSnapshot::DeferredChunk c;
+            c.key = key;
+            c.size = size;
+            c.fill = [sh](SceneSnapshot &, const void *data, size_t size) {
+                return readChunk(data, size, [&sh](Reader &cr) {
+                    if (cr.u32() != kChunkVersion) {
+                        cr.ok = false;
+                        return;
+                    }
+                    auto parsed = readUserShader(cr);
+                    if (cr.ok && parsed)
+                        *sh = *parsed;
+                });
+            };
+            snap.deferredChunks.push_back(std::move(c));
+        }
+        s = it->second;
+    };
+    return refs;
+}
+
+bool readGroupChunk(Reader &r, DrawCallList &out, SceneSnapshot &snap,
+                    const LoaderPtr &st)
+{
+    if (r.u32() != kChunkVersion) {
+        r.ok = false;
+        return false;
+    }
+    r.u64();            // objectKey — the root already carries it
+    float bbox[6];
+    r.floats(bbox, 6);  // likewise; the chunk repeats it to stay whole
+    uint32_t nmesh = r.u32();
+    if (!r.ok || nmesh > 0x100000u) {
+        r.ok = false;
+        return false;
+    }
+    std::vector<std::shared_ptr<const MeshData>> meshes;
+    for (uint32_t i = 0; r.ok && i < nmesh; ++i)
+        meshes.push_back(readMeshRef(r, snap, st));
+    uint32_t nmat = r.u32();
+    if (!r.ok || nmat > 0x100000u) {
+        r.ok = false;
+        return false;
+    }
+    std::vector<int32_t> slots;
+    for (uint32_t i = 0; r.ok && i < nmat; ++i) {
+        std::string key;
+        r.str(key, 128);
+        uint32_t size = r.u32();
+        if (!r.ok)
+            break;
+        slots.push_back(materialSlot(snap, st, key, size));
+    }
+    if (!r.ok)
+        return false;
+
+    DrawRefReader drefs;
+    drefs.mesh = [&meshes](Reader &rr, std::shared_ptr<const MeshData> &m) {
+        int32_t i = rr.i32();
+        if (i >= 0 && size_t(i) < meshes.size())
+            m = meshes[size_t(i)];
+    };
+    drefs.material = [&slots](Reader &rr, DrawCall &d) {
+        int32_t i = rr.i32();
+        d.materialIndex = i >= 0 && size_t(i) < slots.size()
+            ? slots[size_t(i)] : -1;
+    };
+    return readDrawList(r, out, drefs, st->version);
+}
+
+/// Read one group reference: parse it now when it came inline, or take
+/// a slot and defer it when it came as a key. Either way the draws end
+/// up at a fixed index in snap.groups, so the order a backend sees does
+/// not depend on the order the chunks came back in.
+void readGroup(Reader &r, SceneSnapshot &snap, const LoaderPtr &st,
+               const GroupTarget &target)
+{
+    size_t slot = snap.groups.size();
+    snap.groups.emplace_back();
+    st->targets.push_back(target);
+    if (r.u8() == 0) {
+        readGroupChunk(r, snap.groups[slot], snap, st);
+        return;
+    }
+    std::string key;
+    r.str(key, 128);
+    uint32_t size = r.u32();
+    if (!r.ok)
+        return;
+    SceneSnapshot::DeferredChunk c;
+    c.key = key;
+    c.size = size;
+    c.fill = [st, slot](SceneSnapshot &target, const void *data, size_t size) {
+        if (slot >= target.groups.size())
+            return false;
+        DrawCallList draws;
+        bool ok = readChunk(data, size, [&](Reader &cr) {
+            readGroupChunk(cr, draws, target, st);
+        });
+        if (ok)
+            target.groups[slot] = std::move(draws);
+        return ok;
+    };
+    snap.deferredChunks.push_back(std::move(c));
+}
+
+/// The pass that runs once every chunk is in: groups into the feeds
+/// they belong to, then the materials into the draws that named them
+/// by slot.
+void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
+{
+    snap.finalize = [st](SceneSnapshot &s) {
+        // The post-stage shaders, now that their chunks have landed.
+        s.usershaderconf.shaders.clear();
+        for (const auto &sh : st->postShaders)
+            s.usershaderconf.shaders.push_back(*sh);
+        s.usershaderconf.splices.clear();
+        for (const auto &sh : st->postSplices)
+            s.usershaderconf.splices.push_back(*sh);
+
+        DrawCallList scene;
+        for (size_t i = 0; i < st->targets.size() && i < s.groups.size(); ++i) {
+            const GroupTarget &t = st->targets[i];
+            DrawCallList &draws = s.groups[i];
+            switch (t.kind) {
+            case GroupTarget::Scene:
+                scene.insert(scene.end(),
+                             std::make_move_iterator(draws.begin()),
+                             std::make_move_iterator(draws.end()));
+                break;
+            case GroupTarget::Overlay:
+                if (t.index < s.overlays.size())
+                    s.overlays[t.index].draws = std::move(draws);
+                break;
+            case GroupTarget::Selection:
+                if (t.index < s.selections.size())
+                    s.selections[t.index].second = std::move(draws);
+                break;
+            case GroupTarget::Highlight:
+                s.highlight = std::move(draws);
+                break;
+            }
+        }
+        s.scene = std::move(scene);
+        s.groups.clear();
+
+        auto apply = [&s](DrawCallList &draws) {
+            for (auto &d : draws) {
+                if (d.materialIndex >= 0
+                        && size_t(d.materialIndex) < s.materials.size())
+                    d.material = s.materials[size_t(d.materialIndex)];
+            }
+        };
+        apply(s.scene);
+        apply(s.highlight);
+        for (auto &sel : s.selections)
+            apply(sel.second);
+        for (auto &ov : s.overlays)
+            apply(ov.draws);
+    };
 }
 
 } // anonymous namespace
@@ -1071,7 +1675,15 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.u32(kMagic);
     w.u32(kVersion);
 
-    // Unique mesh and texture tables referenced by index from the draws.
+    // v33: which of the two layouts follows. Having somewhere to hand
+    // chunks is what decides it — a bundled capture has nowhere, and
+    // has to stay one self-contained document.
+    const bool manifest = bool(snap.chunkBlobs);
+    w.u8(manifest ? 1 : 0);
+
+    // Unique mesh and texture tables referenced by index from the
+    // draws. Monolithic layout only: the manifest layout has no global
+    // tables at all, by design (docs/SceneStreaming.md §3).
     MeshIndex meshIndex;
     std::vector<const MeshData *> meshes;
     TextureIndex texIndex;
@@ -1102,51 +1714,103 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
             addShader(d.material.usershader.get());
         }
     };
-    addDraws(snap.scene);
-    for (const auto &sel : snap.selections)
-        addDraws(sel.second);
-    addDraws(snap.highlight);
-    for (const auto &ov : snap.overlays)
-        addDraws(ov.draws);
-    addTex(snap.pbrconf.envImage);
-    addTex(snap.hatch);
-    addTex(snap.lightconf.groundTexture);
-    addTex(snap.lightconf.groundBumpMap);
-    for (const auto &s : snap.usershaderconf.shaders)
-        addShader(&s);
-    for (const auto &s : snap.usershaderconf.splices)
-        addShader(&s);
-
-    w.u32(uint32_t(meshes.size()));
-    for (auto *m : meshes)
-        writeMesh(w, *m, snap.meshBlobs);
-    w.u32(uint32_t(textures.size()));
-    for (auto *t : textures)
-        writeTexture(w, *t, snap.textureBlobs);
-
-    // v23: the user shader table (before the draws that reference it)
-    // + the post-stage config list as table indices.
-    w.u32(uint32_t(shaders.size()));
-    for (auto *s : shaders)
-        writeUserShader(w, *s, snap.shaderBins);
-    w.u32(uint32_t(snap.usershaderconf.shaders.size()));
-    for (const auto &s : snap.usershaderconf.shaders)
-        w.i32(shaderIndex[&s]);
-    // v24: the assembled volume-splice variants as table indices.
-    w.u32(uint32_t(snap.usershaderconf.splices.size()));
-    for (const auto &s : snap.usershaderconf.splices)
-        w.i32(shaderIndex[&s]);
-
-    // v29: the deduplicated material table, ahead of every draw list
-    // that indexes into it. Materials reference the texture and shader
-    // tables, so it has to follow those.
+    // How the records below place their references, and how a feed's
+    // draws are written: the one difference between the two layouts,
+    // so that everything after this point is shared.
+    RefWriter refs;
+    ManifestWriter mst;
     MaterialIndex matIndex;
-    {
+    DrawRefWriter drefs;
+    auto writeFeed = [&](const DrawCallList &draws, uint64_t objectKey,
+                         bool outOfBand) {
+        if (!manifest) {
+            writeDrawList(w, draws, drefs);
+            return;
+        }
+        DrawRefs refsList;
+        refsList.reserve(draws.size());
+        for (const auto &d : draws)
+            refsList.push_back(&d);
+        writeGroup(w, refsList, objectKey, mst, outOfBand);
+    };
+
+    if (manifest) {
+        initManifestWriter(mst, snap);
+        refs = mst.refs;
+        // The scene-level user shader lists, by content key rather
+        // than by table index.
+        w.u32(uint32_t(snap.usershaderconf.shaders.size()));
+        for (const auto &s : snap.usershaderconf.shaders)
+            refs.shader(w, &s);
+        w.u32(uint32_t(snap.usershaderconf.splices.size()));
+        for (const auto &s : snap.usershaderconf.splices)
+            refs.shader(w, &s);
+
+        // The scene cut into one content-keyed group per object, in
+        // first-appearance order so the cut does not move when the
+        // scene did not. Draws the producer could not name have no
+        // identity to cache under and ride along in a group of their
+        // own, written inline.
+        std::vector<uint64_t> order;
+        std::map<uint64_t, DrawRefs> byKey;
+        DrawRefs keyless;
+        groupScene(snap.scene, order, byKey, keyless);
+        w.u32(uint32_t(order.size()));
+        for (uint64_t key : order) {
+            const DrawRefs &group = byKey[key];
+            float bbox[6];
+            groupBBox(group, bbox);
+            w.u64(key);
+            w.floats(bbox, 6);
+            writeGroup(w, group, key, mst, true);
+        }
+        writeGroup(w, keyless, 0, mst, false);
+    }
+    else {
+        addDraws(snap.scene);
+        for (const auto &sel : snap.selections)
+            addDraws(sel.second);
+        addDraws(snap.highlight);
+        for (const auto &ov : snap.overlays)
+            addDraws(ov.draws);
+        addTex(snap.pbrconf.envImage);
+        addTex(snap.hatch);
+        addTex(snap.lightconf.groundTexture);
+        addTex(snap.lightconf.groundBumpMap);
+        for (const auto &s : snap.usershaderconf.shaders)
+            addShader(&s);
+        for (const auto &s : snap.usershaderconf.splices)
+            addShader(&s);
+
+        w.u32(uint32_t(meshes.size()));
+        for (auto *m : meshes)
+            writeMesh(w, *m, snap.meshBlobs);
+        w.u32(uint32_t(textures.size()));
+        for (auto *t : textures)
+            writeTexture(w, *t, snap.textureBlobs);
+
+        // v23: the user shader table (before the draws that reference
+        // it) + the post-stage config list as table indices.
+        w.u32(uint32_t(shaders.size()));
+        for (auto *s : shaders)
+            writeUserShader(w, *s, snap.shaderBins);
+        w.u32(uint32_t(snap.usershaderconf.shaders.size()));
+        for (const auto &s : snap.usershaderconf.shaders)
+            w.i32(shaderIndex[&s]);
+        // v24: the assembled volume-splice variants as table indices.
+        w.u32(uint32_t(snap.usershaderconf.splices.size()));
+        for (const auto &s : snap.usershaderconf.splices)
+            w.i32(shaderIndex[&s]);
+
+        refs = tableRefWriter(texIndex, shaderIndex);
+
+        // v29: the deduplicated material table, ahead of every draw
+        // list that indexes into it. Materials reference the texture
+        // and shader tables, so it has to follow those.
         std::vector<std::vector<uint8_t>> table;
         std::map<std::vector<uint8_t>, int32_t> seen;
         auto collect = [&](const DrawCallList &draws) {
-            collectMaterials(draws, texIndex, shaderIndex, table, seen,
-                             matIndex);
+            collectMaterials(draws, refs, table, seen, matIndex);
         };
         collect(snap.scene);
         for (const auto &sel : snap.selections)
@@ -1154,29 +1818,24 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         collect(snap.highlight);
         for (const auto &ov : snap.overlays)
             collect(ov.draws);
-        std::vector<uint8_t> blob;
-        writeChunk(blob, [&table](Writer &cw) {
-            cw.u32(kChunkVersion);
-            cw.u32(uint32_t(table.size()));
-            for (const auto &bytes : table)
-                cw.raw(bytes.data(), bytes.size());
-        });
-        if (snap.materialBlobs) {
-            // v31: the key alone; the publisher decides whether the
-            // bytes still have to be sent.
-            std::string key = sha1Hex(blob.data(), blob.size());
-            w.u8(1);
-            w.str(key);
-            w.u32(uint32_t(blob.size()));
-            snap.materialBlobs(key, std::move(blob));
-        }
-        else {
-            w.u8(0);
-            w.raw(blob.data(), blob.size());
-        }
-    }
+        w.u8(0);
+        w.u32(kChunkVersion);
+        w.u32(uint32_t(table.size()));
+        for (const auto &bytes : table)
+            w.raw(bytes.data(), bytes.size());
 
-    writeDrawList(w, snap.scene, meshIndex, matIndex);
+        drefs.mesh = [&meshIndex](Writer &ww,
+                                  const std::shared_ptr<const MeshData> &m) {
+            auto it = m ? meshIndex.find(m.get()) : meshIndex.end();
+            ww.i32(it == meshIndex.end() ? -1 : it->second);
+        };
+        drefs.material = [&matIndex](Writer &ww, const DrawCall &d) {
+            auto it = matIndex.find(&d);
+            ww.i32(it == matIndex.end() ? -1 : it->second);
+        };
+
+        writeDrawList(w, snap.scene, drefs);
+    }
 
     // Background + per-frame configs.
     w.u8(snap.background.type);
@@ -1206,15 +1865,12 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.f(snap.pbrconf.roughness);
     w.f(snap.pbrconf.envIntensity);
     w.b(snap.pbrconf.envBackground);
-    {
-        auto it = texIndex.find(snap.pbrconf.envImage.get());
-        w.i32(it == texIndex.end() ? -1 : it->second);
-    }
+    refs.tex(w, snap.pbrconf.envImage);
 
     w.f(snap.bumpconf.scale);
     w.b(snap.bumpconf.parallax);
 
-    writeLight(w, snap.lightconf, texIndex);
+    writeLight(w, snap.lightconf, refs);
 
     const VolumetricConfig &vc = snap.volconf;
     w.b(vc.enabled); w.f(vc.intensity); w.f(vc.density);
@@ -1242,10 +1898,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
 
     // v27: the hatch image as a texture-table index (v26 and older
     // wrote its size and pixels inline here).
-    {
-        auto it = texIndex.find(snap.hatch.get());
-        w.i32(it == texIndex.end() ? -1 : it->second);
-    }
+    refs.tex(w, snap.hatch);
 
     w.floats(snap.viewMatrix, 16);
     w.floats(snap.projMatrix, 16);
@@ -1258,9 +1911,9 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.u32(uint32_t(snap.selections.size()));
     for (const auto &sel : snap.selections) {
         w.i32(sel.first);
-        writeDrawList(w, sel.second, meshIndex, matIndex);
+        writeFeed(sel.second, 0, false);
     }
-    writeDrawList(w, snap.highlight, meshIndex, matIndex);
+    writeFeed(snap.highlight, 0, false);
     w.b(snap.highlightWholeOnTop);
 
     // v3: overlay feeds (appended so the v2 prefix layout is unchanged).
@@ -1280,7 +1933,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(a.marginX);    // v5
         w.f(a.marginY);
         w.b(a.sceneCamera); // v6
-        writeDrawList(w, ov.draws, meshIndex, matIndex);
+        writeFeed(ov.draws, 0, true);
     }
 
     // v10: preselection + selection highlight config (client-side styling).
@@ -1308,27 +1961,23 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     return w.ok;
 }
 
-static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
+/// The monolithic layout's global tables, then the scene draw list
+/// that indexes into them. A bundled capture is the only thing that
+/// still writes this, but every older snapshot on disk is one too, so
+/// it reads every version back to 1.
+void loadMonolithicTables(Reader &r, SceneSnapshot &snap, uint32_t version,
+                          MeshTable &meshes, TextureTable &textures,
+                          ShaderTable &shaders, MaterialTable &materials,
+                          RefReader &refs, DrawRefReader &drefs)
 {
-    Reader r;
-    r.fp = fp;
-    uint32_t magic = r.u32();
-    uint32_t version = r.u32();
-    if (magic != kMagic || version < 1 || version > kVersion)
-        return false;
-
     uint32_t nmesh = r.u32();
-    MeshTable meshes;
     if (nmesh > 0x100000u)
         r.ok = false;
-    snap.deferredMeshes.clear();
     for (uint32_t i = 0; r.ok && i < nmesh; ++i)
         meshes.push_back(readMesh(r, version, snap));
     uint32_t ntex = r.u32();
-    TextureTable textures;
     if (ntex > 0x100000u)
         r.ok = false;
-    snap.deferredTextures.clear();
     for (uint32_t i = 0; r.ok && i < ntex; ++i) {
         auto tex = readTexture(r, version);
         if (tex && tex->deferred)
@@ -1337,7 +1986,6 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     }
 
     // v23: user shader table + post-stage list (see saveSnapshotFp).
-    ShaderTable shaders;
     snap.usershaderconf = UserShaderConfig();
     if (version >= 23) {
         uint32_t ns = r.u32();
@@ -1368,68 +2016,137 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         }
     }
 
-    MaterialTable materials;
-    snap.deferredMaterials = SceneSnapshot::DeferredMaterials();
+    // The tables are complete; the records below reference them.
+    refs = tableRefReader(textures, shaders);
+
     if (version >= 29) {
-        bool deferred = false;
-        if (version >= 31)
-            deferred = r.u8() != 0;
-        if (deferred) {
-            r.str(snap.deferredMaterials.key, 128);
-            snap.deferredMaterials.size = r.u32();
-            snap.deferredMaterials.fill =
-                [textures, shaders, version](SceneSnapshot &target,
-                                             const void *data, size_t size) {
-                MaterialTable table;
-                if (!readChunk(data, size, [&](Reader &cr) {
-                        if (cr.u32() != kChunkVersion) {
-                            cr.ok = false;
-                            return;
-                        }
-                        uint32_t nmat = cr.u32();
-                        if (!cr.ok || nmat > 0x1000000u) {
-                            cr.ok = false;
-                            return;
-                        }
-                        for (uint32_t i = 0; cr.ok && i < nmat; ++i) {
-                            table.emplace_back();
-                            readMaterial(cr, table.back(), textures, shaders,
-                                         version);
-                        }
-                    }))
-                    return false;
-                auto apply = [&table](DrawCallList &draws) {
-                    for (auto &d : draws) {
-                        if (d.materialIndex >= 0
-                                && size_t(d.materialIndex) < table.size())
-                            d.material = table[size_t(d.materialIndex)];
-                    }
-                };
-                apply(target.scene);
-                apply(target.highlight);
-                for (auto &sel : target.selections)
-                    apply(sel.second);
-                for (auto &ov : target.overlays)
-                    apply(ov.draws);
-                return true;
-            };
+        // v31/v32 served this table out of band on the streaming path.
+        // The manifest layout keys materials individually instead, so
+        // nothing writes that form any more and a bundled capture,
+        // which is all this layout is now used for, never did.
+        if (version >= 31 && r.u8() != 0) {
+            r.ok = false;
+            return;
         }
-        else {
-            // The table is the same chunk either way, so it carries
-            // the same version field (v32) inline as it does as a blob.
-            if (version >= 32 && r.u32() != kChunkVersion)
-                r.ok = false;
-            uint32_t nmat = r.u32();
-            if (!r.ok || nmat > 0x1000000u)
-                r.ok = false;
-            for (uint32_t i = 0; r.ok && i < nmat; ++i) {
-                materials.emplace_back();
-                readMaterial(r, materials.back(), textures, shaders, version);
-            }
+        // The table is the same chunk either way, so it carries the
+        // same version field (v32) inline as it did as a blob.
+        if (version >= 32 && r.u32() != kChunkVersion)
+            r.ok = false;
+        uint32_t nmat = r.u32();
+        if (!r.ok || nmat > 0x1000000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < nmat; ++i) {
+            materials.emplace_back();
+            readMaterial(r, materials.back(), refs, version);
         }
     }
 
-    readDrawList(r, snap.scene, meshes, textures, shaders, materials, version);
+    drefs.mesh = [&meshes](Reader &rr, std::shared_ptr<const MeshData> &m) {
+        int32_t i = rr.i32();
+        if (i >= 0 && size_t(i) < meshes.size())
+            m = meshes[size_t(i)];
+    };
+    drefs.material = [&materials, version, &refs](Reader &rr, DrawCall &d) {
+        if (version < 29) {
+            readMaterial(rr, d.material, refs, version);
+            return;
+        }
+        d.materialIndex = rr.i32();
+        if (d.materialIndex >= 0 && size_t(d.materialIndex) < materials.size())
+            d.material = materials[size_t(d.materialIndex)];
+    };
+
+    readDrawList(r, snap.scene, drefs, version);
+}
+
+static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
+{
+    Reader r;
+    r.fp = fp;
+    uint32_t magic = r.u32();
+    uint32_t version = r.u32();
+    if (magic != kMagic || version < 1 || version > kVersion)
+        return false;
+    const bool manifest = version >= 33 && r.u8() != 0;
+
+    snap.deferredChunks.clear();
+    snap.deferredTextures.clear();
+    snap.groups.clear();
+    snap.materials.clear();
+    snap.finalize = nullptr;
+
+    // Set by whichever layout follows; everything after the feeds is
+    // shared and goes through these.
+    RefReader refs;
+    DrawRefReader drefs;
+    LoaderPtr st;
+    MeshTable meshes;
+    TextureTable textures;
+    ShaderTable shaders;
+    MaterialTable materials;
+
+    if (manifest) {
+        st = std::make_shared<ManifestLoader>();
+        st->version = version;
+        refs = manifestRefReader(st, snap);
+        snap.usershaderconf = UserShaderConfig();
+        uint32_t npost = r.u32();
+        if (!r.ok || npost > 0x10000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < npost; ++i) {
+            std::shared_ptr<const UserShader> s;
+            refs.shader(r, s);
+            if (s)
+                st->postShaders.push_back(s);
+        }
+        uint32_t nspl = r.u32();
+        if (!r.ok || nspl > 0x10000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < nspl; ++i) {
+            std::shared_ptr<const UserShader> s;
+            refs.shader(r, s);
+            if (s)
+                st->postSplices.push_back(s);
+        }
+
+        uint32_t nobj = r.u32();
+        if (!r.ok || nobj > 0x1000000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < nobj; ++i) {
+            r.u64();            // objectKey
+            float bbox[6];
+            r.floats(bbox, 6);  // 2b-3 will draw a proxy from this
+            GroupTarget t;
+            t.kind = GroupTarget::Scene;
+            readGroup(r, snap, st, t);
+        }
+        if (r.ok) {
+            GroupTarget t;
+            t.kind = GroupTarget::Scene;
+            readGroup(r, snap, st, t);   // the draws with no objectKey
+        }
+        setManifestFinalize(snap, st);
+    }
+    else
+        loadMonolithicTables(r, snap, version, meshes, textures, shaders,
+                             materials, refs, drefs);
+
+    // The feeds that follow the configs. In the monolithic layout they
+    // are draw lists indexing the global tables; in the manifest one
+    // they are groups, whose draws land in a fixed slot and are moved
+    // into place by finalize() once every chunk is in — so that the
+    // order a backend sees never depends on the order chunks arrived.
+    auto readFeed = [&](DrawCallList &target, int kind, size_t index) {
+        if (!manifest) {
+            readDrawList(r, target, drefs, version);
+            return;
+        }
+        GroupTarget t;
+        t.kind = kind;
+        t.index = index;
+        readGroup(r, snap, st, t);
+    };
+
 
     snap.background.type = r.u8();
     snap.background.fromColor = r.u32();
@@ -1460,16 +2177,13 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.pbrconf.roughness = r.f();
     snap.pbrconf.envIntensity = r.f();
     snap.pbrconf.envBackground = version >= 25 ? r.b() : false;
-    if (version >= 25) {
-        int32_t idx = r.i32();
-        if (idx >= 0 && size_t(idx) < textures.size())
-            snap.pbrconf.envImage = textures[size_t(idx)];
-    }
+    if (version >= 25)
+        refs.tex(r, snap.pbrconf.envImage);
 
     snap.bumpconf.scale = r.f();
     snap.bumpconf.parallax = r.b();
 
-    readLight(r, snap.lightconf, textures, version);
+    readLight(r, snap.lightconf, refs, version);
 
     VolumetricConfig &vc = snap.volconf;
     vc.enabled = r.b(); vc.intensity = r.f(); vc.density = r.f();
@@ -1501,11 +2215,8 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.ssaoResolution = version >= 12 ? r.f() : 1.0f;
 
     snap.hatch.reset();
-    if (version >= 27) {
-        int32_t idx = r.i32();
-        if (idx >= 0 && size_t(idx) < textures.size())
-            snap.hatch = textures[size_t(idx)];
-    }
+    if (version >= 27)
+        refs.tex(r, snap.hatch);
     else {
         // v26 and older: width, height and the pixels written inline.
         auto hatch = std::make_shared<TextureImage>();
@@ -1538,13 +2249,11 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             r.ok = false;
         for (uint32_t i = 0; r.ok && i < nsel; ++i) {
             int id = r.i32();
-            DrawCallList draws;
-            if (readDrawList(r, draws, meshes, textures, shaders,
-                             materials, version))
-                snap.selections.emplace_back(id, std::move(draws));
+            snap.selections.emplace_back(id, DrawCallList());
+            readFeed(snap.selections.back().second, GroupTarget::Selection,
+                     snap.selections.size() - 1);
         }
-        readDrawList(r, snap.highlight, meshes, textures, shaders,
-                     materials, version);
+        readFeed(snap.highlight, GroupTarget::Highlight, 0);
         snap.highlightWholeOnTop = r.b();
     }
 
@@ -1571,9 +2280,9 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 a.marginY = r.f();
             }
             a.sceneCamera = version >= 6 ? r.b() : false;
-            if (readDrawList(r, ov.draws, meshes, textures, shaders, materials,
-                             version))
-                snap.overlays.push_back(std::move(ov));
+            snap.overlays.push_back(std::move(ov));
+            readFeed(snap.overlays.back().draws, GroupTarget::Overlay,
+                     snap.overlays.size() - 1);
         }
     }
 

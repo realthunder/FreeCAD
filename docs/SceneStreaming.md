@@ -388,7 +388,7 @@ to remove.
 | 1c | camera out of the scene payload | **not needed, see below** |
 | 2a | material dedup (**done**, v29) | 27.7 KB |
 | 2a′ | trimmed records + table out of band (**done**, v30/v31) | 10.8 KB |
-| 2b-1 | draw groups → content-keyed chunks, leaves keyed | unchanged object = 53 B |
+| 2b-1 | draw groups → content-keyed chunks, leaves keyed (**done**, v33) | 1.4 KB |
 | 2b-2 | root delta-encoded, history + resync | ~1 KB steady state |
 | 2b-3 | progressive fidelity off the manifest boxes | frames before geometry |
 | 3 | mesh-complete submission + bbox proxies | model appears while it loads |
@@ -559,6 +559,38 @@ material, which pays for itself the moment two objects share a material and pays
 enormously the moment an object is unchanged. The count of round trips does not
 grow: leaves are batched by byte budget, and a batch is one request whether it
 holds one key or four hundred.
+
+**2b-1 landed as snapshot v33.** The format now has *two* layouts, chosen by a
+flag after the version and, on the writer's side, by whether it was given
+anywhere to put chunks: the monolithic one is untouched and is what a bundled
+`.fcsd` capture stays, and the manifest one is what the stream uses. Measured on
+`scripts/demo-water.py`: **10,834 B → 1,404 B**, with the draws, the materials,
+the shaders and the overlays all behind content keys and the root reduced to the
+volatile config block plus one 53-byte entry per object.
+
+Three things are worth recording about the implementation:
+
+- **The two layouts share their code, not their shape.** Every record that
+  references something it does not contain — a material naming a texture, a
+  draw naming a mesh, the config block naming the environment image — goes
+  through a small reference indirection (`RefWriter`/`RefReader`), and only that
+  indirection differs between the layouts. Without it the config block alone
+  would have had to be written twice and would have drifted.
+- **A leaf is described where it is used.** With no global texture table, an
+  image's ~70-byte header repeats in each material that names it. Its *payload*
+  does not: the writer memoizes what it has handed over this publish, so the
+  pixels leave the renderer once however many materials mention them.
+- **The staging is indexed, not appended.** A group's draws land at the slot the
+  root named them at and a `finalize()` pass stitches them into the feeds, so
+  the order a backend sees is the producer's order and not the order chunks
+  happened to come back in — which would otherwise vary run to run and make
+  pixel comparison meaningless.
+
+`tests/src/Gui/SceneDump.cpp` covers both layouts headlessly (no GL context, no
+document): round trips, and the two properties the phase exists for — an
+unchanged scene republishes without minting a key, and repainting one object
+mints exactly its own manifest and its new material, touching no other object's
+chunk and no mesh at all.
 
 **What 2b-1 does not do** is delta-encode the root. Every publish still names
 every object — 53 B each, so ~530 KB at 10k objects, which is the whole reason

@@ -7275,11 +7275,16 @@ public:
                     meshKeys[cacheId] = {key, uint32_t(chunk.size())};
                     server.publishBlob(key, std::move(chunk));
                 };
-                // The deduplicated material table (v31) is one blob:
-                // it is rebuilt and hashed every publish, but its bytes
-                // only leave the process when it actually changed.
-                snap.materialBlobs = [&server](const std::string &key,
-                                               std::vector<uint8_t> &&bytes) {
+                // v33: the manifest layout. Setting this is what
+                // selects it — the group manifests, the materials and
+                // the user shaders all become content-keyed chunks,
+                // and an object nothing touched then costs its root
+                // entry alone. Each is rebuilt and hashed every
+                // publish (it has to be built to know it is
+                // unchanged), but its bytes only leave the process
+                // when the publisher does not already hold them.
+                snap.chunkBlobs = [&server](const std::string &key,
+                                            std::vector<uint8_t> &&bytes) {
                     if (!server.retainBlob(key))
                         server.publishBlob(key, std::move(bytes));
                 };
