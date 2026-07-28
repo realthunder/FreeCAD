@@ -388,7 +388,9 @@ to remove.
 | 1c | camera out of the scene payload | **not needed, see below** |
 | 2a | material dedup (**done**, v29) | 27.7 KB |
 | 2a′ | trimmed records + table out of band (**done**, v30/v31) | 10.8 KB |
-| 2b | L0/L1/L2 manifests, delta sync | ~1 KB steady state |
+| 2b-1 | draw groups → content-keyed chunks, leaves keyed | unchanged object = 53 B |
+| 2b-2 | root delta-encoded, history + resync | ~1 KB steady state |
+| 2b-3 | progressive fidelity off the manifest boxes | frames before geometry |
 | 3 | mesh-complete submission + bbox proxies | model appears while it loads |
 | 4 | frustum-ordered fetch, distance eviction | large models usable |
 | 5 | LOD variants per mesh (§7) | large models *fast* |
@@ -512,10 +514,62 @@ which is what §4's compact draw record and the manifest tree address. Phase 2 i
 complexity lands, and it is what the thin client needs — the phases before it
 shrink a small scene, but only the manifest tree makes a *big* model tractable.
 
+### 2b — the manifest tree, in three slices
+
+2b is where the format stops being one document with tables in it and becomes a
+tree of independently addressed chunks. That is too much to land in one step, and
+the three pieces have genuinely different risk, so they are separated:
+
+| Slice | Change | What it buys |
+| --- | --- | --- |
+| 2b-1 | draw groups become content-keyed chunks; leaves keyed individually | an unchanged object costs 53 B a publish |
+| 2b-2 | root delta-encoded against the version the viewer holds, with history and resync | steady state independent of model size |
+| 2b-3 | progressive fidelity off the L0/L1 boxes | the model frames and roughs in before geometry lands |
+
+**The unit is a draw group, not an object.** The scene feed is grouped by
+`objectKey`, but selection, highlight and overlay feeds are draw lists too, and
+none of them wants a mechanism of its own. So one encoding — *local key lists
+plus draws that index into them* (§4's L1) — is used in two placements: written
+out of band under its content key (a scene object, an overlay), or inline
+(selection and highlight, which are per-viewer, volatile and a handful of draws
+after a pick — a chunk and a round trip for them would cost more than they
+carry). The placement is the only difference; the bytes are the same.
+
+**Keyless draws stay inline.** `objectKey == 0` means the producer could not
+name the draw, so those draws have no identity to be cached under and no
+grouping that survives a republish. Bucketing them together would build exactly
+the perpetually-dirty chunk §3 warns about — one chunk that changes whenever any
+unnamed draw does, invalidating all of them. They are written inline in the root
+instead, which costs their full record every publish and is the honest price of
+not knowing what they are. If a real model turns out to have many, the fix is to
+name them at the producer, not to bucket them here.
+
+**Materials become individually keyed, undoing v31's single table.** The whole
+table as one blob was right while draws indexed into it globally; under §3 it is
+exactly wrong, because inserting one material renumbers the indices in every
+object manifest that follows it and invalidates every one of them. So a material
+becomes a leaf like a mesh: its own content key, pulled through the same batch
+path (at ~195 B it is squarely a *many and small* payload). Shaders follow for
+the same reason — and they carry compiled binaries, so their dedup matters more
+than their count suggests. Textures already work this way. The v31 table blob
+survives only for the bundled-snapshot path, which has no keys at all.
+
+The cost of individual keys is 44 B of reference per leaf against 195 B of
+material, which pays for itself the moment two objects share a material and pays
+enormously the moment an object is unchanged. The count of round trips does not
+grow: leaves are batched by byte budget, and a batch is one request whether it
+holds one key or four hundred.
+
+**What 2b-1 does not do** is delta-encode the root. Every publish still names
+every object — 53 B each, so ~530 KB at 10k objects, which is the whole reason
+2b-2 exists — but nothing *behind* those names moves unless it changed. That
+split is deliberate: 2b-1 is a serializer change with a mechanical viewer
+counterpart, while 2b-2 adds server-side history and a resync path, which is
+where the protocol can actually go wrong. Landing them together would make a
+sync bug indistinguishable from a chunking bug.
+
 ## 12. Open questions
 
-- **`objectKey == 0`** means "unknown" (`Renderer.h:1011`). Those draws need a
-  fallback bucket, or they collide into a single perpetually-dirty chunk.
 - **Manifest history depth** — how stale a viewer may be before a full resync,
   and what that costs in server memory.
 - **Very large single objects.** The mesh level bounds *geometry* churn and
