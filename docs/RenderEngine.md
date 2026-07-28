@@ -107,6 +107,16 @@ configs that it used to be. That one line of the stream was 64% of a
 small scene's payload, re-sent on every publish, purely because it sat
 outside the table the deferral applies to.
 
+Mesh chunks follow the same shape in **v28**, with two differences
+that follow from meshes being many and small rather than few and
+large. They are pulled in **batches** packed to a byte budget rather
+than one request each, and their key is memoized on `MeshData::cacheId`
+rather than recomputed per publish — sound because a cacheId names one
+content for the life of the process, which is the one direction that
+counter guarantees. The cacheId itself is excluded from the hashed
+bytes: it changes on every re-tessellation, so hashing it would mint a
+new key for geometry that did not change.
+
 Deferral is a property of the transport, not of the format: the sink is
 set only by the streaming publisher, so a snapshot captured to a file
 (`FC_BGFX_DUMP_SCENE`, the bundled `/scene.fcsd`) stays self-contained

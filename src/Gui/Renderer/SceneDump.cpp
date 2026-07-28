@@ -56,7 +56,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // 27: the section-cap hatch image joins the texture table (was a raw
 //     blob written inline), so it rides the v26 content key and is
 //     served out of band like any other image.
-const uint32_t kVersion = 27;
+// 28: mesh entries carry a content key and a deferred flag, and their
+//     cacheId leaves the hashed payload (it is a counter, so hashing
+//     it would mint a new key for unchanged geometry). The streaming
+//     transport writes the key alone and serves the chunks in batches.
+const uint32_t kVersion = 28;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -147,12 +151,24 @@ struct Reader {
     }
 };
 
+/// Serialize / parse a detached chunk (an out-of-band mesh payload)
+/// through the same Writer and Reader. Defined next to the platform's
+/// memory-stream shims at the end of this file.
+static bool writeChunk(std::vector<uint8_t> &out,
+                       const std::function<void(Writer &)> &fn);
+static bool readChunk(const void *data, size_t size,
+                      const std::function<void(Reader &)> &fn);
+std::string sha1Hex(const uint8_t *data, size_t size);
+
 //////////////////////////////////////////////////////////////////////
 // Mesh payload
 
-void writeMesh(Writer &w, const MeshData &m)
+/// The mesh content proper — everything but the cacheId, which names
+/// the mesh rather than describing it and would poison the content key
+/// (it is a counter, bumped even by a re-tessellation that reproduces
+/// the same geometry byte for byte).
+void writeMeshChunk(Writer &w, const MeshData &m)
 {
-    w.u64(m.cacheId);
     w.i32(m.numVertices);
     uint8_t flags = (m.normals ? 1 : 0) | (m.colors ? 2 : 0)
         | (m.texCoords ? 4 : 0);
@@ -185,6 +201,41 @@ void writeMesh(Writer &w, const MeshData &m)
     w.parts(m.pointParts);  // v11
 }
 
+/// \a blobs unset (a bundled snapshot) writes the identity and the
+/// chunk inline as before; set (the streaming transport) writes the
+/// content key alone and hands the chunk over to be served out of
+/// band. On the streaming path a memoized key costs nothing at all:
+/// no serialization, no hash, no copy of the geometry.
+void writeMesh(Writer &w, const MeshData &m,
+               const SceneSnapshot::MeshBlobSink &blobs)
+{
+    if (!blobs) {
+        w.u8(0);
+        w.u64(m.cacheId);
+        writeMeshChunk(w, m);
+        return;
+    }
+
+    uint32_t size = 0;
+    std::string key = blobs.reuse(m.cacheId, size);
+    if (key.empty()) {
+        std::vector<uint8_t> chunk;
+        if (!writeChunk(chunk, [&m](Writer &cw) { writeMeshChunk(cw, m); })) {
+            w.ok = false;
+            return;
+        }
+        key = sha1Hex(chunk.data(), chunk.size());
+        size = uint32_t(chunk.size());
+        blobs.store(m.cacheId, key, std::move(chunk));
+    }
+    w.u8(1);
+    w.str(key);
+    // The payload size the key stands for: the viewer routes a small
+    // chunk into a batch and a large one into its own request, and it
+    // cannot know which without being told.
+    w.u32(size);
+}
+
 /// Loader-side mesh: the arrays live in the owned vectors, the base
 /// MeshData pointers point into them. Held by DrawCall::mesh.
 struct OwnedMeshData : MeshData {
@@ -198,16 +249,16 @@ struct OwnedMeshData : MeshData {
     std::vector<int32_t> noSeamStore;
 };
 
-std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version)
+/// Parse the mesh content proper (writeMeshChunk's output) into \a mesh,
+/// from either the stream itself or a separately fetched chunk.
+void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
 {
-    auto mesh = std::make_shared<OwnedMeshData>();
-    mesh->cacheId = r.u64();
     mesh->numVertices = r.i32();
     uint8_t flags = r.u8();
     if (!r.ok || mesh->numVertices < 0
             || mesh->numVertices > 0x8000000) {
         r.ok = false;
-        return nullptr;
+        return;
     }
     size_t nv = size_t(mesh->numVertices);
     mesh->posStore.resize(nv * 3);
@@ -260,7 +311,33 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version)
         r.parts(mesh->lineParts);
         r.parts(mesh->pointParts);
     }
-    return mesh;
+}
+
+/// Read one mesh table entry. A deferred entry (v28, streaming) yields
+/// an empty MeshData plus the means to fill it once its chunk arrives;
+/// the draw calls already alias it, so filling it in place is enough.
+std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
+                                         SceneSnapshot &snap)
+{
+    auto mesh = std::make_shared<OwnedMeshData>();
+    if (version >= 28 && r.u8() != 0) {
+        SceneSnapshot::DeferredMesh entry;
+        r.str(entry.key, 128);
+        entry.size = r.u32();
+        if (!r.ok)
+            return nullptr;
+        entry.mesh = mesh;
+        entry.fill = [mesh](const void *data, size_t size) {
+            return readChunk(data, size, [&mesh](Reader &cr) {
+                readMeshChunk(cr, mesh.get(), kVersion);
+            });
+        };
+        snap.deferredMeshes.push_back(std::move(entry));
+        return mesh;
+    }
+    mesh->cacheId = r.u64();
+    readMeshChunk(r, mesh.get(), version);
+    return r.ok ? mesh : nullptr;
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -884,7 +961,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
 
     w.u32(uint32_t(meshes.size()));
     for (auto *m : meshes)
-        writeMesh(w, *m);
+        writeMesh(w, *m, snap.meshBlobs);
     w.u32(uint32_t(textures.size()));
     for (auto *t : textures)
         writeTexture(w, *t, snap.textureBlobs);
@@ -1047,8 +1124,9 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     MeshTable meshes;
     if (nmesh > 0x100000u)
         r.ok = false;
+    snap.deferredMeshes.clear();
     for (uint32_t i = 0; r.ok && i < nmesh; ++i)
-        meshes.push_back(readMesh(r, version));
+        meshes.push_back(readMesh(r, version, snap));
     uint32_t ntex = r.u32();
     TextureTable textures;
     if (ntex > 0x100000u)
@@ -1299,6 +1377,50 @@ bool Render::loadSceneSnapshot(const char *path, SceneSnapshot &snap)
 #ifdef _WIN32
 // No open_memstream/fmemopen: stage through a temporary file.
 
+namespace {
+
+bool writeChunk(std::vector<uint8_t> &out,
+                const std::function<void(Writer &)> &fn)
+{
+    FILE *fp = std::tmpfile();
+    if (!fp)
+        return false;
+    Writer w;
+    w.fp = fp;
+    fn(w);
+    bool ok = w.ok && std::fflush(fp) == 0;
+    if (ok) {
+        long size = (std::fseek(fp, 0, SEEK_END) == 0) ? std::ftell(fp) : -1;
+        ok = size >= 0 && std::fseek(fp, 0, SEEK_SET) == 0;
+        if (ok) {
+            out.resize(size_t(size));
+            ok = std::fread(out.data(), 1, out.size(), fp) == out.size();
+        }
+    }
+    std::fclose(fp);
+    return ok;
+}
+
+bool readChunk(const void *data, size_t size,
+               const std::function<void(Reader &)> &fn)
+{
+    FILE *fp = std::tmpfile();
+    if (!fp)
+        return false;
+    bool ok = std::fwrite(data, 1, size, fp) == size
+        && std::fseek(fp, 0, SEEK_SET) == 0;
+    if (ok) {
+        Reader r;
+        r.fp = fp;
+        fn(r);
+        ok = r.ok;
+    }
+    std::fclose(fp);
+    return ok;
+}
+
+} // namespace
+
 bool Render::saveSceneSnapshot(std::vector<uint8_t> &out,
                                const SceneSnapshot &snap)
 {
@@ -1332,6 +1454,43 @@ bool Render::loadSceneSnapshot(const void *data, size_t size,
 }
 
 #else // !_WIN32
+
+namespace {
+
+bool writeChunk(std::vector<uint8_t> &out,
+                const std::function<void(Writer &)> &fn)
+{
+    char *buf = nullptr;
+    size_t size = 0;
+    FILE *fp = open_memstream(&buf, &size);
+    if (!fp)
+        return false;
+    Writer w;
+    w.fp = fp;
+    fn(w);
+    bool ok = w.ok;
+    std::fclose(fp);
+    if (ok)
+        out.assign(buf, buf + size);
+    std::free(buf);
+    return ok;
+}
+
+bool readChunk(const void *data, size_t size,
+               const std::function<void(Reader &)> &fn)
+{
+    FILE *fp = fmemopen(const_cast<void *>(data), size, "rb");
+    if (!fp)
+        return false;
+    Reader r;
+    r.fp = fp;
+    fn(r);
+    bool ok = r.ok;
+    std::fclose(fp);
+    return ok;
+}
+
+} // namespace
 
 bool Render::saveSceneSnapshot(std::vector<uint8_t> &out,
                                const SceneSnapshot &snap)

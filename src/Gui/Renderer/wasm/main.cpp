@@ -2055,6 +2055,49 @@ static bool s_pendingValid = false;
 
 static void resolvePending();
 
+/// Bytes one request should carry. Meshes are many and small, so a
+/// request each would be mostly round trips: they are packed into
+/// batches up to this budget, and a full batch is issued immediately
+/// while the next one fills, so batches run in parallel. A chunk
+/// larger than the budget is not a special case — it simply ends up
+/// alone in its batch, which is the one-resource-one-request shape
+/// textures always have.
+///
+/// 256 KB is about where transfer time stops being dominated by
+/// per-request overhead on a slow link (~200 ms at 10 Mbps), while
+/// still leaving a large model enough separate requests to use the
+/// browser's parallel connections and to report progress.
+static const size_t kRequestBytes = 256 * 1024;
+/// Matches the server's cap on one POST /blobs (SceneServer.cpp).
+static const size_t kBatchKeyMax = 512;
+
+/// Keys waiting to be asked for, with the size each contributes.
+static std::vector<std::pair<std::string, uint32_t>> s_batchQueue;
+static size_t s_batchBytes = 0;
+static bool s_batchScheduled = false;
+/// Set while a batch response is being unpacked, so the staged
+/// snapshot is re-examined once at the end rather than per blob.
+static bool s_batchApplying = false;
+
+/// Backend ids for streamed meshes, assigned locally per content key.
+/// The stream no longer carries cacheId — it is a counter that changes
+/// on every re-tessellation, identical or not — and keying the GPU
+/// upload on the content instead is what lets an unchanged mesh skip
+/// the upload as well as the fetch. Two entries with the same key
+/// (identical geometry the backend happens to hold twice) collapse
+/// onto one id and so upload once. Ids start above anything the
+/// backend mints itself, so the inline meshes of a bundled snapshot,
+/// which still carry their own ids, can never collide with these.
+static uint64_t meshIdFor(const std::string &key)
+{
+    static std::map<std::string, uint64_t> ids;
+    static uint64_t seq = 0x8000000000000000ull;
+    auto it = ids.find(key);
+    if (it != ids.end())
+        return it->second;
+    return ids[key] = ++seq;
+}
+
 /// Memory the resident payload cache may hold. Past it, everything the
 /// applied scene does not name is dropped — IndexedDB still has it, so
 /// the cost of being wrong is one local read, not a download.
@@ -2072,6 +2115,8 @@ static void pruneBlobCache()
         if (tex)
             inUse.insert(tex->contentKey);
     }
+    for (const auto &mesh : s_snap.deferredMeshes)
+        inUse.insert(mesh.key);
     for (auto it = s_blobCache.begin(); it != s_blobCache.end();) {
         if (inUse.count(it->first))
             ++it;
@@ -2097,16 +2142,17 @@ static void blobResolved(const std::string &key, BlobData data,
                 std::printf("fcviewer: blob store to IndexedDB failed\n");
             });
     }
-    resolvePending();
+    if (!s_batchApplying)
+        resolvePending();
 }
 
 static void blobFailed(const std::string &key)
 {
     s_blobInFlight.erase(key);
     s_blobFailed.insert(key);
-    std::printf("fcviewer: blob %s unavailable, texture dropped\n",
-                key.c_str());
-    resolvePending();
+    std::printf("fcviewer: blob %s unavailable, dropped\n", key.c_str());
+    if (!s_batchApplying)
+        resolvePending();
 }
 
 static void fetchBlob(const std::string &key)
@@ -2138,11 +2184,149 @@ static void fetchBlob(const std::string &key)
     emscripten_fetch(&attr, url.c_str());
 }
 
+/// Unpack a POST /blobs reply: 'FCBB', u32 count, then per entry the
+/// 40-byte key, u32 length (0xffffffff = the server does not have it)
+/// and the payload. Anything the reply did not answer is failed, so no
+/// key is left in flight forever.
+static void applyBatch(const uint8_t *data, size_t size,
+                       const std::vector<std::string> &asked)
+{
+    s_batchApplying = true;
+    std::set<std::string> seen;
+    if (size >= 8 && std::memcmp(data, "FCBB", 4) == 0) {
+        uint32_t count = 0;
+        std::memcpy(&count, data + 4, 4);
+        size_t pos = 8;
+        for (uint32_t i = 0; i < count && pos + 44 <= size; ++i) {
+            std::string key(reinterpret_cast<const char *>(data + pos), 40);
+            pos += 40;
+            uint32_t len = 0;
+            std::memcpy(&len, data + pos, 4);
+            pos += 4;
+            seen.insert(key);
+            if (len == 0xffffffffu) {
+                blobFailed(key);
+                continue;
+            }
+            if (pos + len > size)
+                break;
+            blobResolved(key, std::make_shared<std::vector<uint8_t>>(
+                                  data + pos, data + pos + len), false);
+            pos += len;
+        }
+    }
+    for (const auto &key : asked) {
+        if (!seen.count(key))
+            blobFailed(key);
+    }
+    s_batchApplying = false;
+    resolvePending();
+}
+
+/// One request for a packed batch of keys.
+struct BatchRequest {
+    std::string body;
+    std::vector<std::string> keys;
+};
+
+static void flushBatch()
+{
+    if (s_batchQueue.empty())
+        return;
+    auto items = std::move(s_batchQueue);
+    s_batchQueue.clear();
+    s_batchBytes = 0;
+
+    auto *req = new BatchRequest;
+    size_t bytes = 0;
+    for (const auto &item : items) {
+        req->keys.push_back(item.first);
+        req->body += item.first;
+        req->body += '\n';
+        bytes += item.second;
+    }
+    if (s_sceneUrl.empty()) {
+        std::unique_ptr<BatchRequest> owned(req);
+        for (const auto &key : owned->keys)
+            blobFailed(key);
+        return;
+    }
+
+    emscripten_fetch_attr_t attr;
+    emscripten_fetch_attr_init(&attr);
+    std::strcpy(attr.requestMethod, "POST");
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+    static const char *headers[] = {"Content-Type", "text/plain", nullptr};
+    attr.requestHeaders = headers;
+    attr.requestData = req->body.data();
+    attr.requestDataSize = req->body.size();
+    attr.userData = req;
+    attr.onsuccess = [](emscripten_fetch_t *fetch) {
+        std::unique_ptr<BatchRequest> req(
+            static_cast<BatchRequest *>(fetch->userData));
+        std::vector<uint8_t> data(fetch->data, fetch->data + fetch->numBytes);
+        emscripten_fetch_close(fetch);
+        applyBatch(data.data(), data.size(), req->keys);
+    };
+    attr.onerror = [](emscripten_fetch_t *fetch) {
+        std::unique_ptr<BatchRequest> req(
+            static_cast<BatchRequest *>(fetch->userData));
+        emscripten_fetch_close(fetch);
+        applyBatch(nullptr, 0, req->keys);
+    };
+    std::printf("fcviewer: mesh batch, %zu keys, %zu bytes\n",
+                req->keys.size(), bytes);
+    std::string url = s_sceneUrl + "/blobs";
+    emscripten_fetch(&attr, url.c_str());
+}
+
+/// Pack a key into the batch being filled. A full batch goes out at
+/// once and the next starts, so requests overlap; a partial one is
+/// flushed on the next tick, by which time the other misses of this
+/// pass have joined it.
+static void queueBatch(const std::string &key, uint32_t size)
+{
+    s_batchQueue.emplace_back(key, size);
+    s_batchBytes += size;
+    if (s_batchBytes >= kRequestBytes || s_batchQueue.size() >= kBatchKeyMax) {
+        flushBatch();
+        return;
+    }
+    if (!s_batchScheduled) {
+        s_batchScheduled = true;
+        emscripten_async_call([](void *) {
+            s_batchScheduled = false;
+            flushBatch();
+        }, nullptr, 0);
+    }
+}
+
 /// IndexedDB first — a reload or a revisit skips the network entirely.
-static void requestBlob(const std::string &key)
+/// \a size non-zero routes the network step through a batch instead of
+/// a request of its own (the mesh path).
+static void requestBlob(const std::string &key, uint32_t size = 0)
 {
     if (!s_blobInFlight.insert(key).second)
         return;
+    if (size) {
+        emscripten_idb_async_load(
+            kBlobDb, key.c_str(), new std::pair<std::string, uint32_t>(key, size),
+            [](void *arg, void *ptr, int num) {
+                std::unique_ptr<std::pair<std::string, uint32_t>> item(
+                    static_cast<std::pair<std::string, uint32_t> *>(arg));
+                auto bytes = static_cast<uint8_t *>(ptr);
+                auto data = std::make_shared<std::vector<uint8_t>>(
+                    bytes, bytes + num);
+                std::free(ptr);
+                blobResolved(item->first, data, true);
+            },
+            [](void *arg) {
+                std::unique_ptr<std::pair<std::string, uint32_t>> item(
+                    static_cast<std::pair<std::string, uint32_t> *>(arg));
+                queueBatch(item->first, item->second);
+            });
+        return;
+    }
     emscripten_idb_async_load(
         kBlobDb, key.c_str(), new std::string(key),
         [](void *arg, void *ptr, int num) {
@@ -2186,8 +2370,34 @@ static void resolvePending()
         ++missing;
         requestBlob(tex->contentKey);
     }
+    // Mesh chunks (v28), pulled in batches. `fill` cleared marks an
+    // entry done: the MeshData it names is the one the draws already
+    // point at, so filling it in place is all that is needed.
+    for (auto &entry : s_pendingSnap.deferredMeshes) {
+        if (!entry.fill || !entry.mesh)
+            continue;
+        ++total;
+        auto it = s_blobCache.find(entry.key);
+        if (it != s_blobCache.end() && it->second) {
+            if (entry.fill(it->second->data(), it->second->size()))
+                entry.mesh->cacheId = meshIdFor(entry.key);
+            else
+                std::printf("fcviewer: mesh chunk %s malformed\n",
+                            entry.key.c_str());
+            entry.fill = nullptr;
+            continue;
+        }
+        if (s_blobFailed.count(entry.key)) {
+            // Draw the rest of the scene rather than stall on it; the
+            // backend skips a mesh with no vertices.
+            entry.fill = nullptr;
+            continue;
+        }
+        ++missing;
+        requestBlob(entry.key, entry.size ? entry.size : 1);
+    }
     if (missing) {
-        fcviewer_status("loading textures", double(total - missing),
+        fcviewer_status("loading scene", double(total - missing),
                         double(total));
         return;
     }

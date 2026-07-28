@@ -89,6 +89,13 @@ public:
     /// viewer can learn its key.
     void publishBlob(const std::string &key, std::vector<uint8_t> &&data);
 
+    /// Declare a blob still in use by the publish being built, without
+    /// re-sending its bytes, and report its size. False means it is no
+    /// longer stored and has to be published again — that is how a
+    /// publisher-side content-key memo learns it went stale
+    /// (SceneDump.h, MeshBlobSink).
+    bool retainBlob(const std::string &key, uint32_t *size = nullptr);
+
     /// Install the consumer of viewer pick requests. Called on a
     /// server connection thread — the handler must marshal to the GUI
     /// thread itself before touching any scene graph.

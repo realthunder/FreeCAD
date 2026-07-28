@@ -1,7 +1,10 @@
 # Scene streaming — content-addressed delta publishing
 
-Status: design. The leaf tier for textures is implemented (snapshot v26,
-`c4337904f9`); everything else here is specification.
+Status: phase 1 implemented, phase 2 onward is specification. The leaf tier is
+done — textures (snapshot v26, `c4337904f9`), the hatch image (v27, `ebddfc0fdd`)
+and mesh chunks with batched pull (v28) are all content-addressed and served out
+of band, which took the reference scene from 425 KB to 39 KB per publish. The
+manifest tree and delta sync (§4-§5) are not built yet.
 
 Companions: [RenderEngine.md](./RenderEngine.md) §2 (the snapshot format and the
 tiers that consume it), [ThinClient.md](./ThinClient.md) (the UI layer this
@@ -380,7 +383,7 @@ to remove.
 | --- | --- | ---: |
 | — | today | 425 KB |
 | 1a | hatch image → content key (**done**, v27) | 155 KB |
-| 1b | meshes → content keys, batched pull | ~35 KB |
+| 1b | meshes → content keys, batched pull (**done**, v28) | ~35 KB |
 | 1c | camera out of the scene payload | orbit stops republishing |
 | 2 | L0/L1/L2 manifests, delta sync, material dedup | ~1 KB steady state |
 | 3 | mesh-complete submission + bbox proxies | model appears while it loads |
@@ -396,7 +399,34 @@ path rather than getting a mechanism of its own — the same reason it was misse
 in the first place is that it sat *outside* the table as a raw blob. Measured on
 `scripts/demo-water.py`: **424,799 B → 154,867 B**, the hatch section down to the
 4 bytes of its table index, its 270,000-byte payload fetched once and cached.
-A bundled `.fcsd` capture sets no blob sink and so stays self-contained. Phase 2 is where the
+A bundled `.fcsd` capture sets no blob sink and so stays self-contained.
+
+**1b landed as snapshot v28** — measured **154,867 B → 38,601 B** on the same
+scene, mesh table down from 119,749 B to 3,483 B. Three things make it work:
+
+- **`cacheId` leaves the hashed bytes.** It is emitted first by `writeMesh` and
+  is a bare counter (`SoFCVertexCache.cpp:252`), so hashing the chunk verbatim
+  would mint a fresh key every re-tessellation, identical output or not.
+- **The key is memoized on `cacheId` anyway** — as a *memo* key it is exactly
+  right, because a cacheId names one content for the life of the process. A hit
+  costs no serialization, no hash and no copy; a re-tessellation misses and is
+  hashed once. This is what keeps the cost proportional to changed geometry
+  instead of moving it from the network onto the CPU. The memo spans two
+  publishes and expires when `retainBlob()` reports the blob gone, so it can
+  never name something the server has dropped.
+- **Batched pull.** 58 chunks over individual requests would be mostly round
+  trips, so keys are packed into batches up to a byte budget
+  (`kRequestBytes`, 256 KB) and a filled batch is issued while the next one
+  fills. A chunk larger than the budget is not a special case: it simply ends up
+  alone in its batch. Textures keep their own `GET /blob?key=` — one large
+  resource per request is what an image wants, and it stays individually
+  cacheable by the browser, which a POSTed batch is not.
+
+Content addressing also dedups geometry that `cacheId` never could: this scene's
+**71 mesh entries carry only 58 distinct contents** (18% redundant), and both the
+fetch and the GPU upload collapse onto one id per key. Viewer-side ids are
+assigned per key from a private high range, so they cannot collide with the ids a
+bundled snapshot carries inline. Phase 2 is where the
 complexity lands, and it is what the thin client needs — the phases before it
 shrink a small scene, but only the manifest tree makes a *big* model tractable.
 

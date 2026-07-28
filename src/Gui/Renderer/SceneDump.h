@@ -90,6 +90,52 @@ struct SceneSnapshot {
     typedef std::function<void(const std::string &key,
                                std::vector<uint8_t> &&pixels)> TextureBlobSink;
     TextureBlobSink textureBlobs;
+
+    /// Save-side hook enabling out-of-band mesh payloads (v28) — the
+    /// mesh counterpart of textureBlobs, with two differences that
+    /// follow from meshes being many and small rather than few and
+    /// large. They are pulled in batches packed to a byte budget
+    /// rather than one request per mesh, and the content key is
+    /// memoized on
+    /// `MeshData::cacheId` instead of recomputed: a cacheId is unique
+    /// per content within the process (Renderer.h), so a hit needs no
+    /// re-hash, while a re-tessellation mints a new id, misses, and is
+    /// hashed once. That is what keeps the hashing cost proportional
+    /// to changed geometry rather than to publishes.
+    ///
+    /// The identity is deliberately not part of the hashed bytes:
+    /// cacheId is a bare counter, so a re-tessellation producing
+    /// identical geometry would otherwise mint a new key for unchanged
+    /// content and defeat the caching entirely.
+    struct MeshBlobSink {
+        /// The content key already stored for this cacheId, retained
+        /// for the publish in flight, with the size of the chunk it
+        /// names; empty when the chunk has to be serialized, hashed
+        /// and stored.
+        std::function<std::string(uint64_t cacheId, uint32_t &size)> reuse;
+        /// Take over a freshly serialized chunk under its content key.
+        std::function<void(uint64_t cacheId, const std::string &key,
+                           std::vector<uint8_t> &&chunk)> store;
+        explicit operator bool() const { return bool(reuse) && bool(store); }
+    };
+    MeshBlobSink meshBlobs;
+    /// Load-side counterpart: the meshes that arrived as a key alone.
+    /// Each entry parses a fetched chunk into the MeshData the draw
+    /// calls already point at — through `fill`, because the loader
+    /// owns that storage and its type is private to the serializer.
+    /// A snapshot must not be fed to a backend before every entry is
+    /// filled.
+    struct DeferredMesh {
+        std::string key;
+        /// Chunk size in bytes, known before the fetch so the viewer
+        /// can pack batches to a byte budget. A chunk larger than the
+        /// budget is not a special case — it simply ends up alone in
+        /// its batch.
+        uint32_t size = 0;
+        std::shared_ptr<MeshData> mesh;
+        std::function<bool(const void *chunk, size_t size)> fill;
+    };
+    std::vector<DeferredMesh> deferredMeshes;
     /// Load-side counterpart: the textures that arrived key-only. Their
     /// `pixels` must be filled and `deferred` cleared before the
     /// snapshot is fed to a backend — these alias the entries the draw

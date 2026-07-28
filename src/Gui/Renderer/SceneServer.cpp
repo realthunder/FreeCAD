@@ -156,12 +156,34 @@ public:
     /// while a new one is published does not race into a 404.
     std::set<std::string> pendingKeys, currentKeys, previousKeys;
 
+    /// Bounds on one POST /blobs request, which is otherwise an
+    /// unauthenticated allocation the client controls.
+    static const size_t kMaxBatchKeys = 512;
+    static const size_t kMaxBatchBody = kMaxBatchKeys * 64;
+
     void addBlob(const std::string &key, std::vector<uint8_t> &&data)
     {
         std::lock_guard<std::mutex> guard(mutex);
         pendingKeys.insert(key);
         // Content addressed: an existing entry is already this payload.
         blobs.emplace(key, std::move(data));
+    }
+
+    /// Name a stored blob as still in use by the publish in flight,
+    /// without re-sending its bytes — what lets the publisher answer
+    /// from its cacheId memo instead of re-serializing a mesh. Returns
+    /// false when the blob is gone, which is the memo's invalidation:
+    /// the caller then rebuilds and stores it.
+    bool retainBlob(const std::string &key, uint32_t *size)
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        auto it = blobs.find(key);
+        if (it == blobs.end())
+            return false;
+        pendingKeys.insert(key);
+        if (size)
+            *size = uint32_t(it->second.size());
+        return true;
     }
 
     /// Roll the generations and drop what neither of them names.
@@ -413,10 +435,11 @@ public:
 
     void handle(int fd)
     {
-        // Read the request head (the viewer sends no body).
+        // Read the request head (only the mesh batch carries a body).
         std::string req;
         char buf[1024];
-        while (req.find("\r\n\r\n") == std::string::npos) {
+        size_t headEnd = std::string::npos;
+        while ((headEnd = req.find("\r\n\r\n")) == std::string::npos) {
             ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
             if (n <= 0)
                 return;
@@ -424,9 +447,28 @@ public:
             if (req.size() > 16384)
                 return;
         }
-        if (req.compare(0, 4, "GET ") != 0)
+        bool post = req.compare(0, 5, "POST ") == 0;
+        if (!post && req.compare(0, 4, "GET ") != 0)
             return;
-        std::string path = req.substr(4, req.find(' ', 4) - 4);
+        size_t verb = post ? 5 : 4;
+
+        std::string reqBody;
+        if (post) {
+            size_t want = size_t(std::strtoul(
+                headerValue(req, "content-length").c_str(), nullptr, 10));
+            if (want > kMaxBatchBody)
+                return;
+            reqBody = req.substr(headEnd + 4);
+            while (reqBody.size() < want) {
+                ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+                if (n <= 0)
+                    return;
+                reqBody.append(buf, size_t(n));
+            }
+            reqBody.resize(want);
+        }
+
+        std::string path = req.substr(verb, req.find(' ', verb) - verb);
         std::string query;
         auto q = path.find('?');
         if (q != std::string::npos) {
@@ -468,6 +510,62 @@ public:
                 "Connection: close\r\n\r\n", body.size());
             if (sendAll(fd, head, size_t(n)))
                 sendAll(fd, body.data(), body.size());
+            return;
+        }
+
+        // POST /blobs, body = one content key per line: several
+        // out-of-band payloads in a single response (SceneDump.h, v28).
+        // Meshes are many and small, so a request per mesh would be
+        // mostly round trips; textures stay on /blob, where one key
+        // already fills a request. Framed reply:
+        //   'FCBB', u32 count, then per key: 40 raw bytes, u32 length
+        //   (0xffffffff = unknown key), payload.
+        if (path == "/blobs") {
+            std::vector<uint8_t> out;
+            uint32_t count = 0;
+            {
+                std::lock_guard<std::mutex> guard(mutex);
+                size_t pos = 0;
+                while (pos < reqBody.size() && count < kMaxBatchKeys) {
+                    size_t end = reqBody.find('\n', pos);
+                    if (end == std::string::npos)
+                        end = reqBody.size();
+                    std::string key = reqBody.substr(pos, end - pos);
+                    pos = end + 1;
+                    while (!key.empty()
+                           && (key.back() == '\r' || key.back() == ' '))
+                        key.pop_back();
+                    if (!isBlobKey(key))
+                        continue;
+                    ++count;
+                    out.insert(out.end(), key.begin(), key.end());
+                    auto it = blobs.find(key);
+                    uint32_t len = it == blobs.end()
+                        ? 0xffffffffu : uint32_t(it->second.size());
+                    const uint8_t *lp = reinterpret_cast<uint8_t *>(&len);
+                    out.insert(out.end(), lp, lp + 4);
+                    if (it != blobs.end())
+                        out.insert(out.end(), it->second.begin(),
+                                   it->second.end());
+                }
+            }
+            uint8_t header[8] = {'F', 'C', 'B', 'B'};
+            std::memcpy(header + 4, &count, 4);
+            out.insert(out.begin(), header, header + 8);
+            char h[256];
+            int n = std::snprintf(h, sizeof(h),
+                "HTTP/1.1 200 OK\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Content-Type: application/octet-stream\r\n"
+                // Content addressed like /blob, but a batch is named by
+                // the request body, which no HTTP cache keys on — so it
+                // must not be stored. The viewer's own IndexedDB is
+                // what makes a second visit free.
+                "Cache-Control: no-store\r\n"
+                "Content-Length: %zu\r\n"
+                "Connection: close\r\n\r\n", out.size());
+            if (sendAll(fd, h, size_t(n)))
+                sendAll(fd, out.data(), out.size());
             return;
         }
 
@@ -972,6 +1070,11 @@ void SceneStreamServer::publishBlob(const std::string &key,
                                     std::vector<uint8_t> &&data)
 {
     ensure()->addBlob(key, std::move(data));
+}
+
+bool SceneStreamServer::retainBlob(const std::string &key, uint32_t *size)
+{
+    return ensure()->retainBlob(key, size);
 }
 
 void SceneStreamServer::setPickHandler(

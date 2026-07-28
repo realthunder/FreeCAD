@@ -7246,6 +7246,35 @@ public:
                                               std::vector<uint8_t> &&pixels) {
                     server.publishBlob(key, std::move(pixels));
                 };
+                // Mesh chunks likewise (v28), but keyed through a memo
+                // on cacheId: hashing every mesh on every publish would
+                // just move the cost from the network to the CPU. The
+                // memo spans two publishes — an entry has to be
+                // reachable while the blob it names is still retained,
+                // and retainBlob() failing is what expires it.
+                meshKeysPrev = std::move(meshKeys);
+                meshKeys.clear();
+                snap.meshBlobs.reuse = [this, &server](uint64_t cacheId,
+                                                       uint32_t &size) {
+                    auto it = meshKeys.find(cacheId);
+                    if (it != meshKeys.end()) {
+                        size = it->second.second;
+                        return it->second.first;
+                    }
+                    it = meshKeysPrev.find(cacheId);
+                    if (it == meshKeysPrev.end())
+                        return std::string();
+                    if (!server.retainBlob(it->second.first, &size))
+                        return std::string();
+                    meshKeys[cacheId] = {it->second.first, size};
+                    return it->second.first;
+                };
+                snap.meshBlobs.store = [this, &server](
+                        uint64_t cacheId, const std::string &key,
+                        std::vector<uint8_t> &&chunk) {
+                    meshKeys[cacheId] = {key, uint32_t(chunk.size())};
+                    server.publishBlob(key, std::move(chunk));
+                };
                 std::vector<uint8_t> payload;
                 if (Render::saveSceneSnapshot(payload, snap))
                     server.publish(std::move(payload));
@@ -10918,6 +10947,13 @@ public:
     // key is then hashed once per hatch change, not per publish.
     std::shared_ptr<Render::TextureImage> hatchTex;
     const void *hatchKey = nullptr;
+    /// Streamed mesh chunks by cacheId: content key and chunk size, for
+    /// the publish in flight and the one before it (SceneDump.h,
+    /// MeshBlobSink). Sound because a cacheId names one content for the
+    /// life of the process, so a hit needs no re-hash; bounded because
+    /// an entry only survives while the blob it names is still served.
+    std::map<uint64_t, std::pair<std::string, uint32_t>> meshKeys;
+    std::map<uint64_t, std::pair<std::string, uint32_t>> meshKeysPrev;
     uint64_t hatchVersion = 0;
     bool hlWholeOnTop = false;
     /// One-shot frame capture (requestFrameDump), consumed by the next
