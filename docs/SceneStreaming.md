@@ -12,7 +12,11 @@ publish is numbered by its producer and names the backend run that numbered it,
 which both transports state back on request), and so is the publishing half —
 the server keeps a bounded history and narrows the published root to what each
 viewer is actually missing, taking the 200-object benchmark from 17,146 B to
-1,027 B a publish. What is left of the phase is §6, progressive application.
+1,027 B a publish. What is left of the phase is §6, progressive application,
+respecified around a **fidelity ladder** — a draw names the best rung it holds,
+from a synthesised bounding box through LOD levels to the full mesh, and climbs
+it through the ordinary update path — which subsumes what §7 had kept separate
+as a future LOD mechanism.
 
 Companions: [RenderEngine.md](./RenderEngine.md) §2 (the snapshot format and the
 tiers that consume it), [ThinClient.md](./ThinClient.md) (the UI layer this
@@ -153,7 +157,7 @@ draws:     [ compact draw record ]
 ```
 
 Mesh entries carry a bounding box for the same reason object entries do: it is
-what lets the viewer act on a mesh it does not yet have — draw a proxy for it
+what lets the viewer act on a mesh it does not yet have — stand a box in for it
 (§6), order its fetch by what is on screen, and later choose a level of detail
 for it (§7). The box is known to the producer for free; the mesh chunk it
 describes may be megabytes.
@@ -278,101 +282,180 @@ them: the full root is 17,146 B and a viewer that is current is served 1,027 B �
 
 ## 6. Progressive application
 
-The v26 texture tier applies a snapshot only once every key resolves. That does
-not scale — a viewer cannot block on 20 MB before drawing anything. The rule is
-therefore per **mesh**, the finest unit that is independently drawable:
+Today a publish applies only once every key it names has resolved
+(`resolvePending` → `commitResolved`, `wasm/main.cpp:2433`). That does not
+scale: a viewer cannot block on 20 MB before it draws anything.
 
-> A draw is submitted to the backend when the mesh chunk it names, and the
-> material/texture/shader chunks it names, are in hand. Anything not yet
-> complete is drawn as a **bounding-box proxy** instead.
+The fix is not a second rendering path for things that have not arrived. It is
+to notice that **which mesh a draw names is a choice, not a given**, and that
+the manifest already tells the viewer enough to make a poorer choice while it
+waits for a better one. Progressive display is then not a mode — it is the
+ordinary scene, built from the ordinary manifest, refined by the ordinary
+update path.
 
-Mesh granularity rather than object granularity matters because an object is not
-an atom: an assembly component with a hundred parts should reveal them as they
-land, not wait for its slowest chunk. Nothing about the object level is lost —
-it is still the delta unit and the fetch bucket — but it is no longer the
-submission unit.
+### The ladder
 
-### Progressive refinement
+Every mesh entry defines a ladder of drawable stand-ins, coarsest first:
 
-The two manifest levels give three fidelities for free, each a strict refinement
-of the last:
+```
+[ unit box @ mesh bbox ]  <  [ lod0 ]  <  …  <  [ full mesh ]
+```
 
-1. **L0 only** — the object's own bbox is known. One proxy box per object.
-2. **L1 in hand** — every mesh bbox is known. The single box resolves into one
-   proxy per mesh, so the object's silhouette is roughly right long before any
-   geometry arrives.
-3. **Mesh chunks arrive** — each proxy is replaced by real geometry, one mesh at
-   a time, in whatever order the fetch prioritiser chose.
+One rule, applied where the scene feed is built:
+
+> **Draw the best rung that is resident. Ask for a better one. Rebuild the
+> draw when it lands.**
+
+The bottom rung is free. A unit box is the same 24 vertices for every mesh in
+every scene, so it is one chunk, one key, one GPU upload for the whole session;
+the per-mesh variation is the bbox transform, which the draw record already
+carries. The producer never sends it and the viewer never fetches it — it is
+synthesised from the bounding box L1 carries anyway (§4).
+
+So the two manifest levels give three fidelities, each a strict refinement of
+the last:
+
+1. **L0 only** — the object's own bbox is known. One box per object.
+2. **L1 in hand** — every mesh bbox is known. The object's single box resolves
+   into one box per mesh, so its silhouette is roughly right long before any
+   geometry exists.
+3. **Mesh chunks arrive** — each box is replaced by real geometry, one mesh at
+   a time, in whatever order the prioritiser chose.
 
 A useful consequence: the initial camera fit runs off L0 bounding boxes, so the
 view frames the model correctly *before* the first triangle exists and does not
 lurch as geometry streams in. Today's `applySnapshot(fit)` fits to loaded
 geometry and would re-fit repeatedly under streaming.
 
-### Pending proxies
+### Boxes are meshes, not proxies
 
-A proxy is real geometry — a unit box, instanced per pending mesh with its bbox
-as the transform — carrying a distinct visual cue so it never reads as part of
-the model: unlit, translucent fill with a brighter wireframe edge, in a reserved
-"pending" colour. Disabling it degrades to drawing nothing, which is today's
-behaviour.
+The earlier design for this section made a pending box a *proxy*: a parallel
+draw list with its own lifetime, its own exclusions, and an invariant written
+specially to stop a placeholder being mistaken for the mesh it stood for. The
+ladder removes all of it, because a box is simply a mesh:
 
-**Proxies participate in depth**, including the depth prepass. A bbox is a
-conservative bound of the geometry it stands for, so writing depth keeps the
-scene behind a pending object from showing through it and then popping when it
-resolves — the model reads as solid throughout loading, which is the whole point
-of drawing proxies at all. The cost is that a box over-occludes: transiently it
+- **Identity is structural.** The box has its own content key, so the
+  backend-facing id derived from that key is the box's id and never the
+  pending mesh's. A backend that keys GPU uploads by id cannot be handed a
+  placeholder to fill in later, because nothing ever claims to be the thing it
+  is standing in for. What was invariant 4 is now a consequence of the format
+  rather than a rule to obey.
+- **It carries the object's real material.** The coarse scene reads as the
+  model in the right colours, not as grey scaffolding, and no separate
+  "pending" appearance needs designing.
+- **Refinement is a normal update.** Replacing a rung is the same operation a
+  delta performs on a changed object (§5), through the same code.
+- **It runs backwards.** Under memory pressure a mesh descends the ladder
+  instead of vanishing — an eviction policy the proxy design could not express
+  at all.
+
+The one thing a box must still announce is that it is a stand-in, so a draw
+carries a single **`standIn` bit**. It buys three behaviours and no machinery:
+
+**Depth, yes.** Stand-ins write depth, including in the prepass. A bbox is a
+conservative bound of the geometry it replaces, so writing depth keeps the
+scene behind a coarse object from showing through it and then popping when it
+resolves — the model reads as solid throughout loading, which is the whole
+point of drawing anything. The cost is that a box over-occludes: transiently it
 hides slightly more than the real mesh will.
 
-They stay **excluded** from shadow casting, section capping, hidden-line,
-outline passes and picking — those are shading and interaction, not occupancy,
-and a box in them reads as a modelling error rather than as progress.
+**Shadows, no.** A box casts a box-shaped shadow, which is not conservative in
+any useful sense and reads as a modelling error rather than as progress. The
+same applies to section capping, hidden-line and outline passes: those are
+shading, not occupancy.
+
+**Tinting, optional.** The bit is also what a "show me what is still loading"
+view mode would key on. Off by default — the material is the better answer.
 
 > **Coupling to settle in implementation.** AO derives from the depth prepass,
-> so putting proxies in it means AO sees them and darkens their edges unless
-> they are masked out (a stencil bit, or an id channel the AO resolve tests).
-> Whether that transient darkening is worth masking is a judgement to make
-> against a real model; the mask is cheap, so the default should be to exclude
-> them and relax it only if it looks better.
+> so keeping stand-ins in it means AO sees them and darkens their edges unless
+> they are masked out — the `standIn` bit as a stencil write, or an id channel
+> the AO resolve tests. Whether the transient darkening is worth masking is a
+> judgement to make against a real model; the mask is cheap, so the default
+> should be to exclude them and relax it only if it looks better.
 
-The invariant that makes all of this safe is that a proxy is **never submitted
-under the identity of the mesh it stands in for**. It is a separate draw with
-its own mesh and its own id. The backend keys GPU uploads on that id and would
-never re-upload a placeholder that was filled in later; the proxy sidesteps that
-entirely by never claiming to be the thing it is waiting for. When the real mesh
-lands, the proxy draw is dropped and the real draw submitted.
+### Picking follows the rung
+
+A box has no correspondence to the elements of the mesh it replaces, so it
+cannot answer an element query — but it can answer truthfully at a coarser
+grain. **Picking a stand-in selects the whole object**, never a sub-element:
+that is exactly what the box knows, and it is what a user reaching for a
+half-loaded model means anyway.
+
+Precision therefore follows the rung, and there is never a wrong answer, only a
+coarser one:
+
+| Rung | Pick resolves to |
+| --- | --- |
+| unit box | the object |
+| LOD mesh | the object today; sub-elements once a level carries an element map (§7) |
+| full mesh | sub-elements, as now |
+
+Selection state is held per object and per element path, so a selection made
+against a box stays valid when the real mesh lands — the object key does not
+change, only what can be named beneath it.
 
 ### Timing
 
-A mesh that arrives quickly should not flash a box for one frame. A proxy
-therefore appears only after a **grace period**, and fades rather than cutting
-when it is replaced. Both are user-configurable view parameters in the
-`Render_*` family, alongside enable and colour:
+A mesh that arrives quickly should not flash a box for one frame. That is not a
+special case either: it is a **rung eligibility** rule applied where the choice
+is made. The box rung becomes eligible only after its mesh has been outstanding
+for a grace period, and a rung change cross-fades rather than cuts. Both are
+user-configurable view parameters in the `Render_*` family:
 
 | Parameter | Meaning |
 | --- | --- |
-| `Render_ProxyPending` | draw proxies at all (default on) |
-| `Render_ProxyGrace` | ms a mesh may be outstanding before its proxy appears |
-| `Render_ProxyFade` | ms to cross-fade a proxy out when its mesh lands |
-| `Render_ProxyColor` | the reserved "pending" colour |
+| `Render_CoarseGeometry` | use coarse rungs at all (default on); off = draw nothing until the real mesh lands, today's behaviour |
+| `Render_CoarseGrace` | ms a mesh may be outstanding before its box becomes eligible |
+| `Render_CoarseFade` | ms to cross-fade when a draw changes rung |
 
 Defaults want tuning against a real model on a real link rather than being
 guessed here; the point of making them parameters is that the tuning does not
 need a rebuild.
 
+### The trigger is chunk arrival
+
+Refinement needs no invented event. A chunk landing is already an event the
+fetch layer raises (`blobResolved`, `wasm/main.cpp:2079`/`2201`); what is
+missing is only the ability to answer *what did that chunk change*.
+
+So `SceneObjectModel` maintains a **reverse index, key → the objects that
+reference it**, built as it merges manifests. Arrival marks those objects
+dirty; the dirty set is drained once per frame and each object's draws are
+rebuilt by the same per-object path a delta uses, splicing its slot rather than
+re-serialising the feed. The index is needed for eviction regardless, so the
+ladder is not what pays for it.
+
+Two consequences for the consumer, and they are the only behavioural changes:
+
+- **Commit early.** `commitResolved` must run on the first useful arrival with
+  coarse rungs in place, and again as rungs improve, instead of waiting for
+  `resolvePending` to report nothing outstanding.
+- **Coalesce.** Rebuilding on every arrival is O(scene) × O(chunks). Dirty
+  objects accumulate and the rebuild runs once per frame.
+
 ### Prioritisation
 
-Because L0 is small and carries bounding boxes, the viewer holds a spatial index
-*before* it holds any geometry. Fetch order follows the view frustum — nearest
-and largest-on-screen first — off-screen objects can be deferred entirely, and
-eviction can be distance-based. This is also the natural hook for the
-occlusion-culling work.
+Because L0 is small and carries bounding boxes, the viewer holds a spatial
+index *before* it holds any geometry. Fetch order follows the view frustum —
+nearest and largest-on-screen first — off-screen objects can be deferred
+entirely, and eviction can be distance-based. This is also the natural hook for
+the occlusion-culling work.
+
+Note where that decision lives: **with the viewer**. The producer publishes the
+full manifest, which is only keys and therefore cheap, and each viewer climbs
+the ladder on its own camera. A producer that instead published coarse-then-fine
+would have to hold a refinement sequence per viewer — several viewers looking
+at different parts of a model want different orders — which is exactly the
+per-viewer server state invariant 7 forbids.
 
 ## 7. Level of detail (future)
 
-The design leaves room for LOD without a format break, and the pieces it needs
-are already here: per-mesh bounding boxes to estimate projected screen size, and
-content addressing to make each variant an independent immutable chunk.
+LOD is not a second mechanism. It is the middle rungs of §6's ladder, and the
+consumer logic is already written: pick the best resident rung, fetch better,
+rebuild on arrival. What changes is only where a rung comes from — the box is
+synthesised by the viewer, an LOD mesh is generated by the producer — and that
+difference stops at the format.
 
 A mesh entry generalises from one key to a list, coarsest first:
 
@@ -380,24 +463,37 @@ A mesh entry generalises from one key to a list, coarsest first:
 meshes: [ bbox[6], lods: [ { key, error } ] ]
 ```
 
-The viewer picks a level from the bbox's projected size and its budget, fetches
-that chunk, and may refine later — each level is just another content-addressed
-chunk, cached and evicted like any other, with no invalidation because none of
-them ever change.
+No format break is needed to get here: per-mesh bounding boxes already exist
+for the box rung, and content addressing already makes each variant an
+independent immutable chunk. The viewer picks a level from the bbox's projected
+size and its budget, fetches that chunk, and may refine later — cached and
+evicted like any other chunk, with no invalidation, because no chunk ever
+changes. Switching level costs nothing on the wire that was not already paid: a
+level the viewer kept is a key it already holds.
 
-What `error` measures and how a level is chosen are deliberately left open until
-there is a real model to tune against; the likely answer is that both become
-`Render_*` parameters like the proxy timings above, so the policy is adjustable
-without a rebuild.
+What `error` measures and how a level is chosen are deliberately left open
+until there is a real model to tune against; the likely answer is that both
+become `Render_*` parameters like the timings above, so the policy is
+adjustable without a rebuild.
 
-Seen this way the pending proxy of §6 is simply the coarsest level of the same
-continuum — box, then coarse mesh, then full geometry — and the same
-prioritiser drives all of it. What LOD adds is producer-side work rather than
-protocol: generating the variants (OCCT tessellation at several deviations, or
-decimation), and extending the TShape-level tessellation sharing in
-`docs/TShapeRenderCache.md` to cache per level. Switching level costs nothing on
-the wire that was not already paid, because a level the viewer has kept is a key
-it already holds.
+The real work LOD adds is producer-side rather than protocol: generating the
+variants (OCCT tessellation at several deviations, or decimation), and
+extending the TShape-level tessellation sharing in `docs/TShapeRenderCache.md`
+to cache per level. That work has a natural trigger of its own — a refinement
+job finishing is a real event, not a synthesised one — which is why producer
+side refinement is right for LOD and wrong for boxes: republishing when
+tessellation improves is a publish like any other (§5), and the out-of-process
+geometry work in `docs/ComputeBoundaries.md` is where those jobs will run.
+
+Two things fall out for free once the rungs are real meshes rather than boxes:
+
+- **Element picking on a level.** An LOD mesh that carries an element map can
+  answer sub-element queries, so picking precision improves with fidelity
+  instead of stepping from "the object" straight to "everything" (§6). Whether
+  a decimated mesh can carry a faithful element map is the open part.
+- **Eviction becomes graceful.** Memory pressure walks a draw down the ladder
+  to a cheaper level and finally to its box, rather than choosing between
+  holding geometry and showing a hole.
 
 ## 8. Server and viewer state
 
@@ -419,16 +515,20 @@ reconstructs a large scene from a small root delta plus local reads.
    counter would make every re-tessellation a cache miss.
 3. No chunk references anything by global index (§3).
 4. A draw is submitted only when every chunk it names is in hand (§6). Until
-   then it is a bbox proxy, and **a proxy never carries the identity of the mesh
-   it stands in for** — a backend that keys GPU uploads by id would never
-   re-upload a placeholder filled in later.
-5. Proxies are progress indication, not geometry: excluded from shadows, AO,
-   section capping, hidden-line, outlines and picking (§6).
-6. The server answers any chunk request from its store alone, with no per-viewer
+   then it names a coarser rung of the same ladder, and **a stand-in never
+   carries the identity of the mesh it stands in for**: it is a chunk with its
+   own key, so the backend id derived from that key is its own and a
+   placeholder can never be filled in later under the pending mesh's id.
+5. A stand-in states occupancy, not shading: it writes depth (including the
+   prepass) and is excluded from shadow casting, section capping, hidden-line
+   and outline passes (§6).
+6. Fidelity never lies about identity. A stand-in picks as the whole object; a
+   rung answers sub-element queries only if it carries an element map (§6, §7).
+7. The server answers any chunk request from its store alone, with no per-viewer
    state.
-7. A bundled capture is self-contained: chunking is a property of the transport,
+8. A bundled capture is self-contained: chunking is a property of the transport,
    never of the format (as v26 already establishes for textures).
-8. Content keys are computed once per distinct content, never per publish (§10).
+9. Content keys are computed once per distinct content, never per publish (§10).
 
 ## 10. The producer-side requirement (main risk)
 
@@ -459,10 +559,10 @@ to remove.
 | 2a′ | trimmed records + table out of band (**done**, v30/v31) | 10.8 KB |
 | 2b-1 | draw groups → content-keyed chunks, leaves keyed (**done**, v33) | 1.4 KB |
 | 2b-2 | root delta-encoded, history + resync (**format + viewer done**, v34) | ~1 KB steady state |
-| 2b-3 | progressive fidelity off the manifest boxes | frames before geometry |
-| 3 | mesh-complete submission + bbox proxies | model appears while it loads |
-| 4 | frustum-ordered fetch, distance eviction | large models usable |
-| 5 | LOD variants per mesh (§7) | large models *fast* |
+| 2b-3 | reverse index + per-frame dirty rebuild, commit early (§6) | frames before geometry |
+| 3 | the box rung: per-mesh submission, `standIn` bit, coarse picking | model appears while it loads |
+| 4 | frustum-ordered fetch, ladder-descending eviction | large models usable |
+| 5 | LOD rungs per mesh (§7) | large models *fast* |
 
 Phase 1 is the v26 pattern extended to two more section types and needs no
 protocol restructure; 1a alone is 64% of the payload.
@@ -722,11 +822,18 @@ merely no smaller than 2b-1 left it.
   decouples submission from it, but an object with tens of thousands of draws
   still re-sends its whole draw list when one draw changes. Sub-bucketing the
   draw list may be needed; measure first.
-- **Masking proxies out of AO** (§6) — the one live consequence of putting them
-  in the depth prepass. Stencil bit or id channel; decide by looking at it.
-- **Proxy default timings** — grace and fade are parameters (§6), but their
-  defaults still want tuning against a real model over a real link.
+- **Masking stand-ins out of AO** (§6) — the one live consequence of keeping
+  them in the depth prepass. Stencil bit or id channel; decide by looking at it.
+- **Coarse-rung default timings** — grace and fade are parameters (§6), but
+  their defaults still want tuning against a real model over a real link.
+- **Rebuild granularity under a chunk storm** (§6) — a per-frame dirty drain
+  bounds the rebuild to once per frame, but a frame in which thousands of
+  objects go dirty still rebuilds thousands of slots. Whether that needs a
+  budget per frame is a measurement, not a guess.
 - **LOD error metric and budget** (§7) — deferred; likely parameters too.
+- **Element maps on decimated levels** (§7) — whether a coarser mesh can name
+  sub-elements faithfully, or whether element picking simply waits for the full
+  mesh as it does for the box rung.
 - **Root manifest at very large object counts.** 100k objects make even the
   delta's object list non-trivial; paging the object list into content-addressed
   pages is the escape, if measurement demands it.
