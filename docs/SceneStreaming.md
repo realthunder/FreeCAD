@@ -615,8 +615,19 @@ mints exactly its own manifest and its new material, touching no other object's
 chunk and no mesh at all.
 
 **What 2b-1 does not do** is delta-encode the root. Every publish still names
-every object — 53 B each, so ~530 KB at 10k objects, which is the whole reason
-2b-2 exists — but nothing *behind* those names moves unless it changed. That
+every object, and `scripts/demo-many.py` is what says how much that costs:
+a grid of `COUNT` boxes whose geometry deduplicates to a handful of keys, so
+whatever remains scales with the object count and nothing else. Measured at
+`COUNT=200`, the root is **17,118 B — 79 B per object**, and two consecutive
+publishes of an untouched scene are byte-identical. The entry is bigger than
+§4's 53 B estimate because 44 of those bytes are the manifest key as 40 hex
+characters plus its size; storing the digest raw would take a quarter off, and
+delta-encoding removes it entirely, which is why that is the phase and this is
+only the measurement.
+
+Extrapolated, 10k objects cost ~770 KB **per publish** — on every selection
+pick. That is the whole reason 2b-2 exists. Nothing *behind* those names moves
+unless it changed. That
 split is deliberate: 2b-1 is a serializer change with a mechanical viewer
 counterpart, while 2b-2 adds server-side history and a resync path, which is
 where the protocol can actually go wrong. Landing them together would make a
