@@ -60,7 +60,12 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     cacheId leaves the hashed payload (it is a counter, so hashing
 //     it would mint a new key for unchanged geometry). The streaming
 //     transport writes the key alone and serves the chunks in batches.
-const uint32_t kVersion = 28;
+// 29: materials are deduplicated into a table and referenced by index
+//     instead of being written inline in every draw. A material is
+//     ~347 of a draw's 463 bytes and repeats heavily — an assembly
+//     whose thousands of parts share a dozen appearances writes each
+//     of them thousands of times.
+const uint32_t kVersion = 29;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -69,11 +74,23 @@ const uint32_t kVersion = 28;
 
 struct Writer {
     FILE *fp = nullptr;
+    /// Target a buffer instead of a stream. Used for the many small
+    /// records that are hashed or deduplicated before they are written
+    /// (mesh chunks, materials), where a memory stream per record would
+    /// cost an allocation and a FILE for a few hundred bytes.
+    std::vector<uint8_t> *vec = nullptr;
     bool ok = true;
 
     void raw(const void *data, size_t size)
     {
-        if (ok && size && std::fwrite(data, 1, size, fp) != size)
+        if (!ok || !size)
+            return;
+        if (vec) {
+            const uint8_t *p = static_cast<const uint8_t *>(data);
+            vec->insert(vec->end(), p, p + size);
+            return;
+        }
+        if (std::fwrite(data, 1, size, fp) != size)
             ok = false;
     }
     template<typename T>
@@ -151,11 +168,18 @@ struct Reader {
     }
 };
 
-/// Serialize / parse a detached chunk (an out-of-band mesh payload)
-/// through the same Writer and Reader. Defined next to the platform's
-/// memory-stream shims at the end of this file.
+/// Serialize a detached record (an out-of-band mesh payload, a material
+/// table entry) into a buffer.
 static bool writeChunk(std::vector<uint8_t> &out,
-                       const std::function<void(Writer &)> &fn);
+                       const std::function<void(Writer &)> &fn)
+{
+    Writer w;
+    w.vec = &out;
+    fn(w);
+    return w.ok;
+}
+/// Parse one back. Defined with the platform's memory-stream shim at
+/// the end of this file.
 static bool readChunk(const void *data, size_t size,
                       const std::function<void(Reader &)> &fn);
 std::string sha1Hex(const uint8_t *data, size_t size);
@@ -474,6 +498,7 @@ std::shared_ptr<TextureImage> readTexture(Reader &r, uint32_t version)
 //////////////////////////////////////////////////////////////////////
 // Material / draw call
 
+typedef std::map<const DrawCall *, int32_t> MaterialIndex;
 typedef std::map<const TextureImage *, int32_t> TextureIndex;
 typedef std::vector<std::shared_ptr<const TextureImage>> TextureTable;
 
@@ -825,9 +850,11 @@ typedef std::map<const MeshData *, int32_t> MeshIndex;
 typedef std::vector<std::shared_ptr<const MeshData>> MeshTable;
 
 void writeDraw(Writer &w, const DrawCall &d, const MeshIndex &meshIndex,
-               const TextureIndex &texIndex, const ShaderIndex &shaderIndex)
+               const MaterialIndex &matIndex)
 {
-    writeMaterial(w, d.material, texIndex, shaderIndex);
+    // v29: an index into the deduplicated material table.
+    auto mit = matIndex.find(&d);
+    w.i32(mit == matIndex.end() ? -1 : mit->second);
     auto it = d.mesh ? meshIndex.find(d.mesh.get()) : meshIndex.end();
     w.i32(it == meshIndex.end() ? -1 : it->second);
     w.floats(d.model, 16);
@@ -841,11 +868,19 @@ void writeDraw(Writer &w, const DrawCall &d, const MeshIndex &meshIndex,
     w.floats(d.bboxMax, 3);
 }
 
+typedef std::vector<Material> MaterialTable;
+
 void readDraw(Reader &r, DrawCall &d, const MeshTable &meshes,
               const TextureTable &textures, const ShaderTable &shaders,
-              uint32_t version)
+              const MaterialTable &materials, uint32_t version)
 {
-    readMaterial(r, d.material, textures, shaders, version);
+    if (version >= 29) {
+        int32_t mati = r.i32();
+        if (mati >= 0 && size_t(mati) < materials.size())
+            d.material = materials[size_t(mati)];
+    }
+    else
+        readMaterial(r, d.material, textures, shaders, version);
     int32_t mi = r.i32();
     if (mi >= 0 && size_t(mi) < meshes.size())
         d.mesh = meshes[size_t(mi)];
@@ -861,17 +896,42 @@ void readDraw(Reader &r, DrawCall &d, const MeshTable &meshes,
 }
 
 void writeDrawList(Writer &w, const DrawCallList &draws,
-                   const MeshIndex &meshIndex, const TextureIndex &texIndex,
-                   const ShaderIndex &shaderIndex)
+                   const MeshIndex &meshIndex, const MaterialIndex &matIndex)
 {
     w.u32(uint32_t(draws.size()));
     for (const auto &d : draws)
-        writeDraw(w, d, meshIndex, texIndex, shaderIndex);
+        writeDraw(w, d, meshIndex, matIndex);
+}
+
+/// Serialize every draw's material once, keeping the distinct ones.
+/// Equality is the serialized bytes, which is exact by construction —
+/// two materials that write the same bytes restore identically — and
+/// needs no hand-written comparison over ~60 fields to stay in step
+/// with the format.
+void collectMaterials(const DrawCallList &draws, const TextureIndex &texIndex,
+                      const ShaderIndex &shaderIndex,
+                      std::vector<std::vector<uint8_t>> &table,
+                      std::map<std::vector<uint8_t>, int32_t> &seen,
+                      MaterialIndex &matIndex)
+{
+    for (const auto &d : draws) {
+        std::vector<uint8_t> bytes;
+        if (!writeChunk(bytes, [&](Writer &cw) {
+                writeMaterial(cw, d.material, texIndex, shaderIndex);
+            }))
+            continue;
+        auto it = seen.find(bytes);
+        if (it == seen.end()) {
+            it = seen.emplace(bytes, int32_t(table.size())).first;
+            table.push_back(std::move(bytes));
+        }
+        matIndex[&d] = it->second;
+    }
 }
 
 bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
                   const TextureTable &textures, const ShaderTable &shaders,
-                  uint32_t version)
+                  const MaterialTable &materials, uint32_t version)
 {
     uint32_t n = r.u32();
     if (!r.ok || n > 0x1000000u) {
@@ -881,7 +941,7 @@ bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
     draws.clear();
     for (uint32_t i = 0; r.ok && i < n; ++i) {
         DrawCall d;
-        readDraw(r, d, meshes, textures, shaders, version);
+        readDraw(r, d, meshes, textures, shaders, materials, version);
         draws.push_back(std::move(d));
     }
     return r.ok;
@@ -979,7 +1039,29 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     for (const auto &s : snap.usershaderconf.splices)
         w.i32(shaderIndex[&s]);
 
-    writeDrawList(w, snap.scene, meshIndex, texIndex, shaderIndex);
+    // v29: the deduplicated material table, ahead of every draw list
+    // that indexes into it. Materials reference the texture and shader
+    // tables, so it has to follow those.
+    MaterialIndex matIndex;
+    {
+        std::vector<std::vector<uint8_t>> table;
+        std::map<std::vector<uint8_t>, int32_t> seen;
+        auto collect = [&](const DrawCallList &draws) {
+            collectMaterials(draws, texIndex, shaderIndex, table, seen,
+                             matIndex);
+        };
+        collect(snap.scene);
+        for (const auto &sel : snap.selections)
+            collect(sel.second);
+        collect(snap.highlight);
+        for (const auto &ov : snap.overlays)
+            collect(ov.draws);
+        w.u32(uint32_t(table.size()));
+        for (const auto &bytes : table)
+            w.raw(bytes.data(), bytes.size());
+    }
+
+    writeDrawList(w, snap.scene, meshIndex, matIndex);
 
     // Background + per-frame configs.
     w.u8(snap.background.type);
@@ -1061,9 +1143,9 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.u32(uint32_t(snap.selections.size()));
     for (const auto &sel : snap.selections) {
         w.i32(sel.first);
-        writeDrawList(w, sel.second, meshIndex, texIndex, shaderIndex);
+        writeDrawList(w, sel.second, meshIndex, matIndex);
     }
-    writeDrawList(w, snap.highlight, meshIndex, texIndex, shaderIndex);
+    writeDrawList(w, snap.highlight, meshIndex, matIndex);
     w.b(snap.highlightWholeOnTop);
 
     // v3: overlay feeds (appended so the v2 prefix layout is unchanged).
@@ -1083,7 +1165,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(a.marginX);    // v5
         w.f(a.marginY);
         w.b(a.sceneCamera); // v6
-        writeDrawList(w, ov.draws, meshIndex, texIndex, shaderIndex);
+        writeDrawList(w, ov.draws, meshIndex, matIndex);
     }
 
     // v10: preselection + selection highlight config (client-side styling).
@@ -1171,7 +1253,18 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         }
     }
 
-    readDrawList(r, snap.scene, meshes, textures, shaders, version);
+    MaterialTable materials;
+    if (version >= 29) {
+        uint32_t nmat = r.u32();
+        if (!r.ok || nmat > 0x1000000u)
+            r.ok = false;
+        for (uint32_t i = 0; r.ok && i < nmat; ++i) {
+            materials.emplace_back();
+            readMaterial(r, materials.back(), textures, shaders, version);
+        }
+    }
+
+    readDrawList(r, snap.scene, meshes, textures, shaders, materials, version);
 
     snap.background.type = r.u8();
     snap.background.fromColor = r.u32();
@@ -1281,10 +1374,12 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         for (uint32_t i = 0; r.ok && i < nsel; ++i) {
             int id = r.i32();
             DrawCallList draws;
-            if (readDrawList(r, draws, meshes, textures, shaders, version))
+            if (readDrawList(r, draws, meshes, textures, shaders,
+                             materials, version))
                 snap.selections.emplace_back(id, std::move(draws));
         }
-        readDrawList(r, snap.highlight, meshes, textures, shaders, version);
+        readDrawList(r, snap.highlight, meshes, textures, shaders,
+                     materials, version);
         snap.highlightWholeOnTop = r.b();
     }
 
@@ -1311,7 +1406,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 a.marginY = r.f();
             }
             a.sceneCamera = version >= 6 ? r.b() : false;
-            if (readDrawList(r, ov.draws, meshes, textures, shaders,
+            if (readDrawList(r, ov.draws, meshes, textures, shaders, materials,
                              version))
                 snap.overlays.push_back(std::move(ov));
         }
@@ -1379,28 +1474,6 @@ bool Render::loadSceneSnapshot(const char *path, SceneSnapshot &snap)
 
 namespace {
 
-bool writeChunk(std::vector<uint8_t> &out,
-                const std::function<void(Writer &)> &fn)
-{
-    FILE *fp = std::tmpfile();
-    if (!fp)
-        return false;
-    Writer w;
-    w.fp = fp;
-    fn(w);
-    bool ok = w.ok && std::fflush(fp) == 0;
-    if (ok) {
-        long size = (std::fseek(fp, 0, SEEK_END) == 0) ? std::ftell(fp) : -1;
-        ok = size >= 0 && std::fseek(fp, 0, SEEK_SET) == 0;
-        if (ok) {
-            out.resize(size_t(size));
-            ok = std::fread(out.data(), 1, out.size(), fp) == out.size();
-        }
-    }
-    std::fclose(fp);
-    return ok;
-}
-
 bool readChunk(const void *data, size_t size,
                const std::function<void(Reader &)> &fn)
 {
@@ -1456,25 +1529,6 @@ bool Render::loadSceneSnapshot(const void *data, size_t size,
 #else // !_WIN32
 
 namespace {
-
-bool writeChunk(std::vector<uint8_t> &out,
-                const std::function<void(Writer &)> &fn)
-{
-    char *buf = nullptr;
-    size_t size = 0;
-    FILE *fp = open_memstream(&buf, &size);
-    if (!fp)
-        return false;
-    Writer w;
-    w.fp = fp;
-    fn(w);
-    bool ok = w.ok;
-    std::fclose(fp);
-    if (ok)
-        out.assign(buf, buf + size);
-    std::free(buf);
-    return ok;
-}
 
 bool readChunk(const void *data, size_t size,
                const std::function<void(Reader &)> &fn)

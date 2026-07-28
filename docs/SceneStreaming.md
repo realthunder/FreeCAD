@@ -384,8 +384,9 @@ to remove.
 | — | today | 425 KB |
 | 1a | hatch image → content key (**done**, v27) | 155 KB |
 | 1b | meshes → content keys, batched pull (**done**, v28) | ~35 KB |
-| 1c | camera out of the scene payload | orbit stops republishing |
-| 2 | L0/L1/L2 manifests, delta sync, material dedup | ~1 KB steady state |
+| 1c | camera out of the scene payload | **not needed, see below** |
+| 2a | material dedup (**done**, v29) | 27.7 KB |
+| 2b | L0/L1/L2 manifests, delta sync | ~1 KB steady state |
 | 3 | mesh-complete submission + bbox proxies | model appears while it loads |
 | 4 | frustum-ordered fetch, distance eviction | large models usable |
 | 5 | LOD variants per mesh (§7) | large models *fast* |
@@ -426,7 +427,45 @@ Content addressing also dedups geometry that `cacheId` never could: this scene's
 **71 mesh entries carry only 58 distinct contents** (18% redundant), and both the
 fetch and the GPU upload collapse onto one id per key. Viewer-side ids are
 assigned per key from a private high range, so they cannot collide with the ids a
-bundled snapshot carries inline. Phase 2 is where the
+bundled snapshot carries inline.
+
+### 1c is not needed
+
+Phase 1c assumed the camera in the payload made orbiting republish. Measured, it
+does not, and the phase was dropped rather than implemented:
+
+- **Nothing consumes it.** The viewer navigates client-side and never reads
+  `viewMatrix`/`projMatrix`; it even recomputes `autozoomScale` from its own
+  camera each frame (`wasm/main.cpp:1524`), overriding the snapshot's. The block
+  is 140 B, 0.5% of the payload.
+- **Camera motion does not mark the scene dirty.** The camera arrives as
+  `render()` arguments; no setter touches `sceneDirty`, and the publish gate is
+  `dirtyChanged`.
+- **Idle does not republish at all** — zero version bumps over 20 s on the
+  animated demo scene, and two consecutive payloads are byte-identical. The
+  earlier "two publishes differ in 28 bytes" reading was a settling artifact of
+  startup, not steady-state churn.
+
+One camera-derived republish path does exist and is worth remembering:
+`setAutoZoomScale` marks the scene dirty when the scale changes *and* the feed
+holds autozoom draws, so zooming (not orbiting) can republish the whole draw
+table for a screen-space size the viewer discards. Worth decoupling from the
+publish gate if it ever shows up in practice.
+
+### 2a — material dedup (v29)
+
+Materials move into a table and draws carry an index, exactly as meshes,
+textures and shaders already did. Equality is the **serialized bytes**: exact by
+construction, and it cannot drift out of step with the format the way a
+hand-written comparison over ~60 fields would. Measured on the same scene,
+38 distinct materials back 71 draws: **38,601 B → 27,669 B**, scene draws
+8,176 → 2,128 B and overlay draws 24,702 → 6,390 B.
+
+The table is now the largest section (13,428 B, 48%) and is re-sent whole on
+every publish, which points at the two things left from §1: each material is
+still 353 B because `writeMaterial` always emits 96 B of clip planes and a 64 B
+texture matrix regardless of use, and the table itself wants to be content-keyed
+like the mesh chunks so an unchanged publish stops re-sending it. Phase 2 is where the
 complexity lands, and it is what the thin client needs — the phases before it
 shrink a small scene, but only the manifest tree makes a *big* model tractable.
 
