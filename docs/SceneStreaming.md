@@ -70,7 +70,7 @@ copy is valid forever and no invalidation protocol exists.
 ```
 L0  root manifest        mutable, per publish, delta-encoded
       └─ objects[]  ──►  L1  object manifest      content-addressed
-                              ├─ mesh keys    ──►  L2  mesh chunk
+                              ├─ mesh keys+bbox ►  L2  mesh chunk
                               ├─ material keys──►  L2  material chunk
                               ├─ texture keys ──►  L2  texture blob   (v26, done)
                               ├─ shader keys  ──►  L2  shader chunk
@@ -88,6 +88,10 @@ An object manifest *names* its meshes rather than containing them, so an object
 with thousands of draws does not re-send its geometry when only its placement or
 appearance moved — and, conversely, a re-tessellation replaces one mesh chunk
 without disturbing the draws around it.
+
+The mesh is also the **submission** unit (§6): the object decides what is fetched
+and what is invalidated, but drawing waits on individual meshes, so a large
+assembly reveals its parts as they land instead of appearing all at once.
 
 ## 3. Reference discipline: keys, never indices
 
@@ -130,12 +134,27 @@ why §5 delta-encodes it; the full form is only for a first connect or a resync.
 
 ```
 objectKey, bbox[6]
-meshes:    [ key ]        ← the level that spares geometry from appearance churn
+meshes:    [ key, bbox[6] ]   ← the level that spares geometry from appearance churn
 materials: [ key ]
 textures:  [ key ]
 shaders:   [ key ]
 draws:     [ compact draw record ]
 ```
+
+Mesh entries carry a bounding box for the same reason object entries do: it is
+what lets the viewer act on a mesh it does not yet have — draw a proxy for it
+(§6), order its fetch by what is on screen, and later choose a level of detail
+for it (§7). The box is known to the producer for free; the mesh chunk it
+describes may be megabytes.
+
+**The mesh key covers the geometry, not the provenance.** `writeMesh` emits
+`cacheId` as its first field, and `cacheId` is a bare counter that changes on
+every re-tessellation *including* ones that reproduce identical geometry (§1).
+Hashing the chunk verbatim would therefore mint a new key for unchanged bytes and
+defeat the entire design. So `cacheId` is excluded from the mesh chunk, and the
+viewer derives the id it hands the backend from the key itself. Identical
+geometry then collapses onto one GPU upload — across recomputes, across
+sessions, and across objects that happen to share a shape.
 
 A compact draw record references its mesh/material/texture/shader by **index
 into this manifest's own key lists** — local indices, so the chunk stays
@@ -187,23 +206,91 @@ format of bundled `.fcsd` captures, which must stay self-contained.
 ## 6. Progressive application
 
 The v26 texture tier applies a snapshot only once every key resolves. That does
-not scale — a viewer cannot block on 20 MB before drawing anything — and object
-bucketing makes the weaker rule safe:
+not scale — a viewer cannot block on 20 MB before drawing anything. The rule is
+therefore per **mesh**, the finest unit that is independently drawable:
 
-> An object is submitted to the backend only when its manifest **and** every
-> chunk it names are in hand.
+> A draw is submitted to the backend when the mesh chunk it names, and the
+> material/texture/shader chunks it names, are in hand. Anything not yet
+> complete is drawn as a **bounding-box proxy** instead.
 
-A partially arrived scene is then a scene with *fewer objects*, never one holding
-placeholder geometry. That distinction matters because the backend keys GPU
-uploads on `cacheId`/`textureId`: a placeholder uploaded under an id and filled
-in later would never be re-uploaded.
+Mesh granularity rather than object granularity matters because an object is not
+an atom: an assembly component with a hundred parts should reveal them as they
+land, not wait for its slowest chunk. Nothing about the object level is lost —
+it is still the delta unit and the fetch bucket — but it is no longer the
+submission unit.
 
-Because L0 carries per-object bounding boxes and is small, the viewer has a
-spatial index *before* it has any geometry. Fetch order follows the view frustum,
-off-screen objects can be deferred entirely, and eviction can be distance-based —
-which is also the natural hook for the occlusion-culling work.
+### Progressive refinement
 
-## 7. Server and viewer state
+The two manifest levels give three fidelities for free, each a strict refinement
+of the last:
+
+1. **L0 only** — the object's own bbox is known. One proxy box per object.
+2. **L1 in hand** — every mesh bbox is known. The single box resolves into one
+   proxy per mesh, so the object's silhouette is roughly right long before any
+   geometry arrives.
+3. **Mesh chunks arrive** — each proxy is replaced by real geometry, one mesh at
+   a time, in whatever order the fetch prioritiser chose.
+
+A useful consequence: the initial camera fit runs off L0 bounding boxes, so the
+view frames the model correctly *before* the first triangle exists and does not
+lurch as geometry streams in. Today's `applySnapshot(fit)` fits to loaded
+geometry and would re-fit repeatedly under streaming.
+
+### Pending proxies
+
+A proxy is real geometry — a unit box, instanced per pending mesh with its bbox
+as the transform — carrying a distinct visual cue so it never reads as part of
+the model: unlit, translucent fill with a brighter wireframe edge, in a reserved
+"pending" colour. It should be configurable, and disabling it degrades to
+drawing nothing, which is the current behaviour.
+
+Proxies are **excluded** from shadow casting, AO, section capping, hidden-line
+and outline passes, and from picking — they are progress indication, not
+geometry, and letting them into those passes would make loading visibly corrupt
+the shading of everything around them.
+
+The invariant that makes this safe is that a proxy is **never submitted under
+the identity of the mesh it stands in for**. It is a separate draw with its own
+mesh and its own id. The backend keys GPU uploads on that id and would never
+re-upload a placeholder that was filled in later; the proxy sidesteps that
+entirely by never claiming to be the thing it is waiting for. When the real mesh
+lands, the proxy draw is dropped and the real draw submitted.
+
+### Prioritisation
+
+Because L0 is small and carries bounding boxes, the viewer holds a spatial index
+*before* it holds any geometry. Fetch order follows the view frustum — nearest
+and largest-on-screen first — off-screen objects can be deferred entirely, and
+eviction can be distance-based. This is also the natural hook for the
+occlusion-culling work.
+
+## 7. Level of detail (future)
+
+The design leaves room for LOD without a format break, and the pieces it needs
+are already here: per-mesh bounding boxes to estimate projected screen size, and
+content addressing to make each variant an independent immutable chunk.
+
+A mesh entry generalises from one key to a list, coarsest first:
+
+```
+meshes: [ bbox[6], lods: [ { key, error } ] ]
+```
+
+The viewer picks a level from the bbox's projected size and its budget, fetches
+that chunk, and may refine later — each level is just another content-addressed
+chunk, cached and evicted like any other, with no invalidation because none of
+them ever change.
+
+Seen this way the pending proxy of §6 is simply the coarsest level of the same
+continuum — box, then coarse mesh, then full geometry — and the same
+prioritiser drives all of it. What LOD adds is producer-side work rather than
+protocol: generating the variants (OCCT tessellation at several deviations, or
+decimation), and extending the TShape-level tessellation sharing in
+`docs/TShapeRenderCache.md` to cache per level. Switching level costs nothing on
+the wire that was not already paid, because a level the viewer has kept is a key
+it already holds.
+
+## 8. Server and viewer state
 
 **Server.** One chunk store, key → bytes, plus the manifests of the last K
 publishes. A chunk is retained while any retained manifest names it; the
@@ -214,20 +301,27 @@ unchanged: resident cache → IndexedDB → network, writing back what it fetche
 Meshes and materials therefore survive a page reload, so a returning viewer
 reconstructs a large scene from a small root delta plus local reads.
 
-## 8. Invariants
+## 9. Invariants
 
 1. A chunk's key is the SHA-1 of its bytes and depends on nothing else. Two
    chunks with the same key are interchangeable, forever.
-2. No chunk references anything by global index (§3).
-3. An object is drawn only when complete (§6); no placeholder is ever handed to
-   a backend that keys uploads by id.
-4. The server answers any chunk request from its store alone, with no per-viewer
+2. A key covers content, never provenance: `cacheId` is excluded from a mesh
+   chunk and the backend-facing id is derived from the key (§4). Hashing a
+   counter would make every re-tessellation a cache miss.
+3. No chunk references anything by global index (§3).
+4. A draw is submitted only when every chunk it names is in hand (§6). Until
+   then it is a bbox proxy, and **a proxy never carries the identity of the mesh
+   it stands in for** — a backend that keys GPU uploads by id would never
+   re-upload a placeholder filled in later.
+5. Proxies are progress indication, not geometry: excluded from shadows, AO,
+   section capping, hidden-line, outlines and picking (§6).
+6. The server answers any chunk request from its store alone, with no per-viewer
    state.
-5. A bundled capture is self-contained: chunking is a property of the transport,
+7. A bundled capture is self-contained: chunking is a property of the transport,
    never of the format (as v26 already establishes for textures).
-6. Content keys are computed once per distinct content, never per publish (§9).
+8. Content keys are computed once per distinct content, never per publish (§10).
 
-## 9. The producer-side requirement (main risk)
+## 10. The producer-side requirement (main risk)
 
 Delta publishing on the wire is worthless if the producer rebuilds and rehashes
 the whole scene each publish — the cost merely moves from network to CPU.
@@ -244,7 +338,7 @@ Settling that tracking is a prerequisite, not an optimization. Until it exists,
 hashing ~10k object manifests per publish is the bottleneck the design was meant
 to remove.
 
-## 10. Phasing
+## 11. Phasing
 
 | Phase | Change | Demo payload |
 | --- | --- | ---: |
@@ -253,22 +347,35 @@ to remove.
 | 1b | meshes → content keys, batched pull | ~35 KB |
 | 1c | camera out of the scene payload | orbit stops republishing |
 | 2 | L0/L1/L2 manifests, delta sync, material dedup | ~1 KB steady state |
-| 3 | frustum-ordered fetch, distance eviction | large models usable |
+| 3 | mesh-complete submission + bbox proxies | model appears while it loads |
+| 4 | frustum-ordered fetch, distance eviction | large models usable |
+| 5 | LOD variants per mesh (§7) | large models *fast* |
 
 Phase 1 is the v26 pattern extended to two more section types and needs no
 protocol restructure; 1a alone is 64% of the payload. Phase 2 is where the
 complexity lands, and it is what the thin client needs — the phases before it
 shrink a small scene, but only the manifest tree makes a *big* model tractable.
 
-## 11. Open questions
+## 12. Open questions
 
 - **`objectKey == 0`** means "unknown" (`Renderer.h:1011`). Those draws need a
   fallback bucket, or they collide into a single perpetually-dirty chunk.
 - **Manifest history depth** — how stale a viewer may be before a full resync,
   and what that costs in server memory.
-- **Very large single objects.** The mesh level bounds geometry churn, but an
-  object with tens of thousands of draws still re-sends its whole draw list when
-  one draw changes. Sub-bucketing the draw list may be needed; measure first.
+- **Very large single objects.** The mesh level bounds *geometry* churn and
+  decouples submission from it, but an object with tens of thousands of draws
+  still re-sends its whole draw list when one draw changes. Sub-bucketing the
+  draw list may be needed; measure first.
+- **Proxy churn.** A mesh that arrives quickly should not flash a proxy for one
+  frame. A short grace period before a proxy appears (and a fade when it is
+  replaced) is probably wanted; needs to be tuned against a real model, not
+  guessed.
+- **Do proxies belong in the depth prepass?** Excluding them keeps effects
+  honest, but means geometry behind a pending object shows through it. Either
+  reading is defensible; decide by looking at it.
+- **LOD error metric and budget** (§7) — what `error` means (screen-space
+  deviation is the usual choice) and whether the level is chosen per mesh or
+  solved globally against a triangle budget.
 - **Root manifest at very large object counts.** 100k objects make even the
   delta's object list non-trivial; paging the object list into content-addressed
   pages is the escape, if measurement demands it.
