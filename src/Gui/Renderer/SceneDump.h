@@ -137,23 +137,37 @@ struct SceneSnapshot {
     MeshBlobSink meshBlobs;
 
     /// Load-side counterpart of every out-of-band payload but a
-    /// texture: a group manifest, a mesh, a material, a shader. `fill`
-    /// parses the fetched bytes into storage the loader owns (its types
-    /// are private to the serializer), and **may name further
-    /// deferrals of its own** — a group names its meshes and materials,
-    /// a material names its textures — so a consumer resolves in rounds
-    /// until nothing is outstanding rather than in one pass. It takes
-    /// the snapshot at call time: a staged snapshot is moved before it
-    /// is applied, which a captured pointer would not survive.
+    /// payload: a group manifest, a mesh, a material, a shader, a
+    /// texture. `fill` parses the fetched bytes into storage the loader
+    /// owns (its types are private to the serializer), and **may name
+    /// further deferrals of its own** — a group names its meshes and
+    /// materials, a material names its textures — so a consumer
+    /// resolves in rounds until nothing is outstanding rather than in
+    /// one pass. It takes the snapshot at call time: a staged snapshot
+    /// is moved before it is applied, which a captured pointer would
+    /// not survive.
+    ///
+    /// **One list, no payload kinds.** A consumer decides how to fetch
+    /// an entry from its `size` alone and never from what is inside it:
+    /// a large payload is worth a request of its own, a small one is
+    /// worth batching with its neighbours, and that is as true of a
+    /// texture as of a mesh. Nothing here says which is which.
     ///
     /// A snapshot must not be fed to a backend until every entry is
     /// filled and finalize() has run.
     struct DeferredChunk {
         std::string key;
-        /// Chunk size in bytes, known before the fetch so pulls can be
-        /// packed to a byte budget. A chunk larger than the budget is
-        /// not a special case — it simply ends up alone in its batch.
+        /// Payload size in bytes, always known before the fetch: it is
+        /// what the fetch policy is chosen from, and what lets a batch
+        /// be packed to a byte budget. A payload larger than the budget
+        /// is not a special case — it simply ends up alone.
         uint32_t size = 0;
+        /// \a data null means the payload could not be obtained at
+        /// all. Whether that is survivable is the entry's own business,
+        /// not the consumer's: a texture clears its deferred flag and
+        /// returns true, because the draw renders untextured rather
+        /// than not at all, while geometry returns false and the
+        /// snapshot is not applied.
         std::function<bool(SceneSnapshot &snap,
                            const void *data, size_t size)> fill;
     };
@@ -169,11 +183,6 @@ struct SceneSnapshot {
     std::vector<DrawCallList> groups;
     std::vector<Material> materials;
     std::function<void(SceneSnapshot &snap)> finalize;
-    /// Load-side counterpart: the textures that arrived key-only. Their
-    /// `pixels` must be filled and `deferred` cleared before the
-    /// snapshot is fed to a backend — these alias the entries the draw
-    /// materials point at, so filling them in place is enough.
-    std::vector<std::shared_ptr<TextureImage>> deferredTextures;
     float autozoomScale = 1.0f;
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect
     /// passes (reflection re-render, SSAO resolve); 1.0 = full resolution.

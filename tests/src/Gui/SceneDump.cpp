@@ -165,10 +165,10 @@ void attachSinks(Render::SceneSnapshot& snap, BlobStore& store)
     };
 }
 
-/// Resolve everything a loaded manifest snapshot named, out of \a
-/// store, the way the viewer does — in rounds, because a chunk's parse
-/// names further chunks — then run the pass that puts the staged draws
-/// and materials where a backend expects them.
+/// Resolve everything a loaded snapshot named, out of \a store, the
+/// way the viewer does — in rounds, because a payload's parse names
+/// further payloads — then run the pass that puts the staged draws and
+/// materials where a backend expects them.
 ::testing::AssertionResult resolve(Render::SceneSnapshot& snap,
                                    const BlobStore& store)
 {
@@ -179,16 +179,23 @@ void attachSinks(Render::SceneSnapshot& snap, BlobStore& store)
             if (!fill) {
                 continue;
             }
-            auto it = store.blobs.find(snap.deferredChunks[i].key);
+            const std::string key = snap.deferredChunks[i].key;
+            // Every entry must be able to say how big it is: that is
+            // the only thing a consumer gets to choose a fetch policy
+            // from, so an entry without it would have to be special-cased.
+            if (snap.deferredChunks[i].size == 0) {
+                return ::testing::AssertionFailure()
+                    << "payload " << key << " does not name its size";
+            }
+            auto it = store.blobs.find(key);
             if (it == store.blobs.end()) {
                 return ::testing::AssertionFailure()
-                    << "chunk " << snap.deferredChunks[i].key
-                    << " was never published";
+                    << "payload " << key << " was never published";
             }
             snap.deferredChunks[i].fill = nullptr;
             if (!fill(snap, it->second.data(), it->second.size())) {
                 return ::testing::AssertionFailure()
-                    << "chunk " << it->first << " failed to parse";
+                    << "payload " << key << " failed to parse";
             }
             progress = true;
         }
@@ -196,22 +203,10 @@ void attachSinks(Render::SceneSnapshot& snap, BlobStore& store)
             break;
         }
     }
-    for (const auto& tex : snap.deferredTextures) {
-        if (!tex || !tex->deferred) {
-            continue;
-        }
-        auto it = store.blobs.find(tex->contentKey);
-        if (it == store.blobs.end()) {
-            return ::testing::AssertionFailure()
-                << "texture " << tex->contentKey << " was never published";
-        }
-        tex->pixels = it->second;
-        tex->deferred = false;
-    }
     for (const auto& chunk : snap.deferredChunks) {
         if (chunk.fill) {
             return ::testing::AssertionFailure()
-                << "chunk " << chunk.key << " left outstanding";
+                << "payload " << chunk.key << " left outstanding";
         }
     }
     if (snap.finalize) {
@@ -384,4 +379,74 @@ TEST(SceneDump, changingOneObjectSparesTheOthers)
     // not change, and the material is not part of what a mesh hashes.
     EXPECT_EQ(minted.size(), 2u)
         << "only the changed object's manifest and its new material";
+}
+
+/// The consumer never learns what kind of payload it is holding, so
+/// "can the scene do without this?" has to be answered by the entry.
+/// A payload that could not be obtained is offered to `fill` as
+/// nothing at all, and the entry says whether that is survivable.
+TEST(SceneDump, entriesDecideWhatCanBeGivenUpOn)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    // The two texture payloads, by the keys their pixels hash to.
+    const std::vector<uint8_t> texPixels(256, uint8_t(7));
+    const std::vector<uint8_t> hatchPixels(128, uint8_t(8));
+    std::set<std::string> giveUp {
+        Render::sha1Hex(texPixels.data(), texPixels.size()),
+        Render::sha1Hex(hatchPixels.data(), hatchPixels.size()),
+    };
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+
+    size_t abandoned = 0;
+    for (int round = 0; round < 16; ++round) {
+        bool progress = false;
+        for (size_t i = 0; i < loaded.deferredChunks.size(); ++i) {
+            auto fill = loaded.deferredChunks[i].fill;
+            if (!fill) {
+                continue;
+            }
+            const std::string key = loaded.deferredChunks[i].key;
+            loaded.deferredChunks[i].fill = nullptr;
+            if (giveUp.count(key)) {
+                ++abandoned;
+                EXPECT_TRUE(fill(loaded, nullptr, 0))
+                    << "a scene renders untextured rather than not at all";
+            }
+            else {
+                auto it = store.blobs.find(key);
+                ASSERT_NE(it, store.blobs.end());
+                ASSERT_TRUE(fill(loaded, it->second.data(), it->second.size()));
+                // Geometry is the opposite case: without it there is
+                // nothing to draw, so giving up is refused.
+                EXPECT_FALSE(fill(loaded, nullptr, 0))
+                    << "payload " << key << " claimed to be dispensable";
+            }
+            progress = true;
+        }
+        if (!progress) {
+            break;
+        }
+    }
+    EXPECT_EQ(abandoned, 2u) << "both textures were reached and abandoned";
+    ASSERT_TRUE(loaded.finalize);
+    loaded.finalize(loaded);
+
+    // The scene is whole; only the images are missing.
+    EXPECT_EQ(loaded.scene.size(), 4u);
+    for (const auto& d : loaded.scene) {
+        EXPECT_TRUE(d.mesh);
+        if (d.material.texture) {
+            EXPECT_FALSE(d.material.texture->deferred)
+                << "an abandoned texture must not still read as pending";
+            EXPECT_TRUE(d.material.texture->pixels.empty());
+        }
+    }
 }

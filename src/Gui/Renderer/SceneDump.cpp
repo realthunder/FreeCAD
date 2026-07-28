@@ -515,12 +515,14 @@ void writeTexture(Writer &w, const TextureImage &t,
     w.u8(defer ? 1 : 0);
     w.u32(uint32_t(t.contentKey.size()));
     w.raw(t.contentKey.data(), t.contentKey.size());
-    if (defer)
-        w.u32(0);
-    else {
-        w.u32(uint32_t(t.pixels.size()));
+    // The payload size either way (v33): deferred, it is what the
+    // consumer picks a fetch policy from — one request of its own for a
+    // big image, a shared batch for a small one — and it cannot make
+    // that call without being told. Inline, it is the byte count that
+    // follows.
+    w.u32(uint32_t(t.pixels.size()));
+    if (!defer)
         w.raw(t.pixels.data(), t.pixels.size());
-    }
     w.u8(t.wrapS);
     w.u8(t.wrapT);
     w.u8(t.model);
@@ -530,7 +532,10 @@ void writeTexture(Writer &w, const TextureImage &t,
         blobs(t.contentKey, std::vector<uint8_t>(t.pixels));
 }
 
-std::shared_ptr<TextureImage> readTexture(Reader &r, uint32_t version)
+/// \a payloadSize, when given, receives the size of a deferred
+/// texture's pixels — zero for one that came inline.
+std::shared_ptr<TextureImage> readTexture(Reader &r, uint32_t version,
+                                          uint32_t *payloadSize = nullptr)
 {
     auto tex = std::make_shared<TextureImage>();
     tex->textureId = r.u64();
@@ -552,13 +557,46 @@ std::shared_ptr<TextureImage> readTexture(Reader &r, uint32_t version)
         r.ok = false;
         return nullptr;
     }
-    tex->pixels.resize(n);
-    r.raw(tex->pixels.data(), n);
+    if (tex->deferred) {
+        // v33 names the size here; v26-v32 wrote a zero, which simply
+        // leaves the consumer to fetch without one.
+        if (payloadSize)
+            *payloadSize = n;
+    }
+    else {
+        tex->pixels.resize(n);
+        r.raw(tex->pixels.data(), n);
+    }
     tex->wrapS = r.u8();
     tex->wrapT = r.u8();
     tex->model = r.u8();
     tex->blendColor = r.u32();
     return tex;
+}
+
+/// Queue a key-only texture as an ordinary deferred payload. Its
+/// pixels are filled in place, which is enough because every material
+/// that uses the image points at this same object.
+///
+/// A texture is the one payload a scene survives without, and that is
+/// expressed here rather than in the consumer: asked to give up, it
+/// clears the flag and reports success, so the draw renders untextured
+/// instead of the whole snapshot being withheld.
+void deferTexture(SceneSnapshot &snap,
+                  const std::shared_ptr<TextureImage> &tex, uint32_t size)
+{
+    SceneSnapshot::DeferredChunk entry;
+    entry.key = tex->contentKey;
+    entry.size = size;
+    entry.fill = [tex](SceneSnapshot &, const void *data, size_t size) {
+        if (data) {
+            const uint8_t *bytes = static_cast<const uint8_t *>(data);
+            tex->pixels.assign(bytes, bytes + size);
+        }
+        tex->deferred = false;
+        return true;
+    };
+    snap.deferredChunks.push_back(std::move(entry));
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -1454,7 +1492,8 @@ RefReader manifestRefReader(const LoaderPtr &st, SceneSnapshot &snap)
                            std::shared_ptr<const TextureImage> &t) {
         if (r.u8() == 0)
             return;
-        auto tex = readTexture(r, st->version);
+        uint32_t size = 0;
+        auto tex = readTexture(r, st->version, &size);
         if (!tex)
             return;
         if (!tex->contentKey.empty()) {
@@ -1466,7 +1505,7 @@ RefReader manifestRefReader(const LoaderPtr &st, SceneSnapshot &snap)
             st->textures.emplace(tex->contentKey, tex);
         }
         if (tex->deferred)
-            snap.deferredTextures.push_back(tex);
+            deferTexture(snap, tex, size);
         t = tex;
     };
     refs.shader = [st, &snap](Reader &r,
@@ -1979,9 +2018,10 @@ void loadMonolithicTables(Reader &r, SceneSnapshot &snap, uint32_t version,
     if (ntex > 0x100000u)
         r.ok = false;
     for (uint32_t i = 0; r.ok && i < ntex; ++i) {
-        auto tex = readTexture(r, version);
+        uint32_t size = 0;
+        auto tex = readTexture(r, version, &size);
         if (tex && tex->deferred)
-            snap.deferredTextures.push_back(tex);
+            deferTexture(snap, tex, size);
         textures.push_back(tex);
     }
 
@@ -2070,7 +2110,6 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     const bool manifest = version >= 33 && r.u8() != 0;
 
     snap.deferredChunks.clear();
-    snap.deferredTextures.clear();
     snap.groups.clear();
     snap.materials.clear();
     snap.finalize = nullptr;

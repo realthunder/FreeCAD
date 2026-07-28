@@ -2071,6 +2071,7 @@ static void blobResolved(const std::string &key,
                          bool fromDb);
 static void queueBatch(const std::string &key, uint32_t size);
 static void fetchBlob(const std::string &key);
+static void fetchFromNetwork(const std::string &key, uint32_t size);
 
 static void blobFromDb(const std::string &key, const uint8_t *bytes,
                        size_t size, uint32_t batchSize)
@@ -2086,10 +2087,7 @@ static void blobFromDb(const std::string &key, const uint8_t *bytes,
                                 [](void *) {}, [](void *) {});
     // Straight to the network: the store just proved untrustworthy for
     // this key, and the delete may not have landed yet.
-    if (batchSize)
-        queueBatch(key, batchSize);
-    else
-        fetchBlob(key);
+    fetchFromNetwork(key, batchSize);
 }
 
 typedef std::shared_ptr<std::vector<uint8_t>> BlobData;
@@ -2177,10 +2175,6 @@ static void pruneBlobCache()
     if (total <= kBlobCacheBudget)
         return;
     std::set<std::string> inUse;
-    for (const auto &tex : s_snap.deferredTextures) {
-        if (tex)
-            inUse.insert(tex->contentKey);
-    }
     for (const auto &chunk : s_snap.deferredChunks)
         inUse.insert(chunk.key);
     for (auto it = s_blobCache.begin(); it != s_blobCache.end();) {
@@ -2373,49 +2367,55 @@ static void queueBatch(const std::string &key, uint32_t size)
     }
 }
 
+/// How a payload is fetched, decided from its size and nothing else.
+///
+/// The line is one batch's worth: a payload that would fill a whole
+/// request by itself gains nothing from sharing one, so it takes a
+/// plain `GET /blob?key=` — which the browser can cache and revalidate
+/// on its own, where a batched POST cannot be. Anything smaller shares
+/// a request, because below that size the round trip *is* the cost:
+/// the demo scene's 105 payloads as 105 requests would be slower than
+/// sending them all inline.
+///
+/// The rule is about size and not about what the payload holds. A
+/// small texture shares a request with its neighbours and a large mesh
+/// takes its own, and neither this function nor the deferred entry it
+/// serves knows which kind it is looking at — which is the point:
+/// adding a payload kind should not mean adding a fetch path.
+static const size_t kOwnRequestBytes = kRequestBytes;
+
+static void fetchFromNetwork(const std::string &key, uint32_t size)
+{
+    if (size && size < kOwnRequestBytes)
+        queueBatch(key, size);
+    else
+        fetchBlob(key);
+}
+
 /// IndexedDB first — a reload or a revisit skips the network entirely.
-/// \a size non-zero routes the network step through a batch instead of
-/// a request of its own (the mesh path).
 static void requestBlob(const std::string &key, uint32_t size = 0)
 {
     if (!s_blobInFlight.insert(key).second)
         return;
     if (!blobPersistEnabled()) {
-        if (size)
-            queueBatch(key, size);
-        else
-            fetchBlob(key);
-        return;
-    }
-    if (size) {
-        emscripten_idb_async_load(
-            kBlobDb, key.c_str(), new std::pair<std::string, uint32_t>(key, size),
-            [](void *arg, void *ptr, int num) {
-                std::unique_ptr<std::pair<std::string, uint32_t>> item(
-                    static_cast<std::pair<std::string, uint32_t> *>(arg));
-                blobFromDb(item->first, static_cast<uint8_t *>(ptr),
-                           size_t(num), item->second);
-                std::free(ptr);
-            },
-            [](void *arg) {
-                std::unique_ptr<std::pair<std::string, uint32_t>> item(
-                    static_cast<std::pair<std::string, uint32_t> *>(arg));
-                queueBatch(item->first, item->second);
-            });
+        fetchFromNetwork(key, size);
         return;
     }
     emscripten_idb_async_load(
-        kBlobDb, key.c_str(), new std::string(key),
+        kBlobDb, key.c_str(), new std::pair<std::string, uint32_t>(key, size),
         [](void *arg, void *ptr, int num) {
-            std::unique_ptr<std::string> key(static_cast<std::string *>(arg));
-            blobFromDb(*key, static_cast<uint8_t *>(ptr), size_t(num), 0);
+            std::unique_ptr<std::pair<std::string, uint32_t>> item(
+                static_cast<std::pair<std::string, uint32_t> *>(arg));
+            blobFromDb(item->first, static_cast<uint8_t *>(ptr),
+                       size_t(num), item->second);
             std::free(ptr);
         },
         [](void *arg) {
             // Not stored yet (the common first-visit case) or the store
             // is unavailable: go to the network.
-            std::unique_ptr<std::string> key(static_cast<std::string *>(arg));
-            fetchBlob(*key);
+            std::unique_ptr<std::pair<std::string, uint32_t>> item(
+                static_cast<std::pair<std::string, uint32_t> *>(arg));
+            fetchFromNetwork(item->first, item->second);
         });
 }
 
@@ -2446,11 +2446,11 @@ static void resolvePending()
     size_t missing = 0, total = 0;
     bool incomplete = false;
 
-    // Out-of-band chunks (v33: group manifests, meshes, materials,
-    // shaders), pulled in batches. A fill can name further chunks — a
-    // group names its meshes and materials, a material names its
-    // textures — so this runs in rounds until one resolves nothing
-    // new, rather than in a single pass.
+    // Every out-of-band payload the snapshot named — group manifests,
+    // meshes, materials, shaders, textures — in one pass. A fill can
+    // name further payloads (a group names its meshes and materials, a
+    // material names its textures), so this runs in rounds until one
+    // resolves nothing new rather than in a single pass.
     bool progress = true;
     while (progress) {
         progress = false;
@@ -2459,22 +2459,25 @@ static void resolvePending()
             if (!entry.fill)
                 continue;
             auto it = s_blobCache.find(entry.key);
-            if (it == s_blobCache.end() || !it->second) {
-                if (s_blobFailed.count(entry.key)) {
-                    incomplete = true;
-                    entry.fill = nullptr;
-                }
+            bool failed = s_blobFailed.count(entry.key) != 0;
+            if ((it == s_blobCache.end() || !it->second) && !failed)
                 continue;
-            }
             // Take the callable and clear the slot before running it:
             // it may append entries, and a reference into the vector
             // does not survive that.
             auto fill = entry.fill;
             entry.fill = nullptr;
-            if (fill(s_pendingSnap, it->second->data(), it->second->size()))
+            // A null payload asks the entry to give up. Whether that
+            // is survivable is its business, not ours — a texture says
+            // yes and the draw renders untextured.
+            bool ok = failed
+                ? fill(s_pendingSnap, nullptr, 0)
+                : fill(s_pendingSnap, it->second->data(), it->second->size());
+            if (ok)
                 progress = true;
             else {
-                resetBlobStore();
+                if (!failed)
+                    resetBlobStore();
                 incomplete = true;
             }
         }
@@ -2484,29 +2487,7 @@ static void resolvePending()
         if (!entry.fill)
             continue;
         ++missing;
-        requestBlob(entry.key, entry.size ? entry.size : 1);
-    }
-
-    // Textures last: they are named by the material chunks above, so
-    // the set is only complete once those have been parsed.
-    for (const auto &tex : s_pendingSnap.deferredTextures) {
-        if (!tex || !tex->deferred)
-            continue;
-        ++total;
-        auto it = s_blobCache.find(tex->contentKey);
-        if (it != s_blobCache.end()) {
-            tex->pixels = *it->second;
-            tex->deferred = false;
-            continue;
-        }
-        if (s_blobFailed.count(tex->contentKey)) {
-            // A texture is the one payload a scene survives without:
-            // the draw renders untextured instead of not at all.
-            tex->deferred = false;
-            continue;
-        }
-        ++missing;
-        requestBlob(tex->contentKey);
+        requestBlob(entry.key, entry.size);
     }
     if (missing) {
         fcviewer_status("loading scene", double(total - missing),

@@ -202,6 +202,28 @@ huge (textures, hatch) stay well served by individual `GET /blob?key=`, which
 also inherits browser HTTP caching; many and small go through the batched
 WebSocket path.
 
+**Which of the two a payload gets is decided by its size, and by nothing else.**
+Not by what it holds: the viewer's fetch path does not know a texture from a
+mesh, and the loader does not tell it. The line is one batch's worth
+(`kRequestBytes`) — a payload that would fill a request by itself gains nothing
+from sharing one, and gains the browser's own caching by taking a plain GET. So
+a small texture rides a batch and a large mesh takes its own request, both
+without a rule naming either.
+
+Two things follow, and both are requirements on the format rather than on the
+viewer. **Every deferred payload states its size in the stream** — including a
+texture, which before v33 wrote a zero there, because a consumer cannot choose a
+policy for a payload whose size it has to guess. And **whether a missing payload
+is survivable is the payload's own answer**: a consumer that cannot obtain one
+offers the entry nothing (`fill(snap, nullptr, 0)`) and takes its verdict — a
+texture clears its pending flag and says yes, since the draw renders untextured;
+geometry says no and the snapshot is withheld. The alternative — a consumer that
+knows textures are optional — is the same kind-knowledge creeping back in
+through the error path.
+
+Measured on `scripts/demo-water.py`, a first load resolves as 15 batched
+requests and 3 individual ones, the latter being the genuinely large images.
+
 When a viewer's manifest version has fallen out of the server's history, it is
 told to resync: it re-fetches a full root manifest. The monolithic `SceneDump`
 serializer is retained as the ultimate fallback (`getFull`) and remains the
