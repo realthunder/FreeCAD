@@ -626,6 +626,91 @@ TEST(SceneDump, deltaAgainstAnUnheldVersionIsRefused)
         << "a consumer holding nothing must be told to ask for a full root";
 }
 
+/// A server holds published bytes, not the scene behind them, so the
+/// only way it can answer a viewer that is behind is by rewriting the
+/// object list of a payload it already has. That rewrite has to produce
+/// exactly what the serializer would have produced from the scene.
+TEST(SceneDump, aSplicedDeltaIsTheDeltaTheWriterWouldHaveWritten)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+
+    // Publish 1, full.
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries1;
+    snap.manifestVersion = 1;
+    snap.sessionId = 99;
+    snap.objectEntries = &entries1;
+    std::vector<uint8_t> full1;
+    ASSERT_TRUE(Render::saveSceneSnapshot(full1, snap));
+
+    Render::SceneObjectModel model;
+    Render::SceneSnapshot loaded1;
+    ASSERT_TRUE(Render::loadSceneSnapshot(full1.data(), full1.size(),
+                                          loaded1));
+    ASSERT_TRUE(resolveInto(loaded1, store, model));
+    ASSERT_EQ(model.version, 1u);
+
+    // Publish 2 repaints one object and is serialized FULL, recording
+    // where its object list landed — this is what a server would hold.
+    for (auto& d : snap.scene) {
+        if (d.objectKey == 0x2222) {
+            d.material.diffuse = 0x777777ff;
+        }
+    }
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries2;
+    Render::SceneSnapshot::RootSpans spans;
+    snap.manifestVersion = 2;
+    snap.baseVersion = 0;
+    snap.baseObjects.clear();
+    snap.objectEntries = &entries2;
+    snap.rootSpans = &spans;
+    std::vector<uint8_t> full2;
+    ASSERT_TRUE(Render::saveSceneSnapshot(full2, snap));
+    snap.rootSpans = nullptr;
+    EXPECT_GT(spans.listEnd, spans.listBegin);
+    EXPECT_LT(spans.baseVersionAt, spans.listBegin);
+
+    // The same publish serialized natively as a delta against 1 — what
+    // the splice has to reproduce.
+    std::vector<Render::SceneSnapshot::ObjectEntry> entriesNative;
+    snap.baseObjects = entries1;
+    snap.baseVersion = 1;
+    snap.objectEntries = &entriesNative;
+    std::vector<uint8_t> native;
+    ASSERT_TRUE(Render::saveSceneSnapshot(native, snap));
+
+    std::vector<Render::SceneSnapshot::ObjectEntry> changed;
+    std::vector<uint64_t> removed;
+    Render::diffObjectLists(entries1, entries2, changed, removed);
+    ASSERT_EQ(changed.size(), 1u) << "one object was repainted";
+    EXPECT_EQ(changed[0].objectKey, 0x2222u);
+    EXPECT_TRUE(removed.empty());
+
+    std::vector<uint8_t> spliced;
+    ASSERT_TRUE(Render::spliceObjectDelta(full2, spans, 1, changed, removed,
+                                          spliced));
+    EXPECT_EQ(spliced, native)
+        << "a spliced delta must be byte-identical to a written one";
+    EXPECT_LT(spliced.size(), full2.size());
+
+    // And it applies onto a model holding exactly what it is against.
+    Render::SceneSnapshot loaded2;
+    ASSERT_TRUE(Render::loadSceneSnapshot(spliced.data(), spliced.size(),
+                                          loaded2));
+    ASSERT_TRUE(resolveInto(loaded2, store, model));
+    EXPECT_EQ(model.version, 2u);
+    expectScene(loaded2);
+
+    // Bad spans are refused rather than silently producing a payload
+    // that parses into nonsense.
+    Render::SceneSnapshot::RootSpans bad = spans;
+    bad.listEnd = full2.size() + 1;
+    std::vector<uint8_t> nope;
+    EXPECT_FALSE(Render::spliceObjectDelta(full2, bad, 1, changed, removed,
+                                           nope));
+}
+
 /// A version is only meaningful within the run that issued it, so the
 /// run has to travel with it (v35). Without that a consumer cannot tell
 /// "publish 3 of this backend" from "publish 3 of the one before the

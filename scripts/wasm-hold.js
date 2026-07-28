@@ -19,7 +19,15 @@ const puppeteer = require(path);
   const browser = await puppeteer.launch({
     headless: 'new',
     args: ['--no-sandbox', '--enable-unsafe-swiftshader',
-           '--use-angle=swiftshader', '--window-size=1100,900'],
+           '--use-angle=swiftshader', '--window-size=1100,900',
+           // A held page is a background page, and Chromium throttles
+           // background timers hard enough that the viewer's WebSocket
+           // reconnect backoff never fires — so a backend restarted
+           // under the page is never reconnected to and anything about
+           // resync is untestable here.
+           '--disable-background-timer-throttling',
+           '--disable-backgrounding-occluded-windows',
+           '--disable-renderer-backgrounding'],
   });
   const page = await browser.newPage();
   await page.setViewport({width: 1100, height: 900});

@@ -129,6 +129,16 @@ struct Writer {
         if (std::fwrite(data, 1, size, fp) != size)
             ok = false;
     }
+    /// How far into the payload the next write lands — what a span is
+    /// recorded from (SceneDump.h, RootSpans).
+    size_t pos() const
+    {
+        if (vec)
+            return vec->size();
+        long at = fp ? std::ftell(fp) : -1;
+        return at < 0 ? 0 : size_t(at);
+    }
+
     template<typename T>
     void num(T v) { raw(&v, sizeof(v)); }
     void b(bool v) { num<uint8_t>(v ? 1 : 0); }
@@ -1414,58 +1424,77 @@ void groupScene(const DrawCallList &scene,
     }
 }
 
-/// The whole object list: what a viewer needs when it holds nothing,
-/// and the only form a bundled or first-connect root can take.
-void writeObjectList(Writer &w,
-                     const std::vector<SceneSnapshot::ObjectEntry> &entries)
+/// The object-list section: what this publish retires, then what it
+/// carries. One shape for both forms — a full list is the one that
+/// retires nothing and carries everything, which is why a consumer
+/// needs `baseVersion`, not the section, to tell them apart.
+template<typename EntryPtr>
+void writeObjectSection(Writer &w,
+                        const std::vector<uint64_t> &removed,
+                        const std::vector<EntryPtr> &carried)
 {
-    w.u32(0);   // nothing retired: this list replaces whatever was held
-    w.u32(uint32_t(entries.size()));
-    for (const auto &e : entries) {
+    w.u32(uint32_t(removed.size()));
+    for (uint64_t key : removed)
+        w.u64(key);
+    w.u32(uint32_t(carried.size()));
+    for (const auto &ref : carried) {
+        const SceneSnapshot::ObjectEntry &e = *ref;
         w.u64(e.objectKey);
         w.floats(e.bbox, 6);
         writeGroupRef(w, e);
     }
 }
 
-/// The difference against \a base — both sorted by objectKey, so this
-/// is one linear pass. An object is unchanged exactly when its group
-/// manifest key is unchanged: the key covers the whole group, bounding
-/// box included, so there is nothing else that could have moved.
+/// The whole object list: what a viewer needs when it holds nothing,
+/// and the only form a bundled or first-connect root can take.
+void writeObjectList(Writer &w,
+                     const std::vector<SceneSnapshot::ObjectEntry> &entries)
+{
+    std::vector<const SceneSnapshot::ObjectEntry *> all;
+    all.reserve(entries.size());
+    for (const auto &e : entries)
+        all.push_back(&e);
+    // Nothing retired: this list replaces whatever was held.
+    writeObjectSection(w, std::vector<uint64_t>(), all);
+}
+
+/// Both lists are ordered by objectKey, so the difference is one linear
+/// pass. An object is unchanged exactly when its group manifest key is
+/// unchanged: the key covers the whole group, bounding box included, so
+/// there is nothing else that could have moved.
+void diffObjectPtrs(const std::vector<SceneSnapshot::ObjectEntry> &from,
+                    const std::vector<SceneSnapshot::ObjectEntry> &to,
+                    std::vector<const SceneSnapshot::ObjectEntry *> &changed,
+                    std::vector<uint64_t> &removed)
+{
+    size_t i = 0, j = 0;
+    while (i < to.size() || j < from.size()) {
+        if (j >= from.size()
+                || (i < to.size() && to[i].objectKey < from[j].objectKey)) {
+            changed.push_back(&to[i++]);      // new object
+        }
+        else if (i >= to.size()
+                 || from[j].objectKey < to[i].objectKey) {
+            removed.push_back(from[j++].objectKey);
+        }
+        else {
+            if (to[i].key != from[j].key)
+                changed.push_back(&to[i]);
+            ++i;
+            ++j;
+        }
+    }
+}
+
+/// The difference against \a base.
 void writeObjectDelta(Writer &w,
                       const std::vector<SceneSnapshot::ObjectEntry> &entries,
                       const std::vector<SceneSnapshot::ObjectEntry> &base)
 {
     std::vector<uint64_t> removed;
     std::vector<const SceneSnapshot::ObjectEntry *> changed;
-    size_t i = 0, j = 0;
-    while (i < entries.size() || j < base.size()) {
-        if (j >= base.size()
-                || (i < entries.size()
-                    && entries[i].objectKey < base[j].objectKey)) {
-            changed.push_back(&entries[i++]);      // new object
-        }
-        else if (i >= entries.size()
-                 || base[j].objectKey < entries[i].objectKey) {
-            removed.push_back(base[j++].objectKey);
-        }
-        else {
-            if (entries[i].key != base[j].key)
-                changed.push_back(&entries[i]);
-            ++i;
-            ++j;
-        }
-    }
-
-    w.u32(uint32_t(removed.size()));
-    for (uint64_t key : removed)
-        w.u64(key);
-    w.u32(uint32_t(changed.size()));
-    for (const auto *e : changed) {
-        w.u64(e->objectKey);
-        w.floats(e->bbox, 6);
-        writeGroupRef(w, *e);
-    }
+    diffObjectPtrs(base, entries, changed, removed);
+    writeObjectSection(w, removed, changed);
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -1821,6 +1850,8 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         // a difference against (0 = none, the list is complete). v35
         // adds the run those numbers belong to.
         w.u64(snap.manifestVersion);
+        if (snap.rootSpans)
+            snap.rootSpans->baseVersionAt = w.pos();
         w.u64(snap.baseVersion);
         w.u64(snap.sessionId);
     }
@@ -1912,10 +1943,14 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
             entries.push_back(std::move(entry));
         }
 
+        if (snap.rootSpans)
+            snap.rootSpans->listBegin = w.pos();
         if (!snap.baseVersion)
             writeObjectList(w, entries);
         else
             writeObjectDelta(w, entries, snap.baseObjects);
+        if (snap.rootSpans)
+            snap.rootSpans->listEnd = w.pos();
         if (snap.objectEntries)
             *snap.objectEntries = entries;
 
@@ -2534,6 +2569,58 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
     scene.insert(scene.end(), std::make_move_iterator(snap.scene.begin()),
                  std::make_move_iterator(snap.scene.end()));
     snap.scene = std::move(scene);
+    return true;
+}
+
+void Render::diffObjectLists(
+        const std::vector<SceneSnapshot::ObjectEntry> &from,
+        const std::vector<SceneSnapshot::ObjectEntry> &to,
+        std::vector<SceneSnapshot::ObjectEntry> &changed,
+        std::vector<uint64_t> &removed)
+{
+    std::vector<const SceneSnapshot::ObjectEntry *> refs;
+    diffObjectPtrs(from, to, refs, removed);
+    changed.reserve(changed.size() + refs.size());
+    for (const auto *e : refs)
+        changed.push_back(*e);
+}
+
+bool Render::spliceObjectDelta(
+        const std::vector<uint8_t> &full,
+        const SceneSnapshot::RootSpans &spans,
+        uint64_t baseVersion,
+        const std::vector<SceneSnapshot::ObjectEntry> &changed,
+        const std::vector<uint64_t> &removed,
+        std::vector<uint8_t> &out)
+{
+    // A splice is only ever as sound as the spans, and they come from a
+    // different call than this one: refuse rather than produce a
+    // payload that parses into nonsense.
+    if (spans.listEnd < spans.listBegin || spans.listEnd > full.size()
+            || spans.baseVersionAt + sizeof(uint64_t) > spans.listBegin
+            || !baseVersion)
+        return false;
+
+    std::vector<uint8_t> section;
+    Writer w;
+    w.vec = &section;
+    std::vector<const SceneSnapshot::ObjectEntry *> refs;
+    refs.reserve(changed.size());
+    for (const auto &e : changed)
+        refs.push_back(&e);
+    writeObjectSection(w, removed, refs);
+    if (!w.ok)
+        return false;
+
+    out.clear();
+    out.reserve(full.size() - (spans.listEnd - spans.listBegin)
+                + section.size());
+    out.insert(out.end(), full.begin(), full.begin() + spans.listBegin);
+    out.insert(out.end(), section.begin(), section.end());
+    out.insert(out.end(), full.begin() + spans.listEnd, full.end());
+    // The header still says the list is complete; it no longer is.
+    std::memcpy(out.data() + spans.baseVersionAt, &baseVersion,
+                sizeof(baseVersion));
     return true;
 }
 

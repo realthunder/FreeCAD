@@ -215,6 +215,22 @@ struct SceneSnapshot {
     std::vector<ObjectEntry> baseObjects;
     std::vector<ObjectEntry> *objectEntries = nullptr;
 
+    /// Where the parts of a root that may later be rewritten ended up
+    /// in the payload, recorded on save when non-null.
+    ///
+    /// A server holds published bytes, not the scene they came from, so
+    /// it cannot re-serialize a root to suit one viewer. What it can do
+    /// is replace the object list in a payload it already has, which is
+    /// all that separates a full root from a delta — see
+    /// spliceObjectDelta() and docs/SceneStreaming.md §5. Meaningful
+    /// only for the in-memory (streaming) save.
+    struct RootSpans {
+        size_t baseVersionAt = 0;   ///< the baseVersion field
+        size_t listBegin = 0;       ///< the object-list section
+        size_t listEnd = 0;
+    };
+    RootSpans *rootSpans = nullptr;
+
     /// Load side: what this publish says about the object list — the
     /// entries it carries (all of them for a full root, the changed
     /// ones for a delta) and, for a delta, the objects it retires.
@@ -291,6 +307,39 @@ struct SceneObjectModel {
 /// produced.
 RendererExport bool applySceneObjects(SceneSnapshot &snap,
                                       SceneObjectModel &model);
+
+/// The difference between two object lists, both ordered by objectKey:
+/// the entries of \a to that \a from does not already have, and the
+/// keys \a from has that \a to does not. An object counts as unchanged
+/// exactly when its group manifest key is unchanged, since that key
+/// covers the whole group — bounding box included.
+RendererExport void diffObjectLists(
+        const std::vector<SceneSnapshot::ObjectEntry> &from,
+        const std::vector<SceneSnapshot::ObjectEntry> &to,
+        std::vector<SceneSnapshot::ObjectEntry> &changed,
+        std::vector<uint64_t> &removed);
+
+/// Rewrite \a full — a serialized root carrying a complete object list
+/// — into one carrying only \a changed and \a removed, as a delta
+/// against \a baseVersion. Nothing else about the payload moves: the
+/// inline state, the draws of the objects that ride inline, and every
+/// chunk key it names are the bytes of \a full.
+///
+/// This is how a server serves a viewer that is behind without holding
+/// the scene: it knows what that viewer is missing, it has the latest
+/// published payload, and the only difference between what it has and
+/// what the viewer needs is which objects the list names. \a spans must
+/// be the ones recorded when \a full was saved.
+///
+/// The result is applicable by a consumer holding exactly
+/// \a baseVersion — the same contract as a natively serialized delta.
+RendererExport bool spliceObjectDelta(
+        const std::vector<uint8_t> &full,
+        const SceneSnapshot::RootSpans &spans,
+        uint64_t baseVersion,
+        const std::vector<SceneSnapshot::ObjectEntry> &changed,
+        const std::vector<uint64_t> &removed,
+        std::vector<uint8_t> &out);
 
 RendererExport bool saveSceneSnapshot(const char *path,
                                       const SceneSnapshot &snap);
