@@ -53,7 +53,10 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     deferred flag: the streaming transport writes the key alone and
 //     serves the payload out of band, so a republish stops re-sending
 //     every embedded image and the viewer caches each key.
-const uint32_t kVersion = 26;
+// 27: the section-cap hatch image joins the texture table (was a raw
+//     blob written inline), so it rides the v26 content key and is
+//     served out of band like any other image.
+const uint32_t kVersion = 27;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -871,6 +874,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     for (const auto &ov : snap.overlays)
         addDraws(ov.draws);
     addTex(snap.pbrconf.envImage);
+    addTex(snap.hatch);
     addTex(snap.lightconf.groundTexture);
     addTex(snap.lightconf.groundBumpMap);
     for (const auto &s : snap.usershaderconf.shaders)
@@ -962,10 +966,12 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.f(snap.effectResolution);
     w.f(snap.ssaoResolution);
 
-    w.i32(snap.hatchWidth);
-    w.i32(snap.hatchHeight);
-    w.u32(uint32_t(snap.hatchRGBA.size()));
-    w.raw(snap.hatchRGBA.data(), snap.hatchRGBA.size());
+    // v27: the hatch image as a texture-table index (v26 and older
+    // wrote its size and pixels inline here).
+    {
+        auto it = texIndex.find(snap.hatch.get());
+        w.i32(it == texIndex.end() ? -1 : it->second);
+    }
 
     w.floats(snap.viewMatrix, 16);
     w.floats(snap.projMatrix, 16);
@@ -1158,14 +1164,27 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.effectResolution = version >= 9 ? r.f() : 1.0f;
     snap.ssaoResolution = version >= 12 ? r.f() : 1.0f;
 
-    snap.hatchWidth = r.i32();
-    snap.hatchHeight = r.i32();
-    uint32_t nhatch = r.u32();
-    if (nhatch > 0x10000000u)
-        r.ok = false;
-    if (r.ok) {
-        snap.hatchRGBA.resize(nhatch);
-        r.raw(snap.hatchRGBA.data(), nhatch);
+    snap.hatch.reset();
+    if (version >= 27) {
+        int32_t idx = r.i32();
+        if (idx >= 0 && size_t(idx) < textures.size())
+            snap.hatch = textures[size_t(idx)];
+    }
+    else {
+        // v26 and older: width, height and the pixels written inline.
+        auto hatch = std::make_shared<TextureImage>();
+        hatch->width = r.i32();
+        hatch->height = r.i32();
+        hatch->numComponents = 4;
+        uint32_t nhatch = r.u32();
+        if (nhatch > 0x10000000u)
+            r.ok = false;
+        if (r.ok) {
+            hatch->pixels.resize(nhatch);
+            r.raw(hatch->pixels.data(), nhatch);
+        }
+        if (r.ok && nhatch)
+            snap.hatch = hatch;
     }
 
     r.floats(snap.viewMatrix, 16);

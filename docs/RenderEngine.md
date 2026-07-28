@@ -101,6 +101,12 @@ invalidation protocol. It is deliberately *not* `textureId`, which
 guarantees only "same id, same pixels" **within one process** and so
 could never back a store that outlives the page.
 
+The section-cap hatch image rides the same path since **v27**, by being
+a texture-table entry rather than the raw blob written inline beside the
+configs that it used to be. That one line of the stream was 64% of a
+small scene's payload, re-sent on every publish, purely because it sat
+outside the table the deferral applies to.
+
 Deferral is a property of the transport, not of the format: the sink is
 set only by the streaming publisher, so a snapshot captured to a file
 (`FC_BGFX_DUMP_SCENE`, the bundled `/scene.fcsd`) stays self-contained

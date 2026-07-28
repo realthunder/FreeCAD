@@ -109,10 +109,11 @@ struct SceneSnapshot {
     PreselHighlightConfig selconf;
 
     /// Section-cap hatch image, RGBA8 (the renderer stores it
-    /// pre-expanded); empty = none.
-    std::vector<uint8_t> hatchRGBA;
-    int hatchWidth = 0;
-    int hatchHeight = 0;
+    /// pre-expanded); null = none. A texture-table entry since v27, so
+    /// that it shares the content key and the out-of-band payload path
+    /// above — as a raw blob outside the table it was re-sent whole on
+    /// every publish, and it is the single largest item in the stream.
+    std::shared_ptr<const TextureImage> hatch;
 
     /// Camera and viewport at capture time (GL-layout matrices).
     float viewMatrix[16];

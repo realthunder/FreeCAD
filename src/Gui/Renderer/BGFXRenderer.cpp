@@ -7188,9 +7188,7 @@ public:
             snap.autozoomScale = autozoomScale;
             snap.effectResolution = _BGFXLib.effectResolution;
             snap.ssaoResolution = _BGFXLib.ssaoResolution;
-            snap.hatchRGBA = hatchRGBA;
-            snap.hatchWidth = hatchWidth;
-            snap.hatchHeight = hatchHeight;
+            snap.hatch = hatchTex;
             std::memcpy(snap.viewMatrix, viewMatrix, sizeof(snap.viewMatrix));
             std::memcpy(snap.projMatrix, projMatrix, sizeof(snap.projMatrix));
             snap.width = width;
@@ -9990,9 +9988,10 @@ public:
         // passes, transparent caps after the OIT composite — GL's
         // grouped section pass order).
         view->updateHatchTexture(hatchVersion,
-                                 hatchRGBA.empty() ? nullptr
-                                                   : hatchRGBA.data(),
-                                 hatchWidth, hatchHeight);
+                                 hatchTex ? hatchTex->pixels.data()
+                                          : nullptr,
+                                 hatchTex ? hatchTex->width : 0,
+                                 hatchTex ? hatchTex->height : 0);
         submitSectionCaps(view, reinterpret_cast<const float *>(projMatrix));
 
         // 1c. SSAO resolve: generate and blur the AO (the gen/blur
@@ -10488,7 +10487,7 @@ public:
         // stand-in for Coin's getWorldToScreenScale at the sight point),
         // times the bounding radius, over the texture width.
         float texscale = 0.0f;
-        if (secconf.hatchEnable && hatchWidth > 0) {
+        if (secconf.hatchEnable && hatchTex) {
             float hs = std::max(1e-4f, 0.3f * secconf.hatchScale);
             float worldPerVp;
             if (projMat[15] == 1.0f) {  // orthographic
@@ -10501,7 +10500,7 @@ public:
             }
             float pixelsize = float(vpWidth) / (hs * worldPerVp);
             texscale = std::max(1e-3f, radius * pixelsize
-                                           / float(hatchWidth));
+                                           / float(hatchTex->width));
         }
 
         // GL vertex/texcoord assignment: v1=(0,s) v2=(0,0) v3=(s,0)
@@ -10641,7 +10640,8 @@ public:
                         }
                     }
                     view->submitCapQuad(verts, color, others, numother,
-                                        secconf.hatchEnable && hatchWidth > 0,
+                                        secconf.hatchEnable
+                                            && hatchTex != nullptr,
                                         bucket == 1, capView);
                     view->submitCapCleanup(verts, capView);
                 }
@@ -10912,10 +10912,11 @@ public:
     Render::PreselHighlightConfig selconf;
     float autozoomScale = 1.0f;
     // CPU copy of the section hatch texture, expanded to RGBA8; the
-    // version stamps GPU re-uploads (0 = no image).
-    std::vector<uint8_t> hatchRGBA;
-    int hatchWidth = 0;
-    int hatchHeight = 0;
+    // version stamps GPU re-uploads (null = no image). Held as a
+    // TextureImage so the stream can carry it in the texture table,
+    // content-keyed and served out of band (SceneDump.h, v27) — the
+    // key is then hashed once per hatch change, not per publish.
+    std::shared_ptr<Render::TextureImage> hatchTex;
     const void *hatchKey = nullptr;
     uint64_t hatchVersion = 0;
     bool hlWholeOnTop = false;
@@ -11313,19 +11314,23 @@ void BGFXRenderer::setAutoZoomScale(float scale)
 void BGFXRenderer::setHatchImage(const void *data, int nc,
                                  int width, int height)
 {
-    if (data == pimpl->hatchKey && width == pimpl->hatchWidth
-            && height == pimpl->hatchHeight)
+    int curWidth = pimpl->hatchTex ? pimpl->hatchTex->width : 0;
+    int curHeight = pimpl->hatchTex ? pimpl->hatchTex->height : 0;
+    if (data == pimpl->hatchKey && width == curWidth
+            && height == curHeight)
         return;
     pimpl->hatchKey = data;
-    pimpl->hatchRGBA.clear();
-    pimpl->hatchWidth = 0;
-    pimpl->hatchHeight = 0;
+    pimpl->hatchTex.reset();
     if (data && nc > 0 && width > 0 && height > 0) {
         // Expand to RGBA8 (the image comes as tightly packed
         // nc-component rows; 1/2 components are luminance(+alpha)).
+        auto tex = std::make_shared<Render::TextureImage>();
+        tex->width = width;
+        tex->height = height;
+        tex->numComponents = 4;
         const uint8_t *src = static_cast<const uint8_t *>(data);
-        pimpl->hatchRGBA.resize(size_t(width) * height * 4);
-        uint8_t *dst = pimpl->hatchRGBA.data();
+        tex->pixels.resize(size_t(width) * height * 4);
+        uint8_t *dst = tex->pixels.data();
         for (size_t i = 0, n = size_t(width) * height; i < n; ++i) {
             const uint8_t *p = src + i * nc;
             switch (nc) {
@@ -11338,8 +11343,7 @@ void BGFXRenderer::setHatchImage(const void *data, int nc,
             }
             dst += 4;
         }
-        pimpl->hatchWidth = width;
-        pimpl->hatchHeight = height;
+        pimpl->hatchTex = std::move(tex);
     }
     ++pimpl->hatchVersion;
     pimpl->sceneDirty = true;

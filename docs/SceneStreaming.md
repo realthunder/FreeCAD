@@ -379,7 +379,7 @@ to remove.
 | Phase | Change | Demo payload |
 | --- | --- | ---: |
 | — | today | 425 KB |
-| 1a | hatch image → content key | 155 KB |
+| 1a | hatch image → content key (**done**, v27) | 155 KB |
 | 1b | meshes → content keys, batched pull | ~35 KB |
 | 1c | camera out of the scene payload | orbit stops republishing |
 | 2 | L0/L1/L2 manifests, delta sync, material dedup | ~1 KB steady state |
@@ -388,7 +388,15 @@ to remove.
 | 5 | LOD variants per mesh (§7) | large models *fast* |
 
 Phase 1 is the v26 pattern extended to two more section types and needs no
-protocol restructure; 1a alone is 64% of the payload. Phase 2 is where the
+protocol restructure; 1a alone is 64% of the payload.
+
+**1a landed as snapshot v27**: the hatch image simply joins the texture table,
+so it inherits the v26 content key, the deferred flag and the `GET /blob?key=`
+path rather than getting a mechanism of its own — the same reason it was missed
+in the first place is that it sat *outside* the table as a raw blob. Measured on
+`scripts/demo-water.py`: **424,799 B → 154,867 B**, the hatch section down to the
+4 bytes of its table index, its 270,000-byte payload fetched once and cached.
+A bundled `.fcsd` capture sets no blob sink and so stays self-contained. Phase 2 is where the
 complexity lands, and it is what the thin client needs — the phases before it
 shrink a small scene, but only the manifest tree makes a *big* model tractable.
 
