@@ -263,6 +263,14 @@ struct SceneSnapshot {
     /// being the thing that accumulates.
     DrawCallList keyless;
     std::vector<Material> materials;
+    /// Which entries of `materials` have had their chunk parsed. A
+    /// draw is assembled from its group manifest, which can be in hand
+    /// well before the materials it references, and the table entry
+    /// until then is a default-constructed Material that would be
+    /// baked into the draw and never revisited. So an object's draws
+    /// are taken only once the appearance they name is real
+    /// (docs/SceneStreaming.md §6).
+    std::vector<uint8_t> materialFilled;
     std::function<void(SceneSnapshot &snap)> finalize;
     float autozoomScale = 1.0f;
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect
@@ -303,10 +311,28 @@ struct SceneObjectModel {
     struct Object {
         SceneSnapshot::ObjectEntry entry;
         DrawCallList draws;
+        /// The group manifest the draws came from. Equal to
+        /// `entry.key` once the geometry the current entry names is in
+        /// hand; different — or empty — while it is still arriving, in
+        /// which case the draws are the rung this object was last
+        /// drawn at (docs/SceneStreaming.md §6). A key rather than a
+        /// flag because an object with no draws is not the same as one
+        /// still waiting: an empty feed is a real answer.
+        std::string drawsKey;
+        bool resolved() const { return drawsKey == entry.key; }
     };
     std::map<uint64_t, Object> objects;
     /// The version the model holds, i.e. what a delta must be based on.
     uint64_t version = 0;
+
+    /// How many objects the root named whose geometry has not arrived.
+    size_t unresolved() const;
+    /// The union of the bounding boxes the root named, whether or not
+    /// the geometry inside them has arrived. This is what the initial
+    /// camera fit wants: it frames the model correctly before the
+    /// first triangle exists, and does not lurch as geometry streams
+    /// in (§6). False when the model names nothing.
+    bool boundBox(float *min3, float *max3) const;
 };
 
 /// Merge a loaded publish into \a model and rebuild `snap.scene` from
@@ -314,9 +340,11 @@ struct SceneObjectModel {
 /// version the model does not hold — the caller has to ask for a full
 /// root, and must not apply the snapshot.
 ///
-/// Call after every deferred payload has been filled and finalize()
-/// has run: the draws being merged in are the ones those payloads
-/// produced.
+/// Call after finalize(), and call it again on every payload that
+/// lands afterwards: a scene is drawn while it is still arriving, so
+/// this assembles what is in hand rather than waiting for the last
+/// chunk (§6). Re-running it for a publish the model already holds is
+/// how refinement happens, not an error.
 RendererExport bool applySceneObjects(SceneSnapshot &snap,
                                       SceneObjectModel &model);
 

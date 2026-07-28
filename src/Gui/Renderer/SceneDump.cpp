@@ -21,6 +21,7 @@
 
 #include "SceneDump.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -1575,6 +1576,7 @@ int32_t materialSlot(SceneSnapshot &snap, const LoaderPtr &st,
         return it->second;
     int32_t slot = int32_t(snap.materials.size());
     snap.materials.emplace_back();
+    snap.materialFilled.push_back(0);
     st->matSlots.emplace(key, slot);
     SceneSnapshot::DeferredChunk c;
     c.key = key;
@@ -1592,6 +1594,8 @@ int32_t materialSlot(SceneSnapshot &snap, const LoaderPtr &st,
             RefReader refs = manifestRefReader(st, target);
             readMaterial(cr, target.materials[size_t(slot)], refs,
                          st->version);
+            if (cr.ok && size_t(slot) < target.materialFilled.size())
+                target.materialFilled[size_t(slot)] = 1;
         });
     };
     snap.deferredChunks.push_back(std::move(c));
@@ -2286,6 +2290,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.deferredChunks.clear();
     snap.groups.clear();
     snap.materials.clear();
+    snap.materialFilled.clear();
     snap.finalize = nullptr;
 
     // Set by whichever layout follows; everything after the feeds is
@@ -2549,13 +2554,78 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     return r.ok;
 }
 
+size_t Render::SceneObjectModel::unresolved() const
+{
+    size_t n = 0;
+    for (const auto &entry : objects) {
+        if (!entry.second.resolved())
+            ++n;
+    }
+    return n;
+}
+
+bool Render::SceneObjectModel::boundBox(float *min3, float *max3) const
+{
+    bool any = false;
+    for (const auto &entry : objects) {
+        const float *b = entry.second.entry.bbox;
+        // The producer writes an empty box as one that is inside out,
+        // which would otherwise swallow the origin and pull the fit
+        // towards it.
+        if (b[0] > b[3] || b[1] > b[4] || b[2] > b[5])
+            continue;
+        for (int i = 0; i < 3; ++i) {
+            min3[i] = any ? std::min(min3[i], b[i]) : b[i];
+            max3[i] = any ? std::max(max3[i], b[3 + i]) : b[3 + i];
+        }
+        any = true;
+    }
+    return any;
+}
+
+/// Whether the mesh a draw names is in hand. A deferred mesh chunk
+/// starts life as an empty MeshData and is filled in place when it
+/// lands, so a draw can be assembled well before its geometry is
+/// (docs/SceneStreaming.md §6) — and an empty mesh has no positions
+/// array behind its vertex count, which the backend reaches through
+/// the shadow, outline and instancing paths as well as the submit one.
+/// Leaving the draw out is the coarsest rung of the ladder: nothing
+/// yet. A draw naming no mesh at all is not geometry and passes.
+static bool meshResident(const Render::DrawCall &d)
+{
+    return !d.mesh || (d.mesh->numVertices > 0 && d.mesh->positions);
+}
+
+/// Whether every appearance a group's draws name has arrived. Unlike a
+/// mesh, a material is copied into the draw and the reference is gone
+/// (finalize, SceneDump.cpp), so a group taken before its materials
+/// land would keep a default-constructed one for as long as the object
+/// lives. Waiting is per group and costs nothing: a material chunk is
+/// a few hundred bytes and its objects follow it by one round.
+static bool materialsResident(const Render::DrawCallList &draws,
+                              const Render::SceneSnapshot &snap)
+{
+    for (const Render::DrawCall &d : draws) {
+        if (d.materialIndex < 0)
+            continue;
+        size_t i = size_t(d.materialIndex);
+        if (i >= snap.materialFilled.size() || !snap.materialFilled[i])
+            return false;
+    }
+    return true;
+}
+
 bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
 {
-    if (snap.baseVersion && snap.baseVersion != model.version) {
+    if (snap.baseVersion && snap.baseVersion != model.version
+            && snap.manifestVersion != model.version) {
         // A difference against something this consumer does not hold.
         // There is nothing to be salvaged from it — the entries it does
         // not mention are exactly the ones it assumes are already
-        // right — so the caller has to be given a full root.
+        // right — so the caller has to be given a full root. The model
+        // already standing at this publish's own version is the other
+        // case: that is this delta being assembled a second time as
+        // more of it arrives, which is refinement, not a gap.
         return false;
     }
     if (!snap.baseVersion) {
@@ -2586,8 +2656,10 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
         // still waiting keeps what it was last drawn as rather than
         // being emptied (docs/SceneStreaming.md §6).
         if (up.group < snap.groups.size() && up.group < snap.groupFilled.size()
-                && snap.groupFilled[up.group]) {
+                && snap.groupFilled[up.group]
+                && materialsResident(snap.groups[up.group], snap)) {
             obj.draws = std::move(snap.groups[up.group]);
+            obj.drawsKey = up.entry.key;
             snap.groupFilled[up.group] = 0;
         }
     }
@@ -2596,13 +2668,19 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
     // The feed, in objectKey order, then the draws the producer could
     // not name — which belong to no object and are re-sent whole every
     // publish. Rebuilt from the model rather than accumulated, so that
-    // building it twice is building it once.
+    // building it twice is building it once — which is what lets this
+    // run on every arrival and not only the last.
     DrawCallList scene;
     for (const auto &entry : model.objects) {
-        const DrawCallList &draws = entry.second.draws;
-        scene.insert(scene.end(), draws.begin(), draws.end());
+        for (const DrawCall &d : entry.second.draws) {
+            if (meshResident(d))
+                scene.push_back(d);
+        }
     }
-    scene.insert(scene.end(), snap.keyless.begin(), snap.keyless.end());
+    for (const DrawCall &d : snap.keyless) {
+        if (meshResident(d))
+            scene.push_back(d);
+    }
     snap.scene = std::move(scene);
     return true;
 }

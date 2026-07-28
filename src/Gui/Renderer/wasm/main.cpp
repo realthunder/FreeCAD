@@ -1871,8 +1871,17 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
 static void fitCamera()
 {
     float bmin[3], bmax[3];
-    if (s_renderer->boundBox(bmin[0], bmin[1], bmin[2],
-                             bmax[0], bmax[1], bmax[2])) {
+    // Prefer the boxes the root manifest named over the geometry that
+    // has arrived. A scene is drawn while it is still coming in
+    // (docs/SceneStreaming.md §6), and fitting to what happens to be
+    // resident would frame the first few objects and then lurch on
+    // every arrival; the root's boxes are the whole model from the
+    // first payload. Falls back to the renderer's bound box for a
+    // scene that carries no object manifest at all — a bundled
+    // capture, or a publish from before v33.
+    if (s_objects.boundBox(bmin, bmax)
+            || s_renderer->boundBox(bmin[0], bmin[1], bmin[2],
+                                    bmax[0], bmax[1], bmax[2])) {
         for (int i = 0; i < 3; ++i)
             s_center[i] = 0.5f * (bmin[i] + bmax[i]);
         float dx = bmax[0] - bmin[0];
@@ -2112,6 +2121,20 @@ static std::set<std::string> s_blobFailed;
 static Render::SceneSnapshot s_pendingSnap;
 static uint64_t s_pendingVersion = 0;
 static bool s_pendingValid = false;
+/// The publish being shown still has payloads outstanding. A scene is
+/// put on screen as soon as any of it can be drawn
+/// (docs/SceneStreaming.md §6), so the snapshot that arrives keeps
+/// resolving after it has been committed: from then on the live
+/// snapshot is the one chunks fill, and each arrival re-assembles the
+/// feed. There is only ever one snapshot resolving — a publish that
+/// stages while this is set supersedes it.
+static bool s_liveOutstanding = false;
+/// The live snapshot has payloads that arrived since it was last
+/// assembled. Kept apart from `s_liveOutstanding` because the two go
+/// false at different moments: the batch that completes a publish
+/// clears the outstanding flag and is itself the one still needing to
+/// be shown.
+static bool s_liveUnapplied = false;
 
 static void resolvePending();
 
@@ -2430,44 +2453,99 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
         });
 }
 
-/// Apply the staged snapshot: everything it named has arrived.
-static void commitResolved()
+/// Assemble a snapshot out of the payloads that have arrived so far.
+/// False means it cannot be applied at all and the caller must ask for
+/// a full scene.
+static bool assembleResolved(Render::SceneSnapshot &snap)
 {
-    if (!s_pendingValid || s_blobStoreReset)
-        return;
-    Render::SceneSnapshot snap = std::move(s_pendingSnap);
-    uint64_t version = s_pendingVersion;
-    s_pendingValid = false;
-    s_pendingSnap = Render::SceneSnapshot();
     // The manifest layout stages a group's draws in a fixed slot and
     // its materials in a table; this is the pass that puts both where
     // the backend expects them (SceneDump.h).
-    if (snap.finalize) {
-        snap.finalize(snap);
-        // Then the objects, which the snapshot alone cannot assemble:
-        // a delta names only what changed, so the feed is built from
-        // the model this viewer carries between publishes.
-        if (!Render::applySceneObjects(snap, s_objects)) {
-            std::printf("fcviewer: publish is a delta against v%llu, "
-                        "holding v%llu — asking for a full scene\n",
-                        (unsigned long long)snap.baseVersion,
-                        (unsigned long long)s_objects.version);
+    if (!snap.finalize)
+        return true;
+    snap.finalize(snap);
+    // Then the objects, which the snapshot alone cannot assemble:
+    // a delta names only what changed, so the feed is built from
+    // the model this viewer carries between publishes. Draws whose
+    // mesh has not landed are left out of the feed and come in on a
+    // later pass, so this runs per arrival rather than once.
+    if (Render::applySceneObjects(snap, s_objects))
+        return true;
+    std::printf("fcviewer: publish is a delta against v%llu, "
+                "holding v%llu — asking for a full scene\n",
+                (unsigned long long)snap.baseVersion,
+                (unsigned long long)s_objects.version);
+    return false;
+}
+
+static bool stillArriving(const Render::SceneSnapshot &snap)
+{
+    for (const auto &entry : snap.deferredChunks) {
+        if (entry.fill)
+            return true;
+    }
+    return false;
+}
+
+/// Show what the staged snapshot can draw. Runs on every arrival that
+/// made progress, not only on the last one.
+static void commitResolved()
+{
+    if (s_blobStoreReset)
+        return;
+    if (s_pendingValid) {
+        Render::SceneSnapshot snap = std::move(s_pendingSnap);
+        uint64_t version = s_pendingVersion;
+        s_pendingValid = false;
+        s_pendingSnap = Render::SceneSnapshot();
+        if (!assembleResolved(snap)) {
             requestFullScene();
             return;
         }
+        // From here the committed snapshot is the one still being
+        // filled: the fills write into whichever snapshot they are
+        // handed, so nothing is copied and nothing is staged twice.
+        commitSnapshot(std::move(snap), version);
+        s_liveOutstanding = stillArriving(s_snap);
+        s_liveUnapplied = false;
     }
-    commitSnapshot(std::move(snap), version);
+    else if (s_liveUnapplied) {
+        s_liveUnapplied = false;
+        if (!assembleResolved(s_snap)) {
+            requestFullScene();
+            return;
+        }
+        // Refit while the camera is still the automatic one: the fit
+        // runs off the bounding boxes the root named, so it does not
+        // move as the geometry inside them arrives.
+        applySnapshot(!s_userCam);
+        if (!s_liveOutstanding)
+            fcviewer_status(nullptr, 0.0, 0.0);
+    }
+    else {
+        return;
+    }
     pruneBlobCache();
 }
 
-/// Fill in what the staged snapshot still needs; apply it once nothing
-/// is outstanding.
+/// Fill in what the snapshot being resolved still needs, and show what
+/// that made drawable. The target is the staged publish until it is
+/// committed and the live scene afterwards — a scene keeps arriving
+/// after it is first drawn (docs/SceneStreaming.md §6).
 static void resolvePending()
 {
-    if (!s_pendingValid || s_blobStoreReset)
+    if (s_blobStoreReset)
+        return;
+    Render::SceneSnapshot *target = s_pendingValid ? &s_pendingSnap
+        : (s_liveOutstanding ? &s_snap : nullptr);
+    if (!target)
         return;
     size_t missing = 0, total = 0;
     bool incomplete = false;
+    /// Whether anything new became drawable this round. Without it a
+    /// commit would be scheduled for every payload that merely failed
+    /// or was already in hand.
+    bool filled = false;
 
     // Every out-of-band payload the snapshot named — group manifests,
     // meshes, materials, shaders, textures — in one pass. A fill can
@@ -2477,8 +2555,8 @@ static void resolvePending()
     bool progress = true;
     while (progress) {
         progress = false;
-        for (size_t i = 0; i < s_pendingSnap.deferredChunks.size(); ++i) {
-            auto &entry = s_pendingSnap.deferredChunks[i];
+        for (size_t i = 0; i < target->deferredChunks.size(); ++i) {
+            auto &entry = target->deferredChunks[i];
             if (!entry.fill)
                 continue;
             auto it = s_blobCache.find(entry.key);
@@ -2494,10 +2572,12 @@ static void resolvePending()
             // is survivable is its business, not ours — a texture says
             // yes and the draw renders untextured.
             bool ok = failed
-                ? fill(s_pendingSnap, nullptr, 0)
-                : fill(s_pendingSnap, it->second->data(), it->second->size());
-            if (ok)
+                ? fill(*target, nullptr, 0)
+                : fill(*target, it->second->data(), it->second->size());
+            if (ok) {
                 progress = true;
+                filled = true;
+            }
             else {
                 if (!failed)
                     resetBlobStore();
@@ -2505,32 +2585,42 @@ static void resolvePending()
             }
         }
     }
-    total += s_pendingSnap.deferredChunks.size();
-    for (auto &entry : s_pendingSnap.deferredChunks) {
-        if (!entry.fill)
-            continue;
-        ++missing;
-        requestBlob(entry.key, entry.size);
+    if (incomplete) {
+        // A payload could not be obtained or would not parse. This
+        // publish will not complete, so stop resolving it rather than
+        // re-requesting what already failed — but show what did
+        // arrive: a draw whose mesh is missing is left out of the feed
+        // rather than submitted with nothing behind it
+        // (applySceneObjects), so a partial scene is a valid one. The
+        // objects it could not describe wait for the next publish.
+        std::printf("fcviewer: snapshot incomplete, showing what arrived\n");
+        for (auto &entry : target->deferredChunks)
+            entry.fill = nullptr;
+    }
+    else {
+        total += target->deferredChunks.size();
+        for (auto &entry : target->deferredChunks) {
+            if (!entry.fill)
+                continue;
+            ++missing;
+            requestBlob(entry.key, entry.size);
+        }
+    }
+    if (target == &s_snap) {
+        s_liveOutstanding = missing != 0;
+        s_liveUnapplied = s_liveUnapplied || filled;
     }
     if (missing) {
         fcviewer_status("loading scene", double(total - missing),
                         double(total));
-        return;
-    }
-    if (incomplete) {
-        // Some payload could not be obtained. Keep whatever is on
-        // screen rather than apply a scene with holes in it: the draws
-        // of a mesh that never arrived still point at it, and the
-        // backend reaches a mesh through the shadow, outline and
-        // segment-instancing paths as well as the guarded submit one.
-        // The next publish stages the scene again.
-        std::printf("fcviewer: snapshot incomplete, not applied\n");
-        s_pendingValid = false;
-        s_pendingSnap = Render::SceneSnapshot();
-        return;
+        if (!filled) {
+            // Nothing new became drawable — the requests above are
+            // what this round accomplished.
+            return;
+        }
     }
 
-    // Everything is in hand, but this runs inside a fetch or IndexedDB
+    // Something is drawable, but this runs inside a fetch or IndexedDB
     // callback, and applying a scene from there puts the whole apply —
     // draw lists, GPU uploads, the refit — on top of an already deep
     // callback stack. Hand it to a fresh tick instead, so the stack
@@ -2578,9 +2668,27 @@ static void applyScenePayload(const char *data, size_t size)
         // fetch).
         else if (s_haveScene && version == s_sceneVersion)
             return;
-        // Textures the payload only named are fetched before the
-        // snapshot is applied; with none outstanding (the usual case,
-        // every key already cached) this commits inline.
+        // A publish that stages while the last one is still arriving
+        // supersedes it, and its outstanding chunks are abandoned with
+        // it. That is only safe if this publish describes the objects
+        // those chunks were going to: a full root always does, a delta
+        // names only what changed. So a delta arriving over an
+        // unfinished scene is answered with a request for a full root
+        // rather than leaving those objects with no geometry until
+        // something happens to touch them again.
+        if (snap.baseVersion && s_liveOutstanding && s_objects.unresolved()) {
+            std::printf("fcviewer: delta v%llu arrived with %zu objects "
+                        "still incomplete — asking for a full scene\n",
+                        (unsigned long long)snap.manifestVersion,
+                        s_objects.unresolved());
+            requestFullScene();
+            return;
+        }
+        // Payloads the publish only named are fetched before it is
+        // applied; with none outstanding (the usual case, every key
+        // already cached) this commits inline.
+        s_liveOutstanding = false;
+        s_liveUnapplied = false;
         s_pendingSnap = std::move(snap);
         s_pendingVersion = version;
         s_pendingValid = true;
@@ -2998,6 +3106,8 @@ static void requestFullScene()
     s_objects = Render::SceneObjectModel();
     s_pendingValid = false;
     s_pendingSnap = Render::SceneSnapshot();
+    s_liveOutstanding = false;
+    s_liveUnapplied = false;
     s_sceneVersion = 0;
     s_haveScene = false;
     emscripten_fetch_attr_t attr;
