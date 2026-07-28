@@ -2040,6 +2040,58 @@ static void commitSnapshot(Render::SceneSnapshot &&snap, uint64_t version)
 /// one store serves every document and every backend.
 static const char *kBlobDb = "fcviewer-blobs";
 
+/// Whether payloads are kept in IndexedDB across page loads. ?noidb
+/// turns it off, which is the quickest way to tell a store problem
+/// apart from a stream problem.
+static bool blobPersistEnabled()
+{
+    static int on = -1;
+    if (on < 0)
+        on = EM_ASM_INT({
+            return new URLSearchParams(location.search).has('noidb') ? 0 : 1;
+        });
+    return on != 0;
+}
+
+/// Take a payload the store handed back, but only if it is the payload
+/// that key names. The store is content addressed, so the key IS the
+/// hash and checking costs one pass over bytes that would otherwise
+/// have been downloaded — cheap next to the fetch it saves.
+///
+/// This is not paranoia about bit rot. A store entry whose content
+/// does not match its key is indistinguishable from a correct one at
+/// every later step: it parses, it renders, and it produces garbage
+/// geometry and out-of-bounds picks instead of an error. Nothing short
+/// of comparing the bytes to the key catches it, and until something
+/// did, a profile that acquired one bad entry stayed broken through
+/// every reload — while a private window worked, since it had no
+/// store at all.
+static void blobResolved(const std::string &key,
+                         std::shared_ptr<std::vector<uint8_t>> data,
+                         bool fromDb);
+static void queueBatch(const std::string &key, uint32_t size);
+static void fetchBlob(const std::string &key);
+
+static void blobFromDb(const std::string &key, const uint8_t *bytes,
+                       size_t size, uint32_t batchSize)
+{
+    if (Render::sha1Hex(bytes, size) == key) {
+        blobResolved(key, std::make_shared<std::vector<uint8_t>>(
+                              bytes, bytes + size), true);
+        return;
+    }
+    std::printf("fcviewer: cached blob %s is not what its key names, "
+                "dropping it\n", key.c_str());
+    emscripten_idb_async_delete(kBlobDb, key.c_str(), nullptr,
+                                [](void *) {}, [](void *) {});
+    // Straight to the network: the store just proved untrustworthy for
+    // this key, and the delete may not have landed yet.
+    if (batchSize)
+        queueBatch(key, batchSize);
+    else
+        fetchBlob(key);
+}
+
 typedef std::shared_ptr<std::vector<uint8_t>> BlobData;
 static std::map<std::string, BlobData> s_blobCache;
 /// Keys with a load in flight (IndexedDB or HTTP), so a second
@@ -2169,7 +2221,7 @@ static void blobResolved(const std::string &key, BlobData data,
         return;
     s_blobInFlight.erase(key);
     s_blobCache[key] = data;
-    if (!fromDb && data) {
+    if (!fromDb && data && blobPersistEnabled()) {
         // Persist for the next page load. The store is keyed by content
         // hash, so this never overwrites anything with different bytes.
         emscripten_idb_async_store(
@@ -2347,17 +2399,22 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
 {
     if (!s_blobInFlight.insert(key).second)
         return;
+    if (!blobPersistEnabled()) {
+        if (size)
+            queueBatch(key, size);
+        else
+            fetchBlob(key);
+        return;
+    }
     if (size) {
         emscripten_idb_async_load(
             kBlobDb, key.c_str(), new std::pair<std::string, uint32_t>(key, size),
             [](void *arg, void *ptr, int num) {
                 std::unique_ptr<std::pair<std::string, uint32_t>> item(
                     static_cast<std::pair<std::string, uint32_t> *>(arg));
-                auto bytes = static_cast<uint8_t *>(ptr);
-                auto data = std::make_shared<std::vector<uint8_t>>(
-                    bytes, bytes + num);
+                blobFromDb(item->first, static_cast<uint8_t *>(ptr),
+                           size_t(num), item->second);
                 std::free(ptr);
-                blobResolved(item->first, data, true);
             },
             [](void *arg) {
                 std::unique_ptr<std::pair<std::string, uint32_t>> item(
@@ -2370,11 +2427,8 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
         kBlobDb, key.c_str(), new std::string(key),
         [](void *arg, void *ptr, int num) {
             std::unique_ptr<std::string> key(static_cast<std::string *>(arg));
-            auto bytes = static_cast<uint8_t *>(ptr);
-            auto data = std::make_shared<std::vector<uint8_t>>(
-                bytes, bytes + num);
+            blobFromDb(*key, static_cast<uint8_t *>(ptr), size_t(num), 0);
             std::free(ptr);
-            blobResolved(*key, data, true);
         },
         [](void *arg) {
             // Not stored yet (the common first-visit case) or the store

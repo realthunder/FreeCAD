@@ -1044,6 +1044,11 @@ bool readDrawList(Reader &r, DrawCallList &draws, const MeshTable &meshes,
 
 //////////////////////////////////////////////////////////////////////
 
+std::string Render::sha1Hex(const void *data, size_t size)
+{
+    return ::sha1Hex(static_cast<const uint8_t *>(data), size);
+}
+
 uint32_t Render::sceneDumpVersion()
 {
     return kVersion;

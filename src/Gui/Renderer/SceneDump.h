@@ -207,6 +207,12 @@ RendererExport bool loadSceneSnapshot(const void *data, size_t size,
 /// can read) — the version-handshake token of the viewer control
 /// channel (docs/RenderDebug.md §4.4).
 RendererExport uint32_t sceneDumpVersion();
+
+/// SHA-1 of a byte range as 40 lowercase hex characters — the content
+/// key an out-of-band payload is addressed by. Exposed so a consumer
+/// can verify a payload it got from somewhere it does not control (a
+/// browser's IndexedDB store) actually is the bytes that key names.
+RendererExport std::string sha1Hex(const void *data, size_t size);
 /// Peek the format version of a serialized snapshot (the payload
 /// without the 8-byte stream-version prefix); 0 when it is not a
 /// snapshot. A viewer receiving a payload newer than its own

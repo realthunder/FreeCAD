@@ -117,6 +117,20 @@ counter guarantees. The cacheId itself is excluded from the hashed
 bytes: it changes on every re-tessellation, so hashing it would mint a
 new key for geometry that did not change.
 
+A payload the viewer gets back from its IndexedDB store is **verified
+against its key** before it is used. The store is content addressed, so
+the key is the hash and checking costs one pass over bytes that would
+otherwise have been downloaded. This is not paranoia about bit rot: an
+entry whose content does not match its key is indistinguishable from a
+correct one at every later step — it parses, it renders, and it yields
+garbage geometry and out-of-bounds picks rather than an error — so
+nothing but comparing the bytes catches it. A store is only
+self-verifying if something actually verifies; content addressing
+guarantees the *writer* named the bytes correctly, not that the map in
+the browser still holds what the name says. A mismatch drops that entry
+and refetches it; `?noidb` skips the store entirely, which separates a
+store problem from a stream problem in one reload.
+
 Every out-of-band chunk begins with a **chunk-layout version** (v32),
 inside the bytes the key hashes. A change to a chunk's layout therefore
 changes every key, and a payload cached by an older build can never be
