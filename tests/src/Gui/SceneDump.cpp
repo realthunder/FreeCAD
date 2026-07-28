@@ -625,3 +625,40 @@ TEST(SceneDump, deltaAgainstAnUnheldVersionIsRefused)
     EXPECT_FALSE(Render::applySceneObjects(loaded, fresh))
         << "a consumer holding nothing must be told to ask for a full root";
 }
+
+/// A version is only meaningful within the run that issued it, so the
+/// run has to travel with it (v35). Without that a consumer cannot tell
+/// "publish 3 of this backend" from "publish 3 of the one before the
+/// restart", and a delta would be applied onto the wrong model.
+TEST(SceneDump, theRootNamesTheRunThatVersionedIt)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 3;
+    snap.sessionId = 0x5eed1234abcdULL;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(),
+                                          loaded));
+    EXPECT_EQ(loaded.manifestVersion, 3u);
+    EXPECT_EQ(loaded.sessionId, 0x5eed1234abcdULL);
+
+    // A bundled capture is one self-contained document with no stream
+    // behind it, so it carries neither.
+    Render::SceneSnapshot bundle = makeScene();
+    bundle.manifestVersion = 3;
+    bundle.sessionId = 0x5eed1234abcdULL;
+    std::vector<uint8_t> mono;
+    ASSERT_TRUE(Render::saveSceneSnapshot(mono, bundle));
+    Render::SceneSnapshot loadedMono;
+    ASSERT_TRUE(Render::loadSceneSnapshot(mono.data(), mono.size(),
+                                          loadedMono));
+    EXPECT_EQ(loadedMono.sessionId, 0u);
+    EXPECT_EQ(loadedMono.manifestVersion, 0u);
+}

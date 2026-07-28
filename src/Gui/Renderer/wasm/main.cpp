@@ -49,6 +49,11 @@ static std::set<int> s_overlayIds;
 // where WebSocket fails.
 static std::string s_sceneUrl;
 static uint64_t s_sceneVersion = 0;
+/// The backend run those versions belong to (SceneDump.h, v35). Told to
+/// the server on every request, so that a version this viewer carried
+/// across a restart is not taken at face value by the run that did not
+/// issue it.
+static uint64_t s_sessionId = 0;
 static EMSCRIPTEN_WEBSOCKET_T s_ws = 0;
 static bool s_wsOpen = false;
 static bool s_polling = false;
@@ -2551,12 +2556,28 @@ static void applyScenePayload(const char *data, size_t size)
         return;
     uint64_t version = 0;
     std::memcpy(&version, data, sizeof(version));
-    // The WebSocket push loop re-sends the current scene on connect; skip
-    // the echo of a version already applied (the initial HTTP fetch).
-    if (s_haveScene && version == s_sceneVersion)
-        return;
     Render::SceneSnapshot snap;
     if (Render::loadSceneSnapshot(data + 8, size - 8, snap)) {
+        // A version means something only within the run that issued it
+        // (SceneDump.h, v35). A restarted backend counts from one
+        // again, so the version we hold can name a publish that never
+        // happened — and would otherwise be read as "already applied",
+        // or worse, as a base a delta could be applied onto. The blob
+        // cache survives: its keys are content hashes, so the new run
+        // republishes the same bytes under the same keys.
+        if (snap.sessionId != s_sessionId) {
+            if (s_sessionId)
+                std::printf("fcviewer: backend session changed, "
+                            "dropping the object model\n");
+            s_sessionId = snap.sessionId;
+            s_objects = Render::SceneObjectModel();
+            s_sceneVersion = 0;
+        }
+        // The WebSocket push loop re-sends the current scene on connect;
+        // skip the echo of a version already applied (the initial HTTP
+        // fetch).
+        else if (s_haveScene && version == s_sceneVersion)
+            return;
         // Textures the payload only named are fetched before the
         // snapshot is applied; with none outstanding (the usual case,
         // every key already cached) this commits inline.
@@ -2682,8 +2703,10 @@ static void doPoll(void * = nullptr)
     attr.onsuccess = onPollResult;
     attr.onerror = onPollError;
     char url[512];
-    std::snprintf(url, sizeof(url), "%s/scene?v=%llu", s_sceneUrl.c_str(),
-                  (unsigned long long)s_sceneVersion);
+    std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu",
+                  s_sceneUrl.c_str(),
+                  (unsigned long long)s_sceneVersion,
+                  (unsigned long long)s_sessionId);
     emscripten_fetch(&attr, url);
 }
 
@@ -2833,7 +2856,15 @@ static bool connectWs()
     std::string url = s_sceneUrl;
     if (url.rfind("http", 0) == 0)
         url = "ws" + url.substr(4);   // http(s):// -> ws(s)://
-    url += "/scene";
+    // What we hold, stated in the upgrade request rather than in a
+    // hello: it is available before the socket opens, so the server's
+    // push loop can act on it without a round trip, and it is the same
+    // query the polling transport uses.
+    char held[64];
+    std::snprintf(held, sizeof(held), "/scene?v=%llu&s=%llu",
+                  (unsigned long long)s_sceneVersion,
+                  (unsigned long long)s_sessionId);
+    url += held;
     EmscriptenWebSocketCreateAttributes attr = {
         url.c_str(), nullptr, EM_TRUE};
     s_ws = emscripten_websocket_new(&attr);
@@ -2991,8 +3022,10 @@ static void startInitialFetch()
     attr.onerror = onInitFetchError;
     attr.onprogress = onInitFetchProgress;
     char url[512];
-    std::snprintf(url, sizeof(url), "%s/scene?v=%llu", s_sceneUrl.c_str(),
-                  (unsigned long long)s_sceneVersion);
+    std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu",
+                  s_sceneUrl.c_str(),
+                  (unsigned long long)s_sceneVersion,
+                  (unsigned long long)s_sessionId);
     emscripten_fetch(&attr, url);
 }
 

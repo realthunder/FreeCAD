@@ -90,7 +90,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     objects that changed and the ones that went away, against a
 //     list the consumer already holds. Naming every object cost 79 B
 //     each on every publish, which is what a big model actually pays.
-const uint32_t kVersion = 34;
+// 35: the manifest root names the backend run that numbered its
+//     version. Versions restart when the backend does, so a consumer
+//     reconnecting across a restart would otherwise offer a version
+//     the new run will happily believe.
+const uint32_t kVersion = 35;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -1814,9 +1818,11 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.u8(manifest ? 1 : 0);
     if (manifest) {
         // v34: which publish this is, and which one its object list is
-        // a difference against (0 = none, the list is complete).
+        // a difference against (0 = none, the list is complete). v35
+        // adds the run those numbers belong to.
         w.u64(snap.manifestVersion);
         w.u64(snap.baseVersion);
+        w.u64(snap.sessionId);
     }
 
     // Unique mesh and texture tables referenced by index from the
@@ -2220,9 +2226,12 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     const bool manifest = version >= 33 && r.u8() != 0;
     snap.manifestVersion = 0;
     snap.baseVersion = 0;
+    snap.sessionId = 0;
     if (manifest && version >= 34) {
         snap.manifestVersion = r.u64();
         snap.baseVersion = r.u64();
+        if (version >= 35)
+            snap.sessionId = r.u64();
     }
 
     snap.objectUpdates.clear();

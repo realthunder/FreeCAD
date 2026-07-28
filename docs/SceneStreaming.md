@@ -7,8 +7,12 @@ pull (v28) and the deduplicated material table (v29-v31) — and so is the
 manifest tree (§4): the scene is cut into content-keyed groups by `objectKey`,
 with materials and shaders keyed individually (v33). That took the reference
 scene from **425 KB to 1.4 KB** per publish. Of the delta sync (§5), the format
-and the consumer are done (v34) and the publishing half is not: the producer
-still writes a full object list every publish, which costs 79 B an object.
+and the consumer are done (v34), and so is the versioning the rest rests on: a
+publish is numbered by its producer and names the backend run that numbered it
+(v35), which both transports state back on request. What is left is the
+publishing half — the producer still writes a full object list every publish,
+which costs 79 B an object, and the server does not yet hold the object map a
+lagging viewer is caught up from.
 
 Companions: [RenderEngine.md](./RenderEngine.md) §2 (the snapshot format and the
 tiers that consume it), [ThinClient.md](./ThinClient.md) (the UI layer this
@@ -180,16 +184,48 @@ dimensions.
 ## 5. Sync
 
 The viewer states the manifest version it holds; the server answers with the
-difference and a bounded history decides when that is possible.
+difference, and a bounded history decides when that is possible.
 
 ```
-viewer  → { cmd: "hello", manifest: <version or 0> }
-server  → root delta: { manifestVersion, inline state,
-                        objects: { added[], changed[], removed[] } }
+viewer  → GET /scene?v=<version>&s=<session>       ← on the upgrade request
+server  → catch-up frame (only if the viewer is behind):
+              the flattened object list from v to now
+        + root payload: { manifestVersion, sessionId, inline state,
+                          objects changed since the last publish }
         + the chunks new in this publish (optimistic push)
 viewer  → { cmd: "getChunks", keys: [...] }        ← batched, one round trip
 server  → chunk payloads
 ```
+
+**What the viewer holds is stated in the request, not in a hello.** It is
+available at handshake time, so the push loop can act on it without a round
+trip, and it is the same query the polling transport already used. A viewer
+that reconnects still current therefore costs no payload at all.
+
+**A version means nothing without the run that issued it.** The backend
+restarting resets the counter, so a viewer carrying v12 across a restart would
+otherwise be told it is current, or worse, be handed a delta based on a publish
+that never happened. Every root names its `sessionId` (v35) and every request
+echoes it back; a mismatch means the viewer holds nothing. Its *chunk store*
+survives, though — keys are content hashes, so the new run republishes the same
+bytes under the same keys and the resync lands on an almost-warm cache.
+
+**The producer encodes against its own previous publish; the server flattens.**
+One version, one payload, one broadcast — the producer keeps only the object
+list of the publish before, and never re-serializes per viewer. What lets a
+lagging viewer be served anyway is that the object list is a *structured* delta,
+not opaque bytes: the server maintains its own `objectKey → entry` map plus a
+bounded ring of recent deltas, and merges the ones a viewer missed by last-wins
+on `objectKey`. The merge names only live chunks, because the last write for an
+object is its current key — so a catch-up cannot send a viewer chasing a chunk
+that has already been retired, and the two-generation blob roll stays correct.
+
+Flattening the whole map is the same operation with nothing to merge against,
+which is why there is no separate "full root" path: a viewer at version 0, or
+one whose session does not match, gets a catch-up frame carrying every object.
+The producer never has to publish a full root after the first, and the
+full-versus-delta decision lives where the knowledge is — with the server, which
+is the only party that knows what a given viewer is missing.
 
 **Push the delta, pull the gaps.** The server knows what changed because it built
 both manifests, so appending the new chunks to the broadcast costs a round trip
@@ -227,10 +263,13 @@ through the error path.
 Measured on `scripts/demo-water.py`, a first load resolves as 15 batched
 requests and 3 individual ones, the latter being the genuinely large images.
 
-When a viewer's manifest version has fallen out of the server's history, it is
-told to resync: it re-fetches a full root manifest. The monolithic `SceneDump`
-serializer is retained as the ultimate fallback (`getFull`) and remains the
-format of bundled `.fcsd` captures, which must stay self-contained.
+A viewer whose version has fallen out of the ring is not a separate case: it is
+caught up from the server's whole object map rather than from a merge of the
+deltas it missed. The ring depth is therefore a bandwidth knob and nothing more
+— too shallow costs a lagging viewer a full object list, never correctness. The
+monolithic `SceneDump` serializer stays as the ultimate fallback and remains the
+format of bundled `.fcsd` captures, which must be self-contained and so carry
+neither a version nor a session.
 
 ## 6. Progressive application
 

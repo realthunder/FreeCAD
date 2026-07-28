@@ -140,9 +140,34 @@ class SceneStreamServer::Private {
 public:
     std::mutex mutex;
     std::vector<uint8_t> payload;
+    /// The version \a payload was built for; both change together, in
+    /// publish(). \a handedOut runs ahead of it — a version is claimed
+    /// before the payload that carries it can be serialized.
     uint64_t version = 0;
+    uint64_t handedOut = 0;
     int listenFd = -1;
     bool started = false;
+
+    /// This run of the backend, and who is numbering its versions
+    /// (SceneServer.h, beginPublish). Both guarded by \a mutex.
+    uint64_t session = 0;
+    const void *publisher = nullptr;
+
+    uint64_t ensureSession()
+    {
+        if (!session) {
+            // Wall clock, so that two runs of this process — which is
+            // exactly the case the id exists for — cannot collide the
+            // way a counter or an address could.
+            session = uint64_t(std::chrono::duration_cast<
+                    std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
+                    .count());
+            if (!session)
+                session = 1;   // 0 means "unknown" on the wire
+        }
+        return session;
+    }
 
     /// Out-of-band texture payloads, addressed by content key and
     /// served over GET /blob?key= — the snapshot only names them
@@ -209,6 +234,10 @@ public:
     /// here and drained by the loop within its poll interval.
     struct Conn {
         int fd = -1;
+        /// The scene version this connection has been given, seeded
+        /// with what the client said it held on the upgrade request.
+        /// Touched only by this connection's own push loop.
+        uint64_t sent = 0;
         std::vector<std::string> pendingText; ///< queued control JSONs
         bool viewer = false;   ///< sent a hello — answers control requests
         std::string build;     ///< bundle build stamp from the hello
@@ -569,11 +598,21 @@ public:
             return;
         }
 
-        // /scene?v=<version>: 204 while the client is current.
+        // /scene?v=<version>&s=<session>: what the client holds. 204
+        // while it is current. A version stated without a session, or
+        // with one from another run of this backend, names a publish
+        // that never happened here and is worth nothing (SceneDump.h,
+        // v35) — the client is treated as holding nothing.
         uint64_t clientVersion = ~uint64_t(0);
         std::string v = queryValue(query, "v");
         if (!v.empty())
             clientVersion = std::strtoull(v.c_str(), nullptr, 10);
+        std::string s = queryValue(query, "s");
+        if (!s.empty() && clientVersion != ~uint64_t(0)) {
+            std::lock_guard<std::mutex> guard(mutex);
+            if (std::strtoull(s.c_str(), nullptr, 10) != ensureSession())
+                clientVersion = 0;
+        }
         if (path != "/scene" && path != "/scene.fcsd") {
             static const char notFound[] =
                 "HTTP/1.1 404 Not Found\r\n"
@@ -587,7 +626,7 @@ public:
         std::string wsKey = headerValue(req, "sec-websocket-key");
         if (!wsKey.empty()) {
             if (handshake(fd, wsKey))
-                wsLoop(fd);
+                wsLoop(fd, clientVersion);
             return;
         }
 
@@ -724,10 +763,17 @@ public:
     /// payload whenever it changes (including right after the
     /// handshake), and consume client frames (pick requests, pings,
     /// close).
-    void wsLoop(int fd)
+    ///
+    /// \a held is what the client said it already has, from the same
+    /// `?v=&s=` on the upgrade request that the polling transport uses
+    /// — read at handshake time, so a reconnecting viewer that is
+    /// already current costs no payload and needs no round trip to say
+    /// so.
+    void wsLoop(int fd, uint64_t held)
     {
         Conn conn;
         conn.fd = fd;
+        conn.sent = held;
         {
             std::lock_guard<std::mutex> guard(connMutex);
             conns.push_back(&conn);
@@ -744,7 +790,7 @@ public:
 
     void wsLoopBody(int fd, Conn &conn)
     {
-        uint64_t sent = 0;
+        uint64_t &sent = conn.sent;
         std::string inbuf;
         int stampTick = 0;
         for (;;) {
@@ -1057,12 +1103,48 @@ bool SceneStreamServer::running() const
     return pimpl && pimpl->listenFd >= 0;
 }
 
-void SceneStreamServer::publish(std::vector<uint8_t> &&payload)
+uint64_t SceneStreamServer::sessionId()
 {
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->mutex);
+    return p->ensureSession();
+}
+
+uint64_t SceneStreamServer::beginPublish(const void *publisher)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->mutex);
+    p->ensureSession();
+    if (!p->publisher)
+        p->publisher = publisher;
+    else if (p->publisher != publisher)
+        return 0;
+    // Handed out before the payload exists, so a serializer that fails
+    // leaves a gap. Versions are monotonic, not gapless: a consumer
+    // compares them, it does not count them.
+    return ++p->handedOut;
+}
+
+void SceneStreamServer::endPublish(const void *publisher)
+{
+    if (!pimpl)
+        return;
+    std::lock_guard<std::mutex> guard(pimpl->mutex);
+    if (pimpl->publisher == publisher)
+        pimpl->publisher = nullptr;
+}
+
+void SceneStreamServer::publish(uint64_t version,
+                                std::vector<uint8_t> &&payload)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->mutex);
+    if (version <= p->version)
+        return;   // superseded before it was installed
     p->payload = std::move(payload);
-    ++p->version;
+    // Version and payload move together, and only here: what is served
+    // must always be the bytes the version names.
+    p->version = version;
     p->retireBlobs();
 }
 

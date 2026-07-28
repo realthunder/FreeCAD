@@ -77,10 +77,35 @@ public:
     bool start(int port);
     bool running() const;
 
-    /// Replace the served payload and bump the version. Also rolls the
-    /// out-of-band blob generations: whatever the new payload did not
-    /// name (nor the one before it) is dropped.
-    void publish(std::vector<uint8_t> &&payload);
+    /// Which run of this backend the served versions belong to: a
+    /// number minted once per process, carried in every payload
+    /// (SceneDump.h, v35) and accepted back as `?s=` so a version from
+    /// a previous run is not mistaken for one of ours.
+    uint64_t sessionId();
+
+    /// Claim the stream and take the version of the publish about to be
+    /// serialized. The version has to be known before the payload is
+    /// built, because it is written into it.
+    ///
+    /// \a publisher identifies the caller (its own address will do).
+    /// The first one to ask owns the stream and every later caller gets
+    /// 0, meaning "do not publish": two renderers alternating payloads
+    /// would already be serving two different scenes down one
+    /// connection, and once publishes are deltas against each other it
+    /// would be incoherent rather than merely confusing.
+    uint64_t beginPublish(const void *publisher);
+
+    /// Give the claim back when the publisher goes away, so the next
+    /// renderer to come along can take the stream rather than find it
+    /// held by something that no longer exists. Ignored unless
+    /// \a publisher is the one holding it.
+    void endPublish(const void *publisher);
+
+    /// Replace the served payload with the one built for \a version
+    /// (the value beginPublish() returned). Also rolls the out-of-band
+    /// blob generations: whatever the new payload did not name (nor the
+    /// one before it) is dropped.
+    void publish(uint64_t version, std::vector<uint8_t> &&payload);
 
     /// Register one out-of-band payload, addressed by content key and
     /// answered by GET /blob?key= (SceneDump.h, v26). Called by the

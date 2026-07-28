@@ -7233,11 +7233,18 @@ public:
             // with no other geometry) the whole edit graph lives in the editing
             // overlay and the main scene is empty — the datums/leaders must
             // still stream.
+            uint64_t publishVersion = 0;
             if (server.running() && (dirtyChanged || !scenePublished)
-                    && !(scene.empty() && overlays.empty())) {
+                    && !(scene.empty() && overlays.empty())
+                    // Claims the stream on the first publish and states
+                    // which publish this is; 0 means another renderer
+                    // owns it and this one stays off the wire.
+                    && (publishVersion = server.beginPublish(this)) != 0) {
                 scenePublished = true;
                 Render::SceneSnapshot snap;
                 makeSnapshot(snap);
+                snap.manifestVersion = publishVersion;
+                snap.sessionId = server.sessionId();
                 // Texture pixels leave the stream and are served out of
                 // band instead (SceneDump.h, v26): a republish fires on
                 // every feed change, down to a selection pick, and the
@@ -7290,7 +7297,7 @@ public:
                 };
                 std::vector<uint8_t> payload;
                 if (Render::saveSceneSnapshot(payload, snap))
-                    server.publish(std::move(payload));
+                    server.publish(publishVersion, std::move(payload));
             }
         }
 #endif
@@ -11008,6 +11015,13 @@ BGFXRenderer::BGFXRenderer(QOpenGLWidget *widget)
 
 BGFXRenderer::~BGFXRenderer()
 {
+#ifndef FC_RENDERER_STANDALONE
+    // Whoever publishes owns the stream for as long as it exists
+    // (SceneServer.h, beginPublish); hand it back, or closing and
+    // reopening a 3D view would leave it claimed by a renderer that is
+    // gone and nothing would stream again.
+    Render::SceneStreamServer::instance().endPublish(pimpl.get());
+#endif
 }
 
 bool BGFXRenderer::render(const QColor &col,

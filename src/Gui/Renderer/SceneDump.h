@@ -194,6 +194,18 @@ struct SceneSnapshot {
     uint64_t manifestVersion = 0;
     uint64_t baseVersion = 0;
 
+    /// Which run of the backend numbered those versions (v35). A
+    /// restarted server begins counting again, so a version alone does
+    /// not say what a consumer holds: one carried across the restart
+    /// names a publish that never happened. A consumer whose session
+    /// differs must treat its version as 0.
+    ///
+    /// What it does *not* invalidate is the consumer's chunk store.
+    /// Keys are content hashes, so a restarted backend republishes the
+    /// same bytes under the same keys, and a reconnect after a restart
+    /// is a full object list over an almost-warm cache.
+    uint64_t sessionId = 0;
+
     /// Save side. `baseObjects` is the object list of `baseVersion` —
     /// set it, with a non-zero baseVersion, to publish a delta. The
     /// writer records this publish's list in `objectEntries` for the
