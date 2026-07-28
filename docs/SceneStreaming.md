@@ -241,20 +241,51 @@ geometry and would re-fit repeatedly under streaming.
 A proxy is real geometry — a unit box, instanced per pending mesh with its bbox
 as the transform — carrying a distinct visual cue so it never reads as part of
 the model: unlit, translucent fill with a brighter wireframe edge, in a reserved
-"pending" colour. It should be configurable, and disabling it degrades to
-drawing nothing, which is the current behaviour.
+"pending" colour. Disabling it degrades to drawing nothing, which is today's
+behaviour.
 
-Proxies are **excluded** from shadow casting, AO, section capping, hidden-line
-and outline passes, and from picking — they are progress indication, not
-geometry, and letting them into those passes would make loading visibly corrupt
-the shading of everything around them.
+**Proxies participate in depth**, including the depth prepass. A bbox is a
+conservative bound of the geometry it stands for, so writing depth keeps the
+scene behind a pending object from showing through it and then popping when it
+resolves — the model reads as solid throughout loading, which is the whole point
+of drawing proxies at all. The cost is that a box over-occludes: transiently it
+hides slightly more than the real mesh will.
 
-The invariant that makes this safe is that a proxy is **never submitted under
-the identity of the mesh it stands in for**. It is a separate draw with its own
-mesh and its own id. The backend keys GPU uploads on that id and would never
-re-upload a placeholder that was filled in later; the proxy sidesteps that
+They stay **excluded** from shadow casting, section capping, hidden-line,
+outline passes and picking — those are shading and interaction, not occupancy,
+and a box in them reads as a modelling error rather than as progress.
+
+> **Coupling to settle in implementation.** AO derives from the depth prepass,
+> so putting proxies in it means AO sees them and darkens their edges unless
+> they are masked out (a stencil bit, or an id channel the AO resolve tests).
+> Whether that transient darkening is worth masking is a judgement to make
+> against a real model; the mask is cheap, so the default should be to exclude
+> them and relax it only if it looks better.
+
+The invariant that makes all of this safe is that a proxy is **never submitted
+under the identity of the mesh it stands in for**. It is a separate draw with
+its own mesh and its own id. The backend keys GPU uploads on that id and would
+never re-upload a placeholder that was filled in later; the proxy sidesteps that
 entirely by never claiming to be the thing it is waiting for. When the real mesh
 lands, the proxy draw is dropped and the real draw submitted.
+
+### Timing
+
+A mesh that arrives quickly should not flash a box for one frame. A proxy
+therefore appears only after a **grace period**, and fades rather than cutting
+when it is replaced. Both are user-configurable view parameters in the
+`Render_*` family, alongside enable and colour:
+
+| Parameter | Meaning |
+| --- | --- |
+| `Render_ProxyPending` | draw proxies at all (default on) |
+| `Render_ProxyGrace` | ms a mesh may be outstanding before its proxy appears |
+| `Render_ProxyFade` | ms to cross-fade a proxy out when its mesh lands |
+| `Render_ProxyColor` | the reserved "pending" colour |
+
+Defaults want tuning against a real model on a real link rather than being
+guessed here; the point of making them parameters is that the tuning does not
+need a rebuild.
 
 ### Prioritisation
 
@@ -280,6 +311,11 @@ The viewer picks a level from the bbox's projected size and its budget, fetches
 that chunk, and may refine later — each level is just another content-addressed
 chunk, cached and evicted like any other, with no invalidation because none of
 them ever change.
+
+What `error` measures and how a level is chosen are deliberately left open until
+there is a real model to tune against; the likely answer is that both become
+`Render_*` parameters like the proxy timings above, so the policy is adjustable
+without a rebuild.
 
 Seen this way the pending proxy of §6 is simply the coarsest level of the same
 continuum — box, then coarse mesh, then full geometry — and the same
@@ -366,16 +402,11 @@ shrink a small scene, but only the manifest tree makes a *big* model tractable.
   decouples submission from it, but an object with tens of thousands of draws
   still re-sends its whole draw list when one draw changes. Sub-bucketing the
   draw list may be needed; measure first.
-- **Proxy churn.** A mesh that arrives quickly should not flash a proxy for one
-  frame. A short grace period before a proxy appears (and a fade when it is
-  replaced) is probably wanted; needs to be tuned against a real model, not
-  guessed.
-- **Do proxies belong in the depth prepass?** Excluding them keeps effects
-  honest, but means geometry behind a pending object shows through it. Either
-  reading is defensible; decide by looking at it.
-- **LOD error metric and budget** (§7) — what `error` means (screen-space
-  deviation is the usual choice) and whether the level is chosen per mesh or
-  solved globally against a triangle budget.
+- **Masking proxies out of AO** (§6) — the one live consequence of putting them
+  in the depth prepass. Stencil bit or id channel; decide by looking at it.
+- **Proxy default timings** — grace and fade are parameters (§6), but their
+  defaults still want tuning against a real model over a real link.
+- **LOD error metric and budget** (§7) — deferred; likely parameters too.
 - **Root manifest at very large object counts.** 100k objects make even the
   delta's object list non-trivial; paging the object list into content-addressed
   pages is the escape, if measurement demands it.
