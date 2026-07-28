@@ -113,6 +113,11 @@ This is the browser-tier half of the content-addressed storage in
 lifetime follows the references) applied to the wire instead of the
 `.FCStd`.
 
+Textures are the leaf tier of a larger design: `docs/SceneStreaming.md`
+specifies the manifest tree (root → per-object → mesh/material/texture)
+and the delta sync that a thin client needs to serve big models, for
+which re-sending an unchanged scene on every publish is the wall.
+
 ## 3. Frame anatomy
 
 Each frame is a fixed sequence of bgfx views (`BGFXView::PassView`)

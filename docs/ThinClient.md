@@ -3,7 +3,9 @@
 Status: design / direction. Not yet implemented.
 Companions: [RoadMap.md](./RoadMap.md) (workstreams 1–5), [ComputeBoundaries.md](./ComputeBoundaries.md)
 (the two-tier client + semantic protocol), [ViewerUIResearch.md](./ViewerUIResearch.md)
-(UI-framework survey → the DOM-overlay conclusion this doc builds on).
+(UI-framework survey → the DOM-overlay conclusion this doc builds on),
+[SceneStreaming.md](./SceneStreaming.md) (how the scene itself reaches this client
+at big-model scale — the content-addressed manifest tree and delta publishing).
 
 This document specifies how to grow the current bgfx/WASM **viewer** into a **thin CAD
 client**: a browser/mobile/desktop app whose 3D surface is the bgfx canvas and whose UI
