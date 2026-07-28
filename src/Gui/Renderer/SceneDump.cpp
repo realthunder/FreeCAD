@@ -426,10 +426,14 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
             bool ok = readChunk(data, size, [&mesh, version](Reader &cr) {
                 readMeshChunk(cr, mesh.get(), version);
             });
-            if (!ok) {
+            if (!ok && data) {
                 // A partial parse leaves a vertex count with no arrays
                 // behind it, which a backend would read straight past
-                // the end. Empty is the only safe failure.
+                // the end. Empty is the only safe failure — but only
+                // when there were bytes to parse: a null payload asks
+                // whether this chunk can be given up on, and wiping
+                // there would answer by destroying what an earlier
+                // fill already read.
                 *mesh = OwnedMeshData();
             }
             mesh->cacheId = id;
@@ -1552,10 +1556,16 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
         bool ok = readChunk(data, size, [&mesh, version](Reader &cr) {
             readMeshChunk(cr, mesh.get(), version);
         });
-        if (!ok) {
+        if (!ok && data) {
             // A partial parse leaves a vertex count with no arrays
             // behind it, which a backend would read straight past the
             // end of. Empty is the only safe failure.
+            //
+            // Only when there were bytes to parse, though: a null
+            // payload is the consumer asking whether this chunk can be
+            // given up on, and the answer for geometry is no (the
+            // false below). Wiping there would answer by destroying
+            // what a previous fill had already read.
             *mesh = OwnedMeshData();
         }
         mesh->cacheId = id;

@@ -25,6 +25,9 @@ struct BlobStore
 {
     std::map<std::string, std::vector<uint8_t>> blobs;
     std::set<std::string> sentThisPublish;
+    /// The keys that carried geometry, so a test can hold the geometry
+    /// back and let everything else arrive.
+    std::set<std::string> meshKeys;
 
     void take(const std::string& key, std::vector<uint8_t>&& bytes)
     {
@@ -157,6 +160,7 @@ void attachSinks(Render::SceneSnapshot& snap, BlobStore& store)
     };
     snap.meshBlobs.store = [&store](uint64_t, const std::string& key,
                                     std::vector<uint8_t>&& chunk) {
+        store.meshKeys.insert(key);
         if (store.has(key)) {
             store.sentThisPublish.insert(key);
             return;
@@ -170,7 +174,8 @@ void attachSinks(Render::SceneSnapshot& snap, BlobStore& store)
 /// further payloads — then run the pass that puts the staged draws and
 /// materials where a backend expects them.
 ::testing::AssertionResult resolve(Render::SceneSnapshot& snap,
-                                   const BlobStore& store)
+                                   const BlobStore& store,
+                                   const std::set<std::string>& hold = {})
 {
     for (int round = 0; round < 16; ++round) {
         bool progress = false;
@@ -180,6 +185,9 @@ void attachSinks(Render::SceneSnapshot& snap, BlobStore& store)
                 continue;
             }
             const std::string key = snap.deferredChunks[i].key;
+            if (hold.count(key)) {
+                continue;
+            }
             // Every entry must be able to say how big it is: that is
             // the only thing a consumer gets to choose a fetch policy
             // from, so an entry without it would have to be special-cased.
@@ -204,7 +212,7 @@ void attachSinks(Render::SceneSnapshot& snap, BlobStore& store)
         }
     }
     for (const auto& chunk : snap.deferredChunks) {
-        if (chunk.fill) {
+        if (chunk.fill && !hold.count(chunk.key)) {
             return ::testing::AssertionFailure()
                 << "payload " << chunk.key << " left outstanding";
         }
@@ -785,4 +793,102 @@ TEST(SceneDump, theRootNamesTheRunThatVersionedIt)
                                           loadedMono));
     EXPECT_EQ(loadedMono.sessionId, 0u);
     EXPECT_EQ(loadedMono.manifestVersion, 0u);
+}
+
+/// A scene is drawn while it is still arriving (docs/SceneStreaming.md
+/// §6), so the feed has to state what is not in hand yet: a draw whose
+/// mesh chunk has not landed points at an empty MeshData, which the
+/// backend would read past the end of. It is left out and picked up on
+/// a later pass — the bottom rung of the fidelity ladder, until there
+/// is a box to draw in its place.
+TEST(SceneDump, aDrawWaitsForTheMeshItNames)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    ASSERT_FALSE(store.meshKeys.empty());
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(),
+                                          loaded));
+
+    // Everything but the geometry, which is the common case: a mesh
+    // chunk is orders of magnitude larger than the manifest naming it.
+    ASSERT_TRUE(resolve(loaded, store, store.meshKeys));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(Render::applySceneObjects(loaded, model));
+    EXPECT_TRUE(loaded.scene.empty())
+        << "a draw is not submitted before the mesh it names is in hand";
+    EXPECT_EQ(model.objects.size(), 2u)
+        << "the objects are known regardless — that is what a root is for";
+    for (const auto& entry : model.objects) {
+        EXPECT_TRUE(entry.second.resolved())
+            << "their manifests did arrive; only the geometry did not";
+    }
+
+    // The geometry lands into the very meshes those draws point at, so
+    // the next pass has a whole scene without re-reading anything.
+    ASSERT_TRUE(resolve(loaded, store));
+    ASSERT_TRUE(Render::applySceneObjects(loaded, model));
+    expectScene(loaded);
+}
+
+/// The same, one chunk at a time and assembling after every one, which
+/// is what an arrival actually looks like. This is the order that
+/// catches a reference resolved too early: finalize copies a material
+/// into the draw and the reference is gone, so an object taken before
+/// its material chunk arrived would keep a default-constructed
+/// appearance — a scene fully shaped and entirely blank — for as long
+/// as it lives.
+TEST(SceneDump, assemblingAfterEveryChunkGivesTheWholeScene)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(),
+                                          loaded));
+    Render::SceneObjectModel model;
+
+    size_t applied = 0;
+    for (int round = 0; round < 64; ++round) {
+        bool progress = false;
+        for (size_t i = 0; i < loaded.deferredChunks.size(); ++i) {
+            auto fill = loaded.deferredChunks[i].fill;
+            if (!fill) {
+                continue;
+            }
+            const std::string key = loaded.deferredChunks[i].key;
+            auto it = store.blobs.find(key);
+            ASSERT_NE(it, store.blobs.end());
+            loaded.deferredChunks[i].fill = nullptr;
+            ASSERT_TRUE(fill(loaded, it->second.data(), it->second.size()));
+            progress = true;
+            // One chunk, then assemble — the viewer commits on every
+            // arrival that made something drawable.
+            ASSERT_TRUE(loaded.finalize);
+            loaded.finalize(loaded);
+            ASSERT_TRUE(Render::applySceneObjects(loaded, model));
+            ++applied;
+            EXPECT_LE(loaded.scene.size(), 4u)
+                << "the feed never accumulates past the whole scene";
+            break;   // rescan: a parse can name further chunks
+        }
+        if (!progress) {
+            break;
+        }
+    }
+    EXPECT_GT(applied, 1u) << "the scene arrived in more than one piece";
+    expectScene(loaded);
 }
