@@ -796,12 +796,12 @@ TEST(SceneDump, theRootNamesTheRunThatVersionedIt)
 }
 
 /// A scene is drawn while it is still arriving (docs/SceneStreaming.md
-/// §6), so the feed has to state what is not in hand yet: a draw whose
-/// mesh chunk has not landed points at an empty MeshData, which the
-/// backend would read past the end of. It is left out and picked up on
-/// a later pass — the bottom rung of the fidelity ladder, until there
-/// is a box to draw in its place.
-TEST(SceneDump, aDrawWaitsForTheMeshItNames)
+/// §6) at the best rung it holds. A draw whose mesh chunk has not
+/// landed points at an empty MeshData, which the backend would read
+/// past the end of — so what is submitted in its place is a box on the
+/// bounds the manifest carries anyway, and the real geometry replaces
+/// it through the ordinary update path.
+TEST(SceneDump, aDrawStandsInForTheMeshItNames)
 {
     BlobStore store;
     Render::SceneSnapshot snap = makeScene();
@@ -822,8 +822,30 @@ TEST(SceneDump, aDrawWaitsForTheMeshItNames)
     ASSERT_TRUE(resolve(loaded, store, store.meshKeys));
     Render::SceneObjectModel model;
     ASSERT_TRUE(Render::applySceneObjects(loaded, model));
-    EXPECT_TRUE(loaded.scene.empty())
-        << "a draw is not submitted before the mesh it names is in hand";
+    // Two objects and one unnamed draw, over two distinct meshes: one
+    // box each. The two draws of the object that names meshA twice
+    // share a box, because they describe one piece of geometry and a
+    // box apiece would be the same silhouette drawn twice.
+    ASSERT_EQ(loaded.scene.size(), 3u)
+        << "one box per mesh stands in until the geometry lands";
+    for (const auto& d : loaded.scene) {
+        EXPECT_TRUE(d.standIn);
+        EXPECT_EQ(d.mesh, Render::standInMesh())
+            << "every stand-in is the one shared box";
+        EXPECT_FALSE(d.identity);
+        EXPECT_EQ(d.partIndex, -1)
+            << "a box knows the whole object, never a sub-element";
+        // Scaled onto the [-1, 1] bounds the draws carry: extent 2 on
+        // the diagonal, origin at the low corner.
+        EXPECT_FLOAT_EQ(d.model[0], 2.0f);
+        EXPECT_FLOAT_EQ(d.model[5], 2.0f);
+        EXPECT_FLOAT_EQ(d.model[10], 2.0f);
+        EXPECT_FLOAT_EQ(d.model[12], -1.0f);
+        EXPECT_FLOAT_EQ(d.model[15], 1.0f);
+    }
+    // It stands in for the object, so it is the object's colour — the
+    // coarse scene reads as the model, not as scaffolding.
+    EXPECT_EQ(loaded.scene[0].material.diffuse, 0xff0000ffu);
     EXPECT_EQ(model.objects.size(), 2u)
         << "the objects are known regardless — that is what a root is for";
     for (const auto& entry : model.objects) {
@@ -833,6 +855,61 @@ TEST(SceneDump, aDrawWaitsForTheMeshItNames)
 
     // The geometry lands into the very meshes those draws point at, so
     // the next pass has a whole scene without re-reading anything.
+    ASSERT_TRUE(resolve(loaded, store));
+    ASSERT_TRUE(Render::applySceneObjects(loaded, model));
+    expectScene(loaded);
+    for (const auto& d : loaded.scene) {
+        EXPECT_FALSE(d.standIn)
+            << "a rung is climbed through the ordinary update path, so "
+               "nothing stands in once the geometry is in hand";
+    }
+}
+
+/// The rung below that one. Before any group manifest arrives, the only
+/// thing known about an object is the box the root named — so that is
+/// what is drawn, one box for the whole object, and the model has a
+/// silhouette before a single mesh has been asked for.
+TEST(SceneDump, anObjectStandsInForItselfBeforeItsManifest)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    // The root alone: nothing else is resolved, which is what a viewer
+    // holds one round trip in.
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(),
+                                          loaded));
+    ASSERT_TRUE(loaded.finalize);
+    loaded.finalize(loaded);
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(Render::applySceneObjects(loaded, model));
+
+    ASSERT_EQ(model.objects.size(), 2u);
+    // One box per object the root named, plus one for the draw no
+    // object owns: those ride inline in the root, so that draw is
+    // already in hand at this rung and stands in on its own bounds.
+    ASSERT_EQ(loaded.scene.size(), 3u);
+    size_t named = 0;
+    for (const auto& d : loaded.scene) {
+        EXPECT_TRUE(d.standIn);
+        EXPECT_EQ(d.mesh, Render::standInMesh());
+        if (d.objectKey) {
+            ++named;
+            // Nothing names a material yet, so an object's box wears
+            // the default appearance rather than a wrong one.
+            EXPECT_EQ(d.materialIndex, -1);
+        }
+    }
+    EXPECT_EQ(named, model.objects.size())
+        << "a box picks as the object it stands for";
+
+    // And it gives way to the geometry, without the root being re-read.
     ASSERT_TRUE(resolve(loaded, store));
     ASSERT_TRUE(Render::applySceneObjects(loaded, model));
     expectScene(loaded);

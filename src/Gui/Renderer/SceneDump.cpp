@@ -2593,6 +2593,67 @@ bool Render::SceneObjectModel::boundBox(float *min3, float *max3) const
     return any;
 }
 
+const std::shared_ptr<const Render::MeshData> &Render::standInMesh()
+{
+    struct Box {
+        float positions[24 * 3];
+        float normals[24 * 3];
+        int32_t indices[36];
+    };
+    static const std::shared_ptr<const MeshData> mesh = [] {
+        // Six quads on [0,1]³, each with its own normal so the box
+        // shades as a box rather than as a rounded blob. Every face is
+        // wound counter-clockwise seen from outside (u × v = n), which
+        // is what Material::ccw says a front face is.
+        static const float face[6][3][3] = {
+            // origin        u              v          (normal = u × v)
+            {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}},   // +X
+            {{0, 0, 0}, {0, 0, 1}, {0, 1, 0}},   // -X
+            {{0, 1, 0}, {0, 0, 1}, {1, 0, 0}},   // +Y
+            {{0, 0, 0}, {1, 0, 0}, {0, 0, 1}},   // -Y
+            {{0, 0, 1}, {1, 0, 0}, {0, 1, 0}},   // +Z
+            {{0, 0, 0}, {0, 1, 0}, {1, 0, 0}},   // -Z
+        };
+        auto box = std::make_shared<Box>();
+        for (int f = 0; f < 6; ++f) {
+            const float *o = face[f][0];
+            const float *u = face[f][1];
+            const float *v = face[f][2];
+            const float n[3] = {u[1] * v[2] - u[2] * v[1],
+                                u[2] * v[0] - u[0] * v[2],
+                                u[0] * v[1] - u[1] * v[0]};
+            for (int c = 0; c < 4; ++c) {
+                // The quad, walked o → o+u → o+u+v → o+v.
+                const float su = (c == 1 || c == 2) ? 1.0f : 0.0f;
+                const float sv = (c == 2 || c == 3) ? 1.0f : 0.0f;
+                float *p = box->positions + (f * 4 + c) * 3;
+                float *q = box->normals + (f * 4 + c) * 3;
+                for (int i = 0; i < 3; ++i) {
+                    p[i] = o[i] + u[i] * su + v[i] * sv;
+                    q[i] = n[i];
+                }
+            }
+            static const int corner[6] = {0, 1, 2, 0, 2, 3};
+            for (int i = 0; i < 6; ++i)
+                box->indices[f * 6 + i] = f * 4 + corner[i];
+        }
+        auto data = std::make_shared<MeshData>();
+        // An id no streamed or bundled mesh can hold, so the backend
+        // uploads the box once and never confuses it for geometry:
+        // meshIdFromKey() fills 60 bits below the top one, and an
+        // inline cacheId is a counter that sets neither.
+        data->cacheId = 0xC000000000000001ull;
+        data->owner = box;
+        data->numVertices = 24;
+        data->positions = box->positions;
+        data->normals = box->normals;
+        data->triangleIndices = box->indices;
+        data->numTriangleIndices = 36;
+        return std::shared_ptr<const MeshData>(data);
+    }();
+    return mesh;
+}
+
 /// Whether the mesh a draw names is in hand. A deferred mesh chunk
 /// starts life as an empty MeshData and is filled in place when it
 /// lands, so a draw can be assembled well before its geometry is
@@ -2623,6 +2684,98 @@ static bool materialsResident(const Render::DrawCallList &draws,
             return false;
     }
     return true;
+}
+
+/// A coarse stand-in on the bounds \a bmin … \a bmax, carrying over
+/// whatever \a tmpl says about the object it stands for. False when
+/// the bounds say nothing: an empty box is written inside out, and
+/// there is no coarse answer to give for an extent that is not known.
+static bool makeStandIn(Render::DrawCall &box, const Render::DrawCall &tmpl,
+                        const float *bmin, const float *bmax)
+{
+    for (int i = 0; i < 3; ++i) {
+        if (bmin[i] > bmax[i])
+            return false;
+    }
+    box = tmpl;
+    box.standIn = true;
+    box.mesh = Render::standInMesh();
+    box.material.type = Render::Material::Triangle;
+    box.partIndex = -1;
+    box.indexStart = 0;
+    box.indexCount = 0;
+    // It keeps the object's real appearance — the coarse scene reads as
+    // the model in the right colours rather than as grey scaffolding —
+    // but not the parts of it that describe a surface the box does not
+    // have. Per-vertex colour is the one that would be read off an
+    // array the box has no equivalent of; textures are already
+    // conditional on texture coordinates.
+    box.material.pervertexcolor = false;
+    // A stand-in occupies space but is not the shape, and the
+    // difference is exactly the passes it drops. It keeps writing
+    // depth, including in the prepass: a bounding box is a
+    // conservative bound of what it replaces, so the scene behind a
+    // coarse object stays hidden instead of showing through and then
+    // popping when the geometry lands.
+    //
+    // What it gives up is everything that describes a surface rather
+    // than occupancy. It casts no shadow — a box-shaped shadow reads
+    // as a modelling error rather than as progress — while still
+    // receiving one, so it is lit like the object it stands for. Nor
+    // does it take an outline, a hidden-line or a section-capping
+    // pass: those would all draw the box's own edges as if they were
+    // the model's.
+    box.material.shadowstyle &= uint8_t(~1);
+    box.material.outline = false;
+    box.material.faceoutline = false;
+    box.material.outlineonly = false;
+    box.material.solidshape = false;
+    // The bounds are world space, so the placement is the box's whole
+    // model matrix: scale onto the extent, translate to the corner.
+    // Whatever transform produced those bounds is already inside them.
+    std::fill(box.model, box.model + 16, 0.0f);
+    for (int i = 0; i < 3; ++i) {
+        box.model[i * 5] = bmax[i] - bmin[i];
+        box.model[12 + i] = bmin[i];
+        box.bboxMin[i] = bmin[i];
+        box.bboxMax[i] = bmax[i];
+    }
+    box.model[15] = 1.0f;
+    box.identity = false;
+    return true;
+}
+
+/// Append \a draws to \a scene at the best rung each one has: itself
+/// when its mesh is in hand, otherwise a coarse stand-in on its bounds
+/// (docs/SceneStreaming.md §6).
+///
+/// One box per *mesh*, not per draw. A mesh is typically named by one
+/// draw per face part, and every one of them carries the bounding box
+/// of the same geometry, so a box each would be that many coincident
+/// boxes — the overdraw of a solid object drawn many times over, for
+/// one silhouette. The first draw naming a mesh is the one that stands
+/// in for it, and it stands in whole: no part index, no index range.
+///
+/// Only surfaces get a stand-in. A box drawn for an object's edge or
+/// vertex mesh would add a second, solid silhouette over the one its
+/// triangles already gave, and neither reads as the wireframe it
+/// replaces; those draws simply wait, as everything did before.
+static void appendAtBestRung(Render::DrawCallList &scene,
+                             const Render::DrawCallList &draws)
+{
+    std::set<const Render::MeshData *> stoodIn;
+    for (const Render::DrawCall &d : draws) {
+        if (meshResident(d)) {
+            scene.push_back(d);
+            continue;
+        }
+        if (d.material.type != Render::Material::Triangle
+                || !stoodIn.insert(d.mesh.get()).second)
+            continue;
+        Render::DrawCall box;
+        if (makeStandIn(box, d, d.bboxMin, d.bboxMax))
+            scene.push_back(std::move(box));
+    }
 }
 
 bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
@@ -2682,15 +2835,29 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
     // run on every arrival and not only the last.
     DrawCallList scene;
     for (const auto &entry : model.objects) {
-        for (const DrawCall &d : entry.second.draws) {
-            if (meshResident(d))
-                scene.push_back(d);
+        const SceneObjectModel::Object &obj = entry.second;
+        if (obj.draws.empty() && obj.drawsKey.empty()) {
+            // The rung below the per-mesh boxes: the root has been read
+            // and this object's manifest has not, so the only thing
+            // known about it is the box the root named — one box for
+            // the whole object, which is what makes a model appear at
+            // all on a cold load rather than after its first group
+            // manifests land (docs/SceneStreaming.md §6).
+            //
+            // Its appearance is the default one, because at this rung
+            // there is genuinely no other: a material is named by a
+            // group manifest, and that is the thing still missing. One
+            // manifest later it is the object's own colour.
+            DrawCall whole;
+            whole.objectKey = entry.first;
+            DrawCall box;
+            if (makeStandIn(box, whole, obj.entry.bbox, obj.entry.bbox + 3))
+                scene.push_back(std::move(box));
+            continue;
         }
+        appendAtBestRung(scene, obj.draws);
     }
-    for (const DrawCall &d : snap.keyless) {
-        if (meshResident(d))
-            scene.push_back(d);
-    }
+    appendAtBestRung(scene, snap.keyless);
     snap.scene = std::move(scene);
     return true;
 }

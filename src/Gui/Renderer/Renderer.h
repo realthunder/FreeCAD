@@ -1026,6 +1026,18 @@ struct DrawCall {
     int indexCount = 0;
     float bboxMin[3] = {0.0f, 0.0f, 0.0f};  ///< world space bounds,
     float bboxMax[3] = {0.0f, 0.0f, 0.0f};  ///< empty if min > max
+    /// This draw is a coarse stand-in for geometry that has not arrived:
+    /// a unit box scaled onto the bounds above, the bottom rung of the
+    /// fidelity ladder (docs/SceneStreaming.md §6). It occupies space —
+    /// it writes depth, including in the prepass — but it is not the
+    /// shape, so it casts no shadow and takes no outline, capping or
+    /// hidden-line pass: those are shading, not occupancy.
+    ///
+    /// Consumer-side only. A stand-in is synthesised by whoever is
+    /// waiting, from the bounding box the manifest carries anyway, and
+    /// is never serialized: nothing on the wire ever claims to be the
+    /// mesh it stands in for.
+    bool standIn = false;
 };
 
 typedef std::vector<DrawCall> DrawCallList;

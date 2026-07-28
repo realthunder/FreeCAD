@@ -335,6 +335,14 @@ struct SceneObjectModel {
     bool boundBox(float *min3, float *max3) const;
 };
 
+/// The unit box every coarse stand-in is drawn with: the corners of
+/// [0,1]³, one normal per face, shared by every stand-in in the session
+/// (docs/SceneStreaming.md §6). The per-mesh variation is the model
+/// matrix that puts it on the bounding box, which the draw record
+/// carries anyway — so the bottom rung of the ladder costs one GPU
+/// upload however much of the model is still in flight.
+RendererExport const std::shared_ptr<const MeshData> &standInMesh();
+
 /// Merge a loaded publish into \a model and rebuild `snap.scene` from
 /// the result. Returns false when the publish is a delta against a
 /// version the model does not hold — the caller has to ask for a full
