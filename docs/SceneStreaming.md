@@ -1,7 +1,6 @@
 # Scene streaming — content-addressed delta publishing
 
-Status: phases 1 and 2a-2b1 implemented; 2b-2 is half built and phase 4 onward
-is specification. The leaf tier is done — textures (snapshot v26,
+Status: phase 1 and all of 2 implemented; phase 3 onward is specification. The leaf tier is done — textures (snapshot v26,
 `c4337904f9`), the hatch image (v27, `ebddfc0fdd`), mesh chunks with batched
 pull (v28) and the deduplicated material table (v29-v31) — and so is the
 manifest tree (§4): the scene is cut into content-keyed groups by `objectKey`,
@@ -12,11 +11,13 @@ publish is numbered by its producer and names the backend run that numbered it,
 which both transports state back on request), and so is the publishing half —
 the server keeps a bounded history and narrows the published root to what each
 viewer is actually missing, taking the 200-object benchmark from 17,146 B to
-1,027 B a publish. What is left of the phase is §6, progressive application,
-respecified around a **fidelity ladder** — a draw names the best rung it holds,
-from a synthesised bounding box through LOD levels to the full mesh, and climbs
-it through the ordinary update path — which subsumes what §7 had kept separate
-as a future LOD mechanism.
+1,027 B a publish. §6, progressive application, has been respecified around a
+**fidelity ladder** — a draw names the best rung it holds, from a synthesised
+bounding box through LOD levels to the full mesh, and climbs it through the
+ordinary update path — which subsumes what §7 had kept separate as a future LOD
+mechanism. Its first half is implemented: a publish is now drawn while it is
+still arriving, with the draws whose chunks have not landed left out. What
+remains of the phase is the rung that replaces them with a box.
 
 Companions: [RenderEngine.md](./RenderEngine.md) §2 (the snapshot format and the
 tiers that consume it), [ThinClient.md](./ThinClient.md) (the UI layer this
@@ -559,7 +560,7 @@ to remove.
 | 2a′ | trimmed records + table out of band (**done**, v30/v31) | 10.8 KB |
 | 2b-1 | draw groups → content-keyed chunks, leaves keyed (**done**, v33) | 1.4 KB |
 | 2b-2 | root delta-encoded, history + resync (**format + viewer done**, v34) | ~1 KB steady state |
-| 2b-3 | reverse index + per-frame dirty rebuild, commit early (§6) | frames before geometry |
+| 2b-3 | commit early, assemble per arrival (**done**) | the model draws while it arrives |
 | 3 | the box rung: per-mesh submission, `standIn` bit, coarse picking | model appears while it loads |
 | 4 | frustum-ordered fetch, ladder-descending eviction | large models usable |
 | 5 | LOD rungs per mesh (§7) | large models *fast* |
@@ -693,7 +694,7 @@ the three pieces have genuinely different risk, so they are separated:
 | --- | --- | --- |
 | 2b-1 | draw groups become content-keyed chunks; leaves keyed individually | an unchanged object costs 53 B a publish |
 | 2b-2 | root delta-encoded against the version the viewer holds, with history and resync | steady state independent of model size |
-| 2b-3 | progressive fidelity off the L0/L1 boxes | the model frames and roughs in before geometry lands |
+| 2b-3 | commit early and assemble on every arrival | the model draws while it is still arriving |
 
 **The unit is a draw group, not an object.** The scene feed is grouped by
 `objectKey`, but selection, highlight and overlay feeds are draw lists too, and
