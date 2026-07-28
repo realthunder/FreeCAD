@@ -21,6 +21,7 @@ stacks.
 |--------|--------------|
 | `wasm-shot.js <url> <out.png>` | Screenshot the WASM viewer at a chosen `?cam=` via headless Chromium (swiftshader) — a separate client, never touches a live view. |
 | `wasm-hold.js <url> [ms]` | Hold a headless-Chromium page on the WASM viewer so the backend can drive the `dumpFrame` capture protocol (`saveRenderDump(source="viewer")`). |
+| `wasm-burst.js <url> <prefix> [ms,…]` | Shoot the viewer repeatedly **while a scene streams in**, over a `KBPS`-throttled link, so the coarse rungs of the fidelity ladder are on screen to be captured. Pair with the viewer's `&stream` flag. |
 
 ## Verification harnesses
 
@@ -37,15 +38,23 @@ stacks.
 
 ## Demo scenes
 
-All three run persistently (no auto-close) so they can be viewed on the
+All of them run persistently (no auto-close) so they can be viewed on the
 desktop or streamed to the WASM viewer; pass them to
 `renderer-desktop.sh` / `renderer-serve.sh`.
+
+The first group is about **pixels** — what the renderer draws. The second is
+about **payload**: what a publish costs and how a scene arrives
+(docs/SceneStreaming.md), where the geometry is deliberately dull.
 
 | Script | What it does |
 |--------|--------------|
 | `demo-lights.py` | Two colored shadow-casting point-light bulbs (warm/cool) over a pillar + cross-beam on a matte floor — the default verification scene (bulb shadows, bloom, AO; env knobs `SUN`, `BULB_*`, `BLOOM`, `AO`, `VOL`, `SHADOWSMOOTH`). |
 | `demo-ao.py` | SSAO/GTAO isolation scene: every other effect off, matte objects in mutual contact with tight concave corners where ambient occlusion reads strongest. |
 | `demo-water.py` | Full-effect showcase: water pool (refraction, planar reflection, caustics, water shadow), bark-textured gantry (PBR + normal map), metallic cylinder, fire plume with volumetric lighting. |
+| `demo-pbr.py` | PBR showcase: the metallic × roughness sphere chart twice over (silver in front, gold behind) against the IBL studio environment drawn as the background. |
+| `demo-effects.py` | Every shipped effect package as standalone shader objects on their built-in demo geometry — water + spray, fountain + droplets, fire + embers, rain. |
+| `demo-many.py` | **Payload benchmark**: a grid of `COUNT` *identical* boxes. The geometry deduplicates to a handful of content keys, so whatever the stream still spends scales with the object count and nothing else. |
+| `demo-varied.py` | **Stream benchmark**: `COUNT` ellipsoids with seeded per-object radii, so every object is a distinct mesh chunk and nothing deduplicates — what exercises batched fetch and the fidelity ladder, which the box grid barely touches. |
 | `textures/` | CC0 texture assets used by the demo scenes (ambientCG Bark012 color + normal maps; see its README). |
 
 ## Shader rebuilds
@@ -93,6 +102,29 @@ scripts/render-verify.sh capture /tmp/rv --golden /path/goldens
 # build/wasm + PUPPETEER_PATH)
 scripts/user-shader-verify.sh desktop /tmp/us
 ```
+
+## Verifying a scene-streaming change
+
+```sh
+# a scene with one distinct mesh per object, so chunks actually stream
+COUNT=200 SMOKE_RESULT=/tmp/s.txt scripts/renderer-serve.sh scripts/demo-varied.py 8077
+scripts/wasm-viewer.sh 8011 8077
+# wait for "SETUP OK" in /tmp/s.txt — 200 objects take about a minute to build
+
+KBPS=3000 node scripts/wasm-burst.js \
+  'http://127.0.0.1:8011/fcviewer.html?scene=http://127.0.0.1:8077&noidb&stream&cam=0.6,0.4,300,60,60,5,0,0' \
+  /tmp/rung 4000,9000,16000,30000
+```
+
+`&stream` prints what each assembly pass could draw (`N draws, M of them
+coarse, K objects still arriving`); the counts should climb monotonically
+to zero coarse, and the shots should show the model appearing as boxes and
+refining into geometry.
+
+**Throttling is not optional.** On loopback the whole scene lands faster
+than a frame, so every intermediate rung is real but invisible, and a
+broken ladder photographs exactly like a working one. `&noidb` forces the
+cold path past the browser's IndexedDB chunk cache.
 
 A regression is reported against the first pipeline stage whose buffer
 diverges, not just the final image. Add `--gpu` for a real-GPU leg (opens a
