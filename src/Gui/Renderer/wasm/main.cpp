@@ -2098,6 +2098,39 @@ static uint64_t meshIdFor(const std::string &key)
     return ids[key] = ++seq;
 }
 
+/// A cached payload that will not parse means the store is stale or
+/// damaged — most often written by a build whose chunk layout this one
+/// no longer agrees with. The store is a pure optimization, so throw
+/// all of it away and reload rather than repair it entry by entry: the
+/// case is rare, the cost is one round of refetching, and a
+/// half-trusted cache is worse than none. Once per page, so a payload
+/// the server itself cannot serve cannot loop.
+static bool s_blobStoreReset = false;
+/// A commit already queued for the next tick (see resolvePending).
+static bool s_commitScheduled = false;
+
+static void commitResolved();
+
+static void resetBlobStore()
+{
+    if (s_blobStoreReset)
+        return;
+    s_blobStoreReset = true;
+    std::printf("fcviewer: blob store unusable, clearing and reloading\n");
+    // Everything after this point is abandoned: navigating away tears
+    // the module down, and code that keeps running into a page that is
+    // going away reads memory it no longer owns. The flag stops the
+    // scene pipeline; the reload itself waits for the clear to finish
+    // and then for a fresh tick, so no C++ frame is still on the stack
+    // under it.
+    auto done = [](void *) {
+        emscripten_async_call([](void *) {
+            emscripten_run_script("location.reload()");
+        }, nullptr, 0);
+    };
+    emscripten_idb_async_clear(kBlobDb, nullptr, done, done);
+}
+
 /// Memory the resident payload cache may hold. Past it, everything the
 /// applied scene does not name is dropped — IndexedDB still has it, so
 /// the cost of being wrong is one local read, not a download.
@@ -2132,6 +2165,8 @@ static void pruneBlobCache()
 static void blobResolved(const std::string &key, BlobData data,
                          bool fromDb)
 {
+    if (s_blobStoreReset)
+        return;
     s_blobInFlight.erase(key);
     s_blobCache[key] = data;
     if (!fromDb && data) {
@@ -2193,6 +2228,8 @@ static void fetchBlob(const std::string &key)
 static void applyBatch(const uint8_t *data, size_t size,
                        const std::vector<std::string> &asked)
 {
+    if (s_blobStoreReset)
+        return;
     s_batchApplying = true;
     std::set<std::string> seen;
     if (size >= 8 && std::memcmp(data, "FCBB", 4) == 0) {
@@ -2347,13 +2384,27 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
         });
 }
 
+/// Apply the staged snapshot: everything it named has arrived.
+static void commitResolved()
+{
+    if (!s_pendingValid || s_blobStoreReset)
+        return;
+    Render::SceneSnapshot snap = std::move(s_pendingSnap);
+    uint64_t version = s_pendingVersion;
+    s_pendingValid = false;
+    s_pendingSnap = Render::SceneSnapshot();
+    commitSnapshot(std::move(snap), version);
+    pruneBlobCache();
+}
+
 /// Fill in what the staged snapshot still needs; apply it once nothing
 /// is outstanding.
 static void resolvePending()
 {
-    if (!s_pendingValid)
+    if (!s_pendingValid || s_blobStoreReset)
         return;
     size_t missing = 0, total = 0;
+    bool incomplete = false;
     for (const auto &tex : s_pendingSnap.deferredTextures) {
         if (!tex || !tex->deferred)
             continue;
@@ -2365,7 +2416,8 @@ static void resolvePending()
             continue;
         }
         if (s_blobFailed.count(tex->contentKey)) {
-            // Render it untextured rather than stalling the scene.
+            // A texture is the one payload a scene survives without:
+            // the draw renders untextured instead of not at all.
             tex->deferred = false;
             continue;
         }
@@ -2378,15 +2430,17 @@ static void resolvePending()
         ++total;
         auto it = s_blobCache.find(key);
         if (it != s_blobCache.end() && it->second) {
-            if (!s_pendingSnap.deferredMaterials.fill(
+            if (s_pendingSnap.deferredMaterials.fill(
                     s_pendingSnap, it->second->data(), it->second->size()))
-                std::printf("fcviewer: material table %s malformed\n",
-                            key.c_str());
-            s_pendingSnap.deferredMaterials.fill = nullptr;
+                s_pendingSnap.deferredMaterials.fill = nullptr;
+            else {
+                resetBlobStore();
+                incomplete = true;
+                s_pendingSnap.deferredMaterials.fill = nullptr;
+            }
         }
         else if (s_blobFailed.count(key)) {
-            // Every draw keeps its default material rather than the
-            // scene stalling on one blob.
+            incomplete = true;
             s_pendingSnap.deferredMaterials.fill = nullptr;
         }
         else {
@@ -2403,17 +2457,18 @@ static void resolvePending()
         ++total;
         auto it = s_blobCache.find(entry.key);
         if (it != s_blobCache.end() && it->second) {
-            if (entry.fill(it->second->data(), it->second->size()))
+            if (entry.fill(it->second->data(), it->second->size())) {
                 entry.mesh->cacheId = meshIdFor(entry.key);
-            else
-                std::printf("fcviewer: mesh chunk %s malformed\n",
-                            entry.key.c_str());
+                entry.fill = nullptr;
+                continue;
+            }
+            resetBlobStore();
+            incomplete = true;
             entry.fill = nullptr;
             continue;
         }
         if (s_blobFailed.count(entry.key)) {
-            // Draw the rest of the scene rather than stall on it; the
-            // backend skips a mesh with no vertices.
+            incomplete = true;
             entry.fill = nullptr;
             continue;
         }
@@ -2425,12 +2480,32 @@ static void resolvePending()
                         double(total));
         return;
     }
-    Render::SceneSnapshot snap = std::move(s_pendingSnap);
-    uint64_t version = s_pendingVersion;
-    s_pendingValid = false;
-    s_pendingSnap = Render::SceneSnapshot();
-    commitSnapshot(std::move(snap), version);
-    pruneBlobCache();
+    if (incomplete) {
+        // Some payload could not be obtained. Keep whatever is on
+        // screen rather than apply a scene with holes in it: the draws
+        // of a mesh that never arrived still point at it, and the
+        // backend reaches a mesh through the shadow, outline and
+        // segment-instancing paths as well as the guarded submit one.
+        // The next publish stages the scene again.
+        std::printf("fcviewer: snapshot incomplete, not applied\n");
+        s_pendingValid = false;
+        s_pendingSnap = Render::SceneSnapshot();
+        return;
+    }
+
+    // Everything is in hand, but this runs inside a fetch or IndexedDB
+    // callback, and applying a scene from there puts the whole apply —
+    // draw lists, GPU uploads, the refit — on top of an already deep
+    // callback stack. Hand it to a fresh tick instead, so the stack
+    // depth of an apply does not depend on how the last blob happened
+    // to arrive.
+    if (!s_commitScheduled) {
+        s_commitScheduled = true;
+        emscripten_async_call([](void *) {
+            s_commitScheduled = false;
+            commitResolved();
+        }, nullptr, 0);
+    }
 }
 
 //////////////////////////////////////////////////////////////////////

@@ -117,6 +117,22 @@ counter guarantees. The cacheId itself is excluded from the hashed
 bytes: it changes on every re-tessellation, so hashing it would mint a
 new key for geometry that did not change.
 
+Every out-of-band chunk begins with a **chunk-layout version** (v32),
+inside the bytes the key hashes. A change to a chunk's layout therefore
+changes every key, and a payload cached by an older build can never be
+handed to a reader that would misread it — the key covers the format,
+not just the content. A cached payload that still fails to parse means
+the store is stale or damaged; since it is a pure optimization, the
+viewer clears the whole store and reloads rather than repairing it
+entry by entry, and stops its scene pipeline first so nothing runs on
+into a page that is navigating away.
+
+A snapshot missing any payload is **not applied at all**. The draws of
+a mesh that never arrived still point at it, and the backend reaches a
+mesh through the shadow, outline and segment-instancing paths as well
+as the guarded submit one — a scene with holes crashes there. Textures
+are the exception: a draw renders untextured rather than not at all.
+
 Deferral is a property of the transport, not of the format: the sink is
 set only by the streaming publisher, so a snapshot captured to a file
 (`FC_BGFX_DUMP_SCENE`, the bundled `/scene.fcsd`) stays self-contained

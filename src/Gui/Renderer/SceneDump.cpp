@@ -72,7 +72,18 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // 31: the material table can be served out of band under its content
 //     key, like the mesh chunks — deduplication makes it the largest
 //     section, and it rarely changes from one publish to the next.
-const uint32_t kVersion = 31;
+// 32: every out-of-band chunk starts with kChunkVersion, so a change
+//     to a chunk's layout changes the content key of every chunk and
+//     a cached one can never be parsed by a reader that disagrees
+//     with it (the key covers the format, not just the payload).
+const uint32_t kVersion = 32;
+
+/// Layout revision of the out-of-band chunks (mesh chunk, material
+/// table). Written as the first field of each chunk, so it is part of
+/// what the content key hashes: bump it whenever a chunk's own layout
+/// changes and every key changes with it, which retires the entries
+/// cached by older builds instead of letting them be misread.
+const uint32_t kChunkVersion = 1;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -209,6 +220,7 @@ void setIdentity(float m[16])
 /// the same geometry byte for byte).
 void writeMeshChunk(Writer &w, const MeshData &m)
 {
+    w.u32(kChunkVersion);
     w.i32(m.numVertices);
     uint8_t flags = (m.normals ? 1 : 0) | (m.colors ? 2 : 0)
         | (m.texCoords ? 4 : 0);
@@ -293,6 +305,12 @@ struct OwnedMeshData : MeshData {
 /// from either the stream itself or a separately fetched chunk.
 void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
 {
+    if (version >= 32 && r.u32() != kChunkVersion) {
+        // Only reachable from a cache that outlived the build that
+        // wrote it; the caller drops the entry and refetches.
+        r.ok = false;
+        return;
+    }
     mesh->numVertices = r.i32();
     uint8_t flags = r.u8();
     if (!r.ok || mesh->numVertices < 0
@@ -367,10 +385,21 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
         if (!r.ok)
             return nullptr;
         entry.mesh = mesh;
-        entry.fill = [mesh](const void *data, size_t size) {
-            return readChunk(data, size, [&mesh](Reader &cr) {
-                readMeshChunk(cr, mesh.get(), kVersion);
+        // Parse with the version of the snapshot that named the chunk,
+        // not this build's: a viewer newer than the payload reads it
+        // as it is, and only a payload newer than the viewer makes the
+        // viewer reload.
+        entry.fill = [mesh, version](const void *data, size_t size) {
+            bool ok = readChunk(data, size, [&mesh, version](Reader &cr) {
+                readMeshChunk(cr, mesh.get(), version);
             });
+            if (!ok) {
+                // A partial parse leaves a vertex count with no arrays
+                // behind it, which a backend would read straight past
+                // the end. Empty is the only safe failure.
+                *mesh = OwnedMeshData();
+            }
+            return ok;
         };
         snap.deferredMeshes.push_back(std::move(entry));
         return mesh;
@@ -1122,6 +1151,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
             collect(ov.draws);
         std::vector<uint8_t> blob;
         writeChunk(blob, [&table](Writer &cw) {
+            cw.u32(kChunkVersion);
             cw.u32(uint32_t(table.size()));
             for (const auto &bytes : table)
                 cw.raw(bytes.data(), bytes.size());
@@ -1347,6 +1377,10 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                                              const void *data, size_t size) {
                 MaterialTable table;
                 if (!readChunk(data, size, [&](Reader &cr) {
+                        if (cr.u32() != kChunkVersion) {
+                            cr.ok = false;
+                            return;
+                        }
                         uint32_t nmat = cr.u32();
                         if (!cr.ok || nmat > 0x1000000u) {
                             cr.ok = false;
@@ -1376,6 +1410,10 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             };
         }
         else {
+            // The table is the same chunk either way, so it carries
+            // the same version field (v32) inline as it does as a blob.
+            if (version >= 32 && r.u32() != kChunkVersion)
+                r.ok = false;
             uint32_t nmat = r.u32();
             if (!r.ok || nmat > 0x1000000u)
                 r.ok = false;

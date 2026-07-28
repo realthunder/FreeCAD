@@ -485,6 +485,21 @@ hashed every publish (that cost is unavoidable, the table has to be built to
 know it is unchanged), but its bytes only leave the process when the hash moves,
 because the publisher calls `retainBlob()` first.
 
+Two rules keep the caches honest, both learned from a browser profile that
+failed permanently while incognito worked (the store outlives any reload, so
+nothing short of clearing it recovers):
+
+- **The key covers the format.** Each chunk starts with a layout version
+  (v32) that is part of the hashed bytes, so changing a chunk's layout changes
+  every key and no cached payload can be read by a parser that disagrees with
+  it. A cached payload that still fails to parse means the store is stale or
+  damaged, so the viewer clears all of it and reloads — it is a pure
+  optimization, and a half-trusted cache is worse than none.
+- **A snapshot missing any payload is never applied.** Draws of a mesh that
+  never arrived still point at it, and the backend reaches a mesh through the
+  shadow, outline and segment-instancing paths as well as the guarded submit
+  one. Textures are the exception, since a draw renders untextured.
+
 Because the table can now arrive after the draws that use it, a draw carries its
 table index (`DrawCall::materialIndex`, load side only) and the fill takes the
 snapshot **at call time** — a staged snapshot is moved before it is applied, and
