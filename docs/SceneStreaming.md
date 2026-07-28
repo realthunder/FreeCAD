@@ -1,11 +1,14 @@
 # Scene streaming — content-addressed delta publishing
 
-Status: phase 1 implemented, phase 2 onward is specification. The leaf tier is
-done — textures (snapshot v26, `c4337904f9`), the hatch image (v27, `ebddfc0fdd`)
-mesh chunks with batched pull (v28), and the deduplicated material table
-(v29-v31) are all content-addressed and served out of band, which took the
-reference scene from 425 KB to 10.8 KB per publish. The
-manifest tree and delta sync (§4-§5) are not built yet.
+Status: phases 1 and 2a-2b1 implemented; 2b-2 is half built and phase 4 onward
+is specification. The leaf tier is done — textures (snapshot v26,
+`c4337904f9`), the hatch image (v27, `ebddfc0fdd`), mesh chunks with batched
+pull (v28) and the deduplicated material table (v29-v31) — and so is the
+manifest tree (§4): the scene is cut into content-keyed groups by `objectKey`,
+with materials and shaders keyed individually (v33). That took the reference
+scene from **425 KB to 1.4 KB** per publish. Of the delta sync (§5), the format
+and the consumer are done (v34) and the publishing half is not: the producer
+still writes a full object list every publish, which costs 79 B an object.
 
 Companions: [RenderEngine.md](./RenderEngine.md) §2 (the snapshot format and the
 tiers that consume it), [ThinClient.md](./ThinClient.md) (the UI layer this
