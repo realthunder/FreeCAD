@@ -2120,6 +2120,10 @@ static std::set<std::string> s_blobFailed;
 
 static Render::SceneSnapshot s_pendingSnap;
 static uint64_t s_pendingVersion = 0;
+/// ?stream — report what each assembly pass could draw and how much of
+/// it is still coarse. Off by default: this fires on every arrival, and
+/// a scene arrives in hundreds of chunks.
+static bool s_streamDebug = false;
 static bool s_pendingValid = false;
 /// The publish being shown still has payloads outstanding. A scene is
 /// put on screen as soon as any of it can be drawn
@@ -2466,11 +2470,21 @@ static bool assembleResolved(Render::SceneSnapshot &snap)
     snap.finalize(snap);
     // Then the objects, which the snapshot alone cannot assemble:
     // a delta names only what changed, so the feed is built from
-    // the model this viewer carries between publishes. Draws whose
-    // mesh has not landed are left out of the feed and come in on a
-    // later pass, so this runs per arrival rather than once.
-    if (Render::applySceneObjects(snap, s_objects))
+    // the model this viewer carries between publishes. Each draw
+    // comes out at the best rung it holds — the geometry if it has
+    // landed, a box on its bounds if it has not — so this runs per
+    // arrival rather than once, and each pass refines the last.
+    if (Render::applySceneObjects(snap, s_objects)) {
+        if (s_streamDebug) {
+            size_t coarse = 0;
+            for (const auto &d : snap.scene)
+                coarse += d.standIn ? 1 : 0;
+            std::printf("fcviewer: scene at %zu draws, %zu of them coarse,"
+                        " %zu objects still arriving\n",
+                        snap.scene.size(), coarse, s_objects.unresolved());
+        }
         return true;
+    }
     std::printf("fcviewer: publish is a delta against v%llu, "
                 "holding v%llu — asking for a full scene\n",
                 (unsigned long long)snap.baseVersion,
@@ -3202,6 +3216,11 @@ int main()
         // left from the emscripten download phase.
         fcviewer_status(nullptr, 0.0, 0.0);
     }
+
+    s_streamDebug = EM_ASM_INT({
+        return new URLSearchParams(window.location.search).has('stream')
+            ? 1 : 0;
+    }) != 0;
 
     s_hudOn = EM_ASM_INT({
         var q = new URLSearchParams(window.location.search);
