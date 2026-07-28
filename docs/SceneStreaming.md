@@ -7,12 +7,12 @@ pull (v28) and the deduplicated material table (v29-v31) — and so is the
 manifest tree (§4): the scene is cut into content-keyed groups by `objectKey`,
 with materials and shaders keyed individually (v33). That took the reference
 scene from **425 KB to 1.4 KB** per publish. Of the delta sync (§5), the format
-and the consumer are done (v34), and so is the versioning the rest rests on: a
-publish is numbered by its producer and names the backend run that numbered it
-(v35), which both transports state back on request. What is left is the
-publishing half — the producer still writes a full object list every publish,
-which costs 79 B an object, and the server does not yet hold the object map a
-lagging viewer is caught up from.
+and the consumer are done (v34), the versioning it rests on is done (v35: a
+publish is numbered by its producer and names the backend run that numbered it,
+which both transports state back on request), and so is the publishing half —
+the server keeps a bounded history and narrows the published root to what each
+viewer is actually missing, taking the 200-object benchmark from 17,146 B to
+1,027 B a publish. What is left of the phase is §6, progressive application.
 
 Companions: [RenderEngine.md](./RenderEngine.md) §2 (the snapshot format and the
 tiers that consume it), [ThinClient.md](./ThinClient.md) (the UI layer this
@@ -188,10 +188,8 @@ difference, and a bounded history decides when that is possible.
 
 ```
 viewer  → GET /scene?v=<version>&s=<session>       ← on the upgrade request
-server  → catch-up frame (only if the viewer is behind):
-              the flattened object list from v to now
-        + root payload: { manifestVersion, sessionId, inline state,
-                          objects changed since the last publish }
+server  → root payload: { manifestVersion, sessionId, inline state,
+                          objects changed since <version> }
         + the chunks new in this publish (optimistic push)
 viewer  → { cmd: "getChunks", keys: [...] }        ← batched, one round trip
 server  → chunk payloads
@@ -210,22 +208,28 @@ echoes it back; a mismatch means the viewer holds nothing. Its *chunk store*
 survives, though — keys are content hashes, so the new run republishes the same
 bytes under the same keys and the resync lands on an almost-warm cache.
 
-**The producer encodes against its own previous publish; the server flattens.**
-One version, one payload, one broadcast — the producer keeps only the object
-list of the publish before, and never re-serializes per viewer. What lets a
-lagging viewer be served anyway is that the object list is a *structured* delta,
-not opaque bytes: the server maintains its own `objectKey → entry` map plus a
-bounded ring of recent deltas, and merges the ones a viewer missed by last-wins
-on `objectKey`. The merge names only live chunks, because the last write for an
-object is its current key — so a catch-up cannot send a viewer chasing a chunk
-that has already been retired, and the two-generation blob roll stays correct.
+**The producer publishes a full root once; the server narrows it per viewer.**
+A viewer is routinely more than one publish behind — publishes fire on change
+and several can land inside one push tick, since the loop sends the current
+scene rather than every version of it. So a delta against the previous publish
+would seldom be applicable, and encoding one per viewer would mean serializing
+the scene once per connection.
 
-Flattening the whole map is the same operation with nothing to merge against,
-which is why there is no separate "full root" path: a viewer at version 0, or
-one whose session does not match, gets a catch-up frame carrying every object.
-The producer never has to publish a full root after the first, and the
-full-versus-delta decision lives where the knowledge is — with the server, which
-is the only party that knows what a given viewer is missing.
+Neither is necessary, because a full root and a delta differ *only* in which
+objects their object list names. The writer records where that list sits
+(`RootSpans`), and the server replaces it: it keeps a bounded ring of what each
+recent publish changed, merges the entries a viewer missed by last-wins on
+`objectKey`, and splices the result into the payload it already holds. The
+outcome is byte-identical to what the serializer would have written from the
+scene — which is asserted, not assumed.
+
+The merge names only live chunks, because the last write for an object is its
+current key. So a viewer catching up is never sent chasing a chunk that has
+since been retired, and the two-generation blob roll stays correct as it is.
+
+The ring depth is therefore a bandwidth choice and never a correctness one: a
+viewer that has fallen out of it, or holds nothing, or came from another
+session, gets the payload whole — the same bytes, minus the narrowing.
 
 **Push the delta, pull the gaps.** The server knows what changed because it built
 both manifests, so appending the new chunks to the broadcast costs a round trip
@@ -263,13 +267,14 @@ through the error path.
 Measured on `scripts/demo-water.py`, a first load resolves as 15 batched
 requests and 3 individual ones, the latter being the genuinely large images.
 
-A viewer whose version has fallen out of the ring is not a separate case: it is
-caught up from the server's whole object map rather than from a merge of the
-deltas it missed. The ring depth is therefore a bandwidth knob and nothing more
-— too shallow costs a lagging viewer a full object list, never correctness. The
-monolithic `SceneDump` serializer stays as the ultimate fallback and remains the
-format of bundled `.fcsd` captures, which must be self-contained and so carry
-neither a version nor a session.
+The monolithic `SceneDump` serializer stays as the ultimate fallback and remains
+the format of bundled `.fcsd` captures, which must be self-contained and so
+carry neither a version nor a session.
+
+Measured on `scripts/demo-many.py` at 200 objects, where an edit moves one of
+them: the full root is 17,146 B and a viewer that is current is served 1,027 B —
+**94% less**, and flat in the number of objects it did not touch rather than
+79 B each.
 
 ## 6. Progressive application
 

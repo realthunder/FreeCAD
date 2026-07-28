@@ -47,6 +47,7 @@
 #include <vector>
 
 #include "Renderer.h"
+#include "SceneDump.h"
 
 namespace Render {
 
@@ -101,11 +102,28 @@ public:
     /// \a publisher is the one holding it.
     void endPublish(const void *publisher);
 
-    /// Replace the served payload with the one built for \a version
-    /// (the value beginPublish() returned). Also rolls the out-of-band
-    /// blob generations: whatever the new payload did not name (nor the
-    /// one before it) is dropped.
-    void publish(uint64_t version, std::vector<uint8_t> &&payload);
+    /// One publish as the server needs to hold it.
+    struct ScenePublish {
+        uint64_t version = 0;   ///< what beginPublish() returned
+        /// The root, always with a complete object list. What a viewer
+        /// that is behind gets instead is derived from this, not
+        /// serialized separately: the producer publishes once.
+        std::vector<uint8_t> payload;
+        SceneSnapshot::RootSpans spans;
+        /// This publish against the one before it — the entry of every
+        /// object whose group manifest key moved, and the keys of the
+        /// ones that went away. A viewer that missed publishes is
+        /// caught up from a merge of these.
+        std::vector<SceneSnapshot::ObjectEntry> changed;
+        std::vector<uint64_t> removed;
+    };
+
+    /// Replace the served payload, and remember what this publish
+    /// changed so a viewer that is behind can be given the difference
+    /// rather than the scene. Also rolls the out-of-band blob
+    /// generations: whatever the new payload did not name (nor the one
+    /// before it) is dropped.
+    void publish(ScenePublish &&pub);
 
     /// Register one out-of-band payload, addressed by content key and
     /// answered by GET /blob?key= (SceneDump.h, v26). Called by the

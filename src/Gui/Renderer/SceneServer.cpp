@@ -26,6 +26,7 @@
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -148,10 +149,73 @@ public:
     int listenFd = -1;
     bool started = false;
 
+    /// Where \a payload's object list sits, so it can be narrowed for a
+    /// viewer that is behind (SceneDump.h, spliceObjectDelta).
+    SceneSnapshot::RootSpans spans;
+
+    /// What each of the last few publishes changed, oldest first and
+    /// consecutive. A viewer that missed some is caught up by merging
+    /// the ones it missed; one that fell out of this window gets the
+    /// payload whole, so the depth is a bandwidth choice and never a
+    /// correctness one.
+    struct Change {
+        uint64_t version = 0;
+        std::vector<SceneSnapshot::ObjectEntry> changed;
+        std::vector<uint64_t> removed;
+    };
+    std::deque<Change> history;
+    static const size_t kHistory = 32;
+
     /// This run of the backend, and who is numbering its versions
     /// (SceneServer.h, beginPublish). Both guarded by \a mutex.
     uint64_t session = 0;
     const void *publisher = nullptr;
+
+    /// The payload for a viewer holding \a held: the difference since
+    /// it, when the history reaches back that far, and the whole root
+    /// otherwise. Empty when there is nothing to send. Call with
+    /// \a mutex held.
+    ///
+    /// The merge is last-wins per objectKey, which is what makes this
+    /// safe to serve: the last thing said about an object is its
+    /// current state, so the result names only keys the publish in
+    /// flight still names — never a chunk that has since been retired.
+    std::vector<uint8_t> payloadFor(uint64_t held)
+    {
+        if (payload.empty() || held == version)
+            return {};
+        // No manifest layout (nothing to narrow), or a viewer holding
+        // nothing, or one whose version predates what we remember.
+        if (!spans.listEnd || !held || held > version || history.empty()
+                || history.front().version > held + 1)
+            return payload;
+
+        std::map<uint64_t, const SceneSnapshot::ObjectEntry *> changed;
+        std::set<uint64_t> removed;
+        for (const auto &h : history) {
+            if (h.version <= held)
+                continue;
+            for (const auto &e : h.changed) {
+                changed[e.objectKey] = &e;
+                removed.erase(e.objectKey);
+            }
+            for (uint64_t key : h.removed) {
+                removed.insert(key);
+                changed.erase(key);
+            }
+        }
+
+        std::vector<SceneSnapshot::ObjectEntry> entries;
+        entries.reserve(changed.size());
+        for (const auto &item : changed)
+            entries.push_back(*item.second);
+        std::vector<uint64_t> gone(removed.begin(), removed.end());
+
+        std::vector<uint8_t> out;
+        if (!spliceObjectDelta(payload, spans, held, entries, gone, out))
+            return payload;
+        return out;
+    }
 
     uint64_t ensureSession()
     {
@@ -633,7 +697,8 @@ public:
         std::vector<uint8_t> body;
         {
             std::lock_guard<std::mutex> guard(mutex);
-            if (version == clientVersion || payload.empty()) {
+            std::vector<uint8_t> out = payloadFor(clientVersion);
+            if (out.empty()) {
                 static const char noContent[] =
                     "HTTP/1.1 204 No Content\r\n"
                     "Access-Control-Allow-Origin: *\r\n"
@@ -641,10 +706,10 @@ public:
                 sendAll(fd, noContent, sizeof(noContent) - 1);
                 return;
             }
-            body.resize(8 + payload.size());
+            body.resize(8 + out.size());
             uint64_t v = version;
             std::memcpy(body.data(), &v, 8);
-            std::memcpy(body.data() + 8, payload.data(), payload.size());
+            std::memcpy(body.data() + 8, out.data(), out.size());
         }
         char head[256];
         int n = std::snprintf(head, sizeof(head),
@@ -805,12 +870,16 @@ public:
             std::vector<uint8_t> body;
             {
                 std::lock_guard<std::mutex> guard(mutex);
-                if (version != sent && !payload.empty()) {
-                    body.resize(8 + payload.size());
+                // What this connection is missing, which after a
+                // coalesced tick may be several publishes rather than
+                // one — the push loop sends the current scene, not
+                // every version of it.
+                std::vector<uint8_t> out = payloadFor(sent);
+                if (!out.empty()) {
+                    body.resize(8 + out.size());
                     uint64_t v = version;
                     std::memcpy(body.data(), &v, 8);
-                    std::memcpy(body.data() + 8, payload.data(),
-                                payload.size());
+                    std::memcpy(body.data() + 8, out.data(), out.size());
                     sent = version;
                 }
             }
@@ -1134,17 +1203,27 @@ void SceneStreamServer::endPublish(const void *publisher)
         pimpl->publisher = nullptr;
 }
 
-void SceneStreamServer::publish(uint64_t version,
-                                std::vector<uint8_t> &&payload)
+void SceneStreamServer::publish(ScenePublish &&pub)
 {
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->mutex);
-    if (version <= p->version)
+    if (pub.version <= p->version)
         return;   // superseded before it was installed
-    p->payload = std::move(payload);
+    // A gap would make the history lie about what a viewer is missing:
+    // merging across it would skip whatever the missing publish said.
+    if (!p->history.empty()
+            && p->history.back().version + 1 != pub.version)
+        p->history.clear();
+    p->history.push_back({pub.version, std::move(pub.changed),
+                          std::move(pub.removed)});
+    while (p->history.size() > Private::kHistory)
+        p->history.pop_front();
+
+    p->payload = std::move(pub.payload);
+    p->spans = pub.spans;
     // Version and payload move together, and only here: what is served
     // must always be the bytes the version names.
-    p->version = version;
+    p->version = pub.version;
     p->retireBlobs();
 }
 

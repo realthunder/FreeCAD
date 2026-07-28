@@ -7295,9 +7295,25 @@ public:
                     if (!server.retainBlob(key))
                         server.publishBlob(key, std::move(bytes));
                 };
-                std::vector<uint8_t> payload;
-                if (Render::saveSceneSnapshot(payload, snap))
-                    server.publish(publishVersion, std::move(payload));
+                // The root is always written with a complete object
+                // list. What a viewer that is behind gets instead is
+                // derived from these bytes by the server, which is the
+                // only party that knows what any given viewer is
+                // missing — so this runs once however many viewers are
+                // connected, and however far behind they are.
+                std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+                Render::SceneSnapshot::RootSpans spans;
+                snap.objectEntries = &entries;
+                snap.rootSpans = &spans;
+                Render::SceneStreamServer::ScenePublish pub;
+                pub.version = publishVersion;
+                if (Render::saveSceneSnapshot(pub.payload, snap)) {
+                    pub.spans = spans;
+                    Render::diffObjectLists(publishedObjects, entries,
+                                            pub.changed, pub.removed);
+                    publishedObjects = std::move(entries);
+                    server.publish(std::move(pub));
+                }
             }
         }
 #endif
@@ -10974,6 +10990,11 @@ public:
     /// an entry only survives while the blob it names is still served.
     std::map<uint64_t, std::pair<std::string, uint32_t>> meshKeys;
     std::map<uint64_t, std::pair<std::string, uint32_t>> meshKeysPrev;
+    /// The object list of the last publish, ordered by objectKey. The
+    /// difference against it is what the server remembers per publish,
+    /// and it is the publisher that has to keep it: the server holds
+    /// bytes, not scenes.
+    std::vector<Render::SceneSnapshot::ObjectEntry> publishedObjects;
     uint64_t hatchVersion = 0;
     bool hlWholeOnTop = false;
     /// One-shot frame capture (requestFrameDump), consumed by the next
