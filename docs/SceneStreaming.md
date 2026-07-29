@@ -511,6 +511,36 @@ until there is a real model to tune against; the likely answer is that both
 become `Render_*` parameters like the timings above, so the policy is
 adjustable without a rebuild.
 
+**Levels are generated on demand, which the format has to admit.** Tessellating
+every object at N deviations on every publish is exactly the cost §10 warns
+about, moved from the network to the CPU and multiplied. But a level nobody has
+generated has no bytes, therefore no key (invariant 1), and therefore cannot be
+asked for the way every other payload is: a `key` request is a request for
+*bytes*, and this is a request for *work*. The two cannot share a channel.
+
+Three things follow, and 4c has the consumer-side shape of them already
+(`Render::LevelRequest`, `RungProvider::generate`):
+
+1. **A level entry's key is optional.** Present means fetchable now; absent
+   means declared possible but unbuilt. `lods: [ { error, key? } ]`.
+2. **A level is named by what would produce it** — its source geometry's
+   content identity plus the level index — not by what it will contain. That
+   token is stable across publishes and identical for every viewer wanting it.
+3. **The answer arrives as an ordinary publish.** Generation completes, the key
+   is announced in the next root delta (§5), and from there it is a chunk like
+   any other.
+
+Invariant 7 needs amending for this: "no per-viewer state" survives intact,
+because the request is keyed by content and idempotent, but "answers from its
+store alone" does not — the server gains a work queue. That queue is the
+natural client of `docs/ComputeBoundaries.md`'s out-of-process geometry.
+
+The desktop gets this for free rather than as a second mechanism: there,
+"generate level L" *is* a tessellation job at a deviation, cached per
+`(TShape, level)` — a direct extension of the sharing in
+`docs/TShapeRenderCache.md`. Which is the argument for doing LOD once, behind
+the seam, rather than in the viewer first and porting it after.
+
 The real work LOD adds is producer-side rather than protocol: generating the
 variants (OCCT tessellation at several deviations, or decimation), and
 extending the TShape-level tessellation sharing in `docs/TShapeRenderCache.md`
@@ -598,7 +628,8 @@ to remove.
 | 3 | the box rung: per-mesh submission, `standIn` bit, coarse picking (**done**) | model appears while it loads |
 | 4a | reverse index, frustum-ordered bounded fetch (**done**) | the visible part of a model loads first |
 | 4b | ladder-descending eviction (**done**) | a model larger than memory |
-| 5 | LOD rungs per mesh (§7) | large models *fast* |
+| 4c | policy to shared code, adaptive budget, acquisition seam (**done**) | one ladder for both tiers |
+| 5 | LOD rungs per mesh, generated on demand (§7) | large models *fast* |
 
 Phase 1 is the v26 pattern extended to two more section types and needs no
 protocol restructure; 1a alone is 64% of the payload.
@@ -1181,6 +1212,68 @@ the local store still has them, so they go.
 
 Budget default 320 MB, `?membudget=<MB>` to say otherwise — which is the only
 way to exercise any of this, since a real budget is larger than a demo scene.
+(Both of those changed in 4c below: the budget now fits itself to the device,
+and `?membudget=` pins it.)
+
+### 4c — one ladder for two tiers, as built
+
+Phases 3 through 4b were written into the WASM viewer, where the desktop
+cannot reach them. But nothing about ranking a payload by what the camera can
+see of the objects that want it, or giving one back when memory is full, is a
+statement about a network: a large model exhausts a desktop GPU exactly as it
+exhausts a phone. Only *acquisition* differs.
+
+So the policy moved to `Renderer/SceneLadder.{h,cpp}` — `LadderView`,
+`RungRanker` (was the viewer's `FetchOrder`), `Evictor`, `kEvictMargin` — with
+no `bx`, no emscripten and no Qt in it, and plain float arithmetic rather than
+a math library's vectors, because two tiers should not have to agree on a
+vector type to share a policy. The viewer keeps only what a viewer can answer:
+where its camera is, and where to look up an object's bounds, which it alone
+knows is in two places because a staged publish announces bounds before the
+object is applied. `FetchOrder::chunk` became `RungRanker::acquisition`, since
+on the desktop the thing being ranked is not a download.
+
+`RungProvider` is the seam acquisition sits behind: begin an acquisition, say
+how much is outstanding and how much may be, flush what is packed but unsent.
+Nothing returns a payload — acquisition completes by the chunk's fill running —
+so a provider answering from a local cache and one answering over a link are
+the same to the caller.
+
+**The budget stopped being a constant.** 320 MB was chosen against a desktop
+and applied unchanged to a phone, where it is less a budget than a way to be
+killed later. It now starts from what the platform will say (wasm growth cap,
+`GlobalMemoryStatusEx`, `hw.memsize`, `_SC_PHYS_PAGES`, plus
+`navigator.deviceMemory` where it exists) and then *measures*: the heartbeat
+already reporting the heap and the resident payloads feeds both back, and a
+heap ceiling converts into a payload budget through a factor observed on the
+device rather than assumed. The platform query is only a starting guess —
+`deviceMemory` is Chrome and Android only, absent on Safari where the ceiling
+matters most, and what a tab may hold is decided by the device, the other fifty
+tabs and the OS.
+
+Three attempts, because the estimator is easy to get wrong in ways that look
+right:
+
+- **Charging the raw payload cache to geometry.** It is held about one for one,
+  so folding it in reports expansion where there is only a download cache.
+- **A ratio from the origin** — `(heap now − heap when empty) / payload`. The
+  heap before geometry is not the fixed cost of running: the backend's buffers
+  and the textures are created as the first payloads land, and charging that
+  one-off to the few megabytes then resident reported a factor of six. What a
+  budget needs is the cost of the *next* megabyte, which is a slope.
+- **A slope that never samples.** Re-anchoring every heartbeat left each ~1 MB
+  delta under the significance threshold, so the gap never accumulated to reach
+  it and the expansion sat at zero for a whole load while appearing merely
+  quiet. The anchor moves only when a sample is drawn from it.
+
+It converges downward from the clamp — erring toward holding less until the
+device proves otherwise, which is the direction to be wrong in. The 200-object
+scene is too small to settle it (~14 MB of payload); a real model is what will.
+
+GPU memory is still unmeasured on both tiers: `bgfx::getStats()` reports
+`gpuMemoryUsed`/`gpuMemoryMax` where the backend supports it and is called
+nowhere. On the desktop that is more likely than system RAM to be the binding
+constraint, so the budget there is currently watching the wrong number.
 
 ## 12. Open questions
 
