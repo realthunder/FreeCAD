@@ -429,11 +429,10 @@ ladder is not what pays for it.
 
 > **As built.** The reverse index exists as of phase 4a, but as the fetch
 > order's input rather than as an assembly optimization: the assembly pass
-> still rebuilds the whole feed from the model on every arrival. Measured,
-> that is not what a load spends its time on — a hundred passes over a 200
-> object scene cost 116 ms in total, against tens of seconds in the fetch —
-> so the incremental rebuild stays unbuilt until something says it is needed.
-> See §11 phase 4a.
+> still rebuilds the whole feed from the model on every arrival, and
+> measured against `?noprogressive`, **that rebuild is what a streamed load
+> spends its time on** — 7.5 s of a load whose bytes arrive in 1.4 s. It is
+> the next thing worth building here. See §11 phase 4a.
 
 Two consequences for the consumer, and they are the only behavioural changes:
 
@@ -907,13 +906,11 @@ one lands. Three properties of that window were each measured the hard way,
 on `scripts/demo-varied.py` at 200 objects (60 MB of chunks) over loopback,
 against the same scene fetched with no ordering at all (5.3 s):
 
-- **Count requests, not bytes.** A browser request delivered about 170 KB/s
-  here whatever its size, while the same batch over `curl` came back at
-  17 MB/s — so a page goes faster only by having more requests in the air,
-  and the unordered fetch's 20 MB/s was a hundred outstanding requests rather
-  than a fast link. Windows of 8, 32 and 64 requests gave 65 s, 17 s and
-  7.7 s. A byte-counted window throttles a scene of large chunks and leaves a
-  scene of small ones unbounded, which is exactly backwards.
+- **Count requests, not bytes.** A request is a socket and a round trip
+  whatever it carries; counting bytes throttles a scene of large chunks and
+  leaves a scene of small ones unbounded. Windows of 8, 32 and 64 requests
+  took the scene 65 s, 17 s and 7.7 s — but see below for what that is
+  actually measuring.
 - **Never cut a batch short.** Stopping mid-fill sends quarter-full requests,
   which costs round trips *and* arrivals — each arrival re-runs assembly — so
   the window closes only between batches, and whatever is left half-packed is
@@ -923,11 +920,37 @@ against the same scene fetched with no ordering at all (5.3 s):
   window in front of the queue that second is paid once per batch instead of
   once per load: 4.6 s against 58 s, from one call to `flushBatch`.
 
-The remaining cost of ordering is the concurrency it gives up — 7.7 s against
-5.3 s on this scene. That is the trade, and it is the right way round for
-what the phase is for: a model small enough to finish in five seconds does
-not need a fetch order, and one that does not finish in five minutes is the
-case where fetching the visible part first is the whole difference.
+**What that window sweep was actually measuring.** Not the fetch. The
+`?nofetchorder` and `?noprogressive` flags exist to take one variable out at
+a time, and with the display held back the same three windows fetch the
+scene in **1.61 s, 1.53 s and 1.41 s** — the bound costs almost nothing, and
+the ordered fetch at 1.41 s is the unordered fetch's 1.44 s. The eightfold
+spread appears only with the display on, because **every arrival
+re-assembles the feed and re-uploads it, and a wider window folds more
+arrivals into one pass**. The four corners, on `demo-varied.py` at 200
+objects over loopback:
+
+| | usable (whole model in colour) | fully refined |
+| --- | ---: | ---: |
+| ordered, progressive | 2.5 s | 7.5 s |
+| `?nofetchorder` | 0.24 s | 3.1 s |
+| `?noprogressive` | — | 1.4 s |
+| both | — | 1.4 s |
+
+Two things follow. The window is wide for coalescing rather than for
+throughput, so it can be narrowed — sharpening the order — exactly as far as
+the per-arrival cost of showing a scene is brought down. And **that cost,
+not the fetch, is what a streamed load spends its time on**: it is the
+O(scene)-per-chunk assembly of §6, and it is the first thing to measure
+before anything else here is tuned. An earlier reading that put it at 116 ms
+was taken over twenty passes on a throttled link and did not include the
+apply; it was wrong.
+
+The concurrency ordering gives up is real but small: 1.41 s against 1.44 s
+unordered. That is the trade, and it is the right way round for what the
+phase is for — a model small enough to finish in a second does not need a
+fetch order, and one that does not finish in five minutes is the case where
+fetching the visible part first is the whole difference.
 
 **Priority is projected size per byte, over the best owner.** Two corrections
 to the obvious formula, both of which were bugs first (§6):
@@ -975,9 +998,17 @@ overlays arriving last:
   bounds like any object, and holding them back would show less than the
   viewer knows.
 
+**Benchmark flags.** `?nofetchorder` asks for every payload the moment it is
+named, in publish order, as the viewer did before this phase; `?noprogressive`
+holds the display back until the publish is whole, as it did before 2b-3.
+They are deliberately independent — a benchmark that moves both at once
+measures neither — and between them they separate "when is it usable" from
+"when is it finished" from "how fast did the bytes arrive".
+
 **Not done:** eviction (4b), which is the other half of what the index was
 built for, and the frustum's stronger form — deferring off-screen objects
-entirely rather than ranking them last.
+entirely rather than ranking them last. And the incremental assembly the
+table above now points at.
 
 ## 12. Open questions
 

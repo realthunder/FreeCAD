@@ -2173,6 +2173,23 @@ static uint64_t s_pendingVersion = 0;
 /// it is still coarse. Off by default: this fires on every arrival, and
 /// a scene arrives in hundreds of chunks.
 static bool s_streamDebug = false;
+/// ?nofetchorder — ask for every payload the moment it is named, in the
+/// order the publish names them, as the viewer did before there was a
+/// fetch order (docs/SceneStreaming.md §6). This is the benchmark
+/// baseline: it hands the whole queue to the browser at once, which is
+/// the fastest a scene can arrive and the least useful order for it to
+/// arrive in.
+static bool s_noFetchOrder = false;
+/// ?noprogressive — do not draw a publish until all of it is in hand,
+/// as the viewer did before 2b-3. The ladder still exists underneath —
+/// this suppresses the *showing* of it, so a load has one visible
+/// event, which is what makes "when is it usable" and "when is it
+/// finished" separable numbers.
+///
+/// Deliberately independent of the flag above: they turn off two
+/// different things, and a benchmark that moves both at once measures
+/// neither.
+static bool s_noProgressive = false;
 static bool s_pendingValid = false;
 /// The publish being shown still has payloads outstanding. A scene is
 /// put on screen as soon as any of it can be drawn
@@ -2630,23 +2647,24 @@ static void indexPendingBoxes(const Render::SceneSnapshot &snap)
 /// because the requests are all issued in the same tick and come back
 /// in whatever order the network answers them.
 ///
-/// **Requests, not bytes** — measured, that is what a viewer's
-/// throughput is proportional to. A single browser request delivered
-/// about 170 KB/s here whatever its size, against a server that
-/// answered the same batch over `curl` at 17 MB/s, so a page goes
-/// faster only by having more requests in the air: the unordered
-/// fetch's 20 MB/s was a hundred outstanding requests, not a fast
-/// link. A window counted in bytes therefore throttles a scene of
-/// large chunks and leaves a scene of small ones unbounded, which is
-/// exactly backwards.
+/// **Requests, not bytes**, because bytes is not what a window of
+/// outstanding work is bounded by anywhere: a request is a socket and
+/// a round trip whatever it carries. Counting bytes would also
+/// throttle a scene of large chunks while leaving a scene of small
+/// ones unbounded, which is exactly backwards.
 ///
-/// The number trades responsiveness against throughput and there is no
-/// value that is free: 8 requests took a 60 MB scene from 5 s to 65 s,
-/// 32 brought it to 17 s, and no window at all is the 5 s. 64 is where
-/// the curve flattens on this harness while still leaving a large
-/// model most of its queue to re-sort — and on a large model that is
-/// the point, because the fetch that ordering exists for is one no
-/// viewer was ever going to finish in five seconds.
+/// The width is not about throughput, though it took `?noprogressive`
+/// to see that: with the display held back, windows of 8, 16 and 64
+/// fetched the same 60 MB scene in 1.61 s, 1.53 s and 1.41 s — the
+/// fetch barely notices. What the width really buys is *coalescing*.
+/// Every arrival re-assembles the feed and hands it to the backend,
+/// and a batch that lands while another is still in flight is folded
+/// into the same pass; the same three windows with the display on
+/// cost 65 s, 17 s and 7.7 s. So the number to tune here is really the
+/// per-arrival cost of showing a scene, and until that is incremental
+/// (§6) a wide window is how it is paid for. 64 is where the curve
+/// flattens on this harness, and still leaves a large model most of
+/// its queue to re-sort — which on a large model is the point.
 static const size_t kInFlightRequests = 64;
 
 /// The camera as one round of ordering sees it, with the priority of
@@ -2864,7 +2882,11 @@ static void resolvePending()
             ++missing;
             if (s_blobInFlight.count(entry.key))
                 continue;
-            want.emplace_back(order.chunk(entry), i);
+            // ?nofetchorder scores nothing: every chunk ties, the sort
+            // below leaves them in the order the publish named them,
+            // and the window check is skipped, which between them is
+            // the fetch exactly as it was before there was an order.
+            want.emplace_back(s_noFetchOrder ? 0.0f : order.chunk(entry), i);
         }
         // Ties keep publish order, which is the order the objects were
         // named in: a scene the camera has no opinion about (nothing
@@ -2896,7 +2918,7 @@ static void resolvePending()
             // slower than no ordering at all; batches kept whole, it
             // is the same number of requests as before, just asked for
             // in a different order.
-            if (s_batchQueue.empty()
+            if (!s_noFetchOrder && s_batchQueue.empty()
                     && s_requestsInFlight >= kInFlightRequests)
                 break;
             const auto &entry = target->deferredChunks[item.second];
@@ -2926,6 +2948,11 @@ static void resolvePending()
             return;
         }
     }
+
+    // ?noprogressive holds everything back until the publish is whole,
+    // which is the load with one visible event in it.
+    if (s_noProgressive && missing)
+        return;
 
     // Something is drawable, but this runs inside a fetch or IndexedDB
     // callback, and applying a scene from there puts the whole apply —
@@ -3505,6 +3532,27 @@ int main()
         std::printf("fcviewer: no /scene.fcsd snapshot, empty scene\n");
     }
 
+    // Before the first payload is asked for, not after: these decide
+    // what the very first round of fetching does, and on a cold load
+    // that round covers every object in the scene.
+    s_streamDebug = EM_ASM_INT({
+        return new URLSearchParams(window.location.search).has('stream')
+            ? 1 : 0;
+    }) != 0;
+    s_noFetchOrder = EM_ASM_INT({
+        return new URLSearchParams(window.location.search)
+            .has('nofetchorder') ? 1 : 0;
+    }) != 0;
+    s_noProgressive = EM_ASM_INT({
+        return new URLSearchParams(window.location.search)
+            .has('noprogressive') ? 1 : 0;
+    }) != 0;
+    if (s_noFetchOrder)
+        std::printf("fcviewer: fetch order off, asking for everything\n");
+    if (s_noProgressive)
+        std::printf("fcviewer: progressive display off, waiting for the "
+                    "whole publish\n");
+
     if (char *sceneParam = fcviewer_scene_param()) {
         s_sceneUrl = sceneParam;
         std::free(sceneParam);
@@ -3521,10 +3569,6 @@ int main()
         fcviewer_status(nullptr, 0.0, 0.0);
     }
 
-    s_streamDebug = EM_ASM_INT({
-        return new URLSearchParams(window.location.search).has('stream')
-            ? 1 : 0;
-    }) != 0;
 
     s_hudOn = EM_ASM_INT({
         var q = new URLSearchParams(window.location.search);
