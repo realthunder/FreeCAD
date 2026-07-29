@@ -1836,6 +1836,39 @@ void readGroup(Reader &r, SceneSnapshot &snap, const LoaderPtr &st,
     st->chunkAt[key] = snap.deferredChunks.size() - 1;
 }
 
+/// Whether everything \a draws needs in order to look right is in
+/// hand. Not whether it can be drawn — it always can — but whether
+/// drawing it now would show something the model does not say.
+///
+/// The appearance is a chain, and every link of it arrives separately:
+/// a draw names a material by slot, the material chunk names a texture
+/// by key, and the pixels come after that again. A draw taken between
+/// any two of those renders in a colour or a surface that is not the
+/// object's, and it is taken *once* — so it does not correct itself
+/// when the rest lands (docs/SceneStreaming.md §6). Waiting is what the
+/// coarse rungs are for.
+bool appearanceResident(const DrawCallList &draws,
+                        const SceneSnapshot &snap)
+{
+    for (const DrawCall &d : draws) {
+        // Below zero the material rides in the draw, and so does
+        // whatever it names: the monolithic layout defers nothing.
+        if (d.materialIndex < 0)
+            continue;
+        size_t i = size_t(d.materialIndex);
+        if (i >= snap.materialFilled.size() || !snap.materialFilled[i])
+            return false;
+        const Material &m = snap.materials[i];
+        // A texture that was given up on has cleared its deferred flag
+        // and stays empty, which is the draw rendering untextured —
+        // the answer the entry already gave. Only one still on its way
+        // is worth waiting for.
+        if (m.texture && m.texture->deferred && m.texture->pixels.empty())
+            return false;
+    }
+    return true;
+}
+
 /// The pass that runs once every chunk is in: groups into the feeds
 /// they belong to, then the materials into the draws that named them
 /// by slot.
@@ -1865,6 +1898,14 @@ void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
                     || i >= s.groupFilled.size() || !s.groupFilled[i])
                 continue;
             DrawCallList &draws = s.groups[i];
+            // The same rule the scene objects are taken under, for the
+            // feeds that have no coarse rung to fall back to: a
+            // navigation cube with its labels still in flight is a
+            // white block, and it is taken once, so for these "not
+            // yet" *is* the rung. The keyless draws are not among
+            // them — they stand in on their own bounds like any
+            // object, and holding them back would show less than is
+            // known (§6).
             switch (t.kind) {
             case GroupTarget::Scene:
                 break;
@@ -1872,14 +1913,20 @@ void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
                 s.keyless = std::move(draws);
                 break;
             case GroupTarget::Overlay:
+                if (!appearanceResident(draws, s))
+                    continue;
                 if (t.index < s.overlays.size())
                     s.overlays[t.index].draws = std::move(draws);
                 break;
             case GroupTarget::Selection:
+                if (!appearanceResident(draws, s))
+                    continue;
                 if (t.index < s.selections.size())
                     s.selections[t.index].second = std::move(draws);
                 break;
             case GroupTarget::Highlight:
+                if (!appearanceResident(draws, s))
+                    continue;
                 s.highlight = std::move(draws);
                 break;
             }
@@ -2745,19 +2792,6 @@ static bool meshResident(const Render::DrawCall &d)
 /// land would keep a default-constructed one for as long as the object
 /// lives. Waiting is per group and costs nothing: a material chunk is
 /// a few hundred bytes and its objects follow it by one round.
-static bool materialsResident(const Render::DrawCallList &draws,
-                              const Render::SceneSnapshot &snap)
-{
-    for (const Render::DrawCall &d : draws) {
-        if (d.materialIndex < 0)
-            continue;
-        size_t i = size_t(d.materialIndex);
-        if (i >= snap.materialFilled.size() || !snap.materialFilled[i])
-            return false;
-    }
-    return true;
-}
-
 /// A coarse stand-in on the bounds \a bmin … \a bmax, carrying over
 /// whatever \a tmpl says about the object it stands for. False when
 /// the bounds say nothing: an empty box is written inside out, and
@@ -2892,7 +2926,7 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
         // being emptied (docs/SceneStreaming.md §6).
         if (up.group < snap.groups.size() && up.group < snap.groupFilled.size()
                 && snap.groupFilled[up.group]
-                && materialsResident(snap.groups[up.group], snap)) {
+                && appearanceResident(snap.groups[up.group], snap)) {
             obj.draws = std::move(snap.groups[up.group]);
             obj.drawsKey = up.entry.key;
             snap.groupFilled[up.group] = 0;
