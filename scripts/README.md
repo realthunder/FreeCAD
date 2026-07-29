@@ -22,6 +22,7 @@ stacks.
 | `wasm-shot.js <url> <out.png>` | Screenshot the WASM viewer at a chosen `?cam=` via headless Chromium (swiftshader) — a separate client, never touches a live view. |
 | `wasm-hold.js <url> [ms]` | Hold a headless-Chromium page on the WASM viewer so the backend can drive the `dumpFrame` capture protocol (`saveRenderDump(source="viewer")`). |
 | `wasm-burst.js <url> <prefix> [ms,…]` | Shoot the viewer repeatedly **while a scene streams in**, over a `KBPS`-throttled link, so the coarse rungs of the fidelity ladder are on screen to be captured. Pair with the viewer's `&stream` flag. |
+| `wasm-orbit.js <url> [settle_ms] [steps]` | Settle a scene under `&membudget=`, then orbit — the only way to exercise the ladder running *backwards*. `wasm-burst.js` never evicts: the default budget is not reached, and a fixed camera converges and then merely refuses. Reports releases before vs after the orbit. |
 
 ## Verification harnesses
 
