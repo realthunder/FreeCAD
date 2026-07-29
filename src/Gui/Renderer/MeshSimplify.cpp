@@ -56,12 +56,22 @@ struct Cluster {
     int32_t index = -1;
 };
 
-inline Cell cellOf(const float *p, float cellSize)
+/// The grid is anchored at \a anchor — the mesh's own minimum corner —
+/// rather than at the world origin. A part small against its distance
+/// from the origin would otherwise divide a huge coordinate by a tiny
+/// cell: the quotient overflows int32 (undefined in the cast) long
+/// before that, and loses float precision long before *that*, so
+/// neighbouring vertices quantize arbitrarily. Relative to the anchor
+/// the quotient is bounded by the level's cell count across the mesh.
+/// The anchor derives from the vertices alone, so identical content
+/// still produces identical bytes wherever it sits (§9, invariant 2) —
+/// and a translated mesh produces the translated output.
+inline Cell cellOf(const float *p, const float *anchor, float cellSize)
 {
     Cell c;
-    c.x = int32_t(std::floor(p[0] / cellSize));
-    c.y = int32_t(std::floor(p[1] / cellSize));
-    c.z = int32_t(std::floor(p[2] / cellSize));
+    c.x = int32_t(std::floor((p[0] - anchor[0]) / cellSize));
+    c.y = int32_t(std::floor((p[1] - anchor[1]) / cellSize));
+    c.z = int32_t(std::floor((p[2] - anchor[2]) / cellSize));
     return c;
 }
 
@@ -99,8 +109,10 @@ float Render::levelCellSize(const float *bbox, uint32_t level)
     // An eighth of the diagonal at level 0, halving thereafter: the
     // coarsest level is a handful of cells across, so a mesh of any size
     // reduces to a few hundred vertices, and the count roughly
-    // octuples per level after that.
-    return diagonal / float(8u << level);
+    // octuples per level after that. Capped where the shift would
+    // overflow; a grid billions of cells across stopped merging anything
+    // long before.
+    return diagonal / float(8u << std::min(level, 20u));
 }
 
 bool Render::simplifyMesh(const MeshData &src, float cellSize,
@@ -112,6 +124,15 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
     if (src.numTriangleIndices <= 0)
         return false;
 
+    // The grid's anchor: the mesh's own minimum corner (see cellOf).
+    float anchor[3] = {src.positions[0], src.positions[1], src.positions[2]};
+    for (int v = 1; v < src.numVertices; ++v) {
+        const float *p = src.positions + size_t(v) * 3;
+        anchor[0] = std::min(anchor[0], p[0]);
+        anchor[1] = std::min(anchor[1], p[1]);
+        anchor[2] = std::min(anchor[2], p[2]);
+    }
+
     // Pass one: which cell each vertex falls in, and the sums that make
     // each cell's representative. Averaging rather than snapping to the
     // cell centre keeps a flat face flat -- snapping visibly corrugates
@@ -121,7 +142,7 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
     std::vector<Cluster *> vertexCluster(size_t(src.numVertices), nullptr);
     for (int v = 0; v < src.numVertices; ++v) {
         const float *p = src.positions + size_t(v) * 3;
-        Cluster &cl = clusters[cellOf(p, cellSize)];
+        Cluster &cl = clusters[cellOf(p, anchor, cellSize)];
         cl.px += p[0];
         cl.py += p[1];
         cl.pz += p[2];

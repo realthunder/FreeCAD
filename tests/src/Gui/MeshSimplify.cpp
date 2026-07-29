@@ -141,6 +141,52 @@ TEST(MeshSimplify, weldingDuplicatesAloneCountsAsAReduction)
         EXPECT_NEAR(out.positions[v + 2], 0.0f, 1e-6f);
 }
 
+TEST(MeshSimplify, isTranslationInvariantBecauseTheGridIsAnchoredToTheMesh)
+{
+    // The clustering grid is anchored at the mesh's own minimum corner,
+    // not the world origin, so moving a mesh — including into the
+    // negative octant, where floor and truncation part ways — must
+    // change nothing but the positions, and those by exactly the move.
+    const SoupGrid grid(16);
+    SoupGrid moved(16);
+    const float shift[3] = {-5.3f, 7.1f, -2.9f};
+    for (size_t v = 0; v < moved.positions.size(); v += 3) {
+        moved.positions[v] += shift[0];
+        moved.positions[v + 1] += shift[1];
+        moved.positions[v + 2] += shift[2];
+    }
+
+    Render::SimplifiedMesh a, b;
+    ASSERT_TRUE(Render::simplifyMesh(grid.mesh(), 0.25f, a));
+    ASSERT_TRUE(Render::simplifyMesh(moved.mesh(), 0.25f, b));
+    ASSERT_EQ(a.positions.size(), b.positions.size());
+    EXPECT_EQ(a.triangleIndices, b.triangleIndices);
+    for (size_t v = 0; v < a.positions.size(); v += 3) {
+        EXPECT_NEAR(a.positions[v] + shift[0], b.positions[v], 1e-4f);
+        EXPECT_NEAR(a.positions[v + 1] + shift[1], b.positions[v + 1], 1e-4f);
+        EXPECT_NEAR(a.positions[v + 2] + shift[2], b.positions[v + 2], 1e-4f);
+    }
+}
+
+TEST(MeshSimplify, survivesAMeshFarFromTheOrigin)
+{
+    // A unit part a million units out: dividing absolute coordinates by
+    // the cell size would exhaust float precision (and eventually
+    // overflow the cell index), so vertices would quantize arbitrarily.
+    // Anchored to the mesh, the far copy must simplify exactly like the
+    // one at the origin.
+    const SoupGrid grid(16);
+    SoupGrid distant(16);
+    for (size_t v = 0; v < distant.positions.size(); v += 3)
+        distant.positions[v] += 1.0e6f;
+
+    Render::SimplifiedMesh a, b;
+    ASSERT_TRUE(Render::simplifyMesh(grid.mesh(), 0.25f, a));
+    ASSERT_TRUE(Render::simplifyMesh(distant.mesh(), 0.25f, b));
+    EXPECT_EQ(a.positions.size(), b.positions.size());
+    EXPECT_EQ(a.triangleIndices, b.triangleIndices);
+}
+
 TEST(MeshSimplify, refusesDegenerateInput)
 {
     Render::MeshData empty;
