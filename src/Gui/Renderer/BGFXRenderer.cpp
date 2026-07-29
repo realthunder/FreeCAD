@@ -6989,10 +6989,10 @@ public:
     // Standalone (WebGL2) one-shot warmup: the very first MSAA scene
     // framebuffer created while bgfx's async WebGL2 init is still settling
     // renders the overlay views wrong (a stale-target artifact — the corner
-    // overlay draws the main scene). Re-creating the target once, on the first
-    // frame the scene is present, clears it for good. Re-armed to 0 on each
-    // feed change so it targets the streamed scene rather than the bundled
-    // snapshot; set to -1 once the rebuild has fired. (Regression:
+    // overlay draws the main scene). Re-creating the target once, a few frames
+    // after the scene is first present, clears it for good: counts frames with
+    // a scene on screen, then sets -1 once the rebuild has fired, so it costs
+    // one re-create per view and not one per streamed arrival. (Regression:
     // 6065ad06ed dropped the interaction-triggered rebuild that masked this.)
     int warmup = 0;
     bool ontop = false;   // route submits to the highlight pass
@@ -7083,22 +7083,29 @@ public:
             return false;
 
 #ifdef FC_RENDERER_STANDALONE
-        // Warmup rebuild: a few frames after new scene data arrives, force a
-        // single target re-create to clear the bad first-target overlay
-        // artifact (see BGFXView::warmup). Re-armed on every feed change so it
-        // fires after the STREAMED scene, not the bundled snapshot that loads
-        // first (which would rebuild too early to matter).
+        // Warmup rebuild: a few frames after the scene first appears,
+        // force a single target re-create to clear the bad
+        // first-target overlay artifact (see BGFXView::warmup).
+        //
+        // **Once per view, not once per feed change.** It was written
+        // when a streamed scene was set exactly once, so re-arming on
+        // every feed change cost one rebuild per load. A progressively
+        // assembled scene sets the feed on every arrival
+        // (docs/SceneStreaming.md §6), and a rebuild re-creates every
+        // target the view owns — the MSAA scene buffer, the AO
+        // pyramid, the shadow maps — so the same rule turned into
+        // tens of full pipeline re-creates during a load, each one a
+        // stall on the frame that was supposed to be showing progress.
+        //
+        // What the artifact needs is one rebuild once bgfx's async
+        // WebGL2 init has settled, and a scene that has been on screen
+        // for a few frames is exactly that. It cannot be the very
+        // first frame with a scene, which is what "too early to
+        // matter" meant for the bundled snapshot.
         bool warmupReinit = false;
-        if (feedChanged)
-            view->warmup = 0;
-        if (view->warmup >= 0 && !scene.empty()) {
-            // Rebuild on the first frame the (new) scene is present, before it
-            // draws, so the artifact never shows. The re-create happens at the
-            // top of render(), ahead of scene submission.
-            if (++view->warmup >= 1) {
-                warmupReinit = true;
-                view->warmup = -1;  // fire once per feed change
-            }
+        if (view->warmup >= 0 && !scene.empty() && ++view->warmup >= 3) {
+            warmupReinit = true;
+            view->warmup = -1;  // fired; never again for this view
         }
         if (_BGFXLib.standaloneWidth != view->width
                 || _BGFXLib.standaloneHeight != view->height
