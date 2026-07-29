@@ -17,6 +17,7 @@ generate_from_xml(ViewProviderPartExtPy)
 set(PartGui_LIBS
     Part
     FreeCADGui
+    FreeCADRenderer
 )
 
 if(MSVC)
@@ -167,6 +168,8 @@ SET(PartGui_SRCS
     ViewProvider.h
     ViewProviderAttachExtension.h
     ViewProviderAttachExtension.cpp
+    MeshLevelSource.cpp
+    MeshLevelSource.h
     ViewProviderExt.cpp
     ViewProviderExt.h
     ViewProviderReference.cpp

@@ -109,6 +109,7 @@
 #include <Mod/Part/App/Tools.h>
 
 #include "ViewProviderExt.h"
+#include "MeshLevelSource.h"
 #include "PartParams.h"
 #include "SoBrepEdgeSet.h"
 #include "SoBrepFaceSet.h"
@@ -460,8 +461,11 @@ struct ShapeInstanceRep {
         }
         for (const auto &key : keys) {
             auto it = _InstGeomTable.find(key);
-            if (it != _InstGeomTable.end() && --it->second.refcount <= 0)
+            if (it != _InstGeomTable.end() && --it->second.refcount <= 0) {
+                unregisterMeshLevelSource(it->second.faceset,
+                                          it->second.lineset);
                 _InstGeomTable.erase(it);
+            }
         }
     }
 };
@@ -684,6 +688,7 @@ ViewProviderPartExt::ViewProviderPartExt()
 
 ViewProviderPartExt::~ViewProviderPartExt()
 {
+    unregisterMeshLevelSource(faceset, lineset);
     pcFaceBind->unref();
     pcLineBind->unref();
     pcPointBind->unref();
@@ -2633,6 +2638,10 @@ bool ViewProviderPartExt::buildInstanced()
                              gcoords, gpcoords, gnorm, gtexcoords,
                              gfaceset, glineset, gnodeset,
                              nt, nn, np, nno, nf, ne, nl);
+            // Level generation for the shared leaf tessellation
+            // (MeshLevelSource.h); released with the geometry entry.
+            registerMeshLevelSource(local, NormalsFromUV, gfaceset,
+                                    glineset);
             // Solid knowledge for the section-cap pass, in local part
             // numbering (the cache reads it per shape node).
             if (local.ShapeType() == TopAbs_SOLID && counts[i].faces > 0) {
@@ -3191,6 +3200,12 @@ void ViewProviderPartExt::updateVisual()
                          faceset, lineset, nodeset,
                          numTriangles, numNodes, numPoints, numNorms,
                          numFaces, numEdges, numLines);
+
+        // The scene server can now re-tessellate this shape at a
+        // coarser deviation when a viewer asks for a declared level of
+        // the meshes these nodes feed (MeshLevelSource.h). Re-runs
+        // replace the previous shape under the same node tags.
+        registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset);
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());
