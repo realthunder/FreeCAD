@@ -22,6 +22,7 @@
 
 #include <emscripten.h>
 #include <emscripten/fetch.h>
+#include <emscripten/heap.h>
 #include <emscripten/html5.h>
 #include <emscripten/websocket.h>
 
@@ -240,9 +241,22 @@ static void markDirty()
     s_dirtyFrames = 8;
 }
 
+/// ?stream — report what each assembly pass could draw and how much of
+/// it is still coarse, and what the budget is holding. Off by default:
+/// this fires on every arrival, and a scene arrives in hundreds of
+/// chunks. Declared here because the frame reports against it too.
+static bool s_streamDebug = false;
+
 /// Reconsider what to fetch when the camera has moved (defined with
 /// the fetch order, called from the frame).
 static void pumpFetchOnMove();
+/// The resident geometry and the budget bounding it, in bytes, and a
+/// heartbeat line reporting both against the heap they live in — all
+/// defined with the resident set (docs/SceneStreaming.md §6, 4b) and
+/// wanted here, where the frame can show and say them.
+static size_t residentBytes();
+static size_t geometryBudget();
+static void reportHeap();
 
 static void interact()
 {
@@ -1432,6 +1446,7 @@ static void updateHud(bool idle)
         "fps:  %s  (frame %6.1f ms  render %6.1f ms)\n"
         "res:  %5d x%5d   dpr %4.2f   effRes %4.2f\n"
         "bld:  %.11s %.8s   prepass %s  aomip %s\n"
+        "mem:  heap %5zu MB   geometry %4zu / %zu MB\n"
         "cam:  yaw %8.2f  pitch %7.2f  dist %9.2f\n"
         "pan:  %8.2f,%8.2f  ctr %7.1f,%7.1f,%7.1f\n"
         "hover: %-30.30s\n"
@@ -1441,6 +1456,12 @@ static void updateHud(bool idle)
         s_width, s_height, double(s_dpr), double(s_snap.effectResolution),
         __DATE__, __TIME__,
         rgba32f ? "fp32" : "fp16", r32f ? "fp32" : "fp16",
+        // The wasm heap the browser has handed this page, which is
+        // what an allocation failure runs out of — and beside it what
+        // the geometry budget thinks it is holding, so the two can be
+        // told apart at a glance on a device with no console.
+        size_t(emscripten_get_heap_size()) >> 20,
+        residentBytes() >> 20, geometryBudget() >> 20,
         s_yaw, s_pitch, s_dist, s_panX, s_panY,
         s_center[0], s_center[1], s_center[2], s_hoverDesc,
         s_camMsg);
@@ -1576,6 +1597,12 @@ static void mainLoop()
         return;
     }
     pumpFetchOnMove();
+    // The heap, on a slow heartbeat. An allocation that fails takes
+    // the page with it and leaves nothing to inspect, so what the heap
+    // was doing in the seconds before has to have been said already —
+    // and on a phone the only way it gets said is ?log beaconing it
+    // somewhere else (shell.html).
+    reportHeap();
 
     float viewMtx[16], projMtx[16];
     buildCamera(viewMtx, projMtx);
@@ -2332,12 +2359,39 @@ static const float kKeepSizeWeight = 0.0f;
 static float s_fetchSizeWeight = kFetchSizeWeight;
 static float s_keepSizeWeight = kKeepSizeWeight;
 
+static size_t residentBytes()
+{
+    return s_residentBytes;
+}
+
+static size_t geometryBudget()
+{
+    return s_geometryBudget;
+}
+
+/// The heap, on a slow heartbeat. An allocation that fails takes the
+/// page with it and leaves nothing to inspect, so whatever the heap
+/// was doing in the seconds before has to have been said already — and
+/// on a device with no console the only way it gets said is ?log
+/// beaconing it somewhere else (shell.html). Beside it the budget, so
+/// that "the viewer is holding too much" and "something else is" are
+/// distinguishable without a debugger.
+static void reportHeap()
+{
+    static double last = 0.0;
+    const double now = emscripten_get_now();
+    if (!s_streamDebug || now - last < 3000.0)
+        return;
+    last = now;
+    std::printf("fcviewer: heap %zu MB, geometry %zu of %zu MB, "
+                "%zu payloads resident, %zu cached\n",
+                size_t(emscripten_get_heap_size()) >> 20,
+                s_residentBytes >> 20, s_geometryBudget >> 20,
+                s_resident.size(), s_blobCache.size());
+}
+
 static Render::SceneSnapshot s_pendingSnap;
 static uint64_t s_pendingVersion = 0;
-/// ?stream — report what each assembly pass could draw and how much of
-/// it is still coarse. Off by default: this fires on every arrival, and
-/// a scene arrives in hundreds of chunks.
-static bool s_streamDebug = false;
 /// How long the view's own chunks may hold the model back without
 /// arriving. The barrier below is what puts the navigation cube on
 /// screen before the geometry, and a barrier with no release is a
