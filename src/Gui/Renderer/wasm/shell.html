@@ -48,6 +48,91 @@
     <div id="statustext">Loading…</div>
   </div>
   <script>
+    // ?log — a console for a device that has none.
+    //
+    // Chrome on Android can only be inspected over USB, which is no
+    // help to someone testing a model over the network, and a page
+    // that has frozen or run out of memory cannot be asked anything
+    // afterwards either. So this does two things, both before the
+    // wasm module loads so that nothing it says is missed:
+    //
+    //  - mirrors every console line into an overlay on the page, so a
+    //    freeze leaves the last lines *on screen* rather than nowhere;
+    //  - beacons each line to the scene server's /log, which appends
+    //    it to the log of the machine serving the scene. sendBeacon
+    //    because it is fire and forget and survives the page dying —
+    //    a viewer must never wait on its own logging, and what caused
+    //    a freeze is whatever it managed to say just before it.
+    //
+    // ?log=quiet keeps the beacon and leaves the screen alone.
+    (function () {
+      var q = new URLSearchParams(window.location.search);
+      if (!q.has('log')) return;
+      var onScreen = q.get('log') !== 'quiet';
+      var scene = q.get('scene') || '';
+      var box = null;
+      if (onScreen) {
+        box = document.createElement('div');
+        box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;' +
+          'max-height:38%;overflow-y:auto;z-index:9;background:rgba(0,0,0,.78);' +
+          'color:#8f8;font:11px/1.35 monospace;padding:4px 6px;' +
+          'white-space:pre-wrap;word-break:break-all;-webkit-user-select:text;' +
+          'user-select:text';
+        var ready = function () { document.body.appendChild(box); };
+        if (document.body) ready();
+        else document.addEventListener('DOMContentLoaded', ready);
+      }
+      // One beacon per line is a request per line; batch on a short
+      // timer instead, and flush on the way out.
+      var pending = [], timer = null;
+      var flush = function () {
+        timer = null;
+        if (!pending.length || !scene) return;
+        var body = pending.join('\n');
+        pending = [];
+        try { navigator.sendBeacon(scene + '/log', body); } catch (e) {}
+      };
+      var emit = function (kind, args) {
+        var line = kind + ' ' + Array.prototype.map.call(args, function (a) {
+          if (typeof a === 'string') return a;
+          try { return JSON.stringify(a); } catch (e) { return String(a); }
+        }).join(' ');
+        // A stack of megabytes of WebGL warnings helps nobody.
+        if (line.length > 600) line = line.slice(0, 600) + '…';
+        if (box) {
+          var atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+          box.appendChild(document.createTextNode(line + '\n'));
+          while (box.childNodes.length > 400) box.removeChild(box.firstChild);
+          if (atEnd) box.scrollTop = box.scrollHeight;
+        }
+        pending.push(line);
+        if (pending.length > 40) flush();
+        else if (timer === null) timer = setTimeout(flush, 700);
+      };
+      ['log', 'warn', 'error'].forEach(function (kind) {
+        var was = console[kind].bind(console);
+        console[kind] = function () {
+          emit(kind === 'log' ? '.' : kind[0].toUpperCase(), arguments);
+          was.apply(console, arguments);
+        };
+      });
+      window.addEventListener('error', function (e) {
+        emit('E', [e.message + ' @' + (e.filename || '?') + ':' + e.lineno,
+                   (e.error && e.error.stack) || '']);
+        flush();
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        emit('E', ['unhandled rejection', String(e.reason)]);
+        flush();
+      });
+      // The page going away is the last chance to say anything, and
+      // for a tab killed under memory pressure it is the only one.
+      window.addEventListener('pagehide', flush);
+      window.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') flush();
+      });
+    })();
+
     var canvasElement = document.getElementById('canvas');
     canvasElement.addEventListener('webglcontextlost', function (e) {
       alert('WebGL context lost — please reload.');

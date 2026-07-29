@@ -606,6 +606,45 @@ public:
             return;
         }
 
+        // POST /log, body = console lines: what a viewer saw, sent
+        // back to the machine serving it.
+        //
+        // A phone has no console. Chrome on Android can only be
+        // inspected over USB, which is no use to someone testing a
+        // model over the network, and a page that has frozen or run
+        // out of memory cannot be asked anything afterwards either. So
+        // the viewer beacons its console here as it goes, and what
+        // arrived before the freeze is on disk whether or not the page
+        // survives.
+        //
+        // Deliberately dumb: append to the server's own log with a
+        // prefix, no storage, no per-client state (invariant 7). The
+        // reply is empty and immediate — a beacon is fire and forget,
+        // and a viewer must never wait on its own logging.
+        if (path == "/log") {
+            for (size_t at = 0; at < reqBody.size();) {
+                size_t nl = reqBody.find('\n', at);
+                if (nl == std::string::npos)
+                    nl = reqBody.size();
+                if (nl > at)
+                    std::fprintf(stderr, "viewer log: %.*s\n",
+                                 int(nl - at), reqBody.data() + at);
+                at = nl + 1;
+            }
+            // Straight to stderr, and flushed: this exists to survive
+            // whatever the viewer is about to do, so it must be on
+            // disk before the next line is read rather than sitting in
+            // a buffer that a crash would take with it.
+            std::fflush(stderr);
+            static const char ok[] =
+                "HTTP/1.1 204 No Content\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Headers: *\r\n"
+                "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            sendAll(fd, ok, sizeof(ok) - 1);
+            return;
+        }
+
         // POST /blobs, body = one content key per line: several
         // out-of-band payloads in a single response (SceneDump.h, v28).
         // Meshes are many and small, so a request per mesh would be

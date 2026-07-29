@@ -3137,8 +3137,16 @@ struct Evictor {
             freed += snap.deferredChunks[victims[take].second].size;
             ++take;
         }
-        if (freed < need)
+        if (freed < need) {
+            if (s_streamDebug)
+                std::printf("fcviewer: no room for a chunk worth %.3g: "
+                            "need %zu B, freed %zu of %zu candidates "
+                            "(best spare %.3g)\n",
+                            incoming, need, freed, victims.size() - next,
+                            next < victims.size() ? victims[next].first
+                                                  : -1.0f);
             return false;
+        }
         for (; next < take; ++next) {
             auto &entry = snap.deferredChunks[victims[next].second];
             const uint32_t size = entry.size;
