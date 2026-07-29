@@ -7,11 +7,13 @@
 // wheel = zoom).
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <memory>
 #include <set>
@@ -265,6 +267,10 @@ static void updateQuality()
     }
     s_renderer->setAOConfig(ao);
 }
+
+static double s_dbgMs = 0.0;
+static int s_dbgN = 0;
+static double s_dbgApplyMs = 0.0;
 
 static const float kFovY = 45.0f;
 
@@ -1340,7 +1346,7 @@ static void selectAt(float px, float py, bool ctrl)
     rebuildSelection();
 }
 
-static void fitCamera();
+static bool fitCamera();
 
 // Browser-measured frame timing for the HUD: the wall-clock period between
 // mainLoop calls (the real displayed frame rate, unlike the backend's own
@@ -1868,7 +1874,13 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
     return EM_TRUE;  // preventDefault: no synthesized mouse events
 }
 
-static void fitCamera()
+/// The boxes of a publish that is staged but not yet merged into the
+/// model; defined with the fetch order those boxes exist for.
+static const std::map<uint64_t, std::array<float, 6>> &pendingBoxes();
+
+/// Frame everything the viewer knows about. False when it knows of
+/// nothing yet and the camera was left alone.
+static bool fitCamera()
 {
     float bmin[3], bmax[3];
     // Prefer the boxes the root manifest named over the geometry that
@@ -1879,9 +1891,25 @@ static void fitCamera()
     // first payload. Falls back to the renderer's bound box for a
     // scene that carries no object manifest at all — a bundled
     // capture, or a publish from before v33.
-    if (s_objects.boundBox(bmin, bmax)
-            || s_renderer->boundBox(bmin[0], bmin[1], bmin[2],
-                                    bmax[0], bmax[1], bmax[2])) {
+    bool have = s_objects.boundBox(bmin, bmax)
+        || (s_renderer && s_renderer->boundBox(bmin[0], bmin[1], bmin[2],
+                                               bmax[0], bmax[1], bmax[2]));
+    // A staged publish has not reached the model yet, and on a cold
+    // load it *is* the model: fitting without it would frame nothing
+    // on the first pass and leave the camera — which the fetch order
+    // is sorted by (§6) — pointing at an arbitrary default while every
+    // object in the scene is being asked for.
+    for (const auto &item : pendingBoxes()) {
+        const float *b = item.second.data();
+        if (b[0] > b[3] || b[1] > b[4] || b[2] > b[5])
+            continue;   // an empty box, written inside out
+        for (int i = 0; i < 3; ++i) {
+            bmin[i] = have ? std::min(bmin[i], b[i]) : b[i];
+            bmax[i] = have ? std::max(bmax[i], b[3 + i]) : b[3 + i];
+        }
+        have = true;
+    }
+    if (have) {
         for (int i = 0; i < 3; ++i)
             s_center[i] = 0.5f * (bmin[i] + bmax[i]);
         float dx = bmax[0] - bmin[0];
@@ -1924,12 +1952,41 @@ static void fitCamera()
         s_dist = bx::max(dNeed * 1.05f, 0.02f * s_diag);   // small margin + floor
         s_panX = s_panY = 0.0f;
     }
+    return have;
+}
+
+/// The automatic camera: frame the model, then let a ?cam= parameter
+/// reproduce an exact viewport over it.
+///
+/// One place, because it is wanted at two moments — when a publish is
+/// staged, so the fetch order is sorted by the camera the page asked
+/// for, and when one is applied. The parameter is consumed by the
+/// first of those that has a model to fit against, and only then: it
+/// keeps fitCamera's s_diag (the near/far derivation), which a fit
+/// that framed nothing has not computed.
+static void autoFitCamera()
+{
+    if (!fitCamera() || !s_haveCamParam)
+        return;
+    s_yaw = s_camParam[0];
+    s_pitch = s_camParam[1];
+    s_dist = s_camParam[2];
+    s_center[0] = s_camParam[3];
+    s_center[1] = s_camParam[4];
+    s_center[2] = s_camParam[5];
+    s_panX = s_camParam[6];
+    s_panY = s_camParam[7];
+    s_haveCamParam = false;   // only the initial view
+    s_userCam = true;         // a reproduced view; don't auto-refit
 }
 
 /// Feed the loaded snapshot to the renderer; a first load also fits
 /// the camera (streamed updates keep the user's).
 static void applySnapshot(bool fit)
 {
+    const double dbgA0 = emscripten_get_now();
+    struct AccA { double t0; ~AccA() { s_dbgApplyMs += emscripten_get_now() - t0; } }
+        accA{dbgA0};
     markDirty();
     // One line per apply — the streamed updates were previously
     // silent, which made "did the page get the republish?" guesswork.
@@ -2003,23 +2060,8 @@ static void applySnapshot(bool fit)
     s_hoverPart = -2;
     s_hoverKind = PickNone;
     s_haveScene = true;
-    if (fit) {
-        fitCamera();   // derives scene center / dist / s_diag (near-far)
-        if (s_haveCamParam) {
-            // Reproduce an exact viewport: keep fitCamera's s_diag but
-            // override the orbit/pan the ?cam= parameter carries.
-            s_yaw = s_camParam[0];
-            s_pitch = s_camParam[1];
-            s_dist = s_camParam[2];
-            s_center[0] = s_camParam[3];
-            s_center[1] = s_camParam[4];
-            s_center[2] = s_camParam[5];
-            s_panX = s_camParam[6];
-            s_panY = s_camParam[7];
-            s_haveCamParam = false;   // only the initial view
-            s_userCam = true;         // a reproduced view; don't auto-refit
-        }
-    }
+    if (fit)
+        autoFitCamera();   // derives scene center / dist / s_diag (near-far)
 }
 
 /// Install a fully resolved snapshot as the scene being rendered.
@@ -2030,7 +2072,10 @@ static void commitSnapshot(Render::SceneSnapshot &&snap, uint64_t version)
     // still the auto fit (the user hasn't driven it), a streamed
     // scene replacing a bundled snapshot reframes too — the old fit
     // may point at entirely different geometry.
-    bool first = !s_haveScene || !s_userCam;
+    // A camera the user drove — or one a ?cam= parameter reproduced,
+    // possibly already at staging time (§6) — is never refitted, even
+    // by the first scene.
+    bool first = !s_userCam;
     s_snap = std::move(snap);
     applySnapshot(first);
     fcviewer_status(nullptr, 0.0, 0.0);
@@ -2114,6 +2159,10 @@ static std::map<std::string, BlobData> s_blobCache;
 /// Keys with a load in flight (IndexedDB or HTTP), so a second
 /// deferred texture naming the same key does not start a second one.
 static std::set<std::string> s_blobInFlight;
+/// Requests, not keys and not bytes: what a viewer's throughput turns
+/// out to depend on is how many of them are outstanding at once (see
+/// kInFlightRequests).
+static size_t s_requestsInFlight = 0;
 /// Keys this snapshot could not obtain. Cleared whenever a new
 /// snapshot is staged: one retry per publish, never a fetch loop.
 static std::set<std::string> s_blobFailed;
@@ -2267,6 +2316,7 @@ static void fetchBlob(const std::string &key)
     attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
     attr.userData = new std::string(key);
     attr.onsuccess = [](emscripten_fetch_t *fetch) {
+        --s_requestsInFlight;
         std::unique_ptr<std::string> key(
             static_cast<std::string *>(fetch->userData));
         auto data = std::make_shared<std::vector<uint8_t>>(
@@ -2275,11 +2325,13 @@ static void fetchBlob(const std::string &key)
         blobResolved(*key, data, false);
     };
     attr.onerror = [](emscripten_fetch_t *fetch) {
+        --s_requestsInFlight;
         std::unique_ptr<std::string> key(
             static_cast<std::string *>(fetch->userData));
         emscripten_fetch_close(fetch);
         blobFailed(*key);
     };
+    ++s_requestsInFlight;
     std::string url = s_sceneUrl + "/blob?key=" + key;
     emscripten_fetch(&attr, url.c_str());
 }
@@ -2364,6 +2416,7 @@ static void flushBatch()
     attr.requestDataSize = req->body.size();
     attr.userData = req;
     attr.onsuccess = [](emscripten_fetch_t *fetch) {
+        --s_requestsInFlight;
         std::unique_ptr<BatchRequest> req(
             static_cast<BatchRequest *>(fetch->userData));
         std::vector<uint8_t> data(fetch->data, fetch->data + fetch->numBytes);
@@ -2371,6 +2424,7 @@ static void flushBatch()
         applyBatch(data.data(), data.size(), req->keys);
     };
     attr.onerror = [](emscripten_fetch_t *fetch) {
+        --s_requestsInFlight;
         std::unique_ptr<BatchRequest> req(
             static_cast<BatchRequest *>(fetch->userData));
         emscripten_fetch_close(fetch);
@@ -2380,6 +2434,7 @@ static void flushBatch()
     // shaders are all many-and-small and share this path.
     std::printf("fcviewer: chunk batch, %zu keys, %zu bytes\n",
                 req->keys.size(), bytes);
+    ++s_requestsInFlight;
     std::string url = s_sceneUrl + "/blobs";
     emscripten_fetch(&attr, url.c_str());
 }
@@ -2542,14 +2597,197 @@ static void commitResolved()
     pruneBlobCache();
 }
 
-/// Fill in what the snapshot being resolved still needs, and show what
-/// that made drawable. The target is the staged publish until it is
+//////////////////////////////////////////////////////////////////////
+// Fetch order (docs/SceneStreaming.md §6, phase 4)
+
+/// The boxes of the objects this publish introduced. The model behind
+/// the feed carries the boxes of everything published earlier, but the
+/// objects of the publish now arriving are not in it yet — they are
+/// merged when the snapshot is first assembled, which is *after* their
+/// chunks have to be asked for. On a cold load that is every object in
+/// the scene, so without this the first and most important ordering
+/// decision would be the one made blind.
+static std::map<uint64_t, std::array<float, 6>> s_pendingBox;
+
+static const std::map<uint64_t, std::array<float, 6>> &pendingBoxes()
+{
+    return s_pendingBox;
+}
+
+static void indexPendingBoxes(const Render::SceneSnapshot &snap)
+{
+    s_pendingBox.clear();
+    for (const auto &up : snap.objectUpdates) {
+        std::array<float, 6> box{};
+        std::memcpy(box.data(), up.entry.bbox, sizeof(box));
+        s_pendingBox[up.entry.objectKey] = box;
+    }
+}
+
+/// How many requests this viewer keeps outstanding at once. A fetch
+/// order is only an order if there is a queue to order: ask for
+/// everything the moment it is named and the sort decides nothing,
+/// because the requests are all issued in the same tick and come back
+/// in whatever order the network answers them.
+///
+/// **Requests, not bytes** — measured, that is what a viewer's
+/// throughput is proportional to. A single browser request delivered
+/// about 170 KB/s here whatever its size, against a server that
+/// answered the same batch over `curl` at 17 MB/s, so a page goes
+/// faster only by having more requests in the air: the unordered
+/// fetch's 20 MB/s was a hundred outstanding requests, not a fast
+/// link. A window counted in bytes therefore throttles a scene of
+/// large chunks and leaves a scene of small ones unbounded, which is
+/// exactly backwards.
+///
+/// The number trades responsiveness against throughput and there is no
+/// value that is free: 8 requests took a 60 MB scene from 5 s to 65 s,
+/// 32 brought it to 17 s, and no window at all is the 5 s. 64 is where
+/// the curve flattens on this harness while still leaving a large
+/// model most of its queue to re-sort — and on a large model that is
+/// the point, because the fetch that ordering exists for is one no
+/// viewer was ever going to finish in five seconds.
+static const size_t kInFlightRequests = 64;
+
+/// The camera as one round of ordering sees it, with the priority of
+/// each object it has already had to work out.
+///
+/// Both halves are memoization and both are needed. The camera frame
+/// costs four trigonometric functions, and a chunk shared by every
+/// object in the scene carries every one of those objects — so scoring
+/// a queue of a few hundred chunks against a few hundred owners apiece
+/// re-derived the same camera millions of times per load. Measured, it
+/// was the whole cost of the fetch: a load that should have been
+/// network-bound spent its time in `sin`.
+struct FetchOrder {
+    CamFrame cam;
+    bx::Vec3 fwd = bx::InitZero;
+    float th = 0.0f;
+    float aspect = 1.0f;
+    std::map<uint64_t, float> memo;
+
+    FetchOrder()
+        : cam(camFrame())
+    {
+        fwd = bx::normalize(bx::sub(cam.at, cam.eye));
+        th = std::tan(0.5f * kFovY * bx::kPi / 180.0f);
+        aspect = s_height > 0 ? float(s_width) / float(s_height) : 1.0f;
+    }
+
+    /// Fetch priority of one object: larger is wanted sooner.
+    ///
+    /// Projected size, which is distance and extent in one number, and
+    /// is what "fetch what matters" means on a screen: a near wall and
+    /// a far building can be equally worth having. Off-screen is a
+    /// penalty rather than an exclusion — the object is still fetched,
+    /// just behind everything visible, so a viewer that never moves
+    /// still ends up holding the whole scene, and one that turns
+    /// around finds the work already started.
+    float owner(uint64_t key)
+    {
+        auto memoIt = memo.find(key);
+        if (memoIt != memo.end())
+            return memoIt->second;
+        float score = 0.0f;
+        const float *bbox = nullptr;
+        auto it = s_objects.objects.find(key);
+        if (it != s_objects.objects.end())
+            bbox = it->second.entry.bbox;
+        else {
+            auto pit = s_pendingBox.find(key);
+            if (pit != s_pendingBox.end())
+                bbox = pit->second.data();
+        }
+        if (bbox)
+            score = project(bbox);
+        memo.emplace(key, score);
+        return score;
+    }
+
+    /// The priority of a chunk: **the best of the objects that need
+    /// it**, never the first of them. One material can back a whole
+    /// scene and one mesh every instance of a part, and such a chunk
+    /// is named by whichever manifest happened to be read first —
+    /// which may be the smallest object in the far distance. Fetched
+    /// at that object's priority it holds up every object that shares
+    /// it, and since an object is only drawn once its whole appearance
+    /// is resident (SceneDump.cpp), one starved material is a scene
+    /// that never leaves its boxes.
+    float chunk(const Render::SceneSnapshot::DeferredChunk &c)
+    {
+        float best;
+        if (c.owners.empty()) {
+            // The root's own sections and the overlay feeds, which no
+            // object claims: they are what names the rest, and the
+            // navigation cube is wanted before any of the model.
+            best = std::numeric_limits<float>::max();
+        }
+        else {
+            best = 0.0f;
+            for (uint64_t key : c.owners)
+                best = std::max(best, owner(key));
+        }
+        // Per byte, because the question a fetch order answers is not
+        // "what is most worth having" but "what is most worth
+        // *spending the next byte on*" — and the two differ by a
+        // factor of a thousand here. A material is a few hundred bytes
+        // and lifts every object that names it off the grey box it is
+        // drawn as; the mesh that finishes one of those objects is a
+        // hundred kilobytes. Rank by size alone and the appearance of
+        // the whole model queues behind the geometry of its first few
+        // parts, which is what a ladder exists not to do (§6).
+        //
+        // It also keeps the rule the deferred list is built on: what a
+        // consumer does with a chunk follows from its size and never
+        // from what is inside it (SceneDump.h). Nothing here knows a
+        // material from a mesh — it does not need to, because the
+        // appearance layer *is* the small one.
+        return best / float(std::max<uint32_t>(c.size, 1));
+    }
+
+private:
+    float project(const float *bbox) const
+    {
+        const bx::Vec3 center(0.5f * (bbox[0] + bbox[3]),
+                              0.5f * (bbox[1] + bbox[4]),
+                              0.5f * (bbox[2] + bbox[5]));
+        const float radius = 0.5f * bx::length(bx::Vec3(bbox[3] - bbox[0],
+                                                        bbox[4] - bbox[1],
+                                                        bbox[5] - bbox[2]));
+        const bx::Vec3 rel = bx::sub(center, cam.eye);
+        const float along = bx::dot(rel, fwd);
+        // Clamped at the object's own radius: something at or behind
+        // the eye is not a hundred times more urgent than something in
+        // front of it, it is off-screen, which the penalty below says.
+        const float dist = std::max(along, radius + 1e-4f);
+        float score = radius / dist;
+        const float halfV = th * std::max(along, 0.0f);
+        // CamFrame::right is the negation of the camera's right axis
+        // (screenRay), which does not matter to a symmetric test.
+        const bool onScreen = along + radius > 0.0f
+            && std::fabs(bx::dot(rel, cam.right)) <= halfV * aspect + radius
+            && std::fabs(bx::dot(rel, cam.up)) <= halfV + radius;
+        return onScreen ? score : score * 1e-3f;
+    }
+};
+
+/// Fill in what the snapshot being resolved still needs, ask for what
+/// it is missing in the order the camera wants it, and show what that
+/// made drawable. The target is the staged publish until it is
 /// committed and the live scene afterwards — a scene keeps arriving
 /// after it is first drawn (docs/SceneStreaming.md §6).
 static void resolvePending()
 {
     if (s_blobStoreReset)
         return;
+    const double dbgT0 = emscripten_get_now();
+    struct Acc { double t0; ~Acc() {
+        s_dbgMs += emscripten_get_now() - t0;
+        if (s_streamDebug && (++s_dbgN % 25) == 0)
+            std::printf("fcviewer: DBG %d resolve+commit passes, %.0f ms "
+                        "total, %.0f ms of it in apply\n",
+                        s_dbgN, s_dbgMs, s_dbgApplyMs);
+    } } acc{dbgT0};
     Render::SceneSnapshot *target = s_pendingValid ? &s_pendingSnap
         : (s_liveOutstanding ? &s_snap : nullptr);
     if (!target)
@@ -2613,12 +2851,67 @@ static void resolvePending()
     }
     else {
         total += target->deferredChunks.size();
-        for (auto &entry : target->deferredChunks) {
+        // What is outstanding, in the order the camera wants it. The
+        // sort is over the chunks not yet asked for, so it costs
+        // nothing once the scene is mostly in hand — the common case
+        // being a delta with a handful of chunks.
+        std::vector<std::pair<float, size_t>> want;
+        FetchOrder order;
+        for (size_t i = 0; i < target->deferredChunks.size(); ++i) {
+            const auto &entry = target->deferredChunks[i];
             if (!entry.fill)
                 continue;
             ++missing;
+            if (s_blobInFlight.count(entry.key))
+                continue;
+            want.emplace_back(order.chunk(entry), i);
+        }
+        // Ties keep publish order, which is the order the objects were
+        // named in: a scene the camera has no opinion about (nothing
+        // fitted yet, or everything equally distant) streams exactly as
+        // it did before this.
+        std::stable_sort(want.begin(), want.end(),
+                         [](const std::pair<float, size_t> &a,
+                            const std::pair<float, size_t> &b) {
+                             return a.first > b.first;
+                         });
+        if (s_streamDebug) {
+            std::printf("fcviewer: fetch: %zu outstanding of %zu, %zu "
+                        "askable, %zu requests in flight\n",
+                        missing, total, want.size(), s_requestsInFlight);
+        }
+        for (const auto &item : want) {
+            // Past the window, stop asking. Every resolution pumps this
+            // function again, so the rest of the queue is issued as the
+            // window drains, re-sorted against wherever the camera is
+            // by then.
+            //
+            // Only ever between batches, though — never mid-batch.
+            // Stopping as soon as the byte count is reached cuts the
+            // batch being filled short, and a stream of quarter-full
+            // requests is slower in two ways at once: more round trips
+            // for the same bytes, and more arrivals, each of which
+            // re-runs the whole assembly pass (§6). That cost is what
+            // made a first, narrow window three and a half times
+            // slower than no ordering at all; batches kept whole, it
+            // is the same number of requests as before, just asked for
+            // in a different order.
+            if (s_batchQueue.empty()
+                    && s_requestsInFlight >= kInFlightRequests)
+                break;
+            const auto &entry = target->deferredChunks[item.second];
             requestBlob(entry.key, entry.size);
         }
+        // Whatever is left half-packed goes now. queueBatch would send
+        // it on the next tick, which is right when more keys may still
+        // join it — but this round has decided what it wants, and a
+        // tick is not free: a browser that considers the page
+        // backgrounded clamps the timer to a second, and with a window
+        // in front of the queue that second is paid once per batch
+        // rather than once per load. Measured on headless Chromium,
+        // that alone was the difference between a load finishing in
+        // four seconds and in sixty.
+        flushBatch();
     }
     if (target == &s_snap) {
         s_liveOutstanding = missing != 0;
@@ -2706,6 +2999,17 @@ static void applyScenePayload(const char *data, size_t size)
         s_pendingSnap = std::move(snap);
         s_pendingVersion = version;
         s_pendingValid = true;
+        // Before anything of this publish is asked for: what it names
+        // is sorted by where its objects are, and it is the only thing
+        // that knows where the new ones are (§6).
+        indexPendingBoxes(s_pendingSnap);
+        // And fit to them now, not at the first commit: the order the
+        // publish is fetched in is decided before any of it has been
+        // drawn, so the camera has to be pointing at the model by
+        // then. Only while it is still the automatic one — a user who
+        // has moved it has said where they are looking.
+        if (!s_userCam)
+            autoFitCamera();
         s_blobFailed.clear();
         resolvePending();
     }
