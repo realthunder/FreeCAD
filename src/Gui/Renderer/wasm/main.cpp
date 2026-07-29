@@ -2264,17 +2264,28 @@ typedef std::function<bool(Render::SceneSnapshot &, const void *, size_t)>
     FillFn;
 static std::map<std::string, FillFn> s_refill;
 
-/// What the camera has said so far: bumped whenever a move makes the
-/// fetch order reconsider itself (pumpFetchOnMove) or a new publish
-/// arrives. A payload given back was given back *under this camera*,
-/// and asking for it again before anything has changed would be
-/// reversing a decision on no new information — which is exactly the
-/// shape a thrash takes. Measured on the 200-object scene under an
-/// 8 MB budget: 35,186 releases in forty seconds without this, and
-/// the fetch spent twenty-two of those seconds re-deciding.
-static uint64_t s_fetchGeneration = 0;
-/// The generation each released payload was given back in.
-static std::map<std::string, uint64_t> s_releasedAt;
+/// What each released payload was worth, per byte, at the moment it
+/// was given back — and the price of asking for it again.
+///
+/// A release is a decision, and reversing it needs new information,
+/// not merely a new *round*. Without that, the payload just given back
+/// is worth more than something else still resident, takes its place,
+/// and the two swap forever: 35,186 releases in forty seconds on the
+/// 200-object scene under an 8 MB budget, with the fetch spending
+/// twenty-two of them re-deciding.
+///
+/// The first cut said the new information was "the camera moved at
+/// all", which is far too weak: a continuous zoom is a new camera
+/// several times a second, so every released payload became askable
+/// again on each one and the ping-pong came back as a slow churn —
+/// hundreds of kilobytes re-fetched, re-parsed and re-freed per
+/// second, which on a large canvas ran the heap out of memory
+/// entirely. What actually justifies re-asking is that the payload is
+/// now worth materially *more than it was when it was let go*, which
+/// is the same margin that let something displace it in the first
+/// place. Zooming into a distant object raises its score and brings
+/// it back; drifting the camera by a pixel does not.
+static std::map<std::string, float> s_releasedScore;
 /// Whether the viewer has already said it is at its budget, so the
 /// line is printed on the transition and not on every round.
 static bool s_atBudgetReported = false;
@@ -2427,6 +2438,17 @@ static const size_t kBlobCacheBudget = 192u * 1024 * 1024;
 
 static void pruneBlobCache()
 {
+    // A payload that has been parsed is held twice: as the bytes it
+    // arrived as, and as the geometry they were read into. The second
+    // is what the scene draws and what the budget bounds (§6 phase
+    // 4b); the first is finished with the moment the fill returns, and
+    // keeping it means a viewer that has been told to hold 8 MB of
+    // geometry is really holding that plus every byte it ever
+    // downloaded. Dropping it costs a local read if the payload is
+    // ever wanted again — which is exactly what eviction already
+    // assumes, since it drops the payload too.
+    for (const auto &res : s_resident)
+        s_blobCache.erase(res.first);
     size_t total = 0;
     for (const auto &entry : s_blobCache)
         total += entry.second ? entry.second->size() : 0;
@@ -2963,7 +2985,8 @@ private:
 /// their bounds — the same choice it made while the mesh was still on
 /// its way. That is the whole point of the ladder running backwards:
 /// there is no eviction state, only a rung.
-static void releaseChunk(Render::SceneSnapshot::DeferredChunk &entry)
+static void releaseChunk(Render::SceneSnapshot::DeferredChunk &entry,
+                         float score)
 {
     auto refill = s_refill.find(entry.key);
     if (!entry.release || refill == s_refill.end())
@@ -2980,7 +3003,7 @@ static void releaseChunk(Render::SceneSnapshot::DeferredChunk &entry)
         s_resident.erase(res);
     }
     s_refill.erase(refill);
-    s_releasedAt[entry.key] = s_fetchGeneration;
+    s_releasedScore[entry.key] = score;
     // The feed still names the mesh that was just emptied, so the
     // scene on screen is a rung out of date until it is rebuilt.
     s_liveUnapplied = true;
@@ -3054,7 +3077,7 @@ struct Evictor {
         for (; next < take; ++next) {
             auto &entry = snap.deferredChunks[victims[next].second];
             const uint32_t size = entry.size;
-            releaseChunk(entry);
+            releaseChunk(entry, victims[next].first);
             if (s_streamDebug)
                 std::printf("fcviewer: released %u B of geometry, %zu MB "
                             "resident\n", size, s_residentBytes >> 20);
@@ -3152,6 +3175,10 @@ static void resolvePending()
                         && s_resident.emplace(entry.key, entry.size).second) {
                     s_residentBytes += entry.size;
                     s_refill[entry.key] = fill;
+                    // Resident again: what it was worth when it was
+                    // last let go is history, and the next release
+                    // will record what it is worth then.
+                    s_releasedScore.erase(entry.key);
                 }
             }
             else {
@@ -3210,12 +3237,14 @@ static void resolvePending()
             viewPending = viewPending || entry.owners.empty();
             if (s_blobInFlight.count(entry.key))
                 continue;
-            // Given back under this very camera: asking for it again
-            // would reverse that decision on no new information, and
-            // the payload it displaced would then displace it right
-            // back. A camera move is what makes it askable again.
-            auto rel = s_releasedAt.find(entry.key);
-            if (rel != s_releasedAt.end() && rel->second == s_fetchGeneration)
+            // Given back once already: ask again only once it is worth
+            // materially more than it was worth then — the same margin
+            // that let something displace it. Otherwise the payload it
+            // made room for is displaced right back, and the pair swap
+            // for as long as the camera keeps moving.
+            auto rel = s_releasedScore.find(entry.key);
+            if (rel != s_releasedScore.end()
+                    && order.chunk(entry) <= rel->second * kEvictMargin)
                 continue;
             // ?nofetchorder scores nothing: every chunk ties, the sort
             // below leaves them in the order the publish named them,
@@ -3455,10 +3484,11 @@ static void pumpFetchOnMove()
         return;
     lastPump = now;
     std::copy(cam, cam + 8, lastCam);
-    // The camera has said something new, so every payload given back
-    // under the old one is worth asking about again.
-    ++s_fetchGeneration;
-    s_releasedAt.clear();
+    // Note what is *not* here: the released set is not cleared. A move
+    // re-sorts the queue, and a payload given back re-enters it only
+    // when the new camera makes it worth materially more than it was
+    // (see s_releasedScore) — otherwise every frame of an orbit would
+    // re-ask for everything the frame before let go.
     resolvePending();
 }
 
