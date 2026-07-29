@@ -2303,6 +2303,35 @@ static bool s_atBudgetReported = false;
 /// the exact heap cost.
 static size_t s_geometryBudget = 320u * 1024 * 1024;
 
+/// How strongly a payload's size counts against it, for the two
+/// decisions that rank chunks (FetchOrder::value). 0 ignores size and
+/// ranks purely by what the camera sees; 1 ranks strictly per byte.
+///
+/// **Fetching leans on size, keeping does not.** What to download next
+/// is a question about a rate — the appearance layer costs a
+/// thousandth of the geometry and lifts every object a whole rung, so
+/// discounting by size is what puts a model in its real colours in a
+/// fraction of a second. What to keep is a question about a stock, and
+/// there size is beside the point: the near, detailed object is the
+/// one worth its memory even though it is the expensive one.
+///
+/// The fetch default is a *square root* rather than the full per-byte
+/// discount it started as. Per byte, a payload a thousand times
+/// smaller was a thousand times preferred, which is far more than
+/// "colour first" needs and left a large near mesh queued behind every
+/// trivial distant one — visible as boxes in the foreground of a
+/// half-loaded model. At 0.5 the same payload is thirty times
+/// preferred: the appearance layer still arrives first by a wide
+/// margin, and geometry is ordered much more by where it is.
+///
+/// Both are overridable per load — `?fetchweight=` and `?keepweight=`
+/// — because the right values depend on the model and the link, and
+/// tuning them should not need a rebuild.
+static const float kFetchSizeWeight = 0.5f;
+static const float kKeepSizeWeight = 0.0f;
+static float s_fetchSizeWeight = kFetchSizeWeight;
+static float s_keepSizeWeight = kKeepSizeWeight;
+
 static Render::SceneSnapshot s_pendingSnap;
 static uint64_t s_pendingVersion = 0;
 /// ?stream — report what each assembly pass could draw and how much of
@@ -2908,72 +2937,81 @@ struct FetchOrder {
         return score;
     }
 
-    /// The priority of a chunk: **the best of the objects that need
-    /// it**, never the first of them. One material can back a whole
-    /// scene and one mesh every instance of a part, and such a chunk
-    /// is named by whichever manifest happened to be read first —
-    /// which may be the smallest object in the far distance. Fetched
-    /// at that object's priority it holds up every object that shares
-    /// it, and since an object is only drawn once its whole appearance
-    /// is resident (SceneDump.cpp), one starved material is a scene
-    /// that never leaves its boxes.
-    float chunk(const Render::SceneSnapshot::DeferredChunk &c)
+    /// What a chunk is worth, discounted by what it costs: **the best
+    /// of the objects that need it**, never the first of them, over
+    /// its payload size raised to \a sizeWeight.
+    ///
+    /// The best owner, because content addressing means one material
+    /// can back a whole scene and one mesh every instance of a part,
+    /// and such a chunk is named by whichever manifest happened to be
+    /// read first — which may be the smallest object in the far
+    /// distance. Taken at that object's priority it holds up every
+    /// object that shares it, and since an object is only drawn once
+    /// its whole appearance is resident (SceneDump.cpp), one starved
+    /// material is a scene that never leaves its boxes.
+    ///
+    /// \a sizeWeight is how strongly a payload's size counts against
+    /// it, and it is a knob because the honest answer differs by the
+    /// question being asked (see kFetchSizeWeight / kKeepSizeWeight):
+    ///
+    /// - **1 — strictly per byte.** What is most worth spending the
+    ///   next byte on. A material is a few hundred bytes and lifts
+    ///   every object that names it off the grey box it is drawn as;
+    ///   the mesh that finishes one of those objects is a hundred
+    ///   kilobytes, so per byte the appearance of a whole model comes
+    ///   before the geometry of its first few parts.
+    /// - **0 — size ignored.** What is most worth *having*: the
+    ///   nearest, largest thing on screen, whatever it weighs.
+    /// - **between — a discount, not a veto.** At 0.5 a payload a
+    ///   thousand times smaller is thirty times preferred rather than
+    ///   a thousand: enough that the appearance layer still arrives
+    ///   first, not so much that a detailed near object waits behind
+    ///   every trivial far one.
+    ///
+    /// Note it keeps the rule the deferred list is built on: what a
+    /// consumer does with a chunk follows from its size and never from
+    /// what is inside it (SceneDump.h). Nothing here knows a material
+    /// from a mesh — it does not need to, because the appearance layer
+    /// *is* the small one.
+    float value(const Render::SceneSnapshot::DeferredChunk &c,
+                float sizeWeight)
     {
-        float best;
         if (c.owners.empty()) {
             // The root's own sections and the overlay feeds, which no
             // object claims: they are what names the rest, and the
             // navigation cube is wanted before any of the model.
-            best = std::numeric_limits<float>::max();
-        }
-        else {
-            best = 0.0f;
-            for (uint64_t key : c.owners)
-                best = std::max(best, owner(key));
-        }
-        // Per byte, because the question a fetch order answers is not
-        // "what is most worth having" but "what is most worth
-        // *spending the next byte on*" — and the two differ by a
-        // factor of a thousand here. A material is a few hundred bytes
-        // and lifts every object that names it off the grey box it is
-        // drawn as; the mesh that finishes one of those objects is a
-        // hundred kilobytes. Rank by size alone and the appearance of
-        // the whole model queues behind the geometry of its first few
-        // parts, which is what a ladder exists not to do (§6).
-        //
-        // It also keeps the rule the deferred list is built on: what a
-        // consumer does with a chunk follows from its size and never
-        // from what is inside it (SceneDump.h). Nothing here knows a
-        // material from a mesh — it does not need to, because the
-        // appearance layer *is* the small one.
-        return best / float(std::max<uint32_t>(c.size, 1));
-    }
-
-    /// What a payload is worth *keeping*, which is not what it is
-    /// worth fetching next: the projected size of the best object that
-    /// wants it, and no division by its bytes.
-    ///
-    /// The two questions differ because bandwidth is spent and memory
-    /// is held. The next byte should go where it lifts the most per
-    /// byte — that is what colours a whole model in a fraction of a
-    /// second (see chunk() above). But a budget decides what to *hold*,
-    /// and per byte there it buys many cheap distant meshes in
-    /// preference to the one large near one the user is looking at.
-    /// Measured on the 200-object scene under an 8 MB budget: 494
-    /// resident chunks averaging 16 KB against 146 refused averaging
-    /// 146 KB — the refused set was precisely the detailed geometry,
-    /// wherever it was, so the foreground kept boxes while the
-    /// distance was fully modelled. Ranking what to keep by projected
-    /// size alone puts the near, heavy meshes first and lets the
-    /// distance be coarse, which is what a ladder is for.
-    float residency(const Render::SceneSnapshot::DeferredChunk &c)
-    {
-        if (c.owners.empty())
             return std::numeric_limits<float>::max();
+        }
         float best = 0.0f;
         for (uint64_t key : c.owners)
             best = std::max(best, owner(key));
-        return best;
+        const float bytes = float(std::max<uint32_t>(c.size, 1));
+        if (sizeWeight <= 0.0f)
+            return best;
+        return best / (sizeWeight >= 1.0f ? bytes
+                                          : std::pow(bytes, sizeWeight));
+    }
+
+    /// What to ask for next: value per byte spent, because bandwidth
+    /// is a rate and the question is what to spend the next byte on.
+    float chunk(const Render::SceneSnapshot::DeferredChunk &c)
+    {
+        return value(c, s_fetchSizeWeight);
+    }
+
+    /// What to keep, which is a different question: memory is a stock,
+    /// and what belongs in it is what the camera is looking at.
+    ///
+    /// Measured on the 200-object scene under an 8 MB budget, keeping
+    /// per byte gave 494 resident chunks averaging 16 KB against 146
+    /// refused averaging 146 KB — the refused set was precisely the
+    /// detailed geometry, wherever it was, so the foreground kept
+    /// boxes while the distance was fully modelled. Ignoring size
+    /// instead: 234 resident averaging 35 KB against 406 refused
+    /// averaging 52 KB, and distance decides membership.
+    float residency(const Render::SceneSnapshot::DeferredChunk &c)
+    {
+        return value(c, s_keepSizeWeight);
     }
 
 private:
@@ -4173,6 +4211,28 @@ int main()
             s_geometryBudget = size_t(mb) * 1024 * 1024;
             std::printf("fcviewer: geometry budget %d MB\n", mb);
         }
+    }
+    // ?fetchweight= / ?keepweight= — how much payload size discounts a
+    // chunk's value when deciding what to ask for next and what to
+    // hold (see kFetchSizeWeight). 0 = ignore size, rank by what the
+    // camera sees; 1 = strictly per byte. Read as a percentage so the
+    // integer-only EM_ASM_INT path can carry a fraction.
+    {
+        auto weight = [](const char *name, float fallback) {
+            const int pct = EM_ASM_INT({
+                const v = new URLSearchParams(window.location.search)
+                    .get(UTF8ToString($0));
+                return v === null ? -1
+                    : Math.round(Math.max(0, Math.min(2, parseFloat(v))) * 100);
+            }, name);
+            if (pct < 0)
+                return fallback;
+            const float w = float(pct) / 100.0f;
+            std::printf("fcviewer: %s %.2f\n", name, w);
+            return w;
+        };
+        s_fetchSizeWeight = weight("fetchweight", kFetchSizeWeight);
+        s_keepSizeWeight = weight("keepweight", kKeepSizeWeight);
     }
     s_noProgressive = EM_ASM_INT({
         return new URLSearchParams(window.location.search)
