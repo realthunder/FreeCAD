@@ -2949,6 +2949,33 @@ struct FetchOrder {
         return best / float(std::max<uint32_t>(c.size, 1));
     }
 
+    /// What a payload is worth *keeping*, which is not what it is
+    /// worth fetching next: the projected size of the best object that
+    /// wants it, and no division by its bytes.
+    ///
+    /// The two questions differ because bandwidth is spent and memory
+    /// is held. The next byte should go where it lifts the most per
+    /// byte — that is what colours a whole model in a fraction of a
+    /// second (see chunk() above). But a budget decides what to *hold*,
+    /// and per byte there it buys many cheap distant meshes in
+    /// preference to the one large near one the user is looking at.
+    /// Measured on the 200-object scene under an 8 MB budget: 494
+    /// resident chunks averaging 16 KB against 146 refused averaging
+    /// 146 KB — the refused set was precisely the detailed geometry,
+    /// wherever it was, so the foreground kept boxes while the
+    /// distance was fully modelled. Ranking what to keep by projected
+    /// size alone puts the near, heavy meshes first and lets the
+    /// distance be coarse, which is what a ladder is for.
+    float residency(const Render::SceneSnapshot::DeferredChunk &c)
+    {
+        if (c.owners.empty())
+            return std::numeric_limits<float>::max();
+        float best = 0.0f;
+        for (uint64_t key : c.owners)
+            best = std::max(best, owner(key));
+        return best;
+    }
+
 private:
     float project(const float *bbox) const
     {
@@ -3042,7 +3069,7 @@ struct Evictor {
             const auto &entry = snap.deferredChunks[i];
             if (entry.fill || !entry.release || !s_resident.count(entry.key))
                 continue;
-            victims.emplace_back(order.chunk(entry), i);
+            victims.emplace_back(order.residency(entry), i);
         }
         std::sort(victims.begin(), victims.end(),
                   [](const std::pair<float, size_t> &a,
@@ -3085,6 +3112,51 @@ struct Evictor {
         return true;
     }
 };
+
+/// What the budget is actually holding, and what it turned away — the
+/// two score distributions side by side, because that is the only way
+/// to read *why* a particular mesh is a box (§6 phase 4b).
+///
+/// The scores are what the fetch order and the eviction both rank by:
+/// the projected size of the best object that wants this payload,
+/// divided by the payload's bytes. Printing the quartiles of each set
+/// says whether the boundary between them is sharp — a clean split
+/// means the camera decided it — or whether the two overlap, which
+/// means the resident set is frozen: with a margin on displacement,
+/// payloads of comparable value cannot take each other's place, so
+/// whichever arrived first stays.
+static void reportBudget(Render::SceneSnapshot &snap)
+{
+    FetchOrder order;
+    std::vector<float> in, out;
+    size_t inBytes = 0, outBytes = 0;
+    for (const auto &entry : snap.deferredChunks) {
+        if (!entry.release)
+            continue;
+        if (!entry.fill && s_resident.count(entry.key)) {
+            in.push_back(order.residency(entry));
+            inBytes += entry.size;
+        }
+        else if (entry.fill) {
+            out.push_back(order.residency(entry));
+            outBytes += entry.size;
+        }
+    }
+    auto q = [](std::vector<float> &v, const char *what, size_t bytes) {
+        if (v.empty()) {
+            std::printf("fcviewer:   %s: none\n", what);
+            return;
+        }
+        std::sort(v.begin(), v.end());
+        std::printf("fcviewer:   %s: %zu chunks, %zu KB, score "
+                    "min %.3g / q1 %.3g / med %.3g / q3 %.3g / max %.3g\n",
+                    what, v.size(), bytes >> 10, v.front(),
+                    v[v.size() / 4], v[v.size() / 2], v[(3 * v.size()) / 4],
+                    v.back());
+    };
+    q(in, "resident", inBytes);
+    q(out, "wanted  ", outBytes);
+}
 
 /// Fill in what the snapshot being resolved still needs, ask for what
 /// it is missing in the order the camera wants it, and show what that
@@ -3244,7 +3316,7 @@ static void resolvePending()
             // for as long as the camera keeps moving.
             auto rel = s_releasedScore.find(entry.key);
             if (rel != s_releasedScore.end()
-                    && order.chunk(entry) <= rel->second * kEvictMargin)
+                    && order.residency(entry) <= rel->second * kEvictMargin)
                 continue;
             // ?nofetchorder scores nothing: every chunk ties, the sort
             // below leaves them in the order the publish named them,
@@ -3349,8 +3421,12 @@ static void resolvePending()
             // still fit where this one did not.
             if (entry.release) {
                 const size_t held = s_residentBytes + pledged + entry.size;
+                // Admission is a residency question, so it is asked in
+                // residency's terms — `item.first` is the fetch order's
+                // per-byte score and would compare a candidate against
+                // victims measured on a different scale entirely.
                 if (held > s_geometryBudget
-                        && !evictor.makeRoom(item.first,
+                        && !evictor.makeRoom(order.residency(entry),
                                              held - s_geometryBudget)) {
                     ++refused;
                     continue;
@@ -3391,6 +3467,7 @@ static void resolvePending()
                     "payloads left unasked; the rest of the model is "
                     "drawn coarse\n",
                     s_geometryBudget >> 20, refused);
+        reportBudget(*target);
     }
     else if (!atBudget) {
         s_atBudgetReported = false;
