@@ -191,6 +191,22 @@ struct SceneSnapshot {
         /// group that asked for it, so the textures it names have no
         /// other way to say who wanted them.
         std::vector<uint64_t> owners;
+        /// The ladder of levels this payload exists at, coarsest first
+        /// and ending with the exact content (v36, mesh entries under
+        /// the manifest layout; docs/SceneStreaming.md §7). `error` is
+        /// relative to the mesh's own diagonal; an **empty key is a
+        /// level declared possible but not generated** — it cannot be
+        /// fetched, only asked to be built (RungProvider::generate),
+        /// because a chunk with no bytes has no content address. The
+        /// entry's own key and size always name the finest *built*
+        /// level; choosing a coarser one is level selection, phase 5
+        /// slice 4, and until then the list is carried, not consulted.
+        struct Level {
+            float error = 0.0f;
+            std::string key;
+            uint32_t size = 0;
+        };
+        std::vector<Level> levels;
         /// Give this payload back — the ladder's downward step
         /// (docs/SceneStreaming.md §6, phase 4b). Set only where a
         /// lower rung exists: a mesh, whose draws fall back to the box

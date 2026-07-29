@@ -1151,3 +1151,73 @@ TEST(SceneDump, geometryGivenBackDescendsToTheBoxAndClimbsAgain)
     EXPECT_EQ(loaded.scene.size(), whole);
     expectScene(loaded);
 }
+
+/// Phase 5 slice 2 (docs/SceneStreaming.md §7): a deferred mesh
+/// reference is a ladder of levels. A big mesh declares coarser levels
+/// it cannot yet serve — error stated, key absent — and always closes
+/// the list with the exact mesh, keyed, at error 0. A small mesh
+/// declares nothing. Either way the entry's own key is the finest
+/// built level, so nothing downstream changes until selection lands.
+TEST(SceneDump, aBigMeshDeclaresItsLadderOfLevels)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    // ~96 KB of positions: over the declaration threshold. The small
+    // one is far under it.
+    auto big = makeMesh(1, 8000);
+    auto small = makeMesh(2, 8);
+    snap.scene.push_back(makeDraw(0x1111, big, 0xff0000ff));
+    snap.scene.push_back(makeDraw(0x2222, small, 0x00ff00ff));
+    attachSinks(snap, store);
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+
+    // The mesh entries live inside the group chunks, so they only
+    // exist as deferred entries once those have been parsed — and the
+    // declared-but-unbuilt levels must not stop any of it: the scene
+    // resolves and assembles from built payloads alone.
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+    ASSERT_EQ(loaded.scene.size(), 2u);
+    for (const auto& d : loaded.scene) {
+        ASSERT_TRUE(d.mesh);
+        EXPECT_GT(d.mesh->numVertices, 0);
+    }
+
+    size_t bigSeen = 0, smallSeen = 0;
+    for (const auto& chunk : loaded.deferredChunks) {
+        if (!store.meshKeys.count(chunk.key)) {
+            continue;
+        }
+        ASSERT_FALSE(chunk.levels.empty())
+            << "every mesh entry carries its ladder";
+        const auto& exact = chunk.levels.back();
+        EXPECT_EQ(exact.error, 0.0f);
+        EXPECT_EQ(exact.key, chunk.key)
+            << "the entry fetches the finest built level";
+        EXPECT_EQ(exact.size, chunk.size);
+        if (chunk.size >= 64 * 1024) {
+            ++bigSeen;
+            ASSERT_EQ(chunk.levels.size(), 3u);
+            // Coarsest first, strictly refining, and declared only:
+            // stated error, no key, because nothing has generated
+            // their bytes and a chunk with no bytes has no address.
+            EXPECT_NEAR(chunk.levels[0].error, 1.0f / 8.0f, 1e-6f);
+            EXPECT_NEAR(chunk.levels[1].error, 1.0f / 16.0f, 1e-6f);
+            EXPECT_GT(chunk.levels[0].error, chunk.levels[1].error);
+            EXPECT_TRUE(chunk.levels[0].key.empty());
+            EXPECT_TRUE(chunk.levels[1].key.empty());
+        }
+        else {
+            ++smallSeen;
+            EXPECT_EQ(chunk.levels.size(), 1u)
+                << "a small mesh declares no ladder";
+        }
+    }
+    EXPECT_EQ(bigSeen, 1u);
+    EXPECT_EQ(smallSeen, 1u);
+}

@@ -95,14 +95,24 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     version. Versions restart when the backend does, so a consumer
 //     reconnecting across a restart would otherwise offer a version
 //     the new run will happily believe.
-const uint32_t kVersion = 35;
+// 36: a deferred mesh reference is a ladder of levels, coarsest first
+//     and ending with the exact mesh (docs/SceneStreaming.md §7). A
+//     level states its error relative to the mesh diagonal and,
+//     optionally, its key — **absent means declared possible but not
+//     generated**, a request for work rather than for bytes. Meshes
+//     over a size threshold declare coarser levels ahead of any
+//     generator existing; the consumer records the ladder and still
+//     fetches the finest built level, which today is always the exact
+//     mesh, so behaviour is unchanged until slices 3 and 4 land.
+const uint32_t kVersion = 36;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
 /// part of what the content key hashes: bump it whenever a chunk's own
 /// layout changes and every key changes with it, which retires the
 /// entries cached by older builds instead of letting them be misread.
-const uint32_t kChunkVersion = 2;
+/// (3: the mesh references inside a group chunk became level ladders.)
+const uint32_t kChunkVersion = 3;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -284,6 +294,16 @@ void writeMeshChunk(Writer &w, const MeshData &m)
     w.parts(m.pointParts);  // v11
 }
 
+/// Meshes whose payload reaches this size declare coarser levels
+/// (§7): below it the exact mesh costs about what a level would, and
+/// a ladder of variants of a small payload is bookkeeping for nothing.
+const uint32_t kLodDeclareSize = 64u * 1024;
+/// How many coarser levels a big mesh declares ahead of any generator
+/// existing. The declared errors follow the generator's construction
+/// (MeshSimplify::levelCellSize): level L clusters on cells of
+/// diagonal/(8<<L), so its error relative to the diagonal is 1/(8<<L).
+const uint32_t kLodDeclareLevels = 2;
+
 /// \a blobs unset (a bundled snapshot) writes the identity and the
 /// chunk inline as before; set (the streaming transport) writes the
 /// content key alone and hands the chunk over to be served out of
@@ -312,11 +332,73 @@ void writeMesh(Writer &w, const MeshData &m,
         blobs.store(m.cacheId, key, std::move(chunk));
     }
     w.u8(1);
+    // v36: the ladder of levels, coarsest first, ending with the exact
+    // mesh. A declared level has no key yet — nothing has generated
+    // its bytes, so it has no content address and cannot be fetched,
+    // only asked for (§7). The exact mesh always closes the list, at
+    // error 0, keyed.
+    const uint32_t declared = size >= kLodDeclareSize ? kLodDeclareLevels : 0;
+    w.u8(uint8_t(declared + 1));
+    for (uint32_t lvl = 0; lvl < declared; ++lvl) {
+        w.f(1.0f / float(8u << lvl));
+        w.u8(0);
+    }
+    w.f(0.0f);
+    w.u8(1);
     w.str(key);
     // The payload size the key stands for: the viewer routes a small
     // chunk into a batch and a large one into its own request, and it
     // cannot know which without being told.
     w.u32(size);
+}
+
+/// The reader half of writeMesh's deferred branch: the level ladder
+/// into \a entry's `levels`, and the finest *built* level into the
+/// entry's own key and size — which is what the ordinary fetch path
+/// acts on, so a consumer that never looks at the ladder behaves
+/// exactly as it did before v36.
+bool readMeshLevels(Reader &r, uint32_t version,
+                    SceneSnapshot::DeferredChunk &entry)
+{
+    if (version < 36) {
+        r.str(entry.key, 128);
+        entry.size = r.u32();
+        if (r.ok) {
+            SceneSnapshot::DeferredChunk::Level level;
+            level.key = entry.key;
+            level.size = entry.size;
+            entry.levels.push_back(std::move(level));
+        }
+        return r.ok;
+    }
+    const uint32_t count = r.u8();
+    if (!r.ok || count == 0) {
+        r.ok = false;
+        return false;
+    }
+    entry.key.clear();
+    entry.size = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        SceneSnapshot::DeferredChunk::Level level;
+        level.error = r.f();
+        if (r.u8() != 0) {
+            r.str(level.key, 128);
+            level.size = r.u32();
+            // Coarsest first, so the last keyed level is the finest
+            // built one.
+            entry.key = level.key;
+            entry.size = level.size;
+        }
+        if (!r.ok)
+            return false;
+        entry.levels.push_back(std::move(level));
+    }
+    // A ladder with nothing built is a mesh that cannot be obtained at
+    // all; the producer always keys the exact mesh, so this is a
+    // damaged payload, not a valid state.
+    if (entry.key.empty())
+        r.ok = false;
+    return r.ok;
 }
 
 /// Loader-side mesh: the arrays live in the owned vectors, the base
@@ -411,9 +493,7 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
     auto mesh = std::make_shared<OwnedMeshData>();
     if (version >= 28 && r.u8() != 0) {
         SceneSnapshot::DeferredChunk entry;
-        r.str(entry.key, 128);
-        entry.size = r.u32();
-        if (!r.ok)
+        if (!readMeshLevels(r, version, entry))
             return nullptr;
         mesh->cacheId = meshIdFromKey(entry.key);
         // Parse with the version of the snapshot that named the chunk,
@@ -1583,11 +1663,15 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
         readMeshChunk(r, mesh.get(), st->version);
         return r.ok ? mesh : nullptr;
     }
-    std::string key;
-    r.str(key, 128);
-    uint32_t size = r.u32();
-    if (!r.ok)
+    SceneSnapshot::DeferredChunk c;
+    if (!readMeshLevels(r, st->version, c))
         return nullptr;
+    // The mesh's identity is its finest built level — the ladder's
+    // other rungs are alternatives for the same slot, not meshes of
+    // their own — so the dedup across groups keys on that. A copy,
+    // because c is moved into the deferred list below and the key is
+    // still needed to attribute the owner afterwards.
+    const std::string key = c.key;
     auto it = st->meshes.find(key);
     if (it != st->meshes.end()) {
         // Already slotted by another group: nothing to defer, but this
@@ -1598,9 +1682,6 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
     auto mesh = std::make_shared<OwnedMeshData>();
     mesh->cacheId = meshIdFromKey(key);
     st->meshes.emplace(key, mesh);
-    SceneSnapshot::DeferredChunk c;
-    c.key = key;
-    c.size = size;
     uint32_t version = st->version;
     c.fill = [mesh, version](SceneSnapshot &, const void *data, size_t size) {
         uint64_t id = mesh->cacheId;

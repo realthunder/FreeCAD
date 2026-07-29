@@ -528,6 +528,21 @@ Three things follow, and 4c has the consumer-side shape of them already
 
 1. **A level entry's key is optional.** Present means fetchable now; absent
    means declared possible but unbuilt. `lods: [ { error, key? } ]`.
+
+   > **As built (5b, v36).** The ladder rides the mesh *reference*: a
+   > deferred mesh entry is a list of levels, coarsest first, each
+   > `{error, key?}`, closed by the exact mesh at error 0, always keyed.
+   > `error` is relative to the mesh's own diagonal, matching the
+   > generator's construction (level L clusters on cells of
+   > diagonal/(8<<L), so its error is 1/(8<<L)) — no per-mesh bbox needed,
+   > since the draws already carry world bounds and a relative error
+   > converts at selection time. Meshes over 64 KB declare two coarser
+   > levels ahead of any generator existing; the consumer records the
+   > ladder on the deferred entry (`DeferredChunk::levels`) and still
+   > fetches the finest built level, so behaviour is unchanged until
+   > selection (5d) consults it. The chunk layout version rose with it
+   > (`kChunkVersion` 3), so every key changed and no cached chunk can be
+   > misread across the format change.
 2. **A level is named by what would produce it** — its source geometry's
    content identity plus the level index — not by what it will contain. That
    token is stable across publishes and identical for every viewer wanting it.
@@ -647,7 +662,10 @@ to remove.
 | 4a | reverse index, frustum-ordered bounded fetch (**done**) | the visible part of a model loads first |
 | 4b | ladder-descending eviction (**done**) | a model larger than memory |
 | 4c | policy to shared code, adaptive budget, acquisition seam (**done**) | one ladder for both tiers |
-| 5 | LOD rungs per mesh, generated on demand (§7) | large models *fast* |
+| 5a | the decimation generator, element maps preserved (**done**) | a middle rung exists to build |
+| 5b | the level ladder in the format: declared levels, optional keys (**done**, v36) | a level can exist before it is generated |
+| 5c | generation on demand: `LevelRequest` → producer work queue (§7) | the middle rungs get bytes |
+| 5d | level selection, and eviction descending level by level | large models *fast* |
 
 Phase 1 is the v26 pattern extended to two more section types and needs no
 protocol restructure; 1a alone is 64% of the payload.
