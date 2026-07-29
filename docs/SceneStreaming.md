@@ -462,6 +462,14 @@ building it (§11 phase 4a):
   a chunk's priority is the best of the objects that reference it. Taking the
   first — whichever manifest happened to name it — ranks a chunk the scene is
   waiting on by the least important object that wears it.
+- **The view's own chunks are a barrier, not a priority.** The overlays — the
+  navigation cube, the axis cross — belong to no object, so nothing about the
+  camera ranks them and they simply come first. Sorting them first is not
+  enough: that decides only the order requests are *issued* in, and a window
+  that issues sixty-four at once has them all sharing the link, so half a
+  megabyte of cube arrives behind a share of tens of megabytes of model. So
+  nothing the model owns is asked for while anything the view owns is
+  outstanding.
 - **Priority is per byte, not per chunk.** What a fetch order allocates is the
   next byte, and the appearance layer costs a thousandth of what the geometry
   does while lifting a whole rung. Ranked by projected size alone, the colour
@@ -971,6 +979,19 @@ to the obvious formula, both of which were bugs first (§6):
   model in its own colours at 0.2 s instead of >20 s, and it needs no notion
   of what a chunk contains — the appearance layer simply *is* the small one,
   which is the same size-decides-policy rule the deferred list already runs on.
+
+**Overlays are fetched to completion before any of the model.** They belong
+to no object, so the ordering rule has nothing to say about them beyond
+putting them first — and measured, first was not soon enough: twenty seconds
+into a throttled load the model was a third refined and there was still no
+navigation cube and no axis cross on screen. Ranking decides issue order, and
+sixty-four simultaneous requests share the link whatever order they went out
+in. Making the view's own chunks a barrier — no owned chunk asked for while an
+unowned one is outstanding — puts the cube, the buttons and the cross up at
+ten seconds instead, with the model behind them at its colour rung. It costs
+nothing on a fast link (unchanged at 0.25 s to full colour, 7.2 s to fully
+refined) because what it defers is a fixed few hundred kilobytes, and the
+model's bottom rung is a box per object that the root alone already draws.
 
 **The index is recorded, not reconstructed.** A group manifest is the only
 chunk named with an object beside it; everything below one — its meshes, its

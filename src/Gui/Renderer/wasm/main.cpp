@@ -2875,11 +2875,19 @@ static void resolvePending()
         // being a delta with a handful of chunks.
         std::vector<std::pair<float, size_t>> want;
         FetchOrder order;
+        /// Whether the view's own chunks are all in hand yet — counting
+        /// the ones already asked for, since the point is to wait for
+        /// them rather than merely to ask first.
+        bool viewPending = false;
         for (size_t i = 0; i < target->deferredChunks.size(); ++i) {
             const auto &entry = target->deferredChunks[i];
             if (!entry.fill)
                 continue;
             ++missing;
+            // Anything no object claims is the view's own — the overlays
+            // and the root's sections — and none of the model is asked
+            // for while one is outstanding (see the issue loop).
+            viewPending = viewPending || entry.owners.empty();
             if (s_blobInFlight.count(entry.key))
                 continue;
             // ?nofetchorder scores nothing: every chunk ties, the sort
@@ -2922,6 +2930,25 @@ static void resolvePending()
                     && s_requestsInFlight >= kInFlightRequests)
                 break;
             const auto &entry = target->deferredChunks[item.second];
+            // **The view's own chunks are a barrier, not just a
+            // priority.** Sorting put them first, which decides the
+            // order requests are *issued* in — and that is not what
+            // decides when they arrive, because the window issues
+            // sixty-four at once and they all share the link. A
+            // navigation cube is half a megabyte against a model's
+            // tens, so ranking it first still delivered it after a
+            // third of the geometry: measured, no cube and no axis
+            // cross twenty seconds into a throttled load.
+            //
+            // So nothing owned is asked for until nothing unowned is
+            // outstanding. The queue is sorted, so the first owned
+            // entry is where the model begins and the rest of the
+            // round can be abandoned. The model is not held back by
+            // it: its bottom rung is a box per object, which the root
+            // alone draws (§6), and the view's own chunks are a fixed
+            // few hundred kilobytes rather than a share of the scene.
+            if (!s_noFetchOrder && viewPending && !entry.owners.empty())
+                break;
             requestBlob(entry.key, entry.size);
         }
         // Whatever is left half-packed goes now. queueBatch would send
