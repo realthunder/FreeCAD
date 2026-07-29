@@ -436,9 +436,14 @@ ladder is not what pays for it.
 > **As built.** The reverse index exists as of phase 4a, but as the fetch
 > order's input rather than as an assembly optimization: the assembly pass
 > still rebuilds the whole feed from the model on every arrival, and
-> measured against `?noprogressive`, **that rebuild is what a streamed load
-> spends its time on** — 7.5 s of a load whose bytes arrive in 1.4 s. It is
-> the next thing worth building here. See §11 phase 4a.
+> measured against `?noprogressive`, the per-arrival work in aggregate is
+> what separates a 7.5 s load from its 1.4 s of bytes. Direct
+> instrumentation has since split that aggregate: **the assembly pass
+> itself is ~150 ms of a 5.4 s load** — the bulk of the progressive
+> overhead sits elsewhere in the per-arrival path, around the apply and
+> re-upload. Incremental assembly therefore remains worth building but is
+> sequenced *after* phase 5 (LOD), not ahead of it (decided 2026-07-29).
+> See §11 phase 4a.
 
 Two consequences for the consumer, and they are the only behavioural changes:
 
@@ -998,11 +1003,14 @@ objects over loopback:
 Two things follow. The window is wide for coalescing rather than for
 throughput, so it can be narrowed — sharpening the order — exactly as far as
 the per-arrival cost of showing a scene is brought down. And **that cost,
-not the fetch, is what a streamed load spends its time on**: it is the
-O(scene)-per-chunk assembly of §6, and it is the first thing to measure
-before anything else here is tuned. An earlier reading that put it at 116 ms
-was taken over twenty passes on a throttled link and did not include the
-apply; it was wrong.
+not the fetch, is what a streamed load spends its time on**: the
+per-arrival path of §6. An earlier reading that put it at 116 ms was taken
+over twenty passes on a throttled link and did not include the apply; it
+was wrong. Measured directly afterwards, the O(scene) assembly pass itself
+is ~150 ms of a 5.4 s load — the remainder of the per-arrival cost is the
+apply and re-upload around it, which is what "incremental" has to reach to
+matter, and why that work is sequenced behind phase 5 rather than ahead of
+it.
 
 The concurrency ordering gives up is real but small: 1.41 s against 1.44 s
 unordered. That is the trade, and it is the right way round for what the
