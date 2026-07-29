@@ -299,6 +299,13 @@ void writeMeshChunk(Writer &w, const MeshData &m)
 /// (§7): below it the exact mesh costs about what a level would, and
 /// a ladder of variants of a small payload is bookkeeping for nothing.
 const uint32_t kLodDeclareSize = 64u * 1024;
+/// Line meshes declare much earlier: an edge chunk is a fraction of
+/// its face sibling's size, but when the faces of an object step onto
+/// a coarse rung its exact edges float off the coarse surface at the
+/// silhouettes — the matching edge rung has to exist for the pair to
+/// descend together. Only a chunk of a few segments, where the float
+/// is subpixel anyway, is exempt.
+const uint32_t kLodDeclareSizeLines = 1024;
 /// How many coarser levels a big mesh declares ahead of any generator
 /// existing. The declared errors follow the generator's construction
 /// (MeshSimplify::levelCellSize): level L clusters on cells of
@@ -338,7 +345,10 @@ void writeMesh(Writer &w, const MeshData &m,
     // its bytes, so it has no content address and cannot be fetched,
     // only asked for (§7). The exact mesh always closes the list, at
     // error 0, keyed.
-    const uint32_t declared = size >= kLodDeclareSize ? kLodDeclareLevels : 0;
+    const bool lineMesh = m.numTriangleIndices <= 0 && m.numLineIndices > 0;
+    const uint32_t declareAt = lineMesh ? kLodDeclareSizeLines
+                                        : kLodDeclareSize;
+    const uint32_t declared = size >= declareAt ? kLodDeclareLevels : 0;
     w.u8(uint8_t(declared + 1));
     for (uint32_t lvl = 0; lvl < declared; ++lvl) {
         w.f(1.0f / float(8u << lvl));
@@ -417,16 +427,7 @@ bool readMeshLevels(Reader &r, uint32_t version,
 
 /// Loader-side mesh: the arrays live in the owned vectors, the base
 /// MeshData pointers point into them. Held by DrawCall::mesh.
-struct OwnedMeshData : MeshData {
-    std::vector<float> posStore;
-    std::vector<float> normStore;
-    std::vector<uint8_t> colorStore;
-    std::vector<float> uvStore;
-    std::vector<int32_t> triStore;
-    std::vector<int32_t> lineStore;
-    std::vector<int32_t> pointStore;
-    std::vector<int32_t> noSeamStore;
-};
+using OwnedMeshData = Render::ParsedMeshChunk;
 
 /// Parse the mesh content proper (writeMeshChunk's output) into \a mesh,
 /// from either the stream itself or a separately fetched chunk.
@@ -546,6 +547,21 @@ bool Render::generateMeshLevel(const void *chunk, size_t size, uint32_t level,
     return writeChunk(out, [&levelMesh](Writer &w) {
         writeMeshChunk(w, levelMesh);
     });
+}
+
+bool Render::parseMeshChunk(const void *chunk, size_t size,
+                            ParsedMeshChunk &out)
+{
+    out = ParsedMeshChunk();
+    bool ok = readChunk(chunk, size, [&out](Reader &r) {
+        readMeshChunk(r, &out, kVersion);
+    });
+    return ok && out.numVertices > 0;
+}
+
+bool Render::encodeMeshChunk(const MeshData &m, std::vector<uint8_t> &out)
+{
+    return writeChunk(out, [&m](Writer &w) { writeMeshChunk(w, m); });
 }
 
 namespace {

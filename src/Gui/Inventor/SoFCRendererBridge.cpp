@@ -137,6 +137,13 @@ translateCache(SoFCVertexCache * cache)
     mesh->holder = cache;
     mesh->arrayRefs = cache->copyArrayRefs();
     mesh->cacheId = cache->getCacheId();
+    if (SoNode *node = cache->getNode()) {
+        // Proto node preferred: color variants of one geometry carry
+        // the same source tag as their base, so a shape-backed level
+        // generator registered on the base claims them all.
+        SoNode *proto = SoFCVertexCache::getProtoNode(node);
+        mesh->sourceTag = proto ? proto : node;
+    }
 
     mesh->numVertices = cache->getNumVertices();
     mesh->positions = reinterpret_cast<const float *>(cache->getVertexArray());

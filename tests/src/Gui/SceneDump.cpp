@@ -15,6 +15,9 @@
 #include <thread>
 #include <vector>
 
+#include <cstring>
+
+#include <Gui/Renderer/MeshSource.h>
 #include <Gui/Renderer/SceneDump.h>
 #include <Gui/Renderer/SceneServer.h>
 
@@ -1421,4 +1424,188 @@ TEST(SceneDump, theServerWorkQueueBuildsARequestedLevel)
 
     // A level nobody asked for stays unbuilt.
     EXPECT_TRUE(server.builtLevel(sourceKey, 1).empty());
+}
+
+/// A line-only mesh — edge chunks are what this stands for. The soup
+/// polyline is big enough to pass the line declaration threshold and
+/// far under the triangle one.
+std::shared_ptr<Render::MeshData> makeLineMesh(int id, int verts)
+{
+    struct Owned: Render::MeshData
+    {
+        std::vector<float> pos;
+        std::vector<int32_t> lines;
+    };
+    auto m = std::make_shared<Owned>();
+    m->cacheId = uint64_t(id);
+    m->numVertices = verts;
+    m->pos.resize(size_t(verts) * 3);
+    for (size_t i = 0; i < m->pos.size(); ++i) {
+        m->pos[i] = float(i) * 0.25f + float(id);
+    }
+    for (int i = 0; i + 1 < verts; ++i) {
+        m->lines.push_back(i);
+        m->lines.push_back(i + 1);
+    }
+    m->positions = m->pos.data();
+    m->lineIndices = m->lines.data();
+    m->numLineIndices = int(m->lines.size());
+    return m;
+}
+
+/// The new public chunk API (parseMeshChunk/encodeMeshChunk): what a
+/// shape-backed generator writes must read back as the same mesh —
+/// tables, flags and all — because the source chunk it validates
+/// against went through exactly this pair.
+TEST(SceneDump, aMeshChunkRoundTripsThroughThePublicParse)
+{
+    auto grid = makeGridMesh(1, 9);
+    grid->triangleParts = {{0, 120}, {120, int(grid->numTriangleIndices) - 120}};
+    grid->nonFlatParts = {{120, int(grid->numTriangleIndices) - 120}};
+    grid->hasSolid = 1;
+    grid->solidParts = {{0, 120}};
+    grid->hasTransparency = true;
+
+    std::vector<uint8_t> chunk;
+    ASSERT_TRUE(Render::encodeMeshChunk(*grid, chunk));
+
+    Render::ParsedMeshChunk parsed;
+    ASSERT_TRUE(Render::parseMeshChunk(chunk.data(), chunk.size(), parsed));
+    EXPECT_EQ(parsed.numVertices, grid->numVertices);
+    ASSERT_EQ(parsed.numTriangleIndices, grid->numTriangleIndices);
+    EXPECT_EQ(0, std::memcmp(parsed.positions, grid->positions,
+                             size_t(grid->numVertices) * 3 * sizeof(float)));
+    ASSERT_TRUE(parsed.normals);
+    EXPECT_FALSE(parsed.colors);
+    EXPECT_FALSE(parsed.texCoords);
+    EXPECT_EQ(parsed.triangleParts, grid->triangleParts);
+    EXPECT_EQ(parsed.nonFlatParts, grid->nonFlatParts);
+    EXPECT_EQ(parsed.hasSolid, grid->hasSolid);
+    EXPECT_EQ(parsed.solidParts, grid->solidParts);
+    EXPECT_TRUE(parsed.hasTransparency);
+    EXPECT_FALSE(parsed.hasOpaqueParts);
+
+    // And the encoding is the publish encoding: the same bytes, the
+    // same content key.
+    std::vector<uint8_t> again;
+    ASSERT_TRUE(Render::encodeMeshChunk(parsed, again));
+    EXPECT_EQ(chunk, again);
+}
+
+/// A line mesh declares its ladder at a fraction of the triangle
+/// threshold: when an object's faces step onto a coarse rung, its
+/// edges must have a rung to step onto too, or the exact polylines
+/// float off the coarse silhouette — the artifact the shape-backed
+/// generator exists to fix.
+TEST(SceneDump, aLineMeshDeclaresItsLadderEarlier)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    auto edges = makeLineMesh(1, 800);   // ~16 KB: over 1 KB, far under 64
+    auto few = makeLineMesh(2, 20);      // a few hundred bytes: under both
+    auto d1 = makeDraw(0x1111, edges, 0xff0000ff);
+    d1.material.type = 1;
+    auto d2 = makeDraw(0x2222, few, 0x00ff00ff);
+    d2.material.type = 1;
+    snap.scene.push_back(d1);
+    snap.scene.push_back(d2);
+    attachSinks(snap, store);
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    size_t declared = 0, bare = 0;
+    for (const auto& chunk : loaded.deferredChunks) {
+        if (!store.meshKeys.count(chunk.key)) {
+            continue;
+        }
+        ASSERT_FALSE(chunk.levels.empty());
+        if (chunk.levels.size() > 1) {
+            ++declared;
+            EXPECT_GT(chunk.size, 1024u);
+            EXPECT_LT(chunk.size, 64u * 1024)
+                << "declared by the line rule, not the triangle one";
+        }
+        else {
+            ++bare;
+            EXPECT_LT(chunk.size, 1024u);
+        }
+    }
+    EXPECT_EQ(declared, 1u);
+    EXPECT_EQ(bare, 1u);
+}
+
+/// The shape-backed source seam (MeshSource.h): a registered generator
+/// claims its chunk's level jobs ahead of decimation, and removing it
+/// hands the next job back.
+TEST(SceneDump, aShapeBackedSourceBuildsTheLevelAheadOfDecimation)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    auto big = makeGridMesh(1, 41);
+    snap.scene.push_back(makeDraw(0x1111, big, 0xff0000ff));
+    attachSinks(snap, store);
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    ASSERT_EQ(store.meshKeys.size(), 1u);
+    const std::string sourceKey = *store.meshKeys.begin();
+
+    auto& server = Render::SceneStreamServer::instance();
+    server.publishBlob(sourceKey,
+                       std::vector<uint8_t>(store.blobs.at(sourceKey)));
+
+    // The "re-tessellation": any distinguishable, well-formed chunk.
+    auto marker = makeMesh(7, 5);
+    std::vector<uint8_t> markerChunk;
+    ASSERT_TRUE(Render::encodeMeshChunk(*marker, markerChunk));
+    const std::string markerKey =
+        Render::sha1Hex(markerChunk.data(), markerChunk.size());
+
+    int tagStorage = 0;
+    const void* tag = &tagStorage;
+    auto& reg = Render::MeshSourceRegistry::instance();
+    uint32_t seenLevel = 99;
+    size_t seenSize = 0;
+    reg.add(tag, [&](uint32_t level, const void* src, size_t n,
+                     std::vector<uint8_t>& out) {
+        (void)src;
+        seenLevel = level;
+        seenSize = n;
+        out = markerChunk;
+        return true;
+    });
+    // Association before registration is dropped; after, it sticks.
+    const void* unregistered = &markerChunk;
+    reg.associate(sourceKey, unregistered);
+    reg.associate(sourceKey, tag);
+
+    size_t base = server.levelsBuilt();
+    ASSERT_TRUE(server.requestLevel(sourceKey, 0));
+    for (int i = 0; i < 500 && server.levelsBuilt() < base + 1; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_EQ(server.levelsBuilt(), base + 1) << "the worker never finished";
+    uint32_t size = 0;
+    EXPECT_EQ(server.builtLevel(sourceKey, 0, &size), markerKey)
+        << "the registered source built the level, not decimation";
+    EXPECT_EQ(seenLevel, 0u);
+    EXPECT_EQ(seenSize, store.blobs.at(sourceKey).size())
+        << "the generator saw the exact chunk's bytes";
+
+    // Removal: the next level of the same source decimates instead.
+    reg.remove(tag);
+    base = server.levelsBuilt();
+    ASSERT_TRUE(server.requestLevel(sourceKey, 1));
+    for (int i = 0; i < 500 && server.levelsBuilt() < base + 1; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_EQ(server.levelsBuilt(), base + 1);
+    const std::string decimated = server.builtLevel(sourceKey, 1, &size);
+    ASSERT_FALSE(decimated.empty());
+    EXPECT_NE(decimated, markerKey);
 }

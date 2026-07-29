@@ -23,6 +23,7 @@
 #include "FCConfig.h"
 #include "BGFXRenderer.h"
 #include "SceneDump.h"
+#include "MeshSource.h"
 #ifndef FC_RENDERER_STANDALONE
 #include "SceneServer.h"
 #endif
@@ -7365,6 +7366,20 @@ public:
                     // finishes mid-serialization moves the counter
                     // past this mark and triggers the next round.
                     publishedLevelsBuilt = levelsBuilt;
+                    // Tell the level-source registry which published
+                    // key each shape-backed mesh landed under, so the
+                    // server's level worker can re-tessellate instead
+                    // of decimate (MeshSource.h). Idempotent, and a
+                    // tag nobody registered is skipped inside.
+                    auto &sources = Render::MeshSourceRegistry::instance();
+                    for (const auto &d : snap.scene) {
+                        if (!d.mesh || !d.mesh->sourceTag)
+                            continue;
+                        auto it = meshKeys.find(d.mesh->cacheId);
+                        if (it != meshKeys.end())
+                            sources.associate(it->second.first,
+                                              d.mesh->sourceTag);
+                    }
                 }
             }
         }

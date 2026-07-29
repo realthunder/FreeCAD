@@ -52,6 +52,13 @@ class RenderLib;
 struct MeshData {
     uint64_t cacheId = 0;
     std::shared_ptr<const void> owner;
+    /// Opaque identity of the geometry that fed this mesh (the Gui
+    /// bridge stores the shape node, proto node preferred so color
+    /// variants share it). Never dereferenced by the renderer — it is
+    /// the tag a shape-backed level generator was registered under
+    /// (MeshSource.h), carried so the publisher can associate the
+    /// mesh's content key with its source.
+    const void *sourceTag = nullptr;
 
     int numVertices = 0;
     const float *positions = nullptr;   ///< xyz per vertex, never null

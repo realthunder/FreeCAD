@@ -21,6 +21,7 @@
 
 #include "SceneServer.h"
 #include "SceneDump.h"
+#include "MeshSource.h"
 
 #include <algorithm>
 #include <cctype>
@@ -381,21 +382,33 @@ public:
                 // thread shares this mutex.
                 source = it->second;
             }
+            // A shape-backed source re-tessellates at the level's
+            // deviation — edge polylines land on the coarse surface by
+            // construction (MeshSource.h). Decimation is the fallback
+            // for meshes no shape claims (mesh objects, bundled
+            // captures) or whose generator refused.
             std::vector<uint8_t> chunk;
-            if (!generateMeshLevel(source.data(), source.size(), job.level,
-                                   chunk)) {
-                // Nothing to simplify at this level, or not a mesh
-                // chunk at all. The level stays declared-unbuilt, and
-                // the ask stays recorded so it is not retried forever.
-                continue;
+            const char *how = "retess";
+            if (!MeshSourceRegistry::instance().generate(
+                        job.source, job.level, source.data(), source.size(),
+                        chunk)) {
+                how = "decimate";
+                if (!generateMeshLevel(source.data(), source.size(),
+                                       job.level, chunk)) {
+                    // Nothing to simplify at this level, or not a mesh
+                    // chunk at all. The level stays declared-unbuilt,
+                    // and the ask stays recorded so it is not retried
+                    // forever.
+                    continue;
+                }
             }
             std::string key = sha1Hex(chunk.data(), chunk.size());
             uint32_t size = uint32_t(chunk.size());
             std::fprintf(stderr,
                          "scene server: built level %u of %s -> %s "
-                         "(%u of %zu bytes)\n",
+                         "(%u of %zu bytes, %s)\n",
                          job.level, job.source.c_str(), key.c_str(), size,
-                         source.size());
+                         source.size(), how);
             {
                 std::lock_guard<std::mutex> guard(mutex);
                 // Straight into the pending generation: the publish

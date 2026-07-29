@@ -491,6 +491,34 @@ RendererExport std::string sha1Hex(const void *data, size_t size);
 RendererExport bool generateMeshLevel(const void *chunk, size_t size,
                                       uint32_t level,
                                       std::vector<uint8_t> &out);
+
+/// A mesh chunk parsed back into a MeshData that owns its arrays — the
+/// producer-side counterpart of the consumer's deferred-chunk parse.
+/// What a shape-backed level generator (MeshSource.h) reads the source
+/// chunk through: the part tables and flags of the exact mesh are the
+/// contract its output has to honor index for index.
+struct ParsedMeshChunk : MeshData {
+    std::vector<float> posStore;
+    std::vector<float> normStore;
+    std::vector<uint8_t> colorStore;
+    std::vector<float> uvStore;
+    std::vector<int32_t> triStore;
+    std::vector<int32_t> lineStore;
+    std::vector<int32_t> pointStore;
+    std::vector<int32_t> noSeamStore;
+};
+
+/// Parse a serialized mesh chunk (this build's layout — chunks come
+/// from this build's own store, no compatibility question). False when
+/// the bytes are not a mesh chunk.
+RendererExport bool parseMeshChunk(const void *chunk, size_t size,
+                                   ParsedMeshChunk &out);
+
+/// Serialize \a m as an ordinary mesh chunk — the exact encoding
+/// writeMesh uses, so a generated level is indistinguishable from a
+/// published mesh. The cacheId is deliberately not part of the bytes.
+RendererExport bool encodeMeshChunk(const MeshData &m,
+                                    std::vector<uint8_t> &out);
 /// Peek the format version of a serialized snapshot (the payload
 /// without the 8-byte stream-version prefix); 0 when it is not a
 /// snapshot. A viewer receiving a payload newer than its own
