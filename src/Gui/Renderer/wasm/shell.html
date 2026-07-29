@@ -64,13 +64,35 @@
       document.getElementById('statustext').textContent = text;
       var bar = document.getElementById('progress');
       var fill = document.getElementById('progressfill');
+      // The fill grows from the left, so an animated *shrink* reads as the
+      // bar emptying from the right — which is what a viewer sees as
+      // "filling backwards". Shrinking only ever happens where one phase
+      // hands over to the next (the scene fetch ends full, the
+      // indeterminate slide is a fixed 25% wide, the byte-counted phase
+      // starts low), and a handover is not progress running in reverse.
+      // So growth animates and everything else is instant.
+      var grow = function (pct) {
+        var prev = parseFloat(fill.style.width) || 0;
+        fill.style.transition = (pct + 0.01 < prev) ? 'none' : '';
+        fill.style.width = pct + '%';
+      };
       if (total > 0) {
         bar.style.display = 'block';
-        bar.classList.remove('indet');
-        fill.style.width = Math.min(100, 100 * loaded / total) + '%';
+        if (bar.classList.contains('indet')) {
+          // Leaving the slide: it owns width and margin, so drop to the
+          // new value in one step rather than sweeping down to it.
+          bar.classList.remove('indet');
+          fill.style.transition = 'none';
+          fill.style.width = '0';
+        }
+        grow(Math.min(100, 100 * loaded / total));
       } else if (total === 0) {
         bar.style.display = 'block';
-        bar.classList.add('indet');
+        if (!bar.classList.contains('indet')) {
+          fill.style.transition = 'none';
+          fill.style.width = '0';
+          bar.classList.add('indet');
+        }
       } else {
         bar.style.display = 'none';
       }
