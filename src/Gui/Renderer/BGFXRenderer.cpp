@@ -1285,6 +1285,9 @@ struct GpuTexture
 {
     bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
     uint64_t lastUsed = 0;
+    /// This handle is the stand-in for a texture whose pixels had not
+    /// arrived, and must be replaced by the real one when they do.
+    bool placeholder = false;
 
     void destroy()
     {
@@ -1302,6 +1305,21 @@ struct GpuTexture
         // renderer on the OpenGL backend (other backends may see the
         // image v-flipped, a known deviation until needed).
         const size_t n = size_t(tex.width) * tex.height;
+        // A streamed texture arrives as its header first and its pixels
+        // later (Renderer.h), so a draw can reach here naming an image
+        // that has a size but no bytes — and the expansion below would
+        // read every one of them off the end of an empty vector. White
+        // is the answer the deferral already promises: a modulating
+        // draw renders as if untextured until the payload lands.
+        if (tex.pixels.size() < n * size_t(tex.numComponents)) {
+            const uint8_t white[4] = {255, 255, 255, 255};
+            handle = bgfx::createTexture2D(
+                1, 1, false, 1, bgfx::TextureFormat::RGBA8, 0,
+                bgfx::copy(white, sizeof(white)));
+            placeholder = true;
+            return;
+        }
+        placeholder = false;
         std::vector<std::vector<uint8_t>> levels;
         levels.emplace_back(n * 4);
         {
@@ -3480,6 +3498,11 @@ public:
     {
         GpuTexture &tex = textures[data.textureId];
         tex.lastUsed = frame;
+        // A placeholder is re-examined every frame: the pixels it
+        // stands in for are in flight, and the id they will arrive
+        // under is this one, so nothing else would ever replace it.
+        if (tex.placeholder)
+            tex.destroy();
         if (!bgfx::isValid(tex.handle))
             tex.upload(data);
         return &tex;
