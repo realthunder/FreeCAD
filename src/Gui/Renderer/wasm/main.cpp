@@ -33,6 +33,7 @@
 
 #include "BGFXRenderer.h"
 #include "SceneDump.h"
+#include "SceneLadder.h"
 #include "StandalonePlatform.h"
 
 static std::unique_ptr<Render::Renderer> s_renderer;
@@ -2359,7 +2360,7 @@ static bool s_atBudgetReported = false;
 static size_t s_geometryBudget = 320u * 1024 * 1024;
 
 /// How strongly a payload's size counts against it, for the two
-/// decisions that rank chunks (FetchOrder::value). 0 ignores size and
+/// decisions that rank chunks (Render::RungRanker::value). 0 ignores size and
 /// ranks purely by what the camera sees; 1 ranks strictly per byte.
 ///
 /// **Fetching leans on size, keeping does not.** What to download next
@@ -2970,163 +2971,46 @@ static void indexPendingBoxes(const Render::SceneSnapshot &snap)
 /// its queue to re-sort — which on a large model is the point.
 static const size_t kInFlightRequests = 64;
 
-/// The camera as one round of ordering sees it, with the priority of
-/// each object it has already had to work out.
+/// The ranking half of the ladder now lives in ../SceneLadder.h, where
+/// the desktop can reach it too: what a payload is worth is a question
+/// about a camera and a bounding box, and neither half of that changes
+/// because the payload arrives over a socket rather than out of a
+/// tessellator (docs/SceneStreaming.md §7).
 ///
-/// Both halves are memoization and both are needed. The camera frame
-/// costs four trigonometric functions, and a chunk shared by every
-/// object in the scene carries every one of those objects — so scoring
-/// a queue of a few hundred chunks against a few hundred owners apiece
-/// re-derived the same camera millions of times per load. Measured, it
-/// was the whole cost of the fetch: a load that should have been
-/// network-bound spent its time in `sin`.
-struct FetchOrder {
-    CamFrame cam;
-    bx::Vec3 fwd = bx::InitZero;
-    float th = 0.0f;
-    float aspect = 1.0f;
-    std::map<uint64_t, float> memo;
+/// What stays here is what only this tier can answer: where the camera
+/// is, and where to look up the bounds of an object key — the viewer
+/// has two places to look, because a staged publish announces an
+/// object's bounds before the object itself has been applied.
+static Render::RungRanker makeRanker()
+{
+    const CamFrame cam = camFrame();
+    Render::LadderView view;
+    const auto put = [](float *dst, const bx::Vec3 &v) {
+        dst[0] = v.x;
+        dst[1] = v.y;
+        dst[2] = v.z;
+    };
+    put(view.eye, cam.eye);
+    put(view.at, cam.at);
+    put(view.right, cam.right);
+    put(view.up, cam.up);
+    view.fovY = kFovY;
+    view.aspect = s_height > 0 ? float(s_width) / float(s_height) : 1.0f;
 
-    FetchOrder()
-        : cam(camFrame())
-    {
-        fwd = bx::normalize(bx::sub(cam.at, cam.eye));
-        th = std::tan(0.5f * kFovY * bx::kPi / 180.0f);
-        aspect = s_height > 0 ? float(s_width) / float(s_height) : 1.0f;
-    }
+    Render::LadderWeights weights;
+    weights.acquire = s_fetchSizeWeight;
+    weights.keep = s_keepSizeWeight;
 
-    /// Fetch priority of one object: larger is wanted sooner.
-    ///
-    /// Projected size, which is distance and extent in one number, and
-    /// is what "fetch what matters" means on a screen: a near wall and
-    /// a far building can be equally worth having. Off-screen is a
-    /// penalty rather than an exclusion — the object is still fetched,
-    /// just behind everything visible, so a viewer that never moves
-    /// still ends up holding the whole scene, and one that turns
-    /// around finds the work already started.
-    float owner(uint64_t key)
-    {
-        auto memoIt = memo.find(key);
-        if (memoIt != memo.end())
-            return memoIt->second;
-        float score = 0.0f;
-        const float *bbox = nullptr;
+    return Render::RungRanker(view, [](uint64_t key) -> const float * {
         auto it = s_objects.objects.find(key);
         if (it != s_objects.objects.end())
-            bbox = it->second.entry.bbox;
-        else {
-            auto pit = s_pendingBox.find(key);
-            if (pit != s_pendingBox.end())
-                bbox = pit->second.data();
-        }
-        if (bbox)
-            score = project(bbox);
-        memo.emplace(key, score);
-        return score;
-    }
-
-    /// What a chunk is worth, discounted by what it costs: **the best
-    /// of the objects that need it**, never the first of them, over
-    /// its payload size raised to \a sizeWeight.
-    ///
-    /// The best owner, because content addressing means one material
-    /// can back a whole scene and one mesh every instance of a part,
-    /// and such a chunk is named by whichever manifest happened to be
-    /// read first — which may be the smallest object in the far
-    /// distance. Taken at that object's priority it holds up every
-    /// object that shares it, and since an object is only drawn once
-    /// its whole appearance is resident (SceneDump.cpp), one starved
-    /// material is a scene that never leaves its boxes.
-    ///
-    /// \a sizeWeight is how strongly a payload's size counts against
-    /// it, and it is a knob because the honest answer differs by the
-    /// question being asked (see kFetchSizeWeight / kKeepSizeWeight):
-    ///
-    /// - **1 — strictly per byte.** What is most worth spending the
-    ///   next byte on. A material is a few hundred bytes and lifts
-    ///   every object that names it off the grey box it is drawn as;
-    ///   the mesh that finishes one of those objects is a hundred
-    ///   kilobytes, so per byte the appearance of a whole model comes
-    ///   before the geometry of its first few parts.
-    /// - **0 — size ignored.** What is most worth *having*: the
-    ///   nearest, largest thing on screen, whatever it weighs.
-    /// - **between — a discount, not a veto.** At 0.5 a payload a
-    ///   thousand times smaller is thirty times preferred rather than
-    ///   a thousand: enough that the appearance layer still arrives
-    ///   first, not so much that a detailed near object waits behind
-    ///   every trivial far one.
-    ///
-    /// Note it keeps the rule the deferred list is built on: what a
-    /// consumer does with a chunk follows from its size and never from
-    /// what is inside it (SceneDump.h). Nothing here knows a material
-    /// from a mesh — it does not need to, because the appearance layer
-    /// *is* the small one.
-    float value(const Render::SceneSnapshot::DeferredChunk &c,
-                float sizeWeight)
-    {
-        if (c.owners.empty()) {
-            // The root's own sections and the overlay feeds, which no
-            // object claims: they are what names the rest, and the
-            // navigation cube is wanted before any of the model.
-            return std::numeric_limits<float>::max();
-        }
-        float best = 0.0f;
-        for (uint64_t key : c.owners)
-            best = std::max(best, owner(key));
-        const float bytes = float(std::max<uint32_t>(c.size, 1));
-        if (sizeWeight <= 0.0f)
-            return best;
-        return best / (sizeWeight >= 1.0f ? bytes
-                                          : std::pow(bytes, sizeWeight));
-    }
-
-    /// What to ask for next: value per byte spent, because bandwidth
-    /// is a rate and the question is what to spend the next byte on.
-    float chunk(const Render::SceneSnapshot::DeferredChunk &c)
-    {
-        return value(c, s_fetchSizeWeight);
-    }
-
-    /// What to keep, which is a different question: memory is a stock,
-    /// and what belongs in it is what the camera is looking at.
-    ///
-    /// Measured on the 200-object scene under an 8 MB budget, keeping
-    /// per byte gave 494 resident chunks averaging 16 KB against 146
-    /// refused averaging 146 KB — the refused set was precisely the
-    /// detailed geometry, wherever it was, so the foreground kept
-    /// boxes while the distance was fully modelled. Ignoring size
-    /// instead: 234 resident averaging 35 KB against 406 refused
-    /// averaging 52 KB, and distance decides membership.
-    float residency(const Render::SceneSnapshot::DeferredChunk &c)
-    {
-        return value(c, s_keepSizeWeight);
-    }
-
-private:
-    float project(const float *bbox) const
-    {
-        const bx::Vec3 center(0.5f * (bbox[0] + bbox[3]),
-                              0.5f * (bbox[1] + bbox[4]),
-                              0.5f * (bbox[2] + bbox[5]));
-        const float radius = 0.5f * bx::length(bx::Vec3(bbox[3] - bbox[0],
-                                                        bbox[4] - bbox[1],
-                                                        bbox[5] - bbox[2]));
-        const bx::Vec3 rel = bx::sub(center, cam.eye);
-        const float along = bx::dot(rel, fwd);
-        // Clamped at the object's own radius: something at or behind
-        // the eye is not a hundred times more urgent than something in
-        // front of it, it is off-screen, which the penalty below says.
-        const float dist = std::max(along, radius + 1e-4f);
-        float score = radius / dist;
-        const float halfV = th * std::max(along, 0.0f);
-        // CamFrame::right is the negation of the camera's right axis
-        // (screenRay), which does not matter to a symmetric test.
-        const bool onScreen = along + radius > 0.0f
-            && std::fabs(bx::dot(rel, cam.right)) <= halfV * aspect + radius
-            && std::fabs(bx::dot(rel, cam.up)) <= halfV + radius;
-        return onScreen ? score : score * 1e-3f;
-    }
-};
+            return it->second.entry.bbox;
+        auto pit = s_pendingBox.find(key);
+        if (pit != s_pendingBox.end())
+            return pit->second.data();
+        return nullptr;
+    }, weights);
+}
 
 /// Walk one payload back down the ladder: give the geometry back and
 /// leave the entry as it was before it arrived, so the ordinary fetch
@@ -3162,90 +3046,32 @@ static void releaseChunk(Render::SceneSnapshot::DeferredChunk &entry,
     s_liveUnapplied = true;
 }
 
-/// How much better, per byte, an incoming payload must be than the one
-/// it displaces. Strictly better is enough to make the resident set
-/// converge, but not enough to make it *settle*: two payloads a
-/// fraction of a percent apart swap places on every rounding of the
-/// projection, and each swap costs a fetch and a rung. A margin says
-/// what counts as a difference worth acting on.
-static const float kEvictMargin = 1.25f;
+/// Eviction and the margin it displaces by now live in
+/// ../SceneLadder.h. What stays here is the one thing the shared half
+/// cannot know: what giving a payload back actually costs this tier —
+/// the local store entry and the resident byte count (releaseChunk).
+using Render::kEvictMargin;
 
-/// The resident geometry a round may give back, worst first: scored
-/// once, spent as the round issues requests.
-///
-/// Once per round rather than once per candidate, which is what the
-/// first cut did — and with a few hundred chunks outstanding, sorting
-/// the resident set for each of them was most of what a load spent its
-/// time on.
-struct Evictor {
-    Render::SceneSnapshot &snap;
-    FetchOrder &order;
-    std::vector<std::pair<float, size_t>> victims;   ///< ascending
-    size_t next = 0;
-    bool built = false;
-
-    Evictor(Render::SceneSnapshot &s, FetchOrder &o)
-        : snap(s), order(o)
-    {}
-
-    void build()
-    {
-        built = true;
-        for (size_t i = 0; i < snap.deferredChunks.size(); ++i) {
-            const auto &entry = snap.deferredChunks[i];
-            if (entry.fill || !entry.release || !s_resident.count(entry.key))
-                continue;
-            victims.emplace_back(order.residency(entry), i);
-        }
-        std::sort(victims.begin(), victims.end(),
-                  [](const std::pair<float, size_t> &a,
-                     const std::pair<float, size_t> &b) {
-                      return a.first < b.first;
-                  });
-    }
-
-    /// Free \a need bytes for a payload worth \a incoming per byte, or
-    /// change nothing and answer false.
-    ///
-    /// Planned before it is carried out, because a half-done eviction
-    /// is the worst of both: geometry given back and nothing fetched
-    /// with the room it made. So the prefix of victims cheap enough to
-    /// displace is measured first, and released only if it is enough.
-    ///
-    /// False means the budget cannot accommodate this payload — it is
-    /// worth less than what holding it would cost. It stays
-    /// outstanding, and a camera move reconsiders it for free.
-    bool makeRoom(float incoming, size_t need)
-    {
-        if (!built)
-            build();
-        size_t take = next, freed = 0;
-        while (take < victims.size() && freed < need
-               && victims[take].first * kEvictMargin < incoming) {
-            freed += snap.deferredChunks[victims[take].second].size;
-            ++take;
-        }
-        if (freed < need) {
-            if (s_streamDebug)
-                std::printf("fcviewer: no room for a chunk worth %.3g: "
-                            "need %zu B, freed %zu of %zu candidates "
-                            "(best spare %.3g)\n",
-                            incoming, need, freed, victims.size() - next,
-                            next < victims.size() ? victims[next].first
-                                                  : -1.0f);
-            return false;
-        }
-        for (; next < take; ++next) {
-            auto &entry = snap.deferredChunks[victims[next].second];
+/// The shared evictor, wired to this viewer's resident set.
+static Render::Evictor makeEvictor(Render::SceneSnapshot &snap,
+                                   Render::RungRanker &ranker)
+{
+    Render::Evictor evictor(snap, ranker,
+        [](const std::string &key) { return s_resident.count(key) != 0; },
+        [](Render::SceneSnapshot::DeferredChunk &entry, float score) {
             const uint32_t size = entry.size;
-            releaseChunk(entry, victims[next].first);
+            releaseChunk(entry, score);
             if (s_streamDebug)
                 std::printf("fcviewer: released %u B of geometry, %zu MB "
                             "resident\n", size, s_residentBytes >> 20);
-        }
-        return true;
+        });
+    if (s_streamDebug) {
+        evictor.setTrace([](const std::string &message) {
+            std::printf("fcviewer: %s\n", message.c_str());
+        });
     }
-};
+    return evictor;
+}
 
 /// What the budget is actually holding, and what it turned away — the
 /// two score distributions side by side, because that is the only way
@@ -3261,7 +3087,7 @@ struct Evictor {
 /// whichever arrived first stays.
 static void reportBudget(Render::SceneSnapshot &snap)
 {
-    FetchOrder order;
+    Render::RungRanker order = makeRanker();
     std::vector<float> in, out;
     size_t inBytes = 0, outBytes = 0;
     for (const auto &entry : snap.deferredChunks) {
@@ -3462,11 +3288,11 @@ static void resolvePending()
         // nothing once the scene is mostly in hand — the common case
         // being a delta with a handful of chunks.
         std::vector<std::pair<float, size_t>> want;
-        FetchOrder order;
+        Render::RungRanker order = makeRanker();
         /// What this round may give back to stay inside the budget,
         /// scored against the same camera as the queue (§6 phase 4b).
         /// Built on first use, so a load that fits costs nothing.
-        Evictor evictor(*target, order);
+        Render::Evictor evictor = makeEvictor(*target, order);
         /// Whether the view's own chunks are all in hand yet — counting
         /// the ones already asked for, since the point is to wait for
         /// them rather than merely to ask first.
@@ -3507,7 +3333,8 @@ static void resolvePending()
             // below leaves them in the order the publish named them,
             // and the window check is skipped, which between them is
             // the fetch exactly as it was before there was an order.
-            want.emplace_back(s_noFetchOrder ? 0.0f : order.chunk(entry), i);
+            want.emplace_back(s_noFetchOrder ? 0.0f
+                                             : order.acquisition(entry), i);
         }
         // Ties keep publish order, which is the order the objects were
         // named in: a scene the camera has no opinion about (nothing

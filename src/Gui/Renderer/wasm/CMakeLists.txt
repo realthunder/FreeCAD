@@ -44,6 +44,7 @@ add_executable(fcviewer
     main.cpp
     ../Renderer.cpp
     ../SceneDump.cpp
+    ../SceneLadder.cpp
     ../BGFXRenderer.cpp
     ../StandalonePlatform.cpp
 )
