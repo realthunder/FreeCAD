@@ -115,11 +115,34 @@ const size_t kMinBudget = 24u * 1024 * 1024;
 /// be assumed to have all of it.
 const size_t kMaxGuess = 512u * 1024 * 1024;
 
-/// How much of a new measurement to believe. The expansion is a ratio
-/// of two numbers that both jump — a batch lands, the heap grows in
-/// slabs — so a single sample is noise around a real value, and the
-/// budget should not lurch with it.
-const float kExpansionBlend = 0.25f;
+/// Over how much payload growth a slope sample fades from the
+/// estimate. The expansion is a ratio of two series that both jump — a
+/// batch lands, the heap grows in slabs — and the failure mode of
+/// averaging per-sample slopes is systematic, not noisy: between slabs
+/// every sample reads "the heap did not grow" and drags the estimate
+/// down, then one slab arrives as a single clamped spike that cannot
+/// pull it back. So the slope is the ratio of two *decayed sums*
+/// instead — a slab's bytes land in the numerator whenever they land,
+/// against all the payload growth of the window rather than one
+/// sample's worth. The window must comfortably exceed the largest slab
+/// the allocator grows by, or the same bias returns at window scale.
+const double kSlopeWindow = 64.0 * 1024 * 1024;
+
+/// The share of an observed hard ceiling to aim under. The observation
+/// is the heap at the moment an allocation failed, so the wall is at
+/// it, not near it — and everything the budget does not track still
+/// has to fit below.
+const float kObservedCeilingShare = 0.66f;
+
+/// The ceiling to start from on a mobile browser that will not say how
+/// much memory it has (navigator.deviceMemory is absent on exactly the
+/// platform where the wall is nearest, Safari). The wasm growth cap is
+/// no substitute — a phone whose heap may grow to 2 GB does not have
+/// 2 GB to give, and the OS kills the tab without any signal the
+/// process could observe. Below any modern phone's real allowance,
+/// which is the direction to be wrong in; the measured expansion still
+/// adapts the budget underneath it.
+const size_t kMobileNoHintCeiling = 256u * 1024 * 1024;
 
 /// Bounds on a measured expansion. Outside these the measurement is not
 /// telling us about geometry: below, the heap grew less than the
@@ -180,6 +203,36 @@ size_t MemoryBudget::deviceHint()
 #endif
 }
 
+namespace {
+
+/// Whether this looks like a mobile browser, for the one decision that
+/// wants it: how low to start a ceiling nobody will state. Crude by
+/// nature — user agents lie (an iPad claims to be a Mac) — so touch
+/// support backs the UA test up, and the answer is only ever a
+/// starting guess.
+bool looksMobile()
+{
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        try {
+            if (navigator.userAgentData
+                    && navigator.userAgentData.mobile !== undefined)
+                return navigator.userAgentData.mobile ? 1 : 0;
+            var mobileUa = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
+            var touch = 'ontouchstart' in window
+                && (navigator.maxTouchPoints || 0) > 1;
+            return (mobileUa || touch) ? 1 : 0;
+        } catch (e) {
+            return 0;
+        }
+    }) != 0;
+#else
+    return false;
+#endif
+}
+
+}  // namespace
+
 void MemoryBudget::reset(size_t explicitBytes)
 {
     m_pinned = explicitBytes != 0;
@@ -187,6 +240,8 @@ void MemoryBudget::reset(size_t explicitBytes)
     m_baseHeap = 0;
     m_prevPayload = 0;
     m_prevNet = 0;
+    m_sumPayload = 0.0;
+    m_sumNet = 0.0;
     m_havePrev = false;
     if (m_pinned) {
         m_budget = explicitBytes;
@@ -197,9 +252,17 @@ void MemoryBudget::reset(size_t explicitBytes)
     // Where a device says how much memory it has and that is less than
     // the address space, believe the device: a phone whose wasm heap may
     // grow to 2 GB does not have 2 GB to give.
-    if (const size_t hint = deviceHint())
+    const size_t hint = deviceHint();
+    if (hint)
         system = system ? std::min(system, hint) : hint;
     m_ceiling = size_t(float(system) * kCeilingShare);
+    // A phone that will not say is assumed poor, not rich: the growth
+    // cap alone would put the ceiling in the hundreds of megabytes on
+    // exactly the platform (Safari) where the OS kills the tab first
+    // and signals nothing.
+    if (!hint && looksMobile())
+        m_ceiling = m_ceiling ? std::min(m_ceiling, kMobileNoHintCeiling)
+                              : kMobileNoHintCeiling;
     // Before anything has been measured the budget is a guess at what
     // the payloads for that heap would be, at no expansion at all. The
     // first heartbeats correct it in whichever direction is real.
@@ -244,23 +307,21 @@ void MemoryBudget::observe(size_t payloadBytes, size_t rawBytes,
     }
     if (payloadBytes - m_prevPayload < kSlopeMinDelta)
         return;
-    if (net > m_prevNet) {
-        const float slope = float(net - m_prevNet)
-            / float(payloadBytes - m_prevPayload);
-        const float clamped = std::min(std::max(slope, kMinExpansion),
-                                       kMaxExpansion);
-        m_expansion = m_expansion > 0.0f
-            ? m_expansion + kExpansionBlend * (clamped - m_expansion)
-            : clamped;
-    }
-    else {
-        // Geometry arrived and the heap did not grow: a slab had room.
-        // That is real evidence of a low marginal cost, not a reason to
-        // skip the sample -- ignoring it biases the estimate upwards.
-        m_expansion = m_expansion > 0.0f
-            ? m_expansion + kExpansionBlend * (kMinExpansion - m_expansion)
-            : kMinExpansion;
-    }
+    // Ratio of decayed sums, not an average of per-sample slopes (see
+    // kSlopeWindow): a sample where the heap did not grow contributes
+    // its payload bytes to the denominator and nothing to the
+    // numerator, which is exactly what it is evidence of, and a slab
+    // contributes its whole size whenever it happens to land. The
+    // decay is proportional to the payload growth it admits, so the
+    // window is measured in scene growth rather than in heartbeats.
+    const double dPay = double(payloadBytes - m_prevPayload);
+    const double dNet = net > m_prevNet ? double(net - m_prevNet) : 0.0;
+    const double keep = std::max(0.0, 1.0 - dPay / kSlopeWindow);
+    m_sumPayload = m_sumPayload * keep + dPay;
+    m_sumNet = m_sumNet * keep + dNet;
+    m_expansion = std::min(std::max(float(m_sumNet / m_sumPayload),
+                                    kMinExpansion),
+                           kMaxExpansion);
     m_prevPayload = payloadBytes;
     m_prevNet = net;
     if (m_expansion <= 0.0f)
@@ -287,6 +348,27 @@ void MemoryBudget::observe(size_t payloadBytes, size_t rawBytes,
     }
     const float room = float(m_ceiling - overhead) / m_expansion;
     m_budget = std::max(size_t(room), kMinBudget);
+}
+
+void MemoryBudget::observeCeiling(size_t heapBytes)
+{
+    if (m_pinned || heapBytes == 0)
+        return;
+    // The wall is *at* the observation, not near it, and a second
+    // observation may only lower the ceiling: memory that failed once
+    // is not un-failed by a later success.
+    const size_t observed = size_t(float(heapBytes) * kObservedCeilingShare);
+    m_ceiling = m_ceiling ? std::min(m_ceiling, observed) : observed;
+    // Cut the budget now rather than at the next heartbeat: the next
+    // allocation is what walks into the wall, and eviction needs to be
+    // making room before it. The conversion uses what has been
+    // measured; before any measurement, assume the worst that is not
+    // yet disproven rather than the best.
+    const float expansion = m_expansion > 0.0f ? m_expansion : 1.0f;
+    const size_t base = m_ceiling > m_baseHeap ? m_ceiling - m_baseHeap : 0;
+    m_budget = std::min(m_budget,
+                        std::max(size_t(float(base) / expansion),
+                                 kMinBudget));
 }
 
 // ----------------------------------------------------------------------
@@ -361,7 +443,10 @@ float RungRanker::value(const SceneSnapshot::DeferredChunk &chunk,
     const float bytes = float(std::max<uint32_t>(chunk.size, 1));
     if (sizeWeight <= 0.0f)
         return best;
-    return best / (sizeWeight >= 1.0f ? bytes : std::pow(bytes, sizeWeight));
+    // The exact power at 1 is just the bytes; anything else — below
+    // *or* above 1 — is honored as stated, so the ?fetchweight= knob
+    // never silently saturates.
+    return best / (sizeWeight == 1.0f ? bytes : std::pow(bytes, sizeWeight));
 }
 
 float RungRanker::acquisition(const SceneSnapshot::DeferredChunk &chunk)
@@ -395,6 +480,12 @@ void Evictor::build()
         // or not actually held: nothing to give back.
         if (entry.fill || !entry.release
                 || !(m_isResident && m_isResident(entry.key)))
+            continue;
+        // The view's own chunks are never victims. Their residency
+        // score is infinite anyway, but stating the rule here keeps it
+        // a rule rather than an arithmetic accident of FLT_MAX
+        // surviving the margin multiply.
+        if (entry.owners.empty())
             continue;
         m_victims.emplace_back(m_ranker.residency(entry), i);
     }

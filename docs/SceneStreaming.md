@@ -1250,7 +1250,12 @@ on the desktop the thing being ranked is not a download.
 how much is outstanding and how much may be, flush what is packed but unsent.
 Nothing returns a payload — acquisition completes by the chunk's fill running —
 so a provider answering from a local cache and one answering over a link are
-the same to the caller.
+the same to the caller. It also carries an advisory `cancel(key)`, declared
+before any caller exists, because the seam is the part that fossilizes: a
+fetch already in flight costs nothing to ignore, but the desktop's
+acquisition is *work* — a tessellation a camera move can make pointless
+mid-job — and that cost model has to be expressible from the desktop tier's
+first implementation.
 
 **The budget stopped being a constant.** 320 MB was chosen against a desktop
 and applied unchanged to a phone, where it is less a budget than a way to be
@@ -1278,10 +1283,36 @@ right:
   delta under the significance threshold, so the gap never accumulated to reach
   it and the expansion sat at zero for a whole load while appearing merely
   quiet. The anchor moves only when a sample is drawn from it.
+- **An average of per-sample slopes, under slab growth** (the fourth attempt,
+  found in review). The heap grows in slabs, so between slabs every sample
+  reads "the payloads cost nothing" and drags a blended estimate toward its
+  floor, while the slab arrives as one clamped spike that cannot pull it
+  back — a systematic under-estimate, which is a budget aimed past the wall.
+  The slope is now the **ratio of two decayed sums** (payload growth and net
+  heap growth over a window of scene growth), so a slab's bytes count
+  whenever they land, against the whole window's payload rather than one
+  sample's. Asserted by a test that watches the running estimate *through* a
+  slabbed load — the dip between slabs is the failure, and the estimate's end
+  value can land near truth by phase luck (the first version of the test
+  passed with the old estimator for exactly that reason).
 
 It converges downward from the clamp — erring toward holding less until the
 device proves otherwise, which is the direction to be wrong in. The 200-object
 scene is too small to settle it (~14 MB of payload); a real model is what will.
+
+Two ceiling changes from the same review. A mobile browser that will not say
+how much memory it has (`deviceMemory` is absent on exactly Safari) now
+starts from a **conservative mobile ceiling** rather than a share of the wasm
+growth cap — a phone whose heap may grow to 2 GB does not have 2 GB to give,
+and the OS kills the tab with no signal the process could observe. And
+`MemoryBudget::observeCeiling()` exists as the seam for a *measured* wall: an
+allocation that fails with the heap at some size is a direct observation of
+where the ceiling really is, monotonically lowering, cutting the budget at
+once. Honestly: no wasm caller exists yet — with aborting malloc there is
+nothing left to call it from — the intended caller is the desktop tier,
+where a caught `bad_alloc` is exactly this observation. The Safari gap
+(jetsam kills below any observable threshold) remains open; the conservative
+start is its mitigation.
 
 GPU memory is still unmeasured on both tiers: `bgfx::getStats()` reports
 `gpuMemoryUsed`/`gpuMemoryMax` where the backend supports it and is called

@@ -77,7 +77,9 @@ using LadderBounds = std::function<const float *(uint64_t objectKey)>;
 
 /// How strongly a payload's size counts against it, for the two
 /// decisions that rank chunks. 0 ignores size and ranks purely by what
-/// the camera sees; 1 ranks strictly per byte.
+/// the camera sees; 1 ranks strictly per byte; above 1 discounts size
+/// steeper than per byte, and is honored rather than clamped — a tuning
+/// knob that silently saturates lies to the person turning it.
 ///
 /// **Acquiring leans on size, keeping does not.** What to get next is a
 /// question about a rate — the appearance layer costs a thousandth of
@@ -246,6 +248,24 @@ public:
     /// means this tier can only fetch what already exists, which is
     /// every provider until the producer-side work of §7 lands.
     virtual bool generate(const LevelRequest &request);
+
+    /// The acquisition for \a key is no longer wanted — the camera
+    /// moved, the rung was displaced, the publish it belonged to was
+    /// superseded. Advisory, and a no-op by default: a provider whose
+    /// acquisition is a download may let it complete and land through
+    /// the ordinary path, because a fetch already in flight costs
+    /// nothing to ignore. A provider whose acquisition is *work* — a
+    /// tessellation at a deviation — should stop the job, because CPU
+    /// spent on a level nobody wants anymore is not free the way an
+    /// ignored payload is. Cancelling changes no bookkeeping: the chunk
+    /// stays outstanding until its fill runs or the caller's timeout
+    /// presumes it lost, so a provider that ignores this is merely
+    /// slower, never wrong.
+    ///
+    /// Declared before any caller exists, deliberately: the seam is the
+    /// part that fossilizes, and the desktop tier's cost model needs
+    /// this expressible from its first implementation.
+    virtual void cancel(const std::string &key) { (void)key; }
 };
 
 /// What the scene may hold, and how that number is arrived at on a
@@ -306,6 +326,21 @@ public:
     /// measuring itself.
     void observe(size_t payloadBytes, size_t rawBytes, size_t heapBytes);
 
+    /// A hard ceiling observation: the process just *failed* to obtain
+    /// memory with the heap at \a heapBytes, so the wall is not where
+    /// the platform said — it is here. The ceiling drops to a share
+    /// below the observed wall (monotonically: a second observation can
+    /// only lower it further) and the budget is cut against it at once,
+    /// so eviction starts making room before the next allocation walks
+    /// into the same wall.
+    ///
+    /// No caller exists in the wasm tier yet, honestly: with aborting
+    /// malloc there is nothing left to call it from. The desktop tier
+    /// runs with exceptions, where a caught bad_alloc is exactly this
+    /// observation — which is why the seam is here and not in a
+    /// platform file.
+    void observeCeiling(size_t heapBytes);
+
     /// The budget as it currently stands, in payload bytes.
     size_t value() const { return m_budget; }
 
@@ -333,6 +368,11 @@ private:
     /// payload, and the heap net of the raw cache.
     size_t m_prevPayload = 0;
     size_t m_prevNet = 0;
+    /// Decayed sums of payload growth and net heap growth — the slope
+    /// is their ratio, so a heap that grows in slabs between samples
+    /// averages out instead of biasing the estimate (see observe()).
+    double m_sumPayload = 0.0;
+    double m_sumNet = 0.0;
     float m_expansion = 0.0f;
     bool m_pinned = false;
     bool m_havePrev = false;

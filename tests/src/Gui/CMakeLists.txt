@@ -21,4 +21,9 @@ if(TARGET FreeCADRenderer)
                    ${CMAKE_CURRENT_SOURCE_DIR}/MeshSimplify.cpp)
     target_link_libraries(MeshSimplify_tests_run gtest_main FreeCADRenderer)
     add_test(NAME MeshSimplify_tests_run COMMAND MeshSimplify_tests_run)
+
+    add_executable(SceneLadder_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/SceneLadder.cpp)
+    target_link_libraries(SceneLadder_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME SceneLadder_tests_run COMMAND SceneLadder_tests_run)
 endif()
