@@ -16,4 +16,9 @@ if(TARGET FreeCADRenderer)
     add_executable(SceneDump_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/SceneDump.cpp)
     target_link_libraries(SceneDump_tests_run gtest_main FreeCADRenderer)
     add_test(NAME SceneDump_tests_run COMMAND SceneDump_tests_run)
+
+    add_executable(MeshSimplify_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/MeshSimplify.cpp)
+    target_link_libraries(MeshSimplify_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME MeshSimplify_tests_run COMMAND MeshSimplify_tests_run)
 endif()
