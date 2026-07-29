@@ -126,6 +126,16 @@ than a frame, so every intermediate rung is real but invisible, and a
 broken ladder photographs exactly like a working one. `&noidb` forces the
 cold path past the browser's IndexedDB chunk cache.
 
+**Throttling is also not a link.** CDP's `emulateNetworkConditions` caps
+each *request*, not the connection, so a page with a hundred requests in
+flight gets a hundred times the nominal rate — measured, 1053 KB/s against a
+750 KB/s setting. Never compare two builds' total load time under it if they
+differ in how many requests they keep outstanding; throttle for the
+screenshots, and time the load with throttling off. Elapsed time on
+loopback is dominated by request concurrency either way: a single browser
+request delivers around 170 KB/s here whatever its size, against 17 MB/s
+for the same batch over `curl`.
+
 A regression is reported against the first pipeline stage whose buffer
 diverges, not just the final image. Add `--gpu` for a real-GPU leg (opens a
 window on the desktop) and `--viewer` for the browser leg — see the header

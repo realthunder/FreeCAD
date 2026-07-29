@@ -427,10 +427,13 @@ rebuilt by the same per-object path a delta uses, splicing its slot rather than
 re-serialising the feed. The index is needed for eviction regardless, so the
 ladder is not what pays for it.
 
-> **As built (phase 3), the index does not exist yet.** The assembly pass
-> rebuilds the whole feed from the model on every arrival, which is correct
-> and simple but O(scene) per chunk; the index is the optimization of that,
-> and it lands with the eviction that requires it. See §11 phase 3.
+> **As built.** The reverse index exists as of phase 4a, but as the fetch
+> order's input rather than as an assembly optimization: the assembly pass
+> still rebuilds the whole feed from the model on every arrival. Measured,
+> that is not what a load spends its time on — a hundred passes over a 200
+> object scene cost 116 ms in total, against tens of seconds in the fetch —
+> so the incremental rebuild stays unbuilt until something says it is needed.
+> See §11 phase 4a.
 
 Two consequences for the consumer, and they are the only behavioural changes:
 
@@ -447,6 +450,19 @@ index *before* it holds any geometry. Fetch order follows the view frustum —
 nearest and largest-on-screen first — off-screen objects can be deferred
 entirely, and eviction can be distance-based. This is also the natural hook for
 the occlusion-culling work.
+
+Two things this needs that are not obvious from that sentence, both learned by
+building it (§11 phase 4a):
+
+- **A chunk is wanted by objects, plural.** Content addressing means one
+  material backs a whole scene and one mesh backs every instance of a part, so
+  a chunk's priority is the best of the objects that reference it. Taking the
+  first — whichever manifest happened to name it — ranks a chunk the scene is
+  waiting on by the least important object that wears it.
+- **Priority is per byte, not per chunk.** What a fetch order allocates is the
+  next byte, and the appearance layer costs a thousandth of what the geometry
+  does while lifting a whole rung. Ranked by projected size alone, the colour
+  of the entire model queues behind the geometry of its nearest few objects.
 
 Note where that decision lives: **with the viewer**. The producer publishes the
 full manifest, which is only keys and therefore cheap, and each viewer climbs
@@ -567,7 +583,8 @@ to remove.
 | 2b-2 | root delta-encoded, history + resync (**format + viewer done**, v34) | ~1 KB steady state |
 | 2b-3 | commit early, assemble per arrival (**done**) | the model draws while it arrives |
 | 3 | the box rung: per-mesh submission, `standIn` bit, coarse picking (**done**) | model appears while it loads |
-| 4 | frustum-ordered fetch, ladder-descending eviction | large models usable |
+| 4a | reverse index, frustum-ordered bounded fetch (**done**) | the visible part of a model loads first |
+| 4b | ladder-descending eviction | a model larger than memory |
 | 5 | LOD rungs per mesh (§7) | large models *fast* |
 
 Phase 1 is the v26 pattern extended to two more section types and needs no
@@ -875,6 +892,92 @@ implemented: a grace period and a cross-fade are worth tuning against a real
 model over a real link, and on loopback every rung is invisible anyway. The
 AO coupling §6 flags — stand-ins in the depth prepass darkening their own
 edges — has not been judged against a real model either.
+
+### 4a — frustum-ordered fetch, as built
+
+The ordering itself is the small part. What the phase turned out to be about
+is that **a fetch order only exists if the fetch is bounded**, and every
+mistake below is some version of paying too much for that bound.
+
+Ask for everything the moment the root names it — which is what phases 1-3
+did — and the sort decides nothing: the requests are all issued in the same
+tick and arrive in whatever order the network answers them. So the viewer
+keeps a window of outstanding requests and re-sorts what is left every time
+one lands. Three properties of that window were each measured the hard way,
+on `scripts/demo-varied.py` at 200 objects (60 MB of chunks) over loopback,
+against the same scene fetched with no ordering at all (5.3 s):
+
+- **Count requests, not bytes.** A browser request delivered about 170 KB/s
+  here whatever its size, while the same batch over `curl` came back at
+  17 MB/s — so a page goes faster only by having more requests in the air,
+  and the unordered fetch's 20 MB/s was a hundred outstanding requests rather
+  than a fast link. Windows of 8, 32 and 64 requests gave 65 s, 17 s and
+  7.7 s. A byte-counted window throttles a scene of large chunks and leaves a
+  scene of small ones unbounded, which is exactly backwards.
+- **Never cut a batch short.** Stopping mid-fill sends quarter-full requests,
+  which costs round trips *and* arrivals — each arrival re-runs assembly — so
+  the window closes only between batches, and whatever is left half-packed is
+  flushed at the end of the round rather than left to the deferred flush.
+- **Do not wait on a timer.** That deferred flush is a `setTimeout(0)`, which
+  a browser that considers the page backgrounded clamps to a second. With a
+  window in front of the queue that second is paid once per batch instead of
+  once per load: 4.6 s against 58 s, from one call to `flushBatch`.
+
+The remaining cost of ordering is the concurrency it gives up — 7.7 s against
+5.3 s on this scene. That is the trade, and it is the right way round for
+what the phase is for: a model small enough to finish in five seconds does
+not need a fetch order, and one that does not finish in five minutes is the
+case where fetching the visible part first is the whole difference.
+
+**Priority is projected size per byte, over the best owner.** Two corrections
+to the obvious formula, both of which were bugs first (§6):
+
+- Ranked by the object that happened to name a chunk first, 10 of the scene's
+  40 deduplicated materials sat behind small distant objects, and since a
+  draw is only taken once its appearance is resident, *every* object in the
+  scene stayed a grey box for the whole load. The index therefore records
+  every object that references a chunk, not the first.
+- Ranked by projected size alone, each object arrived complete in turn and
+  the rest of the model stayed at its bottom rung: the appearance layer,
+  which is a few hundred bytes per material and lifts every object that wears
+  it, queued behind hundred-kilobyte meshes. Dividing by size put the whole
+  model in its own colours at 0.2 s instead of >20 s, and it needs no notion
+  of what a chunk contains — the appearance layer simply *is* the small one,
+  which is the same size-decides-policy rule the deferred list already runs on.
+
+**The index is recorded, not reconstructed.** A group manifest is the only
+chunk named with an object beside it; everything below one — its meshes, its
+materials, and through those their textures and shaders — is named while
+something of that object's is being parsed, so the loader attributes them as
+the references are read. A material chunk hands its owners to the textures it
+names when it is parsed, which is the one case that cannot be attributed at
+deferral time: the material is read long after the group that asked for it.
+
+**The camera has to be pointing at the model before the first request.** On a
+cold load the first ordering decision is over every object in the scene, and
+it is made while the viewer is still holding nothing but the root — so the
+fit runs when a publish is *staged*, off the boxes the root named, and a
+`?cam=` parameter is consumed there rather than at the first commit.
+
+Two defects fell out of fetching the overlays early, both of which had been
+latent since progressive apply (2b-3) and were only ever hidden by the
+overlays arriving last:
+
+- **A texture whose pixels have not arrived is not a texture.** The bgfx
+  upload expanded `width x height x components` bytes out of an empty vector
+  — an out-of-bounds read, on screen as noise over the navigation cube. It
+  now uploads a 1x1 white stand-in and remembers to replace it, which is the
+  behaviour the deferral already promised for a texture that fails.
+- **A feed with no coarse rung waits.** Overlay, selection and highlight
+  draws are taken once and have no box to fall back to, so they are handed
+  over only when the materials and textures they name are resident. The
+  keyless draws are deliberately not among them: they stand in on their own
+  bounds like any object, and holding them back would show less than the
+  viewer knows.
+
+**Not done:** eviction (4b), which is the other half of what the index was
+built for, and the frustum's stronger form — deferring off-screen objects
+entirely rather than ranking them last.
 
 ## 12. Open questions
 
