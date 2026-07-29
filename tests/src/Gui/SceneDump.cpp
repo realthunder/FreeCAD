@@ -1061,3 +1061,93 @@ TEST(SceneDump, assemblingAfterEveryChunkGivesTheWholeScene)
     EXPECT_GT(applied, 1u) << "the scene arrived in more than one piece";
     expectScene(loaded);
 }
+
+/// The ladder runs backwards (docs/SceneStreaming.md §6, phase 4b).
+///
+/// Under memory pressure a viewer gives a payload back, and what that
+/// has to leave behind is the state the entry was in before the
+/// payload arrived — not a state of its own. So the checks are: only
+/// geometry offers to be given back, giving it back puts the draws on
+/// the box rung they were on while it was in flight, and the entry's
+/// own fill puts it all the way back.
+TEST(SceneDump, geometryGivenBackDescendsToTheBoxAndClimbsAgain)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(),
+                                          loaded));
+    // Keep every fill: an eviction re-arms the entry with the one it
+    // resolved with, which is what the viewer's refill map holds.
+    std::map<std::string, decltype(loaded.deferredChunks[0].fill)> fills;
+    for (const auto& chunk : loaded.deferredChunks) {
+        if (chunk.fill) {
+            fills[chunk.key] = chunk.fill;
+        }
+    }
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+    expectScene(loaded);
+
+    // Only payloads with a rung below them offer to be given back.
+    size_t releasable = 0;
+    for (const auto& chunk : loaded.deferredChunks) {
+        if (chunk.release) {
+            ++releasable;
+        }
+    }
+    ASSERT_GT(releasable, 0u) << "no payload can be given back at all";
+
+    const size_t whole = loaded.scene.size();
+    size_t standIns = 0;
+    for (const auto& d : loaded.scene) {
+        standIns += d.standIn ? 1 : 0;
+    }
+    ASSERT_EQ(standIns, 0u) << "the scene starts fully refined";
+
+    // Give one back, and re-arm it exactly as the viewer does.
+    std::string released;
+    for (auto& chunk : loaded.deferredChunks) {
+        if (!chunk.release || chunk.fill) {
+            continue;
+        }
+        released = chunk.key;
+        chunk.release();
+        chunk.fill = fills[chunk.key];
+        break;
+    }
+    ASSERT_FALSE(released.empty());
+    ASSERT_TRUE(loaded.finalize);
+    loaded.finalize(loaded);
+    ASSERT_TRUE(Render::applySceneObjects(loaded, model));
+
+    size_t after = 0;
+    for (const auto& d : loaded.scene) {
+        after += d.standIn ? 1 : 0;
+    }
+    EXPECT_GT(after, 0u)
+        << "geometry given back leaves the draws on the box rung";
+    for (const auto& d : loaded.scene) {
+        if (d.standIn) {
+            // A box is the shared unit box, never the emptied mesh
+            // wearing its identity: a backend keys uploads by id, so a
+            // stand-in that claimed the mesh's id could be filled in
+            // later as if it were the geometry.
+            EXPECT_EQ(d.mesh, Render::standInMesh());
+        }
+    }
+
+    // And the entry's own fill climbs back, without the root being
+    // re-read: eviction is the reverse of arrival, not a state.
+    ASSERT_TRUE(resolve(loaded, store));
+    ASSERT_TRUE(Render::applySceneObjects(loaded, model));
+    EXPECT_EQ(loaded.scene.size(), whole);
+    expectScene(loaded);
+}

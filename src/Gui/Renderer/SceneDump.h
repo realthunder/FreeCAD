@@ -191,6 +191,21 @@ struct SceneSnapshot {
         /// group that asked for it, so the textures it names have no
         /// other way to say who wanted them.
         std::vector<uint64_t> owners;
+        /// Give this payload back — the ladder's downward step
+        /// (docs/SceneStreaming.md §6, phase 4b). Set only where a
+        /// lower rung exists: a mesh, whose draws fall back to the box
+        /// on their bounds, so releasing it costs fidelity and not the
+        /// object. Empty means the payload cannot be given up — a
+        /// manifest, a material, a texture — and eviction passes over
+        /// it, which is also why this is a capability the entry states
+        /// rather than a payload kind the consumer tests for.
+        ///
+        /// The entry stays exactly as it was before the payload
+        /// arrived, so \a fill re-run puts it back: eviction is the
+        /// reverse of arrival and not a state of its own. What it
+        /// costs to undo is one fetch, and the payload is in the local
+        /// store, so usually not even a download.
+        std::function<void()> release;
         /// \a data null means the payload could not be obtained at
         /// all. Whether that is survivable is the entry's own business,
         /// not the consumer's: a texture clears its deferred flag and

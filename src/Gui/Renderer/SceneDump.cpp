@@ -439,6 +439,16 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
             mesh->cacheId = id;
             return ok;
         };
+        // Geometry has a rung below it, so it is what a viewer short
+        // of memory gives back first (§6, phase 4b). The cacheId is
+        // the mesh's identity and outlives its contents: the backend
+        // keys GPU buffers by it, and the box the draws fall back to
+        // has an id of its own.
+        entry.release = [mesh] {
+            uint64_t id = mesh->cacheId;
+            *mesh = OwnedMeshData();
+            mesh->cacheId = id;
+        };
         snap.deferredChunks.push_back(std::move(entry));
         return mesh;
     }
@@ -1611,6 +1621,13 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
         }
         mesh->cacheId = id;
         return ok;
+    };
+    // As in readMesh: geometry is the one payload with a coarser rung
+    // to fall back to, so it is the one a viewer can give back (§6).
+    c.release = [mesh] {
+        uint64_t id = mesh->cacheId;
+        *mesh = OwnedMeshData();
+        mesh->cacheId = id;
     };
     snap.deferredChunks.push_back(std::move(c));
     noteChunkOwner(snap, st, key, snap.deferredChunks.size() - 1, owner);
