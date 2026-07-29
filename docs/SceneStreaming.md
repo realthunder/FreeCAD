@@ -1144,6 +1144,30 @@ Two consequences worth naming:
   allows. Once nothing is in flight and everything left was refused, that is as
   much of the model as this viewer holds at once, and the bar clears.
 
+⭐ **A budget turns a lossy failure into a fatal one, so the fetch must
+recover from silence.** A key marked in flight stayed so forever if its
+request neither succeeded nor failed — a backgrounded page, a stalled local
+store, a dropped mobile connection — and such a key is one the fetch never
+asks for again. That used to cost only those chunks. With a budget its bytes
+count as already spent, so a handful of ghosts consume the whole allowance:
+measured on a phone, **349 of 382 payloads unaskable with zero requests
+actually in flight**, holding almost no geometry while refusing everything for
+want of room, every object grey. Requests now carry the time they were made
+and are presumed lost after thirty seconds.
+
+And ⚠️ **the recovery cannot be scheduled by the thing it is waiting for** —
+the same lesson as the overlay barrier's grace (phase 4a), in a second place. A
+round of fetching is driven by an arrival, so a load whose requests have all
+stalled has no arrival to drive the round that would notice. **Two hung
+requests reproduce a permanently grey model**, budget or no budget. While
+anything is outstanding the viewer now wakes on a timer and looks;
+`scratchpad/hangtest.js` hangs the first N chunk requests via CDP and asserts
+the load still completes (200 draws all coarse → 417 draws, 0 outstanding).
+
+A read that hangs is usually the local store, and asking it again just hangs
+again, so the first timeout gives the store up for the session and lets the
+network answer.
+
 GPU memory follows for free: the backend already drops mesh and geometry
 buffers unused for two frames (`BGFXRenderer.cpp`), so a rung descended on the
 CPU releases its upload without eviction having to reach across the interface.
