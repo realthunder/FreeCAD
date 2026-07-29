@@ -623,7 +623,12 @@ reconstructs a large scene from a small root delta plus local reads.
 6. Fidelity never lies about identity. A stand-in picks as the whole object; a
    rung answers sub-element queries only if it carries an element map (§6, §7).
 7. The server answers any chunk request from its store alone, with no per-viewer
-   state.
+   state. *Amended by 5c as §7 anticipated:* the no-per-viewer-state half
+   survives intact — a level request is keyed by content and idempotent, so
+   every viewer wanting the same level is the same request — but "from its
+   store alone" now has one exception, the level-generation work queue, whose
+   answers re-enter the store as ordinary chunks before the publish that
+   names them.
 8. A bundled capture is self-contained: chunking is a property of the transport,
    never of the format (as v26 already establishes for textures).
 9. Content keys are computed once per distinct content, never per publish (§10).
@@ -664,7 +669,7 @@ to remove.
 | 4c | policy to shared code, adaptive budget, acquisition seam (**done**) | one ladder for both tiers |
 | 5a | the decimation generator, element maps preserved (**done**) | a middle rung exists to build |
 | 5b | the level ladder in the format: declared levels, optional keys (**done**, v36) | a level can exist before it is generated |
-| 5c | generation on demand: `LevelRequest` → producer work queue (§7) | the middle rungs get bytes |
+| 5c | generation on demand: `LevelRequest` → producer work queue (**done**) | the middle rungs get bytes |
 | 5d | level selection, and eviction descending level by level | large models *fast* |
 
 Phase 1 is the v26 pattern extended to two more section types and needs no
@@ -1344,6 +1349,57 @@ GPU memory is still unmeasured on both tiers: `bgfx::getStats()` reports
 `gpuMemoryUsed`/`gpuMemoryMax` where the backend supports it and is called
 nowhere. On the desktop that is more likely than system RAM to be the binding
 constraint, so the budget there is currently watching the wrong number.
+
+### 5c — generation on demand, as built
+
+The request channel is `GET /level?source=<key>&level=<n>` — a request for
+*work*, exactly as §7 required, so its reply is an empty 202 whether the job
+is new, queued, or long done: the answer never was the reply. The server
+gains one worker thread and a queue; a job is `(source chunk key, level)`,
+deduplicated by that pair, refused when the source is not a stored chunk or
+the level is outside anything a ladder would declare. The worker parses the
+exact chunk out of the store, decimates on the level's grid
+(`generateMeshLevel`: parse → `simplifyMesh` at `levelCellSize` → re-encode,
+carrying the transparency flags decimation cannot change), and puts the
+result back as an ordinary content-keyed blob, memoized as
+`(source, level) → key`.
+
+The announcement is the ordinary publish path, which took three seams to
+actually close:
+
+- **The serializer consults the memo.** `MeshBlobSink::built` is asked per
+  declared level in `writeMesh`; a built level is written as a keyed entry
+  where the declaration was. That changes the group chunk's bytes, so its
+  key moves, so the delta carries the news — no side channel.
+- **A finished job asks for a frame.** The publish poll lives in the render
+  path, and an idle backend would sit on finished work forever — the first
+  end-to-end run proved it, four hundred levels built and a version number
+  that never moved. `setWorkNotifier` is the cue; the viewer wiring
+  schedules a redraw with the same marshalling the pick handler uses, and
+  the publisher republishes when `levelsBuilt()` has moved since its last
+  publish.
+- **A re-read reference refreshes the resident ladder.** A group re-arriving
+  with the same finest-built key dedups against the already-slotted mesh —
+  and dropped the fresh ladder with it, so announcements only ever reached
+  entries created after the build (37 of 400, measured). The dedup branch
+  now moves the newer `levels` onto the resident entry: same identity, same
+  fill, same residency, newer alternatives.
+
+Retention needed no new mechanism: the built chunk enters the pending
+generation, the publish that announces it is the one that names it, and from
+there manifest naming keeps it alive like any blob. A memo entry whose chunk
+was rolled away (its mesh left the scene before any manifest named the
+level) is forgotten and may be asked for again.
+
+The consumer half is deliberately thin until 5d: `RungProvider::generate` on
+the browser tier fires the GET and forgets; `?genlod` stands in for level
+selection by asking for every declared-unbuilt level the publish names, so
+the whole loop runs today — on demo-varied@200: 400 asks, 400 builds (a
+158 KB chunk's level 0 comes back at 4.6 KB, level 1 at 17 KB), 400
+announced back into the viewer's ladders. What no one does yet is *fetch* a
+middle level: that is selection, and it is 5d's whole subject, along with
+which level a draw wants and when eviction steps down one level instead of
+all the way to the box.
 
 ## 12. Open questions
 
