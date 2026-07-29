@@ -1,6 +1,6 @@
 # Scene streaming — content-addressed delta publishing
 
-Status: phase 1 and all of 2 implemented; phase 3 onward is specification. The leaf tier is done — textures (snapshot v26,
+Status: phases 1, 2, 3 and 4a implemented; 4b and 5 are specification. The leaf tier is done — textures (snapshot v26,
 `c4337904f9`), the hatch image (v27, `ebddfc0fdd`), mesh chunks with batched
 pull (v28) and the deduplicated material table (v29-v31) — and so is the
 manifest tree (§4): the scene is cut into content-keyed groups by `objectKey`,
@@ -15,9 +15,13 @@ viewer is actually missing, taking the 200-object benchmark from 17,146 B to
 **fidelity ladder** — a draw names the best rung it holds, from a synthesised
 bounding box through LOD levels to the full mesh, and climbs it through the
 ordinary update path — which subsumes what §7 had kept separate as a future LOD
-mechanism. Its first half is implemented: a publish is now drawn while it is
-still arriving, with the draws whose chunks have not landed left out. What
-remains of the phase is the rung that replaces them with a box.
+mechanism. It is implemented: a publish is drawn while it is still arriving, and
+a mesh that has not landed is a box on its bounds rather than a hole. §6's
+prioritisation is implemented too (phase 4a): chunks carry the objects that want
+them, and the viewer fetches them in the order its own camera implies, so the
+visible part of a model loads first. What remains is eviction, LOD, and — as the
+benchmark flags of phase 4a showed — making the per-arrival assembly incremental,
+which is now the dominant cost of a streamed load.
 
 Companions: [RenderEngine.md](./RenderEngine.md) §2 (the snapshot format and the
 tiers that consume it), [ThinClient.md](./ThinClient.md) (the UI layer this
