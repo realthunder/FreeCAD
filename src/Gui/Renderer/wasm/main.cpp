@@ -3952,6 +3952,16 @@ static void sendHello()
         std::snprintf(hello, sizeof(hello),
                       "{\"cmd\":\"hello\",\"snapshot\":%u}",
                       Render::sceneDumpVersion());
+    // Guard against a stale open event: when a reconnect has already
+    // replaced s_ws, the superseded socket's onWsOpen still fires and
+    // would send on the new, still-connecting handle — a DOM exception.
+    // Skipping is right, not a loss: the new socket's own open callback
+    // sends the hello.
+    unsigned short ready = 0;
+    if (emscripten_websocket_get_ready_state(s_ws, &ready)
+                != EMSCRIPTEN_RESULT_SUCCESS
+            || ready != 1 /* OPEN */)
+        return;
     emscripten_websocket_send_utf8_text(s_ws, hello);
 }
 
