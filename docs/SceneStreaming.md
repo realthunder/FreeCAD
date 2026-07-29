@@ -1063,15 +1063,22 @@ before the payload ever arrived.
 
 Three things had to be added around that, and each was a bug first.
 
-- ⭐ **A payload given back must not be asked for again under the same
-  camera.** The first cut evicted anything scoring below the incoming chunk,
-  which converges but does not settle: the chunk just released is now
-  outstanding, is worth more than *something* still resident, and takes its
-  place — round after round. Measured on the 200-object scene under an 8 MB
-  budget: **35,186 releases in forty seconds, 22.5 s of it inside the fetch**.
-  A camera generation fixes it exactly: an eviction is a decision made under
-  one camera, and only a camera move is new information. **129 releases, 153 ms**
-  — and 123 of those 129 are during the orbit, which is the feature working.
+- ⭐ **A payload given back must not be asked for again until it is worth
+  materially more than when it was let go.** The first cut evicted anything
+  scoring below the incoming chunk, which converges but does not settle: the
+  chunk just released is now outstanding, is worth more than *something* still
+  resident, and takes its place — round after round. Measured on the
+  200-object scene under an 8 MB budget: **35,186 releases in forty seconds,
+  22.5 s of it inside the fetch**. Recording the score each payload was
+  released at, and demanding the same margin to re-ask for it, fixes it:
+  **129 releases, 153 ms**, 123 of them during an orbit, which is the feature
+  working.
+  ⚠️ The version in between said the new information was "the camera moved at
+  all", which is far too weak — a continuous zoom is a new camera several times
+  a second, so the ping-pong returned as a churn of hundreds of kilobytes
+  re-fetched, re-parsed and re-freed per second, and on a phone-sized canvas it
+  **exhausted the wasm heap outright** (`memory access out of bounds` inside
+  `malloc`). A release is reversed by value, never by motion.
 - **Plan the eviction, then carry it out, once per round.** Per-candidate
   eviction sorted the resident set for every one of a few hundred outstanding
   chunks, which was most of that 22.5 s. And a half-done eviction is the worst
@@ -1082,11 +1089,21 @@ Three things had to be added around that, and each was a bug first.
   payloads a fraction of a percent apart stop swapping places on every
   re-projection.
 
-Scored by the *same* rule as the fetch order — best owner, per byte — so the
-resident set converges on the best-scoring prefix of the scene rather than on
-whatever arrived last. Only geometry is weighed: a manifest or a material
-refused for want of memory would strand every object under it at a rung it
-cannot leave.
+⭐ **What to keep is not what to fetch next.** Residency first borrowed the
+fetch order's score, which is value *per byte* — right for bandwidth, where the
+next byte should go where it lifts the most (§6, and it is what colours a whole
+model in a fraction of a second), and wrong for memory, where per byte a budget
+buys many cheap distant meshes in preference to the one large near mesh the
+user is looking at. Measured on the 200-object scene held to 8 MB, the refused
+set was precisely the detailed geometry wherever it was: **494 resident chunks
+averaging 16 KB against 146 refused averaging 146 KB**, so the foreground kept
+its boxes while the distance was fully modelled. Ranked instead by the
+projected size of the best owner, with no division by bytes: **234 resident
+averaging 35 KB against 406 refused averaging 52 KB** — size no longer decides
+membership, distance does.
+
+Only geometry is weighed either way: a manifest or a material refused for want
+of memory would strand every object under it at a rung it cannot leave.
 
 Two consequences worth naming:
 
@@ -1105,6 +1122,13 @@ Two consequences worth naming:
 GPU memory follows for free: the backend already drops mesh and geometry
 buffers unused for two frames (`BGFXRenderer.cpp`), so a rung descended on the
 CPU releases its upload without eviction having to reach across the interface.
+
+**A parsed payload is not held twice.** The bytes a chunk arrived as and the
+geometry they were read into are two copies of the same thing, and the second
+is the one the budget bounds — so a viewer told to hold 8 MB was really holding
+that plus every byte it had ever downloaded, the payload cache having a
+192 MB budget of its own. The bytes are finished with when the fill returns and
+the local store still has them, so they go.
 
 Budget default 320 MB, `?membudget=<MB>` to say otherwise — which is the only
 way to exercise any of this, since a real budget is larger than a demo scene.
