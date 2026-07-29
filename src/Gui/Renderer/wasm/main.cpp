@@ -2173,6 +2173,34 @@ static uint64_t s_pendingVersion = 0;
 /// it is still coarse. Off by default: this fires on every arrival, and
 /// a scene arrives in hundreds of chunks.
 static bool s_streamDebug = false;
+/// How long the view's own chunks may hold the model back without
+/// arriving. The barrier below is what puts the navigation cube on
+/// screen before the geometry, and a barrier with no release is a
+/// deadlock waiting for a request that never completes: nothing else
+/// is in flight to notice, and the model would sit at its box rung for
+/// the rest of the session.
+///
+/// Measured from the last time the fetch made progress, not from when
+/// the barrier engaged — that is the difference between a slow link
+/// and a stalled one. A slow link keeps landing chunks and keeps the
+/// barrier; only a fetch that has produced nothing at all for this
+/// long gives it up. Six seconds is long enough for one batch over a
+/// bad mobile link and short enough that a hang is a hesitation rather
+/// than a broken page.
+static const double kViewGraceMs = 6000.0;
+/// When the view's own chunks last resolved anything, or 0 while they
+/// are all in hand.
+static double s_viewProgressAt = 0.0;
+/// A re-check already queued for the moment the grace runs out. The
+/// release cannot be decided by the arrival that would have renewed it
+/// — a stall is exactly the absence of one, so nothing would ever run
+/// the check again and the model would wait forever. The hold
+/// therefore schedules its own deadline.
+static bool s_viewGraceScheduled = false;
+/// Whether the release has already been reported for this stall, so
+/// the note is one line rather than one per round.
+static bool s_viewGraceReported = false;
+
 /// ?nofetchorder — ask for every payload the moment it is named, in the
 /// order the publish names them, as the viewer did before there was a
 /// fetch order (docs/SceneStreaming.md §6). This is the benchmark
@@ -2816,6 +2844,13 @@ static void resolvePending()
     /// commit would be scheduled for every payload that merely failed
     /// or was already in hand.
     bool filled = false;
+    /// The same, restricted to the view's own chunks. It is what
+    /// renews the barrier's grace, and it has to be *its* progress:
+    /// counting any arrival would let the model chunks released by an
+    /// expired grace renew it and re-engage the hold they just
+    /// escaped, so a stalled overlay would stutter the whole load
+    /// instead of stepping out of the way once.
+    bool viewFilled = false;
 
     // Every out-of-band payload the snapshot named — group manifests,
     // meshes, materials, shaders, textures — in one pass. A fill can
@@ -2838,6 +2873,7 @@ static void resolvePending()
             // does not survive that.
             auto fill = entry.fill;
             entry.fill = nullptr;
+            const bool wasView = entry.owners.empty();
             // A null payload asks the entry to give up. Whether that
             // is survivable is its business, not ours — a texture says
             // yes and the draw renders untextured.
@@ -2847,6 +2883,7 @@ static void resolvePending()
             if (ok) {
                 progress = true;
                 filled = true;
+                viewFilled = viewFilled || wasView;
             }
             else {
                 if (!failed)
@@ -2905,10 +2942,40 @@ static void resolvePending()
                             const std::pair<float, size_t> &b) {
                              return a.first > b.first;
                          });
+        // The barrier, and its release. Progress is what renews it: a
+        // link slow enough to take seconds per batch keeps the cube
+        // ahead of the model, while a request that has produced
+        // nothing at all for the grace period gives the model its
+        // bandwidth back rather than stranding it on boxes.
+        const double nowMs = emscripten_get_now();
+        if (!viewPending) {
+            s_viewProgressAt = 0.0;
+            s_viewGraceReported = false;
+        }
+        else if (s_viewProgressAt == 0.0 || viewFilled)
+            s_viewProgressAt = nowMs;
+        const bool holdForView = viewPending && !s_noFetchOrder
+            && nowMs - s_viewProgressAt < kViewGraceMs;
+        if (holdForView && !s_viewGraceScheduled) {
+            s_viewGraceScheduled = true;
+            const double wait =
+                kViewGraceMs - (nowMs - s_viewProgressAt) + 50.0;
+            emscripten_async_call([](void *) {
+                s_viewGraceScheduled = false;
+                resolvePending();
+            }, nullptr, int(wait > 0.0 ? wait : 50.0));
+        }
+        if (viewPending && !holdForView && !s_viewGraceReported) {
+            s_viewGraceReported = true;
+            std::printf("fcviewer: the view's own chunks have not arrived "
+                        "in %.0f ms — letting the model through\n",
+                        kViewGraceMs);
+        }
         if (s_streamDebug) {
             std::printf("fcviewer: fetch: %zu outstanding of %zu, %zu "
-                        "askable, %zu requests in flight\n",
-                        missing, total, want.size(), s_requestsInFlight);
+                        "askable, %zu requests in flight%s\n",
+                        missing, total, want.size(), s_requestsInFlight,
+                        holdForView ? ", holding for the view" : "");
         }
         for (const auto &item : want) {
             // Past the window, stop asking. Every resolution pumps this

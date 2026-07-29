@@ -993,6 +993,22 @@ nothing on a fast link (unchanged at 0.25 s to full colour, 7.2 s to fully
 refined) because what it defers is a fixed few hundred kilobytes, and the
 model's bottom rung is a box per object that the root alone already draws.
 
+**The hold degrades rather than deadlocks.** A request that never completes
+has nothing else in flight to notice it, so an unconditional barrier would
+leave the model at its box rung for the rest of the session. It is released
+after a grace period — measured from the last time *the view's own* chunks
+made progress, which is the difference between a slow link and a stalled
+one: a link slow enough to take seconds per batch keeps its cube first,
+while a fetch that has produced nothing at all gives the model its bandwidth
+back. Two things that were wrong before they were tested against a hung
+request: the deadline has to schedule its own wake-up, since the arrival
+that would have renewed it is exactly what is missing; and progress on the
+*model* must not renew it, or the chunks a lapsed grace just released renew
+the hold they escaped and the load stutters instead of stepping aside once.
+Verified by hanging the first chunk request — which the barrier guarantees
+is the view's — and watching the release fire once at six seconds with the
+geometry refining a moment later.
+
 **The index is recorded, not reconstructed.** A group manifest is the only
 chunk named with an object beside it; everything below one — its meshes, its
 materials, and through those their textures and shaders — is named while
