@@ -555,7 +555,20 @@ Two things fall out for free once the rungs are real meshes rather than boxes:
 - **Element picking on a level.** An LOD mesh that carries an element map can
   answer sub-element queries, so picking precision improves with fidelity
   instead of stepping from "the object" straight to "everything" (§6). Whether
-  a decimated mesh can carry a faithful element map is the open part.
+  a decimated mesh can carry a faithful element map was the open part, and the
+  answer is yes, by construction rather than by reconstruction
+  (`MeshSimplify.cpp`): clustering never welds across element boundaries —
+  vertices gather per face, per edge, per point element — so every output
+  primitive belongs to exactly one source element and the part tables carry
+  over index for index, an element that collapsed entirely keeping its slot as
+  an empty range. What keeps the elements sewn together anyway is that a
+  representative's *position* comes from a grid the whole mesh shares: the
+  coincident soup vertices two adjacent faces both carry land in the same cell
+  and read back the same average, so decimated faces still meet bitwise where
+  their tessellations met. Normals average within one element only, so a
+  crease stays a crease — sharper shading than global welding gave, not just
+  equal. Sub-element selection is what CAD operations run on, which is why
+  this is built into the generator rather than deferred with the metric.
 - **Eviction becomes graceful.** Memory pressure walks a draw down the ladder
   to a cheaper level and finally to its box, rather than choosing between
   holding geometry and showing a hole.
@@ -1292,9 +1305,12 @@ constraint, so the budget there is currently watching the wrong number.
   objects go dirty still rebuilds thousands of slots. Whether that needs a
   budget per frame is a measurement, not a guess.
 - **LOD error metric and budget** (§7) — deferred; likely parameters too.
-- **Element maps on decimated levels** (§7) — whether a coarser mesh can name
-  sub-elements faithfully, or whether element picking simply waits for the full
-  mesh as it does for the box rung.
+- **Element maps on decimated levels** — answered: the generator clusters per
+  element and the part tables carry over (§7). Still open is the finer grain
+  below the table: `partIndex`-keyed data that is not a `{start, count}` range
+  (nonFlatParts, solidParts, the no-seam line set) is dropped rather than
+  recomputed, so the hidden-line and capping refinements wait for the full
+  mesh.
 - **Root manifest at very large object counts.** 100k objects make even the
   delta's object list non-trivial; paging the object list into content-addressed
   pages is the escape, if measurement demands it.

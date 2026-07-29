@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <set>
+#include <tuple>
 #include <vector>
 
 #include "Gui/Renderer/MeshSimplify.h"
@@ -57,6 +58,78 @@ struct SoupGrid {
         return m;
     }
 };
+
+/// Two square faces meeting at a right-angle crease along the line
+/// (1, y, 0): part 0 an n x n soup grid on z = 0 spanning [0,1]^2 in x
+/// and y, part 1 the same grid stood upright on the plane x = 1. The
+/// fold's vertices are carried by both parts as coincident duplicates,
+/// exactly as a CAD tessellation duplicates a shared model edge.
+struct SoupFold {
+    std::vector<float> positions;
+    std::vector<float> normals;
+    std::vector<int32_t> triangles;
+    std::vector<std::pair<int, int>> parts;
+
+    explicit SoupFold(int n)
+    {
+        addGrid(n, false);
+        addGrid(n, true);
+    }
+
+    void addGrid(int n, bool upright)
+    {
+        const int start = int(triangles.size());
+        const float step = 1.0f / float(n);
+        for (int i = 0; i < n; ++i) {
+            for (int j = 0; j < n; ++j) {
+                const float u0 = float(i) * step, u1 = u0 + step;
+                const float v0 = float(j) * step, v1 = v0 + step;
+                const float corners[6][2] = {{u0, v0}, {u1, v0}, {u1, v1},
+                                             {u0, v0}, {u1, v1}, {u0, v1}};
+                for (const auto &uv : corners) {
+                    const int32_t base = int32_t(positions.size() / 3);
+                    if (upright) {
+                        positions.insert(positions.end(),
+                                         {1.0f, uv[1], uv[0]});
+                        normals.insert(normals.end(), {1.0f, 0.0f, 0.0f});
+                    }
+                    else {
+                        positions.insert(positions.end(),
+                                         {uv[0], uv[1], 0.0f});
+                        normals.insert(normals.end(), {0.0f, 0.0f, 1.0f});
+                    }
+                    triangles.push_back(base);
+                }
+            }
+        }
+        parts.push_back({start, int(triangles.size()) - start});
+    }
+
+    Render::MeshData mesh() const
+    {
+        Render::MeshData m;
+        m.numVertices = int(positions.size() / 3);
+        m.positions = positions.data();
+        m.normals = normals.data();
+        m.triangleIndices = triangles.data();
+        m.numTriangleIndices = int(triangles.size());
+        m.triangleParts = parts;
+        return m;
+    }
+};
+
+/// The distinct positions referenced by the triangles of one part range.
+static std::set<std::tuple<float, float, float>>
+partPositions(const Render::SimplifiedMesh &out, std::pair<int, int> range)
+{
+    std::set<std::tuple<float, float, float>> result;
+    for (int i = range.first; i < range.first + range.second; ++i) {
+        const size_t v = size_t(out.triangleIndices[size_t(i)]) * 3;
+        result.emplace(out.positions[v], out.positions[v + 1],
+                       out.positions[v + 2]);
+    }
+    return result;
+}
 
 }  // namespace
 
@@ -283,4 +356,145 @@ TEST(MeshSimplify, fillPointsAMeshDataAtTheGeneratedArrays)
     EXPECT_TRUE(view.triangleParts.empty());
     EXPECT_TRUE(view.lineParts.empty());
     EXPECT_EQ(view.pointIndices, nullptr);
+}
+
+TEST(MeshSimplify, keepsTheFacePartTableThroughDecimation)
+{
+    // Sub-element selection is what CAD operations run on, so a rung
+    // must keep the element map: entry i of the output table names the
+    // same face as entry i of the input, and no output triangle may
+    // span two faces.
+    const SoupFold fold(16);
+    Render::SimplifiedMesh out;
+    ASSERT_TRUE(Render::simplifyMesh(fold.mesh(), 0.25f, out));
+
+    ASSERT_EQ(out.triangleParts.size(), 2u);
+    const auto p0 = out.triangleParts[0];
+    const auto p1 = out.triangleParts[1];
+    EXPECT_GT(p0.second, 0);
+    EXPECT_GT(p1.second, 0);
+    // The ranges partition the output triangle list in table order.
+    EXPECT_EQ(p0.first, 0);
+    EXPECT_EQ(p1.first, p0.second);
+    EXPECT_EQ(size_t(p1.first + p1.second), out.triangleIndices.size());
+
+    // Each face's triangles stay within a cell of that face's surface:
+    // part 0 was tessellated on z = 0, part 1 on x = 1. Exactly *on* it
+    // is too strong at the fold, where a cell holds both faces' vertices
+    // and the shared position average sits between them -- that pull is
+    // the rung's geometric error, and it is bounded by the cell size.
+    for (const auto &pos : partPositions(out, p0))
+        EXPECT_NEAR(std::get<2>(pos), 0.0f, 0.25f);
+    for (const auto &pos : partPositions(out, p1))
+        EXPECT_NEAR(std::get<0>(pos), 1.0f, 0.25f);
+
+    // The crease survives: normals average within one element only, so
+    // part 0 still faces +z and part 1 still faces +x. Welding across
+    // the fold would blur both toward the 45-degree diagonal.
+    for (int i = p0.first; i < p0.first + p0.second; ++i)
+        EXPECT_GT(out.normals[size_t(out.triangleIndices[size_t(i)]) * 3 + 2],
+                  0.99f);
+    for (int i = p1.first; i < p1.first + p1.second; ++i)
+        EXPECT_GT(out.normals[size_t(out.triangleIndices[size_t(i)]) * 3],
+                  0.99f);
+
+    // And all of it deterministically, tables included (invariant 2).
+    Render::SimplifiedMesh again;
+    ASSERT_TRUE(Render::simplifyMesh(fold.mesh(), 0.25f, again));
+    EXPECT_EQ(out.positions, again.positions);
+    EXPECT_EQ(out.triangleIndices, again.triangleIndices);
+    EXPECT_EQ(out.triangleParts, again.triangleParts);
+}
+
+TEST(MeshSimplify, decimatedFacesStillMeetAlongTheirSharedBoundary)
+{
+    // Clustering per element must not open the mesh along element
+    // boundaries. Positions come from a grid the whole mesh shares: the
+    // coincident soup vertices both faces carry along the fold land in
+    // the same cell on either side and read back the same average, so
+    // the decimated faces still meet exactly -- bitwise -- where their
+    // tessellations met.
+    const SoupFold fold(16);
+    Render::SimplifiedMesh out;
+    ASSERT_TRUE(Render::simplifyMesh(fold.mesh(), 0.25f, out));
+    ASSERT_EQ(out.triangleParts.size(), 2u);
+
+    const auto a = partPositions(out, out.triangleParts[0]);
+    const auto b = partPositions(out, out.triangleParts[1]);
+    int shared = 0;
+    for (const auto &pos : a)
+        shared += b.count(pos);
+    // The fold is a unit line at a quarter-unit cell: both faces must
+    // reference the same handful of representatives along it.
+    EXPECT_GE(shared, 4);
+}
+
+TEST(MeshSimplify, aCollapsedElementKeepsItsSlotAsAnEmptyRange)
+{
+    // A face smaller than a cell loses all its triangles. Its table
+    // entry must survive as an empty range: element identity is the
+    // *position* in the table, so dropping the entry would shift every
+    // element after it onto the wrong name -- a pick that lies. An
+    // empty range can cover no index, so the collapsed face is merely
+    // unpickable at this rung, never misattributed.
+    SoupFold fold(8);
+    const int tinyStart = int(fold.triangles.size());
+    const float quad[6][2] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f},
+                              {0.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
+    for (const auto &uv : quad) {
+        const int32_t base = int32_t(fold.positions.size() / 3);
+        fold.positions.insert(fold.positions.end(),
+                              {2.0f + uv[0] * 0.01f, uv[1] * 0.01f, 0.0f});
+        fold.normals.insert(fold.normals.end(), {0.0f, 0.0f, 1.0f});
+        fold.triangles.push_back(base);
+    }
+    fold.parts.push_back({tinyStart, int(fold.triangles.size()) - tinyStart});
+
+    Render::SimplifiedMesh out;
+    ASSERT_TRUE(Render::simplifyMesh(fold.mesh(), 0.25f, out));
+    ASSERT_EQ(out.triangleParts.size(), 3u);
+    EXPECT_GT(out.triangleParts[0].second, 0);
+    EXPECT_GT(out.triangleParts[1].second, 0);
+    EXPECT_EQ(out.triangleParts[2].second, 0);
+}
+
+TEST(MeshSimplify, keepsEdgeAndVertexPartTables)
+{
+    // Edges and vertices are elements too (lineParts / pointParts), and
+    // their tables carry over the same way the face table does.
+    SoupGrid grid(8);
+    grid.lines = {0, 1, 1, 2, 3, 4};
+    std::vector<float> &pos = grid.positions;
+    const std::vector<int32_t> points = {0, 5};
+
+    Render::MeshData src = grid.mesh();
+    src.lineParts = {{0, 4}, {4, 2}};
+    src.pointIndices = points.data();
+    src.numPointIndices = int(points.size());
+    src.pointParts = {{0, 1}, {1, 1}};
+
+    Render::SimplifiedMesh out;
+    ASSERT_TRUE(Render::simplifyMesh(src, 0.1f, out));
+
+    ASSERT_EQ(out.lineParts.size(), 2u);
+    for (const auto &part : out.lineParts) {
+        EXPECT_GE(part.first, 0);
+        EXPECT_LE(size_t(part.first + part.second), out.lineIndices.size());
+        EXPECT_EQ(part.second % 2, 0);
+    }
+    EXPECT_GT(out.lineParts[0].second, 0);
+    EXPECT_GT(out.lineParts[1].second, 0);
+
+    // Each vertex element keeps a point, and its representative stays
+    // within a cell of where the vertex was.
+    ASSERT_EQ(out.pointParts.size(), 2u);
+    for (size_t i = 0; i < 2; ++i) {
+        ASSERT_EQ(out.pointParts[i].second, 1);
+        const size_t v =
+            size_t(out.pointIndices[size_t(out.pointParts[i].first)]) * 3;
+        const size_t s = size_t(points[i]) * 3;
+        EXPECT_NEAR(out.positions[v], pos[s], 0.1f);
+        EXPECT_NEAR(out.positions[v + 1], pos[s + 1], 0.1f);
+        EXPECT_NEAR(out.positions[v + 2], pos[s + 2], 0.1f);
+    }
 }

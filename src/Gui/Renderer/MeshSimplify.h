@@ -56,6 +56,15 @@ struct RendererExport SimplifiedMesh {
     std::vector<uint8_t> colors;
     std::vector<int32_t> triangleIndices;
     std::vector<int32_t> lineIndices;
+    std::vector<int32_t> pointIndices;
+
+    /// The element tables, preserved index for index from the source
+    /// mesh (empty when the source carried none): entry i of the output
+    /// names the same element as entry i of the input, with an empty
+    /// range where the element collapsed entirely.
+    std::vector<std::pair<int, int>> triangleParts;
+    std::vector<std::pair<int, int>> lineParts;
+    std::vector<std::pair<int, int>> pointParts;
 
     /// Point the non-owning fields of \a mesh at this storage. The
     /// result is valid only while this object is.
@@ -87,13 +96,25 @@ RendererExport float levelCellSize(const float *bbox, uint32_t level);
 /// rather than the cell centre, so a flat face stays where it was
 /// instead of stepping onto the grid.
 ///
-/// **The part tables are not carried over, and that is the honest
-/// answer rather than a shortcut.** Clustering welds vertices across
-/// face boundaries, so a triangle in the result may belong to two
-/// original faces at once and no faithful element map exists to write.
-/// Per §9 invariant 6, a rung answers sub-element queries only if it
-/// carries such a map — so this one answers none, and picking on it
-/// falls back to the whole object exactly as it does on the box.
+/// **Element identity survives decimation.** Clustering never welds
+/// across element boundaries: vertices are clustered per element (per
+/// face for triangles, per edge for lines, per vertex for points), so
+/// every output primitive belongs to exactly one source element and the
+/// part tables carry over index for index — an element that collapses
+/// entirely keeps its slot as an empty range, so table positions keep
+/// their meaning and a pick can never name the wrong element, only no
+/// element (§9 invariant 6). What keeps the elements sewn together
+/// regardless is that a representative's *position* comes from a grid
+/// the whole mesh shares: the coincident soup vertices two adjacent
+/// faces both carry land in the same cell and take the same average, so
+/// decimated faces still meet exactly where their tessellations met.
+/// A bonus over global welding: normals average within one element
+/// only, so a crease stays a crease instead of shading round.
+///
+/// What is *not* carried: nonFlatParts, solidParts and the no-seam line
+/// set. Those are shading and capping refinements whose absence is a
+/// valid state the backend already handles, and each would have to be
+/// recomputed against geometry that no longer matches it.
 RendererExport bool simplifyMesh(const MeshData &src, float cellSize,
                                  SimplifiedMesh &out);
 
