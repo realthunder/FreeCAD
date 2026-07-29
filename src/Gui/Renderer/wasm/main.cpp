@@ -240,6 +240,10 @@ static void markDirty()
     s_dirtyFrames = 8;
 }
 
+/// Reconsider what to fetch when the camera has moved (defined with
+/// the fetch order, called from the frame).
+static void pumpFetchOnMove();
+
 static void interact()
 {
     s_lastInteract = emscripten_get_now();
@@ -271,6 +275,50 @@ static void updateQuality()
 static double s_dbgMs = 0.0;
 static int s_dbgN = 0;
 static double s_dbgApplyMs = 0.0;
+/// The apply broken down, because "apply is the cost" is not yet an
+/// answer to what to make incremental (docs/SceneStreaming.md §6): the
+/// manifest pass, the feed rebuild, handing the feed to the backend,
+/// the overlays and the selection replay are five different fixes.
+static double s_dbgFinalizeMs = 0.0;
+static double s_dbgObjectsMs = 0.0;
+static double s_dbgSceneMs = 0.0;
+static double s_dbgOverlayMs = 0.0;
+static double s_dbgSelMs = 0.0;
+/// Frames, and how much of them followed a feed change: a streamed
+/// load's cost is as likely to be in the frame that shows the new feed
+/// as in the pass that built it.
+static double s_dbgFrameMs = 0.0;
+static int s_dbgFrames = 0;
+static double s_dbgFeedFrameMs = 0.0;
+static int s_dbgFeedFrames = 0;
+static bool s_feedJustSet = false;
+
+/// Where a streamed load spent itself, as far as the viewer can see:
+/// the passes that resolved and assembled it, and the frames that
+/// showed the result.
+static void dbgReport()
+{
+    std::printf("fcviewer: DBG %d resolve+commit passes, %.0f ms "
+                "total, %.0f ms of it in apply "
+                "(finalize %.0f, objects %.0f, scene %.0f, "
+                "overlays %.0f, selection %.0f); "
+                "%d frames %.0f ms, %d of them after a feed change "
+                "%.0f ms\n",
+                s_dbgN, s_dbgMs, s_dbgApplyMs, s_dbgFinalizeMs,
+                s_dbgObjectsMs, s_dbgSceneMs, s_dbgOverlayMs, s_dbgSelMs,
+                s_dbgFrames, s_dbgFrameMs, s_dbgFeedFrames,
+                s_dbgFeedFrameMs);
+}
+
+/// Charge the time this scope takes to \a acc.
+struct DbgScope {
+    double *acc;
+    double t0;
+    explicit DbgScope(double &a)
+        : acc(&a), t0(emscripten_get_now())
+    {}
+    ~DbgScope() { *acc += emscripten_get_now() - t0; }
+};
 
 static const float kFovY = 45.0f;
 
@@ -1527,6 +1575,7 @@ static void mainLoop()
         s_lastFrameNow = 0.0;   // keep the idle gap out of the fps EMA
         return;
     }
+    pumpFetchOnMove();
 
     float viewMtx[16], projMtx[16];
     buildCamera(viewMtx, projMtx);
@@ -1546,6 +1595,13 @@ static void mainLoop()
     s_renderer->render(bg, viewMtx, projMtx);
     const double rdt = emscripten_get_now() - renderT0;
     s_renderMs = s_renderMs > 0.0 ? s_renderMs * 0.9 + rdt * 0.1 : rdt;
+    s_dbgFrameMs += rdt;
+    ++s_dbgFrames;
+    if (s_feedJustSet) {
+        s_feedJustSet = false;
+        s_dbgFeedFrameMs += rdt;
+        ++s_dbgFeedFrames;
+    }
 
     if (dumping) {
         s_dumpReq.armed = false;
@@ -2020,32 +2076,44 @@ static void applySnapshot(bool fit)
     if (s_snap.hatch && !s_snap.hatch->pixels.empty())
         s_renderer->setHatchImage(s_snap.hatch->pixels.data(), 4,
                                   s_snap.hatch->width, s_snap.hatch->height);
-    Render::DrawCallList draws = s_snap.scene;
-    s_renderer->setScene(std::move(draws));
+    {
+        DbgScope dbg(s_dbgSceneMs);
+        Render::DrawCallList draws = s_snap.scene;
+        s_renderer->setScene(std::move(draws));
+        s_feedJustSet = true;
+    }
     // The client owns selection (rebuildSelection below): the backend's own
     // streamed selection feed is ignored so its slow full re-stream never
     // drives the visible selection. Any previously applied streamed selection
     // is dropped.
-    for (int id : s_selIds)
-        s_renderer->removeSelection(id);
-    s_selIds.clear();
-    // Re-apply the local selection against the (possibly replaced) scene draws.
-    rebuildSelection();
-    // Overlay feeds (foreground superimposition, corner axis cross):
-    // replayed with their declarative anchors — the local renderer
-    // re-derives viewport and camera each frame, so overlays re-anchor
-    // on resize and follow the local orbit camera.
-    std::set<int> ovIds;
-    for (const auto &ov : s_snap.overlays) {
-        ovIds.insert(ov.id);
-        Render::DrawCallList odraws = ov.draws;
-        s_renderer->setOverlay(ov.id, std::move(odraws), ov.anchor);
+    {
+        DbgScope dbg(s_dbgSelMs);
+        for (int id : s_selIds)
+            s_renderer->removeSelection(id);
+        s_selIds.clear();
+        // Re-apply the local selection against the (possibly replaced)
+        // scene draws.
+        rebuildSelection();
     }
-    for (int id : s_overlayIds) {
-        if (!ovIds.count(id))
-            s_renderer->removeOverlay(id);
+    {
+        DbgScope dbg(s_dbgOverlayMs);
+        // Overlay feeds (foreground superimposition, corner axis
+        // cross): replayed with their declarative anchors — the local
+        // renderer re-derives viewport and camera each frame, so
+        // overlays re-anchor on resize and follow the local orbit
+        // camera.
+        std::set<int> ovIds;
+        for (const auto &ov : s_snap.overlays) {
+            ovIds.insert(ov.id);
+            Render::DrawCallList odraws = ov.draws;
+            s_renderer->setOverlay(ov.id, std::move(odraws), ov.anchor);
+        }
+        for (int id : s_overlayIds) {
+            if (!ovIds.count(id))
+                s_renderer->removeOverlay(id);
+        }
+        s_overlayIds.swap(ovIds);
     }
-    s_overlayIds.swap(ovIds);
     if (!s_snap.highlight.empty()) {
         Render::DrawCallList hdraws = s_snap.highlight;
         s_renderer->setHighlight(std::move(hdraws),
@@ -2174,6 +2242,55 @@ static size_t s_requestsInFlight = 0;
 /// Keys this snapshot could not obtain. Cleared whenever a new
 /// snapshot is staged: one retry per publish, never a fetch loop.
 static std::set<std::string> s_blobFailed;
+
+//////////////////////////////////////////////////////////////////////
+// The resident set (docs/SceneStreaming.md §6, phase 4b)
+
+/// What a chunk that can be given back cost, by key. Only chunks whose
+/// entry states a `release` are in here — geometry — because they are
+/// the only ones with a rung below them to fall back to.
+///
+/// Keyed by content, like everything else in the stream: one mesh
+/// backs every instance of a part, so what is resident is a set of
+/// *contents*, and evicting one is one decision however many objects
+/// draw it.
+static std::map<std::string, uint32_t> s_resident;
+static size_t s_residentBytes = 0;
+/// How each resident chunk was filled, so that giving it back can put
+/// it back. A fill is idempotent — it parses bytes into a mesh the
+/// loader owns — so re-arming an entry with the one it resolved with
+/// is exactly the state it was in before the payload arrived.
+typedef std::function<bool(Render::SceneSnapshot &, const void *, size_t)>
+    FillFn;
+static std::map<std::string, FillFn> s_refill;
+
+/// What the camera has said so far: bumped whenever a move makes the
+/// fetch order reconsider itself (pumpFetchOnMove) or a new publish
+/// arrives. A payload given back was given back *under this camera*,
+/// and asking for it again before anything has changed would be
+/// reversing a decision on no new information — which is exactly the
+/// shape a thrash takes. Measured on the 200-object scene under an
+/// 8 MB budget: 35,186 releases in forty seconds without this, and
+/// the fetch spent twenty-two of those seconds re-deciding.
+static uint64_t s_fetchGeneration = 0;
+/// The generation each released payload was given back in.
+static std::map<std::string, uint64_t> s_releasedAt;
+/// Whether the viewer has already said it is at its budget, so the
+/// line is printed on the transition and not on every round.
+static bool s_atBudgetReported = false;
+
+/// Geometry the viewer may hold resident, past which a mesh is given
+/// back rather than a new one refused. It bounds what the *scene*
+/// costs, which is not what pruneBlobCache bounds: that one drops
+/// payloads the scene does not name, and a model too large for memory
+/// is one whose named geometry is itself the problem.
+///
+/// Payload bytes rather than the expanded arrays, because it is what
+/// every part of the stream already states (SceneDump.h) and it tracks
+/// the geometry within a constant factor. What matters for a budget is
+/// that it is proportional and known before the fetch, not that it is
+/// the exact heap cost.
+static size_t s_geometryBudget = 320u * 1024 * 1024;
 
 static Render::SceneSnapshot s_pendingSnap;
 static uint64_t s_pendingVersion = 0;
@@ -2576,7 +2693,11 @@ static bool assembleResolved(Render::SceneSnapshot &snap)
     // the backend expects them (SceneDump.h).
     if (!snap.finalize)
         return true;
-    snap.finalize(snap);
+    {
+        DbgScope dbg(s_dbgFinalizeMs);
+        snap.finalize(snap);
+    }
+    DbgScope dbg(s_dbgObjectsMs);
     // Then the objects, which the snapshot alone cannot assemble:
     // a delta names only what changed, so the feed is built from
     // the model this viewer carries between publishes. Each draw
@@ -2642,8 +2763,14 @@ static void commitResolved()
         // runs off the bounding boxes the root named, so it does not
         // move as the geometry inside them arrives.
         applySnapshot(!s_userCam);
-        if (!s_liveOutstanding)
+        if (!s_liveOutstanding) {
             fcviewer_status(nullptr, 0.0, 0.0);
+            // The breakdown that matters is the one for the whole
+            // load, and the periodic report is unlikely to land on its
+            // last pass.
+            if (s_streamDebug)
+                dbgReport();
+        }
     }
     else {
         return;
@@ -2826,6 +2953,116 @@ private:
     }
 };
 
+/// Walk one payload back down the ladder: give the geometry back and
+/// leave the entry as it was before it arrived, so the ordinary fetch
+/// path can climb it again if the camera comes back
+/// (docs/SceneStreaming.md §6, phase 4b).
+///
+/// The draws that named the mesh are not touched. They keep naming it,
+/// and the next assembly finds it empty and puts them on the box at
+/// their bounds — the same choice it made while the mesh was still on
+/// its way. That is the whole point of the ladder running backwards:
+/// there is no eviction state, only a rung.
+static void releaseChunk(Render::SceneSnapshot::DeferredChunk &entry)
+{
+    auto refill = s_refill.find(entry.key);
+    if (!entry.release || refill == s_refill.end())
+        return;
+    entry.release();
+    entry.fill = refill->second;
+    // The payload itself, which is the other half of what it costs to
+    // hold. The local store keeps it, so what was just given up is a
+    // read and not a download.
+    s_blobCache.erase(entry.key);
+    auto res = s_resident.find(entry.key);
+    if (res != s_resident.end()) {
+        s_residentBytes -= std::min(s_residentBytes, size_t(res->second));
+        s_resident.erase(res);
+    }
+    s_refill.erase(refill);
+    s_releasedAt[entry.key] = s_fetchGeneration;
+    // The feed still names the mesh that was just emptied, so the
+    // scene on screen is a rung out of date until it is rebuilt.
+    s_liveUnapplied = true;
+}
+
+/// How much better, per byte, an incoming payload must be than the one
+/// it displaces. Strictly better is enough to make the resident set
+/// converge, but not enough to make it *settle*: two payloads a
+/// fraction of a percent apart swap places on every rounding of the
+/// projection, and each swap costs a fetch and a rung. A margin says
+/// what counts as a difference worth acting on.
+static const float kEvictMargin = 1.25f;
+
+/// The resident geometry a round may give back, worst first: scored
+/// once, spent as the round issues requests.
+///
+/// Once per round rather than once per candidate, which is what the
+/// first cut did — and with a few hundred chunks outstanding, sorting
+/// the resident set for each of them was most of what a load spent its
+/// time on.
+struct Evictor {
+    Render::SceneSnapshot &snap;
+    FetchOrder &order;
+    std::vector<std::pair<float, size_t>> victims;   ///< ascending
+    size_t next = 0;
+    bool built = false;
+
+    Evictor(Render::SceneSnapshot &s, FetchOrder &o)
+        : snap(s), order(o)
+    {}
+
+    void build()
+    {
+        built = true;
+        for (size_t i = 0; i < snap.deferredChunks.size(); ++i) {
+            const auto &entry = snap.deferredChunks[i];
+            if (entry.fill || !entry.release || !s_resident.count(entry.key))
+                continue;
+            victims.emplace_back(order.chunk(entry), i);
+        }
+        std::sort(victims.begin(), victims.end(),
+                  [](const std::pair<float, size_t> &a,
+                     const std::pair<float, size_t> &b) {
+                      return a.first < b.first;
+                  });
+    }
+
+    /// Free \a need bytes for a payload worth \a incoming per byte, or
+    /// change nothing and answer false.
+    ///
+    /// Planned before it is carried out, because a half-done eviction
+    /// is the worst of both: geometry given back and nothing fetched
+    /// with the room it made. So the prefix of victims cheap enough to
+    /// displace is measured first, and released only if it is enough.
+    ///
+    /// False means the budget cannot accommodate this payload — it is
+    /// worth less than what holding it would cost. It stays
+    /// outstanding, and a camera move reconsiders it for free.
+    bool makeRoom(float incoming, size_t need)
+    {
+        if (!built)
+            build();
+        size_t take = next, freed = 0;
+        while (take < victims.size() && freed < need
+               && victims[take].first * kEvictMargin < incoming) {
+            freed += snap.deferredChunks[victims[take].second].size;
+            ++take;
+        }
+        if (freed < need)
+            return false;
+        for (; next < take; ++next) {
+            auto &entry = snap.deferredChunks[victims[next].second];
+            const uint32_t size = entry.size;
+            releaseChunk(entry);
+            if (s_streamDebug)
+                std::printf("fcviewer: released %u B of geometry, %zu MB "
+                            "resident\n", size, s_residentBytes >> 20);
+        }
+        return true;
+    }
+};
+
 /// Fill in what the snapshot being resolved still needs, ask for what
 /// it is missing in the order the camera wants it, and show what that
 /// made drawable. The target is the staged publish until it is
@@ -2839,15 +3076,17 @@ static void resolvePending()
     struct Acc { double t0; ~Acc() {
         s_dbgMs += emscripten_get_now() - t0;
         if (s_streamDebug && (++s_dbgN % 25) == 0)
-            std::printf("fcviewer: DBG %d resolve+commit passes, %.0f ms "
-                        "total, %.0f ms of it in apply\n",
-                        s_dbgN, s_dbgMs, s_dbgApplyMs);
+            dbgReport();
     } } acc{dbgT0};
     Render::SceneSnapshot *target = s_pendingValid ? &s_pendingSnap
         : (s_liveOutstanding ? &s_snap : nullptr);
     if (!target)
         return;
     size_t missing = 0, total = 0;
+    /// What the issue loop did: requests made, and payloads the budget
+    /// could not afford. Together they say whether a scene that is not
+    /// finished is still *arriving* — see the status below.
+    size_t issued = 0, refused = 0;
     /// The same two counts in bytes, which is what the progress
     /// indicator is driven from. Counting chunks measures the wrong
     /// thing by an order of magnitude: a scene's payload is
@@ -2904,6 +3143,16 @@ static void resolvePending()
                 progress = true;
                 filled = true;
                 viewFilled = viewFilled || wasView;
+                // A payload that can be given back joins the resident
+                // set, with the means to put it back if it is
+                // (§6 phase 4b). Idempotent by key: the same content
+                // may be named by a staged publish and by the live
+                // scene at once, and it is one payload either way.
+                if (entry.release
+                        && s_resident.emplace(entry.key, entry.size).second) {
+                    s_residentBytes += entry.size;
+                    s_refill[entry.key] = fill;
+                }
             }
             else {
                 if (!failed)
@@ -2932,10 +3181,20 @@ static void resolvePending()
         // being a delta with a handful of chunks.
         std::vector<std::pair<float, size_t>> want;
         FetchOrder order;
+        /// What this round may give back to stay inside the budget,
+        /// scored against the same camera as the queue (§6 phase 4b).
+        /// Built on first use, so a load that fits costs nothing.
+        Evictor evictor(*target, order);
         /// Whether the view's own chunks are all in hand yet — counting
         /// the ones already asked for, since the point is to wait for
         /// them rather than merely to ask first.
         bool viewPending = false;
+        /// Releasable bytes asked for and not yet arrived. They are
+        /// already spent as far as the budget is concerned — a window
+        /// of sixty-four requests can be a large share of it in flight
+        /// at once — and counted here rather than kept in a running
+        /// total, which could only drift.
+        size_t pledged = 0;
         for (size_t i = 0; i < target->deferredChunks.size(); ++i) {
             const auto &entry = target->deferredChunks[i];
             totalBytes += entry.size;
@@ -2943,11 +3202,20 @@ static void resolvePending()
                 continue;
             ++missing;
             missingBytes += entry.size;
+            if (entry.release && s_blobInFlight.count(entry.key))
+                pledged += entry.size;
             // Anything no object claims is the view's own — the overlays
             // and the root's sections — and none of the model is asked
             // for while one is outstanding (see the issue loop).
             viewPending = viewPending || entry.owners.empty();
             if (s_blobInFlight.count(entry.key))
+                continue;
+            // Given back under this very camera: asking for it again
+            // would reverse that decision on no new information, and
+            // the payload it displaced would then displace it right
+            // back. A camera move is what makes it askable again.
+            auto rel = s_releasedAt.find(entry.key);
+            if (rel != s_releasedAt.end() && rel->second == s_fetchGeneration)
                 continue;
             // ?nofetchorder scores nothing: every chunk ties, the sort
             // below leaves them in the order the publish named them,
@@ -3040,7 +3308,28 @@ static void resolvePending()
             // kViewGraceMs.
             if (holdForView && !entry.owners.empty())
                 break;
+            // The budget, and the ladder as the way to stay inside it
+            // (§6 phase 4b). Only geometry is weighed: it is the only
+            // payload with a rung below it, and a manifest or a
+            // material refused for want of memory would strand every
+            // object under it at a rung it cannot leave.
+            //
+            // A chunk that cannot be afforded is skipped rather than
+            // ending the round: the queue is ordered by value per
+            // byte, not by size, so a smaller one further down may
+            // still fit where this one did not.
+            if (entry.release) {
+                const size_t held = s_residentBytes + pledged + entry.size;
+                if (held > s_geometryBudget
+                        && !evictor.makeRoom(item.first,
+                                             held - s_geometryBudget)) {
+                    ++refused;
+                    continue;
+                }
+                pledged += entry.size;
+            }
             requestBlob(entry.key, entry.size);
+            ++issued;
         }
         // Whatever is left half-packed goes now. queueBatch would send
         // it on the next tick, which is right when more keys may still
@@ -3057,7 +3346,27 @@ static void resolvePending()
         s_liveOutstanding = missing != 0;
         s_liveUnapplied = s_liveUnapplied || filled;
     }
-    if (missing) {
+    // A scene held back by the budget is not a scene still loading
+    // (§6 phase 4b). Once nothing is in flight and everything left was
+    // refused for want of memory, this is as much of the model as this
+    // viewer holds at once: the rest is drawn at the rung below, and
+    // the camera — not time — is what changes the answer. Saying
+    // "loading" forever would be the indicator describing a
+    // non-progressive world all over again.
+    const bool atBudget = missing && !issued && refused
+        && s_requestsInFlight == 0 && s_batchQueue.empty();
+    if (atBudget && !s_atBudgetReported) {
+        s_atBudgetReported = true;
+        fcviewer_status(nullptr, 0.0, 0.0);
+        std::printf("fcviewer: at the geometry budget (%zu MB) — %zu "
+                    "payloads left unasked; the rest of the model is "
+                    "drawn coarse\n",
+                    s_geometryBudget >> 20, refused);
+    }
+    else if (!atBudget) {
+        s_atBudgetReported = false;
+    }
+    if (missing && !atBudget) {
         // Until every object's manifest is in, the byte total is not
         // known — a manifest is what names the meshes under it, so
         // most of the scene's weight is undiscovered and a fraction
@@ -3084,9 +3393,12 @@ static void resolvePending()
             fcviewer_status("loading scene",
                             double(totalBytes - missingBytes),
                             double(totalBytes));
-        if (!filled) {
+        if (!filled && !s_liveUnapplied) {
             // Nothing new became drawable — the requests above are
-            // what this round accomplished.
+            // what this round accomplished. An eviction counts as
+            // something to show: a draw that gave its geometry back
+            // has to be redrawn at the rung below it, and nothing
+            // else is going to arrive and prompt that.
             return;
         }
     }
@@ -3109,6 +3421,45 @@ static void resolvePending()
             commitResolved();
         }, nullptr, 0);
     }
+}
+
+/// A camera move is a change of mind about what to fetch, and under a
+/// full budget it is the only thing that can be (§6 phase 4b).
+///
+/// While a scene is arriving, every arrival re-sorts the queue and
+/// issues the next of it, so the order follows the camera for free.
+/// Once the budget is full that stops: the chunks left are exactly the
+/// ones worth less than what is resident, nothing is asked for, and so
+/// nothing arrives to reconsider them. Turning to face them is what
+/// changes the answer, and the frame is where that is known.
+///
+/// Rate-limited rather than run per frame, because a round costs a
+/// sort of the outstanding queue and an orbit is a hundred frames of
+/// continuous change; a fifth of a second of staleness in a fetch that
+/// takes seconds is not a difference anyone can see.
+static void pumpFetchOnMove()
+{
+    static float lastCam[8] = {0.0f};
+    static double lastPump = 0.0;
+    if (!s_liveOutstanding)
+        return;
+    const float cam[8] = {s_yaw, s_pitch, s_dist, s_center[0], s_center[1],
+                          s_center[2], s_panX, s_panY};
+    bool moved = false;
+    for (int i = 0; i < 8; ++i)
+        moved = moved || cam[i] != lastCam[i];
+    if (!moved)
+        return;
+    const double now = emscripten_get_now();
+    if (now - lastPump < 200.0)
+        return;
+    lastPump = now;
+    std::copy(cam, cam + 8, lastCam);
+    // The camera has said something new, so every payload given back
+    // under the old one is worth asking about again.
+    ++s_fetchGeneration;
+    s_releasedAt.clear();
+    resolvePending();
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -3702,6 +4053,20 @@ int main()
         return new URLSearchParams(window.location.search)
             .has('nofetchorder') ? 1 : 0;
     }) != 0;
+    // ?membudget=<MB> — the resident geometry budget (§6 phase 4b).
+    // A real budget is larger than any demo scene, so the only way to
+    // exercise the ladder running backwards is to say what it is.
+    {
+        const int mb = EM_ASM_INT({
+            const v = new URLSearchParams(window.location.search)
+                .get('membudget');
+            return v === null ? 0 : (parseInt(v, 10) | 0);
+        });
+        if (mb > 0) {
+            s_geometryBudget = size_t(mb) * 1024 * 1024;
+            std::printf("fcviewer: geometry budget %d MB\n", mb);
+        }
+    }
     s_noProgressive = EM_ASM_INT({
         return new URLSearchParams(window.location.search)
             .has('noprogressive') ? 1 : 0;
