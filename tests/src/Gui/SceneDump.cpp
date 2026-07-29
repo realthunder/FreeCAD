@@ -865,6 +865,98 @@ TEST(SceneDump, aDrawStandsInForTheMeshItNames)
     }
 }
 
+/// A fetch order needs to know what a payload is *for*, and a key says
+/// nothing: it is a hash. So every chunk carries the objects that want
+/// it (docs/SceneStreaming.md §6, phase 4) — recorded as the references
+/// are read, which is the only moment the object is known.
+///
+/// Every object that wants it, not the first: content addressing means
+/// one material backs many objects, and taking whoever named it first
+/// would rank a chunk the whole scene is waiting on by whatever the
+/// smallest, most distant object that happens to wear it is worth.
+TEST(SceneDump, everyChunkKnowsWhichObjectsWantIt)
+{
+    // A scene of its own, because sharing is the point: two objects in
+    // the same appearance over the same geometry, which content
+    // addressing collapses onto one material chunk and one mesh chunk
+    // between them. The stock scene deliberately has no two objects
+    // alike.
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    auto mesh = makeMesh(5, 16);
+    snap.scene.push_back(makeDraw(0xaaaa, mesh, 0x336699ff));
+    snap.scene.push_back(makeDraw(0xbbbb, mesh, 0x336699ff));
+    Render::UserShader post;
+    post.stage = "post";
+    post.fragmentSource = "// post stage fragment";
+    snap.usershaderconf.shaders.push_back(post);
+    attachSinks(snap, store);
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+
+    // Straight out of the root, before a single chunk has been fetched:
+    // an object's manifest is named with the object beside it, which is
+    // what everything below it inherits from.
+    std::set<uint64_t> named;
+    for (const auto& up : loaded.objectUpdates) {
+        named.insert(up.entry.objectKey);
+        bool found = false;
+        for (const auto& chunk : loaded.deferredChunks) {
+            if (chunk.key != up.entry.key) {
+                continue;
+            }
+            found = true;
+            EXPECT_EQ(chunk.owners,
+                      std::vector<uint64_t>{up.entry.objectKey})
+                << "a group manifest is wanted by exactly its object";
+        }
+        EXPECT_TRUE(found) << "the root named a manifest it did not defer";
+    }
+    ASSERT_FALSE(named.empty());
+
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    // Now that the manifests and the materials have been read, every
+    // level below them is attributed too — the meshes and materials a
+    // manifest named, and the texture a material named.
+    size_t shared = 0, owned = 0;
+    for (const auto& chunk : loaded.deferredChunks) {
+        for (uint64_t owner : chunk.owners) {
+            EXPECT_TRUE(named.count(owner))
+                << "chunk " << chunk.key << " claims an object that the "
+                   "root never named";
+        }
+        if (chunk.owners.size() > 1) {
+            ++shared;
+        }
+        if (!chunk.owners.empty()) {
+            ++owned;
+        }
+    }
+    EXPECT_GT(owned, named.size())
+        << "the manifests alone are owned, so nothing below them was "
+           "attributed";
+    EXPECT_EQ(shared, 2u)
+        << "the material and the mesh are each one chunk behind both "
+           "objects, and each has to name both";
+
+    // The chunks nothing in the scene claims stay unclaimed rather than
+    // being attributed to whoever happened to read them: the
+    // post-stage shader belongs to the view, not to a model object,
+    // and a consumer fetches it ahead of the model precisely because
+    // no bounding box can rank it.
+    bool anyUnowned = false;
+    for (const auto& chunk : loaded.deferredChunks) {
+        anyUnowned = anyUnowned || chunk.owners.empty();
+    }
+    EXPECT_TRUE(anyUnowned);
+}
+
 /// The rung below that one. Before any group manifest arrives, the only
 /// thing known about an object is the box the root named — so that is
 /// what is drawn, one box for the whole object, and the model has a

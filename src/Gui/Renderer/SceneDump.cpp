@@ -1515,6 +1515,14 @@ struct ManifestLoader {
     std::map<std::string, std::shared_ptr<UserShader>> shaders;
     std::map<std::string, std::shared_ptr<TextureImage>> textures;
     std::vector<GroupTarget> targets;
+    /// Where each deferred chunk landed, so that a key named a second
+    /// time can add its object to the chunk already covering it. The
+    /// memos above answer "is this key slotted"; this answers "which
+    /// entry is it", which is what the reverse index needs
+    /// (SceneDump.h, docs/SceneStreaming.md §6). Entries are only ever
+    /// appended, so an index stays valid for the life of the snapshot
+    /// — including across the move that commits it.
+    std::map<std::string, size_t> chunkAt;
     /// The scene-level user shader lists, held as the shared objects
     /// their chunks will fill rather than copied into the config at
     /// read time — at read time they are still empty.
@@ -1526,9 +1534,38 @@ typedef std::shared_ptr<ManifestLoader> LoaderPtr;
 
 RefReader manifestRefReader(const LoaderPtr &st, SceneSnapshot &snap);
 
+/// Record that \a owner needs the chunk under \a key, and remember
+/// where that chunk is. Called both where a key is first deferred and
+/// where a later group names the same one — sharing is the case the
+/// index exists for.
+void noteChunkOwner(SceneSnapshot &snap, const LoaderPtr &st,
+                    const std::string &key, size_t index, uint64_t owner)
+{
+    st->chunkAt[key] = index;
+    if (!owner || index >= snap.deferredChunks.size())
+        return;
+    auto &owners = snap.deferredChunks[index].owners;
+    // Repeats are common — every draw of a group names its material —
+    // and the list is short, so a scan beats a set per chunk.
+    if (std::find(owners.begin(), owners.end(), owner) == owners.end())
+        owners.push_back(owner);
+}
+
+/// The same, for a key that may already have been deferred by an
+/// earlier group. Does nothing when this snapshot never deferred it
+/// (it rode inline, or it is a fresh key about to be deferred).
+void noteExistingOwner(SceneSnapshot &snap, const LoaderPtr &st,
+                       const std::string &key, uint64_t owner)
+{
+    auto it = st->chunkAt.find(key);
+    if (it != st->chunkAt.end())
+        noteChunkOwner(snap, st, key, it->second, owner);
+}
+
 /// One mesh reference inside a group: the counterpart of writeMesh.
 std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
-                                            const LoaderPtr &st)
+                                            const LoaderPtr &st,
+                                            uint64_t owner)
 {
     if (r.u8() == 0) {
         auto mesh = std::make_shared<OwnedMeshData>();
@@ -1542,8 +1579,12 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
     if (!r.ok)
         return nullptr;
     auto it = st->meshes.find(key);
-    if (it != st->meshes.end())
+    if (it != st->meshes.end()) {
+        // Already slotted by another group: nothing to defer, but this
+        // object wants it too and its priority may be higher.
+        noteExistingOwner(snap, st, key, owner);
         return it->second;
+    }
     auto mesh = std::make_shared<OwnedMeshData>();
     mesh->cacheId = meshIdFromKey(key);
     st->meshes.emplace(key, mesh);
@@ -1572,6 +1613,7 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
         return ok;
     };
     snap.deferredChunks.push_back(std::move(c));
+    noteChunkOwner(snap, st, key, snap.deferredChunks.size() - 1, owner);
     return mesh;
 }
 
@@ -1579,11 +1621,13 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
 /// first time the key is seen. Draws carry the slot rather than the
 /// material itself, because the chunk may well arrive after them.
 int32_t materialSlot(SceneSnapshot &snap, const LoaderPtr &st,
-                     const std::string &key, uint32_t size)
+                     const std::string &key, uint32_t size, uint64_t owner)
 {
     auto it = st->matSlots.find(key);
-    if (it != st->matSlots.end())
+    if (it != st->matSlots.end()) {
+        noteExistingOwner(snap, st, key, owner);
         return it->second;
+    }
     int32_t slot = int32_t(snap.materials.size());
     snap.materials.emplace_back();
     snap.materialFilled.push_back(0);
@@ -1591,8 +1635,16 @@ int32_t materialSlot(SceneSnapshot &snap, const LoaderPtr &st,
     SceneSnapshot::DeferredChunk c;
     c.key = key;
     c.size = size;
-    c.fill = [st, slot](SceneSnapshot &target, const void *data, size_t size) {
-        return readChunk(data, size, [&](Reader &cr) {
+    // Where this chunk will sit, so that its own parse can hand its
+    // owners down to the textures and shaders it names (SceneDump.h).
+    // A material is read long after the group that asked for it, and
+    // an appearance is wanted by every object wearing it, so nothing
+    // else at that moment knows who those are.
+    const size_t self = snap.deferredChunks.size();
+    c.fill = [st, slot, self](SceneSnapshot &target, const void *data,
+                              size_t size) {
+        const size_t before = target.deferredChunks.size();
+        bool ok = readChunk(data, size, [&](Reader &cr) {
             if (cr.u32() != kChunkVersion) {
                 cr.ok = false;
                 return;
@@ -1607,8 +1659,17 @@ int32_t materialSlot(SceneSnapshot &snap, const LoaderPtr &st,
             if (cr.ok && size_t(slot) < target.materialFilled.size())
                 target.materialFilled[size_t(slot)] = 1;
         });
+        if (self < target.deferredChunks.size()) {
+            const auto owners = target.deferredChunks[self].owners;
+            for (size_t i = before; i < target.deferredChunks.size(); ++i) {
+                if (target.deferredChunks[i].owners.empty())
+                    target.deferredChunks[i].owners = owners;
+            }
+        }
+        return ok;
     };
     snap.deferredChunks.push_back(std::move(c));
+    noteChunkOwner(snap, st, key, snap.deferredChunks.size() - 1, owner);
     return slot;
 }
 
@@ -1670,7 +1731,7 @@ RefReader manifestRefReader(const LoaderPtr &st, SceneSnapshot &snap)
 }
 
 bool readGroupChunk(Reader &r, DrawCallList &out, SceneSnapshot &snap,
-                    const LoaderPtr &st)
+                    const LoaderPtr &st, uint64_t owner)
 {
     if (r.u32() != kChunkVersion) {
         r.ok = false;
@@ -1686,7 +1747,7 @@ bool readGroupChunk(Reader &r, DrawCallList &out, SceneSnapshot &snap,
     }
     std::vector<std::shared_ptr<const MeshData>> meshes;
     for (uint32_t i = 0; r.ok && i < nmesh; ++i)
-        meshes.push_back(readMeshRef(r, snap, st));
+        meshes.push_back(readMeshRef(r, snap, st, owner));
     uint32_t nmat = r.u32();
     if (!r.ok || nmat > 0x100000u) {
         r.ok = false;
@@ -1699,7 +1760,7 @@ bool readGroupChunk(Reader &r, DrawCallList &out, SceneSnapshot &snap,
         uint32_t size = r.u32();
         if (!r.ok)
             break;
-        slots.push_back(materialSlot(snap, st, key, size));
+        slots.push_back(materialSlot(snap, st, key, size, owner));
     }
     if (!r.ok)
         return false;
@@ -1730,8 +1791,15 @@ void readGroup(Reader &r, SceneSnapshot &snap, const LoaderPtr &st,
     snap.groups.emplace_back();
     snap.groupFilled.push_back(0);
     st->targets.push_back(target);
+    // Only a scene object has an entry, and only a scene object has a
+    // bounding box to be prioritized by; the overlay and auxiliary
+    // groups are owned by nobody and are fetched first.
+    const uint64_t owner = entry ? entry->objectKey : 0;
     if (r.u8() == 0) {
-        readGroupChunk(r, snap.groups[slot], snap, st);
+        // Inline draws still name out-of-band meshes and materials,
+        // and those are this object's just as much as a deferred
+        // group's are.
+        readGroupChunk(r, snap.groups[slot], snap, st, owner);
         snap.groupFilled[slot] = 1;
         return;
     }
@@ -1747,12 +1815,15 @@ void readGroup(Reader &r, SceneSnapshot &snap, const LoaderPtr &st,
     SceneSnapshot::DeferredChunk c;
     c.key = key;
     c.size = size;
-    c.fill = [st, slot](SceneSnapshot &target, const void *data, size_t size) {
+    if (owner)
+        c.owners.push_back(owner);
+    c.fill = [st, slot, owner](SceneSnapshot &target, const void *data,
+                               size_t size) {
         if (slot >= target.groups.size())
             return false;
         DrawCallList draws;
         bool ok = readChunk(data, size, [&](Reader &cr) {
-            readGroupChunk(cr, draws, target, st);
+            readGroupChunk(cr, draws, target, st, owner);
         });
         if (ok) {
             target.groups[slot] = std::move(draws);
@@ -1762,6 +1833,7 @@ void readGroup(Reader &r, SceneSnapshot &snap, const LoaderPtr &st,
         return ok;
     };
     snap.deferredChunks.push_back(std::move(c));
+    st->chunkAt[key] = snap.deferredChunks.size() - 1;
 }
 
 /// The pass that runs once every chunk is in: groups into the feeds

@@ -163,6 +163,34 @@ struct SceneSnapshot {
         /// be packed to a byte budget. A payload larger than the budget
         /// is not a special case — it simply ends up alone.
         uint32_t size = 0;
+        /// Which objects this payload is needed by — the reverse index
+        /// of docs/SceneStreaming.md §6, recorded as the references are
+        /// read rather than reconstructed later. Empty means no object
+        /// needs it: the root's own sections and the overlay feeds,
+        /// which belong to the scene rather than to anything in it.
+        ///
+        /// It is what lets a consumer put a fetch order on chunks it
+        /// cannot otherwise tell apart. A mesh key says nothing about
+        /// where the mesh is, but the entry of an object that wants it
+        /// carries a bounding box, so this turns a flat list of
+        /// outstanding payloads into one that can be sorted by the
+        /// camera.
+        ///
+        /// **A list, because content addressing means one chunk serves
+        /// many objects, and the fetch order has to follow the most
+        /// important of them.** Taking the first — the object whose
+        /// manifest happened to name a shared material first — starves
+        /// every other object that needs it behind whatever that one
+        /// object is worth. With dedup that is not a corner case: one
+        /// material can back a whole scene, and one mesh backs every
+        /// instance of a part.
+        ///
+        /// **A chunk deferred by another chunk's fill inherits that
+        /// chunk's owners**, and the consumer that runs the fills is
+        /// what propagates them: a material is parsed long after the
+        /// group that asked for it, so the textures it names have no
+        /// other way to say who wanted them.
+        std::vector<uint64_t> owners;
         /// \a data null means the payload could not be obtained at
         /// all. Whether that is survivable is the entry's own business,
         /// not the consumer's: a texture clears its deferred flag and
