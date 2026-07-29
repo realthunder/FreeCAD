@@ -2805,7 +2805,13 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
                 static_cast<std::pair<std::string, uint32_t> *>(arg));
             blobFromDb(item->first, static_cast<uint8_t *>(ptr),
                        size_t(num), item->second);
-            std::free(ptr);
+            // `ptr` belongs to the caller: emscripten_idb_async_load's
+            // glue frees the buffer as soon as this returns
+            // (libidbstore.js). Freeing it here as well put a block on
+            // the free list twice, which dlmalloc does not notice —
+            // the damage surfaced later as a trap inside malloc on
+            // some unrelated allocation, and only ever on a visit with
+            // a warm store, because a cold one never takes this path.
         },
         [](void *arg) {
             // Not stored yet (the common first-visit case) or the store
@@ -3361,12 +3367,24 @@ static void resolvePending()
             auto fill = entry.fill;
             entry.fill = nullptr;
             const bool wasView = entry.owners.empty();
+            // Everything the bookkeeping below needs, copied out for
+            // the same reason the callable was: a group's fill names
+            // its meshes and materials, appending them here, and the
+            // element this reference names is freed when the vector
+            // grows. `key` is a copy rather than a reference for
+            // exactly that reason — reading it back afterwards was a
+            // use-after-free that ran for a whole session before some
+            // later allocation tripped over the damage.
+            const bool releasable = bool(entry.release);
+            const std::string key = entry.key;
+            const uint32_t size = entry.size;
             // A null payload asks the entry to give up. Whether that
             // is survivable is its business, not ours — a texture says
             // yes and the draw renders untextured.
             bool ok = failed
                 ? fill(*target, nullptr, 0)
                 : fill(*target, it->second->data(), it->second->size());
+            // `entry` is not valid from here on.
             if (ok) {
                 progress = true;
                 filled = true;
@@ -3376,14 +3394,13 @@ static void resolvePending()
                 // (§6 phase 4b). Idempotent by key: the same content
                 // may be named by a staged publish and by the live
                 // scene at once, and it is one payload either way.
-                if (entry.release
-                        && s_resident.emplace(entry.key, entry.size).second) {
-                    s_residentBytes += entry.size;
-                    s_refill[entry.key] = fill;
+                if (releasable && s_resident.emplace(key, size).second) {
+                    s_residentBytes += size;
+                    s_refill[key] = fill;
                     // Resident again: what it was worth when it was
                     // last let go is history, and the next release
                     // will record what it is worth then.
-                    s_releasedScore.erase(entry.key);
+                    s_releasedScore.erase(key);
                 }
             }
             else {
