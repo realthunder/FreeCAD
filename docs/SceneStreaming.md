@@ -1105,6 +1105,31 @@ membership, distance does.
 Only geometry is weighed either way: a manifest or a material refused for want
 of memory would strand every object under it at a rung it cannot leave.
 
+**Both rankings are the same formula with one knob**: the best owner's
+projected size, over the payload's bytes raised to a weight. 1 is strictly per
+byte, 0 ignores size. Tunable per load as `?fetchweight=` / `?keepweight=`,
+since the right value depends on the model and the link.
+
+| | default | why |
+| --- | ---: | --- |
+| fetch | 0.5 | colour first, but not at any price |
+| keep | 0 | what the camera sees, whatever it weighs |
+
+The fetch default is a *square root* rather than the full per-byte discount it
+started as. Per byte, a payload a thousand times smaller is a thousand times
+preferred — far more than "colour first" needs, and it queues a large near mesh
+behind every trivial distant one, which is boxes in the foreground of a
+half-loaded model. Measured on the 200-object scene, the model leaves its
+default colours at **255 ms at 0.5 against 261 ms per byte** — no cost — while
+at **0 it takes 5406 ms**, the whole load, which is precisely the failure the
+per-byte rule was written to prevent. Total load time is unchanged across all
+three.
+
+⚠️ The knob is **steep** for keeping: payload sizes span three orders of
+magnitude and projected sizes about one, so `keepweight=0.5` already ranks
+nearly as size does (492 resident averaging 16 KB, i.e. the per-byte
+behaviour). The useful range for what to hold is nearer 0 to 0.3.
+
 Two consequences worth naming:
 
 - **The camera has to be able to pump the fetch.** While a scene is arriving,
