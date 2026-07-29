@@ -7264,7 +7264,15 @@ public:
             // overlay and the main scene is empty — the datums/leaders must
             // still stream.
             uint64_t publishVersion = 0;
-            if (server.running() && (dirtyChanged || !scenePublished)
+            // A level-generation job finishing (§7, phase 5c) is a
+            // publish trigger of its own: nothing in the feeds moved,
+            // but the manifest a fresh publish writes is what carries
+            // the new key to every viewer.
+            const size_t levelsBuilt =
+                server.running() ? server.levelsBuilt() : 0;
+            if (server.running()
+                    && (dirtyChanged || !scenePublished
+                        || levelsBuilt != publishedLevelsBuilt)
                     && !(scene.empty() && overlays.empty())
                     // Claims the stream on the first publish and states
                     // which publish this is; 0 means another renderer
@@ -7312,6 +7320,14 @@ public:
                     meshKeys[cacheId] = {key, uint32_t(chunk.size())};
                     server.publishBlob(key, std::move(chunk));
                 };
+                // Generated levels (§7, phase 5c): the server's work
+                // queue built them, the serializer asks per declared
+                // level, and writing the key is the announcement.
+                snap.meshBlobs.built = [&server](const std::string &source,
+                                                 uint32_t level,
+                                                 uint32_t &size) {
+                    return server.builtLevel(source, level, &size);
+                };
                 // v33: the manifest layout. Setting this is what
                 // selects it — the group manifests, the materials and
                 // the user shaders all become content-keyed chunks,
@@ -7343,6 +7359,12 @@ public:
                                             pub.changed, pub.removed);
                     publishedObjects = std::move(entries);
                     server.publish(std::move(pub));
+                    // This publish consulted builtLevel() for every
+                    // ladder it wrote, so every level finished by the
+                    // count taken above is now announced. A job that
+                    // finishes mid-serialization moves the counter
+                    // past this mark and triggers the next round.
+                    publishedLevelsBuilt = levelsBuilt;
                 }
             }
         }
@@ -11036,6 +11058,11 @@ public:
     int dumpFrames = 0;         ///< non-empty frames seen (dump delay)
     bool serveStarted = false;  ///< FC_BGFX_SERVE_SCENE start attempted
     bool scenePublished = false;///< at least one payload published
+    /// SceneStreamServer::levelsBuilt() as of the last publish. The
+    /// counter moving is what a finished level-generation job looks
+    /// like from here, and the response is a republish — that is the
+    /// announcement (§7, phase 5c), there is no other channel.
+    size_t publishedLevelsBuilt = 0;
     bool sceneDirty = false;
     // Whether the last rendered frame contained time-animated content
     // (fire/cloud/water/caustics) — see the assignment in render().

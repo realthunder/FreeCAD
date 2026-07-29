@@ -2470,6 +2470,12 @@ static bool s_viewGraceReported = false;
 /// the fastest a scene can arrive and the least useful order for it to
 /// arrive in.
 static bool s_noFetchOrder = false;
+/// ?genlod — ask the server to build every declared-but-unbuilt level
+/// the current publish names (§7, phase 5c). A debug stand-in for
+/// level *selection* (phase 5d), which will ask for the one level a
+/// draw actually wants; until then this is how the request channel and
+/// the producer's work queue are exercised end to end.
+static bool s_genLod = false;
 /// ?noprogressive — do not draw a publish until all of it is in hand,
 /// as the viewer did before 2b-3. The ladder still exists underneath —
 /// this suppresses the *showing* of it, so a load has one visible
@@ -3000,10 +3006,11 @@ static const size_t kInFlightRequests = 64;
 /// none of that is visible to the policy that drives it
 /// (Render::RungProvider).
 ///
-/// `generate` is left at its default: the browser can only ask for
-/// levels the producer has already made. Asking for one that does not
-/// exist is a request for *work*, and the server has no queue to put it
-/// in yet (docs/SceneStreaming.md §7).
+/// `generate` asks the server's work queue (docs/SceneStreaming.md §7,
+/// phase 5c): a declared level has no bytes and no key, so it cannot
+/// be fetched, only asked to be built — GET /level, fire and forget.
+/// The answer never comes back on this request; it arrives as an
+/// ordinary publish whose manifest names the new key.
 class ViewerRungProvider : public Render::RungProvider {
 public:
     void request(const std::string &key, uint32_t size) override
@@ -3016,6 +3023,39 @@ public:
     size_t window() const override { return kInFlightRequests; }
 
     void flush() override { flushBatch(); }
+
+    bool generate(const Render::LevelRequest &req) override
+    {
+        if (s_sceneUrl.empty())
+            return false;
+        // Once per page life: the server dedups too, but a request is
+        // still a request on a link the payloads share.
+        if (!asked.emplace(req.source, req.level).second)
+            return true;
+        if (s_streamDebug)
+            std::printf("fcviewer: asking for level %u of %s\n",
+                        req.level, req.source.c_str());
+        emscripten_fetch_attr_t attr;
+        emscripten_fetch_attr_init(&attr);
+        std::strcpy(attr.requestMethod, "GET");
+        // Deliberately outside the fetch window: this carries no
+        // payload and competes with nothing — the reply is an empty
+        // 202 either way.
+        attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+        attr.onsuccess = [](emscripten_fetch_t *fetch) {
+            emscripten_fetch_close(fetch);
+        };
+        attr.onerror = [](emscripten_fetch_t *fetch) {
+            emscripten_fetch_close(fetch);
+        };
+        std::string url = s_sceneUrl + "/level?source=" + req.source
+            + "&level=" + std::to_string(req.level);
+        emscripten_fetch(&attr, url.c_str());
+        return true;
+    }
+
+private:
+    std::set<std::pair<std::string, uint32_t>> asked;
 };
 
 static ViewerRungProvider s_provider;
@@ -3526,6 +3566,34 @@ static void resolvePending()
     if (target == &s_snap) {
         s_liveOutstanding = missing != 0;
         s_liveUnapplied = s_liveUnapplied || filled;
+    }
+    // ?genlod: ask the producer to build every level the ladder
+    // declares unbuilt (§7, phase 5c). Level *selection* (5d) will ask
+    // for the one level a draw wants; this stands in for it, so the
+    // request channel and the work queue run end to end. The answer
+    // lands as an ordinary publish whose delta re-names the ladder
+    // with a key in place — generate() dedups, so re-running per round
+    // costs a set lookup.
+    if (s_genLod) {
+        size_t builtMiddles = 0;
+        for (const auto &entry : target->deferredChunks) {
+            for (uint32_t i = 0; i + 1 < uint32_t(entry.levels.size()); ++i) {
+                if (entry.levels[i].key.empty())
+                    s_provider.generate({entry.key, i});
+                else
+                    ++builtMiddles;
+            }
+        }
+        // A middle rung with a key is the announcement having arrived:
+        // the server built it, the republish renamed the ladder, and
+        // this viewer parsed the new manifest. The one line that
+        // proves the whole 5c loop closed.
+        static size_t s_builtMiddlesSeen = 0;
+        if (builtMiddles > s_builtMiddlesSeen) {
+            s_builtMiddlesSeen = builtMiddles;
+            std::printf("fcviewer: %zu generated levels announced\n",
+                        builtMiddles);
+        }
     }
     // A scene held back by the budget is not a scene still loading
     // (§6 phase 4b). Once nothing is in flight and everything left was
@@ -4237,6 +4305,10 @@ int main()
     s_noFetchOrder = EM_ASM_INT({
         return new URLSearchParams(window.location.search)
             .has('nofetchorder') ? 1 : 0;
+    }) != 0;
+    s_genLod = EM_ASM_INT({
+        return new URLSearchParams(window.location.search)
+            .has('genlod') ? 1 : 0;
     }) != 0;
     // ?membudget=<MB> — pin the resident geometry budget (§6 phase 4b),
     // which otherwise fits itself to the device. A real budget is larger

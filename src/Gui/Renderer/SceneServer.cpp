@@ -288,10 +288,171 @@ public:
             else
                 it = blobs.erase(it);
         }
+        // A built level whose chunk got rolled away is a memo pointing
+        // at nothing — the mesh it was made from left the scene, and
+        // no manifest retained it. Forget it entirely, so a viewer
+        // that wants it again may ask again.
+        for (auto it = levelBuilt.begin(); it != levelBuilt.end();) {
+            if (blobs.count(it->second.first)) {
+                ++it;
+            }
+            else {
+                levelAsked.erase(it->first);
+                it = levelBuilt.erase(it);
+            }
+        }
+    }
+
+    /// The level-generation work queue (docs/SceneStreaming.md §7,
+    /// phase 5c). This is the one place the server stops answering
+    /// from its store alone: a declared level has no bytes, so asking
+    /// for it is asking for *work*, and the work has to be queued,
+    /// done off the connection threads, and announced by the next
+    /// publish rather than by the reply. All of it stays content-keyed
+    /// and idempotent — every viewer wanting the same level is the
+    /// same request — which is what invariant 7 keeps.
+    struct LevelJob {
+        std::string source;
+        uint32_t level = 0;
+    };
+    std::deque<LevelJob> levelQueue;      ///< guarded by \a mutex
+    /// Every (source, level) ever accepted, so a repeat is free. An
+    /// entry leaves only when its answer does (retireBlobs) or its
+    /// source turns out to be gone by the time the job runs.
+    std::set<std::pair<std::string, uint32_t>> levelAsked;
+    /// (source, level) -> (key, size) of the generated chunk: what
+    /// the publisher's MeshBlobSink::built consults.
+    std::map<std::pair<std::string, uint32_t>,
+             std::pair<std::string, uint32_t>> levelBuilt;
+    /// Levels finished so far, monotonic. The publisher polls it: a
+    /// change is what turns "the worker finished" into a republish,
+    /// which is the announcement.
+    size_t levelsDone = 0;
+    bool levelWorkerRunning = false;
+    std::condition_variable levelCv;      ///< pairs with \a mutex
+
+    /// Accept a request to build \a level of the mesh whose exact
+    /// chunk is stored under \a source. False when the source is not a
+    /// chunk this server holds — nothing could be generated from it.
+    bool requestLevel(const std::string &source, uint32_t level)
+    {
+        // The ladder never declares more than a handful of levels, and
+        // the request is unauthenticated: an absurd level is a bad
+        // request, not work.
+        if (level >= 16)
+            return false;
+        std::lock_guard<std::mutex> guard(mutex);
+        if (!blobs.count(source))
+            return false;
+        // Already queued, running, built, or refused for good: all the
+        // same answer, because the announcement never was the reply.
+        if (!levelAsked.emplace(source, level).second)
+            return true;
+        levelQueue.push_back({source, level});
+        if (!levelWorkerRunning) {
+            levelWorkerRunning = true;
+            std::thread([this]() { levelLoop(); }).detach();
+        }
+        levelCv.notify_one();
+        return true;
+    }
+
+    /// The worker: one thread, process-lifetime, like the accept loop.
+    void levelLoop()
+    {
+        for (;;) {
+            LevelJob job;
+            std::vector<uint8_t> source;
+            {
+                std::unique_lock<std::mutex> lock(mutex);
+                levelCv.wait(lock, [this] { return !levelQueue.empty(); });
+                job = std::move(levelQueue.front());
+                levelQueue.pop_front();
+                auto it = blobs.find(job.source);
+                if (it == blobs.end()) {
+                    // The scene moved on before the job ran. Forget
+                    // the ask, so a republish naming the mesh again
+                    // starts clean.
+                    levelAsked.erase({job.source, job.level});
+                    continue;
+                }
+                // Copied, so generation runs outside the lock: a
+                // decimation is milliseconds, and every connection
+                // thread shares this mutex.
+                source = it->second;
+            }
+            std::vector<uint8_t> chunk;
+            if (!generateMeshLevel(source.data(), source.size(), job.level,
+                                   chunk)) {
+                // Nothing to simplify at this level, or not a mesh
+                // chunk at all. The level stays declared-unbuilt, and
+                // the ask stays recorded so it is not retried forever.
+                continue;
+            }
+            std::string key = sha1Hex(chunk.data(), chunk.size());
+            uint32_t size = uint32_t(chunk.size());
+            std::fprintf(stderr,
+                         "scene server: built level %u of %s -> %s "
+                         "(%u of %zu bytes)\n",
+                         job.level, job.source.c_str(), key.c_str(), size,
+                         source.size());
+            {
+                std::lock_guard<std::mutex> guard(mutex);
+                // Straight into the pending generation: the publish
+                // this triggers is the one that names it, and until
+                // then the roll must not sweep it away.
+                pendingKeys.insert(key);
+                blobs.emplace(key, std::move(chunk));
+                levelBuilt[{job.source, job.level}] = {key, size};
+                ++levelsDone;
+            }
+            // The publisher's poll lives in the render path; wake it,
+            // or an idle backend announces nothing until something
+            // else happens to want a frame.
+            std::function<void()> notify;
+            {
+                std::lock_guard<std::mutex> guard(handlerMutex);
+                notify = workNotifier;
+            }
+            if (notify)
+                notify();
+        }
+    }
+
+    /// The key a generated level is stored under, or empty while
+    /// nobody has built it. Retains the chunk for the publish in
+    /// flight, exactly like retainBlob — being written into a manifest
+    /// is what keeps it alive from here on.
+    std::string builtLevel(const std::string &source, uint32_t level,
+                           uint32_t *size)
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        auto it = levelBuilt.find({source, level});
+        if (it == levelBuilt.end())
+            return {};
+        if (!blobs.count(it->second.first)) {
+            // Rolled away between publishes; forget it (see
+            // retireBlobs) rather than announce a key a fetch would
+            // 404 on.
+            levelAsked.erase(it->first);
+            levelBuilt.erase(it);
+            return {};
+        }
+        pendingKeys.insert(it->second.first);
+        if (size)
+            *size = it->second.second;
+        return it->second.first;
+    }
+
+    size_t levelsBuilt()
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        return levelsDone;
     }
 
     std::mutex handlerMutex;
     std::function<void(const ScenePickRequest &)> pickHandler;
+    std::function<void()> workNotifier;   ///< guarded by handlerMutex
 
     /// One live WebSocket connection, registered by its wsLoop. All
     /// sends stay on that loop's thread: control messages are queued
@@ -698,6 +859,34 @@ public:
                 "Connection: close\r\n\r\n", out.size());
             if (sendAll(fd, h, size_t(n)))
                 sendAll(fd, out.data(), out.size());
+            return;
+        }
+
+        // GET /level?source=<key>&level=<n>: ask for a declared level
+        // of a mesh to be generated (docs/SceneStreaming.md §7, phase
+        // 5c). A request for *work*, not bytes — the reply carries
+        // nothing, because the answer arrives as an ordinary publish:
+        // the worker finishes, the next root delta names the new key,
+        // and from there it is a chunk like any other. 202 whether the
+        // job is new, queued, or long done — idempotence is what lets
+        // every viewer ask without coordination.
+        if (path == "/level") {
+            std::string source = queryValue(query, "source");
+            uint32_t level = uint32_t(std::strtoul(
+                queryValue(query, "level").c_str(), nullptr, 10));
+            bool accepted = isBlobKey(source) && requestLevel(source, level);
+            static const char acceptedReply[] =
+                "HTTP/1.1 202 Accepted\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            static const char refusedReply[] =
+                "HTTP/1.1 404 Not Found\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            if (accepted)
+                sendAll(fd, acceptedReply, sizeof(acceptedReply) - 1);
+            else
+                sendAll(fd, refusedReply, sizeof(refusedReply) - 1);
             return;
         }
 
@@ -1277,12 +1466,36 @@ bool SceneStreamServer::retainBlob(const std::string &key, uint32_t *size)
     return ensure()->retainBlob(key, size);
 }
 
+bool SceneStreamServer::requestLevel(const std::string &source,
+                                     uint32_t level)
+{
+    return ensure()->requestLevel(source, level);
+}
+
+std::string SceneStreamServer::builtLevel(const std::string &source,
+                                          uint32_t level, uint32_t *size)
+{
+    return ensure()->builtLevel(source, level, size);
+}
+
+size_t SceneStreamServer::levelsBuilt()
+{
+    return ensure()->levelsBuilt();
+}
+
 void SceneStreamServer::setPickHandler(
         std::function<void(const ScenePickRequest &)> handler)
 {
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->handlerMutex);
     p->pickHandler = std::move(handler);
+}
+
+void SceneStreamServer::setWorkNotifier(std::function<void()> notifier)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    p->workNotifier = std::move(notifier);
 }
 
 void SceneStreamServer::broadcastControl(const std::string &json)

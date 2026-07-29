@@ -3947,6 +3947,18 @@ void View3DInventorViewer::setRendererType(const std::string &type)
                                 r.modifiers & 1);
                     }, Qt::QueuedConnection);
                 });
+            // A finished level-generation job (§7, phase 5c) is
+            // announced by the next publish, and the publish poll
+            // lives in the render path — so an idle backend would sit
+            // on finished work forever. The notifier's whole job is a
+            // frame.
+            Render::SceneStreamServer::instance().setWorkNotifier(
+                [self]() {
+                    QMetaObject::invokeMethod(qApp, [self]() {
+                        if (self)
+                            self->getSoRenderManager()->scheduleRedraw();
+                    }, Qt::QueuedConnection);
+                });
         }
         getSoRenderManager()->scheduleRedraw();
     }

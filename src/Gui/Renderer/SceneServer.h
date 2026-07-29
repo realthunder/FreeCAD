@@ -139,10 +139,40 @@ public:
     /// (SceneDump.h, MeshBlobSink).
     bool retainBlob(const std::string &key, uint32_t *size = nullptr);
 
+    /// Queue the generation of a declared level (docs/SceneStreaming.md
+    /// §7, phase 5c): \a source is the content key of the exact mesh
+    /// chunk, \a level the rung to build, coarsest first. Idempotent —
+    /// a repeat of any accepted request is free — and the answer is
+    /// never returned here: the finished level is announced by the
+    /// next publish naming its key. False when \a source is not a
+    /// chunk this server holds, or the level is out of any declarable
+    /// range. Also the seam a viewer's GET /level lands on.
+    bool requestLevel(const std::string &source, uint32_t level);
+
+    /// The content key of a generated level, or empty while unbuilt.
+    /// Retains the chunk for the publish in flight, like retainBlob —
+    /// this is what the serializer's MeshBlobSink::built consults, and
+    /// the manifest written from its answer is what keeps the chunk
+    /// alive thereafter.
+    std::string builtLevel(const std::string &source, uint32_t level,
+                           uint32_t *size = nullptr);
+
+    /// Levels generated so far, monotonic. The publisher polls it: a
+    /// change since the last publish is a reason to publish again,
+    /// which is how a finished job becomes an announcement.
+    size_t levelsBuilt();
+
     /// Install the consumer of viewer pick requests. Called on a
     /// server connection thread — the handler must marshal to the GUI
     /// thread itself before touching any scene graph.
     void setPickHandler(std::function<void(const ScenePickRequest &)> handler);
+
+    /// Install the publisher's cue that queued work finished (a level
+    /// was generated): without it an idle backend sits on finished
+    /// work, because the publish that would announce it lives in the
+    /// render path and nothing else asks for a frame. Called on the
+    /// worker thread — the handler must marshal itself.
+    void setWorkNotifier(std::function<void()> notifier);
 
     /// Queue a JSON control message (WebSocket text frame) to every
     /// connected viewer — the browser side of the debug/capture

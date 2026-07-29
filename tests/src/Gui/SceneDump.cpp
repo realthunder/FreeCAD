@@ -7,13 +7,16 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <Gui/Renderer/SceneDump.h>
+#include <Gui/Renderer/SceneServer.h>
 
 namespace
 {
@@ -58,6 +61,43 @@ std::shared_ptr<Render::MeshData> makeMesh(int id, int verts)
     }
     m->tris = {0, 1, 2};
     m->positions = m->pos.data();
+    m->triangleIndices = m->tris.data();
+    m->numTriangleIndices = int(m->tris.size());
+    return m;
+}
+
+/// A soup grid heavy enough to declare a ladder (its chunk passes the
+/// 64 KB threshold) and real enough to decimate: n x n quads on z = 0,
+/// every quad carrying its own six vertices, the way a CAD
+/// tessellation arrives.
+std::shared_ptr<Render::MeshData> makeGridMesh(int id, int n)
+{
+    struct Owned: Render::MeshData
+    {
+        std::vector<float> pos;
+        std::vector<float> norm;
+        std::vector<int32_t> tris;
+    };
+    auto m = std::make_shared<Owned>();
+    m->cacheId = uint64_t(id);
+    const float step = 1.0f / float(n);
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < n; ++j) {
+            const float x0 = float(i) * step, x1 = x0 + step;
+            const float y0 = float(j) * step, y1 = y0 + step;
+            const float quad[6][2] = {{x0, y0}, {x1, y0}, {x1, y1},
+                                      {x0, y0}, {x1, y1}, {x0, y1}};
+            for (const auto& p : quad) {
+                const int32_t base = int32_t(m->pos.size() / 3);
+                m->pos.insert(m->pos.end(), {p[0], p[1], 0.0f});
+                m->norm.insert(m->norm.end(), {0.0f, 0.0f, 1.0f});
+                m->tris.push_back(base);
+            }
+        }
+    }
+    m->numVertices = int(m->pos.size() / 3);
+    m->positions = m->pos.data();
+    m->normals = m->norm.data();
     m->triangleIndices = m->tris.data();
     m->numTriangleIndices = int(m->tris.size());
     return m;
@@ -1220,4 +1260,165 @@ TEST(SceneDump, aBigMeshDeclaresItsLadderOfLevels)
     }
     EXPECT_EQ(bigSeen, 1u);
     EXPECT_EQ(smallSeen, 1u);
+}
+
+/// Phase 5c: a declared level can actually be built from the exact
+/// chunk's bytes alone — no shape, no scene, no producer state — and
+/// what comes out is an ordinary mesh chunk the entry's own fill
+/// parses.
+TEST(SceneDump, aDeclaredLevelIsBuiltFromTheExactChunk)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    auto big = makeGridMesh(1, 37);
+    const int srcVerts = big->numVertices;
+    snap.scene.push_back(makeDraw(0x1111, big, 0xff0000ff));
+    attachSinks(snap, store);
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    // Resolve everything but the geometry, which is exactly the moment
+    // a level exists to serve: the entry is named, its ladder is
+    // declared, and the exact mesh has not arrived.
+    ASSERT_TRUE(resolve(loaded, store, store.meshKeys));
+
+    const Render::SceneSnapshot::DeferredChunk* entry = nullptr;
+    for (const auto& chunk : loaded.deferredChunks) {
+        if (store.meshKeys.count(chunk.key)) {
+            entry = &chunk;
+        }
+    }
+    ASSERT_TRUE(entry);
+    ASSERT_EQ(entry->levels.size(), 3u) << "the big mesh declares two levels";
+    ASSERT_TRUE(entry->fill);
+    auto fill = entry->fill;
+    const auto& source = store.blobs.at(entry->key);
+
+    std::vector<uint8_t> level0;
+    ASSERT_TRUE(Render::generateMeshLevel(source.data(), source.size(), 0,
+                                          level0));
+    ASSERT_FALSE(level0.empty());
+    EXPECT_LT(level0.size(), source.size()) << "a coarser rung weighs less";
+
+    // Determinism, invariant 2's precondition: varying bytes would
+    // mint a varying key for the same level of the same source, and
+    // no cache — the server's memo, a viewer's IndexedDB — could ever
+    // hit.
+    std::vector<uint8_t> again;
+    ASSERT_TRUE(Render::generateMeshLevel(source.data(), source.size(), 0,
+                                          again));
+    EXPECT_EQ(level0, again);
+
+    // The level lands through the entry's ordinary fill and stands in
+    // for the mesh; the exact chunk arriving later refines it in
+    // place. That is the whole consumption story: a level is a chunk.
+    ASSERT_TRUE(fill(loaded, level0.data(), level0.size()));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(Render::applySceneObjects(loaded, model));
+    ASSERT_EQ(loaded.scene.size(), 1u);
+    ASSERT_TRUE(loaded.scene[0].mesh);
+    EXPECT_FALSE(loaded.scene[0].standIn)
+        << "a resident level is geometry, not a box";
+    EXPECT_GT(loaded.scene[0].mesh->numVertices, 0);
+    EXPECT_LT(loaded.scene[0].mesh->numVertices, srcVerts);
+
+    ASSERT_TRUE(fill(loaded, source.data(), source.size()));
+    EXPECT_EQ(loaded.scene[0].mesh->numVertices, srcVerts)
+        << "the exact mesh still lands on top of the level";
+}
+
+/// Phase 5c: once somebody has built a level, the publish that writes
+/// the ladder announces it — a keyed entry where the declaration was,
+/// through the sink the serializer already consults per level.
+TEST(SceneDump, aBuiltLevelIsAnnouncedAsAKeyedEntry)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    auto big = makeMesh(1, 8000);
+    snap.scene.push_back(makeDraw(0x1111, big, 0xff0000ff));
+    attachSinks(snap, store);
+    const std::string builtKey(40, 'a');
+    std::string askedSource;
+    snap.meshBlobs.built = [&](const std::string& source, uint32_t level,
+                               uint32_t& size) {
+        askedSource = source;
+        if (level != 1) {
+            return std::string();
+        }
+        size = 4242;
+        return builtKey;
+    };
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    const Render::SceneSnapshot::DeferredChunk* entry = nullptr;
+    for (const auto& chunk : loaded.deferredChunks) {
+        if (store.meshKeys.count(chunk.key)) {
+            entry = &chunk;
+        }
+    }
+    ASSERT_TRUE(entry);
+    ASSERT_EQ(entry->levels.size(), 3u);
+    EXPECT_EQ(askedSource, entry->key)
+        << "a level is named by the exact chunk it would be built from";
+    EXPECT_TRUE(entry->levels[0].key.empty()) << "level 0 stays declared";
+    EXPECT_EQ(entry->levels[1].key, builtKey);
+    EXPECT_EQ(entry->levels[1].size, 4242u);
+    EXPECT_EQ(entry->levels.back().key, entry->key)
+        << "the entry still fetches the finest built level, the exact mesh";
+}
+
+/// Phase 5c: the server's work queue end to end, no sockets — accept
+/// the request, refuse what could never be generated, build off the
+/// connection threads, and remember the answer where the next
+/// publish's sink will find it.
+TEST(SceneDump, theServerWorkQueueBuildsARequestedLevel)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    auto big = makeGridMesh(1, 37);
+    snap.scene.push_back(makeDraw(0x1111, big, 0xff0000ff));
+    attachSinks(snap, store);
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    ASSERT_EQ(store.meshKeys.size(), 1u);
+    const std::string sourceKey = *store.meshKeys.begin();
+
+    auto& server = Render::SceneStreamServer::instance();
+    server.publishBlob(sourceKey,
+                       std::vector<uint8_t>(store.blobs.at(sourceKey)));
+
+    EXPECT_FALSE(server.requestLevel(std::string(40, 'b'), 0))
+        << "a source the server does not hold is a refusal, not a job";
+    EXPECT_FALSE(server.requestLevel(sourceKey, 99))
+        << "a level no ladder could declare is a bad request, not work";
+
+    ASSERT_TRUE(server.requestLevel(sourceKey, 0));
+    for (int i = 0; i < 500 && server.levelsBuilt() < 1; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_EQ(server.levelsBuilt(), 1u) << "the worker never finished";
+
+    uint32_t size = 0;
+    const std::string key = server.builtLevel(sourceKey, 0, &size);
+    ASSERT_FALSE(key.empty());
+    EXPECT_NE(key, sourceKey);
+    EXPECT_GT(size, 0u);
+
+    // Idempotent: the same ask again is accepted and costs nothing.
+    EXPECT_TRUE(server.requestLevel(sourceKey, 0));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_EQ(server.levelsBuilt(), 1u);
+
+    // A level nobody asked for stays unbuilt.
+    EXPECT_TRUE(server.builtLevel(sourceKey, 1).empty());
 }

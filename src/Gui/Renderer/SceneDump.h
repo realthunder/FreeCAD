@@ -133,6 +133,15 @@ struct SceneSnapshot {
         /// Take over a freshly serialized chunk under its content key.
         std::function<void(uint64_t cacheId, const std::string &key,
                            std::vector<uint8_t> &&chunk)> store;
+        /// The key of a generated level of the mesh whose exact chunk
+        /// is \a source, or empty while nobody has built it (§7, phase
+        /// 5c). Consulted per declared level, so a level finished since
+        /// the last publish is announced by this publish as a keyed
+        /// entry — the ordinary path, no side channel. Optional: unset
+        /// means every declared level is written unbuilt, which is
+        /// exactly what v36 wrote.
+        std::function<std::string(const std::string &source, uint32_t level,
+                                  uint32_t &size)> built;
         explicit operator bool() const { return bool(reuse) && bool(store); }
     };
     MeshBlobSink meshBlobs;
@@ -469,6 +478,19 @@ RendererExport uint32_t sceneDumpVersion();
 /// can verify a payload it got from somewhere it does not control (a
 /// browser's IndexedDB store) actually is the bytes that key names.
 RendererExport std::string sha1Hex(const void *data, size_t size);
+
+/// Build the bytes of a declared level from the bytes of the exact
+/// mesh chunk it was declared on (§7, phase 5c): parse, decimate on
+/// the level's grid (MeshSimplify), re-serialize. The output is an
+/// ordinary mesh chunk — same layout, its own content key — and the
+/// element tables and refinement subsets carry over, so the level
+/// picks like the mesh it stands in for. False when the chunk does
+/// not parse or the level would not simplify anything, in which case
+/// the level simply stays unbuilt: a rung that saves nothing is not
+/// worth a chunk.
+RendererExport bool generateMeshLevel(const void *chunk, size_t size,
+                                      uint32_t level,
+                                      std::vector<uint8_t> &out);
 /// Peek the format version of a serialized snapshot (the payload
 /// without the 8-byte stream-version prefix); 0 when it is not a
 /// snapshot. A viewer receiving a payload newer than its own

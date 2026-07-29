@@ -20,6 +20,7 @@
  ****************************************************************************/
 
 #include "SceneDump.h"
+#include "MeshSimplify.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -341,7 +342,20 @@ void writeMesh(Writer &w, const MeshData &m,
     w.u8(uint8_t(declared + 1));
     for (uint32_t lvl = 0; lvl < declared; ++lvl) {
         w.f(1.0f / float(8u << lvl));
-        w.u8(0);
+        // A level someone has generated since the last publish gets
+        // its key here (§7, phase 5c) — which is the whole
+        // announcement: writing the key changes these bytes, so the
+        // group's content key moves and the delta carries the news.
+        uint32_t lvlSize = 0;
+        std::string lvlKey =
+            blobs.built ? blobs.built(key, lvl, lvlSize) : std::string();
+        if (lvlKey.empty()) {
+            w.u8(0);
+            continue;
+        }
+        w.u8(1);
+        w.str(lvlKey);
+        w.u32(lvlSize);
     }
     w.f(0.0f);
     w.u8(1);
@@ -483,6 +497,58 @@ void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
         r.parts(mesh->pointParts);
     }
 }
+
+} // anonymous namespace — resumed below; the level generator has
+  // external linkage and lives at Render:: scope, but sits here with
+  // the chunk machinery it is made of.
+
+bool Render::generateMeshLevel(const void *chunk, size_t size, uint32_t level,
+                               std::vector<uint8_t> &out)
+{
+    // Parse the exact chunk back into a mesh. The chunk came out of
+    // this build's own store, so it is this build's layout — current
+    // version, no compatibility question.
+    OwnedMeshData mesh;
+    bool ok = readChunk(chunk, size, [&mesh](Reader &r) {
+        readMeshChunk(r, &mesh, kVersion);
+    });
+    if (!ok || mesh.numVertices <= 0)
+        return false;
+
+    // The declared error was stated relative to the mesh's own
+    // diagonal (writeMesh), and the generator's grid is stated the
+    // same way — so the bbox the cell size needs is the mesh's own.
+    float bbox[6] = {mesh.positions[0], mesh.positions[1],
+                     mesh.positions[2], mesh.positions[0],
+                     mesh.positions[1], mesh.positions[2]};
+    for (int i = 1; i < mesh.numVertices; ++i) {
+        for (int a = 0; a < 3; ++a) {
+            float v = mesh.positions[size_t(i) * 3 + a];
+            bbox[a] = std::min(bbox[a], v);
+            bbox[a + 3] = std::max(bbox[a + 3], v);
+        }
+    }
+    float cellSize = levelCellSize(bbox, level);
+    if (!(cellSize > 0.0f))
+        return false;
+
+    SimplifiedMesh simplified;
+    if (!simplifyMesh(mesh, cellSize, simplified))
+        return false;
+
+    // A level is an ordinary mesh chunk. What fill() does not know —
+    // the material-facing flags, invariant under decimation — carries
+    // over from the source.
+    MeshData levelMesh;
+    simplified.fill(levelMesh);
+    levelMesh.hasTransparency = mesh.hasTransparency;
+    levelMesh.hasOpaqueParts = mesh.hasOpaqueParts;
+    return writeChunk(out, [&levelMesh](Writer &w) {
+        writeMeshChunk(w, levelMesh);
+    });
+}
+
+namespace {
 
 /// Read one mesh table entry. A deferred entry (v28, streaming) yields
 /// an empty MeshData plus the means to fill it once its chunk arrives;
@@ -1677,6 +1743,16 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
         // Already slotted by another group: nothing to defer, but this
         // object wants it too and its priority may be higher.
         noteExistingOwner(snap, st, key, owner);
+        // The ladder can be newer under the same identity: a level
+        // generated since this entry was slotted arrives as a keyed
+        // entry where a declaration was, and this re-read reference IS
+        // the announcement (§7, phase 5c). The entry itself — key,
+        // fill, residency — is untouched; only the list of
+        // alternatives is refreshed.
+        auto at = st->chunkAt.find(key);
+        if (at != st->chunkAt.end()
+                && at->second < snap.deferredChunks.size())
+            snap.deferredChunks[at->second].levels = std::move(c.levels);
         return it->second;
     }
     auto mesh = std::make_shared<OwnedMeshData>();
