@@ -670,7 +670,7 @@ to remove.
 | 5a | the decimation generator, element maps preserved (**done**) | a middle rung exists to build |
 | 5b | the level ladder in the format: declared levels, optional keys (**done**, v36) | a level can exist before it is generated |
 | 5c | generation on demand: `LevelRequest` → producer work queue (**done**) | the middle rungs get bytes |
-| 5d | level selection, and eviction descending level by level | large models *fast* |
+| 5d | level selection, and eviction descending level by level (**done**, browser tier) | large models *fast* |
 
 Phase 1 is the v26 pattern extended to two more section types and needs no
 protocol restructure; 1a alone is 64% of the payload.
@@ -1391,15 +1391,70 @@ there manifest naming keeps it alive like any blob. A memo entry whose chunk
 was rolled away (its mesh left the scene before any manifest named the
 level) is forgotten and may be asked for again.
 
-The consumer half is deliberately thin until 5d: `RungProvider::generate` on
+The consumer half was deliberately thin until 5d: `RungProvider::generate` on
 the browser tier fires the GET and forgets; `?genlod` stands in for level
 selection by asking for every declared-unbuilt level the publish names, so
 the whole loop runs today — on demo-varied@200: 400 asks, 400 builds (a
 158 KB chunk's level 0 comes back at 4.6 KB, level 1 at 17 KB), 400
-announced back into the viewer's ladders. What no one does yet is *fetch* a
-middle level: that is selection, and it is 5d's whole subject, along with
-which level a draw wants and when eviction steps down one level instead of
-all the way to the box.
+announced back into the viewer's ladders.
+
+### 5d — level selection, as built (browser tier)
+
+The policy is one shared function, `chooseLevel` (SceneLadder): a level's
+error is stated relative to the mesh's own diagonal, so multiplying by the
+best owner's projected size on screen turns it into pixels, and the choice
+is a comparison — the coarsest level whose error lands under a tolerance
+(`?lodpx=`, default 2 px, 0 = off) is indistinguishable from the exact mesh
+to within that many pixels. The *best* owner decides, as everywhere on this
+ladder; unknown bounds, view chunks and a one-rung ladder all answer "the
+exact mesh", which is what selection replaced. When the wanted level is
+declared but unbuilt, the choice also says which *built* rung to take
+meanwhile — the nearest one, preferring the coarser side — and that the
+producer should be asked (`RungProvider::generate`, which retired `?genlod`
+to a debug flag).
+
+Consumption is a retarget, not a second fetch path: the deferred entry's own
+`key`/`size` are pointed at the chosen level before the round reads them,
+and every mechanism downstream — the ordered fetch, the batch, IndexedDB,
+residency, the refill map, eviction — works on the level chunk unchanged,
+because a level is an ordinary chunk. The entry's ladder identity stays the
+exact-mesh key (the loader's dedup and the backend's upload id both derive
+from it), so retargeting is invisible outside the fetch.
+
+Three rules the first measured runs forced, all the same lesson — **a level
+decision is a decision under one camera**:
+
+- **Upgrades keep the coarse rung until the fine one lands.** A resident
+  entry the camera has outgrown is re-armed toward the finer level, but its
+  residency is not touched: the arrival bookkeeping then enforces *one
+  resident rung per ladder*, superseding whichever level held the slot.
+  The first cut dropped the coarse rung at re-arm, and every refused
+  upgrade was a payload given back for nothing.
+- **Downgrades are eviction's move, never selection's.** A fetch only ever
+  raises fidelity; walking down happens when the budget releases a fine
+  rung — and then the entry steps onto the nearest coarser *built* rung
+  instead of sitting on its box, skipping rungs that were themselves
+  released so the budget's answers stay answered. Measured under
+  `?membudget=4` on demo-varied@200: final boxes halved (89 against 172
+  with selection off), and the model at rest releases nothing.
+- **A refusal is memoized like a release.** Retrying a refused admission
+  every round re-plans the same eviction and fails the same way — measured
+  at fourteen times the admission failures once armed upgrades joined the
+  queue. `s_refusedScore` applies the release rule's margin to refusals:
+  ask again when worth materially more, or at once when the budget has
+  actual room, which costs nothing to test.
+
+What it buys, measured on the warm server (levels built and announced): the
+fitted camera at `?lodpx=8` holds **1 MB of geometry where the exact meshes
+take 28 MB**, with every draw present, none boxed, and the frame visually
+indistinguishable at that tolerance. At the default 2 px the same camera
+correctly chooses the exact meshes — the win appears exactly when objects
+are small on screen, which is the case LOD exists for.
+
+Still open from 5d: the desktop tier consumes none of this yet (its
+provider — a tessellation job per level, with `cancel` — is the remaining
+half of "one ladder for two tiers"), and the tolerance is a URL parameter
+where it wants to be a `Render_*` preference.
 
 ## 12. Open questions
 

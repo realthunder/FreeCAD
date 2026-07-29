@@ -170,3 +170,145 @@ TEST(Evictor, theViewsOwnChunksAreNeverVictims)
     ASSERT_EQ(released.size(), 1u);
     EXPECT_EQ(released[0], "model");
 }
+
+// ----------------------------------------------------------------------
+// chooseLevel (§7, phase 5d)
+// ----------------------------------------------------------------------
+
+namespace
+{
+
+/// eye at (0,0,10) looking at the origin, fovY 90° (tan of the half
+/// angle exactly 1), so an object of radius r at the origin projects
+/// to a diameter of r/10 * viewportPx pixels — round numbers on
+/// purpose.
+Render::LadderView levelView()
+{
+    Render::LadderView view;
+    view.eye[2] = 10.0f;
+    view.fovY = 90.0f;
+    view.aspect = 1.0f;
+    return view;
+}
+
+/// A mesh entry with the v36 ladder a big mesh declares: two unbuilt
+/// or built middle rungs and the exact mesh, owned by object 1.
+Render::SceneSnapshot::DeferredChunk levelEntry(bool level0Built,
+                                                bool level1Built)
+{
+    Render::SceneSnapshot::DeferredChunk entry;
+    entry.key = std::string(40, 'e');
+    entry.size = 100000;
+    entry.owners.push_back(1);
+    Render::SceneSnapshot::DeferredChunk::Level lvl;
+    lvl.error = 1.0f / 8.0f;
+    if (level0Built) {
+        lvl.key = std::string(40, 'a');
+        lvl.size = 5000;
+    }
+    entry.levels.push_back(lvl);
+    lvl = {};
+    lvl.error = 1.0f / 16.0f;
+    if (level1Built) {
+        lvl.key = std::string(40, 'b');
+        lvl.size = 17000;
+    }
+    entry.levels.push_back(lvl);
+    lvl = {};
+    lvl.error = 0.0f;
+    lvl.key = entry.key;
+    lvl.size = entry.size;
+    entry.levels.push_back(lvl);
+    return entry;
+}
+
+}  // namespace
+
+TEST(ChooseLevel, theCoarsestLevelTheCameraCannotFaultIsDesired)
+{
+    // radius 0.4 at distance 10 on a 1000 px viewport: a 40 px object.
+    // Level 0 errs by 5 px, level 1 by 2.5 px.
+    float bbox[6] = {-0.231f, -0.231f, -0.231f, 0.231f, 0.231f, 0.231f};
+    Render::RungRanker ranker(levelView(),
+                              [&](uint64_t) -> const float * { return bbox; });
+    auto entry = levelEntry(true, true);
+
+    // 2.6 px allowed: level 1 (2.5 px) passes, level 0 (5 px) does not.
+    auto choice = Render::chooseLevel(ranker, entry, 2.6f, 1000.0f);
+    EXPECT_EQ(choice.desired, 1u);
+    EXPECT_EQ(choice.fetch, 1u);
+    EXPECT_FALSE(choice.generate);
+
+    // 6 px allowed: even the coarsest rung is indistinguishable.
+    choice = Render::chooseLevel(ranker, entry, 6.0f, 1000.0f);
+    EXPECT_EQ(choice.desired, 0u);
+    EXPECT_EQ(choice.fetch, 0u);
+
+    // 1 px allowed: only the exact mesh qualifies.
+    choice = Render::chooseLevel(ranker, entry, 1.0f, 1000.0f);
+    EXPECT_EQ(choice.desired, 2u);
+    EXPECT_EQ(choice.fetch, 2u);
+    EXPECT_FALSE(choice.generate);
+}
+
+TEST(ChooseLevel, anUnbuiltDesireFetchesTheNearestBuiltRung)
+{
+    float bbox[6] = {-0.231f, -0.231f, -0.231f, 0.231f, 0.231f, 0.231f};
+    Render::RungRanker ranker(levelView(),
+                              [&](uint64_t) -> const float * { return bbox; });
+
+    // Desired level 1 unbuilt, level 0 built: take the coarser built
+    // rung — cheap and on screen beats big and marginally better —
+    // and ask for the wanted one to be generated.
+    auto entry = levelEntry(true, false);
+    auto choice = Render::chooseLevel(ranker, entry, 2.6f, 1000.0f);
+    EXPECT_EQ(choice.desired, 1u);
+    EXPECT_EQ(choice.fetch, 0u);
+    EXPECT_TRUE(choice.generate);
+
+    // Nothing built below: the exact mesh is the only rung there is.
+    entry = levelEntry(false, false);
+    choice = Render::chooseLevel(ranker, entry, 2.6f, 1000.0f);
+    EXPECT_EQ(choice.desired, 1u);
+    EXPECT_EQ(choice.fetch, 2u);
+    EXPECT_TRUE(choice.generate);
+}
+
+TEST(ChooseLevel, theSafeAnswerIsTheExactMesh)
+{
+    float bbox[6] = {-0.231f, -0.231f, -0.231f, 0.231f, 0.231f, 0.231f};
+    Render::RungRanker withBounds(
+        levelView(), [&](uint64_t) -> const float * { return bbox; });
+    Render::RungRanker noBounds(
+        levelView(), [](uint64_t) -> const float * { return nullptr; });
+    auto entry = levelEntry(true, true);
+
+    // Tolerance zero is the off switch.
+    auto choice = Render::chooseLevel(withBounds, entry, 0.0f, 1000.0f);
+    EXPECT_EQ(choice.desired, entry.levels.size() - 1);
+    EXPECT_FALSE(choice.generate);
+
+    // Bounds nobody knows score zero and must not read as "infinitely
+    // far away, take the coarsest": the safe answer is exact.
+    choice = Render::chooseLevel(noBounds, entry, 2.6f, 1000.0f);
+    EXPECT_EQ(choice.desired, entry.levels.size() - 1);
+
+    // A view chunk owns no objects and has no ladder to speak of.
+    auto viewEntry = entry;
+    viewEntry.owners.clear();
+    choice = Render::chooseLevel(withBounds, viewEntry, 2.6f, 1000.0f);
+    EXPECT_EQ(choice.desired, entry.levels.size() - 1);
+
+    // The best owner decides: add a near object to the same mesh and
+    // the far one no longer settles for its rung.
+    float nearBox[6] = {-4.0f, -4.0f, 4.0f, 4.0f, 4.0f, 6.0f};
+    Render::RungRanker twoOwners(
+        levelView(), [&](uint64_t key) -> const float * {
+            return key == 1 ? bbox : nearBox;
+        });
+    auto shared = levelEntry(true, true);
+    shared.owners.push_back(2);
+    choice = Render::chooseLevel(twoOwners, shared, 2.6f, 1000.0f);
+    EXPECT_EQ(choice.desired, entry.levels.size() - 1)
+        << "a mesh shared with a near object must be fine enough for it";
+}

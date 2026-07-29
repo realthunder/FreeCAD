@@ -459,6 +459,64 @@ float RungRanker::residency(const SceneSnapshot::DeferredChunk &chunk)
     return value(chunk, m_weights.keep);
 }
 
+LevelChoice Render::chooseLevel(RungRanker &ranker,
+                                const SceneSnapshot::DeferredChunk &entry,
+                                float tolerancePx, float viewportPx)
+{
+    LevelChoice choice;
+    const size_t count = entry.levels.size();
+    choice.desired = choice.fetch = count ? count - 1 : 0;
+    if (count < 2 || !(tolerancePx > 0.0f) || !(viewportPx > 0.0f))
+        return choice;
+    // The best owner decides. Unknown bounds answer exact — the level
+    // that is right whatever the camera turns out to see.
+    float best = 0.0f;
+    for (uint64_t owner : entry.owners)
+        best = std::max(best, ranker.owner(owner));
+    if (!(best > 0.0f))
+        return choice;
+    // project() scores angular size — radius over distance. The
+    // viewport's half height spans tan(fovY/2) of the same measure
+    // over viewportPx/2 pixels, so the owner's projected *diameter* in
+    // pixels is score / tan(fovY/2) * viewportPx; a level's stated
+    // error is relative to the diagonal, which is that diameter.
+    const float tanHalf =
+        std::tan(ranker.view().fovY * 0.5f * 3.14159265358979f / 180.0f);
+    if (!(tanHalf > 0.0f))
+        return choice;
+    const float diameterPx = best / tanHalf * viewportPx;
+    for (size_t i = 0; i < count; ++i) {
+        if (entry.levels[i].error * diameterPx <= tolerancePx) {
+            choice.desired = i;
+            break;
+        }
+    }
+    choice.generate = entry.levels[choice.desired].key.empty();
+    // The built rung nearest the desired one, coarser side first: the
+    // exact mesh always closes the ladder keyed, so the scan cannot
+    // come up empty.
+    choice.fetch = choice.desired;
+    if (choice.generate) {
+        size_t found = size_t(-1);
+        for (size_t step = choice.desired; step-- > 0;) {
+            if (!entry.levels[step].key.empty()) {
+                found = step;
+                break;
+            }
+        }
+        if (found == size_t(-1)) {
+            for (size_t i = choice.desired + 1; i < count; ++i) {
+                if (!entry.levels[i].key.empty()) {
+                    found = i;
+                    break;
+                }
+            }
+        }
+        choice.fetch = found;
+    }
+    return choice;
+}
+
 // ----------------------------------------------------------------------
 // Evictor
 // ----------------------------------------------------------------------

@@ -181,6 +181,41 @@ private:
     std::map<uint64_t, float> m_memo;
 };
 
+/// Which rung of a mesh's declared ladder to have, and which to ask
+/// for — the two are different whenever the wanted one is declared but
+/// unbuilt (docs/SceneStreaming.md §7, phase 5d).
+struct LevelChoice {
+    /// The rung the camera warrants: the coarsest level whose stated
+    /// error the viewer could not tell from the exact mesh.
+    size_t desired = 0;
+    /// The rung to acquire now: the built level nearest \a desired,
+    /// preferring the coarser side — a cheap rung that shows the
+    /// object beats a large one that shows it slightly better, which
+    /// is the whole progressive argument, and the exact mesh always
+    /// closes the ladder so there is always something to fetch.
+    size_t fetch = 0;
+    /// True when \a desired is declared but has no key yet: worth a
+    /// RungProvider::generate, whose answer arrives as a publish.
+    bool generate = false;
+};
+
+/// Pick a level from what the camera can actually resolve.
+///
+/// A level's error is stated relative to the mesh's own diagonal
+/// (v36), so multiplying by the owner's projected size on screen turns
+/// it into pixels, and the choice is a comparison: the coarsest level
+/// whose error lands under \a tolerancePx is indistinguishable from
+/// the exact mesh to within that many pixels. The *best* owner
+/// decides, as everywhere on this ladder — a mesh shared by a near
+/// object and a far one must be fine enough for the near one.
+///
+/// Owners with unknown bounds, a non-positive tolerance (the off
+/// switch), or a ladder of one rung all answer "the exact mesh", which
+/// is the behavior selection replaced.
+RendererExport LevelChoice chooseLevel(
+    RungRanker &ranker, const SceneSnapshot::DeferredChunk &entry,
+    float tolerancePx, float viewportPx);
+
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.
 ///

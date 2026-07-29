@@ -2343,6 +2343,16 @@ static std::map<std::string, FillFn> s_refill;
 /// place. Zooming into a distant object raises its score and brings
 /// it back; drifting the camera by a pixel does not.
 static std::map<std::string, float> s_releasedScore;
+/// The same margin rule for *refusals* (§7 phase 5d). An admission the
+/// budget turned down is also a decision under one camera: retrying it
+/// every round re-plans the same eviction and fails the same way —
+/// measured at fourteen times the admission failures once armed
+/// upgrades joined the queue, all CPU, no bytes moved. A refused entry
+/// asks again when it is worth materially more than when it was
+/// refused — or at once when the budget has actual room, because room
+/// appearing is the other thing that changes the answer and costs
+/// nothing to test.
+static std::map<std::string, float> s_refusedScore;
 /// Whether the viewer has already said it is at its budget, so the
 /// line is printed on the transition and not on every round.
 static bool s_atBudgetReported = false;
@@ -2470,6 +2480,13 @@ static bool s_viewGraceReported = false;
 /// the fastest a scene can arrive and the least useful order for it to
 /// arrive in.
 static bool s_noFetchOrder = false;
+/// ?lodpx=<pixels> — the screen-space error a coarser level may commit
+/// before the exact mesh is required (§7, phase 5d). The selection
+/// tolerance: a level's stated error times the owner's projected size
+/// must land under this many pixels for the level to stand in. 0
+/// disables selection entirely — every mesh entry fetches its finest
+/// built level, the pre-5d behavior.
+static float s_lodPx = 2.0f;
 /// ?genlod — ask the server to build every declared-but-unbuilt level
 /// the current publish names (§7, phase 5c). A debug stand-in for
 /// level *selection* (phase 5d), which will ask for the one level a
@@ -3293,6 +3310,7 @@ static void resolvePending()
             const bool releasable = bool(entry.release);
             const std::string key = entry.key;
             const uint32_t size = entry.size;
+            const auto levels = entry.levels;
             // A null payload asks the entry to give up. Whether that
             // is survivable is its business, not ours — a texture says
             // yes and the draw renders untextured.
@@ -3316,6 +3334,23 @@ static void resolvePending()
                     // last let go is history, and the next release
                     // will record what it is worth then.
                     s_releasedScore.erase(key);
+                    s_refusedScore.erase(key);
+                    // One resident rung per ladder (§7 phase 5d): the
+                    // arrival of any level supersedes whichever other
+                    // level held the slot — its arrays were just
+                    // overwritten by this fill, so its bytes are gone
+                    // whatever the books said.
+                    for (const auto &lvl : levels) {
+                        if (lvl.key == key)
+                            continue;
+                        auto other = s_resident.find(lvl.key);
+                        if (other == s_resident.end())
+                            continue;
+                        s_residentBytes -= std::min(s_residentBytes,
+                                                    size_t(other->second));
+                        s_resident.erase(other);
+                        s_refill.erase(lvl.key);
+                    }
                 }
             }
             else {
@@ -3392,11 +3427,81 @@ static void resolvePending()
         /// at once — and counted here rather than kept in a running
         /// total, which could only drift.
         size_t pledged = 0;
+        /// Rung moves this round (§7 phase 5d), for the debug line:
+        /// upgrades re-armed toward a finer level, and descents onto a
+        /// coarser built level after the finer was given back.
+        size_t rungUp = 0, rungDown = 0;
+        /// The index entry.key currently names in its own ladder.
+        const auto levelIndexOf =
+            [](const Render::SceneSnapshot::DeferredChunk &entry) {
+                for (size_t l = 0; l < entry.levels.size(); ++l) {
+                    if (entry.levels[l].key == entry.key)
+                        return l;
+                }
+                return entry.levels.empty() ? size_t(0)
+                                            : entry.levels.size() - 1;
+            };
         for (size_t i = 0; i < target->deferredChunks.size(); ++i) {
-            const auto &entry = target->deferredChunks[i];
+            auto &entry = target->deferredChunks[i];
             totalBytes += entry.size;
+            // A resident rung the camera has outgrown (§7 phase 5d):
+            // re-arm the entry toward the finer level and let the
+            // ordinary issue path fetch it. The coarse arrays stay in
+            // place until the finer fill lands, so an upgrade never
+            // shows the box — and only upgrades happen here, because a
+            // fetch never *lowers* fidelity: walking down is
+            // eviction's move, under pressure, not selection's.
+            if (!entry.fill && entry.levels.size() > 1 && s_lodPx > 0.0f
+                    && s_resident.count(entry.key)
+                    && !s_blobInFlight.count(entry.key)) {
+                auto choice = Render::chooseLevel(order, entry, s_lodPx,
+                                                 float(s_height));
+                if (choice.generate)
+                    s_provider.generate({entry.levels.back().key,
+                                         uint32_t(choice.desired)});
+                const size_t cur = levelIndexOf(entry);
+                auto refill = s_refill.find(entry.key);
+                if (choice.fetch > cur && refill != s_refill.end()) {
+                    // The coarse rung stays resident — in the budget's
+                    // books and in the refill map — until the finer
+                    // one actually lands; the arrival bookkeeping
+                    // supersedes it then (one resident rung per
+                    // ladder). Dropping it here and refetching on
+                    // refusal was measured as pure thrash: the budget
+                    // says no to the fine rung, and the coarse one has
+                    // been given up for nothing.
+                    entry.fill = refill->second;
+                    entry.key = entry.levels[choice.fetch].key;
+                    entry.size = entry.levels[choice.fetch].size;
+                    ++rungUp;
+                }
+            }
             if (!entry.fill)
                 continue;
+            // Which rung to ask for (§7 phase 5d): retarget the
+            // entry's fetch identity to the chosen level before
+            // anything below reads its key or size. Not while a
+            // request is out — the arrival matches on the key.
+            if (entry.levels.size() > 1 && s_lodPx > 0.0f
+                    && !s_blobInFlight.count(entry.key)) {
+                auto choice = Render::chooseLevel(order, entry, s_lodPx,
+                                                 float(s_height));
+                if (choice.generate)
+                    s_provider.generate({entry.levels.back().key,
+                                         uint32_t(choice.desired)});
+                const auto &lvl = entry.levels[choice.fetch];
+                if (!lvl.key.empty() && s_resident.count(lvl.key)) {
+                    // The rung the camera wants is the one already
+                    // held — an armed upgrade whose reason zoomed away
+                    // stands down rather than refetching what it has.
+                    entry.fill = nullptr;
+                    continue;
+                }
+                if (!lvl.key.empty() && lvl.key != entry.key) {
+                    entry.key = lvl.key;
+                    entry.size = lvl.size;
+                }
+            }
             ++missing;
             missingBytes += entry.size;
             if (entry.release && s_blobInFlight.count(entry.key)) {
@@ -3416,8 +3521,31 @@ static void resolvePending()
             // for as long as the camera keeps moving.
             auto rel = s_releasedScore.find(entry.key);
             if (rel != s_releasedScore.end()
-                    && order.residency(entry) <= rel->second * kEvictMargin)
-                continue;
+                    && order.residency(entry) <= rel->second * kEvictMargin) {
+                // The rung that was given back waits for the camera —
+                // but a coarser *built* rung is not the payload that
+                // was displaced, and a few kilobytes that show the
+                // object beat a box that holds its place (§7 phase
+                // 5d): step the entry down instead of leaving it
+                // boxed. Skipping rungs that were themselves released
+                // keeps this from re-asking anything the budget
+                // already answered about.
+                bool descended = false;
+                if (entry.levels.size() > 1 && s_lodPx > 0.0f) {
+                    for (size_t step = levelIndexOf(entry); step-- > 0;) {
+                        const auto &lvl = entry.levels[step];
+                        if (lvl.key.empty() || s_releasedScore.count(lvl.key))
+                            continue;
+                        entry.key = lvl.key;
+                        entry.size = lvl.size;
+                        descended = true;
+                        ++rungDown;
+                        break;
+                    }
+                }
+                if (!descended)
+                    continue;
+            }
             // ?nofetchorder scores nothing: every chunk ties, the sort
             // below leaves them in the order the publish named them,
             // and the window check is skipped, which between them is
@@ -3526,12 +3654,24 @@ static void resolvePending()
                 // residency's terms — `item.first` is the fetch order's
                 // per-byte score and would compare a candidate against
                 // victims measured on a different scale entirely.
-                if (held > geometryBudget()
-                        && !evictor.makeRoom(order.residency(entry),
-                                             held - geometryBudget())) {
-                    ++refused;
-                    continue;
+                if (held > geometryBudget()) {
+                    const float score = order.residency(entry);
+                    auto ref = s_refusedScore.find(entry.key);
+                    if (ref != s_refusedScore.end()
+                            && score <= ref->second * kEvictMargin) {
+                        // Refused at this worth already; only being
+                        // worth more re-opens the question (see
+                        // s_refusedScore).
+                        ++refused;
+                        continue;
+                    }
+                    if (!evictor.makeRoom(score, held - geometryBudget())) {
+                        s_refusedScore[entry.key] = score;
+                        ++refused;
+                        continue;
+                    }
                 }
+                s_refusedScore.erase(entry.key);
                 pledged += entry.size;
             }
             s_provider.request(entry.key, entry.size);
@@ -3546,6 +3686,9 @@ static void resolvePending()
         // rather than once per load. Measured on headless Chromium,
         // that alone was the difference between a load finishing in
         // four seconds and in sixty.
+        if (s_streamDebug && (rungUp || rungDown))
+            std::printf("fcviewer: rungs: %zu re-armed finer, %zu stepped "
+                        "coarser\n", rungUp, rungDown);
         s_provider.flush();
         // ⭐ A round is driven by an arrival, so a load whose requests
         // have all stalled has nothing left to drive one: no arrival,
@@ -3579,7 +3722,9 @@ static void resolvePending()
         for (const auto &entry : target->deferredChunks) {
             for (uint32_t i = 0; i + 1 < uint32_t(entry.levels.size()); ++i) {
                 if (entry.levels[i].key.empty())
-                    s_provider.generate({entry.key, i});
+                    // The source is the exact mesh closing the ladder —
+                    // entry.key may have been retargeted to a level.
+                    s_provider.generate({entry.levels.back().key, i});
                 else
                     ++builtMiddles;
             }
@@ -4320,6 +4465,15 @@ int main()
         return new URLSearchParams(window.location.search)
             .has('genlod') ? 1 : 0;
     }) != 0;
+    {
+        const double px = EM_ASM_DOUBLE({
+            const v = new URLSearchParams(window.location.search)
+                .get('lodpx');
+            return v === null ? -1.0 : parseFloat(v);
+        });
+        if (px >= 0.0)
+            s_lodPx = float(px);
+    }
     // ?membudget=<MB> — pin the resident geometry budget (§6 phase 4b),
     // which otherwise fits itself to the device. A real budget is larger
     // than any demo scene, so the only way to exercise the ladder
