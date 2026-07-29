@@ -19,9 +19,11 @@ mechanism. It is implemented: a publish is drawn while it is still arriving, and
 a mesh that has not landed is a box on its bounds rather than a hole. §6's
 prioritisation is implemented too (phase 4a): chunks carry the objects that want
 them, and the viewer fetches them in the order its own camera implies, so the
-visible part of a model loads first. What remains is eviction, LOD, and — as the
-benchmark flags of phase 4a showed — making the per-arrival assembly incremental,
-which is now the dominant cost of a streamed load.
+visible part of a model loads first. The ladder also runs *backwards* (phase
+4b): a viewer holds its geometry to a budget by giving payloads back, and what
+it gives back is drawn at the rung below rather than as a hole, so a model
+larger than memory is a model drawn coarse in the distance. What remains is
+LOD, and making the per-arrival assembly incremental.
 
 Companions: [RenderEngine.md](./RenderEngine.md) §2 (the snapshot format and the
 tiers that consume it), [ThinClient.md](./ThinClient.md) (the UI layer this
@@ -595,7 +597,7 @@ to remove.
 | 2b-3 | commit early, assemble per arrival (**done**) | the model draws while it arrives |
 | 3 | the box rung: per-mesh submission, `standIn` bit, coarse picking (**done**) | model appears while it loads |
 | 4a | reverse index, frustum-ordered bounded fetch (**done**) | the visible part of a model loads first |
-| 4b | ladder-descending eviction | a model larger than memory |
+| 4b | ladder-descending eviction (**done**) | a model larger than memory |
 | 5 | LOD rungs per mesh (§7) | large models *fast* |
 
 Phase 1 is the v26 pattern extended to two more section types and needs no
@@ -1046,10 +1048,66 @@ They are deliberately independent — a benchmark that moves both at once
 measures neither — and between them they separate "when is it usable" from
 "when is it finished" from "how fast did the bytes arrive".
 
-**Not done:** eviction (4b), which is the other half of what the index was
-built for, and the frustum's stronger form — deferring off-screen objects
+**Not done:** the frustum's stronger form — deferring off-screen objects
 entirely rather than ranking them last. And the incremental assembly the
 table above now points at.
+
+### 4b — ladder-descending eviction, as built
+
+A budget on resident geometry, and the ladder as the way to stay inside it: a
+draw whose mesh is given back is drawn at the box on its bounds, which is the
+rung it was on while that mesh was still in flight. There is no eviction state
+and no invalidation — `release()` empties the mesh, the entry is re-armed with
+the fill it resolved with, and the next assembly makes the same choice it made
+before the payload ever arrived.
+
+Three things had to be added around that, and each was a bug first.
+
+- ⭐ **A payload given back must not be asked for again under the same
+  camera.** The first cut evicted anything scoring below the incoming chunk,
+  which converges but does not settle: the chunk just released is now
+  outstanding, is worth more than *something* still resident, and takes its
+  place — round after round. Measured on the 200-object scene under an 8 MB
+  budget: **35,186 releases in forty seconds, 22.5 s of it inside the fetch**.
+  A camera generation fixes it exactly: an eviction is a decision made under
+  one camera, and only a camera move is new information. **129 releases, 153 ms**
+  — and 123 of those 129 are during the orbit, which is the feature working.
+- **Plan the eviction, then carry it out, once per round.** Per-candidate
+  eviction sorted the resident set for every one of a few hundred outstanding
+  chunks, which was most of that 22.5 s. And a half-done eviction is the worst
+  of both — geometry given back and nothing fetched with the room it made — so
+  the prefix of victims cheap enough to displace is measured before any of it
+  is released.
+- **A margin, not just an ordering.** `kEvictMargin` (1.25) is what makes two
+  payloads a fraction of a percent apart stop swapping places on every
+  re-projection.
+
+Scored by the *same* rule as the fetch order — best owner, per byte — so the
+resident set converges on the best-scoring prefix of the scene rather than on
+whatever arrived last. Only geometry is weighed: a manifest or a material
+refused for want of memory would strand every object under it at a rung it
+cannot leave.
+
+Two consequences worth naming:
+
+- **The camera has to be able to pump the fetch.** While a scene is arriving,
+  every arrival re-sorts the queue for free. At the budget that stops — the
+  chunks left are exactly the ones worth less than what is resident, so nothing
+  is asked for and nothing arrives to reconsider them. Turning to face them is
+  what changes the answer, so the frame pumps a round when the camera has
+  moved (rate-limited to 200 ms; an orbit is a hundred frames of continuous
+  change and a round costs a sort).
+- **A scene held back by the budget is not a scene still loading.** The
+  indicator would otherwise say "loading" forever at the fraction the budget
+  allows. Once nothing is in flight and everything left was refused, that is as
+  much of the model as this viewer holds at once, and the bar clears.
+
+GPU memory follows for free: the backend already drops mesh and geometry
+buffers unused for two frames (`BGFXRenderer.cpp`), so a rung descended on the
+CPU releases its upload without eviction having to reach across the interface.
+
+Budget default 320 MB, `?membudget=<MB>` to say otherwise — which is the only
+way to exercise any of this, since a real budget is larger than a demo scene.
 
 ## 12. Open questions
 
