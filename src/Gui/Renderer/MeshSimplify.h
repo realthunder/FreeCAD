@@ -57,6 +57,10 @@ struct RendererExport SimplifiedMesh {
     std::vector<int32_t> triangleIndices;
     std::vector<int32_t> lineIndices;
     std::vector<int32_t> pointIndices;
+    /// lineIndices with seam edges filtered out, under non-seam-wins
+    /// (see above). Empty either when the source carried no filter or
+    /// when nothing non-seam survived; fill() maps both to "no seams".
+    std::vector<int32_t> noSeamLineIndices;
 
     /// The element tables, preserved index for index from the source
     /// mesh (empty when the source carried none): entry i of the output
@@ -65,6 +69,12 @@ struct RendererExport SimplifiedMesh {
     std::vector<std::pair<int, int>> triangleParts;
     std::vector<std::pair<int, int>> lineParts;
     std::vector<std::pair<int, int>> pointParts;
+
+    /// The refinement subsets, re-emitted as maximal runs over the
+    /// surviving triangles (see above).
+    std::vector<std::pair<int, int>> nonFlatParts;
+    std::vector<std::pair<int, int>> solidParts;
+    int hasSolid = 0;
 
     /// Point the non-owning fields of \a mesh at this storage. The
     /// result is valid only while this object is.
@@ -111,10 +121,20 @@ RendererExport float levelCellSize(const float *bbox, uint32_t level);
 /// A bonus over global welding: normals average within one element
 /// only, so a crease stays a crease instead of shading round.
 ///
-/// What is *not* carried: nonFlatParts, solidParts and the no-seam line
-/// set. Those are shading and capping refinements whose absence is a
-/// valid state the backend already handles, and each would have to be
-/// recomputed against geometry that no longer matches it.
+/// The refinements below the table carry over too, each by the rule its
+/// meaning allows. Flat-versus-curved and solidness are properties of
+/// the *source* faces, invariant under decimation, so nonFlatParts and
+/// solidParts are carried by marking source triangles and re-emitting
+/// maximal runs over the survivors — no assumption about how the source
+/// ranges were laid out. Seam-ness is per source edge, and welding can
+/// merge a seam edge with a non-seam one; the merged edge has no
+/// faithful answer, so **non-seam wins**: an output edge is kept in the
+/// no-seam set if any source edge it merges was non-seam, which errs
+/// toward showing a line rather than hiding one. One caution stands:
+/// section capping assumes closed geometry, and clustering does not
+/// preserve watertightness, so a cap cut through a decimated solid can
+/// be visibly rough — judged worth carrying so the rung caps at all,
+/// and the full mesh restores exactness when it lands.
 RendererExport bool simplifyMesh(const MeshData &src, float cellSize,
                                  SimplifiedMesh &out);
 

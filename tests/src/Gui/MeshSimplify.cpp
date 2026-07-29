@@ -450,12 +450,90 @@ TEST(MeshSimplify, aCollapsedElementKeepsItsSlotAsAnEmptyRange)
     }
     fold.parts.push_back({tinyStart, int(fold.triangles.size()) - tinyStart});
 
+    Render::MeshData src = fold.mesh();
+    // The collapsed face is also the only solid one: with none of its
+    // triangles surviving there is nothing left that is solid, and
+    // claiming hasSolid over an empty set would send the capping pass
+    // looking for geometry that is not there.
+    src.hasSolid = 1;
+    src.solidParts = {fold.parts[2]};
+
     Render::SimplifiedMesh out;
-    ASSERT_TRUE(Render::simplifyMesh(fold.mesh(), 0.25f, out));
+    ASSERT_TRUE(Render::simplifyMesh(src, 0.25f, out));
     ASSERT_EQ(out.triangleParts.size(), 3u);
     EXPECT_GT(out.triangleParts[0].second, 0);
     EXPECT_GT(out.triangleParts[1].second, 0);
     EXPECT_EQ(out.triangleParts[2].second, 0);
+    EXPECT_EQ(out.hasSolid, 0);
+    EXPECT_TRUE(out.solidParts.empty());
+}
+
+TEST(MeshSimplify, carriesTheTriangleFlagSubsetsAsRunsOverSurvivors)
+{
+    // Flat-versus-curved and solidness are properties of the source
+    // faces and survive decimation, so the subsets carry over -- as
+    // maximal runs over the surviving triangles, which here must land
+    // exactly on the faces they marked.
+    const SoupFold fold(16);
+    Render::MeshData src = fold.mesh();
+    src.nonFlatParts = {fold.parts[1]};
+    src.hasSolid = 1;
+    src.solidParts = {fold.parts[0]};
+
+    Render::SimplifiedMesh out;
+    ASSERT_TRUE(Render::simplifyMesh(src, 0.25f, out));
+    ASSERT_EQ(out.triangleParts.size(), 2u);
+    ASSERT_EQ(out.nonFlatParts.size(), 1u);
+    EXPECT_EQ(out.nonFlatParts[0], out.triangleParts[1]);
+    EXPECT_EQ(out.hasSolid, 1);
+    ASSERT_EQ(out.solidParts.size(), 1u);
+    EXPECT_EQ(out.solidParts[0], out.triangleParts[0]);
+
+    // A wholly-solid mesh has no subset to remap and stays wholly solid.
+    src.hasSolid = 2;
+    src.solidParts.clear();
+    ASSERT_TRUE(Render::simplifyMesh(src, 0.25f, out));
+    EXPECT_EQ(out.hasSolid, 2);
+    EXPECT_TRUE(out.solidParts.empty());
+}
+
+TEST(MeshSimplify, seamFilterSurvivesTheWeldAndNonSeamWins)
+{
+    // Four positions on a line, each a duplicated soup pair; the middle
+    // two (x = 0.5 and 0.52) share a cell at 0.1, so edges reaching
+    // either weld onto one output edge.
+    std::vector<float> positions;
+    for (float x : {0.0f, 0.0f, 0.5f, 0.5f, 0.52f, 0.52f, 1.0f, 1.0f})
+        positions.insert(positions.end(), {x, 0.0f, 0.0f});
+    const std::vector<int32_t> triangles = {0, 2, 6};
+    // One seam edge and one non-seam edge that weld together, and one
+    // seam edge that stays alone.
+    const std::vector<int32_t> lines = {1, 3, 0, 4, 2, 6};
+    const std::vector<int32_t> noSeam = {0, 4};
+
+    Render::MeshData src;
+    src.numVertices = int(positions.size() / 3);
+    src.positions = positions.data();
+    src.triangleIndices = triangles.data();
+    src.numTriangleIndices = int(triangles.size());
+    src.lineIndices = lines.data();
+    src.numLineIndices = int(lines.size());
+    src.noSeamLineIndices = noSeam.data();
+    src.numNoSeamLineIndices = int(noSeam.size());
+
+    Render::SimplifiedMesh out;
+    ASSERT_TRUE(Render::simplifyMesh(src, 0.1f, out));
+    ASSERT_EQ(out.lineIndices.size(), 4u);
+    // The merged edge folded a seam edge and a non-seam edge together;
+    // there is no faithful answer for it, and non-seam wins so it stays
+    // visible under hideSeam. The seam-only edge is filtered.
+    ASSERT_EQ(out.noSeamLineIndices.size(), 2u);
+    // Identify the kept edge by where it sits: it is the one touching
+    // x = 0, not the one running to x = 1.
+    float maxX = 0.0f;
+    for (const int32_t v : out.noSeamLineIndices)
+        maxX = std::max(maxX, out.positions[size_t(v) * 3]);
+    EXPECT_LT(maxX, 0.6f);
 }
 
 TEST(MeshSimplify, keepsEdgeAndVertexPartTables)

@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <set>
 
 using namespace Render;
 
@@ -154,18 +155,19 @@ void SimplifiedMesh::fill(MeshData &mesh) const
     mesh.numPointIndices = int(pointIndices.size());
     // The element tables survive decimation (see the header): entry i
     // still names the source's element i, so picking on this rung
-    // resolves sub-elements exactly as the full mesh does.
+    // resolves sub-elements exactly as the full mesh does. The
+    // refinement subsets survive as re-emitted runs.
     mesh.triangleParts = triangleParts;
     mesh.lineParts = lineParts;
     mesh.pointParts = pointParts;
-    // The shading and capping refinements do not: their absence is a
-    // state the backend already handles, and each would have to be
-    // recomputed against geometry that no longer matches it.
-    mesh.nonFlatParts.clear();
-    mesh.solidParts.clear();
-    mesh.hasSolid = 0;
-    mesh.noSeamLineIndices = nullptr;
-    mesh.numNoSeamLineIndices = 0;
+    mesh.nonFlatParts = nonFlatParts;
+    mesh.solidParts = solidParts;
+    mesh.hasSolid = hasSolid;
+    // An empty filtered set reads as "no seams", which shows every line
+    // -- the same direction non-seam-wins already errs in.
+    mesh.noSeamLineIndices =
+        noSeamLineIndices.empty() ? nullptr : noSeamLineIndices.data();
+    mesh.numNoSeamLineIndices = int(noSeamLineIndices.size());
     mesh.texCoords = nullptr;
 }
 
@@ -319,6 +321,10 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
         groups.assign(1, {-1, 0, src.numTriangleIndices});
     else
         out.triangleParts.assign(src.triangleParts.size(), {0, 0});
+    // Which source triangle each output triangle came from, for
+    // re-emitting the flag subsets (nonFlatParts, solidParts) as runs
+    // over the survivors.
+    std::vector<int32_t> outSrcTri;
     for (const Group &g : groups) {
         std::map<Cell, AttrCluster> local;
         gather(src.triangleIndices, g, local);
@@ -341,6 +347,7 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
                 continue;
             out.triangleIndices.insert(out.triangleIndices.end(),
                                        {ia, ib, ic});
+            outSrcTri.push_back(i / 3);
         }
         if (g.part >= 0)
             out.triangleParts[size_t(g.part)] = {
@@ -349,11 +356,78 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
     if (out.triangleIndices.empty())
         return false;
 
+    // The triangle-flag subsets. Flat-versus-curved and solidness are
+    // properties of the *source* faces and survive decimation, so each
+    // subset is carried by marking the source triangles it covers and
+    // re-emitting maximal runs over the output -- which assumes nothing
+    // about how the source ranges were laid out, and yields nothing
+    // where a flagged region collapsed entirely.
+    const auto markTriangles = [&](const std::vector<std::pair<int, int>>
+                                       &ranges,
+                                   std::vector<uint8_t> &flags) {
+        bool any = false;
+        flags.assign(size_t(src.numTriangleIndices) / 3, 0);
+        for (const auto &range : ranges) {
+            if (range.first < 0 || range.second < 0 || range.first % 3 != 0
+                    || range.second % 3 != 0
+                    || range.first + range.second > src.numTriangleIndices)
+                continue;
+            for (int t = range.first / 3;
+                 t < (range.first + range.second) / 3; ++t) {
+                flags[size_t(t)] = 1;
+                any = true;
+            }
+        }
+        return any;
+    };
+    const auto emitRuns = [&](const std::vector<uint8_t> &flags,
+                              std::vector<std::pair<int, int>> &runs) {
+        int runStart = -1;
+        for (size_t o = 0; o <= outSrcTri.size(); ++o) {
+            const bool flagged =
+                o < outSrcTri.size() && flags[size_t(outSrcTri[o])] != 0;
+            if (flagged && runStart < 0)
+                runStart = int(o) * 3;
+            else if (!flagged && runStart >= 0) {
+                runs.emplace_back(runStart, int(o) * 3 - runStart);
+                runStart = -1;
+            }
+        }
+    };
+    std::vector<uint8_t> flags;
+    if (!src.nonFlatParts.empty() && markTriangles(src.nonFlatParts, flags))
+        emitRuns(flags, out.nonFlatParts);
+    if (src.hasSolid == 2) {
+        // The whole triangle set is solid; there is no subset to remap.
+        out.hasSolid = 2;
+    }
+    else if (src.hasSolid == 1 && markTriangles(src.solidParts, flags)) {
+        emitRuns(flags, out.solidParts);
+        out.hasSolid = out.solidParts.empty() ? 0 : 1;
+    }
+
     // The edges, one group per edge part, deduplicated within their
     // element: clustering maps many original edges onto the same pair,
     // and a coarse rung that drew each of them would spend more on lines
     // than on the surface it is standing in for.
     if (src.lineIndices && src.numLineIndices > 0) {
+        // Which source edges the seam filter kept, so the filter can be
+        // carried through the weld. A merged edge may fold a seam edge
+        // and a non-seam edge together, and there is no faithful answer
+        // for it -- so non-seam wins: the merge stays visible under
+        // hideSeam, erring toward showing a line rather than hiding one.
+        std::set<std::pair<int32_t, int32_t>> noSeamSrc;
+        const bool haveSeams =
+            src.noSeamLineIndices && src.numNoSeamLineIndices > 0;
+        if (haveSeams) {
+            for (int i = 0; i + 1 < src.numNoSeamLineIndices; i += 2) {
+                int32_t a = src.noSeamLineIndices[i];
+                int32_t b = src.noSeamLineIndices[i + 1];
+                if (a > b)
+                    std::swap(a, b);
+                noSeamSrc.emplace(a, b);
+            }
+        }
         const bool lineTable =
             buildGroups(src.lineParts, src.numLineIndices, 2, groups);
         if (!lineTable)
@@ -364,8 +438,9 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
             std::map<Cell, AttrCluster> local;
             gather(src.lineIndices, g, local);
             emitVertices(local);
-            std::vector<std::pair<int32_t, int32_t>> edges;
-            edges.reserve(size_t(g.end - g.begin) / 2);
+            // Ordered by output pair, so emission stays deterministic;
+            // the value ORs non-seam-ness across the merged edges.
+            std::map<std::pair<int32_t, int32_t>, bool> edges;
             for (int i = g.begin; i + 1 < g.end; i += 2) {
                 const int32_t a = src.lineIndices[i];
                 const int32_t b = src.lineIndices[i + 1];
@@ -378,14 +453,23 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
                     continue;
                 if (ia > ib)
                     std::swap(ia, ib);
-                edges.emplace_back(ia, ib);
+                bool nonSeam = false;
+                if (haveSeams) {
+                    std::pair<int32_t, int32_t> key(std::min(a, b),
+                                                    std::max(a, b));
+                    nonSeam = noSeamSrc.count(key) != 0;
+                }
+                edges[{ia, ib}] |= nonSeam;
             }
-            std::sort(edges.begin(), edges.end());
-            edges.erase(std::unique(edges.begin(), edges.end()), edges.end());
             const int rangeStart = int(out.lineIndices.size());
-            for (const auto &e : edges)
+            for (const auto &e : edges) {
                 out.lineIndices.insert(out.lineIndices.end(),
-                                       {e.first, e.second});
+                                       {e.first.first, e.first.second});
+                if (e.second)
+                    out.noSeamLineIndices.insert(
+                        out.noSeamLineIndices.end(),
+                        {e.first.first, e.first.second});
+            }
             if (g.part >= 0)
                 out.lineParts[size_t(g.part)] = {
                     rangeStart, int(out.lineIndices.size()) - rangeStart};

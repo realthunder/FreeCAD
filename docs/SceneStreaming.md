@@ -1306,11 +1306,15 @@ constraint, so the budget there is currently watching the wrong number.
   budget per frame is a measurement, not a guess.
 - **LOD error metric and budget** (§7) — deferred; likely parameters too.
 - **Element maps on decimated levels** — answered: the generator clusters per
-  element and the part tables carry over (§7). Still open is the finer grain
-  below the table: `partIndex`-keyed data that is not a `{start, count}` range
-  (nonFlatParts, solidParts, the no-seam line set) is dropped rather than
-  recomputed, so the hidden-line and capping refinements wait for the full
-  mesh.
+  element and the part tables carry over (§7). The refinement subsets carry
+  too, each by the rule its meaning allows: nonFlatParts and solidParts mark
+  source faces (properties invariant under decimation) and are re-emitted as
+  maximal runs over the surviving triangles; the seam filter follows the weld
+  with **non-seam winning** where a seam and a non-seam edge merge, erring
+  toward showing a line. The one watch item: capping assumes closed geometry
+  and clustering does not preserve watertightness, so a cap cut through a
+  decimated solid can be rough until the full mesh lands — judge against a
+  real model.
 - **Root manifest at very large object counts.** 100k objects make even the
   delta's object list non-trivial; paging the object list into content-addressed
   pages is the escape, if measurement demands it.
