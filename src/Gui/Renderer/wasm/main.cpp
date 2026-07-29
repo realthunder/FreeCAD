@@ -257,6 +257,7 @@ static void pumpFetchOnMove();
 /// wanted here, where the frame can show and say them.
 static size_t residentBytes();
 static size_t geometryBudget();
+static size_t blobCacheBytes();
 static void reportHeap();
 
 static void interact()
@@ -2356,8 +2357,10 @@ static bool s_atBudgetReported = false;
 /// every part of the stream already states (SceneDump.h) and it tracks
 /// the geometry within a constant factor. What matters for a budget is
 /// that it is proportional and known before the fetch, not that it is
-/// the exact heap cost.
-static size_t s_geometryBudget = 320u * 1024 * 1024;
+/// the exact heap cost — and the factor between the two is measured
+/// rather than assumed, which is what fits the budget to a device
+/// nobody tested on (Render::MemoryBudget).
+static Render::MemoryBudget s_budget;
 
 /// How strongly a payload's size counts against it, for the two
 /// decisions that rank chunks (Render::RungRanker::value). 0 ignores size and
@@ -2395,7 +2398,7 @@ static size_t residentBytes()
 
 static size_t geometryBudget()
 {
-    return s_geometryBudget;
+    return s_budget.value();
 }
 
 /// The heap, on a slow heartbeat. An allocation that fails takes the
@@ -2405,17 +2408,27 @@ static size_t geometryBudget()
 /// beaconing it somewhere else (shell.html). Beside it the budget, so
 /// that "the viewer is holding too much" and "something else is" are
 /// distinguishable without a debugger.
+/// The same heartbeat is what fits the budget to this device: the two
+/// numbers the adaptation needs are the two being reported, so it costs
+/// a call. It runs whether or not anyone is reading — a budget that
+/// only adapted under ?stream would be a different viewer from the one
+/// people load.
 static void reportHeap()
 {
     static double last = 0.0;
     const double now = emscripten_get_now();
-    if (!s_streamDebug || now - last < 3000.0)
+    if (now - last < 3000.0)
         return;
     last = now;
-    std::printf("fcviewer: heap %zu MB, geometry %zu of %zu MB, "
-                "%zu payloads resident, %zu cached\n",
-                size_t(emscripten_get_heap_size()) >> 20,
-                s_residentBytes >> 20, s_geometryBudget >> 20,
+    const size_t heap = size_t(emscripten_get_heap_size());
+    s_budget.observe(s_residentBytes, blobCacheBytes(), heap);
+    if (!s_streamDebug)
+        return;
+    std::printf("fcviewer: heap %zu MB, geometry %zu of %zu MB "
+                "(x%.2f, ceiling %zu MB), %zu payloads resident, "
+                "%zu cached\n",
+                heap >> 20, s_residentBytes >> 20, geometryBudget() >> 20,
+                s_budget.expansion(), s_budget.ceiling() >> 20,
                 s_resident.size(), s_blobCache.size());
 }
 
@@ -2548,6 +2561,17 @@ static void resetBlobStore()
 /// the cost of being wrong is one local read, not a download.
 static const size_t kBlobCacheBudget = 192u * 1024 * 1024;
 
+/// What the local payload cache is holding, in the bytes it arrived as.
+/// Reported to the budget, which must not charge them to geometry as
+/// expansion: they are raw payloads held about one for one.
+static size_t blobCacheBytes()
+{
+    size_t total = 0;
+    for (const auto &entry : s_blobCache)
+        total += entry.second ? entry.second->size() : 0;
+    return total;
+}
+
 static void pruneBlobCache()
 {
     // A payload that has been parsed is held twice: as the bytes it
@@ -2561,9 +2585,7 @@ static void pruneBlobCache()
     // assumes, since it drops the payload too.
     for (const auto &res : s_resident)
         s_blobCache.erase(res.first);
-    size_t total = 0;
-    for (const auto &entry : s_blobCache)
-        total += entry.second ? entry.second->size() : 0;
+    const size_t total = blobCacheBytes();
     if (total <= kBlobCacheBudget)
         return;
     std::set<std::string> inUse;
@@ -3437,9 +3459,9 @@ static void resolvePending()
                 // residency's terms — `item.first` is the fetch order's
                 // per-byte score and would compare a candidate against
                 // victims measured on a different scale entirely.
-                if (held > s_geometryBudget
+                if (held > geometryBudget()
                         && !evictor.makeRoom(order.residency(entry),
-                                             held - s_geometryBudget)) {
+                                             held - geometryBudget())) {
                     ++refused;
                     continue;
                 }
@@ -3494,7 +3516,7 @@ static void resolvePending()
                     "payloads left unasked; the rest of the model is "
                     "drawn coarse. Holding %zu KB in %zu payloads, %zu KB "
                     "more asked for and not yet arrived\n",
-                    s_geometryBudget >> 20, refused, s_residentBytes >> 10,
+                    geometryBudget() >> 20, refused, s_residentBytes >> 10,
                     s_resident.size(), pledgedBytes >> 10);
         reportBudget(*target);
     }
@@ -4189,19 +4211,27 @@ int main()
         return new URLSearchParams(window.location.search)
             .has('nofetchorder') ? 1 : 0;
     }) != 0;
-    // ?membudget=<MB> — the resident geometry budget (§6 phase 4b).
-    // A real budget is larger than any demo scene, so the only way to
-    // exercise the ladder running backwards is to say what it is.
+    // ?membudget=<MB> — pin the resident geometry budget (§6 phase 4b),
+    // which otherwise fits itself to the device. A real budget is larger
+    // than any demo scene, so the only way to exercise the ladder
+    // running backwards is to say what it is.
     {
         const int mb = EM_ASM_INT({
             const v = new URLSearchParams(window.location.search)
                 .get('membudget');
             return v === null ? 0 : (parseInt(v, 10) | 0);
         });
-        if (mb > 0) {
-            s_geometryBudget = size_t(mb) * 1024 * 1024;
-            std::printf("fcviewer: geometry budget %d MB\n", mb);
-        }
+        s_budget.reset(mb > 0 ? size_t(mb) * 1024 * 1024 : 0);
+        if (mb > 0)
+            std::printf("fcviewer: geometry budget %d MB (pinned)\n", mb);
+        else
+            std::printf("fcviewer: geometry budget %zu MB to start, "
+                        "adapting; %zu MB system, %zu MB device hint, "
+                        "%zu MB heap ceiling\n",
+                        s_budget.value() >> 20,
+                        Render::MemoryBudget::systemMemory() >> 20,
+                        Render::MemoryBudget::deviceHint() >> 20,
+                        s_budget.ceiling() >> 20);
     }
     // ?fetchweight= / ?keepweight= — how much payload size discounts a
     // chunk's value when deciding what to ask for next and what to

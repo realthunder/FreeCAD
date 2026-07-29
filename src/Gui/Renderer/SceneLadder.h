@@ -179,6 +179,96 @@ private:
     std::map<uint64_t, float> m_memo;
 };
 
+/// What the scene may hold, and how that number is arrived at on a
+/// machine nobody measured.
+///
+/// The budget is stated in the **payload bytes every chunk already
+/// declares** (SceneDump.h), because that is what is known before a
+/// rung is acquired and what both tiers can rank by. What actually
+/// runs a device out of memory is the expanded arrays those payloads
+/// become, which is a different number by a factor nobody can name in
+/// advance: it depends on the compression the wire happened to get and
+/// on what the backend keeps beside each buffer.
+///
+/// So rather than assume that factor, this measures it. Both numbers
+/// are already sampled on a heartbeat — what the scene says it holds
+/// and what the heap actually is — and the ratio between them is the
+/// expansion. A heap ceiling then converts into a payload budget by
+/// dividing, and a device the author never saw gets a budget fitted to
+/// what payloads cost *on it*.
+///
+/// This is deliberately not `navigator.deviceMemory` and friends. Those
+/// exist on Chrome and Android, are absent on Safari — where the
+/// ceiling matters most — and are rounded to powers of two and capped
+/// at 8 GB besides. They are worth a starting guess and nothing more:
+/// what a tab may hold is decided by the device, the other fifty tabs
+/// and the OS, and the only honest way to learn it is to watch.
+class RendererExport MemoryBudget {
+public:
+    /// The largest heap this process could ever have, as the platform
+    /// states it: the wasm growth cap in the browser, physical memory
+    /// on a desktop. 0 when nothing will say.
+    static size_t systemMemory();
+
+    /// A device hint where one exists (navigator.deviceMemory), in
+    /// bytes. 0 when the browser does not answer or this is not one.
+    static size_t deviceHint();
+
+    /// Start adapting from a guess for this machine. \a explicitBytes
+    /// non-zero pins the budget instead and stops all adaptation — the
+    /// `?membudget=` case, where the point is to say what it is.
+    void reset(size_t explicitBytes = 0);
+
+    /// One heartbeat: \a payloadBytes is the resident geometry by the
+    /// scene's own accounting, \a rawBytes everything else the stream
+    /// is holding that the budget does not bound — the local payload
+    /// cache — and \a heapBytes what the process actually occupies.
+    ///
+    /// \a rawBytes is separated out because it is held roughly one for
+    /// one and would otherwise be charged to geometry as expansion.
+    /// Measured on the 200-object scene, folding it in reported a
+    /// factor of six and falling where the real steady-state ratio was
+    /// about one: the estimate was tracking the download cache, and the
+    /// budget it produced was wrong by that much.
+    ///
+    /// Cheap enough to call as often as the heap is sampled, and it has
+    /// to be: the expansion is only learnable while the scene is
+    /// growing, which is exactly when nothing wants to spend time
+    /// measuring itself.
+    void observe(size_t payloadBytes, size_t rawBytes, size_t heapBytes);
+
+    /// The budget as it currently stands, in payload bytes.
+    size_t value() const { return m_budget; }
+
+    /// Heap bytes observed per payload byte, as measured. 0 before
+    /// enough of a scene has arrived to tell.
+    float expansion() const { return m_expansion; }
+
+    /// False once a budget has been pinned explicitly.
+    bool adaptive() const { return !m_pinned; }
+
+    /// The heap this budget is trying to keep the process under — what
+    /// the adaptation is solving for, reported so that "the viewer is
+    /// holding too much" and "something else is" stay distinguishable.
+    size_t ceiling() const { return m_ceiling; }
+
+private:
+    size_t m_budget = 0;
+    size_t m_ceiling = 0;
+    /// The heap before the scene paid for anything: everything that is
+    /// not geometry — the backend, the runtime, the canvas. Subtracted
+    /// before dividing, or the expansion absorbs it and the budget
+    /// shrinks on a machine that merely has a large baseline.
+    size_t m_baseHeap = 0;
+    /// The previous sample the slope is measured against: resident
+    /// payload, and the heap net of the raw cache.
+    size_t m_prevPayload = 0;
+    size_t m_prevNet = 0;
+    float m_expansion = 0.0f;
+    bool m_pinned = false;
+    bool m_havePrev = false;
+};
+
 /// How much better, per byte, an incoming payload must be than the one
 /// it displaces. Strictly better is enough to make the resident set
 /// converge, but not enough to make it *settle*: two payloads a

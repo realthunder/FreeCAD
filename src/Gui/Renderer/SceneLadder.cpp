@@ -26,6 +26,18 @@
 #include <cstdio>
 #include <limits>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/em_asm.h>
+#include <emscripten/heap.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#else
+#include <unistd.h>
+#endif
+
 using namespace Render;
 
 namespace {
@@ -67,6 +79,208 @@ constexpr float kPi = 3.14159265358979323846f;
 }  // namespace
 
 const float Render::kEvictMargin = 1.25f;
+
+// ----------------------------------------------------------------------
+// MemoryBudget
+// ----------------------------------------------------------------------
+
+namespace {
+
+/// The share of the largest possible heap a scene may aim to occupy.
+///
+/// Well under half, because the ceiling is where the process *dies*,
+/// not where it is uncomfortable: on wasm the growth cap is a hard wall
+/// an allocation walks into with no warning and no chance to report,
+/// and everything the budget does not know about — the backend's own
+/// buffers, a texture upload in flight, whatever the page is doing —
+/// comes out of the same space. Aiming at a third leaves room for all
+/// of it to be wrong at once.
+const float kCeilingShare = 0.33f;
+
+/// Never propose less than this, whatever the arithmetic says. A budget
+/// small enough to hold nothing does not degrade gracefully — it draws
+/// every object as a box forever, which reads as a broken viewer rather
+/// than a loaded one.
+const size_t kMinBudget = 24u * 1024 * 1024;
+
+/// Nor more than this from a guess alone. The point of the ceiling is
+/// that a machine which will not say how much memory it has should not
+/// be assumed to have all of it.
+const size_t kMaxGuess = 512u * 1024 * 1024;
+
+/// How much of a new measurement to believe. The expansion is a ratio
+/// of two numbers that both jump — a batch lands, the heap grows in
+/// slabs — so a single sample is noise around a real value, and the
+/// budget should not lurch with it.
+const float kExpansionBlend = 0.25f;
+
+/// Bounds on a measured expansion. Outside these the measurement is not
+/// telling us about geometry: below, the heap grew less than the
+/// payloads that supposedly filled it (a slab already had room); far
+/// above, something other than the scene is allocating and dividing by
+/// it would collapse the budget to nothing.
+const float kMinExpansion = 0.5f;
+const float kMaxExpansion = 8.0f;
+
+/// How much the resident geometry must grow between two samples before
+/// the slope between them means anything. Too small and the ratio is
+/// two heap slabs divided by rounding noise.
+const size_t kSlopeMinDelta = 2u * 1024 * 1024;
+
+}  // namespace
+
+size_t MemoryBudget::systemMemory()
+{
+#ifdef __EMSCRIPTEN__
+    // What the wasm heap may grow to: MAXIMUM_MEMORY if the build set
+    // one, else the wasm32 address space. It is an upper bound on what
+    // could ever be allocated and not a promise that it can be — which
+    // is what kCeilingShare is for.
+    return size_t(emscripten_get_heap_max());
+#elif defined(_WIN32)
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    if (GlobalMemoryStatusEx(&status))
+        return size_t(status.ullTotalPhys);
+    return 0;
+#elif defined(__APPLE__)
+    int64_t bytes = 0;
+    size_t len = sizeof(bytes);
+    if (sysctlbyname("hw.memsize", &bytes, &len, nullptr, 0) == 0 && bytes > 0)
+        return size_t(bytes);
+    return 0;
+#else
+    const long pages = sysconf(_SC_PHYS_PAGES);
+    const long pageSize = sysconf(_SC_PAGE_SIZE);
+    if (pages > 0 && pageSize > 0)
+        return size_t(pages) * size_t(pageSize);
+    return 0;
+#endif
+}
+
+size_t MemoryBudget::deviceHint()
+{
+#ifdef __EMSCRIPTEN__
+    // Chrome and the Android browsers only, rounded to a power of two
+    // and capped at 8: a hint, never a limit. Absent everywhere else,
+    // which is why nothing downstream may depend on it.
+    const int gib = EM_ASM_INT({
+        return (navigator && navigator.deviceMemory) ? navigator.deviceMemory : 0;
+    });
+    return gib > 0 ? size_t(gib) * 1024u * 1024u * 1024u : 0;
+#else
+    return 0;
+#endif
+}
+
+void MemoryBudget::reset(size_t explicitBytes)
+{
+    m_pinned = explicitBytes != 0;
+    m_expansion = 0.0f;
+    m_baseHeap = 0;
+    m_prevPayload = 0;
+    m_prevNet = 0;
+    m_havePrev = false;
+    if (m_pinned) {
+        m_budget = explicitBytes;
+        m_ceiling = 0;
+        return;
+    }
+    size_t system = systemMemory();
+    // Where a device says how much memory it has and that is less than
+    // the address space, believe the device: a phone whose wasm heap may
+    // grow to 2 GB does not have 2 GB to give.
+    if (const size_t hint = deviceHint())
+        system = system ? std::min(system, hint) : hint;
+    m_ceiling = size_t(float(system) * kCeilingShare);
+    // Before anything has been measured the budget is a guess at what
+    // the payloads for that heap would be, at no expansion at all. The
+    // first heartbeats correct it in whichever direction is real.
+    m_budget = std::min(m_ceiling ? m_ceiling : kMaxGuess, kMaxGuess);
+    m_budget = std::max(m_budget, kMinBudget);
+}
+
+void MemoryBudget::observe(size_t payloadBytes, size_t rawBytes,
+                           size_t heapBytes)
+{
+    if (m_pinned || !m_ceiling)
+        return;
+    // The heap net of the raw payloads, which are held about one for
+    // one and are not what "expansion" is asking about.
+    const size_t net = heapBytes > rawBytes ? heapBytes - rawBytes : 0;
+
+    // A *slope*, not a ratio from the origin. The tempting estimator —
+    // (heap - heap when the scene was empty) / payload — is wrong, and
+    // measurably so: the heap before any geometry has arrived is not
+    // the fixed cost of running, because the backend's own buffers, the
+    // textures and the snapshot structures are all created as the first
+    // payloads land. Charging that one-off to the few megabytes
+    // resident at the time reported a factor of six on the 200-object
+    // scene and had the budget still falling through 4.8 when the load
+    // finished. What the budget actually needs is the marginal cost of
+    // the *next* megabyte, and that is the slope between two samples.
+    // The anchor moves only when a sample is actually drawn from it.
+    // Advancing it every heartbeat instead is a subtle way to measure
+    // nothing at all: the scene grows about a megabyte between ticks, so
+    // each delta falls under the threshold, and re-anchoring means the
+    // gap never accumulates to reach it. Observed as an expansion that
+    // stayed at zero for a whole load.
+    if (!m_havePrev || payloadBytes < m_prevPayload) {
+        // First sight, or the ladder ran backwards. Eviction frees
+        // payloads without the wasm heap ever shrinking, so a slope
+        // measured across it would attribute a fall in geometry to no
+        // fall in memory and read as an enormous cost per byte.
+        m_havePrev = true;
+        m_prevPayload = payloadBytes;
+        m_prevNet = net;
+        return;
+    }
+    if (payloadBytes - m_prevPayload < kSlopeMinDelta)
+        return;
+    if (net > m_prevNet) {
+        const float slope = float(net - m_prevNet)
+            / float(payloadBytes - m_prevPayload);
+        const float clamped = std::min(std::max(slope, kMinExpansion),
+                                       kMaxExpansion);
+        m_expansion = m_expansion > 0.0f
+            ? m_expansion + kExpansionBlend * (clamped - m_expansion)
+            : clamped;
+    }
+    else {
+        // Geometry arrived and the heap did not grow: a slab had room.
+        // That is real evidence of a low marginal cost, not a reason to
+        // skip the sample -- ignoring it biases the estimate upwards.
+        m_expansion = m_expansion > 0.0f
+            ? m_expansion + kExpansionBlend * (kMinExpansion - m_expansion)
+            : kMinExpansion;
+    }
+    m_prevPayload = payloadBytes;
+    m_prevNet = net;
+    if (m_expansion <= 0.0f)
+        return;
+
+    // With a slope in hand the intercept follows: what the process
+    // occupies that is *not* proportional to geometry. Derived rather
+    // than sampled, so it includes everything created along the way.
+    const float fixed = float(net) - m_expansion * float(payloadBytes);
+    m_baseHeap = size_t(std::max(fixed, 0.0f));
+
+    // What the ceiling leaves for geometry, converted from heap bytes
+    // into the payload bytes the ladder actually ranks and bounds. The
+    // cache is subtracted as it actually stands rather than at its own
+    // bound: it is prunable, so charging the budget its worst case
+    // would keep a scene coarse to protect memory nothing is using.
+    const size_t overhead = m_baseHeap + rawBytes;
+    if (m_ceiling <= overhead) {
+        // The process is already over its share before drawing
+        // anything. Nothing to do but hold the floor and let eviction
+        // keep the scene coarse.
+        m_budget = kMinBudget;
+        return;
+    }
+    const float room = float(m_ceiling - overhead) / m_expansion;
+    m_budget = std::max(size_t(room), kMinBudget);
+}
 
 // ----------------------------------------------------------------------
 // RungRanker
