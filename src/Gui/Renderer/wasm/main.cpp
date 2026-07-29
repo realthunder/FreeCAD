@@ -2845,6 +2845,7 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
         });
 }
 
+
 /// Assemble a snapshot out of the payloads that have arrived so far.
 /// False means it cannot be applied at all and the caller must ask for
 /// a full scene.
@@ -2992,6 +2993,32 @@ static void indexPendingBoxes(const Render::SceneSnapshot &snap)
 /// flattens on this harness, and still leaves a large model most of
 /// its queue to re-sort — which on a large model is the point.
 static const size_t kInFlightRequests = 64;
+
+/// This tier's answer to "how is a rung obtained": the local store, and
+/// the network behind it. Everything about it is browser-shaped — an
+/// IndexedDB read, a batched GET, a window counted in round trips — and
+/// none of that is visible to the policy that drives it
+/// (Render::RungProvider).
+///
+/// `generate` is left at its default: the browser can only ask for
+/// levels the producer has already made. Asking for one that does not
+/// exist is a request for *work*, and the server has no queue to put it
+/// in yet (docs/SceneStreaming.md §7).
+class ViewerRungProvider : public Render::RungProvider {
+public:
+    void request(const std::string &key, uint32_t size) override
+    {
+        requestBlob(key, size);
+    }
+
+    size_t outstanding() const override { return s_requestsInFlight; }
+
+    size_t window() const override { return kInFlightRequests; }
+
+    void flush() override { flushBatch(); }
+};
+
+static ViewerRungProvider s_provider;
 
 /// The ranking half of the ladder now lives in ../SceneLadder.h, where
 /// the desktop can reach it too: what a payload is worth is a question
@@ -3419,7 +3446,7 @@ static void resolvePending()
             // is the same number of requests as before, just asked for
             // in a different order.
             if (!s_noFetchOrder && s_batchQueue.empty()
-                    && s_requestsInFlight >= kInFlightRequests)
+                    && s_provider.outstanding() >= s_provider.window())
                 break;
             const auto &entry = target->deferredChunks[item.second];
             // **The view's own chunks are a barrier, not just a
@@ -3467,7 +3494,7 @@ static void resolvePending()
                 }
                 pledged += entry.size;
             }
-            requestBlob(entry.key, entry.size);
+            s_provider.request(entry.key, entry.size);
             ++issued;
         }
         // Whatever is left half-packed goes now. queueBatch would send
@@ -3479,7 +3506,7 @@ static void resolvePending()
         // rather than once per load. Measured on headless Chromium,
         // that alone was the difference between a load finishing in
         // four seconds and in sixty.
-        flushBatch();
+        s_provider.flush();
         // ⭐ A round is driven by an arrival, so a load whose requests
         // have all stalled has nothing left to drive one: no arrival,
         // no round, no timeout noticed, no retry — and the model sits
@@ -3508,7 +3535,7 @@ static void resolvePending()
     // "loading" forever would be the indicator describing a
     // non-progressive world all over again.
     const bool atBudget = missing && !issued && refused
-        && s_requestsInFlight == 0 && s_batchQueue.empty();
+        && s_provider.outstanding() == 0 && s_batchQueue.empty();
     if (atBudget && !s_atBudgetReported) {
         s_atBudgetReported = true;
         fcviewer_status(nullptr, 0.0, 0.0);

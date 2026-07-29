@@ -80,6 +80,13 @@ constexpr float kPi = 3.14159265358979323846f;
 
 const float Render::kEvictMargin = 1.25f;
 
+// Out of line so the vtable has a home here rather than in every
+// translation unit that sees the header.
+bool RungProvider::generate(const LevelRequest &)
+{
+    return false;
+}
+
 // ----------------------------------------------------------------------
 // MemoryBudget
 // ----------------------------------------------------------------------

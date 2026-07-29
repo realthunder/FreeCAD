@@ -179,6 +179,75 @@ private:
     std::map<uint64_t, float> m_memo;
 };
 
+/// A rung that may not exist yet, named by what would *produce* it
+/// rather than by what it will contain.
+///
+/// This is the awkward part of generating levels on demand, and it does
+/// not go away by being ignored. A chunk's key is the SHA-1 of its
+/// bytes (docs/SceneStreaming.md §9, invariant 1), so a level nobody
+/// has tessellated has no bytes, therefore no key, therefore cannot be
+/// asked for the way every other payload is. A request for work is not
+/// a request for bytes and cannot share the channel.
+///
+/// So a level is named by its source and its index instead: stable
+/// across publishes, identical for every viewer that wants it, and
+/// derived from content rather than from who is asking — which is what
+/// keeps the server free of per-viewer state (invariant 7) even once it
+/// has a queue of work. What comes back is the key, and from there it
+/// is an ordinary chunk with an ordinary content address.
+struct LevelRequest {
+    /// Content identity of the geometry the level would be generated
+    /// from. Not the key of the level — that is what this asks for.
+    std::string source;
+    /// Which rung, coarsest first. What a level *means* — a tessellation
+    /// deviation, a decimation ratio — is the producer's business, and
+    /// deliberately not encoded here.
+    uint32_t level = 0;
+};
+
+/// How a rung is actually obtained. The ladder decides *what* to
+/// acquire and what to give back; this is the tier's answer to *how*.
+///
+/// The two implementations differ in everything except their shape. The
+/// browser asks a server for bytes over a link whose cost is a round
+/// trip; the desktop asks a tessellator for a mesh at a deviation,
+/// where the cost is CPU and the bytes never travel. Both are
+/// asynchronous, both answer with a payload the ladder can rebuild
+/// from, and both have a sensible limit on how much may be in flight —
+/// which is the entire reason one policy can drive them.
+///
+/// Nothing here returns a payload: acquisition completes by the chunk's
+/// own fill running, so a provider that answers immediately and one
+/// that answers in a second are the same to the caller.
+class RendererExport RungProvider {
+public:
+    virtual ~RungProvider() = default;
+
+    /// Begin acquiring the payload with this content key. Called only
+    /// for keys a manifest already names.
+    virtual void request(const std::string &key, uint32_t size) = 0;
+
+    /// Requests begun and not yet answered.
+    virtual size_t outstanding() const = 0;
+
+    /// How many may be outstanding at once. A window is what makes an
+    /// order an order: acquire everything the moment it is named and
+    /// the ranking decides nothing, because it is all issued in the
+    /// same tick and answered in whatever order it happens to finish.
+    virtual size_t window() const = 0;
+
+    /// The end of a round: issue whatever has been accumulated but not
+    /// yet sent. A provider that batches must not wait for the next
+    /// round to flush a partial batch — left to a timer that cost a
+    /// 4.6 s load 58 s (§6 phase 4a).
+    virtual void flush() {}
+
+    /// Ask for a level that may not exist yet. False — the default —
+    /// means this tier can only fetch what already exists, which is
+    /// every provider until the producer-side work of §7 lands.
+    virtual bool generate(const LevelRequest &request);
+};
+
 /// What the scene may hold, and how that number is arrived at on a
 /// machine nobody measured.
 ///
