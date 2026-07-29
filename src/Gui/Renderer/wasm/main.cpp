@@ -2210,6 +2210,14 @@ static const char *kBlobDb = "fcviewer-blobs";
 /// Whether payloads are kept in IndexedDB across page loads. ?noidb
 /// turns it off, which is the quickest way to tell a store problem
 /// apart from a stream problem.
+/// Set when the local store has stopped answering (see
+/// s_blobInFlight): a read that neither succeeds nor fails takes its
+/// payload out of the load for good, and retrying the same store only
+/// hangs again. The store is a pure optimization, so the recovery is
+/// simply to stop using it for the rest of the session and fetch from
+/// the network instead.
+static bool s_idbUnresponsive = false;
+
 static bool blobPersistEnabled()
 {
     static int on = -1;
@@ -2217,7 +2225,7 @@ static bool blobPersistEnabled()
         on = EM_ASM_INT({
             return new URLSearchParams(location.search).has('noidb') ? 0 : 1;
         });
-    return on != 0;
+    return on != 0 && !s_idbUnresponsive;
 }
 
 /// Take a payload the store handed back, but only if it is the payload
@@ -2261,7 +2269,27 @@ typedef std::shared_ptr<std::vector<uint8_t>> BlobData;
 static std::map<std::string, BlobData> s_blobCache;
 /// Keys with a load in flight (IndexedDB or HTTP), so a second
 /// deferred texture naming the same key does not start a second one.
-static std::set<std::string> s_blobInFlight;
+/// Keys with a load in flight, and *when it was asked for*.
+///
+/// The time is what makes this recoverable. A request that neither
+/// resolves nor fails — a socket that dies with the page backgrounded,
+/// a batch abandoned on a flaky mobile link — leaves its key here
+/// forever, and a key that is permanently "in flight" is one the fetch
+/// will never ask for again. That was survivable when it only cost
+/// those chunks; with a budget it is fatal, because their bytes are
+/// counted as already spent (see `pledged`), so a handful of ghosts
+/// can consume the whole allowance and leave every object at its box.
+/// Observed on a phone: 349 of 382 outstanding payloads unaskable with
+/// *zero* requests actually in flight, and a scene of grey boxes.
+static std::map<std::string, double> s_blobInFlight;
+
+/// How long a payload may be outstanding before it is presumed lost
+/// and may be asked for again. Long enough that a slow link is never
+/// mistaken for a dead one — the point is to recover from silence, not
+/// to race it.
+static const double kInFlightTimeoutMs = 30000.0;
+/// A wake-up already queued to re-examine stalled requests.
+static bool s_retryScheduled = false;
 /// Requests, not keys and not bytes: what a viewer's throughput turns
 /// out to depend on is how many of them are outstanding at once (see
 /// kInFlightRequests).
@@ -2764,7 +2792,7 @@ static void fetchFromNetwork(const std::string &key, uint32_t size)
 /// IndexedDB first — a reload or a revisit skips the network entirely.
 static void requestBlob(const std::string &key, uint32_t size = 0)
 {
-    if (!s_blobInFlight.insert(key).second)
+    if (!s_blobInFlight.emplace(key, emscripten_get_now()).second)
         return;
     if (!blobPersistEnabled()) {
         fetchFromNetwork(key, size);
@@ -3282,6 +3310,11 @@ static void resolvePending()
     /// could not afford. Together they say whether a scene that is not
     /// finished is still *arriving* — see the status below.
     size_t issued = 0, refused = 0;
+    /// Releasable bytes outstanding, reported beside the budget: a
+    /// viewer that is "full" while holding almost nothing is one whose
+    /// allowance has been eaten by requests that never landed, which
+    /// is otherwise invisible from outside.
+    size_t pledgedBytes = 0;
     /// The same two counts in bytes, which is what the progress
     /// indicator is driven from. Counting chunks measures the wrong
     /// thing by an order of magnitude: a scene's payload is
@@ -3374,6 +3407,39 @@ static void resolvePending()
     }
     else {
         total += target->deferredChunks.size();
+        // Anything outstanding long enough to be presumed lost is
+        // forgotten, so it can be asked for again. Without this a
+        // request that dies quietly is a chunk the fetch never
+        // reconsiders *and* a hole in the budget that nothing can
+        // fill (see s_blobInFlight).
+        {
+            const double now = emscripten_get_now();
+            size_t lost = 0;
+            for (auto it = s_blobInFlight.begin();
+                 it != s_blobInFlight.end();) {
+                if (now - it->second < kInFlightTimeoutMs) {
+                    ++it;
+                    continue;
+                }
+                ++lost;
+                it = s_blobInFlight.erase(it);
+            }
+            if (lost) {
+                // A read that hangs is nearly always the local store,
+                // which a phone under storage pressure can leave
+                // pending forever — and asking it again just hangs
+                // again. It is an optimization, so give it up for the
+                // session and let the network answer.
+                if (blobPersistEnabled()) {
+                    s_idbUnresponsive = true;
+                    std::printf("fcviewer: the local blob store stopped "
+                                "answering — using the network instead\n");
+                }
+                std::printf("fcviewer: %zu payloads never arrived in %.0f s "
+                            "— asking again\n",
+                            lost, kInFlightTimeoutMs / 1000.0);
+            }
+        }
         // What is outstanding, in the order the camera wants it. The
         // sort is over the chunks not yet asked for, so it costs
         // nothing once the scene is mostly in hand — the common case
@@ -3401,8 +3467,10 @@ static void resolvePending()
                 continue;
             ++missing;
             missingBytes += entry.size;
-            if (entry.release && s_blobInFlight.count(entry.key))
+            if (entry.release && s_blobInFlight.count(entry.key)) {
                 pledged += entry.size;
+                pledgedBytes = pledged;
+            }
             // Anything no object claims is the view's own — the overlays
             // and the root's sections — and none of the model is asked
             // for while one is outstanding (see the issue loop).
@@ -3546,6 +3614,21 @@ static void resolvePending()
         // that alone was the difference between a load finishing in
         // four seconds and in sixty.
         flushBatch();
+        // ⭐ A round is driven by an arrival, so a load whose requests
+        // have all stalled has nothing left to drive one: no arrival,
+        // no round, no timeout noticed, no retry — and the model sits
+        // at its boxes for good. Two hung requests were enough to do
+        // it, budget or no budget. So while anything is outstanding,
+        // wake up and look. This is the same lesson the overlay
+        // barrier's grace taught: the thing that recovers from silence
+        // cannot be scheduled by the noise it is waiting for.
+        if (!s_blobInFlight.empty() && !s_retryScheduled) {
+            s_retryScheduled = true;
+            emscripten_async_call([](void *) {
+                s_retryScheduled = false;
+                resolvePending();
+            }, nullptr, int(kInFlightTimeoutMs / 4));
+        }
     }
     if (target == &s_snap) {
         s_liveOutstanding = missing != 0;
@@ -3565,8 +3648,10 @@ static void resolvePending()
         fcviewer_status(nullptr, 0.0, 0.0);
         std::printf("fcviewer: at the geometry budget (%zu MB) — %zu "
                     "payloads left unasked; the rest of the model is "
-                    "drawn coarse\n",
-                    s_geometryBudget >> 20, refused);
+                    "drawn coarse. Holding %zu KB in %zu payloads, %zu KB "
+                    "more asked for and not yet arrived\n",
+                    s_geometryBudget >> 20, refused, s_residentBytes >> 10,
+                    s_resident.size(), pledgedBytes >> 10);
         reportBudget(*target);
     }
     else if (!atBudget) {
