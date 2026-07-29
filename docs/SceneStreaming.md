@@ -1456,6 +1456,76 @@ provider — a tessellation job per level, with `cancel` — is the remaining
 half of "one ladder for two tiers"), and the tolerance is a URL parameter
 where it wants to be a `Render_*` preference.
 
+### 5e — the shape-backed generator, as built
+
+Decimation was the generator a chunk's own bytes allow; §7 always named
+re-tessellation as the better one where a shape exists, and it fixes a
+real artifact decimation cannot: OCCT edge polylines lie on the true
+curve while decimated facets are chords, so exact edges float off a
+coarse surface by up to the level's error, exactly at silhouettes. A
+re-tessellated level gets its edge polylines from
+`Poly_PolygonOnTriangulation` of the same coarse triangulation the
+faces come from — the lines index the very nodes the facets are drawn
+with, so they lie on the coarse surface *by construction*.
+
+The plumbing problem was identity: the render-cache feed drops the
+mesh→shape link long before a chunk key exists. The seam that restores
+it is `Render::MeshSourceRegistry` (`MeshSource.h`), three parties and
+one rule each:
+
+- **The tessellating layer registers.** `ViewProviderPartExt` already
+  owns the moment a shape becomes visual nodes (flat and instanced-leaf
+  builds alike); it registers a generator closure under the very node
+  pointers the feed will carry (`PartGui::registerMeshLevelSource`).
+  The closure owns a refcounted handle of the exact shape it meshed —
+  lifetime-safe against document changes — and is removed when the
+  nodes die.
+- **The publisher associates.** The bridge stamps each `MeshData` with
+  its shape node (`sourceTag`, proto node preferred so color variants
+  share it), and after each publish the renderer tells the registry
+  which content key each tagged mesh landed under. A tag nobody
+  registered is skipped — only shapes with a generator behind them are
+  remembered.
+- **The level worker asks the registry first**, decimation remaining
+  the fallback for whatever no shape claims (mesh objects, bundled
+  captures, baked color variants) or the generator refuses.
+
+The generator (`MeshLevelSource.cpp`) re-meshes a *structure copy* on
+the worker thread — fresh TShapes, shared geometry, so the live shape
+the GUI reads is never touched — at deviation `diagonal/(8<<L)` of the
+shape's own bounds: the declared error of the ladder, and the same for
+the face and edge roles, which is what makes their triangulations
+identical. Two traps the copy held:
+
+- **BRepMesh does not coarsen.** An existing finer triangulation is
+  "consistent" with a coarser request and survives it
+  (`AllowQualityDecrease` notwithstanding) — the first e2e run produced
+  levels byte-for-byte the size of the exact mesh. The copy must carry
+  the stored mesh (purely triangulated glTF faces have no other
+  geometry) and then *strip it* from every face that has a surface to
+  re-mesh from, and every curve-backed edge.
+- **The part tables are the contract.** The closure parses the source
+  chunk and validates its output against it — same face count, same
+  polyline count under the same first-owning-face compaction — and
+  refuses on any mismatch, handing the job to decimation rather than
+  publish tables that misattribute elements. Solid ranges map
+  face-exact from the source or are dropped entirely; non-flat is
+  recomputed by the vertex cache's own rule; seams come from
+  `BRep_Tool::IsClosed` like the display build's.
+
+Line meshes now declare their ladder from 1 KB (`kLodDeclareSizeLines`)
+rather than 64: an edge chunk is a fraction of its face sibling's size,
+but the artifact needs the edge rung to *exist* whenever the face rung
+does, and a polyline floats visibly at sizes far below the triangle
+threshold.
+
+Verified on demo-varied@200 (`&genlod`): 800 of 800 levels — faces and
+edges, both declared levels — built `retess`, zero refusals, an
+ellipsoid's 157 KB exact face chunk becoming 2.3 KB at level 0; at
+`?lodpx=8` the seam edges visibly hug the facet chords of the coarse
+surfaces. `FC_DEBUG_MESH_SOURCE=1` traces the registry (add/associate/
+generate) and the generator's refusal reasons.
+
 ## 12. Open questions
 
 - **Manifest history depth** — how stale a viewer may be before a full resync,
