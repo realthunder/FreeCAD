@@ -2065,6 +2065,8 @@ static void applySnapshot(bool fit)
 }
 
 /// Install a fully resolved snapshot as the scene being rendered.
+static bool stillArriving(const Render::SceneSnapshot &snap);
+
 static void commitSnapshot(Render::SceneSnapshot &&snap, uint64_t version)
 {
     s_sceneVersion = version;
@@ -2078,7 +2080,13 @@ static void commitSnapshot(Render::SceneSnapshot &&snap, uint64_t version)
     bool first = !s_userCam;
     s_snap = std::move(snap);
     applySnapshot(first);
-    fcviewer_status(nullptr, 0.0, 0.0);
+    // Only when there is nothing left to wait for. A publish is
+    // committed on the first arrival that can be drawn, not on the
+    // last (§6), so hiding the indicator here used to blank it for the
+    // tick until the next round put it back — a flicker at the moment
+    // the model first appears, which is the worst moment for one.
+    if (!stillArriving(s_snap))
+        fcviewer_status(nullptr, 0.0, 0.0);
     std::printf("fcviewer: scene update v%llu, %zu draws, %zu overlays\n",
                 (unsigned long long)version, s_snap.scene.size(),
                 s_snap.overlays.size());
@@ -2188,8 +2196,9 @@ static bool s_streamDebug = false;
 /// bad mobile link and short enough that a hang is a hesitation rather
 /// than a broken page.
 static const double kViewGraceMs = 6000.0;
-/// When the view's own chunks last resolved anything, or 0 while they
-/// are all in hand.
+/// When the fetch last resolved anything, or 0 while the view's chunks
+/// are all in hand. Only view chunks are in flight while the barrier
+/// holds, so any progress at all is progress on them.
 static double s_viewProgressAt = 0.0;
 /// A re-check already queued for the moment the grace runs out. The
 /// release cannot be decided by the arrival that would have renewed it
@@ -2839,6 +2848,17 @@ static void resolvePending()
     if (!target)
         return;
     size_t missing = 0, total = 0;
+    /// The same two counts in bytes, which is what the progress
+    /// indicator is driven from. Counting chunks measures the wrong
+    /// thing by an order of magnitude: a scene's payload is
+    /// concentrated in a minority of large meshes, so the many small
+    /// manifests and materials resolve early and carry the bar to
+    /// four fifths while four fifths of the *bytes* are still coming.
+    /// Measured on the 200-object scene, it reached 78% eleven
+    /// seconds in and spent the next eleven crawling to 81% — which
+    /// reads as a hang followed by a jump. Every deferred payload
+    /// states its size (§5), so weighting by it costs nothing.
+    size_t missingBytes = 0, totalBytes = 0;
     bool incomplete = false;
     /// Whether anything new became drawable this round. Without it a
     /// commit would be scheduled for every payload that merely failed
@@ -2918,9 +2938,11 @@ static void resolvePending()
         bool viewPending = false;
         for (size_t i = 0; i < target->deferredChunks.size(); ++i) {
             const auto &entry = target->deferredChunks[i];
+            totalBytes += entry.size;
             if (!entry.fill)
                 continue;
             ++missing;
+            missingBytes += entry.size;
             // Anything no object claims is the view's own — the overlays
             // and the root's sections — and none of the model is asked
             // for while one is outstanding (see the issue loop).
@@ -3014,7 +3036,9 @@ static void resolvePending()
             // it: its bottom rung is a box per object, which the root
             // alone draws (§6), and the view's own chunks are a fixed
             // few hundred kilobytes rather than a share of the scene.
-            if (!s_noFetchOrder && viewPending && !entry.owners.empty())
+            // The hold degrades rather than deadlocks — see
+            // kViewGraceMs.
+            if (holdForView && !entry.owners.empty())
                 break;
             requestBlob(entry.key, entry.size);
         }
@@ -3034,8 +3058,32 @@ static void resolvePending()
         s_liveUnapplied = s_liveUnapplied || filled;
     }
     if (missing) {
-        fcviewer_status("loading scene", double(total - missing),
-                        double(total));
+        // Until every object's manifest is in, the byte total is not
+        // known — a manifest is what names the meshes under it, so
+        // most of the scene's weight is undiscovered and a fraction
+        // over what is known would run to nearly full and then fall
+        // back as the rest appeared. Indeterminate is what "the size
+        // is not known yet" means, and it is the honest answer for
+        // the second or two that phase lasts.
+        bool discovering = s_objects.objects.empty();
+        for (const auto &item : s_objects.objects) {
+            // An empty drawsKey is an object no manifest has ever been
+            // read for, so its meshes are not in the totals yet. Not
+            // `unresolved()`, which also counts an object whose
+            // manifest arrived and whose material has not — its bytes
+            // are known, and waiting for them would leave the bar
+            // indeterminate for most of the load.
+            if (item.second.drawsKey.empty()) {
+                discovering = true;
+                break;
+            }
+        }
+        if (discovering)
+            fcviewer_status("loading scene", 0.0, 0.0);
+        else
+            fcviewer_status("loading scene",
+                            double(totalBytes - missingBytes),
+                            double(totalBytes));
         if (!filled) {
             // Nothing new became drawable — the requests above are
             // what this round accomplished.
@@ -3068,10 +3116,15 @@ static void resolvePending()
 
 /// A versioned scene payload arrived (either transport): parse and
 /// re-apply; the first scene also fits the camera.
-static void applyScenePayload(const char *data, size_t size)
+///
+/// False means the payload itself was no good. It does **not** mean
+/// there is a scene on screen: a publish is staged here and drawn once
+/// enough of it has arrived (§6), so a caller that treats "nothing
+/// visible yet" as failure is reading the wrong thing.
+static bool applyScenePayload(const char *data, size_t size)
 {
     if (size <= 8)
-        return;
+        return false;
     uint64_t version = 0;
     std::memcpy(&version, data, sizeof(version));
     Render::SceneSnapshot snap;
@@ -3095,7 +3148,7 @@ static void applyScenePayload(const char *data, size_t size)
         // skip the echo of a version already applied (the initial HTTP
         // fetch).
         else if (s_haveScene && version == s_sceneVersion)
-            return;
+            return true;
         // A publish that stages while the last one is still arriving
         // supersedes it, and its outstanding chunks are abandoned with
         // it. That is only safe if this publish describes the objects
@@ -3110,7 +3163,7 @@ static void applyScenePayload(const char *data, size_t size)
                         (unsigned long long)snap.manifestVersion,
                         s_objects.unresolved());
             requestFullScene();
-            return;
+            return true;
         }
         // Payloads the publish only named are fetched before it is
         // applied; with none outstanding (the usual case, every key
@@ -3133,6 +3186,7 @@ static void applyScenePayload(const char *data, size_t size)
             autoFitCamera();
         s_blobFailed.clear();
         resolvePending();
+        return true;
     }
     else {
         // A payload in a newer serializer format than this build can
@@ -3145,10 +3199,11 @@ static void applyScenePayload(const char *data, size_t size)
             char bust[32];
             std::snprintf(bust, sizeof(bust), "v%u", v);
             fcviewer_reload(bust);
-            return;
+            return true;
         }
         std::printf("fcviewer: scene update parse FAILED\n");
     }
+    return false;
 }
 
 /// JSON control messages pushed by the scene server as WebSocket text
@@ -3444,12 +3499,22 @@ static std::string s_initialPayload;
 
 static void applyInitialPayload(void *)
 {
-    applyScenePayload(s_initialPayload.data(), s_initialPayload.size());
+    const bool ok = applyScenePayload(s_initialPayload.data(),
+                                      s_initialPayload.size());
     s_initialPayload.clear();
-    if (!s_haveScene)
+    if (!ok) {
         fcviewer_status("Scene load failed", 0.0, -1.0);
-    else
+    }
+    else if (!s_pendingValid && !s_liveOutstanding) {
         fcviewer_status(nullptr, 0.0, 0.0);
+    }
+    // Otherwise the payload is staged and its chunks are on the way:
+    // resolvePending owns the indicator from here, and anything
+    // written now would be a wrong answer for the moment before the
+    // first commit. That moment used to read "Scene load failed",
+    // because a scene being drawable was once the same thing as a
+    // payload being good — which stopped being true when a publish
+    // began to be drawn while it was still arriving (§6).
     startStream();
 }
 
