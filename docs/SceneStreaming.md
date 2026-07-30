@@ -1358,6 +1358,18 @@ anything is outstanding the viewer now wakes on a timer and looks;
 `scratchpad/hangtest.js` hangs the first N chunk requests via CDP and asserts
 the load still completes (200 draws all coarse → 417 draws, 0 outstanding).
 
+That timer has since become the **one reconciler heartbeat**: while anything
+at all stands between the scene and its plan — a ladder below target, a
+manifest outstanding, a request in flight, a *generate awaiting its
+announcement* — one timer wakes, reconciles, and re-arms from its own
+wake-up; at plan it goes quiet. It subsumes what used to be separate
+stall/retry/watchdog chains, each grown around one measured silence, and
+covers the silence none of them did: a generate's answer is an announcement,
+so a producer that dropped the job (restart, folded link) left the ladder
+coarse forever with nothing arrival-driven to notice. The generate memo now
+carries a deadline too — unanswered for sixty seconds, the job is asked for
+again (the server dedups, so a re-ask of a live job costs a 202).
+
 A read that hangs is usually the local store, and asking it again just hangs
 again, so the first timeout gives the store up for the session and lets the
 network answer.

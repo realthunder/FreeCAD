@@ -2540,27 +2540,25 @@ static bool s_retryScheduled = false;
 
 static void resolvePending();
 
-/// The stall watchdog: while any request is recorded in flight, wake
-/// up and re-look, and re-arm from the WAKE-UP itself — never from
-/// inside resolvePending, whose early returns (a blob-store reset, a
-/// snapshot with nothing outstanding) previously ended the chain with
-/// the requests still hung. An IndexedDB read that never answers has
-/// no XHR and so no timeout; this loop is the only thing that ever
-/// notices it (measured on the phone: one read pending, five minutes
-/// of a converged-looking viewer one mesh short of its plan).
-static void armStallWatchdog()
-{
-    if (s_blobInFlight.empty() || s_retryScheduled)
-        return;
-    s_retryScheduled = true;
-    emscripten_async_call([](void *) {
-        s_retryScheduled = false;
-        if (s_blobInFlight.empty())
-            return;
-        resolvePending();
-        armStallWatchdog();
-    }, nullptr, int(kInFlightTimeoutMs / 4));
-}
+/// The reconciler heartbeat (docs/SceneStreaming.md §7): while the
+/// scene is not where the plan says it should be — a ladder below its
+/// target, a manifest outstanding, a request in flight, a generate
+/// awaiting its announcement — wake up, reconcile, re-arm. Defined
+/// after the resident bookkeeping it reads; this is its arming point.
+///
+/// It re-arms from the WAKE-UP itself — never from inside
+/// resolvePending, whose early returns (a blob-store reset, a snapshot
+/// with nothing outstanding) previously ended the chain with requests
+/// still hung. It subsumes what used to be separate mechanisms, each
+/// grown around one measured silence: the stall watchdog (an IndexedDB
+/// read that never answers has no XHR and so no timeout — one read
+/// pending, five minutes of a converged-looking viewer one mesh short
+/// of its plan), the in-flight retry chain, and the one silence
+/// nothing covered at all: a generate whose producer-side job was
+/// dropped left the ladder coarse forever, because the retry loop was
+/// arrival-driven and the answer to a generate is an announcement that
+/// was never going to arrive.
+static void armHeartbeat();
 /// Requests, not keys and not bytes: what a viewer's throughput turns
 /// out to depend on is how many of them are outstanding at once (see
 /// kInFlightRequests).
@@ -3139,7 +3137,7 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
 {
     if (!s_blobInFlight.emplace(key, emscripten_get_now()).second)
         return;
-    armStallWatchdog();
+    armHeartbeat();
     if (!blobPersistEnabled()) {
         fetchFromNetwork(key, size);
         return;
@@ -3293,6 +3291,47 @@ static bool stillArriving(const Render::SceneSnapshot &snap)
     return false;
 }
 
+/// The heartbeat's condition: anything at all between the scene and
+/// its plan. Wider than stillArriving() on purpose — a ladder standing
+/// on a sibling rung while a generate is out counts as *arrived* there
+/// (a scene under a budget must be able to complete) but not as *at
+/// plan* here: the generate's answer is an announcement, and if the
+/// producer dropped the job no arrival will ever re-ask. The heartbeat
+/// is what does.
+static bool sceneBelowPlan()
+{
+    if (!s_blobInFlight.empty())
+        return true;
+    const Render::SceneSnapshot &snap =
+        s_pendingValid ? s_pendingSnap : s_snap;
+    for (const auto &entry : snap.deferredChunks) {
+        if (!entry.release) {
+            if (entry.fill)
+                return true;
+            continue;
+        }
+        const auto step = Render::planStep(entry, residentRungOf(entry));
+        if (step.fetch >= 0 || step.generate >= 0 || step.release)
+            return true;
+    }
+    return false;
+}
+
+/// See the declaration above requestBlob: one timer, re-armed from its
+/// own wake-up, quiet the moment the scene is at plan.
+static void armHeartbeat()
+{
+    if (s_retryScheduled)
+        return;
+    s_retryScheduled = true;
+    emscripten_async_call([](void *) {
+        s_retryScheduled = false;
+        if (s_blobStoreReset || !sceneBelowPlan())
+            return;
+        resolvePending();
+        armHeartbeat();
+    }, nullptr, int(kInFlightTimeoutMs / 4));
+}
 
 /// Show what the staged snapshot can draw. Runs on every arrival that
 /// made progress, not only on the last one.
@@ -3436,10 +3475,22 @@ public:
     {
         if (s_sceneUrl.empty())
             return false;
-        // Once per page life: the server dedups too, but a request is
-        // still a request on a link the payloads share.
-        if (!asked.emplace(req.source, req.level).second)
-            return true;
+        // Dedup with a deadline, not for a page life: the answer to a
+        // generate is an announcement, and a producer that dropped the
+        // job (a restarted backend, a request lost on a folding link)
+        // sends none — a memo with no expiry left the ladder coarse
+        // forever, silently. The server dedups too, so a re-ask of a
+        // job still running costs a 202 and nothing else.
+        const double now = emscripten_get_now();
+        auto memo = asked.find({req.source, req.level});
+        if (memo != asked.end()) {
+            if (now - memo->second < kGenerateTimeoutMs)
+                return true;
+            decLog("generate level %u of %.8s unanswered for %.0fs "
+                   "-> re-ask", req.level, req.source.c_str(),
+                   (now - memo->second) / 1000.0);
+        }
+        asked[{req.source, req.level}] = now;
         decLog("generate level %u of %.8s", req.level, req.source.c_str());
         if (s_streamDebug)
             std::printf("fcviewer: asking for level %u of %s\n",
@@ -3464,7 +3515,12 @@ public:
     }
 
 private:
-    std::set<std::pair<std::string, uint32_t>> asked;
+    /// When each job was last asked for. How long to trust the memo:
+    /// generous — generation on a loaded backend takes real time and a
+    /// re-ask of a live job is harmless, but the announcement usually
+    /// lands within seconds.
+    static constexpr double kGenerateTimeoutMs = 60000.0;
+    std::map<std::pair<std::string, uint32_t>, double> asked;
 };
 
 static ViewerRungProvider s_provider;
@@ -4252,7 +4308,7 @@ static void resolvePending()
         // wake up and look. This is the same lesson the overlay
         // barrier's grace taught: the thing that recovers from silence
         // cannot be scheduled by the noise it is waiting for.
-        armStallWatchdog();
+        armHeartbeat();
     }
     if (target == &s_snap) {
         s_liveOutstanding = missing != 0;
