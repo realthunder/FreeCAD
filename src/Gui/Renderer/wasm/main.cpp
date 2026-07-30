@@ -3682,6 +3682,22 @@ static void planIfStale(Render::SceneSnapshot &target)
 {
     if (!s_planStale)
         return;
+    // A pending DELTA is not a plan universe: it names only what
+    // changed, and a plan drawn over three objects' ladders against
+    // the whole budget grants them their unbudgeted desire — measured
+    // on a phone as 73 mini-plans ("plan: 3 objects, 0 capped")
+    // re-granting exact meshes faster than the merged plan's
+    // downgrades could take them back: geometry 10 of 8 MB, stable,
+    // zero releases. Stay stale instead: the commit merges the delta
+    // over the model (carryLadders) and replans over the whole scene;
+    // until then the executor treats the delta's entries as unplanned,
+    // and what an unplanned entry with nothing resident fetches is the
+    // coarsest built rung — a few kilobytes that show the object — not
+    // the exact mesh. A pending FULL root still plans here: its
+    // universe is complete by definition, and the cold load's fetch
+    // order depends on it (§6).
+    if (s_pendingValid && &target == &s_pendingSnap && target.baseVersion)
+        return;
     s_planStale = false;
     Render::RungRanker ranker = makeRanker();
     Render::PlanParams params;
