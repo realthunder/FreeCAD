@@ -1526,6 +1526,63 @@ ellipsoid's 157 KB exact face chunk becoming 2.3 KB at level 0; at
 surfaces. `FC_DEBUG_MESH_SOURCE=1` traces the registry (add/associate/
 generate) and the generator's refusal reasons.
 
+### 5f — coarse-first publish, as built
+
+The other direction through the same seam: a big model must not cost
+its exact tessellation up front. With `FC_COARSE_TESSELLATION=<level>`
+set (a headless server's switch; a `Render_*` preference later), the
+display build itself tessellates every shape at that ladder rung —
+`ViewProviderPartExt` uses the generator's own grid
+(`diagonal/(8<<L)`, `meshLevelDeflection`), flat and instanced-leaf
+builds alike — and registers the full display-formula parameters for
+the on-demand *exact* build. The registration's `publishedError`
+travels through the bridge onto `MeshData::levelError`, which is how
+the serializer learns what it is publishing:
+
+- **The published mesh sits on the ladder at its own error**, only
+  strictly coarser rungs declared below it, and the exact mesh
+  declared above it at error 0 — *unbuilt*. The v36 reader already
+  takes the finest built level as the entry's fetch identity, so a
+  consumer that never looks at the ladder simply gets the coarse mesh.
+- **The exact rung is asked for by a sentinel** (`kExactMeshLevel`,
+  255), not its ladder position — the coarser rungs' positions double
+  as generator grid levels and the exact mesh is not on that grid.
+  Decimation refuses the sentinel outright (it cannot *refine*; a weld
+  of the coarse source must never be announced as exact), so only a
+  shape-backed source can build it, at the display deviation captured
+  at registration. The announcement consults `built(key, 255)` like
+  any generated level.
+- **Any built rung names the job.** The exact key may never exist, so
+  `LevelRequest.source` is whatever built sibling the viewer holds;
+  the registry self-associates every generated chunk's key with its
+  source and keeps the publisher-associated key as *canonical* — the
+  server canonicalizes request sources, so dedup, the memo and the
+  announcement lookup all live under the one key the serializer
+  consults.
+- **An announcement must not demote what it refines.** The finest
+  built key moves when the exact rung lands, and each publish is
+  parsed fresh — the re-keyed entry no longer matches the resident
+  coarse payload, and the object would drop to its box for the length
+  of a fetch it may not even need. The viewer's level selection now
+  stands the entry on any resident sibling rung first (its bytes
+  refill from the local caches) and lets the armed-upgrade pass fetch
+  the finer rung behind it.
+
+Verified on demo-varied@200 with `FC_COARSE_TESSELLATION=1` and
+`&genlod`: the publish carries ~4 KB coarse face chunks; 400 of 400
+exact rungs (faces and edges) build `retess` on demand — a 3.9 KB
+coarse chunk refining to the same 157 KB exact mesh a full publish
+ships — are announced, fetched, and the scene converges to the exact
+geometry with objects standing on their coarse rungs throughout.
+
+Still open here: the coarse switch wants to be a real preference tied
+to the server tier rather than an environment variable; bounds without
+*any* tessellation (BRepBndLib before the coarse build) stay deferred
+until coarse tessellation itself shows up in a profile; and `lodpx=0`
+(selection off) keeps the old semantics — an announcement there
+refetches the finest rung with a transient box, the price of the off
+switch.
+
 ## 12. Open questions
 
 - **Manifest history depth** — how stale a viewer may be before a full resync,
