@@ -294,6 +294,54 @@ TEST(PlanLevels, evictionDemotesToCoarseNotToNothing)
         << "the near object pays for the floor out of its finest tier";
 }
 
+TEST(PlanLevels, theWorstErrorOutbidsACoalitionOfCheapUpgrades)
+{
+    // One huge foreground object whose exact mesh is expensive, four
+    // mid objects with cheap exacts. Plain gain per byte minimizes the
+    // error TOTAL: the mids' upgrades are better value per byte, they
+    // spend the budget, and the 693 px object — the one committing a
+    // 87 px error, the worst on screen — stays coarse. Measured on a
+    // phone as a 1300 px sphere held coarse at 8 MB of 8 while the
+    // mid-field polished. Weighting gain by the standing error makes
+    // the plan spend toward the smallest WORST error instead.
+    const auto makeEntry = [](char tag, uint64_t owner, uint32_t coarse,
+                              uint32_t exact) {
+        Render::SceneSnapshot::DeferredChunk entry;
+        entry.key = std::string(40, tag);
+        entry.size = exact;
+        entry.owners.push_back(owner);
+        entry.release = []() {};
+        Render::SceneSnapshot::DeferredChunk::Level lvl;
+        lvl.error = 1.0f / 8.0f;
+        lvl.key = std::string(40, char(tag - ('a' - 'A')));
+        lvl.size = coarse;
+        entry.levels.push_back(lvl);
+        lvl = {};
+        lvl.error = 0.0f;
+        lvl.key = entry.key;
+        lvl.size = exact;
+        entry.levels.push_back(lvl);
+        return entry;
+    };
+    Render::SceneSnapshot snap;
+    snap.deferredChunks.push_back(makeEntry('h', 1, 5000, 2000000));
+    for (int i = 0; i < 4; ++i)
+        snap.deferredChunks.push_back(
+            makeEntry(char('m' + i), uint64_t(2 + i), 1000, 50000));
+    const float hugeBox[6] = {-4.0f, -4.0f, -4.0f, 4.0f, 4.0f, 4.0f};
+    Render::RungRanker ranker(
+        levelView(), [&](uint64_t key) -> const float * {
+            return key == 1 ? hugeBox : kFarBox;
+        });
+    // Floor (9 KB) + the huge exact (2 MB) fit; nothing else does.
+    const auto stats = Render::planLevels(snap, ranker, params(1.0f, 2010000));
+    EXPECT_EQ(snap.deferredChunks[0].plan, 1)
+        << "the object with the largest standing error upgrades first";
+    for (size_t i = 1; i < snap.deferredChunks.size(); ++i)
+        EXPECT_EQ(snap.deferredChunks[i].plan, 0) << i;
+    EXPECT_EQ(stats.capped, 4u);
+}
+
 TEST(PlanLevels, anObjectsChunksLandOnTheSameRung)
 {
     // The face set and the edge set of one object are separate chunks

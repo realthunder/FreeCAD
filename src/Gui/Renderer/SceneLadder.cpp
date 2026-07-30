@@ -686,7 +686,18 @@ PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
     const auto tierScore = [&](const Obj &o) {
         const float from = o.tier < 0 ? kBoxError : o.tiers[o.tier];
         const float to = o.tiers[o.tier + 1];
-        float gain = (from - to) * std::max(o.diamPx, 1e-6f);
+        const float diam = std::max(o.diamPx, 1e-6f);
+        float gain = (from - to) * diam;
+        // Weighted by the error the object is committing NOW, floored
+        // at a pixel. Plain gain per byte minimizes the error TOTAL,
+        // and a coalition of mid objects with cheap upgrades outbids
+        // the one huge foreground object whose next rung is expensive
+        // — measured as a 1300 px sphere held coarse at 8 MB of 8
+        // while mid-field objects polished. The weight makes the score
+        // convex in the standing error, so the worst-off object's
+        // upgrades rank first and the plan spends toward the smallest
+        // WORST error, not the smallest sum.
+        gain *= std::max(from * diam, 1.0f);
         // Incumbency (kPlanKeepBonus): this upgrade only re-affirms
         // what the previous plan already granted every chunk it
         // touches, so under input drift it outranks an equal-worth
