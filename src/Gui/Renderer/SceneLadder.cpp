@@ -25,6 +25,8 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <queue>
+#include <set>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/em_asm.h>
@@ -77,8 +79,6 @@ inline void normalize3(float *v)
 constexpr float kPi = 3.14159265358979323846f;
 
 }  // namespace
-
-const float Render::kEvictMargin = 1.25f;
 
 // Out of line so the vtable has a home here rather than in every
 // translation unit that sees the header.
@@ -459,129 +459,337 @@ float RungRanker::residency(const SceneSnapshot::DeferredChunk &chunk)
     return value(chunk, m_weights.keep);
 }
 
-LevelChoice Render::chooseLevel(RungRanker &ranker,
-                                const SceneSnapshot::DeferredChunk &entry,
-                                float tolerancePx, float viewportPx)
+// ----------------------------------------------------------------------
+// The plan (docs/SceneStreaming.md §7, "Selection is a plan, not a
+// reaction")
+// ----------------------------------------------------------------------
+
+size_t Render::planRungs(const SceneSnapshot::DeferredChunk &entry)
 {
-    LevelChoice choice;
-    const size_t count = entry.levels.size();
-    choice.desired = choice.fetch = count ? count - 1 : 0;
-    if (count < 2 || !(tolerancePx > 0.0f) || !(viewportPx > 0.0f))
-        return choice;
-    // The best owner decides. Unknown bounds answer exact — the level
-    // that is right whatever the camera turns out to see.
-    float best = 0.0f;
-    for (uint64_t owner : entry.owners)
-        best = std::max(best, ranker.owner(owner));
-    if (!(best > 0.0f))
-        return choice;
-    // project() scores angular size — radius over distance. The
-    // viewport's half height spans tan(fovY/2) of the same measure
-    // over viewportPx/2 pixels, so the owner's projected *diameter* in
-    // pixels is score / tan(fovY/2) * viewportPx; a level's stated
-    // error is relative to the diagonal, which is that diameter.
-    const float tanHalf =
-        std::tan(ranker.view().fovY * 0.5f * 3.14159265358979f / 180.0f);
-    if (!(tanHalf > 0.0f))
-        return choice;
-    const float diameterPx = best / tanHalf * viewportPx;
+    return entry.levels.empty() ? 1 : entry.levels.size();
+}
+
+const std::string &Render::planRungKey(
+    const SceneSnapshot::DeferredChunk &entry, size_t rung)
+{
+    return entry.levels.empty() ? entry.key : entry.levels[rung].key;
+}
+
+uint32_t Render::planRungSize(const SceneSnapshot::DeferredChunk &entry,
+                              size_t rung)
+{
+    return entry.levels.empty() ? entry.size : entry.levels[rung].size;
+}
+
+float Render::planRungError(const SceneSnapshot::DeferredChunk &entry,
+                            size_t rung)
+{
+    return entry.levels.empty() ? 0.0f : entry.levels[rung].error;
+}
+
+int Render::finestBuiltRung(const SceneSnapshot::DeferredChunk &entry)
+{
+    for (size_t i = planRungs(entry); i-- > 0;) {
+        if (!planRungKey(entry, i).empty())
+            return int(i);
+    }
+    return -1;
+}
+
+int Render::coarsestBuiltRung(const SceneSnapshot::DeferredChunk &entry)
+{
+    const size_t count = planRungs(entry);
     for (size_t i = 0; i < count; ++i) {
-        if (entry.levels[i].error * diameterPx <= tolerancePx) {
-            choice.desired = i;
+        if (!planRungKey(entry, i).empty())
+            return int(i);
+    }
+    return -1;
+}
+
+namespace {
+
+/// What holding rung \a rung would cost, estimated where it has to be:
+/// an unbuilt rung has no bytes yet, but the generator's grid halves
+/// its cell per level, so triangle count — and payload — scale about
+/// four to one per step from the nearest built rung. An estimate in
+/// the budget is corrected by a re-plan the moment the announcement
+/// states the real size; what it must not do is let an unpriced rung
+/// ride into the plan for free.
+size_t rungCost(const Render::SceneSnapshot::DeferredChunk &entry, int rung)
+{
+    if (rung < 0)
+        return 0;
+    const uint32_t stated = Render::planRungSize(entry, size_t(rung));
+    if (stated)
+        return stated;
+    int built = -1;
+    for (int i = rung; i-- > 0;) {
+        if (!Render::planRungKey(entry, size_t(i)).empty()) {
+            built = i;
             break;
         }
     }
-    choice.generate = entry.levels[choice.desired].key.empty();
-    // The built rung nearest the desired one, coarser side first: the
-    // exact mesh always closes the ladder keyed, so the scan cannot
-    // come up empty.
-    choice.fetch = choice.desired;
-    if (choice.generate) {
-        size_t found = size_t(-1);
-        for (size_t step = choice.desired; step-- > 0;) {
-            if (!entry.levels[step].key.empty()) {
-                found = step;
+    bool builtIsCoarser = built >= 0;
+    if (built < 0) {
+        for (size_t i = size_t(rung) + 1; i < Render::planRungs(entry); ++i) {
+            if (!Render::planRungKey(entry, i).empty()) {
+                built = int(i);
                 break;
             }
         }
-        if (found == size_t(-1)) {
-            for (size_t i = choice.desired + 1; i < count; ++i) {
-                if (!entry.levels[i].key.empty()) {
-                    found = i;
+    }
+    if (built < 0)
+        return 0;
+    const size_t steps = size_t(builtIsCoarser ? rung - built : built - rung);
+    const size_t base = Render::planRungSize(entry, size_t(built));
+    // Shifts capped well below overflow; a ladder is a handful of rungs.
+    const size_t scale = size_t(1) << (2 * std::min<size_t>(steps, 12));
+    return builtIsCoarser ? base * scale : std::max<size_t>(base / scale, 1);
+}
+
+/// The coarsest rung of \a entry whose stated error is within \a err.
+/// The exact rung closes every ladder at error 0, so this always
+/// answers.
+int rungWithin(const Render::SceneSnapshot::DeferredChunk &entry, float err)
+{
+    const size_t count = Render::planRungs(entry);
+    for (size_t i = 0; i < count; ++i) {
+        if (Render::planRungError(entry, i) <= err)
+            return int(i);
+    }
+    return int(count) - 1;
+}
+
+/// The screen-space error of an object drawn as its box: the whole of
+/// it is wrong, so the relative error is the whole diagonal. What
+/// matters is only that it is larger than any declared rung's error,
+/// so the first upgrade off the box is always worth something.
+constexpr float kBoxError = 1.0f;
+
+}  // namespace
+
+PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
+                             const PlanParams &params)
+{
+    PlanStats stats;
+
+    /// One object's slice of the plan: the entries it owns, its
+    /// projected diameter in pixels, and the descending error tiers
+    /// its ladders offer — cut off at the first tier the camera could
+    /// not tell from exact.
+    struct Obj {
+        std::vector<size_t> entries;
+        float diamPx = 0.0f;
+        std::vector<float> tiers;
+        /// Index into \a tiers applied so far; -1 is the box.
+        int tier = -1;
+        bool done = false;
+    };
+
+    // Owned geometry is planned; the view's own geometry always
+    // targets its finest built rung, outside the budget, because a
+    // navigation cube refused for want of memory is a verdict nothing
+    // can appeal (it can never be a victim either).
+    std::map<uint64_t, Obj> objs;
+    const int kUntouched = std::numeric_limits<int>::min();
+    std::vector<int> plan(snap.deferredChunks.size(), kUntouched);
+    for (size_t i = 0; i < snap.deferredChunks.size(); ++i) {
+        auto &entry = snap.deferredChunks[i];
+        if (!entry.release)
+            continue;
+        if (entry.owners.empty()) {
+            entry.plan = int16_t(finestBuiltRung(entry));
+            continue;
+        }
+        plan[i] = -1;
+        for (uint64_t owner : entry.owners)
+            objs[owner].entries.push_back(i);
+    }
+
+    // project() scores angular size — radius over distance. The
+    // viewport's half height spans tan(fovY/2) of the same measure, so
+    // an owner's projected diameter in pixels is score / tan(fovY/2) ×
+    // the viewport height; a rung's error is relative to the diagonal,
+    // which is that diameter.
+    const float tanHalf =
+        std::tan(ranker.view().fovY * 0.5f * kPi / 180.0f);
+    const bool pixelsKnown = tanHalf > 0.0f && params.viewportPx > 0.0f;
+    for (auto &kv : objs) {
+        Obj &o = kv.second;
+        std::sort(o.entries.begin(), o.entries.end());
+        o.entries.erase(std::unique(o.entries.begin(), o.entries.end()),
+                        o.entries.end());
+        o.diamPx = pixelsKnown
+            ? ranker.owner(kv.first) / tanHalf * params.viewportPx
+            : 0.0f;
+        // The coarsest error the camera cannot resolve at the
+        // tolerance. Non-positive tolerance, or an object whose size
+        // on screen is unknown, desires exact — the answer that is
+        // right whatever the camera turns out to see.
+        const float desired =
+            (params.tolerancePx > 0.0f && o.diamPx > 0.0f)
+            ? params.tolerancePx / o.diamPx
+            : 0.0f;
+        // The candidate tiers, finest ladder first: the union of the
+        // owned ladders' errors, descending, cut after the first tier
+        // within the desired error — beyond it a byte buys nothing
+        // visible.
+        std::set<float, std::greater<float>> tiers;
+        for (size_t idx : o.entries) {
+            const auto &entry = snap.deferredChunks[idx];
+            for (size_t r = 0; r < planRungs(entry); ++r)
+                tiers.insert(planRungError(entry, r));
+        }
+        for (float t : tiers) {
+            o.tiers.push_back(t);
+            if (t <= desired)
+                break;
+        }
+    }
+    stats.objects = objs.size();
+
+    // Greedy: the best screen-space error removed per byte added, one
+    // upgrade at a time, until the budget is spent or every object is
+    // at its desired tier. The heap is lazy — a shared chunk another
+    // owner already raised makes an upgrade cheaper than its queued
+    // score claims — so a popped candidate is re-scored fresh and
+    // re-queued if it got better; it can never have gotten worse.
+    const auto tierCost = [&](const Obj &o, float err) {
+        size_t cost = 0;
+        for (size_t idx : o.entries) {
+            const auto &entry = snap.deferredChunks[idx];
+            const int rung = rungWithin(entry, err);
+            if (rung > plan[idx])
+                cost += rungCost(entry, rung)
+                    - (plan[idx] >= 0 ? rungCost(entry, plan[idx]) : 0);
+        }
+        return cost;
+    };
+    const auto tierScore = [&](const Obj &o) {
+        const float from = o.tier < 0 ? kBoxError : o.tiers[o.tier];
+        const float to = o.tiers[o.tier + 1];
+        const float gain = (from - to) * std::max(o.diamPx, 1e-6f);
+        const size_t cost = tierCost(o, to);
+        return cost ? gain / float(cost) : std::numeric_limits<float>::max();
+    };
+
+    // Ordered by score, ties broken by object key: the same inputs
+    // must yield the same plan, or the plan oscillates with itself.
+    std::priority_queue<std::pair<float, uint64_t>> heap;
+    size_t spent = 0;
+    for (auto &kv : objs) {
+        if (kv.second.tier + 1 < int(kv.second.tiers.size()))
+            heap.emplace(tierScore(kv.second), kv.first);
+    }
+    while (!heap.empty()) {
+        const auto top = heap.top();
+        heap.pop();
+        Obj &o = objs[top.second];
+        if (o.done || o.tier + 1 >= int(o.tiers.size()))
+            continue;
+        const float fresh = tierScore(o);
+        if (fresh > top.first) {
+            // Cheaper than when queued (a shared chunk was raised):
+            // let it compete at its real score.
+            heap.emplace(fresh, top.second);
+            continue;
+        }
+        const float err = o.tiers[o.tier + 1];
+        const size_t cost = tierCost(o, err);
+        if (params.budgetBytes && spent + cost > params.budgetBytes) {
+            // This object stops here; smaller upgrades elsewhere may
+            // still fit, so the round goes on without it.
+            o.done = true;
+            ++stats.capped;
+            continue;
+        }
+        for (size_t idx : o.entries) {
+            const auto &entry = snap.deferredChunks[idx];
+            const int rung = rungWithin(entry, err);
+            if (rung > plan[idx])
+                plan[idx] = rung;
+        }
+        spent += cost;
+        ++o.tier;
+        if (o.tier + 1 < int(o.tiers.size()))
+            heap.emplace(tierScore(o), top.second);
+    }
+    stats.plannedBytes = spent;
+
+    for (size_t i = 0; i < snap.deferredChunks.size(); ++i) {
+        if (plan[i] != kUntouched)
+            snap.deferredChunks[i].plan = int16_t(plan[i]);
+    }
+    return stats;
+}
+
+PlanStep Render::planStep(const SceneSnapshot::DeferredChunk &entry,
+                          int residentRung)
+{
+    PlanStep step;
+    if (!entry.release)
+        return step;
+    const int count = int(planRungs(entry));
+    int target = entry.plan == SceneSnapshot::DeferredChunk::kPlanUnset
+        ? finestBuiltRung(entry)
+        : int(entry.plan);
+    target = std::min(target, count - 1);
+    if (target < -1)
+        target = -1;
+    if (target == residentRung)
+        return step;
+    if (target < 0) {
+        step.release = residentRung >= 0;
+        return step;
+    }
+    int fetch = target;
+    if (planRungKey(entry, size_t(target)).empty()) {
+        // Declared but unbuilt: ask the producer, stand on the nearest
+        // built rung meanwhile — coarser side first, a cheap rung that
+        // shows the object beating a large one that shows it slightly
+        // better.
+        step.generate = target;
+        fetch = -1;
+        for (int i = target; i-- > 0;) {
+            if (!planRungKey(entry, size_t(i)).empty()) {
+                fetch = i;
+                break;
+            }
+        }
+        if (fetch < 0) {
+            for (int i = target + 1; i < count; ++i) {
+                if (!planRungKey(entry, size_t(i)).empty()) {
+                    fetch = i;
                     break;
                 }
             }
         }
-        choice.fetch = found;
     }
-    return choice;
-}
-
-// ----------------------------------------------------------------------
-// Evictor
-// ----------------------------------------------------------------------
-
-Evictor::Evictor(SceneSnapshot &snap, RungRanker &ranker,
-                 ResidentTest isResident, Release release)
-    : m_snap(snap)
-    , m_ranker(ranker)
-    , m_isResident(std::move(isResident))
-    , m_release(std::move(release))
-{}
-
-void Evictor::build()
-{
-    m_built = true;
-    for (size_t i = 0; i < m_snap.deferredChunks.size(); ++i) {
-        const auto &entry = m_snap.deferredChunks[i];
-        // Still outstanding, or with no rung below it to fall back to,
-        // or not actually held: nothing to give back.
-        if (entry.fill || !entry.release
-                || !(m_isResident && m_isResident(entry.key)))
-            continue;
-        // The view's own chunks are never victims. Their residency
-        // score is infinite anyway, but stating the rule here keeps it
-        // a rule rather than an arithmetic accident of FLT_MAX
-        // surviving the margin multiply.
-        if (entry.owners.empty())
-            continue;
-        m_victims.emplace_back(m_ranker.residency(entry), i);
-    }
-    std::sort(m_victims.begin(), m_victims.end(),
-              [](const std::pair<float, size_t> &a,
-                 const std::pair<float, size_t> &b) {
-                  return a.first < b.first;
-              });
-}
-
-bool Evictor::makeRoom(float incoming, size_t need, bool *starved)
-{
-    if (!m_built)
-        build();
-    size_t take = m_next, freed = 0;
-    while (take < m_victims.size() && freed < need
-           && m_victims[take].first * kEvictMargin < incoming) {
-        freed += m_snap.deferredChunks[m_victims[take].second].size;
-        ++take;
-    }
-    if (starved)
-        *starved = freed < need && take == m_victims.size();
-    if (freed < need) {
-        if (m_trace) {
-            char buf[256];
-            std::snprintf(buf, sizeof(buf),
-                          "no room for a chunk worth %.3g: need %zu B, "
-                          "freed %zu of %zu candidates (best spare %.3g)",
-                          incoming, need, freed, m_victims.size() - m_next,
-                          m_next < m_victims.size() ? m_victims[m_next].first
-                                                    : -1.0f);
-            m_trace(buf);
+    if (target > residentRung) {
+        // En route, coarse first (§7): nothing on screen yet and the
+        // rung to fetch is not the cheapest built one — put the
+        // cheapest up this round, and the target lands as an upgrade
+        // over it instead of over a box.
+        if (residentRung < 0) {
+            const int coarsest = coarsestBuiltRung(entry);
+            if (coarsest >= 0 && coarsest < fetch)
+                fetch = coarsest;
         }
-        return false;
+        if (fetch >= 0 && fetch != residentRung)
+            step.fetch = fetch;
     }
-    for (; m_next < take; ++m_next) {
-        auto &entry = m_snap.deferredChunks[m_victims[m_next].second];
-        m_release(entry, m_victims[m_next].first);
+    else {
+        // Downgrade: the built rung at or below the target. None built
+        // down there means nothing to do but wait for the generate —
+        // holding the finer rung meanwhile is the right failure.
+        for (int i = std::min(fetch, target); i >= 0; --i) {
+            if (!planRungKey(entry, size_t(i)).empty()) {
+                step.fetch = i;
+                break;
+            }
+        }
+        if (step.fetch >= residentRung)
+            step.fetch = -1;
     }
-    return true;
+    return step;
 }

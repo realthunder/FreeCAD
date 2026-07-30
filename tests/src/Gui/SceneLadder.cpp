@@ -1,6 +1,7 @@
-// Tests for the shared ladder policy (docs/SceneStreaming.md §6/§11 4c):
-// the budget estimator, the ranker's size weighting and the evictor's
-// victim rules. Like the SceneDump and MeshSimplify tests beside them
+// Tests for the shared ladder policy (docs/SceneStreaming.md §6/§7):
+// the budget estimator, the ranker's size weighting, and the level
+// plan — what the whole scene should hold, and the executor's step
+// toward it. Like the SceneDump and MeshSimplify tests beside them
 // these need no GL context and no document.
 
 #include <gtest/gtest.h>
@@ -140,75 +141,8 @@ TEST(RungRanker, sizeWeightAboveOneIsHonoredNotClamped)
     EXPECT_NEAR(ratio, 10000.0f, 1.0f);
 }
 
-TEST(Evictor, theViewsOwnChunksAreNeverVictims)
-{
-    // An ownerless chunk is the view's own (navigation cube, axis
-    // cross): infinitely valuable to residency, and excluded from the
-    // victim list by rule rather than left to FLT_MAX arithmetic.
-    Render::SceneSnapshot snap;
-    snap.deferredChunks.push_back(chunk("view", 4096, false));
-    snap.deferredChunks.push_back(chunk("model", 4096, true));
-    for (auto &entry : snap.deferredChunks)
-        entry.release = []() {};
-
-    std::vector<std::string> released;
-    Render::RungRanker ranker = makeRanker();
-    Render::Evictor evictor(
-        snap, ranker, [](const std::string &) { return true; },
-        [&released](Render::SceneSnapshot::DeferredChunk &entry, float) {
-            released.push_back(entry.key);
-        });
-
-    const float incoming = 1e9f;
-    // Both chunks' worth of room cannot be made: only the model chunk
-    // is a candidate, and a planned eviction that cannot reach its goal
-    // releases nothing.
-    EXPECT_FALSE(evictor.makeRoom(incoming, 8192));
-    EXPECT_TRUE(released.empty());
-    // One chunk's worth can, and it is the model's, never the view's.
-    EXPECT_TRUE(evictor.makeRoom(incoming, 4096));
-    ASSERT_EQ(released.size(), 1u);
-    EXPECT_EQ(released[0], "model");
-}
-
-TEST(Evictor, aRefusalSaysWhetherAnythingStoodAgainstThePayload)
-{
-    // The first issue round pledges the whole budget before anything
-    // is resident, so its refusals compare against nobody. A consumer
-    // that memoized those froze the scene at whatever that round
-    // happened to ask for — near objects coarse for good, the evictor
-    // never once running. `starved` is how it tells the two apart.
-    Render::SceneSnapshot snap;
-    snap.deferredChunks.push_back(chunk("model", 4096, true));
-    snap.deferredChunks.back().release = []() {};
-
-    size_t releases = 0;
-    Render::RungRanker ranker = makeRanker();
-
-    // Nothing resident: the walk runs out of victims, not out of worth.
-    Render::Evictor starvedEvictor(
-        snap, ranker, [](const std::string &) { return false; },
-        [&releases](Render::SceneSnapshot::DeferredChunk &, float) {
-            ++releases;
-        });
-    bool starved = false;
-    EXPECT_FALSE(starvedEvictor.makeRoom(1e9f, 4096, &starved));
-    EXPECT_TRUE(starved);
-
-    // A resident victim the margin keeps: a real comparison, a real no.
-    Render::Evictor marginEvictor(
-        snap, ranker, [](const std::string &) { return true; },
-        [&releases](Render::SceneSnapshot::DeferredChunk &, float) {
-            ++releases;
-        });
-    starved = true;
-    EXPECT_FALSE(marginEvictor.makeRoom(0.0f, 4096, &starved));
-    EXPECT_FALSE(starved);
-    EXPECT_EQ(releases, 0u);
-}
-
 // ----------------------------------------------------------------------
-// chooseLevel (§7, phase 5d)
+// The plan (§7, "Selection is a plan, not a reaction")
 // ----------------------------------------------------------------------
 
 namespace
@@ -236,6 +170,8 @@ Render::SceneSnapshot::DeferredChunk levelEntry(bool level0Built,
     entry.key = std::string(40, 'e');
     entry.size = 100000;
     entry.owners.push_back(1);
+    // Geometry: the one payload kind the plan governs.
+    entry.release = []() {};
     Render::SceneSnapshot::DeferredChunk::Level lvl;
     lvl.error = 1.0f / 8.0f;
     if (level0Built) {
@@ -260,91 +196,250 @@ Render::SceneSnapshot::DeferredChunk levelEntry(bool level0Built,
 
 }  // namespace
 
-TEST(ChooseLevel, theCoarsestLevelTheCameraCannotFaultIsDesired)
+namespace
 {
-    // radius 0.4 at distance 10 on a 1000 px viewport: a 40 px object.
-    // Level 0 errs by 5 px, level 1 by 2.5 px.
-    float bbox[6] = {-0.231f, -0.231f, -0.231f, 0.231f, 0.231f, 0.231f};
+
+/// The 40 px object of the old chooseLevel tests: radius 0.4 at
+/// distance 10 on a 1000 px viewport. Level 0 errs by 5 px, level 1 by
+/// 2.5 px.
+const float kFarBox[6] = {-0.231f, -0.231f, -0.231f,
+                          0.231f, 0.231f, 0.231f};
+
+Render::PlanParams params(float tolerancePx, size_t budget = 100 * kMB)
+{
+    Render::PlanParams p;
+    p.budgetBytes = budget;
+    p.tolerancePx = tolerancePx;
+    p.viewportPx = 1000.0f;
+    return p;
+}
+
+}  // namespace
+
+TEST(PlanLevels, theCoarsestRungTheCameraCannotFaultIsTheTarget)
+{
+    Render::SceneSnapshot snap;
+    snap.deferredChunks.push_back(levelEntry(true, true));
     Render::RungRanker ranker(levelView(),
-                              [&](uint64_t) -> const float * { return bbox; });
-    auto entry = levelEntry(true, true);
+                              [](uint64_t) -> const float * { return kFarBox; });
 
     // 2.6 px allowed: level 1 (2.5 px) passes, level 0 (5 px) does not.
-    auto choice = Render::chooseLevel(ranker, entry, 2.6f, 1000.0f);
-    EXPECT_EQ(choice.desired, 1u);
-    EXPECT_EQ(choice.fetch, 1u);
-    EXPECT_FALSE(choice.generate);
+    Render::planLevels(snap, ranker, params(2.6f));
+    EXPECT_EQ(snap.deferredChunks[0].plan, 1);
 
     // 6 px allowed: even the coarsest rung is indistinguishable.
-    choice = Render::chooseLevel(ranker, entry, 6.0f, 1000.0f);
-    EXPECT_EQ(choice.desired, 0u);
-    EXPECT_EQ(choice.fetch, 0u);
+    Render::planLevels(snap, ranker, params(6.0f));
+    EXPECT_EQ(snap.deferredChunks[0].plan, 0);
 
-    // 1 px allowed: only the exact mesh qualifies.
-    choice = Render::chooseLevel(ranker, entry, 1.0f, 1000.0f);
-    EXPECT_EQ(choice.desired, 2u);
-    EXPECT_EQ(choice.fetch, 2u);
-    EXPECT_FALSE(choice.generate);
-}
-
-TEST(ChooseLevel, anUnbuiltDesireFetchesTheNearestBuiltRung)
-{
-    float bbox[6] = {-0.231f, -0.231f, -0.231f, 0.231f, 0.231f, 0.231f};
-    Render::RungRanker ranker(levelView(),
-                              [&](uint64_t) -> const float * { return bbox; });
-
-    // Desired level 1 unbuilt, level 0 built: take the coarser built
-    // rung — cheap and on screen beats big and marginally better —
-    // and ask for the wanted one to be generated.
-    auto entry = levelEntry(true, false);
-    auto choice = Render::chooseLevel(ranker, entry, 2.6f, 1000.0f);
-    EXPECT_EQ(choice.desired, 1u);
-    EXPECT_EQ(choice.fetch, 0u);
-    EXPECT_TRUE(choice.generate);
-
-    // Nothing built below: the exact mesh is the only rung there is.
-    entry = levelEntry(false, false);
-    choice = Render::chooseLevel(ranker, entry, 2.6f, 1000.0f);
-    EXPECT_EQ(choice.desired, 1u);
-    EXPECT_EQ(choice.fetch, 2u);
-    EXPECT_TRUE(choice.generate);
-}
-
-TEST(ChooseLevel, theSafeAnswerIsTheExactMesh)
-{
-    float bbox[6] = {-0.231f, -0.231f, -0.231f, 0.231f, 0.231f, 0.231f};
-    Render::RungRanker withBounds(
-        levelView(), [&](uint64_t) -> const float * { return bbox; });
+    // 1 px allowed: only the exact mesh qualifies. So does a
+    // non-positive tolerance (the off switch) and an owner with
+    // unknown bounds — the answer that is right whatever the camera
+    // turns out to see.
+    Render::planLevels(snap, ranker, params(1.0f));
+    EXPECT_EQ(snap.deferredChunks[0].plan, 2);
+    Render::planLevels(snap, ranker, params(0.0f));
+    EXPECT_EQ(snap.deferredChunks[0].plan, 2);
     Render::RungRanker noBounds(
         levelView(), [](uint64_t) -> const float * { return nullptr; });
-    auto entry = levelEntry(true, true);
+    Render::planLevels(snap, noBounds, params(2.6f));
+    EXPECT_EQ(snap.deferredChunks[0].plan, 2);
+}
 
-    // Tolerance zero is the off switch.
-    auto choice = Render::chooseLevel(withBounds, entry, 0.0f, 1000.0f);
-    EXPECT_EQ(choice.desired, entry.levels.size() - 1);
-    EXPECT_FALSE(choice.generate);
+TEST(PlanLevels, theBudgetHoldsAnObjectBelowItsDesire)
+{
+    Render::SceneSnapshot snap;
+    snap.deferredChunks.push_back(levelEntry(true, true));
+    Render::RungRanker ranker(levelView(),
+                              [](uint64_t) -> const float * { return kFarBox; });
 
-    // Bounds nobody knows score zero and must not read as "infinitely
-    // far away, take the coarsest": the safe answer is exact.
-    choice = Render::chooseLevel(noBounds, entry, 2.6f, 1000.0f);
-    EXPECT_EQ(choice.desired, entry.levels.size() - 1);
+    // Wants exact (100000 B), the budget affords level 0 (5000 B) but
+    // not level 1 (17000 B): the plan stops where the money does, and
+    // says so.
+    const auto stats = Render::planLevels(snap, ranker, params(1.0f, 6000));
+    EXPECT_EQ(snap.deferredChunks[0].plan, 0);
+    EXPECT_EQ(stats.objects, 1u);
+    EXPECT_EQ(stats.capped, 1u);
+    EXPECT_EQ(stats.plannedBytes, 5000u);
+}
 
-    // A view chunk owns no objects and has no ladder to speak of.
-    auto viewEntry = entry;
-    viewEntry.owners.clear();
-    choice = Render::chooseLevel(withBounds, viewEntry, 2.6f, 1000.0f);
-    EXPECT_EQ(choice.desired, entry.levels.size() - 1);
+TEST(PlanLevels, anObjectsChunksLandOnTheSameRung)
+{
+    // The face set and the edge set of one object are separate chunks
+    // with separate ladders; independent choices put exact polylines
+    // on a coarse surface. The plan assigns the object one error, so
+    // the rungs agree — under a generous budget and under one that
+    // caps the pair alike.
+    const auto makeSnap = [] {
+        Render::SceneSnapshot snap;
+        snap.deferredChunks.push_back(levelEntry(true, true));
+        auto edges = levelEntry(true, true);
+        edges.key = std::string(40, 'f');
+        edges.size = 2000;
+        edges.levels[0].key = std::string(40, 'c');
+        edges.levels[0].size = 50;
+        edges.levels[1].key = std::string(40, 'd');
+        edges.levels[1].size = 170;
+        edges.levels[2].key = edges.key;
+        edges.levels[2].size = edges.size;
+        snap.deferredChunks.push_back(std::move(edges));
+        return snap;
+    };
+    Render::RungRanker ranker(levelView(),
+                              [](uint64_t) -> const float * { return kFarBox; });
 
-    // The best owner decides: add a near object to the same mesh and
-    // the far one no longer settles for its rung.
-    float nearBox[6] = {-4.0f, -4.0f, 4.0f, 4.0f, 4.0f, 6.0f};
-    Render::RungRanker twoOwners(
+    Render::SceneSnapshot roomy = makeSnap();
+    Render::planLevels(roomy, ranker, params(1.0f));
+    EXPECT_EQ(roomy.deferredChunks[0].plan, 2);
+    EXPECT_EQ(roomy.deferredChunks[0].plan, roomy.deferredChunks[1].plan);
+
+    Render::SceneSnapshot tight = makeSnap();
+    Render::planLevels(tight, ranker, params(1.0f, 6000));
+    EXPECT_EQ(tight.deferredChunks[0].plan, 0);
+    EXPECT_EQ(tight.deferredChunks[0].plan, tight.deferredChunks[1].plan);
+}
+
+TEST(PlanLevels, aSharedChunkIsPlannedOnceAtTheFinestNeed)
+{
+    // One mesh, two owners: the far one would settle for level 1, the
+    // near one needs exact. The finest need wins, and the bytes are
+    // counted once.
+    const float nearBox[6] = {-4.0f, -4.0f, 4.0f, 4.0f, 4.0f, 6.0f};
+    Render::SceneSnapshot snap;
+    snap.deferredChunks.push_back(levelEntry(true, true));
+    snap.deferredChunks[0].owners.push_back(2);
+    Render::RungRanker ranker(
         levelView(), [&](uint64_t key) -> const float * {
-            return key == 1 ? bbox : nearBox;
+            return key == 1 ? kFarBox : nearBox;
         });
-    auto shared = levelEntry(true, true);
-    shared.owners.push_back(2);
-    choice = Render::chooseLevel(twoOwners, shared, 2.6f, 1000.0f);
-    EXPECT_EQ(choice.desired, entry.levels.size() - 1)
+    const auto stats = Render::planLevels(snap, ranker, params(2.6f));
+    EXPECT_EQ(snap.deferredChunks[0].plan, 2)
         << "a mesh shared with a near object must be fine enough for it";
+    EXPECT_EQ(stats.plannedBytes, 100000u);
+}
+
+TEST(PlanLevels, theViewsOwnAlwaysTargetTheirFinestBuiltRung)
+{
+    // Ownerless geometry is the view's own (navigation cube, axis
+    // cross): outside the budget entirely, because refusing it is a
+    // verdict nothing can appeal. A budget of one byte must not touch
+    // it.
+    Render::SceneSnapshot snap;
+    snap.deferredChunks.push_back(levelEntry(true, true));
+    snap.deferredChunks[0].owners.clear();
+    Render::RungRanker ranker(levelView(),
+                              [](uint64_t) -> const float * { return kFarBox; });
+    Render::planLevels(snap, ranker, params(2.6f, 1));
+    EXPECT_EQ(snap.deferredChunks[0].plan, 2);
+}
+
+TEST(PlanLevels, theSameInputsProduceTheSamePlan)
+{
+    // Determinism is what the plan has instead of damping: a plan that
+    // cannot differ from itself cannot oscillate with itself.
+    const auto build = [] {
+        Render::SceneSnapshot snap;
+        for (int i = 0; i < 8; ++i) {
+            auto entry = levelEntry(true, true);
+            entry.key = std::string(40, char('g' + i));
+            entry.levels[2].key = entry.key;
+            entry.owners[0] = uint64_t(i + 1);
+            snap.deferredChunks.push_back(std::move(entry));
+        }
+        return snap;
+    };
+    Render::RungRanker ranker(levelView(),
+                              [](uint64_t) -> const float * { return kFarBox; });
+    Render::SceneSnapshot a = build();
+    Render::SceneSnapshot b = build();
+    // A budget that fits only some of the desires forces the greedy
+    // order to decide, which is where nondeterminism would live.
+    Render::planLevels(a, ranker, params(1.0f, 40000));
+    Render::planLevels(b, ranker, params(1.0f, 40000));
+    for (size_t i = 0; i < a.deferredChunks.size(); ++i)
+        EXPECT_EQ(a.deferredChunks[i].plan, b.deferredChunks[i].plan) << i;
+}
+
+// ----------------------------------------------------------------------
+// The executor's step (§7)
+// ----------------------------------------------------------------------
+
+TEST(PlanStep, coarseFirstWhenNothingIsResident)
+{
+    // Target exact with nothing on screen: fetch the coarsest built
+    // rung first — kilobytes now, the target lands as an upgrade over
+    // it instead of over a box. With the coarse rung up, the target is
+    // fetched directly; at target, nothing.
+    auto entry = levelEntry(true, true);
+    entry.plan = 2;
+    auto step = Render::planStep(entry, -1);
+    EXPECT_EQ(step.fetch, 0);
+    EXPECT_EQ(step.generate, -1);
+    EXPECT_FALSE(step.release);
+    step = Render::planStep(entry, 0);
+    EXPECT_EQ(step.fetch, 2);
+    step = Render::planStep(entry, 2);
+    EXPECT_EQ(step.fetch, -1);
+    EXPECT_EQ(step.generate, -1);
+    EXPECT_FALSE(step.release);
+}
+
+TEST(PlanStep, anUnbuiltTargetGeneratesAndStandsOnTheNearestBuilt)
+{
+    // Level 1 targeted but not built: ask the producer. Standing on
+    // level 0 already, there is nothing worth fetching meanwhile; with
+    // nothing resident, the built coarser rung goes up first.
+    auto entry = levelEntry(true, false);
+    entry.plan = 1;
+    auto step = Render::planStep(entry, 0);
+    EXPECT_EQ(step.generate, 1);
+    EXPECT_EQ(step.fetch, -1);
+    step = Render::planStep(entry, -1);
+    EXPECT_EQ(step.generate, 1);
+    EXPECT_EQ(step.fetch, 0);
+    // Nothing built on the coarse side at all: the exact mesh is the
+    // only rung there is.
+    entry = levelEntry(false, false);
+    entry.plan = 1;
+    step = Render::planStep(entry, -1);
+    EXPECT_EQ(step.generate, 1);
+    EXPECT_EQ(step.fetch, 2);
+}
+
+TEST(PlanStep, aboveTheTargetWalksBackDown)
+{
+    // Downgrades are the plan's move now: resident above the target
+    // fetches the built target (the arrival bookkeeping releases the
+    // finer rung), and a box target releases outright.
+    auto entry = levelEntry(true, true);
+    entry.plan = 0;
+    auto step = Render::planStep(entry, 2);
+    EXPECT_EQ(step.fetch, 0);
+    EXPECT_FALSE(step.release);
+    entry.plan = Render::SceneSnapshot::DeferredChunk::kPlanBox;
+    step = Render::planStep(entry, 1);
+    EXPECT_TRUE(step.release);
+    EXPECT_EQ(step.fetch, -1);
+    step = Render::planStep(entry, -1);
+    EXPECT_FALSE(step.release);
+    EXPECT_EQ(step.fetch, -1);
+}
+
+TEST(PlanStep, anUnplannedEntryTargetsItsFinestBuiltRung)
+{
+    // kPlanUnset is "no plan has looked yet": behave as a consumer did
+    // before there was a plan — the finest built rung — so an entry
+    // discovered between plans is never stranded.
+    auto entry = levelEntry(true, true);
+    ASSERT_EQ(entry.plan, Render::SceneSnapshot::DeferredChunk::kPlanUnset);
+    auto step = Render::planStep(entry, 0);
+    EXPECT_EQ(step.fetch, 2);
+    // And an entry with no ladder at all is a one-rung ladder.
+    Render::SceneSnapshot::DeferredChunk bare;
+    bare.key = std::string(40, 'x');
+    bare.size = 500;
+    bare.release = []() {};
+    step = Render::planStep(bare, -1);
+    EXPECT_EQ(step.fetch, 0);
+    step = Render::planStep(bare, 0);
+    EXPECT_EQ(step.fetch, -1);
 }

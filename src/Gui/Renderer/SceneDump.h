@@ -239,14 +239,27 @@ struct SceneSnapshot {
         /// snapshot is not applied.
         std::function<bool(SceneSnapshot &snap,
                            const void *data, size_t size)> fill;
-        /// An upgrade in flight (§7 phase 5d): `fill` is set and `key`
-        /// names a finer rung, but the arrays still hold a resident
-        /// coarser sibling, so nothing on screen is at stake. Level
-        /// selection reads this to tell an armed entry from one a
-        /// fresh manifest re-keyed with empty arrays — the case that
-        /// must stand on a resident sibling to avoid the box. Cleared
-        /// when the fill runs or the upgrade stands down.
-        bool armed = false;
+        /// The rung the current plan targets (docs/SceneStreaming.md
+        /// §7, "Selection is a plan, not a reaction"): an index into
+        /// \a levels, `kPlanBox` for the box below the ladder, or
+        /// `kPlanUnset` while no plan has looked at this entry — read
+        /// as "the finest built rung", which is what a consumer did
+        /// before there was a plan. Written by Render::planLevels,
+        /// consumed by Render::planStep; the producer never sets it.
+        static constexpr int16_t kPlanUnset = -2;
+        static constexpr int16_t kPlanBox = -1;
+        int16_t plan = kPlanUnset;
+        /// Whether THIS entry's arrays are live — its fill ran against
+        /// this parse. Residency cannot be judged from a global key
+        /// set alone: every publish re-parses its manifests into fresh
+        /// (empty) payload objects under the same content keys, so a
+        /// key can be "resident" while the entry that now carries it
+        /// holds nothing — acting on that showed empty meshes where
+        /// the navigation cube and re-keyed objects should be. Set by
+        /// the consumer's fill bookkeeping, cleared by release; a
+        /// carried entry keeps it, which is exactly what carrying is
+        /// for.
+        bool filled = false;
     };
     std::vector<DeferredChunk> deferredChunks;
 

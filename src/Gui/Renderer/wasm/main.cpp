@@ -44,6 +44,24 @@ static Render::SceneSnapshot s_snap;
 /// reconnect cannot apply a delta onto a model from a previous run.
 static Render::SceneObjectModel s_objects;
 static bool s_haveScene = false;
+
+/// The plan is what there is instead of the released/refused memos,
+/// the armed flag and the rest of the damping the reactive selection
+/// accumulated (docs/SceneStreaming.md §7, "Selection is a plan, not a
+/// reaction"): Render::planLevels decides once, on events, what every
+/// object should hold, and the executor in resolvePending only diffs
+/// resident against target. Stale is set by the events — a publish
+/// staged, the ladder set growing, the camera settling after a move,
+/// the adaptive budget moving materially — and the next round plans
+/// before it executes.
+static bool s_planStale = true;
+/// What the last plan reported: objects the budget held below their
+/// desired rung (the honest meaning of "at the geometry budget"), the
+/// bytes it targets, and the budget it was drawn against — the last
+/// one so a materially different budget can re-plan.
+static size_t s_planCapped = 0;
+static size_t s_plannedBytes = 0;
+static size_t s_plannedBudget = 0;
 static std::set<int> s_selIds;
 static std::set<int> s_overlayIds;
 
@@ -2164,9 +2182,83 @@ static void applySnapshot(bool fit)
 /// Install a fully resolved snapshot as the scene being rendered.
 static bool stillArriving(const Render::SceneSnapshot &snap);
 
+/// Ride the geometry ladders of unchanged objects across a delta
+/// commit (docs/SceneStreaming.md §7): a delta names only what
+/// changed, and a plan over only what changed would silently exempt
+/// the rest of the model from both upgrades and eviction. Only
+/// geometry — its fill and release closures capture the mesh they
+/// write, never the parse they were born in, so they are safe to run
+/// against any snapshot; the manifest layer's closures are not, which
+/// is why a delta over missing manifests still asks for a full root
+/// (applyScenePayload).
+static void carryLadders(Render::SceneSnapshot &fresh)
+{
+    // Everything the fresh publish already names, at any rung: an
+    // entry it covers must not ride in beside its replacement.
+    std::set<std::string> named;
+    for (const auto &entry : fresh.deferredChunks) {
+        if (!entry.key.empty())
+            named.insert(entry.key);
+        for (const auto &lvl : entry.levels) {
+            if (!lvl.key.empty())
+                named.insert(lvl.key);
+        }
+    }
+    // Objects this delta re-describes: whatever of theirs it did NOT
+    // name again is dead geometry — an edit that re-keyed the mesh —
+    // not an unchanged ladder to preserve.
+    std::set<uint64_t> redescribed;
+    for (const auto &up : fresh.objectUpdates)
+        redescribed.insert(up.entry.objectKey);
+    size_t carried = 0;
+    for (const auto &entry : s_snap.deferredChunks) {
+        if (!entry.release)
+            continue;
+        bool covered = !entry.key.empty() && named.count(entry.key);
+        for (const auto &lvl : entry.levels)
+            covered = covered
+                || (!lvl.key.empty() && named.count(lvl.key) != 0);
+        if (covered)
+            continue;
+        // Owners that left the model, or were re-described without
+        // this entry, take their claim with them; the ownerless (the
+        // view's own) always ride.
+        std::vector<uint64_t> owners;
+        for (uint64_t owner : entry.owners) {
+            if (s_objects.objects.count(owner) && !redescribed.count(owner))
+                owners.push_back(owner);
+        }
+        if (owners.empty() && !entry.owners.empty())
+            continue;
+        fresh.deferredChunks.push_back(entry);
+        fresh.deferredChunks.back().owners = std::move(owners);
+        ++carried;
+    }
+    if (carried && s_streamDebug)
+        std::printf("fcviewer: carried %zu geometry ladders across the "
+                    "delta\n", carried);
+}
+
+/// Drop from the resident books every key no live entry of the scene
+/// being installed can claim. The books are global and keyed by
+/// content; the arrays they price live in per-parse payload objects,
+/// and a commit is where those die — the superseded snapshot's overlay
+/// meshes, the re-keyed objects' old rungs. A key left behind is worse
+/// than a leak: an entry re-parsed under it reads as "already held"
+/// and is never fetched, which is an empty navigation cube on screen.
+static void reconcileResident(const Render::SceneSnapshot &fresh);
+
 static void commitSnapshot(Render::SceneSnapshot &&snap, uint64_t version)
 {
     s_sceneVersion = version;
+    // The plan's universe is the whole scene, and a delta is not (§7):
+    // carry the unchanged ladders over, then plan against the merged
+    // set. This is also what makes abandoning the superseded
+    // snapshot's outstanding geometry safe.
+    if (snap.baseVersion)
+        carryLadders(snap);
+    reconcileResident(snap);
+    s_planStale = true;
     // Refit not only on the very first scene: while the camera is
     // still the auto fit (the user hasn't driven it), a streamed
     // scene replacing a bundled snapshot reframes too — the old fit
@@ -2321,38 +2413,41 @@ typedef std::function<bool(Render::SceneSnapshot &, const void *, size_t)>
     FillFn;
 static std::map<std::string, FillFn> s_refill;
 
-/// What each released payload was worth, per byte, at the moment it
-/// was given back — and the price of asking for it again.
-///
-/// A release is a decision, and reversing it needs new information,
-/// not merely a new *round*. Without that, the payload just given back
-/// is worth more than something else still resident, takes its place,
-/// and the two swap forever: 35,186 releases in forty seconds on the
-/// 200-object scene under an 8 MB budget, with the fetch spending
-/// twenty-two of them re-deciding.
-///
-/// The first cut said the new information was "the camera moved at
-/// all", which is far too weak: a continuous zoom is a new camera
-/// several times a second, so every released payload became askable
-/// again on each one and the ping-pong came back as a slow churn —
-/// hundreds of kilobytes re-fetched, re-parsed and re-freed per
-/// second, which on a large canvas ran the heap out of memory
-/// entirely. What actually justifies re-asking is that the payload is
-/// now worth materially *more than it was when it was let go*, which
-/// is the same margin that let something displace it in the first
-/// place. Zooming into a distant object raises its score and brings
-/// it back; drifting the camera by a pixel does not.
-static std::map<std::string, float> s_releasedScore;
-/// The same margin rule for *refusals* (§7 phase 5d). An admission the
-/// budget turned down is also a decision under one camera: retrying it
-/// every round re-plans the same eviction and fails the same way —
-/// measured at fourteen times the admission failures once armed
-/// upgrades joined the queue, all CPU, no bytes moved. A refused entry
-/// asks again when it is worth materially more than when it was
-/// refused — or at once when the budget has actual room, because room
-/// appearing is the other thing that changes the answer and costs
-/// nothing to test.
-static std::map<std::string, float> s_refusedScore;
+/// See the declaration above commitSnapshot: the books shed the keys
+/// of payload objects that die with a superseded snapshot.
+static void reconcileResident(const Render::SceneSnapshot &fresh)
+{
+    std::map<std::string, uint32_t> keep;
+    for (const auto &entry : fresh.deferredChunks) {
+        if (!entry.release || !entry.filled)
+            continue;
+        const size_t count = Render::planRungs(entry);
+        for (size_t i = 0; i < count; ++i) {
+            const std::string &key = Render::planRungKey(entry, i);
+            if (key.empty())
+                continue;
+            auto it = s_resident.find(key);
+            if (it != s_resident.end())
+                keep.emplace(it->first, it->second);
+        }
+    }
+    if (keep.size() == s_resident.size())
+        return;
+    if (s_streamDebug)
+        std::printf("fcviewer: %zu resident payloads died with the old "
+                    "scene\n", s_resident.size() - keep.size());
+    s_resident.swap(keep);
+    s_residentBytes = 0;
+    for (const auto &res : s_resident)
+        s_residentBytes += res.second;
+    for (auto it = s_refill.begin(); it != s_refill.end();) {
+        if (s_resident.count(it->first))
+            ++it;
+        else
+            it = s_refill.erase(it);
+    }
+}
+
 /// Whether the viewer has already said it is at its budget, so the
 /// line is printed on the transition and not on every round.
 static bool s_atBudgetReported = false;
@@ -2432,6 +2527,13 @@ static void reportHeap()
     last = now;
     const size_t heap = size_t(emscripten_get_heap_size());
     s_budget.observe(s_residentBytes, blobCacheBytes(), heap);
+    // A budget that adapted past what the last plan was drawn against
+    // is one of the events a plan answers to — an eighth either way,
+    // so the heartbeat's ordinary jitter does not replan a quiet scene.
+    if (!s_planStale && s_plannedBudget
+            && (s_budget.value() > s_plannedBudget + s_plannedBudget / 8
+                || s_budget.value() + s_plannedBudget / 8 < s_plannedBudget))
+        s_planStale = true;
     if (!s_streamDebug)
         return;
     std::printf("fcviewer: heap %zu MB, geometry %zu of %zu MB "
@@ -2908,13 +3010,40 @@ static bool assembleResolved(Render::SceneSnapshot &snap)
     return false;
 }
 
+static int residentRungOf(const Render::SceneSnapshot::DeferredChunk &entry);
+static bool ladderInFlight(const Render::SceneSnapshot::DeferredChunk &entry);
+
+/// Whether anything the executor would still act on is left: geometry
+/// below its planned rung or with a request out, or a manifest-layer
+/// chunk not yet in hand. Geometry standing at its plan is *done* even
+/// though its ladder could go finer — which is what lets a scene under
+/// a budget ever count as complete (§7).
 static bool stillArriving(const Render::SceneSnapshot &snap)
 {
     for (const auto &entry : snap.deferredChunks) {
-        if (entry.fill)
+        if (entry.release) {
+            if (ladderInFlight(entry))
+                return true;
+            if (Render::planStep(entry, residentRungOf(entry)).fetch >= 0)
+                return true;
+        }
+        else if (entry.fill)
             return true;
     }
     return false;
+}
+
+/// Manifest-layer payloads still outstanding: the group manifests,
+/// materials and textures a publish cannot be merged under, as opposed
+/// to geometry the plan is entitled to hold below exact (§7).
+static size_t nonGeometryOutstanding(const Render::SceneSnapshot &snap)
+{
+    size_t n = 0;
+    for (const auto &entry : snap.deferredChunks) {
+        if (entry.fill && !entry.release)
+            ++n;
+    }
+    return n;
 }
 
 /// Show what the staged snapshot can draw. Runs on every arrival that
@@ -3151,15 +3280,14 @@ static Render::RungRanker makeRanker()
 /// their bounds — the same choice it made while the mesh was still on
 /// its way. That is the whole point of the ladder running backwards:
 /// there is no eviction state, only a rung.
-static void releaseChunk(Render::SceneSnapshot::DeferredChunk &entry,
-                         float score)
+static void releaseChunk(Render::SceneSnapshot::DeferredChunk &entry)
 {
     auto refill = s_refill.find(entry.key);
     if (!entry.release || refill == s_refill.end())
         return;
     entry.release();
     entry.fill = refill->second;
-    entry.armed = false;
+    entry.filled = false;
     // The payload itself, which is the other half of what it costs to
     // hold. The local store keeps it, so what was just given up is a
     // read and not a download.
@@ -3170,37 +3298,86 @@ static void releaseChunk(Render::SceneSnapshot::DeferredChunk &entry,
         s_resident.erase(res);
     }
     s_refill.erase(refill);
-    s_releasedScore[entry.key] = score;
     // The feed still names the mesh that was just emptied, so the
     // scene on screen is a rung out of date until it is rebuilt.
     s_liveUnapplied = true;
 }
 
-/// Eviction and the margin it displaces by now live in
-/// ../SceneLadder.h. What stays here is the one thing the shared half
-/// cannot know: what giving a payload back actually costs this tier —
-/// the local store entry and the resident byte count (releaseChunk).
-using Render::kEvictMargin;
-
-/// The shared evictor, wired to this viewer's resident set.
-static Render::Evictor makeEvictor(Render::SceneSnapshot &snap,
-                                   Render::RungRanker &ranker)
+/// The rung of \a entry's ladder currently held, -1 for none. At most
+/// one is (the arrival bookkeeping enforces it), so the first hit
+/// answers. Only an entry whose own arrays are live may claim one:
+/// the global resident set is keyed by content, and a fresh parse
+/// re-defers the same keys into empty payload objects — a key that is
+/// "resident" somewhere else is not geometry THIS entry can draw
+/// (SceneDump.h, DeferredChunk::filled).
+static int residentRungOf(const Render::SceneSnapshot::DeferredChunk &entry)
 {
-    Render::Evictor evictor(snap, ranker,
-        [](const std::string &key) { return s_resident.count(key) != 0; },
-        [](Render::SceneSnapshot::DeferredChunk &entry, float score) {
-            const uint32_t size = entry.size;
-            releaseChunk(entry, score);
-            if (s_streamDebug)
-                std::printf("fcviewer: released %u B of geometry, %zu MB "
-                            "resident\n", size, s_residentBytes >> 20);
-        });
-    if (s_streamDebug) {
-        evictor.setTrace([](const std::string &message) {
-            std::printf("fcviewer: %s\n", message.c_str());
-        });
+    if (!entry.filled)
+        return -1;
+    const size_t count = Render::planRungs(entry);
+    for (size_t i = 0; i < count; ++i) {
+        const std::string &key = Render::planRungKey(entry, i);
+        if (!key.empty() && s_resident.count(key))
+            return int(i);
     }
-    return evictor;
+    return -1;
+}
+
+/// Whether any rung of \a entry's ladder has a request out. The
+/// executor does not issue over it — whichever rung lands re-runs the
+/// diff, and two rungs of one ladder racing each other is bandwidth
+/// spent to no end.
+static bool ladderInFlight(const Render::SceneSnapshot::DeferredChunk &entry)
+{
+    const size_t count = Render::planRungs(entry);
+    for (size_t i = 0; i < count; ++i) {
+        const std::string &key = Render::planRungKey(entry, i);
+        if (!key.empty() && s_blobInFlight.count(key))
+            return true;
+    }
+    return false;
+}
+
+/// Point the entry's fetch identity at one rung: the generic fetch,
+/// batch, cache and residency machinery all work off `key`/`size`, and
+/// a rung is an ordinary chunk to every one of them.
+static void retargetRung(Render::SceneSnapshot::DeferredChunk &entry,
+                         int rung)
+{
+    if (rung < 0 || entry.levels.empty())
+        return;
+    const auto &lvl = entry.levels[size_t(rung)];
+    if (lvl.key.empty() || lvl.key == entry.key)
+        return;
+    entry.key = lvl.key;
+    entry.size = lvl.size;
+}
+
+/// Run the planner if any event marked it stale: what the whole scene
+/// should hold, one target rung per owned geometry entry
+/// (docs/SceneStreaming.md §7). Cheap enough to run on discovery —
+/// a few hundred entries through a greedy heap — and deterministic,
+/// so re-running it against unchanged inputs re-produces the plan
+/// rather than perturbing it.
+static void planIfStale(Render::SceneSnapshot &target)
+{
+    if (!s_planStale)
+        return;
+    s_planStale = false;
+    Render::RungRanker ranker = makeRanker();
+    Render::PlanParams params;
+    params.budgetBytes = geometryBudget();
+    params.tolerancePx = s_lodPx;
+    params.viewportPx = float(s_height);
+    const auto stats = Render::planLevels(target, ranker, params);
+    s_planCapped = stats.capped;
+    s_plannedBytes = stats.plannedBytes;
+    s_plannedBudget = params.budgetBytes;
+    if (s_streamDebug)
+        std::printf("fcviewer: plan: %zu objects, %zu KB targeted of "
+                    "%zu MB budget, %zu capped\n",
+                    stats.objects, stats.plannedBytes >> 10,
+                    params.budgetBytes >> 20, stats.capped);
 }
 
 /// What the budget is actually holding, and what it turned away — the
@@ -3263,15 +3440,15 @@ static void resolvePending()
         if (s_streamDebug && (++s_dbgN % 25) == 0)
             dbgReport();
     } } acc{dbgT0};
+    // A stale plan re-opens a live scene that had nothing outstanding:
+    // a camera settling over a complete scene is how upgrades and
+    // releases happen at all once a load has converged (§7).
     Render::SceneSnapshot *target = s_pendingValid ? &s_pendingSnap
-        : (s_liveOutstanding ? &s_snap : nullptr);
+        : ((s_liveOutstanding || (s_planStale && s_haveScene)) ? &s_snap
+                                                               : nullptr);
     if (!target)
         return;
     size_t missing = 0, total = 0;
-    /// What the issue loop did: requests made, and payloads the budget
-    /// could not afford. Together they say whether a scene that is not
-    /// finished is still *arriving* — see the status below.
-    size_t issued = 0, refused = 0;
     /// Releasable bytes outstanding, reported beside the budget: a
     /// viewer that is "full" while holding almost nothing is one whose
     /// allowance has been eaten by requests that never landed, which
@@ -3306,6 +3483,7 @@ static void resolvePending()
     // name further payloads (a group names its meshes and materials, a
     // material names its textures), so this runs in rounds until one
     // resolves nothing new rather than in a single pass.
+    const size_t knownChunks = target->deferredChunks.size();
     bool progress = true;
     while (progress) {
         progress = false;
@@ -3322,7 +3500,6 @@ static void resolvePending()
             // does not survive that.
             auto fill = entry.fill;
             entry.fill = nullptr;
-            entry.armed = false;
             const bool wasView = entry.owners.empty();
             // Everything the bookkeeping below needs, copied out for
             // the same reason the callable was: a group's fill names
@@ -3342,7 +3519,10 @@ static void resolvePending()
             bool ok = failed
                 ? fill(*target, nullptr, 0)
                 : fill(*target, it->second->data(), it->second->size());
-            // `entry` is not valid from here on.
+            // `entry` is not valid from here on — but the index is:
+            // fills only ever append. The arrays behind this entry are
+            // live exactly when the fill parsed real bytes.
+            target->deferredChunks[i].filled = ok && !failed;
             if (ok) {
                 progress = true;
                 filled = true;
@@ -3355,11 +3535,6 @@ static void resolvePending()
                 if (releasable && s_resident.emplace(key, size).second) {
                     s_residentBytes += size;
                     s_refill[key] = fill;
-                    // Resident again: what it was worth when it was
-                    // last let go is history, and the next release
-                    // will record what it is worth then.
-                    s_releasedScore.erase(key);
-                    s_refusedScore.erase(key);
                     // One resident rung per ladder (§7 phase 5d): the
                     // arrival of any level supersedes whichever other
                     // level held the slot — its arrays were just
@@ -3385,6 +3560,12 @@ static void resolvePending()
             }
         }
     }
+    // A fill that named further payloads grew the ladder set — group
+    // manifests appending their meshes — and entries the plan has
+    // never seen must not fetch at a default the next plan would
+    // contradict. Discovery is one of the plan's events (§7).
+    if (target->deferredChunks.size() != knownChunks)
+        s_planStale = true;
     if (incomplete) {
         // A payload could not be obtained or would not parse. This
         // publish will not complete, so stop resolving it rather than
@@ -3394,10 +3575,8 @@ static void resolvePending()
         // (applySceneObjects), so a partial scene is a valid one. The
         // objects it could not describe wait for the next publish.
         std::printf("fcviewer: snapshot incomplete, showing what arrived\n");
-        for (auto &entry : target->deferredChunks) {
+        for (auto &entry : target->deferredChunks)
             entry.fill = nullptr;
-            entry.armed = false;
-        }
     }
     else {
         total += target->deferredChunks.size();
@@ -3434,16 +3613,16 @@ static void resolvePending()
                             lost, kInFlightTimeoutMs / 1000.0);
             }
         }
+        // The plan first, if any event marked it stale: everything
+        // below *executes* it, and decides nothing of its own (§7,
+        // "Selection is a plan, not a reaction").
+        planIfStale(*target);
         // What is outstanding, in the order the camera wants it. The
         // sort is over the chunks not yet asked for, so it costs
         // nothing once the scene is mostly in hand — the common case
         // being a delta with a handful of chunks.
         std::vector<std::pair<float, size_t>> want;
         Render::RungRanker order = makeRanker();
-        /// What this round may give back to stay inside the budget,
-        /// scored against the same camera as the queue (§6 phase 4b).
-        /// Built on first use, so a load that fits costs nothing.
-        Render::Evictor evictor = makeEvictor(*target, order);
         /// Whether the view's own chunks are all in hand yet — counting
         /// the ones already asked for, since the point is to wait for
         /// them rather than merely to ask first.
@@ -3454,190 +3633,87 @@ static void resolvePending()
         /// at once — and counted here rather than kept in a running
         /// total, which could only drift.
         size_t pledged = 0;
-        /// Rung moves this round (§7 phase 5d), for the debug line:
-        /// upgrades re-armed toward a finer level, and descents onto a
-        /// coarser built level after the finer was given back.
-        size_t rungUp = 0, rungDown = 0;
-        /// The index entry.key currently names in its own ladder.
-        const auto levelIndexOf =
-            [](const Render::SceneSnapshot::DeferredChunk &entry) {
-                for (size_t l = 0; l < entry.levels.size(); ++l) {
-                    if (entry.levels[l].key == entry.key)
-                        return l;
-                }
-                return entry.levels.empty() ? size_t(0)
-                                            : entry.levels.size() - 1;
-            };
+        /// The executor's moves this round, for the debug line.
+        size_t rungUp = 0, rungDown = 0, rungsReleased = 0;
         for (size_t i = 0; i < target->deferredChunks.size(); ++i) {
             auto &entry = target->deferredChunks[i];
             totalBytes += entry.size;
-            // A resident rung the camera has outgrown (§7 phase 5d):
-            // re-arm the entry toward the finer level and let the
-            // ordinary issue path fetch it. The coarse arrays stay in
-            // place until the finer fill lands, so an upgrade never
-            // shows the box — and only upgrades happen here, because a
-            // fetch never *lowers* fidelity: walking down is
-            // eviction's move, under pressure, not selection's.
-            if (!entry.fill && entry.levels.size() > 1 && s_lodPx > 0.0f
-                    && s_resident.count(entry.key)
-                    && !s_blobInFlight.count(entry.key)) {
-                auto choice = Render::chooseLevel(order, entry, s_lodPx,
-                                                 float(s_height));
-                if (choice.generate)
+            if (entry.release) {
+                // Geometry answers to the plan: diff the rung this
+                // ladder holds against the rung it is targeted at, and
+                // act. The step is pure (SceneLadder); every side
+                // effect lives here, and every one of them moves the
+                // ladder toward its plan — which is what makes the
+                // round idempotent and a scene at plan silent.
+                const int resident = residentRungOf(entry);
+                const auto step = Render::planStep(entry, resident);
+                if (step.generate >= 0)
                     s_provider.generate(
-                        levelRequestFor(entry, choice.desired));
-                const size_t cur = levelIndexOf(entry);
-                auto refill = s_refill.find(entry.key);
-                if (choice.fetch > cur && refill != s_refill.end()) {
-                    // The budget may already have answered about the
-                    // finer rung under this camera — released it, or
-                    // refused it. Arming toward it anyway asks the
-                    // same question every round: the memo blocks the
-                    // fetch, the descend steps back onto the rung
-                    // already held, the local cache answers instantly,
-                    // and the pair run as a busy loop until the camera
-                    // moves. So the memos are consulted here, in the
-                    // finer rung's terms (residency reads the entry's
-                    // size), before any arming happens at all.
-                    const auto &finer = entry.levels[choice.fetch];
-                    const uint32_t heldSize = entry.size;
-                    entry.size = finer.size;
-                    const float worth = order.residency(entry);
-                    entry.size = heldSize;
-                    const auto answered =
-                        [&](const std::map<std::string, float> &memo) {
-                            auto it = memo.find(finer.key);
-                            return it != memo.end()
-                                && worth <= it->second * kEvictMargin;
-                        };
-                    if (!answered(s_releasedScore)
-                            && !answered(s_refusedScore)) {
-                        // The coarse rung stays resident — in the
-                        // budget's books and in the refill map — until
-                        // the finer one actually lands; the arrival
-                        // bookkeeping supersedes it then (one resident
-                        // rung per ladder). Dropping it here and
-                        // refetching on refusal was measured as pure
-                        // thrash: the budget says no to the fine rung,
-                        // and the coarse one has been given up for
-                        // nothing.
-                        entry.fill = refill->second;
-                        entry.armed = true;
-                        entry.key = finer.key;
-                        entry.size = finer.size;
-                        ++rungUp;
-                    }
+                        levelRequestFor(entry, size_t(step.generate)));
+                if (step.release) {
+                    // Above an empty target: give the geometry back.
+                    // The entry keeps its refill closure, so a later
+                    // plan climbs the ladder again from the local
+                    // store rather than the network.
+                    retargetRung(entry, resident);
+                    releaseChunk(entry);
+                    ++rungsReleased;
+                    continue;
                 }
+                if (step.fetch < 0)
+                    continue;  // At plan, or standing until a generate lands.
+                if (ladderInFlight(entry)) {
+                    // One request per ladder: whichever rung lands
+                    // re-runs this diff against wherever the plan is
+                    // by then.
+                    ++missing;
+                    missingBytes += entry.size;
+                    pledged += entry.size;
+                    pledgedBytes = pledged;
+                    viewPending = viewPending || entry.owners.empty();
+                    continue;
+                }
+                if (!entry.fill) {
+                    // Resident below target: the closure that parsed
+                    // the held rung parses the wanted one too. Gone
+                    // entirely — an abandoned load — means there is
+                    // nothing to parse an arrival with, so nothing to
+                    // ask for.
+                    auto refill = resident >= 0
+                        ? s_refill.find(
+                              Render::planRungKey(entry, size_t(resident)))
+                        : s_refill.end();
+                    if (refill == s_refill.end())
+                        continue;
+                    entry.fill = refill->second;
+                }
+                if (step.fetch > resident)
+                    ++rungUp;
+                else
+                    ++rungDown;
+                retargetRung(entry, step.fetch);
+                ++missing;
+                missingBytes += entry.size;
+                viewPending = viewPending || entry.owners.empty();
+                // ?nofetchorder scores nothing: every chunk ties, the
+                // sort below leaves them in publish order, and the
+                // window check is skipped — the fetch exactly as it
+                // was before there was an order.
+                want.emplace_back(s_noFetchOrder ? 0.0f
+                                                 : order.acquisition(entry),
+                                  i);
+                continue;
             }
             if (!entry.fill)
                 continue;
-            // Which rung to ask for (§7 phase 5d): retarget the
-            // entry's fetch identity to the chosen level before
-            // anything below reads its key or size. Not while a
-            // request is out — the arrival matches on the key.
-            if (entry.levels.size() > 1 && s_lodPx > 0.0f
-                    && !s_blobInFlight.count(entry.key)) {
-                auto choice = Render::chooseLevel(order, entry, s_lodPx,
-                                                 float(s_height));
-                if (choice.generate)
-                    s_provider.generate(
-                        levelRequestFor(entry, choice.desired));
-                const auto &lvl = entry.levels[choice.fetch];
-                if (!lvl.key.empty() && s_resident.count(lvl.key)) {
-                    // The rung the camera wants is the one already
-                    // held — an armed upgrade whose reason zoomed away
-                    // stands down rather than refetching what it has.
-                    // Re-keyed onto that rung, or the books diverge:
-                    // an entry keyed at a rung it does not hold is
-                    // invisible to the evictor, which tests residency
-                    // through the entry's own key.
-                    entry.fill = nullptr;
-                    entry.armed = false;
-                    entry.key = lvl.key;
-                    entry.size = lvl.size;
-                    continue;
-                }
-                if (!lvl.key.empty() && lvl.key != entry.key) {
-                    entry.key = lvl.key;
-                    entry.size = lvl.size;
-                }
-                // A fresh manifest can re-key the entry to a rung this
-                // viewer never fetched — the exact rung of a
-                // coarse-first ladder, just announced (§7) — while a
-                // sibling rung is resident and on screen. Stand on the
-                // resident rung now (its bytes refill from the local
-                // caches); the armed-upgrade pass fetches the finer
-                // one next round. Without this the announcement itself
-                // demotes the object to its box for the length of a
-                // fetch.
-                //
-                // Never for an *armed* entry: its key names the finer
-                // rung it is upgrading toward — not resident yet by
-                // definition — while its arrays still show the rung it
-                // is climbing from, so there is no box to prevent.
-                // Standing it back onto that resident rung re-fetched
-                // what it already held, instantly, every round: a
-                // busy-loop that starved the websocket and never let
-                // the finer rung be asked for at all.
-                if (!entry.armed && !s_resident.count(entry.key)) {
-                    for (size_t step = entry.levels.size(); step-- > 0;) {
-                        const auto &sib = entry.levels[step];
-                        if (sib.key.empty() || !s_resident.count(sib.key))
-                            continue;
-                        entry.key = sib.key;
-                        entry.size = sib.size;
-                        break;
-                    }
-                }
-            }
             ++missing;
             missingBytes += entry.size;
-            if (entry.release && s_blobInFlight.count(entry.key)) {
-                pledged += entry.size;
-                pledgedBytes = pledged;
-            }
             // Anything no object claims is the view's own — the overlays
             // and the root's sections — and none of the model is asked
             // for while one is outstanding (see the issue loop).
             viewPending = viewPending || entry.owners.empty();
             if (s_blobInFlight.count(entry.key))
                 continue;
-            // Given back once already: ask again only once it is worth
-            // materially more than it was worth then — the same margin
-            // that let something displace it. Otherwise the payload it
-            // made room for is displaced right back, and the pair swap
-            // for as long as the camera keeps moving.
-            auto rel = s_releasedScore.find(entry.key);
-            if (rel != s_releasedScore.end()
-                    && order.residency(entry) <= rel->second * kEvictMargin) {
-                // The rung that was given back waits for the camera —
-                // but a coarser *built* rung is not the payload that
-                // was displaced, and a few kilobytes that show the
-                // object beat a box that holds its place (§7 phase
-                // 5d): step the entry down instead of leaving it
-                // boxed. Skipping rungs that were themselves released
-                // keeps this from re-asking anything the budget
-                // already answered about.
-                bool descended = false;
-                if (entry.levels.size() > 1 && s_lodPx > 0.0f) {
-                    for (size_t step = levelIndexOf(entry); step-- > 0;) {
-                        const auto &lvl = entry.levels[step];
-                        if (lvl.key.empty() || s_releasedScore.count(lvl.key))
-                            continue;
-                        entry.key = lvl.key;
-                        entry.size = lvl.size;
-                        descended = true;
-                        ++rungDown;
-                        break;
-                    }
-                }
-                if (!descended)
-                    continue;
-            }
-            // ?nofetchorder scores nothing: every chunk ties, the sort
-            // below leaves them in the order the publish named them,
-            // and the window check is skipped, which between them is
-            // the fetch exactly as it was before there was an order.
             want.emplace_back(s_noFetchOrder ? 0.0f
                                              : order.acquisition(entry), i);
         }
@@ -3726,64 +3802,16 @@ static void resolvePending()
             // kViewGraceMs.
             if (holdForView && !entry.owners.empty())
                 break;
-            // The budget, and the ladder as the way to stay inside it
-            // (§6 phase 4b). Only geometry is weighed: it is the only
-            // payload with a rung below it, and a manifest or a
-            // material refused for want of memory would strand every
-            // object under it at a rung it cannot leave.
-            //
-            // A chunk that cannot be afforded is skipped rather than
-            // ending the round: the queue is ordered by value per
-            // byte, not by size, so a smaller one further down may
-            // still fit where this one did not.
+            // No admission control here, deliberately: the plan is
+            // budget-feasible by construction, so an entry in this
+            // queue is one the scene is entitled to hold. Deciding it
+            // again at issue time is exactly the per-chunk reactive
+            // layer the plan replaced (§7).
             if (entry.release) {
-                const size_t held = s_residentBytes + pledged + entry.size;
-                // Admission is a residency question, so it is asked in
-                // residency's terms — `item.first` is the fetch order's
-                // per-byte score and would compare a candidate against
-                // victims measured on a different scale entirely.
-                //
-                // The view's own chunks are not asked it at all: they
-                // can never be victims (Evictor::build passes over the
-                // ownerless by rule), so refusing one is a verdict
-                // nothing can ever appeal — their worth is infinite,
-                // and a memoized infinity clears no margin. A missing
-                // navigation cube edge is what that looks like. They
-                // are a fixed few hundred kilobytes; the budget holds
-                // them the way it holds its own bookkeeping.
-                if (held > geometryBudget() && !entry.owners.empty()) {
-                    const float score = order.residency(entry);
-                    auto ref = s_refusedScore.find(entry.key);
-                    if (ref != s_refusedScore.end()
-                            && score <= ref->second * kEvictMargin) {
-                        // Refused at this worth already; only being
-                        // worth more re-opens the question (see
-                        // s_refusedScore).
-                        ++refused;
-                        continue;
-                    }
-                    bool starved = false;
-                    if (!evictor.makeRoom(score, held - geometryBudget(),
-                                          &starved)) {
-                        // A refusal is only worth remembering when it
-                        // was a comparison — a victim was met that the
-                        // margin kept. Starved means nothing resident
-                        // stood against this payload at all (the first
-                        // round pledges the whole budget before
-                        // anything has arrived), and memoizing that
-                        // froze the scene at whatever that round asked
-                        // for: the next arrival re-opens it instead.
-                        if (!starved)
-                            s_refusedScore[entry.key] = score;
-                        ++refused;
-                        continue;
-                    }
-                }
-                s_refusedScore.erase(entry.key);
                 pledged += entry.size;
+                pledgedBytes = pledged;
             }
             s_provider.request(entry.key, entry.size);
-            ++issued;
         }
         // Whatever is left half-packed goes now. queueBatch would send
         // it on the next tick, which is right when more keys may still
@@ -3794,9 +3822,9 @@ static void resolvePending()
         // rather than once per load. Measured on headless Chromium,
         // that alone was the difference between a load finishing in
         // four seconds and in sixty.
-        if (s_streamDebug && (rungUp || rungDown))
-            std::printf("fcviewer: rungs: %zu re-armed finer, %zu stepped "
-                        "coarser\n", rungUp, rungDown);
+        if (s_streamDebug && (rungUp || rungDown || rungsReleased))
+            std::printf("fcviewer: rungs: %zu up, %zu down, %zu released\n",
+                        rungUp, rungDown, rungsReleased);
         s_provider.flush();
         // ⭐ A round is driven by an arrival, so a load whose requests
         // have all stalled has nothing left to drive one: no arrival,
@@ -3850,30 +3878,28 @@ static void resolvePending()
                         builtMiddles);
         }
     }
-    // A scene held back by the budget is not a scene still loading
-    // (§6 phase 4b). Once nothing is in flight and everything left was
-    // refused for want of memory, this is as much of the model as this
-    // viewer holds at once: the rest is drawn at the rung below, and
-    // the camera — not time — is what changes the answer. Saying
-    // "loading" forever would be the indicator describing a
-    // non-progressive world all over again.
-    const bool atBudget = missing && !issued && refused
+    // A scene held at its budget is not a scene still loading (§6
+    // phase 4b): the executor has reached the plan, and the plan says
+    // some objects stay below the detail the camera wanted. The
+    // camera — not time — is what changes the answer, so the note is
+    // printed on the transition, not per round.
+    const bool atBudget = !missing && s_planCapped
         && s_provider.outstanding() == 0 && s_batchQueue.empty();
     if (atBudget && !s_atBudgetReported) {
         s_atBudgetReported = true;
         fcviewer_status(nullptr, 0.0, 0.0);
-        std::printf("fcviewer: at the geometry budget (%zu MB) — %zu "
-                    "payloads left unasked; the rest of the model is "
-                    "drawn coarse. Holding %zu KB in %zu payloads, %zu KB "
-                    "more asked for and not yet arrived\n",
-                    geometryBudget() >> 20, refused, s_residentBytes >> 10,
-                    s_resident.size(), pledgedBytes >> 10);
+        std::printf("fcviewer: at the geometry budget (%zu MB) — the plan "
+                    "holds %zu objects below their wanted detail. Holding "
+                    "%zu KB in %zu payloads, %zu KB planned\n",
+                    geometryBudget() >> 20, s_planCapped,
+                    s_residentBytes >> 10, s_resident.size(),
+                    s_plannedBytes >> 10);
         reportBudget(*target);
     }
     else if (!atBudget) {
         s_atBudgetReported = false;
     }
-    if (missing && !atBudget) {
+    if (missing) {
         // Until every object's manifest is in, the byte total is not
         // known — a manifest is what names the meshes under it, so
         // most of the scene's weight is undiscovered and a fraction
@@ -3944,30 +3970,46 @@ static void resolvePending()
 /// sort of the outstanding queue and an orbit is a hundred frames of
 /// continuous change; a fifth of a second of staleness in a fetch that
 /// takes seconds is not a difference anyone can see.
+/// How long the camera must hold still before it counts as settled —
+/// the planner's event (§7). Short enough that a zoom's end feels
+/// immediate, long enough that a continuous orbit plans zero times
+/// rather than sixty a second.
+static const double kPlanSettleMs = 300.0;
+
 static void pumpFetchOnMove()
 {
     static float lastCam[8] = {0.0f};
     static double lastPump = 0.0;
-    if (!s_liveOutstanding)
-        return;
+    static double movedAt = -1.0;
     const float cam[8] = {s_yaw, s_pitch, s_dist, s_center[0], s_center[1],
                           s_center[2], s_panX, s_panY};
     bool moved = false;
     for (int i = 0; i < 8; ++i)
         moved = moved || cam[i] != lastCam[i];
-    if (!moved)
-        return;
     const double now = emscripten_get_now();
-    if (now - lastPump < 200.0)
+    if (moved) {
+        std::copy(cam, cam + 8, lastCam);
+        movedAt = now;
+        // While a scene is arriving, a move re-sorts the outstanding
+        // queue so the fetch follows the camera. Rate-limited: a fifth
+        // of a second of staleness in a fetch that takes seconds is
+        // not a difference anyone can see, and a round costs a sort.
+        if (s_liveOutstanding && now - lastPump >= 200.0) {
+            lastPump = now;
+            resolvePending();
+        }
         return;
-    lastPump = now;
-    std::copy(cam, cam + 8, lastCam);
-    // Note what is *not* here: the released set is not cleared. A move
-    // re-sorts the queue, and a payload given back re-enters it only
-    // when the new camera makes it worth materially more than it was
-    // (see s_releasedScore) — otherwise every frame of an orbit would
-    // re-ask for everything the frame before let go.
-    resolvePending();
+    }
+    // The camera settling is a plan event: the plan is drawn against
+    // the camera someone is actually looking through, once, not
+    // through every frame of the motion — that discreteness is the
+    // hysteresis (§7).
+    if (movedAt >= 0.0 && now - movedAt >= kPlanSettleMs) {
+        movedAt = -1.0;
+        s_planStale = true;
+    }
+    if (s_planStale && s_haveScene)
+        resolvePending();
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -4010,17 +4052,22 @@ static bool applyScenePayload(const char *data, size_t size)
             return true;
         // A publish that stages while the last one is still arriving
         // supersedes it, and its outstanding chunks are abandoned with
-        // it. That is only safe if this publish describes the objects
-        // those chunks were going to: a full root always does, a delta
-        // names only what changed. So a delta arriving over an
-        // unfinished scene is answered with a request for a full root
-        // rather than leaving those objects with no geometry until
-        // something happens to touch them again.
-        if (snap.baseVersion && s_liveOutstanding && s_objects.unresolved()) {
-            std::printf("fcviewer: delta v%llu arrived with %zu objects "
-                        "still incomplete — asking for a full scene\n",
+        // it. Geometry survives that: the commit carries unchanged
+        // objects' ladders across a delta (carryLadders), so a mesh
+        // below its plan is re-asked from the merged scene. What does
+        // not survive is the manifest layer — a group, material or
+        // texture still in flight describes objects a delta does not
+        // re-name — so only those force the full root. Under the plan
+        // a scene at its budget has none outstanding, which is what
+        // lets the level announcements' own republish traffic merge
+        // instead of resetting the scene to boxes (§7).
+        const size_t manifestsMissing =
+            s_liveOutstanding ? nonGeometryOutstanding(s_snap) : 0;
+        if (snap.baseVersion && manifestsMissing) {
+            std::printf("fcviewer: delta v%llu arrived with %zu manifest "
+                        "payloads still missing — asking for a full scene\n",
                         (unsigned long long)snap.manifestVersion,
-                        s_objects.unresolved());
+                        manifestsMissing);
             requestFullScene();
             return true;
         }
@@ -4032,6 +4079,10 @@ static bool applyScenePayload(const char *data, size_t size)
         s_pendingSnap = std::move(snap);
         s_pendingVersion = version;
         s_pendingValid = true;
+        // A publish staging is a plan event: the ladder set is about
+        // to change, and the fetch order below wants targets drawn
+        // against it (§7).
+        s_planStale = true;
         // Before anything of this publish is asked for: what it names
         // is sorted by where its objects are, and it is the only thing
         // that knows where the new ones are (§6).

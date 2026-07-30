@@ -181,40 +181,101 @@ private:
     std::map<uint64_t, float> m_memo;
 };
 
-/// Which rung of a mesh's declared ladder to have, and which to ask
-/// for — the two are different whenever the wanted one is declared but
-/// unbuilt (docs/SceneStreaming.md §7, phase 5d).
-struct LevelChoice {
-    /// The rung the camera warrants: the coarsest level whose stated
-    /// error the viewer could not tell from the exact mesh.
-    size_t desired = 0;
-    /// The rung to acquire now: the built level nearest \a desired,
-    /// preferring the coarser side — a cheap rung that shows the
-    /// object beats a large one that shows it slightly better, which
-    /// is the whole progressive argument, and the exact mesh always
-    /// closes the ladder so there is always something to fetch.
-    size_t fetch = 0;
-    /// True when \a desired is declared but has no key yet: worth a
-    /// RungProvider::generate, whose answer arrives as a publish.
-    bool generate = false;
+/// The ladder as the planner walks it, whether or not the entry
+/// declares one: an entry with no `levels` list is a ladder of one
+/// rung — its own exact content. These accessors are what keep that
+/// case from being an `if` at every use site.
+RendererExport size_t planRungs(const SceneSnapshot::DeferredChunk &entry);
+RendererExport const std::string &planRungKey(
+    const SceneSnapshot::DeferredChunk &entry, size_t rung);
+RendererExport uint32_t planRungSize(
+    const SceneSnapshot::DeferredChunk &entry, size_t rung);
+RendererExport float planRungError(
+    const SceneSnapshot::DeferredChunk &entry, size_t rung);
+/// The finest / coarsest rung with a key — fetchable now. The finest
+/// built always exists (v36: the entry's own key names it), so these
+/// never answer -1 on a well-formed entry.
+RendererExport int finestBuiltRung(const SceneSnapshot::DeferredChunk &entry);
+RendererExport int coarsestBuiltRung(const SceneSnapshot::DeferredChunk &entry);
+
+/// What one plan is asked to respect (docs/SceneStreaming.md §7,
+/// "Selection is a plan, not a reaction").
+struct PlanParams {
+    /// Payload bytes the planned geometry may total. The view's own
+    /// (ownerless) chunks are outside it, as they are outside
+    /// eviction: a fixed few hundred kilobytes the scene holds the way
+    /// it holds its own bookkeeping.
+    size_t budgetBytes = 0;
+    /// The screen-space error a coarser rung may commit before a finer
+    /// one is wanted, in pixels. Non-positive means every object
+    /// desires its exact content — the budget still bounds what it
+    /// gets.
+    float tolerancePx = 0.0f;
+    /// Viewport height in pixels, which is what turns a relative error
+    /// into a screen-space one.
+    float viewportPx = 0.0f;
 };
 
-/// Pick a level from what the camera can actually resolve.
+/// What a plan did, for the one report worth printing: how much of the
+/// scene the budget admitted.
+struct PlanStats {
+    /// Objects the plan assigned a rung.
+    size_t objects = 0;
+    /// Objects held below their desired rung by the budget — the
+    /// honest meaning of "at the geometry budget".
+    size_t capped = 0;
+    /// Payload bytes the plan targets, budget-bounded geometry only.
+    size_t plannedBytes = 0;
+};
+
+/// Decide what the whole scene should hold: one target rung per owned
+/// geometry entry, written to `DeferredChunk::plan`.
 ///
-/// A level's error is stated relative to the mesh's own diagonal
-/// (v36), so multiplying by the owner's projected size on screen turns
-/// it into pixels, and the choice is a comparison: the coarsest level
-/// whose error lands under \a tolerancePx is indistinguishable from
-/// the exact mesh to within that many pixels. The *best* owner
-/// decides, as everywhere on this ladder — a mesh shared by a near
-/// object and a far one must be fine enough for the near one.
+/// Global and greedy: every object starts at its box, every candidate
+/// upgrade — this object, its next-finer error tier — is scored by
+/// screen-space error removed per byte added, and the best is taken
+/// until the budget is spent or every object has reached the coarsest
+/// rung the camera cannot tell from exact. Planned per *object*, so an
+/// object's face and edge chunks land on the same rung, and a chunk
+/// shared by several objects is planned at the finest rung any of them
+/// needs with its bytes counted once.
 ///
-/// Owners with unknown bounds, a non-positive tolerance (the off
-/// switch), or a ladder of one rung all answer "the exact mesh", which
-/// is the behavior selection replaced.
-RendererExport LevelChoice chooseLevel(
-    RungRanker &ranker, const SceneSnapshot::DeferredChunk &entry,
-    float tolerancePx, float viewportPx);
+/// Deterministic: the same camera, ladders and budget produce the same
+/// plan, which is what there is instead of damping — a plan cannot
+/// oscillate with itself. Runs on events (camera settled, publish
+/// staged, ladder announced, budget moved), never per arrival; that
+/// separation is the entire point of the design.
+///
+/// A rung declared but unbuilt may be targeted — the executor asks the
+/// producer for it and stands on a built neighbour meanwhile. Its
+/// unknown size enters the budget as an estimate scaled from the
+/// nearest built rung (four to one per grid level, the generator's own
+/// ratio), corrected by a re-plan when the announcement states it.
+///
+/// Ownerless geometry — the view's own — is not planned against the
+/// budget at all: it always targets its finest built rung.
+RendererExport PlanStats planLevels(SceneSnapshot &snap, RungRanker &ranker,
+                                    const PlanParams &params);
+
+/// The executor's half: what to do about ONE entry, given the rung it
+/// currently holds. Pure — the caller owns every side effect — and
+/// idempotent by construction: acting on the answer moves the entry
+/// toward its plan, and an entry at plan answers "nothing".
+struct PlanStep {
+    /// Rung to acquire now, -1 for none. When nothing is resident and
+    /// the target is not the coarsest built rung, this is the coarsest
+    /// built rung instead: a few kilobytes on screen this round beat
+    /// the target in flight over a box — the consumer-side echo of the
+    /// producer's coarse-first publish (§7).
+    int fetch = -1;
+    /// Rung to ask the producer to build (RungProvider::generate), -1
+    /// for none: the plan targets it and no bytes exist yet.
+    int generate = -1;
+    /// The plan says box and something is resident: give it back.
+    bool release = false;
+};
+RendererExport PlanStep planStep(const SceneSnapshot::DeferredChunk &entry,
+                                 int residentRung);
 
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.
@@ -421,78 +482,6 @@ private:
     float m_expansion = 0.0f;
     bool m_pinned = false;
     bool m_havePrev = false;
-};
-
-/// How much better, per byte, an incoming payload must be than the one
-/// it displaces. Strictly better is enough to make the resident set
-/// converge, but not enough to make it *settle*: two payloads a
-/// fraction of a percent apart swap places on every rounding of the
-/// projection, and each swap costs an acquisition and a rung. A margin
-/// says what counts as a difference worth acting on.
-RendererExport extern const float kEvictMargin;
-
-/// The resident payloads a round may give back, worst first: scored
-/// once, spent as the round issues requests.
-///
-/// Once per round rather than once per candidate, which is what the
-/// first cut did — and with a few hundred chunks outstanding, sorting
-/// the resident set for each of them was most of what a load spent its
-/// time on.
-class RendererExport Evictor {
-public:
-    /// Whether a payload is currently held, by key.
-    using ResidentTest = std::function<bool(const std::string &key)>;
-    /// Walk one payload back down the ladder, at the score it was worth
-    /// when it was let go. The caller owns what that means — the entry
-    /// is left as it was before the payload arrived, so the ordinary
-    /// acquisition path can climb it again if the camera comes back.
-    using Release = std::function<void(SceneSnapshot::DeferredChunk &entry,
-                                       float score)>;
-    /// Where to say why room could not be made. Unset says nothing.
-    using Trace = std::function<void(const std::string &message)>;
-
-    Evictor(SceneSnapshot &snap, RungRanker &ranker,
-            ResidentTest isResident, Release release);
-
-    /// Free \a need bytes for a payload worth \a incoming per byte, or
-    /// change nothing and answer false.
-    ///
-    /// Planned before it is carried out, because a half-done eviction
-    /// is the worst of both: geometry given back and nothing acquired
-    /// with the room it made. So the prefix of victims cheap enough to
-    /// displace is measured first, and released only if it is enough.
-    ///
-    /// False means the budget cannot accommodate this payload — it is
-    /// worth less than what holding it would cost. It stays
-    /// outstanding, and a camera move reconsiders it for free.
-    ///
-    /// \a starved, when given, reports *why* a false is false: true
-    /// means the walk ran out of victims before any was too dear —
-    /// nothing resident stood against this payload, the budget being
-    /// consumed by requests still in flight or by payloads that cannot
-    /// be given back. That refusal is not a comparison and must not be
-    /// memoized against the payload: the first issue round pledges the
-    /// whole budget before anything is resident, and a "no" recorded
-    /// there froze the scene at whatever the first round happened to
-    /// ask for — near objects coarse for good, with the evictor never
-    /// once running. False with \a starved false is the real verdict:
-    /// a victim was met that the margin refused to displace.
-    bool makeRoom(float incoming, size_t need, bool *starved = nullptr);
-
-    void setTrace(Trace trace) { m_trace = std::move(trace); }
-
-private:
-    void build();
-
-    SceneSnapshot &m_snap;
-    RungRanker &m_ranker;
-    ResidentTest m_isResident;
-    Release m_release;
-    Trace m_trace;
-    /// Ascending by residency score: the worst to keep comes first.
-    std::vector<std::pair<float, size_t>> m_victims;
-    size_t m_next = 0;
-    bool m_built = false;
 };
 
 }  // namespace Render
