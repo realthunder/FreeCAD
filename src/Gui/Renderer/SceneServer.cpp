@@ -30,6 +30,7 @@
 #include <condition_variable>
 #include <deque>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -340,8 +341,27 @@ public:
     /// change is what turns "the worker finished" into a republish,
     /// which is the announcement.
     size_t levelsDone = 0;
-    bool levelWorkerRunning = false;
+    int levelThreads = 0;                 ///< spawned so far, ≤ cap
     std::condition_variable levelCv;      ///< pairs with \a mutex
+
+    /// How many level builds may run at once. A build is a pure
+    /// function of (shape, params, source chunk) — MeshSource.h — so
+    /// this is plain CPU fan-out; modest by default, because BRepMesh
+    /// already parallelizes each build internally over OCCT's shared
+    /// thread pool. FC_LEVEL_THREADS overrides.
+    static int levelThreadCap()
+    {
+        static const int cap = [] {
+            if (const char *env = std::getenv("FC_LEVEL_THREADS")) {
+                int n = std::atoi(env);
+                if (n > 0)
+                    return std::min(n, 64);
+            }
+            unsigned hw = std::thread::hardware_concurrency();
+            return int(std::max(1u, std::min(4u, hw / 4)));
+        }();
+        return cap;
+    }
 
     /// Accept a request to build \a level of the mesh whose exact
     /// chunk is stored under \a source. False when the source is not a
@@ -368,15 +388,23 @@ public:
         if (!levelAsked.emplace(source, level).second)
             return true;
         levelQueue.push_back({source, level});
-        if (!levelWorkerRunning) {
-            levelWorkerRunning = true;
+        // One more thread per accepted job until the cap fills: a big
+        // publish's burst of asks fans out immediately, and the
+        // threads are process-lifetime cv-waiters afterwards, like
+        // the accept loop.
+        if (levelThreads < levelThreadCap()) {
+            ++levelThreads;
             std::thread([this]() { levelLoop(); }).detach();
         }
         levelCv.notify_one();
         return true;
     }
 
-    /// The worker: one thread, process-lifetime, like the accept loop.
+    /// A level thread: up to levelThreadCap() of them, each
+    /// process-lifetime, like the accept loop. levelAsked admits every
+    /// (source, level) once, so no two threads ever hold the same job,
+    /// and the build itself is pure — concurrency needs nothing beyond
+    /// the queue mutex.
     void levelLoop()
     {
         for (;;) {

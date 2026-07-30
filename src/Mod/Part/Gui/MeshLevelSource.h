@@ -36,13 +36,40 @@
 /// visual nodes for a shape registers that shape under the very node
 /// pointers the render feed will carry as MeshData::sourceTag
 /// (Render::MeshSourceRegistry). The registered closure owns a
-/// refcounted shape handle and runs on the server's level worker
-/// thread, tessellating a fresh structure copy — never the live shape.
+/// refcounted shape handle and runs on the server's level threads,
+/// tessellating a fresh structure copy — never the live shape.
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 class SoNode;
 class TopoDS_Shape;
 
 namespace PartGui {
+
+/// Everything a level build needs beyond the shape and the source
+/// chunk — the whole job is a pure function of these (MeshLevelBuild),
+/// which is what lets the scene server run level builds on several
+/// threads at once (and would let the job move behind a process
+/// boundary later, docs/ComputeBoundaries.md).
+struct MeshLevelJob {
+    uint32_t level = 0;
+    bool normalsFromUV = false;
+    /// The full display-formula parameters, used when \a level is
+    /// Render::kExactMeshLevel (the on-demand exact build of a
+    /// coarse-first ladder).
+    double exactDeflection = 0;
+    double exactAngle = 0;
+};
+
+/// Build the bytes of the requested level chunk from \a shape,
+/// honoring the source chunk's element tables index for index (false
+/// on any mismatch — the caller falls back to decimation). Pure and
+/// thread-safe; tessellates a structure copy, never the shape itself.
+bool buildMeshLevel(const TopoDS_Shape &shape, const MeshLevelJob &job,
+                    const void *sourceChunk, size_t sourceSize,
+                    std::vector<uint8_t> &out);
 
 /// Register the level generator for \a shape — the exact shape the
 /// display tessellation just meshed (flattened whole shape, or an
