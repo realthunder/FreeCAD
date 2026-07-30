@@ -2545,6 +2545,30 @@ static std::map<std::string, double> s_blobInFlight;
 static const double kInFlightTimeoutMs = 30000.0;
 /// A wake-up already queued to re-examine stalled requests.
 static bool s_retryScheduled = false;
+
+static void resolvePending();
+
+/// The stall watchdog: while any request is recorded in flight, wake
+/// up and re-look, and re-arm from the WAKE-UP itself — never from
+/// inside resolvePending, whose early returns (a blob-store reset, a
+/// snapshot with nothing outstanding) previously ended the chain with
+/// the requests still hung. An IndexedDB read that never answers has
+/// no XHR and so no timeout; this loop is the only thing that ever
+/// notices it (measured on the phone: one read pending, five minutes
+/// of a converged-looking viewer one mesh short of its plan).
+static void armStallWatchdog()
+{
+    if (s_blobInFlight.empty() || s_retryScheduled)
+        return;
+    s_retryScheduled = true;
+    emscripten_async_call([](void *) {
+        s_retryScheduled = false;
+        if (s_blobInFlight.empty())
+            return;
+        resolvePending();
+        armStallWatchdog();
+    }, nullptr, int(kInFlightTimeoutMs / 4));
+}
 /// Requests, not keys and not bytes: what a viewer's throughput turns
 /// out to depend on is how many of them are outstanding at once (see
 /// kInFlightRequests).
@@ -3123,6 +3147,7 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
 {
     if (!s_blobInFlight.emplace(key, emscripten_get_now()).second)
         return;
+    armStallWatchdog();
     if (!blobPersistEnabled()) {
         fetchFromNetwork(key, size);
         return;
@@ -3626,12 +3651,38 @@ static void planIfStale(Render::SceneSnapshot &target)
         size_t tiers;
     };
     std::vector<Boxed> boxed;
-    params.trace = [&boxed](uint64_t key, float diamPx, int tier,
-                            size_t tiers) {
+    /// Objects granted less than their desired tier, biggest first:
+    /// the budget's actual losers. The one reading worth doing when a
+    /// large object sits coarse at a full budget — if it tops this
+    /// list the knapsack chose wrong; absent from it, the plan wanted
+    /// it fine and the fetch layer is where to look.
+    struct Capped {
+        float diamPx;
+        uint64_t key;
+        int tier;
+        size_t tiers;
+    };
+    std::vector<Capped> capped;
+    params.trace = [&boxed, &capped](uint64_t key, float diamPx, int tier,
+                                     size_t tiers) {
         if (tier < 0)
             boxed.push_back({diamPx, key, tiers});
+        else if (tier + 1 < int(tiers))
+            capped.push_back({diamPx, key, tier, tiers});
     };
     const auto stats = Render::planLevels(target, ranker, params);
+    if (!capped.empty()) {
+        std::sort(capped.begin(), capped.end(),
+                  [](const Capped &a, const Capped &b) {
+                      return a.diamPx > b.diamPx;
+                  });
+        const size_t n = std::min<size_t>(capped.size(), 5);
+        for (size_t i = 0; i < n; ++i)
+            decLog("plan capped obj %llx diam %.0fpx at tier %d of %zu",
+                   (unsigned long long)capped[i].key,
+                   double(capped[i].diamPx), capped[i].tier,
+                   capped[i].tiers);
+    }
     if (!boxed.empty()) {
         std::sort(boxed.begin(), boxed.end(),
                   [](const Boxed &a, const Boxed &b) {
@@ -4202,6 +4253,8 @@ static void resolvePending()
                     decLog("below plan: %zu ladders (%zu awaiting a "
                            "request already out, %zu with no refill)",
                            wantsFetch, inFlightSkips, noRefillSkips);
+                else
+                    decLog("below plan: clear");
             }
         }
         s_provider.flush();
@@ -4213,13 +4266,7 @@ static void resolvePending()
         // wake up and look. This is the same lesson the overlay
         // barrier's grace taught: the thing that recovers from silence
         // cannot be scheduled by the noise it is waiting for.
-        if (!s_blobInFlight.empty() && !s_retryScheduled) {
-            s_retryScheduled = true;
-            emscripten_async_call([](void *) {
-                s_retryScheduled = false;
-                resolvePending();
-            }, nullptr, int(kInFlightTimeoutMs / 4));
-        }
+        armStallWatchdog();
     }
     if (target == &s_snap) {
         s_liveOutstanding = missing != 0;
