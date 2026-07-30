@@ -2582,8 +2582,33 @@ bool ViewProviderPartExt::buildInstanced()
         // Deflection from the LOCAL-frame bbox: the located bbox varies
         // with the instance rotation and would split the table key.
         Standard_Real defl = leafDeflection(leaf.Located(TopLoc_Location()));
+        // Coarse-first publish, like the flattened build: the leaf is
+        // tessellated at a ladder rung and the display parameters go
+        // to the registration for the on-demand exact build.
+        Standard_Real exactDefl = defl, exactAng = angDefl;
+        Standard_Real useAngDefl = angDefl;
+        float builtError = 0.0f;
+        const int coarseLvl = coarseTessellationLevel();
+        if (coarseLvl >= 0) {
+            Bnd_Box leafBounds;
+            BRepBndLib::Add(leaf.Located(TopLoc_Location()), leafBounds);
+            leafBounds.SetGap(0.0);
+            if (!leafBounds.IsVoid()) {
+                Standard_Real x0, y0, z0, x1, y1, z1;
+                leafBounds.Get(x0, y0, z0, x1, y1, z1);
+                double diag = std::sqrt((x1 - x0) * (x1 - x0)
+                                        + (y1 - y0) * (y1 - y0)
+                                        + (z1 - z0) * (z1 - z0));
+                if (diag > 0) {
+                    defl = meshLevelDeflection(diag, unsigned(coarseLvl));
+                    useAngDefl = meshLevelAngle(unsigned(coarseLvl));
+                    builtError =
+                        float(1.0 / double(8u << unsigned(coarseLvl)));
+                }
+            }
+        }
         key.deflection = int64_t(defl * 1e9);
-        key.angdeflection = int64_t(angDefl * 1e9);
+        key.angdeflection = int64_t(useAngDefl * 1e9);
 
         auto res = _InstGeomTable.emplace(key, InstGeometry());
         InstGeometry &geom = res.first->second;
@@ -2634,14 +2659,15 @@ bool ViewProviderPartExt::buildInstanced()
             geom.edgeCount = counts[i].edges;
             geom.vertexCount = counts[i].vertices;
             int nt = 0, nn = 0, np = 0, nno = 0, nf = 0, ne = 0, nl = 0;
-            buildVisualNodes(local, defl, angDefl,
+            buildVisualNodes(local, defl, useAngDefl,
                              gcoords, gpcoords, gnorm, gtexcoords,
                              gfaceset, glineset, gnodeset,
                              nt, nn, np, nno, nf, ne, nl);
             // Level generation for the shared leaf tessellation
             // (MeshLevelSource.h); released with the geometry entry.
             registerMeshLevelSource(local, NormalsFromUV, gfaceset,
-                                    glineset);
+                                    glineset, builtError, exactDefl,
+                                    exactAng);
             // Solid knowledge for the section-cap pass, in local part
             // numbering (the cache reads it per shape node).
             if (local.ShapeType() == TopAbs_SOLID && counts[i].faces > 0) {
@@ -3195,6 +3221,25 @@ void ViewProviderPartExt::updateVisual()
                         PartParams::getMeshAngularDeflection() : AngularDeflection.getValue()),
                       PartParams::getMinimumAngularDeflection()) / 180.0 * M_PI);
 
+        // Coarse-first publish (docs/SceneStreaming.md §7): a headless
+        // streaming server tessellates every shape at a ladder rung
+        // instead of the full display deviation — the exact mesh is
+        // then generated on demand, where a viewer's camera asks. The
+        // display parameters are kept for that on-demand build.
+        double exactDeflection = deflection;
+        double exactAngle = AngDeflectionRads;
+        float builtError = 0.0f;
+        const int coarseLvl = coarseTessellationLevel();
+        if (coarseLvl >= 0) {
+            double dx = xMax - xMin, dy = yMax - yMin, dz = zMax - zMin;
+            double diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (diag > 0) {
+                deflection = meshLevelDeflection(diag, unsigned(coarseLvl));
+                AngDeflectionRads = meshLevelAngle(unsigned(coarseLvl));
+                builtError = float(1.0 / double(8u << unsigned(coarseLvl)));
+            }
+        }
+
         buildVisualNodes(cShape, deflection, AngDeflectionRads,
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
@@ -3205,7 +3250,8 @@ void ViewProviderPartExt::updateVisual()
         // coarser deviation when a viewer asks for a declared level of
         // the meshes these nodes feed (MeshLevelSource.h). Re-runs
         // replace the previous shape under the same node tags.
-        registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset);
+        registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
+                                builtError, exactDeflection, exactAngle);
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());

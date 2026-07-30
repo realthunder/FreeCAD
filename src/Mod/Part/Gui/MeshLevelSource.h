@@ -49,12 +49,36 @@ namespace PartGui {
 /// instanced leaf in its local frame) — under the face and edge shape
 /// nodes it was meshed into. Either tag may be null. Replaces any
 /// previous registration of the same tags.
+///
+/// \a builtError states what the display tessellation itself is: 0
+/// when it ran at the full display deviation (the usual case), else
+/// the ladder error (relative to the shape diagonal) it was
+/// deliberately built coarse at — coarse-first publish, in which case
+/// \a exactDeflection / \a exactAngle carry the full display
+/// parameters the on-demand *exact* build (kExactMeshLevel) will use.
 void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
-                             SoNode *faceTag, SoNode *lineTag);
+                             SoNode *faceTag, SoNode *lineTag,
+                             float builtError = 0.0f,
+                             double exactDeflection = 0.0,
+                             double exactAngle = 0.0);
 
 /// Drop the registration made under these tags (before the nodes die;
 /// their addresses may be reused).
 void unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag);
+
+/// The coarse-first tessellation level for display builds, from
+/// FC_COARSE_TESSELLATION; negative when unset (tessellate at the full
+/// display deviation as always). A headless streaming server sets it
+/// so a big model costs its coarse rungs up front and its exact meshes
+/// only where a viewer's camera asks (docs/SceneStreaming.md §7).
+int coarseTessellationLevel();
+
+/// The linear / angular deflection of ladder level \a level for a
+/// shape of the given bbox diagonal — the generator's own grid
+/// (error 1/(8<<level) of the diagonal), exposed so a coarse-first
+/// display build tessellates exactly the rung it will publish as.
+double meshLevelDeflection(double diagonal, unsigned level);
+double meshLevelAngle(unsigned level);
 
 } // namespace PartGui
 

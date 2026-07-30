@@ -53,6 +53,8 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -62,6 +64,7 @@
 #include <Mod/Part/App/Tools.h>
 #include <Gui/Renderer/MeshSource.h>
 #include <Gui/Renderer/SceneDump.h>
+#include <Gui/Renderer/SceneLadder.h>
 
 #include "MeshLevelSource.h"
 
@@ -84,6 +87,10 @@ struct LevelSourceState {
     double bbMin[3] = {0, 0, 0};
     double bbMax[3] = {0, 0, 0};
     double diagonal = 0;
+    /// The full display-formula parameters, for the on-demand exact
+    /// build when the display itself tessellated coarse-first.
+    double exactDeflection = 0;
+    double exactAngle = 0;
 
     std::mutex mutex;
     std::map<uint32_t, TopoDS_Shape> meshed;
@@ -628,7 +635,10 @@ bool buildLevel(const LevelSourceStatePtr &st, uint32_t level,
                 const void *sourceChunk, size_t sourceSize,
                 std::vector<uint8_t> &out)
 {
-    if (level >= 8 || !(st->diagonal > 0))
+    const bool exact = level == Render::kExactMeshLevel;
+    if ((level >= 8 && !exact) || !(st->diagonal > 0))
+        return false;
+    if (exact && !(st->exactDeflection > 0))
         return false;
 
     Render::ParsedMeshChunk src;
@@ -647,11 +657,14 @@ bool buildLevel(const LevelSourceStatePtr &st, uint32_t level,
 
     // The deviation is the declared error of the level (1/(8<<L) of
     // the diagonal, writeMesh), against the shape's own bounds so the
-    // face and edge roles agree bit for bit on the triangulation.
-    double deflection = st->diagonal / double(8u << level);
+    // face and edge roles agree bit for bit on the triangulation. The
+    // exact rung of a coarse-first ladder is not on that grid: it is
+    // the display formula's own parameters, captured at registration.
+    double deflection = exact ? st->exactDeflection
+                              : st->diagonal / double(8u << level);
     deflection = std::max(deflection, double(Precision::Confusion()));
     deflection = std::min(deflection, 20.0);
-    const double angle = angleForLevel(level);
+    const double angle = exact ? st->exactAngle : angleForLevel(level);
 
     try {
         TopoDS_Shape copy = meshedCopyAt(*st, level, deflection, angle);
@@ -666,12 +679,13 @@ bool buildLevel(const LevelSourceStatePtr &st, uint32_t level,
         if (debugOn() && !ok)
             std::fprintf(stderr, "mesh level: %s extraction refused\n",
                          src.numTriangleIndices > 0 ? "face" : "edge");
-        // A "coarse" level that is not smaller than the exact mesh is
-        // not a rung worth a chunk.
-        if (!ok || chunk.size() >= sourceSize) {
+        // A "coarse" level that is not smaller than the source mesh is
+        // not a rung worth a chunk — except the exact rung, which is
+        // being *refined* from a coarse source and is larger by design.
+        if (!ok || (!exact && chunk.size() >= sourceSize)) {
             if (debugOn() && ok)
                 std::fprintf(stderr,
-                             "mesh level: %zu bytes not below the exact "
+                             "mesh level: %zu bytes not below the source "
                              "%zu — not a rung\n",
                              chunk.size(), sourceSize);
             return false;
@@ -692,15 +706,43 @@ bool buildLevel(const LevelSourceStatePtr &st, uint32_t level,
 
 } // anonymous namespace
 
+int PartGui::coarseTessellationLevel()
+{
+    static const int level = [] {
+        const char *env = std::getenv("FC_COARSE_TESSELLATION");
+        if (!env || !*env)
+            return -1;
+        int lvl = std::atoi(env);
+        return lvl >= 0 && lvl < 8 ? lvl : -1;
+    }();
+    return level;
+}
+
+double PartGui::meshLevelDeflection(double diagonal, unsigned level)
+{
+    double deflection = diagonal / double(8u << level);
+    deflection = std::max(deflection, double(Precision::Confusion()));
+    return std::min(deflection, 20.0);
+}
+
+double PartGui::meshLevelAngle(unsigned level)
+{
+    return angleForLevel(level);
+}
+
 void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                                       bool normalsFromUV, SoNode *faceTag,
-                                      SoNode *lineTag)
+                                      SoNode *lineTag, float builtError,
+                                      double exactDeflection,
+                                      double exactAngle)
 {
     if (shape.IsNull() || (!faceTag && !lineTag))
         return;
     auto st = std::make_shared<LevelSourceState>();
     st->shape = shape;
     st->normalsFromUV = normalsFromUV;
+    st->exactDeflection = exactDeflection;
+    st->exactAngle = exactAngle;
     try {
         Bnd_Box bounds;
         BRepBndLib::Add(shape, bounds);
@@ -726,9 +768,9 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
     };
     auto &reg = Render::MeshSourceRegistry::instance();
     if (faceTag)
-        reg.add(faceTag, gen);
+        reg.add(faceTag, gen, builtError);
     if (lineTag)
-        reg.add(lineTag, gen);
+        reg.add(lineTag, gen, builtError);
 }
 
 void PartGui::unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag)
