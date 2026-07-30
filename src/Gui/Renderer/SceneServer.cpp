@@ -21,6 +21,7 @@
 
 #include "SceneServer.h"
 #include "SceneDump.h"
+#include "SceneLadder.h"
 #include "MeshSource.h"
 
 #include <algorithm>
@@ -335,13 +336,20 @@ public:
     /// Accept a request to build \a level of the mesh whose exact
     /// chunk is stored under \a source. False when the source is not a
     /// chunk this server holds — nothing could be generated from it.
-    bool requestLevel(const std::string &source, uint32_t level)
+    bool requestLevel(const std::string &reqSource, uint32_t level)
     {
         // The ladder never declares more than a handful of levels, and
         // the request is unauthenticated: an absurd level is a bad
-        // request, not work.
-        if (level >= 16)
+        // request, not work. The exact rung of a coarse-first ladder
+        // rides its sentinel index (§7).
+        if (level >= 16 && level != kExactMeshLevel)
             return false;
+        // Any built rung of a ladder may name the source; the job —
+        // its dedup, its memo, the announcement lookup — lives under
+        // the canonical (published) key, which is the one the
+        // serializer consults built() with.
+        const std::string source =
+            MeshSourceRegistry::instance().canonical(reqSource);
         std::lock_guard<std::mutex> guard(mutex);
         if (!blobs.count(source))
             return false;

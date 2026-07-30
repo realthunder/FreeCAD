@@ -20,6 +20,7 @@
  ****************************************************************************/
 
 #include "MeshSource.h"
+#include "SceneDump.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -40,15 +41,19 @@ MeshSourceRegistry &MeshSourceRegistry::instance()
     return reg;
 }
 
-void MeshSourceRegistry::add(const void *tag, Generator gen)
+void MeshSourceRegistry::add(const void *tag, Generator gen,
+                             float publishedError)
 {
     if (!tag || !gen)
         return;
     std::lock_guard<std::mutex> guard(mutex);
-    sources[tag] = std::make_shared<Generator>(std::move(gen));
+    Source &src = sources[tag];
+    src.gen = std::make_shared<Generator>(std::move(gen));
+    src.publishedError = publishedError;
+    src.canonicalKey.clear();
     if (debugOn())
-        std::fprintf(stderr, "mesh source: add tag=%p (%zu sources)\n", tag,
-                     sources.size());
+        std::fprintf(stderr, "mesh source: add tag=%p err=%g (%zu sources)\n",
+                     tag, double(publishedError), sources.size());
 }
 
 void MeshSourceRegistry::remove(const void *tag)
@@ -69,7 +74,8 @@ void MeshSourceRegistry::associate(const std::string &key, const void *tag)
     if (key.empty() || !tag)
         return;
     std::lock_guard<std::mutex> guard(mutex);
-    if (!sources.count(tag)) {
+    auto it = sources.find(tag);
+    if (it == sources.end()) {
         if (debugOn())
             std::fprintf(stderr,
                          "mesh source: associate %s tag=%p UNREGISTERED\n",
@@ -77,9 +83,31 @@ void MeshSourceRegistry::associate(const std::string &key, const void *tag)
         return;
     }
     keys[key] = tag;
+    it->second.canonicalKey = key;
     if (debugOn())
         std::fprintf(stderr, "mesh source: associate %s tag=%p (%zu keys)\n",
                      key.c_str(), tag, keys.size());
+}
+
+std::string MeshSourceRegistry::canonical(const std::string &key)
+{
+    std::lock_guard<std::mutex> guard(mutex);
+    auto it = keys.find(key);
+    if (it == keys.end())
+        return key;
+    auto src = sources.find(it->second);
+    if (src == sources.end() || src->second.canonicalKey.empty())
+        return key;
+    return src->second.canonicalKey;
+}
+
+float MeshSourceRegistry::publishedError(const void *tag)
+{
+    if (!tag)
+        return 0.0f;
+    std::lock_guard<std::mutex> guard(mutex);
+    auto it = sources.find(tag);
+    return it == sources.end() ? 0.0f : it->second.publishedError;
 }
 
 bool MeshSourceRegistry::generate(const std::string &key, uint32_t level,
@@ -90,6 +118,7 @@ bool MeshSourceRegistry::generate(const std::string &key, uint32_t level,
     // geometry (refcounted), so it stays valid through the call even
     // if the source is removed while it runs.
     std::shared_ptr<Generator> gen;
+    const void *tag = nullptr;
     {
         std::lock_guard<std::mutex> guard(mutex);
         auto it = keys.find(key);
@@ -104,11 +133,20 @@ bool MeshSourceRegistry::generate(const std::string &key, uint32_t level,
         auto src = sources.find(it->second);
         if (src == sources.end())
             return false;
-        gen = src->second;
+        tag = it->second;
+        gen = src->second.gen;
     }
     bool ok = (*gen)(level, sourceChunk, sourceSize, out);
     if (debugOn())
         std::fprintf(stderr, "mesh source: generate %s level %u -> %s\n",
                      key.c_str(), level, ok ? "ok" : "refused");
+    if (ok && !out.empty()) {
+        // The built level's key names this source too, non-canonically:
+        // a later request may reach the server holding only this rung.
+        std::string outKey = sha1Hex(out.data(), out.size());
+        std::lock_guard<std::mutex> guard(mutex);
+        if (sources.count(tag))
+            keys[outKey] = tag;
+    }
     return ok;
 }

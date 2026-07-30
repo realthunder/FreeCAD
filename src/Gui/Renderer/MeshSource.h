@@ -69,7 +69,12 @@ public:
     /// Register (or replace) the generator for \a tag. Called by the
     /// layer that tessellates — the tag is the identity the feed
     /// already carries per mesh (MeshData::sourceTag).
-    void add(const void *tag, Generator gen);
+    /// \a publishedError states what the display tessellation itself
+    /// is: 0 for the exact mesh, or the level error (relative to the
+    /// shape diagonal) when the producer tessellated coarse-first —
+    /// which is what tells the serializer to declare the exact mesh as
+    /// an unbuilt rung above it.
+    void add(const void *tag, Generator gen, float publishedError = 0.0f);
     /// Drop \a tag and every chunk-key association pointing at it.
     /// Call before the geometry behind the tag dies; the tag's address
     /// may be reused.
@@ -77,9 +82,22 @@ public:
 
     /// The chunk stored under \a key was fed by \a tag's geometry.
     /// Called by the publisher when it minted (or re-announced) a mesh
-    /// key. A tag nobody registered is not recorded — only shapes with
-    /// a generator behind them are worth remembering.
+    /// key; that key becomes the source's *canonical* one — the name
+    /// its level jobs are memoized under. A tag nobody registered is
+    /// not recorded — only shapes with a generator behind them are
+    /// worth remembering. (Generated levels associate themselves on
+    /// the way out of generate(), non-canonically: any built rung of a
+    /// ladder can then name the source in a request.)
     void associate(const std::string &key, const void *tag);
+
+    /// The canonical (publisher-associated) key of the source \a key
+    /// belongs to, or \a key itself when nothing claims it. What lets
+    /// a request naming any built rung and the publisher's
+    /// announcement lookup agree on one job identity.
+    std::string canonical(const std::string &key);
+
+    /// The registered publishedError of the source behind \a tag, or 0.
+    float publishedError(const void *tag);
 
     /// Try the shape-backed generator for \a key. False when no source
     /// claims the key or its generator refuses — decimation's turn.
@@ -88,8 +106,14 @@ public:
                   std::vector<uint8_t> &out);
 
 private:
+    struct Source {
+        std::shared_ptr<Generator> gen;
+        float publishedError = 0.0f;
+        /// The key the publisher last associated — the job identity.
+        std::string canonicalKey;
+    };
     std::mutex mutex;
-    std::map<const void *, std::shared_ptr<Generator>> sources;
+    std::map<const void *, Source> sources;
     std::unordered_map<std::string, const void *> keys;
 };
 

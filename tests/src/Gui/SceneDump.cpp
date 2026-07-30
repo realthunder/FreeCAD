@@ -19,6 +19,7 @@
 
 #include <Gui/Renderer/MeshSource.h>
 #include <Gui/Renderer/SceneDump.h>
+#include <Gui/Renderer/SceneLadder.h>
 #include <Gui/Renderer/SceneServer.h>
 
 namespace
@@ -1608,4 +1609,153 @@ TEST(SceneDump, aShapeBackedSourceBuildsTheLevelAheadOfDecimation)
     const std::string decimated = server.builtLevel(sourceKey, 1, &size);
     ASSERT_FALSE(decimated.empty());
     EXPECT_NE(decimated, markerKey);
+}
+
+/// Coarse-first publish (§7): a mesh the producer deliberately
+/// tessellated at a ladder rung is written at its own error, with only
+/// strictly coarser rungs declared below it and the exact mesh
+/// declared *unbuilt* above it — until someone builds the exact rung,
+/// whereupon its key is announced like any generated level and the
+/// entry's fetch identity (finest built) moves onto it.
+TEST(SceneDump, aCoarsePublishedMeshDeclaresTheExactRung)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    auto big = makeGridMesh(1, 37);
+    big->levelError = 1.0f / 16.0f;   // published mesh = grid level 1
+    snap.scene.push_back(makeDraw(0x1111, big, 0xff0000ff));
+    attachSinks(snap, store);
+    const std::string exactKey(40, 'e');
+    bool exactBuilt = false;
+    uint32_t askedLevel = 0;
+    snap.meshBlobs.built = [&](const std::string&, uint32_t level,
+                               uint32_t& size) {
+        askedLevel = level;
+        if (!exactBuilt || level != Render::kExactMeshLevel) {
+            return std::string();
+        }
+        size = 777777;
+        return exactKey;
+    };
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    ASSERT_EQ(store.meshKeys.size(), 1u);
+    const std::string published = *store.meshKeys.begin();
+    const Render::SceneSnapshot::DeferredChunk* entry = nullptr;
+    for (const auto& chunk : loaded.deferredChunks) {
+        if (chunk.key == published) {
+            entry = &chunk;
+        }
+    }
+    ASSERT_TRUE(entry);
+    // [coarser declared, the published mesh at its error, exact unbuilt]
+    ASSERT_EQ(entry->levels.size(), 3u);
+    EXPECT_NEAR(entry->levels[0].error, 1.0f / 8.0f, 1e-6f);
+    EXPECT_TRUE(entry->levels[0].key.empty());
+    EXPECT_NEAR(entry->levels[1].error, 1.0f / 16.0f, 1e-6f);
+    EXPECT_EQ(entry->levels[1].key, published)
+        << "the published mesh sits on the ladder at its own error";
+    EXPECT_EQ(entry->levels.back().error, 0.0f);
+    EXPECT_TRUE(entry->levels.back().key.empty())
+        << "the exact mesh is declared, not built";
+    EXPECT_EQ(entry->key, published)
+        << "the finest built level is the published coarse mesh";
+    EXPECT_EQ(askedLevel, Render::kExactMeshLevel)
+        << "the exact slot consults built() under its sentinel";
+
+    // Someone builds the exact rung: the next publish announces it and
+    // the entry's fetch identity moves onto it.
+    exactBuilt = true;
+    payload.clear();
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot again;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), again));
+    // Mesh entries exist only once the group chunks resolved; the
+    // exact chunk itself is missing from the store (nothing built it
+    // for real) — held back, exactly like a viewer that has not
+    // fetched it yet.
+    ASSERT_TRUE(resolve(again, store, {exactKey}));
+    entry = nullptr;
+    for (const auto& chunk : again.deferredChunks) {
+        if (!chunk.levels.empty() && chunk.levels[1].key == published) {
+            entry = &chunk;
+        }
+    }
+    ASSERT_TRUE(entry);
+    ASSERT_EQ(entry->levels.size(), 3u);
+    EXPECT_EQ(entry->levels.back().key, exactKey);
+    EXPECT_EQ(entry->levels.back().size, 777777u);
+    EXPECT_EQ(entry->key, exactKey)
+        << "the exact rung, once built, is the finest built level";
+}
+
+/// The canonical-key rule (MeshSource.h): a generated level's key names
+/// the same source non-canonically, so a request reaching the server
+/// through any built rung dedups onto the one job identity — the
+/// published key, which is the one the serializer's announcement
+/// lookup uses.
+TEST(SceneDump, aRequestThroughAGeneratedRungNamesTheSameJob)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap;
+    auto big = makeGridMesh(1, 43);
+    snap.scene.push_back(makeDraw(0x1111, big, 0xff0000ff));
+    attachSinks(snap, store);
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    ASSERT_EQ(store.meshKeys.size(), 1u);
+    const std::string sourceKey = *store.meshKeys.begin();
+
+    auto& server = Render::SceneStreamServer::instance();
+    server.publishBlob(sourceKey,
+                       std::vector<uint8_t>(store.blobs.at(sourceKey)));
+
+    auto marker = makeMesh(9, 6);
+    std::vector<uint8_t> markerChunk;
+    ASSERT_TRUE(Render::encodeMeshChunk(*marker, markerChunk));
+    const std::string markerKey =
+        Render::sha1Hex(markerChunk.data(), markerChunk.size());
+
+    int tagStorage = 0;
+    const void* tag = &tagStorage;
+    auto& reg = Render::MeshSourceRegistry::instance();
+    reg.add(tag, [&](uint32_t, const void*, size_t,
+                     std::vector<uint8_t>& out) {
+        out = markerChunk;
+        return true;
+    });
+    reg.associate(sourceKey, tag);
+
+    size_t base = server.levelsBuilt();
+    ASSERT_TRUE(server.requestLevel(sourceKey, 0));
+    for (int i = 0; i < 500 && server.levelsBuilt() < base + 1; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_EQ(server.levelsBuilt(), base + 1);
+
+    // The generated chunk's key now names the source too, back to the
+    // canonical published one.
+    EXPECT_EQ(reg.canonical(markerKey), sourceKey);
+    EXPECT_EQ(reg.canonical(sourceKey), sourceKey);
+
+    // A request through the generated rung is the same job: accepted,
+    // memoized, nothing rebuilt.
+    ASSERT_TRUE(server.requestLevel(markerKey, 0));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_EQ(server.levelsBuilt(), base + 1)
+        << "the sibling key deduped onto the canonical job";
+    uint32_t size = 0;
+    EXPECT_EQ(server.builtLevel(sourceKey, 0, &size), markerKey)
+        << "the answer lives under the canonical key, where the "
+           "announcement looks";
+
+    reg.remove(tag);
 }

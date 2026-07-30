@@ -21,6 +21,7 @@
 
 #include "SceneDump.h"
 #include "MeshSimplify.h"
+#include "SceneLadder.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -343,15 +344,27 @@ void writeMesh(Writer &w, const MeshData &m,
     // v36: the ladder of levels, coarsest first, ending with the exact
     // mesh. A declared level has no key yet — nothing has generated
     // its bytes, so it has no content address and cannot be fetched,
-    // only asked for (§7). The exact mesh always closes the list, at
-    // error 0, keyed.
+    // only asked for (§7). The exact mesh closes the list at error 0 —
+    // keyed when the published mesh IS the exact tessellation (the
+    // usual case), declared-unbuilt when the producer tessellated
+    // coarse-first (m.levelError > 0): then the published mesh sits at
+    // its own error and the exact rung is generated on demand like any
+    // other, asked for as kExactMeshLevel.
+    const bool coarsePublished = m.levelError > 0.0f;
     const bool lineMesh = m.numTriangleIndices <= 0 && m.numLineIndices > 0;
     const uint32_t declareAt = lineMesh ? kLodDeclareSizeLines
                                         : kLodDeclareSize;
-    const uint32_t declared = size >= declareAt ? kLodDeclareLevels : 0;
-    w.u8(uint8_t(declared + 1));
-    for (uint32_t lvl = 0; lvl < declared; ++lvl) {
-        w.f(1.0f / float(8u << lvl));
+    uint32_t declared = size >= declareAt ? kLodDeclareLevels : 0;
+    // Only rungs strictly coarser than the published mesh are worth
+    // declaring below it (the grid level whose error equals the
+    // published one IS the published mesh).
+    while (declared > 0
+           && coarsePublished
+           && !(1.0f / float(8u << (declared - 1)) > m.levelError * 1.001f))
+        --declared;
+    w.u8(uint8_t(declared + 1 + (coarsePublished ? 1 : 0)));
+    auto writeBuilt = [&](uint32_t lvl, float error) {
+        w.f(error);
         // A level someone has generated since the last publish gets
         // its key here (§7, phase 5c) — which is the whole
         // announcement: writing the key changes these bytes, so the
@@ -361,19 +374,23 @@ void writeMesh(Writer &w, const MeshData &m,
             blobs.built ? blobs.built(key, lvl, lvlSize) : std::string();
         if (lvlKey.empty()) {
             w.u8(0);
-            continue;
+            return;
         }
         w.u8(1);
         w.str(lvlKey);
         w.u32(lvlSize);
-    }
-    w.f(0.0f);
+    };
+    for (uint32_t lvl = 0; lvl < declared; ++lvl)
+        writeBuilt(lvl, 1.0f / float(8u << lvl));
+    w.f(coarsePublished ? m.levelError : 0.0f);
     w.u8(1);
     w.str(key);
     // The payload size the key stands for: the viewer routes a small
     // chunk into a batch and a large one into its own request, and it
     // cannot know which without being told.
     w.u32(size);
+    if (coarsePublished)
+        writeBuilt(kExactMeshLevel, 0.0f);
 }
 
 /// The reader half of writeMesh's deferred branch: the level ladder
@@ -506,6 +523,13 @@ void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
 bool Render::generateMeshLevel(const void *chunk, size_t size, uint32_t level,
                                std::vector<uint8_t> &out)
 {
+    // The exact rung of a coarse-first ladder cannot be decimated into
+    // existence: decimation only ever removes information, and a weld
+    // of the coarse source would be announced as the exact mesh. Only
+    // a shape-backed generator (MeshSource.h) can build it.
+    if (level == kExactMeshLevel)
+        return false;
+
     // Parse the exact chunk back into a mesh. The chunk came out of
     // this build's own store, so it is this build's layout — current
     // version, no compatibility question.

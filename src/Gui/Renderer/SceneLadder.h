@@ -234,13 +234,23 @@ RendererExport LevelChoice chooseLevel(
 /// is an ordinary chunk with an ordinary content address.
 struct LevelRequest {
     /// Content identity of the geometry the level would be generated
-    /// from. Not the key of the level — that is what this asks for.
+    /// from — any *built* level's key of the same ladder (the producer
+    /// canonicalizes, so siblings name the same job). Not the key of
+    /// the level — that is what this asks for.
     std::string source;
     /// Which rung, coarsest first. What a level *means* — a tessellation
     /// deviation, a decimation ratio — is the producer's business, and
     /// deliberately not encoded here.
     uint32_t level = 0;
 };
+
+/// The level index that names the *exact* mesh (§7, coarse-first
+/// publish): a producer that published a coarse tessellation declares
+/// the exact one at error 0, unbuilt, and this is how it is asked for.
+/// A sentinel rather than a ladder index, because ladder positions of
+/// the coarser rungs double as generator grid levels and the exact
+/// mesh is not on that grid — its deviation is the display formula's.
+constexpr uint32_t kExactMeshLevel = 255;
 
 /// How a rung is actually obtained. The ladder decides *what* to
 /// acquire and what to give back; this is the tier's answer to *how*.

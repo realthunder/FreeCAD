@@ -3077,6 +3077,29 @@ private:
 
 static ViewerRungProvider s_provider;
 
+/// The request for rung \a index of \a entry's ladder. The source is
+/// the finest *built* rung's key — on a coarse-first ladder the exact
+/// mesh has no key to name, and the server canonicalizes whichever
+/// built sibling this happens to be onto one job identity. The exact
+/// rung itself (error 0) is asked for by its sentinel, because ladder
+/// positions of the coarser rungs double as generator grid levels and
+/// the exact mesh is not on that grid.
+static Render::LevelRequest levelRequestFor(
+        const Render::SceneSnapshot::DeferredChunk &entry, size_t index)
+{
+    Render::LevelRequest req;
+    for (size_t i = entry.levels.size(); i-- > 0;) {
+        if (!entry.levels[i].key.empty()) {
+            req.source = entry.levels[i].key;
+            break;
+        }
+    }
+    req.level = entry.levels[index].error == 0.0f
+        ? Render::kExactMeshLevel
+        : uint32_t(index);
+    return req;
+}
+
 /// The ranking half of the ladder now lives in ../SceneLadder.h, where
 /// the desktop can reach it too: what a payload is worth is a question
 /// about a camera and a bounding box, and neither half of that changes
@@ -3457,8 +3480,8 @@ static void resolvePending()
                 auto choice = Render::chooseLevel(order, entry, s_lodPx,
                                                  float(s_height));
                 if (choice.generate)
-                    s_provider.generate({entry.levels.back().key,
-                                         uint32_t(choice.desired)});
+                    s_provider.generate(
+                        levelRequestFor(entry, choice.desired));
                 const size_t cur = levelIndexOf(entry);
                 auto refill = s_refill.find(entry.key);
                 if (choice.fetch > cur && refill != s_refill.end()) {
@@ -3487,8 +3510,8 @@ static void resolvePending()
                 auto choice = Render::chooseLevel(order, entry, s_lodPx,
                                                  float(s_height));
                 if (choice.generate)
-                    s_provider.generate({entry.levels.back().key,
-                                         uint32_t(choice.desired)});
+                    s_provider.generate(
+                        levelRequestFor(entry, choice.desired));
                 const auto &lvl = entry.levels[choice.fetch];
                 if (!lvl.key.empty() && s_resident.count(lvl.key)) {
                     // The rung the camera wants is the one already
@@ -3500,6 +3523,25 @@ static void resolvePending()
                 if (!lvl.key.empty() && lvl.key != entry.key) {
                     entry.key = lvl.key;
                     entry.size = lvl.size;
+                }
+                // A fresh manifest can re-key the entry to a rung this
+                // viewer never fetched — the exact rung of a
+                // coarse-first ladder, just announced (§7) — while a
+                // sibling rung is resident and on screen. Stand on the
+                // resident rung now (its bytes refill from the local
+                // caches); the armed-upgrade pass fetches the finer
+                // one next round. Without this the announcement itself
+                // demotes the object to its box for the length of a
+                // fetch.
+                if (!s_resident.count(entry.key)) {
+                    for (size_t step = entry.levels.size(); step-- > 0;) {
+                        const auto &sib = entry.levels[step];
+                        if (sib.key.empty() || !s_resident.count(sib.key))
+                            continue;
+                        entry.key = sib.key;
+                        entry.size = sib.size;
+                        break;
+                    }
                 }
             }
             ++missing;
@@ -3720,12 +3762,14 @@ static void resolvePending()
     if (s_genLod) {
         size_t builtMiddles = 0;
         for (const auto &entry : target->deferredChunks) {
-            for (uint32_t i = 0; i + 1 < uint32_t(entry.levels.size()); ++i) {
+            // Every unbuilt rung, the exact one of a coarse-first
+            // ladder included (it is the last entry then, unkeyed).
+            for (uint32_t i = 0; i < uint32_t(entry.levels.size()); ++i) {
                 if (entry.levels[i].key.empty())
-                    // The source is the exact mesh closing the ladder —
+                    // The source is the finest built rung —
                     // entry.key may have been retargeted to a level.
-                    s_provider.generate({entry.levels.back().key, i});
-                else
+                    s_provider.generate(levelRequestFor(entry, i));
+                else if (i + 1 < uint32_t(entry.levels.size()))
                     ++builtMiddles;
             }
         }

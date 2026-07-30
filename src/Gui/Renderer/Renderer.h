@@ -59,6 +59,12 @@ struct MeshData {
     /// (MeshSource.h), carried so the publisher can associate the
     /// mesh's content key with its source.
     const void *sourceTag = nullptr;
+    /// What this mesh itself is on its ladder (§7 coarse-first): 0 =
+    /// the exact tessellation, else the level error (relative to the
+    /// shape diagonal) it was deliberately built coarse at — in which
+    /// case the serializer declares the exact mesh as an unbuilt rung
+    /// above it. Stamped by the bridge from the source registry.
+    float levelError = 0.0f;
 
     int numVertices = 0;
     const float *positions = nullptr;   ///< xyz per vertex, never null

@@ -52,6 +52,7 @@
 #include <Inventor/nodes/SoClipPlane.h>
 #include <Inventor/nodes/SoBumpMap.h>
 #include "SoFCRenderMaterial.h"
+#include "../Renderer/MeshSource.h"
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoSpotLight.h>
 #include <Inventor/annex/FXViz/nodes/SoShadowDirectionalLight.h>
@@ -143,6 +144,11 @@ translateCache(SoFCVertexCache * cache)
         // generator registered on the base claims them all.
         SoNode *proto = SoFCVertexCache::getProtoNode(node);
         mesh->sourceTag = proto ? proto : node;
+        // A producer running coarse-first registered what the display
+        // tessellation itself is; the serializer places the mesh on
+        // its ladder by this and declares the exact rung above it.
+        mesh->levelError = Render::MeshSourceRegistry::instance()
+                               .publishedError(mesh->sourceTag);
     }
 
     mesh->numVertices = cache->getNumVertices();
