@@ -1731,6 +1731,18 @@ static void mainLoop()
     // AO refine from updateQuality) surface through isSceneDirty; water
     // and fire keep rendering through isSceneAnimated. The HUD shows
     // `idle` in the fps field while frames are held.
+    // BEFORE the idle skip, not after: the settle detector lives in
+    // this pump, and a camera stops moving ~130 ms (the eight dirty
+    // frames) before the 300 ms settle threshold can pass — so with
+    // the pump behind the skip, the frames that would notice the
+    // settle were exactly the frames the skip suppressed. The replan
+    // never fired, the scene sat below its desire at a stale plan with
+    // budget to spare, and the first hover's highlight — by dirtying
+    // the renderer — was what let the planner breathe again. Measured
+    // as "meshes only upgrade when I move the mouse". The pump is a
+    // handful of float compares on a settled scene; the skip still
+    // saves the render.
+    pumpFetchOnMove();
     if (s_dirtyFrames > 0) {
         --s_dirtyFrames;
     } else if (s_renderer && !s_renderer->isSceneDirty()
@@ -1739,7 +1751,6 @@ static void mainLoop()
         s_lastFrameNow = 0.0;   // keep the idle gap out of the fps EMA
         return;
     }
-    pumpFetchOnMove();
     // The heap, on a slow heartbeat. An allocation that fails takes
     // the page with it and leaves nothing to inspect, so what the heap
     // was doing in the seconds before has to have been said already —
