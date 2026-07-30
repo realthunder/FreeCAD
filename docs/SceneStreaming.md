@@ -593,6 +593,103 @@ Two things fall out for free once the rungs are real meshes rather than boxes:
   to a cheaper level and finally to its box, rather than choosing between
   holding geometry and showing a hole.
 
+### Selection is a plan, not a reaction
+
+The first level selection (phase 5d, §11) decided everything at the moment a
+chunk crossed the fetch path: which rung this entry should be at, whether the
+budget admits it, what to evict for it — one entry at a time, on every
+arrival, against whatever the camera happened to be that instant. It worked
+until the decisions started meeting each other. An upgrade re-armed an entry
+whose re-keying the box-prevention then read as a demotion; the memo that
+damped refusals blocked the fetch whose absence the descend then "fixed" by
+stepping onto the resident rung, whose instant refill re-armed the upgrade.
+Each fight was real, each fix was correct, and each fix was another mechanism
+for the next fight to involve — five damping mechanisms in (released memo,
+refused memo, armed flag, sibling-stand, descend), a stationary camera could
+still produce a permanent release/refetch parade, because **per-chunk
+reactive decisions have no equilibrium to converge to**. Nothing anywhere
+stated what the scene as a whole should hold.
+
+So the redesign states it. Two halves, strictly separated:
+
+**The planner** decides *what the scene should hold* — a target rung for
+every object — and runs only on discrete events: the camera settling after a
+move, a publish staging, a generated level being announced, the adaptive
+budget moving materially. Never on arrivals, which is what made the reactive
+version re-litigate everything per chunk. The assignment is global and
+greedy: every object starts at its box, every possible upgrade (this object,
+its next-finer rung) is scored by **screen-space error removed per byte
+added**, and the best upgrade is taken until the budget is spent or every
+object has reached its *desired* rung — the coarsest whose stated error the
+camera cannot resolve (error × projected size ≤ the tolerance), beyond which
+a byte buys nothing visible. The plan is deterministic: the same camera, the
+same ladders and the same budget produce the same plan, bit for bit, so
+there is nothing to oscillate — hysteresis is not a margin bolted onto a
+feedback loop, it is the absence of the loop.
+
+Three consequences of planning per *object* rather than per chunk:
+
+- **An object's chunks move together.** Its face set and its edge set are
+  separate chunks with separate ladders, and choosing their levels
+  independently put them on different rungs — exact polylines scribbled
+  across a coarse surface. The plan assigns the object one error, and every
+  geometry chunk it owns targets the rung stated at that error.
+- **A shared chunk is planned once, at the finest rung any owner needs**,
+  and its bytes are counted once — the same rule the fetch order already
+  applies to shared materials, now applied to the budget.
+- **The view's own chunks are not planned.** Overlays and the root's
+  sections always target their exact content and are never victims — the
+  rule the reactive version arrived at after the navigation cube lost its
+  edges twice, now true by construction, since only owned geometry enters
+  the plan at all.
+
+**The executor** makes the scene match the plan, and holds no policy of its
+own: diff what is resident against what is targeted, fetch what is missing,
+release what is above target, and stop. It runs wherever the fetch already
+ran — arrivals, the camera pump, the retry timer — and is idempotent:
+every step moves one ladder toward the plan, nothing ever moves away from
+it, so a scene at plan issues nothing and a stationary camera goes silent.
+The state that drives it is explicit at last — an entry's ladder identity,
+which rung is resident, which rung is targeted, what is in flight — where
+the reactive version conflated all four into `entry.key` and needed the
+`armed` flag to disambiguate what it had done to itself. When the plan
+targets a rung that is declared but unbuilt, the executor asks the producer
+to build it (`RungProvider::generate`) and meanwhile fetches the nearest
+built coarser rung — the announcement re-plans, and the diff picks up the
+now-built rung as an ordinary upgrade.
+
+**En route, coarse first.** When an object has nothing resident at all and
+its target is not the coarsest built rung, the executor fetches the coarsest
+built rung before the target: a few kilobytes put the object on screen this
+round, and the target lands as an upgrade over it instead of over a box.
+This is the consumer-side echo of the producer's coarse-first publish (5f) —
+the same policy at both ends of the wire, something on screen beats fidelity
+in flight — and it costs almost nothing, because the coarse rungs exist
+precisely to be cheap.
+
+**Completeness becomes a checkable property, and the deltas need it.** The
+reactive version had no way to say a scene was "done": a refused entry kept
+its fill forever, so under any budget pressure a snapshot simply never
+completed — and a delta arriving over an incomplete snapshot had to be
+answered with a full-scene refetch, which under the republish traffic that
+level announcements themselves generate meant the scene reset to boxes at
+exactly the moment it was busiest. Under the plan, done is `resident ==
+target` for every entry, a state the executor reaches and holds, and a
+delta arriving then merges. For the plan's universe to *be* the whole scene,
+the commit carries the geometry entries of unchanged objects forward from
+the superseded snapshot — a delta names only what changed, and a plan over
+only what changed would silently exempt the rest of the model from both
+upgrades and eviction. That same carry-over is what makes abandoning a
+superseded snapshot's outstanding chunks safe at all.
+
+What this deletes from the reactive version: per-round `chooseLevel`, the
+evictor's margin walk, admission at issue time, both score memos, the
+`armed` flag, the sibling-stand and the descend-on-release. What survives
+unchanged: the ranker (the planner scores with the same projection), the
+memory budget and its adaptation, the provider seam, the ordered fetch
+window, the batches, and the overlay barrier — the transport layer was
+never the problem.
+
 ## 8. Server and viewer state
 
 **Server.** One chunk store, key → bytes, plus the manifests of the last K
@@ -1399,6 +1496,14 @@ the whole loop runs today — on demo-varied@200: 400 asks, 400 builds (a
 announced back into the viewer's ladders.
 
 ### 5d — level selection, as built (browser tier)
+
+> **Superseded by the plan/executor split (§7, "Selection is a plan, not a
+> reaction").** The per-round reactive selection below, its admission
+> control and its damping memos accumulated mechanism-fights faster than
+> fixes could retire them — three in one day, with a stationary camera
+> still able to churn — and were replaced wholesale. The paragraphs stay
+> because the *measurements* (what per-camera decisions cost, what the
+> margin rules damped) are why the plan is shaped the way it is.
 
 The policy is one shared function, `chooseLevel` (SceneLadder): a level's
 error is stated relative to the mesh's own diagonal, so multiplying by the
