@@ -239,6 +239,14 @@ struct SceneSnapshot {
         /// snapshot is not applied.
         std::function<bool(SceneSnapshot &snap,
                            const void *data, size_t size)> fill;
+        /// An upgrade in flight (§7 phase 5d): `fill` is set and `key`
+        /// names a finer rung, but the arrays still hold a resident
+        /// coarser sibling, so nothing on screen is at stake. Level
+        /// selection reads this to tell an armed entry from one a
+        /// fresh manifest re-keyed with empty arrays — the case that
+        /// must stand on a resident sibling to avoid the box. Cleared
+        /// when the fill runs or the upgrade stands down.
+        bool armed = false;
     };
     std::vector<DeferredChunk> deferredChunks;
 

@@ -171,6 +171,42 @@ TEST(Evictor, theViewsOwnChunksAreNeverVictims)
     EXPECT_EQ(released[0], "model");
 }
 
+TEST(Evictor, aRefusalSaysWhetherAnythingStoodAgainstThePayload)
+{
+    // The first issue round pledges the whole budget before anything
+    // is resident, so its refusals compare against nobody. A consumer
+    // that memoized those froze the scene at whatever that round
+    // happened to ask for — near objects coarse for good, the evictor
+    // never once running. `starved` is how it tells the two apart.
+    Render::SceneSnapshot snap;
+    snap.deferredChunks.push_back(chunk("model", 4096, true));
+    snap.deferredChunks.back().release = []() {};
+
+    size_t releases = 0;
+    Render::RungRanker ranker = makeRanker();
+
+    // Nothing resident: the walk runs out of victims, not out of worth.
+    Render::Evictor starvedEvictor(
+        snap, ranker, [](const std::string &) { return false; },
+        [&releases](Render::SceneSnapshot::DeferredChunk &, float) {
+            ++releases;
+        });
+    bool starved = false;
+    EXPECT_FALSE(starvedEvictor.makeRoom(1e9f, 4096, &starved));
+    EXPECT_TRUE(starved);
+
+    // A resident victim the margin keeps: a real comparison, a real no.
+    Render::Evictor marginEvictor(
+        snap, ranker, [](const std::string &) { return true; },
+        [&releases](Render::SceneSnapshot::DeferredChunk &, float) {
+            ++releases;
+        });
+    starved = true;
+    EXPECT_FALSE(marginEvictor.makeRoom(0.0f, 4096, &starved));
+    EXPECT_FALSE(starved);
+    EXPECT_EQ(releases, 0u);
+}
+
 // ----------------------------------------------------------------------
 // chooseLevel (§7, phase 5d)
 // ----------------------------------------------------------------------

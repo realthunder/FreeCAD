@@ -554,7 +554,7 @@ void Evictor::build()
               });
 }
 
-bool Evictor::makeRoom(float incoming, size_t need)
+bool Evictor::makeRoom(float incoming, size_t need, bool *starved)
 {
     if (!m_built)
         build();
@@ -564,6 +564,8 @@ bool Evictor::makeRoom(float incoming, size_t need)
         freed += m_snap.deferredChunks[m_victims[take].second].size;
         ++take;
     }
+    if (starved)
+        *starved = freed < need && take == m_victims.size();
     if (freed < need) {
         if (m_trace) {
             char buf[256];

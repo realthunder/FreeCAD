@@ -465,7 +465,19 @@ public:
     /// False means the budget cannot accommodate this payload — it is
     /// worth less than what holding it would cost. It stays
     /// outstanding, and a camera move reconsiders it for free.
-    bool makeRoom(float incoming, size_t need);
+    ///
+    /// \a starved, when given, reports *why* a false is false: true
+    /// means the walk ran out of victims before any was too dear —
+    /// nothing resident stood against this payload, the budget being
+    /// consumed by requests still in flight or by payloads that cannot
+    /// be given back. That refusal is not a comparison and must not be
+    /// memoized against the payload: the first issue round pledges the
+    /// whole budget before anything is resident, and a "no" recorded
+    /// there froze the scene at whatever the first round happened to
+    /// ask for — near objects coarse for good, with the evictor never
+    /// once running. False with \a starved false is the real verdict:
+    /// a victim was met that the margin refused to displace.
+    bool makeRoom(float incoming, size_t need, bool *starved = nullptr);
 
     void setTrace(Trace trace) { m_trace = std::move(trace); }
 

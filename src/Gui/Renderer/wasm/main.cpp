@@ -3159,6 +3159,7 @@ static void releaseChunk(Render::SceneSnapshot::DeferredChunk &entry,
         return;
     entry.release();
     entry.fill = refill->second;
+    entry.armed = false;
     // The payload itself, which is the other half of what it costs to
     // hold. The local store keeps it, so what was just given up is a
     // read and not a download.
@@ -3321,6 +3322,7 @@ static void resolvePending()
             // does not survive that.
             auto fill = entry.fill;
             entry.fill = nullptr;
+            entry.armed = false;
             const bool wasView = entry.owners.empty();
             // Everything the bookkeeping below needs, copied out for
             // the same reason the callable was: a group's fill names
@@ -3392,8 +3394,10 @@ static void resolvePending()
         // (applySceneObjects), so a partial scene is a valid one. The
         // objects it could not describe wait for the next publish.
         std::printf("fcviewer: snapshot incomplete, showing what arrived\n");
-        for (auto &entry : target->deferredChunks)
+        for (auto &entry : target->deferredChunks) {
             entry.fill = nullptr;
+            entry.armed = false;
+        }
     }
     else {
         total += target->deferredChunks.size();
@@ -3494,6 +3498,7 @@ static void resolvePending()
                     // says no to the fine rung, and the coarse one has
                     // been given up for nothing.
                     entry.fill = refill->second;
+                    entry.armed = true;
                     entry.key = entry.levels[choice.fetch].key;
                     entry.size = entry.levels[choice.fetch].size;
                     ++rungUp;
@@ -3517,7 +3522,14 @@ static void resolvePending()
                     // The rung the camera wants is the one already
                     // held — an armed upgrade whose reason zoomed away
                     // stands down rather than refetching what it has.
+                    // Re-keyed onto that rung, or the books diverge:
+                    // an entry keyed at a rung it does not hold is
+                    // invisible to the evictor, which tests residency
+                    // through the entry's own key.
                     entry.fill = nullptr;
+                    entry.armed = false;
+                    entry.key = lvl.key;
+                    entry.size = lvl.size;
                     continue;
                 }
                 if (!lvl.key.empty() && lvl.key != entry.key) {
@@ -3533,7 +3545,16 @@ static void resolvePending()
                 // one next round. Without this the announcement itself
                 // demotes the object to its box for the length of a
                 // fetch.
-                if (!s_resident.count(entry.key)) {
+                //
+                // Never for an *armed* entry: its key names the finer
+                // rung it is upgrading toward — not resident yet by
+                // definition — while its arrays still show the rung it
+                // is climbing from, so there is no box to prevent.
+                // Standing it back onto that resident rung re-fetched
+                // what it already held, instantly, every round: a
+                // busy-loop that starved the websocket and never let
+                // the finer rung be asked for at all.
+                if (!entry.armed && !s_resident.count(entry.key)) {
                     for (size_t step = entry.levels.size(); step-- > 0;) {
                         const auto &sib = entry.levels[step];
                         if (sib.key.empty() || !s_resident.count(sib.key))
@@ -3696,7 +3717,16 @@ static void resolvePending()
                 // residency's terms — `item.first` is the fetch order's
                 // per-byte score and would compare a candidate against
                 // victims measured on a different scale entirely.
-                if (held > geometryBudget()) {
+                //
+                // The view's own chunks are not asked it at all: they
+                // can never be victims (Evictor::build passes over the
+                // ownerless by rule), so refusing one is a verdict
+                // nothing can ever appeal — their worth is infinite,
+                // and a memoized infinity clears no margin. A missing
+                // navigation cube edge is what that looks like. They
+                // are a fixed few hundred kilobytes; the budget holds
+                // them the way it holds its own bookkeeping.
+                if (held > geometryBudget() && !entry.owners.empty()) {
                     const float score = order.residency(entry);
                     auto ref = s_refusedScore.find(entry.key);
                     if (ref != s_refusedScore.end()
@@ -3707,8 +3737,19 @@ static void resolvePending()
                         ++refused;
                         continue;
                     }
-                    if (!evictor.makeRoom(score, held - geometryBudget())) {
-                        s_refusedScore[entry.key] = score;
+                    bool starved = false;
+                    if (!evictor.makeRoom(score, held - geometryBudget(),
+                                          &starved)) {
+                        // A refusal is only worth remembering when it
+                        // was a comparison — a victim was met that the
+                        // margin kept. Starved means nothing resident
+                        // stood against this payload at all (the first
+                        // round pledges the whole budget before
+                        // anything has arrived), and memoizing that
+                        // froze the scene at whatever that round asked
+                        // for: the next arrival re-opens it instead.
+                        if (!starved)
+                            s_refusedScore[entry.key] = score;
                         ++refused;
                         continue;
                     }
