@@ -1759,3 +1759,80 @@ TEST(SceneDump, aRequestThroughAGeneratedRungNamesTheSameJob)
 
     reg.remove(tag);
 }
+
+/// A publish re-parses its manifests into fresh, empty payload objects
+/// under the same content keys, and until those bytes are re-read every
+/// re-described object used to drop to its box — the "all meshes flash
+/// to boxes" artifact. The model bridges the gap with the copy still in
+/// hand (SceneObjectModel::lastGood): same content id, same bytes.
+TEST(SceneDump, aReparsedMeshBridgesFromTheLastLiveCopy)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> full;
+    ASSERT_TRUE(Render::saveSceneSnapshot(full, snap));
+
+    Render::SceneObjectModel model;
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(full.data(), full.size(), loaded));
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+    expectScene(loaded);
+
+    // Repaint one object: same meshes, a re-keyed group manifest.
+    for (auto& d : snap.scene) {
+        if (d.objectKey == 0x2222) {
+            d.material.diffuse = 0x654321ff;
+        }
+    }
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries2;
+    snap.baseObjects = entries;
+    snap.baseVersion = 1;
+    snap.manifestVersion = 2;
+    snap.objectEntries = &entries2;
+    std::vector<uint8_t> delta;
+    ASSERT_TRUE(Render::saveSceneSnapshot(delta, snap));
+
+    Render::SceneSnapshot loaded2;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(delta.data(), delta.size(), loaded2));
+    // Resolve the manifest layer only: the geometry entries stay
+    // pending, exactly as they do in a live viewer for the length of a
+    // re-read of bytes it was already drawing.
+    bool progress = true;
+    while (progress) {
+        progress = false;
+        for (auto& entry : loaded2.deferredChunks) {
+            if (!entry.fill || entry.release) {
+                continue;
+            }
+            auto fill = entry.fill;
+            entry.fill = nullptr;
+            auto it = store.blobs.find(entry.key);
+            ASSERT_NE(it, store.blobs.end());
+            ASSERT_TRUE(fill(loaded2, it->second.data(), it->second.size()));
+            progress = true;
+        }
+    }
+    ASSERT_TRUE(loaded2.finalize);
+    loaded2.finalize(loaded2);
+    ASSERT_TRUE(Render::applySceneObjects(loaded2, model));
+
+    size_t seen = 0;
+    for (const auto& d : loaded2.scene) {
+        if (d.objectKey != 0x2222) {
+            continue;
+        }
+        ++seen;
+        EXPECT_FALSE(d.standIn)
+            << "a re-described object must not drop to its box while "
+               "identical bytes are re-read";
+        ASSERT_TRUE(d.mesh);
+        EXPECT_GT(d.mesh->numVertices, 0u) << "the bridged copy is live";
+    }
+    EXPECT_GT(seen, 0u);
+}

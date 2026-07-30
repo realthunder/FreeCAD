@@ -189,6 +189,13 @@ public:
     int requestFrameDumps(int mode, int timeoutMs,
                           std::vector<ViewerFrameDump> &dumps);
 
+    /// Pull every connected viewer's decision journal — the plan,
+    /// fetch and release history it keeps locally with the reason for
+    /// each move (docs/SceneStreaming.md §7). One string per viewer;
+    /// partial results on timeout, same contract as the frame dumps.
+    /// Also served over HTTP as GET /decisions.
+    int requestDecisionLogs(int timeoutMs, std::vector<std::string> &logs);
+
 private:
     SceneStreamServer() = default;
     class Private;

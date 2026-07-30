@@ -3080,14 +3080,35 @@ static bool makeStandIn(Render::DrawCall &box, const Render::DrawCall &tmpl,
 /// vertex mesh would add a second, solid silhouette over the one its
 /// triangles already gave, and neither reads as the wireframe it
 /// replaces; those draws simply wait, as everything did before.
-static void appendAtBestRung(Render::DrawCallList &scene,
-                             const Render::DrawCallList &draws)
+static void appendAtBestRung(
+    Render::DrawCallList &scene, const Render::DrawCallList &draws,
+    std::map<uint64_t, std::weak_ptr<const Render::MeshData>> *lastGood)
 {
     std::set<const Render::MeshData *> stoodIn;
     for (const Render::DrawCall &d : draws) {
+        const bool contentId = d.mesh && (d.mesh->cacheId >> 63);
         if (meshResident(d)) {
+            if (lastGood && contentId)
+                (*lastGood)[d.mesh->cacheId] = d.mesh;
             scene.push_back(d);
             continue;
+        }
+        // Not filled yet — but the same content (the id is the content
+        // key) may still be live from before a re-parse. Substituted
+        // into the emitted scene only, never into the model's draws:
+        // when the fresh object's fill lands, the next assembly emits
+        // it and the bridge ends by itself (SceneObjectModel::lastGood).
+        if (lastGood && contentId) {
+            auto it = lastGood->find(d.mesh->cacheId);
+            if (it != lastGood->end()) {
+                auto held = it->second.lock();
+                if (held && held->numVertices > 0 && held->positions) {
+                    Render::DrawCall bridged = d;
+                    bridged.mesh = std::move(held);
+                    scene.push_back(std::move(bridged));
+                    continue;
+                }
+            }
         }
         if (d.material.type != Render::Material::Triangle
                 || !stoodIn.insert(d.mesh.get()).second)
@@ -3153,6 +3174,18 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
     // publish. Rebuilt from the model rather than accumulated, so that
     // building it twice is building it once — which is what lets this
     // run on every arrival and not only the last.
+    //
+    // First shed the bridge entries that no longer bridge anything:
+    // expired (nothing draws that copy), or emptied in place — which
+    // is what a release does, so an evicted mesh still shows the box
+    // eviction decided on rather than a stale twin.
+    for (auto it = model.lastGood.begin(); it != model.lastGood.end();) {
+        auto held = it->second.lock();
+        if (held && held->numVertices > 0 && held->positions)
+            ++it;
+        else
+            it = model.lastGood.erase(it);
+    }
     DrawCallList scene;
     for (const auto &entry : model.objects) {
         const SceneObjectModel::Object &obj = entry.second;
@@ -3175,9 +3208,9 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
                 scene.push_back(std::move(box));
             continue;
         }
-        appendAtBestRung(scene, obj.draws);
+        appendAtBestRung(scene, obj.draws, &model.lastGood);
     }
-    appendAtBestRung(scene, snap.keyless);
+    appendAtBestRung(scene, snap.keyless, &model.lastGood);
     snap.scene = std::move(scene);
     return true;
 }

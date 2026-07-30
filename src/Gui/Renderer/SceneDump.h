@@ -413,6 +413,20 @@ struct SceneObjectModel {
     std::map<uint64_t, Object> objects;
     /// The version the model holds, i.e. what a delta must be based on.
     uint64_t version = 0;
+    /// The last live arrays seen per content-addressed mesh id
+    /// (meshIdFromKey sets the top bit; producer-counter ids never
+    /// enter). A publish re-parses its manifests into fresh, empty
+    /// payload objects under the same content identity, and without
+    /// this every re-described object dropped to its box for the
+    /// length of a re-read of bytes the consumer was already drawing —
+    /// the "all meshes flash to boxes when the scene settles" artifact.
+    /// Assembly bridges the gap with the copy still in hand
+    /// (appendAtBestRung); the fresh object takes over as soon as its
+    /// fill runs, so upgrades stay visible. Weak pointers: a mesh
+    /// nothing draws costs nothing here, and a *released* mesh empties
+    /// in place and stops qualifying — eviction still shows the box it
+    /// decided on.
+    std::map<uint64_t, std::weak_ptr<const MeshData>> lastGood;
 
     /// How many objects the root named whose geometry has not arrived.
     size_t unresolved() const;

@@ -14,6 +14,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <cstdarg>
+#include <deque>
 #include <map>
 #include <memory>
 #include <set>
@@ -62,6 +64,35 @@ static bool s_planStale = true;
 static size_t s_planCapped = 0;
 static size_t s_plannedBytes = 0;
 static size_t s_plannedBudget = 0;
+
+/// The decision journal: every plan, fetch, release, generate, publish
+/// merge and full-scene request, with its reason, timestamped. Always
+/// recorded — a few thousand short lines is nothing next to one mesh —
+/// because the whole point is reading it *after* something looked
+/// wrong on a device with no console. `?decisions` mirrors it to the
+/// console live; the backend pulls it any time over the control
+/// channel ({"cmd":"dumpDecisions"} → an 'L' frame, GET /decisions on
+/// the scene server).
+static std::deque<std::string> s_decisionLog;
+static const size_t kDecisionLogMax = 8192;
+static bool s_decisions = false;
+
+static void decLog(const char *fmt, ...)
+{
+    char buf[240];
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    char line[280];
+    std::snprintf(line, sizeof(line), "%10.1f %s",
+                  emscripten_get_now(), buf);
+    if (s_decisionLog.size() >= kDecisionLogMax)
+        s_decisionLog.pop_front();
+    s_decisionLog.emplace_back(line);
+    if (s_decisions)
+        std::printf("fcviewer:dec %s\n", buf);
+}
 static std::set<int> s_selIds;
 static std::set<int> s_overlayIds;
 
@@ -1556,6 +1587,31 @@ static void captureAndSendFrame(uint32_t id, int mode)
                 id, s_width, s_height, mode);
 }
 
+/// Answer a {"cmd":"dumpDecisions"} control request: 'L', u32 request
+/// id, u32 text length, then the journal as newline-joined text —
+/// little-endian, mirroring the dumpFrame answer the server already
+/// parses by leading tag.
+static void sendDecisionLog(uint32_t id)
+{
+    if (!s_wsOpen)
+        return;
+    std::string text;
+    for (const auto &line : s_decisionLog) {
+        text += line;
+        text += '\n';
+    }
+    std::vector<uint8_t> buf(1 + 4 + 4 + text.size());
+    buf[0] = 'L';
+    uint32_t v = id;
+    std::memcpy(buf.data() + 1, &v, 4);
+    v = uint32_t(text.size());
+    std::memcpy(buf.data() + 5, &v, 4);
+    std::memcpy(buf.data() + 9, text.data(), text.size());
+    emscripten_websocket_send_binary(s_ws, buf.data(), buf.size());
+    std::printf("fcviewer: decision log %u uploaded, %zu lines\n", id,
+                s_decisionLog.size());
+}
+
 static void mainLoop()
 {
     const double frameNow = emscripten_get_now();
@@ -2234,9 +2290,12 @@ static void carryLadders(Render::SceneSnapshot &fresh)
         fresh.deferredChunks.back().owners = std::move(owners);
         ++carried;
     }
-    if (carried && s_streamDebug)
-        std::printf("fcviewer: carried %zu geometry ladders across the "
-                    "delta\n", carried);
+    if (carried) {
+        decLog("carried %zu geometry ladders across the delta", carried);
+        if (s_streamDebug)
+            std::printf("fcviewer: carried %zu geometry ladders across the "
+                        "delta\n", carried);
+    }
 }
 
 /// Drop from the resident books every key no live entry of the scene
@@ -2276,6 +2335,9 @@ static void commitSnapshot(Render::SceneSnapshot &&snap, uint64_t version)
     // the model first appears, which is the worst moment for one.
     if (!stillArriving(s_snap))
         fcviewer_status(nullptr, 0.0, 0.0);
+    decLog("commit v%llu: %zu draws, %zu overlays",
+           (unsigned long long)version, s_snap.scene.size(),
+           s_snap.overlays.size());
     std::printf("fcviewer: scene update v%llu, %zu draws, %zu overlays\n",
                 (unsigned long long)version, s_snap.scene.size(),
                 s_snap.overlays.size());
@@ -2433,6 +2495,8 @@ static void reconcileResident(const Render::SceneSnapshot &fresh)
     }
     if (keep.size() == s_resident.size())
         return;
+    decLog("%zu resident payloads died with the old scene",
+           s_resident.size() - keep.size());
     if (s_streamDebug)
         std::printf("fcviewer: %zu resident payloads died with the old "
                     "scene\n", s_resident.size() - keep.size());
@@ -2532,8 +2596,11 @@ static void reportHeap()
     // so the heartbeat's ordinary jitter does not replan a quiet scene.
     if (!s_planStale && s_plannedBudget
             && (s_budget.value() > s_plannedBudget + s_plannedBudget / 8
-                || s_budget.value() + s_plannedBudget / 8 < s_plannedBudget))
+                || s_budget.value() + s_plannedBudget / 8 < s_plannedBudget)) {
         s_planStale = true;
+        decLog("budget moved %zu -> %zu MB -> replan",
+               s_plannedBudget >> 20, s_budget.value() >> 20);
+    }
     if (!s_streamDebug)
         return;
     std::printf("fcviewer: heap %zu MB, geometry %zu of %zu MB "
@@ -3033,18 +3100,6 @@ static bool stillArriving(const Render::SceneSnapshot &snap)
     return false;
 }
 
-/// Manifest-layer payloads still outstanding: the group manifests,
-/// materials and textures a publish cannot be merged under, as opposed
-/// to geometry the plan is entitled to hold below exact (§7).
-static size_t nonGeometryOutstanding(const Render::SceneSnapshot &snap)
-{
-    size_t n = 0;
-    for (const auto &entry : snap.deferredChunks) {
-        if (entry.fill && !entry.release)
-            ++n;
-    }
-    return n;
-}
 
 /// Show what the staged snapshot can draw. Runs on every arrival that
 /// made progress, not only on the last one.
@@ -3058,6 +3113,9 @@ static void commitResolved()
         s_pendingValid = false;
         s_pendingSnap = Render::SceneSnapshot();
         if (!assembleResolved(snap)) {
+            decLog("full scene: staged delta base v%llu vs model v%llu",
+                   (unsigned long long)snap.baseVersion,
+                   (unsigned long long)s_objects.version);
             requestFullScene();
             return;
         }
@@ -3071,6 +3129,9 @@ static void commitResolved()
     else if (s_liveUnapplied) {
         s_liveUnapplied = false;
         if (!assembleResolved(s_snap)) {
+            decLog("full scene: live delta base v%llu vs model v%llu",
+                   (unsigned long long)s_snap.baseVersion,
+                   (unsigned long long)s_objects.version);
             requestFullScene();
             return;
         }
@@ -3178,6 +3239,7 @@ public:
         // still a request on a link the payloads share.
         if (!asked.emplace(req.source, req.level).second)
             return true;
+        decLog("generate level %u of %.8s", req.level, req.source.c_str());
         if (s_streamDebug)
             std::printf("fcviewer: asking for level %u of %s\n",
                         req.level, req.source.c_str());
@@ -3373,6 +3435,11 @@ static void planIfStale(Render::SceneSnapshot &target)
     s_planCapped = stats.capped;
     s_plannedBytes = stats.plannedBytes;
     s_plannedBudget = params.budgetBytes;
+    decLog("plan: %zu objects, %zu KB of %zu MB budget, %zu capped "
+           "(tol %.1fpx)",
+           stats.objects, stats.plannedBytes >> 10,
+           params.budgetBytes >> 20, stats.capped,
+           double(params.tolerancePx));
     if (s_streamDebug)
         std::printf("fcviewer: plan: %zu objects, %zu KB targeted of "
                     "%zu MB budget, %zu capped\n",
@@ -3564,8 +3631,11 @@ static void resolvePending()
     // manifests appending their meshes — and entries the plan has
     // never seen must not fetch at a default the next plan would
     // contradict. Discovery is one of the plan's events (§7).
-    if (target->deferredChunks.size() != knownChunks)
+    if (target->deferredChunks.size() != knownChunks) {
         s_planStale = true;
+        decLog("ladder set grew %zu -> %zu -> replan", knownChunks,
+               target->deferredChunks.size());
+    }
     if (incomplete) {
         // A payload could not be obtained or would not parse. This
         // publish will not complete, so stop resolving it rather than
@@ -3655,6 +3725,10 @@ static void resolvePending()
                     // The entry keeps its refill closure, so a later
                     // plan climbs the ladder again from the local
                     // store rather than the network.
+                    decLog("release %.8s rung %d -> box, obj %llx",
+                           entry.key.c_str(), resident,
+                           (unsigned long long)(entry.owners.empty()
+                                                    ? 0 : entry.owners[0]));
                     retargetRung(entry, resident);
                     releaseChunk(entry);
                     ++rungsReleased;
@@ -3810,6 +3884,24 @@ static void resolvePending()
             if (entry.release) {
                 pledged += entry.size;
                 pledgedBytes = pledged;
+                // The fetch history, one line per request actually
+                // issued: which rung was asked for, standing where, on
+                // whose account. The plan line above it is the reason.
+                const int target = entry.plan
+                        == Render::SceneSnapshot::DeferredChunk::kPlanUnset
+                    ? Render::finestBuiltRung(entry)
+                    : int(entry.plan);
+                decLog("ask %.8s %uB rung(resident %d, target %d) obj %llx",
+                       entry.key.c_str(), entry.size,
+                       residentRungOf(entry), target,
+                       (unsigned long long)(entry.owners.empty()
+                                                ? 0 : entry.owners[0]));
+            }
+            else {
+                decLog("ask %.8s %uB%s obj %llx", entry.key.c_str(),
+                       entry.size, entry.owners.empty() ? " (view)" : "",
+                       (unsigned long long)(entry.owners.empty()
+                                                ? 0 : entry.owners[0]));
             }
             s_provider.request(entry.key, entry.size);
         }
@@ -4007,6 +4099,7 @@ static void pumpFetchOnMove()
     if (movedAt >= 0.0 && now - movedAt >= kPlanSettleMs) {
         movedAt = -1.0;
         s_planStale = true;
+        decLog("camera settled -> replan");
     }
     if (s_planStale && s_haveScene)
         resolvePending();
@@ -4057,13 +4150,43 @@ static bool applyScenePayload(const char *data, size_t size)
         // below its plan is re-asked from the merged scene. What does
         // not survive is the manifest layer — a group, material or
         // texture still in flight describes objects a delta does not
-        // re-name — so only those force the full root. Under the plan
-        // a scene at its budget has none outstanding, which is what
-        // lets the level announcements' own republish traffic merge
-        // instead of resetting the scene to boxes (§7).
-        const size_t manifestsMissing =
-            s_liveOutstanding ? nonGeometryOutstanding(s_snap) : 0;
+        // re-name. But even there, most of what is outstanding when
+        // level announcements chain is safely abandonable: the view's
+        // own sections are re-sent whole every publish, and a manifest
+        // whose owners this delta all re-describes is superseded by
+        // the very payload that arrived. Only a chunk some object NOT
+        // in the delta is still waiting for forces the full root —
+        // without that precision, each announcement in a chain reset
+        // the scene while the previous one's manifests were in flight,
+        // which is the "Preparing scene…" flashing loop.
+        size_t manifestsMissing = 0;
+        if (snap.baseVersion && s_liveOutstanding) {
+            std::set<uint64_t> renamed;
+            for (const auto &up : snap.objectUpdates)
+                renamed.insert(up.entry.objectKey);
+            for (uint64_t key : snap.objectsRemoved)
+                renamed.insert(key);
+            for (const auto &entry : s_snap.deferredChunks) {
+                if (!entry.fill || entry.release || entry.owners.empty())
+                    continue;
+                bool superseded = true;
+                for (uint64_t owner : entry.owners)
+                    superseded = superseded && renamed.count(owner) != 0;
+                if (!superseded) {
+                    if (!manifestsMissing)
+                        decLog("delta v%llu blocked by %.8s (obj %llx not "
+                               "re-described)",
+                               (unsigned long long)snap.manifestVersion,
+                               entry.key.c_str(),
+                               (unsigned long long)entry.owners[0]);
+                    ++manifestsMissing;
+                }
+            }
+        }
         if (snap.baseVersion && manifestsMissing) {
+            decLog("full scene: delta v%llu over %zu live manifests",
+                   (unsigned long long)snap.manifestVersion,
+                   manifestsMissing);
             std::printf("fcviewer: delta v%llu arrived with %zu manifest "
                         "payloads still missing — asking for a full scene\n",
                         (unsigned long long)snap.manifestVersion,
@@ -4071,6 +4194,10 @@ static bool applyScenePayload(const char *data, size_t size)
             requestFullScene();
             return true;
         }
+        decLog("staged v%llu%s: %zu updates, %zu removed",
+               (unsigned long long)snap.manifestVersion,
+               snap.baseVersion ? " (delta)" : " (full)",
+               snap.objectUpdates.size(), snap.objectsRemoved.size());
         // Payloads the publish only named are fetched before it is
         // applied; with none outstanding (the usual case, every key
         // already cached) this commits inline.
@@ -4149,6 +4276,14 @@ static void handleControlMessage(const char *json)
             std::printf("fcviewer: reconnect budget %ld\n",
                         s_reconnectLimit);
         }
+    }
+    else if (std::strstr(json, "\"cmd\":\"dumpDecisions\"")) {
+        long id = 0;
+        const char *p = std::strstr(json, "\"id\"");
+        const char *colon = p ? std::strchr(p, ':') : nullptr;
+        if (colon)
+            id = std::strtol(colon + 1, nullptr, 10);
+        sendDecisionLog(uint32_t(id));
     }
     else if (std::strstr(json, "\"cmd\":\"reload\"")) {
         char bust[64] = "";
@@ -4527,7 +4662,14 @@ static void fetchBuildStamp()
 /// half of the phase (docs/SceneStreaming.md §5).
 static void requestFullScene()
 {
-    s_objects = Render::SceneObjectModel();
+    decLog("full scene requested (holding v%llu)",
+           (unsigned long long)s_objects.version);
+    // The model is deliberately NOT wiped: a full root retires what it
+    // does not name and re-takes what it renames as the groups fill
+    // (applySceneObjects), and until then the old draws are the bridge
+    // that keeps the scene from flashing to boxes. Only a backend
+    // session change invalidates the model wholesale, and that path
+    // clears it itself (applyScenePayload).
     s_pendingValid = false;
     s_pendingSnap = Render::SceneSnapshot();
     s_liveOutstanding = false;
@@ -4621,6 +4763,13 @@ int main()
     s_noFetchOrder = EM_ASM_INT({
         return new URLSearchParams(window.location.search)
             .has('nofetchorder') ? 1 : 0;
+    }) != 0;
+    // ?decisions mirrors the always-on decision journal to the console
+    // (docs/SceneStreaming.md §7); the journal itself is retrieved any
+    // time via the control channel, GET /decisions on the scene server.
+    s_decisions = EM_ASM_INT({
+        return new URLSearchParams(window.location.search)
+            .has('decisions') ? 1 : 0;
     }) != 0;
     s_genLod = EM_ASM_INT({
         return new URLSearchParams(window.location.search)

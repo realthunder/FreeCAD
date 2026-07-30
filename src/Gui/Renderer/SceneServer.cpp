@@ -506,6 +506,17 @@ public:
     };
     DumpCollect *dumpCollect = nullptr;
     uint32_t dumpIdCounter = 0;
+    /// In-flight decision-log collection (one at a time), the same
+    /// shape as the frame dumps: broadcast a control request, wait for
+    /// each viewer's 'L' answer (docs/SceneStreaming.md §7 — the
+    /// viewer keeps its plan/fetch journal locally, and this is how it
+    /// is pulled).
+    struct LogCollect {
+        uint32_t id = 0;
+        size_t expected = 0;
+        std::vector<std::string> logs;
+    };
+    LogCollect *logCollect = nullptr;
 
     void broadcastControl(const std::string &json)
     {
@@ -547,6 +558,38 @@ public:
                         });
         dumpCollect = nullptr;
         out = std::move(collect.dumps);
+        return int(out.size());
+    }
+
+    int requestDecisionLogs(int timeoutMs, std::vector<std::string> &out)
+    {
+        std::unique_lock<std::mutex> lock(connMutex);
+        if (logCollect)
+            return 0;
+        size_t expected = 0;
+        for (Conn *conn : conns) {
+            if (conn->viewer)
+                ++expected;
+        }
+        if (!expected)
+            return 0;
+        LogCollect collect;
+        collect.id = ++dumpIdCounter;
+        collect.expected = expected;
+        logCollect = &collect;
+        char msg[64];
+        std::snprintf(msg, sizeof(msg),
+                      "{\"cmd\":\"dumpDecisions\",\"id\":%u}", collect.id);
+        for (Conn *conn : conns) {
+            if (conn->viewer)
+                conn->pendingText.push_back(msg);
+        }
+        dumpCv.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+                        [&collect]() {
+                            return collect.logs.size() >= collect.expected;
+                        });
+        logCollect = nullptr;
+        out = std::move(collect.logs);
         return int(out.size());
     }
 
@@ -908,6 +951,36 @@ public:
                 sendAll(fd, acceptedReply, sizeof(acceptedReply) - 1);
             else
                 sendAll(fd, refusedReply, sizeof(refusedReply) - 1);
+            return;
+        }
+
+        // GET /decisions: pull every connected viewer's decision
+        // journal (plan runs, fetches with their reasons, releases,
+        // full-scene requests) — the backend command that reads what
+        // the client decided and why, after the fact. Plain text, one
+        // section per viewer.
+        if (path == "/decisions") {
+            std::vector<std::string> logs;
+            requestDecisionLogs(4000, logs);
+            std::string out;
+            for (size_t i = 0; i < logs.size(); ++i) {
+                out += "=== viewer " + std::to_string(i + 1) + " of "
+                    + std::to_string(logs.size()) + " ===\n";
+                out += logs[i];
+                if (!out.empty() && out.back() != '\n')
+                    out += '\n';
+            }
+            if (out.empty())
+                out = "no viewers connected\n";
+            char h[256];
+            int n = std::snprintf(h, sizeof(h),
+                "HTTP/1.1 200 OK\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Content-Type: text/plain; charset=utf-8\r\n"
+                "Content-Length: %zu\r\n"
+                "Connection: close\r\n\r\n", out.size());
+            if (sendAll(fd, h, size_t(n)))
+                sendAll(fd, out.data(), out.size());
             return;
         }
 
@@ -1308,6 +1381,22 @@ public:
             handleFrameDump(bytes, size);
             return;
         }
+        // A viewer's decision journal: 'L', u32 request id, u32 text
+        // length, newline-joined lines.
+        if (size >= 1 + 4 + 4 && bytes[0] == 'L') {
+            uint32_t id, len;
+            std::memcpy(&id, bytes + 1, 4);
+            std::memcpy(&len, bytes + 5, 4);
+            if (size < 9 + size_t(len))
+                return;
+            std::lock_guard<std::mutex> guard(connMutex);
+            if (logCollect && logCollect->id == id) {
+                logCollect->logs.emplace_back(
+                    reinterpret_cast<const char *>(bytes) + 9, len);
+                dumpCv.notify_all();
+            }
+            return;
+        }
         std::vector<uint8_t> data(bytes, bytes + size);
         handleEvent(data);
     }
@@ -1528,4 +1617,10 @@ int SceneStreamServer::requestFrameDumps(int mode, int timeoutMs,
                                          std::vector<ViewerFrameDump> &dumps)
 {
     return ensure()->requestFrameDumps(mode, timeoutMs, dumps);
+}
+
+int SceneStreamServer::requestDecisionLogs(int timeoutMs,
+                                           std::vector<std::string> &logs)
+{
+    return ensure()->requestDecisionLogs(timeoutMs, logs);
 }
