@@ -708,8 +708,51 @@ PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
     // must yield the same plan, or the plan oscillates with itself.
     std::priority_queue<std::pair<float, uint64_t>> heap;
     size_t spent = 0;
+
+    // The floor: every object holds its coarsest tier before any
+    // object holds a finer one. Eviction demotes to coarse, not to
+    // nothing — an object stripped to its box to fund someone else's
+    // exact mesh is invisible the moment the camera pans it back in,
+    // and the camera pans far more often than the budget genuinely
+    // starves. A coarsest rung is a few kilobytes; only when even
+    // those do not fit does the floor itself start dropping objects,
+    // smallest on screen first.
+    {
+        std::vector<std::pair<float, uint64_t>> order;
+        order.reserve(objs.size());
+        for (auto &kv : objs) {
+            if (!kv.second.tiers.empty() && kv.second.tier < 0)
+                order.emplace_back(kv.second.diamPx, kv.first);
+        }
+        std::sort(order.begin(), order.end(),
+                  [](const std::pair<float, uint64_t> &a,
+                     const std::pair<float, uint64_t> &b) {
+                      return a.first != b.first ? a.first > b.first
+                                                : a.second < b.second;
+                  });
+        for (const auto &item : order) {
+            Obj &o = objs[item.second];
+            const float err = o.tiers[0];
+            const size_t cost = tierCost(o, err);
+            if (params.budgetBytes && spent + cost > params.budgetBytes) {
+                o.done = true;
+                ++stats.capped;
+                continue;
+            }
+            for (size_t idx : o.entries) {
+                const auto &entry = snap.deferredChunks[idx];
+                const int rung = rungWithin(entry, err);
+                if (rung > plan[idx])
+                    plan[idx] = rung;
+            }
+            spent += cost;
+            o.tier = 0;
+        }
+    }
+
     for (auto &kv : objs) {
-        if (kv.second.tier + 1 < int(kv.second.tiers.size()))
+        if (!kv.second.done
+            && kv.second.tier + 1 < int(kv.second.tiers.size()))
             heap.emplace(tierScore(kv.second), kv.first);
     }
     while (!heap.empty()) {
@@ -746,6 +789,12 @@ PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
             heap.emplace(tierScore(o), top.second);
     }
     stats.plannedBytes = spent;
+
+    if (params.trace) {
+        for (auto &kv : objs)
+            params.trace(kv.first, kv.second.diamPx, kv.second.tier,
+                         kv.second.tiers.size());
+    }
 
     for (size_t i = 0; i < snap.deferredChunks.size(); ++i) {
         if (plan[i] != kUntouched)

@@ -262,6 +262,38 @@ TEST(PlanLevels, theBudgetHoldsAnObjectBelowItsDesire)
     EXPECT_EQ(stats.plannedBytes, 5000u);
 }
 
+TEST(PlanLevels, evictionDemotesToCoarseNotToNothing)
+{
+    // A near object's appetite for exact must not price an off-screen
+    // neighbor off the scene entirely. Off-screen is where the camera
+    // pans next: stripped to its box it re-enters the view as a grey
+    // box and waits out a round trip; on its coarsest rung it
+    // re-enters as itself. The floor grants every object its cheapest
+    // tier before anyone gets finer.
+    Render::SceneSnapshot snap;
+    auto big = levelEntry(true, true);
+    auto aside = levelEntry(true, true);
+    aside.key = std::string(40, 'q');
+    aside.levels[2].key = aside.key;
+    aside.owners[0] = 2;
+    snap.deferredChunks.push_back(std::move(big));
+    snap.deferredChunks.push_back(std::move(aside));
+    static const float offBox[6] = {49.5f, -0.4f, -0.4f,
+                                    50.5f, 0.4f, 0.4f};
+    Render::RungRanker ranker(
+        levelView(), [](uint64_t key) -> const float * {
+            return key == 1 ? kFarBox : offBox;
+        });
+    // Exactly the on-screen object's whole ladder: without the floor
+    // the greedy spends it all there and the off-screen object stays
+    // a box.
+    Render::planLevels(snap, ranker, params(0.5f, 100000));
+    EXPECT_GE(snap.deferredChunks[1].plan, 0)
+        << "the off-screen object must hold its coarsest rung";
+    EXPECT_EQ(snap.deferredChunks[0].plan, 1)
+        << "the near object pays for the floor out of its finest tier";
+}
+
 TEST(PlanLevels, anObjectsChunksLandOnTheSameRung)
 {
     // The face set and the edge set of one object are separate chunks

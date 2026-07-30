@@ -382,6 +382,8 @@ static size_t geometryBudget();
 static size_t blobCacheBytes();
 static void reportHeap();
 
+static void logStandIns(const Render::SceneSnapshot &snap);
+
 static void interact()
 {
     s_lastInteract = emscripten_get_now();
@@ -2434,6 +2436,7 @@ static void commitSnapshot(Render::SceneSnapshot &&snap, uint64_t version)
     decLog("commit v%llu: %zu draws, %zu overlays",
            (unsigned long long)version, s_snap.scene.size(),
            s_snap.overlays.size());
+    logStandIns(s_snap);
     std::printf("fcviewer: scene update v%llu, %zu draws, %zu overlays\n",
                 (unsigned long long)version, s_snap.scene.size(),
                 s_snap.overlays.size());
@@ -3137,6 +3140,41 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
 /// Assemble a snapshot out of the payloads that have arrived so far.
 /// False means it cannot be applied at all and the caller must ask for
 /// a full scene.
+/// Ground truth for the box hunt: the objects whose scene draws are
+/// stand-ins right now. The plan's own view of who is on the box (the
+/// "plan left" lines) can disagree with this — a draw is a box
+/// whenever its mesh is not resident, whatever the plan says — and
+/// that disagreement is exactly what this line exists to expose.
+/// Logged only when the set changes; assembly runs per arrival.
+static void logStandIns(const Render::SceneSnapshot &snap)
+{
+    static std::set<uint64_t> s_lastStanding;
+    std::set<uint64_t> standing;
+    for (const auto &d : snap.scene) {
+        if (d.standIn && d.objectKey)
+            standing.insert(d.objectKey);
+    }
+    if (standing == s_lastStanding)
+        return;
+    s_lastStanding = standing;
+    if (standing.empty()) {
+        decLog("drawn as box: none");
+        return;
+    }
+    std::string keys;
+    size_t n = 0;
+    for (uint64_t k : standing) {
+        if (n++ >= 16) {
+            keys += " ...";
+            break;
+        }
+        char buf[24];
+        std::snprintf(buf, sizeof(buf), " %llx", (unsigned long long)k);
+        keys += buf;
+    }
+    decLog("drawn as box: %zu objects:%s", standing.size(), keys.c_str());
+}
+
 static bool assembleResolved(Render::SceneSnapshot &snap)
 {
     // The manifest layout stages a group's draws in a fixed slot and
@@ -3156,6 +3194,7 @@ static bool assembleResolved(Render::SceneSnapshot &snap)
     // landed, a box on its bounds if it has not — so this runs per
     // arrival rather than once, and each pass refines the last.
     if (Render::applySceneObjects(snap, s_objects)) {
+        logStandIns(snap);
         if (s_streamDebug) {
             size_t coarse = 0;
             for (const auto &d : snap.scene)
@@ -3535,7 +3574,57 @@ static void planIfStale(Render::SceneSnapshot &target)
     params.budgetBytes = geometryBudget();
     params.tolerancePx = s_lodPx;
     params.viewportPx = float(s_height);
+    /// The objects the plan left on the box, kept for the journal: a
+    /// box that reads as "nearby" on the screen while far neighbors
+    /// hold meshes is either a huge diamPx the greedy still skipped —
+    /// a costing bug — or a tiny diamPx on a visibly large object,
+    /// which is a scoring bug. The journal line tells the two apart.
+    struct Boxed {
+        float diamPx;
+        uint64_t key;
+        size_t tiers;
+    };
+    std::vector<Boxed> boxed;
+    params.trace = [&boxed](uint64_t key, float diamPx, int tier,
+                            size_t tiers) {
+        if (tier < 0)
+            boxed.push_back({diamPx, key, tiers});
+    };
     const auto stats = Render::planLevels(target, ranker, params);
+    if (!boxed.empty()) {
+        std::sort(boxed.begin(), boxed.end(),
+                  [](const Boxed &a, const Boxed &b) {
+                      return a.diamPx > b.diamPx;
+                  });
+        const CamFrame cam = camFrame();
+        decLog("plan left %zu objects on the box (eye %.1f %.1f %.1f), "
+               "largest first:",
+               boxed.size(), double(cam.eye.x), double(cam.eye.y),
+               double(cam.eye.z));
+        const size_t n = std::min<size_t>(boxed.size(), 12);
+        for (size_t i = 0; i < n; ++i) {
+            const float *bb = nullptr;
+            auto it = s_objects.objects.find(boxed[i].key);
+            if (it != s_objects.objects.end())
+                bb = it->second.entry.bbox;
+            else {
+                auto pit = s_pendingBox.find(boxed[i].key);
+                if (pit != s_pendingBox.end())
+                    bb = pit->second.data();
+            }
+            if (bb)
+                decLog("  box obj %llx diam %.1fpx tiers %zu "
+                       "bbox (%.1f %.1f %.1f)-(%.1f %.1f %.1f)",
+                       (unsigned long long)boxed[i].key,
+                       double(boxed[i].diamPx), boxed[i].tiers,
+                       double(bb[0]), double(bb[1]), double(bb[2]),
+                       double(bb[3]), double(bb[4]), double(bb[5]));
+            else
+                decLog("  box obj %llx diam %.1fpx tiers %zu (no bbox)",
+                       (unsigned long long)boxed[i].key,
+                       double(boxed[i].diamPx), boxed[i].tiers);
+        }
+    }
     s_planCapped = stats.capped;
     s_plannedBytes = stats.plannedBytes;
     s_plannedBudget = params.budgetBytes;

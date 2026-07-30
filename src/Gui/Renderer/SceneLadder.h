@@ -214,6 +214,12 @@ struct PlanParams {
     /// Viewport height in pixels, which is what turns a relative error
     /// into a screen-space one.
     float viewportPx = 0.0f;
+    /// Diagnostic tap, called once per planned object after the greedy
+    /// has run: the object's key, its projected diameter in pixels
+    /// (off-screen penalty included), the tier it was granted (-1 is
+    /// the box), and how many tiers it wanted.
+    std::function<void(uint64_t key, float diamPx, int tier,
+                       size_t tiers)> trace;
 };
 
 /// What a plan did, for the one report worth printing: how much of the
