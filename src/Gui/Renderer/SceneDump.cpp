@@ -618,6 +618,11 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
         entry.fill = [mesh, version](SceneSnapshot &, const void *data,
                                      size_t size) {
             uint64_t id = mesh->cacheId;
+            // Every fill REPLACES the arrays under this one cacheId —
+            // that is how a ladder's rungs share a mesh — and a GPU
+            // cache keyed by the id must see that it happened
+            // (MeshData::generation).
+            const uint32_t gen = mesh->generation;
             bool ok = readChunk(data, size, [&mesh, version](Reader &cr) {
                 readMeshChunk(cr, mesh.get(), version);
             });
@@ -632,6 +637,7 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
                 *mesh = OwnedMeshData();
             }
             mesh->cacheId = id;
+            mesh->generation = gen + 1;
             return ok;
         };
         // Geometry has a rung below it, so it is what a viewer short
@@ -641,8 +647,10 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
         // has an id of its own.
         entry.release = [mesh] {
             uint64_t id = mesh->cacheId;
+            const uint32_t gen = mesh->generation;
             *mesh = OwnedMeshData();
             mesh->cacheId = id;
+            mesh->generation = gen + 1;
         };
         snap.deferredChunks.push_back(std::move(entry));
         return mesh;
@@ -1832,6 +1840,9 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
     uint32_t version = st->version;
     c.fill = [mesh, version](SceneSnapshot &, const void *data, size_t size) {
         uint64_t id = mesh->cacheId;
+        // As in readMesh: a fill replaces the arrays under the one
+        // cacheId, and the GPU cache must see it (MeshData::generation).
+        const uint32_t gen = mesh->generation;
         bool ok = readChunk(data, size, [&mesh, version](Reader &cr) {
             readMeshChunk(cr, mesh.get(), version);
         });
@@ -1848,14 +1859,17 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
             *mesh = OwnedMeshData();
         }
         mesh->cacheId = id;
+        mesh->generation = gen + 1;
         return ok;
     };
     // As in readMesh: geometry is the one payload with a coarser rung
     // to fall back to, so it is the one a viewer can give back (§6).
     c.release = [mesh] {
         uint64_t id = mesh->cacheId;
+        const uint32_t gen = mesh->generation;
         *mesh = OwnedMeshData();
         mesh->cacheId = id;
+        mesh->generation = gen + 1;
     };
     snap.deferredChunks.push_back(std::move(c));
     noteChunkOwner(snap, st, key, snap.deferredChunks.size() - 1, owner);

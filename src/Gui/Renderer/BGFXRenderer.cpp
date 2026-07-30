@@ -1177,6 +1177,10 @@ struct GpuMesh
     /// Seam-filtered variant of lineInst (hidden-line hideSeam).
     bgfx::VertexBufferHandle lineNoSeamInst = BGFX_INVALID_HANDLE;
     uint64_t lastUsed = 0;
+    /// MeshData::generation at upload — the arrays this entry was
+    /// built from. A ladder refines its mesh in place under one
+    /// cacheId, so the id alone no longer proves the upload current.
+    uint32_t generation = 0;
 
     void destroy()
     {
@@ -3442,7 +3446,22 @@ public:
     {
         GpuMesh &mesh = meshes[data.cacheId];
         mesh.lastUsed = frame;
+        // "A cache id always refers to identical content" stopped
+        // being true when meshes grew rungs: every level of a ladder
+        // fills ONE mesh object under one cacheId, in place
+        // (docs/SceneStreaming.md §7), and a mesh being drawn is never
+        // idle long enough for the two-frame purge to retire its
+        // upload. Trusting the id alone kept the coarse buffers under
+        // exact-sized index counts — "Insufficient buffer size" from
+        // the driver, a scene whose books said exact while the screen
+        // showed facets. The generation is bumped by every in-place
+        // fill and release; when it moves, the upload is of a mesh
+        // that no longer exists. The shared geometry entry stays for
+        // whoever still matches it and ages out on its own.
+        if (mesh.geom && mesh.generation != data.generation)
+            mesh.destroy();
         if (!mesh.geom) {
+            mesh.generation = data.generation;
             GeomKey key = computeGeomKey(data);
             auto res = geometries.emplace(key, GpuGeometry());
             GpuGeometry &geom = res.first->second;

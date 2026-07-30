@@ -66,6 +66,19 @@ struct MeshData {
     /// above it. Stamped by the bridge from the source registry.
     float levelError = 0.0f;
 
+    /// Bumped every time the arrays behind this mesh are REPLACED in
+    /// place — a level ladder's rungs all fill one mesh object under
+    /// one cacheId (docs/SceneStreaming.md §7), and a release empties
+    /// it the same way. A GPU cache keyed by cacheId must compare this
+    /// before trusting its upload: "a cache id always refers to
+    /// identical content" stopped being true the day meshes grew
+    /// rungs — measured as exact geometry resident in every book while
+    /// the screen kept drawing the coarse upload, with
+    /// "glDrawElementsInstanced: Insufficient buffer size" where the
+    /// refined index counts overran the stale buffers. Zero for
+    /// bridge-built meshes, which really are immutable.
+    uint32_t generation = 0;
+
     int numVertices = 0;
     const float *positions = nullptr;   ///< xyz per vertex, never null
     const float *normals = nullptr;     ///< xyz per vertex, may be null
