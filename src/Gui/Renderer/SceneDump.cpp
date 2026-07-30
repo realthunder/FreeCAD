@@ -3138,16 +3138,32 @@ static bool makeStandIn(Render::DrawCall &box, const Render::DrawCall &tmpl,
 /// vertex mesh would add a second, solid silhouette over the one its
 /// triangles already gave, and neither reads as the wireframe it
 /// replaces; those draws simply wait, as everything did before.
-static void appendAtBestRung(
-    Render::DrawCallList &scene, const Render::DrawCallList &draws,
-    std::map<uint64_t, std::weak_ptr<const Render::MeshData>> *lastGood)
+static void appendAtBestRung(Render::DrawCallList &scene,
+                             const Render::DrawCallList &draws,
+                             Render::SceneObjectModel *model)
 {
     std::set<const Render::MeshData *> stoodIn;
+    /// Role ordinals, counted over EVERY geometry draw whether or not
+    /// it resolved, so the numbering is the same for the list that
+    /// recorded an identity and the re-keyed list that asks for it.
+    std::map<std::pair<uint64_t, int>, uint32_t> ordinals;
     for (const Render::DrawCall &d : draws) {
         const bool contentId = d.mesh && (d.mesh->cacheId >> 63);
+        const uint32_t ordinal = d.mesh
+            ? ordinals[{d.objectKey, int(d.material.type)}]++
+            : 0;
+        const auto role = std::make_tuple(d.objectKey,
+                                          int(d.material.type), ordinal);
         if (meshResident(d)) {
-            if (lastGood && contentId)
-                (*lastGood)[d.mesh->cacheId] = d.mesh;
+            if (model && contentId) {
+                model->lastGood[d.mesh->cacheId] = d.mesh;
+                if (d.objectKey) {
+                    auto &rd = model->lastRole[role];
+                    rd.mesh = d.mesh;
+                    rd.draw = d;
+                    rd.draw.mesh.reset();
+                }
+            }
             scene.push_back(d);
             continue;
         }
@@ -3156,12 +3172,32 @@ static void appendAtBestRung(
         // into the emitted scene only, never into the model's draws:
         // when the fresh object's fill lands, the next assembly emits
         // it and the bridge ends by itself (SceneObjectModel::lastGood).
-        if (lastGood && contentId) {
-            auto it = lastGood->find(d.mesh->cacheId);
-            if (it != lastGood->end()) {
+        if (model && contentId) {
+            auto it = model->lastGood.find(d.mesh->cacheId);
+            if (it != model->lastGood.end()) {
                 auto held = it->second.lock();
                 if (held && held->numVertices > 0 && held->positions) {
                     Render::DrawCall bridged = d;
+                    bridged.mesh = std::move(held);
+                    scene.push_back(std::move(bridged));
+                    continue;
+                }
+            }
+        }
+        // Same content gone too — but the same IDENTITY may still be
+        // live: an edit re-keys the object's meshes, so the
+        // content-addressed bridge cannot answer by construction, and
+        // the object used to drop to its box for the length of two
+        // fetches. The old draw rides whole — arrays are only correct
+        // under their own index ranges and placement — showing the
+        // object as it was until the new geometry lands and the next
+        // assembly ends the bridge (SceneObjectModel::lastRole).
+        if (model && d.objectKey) {
+            auto it = model->lastRole.find(role);
+            if (it != model->lastRole.end()) {
+                auto held = it->second.mesh.lock();
+                if (held && held->numVertices > 0 && held->positions) {
+                    Render::DrawCall bridged = it->second.draw;
                     bridged.mesh = std::move(held);
                     scene.push_back(std::move(bridged));
                     continue;
@@ -3244,6 +3280,14 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
         else
             it = model.lastGood.erase(it);
     }
+    for (auto it = model.lastRole.begin(); it != model.lastRole.end();) {
+        auto held = it->second.mesh.lock();
+        if (held && held->numVertices > 0 && held->positions
+                && model.objects.count(std::get<0>(it->first)))
+            ++it;
+        else
+            it = model.lastRole.erase(it);
+    }
     DrawCallList scene;
     for (const auto &entry : model.objects) {
         const SceneObjectModel::Object &obj = entry.second;
@@ -3266,9 +3310,9 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
                 scene.push_back(std::move(box));
             continue;
         }
-        appendAtBestRung(scene, obj.draws, &model.lastGood);
+        appendAtBestRung(scene, obj.draws, &model);
     }
-    appendAtBestRung(scene, snap.keyless, &model.lastGood);
+    appendAtBestRung(scene, snap.keyless, &model);
     snap.scene = std::move(scene);
     return true;
 }

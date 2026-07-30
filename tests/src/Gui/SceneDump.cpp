@@ -683,6 +683,101 @@ TEST(SceneDump, aDeltaCarriesItsChangedManifestsInline)
     }
 }
 
+/// An edit re-keys the object's meshes, so the content-addressed
+/// bridge (lastGood) cannot answer by construction — and the edited
+/// object used to drop to its box for the length of two fetches.
+/// Identity survives the re-key: the object keeps showing what it was
+/// (SceneObjectModel::lastRole) until the new geometry lands.
+TEST(SceneDump, anEditedObjectStandsOnItsOldGeometryNotItsBox)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> full;
+    ASSERT_TRUE(Render::saveSceneSnapshot(full, snap));
+    Render::SceneObjectModel model;
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(full.data(), full.size(), loaded));
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    // The edit: object 0x2222 gets different geometry — new bytes,
+    // therefore a new content key its viewer has never seen.
+    auto edited = makeMesh(5, 20);
+    for (auto& d : snap.scene) {
+        if (d.objectKey == 0x2222) {
+            d.mesh = edited;
+        }
+    }
+    snap.baseObjects = entries;
+    snap.baseVersion = 1;
+    snap.manifestVersion = 2;
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries2;
+    snap.objectEntries = &entries2;
+    std::vector<uint8_t> delta;
+    ASSERT_TRUE(Render::saveSceneSnapshot(delta, snap));
+
+    Render::SceneSnapshot loaded2;
+    ASSERT_TRUE(Render::loadSceneSnapshot(delta.data(), delta.size(),
+                                          loaded2));
+    // Fill the changed object's manifest first — from the bytes the
+    // delta itself carried (v37) — because its mesh entries only exist
+    // after the group chunk parses. THEN withhold every geometry
+    // payload: the re-keyed meshes are exactly what has not arrived at
+    // the moment a real delta stages.
+    {
+        bool filledInline = false;
+        for (size_t i = 0; i < loaded2.deferredChunks.size(); ++i) {
+            const std::vector<uint8_t> bytes =
+                loaded2.deferredChunks[i].inlineData;
+            if (bytes.empty()) {
+                continue;
+            }
+            auto fill = loaded2.deferredChunks[i].fill;
+            ASSERT_TRUE(bool(fill));
+            loaded2.deferredChunks[i].fill = nullptr;
+            ASSERT_TRUE(fill(loaded2, bytes.data(), bytes.size()));
+            filledInline = true;
+        }
+        ASSERT_TRUE(filledInline);
+    }
+    std::set<std::string> hold;
+    for (const auto& c : loaded2.deferredChunks) {
+        if (c.release && c.fill) {
+            hold.insert(c.key);
+        }
+    }
+    ASSERT_FALSE(hold.empty());
+    ASSERT_TRUE(resolve(loaded2, store, hold));
+    ASSERT_TRUE(Render::applySceneObjects(loaded2, model));
+
+    bool found = false;
+    for (const auto& d : loaded2.scene) {
+        if (d.objectKey != 0x2222) {
+            continue;
+        }
+        found = true;
+        EXPECT_FALSE(d.standIn)
+            << "the edited object must not fall to its box";
+        ASSERT_TRUE(d.mesh);
+        EXPECT_GT(d.mesh->numVertices, 0)
+            << "it stands on the geometry it was last drawn with";
+    }
+    EXPECT_TRUE(found) << "the edited object is still in the scene";
+
+    // The bridge ends by itself: deliver the held payloads and the
+    // new geometry takes over.
+    ASSERT_TRUE(resolveInto(loaded2, store, model));
+    for (const auto& d : loaded2.scene) {
+        if (d.objectKey == 0x2222 && d.mesh) {
+            EXPECT_EQ(d.mesh->numVertices, 20)
+                << "the edit shows once its geometry arrives";
+        }
+    }
+}
+
 /// An object that goes away has to be retired by name: nothing else in
 /// a delta would say it is gone.
 TEST(SceneDump, deltaRetiresObjectsThatWentAway)

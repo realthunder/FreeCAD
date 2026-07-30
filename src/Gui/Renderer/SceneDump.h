@@ -31,6 +31,7 @@
 
 #include <functional>
 #include <map>
+#include <tuple>
 
 #include "Renderer.h"
 
@@ -438,6 +439,30 @@ struct SceneObjectModel {
     /// in place and stops qualifying — eviction still shows the box it
     /// decided on.
     std::map<uint64_t, std::weak_ptr<const MeshData>> lastGood;
+
+    /// The last live geometry per stable ladder identity: objectKey ×
+    /// role, the role being a draw's primitive type and its ordinal
+    /// among the object's same-typed geometry draws. `lastGood` above
+    /// bridges a re-parse of the SAME content; this bridges a
+    /// **re-key** — an edit gives the object new content keys, so the
+    /// content-addressed bridge cannot answer by construction, and the
+    /// edited object dropped to its box for the length of two fetches
+    /// (measured: 600 → 598 draws on a one-object edit). Identity
+    /// survives the re-key, so the object keeps showing what it was
+    /// until the new geometry lands. The whole draw rides, not just
+    /// the mesh: old arrays are only correct under the old index
+    /// ranges and the old placement. Weak mesh, the same rules as
+    /// lastGood — a released mesh empties in place and stops
+    /// qualifying, so eviction still shows the box it decided on.
+    /// (First step of the ladder-identity refactor: the id that will
+    /// own {resident, target, in-flight} outlives any content key.)
+    struct RoleDraw {
+        std::weak_ptr<const MeshData> mesh;
+        /// The draw as last emitted, its mesh pointer cleared (the
+        /// weak one above decides liveness).
+        DrawCall draw;
+    };
+    std::map<std::tuple<uint64_t, int, uint32_t>, RoleDraw> lastRole;
 
     /// How many objects the root named whose geometry has not arrived.
     size_t unresolved() const;
