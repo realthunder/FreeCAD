@@ -2281,6 +2281,29 @@ static void applySnapshot(bool fit)
         std::set<int> ovIds;
         for (const auto &ov : s_snap.overlays) {
             ovIds.insert(ov.id);
+            // A republish re-parses the overlay feed into fresh payload
+            // objects, and for the length of their re-read (a local
+            // cache hit, usually, but a visible frame regardless) the
+            // feed is a cube with no faces or no glyphs. While a
+            // previous feed is on screen, hold it: the renderer keeps
+            // drawing what it was last given, and the new feed goes up
+            // only once every mesh and texture it names is in hand.
+            // Without this the navigation cube blinked once per
+            // announcement of a 62-delta chain.
+            bool whole = true;
+            for (const auto &d : ov.draws) {
+                if ((d.mesh
+                     && !(d.mesh->numVertices > 0 && d.mesh->positions))
+                        || (d.material.texture
+                            && d.material.texture->deferred)) {
+                    whole = false;
+                    break;
+                }
+            }
+            if (!whole && s_overlayIds.count(ov.id)) {
+                decLog("overlay %d held (feed not whole yet)", ov.id);
+                continue;
+            }
             Render::DrawCallList odraws = ov.draws;
             s_renderer->setOverlay(ov.id, std::move(odraws), ov.anchor);
         }
@@ -3227,6 +3250,12 @@ static void commitResolved()
         return;
     }
     pruneBlobCache();
+    // A commit is what the held deltas queue behind (one stages only
+    // once the one before it is in the model): let the next one go.
+    if (!s_heldPayloads.empty() && !s_heldDrainScheduled) {
+        s_heldDrainScheduled = true;
+        emscripten_async_call(drainHeldPayloads, nullptr, 0);
+    }
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -4179,9 +4208,21 @@ static void pumpFetchOnMove()
     static double movedAt = -1.0;
     const float cam[8] = {s_yaw, s_pitch, s_dist, s_center[0], s_center[1],
                           s_center[2], s_panX, s_panY};
+    // Movement worth reacting to, not float inequality: a touch
+    // fling's inertia decays exponentially and keeps the camera
+    // changing by epsilons long after it LOOKS still, so an exact
+    // compare never settles and the planner never runs — "stationary
+    // detection is not reliable", measured as one settle event in a
+    // whole session of spins. The thresholds are far below anything
+    // visible, and comparing against the last ACCEPTED camera means a
+    // slow real drift still accumulates into a move.
+    const float span = std::max(s_dist, 1e-3f);
+    const float eps[8] = {1e-4f, 1e-4f, span * 1e-4f, span * 1e-4f,
+                          span * 1e-4f, span * 1e-4f, span * 1e-4f,
+                          span * 1e-4f};
     bool moved = false;
     for (int i = 0; i < 8; ++i)
-        moved = moved || cam[i] != lastCam[i];
+        moved = moved || std::fabs(cam[i] - lastCam[i]) > eps[i];
     const double now = emscripten_get_now();
     if (moved) {
         std::copy(cam, cam + 8, lastCam);
@@ -4271,12 +4312,25 @@ static bool applyScenePayload(const char *data, size_t size)
         // single-flight window.
         if (!snap.baseVersion)
             s_fullSceneInFlight = false;
-        // A full root staged and still resolving must not be
-        // superseded by the deltas that follow it — they BASE on it,
-        // so they are early, not conflicting: held like any other
-        // early delta and drained once the root commits.
-        const bool rootStaging =
-            s_pendingValid && s_pendingSnap.baseVersion == 0;
+        // A delta at or behind the model is history: the same version
+        // arrives twice on racing delivery paths, and the twin of one
+        // already applied would stage, mis-base against the model that
+        // moved on, and buy a full root for nothing.
+        if (snap.baseVersion && s_haveScene
+                && snap.manifestVersion <= s_objects.version) {
+            decLog("drop stale delta v%llu (model at v%llu)",
+                   (unsigned long long)snap.manifestVersion,
+                   (unsigned long long)s_objects.version);
+            return true;
+        }
+        // ANY publish staged and not yet committed must not be
+        // superseded by a delta — the deltas that follow BASE on it,
+        // and superseding it means the model never advances through
+        // it: the next delta mis-bases and buys a full root. They are
+        // early, not conflicting: held, and drained once the staged
+        // one commits. (A full root may still supersede — it
+        // re-describes everything.)
+        const bool pendingStaging = s_pendingValid;
         size_t manifestsMissing = 0;
         if (snap.baseVersion && s_liveOutstanding) {
             std::set<uint64_t> renamed;
@@ -4302,7 +4356,15 @@ static bool applyScenePayload(const char *data, size_t size)
                 }
             }
         }
-        if (snap.baseVersion && (manifestsMissing || rootStaging)) {
+        // Anything already held queues everything behind it: deltas
+        // are a chain, and a younger delta whose manifests happen to
+        // be in hand must not overtake an older one still waiting —
+        // measured as "delta base v3, holding v2" mis-bases on a fast
+        // link, each buying a resync. (Exempt while draining: the
+        // drain IS the queue moving.)
+        if (snap.baseVersion
+                && (manifestsMissing || pendingStaging
+                    || (!s_drainingHeld && !s_heldPayloads.empty()))) {
             // Early, not wrong: on a slow link the announcements a
             // fresh session provokes arrive faster than the manifests
             // of the publish before them. Hold the delta in chain
@@ -4329,8 +4391,8 @@ static bool applyScenePayload(const char *data, size_t size)
                 if (held.version == snap.manifestVersion)
                     return true;
             }
-            if (rootStaging)
-                decLog("hold delta v%llu behind the staging root "
+            if (pendingStaging)
+                decLog("hold delta v%llu behind the staging publish "
                        "(%zu held)",
                        (unsigned long long)snap.manifestVersion,
                        s_heldPayloads.size() + 1);
@@ -4409,7 +4471,12 @@ static bool applyScenePayload(const char *data, size_t size)
 static void drainHeldPayloads(void *)
 {
     s_heldDrainScheduled = false;
-    if (s_heldPayloads.empty() || s_fullSceneInFlight)
+    // One at a time, and only between commits: a drained delta stages,
+    // and staging the next one on its heels superseded it before the
+    // model advanced — the mis-base this queue exists to prevent,
+    // reintroduced by its own eagerness. The commit of the staged one
+    // schedules the next drain (commitResolved).
+    if (s_heldPayloads.empty() || s_fullSceneInFlight || s_pendingValid)
         return;
     HeldPayload item = std::move(s_heldPayloads.front());
     s_heldPayloads.pop_front();
@@ -4418,12 +4485,6 @@ static void drainHeldPayloads(void *)
     s_drainingHeld = true;
     applyScenePayload(item.bytes.data(), item.bytes.size());
     s_drainingHeld = false;
-    if (!s_heldPayloads.empty()
-            && s_heldPayloads.front().version != item.version
-            && !s_heldDrainScheduled) {
-        s_heldDrainScheduled = true;
-        emscripten_async_call(drainHeldPayloads, nullptr, 0);
-    }
 }
 
 /// JSON control messages pushed by the scene server as WebSocket text
