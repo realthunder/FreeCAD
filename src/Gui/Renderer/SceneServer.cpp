@@ -1333,6 +1333,17 @@ public:
     {
         if (text) {
             std::string json(reinterpret_cast<const char *>(bytes), size);
+            // The viewer's model lost the delta chain and wants the
+            // full current payload — over THIS socket, in order, which
+            // is what makes the repair atomic: the push loop (same
+            // thread) sends the full scene next iteration, and every
+            // later delta bases on it. The HTTP route starves behind
+            // the fetch window's own requests on a saturated link; the
+            // socket is idle.
+            if (json.find("\"cmd\":\"resync\"") != std::string::npos) {
+                conn.sent = 0;
+                return;
+            }
             if (json.find("\"cmd\":\"hello\"") != std::string::npos) {
                 {
                     std::lock_guard<std::mutex> guard(connMutex);

@@ -65,6 +65,79 @@ static size_t s_planCapped = 0;
 static size_t s_plannedBytes = 0;
 static size_t s_plannedBudget = 0;
 
+/// Deltas held back rather than answered with a full root. A delta
+/// blocked by manifests still in flight (the gate in
+/// applyScenePayload) is not bad news — it is EARLY news on a slow
+/// link, where announcements can arrive faster than the manifests of
+/// the publish before them resolve. Asking for a full root there set
+/// off a livelock measured at 178 "Preparing scene…" rounds on a
+/// phone: while the root was in flight every further announcement
+/// mis-based against the stale model and asked for another. So a
+/// blocked delta waits its turn instead: held in arrival order, tiny
+/// by construction, drained the moment the blocking manifests land.
+/// The full root remains the fallback, once, if the hold outlives its
+/// grace — and only one full-root request may ever be in flight.
+struct HeldPayload {
+    uint64_t version = 0;
+    double heldAt = 0.0;
+    std::vector<char> bytes;
+};
+static std::deque<HeldPayload> s_heldPayloads;
+/// Generous: an announcement chain is one delta per publish batch and
+/// a delta is a few kilobytes, so a long chain over a slow link is
+/// exactly the case the hold exists for. Overflow is the last resort.
+static const size_t kHeldPayloadMax = 128;
+/// Long, deliberately: it only starts counting once NOTHING is
+/// filling, and on a link slow enough to starve a 30 s batch timeout
+/// the gaps between batch arrivals alone can span many seconds. A held
+/// announcement costs nothing while it waits; a premature full root
+/// costs the whole manifest layer again.
+static const double kHeldGraceMs = 15000.0;
+/// When ANY payload last filled. The grace measures a STALL, not
+/// slowness: a cold load over a slow link keeps making progress for
+/// minutes — first manifests, then geometry — and lapsing to a full
+/// root while anything at all is landing restarts the very download
+/// that was moving. A held announcement is cosmetic; waiting out a
+/// whole slow load costs nothing but the upgrade it carries.
+static double s_lastFillAt = 0.0;
+static bool s_fullSceneInFlight = false;
+static bool s_heldDrainScheduled = false;
+/// Manifests a held delta is waiting on. They are what gates the whole
+/// chain, they cost a few kilobytes — and left to the ordinary ranking
+/// they can be the LAST thing fetched: a manifest of an off-screen
+/// object scores a thousandth of anything visible, so it sat behind
+/// megabytes of geometry for the length of a load while the held
+/// queue's grace ran out. Blockers jump the queue.
+static std::set<std::string> s_urgentKeys;
+/// Set while a held payload is being re-applied, so a re-block puts it
+/// back at the FRONT — deltas chain, and order is the chain.
+static bool s_drainingHeld = false;
+static void drainHeldPayloads(void * = nullptr);
+static void requestFullScene();
+static void decLog(const char *fmt, ...);
+
+/// The hold's watchdog: as long as the queue is moving, keep watching;
+/// a front that sat through the whole grace is a stall, and the full
+/// root is the honest way out of one. Re-arms itself while anything is
+/// held, so a stall after early progress is still caught.
+static void heldGraceCheck(void *)
+{
+    if (s_heldPayloads.empty())
+        return;
+    const double since = std::max(s_heldPayloads.front().heldAt,
+                                  s_lastFillAt);
+    const double age = emscripten_get_now() - since;
+    if (age < kHeldGraceMs) {
+        emscripten_async_call(heldGraceCheck, nullptr,
+                              int(kHeldGraceMs - age) + 100);
+        return;
+    }
+    decLog("held deltas outlived their grace -> full scene");
+    s_heldPayloads.clear();
+    s_urgentKeys.clear();
+    requestFullScene();
+}
+
 /// The decision journal: every plan, fetch, release, generate, publish
 /// merge and full-scene request, with its reason, timestamped. Always
 /// recorded — a few thousand short lines is nothing next to one mesh —
@@ -3113,6 +3186,8 @@ static void commitResolved()
         s_pendingValid = false;
         s_pendingSnap = Render::SceneSnapshot();
         if (!assembleResolved(snap)) {
+            // A mis-based delta while the root that will supersede it
+            // is already on its way is noise, not a new emergency.
             decLog("full scene: staged delta base v%llu vs model v%llu",
                    (unsigned long long)snap.baseVersion,
                    (unsigned long long)s_objects.version);
@@ -3590,6 +3665,11 @@ static void resolvePending()
             // fills only ever append. The arrays behind this entry are
             // live exactly when the fill parsed real bytes.
             target->deferredChunks[i].filled = ok && !failed;
+            // Progress of any kind, which is what the held deltas'
+            // grace measures a stall against.
+            if (ok && !failed)
+                s_lastFillAt = emscripten_get_now();
+            s_urgentKeys.erase(key);
             if (ok) {
                 progress = true;
                 filled = true;
@@ -3635,6 +3715,24 @@ static void resolvePending()
         s_planStale = true;
         decLog("ladder set grew %zu -> %zu -> replan", knownChunks,
                target->deferredChunks.size());
+    }
+    // Progress is what unblocks a held delta: the manifests it was
+    // early for may just have landed. Only once none are outstanding —
+    // a drain attempt is a re-parse, and re-trying per arrival while
+    // the blockers are plainly still in flight is noise for nothing.
+    // A fresh tick, so the drain never re-enters this resolve.
+    if (filled && !s_heldPayloads.empty() && !s_heldDrainScheduled) {
+        bool blocked = false;
+        for (const auto &entry : target->deferredChunks) {
+            if (entry.fill && !entry.release && !entry.owners.empty()) {
+                blocked = true;
+                break;
+            }
+        }
+        if (!blocked) {
+            s_heldDrainScheduled = true;
+            emscripten_async_call(drainHeldPayloads, nullptr, 0);
+        }
     }
     if (incomplete) {
         // A payload could not be obtained or would not parse. This
@@ -3788,8 +3886,14 @@ static void resolvePending()
             viewPending = viewPending || entry.owners.empty();
             if (s_blobInFlight.count(entry.key))
                 continue;
-            want.emplace_back(s_noFetchOrder ? 0.0f
-                                             : order.acquisition(entry), i);
+            // A manifest a held delta waits on outranks everything the
+            // camera merely wants to look at (see s_urgentKeys).
+            want.emplace_back(
+                s_noFetchOrder ? 0.0f
+                : s_urgentKeys.count(entry.key)
+                    ? std::numeric_limits<float>::max()
+                    : order.acquisition(entry),
+                i);
         }
         // Ties keep publish order, which is the order the objects were
         // named in: a scene the camera has no opinion about (nothing
@@ -4137,6 +4241,9 @@ static bool applyScenePayload(const char *data, size_t size)
             s_sessionId = snap.sessionId;
             s_objects = Render::SceneObjectModel();
             s_sceneVersion = 0;
+            // Deltas held from the old session chain to nothing now.
+            s_heldPayloads.clear();
+            s_urgentKeys.clear();
         }
         // The WebSocket push loop re-sends the current scene on connect;
         // skip the echo of a version already applied (the initial HTTP
@@ -4159,6 +4266,17 @@ static bool applyScenePayload(const char *data, size_t size)
         // without that precision, each announcement in a chain reset
         // the scene while the previous one's manifests were in flight,
         // which is the "Preparing scene…" flashing loop.
+        // The answer to a resync is an ordinary full payload on the
+        // socket; it arriving — by either route — is what ends the
+        // single-flight window.
+        if (!snap.baseVersion)
+            s_fullSceneInFlight = false;
+        // A full root staged and still resolving must not be
+        // superseded by the deltas that follow it — they BASE on it,
+        // so they are early, not conflicting: held like any other
+        // early delta and drained once the root commits.
+        const bool rootStaging =
+            s_pendingValid && s_pendingSnap.baseVersion == 0;
         size_t manifestsMissing = 0;
         if (snap.baseVersion && s_liveOutstanding) {
             std::set<uint64_t> renamed;
@@ -4180,18 +4298,58 @@ static bool applyScenePayload(const char *data, size_t size)
                                entry.key.c_str(),
                                (unsigned long long)entry.owners[0]);
                     ++manifestsMissing;
+                    s_urgentKeys.insert(entry.key);
                 }
             }
         }
-        if (snap.baseVersion && manifestsMissing) {
-            decLog("full scene: delta v%llu over %zu live manifests",
-                   (unsigned long long)snap.manifestVersion,
-                   manifestsMissing);
-            std::printf("fcviewer: delta v%llu arrived with %zu manifest "
-                        "payloads still missing — asking for a full scene\n",
-                        (unsigned long long)snap.manifestVersion,
-                        manifestsMissing);
-            requestFullScene();
+        if (snap.baseVersion && (manifestsMissing || rootStaging)) {
+            // Early, not wrong: on a slow link the announcements a
+            // fresh session provokes arrive faster than the manifests
+            // of the publish before them. Hold the delta in chain
+            // order and drain it when the blocking manifests land —
+            // answering with a full root here set off a livelock
+            // measured at 178 "Preparing scene…" rounds on a phone.
+            if (s_fullSceneInFlight) {
+                decLog("drop delta v%llu (full scene in flight)",
+                       (unsigned long long)snap.manifestVersion);
+                return true;
+            }
+            if (s_heldPayloads.size() >= kHeldPayloadMax) {
+                decLog("held queue full at v%llu -> full scene",
+                       (unsigned long long)snap.manifestVersion);
+                s_heldPayloads.clear();
+                s_urgentKeys.clear();
+                requestFullScene();
+                return true;
+            }
+            // The same version can arrive twice (two delivery paths
+            // race after a reconnect); one copy of the chain is the
+            // chain.
+            for (const auto &held : s_heldPayloads) {
+                if (held.version == snap.manifestVersion)
+                    return true;
+            }
+            if (rootStaging)
+                decLog("hold delta v%llu behind the staging root "
+                       "(%zu held)",
+                       (unsigned long long)snap.manifestVersion,
+                       s_heldPayloads.size() + 1);
+            else
+                decLog("hold delta v%llu behind %zu manifests (%zu held)",
+                       (unsigned long long)snap.manifestVersion,
+                       manifestsMissing, s_heldPayloads.size() + 1);
+            HeldPayload held;
+            held.version = snap.manifestVersion;
+            held.heldAt = emscripten_get_now();
+            held.bytes.assign(data, data + size);
+            const bool first = s_heldPayloads.empty();
+            if (s_drainingHeld)
+                s_heldPayloads.push_front(std::move(held));
+            else
+                s_heldPayloads.push_back(std::move(held));
+            if (first)
+                emscripten_async_call(heldGraceCheck, nullptr,
+                                      int(kHeldGraceMs) + 100);
             return true;
         }
         decLog("staged v%llu%s: %zu updates, %zu removed",
@@ -4241,6 +4399,31 @@ static bool applyScenePayload(const char *data, size_t size)
         std::printf("fcviewer: scene update parse FAILED\n");
     }
     return false;
+}
+
+/// Re-apply the oldest held delta now that something changed. One per
+/// call: if it re-blocks it goes back to the front and the next fill
+/// progress tries again; if it applies, the next held payload rides
+/// the next tick, after this one's own manifests have had their
+/// chance.
+static void drainHeldPayloads(void *)
+{
+    s_heldDrainScheduled = false;
+    if (s_heldPayloads.empty() || s_fullSceneInFlight)
+        return;
+    HeldPayload item = std::move(s_heldPayloads.front());
+    s_heldPayloads.pop_front();
+    decLog("drain held delta v%llu (%zu still held)",
+           (unsigned long long)item.version, s_heldPayloads.size());
+    s_drainingHeld = true;
+    applyScenePayload(item.bytes.data(), item.bytes.size());
+    s_drainingHeld = false;
+    if (!s_heldPayloads.empty()
+            && s_heldPayloads.front().version != item.version
+            && !s_heldDrainScheduled) {
+        s_heldDrainScheduled = true;
+        emscripten_async_call(drainHeldPayloads, nullptr, 0);
+    }
 }
 
 /// JSON control messages pushed by the scene server as WebSocket text
@@ -4589,6 +4772,7 @@ static void onInitFetchProgress(emscripten_fetch_t *fetch)
 
 static void onInitFetchDone(emscripten_fetch_t *fetch)
 {
+    s_fullSceneInFlight = false;
     if (fetch->status == 200 && fetch->numBytes > 8) {
         s_initialPayload.assign(fetch->data, fetch->data + fetch->numBytes);
         emscripten_fetch_close(fetch);
@@ -4611,6 +4795,7 @@ static void onInitFetchDone(emscripten_fetch_t *fetch)
 
 static void onInitFetchError(emscripten_fetch_t *fetch)
 {
+    s_fullSceneInFlight = false;
     emscripten_fetch_close(fetch);
     if (s_haveScene)
         fcviewer_status(nullptr, 0.0, 0.0);
@@ -4662,8 +4847,19 @@ static void fetchBuildStamp()
 /// half of the phase (docs/SceneStreaming.md §5).
 static void requestFullScene()
 {
-    decLog("full scene requested (holding v%llu)",
-           (unsigned long long)s_objects.version);
+    // One in flight, ever: the storm this guards against was every
+    // mis-based delta of an announcement chain asking for another
+    // root while the first was still downloading — 178 requests, 20
+    // seconds of "Preparing scene…", measured on a phone.
+    if (s_fullSceneInFlight) {
+        decLog("full scene already in flight (holding v%llu)",
+               (unsigned long long)s_objects.version);
+        return;
+    }
+    s_fullSceneInFlight = true;
+    decLog("full scene requested (holding v%llu)%s",
+           (unsigned long long)s_objects.version,
+           s_wsOpen ? " via ws resync" : " via http");
     // The model is deliberately NOT wiped: a full root retires what it
     // does not name and re-takes what it renames as the groups fill
     // (applySceneObjects), and until then the old draws are the bridge
@@ -4676,6 +4872,18 @@ static void requestFullScene()
     s_liveUnapplied = false;
     s_sceneVersion = 0;
     s_haveScene = false;
+    // Over the socket when there is one: the push loop answers with
+    // the full current payload IN ORDER, so every later delta bases on
+    // it — the repair is atomic. The HTTP route (the fallback) shares
+    // the origin's connection pool with the fetch window and can
+    // starve behind its own geometry requests for the length of a
+    // load, which is how one full-root request became a hang.
+    if (s_wsOpen) {
+        fcviewer_status("Preparing scene\xe2\x80\xa6", 0.0, 0.0);
+        static const char resync[] = "{\"cmd\":\"resync\"}";
+        emscripten_websocket_send_utf8_text(s_ws, const_cast<char *>(resync));
+        return;
+    }
     emscripten_fetch_attr_t attr;
     emscripten_fetch_attr_init(&attr);
     std::strcpy(attr.requestMethod, "GET");
