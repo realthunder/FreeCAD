@@ -214,7 +214,17 @@ public:
         std::vector<uint64_t> gone(removed.begin(), removed.end());
 
         std::vector<uint8_t> out;
-        if (!spliceObjectDelta(payload, spans, held, entries, gone, out))
+        // The changed manifests ride inline (v37): they are new by
+        // definition, so no viewer cache ever answers for them, and the
+        // store is right here. Held under \a mutex like everything else
+        // in this call.
+        if (!spliceObjectDelta(
+                payload, spans, held, entries, gone, out,
+                [this](const std::string &key)
+                    -> const std::vector<uint8_t> * {
+                    auto it = blobs.find(key);
+                    return it == blobs.end() ? nullptr : &it->second;
+                }))
             return payload;
         return out;
     }

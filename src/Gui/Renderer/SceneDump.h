@@ -260,6 +260,17 @@ struct SceneSnapshot {
         /// carried entry keeps it, which is exactly what carrying is
         /// for.
         bool filled = false;
+        /// The payload itself, riding in the root that named it (v37,
+        /// docs/SceneStreaming.md §5). Only a delta's group manifests
+        /// do this: they are new by definition — an object is in the
+        /// delta exactly because its manifest key changed — so a cache
+        /// can never answer for them, and fetching a kilobyte by round
+        /// trip is what made every delta a chain of waits. A consumer
+        /// ingests the bytes under `key` (store included) and then
+        /// treats the entry like any other; empty means fetch as
+        /// usual. Leaves (meshes, materials, textures) and full roots
+        /// stay by reference — their keys usually ARE cached.
+        std::vector<uint8_t> inlineData;
     };
     std::vector<DeferredChunk> deferredChunks;
 
@@ -484,13 +495,22 @@ RendererExport void diffObjectLists(
 ///
 /// The result is applicable by a consumer holding exactly
 /// \a baseVersion — the same contract as a natively serialized delta.
+///
+/// \a bytesFor answers a group manifest's content key with its stored
+/// bytes, or null; what it answers rides INLINE in the delta (v37,
+/// DeferredChunk::inlineData), so the consumer never round-trips for a
+/// manifest that is new by definition. Empty means every entry goes by
+/// reference — still a valid v37 delta, just a slower one.
+typedef std::function<const std::vector<uint8_t> *(const std::string &)>
+    ChunkBytesFor;
 RendererExport bool spliceObjectDelta(
         const std::vector<uint8_t> &full,
         const SceneSnapshot::RootSpans &spans,
         uint64_t baseVersion,
         const std::vector<SceneSnapshot::ObjectEntry> &changed,
         const std::vector<uint64_t> &removed,
-        std::vector<uint8_t> &out);
+        std::vector<uint8_t> &out,
+        const ChunkBytesFor &bytesFor = {});
 
 RendererExport bool saveSceneSnapshot(const char *path,
                                       const SceneSnapshot &snap);

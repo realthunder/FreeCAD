@@ -106,7 +106,16 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     generator existing; the consumer records the ladder and still
 //     fetches the finest built level, which today is always the exact
 //     mesh, so behaviour is unchanged until slices 3 and 4 land.
-const uint32_t kVersion = 36;
+// 37: a delta's object section carries each changed object's group
+//     manifest INLINE after its reference (u8 flag, then the chunk
+//     bytes). A delta's manifests are new by definition — the object
+//     is in the delta exactly because its manifest key changed — so no
+//     cache ever answers for them, and fetching them by round trip is
+//     what a delta's staging used to be gated on. The consumer ingests
+//     the bytes under their key and stages unconditionally. Full
+//     roots and leaves stay by reference (their keys usually ARE
+//     cached).
+const uint32_t kVersion = 37;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -1566,7 +1575,8 @@ void writeGroupChunk(Writer &w, const DrawRefs &draws, uint64_t objectKey,
 /// writing, because the root names a scene object's group in an entry
 /// that a delta may or may not go on to send.
 bool storeGroup(const DrawRefs &draws, uint64_t objectKey,
-                ManifestWriter &st, SceneSnapshot::ObjectEntry &entry)
+                ManifestWriter &st, SceneSnapshot::ObjectEntry &entry,
+                std::vector<uint8_t> *keep = nullptr)
 {
     std::vector<uint8_t> chunk;
     if (!writeChunk(chunk, [&](Writer &cw) {
@@ -1577,6 +1587,10 @@ bool storeGroup(const DrawRefs &draws, uint64_t objectKey,
     groupBBox(draws, entry.bbox);
     entry.key = sha1Hex(chunk.data(), chunk.size());
     entry.size = uint32_t(chunk.size());
+    // A delta serializer needs the bytes again after the sink has
+    // them: the changed entries ride inline (v37).
+    if (keep)
+        *keep = chunk;
     st.snap->chunkBlobs(entry.key, std::move(chunk));
     return true;
 }
@@ -1629,10 +1643,19 @@ void groupScene(const DrawCallList &scene,
 /// carries. One shape for both forms — a full list is the one that
 /// retires nothing and carries everything, which is why a consumer
 /// needs `baseVersion`, not the section, to tell them apart.
+///
+/// \a bytesFor non-null marks the DELTA form (v37): each carried entry
+/// is followed by a flag and, when the provider answers, the group
+/// manifest's own bytes. The reader keys the flag's presence off
+/// baseVersion, so the caller must pass a provider exactly when the
+/// payload will say it is a delta — an empty answer for a key is fine
+/// (that entry goes by reference), a missing provider on a delta is a
+/// format error the reader cannot detect.
 template<typename EntryPtr>
 void writeObjectSection(Writer &w,
                         const std::vector<uint64_t> &removed,
-                        const std::vector<EntryPtr> &carried)
+                        const std::vector<EntryPtr> &carried,
+                        const ChunkBytesFor *bytesFor = nullptr)
 {
     w.u32(uint32_t(removed.size()));
     for (uint64_t key : removed)
@@ -1643,6 +1666,13 @@ void writeObjectSection(Writer &w,
         w.u64(e.objectKey);
         w.floats(e.bbox, 6);
         writeGroupRef(w, e);
+        if (bytesFor) {
+            const std::vector<uint8_t> *bytes =
+                *bytesFor ? (*bytesFor)(e.key) : nullptr;
+            w.u8(bytes ? 1 : 0);
+            if (bytes)
+                w.bytes(*bytes);
+        }
     }
 }
 
@@ -1690,12 +1720,13 @@ void diffObjectPtrs(const std::vector<SceneSnapshot::ObjectEntry> &from,
 /// The difference against \a base.
 void writeObjectDelta(Writer &w,
                       const std::vector<SceneSnapshot::ObjectEntry> &entries,
-                      const std::vector<SceneSnapshot::ObjectEntry> &base)
+                      const std::vector<SceneSnapshot::ObjectEntry> &base,
+                      const ChunkBytesFor &bytesFor)
 {
     std::vector<uint64_t> removed;
     std::vector<const SceneSnapshot::ObjectEntry *> changed;
     diffObjectPtrs(base, entries, changed, removed);
-    writeObjectSection(w, removed, changed);
+    writeObjectSection(w, removed, changed, &bytesFor);
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -2293,12 +2324,20 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         // publisher does not already hold.
         std::vector<SceneSnapshot::ObjectEntry> entries;
         entries.reserve(byKey.size());
+        // A delta carries its changed manifests inline (v37); the sink
+        // has the bytes but never gives them back, so keep a copy of
+        // each while it is in hand.
+        std::map<std::string, std::vector<uint8_t>> chunkCopies;
         for (const auto &group : byKey) {
             SceneSnapshot::ObjectEntry entry;
-            if (!storeGroup(group.second, group.first, mst, entry)) {
+            std::vector<uint8_t> copy;
+            if (!storeGroup(group.second, group.first, mst, entry,
+                            snap.baseVersion ? &copy : nullptr)) {
                 w.ok = false;
                 break;
             }
+            if (snap.baseVersion)
+                chunkCopies[entry.key] = std::move(copy);
             entries.push_back(std::move(entry));
         }
 
@@ -2307,7 +2346,13 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         if (!snap.baseVersion)
             writeObjectList(w, entries);
         else
-            writeObjectDelta(w, entries, snap.baseObjects);
+            writeObjectDelta(w, entries, snap.baseObjects,
+                             [&](const std::string &key)
+                                 -> const std::vector<uint8_t> * {
+                                 auto it = chunkCopies.find(key);
+                                 return it == chunkCopies.end()
+                                     ? nullptr : &it->second;
+                             });
         if (snap.rootSpans)
             snap.rootSpans->listEnd = w.pos();
         if (snap.objectEntries)
@@ -2691,7 +2736,20 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             // The group's key is what readGroup consumes next; keep it
             // so the model can tell an unchanged object from a changed
             // one without re-reading the chunk.
+            const size_t before = snap.deferredChunks.size();
             readGroup(r, snap, st, t, &up.entry);
+            // v37: a delta rides each changed manifest's bytes right
+            // behind its reference. They land on the entry readGroup
+            // just deferred; the consumer ingests them under the key
+            // (store included) instead of fetching a payload that no
+            // cache has ever seen.
+            if (version >= 37 && snap.baseVersion && r.ok && r.u8()) {
+                std::vector<uint8_t> bytes;
+                r.bytes(bytes);
+                if (r.ok && snap.deferredChunks.size() > before)
+                    snap.deferredChunks.back().inlineData =
+                        std::move(bytes);
+            }
             snap.objectUpdates.push_back(std::move(up));
         }
         if (r.ok) {
@@ -3234,7 +3292,8 @@ bool Render::spliceObjectDelta(
         uint64_t baseVersion,
         const std::vector<SceneSnapshot::ObjectEntry> &changed,
         const std::vector<uint64_t> &removed,
-        std::vector<uint8_t> &out)
+        std::vector<uint8_t> &out,
+        const ChunkBytesFor &bytesFor)
 {
     // A splice is only ever as sound as the spans, and they come from a
     // different call than this one: refuse rather than produce a
@@ -3251,7 +3310,7 @@ bool Render::spliceObjectDelta(
     refs.reserve(changed.size());
     for (const auto &e : changed)
         refs.push_back(&e);
-    writeObjectSection(w, removed, refs);
+    writeObjectSection(w, removed, refs, &bytesFor);
     if (!w.ok)
         return false;
 

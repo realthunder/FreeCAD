@@ -603,6 +603,86 @@ TEST(SceneDump, deltaCarriesOnlyWhatChanged)
     }
 }
 
+/// A delta's changed manifests ride inline (v37). They are new by
+/// definition — an object is in the delta exactly because its manifest
+/// key changed — so no cache ever answers for them, and fetching them
+/// by round trip is what a delta's staging used to be gated on. Full
+/// roots stay by reference: their keys usually ARE cached.
+TEST(SceneDump, aDeltaCarriesItsChangedManifestsInline)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> full;
+    ASSERT_TRUE(Render::saveSceneSnapshot(full, snap));
+
+    Render::SceneObjectModel model;
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(full.data(), full.size(), loaded));
+    for (const auto& c : loaded.deferredChunks) {
+        EXPECT_TRUE(c.inlineData.empty())
+            << "a full root goes by reference (the store is warm)";
+    }
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    // Repaint one object: the delta must carry that object's manifest
+    // bytes, and they must be exactly what the key names.
+    for (auto& d : snap.scene) {
+        if (d.objectKey == 0x2222) {
+            d.material.diffuse = 0x9abcdef0;
+        }
+    }
+    snap.baseObjects = entries;
+    snap.baseVersion = 1;
+    snap.manifestVersion = 2;
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries2;
+    snap.objectEntries = &entries2;
+    std::vector<uint8_t> delta;
+    ASSERT_TRUE(Render::saveSceneSnapshot(delta, snap));
+
+    Render::SceneSnapshot loaded2;
+    ASSERT_TRUE(Render::loadSceneSnapshot(delta.data(), delta.size(),
+                                          loaded2));
+    ASSERT_EQ(loaded2.objectUpdates.size(), 1u);
+    const std::string want = loaded2.objectUpdates[0].entry.key;
+    size_t inlined = 0;
+    for (size_t i = 0; i < loaded2.deferredChunks.size(); ++i) {
+        // Copy out before filling: a group's fill appends its meshes
+        // and materials, and no reference into the vector survives it.
+        const std::vector<uint8_t> bytes =
+            loaded2.deferredChunks[i].inlineData;
+        if (bytes.empty()) {
+            continue;
+        }
+        ++inlined;
+        EXPECT_EQ(loaded2.deferredChunks[i].key, want)
+            << "only the changed object's manifest rides inline";
+        EXPECT_EQ(Render::sha1Hex(bytes.data(), bytes.size()),
+                  loaded2.deferredChunks[i].key)
+            << "the inline bytes must be exactly what the key names";
+        // Ingest the way the viewer does: fill from the payload
+        // itself, no store answer needed for the manifest.
+        auto fill = loaded2.deferredChunks[i].fill;
+        ASSERT_TRUE(bool(fill));
+        loaded2.deferredChunks[i].fill = nullptr;
+        ASSERT_TRUE(fill(loaded2, bytes.data(), bytes.size()));
+    }
+    EXPECT_EQ(inlined, 1u) << "exactly the changed object's manifest";
+    // The leaves it names — meshes, materials — still come by
+    // reference, out of the store.
+    ASSERT_TRUE(resolveInto(loaded2, store, model));
+    expectScene(loaded2);
+    for (const auto& d : loaded2.scene) {
+        if (d.objectKey == 0x2222) {
+            EXPECT_EQ(d.material.diffuse, 0x9abcdef0u);
+        }
+    }
+}
+
 /// An object that goes away has to be retired by name: nothing else in
 /// a delta would say it is gone.
 TEST(SceneDump, deltaRetiresObjectsThatWentAway)
@@ -778,12 +858,27 @@ TEST(SceneDump, aSplicedDeltaIsTheDeltaTheWriterWouldHaveWritten)
     EXPECT_EQ(changed[0].objectKey, 0x2222u);
     EXPECT_TRUE(removed.empty());
 
+    // The server answers manifest bytes from its store (v37): with the
+    // same bytes the native writer inlined, the splice reproduces it
+    // byte for byte.
+    auto bytesFor =
+        [&store](const std::string& key) -> const std::vector<uint8_t>* {
+        auto it = store.blobs.find(key);
+        return it == store.blobs.end() ? nullptr : &it->second;
+    };
     std::vector<uint8_t> spliced;
     ASSERT_TRUE(Render::spliceObjectDelta(full2, spans, 1, changed, removed,
-                                          spliced));
+                                          spliced, bytesFor));
     EXPECT_EQ(spliced, native)
         << "a spliced delta must be byte-identical to a written one";
-    EXPECT_LT(spliced.size(), full2.size());
+    // A delta saves the UNCHANGED objects' entries but carries the
+    // changed ones' manifests inline (v37), so at two objects it can
+    // outweigh its root — the saving is round trips, and bytes only on
+    // scenes where unchanged objects dominate, which is what deltas
+    // are for. What must still hold: the section grew by no more than
+    // the one inline manifest and its framing.
+    EXPECT_LT(spliced.size(),
+              full2.size() + changed[0].size + 16);
 
     // And it applies onto a model holding exactly what it is against.
     Render::SceneSnapshot loaded2;

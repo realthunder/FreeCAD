@@ -102,13 +102,6 @@ static const double kHeldGraceMs = 15000.0;
 static double s_lastFillAt = 0.0;
 static bool s_fullSceneInFlight = false;
 static bool s_heldDrainScheduled = false;
-/// Manifests a held delta is waiting on. They are what gates the whole
-/// chain, they cost a few kilobytes — and left to the ordinary ranking
-/// they can be the LAST thing fetched: a manifest of an off-screen
-/// object scores a thousandth of anything visible, so it sat behind
-/// megabytes of geometry for the length of a load while the held
-/// queue's grace ran out. Blockers jump the queue.
-static std::set<std::string> s_urgentKeys;
 /// Set while a held payload is being re-applied, so a re-block puts it
 /// back at the FRONT — deltas chain, and order is the chain.
 static bool s_drainingHeld = false;
@@ -134,7 +127,6 @@ static void heldGraceCheck(void *)
     }
     decLog("held deltas outlived their grace -> full scene");
     s_heldPayloads.clear();
-    s_urgentKeys.clear();
     requestFullScene();
 }
 
@@ -3879,7 +3871,6 @@ static void resolvePending()
             // grace measures a stall against.
             if (ok && !failed)
                 s_lastFillAt = emscripten_get_now();
-            s_urgentKeys.erase(key);
             if (ok) {
                 progress = true;
                 filled = true;
@@ -4104,14 +4095,9 @@ static void resolvePending()
             viewPending = viewPending || entry.owners.empty();
             if (s_blobInFlight.count(entry.key))
                 continue;
-            // A manifest a held delta waits on outranks everything the
-            // camera merely wants to look at (see s_urgentKeys).
-            want.emplace_back(
-                s_noFetchOrder ? 0.0f
-                : s_urgentKeys.count(entry.key)
-                    ? std::numeric_limits<float>::max()
-                    : order.acquisition(entry),
-                i);
+            want.emplace_back(s_noFetchOrder ? 0.0f
+                                             : order.acquisition(entry),
+                              i);
         }
         // Ties keep publish order, which is the order the objects were
         // named in: a scene the camera has no opinion about (nothing
@@ -4485,7 +4471,6 @@ static bool applyScenePayload(const char *data, size_t size)
             s_sceneVersion = 0;
             // Deltas held from the old session chain to nothing now.
             s_heldPayloads.clear();
-            s_urgentKeys.clear();
         }
         // The WebSocket push loop re-sends the current scene on connect;
         // skip the echo of a version already applied (the initial HTTP
@@ -4532,30 +4517,24 @@ static bool applyScenePayload(const char *data, size_t size)
         // one commits. (A full root may still supersede — it
         // re-describes everything.)
         const bool pendingStaging = s_pendingValid;
-        size_t manifestsMissing = 0;
-        if (snap.baseVersion && s_liveOutstanding) {
-            std::set<uint64_t> renamed;
-            for (const auto &up : snap.objectUpdates)
-                renamed.insert(up.entry.objectKey);
-            for (uint64_t key : snap.objectsRemoved)
-                renamed.insert(key);
+        // The one manifest-layer hold that inline deltas (v37) cannot
+        // retire: a FULL ROOT still filling its manifests. A delta
+        // carries its own manifests, so nothing of ITS layer is ever
+        // in flight — but the root's un-redescribed objects' manifests
+        // are per-parse state, and staging over them strands those
+        // objects at their boxes for the rest of the session. So a
+        // delta waits for the cold or resync root to finish its
+        // manifest layer, under the same grace as every other hold.
+        size_t rootManifests = 0;
+        if (snap.baseVersion && s_liveOutstanding && !s_snap.baseVersion) {
             for (const auto &entry : s_snap.deferredChunks) {
-                if (!entry.fill || entry.release || entry.owners.empty())
-                    continue;
-                bool superseded = true;
-                for (uint64_t owner : entry.owners)
-                    superseded = superseded && renamed.count(owner) != 0;
-                if (!superseded) {
-                    if (!manifestsMissing)
-                        decLog("delta v%llu blocked by %.8s (obj %llx not "
-                               "re-described)",
-                               (unsigned long long)snap.manifestVersion,
-                               entry.key.c_str(),
-                               (unsigned long long)entry.owners[0]);
-                    ++manifestsMissing;
-                    s_urgentKeys.insert(entry.key);
-                }
+                if (entry.fill && !entry.release && !entry.owners.empty())
+                    ++rootManifests;
             }
+            if (rootManifests)
+                decLog("delta v%llu behind the root's %zu manifests",
+                       (unsigned long long)snap.manifestVersion,
+                       rootManifests);
         }
         // Anything already held queues everything behind it: deltas
         // are a chain, and a younger delta whose manifests happen to
@@ -4564,7 +4543,7 @@ static bool applyScenePayload(const char *data, size_t size)
         // link, each buying a resync. (Exempt while draining: the
         // drain IS the queue moving.)
         if (snap.baseVersion
-                && (manifestsMissing || pendingStaging
+                && (rootManifests || pendingStaging
                     || (!s_drainingHeld && !s_heldPayloads.empty()))) {
             // Early, not wrong: on a slow link the announcements a
             // fresh session provokes arrive faster than the manifests
@@ -4581,7 +4560,6 @@ static bool applyScenePayload(const char *data, size_t size)
                 decLog("held queue full at v%llu -> full scene",
                        (unsigned long long)snap.manifestVersion);
                 s_heldPayloads.clear();
-                s_urgentKeys.clear();
                 requestFullScene();
                 return true;
             }
@@ -4598,9 +4576,10 @@ static bool applyScenePayload(const char *data, size_t size)
                        (unsigned long long)snap.manifestVersion,
                        s_heldPayloads.size() + 1);
             else
-                decLog("hold delta v%llu behind %zu manifests (%zu held)",
+                decLog("hold delta v%llu behind the root's %zu manifests "
+                       "(%zu held)",
                        (unsigned long long)snap.manifestVersion,
-                       manifestsMissing, s_heldPayloads.size() + 1);
+                       rootManifests, s_heldPayloads.size() + 1);
             HeldPayload held;
             held.version = snap.manifestVersion;
             held.heldAt = emscripten_get_now();
@@ -4627,6 +4606,32 @@ static bool applyScenePayload(const char *data, size_t size)
         s_pendingSnap = std::move(snap);
         s_pendingVersion = version;
         s_pendingValid = true;
+        // A delta's group manifests ride in the payload itself (v37):
+        // ingest them under their keys — cache, store and all, exactly
+        // as if the network had just answered — so the resolve below
+        // fills them in the same tick and the delta stages without a
+        // single manifest round trip. New by definition, so this never
+        // duplicates a fetch; the guard only folds the N resolves into
+        // the one that follows.
+        {
+            size_t inlined = 0;
+            s_batchApplying = true;
+            for (auto &entry : s_pendingSnap.deferredChunks) {
+                if (entry.inlineData.empty())
+                    continue;
+                blobResolved(entry.key,
+                             std::make_shared<std::vector<uint8_t>>(
+                                 std::move(entry.inlineData)),
+                             false);
+                entry.inlineData.clear();
+                ++inlined;
+            }
+            s_batchApplying = false;
+            if (inlined)
+                decLog("v%llu carried %zu manifests inline",
+                       (unsigned long long)s_pendingSnap.manifestVersion,
+                       inlined);
+        }
         // A publish staging is a plan event: the ladder set is about
         // to change, and the fetch order below wants targets drawn
         // against it (§7).

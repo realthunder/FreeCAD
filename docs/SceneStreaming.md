@@ -145,7 +145,8 @@ inline volatile state:
     AO, PBR, bump, light, volumetric, water, bloom, presel/sel styling,
     debug config, autozoom/effect/ssao resolution        (~410 B total)
 hatch:    key
-objects:  [ objectKey u64, objectManifestKey, bbox[6], flags ]
+objects:  [ objectKey u64, objectManifestKey, bbox[6], flags,
+            (delta only, v37) manifest bytes inline ]
 overlays: [ id, anchor, objectManifestKey ]
 ```
 
@@ -241,6 +242,27 @@ since been retired, and the two-generation blob roll stays correct as it is.
 The ring depth is therefore a bandwidth choice and never a correctness one: a
 viewer that has fallen out of it, or holds nothing, or came from another
 session, gets the payload whole — the same bytes, minus the narrowing.
+
+**A delta's group manifests ride inline (v37).** An object is in a delta
+exactly because its manifest key changed, so those chunks are new by definition
+and no cache — memory, IndexedDB, browser — has ever seen them: every one was a
+guaranteed round trip, and the delta could not finish staging until the last of
+them landed. That wait is what an entire layer of viewer machinery existed to
+manage — deltas held behind manifests still in flight, blockers jumping the
+fetch queue (`s_urgentKeys`), the precise "is every outstanding manifest's
+owner re-described" supersession test — and each mechanism was a measured fix
+for a livelock the wait caused. So the wait goes instead: the object section of
+a delta carries each changed entry's manifest bytes right behind its reference
+(a kilobyte or so each), the splice answers them from the server's own blob
+store, and the viewer ingests them under their keys — cache and store included,
+exactly as if the network had answered — before resolving. A delta now stages
+without a single manifest round trip. Leaves (meshes, materials, textures) stay
+by reference, because their keys usually *are* cached; full roots stay by
+reference too, because a reconnect lands on a warm store and inlining would
+re-send it. One hold survives, and only one: a delta arriving while a **full
+root** is still filling its manifest layer waits for it (those manifests are
+per-parse state that staging over would strand), under the same stall-measured
+grace as before.
 
 **Push the delta, pull the gaps.** The server knows what changed because it built
 both manifests, so appending the new chunks to the broadcast costs a round trip
