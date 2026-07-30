@@ -3489,19 +3489,44 @@ static void resolvePending()
                 const size_t cur = levelIndexOf(entry);
                 auto refill = s_refill.find(entry.key);
                 if (choice.fetch > cur && refill != s_refill.end()) {
-                    // The coarse rung stays resident — in the budget's
-                    // books and in the refill map — until the finer
-                    // one actually lands; the arrival bookkeeping
-                    // supersedes it then (one resident rung per
-                    // ladder). Dropping it here and refetching on
-                    // refusal was measured as pure thrash: the budget
-                    // says no to the fine rung, and the coarse one has
-                    // been given up for nothing.
-                    entry.fill = refill->second;
-                    entry.armed = true;
-                    entry.key = entry.levels[choice.fetch].key;
-                    entry.size = entry.levels[choice.fetch].size;
-                    ++rungUp;
+                    // The budget may already have answered about the
+                    // finer rung under this camera — released it, or
+                    // refused it. Arming toward it anyway asks the
+                    // same question every round: the memo blocks the
+                    // fetch, the descend steps back onto the rung
+                    // already held, the local cache answers instantly,
+                    // and the pair run as a busy loop until the camera
+                    // moves. So the memos are consulted here, in the
+                    // finer rung's terms (residency reads the entry's
+                    // size), before any arming happens at all.
+                    const auto &finer = entry.levels[choice.fetch];
+                    const uint32_t heldSize = entry.size;
+                    entry.size = finer.size;
+                    const float worth = order.residency(entry);
+                    entry.size = heldSize;
+                    const auto answered =
+                        [&](const std::map<std::string, float> &memo) {
+                            auto it = memo.find(finer.key);
+                            return it != memo.end()
+                                && worth <= it->second * kEvictMargin;
+                        };
+                    if (!answered(s_releasedScore)
+                            && !answered(s_refusedScore)) {
+                        // The coarse rung stays resident — in the
+                        // budget's books and in the refill map — until
+                        // the finer one actually lands; the arrival
+                        // bookkeeping supersedes it then (one resident
+                        // rung per ladder). Dropping it here and
+                        // refetching on refusal was measured as pure
+                        // thrash: the budget says no to the fine rung,
+                        // and the coarse one has been given up for
+                        // nothing.
+                        entry.fill = refill->second;
+                        entry.armed = true;
+                        entry.key = finer.key;
+                        entry.size = finer.size;
+                        ++rungUp;
+                    }
                 }
             }
             if (!entry.fill)
