@@ -566,6 +566,18 @@ int rungWithin(const Render::SceneSnapshot::DeferredChunk &entry, float err)
 /// so the first upgrade off the box is always worth something.
 constexpr float kBoxError = 1.0f;
 
+/// How much an upgrade the PREVIOUS plan already granted outranks a
+/// newcomer of equal worth. Determinism alone is not hysteresis once
+/// the input drifts: a camera settling off a touch fling moves by
+/// accumulated epsilons, each replan reorders the greedy heap by a
+/// fraction of a percent, and the objects at the budget's knapsack
+/// boundary flip between exact and coarse forever — measured on a
+/// phone as the same three objects refetching a 155 KB exact mesh and
+/// its coarse rung alternately every few seconds, stationary. The
+/// incumbent keeps its grant unless a genuinely different camera
+/// outbids it by this margin.
+constexpr float kPlanKeepBonus = 1.3f;
+
 }  // namespace
 
 PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
@@ -593,6 +605,10 @@ PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
     std::map<uint64_t, Obj> objs;
     const int kUntouched = std::numeric_limits<int>::min();
     std::vector<int> plan(snap.deferredChunks.size(), kUntouched);
+    /// What the previous plan granted, per entry, before this one
+    /// overwrites it — the incumbency the greedy honors.
+    std::vector<int> prev(snap.deferredChunks.size(),
+                          int(SceneSnapshot::DeferredChunk::kPlanBox));
     for (size_t i = 0; i < snap.deferredChunks.size(); ++i) {
         auto &entry = snap.deferredChunks[i];
         if (!entry.release)
@@ -602,6 +618,8 @@ PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
             continue;
         }
         plan[i] = -1;
+        if (entry.plan != SceneSnapshot::DeferredChunk::kPlanUnset)
+            prev[i] = int(entry.plan);
         for (uint64_t owner : entry.owners)
             objs[owner].entries.push_back(i);
     }
@@ -668,7 +686,20 @@ PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
     const auto tierScore = [&](const Obj &o) {
         const float from = o.tier < 0 ? kBoxError : o.tiers[o.tier];
         const float to = o.tiers[o.tier + 1];
-        const float gain = (from - to) * std::max(o.diamPx, 1e-6f);
+        float gain = (from - to) * std::max(o.diamPx, 1e-6f);
+        // Incumbency (kPlanKeepBonus): this upgrade only re-affirms
+        // what the previous plan already granted every chunk it
+        // touches, so under input drift it outranks an equal-worth
+        // newcomer and the boundary set stays put.
+        bool incumbent = true;
+        for (size_t idx : o.entries) {
+            if (rungWithin(snap.deferredChunks[idx], to) > prev[idx]) {
+                incumbent = false;
+                break;
+            }
+        }
+        if (incumbent)
+            gain *= kPlanKeepBonus;
         const size_t cost = tierCost(o, to);
         return cost ? gain / float(cost) : std::numeric_limits<float>::max();
     };

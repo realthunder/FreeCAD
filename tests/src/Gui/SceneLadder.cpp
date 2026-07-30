@@ -332,6 +332,63 @@ TEST(PlanLevels, theViewsOwnAlwaysTargetTheirFinestBuiltRung)
     EXPECT_EQ(snap.deferredChunks[0].plan, 2);
 }
 
+TEST(PlanLevels, aDriftingCameraDoesNotFlipTheBudgetBoundary)
+{
+    // Two near-equal objects, budget for one exact mesh. The camera
+    // settling off a touch fling drifts by epsilons, and each replan
+    // reorders the raw scores by a fraction — without incumbency the
+    // knapsack boundary flipped between them forever, refetching a
+    // 155 KB mesh and its coarse rung alternately on a stationary
+    // phone. The previous plan's grant must outlast a marginal
+    // outbid.
+    Render::SceneSnapshot snap;
+    for (int i = 0; i < 2; ++i) {
+        auto entry = levelEntry(true, true);
+        entry.key = std::string(40, char('p' + i));
+        entry.levels[2].key = entry.key;
+        entry.owners[0] = uint64_t(i + 1);
+        snap.deferredChunks.push_back(std::move(entry));
+    }
+    // Coarse rungs for both fit; only ONE exact does.
+    const auto budget = params(1.0f, 5000 + 5000 + 17000 + 17000 + 110000);
+
+    static float boxA[6];
+    static float boxB[6];
+    const auto setBoxes = [&](float b) {
+        for (int i = 0; i < 3; ++i) {
+            boxA[i] = -0.231f;
+            boxA[3 + i] = 0.231f;
+            boxB[i] = -0.231f * b;
+            boxB[3 + i] = 0.231f * b;
+        }
+    };
+    const auto bounds = [](uint64_t key) -> const float * {
+        return key == 1 ? boxA : boxB;
+    };
+
+    // Round 1: A slightly bigger on screen — A gets the exact mesh.
+    setBoxes(0.98f);
+    Render::RungRanker r1(levelView(), bounds);
+    Render::planLevels(snap, r1, budget);
+    EXPECT_EQ(snap.deferredChunks[0].plan, 2);
+    EXPECT_EQ(snap.deferredChunks[1].plan, 1);
+
+    // Round 2: the drift makes B marginally bigger. A keeps its grant.
+    setBoxes(1.02f);
+    Render::RungRanker r2(levelView(), bounds);
+    Render::planLevels(snap, r2, budget);
+    EXPECT_EQ(snap.deferredChunks[0].plan, 2)
+        << "a marginal outbid must not displace the incumbent";
+    EXPECT_EQ(snap.deferredChunks[1].plan, 1);
+
+    // A genuinely different camera still wins: B four times the size.
+    setBoxes(4.0f);
+    Render::RungRanker r3(levelView(), bounds);
+    Render::planLevels(snap, r3, budget);
+    EXPECT_EQ(snap.deferredChunks[1].plan, 2)
+        << "real change must override incumbency";
+}
+
 TEST(PlanLevels, theSameInputsProduceTheSamePlan)
 {
     // Determinism is what the plan has instead of damping: a plan that
