@@ -2932,6 +2932,15 @@ static void fetchBlob(const std::string &key)
     emscripten_fetch_attr_init(&attr);
     std::strcpy(attr.requestMethod, "GET");
     attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+    // A request that dies without an answer — a phone backgrounded
+    // mid-transfer, a tunnel that folds without an RST — otherwise
+    // fires NEITHER callback: the window slot never comes back, the
+    // key stays "in flight", and enough of them is a viewer that sits
+    // below its plan forever (measured: six minutes of coarse spheres
+    // with a quarter of the budget free). The timeout turns silence
+    // into onerror, which fails the keys and frees the slot; the
+    // in-flight sweep then re-asks.
+    attr.timeoutMSecs = (unsigned long)kInFlightTimeoutMs;
     attr.userData = new std::string(key);
     attr.onsuccess = [](emscripten_fetch_t *fetch) {
         --s_requestsInFlight;
@@ -3028,6 +3037,12 @@ static void flushBatch()
     emscripten_fetch_attr_init(&attr);
     std::strcpy(attr.requestMethod, "POST");
     attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+    // Same silence-into-onerror turn as fetchBlob, with headroom: a
+    // batch is up to a third of a megabyte and the server may be
+    // tessellating ahead of the reply. Timing out work the server is
+    // still doing only costs a duplicate ask; never timing out costs
+    // the stall.
+    attr.timeoutMSecs = (unsigned long)(2.0 * kInFlightTimeoutMs);
     static const char *headers[] = {"Content-Type", "text/plain", nullptr};
     attr.requestHeaders = headers;
     attr.requestData = req->body.data();
@@ -3146,6 +3161,8 @@ static void requestBlob(const std::string &key, uint32_t size = 0)
 /// whenever its mesh is not resident, whatever the plan says — and
 /// that disagreement is exactly what this line exists to expose.
 /// Logged only when the set changes; assembly runs per arrival.
+static int residentRungOf(const Render::SceneSnapshot::DeferredChunk &entry);
+
 static void logStandIns(const Render::SceneSnapshot &snap)
 {
     static std::set<uint64_t> s_lastStanding;
@@ -3173,6 +3190,30 @@ static void logStandIns(const Render::SceneSnapshot &snap)
         keys += buf;
     }
     decLog("drawn as box: %zu objects:%s", standing.size(), keys.c_str());
+    // When only a few are left, their ladders' whole state: the draw
+    // says box, so which chunk is it waiting on, and what does the
+    // fetch layer believe about that chunk? A mismatch here — resident
+    // payload under one key, draw waiting on another — is the re-key
+    // residual; "in flight" that never lands is the stall.
+    if (standing.size() <= 3) {
+        for (uint64_t k : standing) {
+            for (const auto &entry : snap.deferredChunks) {
+                bool owned = false;
+                for (uint64_t owner : entry.owners)
+                    owned = owned || owner == k;
+                if (!owned)
+                    continue;
+                decLog("  box obj %llx chunk %.8s rung(resident %d, "
+                       "plan %d)%s%s%s%s",
+                       (unsigned long long)k, entry.key.c_str(),
+                       residentRungOf(entry), int(entry.plan),
+                       entry.fill ? " fill" : "",
+                       s_blobInFlight.count(entry.key) ? " in-flight" : "",
+                       s_resident.count(entry.key) ? " resident" : "",
+                       s_refill.count(entry.key) ? " refill" : "");
+            }
+        }
+    }
 }
 
 static bool assembleResolved(Render::SceneSnapshot &snap)
@@ -3921,6 +3962,10 @@ static void resolvePending()
         size_t pledged = 0;
         /// The executor's moves this round, for the debug line.
         size_t rungUp = 0, rungDown = 0, rungsReleased = 0;
+        /// Why a ladder below its plan was NOT asked for this round —
+        /// the two silent paths (a request presumed still out, and a
+        /// refill closure gone missing) that a stall hides in.
+        size_t wantsFetch = 0, inFlightSkips = 0, noRefillSkips = 0;
         for (size_t i = 0; i < target->deferredChunks.size(); ++i) {
             auto &entry = target->deferredChunks[i];
             totalBytes += entry.size;
@@ -3952,7 +3997,9 @@ static void resolvePending()
                 }
                 if (step.fetch < 0)
                     continue;  // At plan, or standing until a generate lands.
+                ++wantsFetch;
                 if (ladderInFlight(entry)) {
+                    ++inFlightSkips;
                     // One request per ladder: whichever rung lands
                     // re-runs this diff against wherever the plan is
                     // by then.
@@ -3973,8 +4020,10 @@ static void resolvePending()
                         ? s_refill.find(
                               Render::planRungKey(entry, size_t(resident)))
                         : s_refill.end();
-                    if (refill == s_refill.end())
+                    if (refill == s_refill.end()) {
+                        ++noRefillSkips;
                         continue;
+                    }
                     entry.fill = refill->second;
                 }
                 if (step.fetch > resident)
@@ -4139,6 +4188,22 @@ static void resolvePending()
         if (s_streamDebug && (rungUp || rungDown || rungsReleased))
             std::printf("fcviewer: rungs: %zu up, %zu down, %zu released\n",
                         rungUp, rungDown, rungsReleased);
+        // A ladder below its plan that this round did NOT ask for is
+        // where a stall hides; say why, once per change. wantsFetch
+        // counts every below-plan ladder, the skips split the silent
+        // ones by cause.
+        {
+            static size_t s_lastInFlightSkips = 0, s_lastNoRefill = 0;
+            if (inFlightSkips != s_lastInFlightSkips
+                || noRefillSkips != s_lastNoRefill) {
+                s_lastInFlightSkips = inFlightSkips;
+                s_lastNoRefill = noRefillSkips;
+                if (inFlightSkips || noRefillSkips)
+                    decLog("below plan: %zu ladders (%zu awaiting a "
+                           "request already out, %zu with no refill)",
+                           wantsFetch, inFlightSkips, noRefillSkips);
+            }
+        }
         s_provider.flush();
         // ⭐ A round is driven by an arrival, so a load whose requests
         // have all stalled has nothing left to drive one: no arrival,
