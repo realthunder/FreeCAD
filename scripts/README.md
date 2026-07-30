@@ -15,10 +15,11 @@ stacks.
 | `wasm-viewer.sh [http] [scene]` | Serve the built WASM viewer over HTTP (`Cache-Control: no-store` — never a stale bundle) and print the URL to open it against a scene backend. |
 | `mcp-console.py` | In-FreeCAD script starting the **MCP debug console** (`freecad.mcp_console`: `run_python` / `search_api` over streamable-HTTP, default port 8765, `FC_MCP_PORT` overrides, `FC_MCP_PORT=0` disables) so an AI agent can drive the live process. |
 
-## Browser-side tools (headless Chromium)
+## Browser-side tools (Chromium)
 
 | Script | What it does |
 |--------|--------------|
+| `wasm-chrome.js probe\|drive …` | **The Chrome launcher, both tiers**: `--headless` = swiftshader (no display), default = a **headful window on the WSLg desktop with the real GPU** (WebGL2 on ANGLE-over-D3D12, real compositor at 60Hz) — the only browser tier that reproduces frame-pacing / GPU-state bugs. `probe` reports fps + the WebGL renderer actually obtained; `drive <url> [out.png]` runs the standard settle → zoom-burst → stationary-quiet regression against a served scene. Also require-able (`launch()`) by other harnesses. |
 | `wasm-shot.js <url> <out.png>` | Screenshot the WASM viewer at a chosen `?cam=` via headless Chromium (swiftshader) — a separate client, never touches a live view. |
 | `wasm-hold.js <url> [ms]` | Hold a headless-Chromium page on the WASM viewer so the backend can drive the `dumpFrame` capture protocol (`saveRenderDump(source="viewer")`). |
 | `wasm-burst.js <url> <prefix> [ms,…]` | Shoot the viewer repeatedly **while a scene streams in**, over a `KBPS`-throttled link, so the coarse rungs of the fidelity ladder are on screen to be captured. Pair with the viewer's `&stream` flag. |
@@ -77,6 +78,18 @@ grep 'BGFX     Renderer:' /tmp/fc-renderer-desktop.log
 
 Set `FC_ADAPTER=NVIDIA` to force the discrete GPU, or `FC_PLATFORM=xcb` to
 force the software path for a deterministic (GPU-independent) render.
+
+The same split exists in the browser: the headless Chromium tools above are
+always swiftshader (WSL2 exposes `/dev/dxg` but no `/dev/dri`, so headless
+Chrome cannot reach the GPU), which masks frame-pacing and GPU-upload bugs.
+`wasm-chrome.js` without `--headless` is the real-GPU browser leg: an X11
+window on the WSLg desktop with Mesa steered to `d3d12` and Chrome forced
+onto ANGLE-over-native-GL (`--ignore-gpu-blocklist --use-gl=angle
+--use-angle=gl`). Three things are all required — libasound on
+`LD_LIBRARY_PATH` (the conda lib dir), the d3d12 env, and those flags;
+missing pieces degrade silently to no-WebGL2 or llvmpipe, so check with
+`node scripts/wasm-chrome.js probe` (want `ANGLE (... D3D12 ...)` at ~60fps).
+It opens a window on the developer's desktop — announce before launching.
 
 ## Typical loop
 
