@@ -1936,3 +1936,93 @@ views too, not only serving processes.
   pages is the escape, if measurement demands it.
 - **Overlay feeds** (NaviCube, axis cross) are static and per-viewer, not per
   document; they may belong in the viewer bundle rather than the stream at all.
+
+## 13. The desktop tier — proposal, not yet built
+
+The remaining half of "one ladder for two tiers" (§7, 5d). Everything
+below is design for discussion; nothing in this section exists.
+
+**What it is for.** A big model must not cost its exact tessellation up
+front on the desktop either — the same two bills the viewer already
+avoids: startup (tessellating everything exactly before first pixel)
+and residency (holding exact meshes for objects the camera sees at
+five pixels). `CoarseTessellation` already builds the display mesh at a
+ladder rung and registers the exact build's parameters; it is gated off
+the plain desktop *only because nothing there can climb back to exact*.
+The desktop tier is that climb.
+
+**What already exists, and what each piece is missing:**
+
+- The policy — `planLevels`/`planStep`/`RungRanker`/`MemoryBudget`
+  (SceneLadder) — is tier-free by construction. Missing: a desktop
+  caller with a camera and a bounds lookup.
+- The generators — `MeshSourceRegistry` closures registered by
+  `ViewProviderPartExt`, `MeshLevelBuild`'s pure core — build any rung
+  from the live document, off-thread, already. Missing: a consumer
+  that is not the serve path's levelLoop.
+- The seam for acquisition — `RungProvider`, with `cancel` declared
+  precisely for this tier (a tessellation a camera move obsoletes is
+  *work*, not a fetch to ignore). Missing: the implementation.
+- The binder — `SceneObjectModel::rungBinder`, consulted per draw at
+  assembly. Missing on the desktop: the desktop draw path does not run
+  snapshot assembly at all.
+
+**The central decision: where the ladder lives on the desktop.** Two
+candidates:
+
+1. **At the bridge (proposed).** The render-cache bridge already owns
+   the mesh objects the renderer uploads (`MeshData` per draw, proto
+   nodes shared across instances). Give the bridge a per-source ladder
+   slot: the display build's coarse mesh is rung 0-resident from day
+   one; a plan pass (camera settle, budget shift — the viewer's
+   events, §7) diffs resident against target per source; the executor
+   asks a `TessellationRungProvider` to build missing rungs and swaps
+   the built arrays into the *same* mesh object under a bumped
+   `MeshData::generation` (the invariant 410e330278 already enforces
+   at upload). No snapshot, no assembly, no content keys — sources are
+   live node pointers, which the registry already keys by.
+2. At a desktop snapshot — run the publish/assembly path locally as if
+   serving to self. Rejected as first cut: it drags manifest identity,
+   deferral and commit machinery into a path that has the real objects
+   one pointer away, and the serve path already exists for whoever
+   wants that shape.
+
+**The provider.** `TessellationRungProvider : RungProvider` — a job
+queue over the registry's generators, N worker threads (the
+`LevelThreads` parameter already exists and pushes down), jobs keyed
+`(sourceTag, level)`. `cancel` removes queued jobs (a running build
+completes and is kept — it was nearly free by then, and the ladder may
+want it back). Completion marshals to the render thread the same way
+the serve path's `setWorkNotifier` does, fills the rung, bumps the
+generation, schedules a redraw.
+
+**Budget.** Start from `MemoryBudget` with the platform ceiling, but
+the binding constraint on the desktop is GPU memory: wire
+`bgfx::getStats()::gpuMemoryUsed/Max` in as the observed ceiling where
+the backend reports it (D3D/Vulkan do, GL does not), and a caught
+`bad_alloc` in the tessellation worker as `observeCeiling` — the call
+the seam was declared for. Eviction is the viewer's: surplus rungs
+stay until the budget wants the bytes; release = drop the finer
+arrays and stand on the coarse rung, which is always resident.
+
+**Order of work, smallest observable win first:**
+
+1. `TessellationRungProvider` + bridge ladder slots, driven by a fixed
+   plan (everything wants exact) — pure refactor of today's behavior:
+   coarse first pixel, exact streams in. This alone un-gates
+   `CoarseTessellation` on the desktop and pays the startup bill.
+2. The plan pass proper (camera events → `planLevels` over bridge
+   sources) — pays the residency bill; `lodpx` becomes the
+   `Render_LevelTolerance` preference it already wants to be (§5d).
+3. GPU-memory ceiling into `MemoryBudget`; eviction under pressure.
+4. `cancel` wired to plan changes; measure how much work it saves
+   before making it cleverer.
+
+**Open questions for the discussion:** whether instanced leaves share
+one ladder per proto (proposed: yes, same as the publish path's
+sourceTag rule); whether the Coin/desktop *selection* path needs the
+resident-rung remap the viewer got for free (§ selection-at-rung), or
+whether desktop picking stays on the exact shape and never sees the
+ladder; and whether rung 0 on the desktop should be the
+`CoarseTessellation` default (2) or something coarser, given no
+network is being protected — only tessellation time and memory.
