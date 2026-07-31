@@ -67,6 +67,17 @@ Params = [
         "build already parallelizes internally over OCCT's shared thread\n"
         "pool. The FC_LEVEL_THREADS environment variable overrides it.\n"
         "Read when the server spawns its first level worker."),
+    ParamInt('LevelMemoryFloorMB',  0, title='Level memory floor (MB)',
+        doc="Available system memory below which an exact re-tessellation\n"
+        "will not start (docs/SceneStreaming.md #13): the desktop refine\n"
+        "worker checks the system's own estimate of allocatable memory\n"
+        "before each exact build, and dropping under this floor counts as\n"
+        "a memory-ceiling observation - the same as a caught allocation\n"
+        "failure - after which the level plans also demote exact meshes\n"
+        "the camera would not miss back to their resident coarse rung.\n"
+        "0 sizes the floor automatically (at least 512 MB, or 1/16 of\n"
+        "physical memory if that is more). Read when the first refine is\n"
+        "queued."),
     ParamFloat('LevelTolerance',  2.0, title='Level tolerance',
         doc="Screen-space error, in pixels, a coarse tessellation may\n"
         "commit before the exact one is built (docs/SceneStreaming.md\n"

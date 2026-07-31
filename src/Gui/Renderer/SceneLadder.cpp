@@ -188,6 +188,41 @@ size_t MemoryBudget::systemMemory()
 #endif
 }
 
+size_t MemoryBudget::availableMemory()
+{
+#ifdef __EMSCRIPTEN__
+    // The wasm heap has no meaningful "available" beyond its growth
+    // cap; the tier estimates through observe() instead.
+    return 0;
+#elif defined(_WIN32)
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    if (GlobalMemoryStatusEx(&status))
+        return size_t(status.ullAvailPhys);
+    return 0;
+#elif defined(__APPLE__)
+    // No cheap MemAvailable equivalent worth a Mach call here yet.
+    return 0;
+#else
+    // MemAvailable is the kernel's own estimate of what can be
+    // allocated without swapping — the number an "am I about to hurt
+    // this machine" check wants, which free pages alone are not.
+    if (std::FILE *f = std::fopen("/proc/meminfo", "r")) {
+        char line[128];
+        size_t kb = 0;
+        while (std::fgets(line, sizeof(line), f)) {
+            if (std::sscanf(line, "MemAvailable: %zu kB", &kb) == 1)
+                break;
+            kb = 0;
+        }
+        std::fclose(f);
+        if (kb)
+            return kb * 1024;
+    }
+    return 0;
+#endif
+}
+
 size_t MemoryBudget::deviceHint()
 {
 #ifdef __EMSCRIPTEN__
@@ -955,6 +990,85 @@ PlanStep Render::planStep(const SceneSnapshot::DeferredChunk &entry,
     return step;
 }
 
+namespace {
+
+/// One draw's bounding box against one camera — the shared math of the
+/// desktop plan passes (refine and demote read the same projection,
+/// they just act on opposite sides of the tolerance).
+struct BoxSight {
+    enum What {
+        Empty,      ///< no bounds, degenerate, or not judgeable
+        Offscreen,  ///< outside the frustum (or wholly behind)
+        Inside,     ///< the camera is inside the box span: maximal
+        Visible,    ///< on screen at diagPx
+    } what = Empty;
+    /// Projected size of the box diagonal in pixels (Visible only).
+    float diagPx = 0.0f;
+};
+
+BoxSight sightBox(const Render::DrawCall &draw, const float *V,
+                  const float *P, float viewportHeightPx)
+{
+    BoxSight res;
+    if (draw.bboxMin[0] > draw.bboxMax[0])
+        return res;
+    const float dx = draw.bboxMax[0] - draw.bboxMin[0];
+    const float dy = draw.bboxMax[1] - draw.bboxMin[1];
+    const float dz = draw.bboxMax[2] - draw.bboxMin[2];
+    const float diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (!(diag > 0.0f))
+        return res;
+    // GL layout: column-major, points transform as M * p. proj[15] == 1
+    // is orthographic (w does not depend on z), 0 is perspective.
+    const bool ortho = P[15] != 0.0f;
+    const float p11 = P[5];
+    const float cx = 0.5f * (draw.bboxMin[0] + draw.bboxMax[0]);
+    const float cy = 0.5f * (draw.bboxMin[1] + draw.bboxMax[1]);
+    const float cz = 0.5f * (draw.bboxMin[2] + draw.bboxMax[2]);
+    // View space; the camera looks down -z.
+    const float vx = V[0] * cx + V[4] * cy + V[8] * cz + V[12];
+    const float vy = V[1] * cx + V[5] * cy + V[9] * cz + V[13];
+    const float vz = V[2] * cx + V[6] * cy + V[10] * cz + V[14];
+    // Projected size of the diagonal in pixels: NDC height of a
+    // length d is d * P11 (orthographic) or d * P11 / depth
+    // (perspective), and one NDC unit is half the viewport.
+    if (ortho) {
+        res.diagPx = diag * p11 * 0.5f * viewportHeightPx;
+    }
+    else {
+        // Depth of the box's near side. A box wholly behind the camera
+        // is off-screen; a camera *inside* the box span sees it as
+        // large as anything gets.
+        if (-vz + 0.5f * diag <= 0.0f) {
+            res.what = BoxSight::Offscreen;
+            return res;
+        }
+        const float depth = -vz - 0.5f * diag;
+        if (depth <= 0.0f) {
+            res.what = BoxSight::Inside;
+            return res;
+        }
+        res.diagPx = diag * p11 / depth * 0.5f * viewportHeightPx;
+    }
+    // Clip-space test at the box centre, inflated by the projected
+    // half diagonal (in NDC units of the viewport height; the width
+    // margin is approximated with the same value, conservatively).
+    const float ndcMargin = res.diagPx / (0.5f * viewportHeightPx);
+    const float cxc = P[0] * vx + P[4] * vy + P[8] * vz + P[12];
+    const float cyc = P[1] * vx + P[5] * vy + P[9] * vz + P[13];
+    const float w = ortho
+        ? 1.0f : P[3] * vx + P[7] * vy + P[11] * vz + P[15];
+    if (w <= 0.0f || std::fabs(cxc) > w * (1.0f + ndcMargin)
+        || std::fabs(cyc) > w * (1.0f + ndcMargin)) {
+        res.what = BoxSight::Offscreen;
+        return res;
+    }
+    res.what = BoxSight::Visible;
+    return res;
+}
+
+}  // namespace
+
 std::vector<const void *> Render::planMeshRefines(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx)
@@ -963,12 +1077,6 @@ std::vector<const void *> Render::planMeshRefines(
     if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f)
         return out;
     std::set<const void *> seen;
-    const float *V = viewMatrix;
-    const float *P = projMatrix;
-    // GL layout: column-major, points transform as M * p. proj[15] == 1
-    // is orthographic (w does not depend on z), 0 is perspective.
-    const bool ortho = P[15] != 0.0f;
-    const float p11 = P[5];
     for (const auto &draw : draws) {
         if (!draw.mesh)
             continue;
@@ -977,65 +1085,67 @@ std::vector<const void *> Render::planMeshRefines(
             continue;
         if (seen.count(mesh.sourceTag))
             continue;
-        if (draw.bboxMin[0] > draw.bboxMax[0])
-            continue;
-        const float dx = draw.bboxMax[0] - draw.bboxMin[0];
-        const float dy = draw.bboxMax[1] - draw.bboxMin[1];
-        const float dz = draw.bboxMax[2] - draw.bboxMin[2];
-        const float diag = std::sqrt(dx * dx + dy * dy + dz * dz);
-        if (!(diag > 0.0f))
-            continue;
         if (tolerancePx <= 0.0f) {
             // "Every object desires its exact content" — the step-1
-            // behavior, and the same reading as PlanParams::tolerancePx.
+            // behavior, and the same reading as PlanParams::tolerancePx
+            // — except a draw with no judgeable bounds at all.
+            if (draw.bboxMin[0] > draw.bboxMax[0])
+                continue;
             seen.insert(mesh.sourceTag);
             out.push_back(mesh.sourceTag);
             continue;
         }
-        const float cx = 0.5f * (draw.bboxMin[0] + draw.bboxMax[0]);
-        const float cy = 0.5f * (draw.bboxMin[1] + draw.bboxMax[1]);
-        const float cz = 0.5f * (draw.bboxMin[2] + draw.bboxMax[2]);
-        // View space; the camera looks down -z.
-        const float vx = V[0] * cx + V[4] * cy + V[8] * cz + V[12];
-        const float vy = V[1] * cx + V[5] * cy + V[9] * cz + V[13];
-        const float vz = V[2] * cx + V[6] * cy + V[10] * cz + V[14];
-        // Projected size of the diagonal in pixels: NDC height of a
-        // length d is d * P11 (orthographic) or d * P11 / depth
-        // (perspective), and one NDC unit is half the viewport.
-        float diagPx;
-        if (ortho) {
-            diagPx = diag * p11 * 0.5f * viewportHeightPx;
-        }
-        else {
-            // Depth of the box's near side. A box wholly behind the
-            // camera is off-screen; a camera *inside* the box span sees
-            // it as large as anything gets — refine.
-            if (-vz + 0.5f * diag <= 0.0f)
-                continue;
-            const float depth = -vz - 0.5f * diag;
-            if (depth <= 0.0f) {
-                seen.insert(mesh.sourceTag);
-                out.push_back(mesh.sourceTag);
-                continue;
-            }
-            diagPx = diag * p11 / depth * 0.5f * viewportHeightPx;
-        }
+        const BoxSight sight =
+            sightBox(draw, viewMatrix, projMatrix, viewportHeightPx);
         // Off-screen never refines — the residency bill this pass
-        // exists to stop paying. Clip-space test at the box centre,
-        // inflated by the projected half diagonal (in NDC units of the
-        // viewport height; the width margin is approximated with the
-        // same value, conservatively).
-        const float ndcMargin = diagPx / (0.5f * viewportHeightPx);
-        const float cxc = P[0] * vx + P[4] * vy + P[8] * vz + P[12];
-        const float cyc = P[1] * vx + P[5] * vy + P[9] * vz + P[13];
-        const float w = ortho
-            ? 1.0f : P[3] * vx + P[7] * vy + P[11] * vz + P[15];
-        if (w <= 0.0f)
-            continue;  // fully behind the camera (near box handled above)
-        if (std::fabs(cxc) > w * (1.0f + ndcMargin)
-            || std::fabs(cyc) > w * (1.0f + ndcMargin))
+        // exists to stop paying; the camera inside the box span
+        // refines outright.
+        const bool wanted = sight.what == BoxSight::Inside
+            || (sight.what == BoxSight::Visible
+                && mesh.levelError * sight.diagPx > tolerancePx);
+        if (wanted) {
+            seen.insert(mesh.sourceTag);
+            out.push_back(mesh.sourceTag);
+        }
+    }
+    return out;
+}
+
+std::vector<const void *> Render::planMeshDemotes(
+    const DrawCallList &draws, const float *viewMatrix,
+    const float *projMatrix, float viewportHeightPx, float tolerancePx,
+    const std::function<float(const void *)> &demoteErrOf)
+{
+    std::vector<const void *> out;
+    if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f
+        || tolerancePx <= 0.0f || !demoteErrOf)
+        return out;
+    std::set<const void *> seen;
+    for (const auto &draw : draws) {
+        if (!draw.mesh)
             continue;
-        if (mesh.levelError * diagPx > tolerancePx) {
+        const MeshData &mesh = *draw.mesh;
+        // The demotable set is the refine pass's mirror image: sources
+        // standing at their exact rung with a coarse one to fall back
+        // to (the registry answers its error; 0 = nothing resident).
+        if (!mesh.sourceTag || mesh.levelError > 0.0f)
+            continue;
+        if (seen.count(mesh.sourceTag))
+            continue;
+        const float coarseErr = demoteErrOf(mesh.sourceTag);
+        if (coarseErr <= 0.0f)
+            continue;
+        const BoxSight sight =
+            sightBox(draw, viewMatrix, projMatrix, viewportHeightPx);
+        // Off-screen frees outright; on screen only when the coarse
+        // rung clears the tolerance by the demote margin — at the
+        // refine boundary itself a drifting camera would trade a full
+        // tessellation back and forth across it.
+        const bool droppable = sight.what == BoxSight::Offscreen
+            || (sight.what == BoxSight::Visible
+                && coarseErr * sight.diagPx
+                    <= tolerancePx * kPlanDemoteMargin);
+        if (droppable) {
             seen.insert(mesh.sourceTag);
             out.push_back(mesh.sourceTag);
         }

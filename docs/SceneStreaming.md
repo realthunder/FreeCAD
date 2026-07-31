@@ -2063,38 +2063,54 @@ arrays and stand on the coarse rung, which is always resident.
    Diligent view keeps exact tessellation — a coarse build there
    would stay coarse forever). Serving processes are unchanged:
    never plan, never refine locally.
-3. GPU-memory ceiling into `MemoryBudget`; eviction under pressure.
-   **Open design question the sketch above glossed over** (proposal
-   below, not built): the budget paragraph assumed release means
-   "drop the finer arrays and stand on the coarse rung, which is
-   always resident" — but the as-built desktop refine does not keep
-   rungs side by side. It *transfers* the exact triangulation onto
-   the live shape and rebuilds the Coin nodes: one triangulation per
-   face, the coarse one replaced. So desktop eviction is not a drop,
-   it is a *re-tessellation to coarse* — cheap in CPU (a coarse rung
-   is the fast build by construction) but a build nonetheless, and
-   the churn guards the viewer needed (surplus-until-the-budget-
-   wants, hysteresis margins at the boundary) apply with more force
-   when both directions cost work. Candidate shapes, to discuss:
-   (a) evict-by-rebuild — account resident exact bytes per source
-   (the mesh arrays the renderer already holds); when
-   `MemoryBudget` (ceiling from `bgfx::getStats()`'s
-   gpuMemoryUsed/Max where the backend reports it — D3D/Vulkan do,
-   GL does not — plus caught `bad_alloc` in the tessellation worker
-   as `observeCeiling`) wants bytes back, the plan pass picks the
-   refined sources now within tolerance at coarse (camera moved
-   away), and the executor re-runs the coarse build for them
-   (clear `ExactMeshTShape`, re-tessellate at the ladder rung,
-   re-register with a fresh refine); (b) keep the coarse
-   triangulation beside the exact one (OCCT faces can hold several
-   triangulations) so release really is a drop — cheaper eviction,
-   but CPU memory holds both rungs and the node-rebuild plumbing
-   must select the active one; (c) do nothing until a model that
-   actually exhausts a desktop GPU exists to measure — the 200-
-   object scene refines a handful of sources under the default
-   tolerance, and the tolerance itself is already the pressure
-   valve. The viewer's lesson stands either way: eviction must be
-   driven by the budget, never by the replan.
+3. ✅ **As built (2026-07-31, decided by the user: keep both rungs,
+   discard only against a CPU-memory ceiling).** The refine keeps
+   the coarse triangulation *beside* the arriving exact one —
+   `transferMeshLevels` sets the face's OCCT triangulation list to
+   {coarse, exact} with exact active, and edge polygons coexist
+   per-triangulation by construction — so the way back down really
+   is a drop: `demoteMeshLevels` resets each face to its coarsest
+   resident triangulation and strips the dropped ones' edge
+   representations (which would otherwise pin them alive), and the
+   coarse node rebuild finds its mesh resident. Free edges keep
+   their one (exact) polygon — they have no facet silhouette to
+   float off of.
+
+   Nothing is ever dropped proactively: without pressure the
+   desktop keeps every rung it built. The trigger is a **CPU
+   memory ceiling**, observed two ways in the refine worker: a
+   caught allocation failure (`std::bad_alloc` /
+   `Standard_OutOfMemory`) in the exact build, and — the estimate,
+   so the wall is seen before it is hit — available system memory
+   (`MemoryBudget::availableMemory()`: Linux `MemAvailable`,
+   Windows available physical) under a floor before a build starts
+   (`LevelMemoryFloorMB` preference, 0 = automatic: at least
+   512 MB or 1/16 of physical). Either drops the job (its ask
+   stands, so it is not retried into the same wall) and bumps the
+   registry's ceiling epoch. The ceiling is **sticky**, like
+   `MemoryBudget`'s — memory that failed once is not un-failed by
+   a later success: from the first observation on, every level
+   plan also runs `planMeshDemotes` — the refine pass's mirror
+   image: exact-resident sources whose coarse rung (its error
+   remembered by the registration) errs at most
+   `kPlanDemoteMargin` (half) × the tolerance on screen, plus
+   everything off screen. The margin is the tier-cut hysteresis
+   lesson with both directions costing work: demoting at the
+   refine boundary itself would make a drifting camera trade a
+   full tessellation back and forth across it. A demotion fires a
+   consumed per-source callback (face and line share one, like the
+   climb): flat shapes drop and re-run `updateVisual`; instanced
+   entries rebuild their shared nodes coarse — the whole cycle is
+   `registerInstancedLevelEntry`, a named static because closures
+   referencing each other would keep the shape alive forever — and
+   both re-register coarse with a fresh climb, so a camera that
+   returns can refine again. `FC_DEBUG_MESH_CEILING=<n>` treats
+   the n-th exact build as an allocation failure — the only way to
+   exercise the path without running the machine out of memory.
+   Deliberately absent, per the same decision: no GPU-stats
+   ceiling, no byte-accounted budget — the tolerance is the
+   ordinary pressure valve, and the ceiling machinery is for the
+   day the machine itself objects.
 4. ✅ **As built (2026-07-31):** `cancel` wired to plan changes. The
    ask became state instead of consumption:
    `MeshSourceRegistry::requestRefine` sets a standing `asked` on

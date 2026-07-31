@@ -119,6 +119,43 @@ int refineThreadCap()
     return int(std::max(1u, std::min(4u, hw / 4)));
 }
 
+/// The CPU-memory floor an exact build must not start under (§13
+/// step 3): available system memory below this counts as a ceiling
+/// observation without waiting for the bad_alloc. The
+/// LevelMemoryFloorMB render parameter sets it; 0 sizes it
+/// automatically — read once, on the GUI thread, when the first
+/// refine is queued (the LevelThreads pattern).
+size_t s_memFloorBytes = 0;
+
+void resolveMemFloor()
+{
+    if (s_memFloorBytes)
+        return;
+    long mb = long(Gui::RenderParams::getLevelMemoryFloorMB());
+    if (mb > 0) {
+        s_memFloorBytes = size_t(mb) << 20;
+        return;
+    }
+    const size_t total = Render::MemoryBudget::systemMemory();
+    s_memFloorBytes =
+        std::max(size_t(512) << 20, total ? total / 16 : size_t(0));
+}
+
+/// FC_DEBUG_MESH_CEILING=<n>: treat the n-th exact refine build as an
+/// allocation failure — the only way to exercise the demotion path
+/// without actually running the machine out of memory.
+bool debugCeilingHit()
+{
+    static const long at = [] {
+        const char *env = std::getenv("FC_DEBUG_MESH_CEILING");
+        return env ? std::atol(env) : 0;
+    }();
+    if (at <= 0)
+        return false;
+    static std::atomic<long> builds {0};
+    return ++builds == at;
+}
+
 void refineLoop()
 {
     for (;;) {
@@ -132,9 +169,28 @@ void refineLoop()
             if (it == s_refineTokens.end() || it->second != job.token)
                 continue;  // canceled while queued
         }
+        // Pre-build ceiling estimate: a build started under a low
+        // MemAvailable is a bad_alloc that has not happened yet — and
+        // by the time it does, it may be somebody else's. The job is
+        // dropped (its ask stands, so it is not retried into the same
+        // wall); the observation flips the plans to demoting.
+        const size_t avail = Render::MemoryBudget::availableMemory();
+        if (avail && avail < s_memFloorBytes) {
+            Render::MeshSourceRegistry::instance().observeMemoryCeiling();
+            continue;
+        }
+        bool outOfMemory = false;
         TopoDS_Shape meshed = PartGui::meshLevelExactCopy(
             job.st->shape, job.st->params.exactDeflection,
-            job.st->params.exactAngle);
+            job.st->params.exactAngle, &outOfMemory);
+        if (debugCeilingHit()) {
+            outOfMemory = true;
+            meshed.Nullify();
+        }
+        if (outOfMemory) {
+            Render::MeshSourceRegistry::instance().observeMemoryCeiling();
+            continue;
+        }
         if (meshed.IsNull())
             continue;
         // The apply reads and writes live document geometry and Coin
@@ -165,6 +221,7 @@ void refineLoop()
 void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
                       std::function<void(const TopoDS_Shape &)> apply)
 {
+    resolveMemFloor();
     std::lock_guard<std::mutex> lock(s_refineMutex);
     RefineJob job;
     job.token = ++s_refineCounter;
@@ -243,7 +300,9 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                                       double exactDeflection,
                                       double exactAngle,
                                       std::function<void(const TopoDS_Shape &)>
-                                          onExactBuilt)
+                                          onExactBuilt,
+                                      std::function<void()> onDemote,
+                                      float demoteError)
 {
     if (shape.IsNull() || (!faceTag && !lineTag))
         return;
@@ -310,11 +369,24 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
             cancelExactRefine(primary);
         };
     }
+    // The way back down mirrors the climb: one shared closure under
+    // both tags, a shared flag keeping the pair to a single demotion.
+    std::function<void()> demote;
+    if (onDemote && demoteError > 0.0f) {
+        auto fired = std::make_shared<std::atomic<bool>>(false);
+        demote = [fired, apply = std::move(onDemote)]() {
+            if (fired->exchange(true))
+                return;
+            apply();
+        };
+    }
     auto &reg = Render::MeshSourceRegistry::instance();
     if (faceTag)
-        reg.add(faceTag, gen, builtError, refine, cancel);
+        reg.add(faceTag, gen, builtError, refine, cancel, demote,
+                demoteError);
     if (lineTag)
-        reg.add(lineTag, gen, builtError, refine, cancel);
+        reg.add(lineTag, gen, builtError, refine, cancel, demote,
+                demoteError);
 }
 
 void PartGui::unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag)

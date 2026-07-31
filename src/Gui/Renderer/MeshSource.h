@@ -39,6 +39,7 @@
 /// a document change stays memory-safe). Generators run on the level
 /// worker's thread; they must not touch the GUI.
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -87,9 +88,16 @@ public:
     /// (RungProvider::cancel's rationale, at this tier's granularity).
     /// Empty means nothing to climb: the source is already exact, or a
     /// serving process whose viewers drive the exact rung themselves.
+    /// \a demote is the way back DOWN under memory pressure (§13
+    /// step 3): a refined source registers it beside \a demoteError —
+    /// the error of the coarse rung it would stand back on — and
+    /// requestDemote fires it when an observed ceiling makes the plan
+    /// want the bytes back. Empty = nothing resident to fall back to.
     void add(const void *tag, Generator gen, float publishedError = 0.0f,
              std::function<void()> refine = {},
-             std::function<void()> cancelRefine = {});
+             std::function<void()> cancelRefine = {},
+             std::function<void()> demote = {},
+             float demoteError = 0.0f);
     /// Drop \a tag and every chunk-key association pointing at it.
     /// Call before the geometry behind the tag dies; the tag's address
     /// may be reused.
@@ -134,6 +142,26 @@ public:
     /// every coarse source it never asked for.
     void cancelRefine(const void *tag);
 
+    /// The plan wants \a tag's exact rung dropped (memory pressure,
+    /// §13 step 3): fire the source's demote callback, consumed like a
+    /// registration — the demotion re-registers the source coarse,
+    /// which arms everything afresh. No-op without a callback.
+    void requestDemote(const void *tag);
+    /// The coarse-rung error \a tag would fall back to; 0 = not
+    /// demotable. What planMeshDemotes prices a demotion by.
+    float demoteError(const void *tag);
+
+    /// A memory ceiling was observed: an exact build failed to
+    /// allocate (bad_alloc / Standard_OutOfMemory), or the worker's
+    /// pre-build estimate found available system memory under the
+    /// floor. Sticky by design, like MemoryBudget's ceiling — memory
+    /// that failed once is not un-failed by a later success — so every
+    /// level plan from then on also demotes what the camera would not
+    /// miss. The epoch lets the planner replan promptly on a new
+    /// observation.
+    void observeMemoryCeiling();
+    uint64_t memoryCeilingEpoch() const { return ceilingEpoch; }
+
 private:
     struct Source {
         std::shared_ptr<Generator> gen;
@@ -145,10 +173,14 @@ private:
         std::function<void()> refine;
         std::function<void()> cancelRefine;
         bool asked = false;
+        /// The way back down and what it costs the screen (§13 step 3).
+        std::function<void()> demote;
+        float demoteErr = 0.0f;
     };
     std::mutex mutex;
     std::map<const void *, Source> sources;
     std::unordered_map<std::string, const void *> keys;
+    std::atomic<uint64_t> ceilingEpoch {0};
 };
 
 /// The desktop tier's plan *events* (docs/SceneStreaming.md §13 step 2):

@@ -2665,39 +2665,15 @@ bool ViewProviderPartExt::buildInstanced()
                              nt, nn, np, nno, nf, ne, nl);
             // Level generation for the shared leaf tessellation
             // (MeshLevelSource.h); released with the geometry entry.
-            //
-            // A coarse desktop build climbs back to exact through the
-            // registration (§13). The callback rebuilds the SHARED
-            // nodes in place — every instance refines at once, the
-            // per-proto ladder — so it captures the nodes, not the
-            // view provider: the entry outlives any one sharer, and a
-            // live registration token is what guarantees the entry
-            // (release unregisters first). Re-registering at error 0
-            // is what keeps a later sharer's rebuild from queueing the
-            // work again.
-            std::function<void(const TopoDS_Shape &)> onExact;
-            if (builtError > 0.0f) {
-                onExact = [local, exactDefl, exactAng,
-                           normalsFromUV = bool(NormalsFromUV),
-                           gcoords, gpcoords, gnorm, gtexcoords,
-                           gfaceset, glineset, gnodeset](
-                              const TopoDS_Shape &meshed) {
-                    transferMeshLevels(meshed, local);
-                    int nt2 = 0, nn2 = 0, np2 = 0, nno2 = 0;
-                    int nf2 = 0, ne2 = 0, nl2 = 0;
-                    buildVisualNodes(local, exactDefl, exactAng,
-                                     normalsFromUV,
-                                     gcoords, gpcoords, gnorm, gtexcoords,
-                                     gfaceset, glineset, gnodeset,
-                                     nt2, nn2, np2, nno2, nf2, ne2, nl2);
-                    registerMeshLevelSource(local, normalsFromUV, gfaceset,
-                                            glineset, 0.0f, exactDefl,
-                                            exactAng);
-                };
-            }
-            registerMeshLevelSource(local, NormalsFromUV, gfaceset,
-                                    glineset, builtError, exactDefl,
-                                    exactAng, std::move(onExact));
+            // The whole coarse <-> exact cycle of the entry lives in
+            // registerInstancedLevelEntry (§13): climb on plan demand,
+            // demotion back under memory pressure.
+            registerInstancedLevelEntry(local, false, builtError,
+                                        defl, useAngDefl,
+                                        exactDefl, exactAng, NormalsFromUV,
+                                        gcoords, gpcoords, gnorm,
+                                        gtexcoords, gfaceset, glineset,
+                                        gnodeset);
             // Solid knowledge for the section-cap pass, in local part
             // numbering (the cache reads it per shape node).
             if (local.ShapeType() == TopAbs_SOLID && counts[i].faces > 0) {
@@ -3092,6 +3068,69 @@ void ViewProviderPartExt::applyInstancedPointColors(const std::vector<App::Color
         instanced->rebuildNodeMap();
 }
 
+void ViewProviderPartExt::registerInstancedLevelEntry(
+        const TopoDS_Shape &local, bool exact, float builtError,
+        double coarseDefl, double coarseAng,
+        double exactDefl, double exactAng, bool normalsFromUV,
+        SoCoordinate3 *coords, SoCoordinate3 *pcoords, SoNormal *norm,
+        SoTextureCoordinate2 *texcoords, SoBrepFaceSet *faceset,
+        SoBrepEdgeSet *lineset, SoBrepPointSet *nodeset)
+{
+    if (!exact) {
+        // A coarse desktop build climbs back to exact through the
+        // registration (§13): the callback rebuilds the SHARED nodes
+        // in place — every instance refines at once, the per-proto
+        // ladder — and it captures the nodes, not any view provider:
+        // the entry outlives any one sharer, and a live registration
+        // token is what guarantees the entry (release unregisters
+        // first). Re-registering exact is what keeps a later sharer's
+        // rebuild from queueing the work again.
+        std::function<void(const TopoDS_Shape &)> onExact;
+        if (builtError > 0.0f) {
+            onExact = [=](const TopoDS_Shape &meshed) {
+                transferMeshLevels(meshed, local);
+                int nt = 0, nn = 0, np = 0, nno = 0;
+                int nf = 0, ne = 0, nl = 0;
+                buildVisualNodes(local, exactDefl, exactAng, normalsFromUV,
+                                 coords, pcoords, norm, texcoords,
+                                 faceset, lineset, nodeset,
+                                 nt, nn, np, nno, nf, ne, nl);
+                registerInstancedLevelEntry(local, true, builtError,
+                                            coarseDefl, coarseAng,
+                                            exactDefl, exactAng,
+                                            normalsFromUV, coords, pcoords,
+                                            norm, texcoords, faceset,
+                                            lineset, nodeset);
+            };
+        }
+        registerMeshLevelSource(local, normalsFromUV, faceset, lineset,
+                                builtError, exactDefl, exactAng,
+                                std::move(onExact));
+        return;
+    }
+    // Exact-resident: registered at error 0 with the way back down
+    // armed (§13 step 3) — the coarse triangulation never left the
+    // shape, so the demotion is a drop, a coarse node rebuild that
+    // finds its mesh resident, and a fresh climb.
+    auto onDemote = [=]() {
+        if (!demoteMeshLevels(local))
+            return;
+        int nt = 0, nn = 0, np = 0, nno = 0, nf = 0, ne = 0, nl = 0;
+        buildVisualNodes(local, coarseDefl, coarseAng, normalsFromUV,
+                         coords, pcoords, norm, texcoords,
+                         faceset, lineset, nodeset,
+                         nt, nn, np, nno, nf, ne, nl);
+        registerInstancedLevelEntry(local, false, builtError,
+                                    coarseDefl, coarseAng,
+                                    exactDefl, exactAng, normalsFromUV,
+                                    coords, pcoords, norm, texcoords,
+                                    faceset, lineset, nodeset);
+    };
+    registerMeshLevelSource(local, normalsFromUV, faceset, lineset,
+                            0.0f, exactDefl, exactAng, {},
+                            std::move(onDemote), builtError);
+}
+
 void ViewProviderPartExt::updateVisual()
 {
     if (!getObject()
@@ -3300,18 +3339,39 @@ void ViewProviderPartExt::updateVisual()
         std::function<void(const TopoDS_Shape &)> onExact;
         if (builtError > 0.0f) {
             const void *tsh = cShape.TShape().get();
-            onExact = [this, tsh](const TopoDS_Shape &meshed) {
+            onExact = [this, tsh, builtError](const TopoDS_Shape &meshed) {
                 TopoDS_Shape cur = cachedShape.getShape();
                 if (cur.IsNull() || cur.TShape().get() != tsh)
                     return;
                 transferMeshLevels(meshed, cur);
                 ExactMeshTShape = tsh;
+                ExactMeshCoarseError = builtError;
+                updateVisual();
+            };
+        }
+        // Exact by refine: the coarse triangulation never left the
+        // shape (transferMeshLevels keeps it), so the way back down is
+        // armed too (§13 step 3) — under an observed memory ceiling
+        // the plan drops the exact rung, and the rebuild finds the
+        // coarse mesh resident.
+        std::function<void()> onDemote;
+        if (exactResident && ExactMeshCoarseError > 0.0f) {
+            const void *tsh = cShape.TShape().get();
+            onDemote = [this, tsh]() {
+                TopoDS_Shape cur = cachedShape.getShape();
+                if (cur.IsNull() || cur.TShape().get() != tsh)
+                    return;
+                if (!demoteMeshLevels(cur))
+                    return;
+                ExactMeshTShape = nullptr;
                 updateVisual();
             };
         }
         registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
                                 builtError, exactDeflection, exactAngle,
-                                std::move(onExact));
+                                std::move(onExact), std::move(onDemote),
+                                exactResident ? ExactMeshCoarseError
+                                              : 0.0f);
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());

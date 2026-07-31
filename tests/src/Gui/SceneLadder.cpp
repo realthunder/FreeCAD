@@ -7,6 +7,8 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -797,4 +799,89 @@ TEST(PlanMeshRefines, orthographicErrorIsSizeNotDepth)
     draws.push_back(meshDraw(&far, 0.03f, 0, 0, -1000, 5));
     auto tags = Render::planMeshRefines(draws, view, proj, 1000.0f, 2.0f);
     EXPECT_EQ(tags.size(), 2u);
+}
+
+//////////////////////////////////////////////////////////////////////
+// The way back down (§13 step 3): which exact-resident sources an
+// observed memory ceiling may drop back to their coarse rung.
+
+namespace
+{
+
+/// Answers the coarse-rung error for every tag in the map, 0 for the
+/// rest — the registry's demoteError in miniature.
+std::function<float(const void *)> demoteErrs(
+    const std::map<const void *, float> &errs)
+{
+    return [&errs](const void *tag) {
+        auto it = errs.find(tag);
+        return it == errs.end() ? 0.0f : it->second;
+    };
+}
+
+}  // namespace
+
+TEST(PlanMeshDemotes, offscreenDropsAndVisibleHoldsByTheMargin)
+{
+    // Three refined sources (levelError 0): one off screen — free to
+    // drop; one whose coarse rung errs ~0.26 px, far under half the
+    // 2 px tolerance — droppable; one erring ~2.8 px — must keep its
+    // exact mesh.
+    PlanCamera cam;
+    int offscreen = 0, cheap = 0, needed = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&offscreen, 0.0f, 500, 0, -100, 5));
+    draws.push_back(meshDraw(&cheap, 0.0f, 0, 0, -1000, 5));
+    draws.push_back(meshDraw(&needed, 0.0f, 0, 0, -100, 5));
+    std::map<const void *, float> errs{
+        {&offscreen, 0.03f}, {&cheap, 0.03f}, {&needed, 0.03f}};
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj,
+                                        1000.0f, 2.0f, demoteErrs(errs));
+    ASSERT_EQ(tags.size(), 2u);
+    EXPECT_NE(std::find(tags.begin(), tags.end(), &offscreen),
+              tags.end());
+    EXPECT_NE(std::find(tags.begin(), tags.end(), &cheap), tags.end());
+}
+
+TEST(PlanMeshDemotes, theMarginKeepsTheRefineBoundaryApart)
+{
+    // A source the refine pass would NOT want (coarse err just under
+    // the tolerance) still must not demote: at ~1.4 px against a 2 px
+    // tolerance it is under the refine boundary but over the demote
+    // margin (1 px), the hysteresis band a drifting camera sits in
+    // without trading tessellations.
+    PlanCamera cam;
+    int boundary = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&boundary, 0.0f, 0, 0, -200, 5));
+    std::map<const void *, float> errs{{&boundary, 0.03f}};
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj,
+                                        1000.0f, 2.0f, demoteErrs(errs));
+    EXPECT_TRUE(tags.empty());
+    // The refine pass agrees it is fine where it is.
+    auto refines = Render::planMeshRefines(draws, cam.view, cam.proj,
+                                           1000.0f, 2.0f);
+    EXPECT_TRUE(refines.empty());
+}
+
+TEST(PlanMeshDemotes, onlyDemotableSourcesAreConsidered)
+{
+    // A coarse source (levelError > 0) and an exact one the registry
+    // reports no fallback for (err 0) are both out, even off screen;
+    // and a non-positive tolerance demotes nothing at all.
+    PlanCamera cam;
+    int coarse = 0, noFallback = 0, cheap = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&coarse, 0.03f, 500, 0, -100, 5));
+    draws.push_back(meshDraw(&noFallback, 0.0f, 500, 0, -100, 5));
+    draws.push_back(meshDraw(&cheap, 0.0f, 0, 0, -1000, 5));
+    std::map<const void *, float> errs{
+        {&coarse, 0.03f}, {&cheap, 0.03f}};
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj,
+                                        1000.0f, 2.0f, demoteErrs(errs));
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_EQ(tags[0], &cheap);
+    EXPECT_TRUE(Render::planMeshDemotes(draws, cam.view, cam.proj,
+                                        1000.0f, 0.0f, demoteErrs(errs))
+                    .empty());
 }

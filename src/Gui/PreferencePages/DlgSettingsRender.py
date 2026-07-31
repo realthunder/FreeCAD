@@ -49,6 +49,7 @@ ParamGroup = (
         'CoarseTessellation',
         'LevelTolerance',
         'LevelThreads',
+        'LevelMemoryFloorMB',
     )]),
 
     ('Ambient occlusion', [_RenderParams[name] for name in (

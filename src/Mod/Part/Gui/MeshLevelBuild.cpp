@@ -33,8 +33,13 @@
 # include <BRep_Builder.hxx>
 # include <BRepBuilderAPI_Copy.hxx>
 # include <BRepMesh_IncrementalMesh.hxx>
+# include <BRep_CurveRepresentation.hxx>
+# include <BRep_ListOfCurveRepresentation.hxx>
+# include <BRep_TEdge.hxx>
+# include <BRep_TFace.hxx>
 # include <BRep_Tool.hxx>
 # include <Bnd_Box.hxx>
+# include <Poly_ListOfTriangulation.hxx>
 # include <Poly_Polygon3D.hxx>
 # include <Poly_PolygonOnTriangulation.hxx>
 # include <Poly_Triangulation.hxx>
@@ -717,8 +722,11 @@ bool PartGui::buildMeshLevel(const TopoDS_Shape &shape,
 }
 
 TopoDS_Shape PartGui::meshLevelExactCopy(const TopoDS_Shape &shape,
-                                         double deflection, double angle)
+                                         double deflection, double angle,
+                                         bool *outOfMemory)
 {
+    if (outOfMemory)
+        *outOfMemory = false;
     if (shape.IsNull() || !(deflection > 0))
         return {};
     try {
@@ -727,12 +735,20 @@ TopoDS_Shape PartGui::meshLevelExactCopy(const TopoDS_Shape &shape,
         return meshedCopy(shape, defl, angle > 0 ? angle : 0.5);
     }
     catch (const Standard_Failure &e) {
+        // OCCT's own out-of-memory signal travels as a Standard_Failure
+        // subclass; report it like the language-level one — the caller
+        // treats either as a ceiling observation (§13 step 3).
+        if (outOfMemory
+            && e.DynamicType()->SubType("Standard_OutOfMemory"))
+            *outOfMemory = true;
         if (debugOn())
             std::fprintf(stderr, "mesh refine: OCCT failure: %s\n",
                          e.GetMessageString());
         return {};
     }
     catch (const std::bad_alloc &) {
+        if (outOfMemory)
+            *outOfMemory = true;
         return {};
     }
 }
@@ -765,21 +781,13 @@ void PartGui::transferMeshLevels(const TopoDS_Shape &from,
     }
 
     BRep_Builder builder;
-    // Wipe the live curve-backed edges' polygon representations first,
-    // exactly as the meshed copy itself was stripped: the entries
-    // keyed to the outgoing coarse triangulations would otherwise
-    // pin those triangulations alive for the shape's lifetime.
-    for (int i = 1; i <= toEdges.Extent(); ++i) {
-        const TopoDS_Edge &edge = TopoDS::Edge(toEdges(i));
-        TopLoc_Location loc;
-        Standard_Real cf, cl;
-        if (BRep_Tool::Curve(edge, loc, cf, cl).IsNull())
-            continue;
-        builder.UpdateEdge(edge, Handle(Poly_Polygon3D)());
-    }
-    // Faces with a surface take the copy's triangulation handle
-    // whole; purely triangulated faces (glTF imports) kept their own
-    // mesh in the copy and keep it here.
+    // Faces with a surface take the copy's triangulation handle whole
+    // — *beside* the coarse one they already hold, not in its place
+    // (§13 step 3, "keep both"): the face's triangulation list becomes
+    // {coarse, exact} with the exact one active, so a later demotion
+    // under memory pressure is a drop back to the resident coarse rung
+    // instead of a re-tessellation. Purely triangulated faces (glTF
+    // imports) kept their own mesh in the copy and keep it here.
     for (int i = 1; i <= toFaces.Extent(); ++i) {
         const TopoDS_Face &ff = TopoDS::Face(fromFaces(i));
         const TopoDS_Face &tf = TopoDS::Face(toFaces(i));
@@ -788,7 +796,23 @@ void PartGui::transferMeshLevels(const TopoDS_Shape &from,
             continue;
         TopLoc_Location floc;
         Handle(Poly_Triangulation) tria = BRep_Tool::Triangulation(ff, floc);
-        builder.UpdateFace(tf, tria);
+        if (tria.IsNull())
+            continue;
+        TopLoc_Location cloc;
+        Handle(Poly_Triangulation) coarse =
+            BRep_Tool::Triangulation(tf, cloc);
+        if (coarse.IsNull() || coarse == tria) {
+            builder.UpdateFace(tf, tria);
+        }
+        else {
+            Poly_ListOfTriangulation both;
+            both.Append(coarse);
+            both.Append(tria);
+            Handle(BRep_TFace) tface =
+                Handle(BRep_TFace)::DownCast(tf.TShape());
+            tface->Triangulations(both, tria);
+            tf.TShape()->Modified(Standard_True);
+        }
         // The face's edges ride with its triangulation: their
         // polygons-on-triangulation index the very nodes just moved,
         // matched edge for edge in the same preserved order.
@@ -814,4 +838,69 @@ void PartGui::transferMeshLevels(const TopoDS_Shape &from,
         if (!poly.IsNull())
             builder.UpdateEdge(toEdge, poly);
     }
+}
+
+bool PartGui::demoteMeshLevels(const TopoDS_Shape &shape)
+{
+    if (shape.IsNull())
+        return false;
+    // The faces first: every face holding more than one triangulation
+    // drops back to its coarsest resident one (the refine kept it —
+    // transferMeshLevels above). The dropped handles are collected so
+    // the edge pass can remove the polygon representations bound to
+    // them; left in place they would pin the exact triangulations
+    // alive, and freeing that memory is the entire point.
+    BRep_Builder builder;
+    std::set<const void *> dropped;
+    bool any = false;
+    for (TopExp_Explorer fx(shape, TopAbs_FACE); fx.More(); fx.Next()) {
+        const TopoDS_Face &face = TopoDS::Face(fx.Current());
+        Handle(BRep_TFace) tface =
+            Handle(BRep_TFace)::DownCast(face.TShape());
+        if (tface.IsNull() || tface->NbTriangulations() < 2)
+            continue;
+        Handle(Poly_Triangulation) coarse;
+        for (Poly_ListOfTriangulation::Iterator it(tface->Triangulations());
+             it.More(); it.Next()) {
+            if (coarse.IsNull()
+                || it.Value()->NbNodes() < coarse->NbNodes())
+                coarse = it.Value();
+        }
+        for (Poly_ListOfTriangulation::Iterator it(tface->Triangulations());
+             it.More(); it.Next()) {
+            if (it.Value() != coarse)
+                dropped.insert(it.Value().get());
+        }
+        builder.UpdateFace(face, coarse);  // resets the list to {coarse}
+        any = true;
+    }
+    if (!any)
+        return false;
+    // The edges: remove every polygon representation bound to a
+    // dropped triangulation, by direct representation walk — matching
+    // through BRep_Builder::UpdateEdge would need the stored location
+    // reproduced exactly, and the handle identity is the truth here.
+    for (TopExp_Explorer ex(shape, TopAbs_EDGE); ex.More(); ex.Next()) {
+        const TopoDS_Edge &edge = TopoDS::Edge(ex.Current());
+        Handle(BRep_TEdge) tedge =
+            Handle(BRep_TEdge)::DownCast(edge.TShape());
+        if (tedge.IsNull())
+            continue;
+        BRep_ListOfCurveRepresentation &reps = tedge->ChangeCurves();
+        bool modified = false;
+        for (BRep_ListIteratorOfListOfCurveRepresentation it(reps);
+             it.More();) {
+            const Handle(BRep_CurveRepresentation) &rep = it.Value();
+            if (rep->IsPolygonOnTriangulation()
+                && dropped.count(rep->Triangulation().get())) {
+                reps.Remove(it);
+                modified = true;
+                continue;
+            }
+            it.Next();
+        }
+        if (modified)
+            tedge->Modified(Standard_True);
+    }
+    return true;
 }

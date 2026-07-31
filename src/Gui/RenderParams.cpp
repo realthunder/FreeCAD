@@ -53,6 +53,7 @@ public:
     std::string Type;
     long CoarseTessellation;
     long LevelThreads;
+    long LevelMemoryFloorMB;
     double LevelTolerance;
     double EffectResolution;
     bool AO;
@@ -115,6 +116,8 @@ public:
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         LevelThreads = this->handle->GetInt("LevelThreads", 0);
         funcs["LevelThreads"] = &RenderParamsP::updateLevelThreads;
+        LevelMemoryFloorMB = this->handle->GetInt("LevelMemoryFloorMB", 0);
+        funcs["LevelMemoryFloorMB"] = &RenderParamsP::updateLevelMemoryFloorMB;
         LevelTolerance = this->handle->GetFloat("LevelTolerance", 2.0);
         funcs["LevelTolerance"] = &RenderParamsP::updateLevelTolerance;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
@@ -246,6 +249,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelThreads(RenderParamsP *self) {
         self->LevelThreads = self->handle->GetInt("LevelThreads", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelMemoryFloorMB(RenderParamsP *self) {
+        self->LevelMemoryFloorMB = self->handle->GetInt("LevelMemoryFloorMB", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelTolerance(RenderParamsP *self) {
@@ -561,6 +568,43 @@ void RenderParams::setLevelThreads(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelThreads() {
     instance()->handle->RemoveInt("LevelThreads");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelMemoryFloorMB() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Available system memory below which an exact re-tessellation\n"
+"will not start (docs/SceneStreaming.md #13): the desktop refine\n"
+"worker checks the system's own estimate of allocatable memory\n"
+"before each exact build, and dropping under this floor counts as\n"
+"a memory-ceiling observation - the same as a caught allocation\n"
+"failure - after which the level plans also demote exact meshes\n"
+"the camera would not miss back to their resident coarse rung.\n"
+"0 sizes the floor automatically (at least 512 MB, or 1/16 of\n"
+"physical memory if that is more). Read when the first refine is\n"
+"queued.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getLevelMemoryFloorMB() {
+    return instance()->LevelMemoryFloorMB;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultLevelMemoryFloorMB() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelMemoryFloorMB(const long &v) {
+    instance()->handle->SetInt("LevelMemoryFloorMB",v);
+    instance()->LevelMemoryFloorMB = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelMemoryFloorMB() {
+    instance()->handle->RemoveInt("LevelMemoryFloorMB");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

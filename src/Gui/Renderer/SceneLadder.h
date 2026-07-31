@@ -353,6 +353,27 @@ RendererExport std::vector<const void *> planMeshRefines(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx);
 
+/// A demotion only ever runs when the camera would not notice it by a
+/// margin: the coarse rung must err at most this fraction of the
+/// tolerance. Demoting at the refine boundary itself would make a
+/// drifting camera trade a full tessellation back and forth across it
+/// — the tier-cut hysteresis lesson (§7), with both directions costing
+/// work here.
+constexpr float kPlanDemoteMargin = 0.5f;
+
+/// The way back down (§13 step 3), pure policy: among \a draws, the
+/// *exact*-resident sources (levelError 0) whose coarse rung — its
+/// error answered by \a demoteErrOf, 0 = not demotable — would commit
+/// at most kPlanDemoteMargin × \a tolerancePx on screen, plus every
+/// demotable source off screen or wholly behind the camera. Only
+/// consulted under an observed memory ceiling: without one the desktop
+/// keeps every rung it built ("keep both"), and a non-positive
+/// tolerance demotes nothing — everything desires exact.
+RendererExport std::vector<const void *> planMeshDemotes(
+    const DrawCallList &draws, const float *viewMatrix,
+    const float *projMatrix, float viewportHeightPx, float tolerancePx,
+    const std::function<float(const void *)> &demoteErrOf);
+
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.
 ///
@@ -484,6 +505,14 @@ public:
     /// A device hint where one exists (navigator.deviceMemory), in
     /// bytes. 0 when the browser does not answer or this is not one.
     static size_t deviceHint();
+
+    /// Memory the system estimates it can still hand out without
+    /// swapping (Linux MemAvailable, Windows available physical), in
+    /// bytes; 0 when the platform will not say. The desktop refine
+    /// worker's pre-emptive ceiling estimate (§13 step 3): a build
+    /// started under a low number here is a bad_alloc that has not
+    /// happened yet.
+    static size_t availableMemory();
 
     /// Start adapting from a guess for this machine. \a explicitBytes
     /// non-zero pins the budget instead and stops all adaptation — the

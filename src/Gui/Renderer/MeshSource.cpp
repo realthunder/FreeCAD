@@ -49,7 +49,9 @@ MeshSourceRegistry &MeshSourceRegistry::instance()
 void MeshSourceRegistry::add(const void *tag, Generator gen,
                              float publishedError,
                              std::function<void()> refine,
-                             std::function<void()> cancelRefine)
+                             std::function<void()> cancelRefine,
+                             std::function<void()> demote,
+                             float demoteError)
 {
     if (!tag || !gen)
         return;
@@ -61,6 +63,8 @@ void MeshSourceRegistry::add(const void *tag, Generator gen,
     src.refine = std::move(refine);
     src.cancelRefine = std::move(cancelRefine);
     src.asked = false;
+    src.demote = std::move(demote);
+    src.demoteErr = demoteError;
     if (debugOn())
         std::fprintf(stderr, "mesh source: add tag=%p err=%g (%zu sources)\n",
                      tag, double(publishedError), sources.size());
@@ -155,6 +159,43 @@ void MeshSourceRegistry::cancelRefine(const void *tag)
         std::fprintf(stderr, "mesh source: cancel tag=%p\n", tag);
     if (fn)
         fn();
+}
+
+void MeshSourceRegistry::requestDemote(const void *tag)
+{
+    // Consumed like the registration it came with: the demotion
+    // rebuilds and re-registers the source coarse, arming everything
+    // afresh; should the rebuild not happen, a second fire could not
+    // help either.
+    std::function<void()> fn;
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        auto it = sources.find(tag);
+        if (it == sources.end() || !it->second.demote)
+            return;
+        fn = std::move(it->second.demote);
+        it->second.demote = nullptr;
+    }
+    if (debugOn())
+        std::fprintf(stderr, "mesh source: demote tag=%p\n", tag);
+    fn();
+}
+
+float MeshSourceRegistry::demoteError(const void *tag)
+{
+    std::lock_guard<std::mutex> guard(mutex);
+    auto it = sources.find(tag);
+    if (it == sources.end() || !it->second.demote)
+        return 0.0f;
+    return it->second.demoteErr;
+}
+
+void MeshSourceRegistry::observeMemoryCeiling()
+{
+    ++ceilingEpoch;
+    std::fprintf(stderr,
+                 "mesh source: memory ceiling observed (epoch %llu)\n",
+                 static_cast<unsigned long long>(ceilingEpoch.load()));
 }
 
 bool MeshSourceRegistry::generate(const std::string &key, uint32_t level,

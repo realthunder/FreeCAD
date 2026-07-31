@@ -7267,6 +7267,15 @@ public:
         // process's own window never plans — its viewers' cameras
         // decide, and the registry arms no refine there anyway.
         if (!getenv("FC_BGFX_SERVE_SCENE") && viewMatrix && projMatrix) {
+            // A new memory-ceiling observation replans promptly — and
+            // stickily: from the first one on, every plan also demotes
+            // what the camera would not miss (§13 step 3).
+            const uint64_t ceiling = Render::MeshSourceRegistry::
+                instance().memoryCeilingEpoch();
+            if (ceiling != levelCeilingSeen) {
+                levelCeilingSeen = ceiling;
+                levelPlanner.markDirty();
+            }
             levelPlanner.observe(
                 reinterpret_cast<const float *>(viewMatrix),
                 reinterpret_cast<const float *>(projMatrix),
@@ -7278,7 +7287,23 @@ public:
                         levelPlanner.projMatrix(), h,
                         levelPlanner.tolerance());
                     auto &reg = Render::MeshSourceRegistry::instance();
-                    // Cancels first (§13 step 4): every coarse source
+                    // Demotions first (§13 step 3), and only ever under
+                    // an observed ceiling: drop the exact rungs the
+                    // camera would not miss — off screen, or coarse
+                    // within half the tolerance — before spending
+                    // anything on new builds.
+                    if (reg.memoryCeilingEpoch()) {
+                        auto drops = Render::planMeshDemotes(
+                            scene, levelPlanner.viewMatrix(),
+                            levelPlanner.projMatrix(), h,
+                            levelPlanner.tolerance(),
+                            [&reg](const void *t) {
+                                return reg.demoteError(t);
+                            });
+                        for (const void *tag : drops)
+                            reg.requestDemote(tag);
+                    }
+                    // Cancels next (§13 step 4): every coarse source
                     // this plan does not want is de-wanted — a queued
                     // tessellation the camera moved away from is work,
                     // not a fetch to ignore. Before the requests, so a
@@ -11163,6 +11188,9 @@ public:
     // every rendered frame, fires the plan pass ~300ms after it
     // settles somewhere new. The policy half is planMeshRefines.
     Render::MeshLevelPlanner levelPlanner;
+    // The last memory-ceiling epoch this view replanned for (§13
+    // step 3) — a new observation marks the planner dirty.
+    uint64_t levelCeilingSeen = 0;
 #endif
 };
 

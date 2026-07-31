@@ -260,6 +260,26 @@ protected:
     /// the desktop exact refine can rebuild an instanced entry's
     /// shared nodes after the view provider that first built them is
     /// gone (the entry outlives any one sharer).
+    /// One instanced geometry entry's whole level cycle (§13): the
+    /// shared leaf registers at \a builtError (coarse) or at error 0
+    /// (exact); the climb rebuilds the shared nodes exact and
+    /// re-registers with the demotion armed; the demotion drops the
+    /// exact triangulation (the coarse one never left the shape),
+    /// rebuilds coarse and re-registers with a fresh climb. A named
+    /// static rather than closures referencing each other, because
+    /// that cycle of owning std::functions would keep the shape alive
+    /// forever. Captured node pointers stay valid for as long as the
+    /// registration lives — the entry release unregisters first.
+    static void registerInstancedLevelEntry(const TopoDS_Shape &local,
+                          bool exact, float builtError,
+                          double coarseDefl, double coarseAng,
+                          double exactDefl, double exactAng,
+                          bool normalsFromUV,
+                          SoCoordinate3 *coords, SoCoordinate3 *pcoords,
+                          SoNormal *norm, SoTextureCoordinate2 *texcoords,
+                          SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
+                          SoBrepPointSet *nodeset);
+
     static void buildVisualNodes(const TopoDS_Shape &cShape,
                           double deflection, double angDeflectionRads,
                           bool normalsFromUV,
@@ -279,6 +299,10 @@ protected:
     /// full display deviation (the exact triangulation is resident —
     /// meshing is a no-op) instead of going coarse-first again.
     const void *ExactMeshTShape = nullptr;
+    /// The error of the coarse rung that refine kept resident beside
+    /// the exact one — what a demotion under memory pressure falls
+    /// back to, and what the plan prices it by (§13 step 3).
+    float ExactMeshCoarseError = 0.0f;
     bool UpdatingColor;
     bool highlightFaceEdges = false;
 

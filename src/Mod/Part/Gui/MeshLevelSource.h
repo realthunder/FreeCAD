@@ -95,13 +95,22 @@ bool buildMeshLevel(const TopoDS_Shape &shape, const MeshLevelJob &job,
 /// It fires at most once, and never after the tags were re-registered
 /// or unregistered — which is also the cancellation: a build obsoleted
 /// mid-job completes, fails that check, and is dropped.
+///
+/// \a onDemote is the way back down (§13 step 3): given by a source
+/// standing at its exact rung with the coarse one still resident
+/// beside it (transferMeshLevels keeps it), it fires — GUI thread,
+/// consumed on fire — when an observed memory ceiling makes the level
+/// plan want the bytes back; \a demoteError states the coarse rung's
+/// error so the plan can price the drop against the tolerance.
 void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              SoNode *faceTag, SoNode *lineTag,
                              float builtError = 0.0f,
                              double exactDeflection = 0.0,
                              double exactAngle = 0.0,
                              std::function<void(const TopoDS_Shape &)>
-                                 onExactBuilt = {});
+                                 onExactBuilt = {},
+                             std::function<void()> onDemote = {},
+                             float demoteError = 0.0f);
 
 /// Drop the registration made under these tags (before the nodes die;
 /// their addresses may be reused).
@@ -123,16 +132,31 @@ int coarseTessellationLevel();
 /// and return it (null on failure). Pure and thread-safe — the copy
 /// shares geometry but owns fresh TShapes, so the live shape is never
 /// touched; the worker-pool half of the desktop exact refine.
+/// \a outOfMemory, when given, is set if the failure was an
+/// allocation failure (std::bad_alloc or OCCT's Standard_OutOfMemory)
+/// — the caller's memory-ceiling observation (§13 step 3).
 TopoDS_Shape meshLevelExactCopy(const TopoDS_Shape &shape,
-                                double deflection, double angle);
+                                double deflection, double angle,
+                                bool *outOfMemory = nullptr);
 
 /// Move the triangulations of \a from (a meshed structure copy) onto
 /// \a to (the live shape it was copied from): face triangulations,
 /// their edges' polygons-on-triangulation, and free edges' 3D
-/// polygons, matched by the copy's preserved sub-shape order. GUI
+/// polygons, matched by the copy's preserved sub-shape order. The
+/// coarse triangulation each face already holds is KEPT beside the
+/// arriving exact one (exact active) — §13 step 3's "keep both", so
+/// a demotion under memory pressure is a drop, not a rebuild. GUI
 /// thread — the reader of these is the display build. No-op when the
 /// two shapes do not correspond.
 void transferMeshLevels(const TopoDS_Shape &from, const TopoDS_Shape &to);
+
+/// Drop every face triangulation of \a shape except its coarsest
+/// resident one (re-activated), removing the edge polygon
+/// representations bound to the dropped ones so their memory really
+/// frees. The way back down for a shape transferMeshLevels refined —
+/// meshing after this is a no-op, the coarse rung never left. Returns
+/// whether anything was dropped. GUI thread, like the transfer.
+bool demoteMeshLevels(const TopoDS_Shape &shape);
 
 /// The linear / angular deflection of ladder level \a level for a
 /// shape of the given bbox diagonal — the generator's own grid

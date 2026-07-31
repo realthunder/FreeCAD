@@ -123,6 +123,27 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LevelMemoryFloorMB
+    ///
+    /// Available system memory below which an exact re-tessellation
+    /// will not start (docs/SceneStreaming.md #13): the desktop refine
+    /// worker checks the system's own estimate of allocatable memory
+    /// before each exact build, and dropping under this floor counts as
+    /// a memory-ceiling observation - the same as a caught allocation
+    /// failure - after which the level plans also demote exact meshes
+    /// the camera would not miss back to their resident coarse rung.
+    /// 0 sizes the floor automatically (at least 512 MB, or 1/16 of
+    /// physical memory if that is more). Read when the first refine is
+    /// queued.
+    static const long & getLevelMemoryFloorMB();
+    static const long & defaultLevelMemoryFloorMB();
+    static void removeLevelMemoryFloorMB();
+    static void setLevelMemoryFloorMB(const long &v);
+    static const char *docLevelMemoryFloorMB();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LevelTolerance
     ///
     /// Screen-space error, in pixels, a coarse tessellation may
