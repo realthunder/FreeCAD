@@ -287,6 +287,31 @@ EM_JS(char *, fcviewer_gl_info, (), {
 // Self-reload with a cache-busting query parameter (a bare reload may
 // reuse a stale cached .wasm/.js bundle). Refuses a repeat reload for
 // the same bust token, so a bad build cannot cause a reload loop.
+// Semantic-channel answers for the DOM layer (docs/ThinClient.md §3):
+// each is re-dispatched as a window 'fc:control' CustomEvent so the
+// control client correlates on its request id without touching WASM.
+EM_JS(void, fcviewer_control_event, (const char *json), {
+    try {
+        var detail = JSON.parse(UTF8ToString(json));
+        window.dispatchEvent(new CustomEvent('fc:control',
+                                             { detail: detail }));
+    } catch (e) {}
+});
+
+// The DOM layer's uplink, installed once at startup:
+// window.fcviewerControlSend(jsonString) -> bool (false = socket down,
+// caller shows its offline state rather than queueing).
+EM_JS(void, fcviewer_install_control, (), {
+    window.fcviewerControlSend = function(s) {
+        var len = lengthBytesUTF8(s) + 1;
+        var buf = _malloc(len);
+        stringToUTF8(s, buf, len);
+        var ok = _fcviewer_control_send(buf);
+        _free(buf);
+        return ok === 1;
+    };
+});
+
 EM_JS(void, fcviewer_reload, (const char *bust), {
     var b = UTF8ToString(bust);
     try {
@@ -5364,6 +5389,23 @@ static void handleControlMessage(const char *json)
         std::printf("fcviewer: reload requested (bust '%s')\n", bust);
         fcviewer_reload(bust);
     }
+    else if (std::strstr(json, "\"id\":") || std::strstr(json, "\"op\":")) {
+        // A semantic-channel answer (docs/ThinClient.md §4.2) — not for
+        // the viewer, for the DOM layer riding on it.
+        fcviewer_control_event(json);
+    }
+}
+
+/// The DOM layer's uplink for semantic operations (getProperties,
+/// setProperty, ...): send a JSON text frame on the live scene socket.
+/// Returns 0 when the socket is down — the DOM side treats that as its
+/// "offline" state, it must not queue.
+extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_control_send(const char *json)
+{
+    if (s_ws <= 0 || !s_wsOpen)
+        return 0;
+    return emscripten_websocket_send_utf8_text(
+                   s_ws, const_cast<char *>(json)) >= 0 ? 1 : 0;
 }
 
 static void schedulePoll();
@@ -5797,6 +5839,7 @@ static void startInitialFetch()
 int main()
 {
     emscripten_set_canvas_element_size("#canvas", s_width, s_height);
+    fcviewer_install_control();
     // The persistent store's ledger (lazy blob collection, §7): load
     // early so a warm session's touches land on real entries.
     loadStoreMeta();

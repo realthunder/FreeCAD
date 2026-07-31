@@ -176,6 +176,7 @@
 #include "ViewProviderLink.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
+#include "SceneControl.h"
 #include "NavigationAnimator.h"
 #include "NavigationAnimation.h"
 #include "Utilities.h"
@@ -3952,6 +3953,10 @@ void View3DInventorViewer::setRendererType(const std::string &type)
                                 r.modifiers & 1);
                     }, Qt::QueuedConnection);
                 });
+            // The semantic control channel (docs/ThinClient.md §4.2):
+            // property reads (and later edits) from remote viewers,
+            // marshalled to the GUI thread inside.
+            installSceneControlHandler();
             // A finished level-generation job (§7, phase 5c) is
             // announced by the next publish, and the publish poll
             // lives in the render path — so an idle backend would sit

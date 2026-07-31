@@ -521,6 +521,7 @@ public:
 
     std::mutex handlerMutex;
     std::function<void(const ScenePickRequest &)> pickHandler;
+    std::function<void(SceneControlRequest &&)> controlHandler;
     std::function<void()> workNotifier;   ///< guarded by handlerMutex
 
     /// One live WebSocket connection, registered by its wsLoop. All
@@ -528,6 +529,11 @@ public:
     /// here and drained by the loop within its poll interval.
     struct Conn {
         int fd = -1;
+        /// Stable identity for cross-thread reply routing (the Conn
+        /// itself is stack-owned by its wsLoop): a control reply looks
+        /// the connection up by id under connMutex and is dropped when
+        /// it is gone. Never reused within a run.
+        uint64_t id = 0;
         /// The scene version this connection has been given, seeded
         /// with what the client said it held on the upgrade request.
         /// Touched only by this connection's own push loop.
@@ -545,6 +551,7 @@ public:
     };
     std::mutex connMutex;
     std::vector<Conn *> conns;
+    uint64_t connIdCounter = 0;   ///< guarded by connMutex
     std::condition_variable dumpCv;    ///< guarded by connMutex
     /// In-flight dumpFrame collection (one at a time).
     struct DumpCollect {
@@ -745,6 +752,51 @@ public:
         }
         if (handler)
             handler(req);
+    }
+
+    /// Queue \a json for the connection identified by \a connId, if it
+    /// is still with us. Any thread.
+    void replyTo(uint64_t connId, const std::string &json)
+    {
+        std::lock_guard<std::mutex> guard(connMutex);
+        for (Conn *conn : conns) {
+            if (conn->id == connId) {
+                conn->pendingText.push_back(json);
+                return;
+            }
+        }
+    }
+
+    void dispatchControl(Conn &conn, std::string &&json)
+    {
+        std::function<void(SceneControlRequest &&)> handler;
+        {
+            std::lock_guard<std::mutex> guard(handlerMutex);
+            handler = controlHandler;
+        }
+        SceneControlRequest req;
+        req.json = std::move(json);
+        const uint64_t connId = conn.id;
+        req.reply = [this, connId](const std::string &answer) {
+            replyTo(connId, answer);
+        };
+        if (handler) {
+            handler(std::move(req));
+            return;
+        }
+        // Answer rather than stay silent: correlate on the request id
+        // when it has one, so the asker's timeout turns into a real
+        // diagnosis.
+        long long id = 0;
+        char msg[96];
+        if (jsonInt(req.json, "id", id))
+            std::snprintf(msg, sizeof(msg),
+                          "{\"id\":%lld,\"ok\":false,\"code\":"
+                          "\"NoHandler\"}", id);
+        else
+            std::snprintf(msg, sizeof(msg),
+                          "{\"op\":\"error\",\"code\":\"NoHandler\"}");
+        req.reply(msg);
     }
 
 #ifndef _WIN32
@@ -1211,6 +1263,7 @@ public:
         conn.sent = held;
         {
             std::lock_guard<std::mutex> guard(connMutex);
+            conn.id = ++connIdCounter;
             conns.push_back(&conn);
         }
         wsLoopBody(fd, conn);
@@ -1381,6 +1434,12 @@ public:
     {
         if (text) {
             std::string json(reinterpret_cast<const char *>(bytes), size);
+            // The semantic tier (docs/ThinClient.md §4.2) speaks "op";
+            // the transport vocabulary below stays "cmd".
+            if (json.find("\"op\":") != std::string::npos) {
+                dispatchControl(conn, std::move(json));
+                return;
+            }
             // The viewer's model lost the delta chain and wants the
             // full current payload — over THIS socket, in order, which
             // is what makes the repair atomic: the push loop (same
@@ -1663,6 +1722,14 @@ void SceneStreamServer::setPickHandler(
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->handlerMutex);
     p->pickHandler = std::move(handler);
+}
+
+void SceneStreamServer::setControlHandler(
+        std::function<void(SceneControlRequest &&)> handler)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    p->controlHandler = std::move(handler);
 }
 
 void SceneStreamServer::setWorkNotifier(std::function<void()> notifier)

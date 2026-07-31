@@ -58,6 +58,18 @@ struct ScenePickRequest {
     uint32_t modifiers = 0;   ///< bit 0 = ctrl (toggle selection)
 };
 
+/// One semantic control request from a viewer (docs/ThinClient.md
+/// §4.2): the raw JSON text of an `"op"` message, and a thread-safe way
+/// to answer the connection it arrived on. `reply` may be called from
+/// any thread, once or not at all; the answer is queued for the
+/// connection's own send loop (and silently dropped if the viewer has
+/// disconnected meanwhile — the request `id` correlation makes a lost
+/// answer a timeout, never a mixup).
+struct SceneControlRequest {
+    std::string json;
+    std::function<void(const std::string &)> reply;
+};
+
 /// One viewer's answer to a dumpFrame control request
 /// (docs/RenderDebug.md §4.4): its canvas pixels read back in-page on
 /// the device's real GPU, plus the viewer's own metadata JSON (canvas
@@ -172,6 +184,16 @@ public:
     /// server connection thread — the handler must marshal to the GUI
     /// thread itself before touching any scene graph.
     void setPickHandler(std::function<void(const ScenePickRequest &)> handler);
+
+    /// Install the consumer of semantic control requests — the `"op"`
+    /// JSON vocabulary of the property/operation channel
+    /// (docs/ThinClient.md §4.2). Called on a server connection thread;
+    /// the handler must marshal to the GUI thread itself before
+    /// touching the document, and answers through the request's own
+    /// reply hook. No handler installed = every op answers with a
+    /// structured error.
+    void setControlHandler(
+            std::function<void(SceneControlRequest &&)> handler);
 
     /// Install the publisher's cue that queued work finished (a level
     /// was generated): without it an idle backend sits on finished
