@@ -93,11 +93,16 @@ void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
 /// their addresses may be reused).
 void unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag);
 
-/// The coarse-first tessellation level for display builds, from
-/// FC_COARSE_TESSELLATION; negative when unset (tessellate at the full
-/// display deviation as always). A headless streaming server sets it
-/// so a big model costs its coarse rungs up front and its exact meshes
-/// only where a viewer's camera asks (docs/SceneStreaming.md §7).
+/// The coarse-first tessellation level for display builds; negative
+/// means tessellate at the full display deviation as always. Resolved
+/// from the CoarseTessellation render parameter (default 1) — per-view
+/// Render_CoarseTessellation overrides it — while a scene stream
+/// server is active, so a big model costs its coarse rungs up front
+/// and its exact meshes only where a viewer's camera asks
+/// (docs/SceneStreaming.md §7); plain desktop display keeps the exact
+/// tessellation until the desktop LOD tier exists. The
+/// FC_COARSE_TESSELLATION environment variable overrides everything
+/// for a whole process.
 int coarseTessellationLevel();
 
 /// The linear / angular deflection of ladder level \a level for a

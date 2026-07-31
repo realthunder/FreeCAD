@@ -27,6 +27,7 @@
 #include <Inventor/SoRenderManager.h>
 #include "Application.h"
 #include "Document.h"
+#include "Renderer/SceneServer.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
 #include "ViewParams.h"
@@ -50,6 +51,8 @@ public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(RenderParamsP*),App::CStringHasher,App::CStringHasher> funcs;
     std::string Type;
+    long CoarseTessellation;
+    long LevelThreads;
     double EffectResolution;
     bool AO;
     bool Shadow;
@@ -107,6 +110,10 @@ public:
 
         Type = this->handle->GetASCII("Type", "Default");
         funcs["Type"] = &RenderParamsP::updateType;
+        CoarseTessellation = this->handle->GetInt("CoarseTessellation", 1);
+        funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
+        LevelThreads = this->handle->GetInt("LevelThreads", 0);
+        funcs["LevelThreads"] = &RenderParamsP::updateLevelThreads;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
         funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
         AO = this->handle->GetBool("AO", false);
@@ -228,6 +235,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateType(RenderParamsP *self) {
         self->Type = self->handle->GetASCII("Type", "Default");
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCoarseTessellation(RenderParamsP *self) {
+        self->CoarseTessellation = self->handle->GetInt("CoarseTessellation", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelThreads(RenderParamsP *self) {
+        self->LevelThreads = self->handle->GetInt("LevelThreads", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateEffectResolution(RenderParamsP *self) {
@@ -467,6 +482,78 @@ void RenderParams::setType(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeType() {
     instance()->handle->RemoveASCII("Type");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCoarseTessellation() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Ladder level shapes are tessellated at when the scene is being\n"
+"served to streaming viewers (docs/SceneStreaming.md #7,\n"
+"coarse-first publish): the display mesh is built at this rung of\n"
+"the fidelity ladder and the exact tessellation is declared\n"
+"unbuilt, generated on demand where a viewer's camera asks. 0 is\n"
+"the coarsest rung, each level halves the error; -1 always\n"
+"tessellates exact up front (pre-ladder behavior). Only consulted\n"
+"while a scene stream server is active - plain desktop display\n"
+"keeps the exact tessellation, which is also why this engages\n"
+"automatically for a headless serving process. The\n"
+"FC_COARSE_TESSELLATION environment variable overrides it for a\n"
+"whole process. Takes effect when a shape (re)tessellates.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getCoarseTessellation() {
+    return instance()->CoarseTessellation;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultCoarseTessellation() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCoarseTessellation(const long &v) {
+    instance()->handle->SetInt("CoarseTessellation",v);
+    instance()->CoarseTessellation = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCoarseTessellation() {
+    instance()->handle->RemoveInt("CoarseTessellation");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelThreads() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many mesh level builds (the scene server's on-demand\n"
+"re-tessellations, docs/SceneStreaming.md #7) may run at once.\n"
+"0 sizes the pool automatically - modest, because each BRepMesh\n"
+"build already parallelizes internally over OCCT's shared thread\n"
+"pool. The FC_LEVEL_THREADS environment variable overrides it.\n"
+"Read when the server spawns its first level worker.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getLevelThreads() {
+    return instance()->LevelThreads;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultLevelThreads() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelThreads(const long &v) {
+    instance()->handle->SetInt("LevelThreads",v);
+    instance()->LevelThreads = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelThreads() {
+    instance()->handle->RemoveInt("LevelThreads");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -1994,6 +2081,12 @@ void RenderParams::onRenderParamChanged(const char *sReason)
         foreach3DViewer([&type](Gui::View3DInventorViewer *viewer) {
             viewer->setRendererType(type);
         });
+        return;
+    }
+    if (boost::equals(sReason, "LevelThreads")) {
+        // The renderer layer cannot read Gui parameters — push the cap
+        // down (applies to level workers not yet spawned).
+        Render::SceneStreamServer::setLevelThreadCap(int(getLevelThreads()));
         return;
     }
     // Every other parameter is re-fed to the backend each frame; a redraw

@@ -47,6 +47,26 @@ Params = [
     ParamString('Type', 'Default', title='Renderer type',
         doc="Type of the experimental render engine backend. 'Default' keeps\n"
         "the plain GL pipeline. Only effective with render cache mode 3."),
+    ParamInt('CoarseTessellation',  1, title='Coarse tessellation level',
+        doc="Ladder level shapes are tessellated at when the scene is being\n"
+        "served to streaming viewers (docs/SceneStreaming.md #7,\n"
+        "coarse-first publish): the display mesh is built at this rung of\n"
+        "the fidelity ladder and the exact tessellation is declared\n"
+        "unbuilt, generated on demand where a viewer's camera asks. 0 is\n"
+        "the coarsest rung, each level halves the error; -1 always\n"
+        "tessellates exact up front (pre-ladder behavior). Only consulted\n"
+        "while a scene stream server is active - plain desktop display\n"
+        "keeps the exact tessellation, which is also why this engages\n"
+        "automatically for a headless serving process. The\n"
+        "FC_COARSE_TESSELLATION environment variable overrides it for a\n"
+        "whole process. Takes effect when a shape (re)tessellates."),
+    ParamInt('LevelThreads',  0, title='Level build threads',
+        doc="How many mesh level builds (the scene server's on-demand\n"
+        "re-tessellations, docs/SceneStreaming.md #7) may run at once.\n"
+        "0 sizes the pool automatically - modest, because each BRepMesh\n"
+        "build already parallelizes internally over OCCT's shared thread\n"
+        "pool. The FC_LEVEL_THREADS environment variable overrides it.\n"
+        "Read when the server spawns its first level worker."),
     ParamFloat('EffectResolution',  1.0, title='Effect resolution',
         doc="Resolution scale (0.25-1.0) of the expensive screen-space effect\n"
         "passes -- the planar/ground reflection scene re-render, the water\n"

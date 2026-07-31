@@ -41,9 +41,13 @@
 #include <memory>
 #include <vector>
 
+#include <App/PropertyStandard.h>
+#include <Gui/Application.h>
+#include <Gui/RenderParams.h>
 #include <Gui/Renderer/MeshSource.h>
 #include <Gui/Renderer/SceneDump.h>
 #include <Gui/Renderer/SceneLadder.h>
+#include <Gui/View3DInventor.h>
 
 #include "MeshLevelSource.h"
 
@@ -64,14 +68,39 @@ using LevelSourceStatePtr = std::shared_ptr<LevelSourceState>;
 
 int PartGui::coarseTessellationLevel()
 {
-    static const int level = [] {
+    // The environment variable is the whole-process override — set, it
+    // decides for every view and any value outside the ladder means
+    // "exact", so a recipe can also force the feature off with -1.
+    static const bool haveEnv = [] {
         const char *env = std::getenv("FC_COARSE_TESSELLATION");
-        if (!env || !*env)
-            return -1;
-        int lvl = std::atoi(env);
-        return lvl >= 0 && lvl < 8 ? lvl : -1;
+        return env && *env;
     }();
-    return level;
+    if (haveEnv) {
+        static const int level = [] {
+            int lvl = std::atoi(std::getenv("FC_COARSE_TESSELLATION"));
+            return lvl >= 0 && lvl < 8 ? lvl : -1;
+        }();
+        return level;
+    }
+    // Coarse-first tessellation only pays off where something can
+    // deliver the exact rung on demand — the scene stream server's
+    // ladder. Plain desktop display has no level loop yet (the desktop
+    // LOD tier), so a coarse build there would simply stay coarse;
+    // until that tier exists the parameter engages only while the
+    // process serves a scene.
+    if (!std::getenv("FC_BGFX_SERVE_SCENE"))
+        return -1;
+    // The per-view Render_CoarseTessellation property overrides the
+    // global parameter, like every other render parameter; the serving
+    // process has one 3D view, so the active view is the served one.
+    long lvl = Gui::RenderParams::getCoarseTessellation();
+    if (auto *view = qobject_cast<Gui::View3DInventor *>(
+            Gui::Application::Instance->activeView())) {
+        if (auto *prop = dynamic_cast<App::PropertyInteger *>(
+                view->getPropertyByName("Render_CoarseTessellation")))
+            lvl = prop->getValue();
+    }
+    return lvl >= 0 && lvl < 8 ? int(lvl) : -1;
 }
 
 void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,

@@ -1814,8 +1814,12 @@ generate) and the generator's refusal reasons.
 ### 5f — coarse-first publish, as built
 
 The other direction through the same seam: a big model must not cost
-its exact tessellation up front. With `FC_COARSE_TESSELLATION=<level>`
-set (a headless server's switch; a `Render_*` preference later), the
+its exact tessellation up front. Governed by the `CoarseTessellation`
+render parameter (default 1, per-view `Render_CoarseTessellation`
+overrides; engaged only while a scene stream server is active, since
+plain desktop display has no level loop yet to climb back to exact —
+`FC_COARSE_TESSELLATION=<level>` remains the whole-process override,
+with any out-of-range value forcing exact), the
 display build itself tessellates every shape at that ladder rung —
 `ViewProviderPartExt` uses the generator's own grid
 (`diagonal/(8<<L)`, `meshLevelDeflection`), flat and instanced-leaf
@@ -1860,13 +1864,13 @@ coarse chunk refining to the same 157 KB exact mesh a full publish
 ships — are announced, fetched, and the scene converges to the exact
 geometry with objects standing on their coarse rungs throughout.
 
-Still open here: the coarse switch wants to be a real preference tied
-to the server tier rather than an environment variable; bounds without
-*any* tessellation (BRepBndLib before the coarse build) stay deferred
-until coarse tessellation itself shows up in a profile; and `lodpx=0`
-(selection off) keeps the old semantics — an announcement there
-refetches the finest rung with a transient box, the price of the off
-switch.
+Still open here: bounds without *any* tessellation (BRepBndLib before
+the coarse build) stay deferred until coarse tessellation itself shows
+up in a profile; `lodpx=0` (selection off) keeps the old semantics — an
+announcement there refetches the finest rung with a transient box, the
+price of the off switch; and once the desktop LOD tier exists the
+`CoarseTessellation` parameter should engage for desktop renderer
+views too, not only serving processes.
 
 ## 12. Open questions
 

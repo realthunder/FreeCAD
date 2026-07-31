@@ -74,6 +74,13 @@ private:
     Gui::PrefLineEdit *Type = nullptr;
 
     // Auto generated code (Tools/params_utils.py:426)
+    QGroupBox * groupScenestreaming = nullptr;
+    QLabel *labelCoarseTessellation = nullptr;
+    Gui::PrefSpinBox *CoarseTessellation = nullptr;
+    QLabel *labelLevelThreads = nullptr;
+    Gui::PrefSpinBox *LevelThreads = nullptr;
+
+    // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupAmbientocclusion = nullptr;
     Gui::PrefCheckBox *AO = nullptr;
     QLabel *labelAOMethod = nullptr;

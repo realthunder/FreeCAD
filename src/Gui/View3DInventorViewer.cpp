@@ -3922,6 +3922,11 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         if (_pimpl->renderer && selectionRoot) {
             selectionRoot->setExternalRenderer(_pimpl->renderer.get(), _pimpl->view);
             initRenderProperties();
+            // Seed the renderer-layer knobs it cannot read itself
+            // before the backend can start serving (RenderParams
+            // changes re-push through onRenderParamChanged).
+            Render::SceneStreamServer::setLevelThreadCap(
+                int(RenderParams::getLevelThreads()));
             // Apply the persisted AntiAliasing preference to the backend's
             // offscreen target now: at startup the sample count otherwise
             // only reaches the Qt surface-format REQUEST (not granted on
@@ -4101,6 +4106,9 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "EffectResolution",
             RenderParams::docEffectResolution(),
             RenderParams::getEffectResolution());
+    _renderParam<App::PropertyInteger>(view, "CoarseTessellation",
+            RenderParams::docCoarseTessellation(),
+            RenderParams::getCoarseTessellation());
     _renderParam<App::PropertyFloat>(view, "AORadius",
             RenderParams::docAORadius(), RenderParams::getAORadius());
     _renderParam<App::PropertyFloat>(view, "AOIntensity",

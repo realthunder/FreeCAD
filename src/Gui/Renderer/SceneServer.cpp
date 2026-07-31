@@ -25,6 +25,7 @@
 #include "MeshSource.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
@@ -344,23 +345,32 @@ public:
     int levelThreads = 0;                 ///< spawned so far, ≤ cap
     std::condition_variable levelCv;      ///< pairs with \a mutex
 
+    /// The LevelThreads render parameter, pushed down by the Gui layer
+    /// (SceneStreamServer::setLevelThreadCap); 0 = auto.
+    static inline std::atomic<int> s_levelThreadParam{0};
+
     /// How many level builds may run at once. A build is a pure
     /// function of (shape, params, source chunk) — MeshSource.h — so
-    /// this is plain CPU fan-out; modest by default, because BRepMesh
-    /// already parallelizes each build internally over OCCT's shared
-    /// thread pool. FC_LEVEL_THREADS overrides.
+    /// this is plain CPU fan-out; auto-sized modestly by default,
+    /// because BRepMesh already parallelizes each build internally
+    /// over OCCT's shared thread pool. The LevelThreads render
+    /// parameter sets it (0 = auto); FC_LEVEL_THREADS overrides.
+    /// Consulted per spawn, so a parameter change applies to workers
+    /// not yet started.
     static int levelThreadCap()
     {
-        static const int cap = [] {
-            if (const char *env = std::getenv("FC_LEVEL_THREADS")) {
-                int n = std::atoi(env);
-                if (n > 0)
-                    return std::min(n, 64);
-            }
+        static const int envCap = [] {
+            const char *env = std::getenv("FC_LEVEL_THREADS");
+            return env ? std::atoi(env) : 0;
+        }();
+        int n = envCap > 0 ? envCap : s_levelThreadParam.load();
+        if (n > 0)
+            return std::min(n, 64);
+        static const int autoCap = [] {
             unsigned hw = std::thread::hardware_concurrency();
             return int(std::max(1u, std::min(4u, hw / 4)));
         }();
-        return cap;
+        return autoCap;
     }
 
     /// Accept a request to build \a level of the mesh whose exact
@@ -1536,6 +1546,11 @@ SceneStreamServer &SceneStreamServer::instance()
 {
     static SceneStreamServer server;
     return server;
+}
+
+void SceneStreamServer::setLevelThreadCap(int n)
+{
+    Private::s_levelThreadParam.store(n > 0 ? n : 0);
 }
 
 SceneStreamServer::Private *SceneStreamServer::ensure()

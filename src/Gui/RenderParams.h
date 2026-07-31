@@ -83,6 +83,46 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter CoarseTessellation
+    ///
+    /// Ladder level shapes are tessellated at when the scene is being
+    /// served to streaming viewers (docs/SceneStreaming.md #7,
+    /// coarse-first publish): the display mesh is built at this rung of
+    /// the fidelity ladder and the exact tessellation is declared
+    /// unbuilt, generated on demand where a viewer's camera asks. 0 is
+    /// the coarsest rung, each level halves the error; -1 always
+    /// tessellates exact up front (pre-ladder behavior). Only consulted
+    /// while a scene stream server is active - plain desktop display
+    /// keeps the exact tessellation, which is also why this engages
+    /// automatically for a headless serving process. The
+    /// FC_COARSE_TESSELLATION environment variable overrides it for a
+    /// whole process. Takes effect when a shape (re)tessellates.
+    static const long & getCoarseTessellation();
+    static const long & defaultCoarseTessellation();
+    static void removeCoarseTessellation();
+    static void setCoarseTessellation(const long &v);
+    static const char *docCoarseTessellation();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelThreads
+    ///
+    /// How many mesh level builds (the scene server's on-demand
+    /// re-tessellations, docs/SceneStreaming.md #7) may run at once.
+    /// 0 sizes the pool automatically - modest, because each BRepMesh
+    /// build already parallelizes internally over OCCT's shared thread
+    /// pool. The FC_LEVEL_THREADS environment variable overrides it.
+    /// Read when the server spawns its first level worker.
+    static const long & getLevelThreads();
+    static const long & defaultLevelThreads();
+    static void removeLevelThreads();
+    static void setLevelThreads(const long &v);
+    static const char *docLevelThreads();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter EffectResolution
     ///
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect

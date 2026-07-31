@@ -73,6 +73,12 @@ class RendererExport SceneStreamServer {
 public:
     static SceneStreamServer &instance();
 
+    /// Cap on concurrent on-demand level builds, pushed down from the
+    /// LevelThreads render parameter (the renderer layer cannot read
+    /// Gui parameters itself). 0 = auto-size; FC_LEVEL_THREADS still
+    /// overrides. Applies to workers spawned after the call.
+    static void setLevelThreadCap(int n);
+
     /// Start the listener thread on port (once; further calls return
     /// whether it is running).
     bool start(int port);

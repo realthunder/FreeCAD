@@ -45,6 +45,11 @@ ParamGroup = (
         'Type',
     )]),
 
+    ('Scene streaming', [_RenderParams[name] for name in (
+        'CoarseTessellation',
+        'LevelThreads',
+    )]),
+
     ('Ambient occlusion', [_RenderParams[name] for name in (
         'AO',
         'AOMethod',

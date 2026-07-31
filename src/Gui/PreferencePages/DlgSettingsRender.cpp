@@ -74,6 +74,41 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
 
 
     // Auto generated code (Tools/params_utils.py:448)
+    groupScenestreaming = new QGroupBox(this);
+    layout->addWidget(groupScenestreaming);
+    auto layoutHorizScenestreaming = new QHBoxLayout(groupScenestreaming);
+    auto layoutScenestreaming = new QVBoxLayout();
+    layoutHorizScenestreaming->addLayout(layoutScenestreaming);
+    layoutHorizScenestreaming->addStretch();
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutScenestreaming->addLayout(layoutRow);
+    labelCoarseTessellation = new QLabel(this);
+    layoutRow->addWidget(labelCoarseTessellation);
+    CoarseTessellation = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(CoarseTessellation);
+    CoarseTessellation->setValue(Gui::RenderParams::defaultCoarseTessellation());
+    CoarseTessellation->setEntryName("CoarseTessellation");
+    CoarseTessellation->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutScenestreaming->addLayout(layoutRow);
+    labelLevelThreads = new QLabel(this);
+    layoutRow->addWidget(labelLevelThreads);
+    LevelThreads = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(LevelThreads);
+    LevelThreads->setValue(Gui::RenderParams::defaultLevelThreads());
+    LevelThreads->setEntryName("LevelThreads");
+    LevelThreads->setParamGrpPath("View/Render");
+
+
+    // Auto generated code (Tools/params_utils.py:448)
     groupAmbientocclusion = new QGroupBox(this);
     layout->addWidget(groupAmbientocclusion);
     auto layoutHorizAmbientocclusion = new QHBoxLayout(groupAmbientocclusion);
@@ -547,6 +582,8 @@ void DlgSettingsRender::saveSettings()
 {
     // Auto generated code (Tools/params_utils.py:497)
     Type->onSave();
+    CoarseTessellation->onSave();
+    LevelThreads->onSave();
     AO->onSave();
     AOMethod->onSave();
     AOSlices->onSave();
@@ -585,6 +622,8 @@ void DlgSettingsRender::loadSettings()
 {
     // Auto generated code (Tools/params_utils.py:484)
     Type->onRestore();
+    CoarseTessellation->onRestore();
+    LevelThreads->onRestore();
     AO->onRestore();
     AOMethod->onRestore();
     AOSlices->onRestore();
@@ -626,6 +665,13 @@ void DlgSettingsRender::retranslateUi()
     Type->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docType()));
     labelType->setText(QObject::tr("Renderer type"));
     labelType->setToolTip(Type->toolTip());
+    groupScenestreaming->setTitle(QObject::tr("Scene streaming"));
+    CoarseTessellation->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCoarseTessellation()));
+    labelCoarseTessellation->setText(QObject::tr("Coarse tessellation level"));
+    labelCoarseTessellation->setToolTip(CoarseTessellation->toolTip());
+    LevelThreads->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docLevelThreads()));
+    labelLevelThreads->setText(QObject::tr("Level build threads"));
+    labelLevelThreads->setToolTip(LevelThreads->toolTip());
     groupAmbientocclusion->setTitle(QObject::tr("Ambient occlusion"));
     AO->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAO()));
     AO->setText(QObject::tr("Ambient occlusion"));
