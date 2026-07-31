@@ -28,11 +28,13 @@
 #include <QJsonValue>
 
 #include <App/Application.h>
+#include <App/AutoTransaction.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
 #include <App/PropertyGeo.h>
+#include <Base/Exception.h>
 #include <Base/Placement.h>
 #include <Base/Rotation.h>
 #include <Base/Vector3D.h>
@@ -269,6 +271,174 @@ QJsonObject getProperties(const QJsonObject &req)
     return reply;
 }
 
+/// Assign \a value to \a prop, mirroring describeProperty's type set.
+/// Returns an error code, or null on success.
+const char *assignProperty(App::Property *prop, const QJsonValue &value)
+{
+    auto tid = prop->getTypeId();
+    if (tid.isDerivedFrom(App::PropertyBool::getClassTypeId())) {
+        if (!value.isBool())
+            return "BadValue";
+        static_cast<App::PropertyBool *>(prop)->setValue(value.toBool());
+    }
+    else if (tid.isDerivedFrom(App::PropertyEnumeration::getClassTypeId())) {
+        auto p = static_cast<App::PropertyEnumeration *>(prop);
+        if (value.isDouble()) {
+            int idx = int(value.toDouble());
+            if (idx < 0 || idx >= int(p->getEnumVector().size()))
+                return "ConstraintViolation";
+            p->setValue(long(idx));
+        }
+        else if (value.isString()) {
+            const QByteArray choice = value.toString().toUtf8();
+            if (!p->isPartOf(choice.constData()))
+                return "ConstraintViolation";
+            p->setValue(choice.constData());
+        }
+        else
+            return "BadValue";
+    }
+    else if (tid.isDerivedFrom(App::PropertyInteger::getClassTypeId())) {
+        if (!value.isDouble())
+            return "BadValue";
+        long v = long(value.toDouble());
+        if (tid.isDerivedFrom(
+                    App::PropertyIntegerConstraint::getClassTypeId())) {
+            if (const auto *c = static_cast<App::PropertyIntegerConstraint *>(
+                        prop)->getConstraints()) {
+                if (v < c->LowerBound || v > c->UpperBound)
+                    return "ConstraintViolation";
+            }
+        }
+        static_cast<App::PropertyInteger *>(prop)->setValue(v);
+    }
+    else if (tid.isDerivedFrom(App::PropertyFloat::getClassTypeId())) {
+        // Covers PropertyQuantity: its value is set in the property's
+        // own unit, which is exactly what the descriptor published.
+        if (!value.isDouble())
+            return "BadValue";
+        double v = value.toDouble();
+        bool constrained = false;
+        double lower = 0, upper = 0;
+        if (tid.isDerivedFrom(
+                    App::PropertyQuantityConstraint::getClassTypeId())) {
+            if (const auto *c = static_cast<
+                        App::PropertyQuantityConstraint *>(prop)
+                            ->getConstraints()) {
+                constrained = true;
+                lower = c->LowerBound;
+                upper = c->UpperBound;
+            }
+        }
+        else if (tid.isDerivedFrom(
+                         App::PropertyFloatConstraint::getClassTypeId())) {
+            if (const auto *c =
+                        static_cast<App::PropertyFloatConstraint *>(prop)
+                            ->getConstraints()) {
+                constrained = true;
+                lower = c->LowerBound;
+                upper = c->UpperBound;
+            }
+        }
+        if (constrained && (v < lower || v > upper))
+            return "ConstraintViolation";
+        static_cast<App::PropertyFloat *>(prop)->setValue(v);
+    }
+    else if (tid.isDerivedFrom(App::PropertyString::getClassTypeId())) {
+        if (!value.isString())
+            return "BadValue";
+        static_cast<App::PropertyString *>(prop)->setValue(
+                value.toString().toUtf8().constData());
+    }
+    else if (tid.isDerivedFrom(App::PropertyColor::getClassTypeId())) {
+        const QString s = value.toString();
+        if (s.size() != 7 || s[0] != QLatin1Char('#'))
+            return "BadValue";
+        bool ok = false;
+        const uint rgb = s.mid(1).toUInt(&ok, 16);
+        if (!ok)
+            return "BadValue";
+        App::Color c(float((rgb >> 16) & 0xff) / 255.0f,
+                     float((rgb >> 8) & 0xff) / 255.0f,
+                     float(rgb & 0xff) / 255.0f);
+        static_cast<App::PropertyColor *>(prop)->setValue(c);
+    }
+    else if (tid.isDerivedFrom(App::PropertyVector::getClassTypeId())) {
+        if (!value.isObject())
+            return "BadValue";
+        const QJsonObject o = value.toObject();
+        static_cast<App::PropertyVector *>(prop)->setValue(
+                o.value(QLatin1String("x")).toDouble(),
+                o.value(QLatin1String("y")).toDouble(),
+                o.value(QLatin1String("z")).toDouble());
+    }
+    else {
+        return "NotEditable";
+    }
+    return nullptr;
+}
+
+QJsonObject setProperty(const QJsonObject &req)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    App::Document *doc = nullptr;
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    if (docName.isEmpty())
+        doc = App::GetApplication().getActiveDocument();
+    else
+        doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+    App::DocumentObject *obj =
+        doc->getObject(req.value(QLatin1String("obj")).toString()
+                           .toUtf8().constData());
+    if (!obj)
+        return errorReply(id, "UnknownObject",
+                          req.value(QLatin1String("obj")).toString());
+
+    App::PropertyContainer *container = obj;
+    if (req.value(QLatin1String("target")).toString()
+            == QLatin1String("view")) {
+        container = Application::Instance->getViewProvider(obj);
+        if (!container)
+            return errorReply(id, "UnknownObject",
+                              QStringLiteral("no view provider"));
+    }
+    const QByteArray name =
+        req.value(QLatin1String("name")).toString().toUtf8();
+    App::Property *prop = container->getPropertyByName(name.constData());
+    if (!prop)
+        return errorReply(id, "UnknownProperty",
+                          QString::fromUtf8(name));
+    short type = container->getPropertyType(prop);
+    if ((type & App::Prop_ReadOnly)
+            || prop->testStatus(App::Property::ReadOnly)
+            || prop->testStatus(App::Property::Immutable))
+        return errorReply(id, "ReadOnly", QString::fromUtf8(name));
+
+    QJsonObject reply;
+    try {
+        // The transaction closes when this scope does, which puts the
+        // whole edit-plus-recompute on the undo stack as one step.
+        App::AutoTransaction transaction("Edit property");
+        if (const char *code =
+                    assignProperty(prop, req.value(QLatin1String("value"))))
+            return errorReply(id, code, QString::fromUtf8(name));
+        doc->recompute();
+    }
+    catch (Base::Exception &e) {
+        return errorReply(id, "RecomputeFailed",
+                          QString::fromUtf8(e.what()));
+    }
+    catch (std::exception &e) {
+        return errorReply(id, "RecomputeFailed", QString::fromUtf8(e.what()));
+    }
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("recomputed")] = true;
+    return reply;
+}
+
 } // namespace
 
 std::string Gui::handleSceneControlRequest(const std::string &json)
@@ -285,6 +455,8 @@ std::string Gui::handleSceneControlRequest(const std::string &json)
         const QString op = req.value(QLatin1String("op")).toString();
         if (op == QLatin1String("getProperties"))
             reply = getProperties(req);
+        else if (op == QLatin1String("setProperty"))
+            reply = setProperty(req);
         else
             reply = errorReply(req.value(QLatin1String("id")), "UnknownOp", op);
     }

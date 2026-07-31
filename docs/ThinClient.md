@@ -260,6 +260,12 @@ recompute never builds a backlog); (b) previews run inside the gesture's single 
 transaction, and only the commit closes it. `setProperty`/`getProperties` v0 ignores both
 fields; the dispatcher just reserves the queue-per-gesture slot.
 
+**Non-ASCII identifiers are first-class.** This fork allows non-ASCII *internal* names for
+documents, objects and (dynamic) properties — not just labels. Every layer of the channel
+treats identifiers as opaque UTF-8: length-prefixed strings in the snapshot, UTF-8 JSON on
+the wire, no `[A-Za-z0-9_]` assumptions anywhere (validation is by lookup, never by lexical
+shape). The e2e suite includes a CJK-named document/object/property pass.
+
 The **property descriptor** is the serializable generalization of the hand-written table in
 `TaskRenderSettings.cpp:331`: `{ name, group, type, value, readonly, hidden, unit?,
 constraints?{min,max,step}, enums?[] }`. The `type` set maps 1:1 onto DOM controls:

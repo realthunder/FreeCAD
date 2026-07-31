@@ -173,3 +173,29 @@
 
 .fc-note { padding: 12px; color: #9aa0a6; }
 .fc-err { color: #ff8a80; }
+
+/* Editors (§4.B): native inputs, sized for touch, right-aligned like
+ * the static values they replace. */
+.fc-edit {
+  touch-action: manipulation;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: 12px;
+  height: 28px;
+}
+.fc-num { width: 84px; text-align: right; padding: 0 6px; }
+.fc-text { width: 130px; padding: 0 6px; }
+.fc-enum { max-width: 140px; padding: 0 4px; }
+.fc-check { width: 18px; height: 18px; accent-color: #6aa9ff; }
+.fc-color { width: 40px; padding: 1px 2px; }
+.fc-pending { opacity: 0.45; pointer-events: none; }
+.fc-rowerr {
+  margin-left: 6px;
+  font-size: 10px;
+  color: #ff8a80;
+  border: 1px solid rgba(255, 138, 128, 0.4);
+  border-radius: 4px;
+  padding: 0 4px;
+}

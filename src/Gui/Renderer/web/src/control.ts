@@ -97,3 +97,16 @@ export function getProperties(
 ): Promise<PropertiesReply> {
   return sendOp('getProperties', { doc, obj });
 }
+
+/// Commit one property edit. The backend wraps it in a transaction and
+/// recomputes; the updated scene arrives through the normal snapshot
+/// stream (never treat a frame as the ack — this resolve is the ack).
+export function setProperty(
+  doc: string,
+  obj: string,
+  target: 'object' | 'view',
+  name: string,
+  value: unknown,
+): Promise<any> {
+  return sendOp('setProperty', { doc, obj, target, name, value });
+}
