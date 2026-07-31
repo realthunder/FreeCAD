@@ -41,6 +41,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 class SoNode;
@@ -83,11 +84,24 @@ bool buildMeshLevel(const TopoDS_Shape &shape, const MeshLevelJob &job,
 /// deliberately built coarse at — coarse-first publish, in which case
 /// \a exactDeflection / \a exactAngle carry the full display
 /// parameters the on-demand *exact* build (kExactMeshLevel) will use.
+///
+/// \a onExactBuilt is the desktop tier's climb back to exact
+/// (docs/SceneStreaming.md §13): given for a coarse-first build on a
+/// plain desktop process (no scene server — a serving process's
+/// viewers drive the exact rung themselves), the worker pool meshes a
+/// structure copy of the shape at the exact display parameters
+/// off-thread and calls back ON THE GUI THREAD with the meshed copy.
+/// The callback transfers the triangulation and rebuilds its nodes.
+/// It fires at most once, and never after the tags were re-registered
+/// or unregistered — which is also the cancellation: a build obsoleted
+/// mid-job completes, fails that check, and is dropped.
 void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              SoNode *faceTag, SoNode *lineTag,
                              float builtError = 0.0f,
                              double exactDeflection = 0.0,
-                             double exactAngle = 0.0);
+                             double exactAngle = 0.0,
+                             std::function<void(const TopoDS_Shape &)>
+                                 onExactBuilt = {});
 
 /// Drop the registration made under these tags (before the nodes die;
 /// their addresses may be reused).
@@ -95,15 +109,30 @@ void unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag);
 
 /// The coarse-first tessellation level for display builds; negative
 /// means tessellate at the full display deviation as always. Resolved
-/// from the CoarseTessellation render parameter (default 1) — per-view
-/// Render_CoarseTessellation overrides it — while a scene stream
-/// server is active, so a big model costs its coarse rungs up front
-/// and its exact meshes only where a viewer's camera asks
-/// (docs/SceneStreaming.md §7); plain desktop display keeps the exact
-/// tessellation until the desktop LOD tier exists. The
-/// FC_COARSE_TESSELLATION environment variable overrides everything
-/// for a whole process.
+/// from the CoarseTessellation render parameter — per-view
+/// Render_CoarseTessellation overrides it — wherever something can
+/// climb the build back to exact: a scene stream server (viewers'
+/// cameras ask for the exact rung, docs/SceneStreaming.md §7), or a
+/// desktop view on the bgfx renderer (the refine worker rebuilds it,
+/// §13). Plain Coin display keeps the exact tessellation — a coarse
+/// build there would simply stay coarse. The FC_COARSE_TESSELLATION
+/// environment variable overrides everything for a whole process.
 int coarseTessellationLevel();
+
+/// Mesh a structure copy of \a shape at the given display parameters
+/// and return it (null on failure). Pure and thread-safe — the copy
+/// shares geometry but owns fresh TShapes, so the live shape is never
+/// touched; the worker-pool half of the desktop exact refine.
+TopoDS_Shape meshLevelExactCopy(const TopoDS_Shape &shape,
+                                double deflection, double angle);
+
+/// Move the triangulations of \a from (a meshed structure copy) onto
+/// \a to (the live shape it was copied from): face triangulations,
+/// their edges' polygons-on-triangulation, and free edges' 3D
+/// polygons, matched by the copy's preserved sub-shape order. GUI
+/// thread — the reader of these is the display build. No-op when the
+/// two shapes do not correspond.
+void transferMeshLevels(const TopoDS_Shape &from, const TopoDS_Shape &to);
 
 /// The linear / angular deflection of ladder level \a level for a
 /// shape of the given bbox diagonal — the generator's own grid

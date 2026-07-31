@@ -715,3 +715,103 @@ bool PartGui::buildMeshLevel(const TopoDS_Shape &shape,
         return false;
     }
 }
+
+TopoDS_Shape PartGui::meshLevelExactCopy(const TopoDS_Shape &shape,
+                                         double deflection, double angle)
+{
+    if (shape.IsNull() || !(deflection > 0))
+        return {};
+    try {
+        const double defl = std::min(
+            std::max(deflection, double(Precision::Confusion())), 20.0);
+        return meshedCopy(shape, defl, angle > 0 ? angle : 0.5);
+    }
+    catch (const Standard_Failure &e) {
+        if (debugOn())
+            std::fprintf(stderr, "mesh refine: OCCT failure: %s\n",
+                         e.GetMessageString());
+        return {};
+    }
+    catch (const std::bad_alloc &) {
+        return {};
+    }
+}
+
+void PartGui::transferMeshLevels(const TopoDS_Shape &from,
+                                 const TopoDS_Shape &to)
+{
+    if (from.IsNull() || to.IsNull())
+        return;
+    // The copy preserves sub-shape order (the same assumption the
+    // level builder's table validation stands on); a count mismatch
+    // means these are not copy and original, and nothing moves.
+    TopTools_IndexedMapOfShape fromFaces, toFaces, fromEdges, toEdges;
+    TopExp::MapShapes(from, TopAbs_FACE, fromFaces);
+    TopExp::MapShapes(to, TopAbs_FACE, toFaces);
+    TopExp::MapShapes(from, TopAbs_EDGE, fromEdges);
+    TopExp::MapShapes(to, TopAbs_EDGE, toEdges);
+    if (fromFaces.Extent() != toFaces.Extent()
+        || fromEdges.Extent() != toEdges.Extent()) {
+        // The caller's rebuild then re-meshes on the GUI thread — the
+        // jank the transfer exists to avoid, so a refusal is worth a
+        // line under the same switch as the rest of the machinery.
+        if (debugOn())
+            std::fprintf(stderr,
+                         "mesh refine: transfer refused (%d vs %d faces, "
+                         "%d vs %d edges)\n",
+                         fromFaces.Extent(), toFaces.Extent(),
+                         fromEdges.Extent(), toEdges.Extent());
+        return;
+    }
+
+    BRep_Builder builder;
+    // Wipe the live curve-backed edges' polygon representations first,
+    // exactly as the meshed copy itself was stripped: the entries
+    // keyed to the outgoing coarse triangulations would otherwise
+    // pin those triangulations alive for the shape's lifetime.
+    for (int i = 1; i <= toEdges.Extent(); ++i) {
+        const TopoDS_Edge &edge = TopoDS::Edge(toEdges(i));
+        TopLoc_Location loc;
+        Standard_Real cf, cl;
+        if (BRep_Tool::Curve(edge, loc, cf, cl).IsNull())
+            continue;
+        builder.UpdateEdge(edge, Handle(Poly_Polygon3D)());
+    }
+    // Faces with a surface take the copy's triangulation handle
+    // whole; purely triangulated faces (glTF imports) kept their own
+    // mesh in the copy and keep it here.
+    for (int i = 1; i <= toFaces.Extent(); ++i) {
+        const TopoDS_Face &ff = TopoDS::Face(fromFaces(i));
+        const TopoDS_Face &tf = TopoDS::Face(toFaces(i));
+        TopLoc_Location loc;
+        if (BRep_Tool::Surface(tf, loc).IsNull())
+            continue;
+        TopLoc_Location floc;
+        Handle(Poly_Triangulation) tria = BRep_Tool::Triangulation(ff, floc);
+        builder.UpdateFace(tf, tria);
+        // The face's edges ride with its triangulation: their
+        // polygons-on-triangulation index the very nodes just moved,
+        // matched edge for edge in the same preserved order.
+        TopExp_Explorer fe(ff, TopAbs_EDGE), te(tf, TopAbs_EDGE);
+        for (; fe.More() && te.More(); fe.Next(), te.Next()) {
+            const TopoDS_Edge &fromEdge = TopoDS::Edge(fe.Current());
+            const TopoDS_Edge &toEdge = TopoDS::Edge(te.Current());
+            Handle(Poly_PolygonOnTriangulation) poly =
+                BRep_Tool::PolygonOnTriangulation(fromEdge, tria, floc);
+            if (!poly.IsNull())
+                builder.UpdateEdge(toEdge, poly, tria, floc);
+        }
+    }
+    // Free edges: the 3D polygon is all the tessellation they have.
+    for (int i = 1; i <= toEdges.Extent(); ++i) {
+        const TopoDS_Edge &fromEdge = TopoDS::Edge(fromEdges(i));
+        const TopoDS_Edge &toEdge = TopoDS::Edge(toEdges(i));
+        TopLoc_Location loc;
+        Standard_Real cf, cl;
+        if (BRep_Tool::Curve(toEdge, loc, cf, cl).IsNull())
+            continue;
+        Handle(Poly_Polygon3D) poly = BRep_Tool::Polygon3D(fromEdge, loc);
+        if (!poly.IsNull())
+            builder.UpdateEdge(toEdge, poly);
+    }
+}

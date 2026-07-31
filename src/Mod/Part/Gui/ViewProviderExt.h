@@ -256,9 +256,13 @@ protected:
 
     /// One shape's worth of tessellation into the given nodes — the
     /// whole shape for the flattened build, one sub-shape (at identity
-    /// location) per unique TShape for the instanced build.
-    void buildVisualNodes(const TopoDS_Shape &cShape,
+    /// location) per unique TShape for the instanced build. Static so
+    /// the desktop exact refine can rebuild an instanced entry's
+    /// shared nodes after the view provider that first built them is
+    /// gone (the entry outlives any one sharer).
+    static void buildVisualNodes(const TopoDS_Shape &cShape,
                           double deflection, double angDeflectionRads,
+                          bool normalsFromUV,
                           SoCoordinate3 *coords, SoCoordinate3 *pcoords,
                           SoNormal *norm, SoTextureCoordinate2 *texcoords,
                           SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
@@ -269,6 +273,12 @@ protected:
 
     bool VisualTouched;
     bool NormalsFromUV;
+    /// The TShape whose exact tessellation the desktop refine has
+    /// already transferred onto the flattened shape (§13): while the
+    /// current shape still is that one, updateVisual builds at the
+    /// full display deviation (the exact triangulation is resident —
+    /// meshing is a no-op) instead of going coarse-first again.
+    const void *ExactMeshTShape = nullptr;
     bool UpdatingColor;
     bool highlightFaceEdges = false;
 

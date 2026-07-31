@@ -2007,10 +2007,33 @@ arrays and stand on the coarse rung, which is always resident.
 
 **Order of work, smallest observable win first:**
 
-1. `TessellationRungProvider` + bridge ladder slots, driven by a fixed
-   plan (everything wants exact) — pure refactor of today's behavior:
-   coarse first pixel, exact streams in. This alone un-gates
-   `CoarseTessellation` on the desktop and pays the startup bill.
+1. ✅ **As built (2026-07-31):** the fixed plan (everything wants
+   exact) landed as an exact-refine worker pool in `MeshLevelSource`
+   rather than a `RungProvider` implementation — the provider seam
+   waits for the plan pass, its first real caller; what the doc argued
+   must exist from day one, `cancel`, does: job identity is a token
+   per source tag, and re-registering or unregistering the tag drops
+   the job queued or finished. `registerMeshLevelSource` gained an
+   `onExactBuilt` callback: a coarse-first build on a non-serving
+   process queues one job, the worker meshes a structure copy at the
+   exact display parameters off-thread, and the callback — GUI
+   thread, only while its registration is still the live one —
+   transfers the triangulations onto the live shape
+   (`transferMeshLevels`: faces, polygons-on-triangulation, free-edge
+   polygons, by the copy's preserved sub-shape order) and rebuilds
+   the nodes, which find the finer mesh resident and keep it. The
+   flat build re-runs `updateVisual` (an `ExactMeshTShape` marker
+   keeps it from going coarse again for the same TShape); the
+   instanced build rebuilds the shared entry's nodes in place — one
+   refine per proto, every instance at once — and re-registers at
+   error 0. `CoarseTessellation` now engages for desktop views under
+   the bgfx render-cache mode, not only serving processes; a serving
+   process never refines locally (its viewers decide whether exact
+   is worth building at all). Verified: 20-object desktop scene
+   registers 40 coarse → 40 exact; an 8-instance link array refines
+   once with stale jobs canceled through the rebuilds; a serving
+   process stays coarse locally while 40 viewer-asked exact levels
+   still build over the stream.
 2. The plan pass proper (camera events → `planLevels` over bridge
    sources) — pays the residency bill; `lodpx` becomes the
    `Render_LevelTolerance` preference it already wants to be (§5d).
@@ -2018,11 +2041,15 @@ arrays and stand on the coarse rung, which is always resident.
 4. `cancel` wired to plan changes; measure how much work it saves
    before making it cleverer.
 
-**Open questions for the discussion:** whether instanced leaves share
-one ladder per proto (proposed: yes, same as the publish path's
-sourceTag rule); whether the Coin/desktop *selection* path needs the
-resident-rung remap the viewer got for free (§ selection-at-rung), or
-whether desktop picking stays on the exact shape and never sees the
-ladder; and whether rung 0 on the desktop should be the
-`CoarseTessellation` default (2) or something coarser, given no
-network is being protected — only tessellation time and memory.
+**Decided (2026-07-31):** instanced leaves share one ladder per proto
+(the publish path's sourceTag rule). Desktop *picking goes to the
+current rung*: selection is already routed through the renderer, so
+the pick raycasts whatever rung is resident, exactly as the viewer
+does — the part tables carry index-for-index across rungs, and the
+exact shape is never consulted for picking. And the desktop floor is
+coarser than any tessellation: **rung 0 is the box** — the display
+build need not tessellate anything before first pixel; boxes draw
+first and every tessellation, coarse included, streams in behind the
+plan. That makes the desktop ladder box → generator grid rungs →
+exact, the viewer's ladder exactly, with the box promoted from
+stand-in to explicit floor.

@@ -2659,15 +2659,45 @@ bool ViewProviderPartExt::buildInstanced()
             geom.edgeCount = counts[i].edges;
             geom.vertexCount = counts[i].vertices;
             int nt = 0, nn = 0, np = 0, nno = 0, nf = 0, ne = 0, nl = 0;
-            buildVisualNodes(local, defl, useAngDefl,
+            buildVisualNodes(local, defl, useAngDefl, NormalsFromUV,
                              gcoords, gpcoords, gnorm, gtexcoords,
                              gfaceset, glineset, gnodeset,
                              nt, nn, np, nno, nf, ne, nl);
             // Level generation for the shared leaf tessellation
             // (MeshLevelSource.h); released with the geometry entry.
+            //
+            // A coarse desktop build climbs back to exact through the
+            // registration (§13). The callback rebuilds the SHARED
+            // nodes in place — every instance refines at once, the
+            // per-proto ladder — so it captures the nodes, not the
+            // view provider: the entry outlives any one sharer, and a
+            // live registration token is what guarantees the entry
+            // (release unregisters first). Re-registering at error 0
+            // is what keeps a later sharer's rebuild from queueing the
+            // work again.
+            std::function<void(const TopoDS_Shape &)> onExact;
+            if (builtError > 0.0f) {
+                onExact = [local, exactDefl, exactAng,
+                           normalsFromUV = bool(NormalsFromUV),
+                           gcoords, gpcoords, gnorm, gtexcoords,
+                           gfaceset, glineset, gnodeset](
+                              const TopoDS_Shape &meshed) {
+                    transferMeshLevels(meshed, local);
+                    int nt2 = 0, nn2 = 0, np2 = 0, nno2 = 0;
+                    int nf2 = 0, ne2 = 0, nl2 = 0;
+                    buildVisualNodes(local, exactDefl, exactAng,
+                                     normalsFromUV,
+                                     gcoords, gpcoords, gnorm, gtexcoords,
+                                     gfaceset, glineset, gnodeset,
+                                     nt2, nn2, np2, nno2, nf2, ne2, nl2);
+                    registerMeshLevelSource(local, normalsFromUV, gfaceset,
+                                            glineset, 0.0f, exactDefl,
+                                            exactAng);
+                };
+            }
             registerMeshLevelSource(local, NormalsFromUV, gfaceset,
                                     glineset, builtError, exactDefl,
-                                    exactAng);
+                                    exactAng, std::move(onExact));
             // Solid knowledge for the section-cap pass, in local part
             // numbering (the cache reads it per shape node).
             if (local.ShapeType() == TopAbs_SOLID && counts[i].faces > 0) {
@@ -3229,7 +3259,16 @@ void ViewProviderPartExt::updateVisual()
         double exactDeflection = deflection;
         double exactAngle = AngDeflectionRads;
         float builtError = 0.0f;
-        const int coarseLvl = coarseTessellationLevel();
+        // The desktop refine already put this very TShape's exact
+        // triangulation in place (§13): build at the display deviation
+        // — the mesher finds the finer mesh resident and keeps it — and
+        // register at error 0. A different TShape is a new shape, and
+        // goes coarse-first again.
+        const bool exactResident =
+            !cShape.IsNull() && ExactMeshTShape == cShape.TShape().get();
+        if (!exactResident)
+            ExactMeshTShape = nullptr;
+        const int coarseLvl = exactResident ? -1 : coarseTessellationLevel();
         if (coarseLvl >= 0) {
             double dx = xMax - xMin, dy = yMax - yMin, dz = zMax - zMin;
             double diag = std::sqrt(dx * dx + dy * dy + dz * dz);
@@ -3240,7 +3279,7 @@ void ViewProviderPartExt::updateVisual()
             }
         }
 
-        buildVisualNodes(cShape, deflection, AngDeflectionRads,
+        buildVisualNodes(cShape, deflection, AngDeflectionRads, NormalsFromUV,
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
                          numTriangles, numNodes, numPoints, numNorms,
@@ -3250,8 +3289,29 @@ void ViewProviderPartExt::updateVisual()
         // coarser deviation when a viewer asks for a declared level of
         // the meshes these nodes feed (MeshLevelSource.h). Re-runs
         // replace the previous shape under the same node tags.
+        //
+        // On a coarse desktop build the registration also carries the
+        // climb back to exact (§13): the worker meshes a copy at the
+        // display parameters and this callback — GUI thread, and only
+        // while the registration is still the live one, which is what
+        // makes capturing `this` sound (the destructor unregisters) —
+        // transfers the triangulation onto the flattened shape and
+        // rebuilds through the ordinary visual path.
+        std::function<void(const TopoDS_Shape &)> onExact;
+        if (builtError > 0.0f) {
+            const void *tsh = cShape.TShape().get();
+            onExact = [this, tsh](const TopoDS_Shape &meshed) {
+                TopoDS_Shape cur = cachedShape.getShape();
+                if (cur.IsNull() || cur.TShape().get() != tsh)
+                    return;
+                transferMeshLevels(meshed, cur);
+                ExactMeshTShape = tsh;
+                updateVisual();
+            };
+        }
         registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
-                                builtError, exactDeflection, exactAngle);
+                                builtError, exactDeflection, exactAngle,
+                                std::move(onExact));
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());
@@ -3279,6 +3339,7 @@ void ViewProviderPartExt::updateVisual()
 
 void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         double deflection, double AngDeflectionRads,
+        bool NormalsFromUV,
         SoCoordinate3 *coords, SoCoordinate3 *pcoords,
         SoNormal *norm, SoTextureCoordinate2 *texcoords,
         SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
