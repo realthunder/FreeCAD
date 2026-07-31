@@ -788,10 +788,13 @@ emitted-scene-only. Consequences, each smaller than what it replaces:
   set of a ladder is the set of rungs any owner is planned at. Coarse
   rungs are kilobytes beside the exact mesh, so the duplication is
   bounded and the budget simply charges the rungs actually bound.
-- The plan's finest-owner-wins rule and the lazy-heap re-score that
-  exists to serve it retire; a shared ladder's cost is the sum of the
-  distinct rungs its owners want, priced once each (still shared: two
-  owners at the same tier bind the same rung).
+- The plan keeps pricing an entry at its finest owner's rung (as
+  built: the greedy's cost model is untouched); the coarser rungs
+  other owners bind are unpriced overhead, bounded by the rung size
+  ratio — a coarse rung is a few percent of its exact sibling — and
+  charged truthfully in the store ledger, so the journal shows any
+  drift between planned and held bytes. Price the distinct rungs
+  individually only if that drift ever measures as real.
 - Refinement stops being an in-place overwrite: an upgrade fills a
   *different* mesh object, and the coarse rung's arrays survive until the
   plan releases them — the GPU cache sees distinct cacheIds instead of
