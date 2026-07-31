@@ -640,6 +640,9 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
             mesh->generation = gen + 1;
             return ok;
         };
+        // Kept for the ladder's lifetime (DeferredChunk::refill), like
+        // the manifest-layout reader's.
+        entry.refill = entry.fill;
         // Geometry has a rung below it, so it is what a viewer short
         // of memory gives back first (§6, phase 4b). The cacheId is
         // the mesh's identity and outlives its contents: the backend
@@ -1827,11 +1830,30 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
         // entry where a declaration was, and this re-read reference IS
         // the announcement (§7, phase 5c). The entry itself — key,
         // fill, residency — is untouched; only the list of
-        // alternatives is refreshed.
+        // alternatives is refreshed. The resident and asked rungs are
+        // indices into that list, so they follow their KEYS into the
+        // new one: geometry must stay resident under a renamed ladder
+        // (§7, "the ladder owns its fetch state").
         auto at = st->chunkAt.find(key);
         if (at != st->chunkAt.end()
-                && at->second < snap.deferredChunks.size())
-            snap.deferredChunks[at->second].levels = std::move(c.levels);
+                && at->second < snap.deferredChunks.size()) {
+            auto &slot = snap.deferredChunks[at->second];
+            const auto remap = [&slot, &c](int16_t rung) -> int16_t {
+                if (rung < 0 || size_t(rung) >= slot.levels.size())
+                    return rung;
+                const std::string &held = slot.levels[size_t(rung)].key;
+                if (held.empty())
+                    return -1;
+                for (size_t i = 0; i < c.levels.size(); ++i) {
+                    if (c.levels[i].key == held)
+                        return int16_t(i);
+                }
+                return -1;
+            };
+            slot.resident = remap(slot.resident);
+            slot.asked = remap(slot.asked);
+            slot.levels = std::move(c.levels);
+        }
         return it->second;
     }
     auto mesh = std::make_shared<OwnedMeshData>();
@@ -1862,6 +1884,10 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
         mesh->generation = gen + 1;
         return ok;
     };
+    // The closure parses any rung of this ladder, so the ladder keeps
+    // it for life: refetch-after-release and rung changes re-run it
+    // (SceneDump.h, DeferredChunk::refill).
+    c.refill = c.fill;
     // As in readMesh: geometry is the one payload with a coarser rung
     // to fall back to, so it is the one a viewer can give back (§6).
     c.release = [mesh] {

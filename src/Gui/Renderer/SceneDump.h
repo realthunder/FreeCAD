@@ -250,17 +250,34 @@ struct SceneSnapshot {
         static constexpr int16_t kPlanUnset = -2;
         static constexpr int16_t kPlanBox = -1;
         int16_t plan = kPlanUnset;
-        /// Whether THIS entry's arrays are live — its fill ran against
-        /// this parse. Residency cannot be judged from a global key
-        /// set alone: every publish re-parses its manifests into fresh
-        /// (empty) payload objects under the same content keys, so a
-        /// key can be "resident" while the entry that now carries it
-        /// holds nothing — acting on that showed empty meshes where
-        /// the navigation cube and re-keyed objects should be. Set by
-        /// the consumer's fill bookkeeping, cleared by release; a
-        /// carried entry keeps it, which is exactly what carrying is
-        /// for.
-        bool filled = false;
+        /// The parse closure, kept for the ladder's lifetime. \a fill
+        /// is consumed — cleared once run, cleared wholesale when a
+        /// publish gives up — but geometry is re-fillable by design
+        /// (release and climb again, fetch a different rung), and the
+        /// closure that parsed one rung parses them all: it captures
+        /// the mesh object it writes, never the parse it was born in.
+        /// Owning it here is what lets residency survive a re-key: the
+        /// old key-indexed refill map lost its entries whenever a
+        /// ladder was renamed, which the journal reported as "no
+        /// refill" — a ladder below plan that could never be fetched.
+        std::function<bool(SceneSnapshot &snap,
+                           const void *data, size_t size)> refill;
+        /// The rung this ladder's arrays currently hold, an index in
+        /// planRungs() space, -1 for none (docs/SceneStreaming.md §7,
+        /// "the ladder owns its fetch state"). This is the residency
+        /// truth — the store's key-indexed books are accounting, not
+        /// authority. Set by the consumer when a rung's bytes fill,
+        /// cleared by release; a carried entry keeps it, which is
+        /// exactly what carrying is for. A ladder refresh (a delta
+        /// re-declaring levels under the same identity) re-maps it by
+        /// key, so resident geometry stays resident under a renamed
+        /// ladder.
+        int16_t resident = -1;
+        /// The rung a fetch is out for, -1 for none: the "one request
+        /// per ladder" rule reads its own field instead of scanning
+        /// every rung's key against the download table. Cleared when
+        /// the request resolves, fails, or is presumed lost.
+        int16_t asked = -1;
         /// The payload itself, riding in the root that named it (v37,
         /// docs/SceneStreaming.md §5). Only a delta's group manifests
         /// do this: they are new by definition — an object is in the

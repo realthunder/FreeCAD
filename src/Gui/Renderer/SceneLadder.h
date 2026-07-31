@@ -152,6 +152,14 @@ public:
     /// or a tessellator's throughput — is a rate, and the question is
     /// what to spend the next byte on.
     float acquisition(const SceneSnapshot::DeferredChunk &chunk);
+    /// The same, priced at \a bytes instead of the entry's own size:
+    /// a ladder's ask is for ONE rung, and the entry's size names the
+    /// finest built one, which is not what the next byte is being
+    /// spent on when the plan targets a coarser rung (§7, "the ladder
+    /// owns its fetch state" — fetch identity stopped riding on
+    /// entry.key/size).
+    float acquisition(const SceneSnapshot::DeferredChunk &chunk,
+                      uint32_t bytes);
 
     /// What to keep, which is a different question: memory is a stock,
     /// and what belongs in it is what the camera is looking at.

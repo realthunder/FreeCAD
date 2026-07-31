@@ -454,6 +454,21 @@ float RungRanker::acquisition(const SceneSnapshot::DeferredChunk &chunk)
     return value(chunk, m_weights.acquire);
 }
 
+float RungRanker::acquisition(const SceneSnapshot::DeferredChunk &chunk,
+                              uint32_t bytes)
+{
+    if (chunk.owners.empty())
+        return std::numeric_limits<float>::max();
+    float best = 0.0f;
+    for (uint64_t key : chunk.owners)
+        best = std::max(best, owner(key));
+    const float weight = m_weights.acquire;
+    const float b = float(std::max<uint32_t>(bytes, 1));
+    if (weight <= 0.0f)
+        return best;
+    return best / (weight == 1.0f ? b : std::pow(b, weight));
+}
+
 float RungRanker::residency(const SceneSnapshot::DeferredChunk &chunk)
 {
     return value(chunk, m_weights.keep);
