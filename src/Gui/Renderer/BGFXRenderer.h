@@ -99,6 +99,7 @@ public:
 #ifndef FC_RENDERER_STANDALONE
     virtual void setLevelTolerance(float px) override;
     virtual bool drivesMeshLevels() const override;
+    virtual void setGpuMemoryBudget(size_t bytes) override;
 #endif
 
 #ifdef FC_RENDERER_STANDALONE

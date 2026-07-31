@@ -1219,6 +1219,13 @@ public:
     /// whose backend answers false here — the build would simply stay
     /// coarse.
     virtual bool drivesMeshLevels() const { return false; }
+    /// GPU geometry budget in bytes for the desktop mesh-level plan
+    /// (§13 step 3): over it, the plan downgrades the *displayed* rung
+    /// of sources the camera would not miss — their exact meshes stay
+    /// in CPU RAM, so the climb back is an instant re-activation. 0 =
+    /// automatic: the backend's own reported GPU memory limit where
+    /// the API states one (D3D/Vulkan do), else no budget at all.
+    virtual void setGpuMemoryBudget(size_t bytes) { (void)bytes; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

@@ -885,3 +885,69 @@ TEST(PlanMeshDemotes, onlyDemotableSourcesAreConsidered)
                                         1000.0f, 0.0f, demoteErrs(errs))
                     .empty());
 }
+
+namespace
+{
+
+Render::DrawCall keyedDraw(const void *tag, float levelError,
+                           float cx, float cy, float cz, float half,
+                           uint64_t objectKey)
+{
+    Render::DrawCall d = meshDraw(tag, levelError, cx, cy, cz, half);
+    d.objectKey = objectKey;
+    return d;
+}
+
+}  // namespace
+
+TEST(PlanMeshDemotes, aSeamEdgeRidesItsObjectsBounds)
+{
+    // The churn this guards against: an object's edge draw is a
+    // sliver (an ellipsoid's seam is one meridian) that can sit
+    // off-screen while the body fills the view. Judged by its own
+    // box the edge tag dropped, the shared closure downgraded the
+    // whole object, the next plan re-refined it through the face tag
+    // — a full rebuild each way, forever. One union box per object
+    // gives both tags the face's verdict: keep.
+    PlanCamera cam;
+    int faceTag = 0, lineTag = 0;
+    Render::DrawCallList draws;
+    draws.push_back(keyedDraw(&faceTag, 0.0f, 0, 0, -100, 5, 42));
+    draws.push_back(keyedDraw(&lineTag, 0.0f, 500, 0, -100, 0.5f, 42));
+    std::map<const void *, float> errs{
+        {&faceTag, 0.03f}, {&lineTag, 0.03f}};
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj,
+                                        1000.0f, 2.0f, demoteErrs(errs));
+    EXPECT_TRUE(tags.empty());
+    // And the refine mirror: the same sliver, coarse, is wanted with
+    // its object even though its own box is off-screen.
+    Render::DrawCallList coarse;
+    coarse.push_back(keyedDraw(&faceTag, 0.03f, 0, 0, -100, 5, 42));
+    coarse.push_back(keyedDraw(&lineTag, 0.03f, 500, 0, -100, 0.5f, 42));
+    auto refines = Render::planMeshRefines(coarse, cam.view, cam.proj,
+                                           1000.0f, 2.0f);
+    ASSERT_EQ(refines.size(), 2u);
+}
+
+TEST(PlanMeshDemotes, aSharedSourceStaysExactForItsNeediestOwner)
+{
+    // Two instances of one proto (same tag, different objects): the
+    // near one still needs exact, so the far one's vote must not drop
+    // the shared source — demotion is the intersection of its owners.
+    PlanCamera cam;
+    int proto = 0;
+    Render::DrawCallList draws;
+    draws.push_back(keyedDraw(&proto, 0.0f, 0, 0, -100, 5, 1));
+    draws.push_back(keyedDraw(&proto, 0.0f, 0, 0, -1000, 5, 2));
+    std::map<const void *, float> errs{{&proto, 0.03f}};
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj,
+                                        1000.0f, 2.0f, demoteErrs(errs));
+    EXPECT_TRUE(tags.empty());
+    // Both far: now every owner agrees, and the source drops.
+    Render::DrawCallList far;
+    far.push_back(keyedDraw(&proto, 0.0f, 0, 0, -1000, 5, 1));
+    far.push_back(keyedDraw(&proto, 0.0f, 20, 0, -1000, 5, 2));
+    auto tags2 = Render::planMeshDemotes(far, cam.view, cam.proj,
+                                         1000.0f, 2.0f, demoteErrs(errs));
+    ASSERT_EQ(tags2.size(), 1u);
+}

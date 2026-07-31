@@ -4112,6 +4112,9 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "LevelTolerance",
             RenderParams::docLevelTolerance(),
             RenderParams::getLevelTolerance());
+    _renderParam<App::PropertyInteger>(view, "GpuMemoryBudgetMB",
+            RenderParams::docGpuMemoryBudgetMB(),
+            RenderParams::getGpuMemoryBudgetMB());
     _renderParam<App::PropertyFloat>(view, "AORadius",
             RenderParams::docAORadius(), RenderParams::getAORadius());
     _renderParam<App::PropertyFloat>(view, "AOIntensity",

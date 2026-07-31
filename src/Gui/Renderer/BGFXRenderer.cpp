@@ -998,6 +998,14 @@ static GeomKey computeGeomKey(const Render::MeshData &mesh)
 // Colorless GPU buffers of one geometry (GeomKey): shared by every cache
 // whose arrays match. Buffers are immutable; entries are dropped when no
 // referencing mesh used them recently.
+/// Geometry bytes currently uploaded through GpuGeometry/GpuMesh — the
+/// GPU-budget estimate where the backend API reports no memory stats
+/// (GL does not). Buffer sizes are added at creation and taken back in
+/// destroy(); render targets, shadow maps and textures are outside it,
+/// deliberately: the budget steers *geometry* residency (§13 step 3),
+/// and the fixed passes cost what they cost.
+static std::atomic<size_t> s_gpuGeometryBytes {0};
+
 struct GpuGeometry
 {
     /// Position + normal vertex stream.
@@ -1019,6 +1027,14 @@ struct GpuGeometry
     /// first textured use.
     bgfx::VertexBufferHandle texcoord = BGFX_INVALID_HANDLE;
     uint64_t lastUsed = 0;
+    /// Bytes this entry has uploaded (s_gpuGeometryBytes share).
+    size_t bytes = 0;
+
+    void track(size_t add)
+    {
+        bytes += add;
+        s_gpuGeometryBytes += add;
+    }
 
     void destroy()
     {
@@ -1034,6 +1050,8 @@ struct GpuGeometry
                 *vb = BGFX_INVALID_HANDLE;
             }
         }
+        s_gpuGeometryBytes -= bytes;
+        bytes = 0;
     }
 
     void upload(const Render::MeshData &mesh)
@@ -1057,19 +1075,26 @@ struct GpuGeometry
             }
         }
         vbh = bgfx::createVertexBuffer(vmem, SceneVertex::ms_layout);
+        track(vmem->size);
 
-        if (mesh.numTriangleIndices > 0)
+        if (mesh.numTriangleIndices > 0) {
             tri = bgfx::createIndexBuffer(
                 bgfx::copy(mesh.triangleIndices, mesh.numTriangleIndices * 4),
                 BGFX_BUFFER_INDEX32);
-        if (mesh.numLineIndices > 0)
+            track(size_t(mesh.numTriangleIndices) * 4);
+        }
+        if (mesh.numLineIndices > 0) {
             line = bgfx::createIndexBuffer(
                 bgfx::copy(mesh.lineIndices, mesh.numLineIndices * 4),
                 BGFX_BUFFER_INDEX32);
-        if (mesh.numPointIndices > 0)
+            track(size_t(mesh.numLineIndices) * 4);
+        }
+        if (mesh.numPointIndices > 0) {
             point = bgfx::createIndexBuffer(
                 bgfx::copy(mesh.pointIndices, mesh.numPointIndices * 4),
                 BGFX_BUFFER_INDEX32);
+            track(size_t(mesh.numPointIndices) * 4);
+        }
     }
 
     void ensureNoSeam(const Render::MeshData &mesh)
@@ -1080,6 +1105,7 @@ struct GpuGeometry
             bgfx::copy(mesh.noSeamLineIndices,
                        mesh.numNoSeamLineIndices * 4),
             BGFX_BUFFER_INDEX32);
+        track(size_t(mesh.numNoSeamLineIndices) * 4);
     }
 
     /// Texture-coordinate stream (Coin xyzw texcoords collapsed to 2D,
@@ -1103,6 +1129,7 @@ struct GpuGeometry
         }
         texcoord = bgfx::createVertexBuffer(tmem,
                                             TexCoordVertex::ms_layout);
+        track(tmem->size);
     }
 
     /// Triangle-edge segment + corner instance buffers for the stencil
@@ -1138,6 +1165,7 @@ struct GpuGeometry
         }
         triEdgeInst = bgfx::createVertexBuffer(
             emem, LineQuadVertex::ms_instLayout);
+        track(emem->size);
 
         const bgfx::Memory *cmem =
             bgfx::alloc(uint32_t(n) * 8 * sizeof(float));
@@ -1153,6 +1181,7 @@ struct GpuGeometry
         }
         triCornerInst = bgfx::createVertexBuffer(
             cmem, LineQuadVertex::ms_pointInstLayout);
+        track(cmem->size);
     }
 };
 
@@ -1182,6 +1211,14 @@ struct GpuMesh
     /// built from. A ladder refines its mesh in place under one
     /// cacheId, so the id alone no longer proves the upload current.
     uint32_t generation = 0;
+    /// Bytes this entry has uploaded (s_gpuGeometryBytes share).
+    size_t bytes = 0;
+
+    void track(size_t add)
+    {
+        bytes += add;
+        s_gpuGeometryBytes += add;
+    }
 
     void destroy()
     {
@@ -1192,6 +1229,8 @@ struct GpuMesh
                 *vb = BGFX_INVALID_HANDLE;
             }
         }
+        s_gpuGeometryBytes -= bytes;
+        bytes = 0;
     }
 
     void upload(const Render::MeshData &mesh)
@@ -1201,12 +1240,15 @@ struct GpuMesh
             color = bgfx::createVertexBuffer(
                 bgfx::copy(mesh.colors, uint32_t(mesh.numVertices) * 4),
                 ColorVertex::ms_layout);
+            track(size_t(mesh.numVertices) * 4);
         }
 
         if (mesh.numLineIndices > 1
-                && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING))
+                && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)) {
             lineInst = makeSegmentInstances(
                 mesh, mesh.lineIndices, mesh.numLineIndices);
+            track(size_t(mesh.numLineIndices / 2) * 16 * sizeof(float));
+        }
 
         if (mesh.numPointIndices > 0
                 && (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)) {
@@ -1230,6 +1272,7 @@ struct GpuMesh
             }
             pointInst = bgfx::createVertexBuffer(
                 imem, LineQuadVertex::ms_pointInstLayout);
+            track(imem->size);
         }
     }
 
@@ -1278,9 +1321,12 @@ struct GpuMesh
         if (bgfx::isValid(lineNoSeamInst)
                 || mesh.numNoSeamLineIndices <= 1)
             return;
-        if (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING)
+        if (bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING) {
             lineNoSeamInst = makeSegmentInstances(
                 mesh, mesh.noSeamLineIndices, mesh.numNoSeamLineIndices);
+            track(size_t(mesh.numNoSeamLineIndices / 2) * 16
+                  * sizeof(float));
+        }
     }
 };
 
@@ -7276,6 +7322,14 @@ public:
                 levelCeilingSeen = ceiling;
                 levelPlanner.markDirty();
             }
+            // Crossing the GPU budget wakes the planner too (§13
+            // step 3): the sweep itself runs in the plan callback.
+            if (const size_t budget = gpuBudgetBytes()) {
+                const bool over = gpuUsedBytes() > budget;
+                if (over && !gpuOverBudget)
+                    levelPlanner.markDirty();
+                gpuOverBudget = over;
+            }
             levelPlanner.observe(
                 reinterpret_cast<const float *>(viewMatrix),
                 reinterpret_cast<const float *>(projMatrix),
@@ -7288,11 +7342,14 @@ public:
                         levelPlanner.tolerance());
                     auto &reg = Render::MeshSourceRegistry::instance();
                     // Demotions first (§13 step 3), and only ever under
-                    // an observed ceiling: drop the exact rungs the
-                    // camera would not miss — off screen, or coarse
-                    // within half the tolerance — before spending
-                    // anything on new builds.
+                    // an observed CPU-memory ceiling: drop the hidden
+                    // exact rungs outright (nothing on screen changes),
+                    // then the displayed exact rungs the camera would
+                    // not miss — off screen, or coarse within half the
+                    // tolerance — before spending anything on new
+                    // builds.
                     if (reg.memoryCeilingEpoch()) {
+                        reg.dropHiddenLevels();
                         auto drops = Render::planMeshDemotes(
                             scene, levelPlanner.viewMatrix(),
                             levelPlanner.projMatrix(), h,
@@ -7302,6 +7359,23 @@ public:
                             });
                         for (const void *tag : drops)
                             reg.requestDemote(tag);
+                    }
+                    // The GPU budget's half (§13 step 3): over it,
+                    // downgrade the *displayed* rung of what the
+                    // camera would not miss. The exact mesh stays in
+                    // CPU RAM — the way back up is an instant
+                    // re-activation through an ordinary refine.
+                    const size_t gpuBudget = gpuBudgetBytes();
+                    if (gpuBudget && gpuUsedBytes() > gpuBudget) {
+                        auto drops = Render::planMeshDemotes(
+                            scene, levelPlanner.viewMatrix(),
+                            levelPlanner.projMatrix(), h,
+                            levelPlanner.tolerance(),
+                            [&reg](const void *t) {
+                                return reg.downgradeError(t);
+                            });
+                        for (const void *tag : drops)
+                            reg.requestDowngrade(tag);
                     }
                     // Cancels next (§13 step 4): every coarse source
                     // this plan does not want is de-wanted — a queued
@@ -11191,6 +11265,33 @@ public:
     // The last memory-ceiling epoch this view replanned for (§13
     // step 3) — a new observation marks the planner dirty.
     uint64_t levelCeilingSeen = 0;
+    // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
+    size_t gpuBudget = 0;
+    // Whether the last rendered frame stood over the GPU budget — the
+    // crossing is what wakes the planner.
+    bool gpuOverBudget = false;
+
+    /// GPU geometry bytes in use: the API's own number where it
+    /// reports one, else the upload accounting.
+    static size_t gpuUsedBytes()
+    {
+        const bgfx::Stats *stats = bgfx::getStats();
+        if (stats && stats->gpuMemoryUsed > 0)
+            return size_t(stats->gpuMemoryUsed);
+        return s_gpuGeometryBytes.load();
+    }
+
+    /// The effective GPU budget: the explicit one, else the API's
+    /// reported maximum, else none.
+    size_t gpuBudgetBytes() const
+    {
+        if (gpuBudget)
+            return gpuBudget;
+        const bgfx::Stats *stats = bgfx::getStats();
+        if (stats && stats->gpuMemoryMax > 0)
+            return size_t(stats->gpuMemoryMax);
+        return 0;
+    }
 #endif
 };
 
@@ -11663,6 +11764,11 @@ void BGFXRenderer::setLevelTolerance(float px)
 bool BGFXRenderer::drivesMeshLevels() const
 {
     return true;
+}
+
+void BGFXRenderer::setGpuMemoryBudget(size_t bytes)
+{
+    pimpl->gpuBudget = bytes;
 }
 #endif
 

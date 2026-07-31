@@ -2107,10 +2107,32 @@ arrays and stand on the coarse rung, which is always resident.
    returns can refine again. `FC_DEBUG_MESH_CEILING=<n>` treats
    the n-th exact build as an allocation failure — the only way to
    exercise the path without running the machine out of memory.
-   Deliberately absent, per the same decision: no GPU-stats
-   ceiling, no byte-accounted budget — the tolerance is the
-   ordinary pressure valve, and the ceiling machinery is for the
-   day the machine itself objects.
+
+   **The GPU budget is the other half, and it never touches CPU
+   RAM** (the user's design: the CPU rungs are discarded only
+   against the CPU ceiling above; the GPU budget decides what is
+   *displayed*). While the uploaded geometry exceeds the budget —
+   `GpuMemoryBudgetMB` preference / per-view property, 0 =
+   automatic: the API's own reported limit where it states one
+   (D3D/Vulkan; GL reports nothing and then no budget applies) —
+   against the backend's usage (`bgfx::getStats()` where reported,
+   else the upload accounting `s_gpuGeometryBytes` keeps beside
+   every buffer) — the plan runs the same `planMeshDemotes` sweep
+   but fires `requestDowngrade`: `downgradeMeshLevels` merely moves
+   each face's *active* mark to the coarse triangulation, the
+   coarse node rebuild uploads the small arrays, and the source
+   re-registers coarse. Both rungs stay in CPU RAM, which is what
+   makes the climb back instant: the re-registration's refine
+   detects a finer resident rung (`meshLevelFinerResident`) and
+   applies synchronously on the GUI thread —
+   `transferMeshLevels(shape, shape)` reads same-shape as "activate
+   the finest resident rung" — no worker, no tessellation. A
+   downgraded source's hidden exact rung remains droppable by the
+   CPU ceiling (`dropHiddenLevels`: no camera to consult — nothing
+   on screen changes), after which the next climb goes back through
+   the worker. The per-source callbacks live in one
+   `MeshSourceRegistry::LevelHooks` struct: refine / cancelRefine /
+   demote / downgrade / fallbackError.
 4. ✅ **As built (2026-07-31):** `cancel` wired to plan changes. The
    ask became state instead of consumption:
    `MeshSourceRegistry::requestRefine` sets a standing `asked` on

@@ -55,6 +55,36 @@ class QTimer;
 
 namespace Render {
 
+/// The desktop tier's per-source callbacks (docs/SceneStreaming.md
+/// §13), all optional and all consumed/armed per registration:
+/// - `refine`: the climb — the level plan finds the displayed coarse
+///   rung too wrong on screen; requestRefine fires it (a standing
+///   ask, idempotent while it stands) and the producer
+///   builds/activates the exact mesh behind it.
+/// - `cancelRefine`: the retraction (step 4) — a plan that no longer
+///   wants an unbuilt refine un-asks it, and the producer drops the
+///   job: a tessellation is *work*, not a fetch to ignore
+///   (RungProvider::cancel's rationale).
+/// - `demote`: drop the exact rung from CPU RAM (step 3), fired only
+///   against an observed memory ceiling.
+/// - `downgrade`: display the coarse rung but KEEP the exact one in
+///   CPU RAM (step 3's GPU half) — fired when the GPU budget wants
+///   upload bytes back; the way back up is then an instant
+///   re-activation through an ordinary refine.
+/// - `fallbackError`: the error of the coarse rung either way down
+///   lands on — what the plan prices the drop by.
+///
+/// At namespace scope rather than nested, because a nested class with
+/// default member initializers cannot be a default argument of its
+/// enclosing class's members (incomplete-class context).
+struct LevelHooks {
+    std::function<void()> refine;
+    std::function<void()> cancelRefine;
+    std::function<void()> demote;
+    std::function<void()> downgrade;
+    float fallbackError = 0.0f;
+};
+
 class RendererExport MeshSourceRegistry {
 public:
     /// Build the bytes of declared level \a level of the mesh whose
@@ -69,6 +99,9 @@ public:
 
     static MeshSourceRegistry &instance();
 
+    /// The per-source callbacks (see Render::LevelHooks above).
+    using LevelHooks = Render::LevelHooks;
+
     /// Register (or replace) the generator for \a tag. Called by the
     /// layer that tessellates — the tag is the identity the feed
     /// already carries per mesh (MeshData::sourceTag).
@@ -77,27 +110,8 @@ public:
     /// shape diagonal) when the producer tessellated coarse-first —
     /// which is what tells the serializer to declare the exact mesh as
     /// an unbuilt rung above it.
-    /// \a refine is the desktop tier's climb back to exact
-    /// (docs/SceneStreaming.md §13): when the level plan finds this
-    /// source's coarse tessellation too wrong on screen, requestRefine
-    /// fires it and the producer builds and applies the exact mesh
-    /// behind it. \a cancelRefine is the way back down while nothing
-    /// is built yet (§13 step 4): a plan that no longer wants the
-    /// refine un-asks it, and the producer drops the job if it has not
-    /// run — a tessellation is *work*, not a fetch to ignore
-    /// (RungProvider::cancel's rationale, at this tier's granularity).
-    /// Empty means nothing to climb: the source is already exact, or a
-    /// serving process whose viewers drive the exact rung themselves.
-    /// \a demote is the way back DOWN under memory pressure (§13
-    /// step 3): a refined source registers it beside \a demoteError —
-    /// the error of the coarse rung it would stand back on — and
-    /// requestDemote fires it when an observed ceiling makes the plan
-    /// want the bytes back. Empty = nothing resident to fall back to.
     void add(const void *tag, Generator gen, float publishedError = 0.0f,
-             std::function<void()> refine = {},
-             std::function<void()> cancelRefine = {},
-             std::function<void()> demote = {},
-             float demoteError = 0.0f);
+             LevelHooks hooks = LevelHooks());
     /// Drop \a tag and every chunk-key association pointing at it.
     /// Call before the geometry behind the tag dies; the tag's address
     /// may be reused.
@@ -142,14 +156,28 @@ public:
     /// every coarse source it never asked for.
     void cancelRefine(const void *tag);
 
-    /// The plan wants \a tag's exact rung dropped (memory pressure,
-    /// §13 step 3): fire the source's demote callback, consumed like a
-    /// registration — the demotion re-registers the source coarse,
-    /// which arms everything afresh. No-op without a callback.
+    /// The plan wants \a tag's exact rung dropped from CPU RAM
+    /// (memory pressure, §13 step 3): fire the source's demote
+    /// callback, consumed like a registration — the demotion
+    /// re-registers the source, which arms everything afresh. No-op
+    /// without a callback.
     void requestDemote(const void *tag);
     /// The coarse-rung error \a tag would fall back to; 0 = not
     /// demotable. What planMeshDemotes prices a demotion by.
     float demoteError(const void *tag);
+
+    /// The GPU budget wants \a tag's upload bytes back (§13 step 3):
+    /// fire the source's downgrade callback (consumed) — the display
+    /// drops to the coarse rung, the exact one stays in CPU RAM.
+    void requestDowngrade(const void *tag);
+    /// Like demoteError, for the downgrade sweep; 0 = not downgradable.
+    float downgradeError(const void *tag);
+
+    /// A CPU memory ceiling stands: drop every *hidden* exact rung —
+    /// sources displaying their coarse rung while still holding the
+    /// exact one (a demote hook beside a non-zero publishedError).
+    /// Dropping those consults no camera: nothing on screen changes.
+    void dropHiddenLevels();
 
     /// A memory ceiling was observed: an exact build failed to
     /// allocate (bad_alloc / Standard_OutOfMemory), or the worker's
@@ -168,14 +196,10 @@ private:
         float publishedError = 0.0f;
         /// The key the publisher last associated — the job identity.
         std::string canonicalKey;
-        /// The desktop refine trigger and its retraction; `asked` is
-        /// the standing ask requestRefine sets and cancelRefine clears.
-        std::function<void()> refine;
-        std::function<void()> cancelRefine;
+        /// The desktop tier's callbacks; `asked` is the standing ask
+        /// requestRefine sets and cancelRefine clears.
+        LevelHooks hooks;
         bool asked = false;
-        /// The way back down and what it costs the screen (§13 step 3).
-        std::function<void()> demote;
-        float demoteErr = 0.0f;
     };
     std::mutex mutex;
     std::map<const void *, Source> sources;

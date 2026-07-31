@@ -54,6 +54,7 @@ public:
     long CoarseTessellation;
     long LevelThreads;
     long LevelMemoryFloorMB;
+    long GpuMemoryBudgetMB;
     double LevelTolerance;
     double EffectResolution;
     bool AO;
@@ -118,6 +119,8 @@ public:
         funcs["LevelThreads"] = &RenderParamsP::updateLevelThreads;
         LevelMemoryFloorMB = this->handle->GetInt("LevelMemoryFloorMB", 0);
         funcs["LevelMemoryFloorMB"] = &RenderParamsP::updateLevelMemoryFloorMB;
+        GpuMemoryBudgetMB = this->handle->GetInt("GpuMemoryBudgetMB", 0);
+        funcs["GpuMemoryBudgetMB"] = &RenderParamsP::updateGpuMemoryBudgetMB;
         LevelTolerance = this->handle->GetFloat("LevelTolerance", 2.0);
         funcs["LevelTolerance"] = &RenderParamsP::updateLevelTolerance;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
@@ -253,6 +256,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelMemoryFloorMB(RenderParamsP *self) {
         self->LevelMemoryFloorMB = self->handle->GetInt("LevelMemoryFloorMB", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateGpuMemoryBudgetMB(RenderParamsP *self) {
+        self->GpuMemoryBudgetMB = self->handle->GetInt("GpuMemoryBudgetMB", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelTolerance(RenderParamsP *self) {
@@ -605,6 +612,42 @@ void RenderParams::setLevelMemoryFloorMB(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelMemoryFloorMB() {
     instance()->handle->RemoveInt("LevelMemoryFloorMB");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docGpuMemoryBudgetMB() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"GPU geometry budget of the desktop mesh-level plan\n"
+"(docs/SceneStreaming.md #13): while the uploaded geometry exceeds\n"
+"it, a camera pause downgrades the *displayed* mesh of objects the\n"
+"camera would not miss - off screen, or coarse within half the\n"
+"Level tolerance - back to their coarse rung. Their exact meshes\n"
+"stay in CPU RAM, so zooming back in re-activates them instantly,\n"
+"with no re-tessellation. 0 means automatic: the graphics API's\n"
+"own reported GPU memory limit where it states one (Direct3D and\n"
+"Vulkan do; OpenGL reports nothing, and then no budget applies).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getGpuMemoryBudgetMB() {
+    return instance()->GpuMemoryBudgetMB;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultGpuMemoryBudgetMB() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setGpuMemoryBudgetMB(const long &v) {
+    instance()->handle->SetInt("GpuMemoryBudgetMB",v);
+    instance()->GpuMemoryBudgetMB = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeGpuMemoryBudgetMB() {
+    instance()->handle->RemoveInt("GpuMemoryBudgetMB");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

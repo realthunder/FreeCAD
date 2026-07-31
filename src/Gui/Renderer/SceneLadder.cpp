@@ -1069,6 +1069,56 @@ BoxSight sightBox(const Render::DrawCall &draw, const float *V,
 
 }  // namespace
 
+namespace {
+
+/// The bounds one plan verdict stands on: the union box of every
+/// tagged draw sharing the draw's objectKey, or the draw's own box
+/// when it has no object identity (objectKey 0 — the tests' case, and
+/// any feed that never filled keys).
+///
+/// Judging per DRAW was the churn bug this exists to fix: an object's
+/// face and edge draws carry different boxes — an ellipsoid's seam
+/// edge is one meridian, a sliver that can sit off-screen while the
+/// body fills the view — and since the face and line sources of one
+/// object share their refine/demote action, opposite verdicts made
+/// every plan cycle downgrade through the edge tag and re-refine
+/// through the face tag, a full rebuild each way, forever. One box
+/// per object gives every tag of the object the same verdict.
+struct PlanBoxes {
+    std::map<uint64_t, Render::DrawCall> objectBox;
+
+    explicit PlanBoxes(const Render::DrawCallList &draws)
+    {
+        for (const auto &draw : draws) {
+            if (!draw.mesh || !draw.mesh->sourceTag || !draw.objectKey)
+                continue;
+            if (draw.bboxMin[0] > draw.bboxMax[0])
+                continue;
+            auto res = objectBox.try_emplace(draw.objectKey, draw);
+            if (res.second)
+                continue;
+            Render::DrawCall &box = res.first->second;
+            for (int i = 0; i < 3; ++i) {
+                box.bboxMin[i] = std::min(box.bboxMin[i],
+                                          draw.bboxMin[i]);
+                box.bboxMax[i] = std::max(box.bboxMax[i],
+                                          draw.bboxMax[i]);
+            }
+        }
+    }
+
+    BoxSight sight(const Render::DrawCall &draw, const float *view,
+                   const float *proj, float viewportHeightPx) const
+    {
+        auto it = objectBox.find(draw.objectKey);
+        const Render::DrawCall &box =
+            it != objectBox.end() ? it->second : draw;
+        return sightBox(box, view, proj, viewportHeightPx);
+    }
+};
+
+}  // namespace
+
 std::vector<const void *> Render::planMeshRefines(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx)
@@ -1076,14 +1126,17 @@ std::vector<const void *> Render::planMeshRefines(
     std::vector<const void *> out;
     if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f)
         return out;
-    std::set<const void *> seen;
+    const PlanBoxes boxes(draws);
+    // A tag is wanted when ANY draw carrying it wants finer — a shared
+    // (instanced) source refines for its neediest owner.
+    std::set<const void *> wanted, seen;
     for (const auto &draw : draws) {
         if (!draw.mesh)
             continue;
         const MeshData &mesh = *draw.mesh;
         if (!mesh.sourceTag || mesh.levelError <= 0.0f)
             continue;
-        if (seen.count(mesh.sourceTag))
+        if (wanted.count(mesh.sourceTag))
             continue;
         if (tolerancePx <= 0.0f) {
             // "Every object desires its exact content" — the step-1
@@ -1091,19 +1144,22 @@ std::vector<const void *> Render::planMeshRefines(
             // — except a draw with no judgeable bounds at all.
             if (draw.bboxMin[0] > draw.bboxMax[0])
                 continue;
-            seen.insert(mesh.sourceTag);
-            out.push_back(mesh.sourceTag);
-            continue;
         }
-        const BoxSight sight =
-            sightBox(draw, viewMatrix, projMatrix, viewportHeightPx);
-        // Off-screen never refines — the residency bill this pass
-        // exists to stop paying; the camera inside the box span
-        // refines outright.
-        const bool wanted = sight.what == BoxSight::Inside
-            || (sight.what == BoxSight::Visible
-                && mesh.levelError * sight.diagPx > tolerancePx);
-        if (wanted) {
+        else {
+            const BoxSight sight = boxes.sight(draw, viewMatrix,
+                                               projMatrix,
+                                               viewportHeightPx);
+            // Off-screen never refines — the residency bill this pass
+            // exists to stop paying; the camera inside the box span
+            // refines outright.
+            const bool want = sight.what == BoxSight::Inside
+                || (sight.what == BoxSight::Visible
+                    && mesh.levelError * sight.diagPx > tolerancePx);
+            if (!want)
+                continue;
+        }
+        wanted.insert(mesh.sourceTag);
+        if (!seen.count(mesh.sourceTag)) {
             seen.insert(mesh.sourceTag);
             out.push_back(mesh.sourceTag);
         }
@@ -1120,6 +1176,12 @@ std::vector<const void *> Render::planMeshDemotes(
     if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f
         || tolerancePx <= 0.0f || !demoteErrOf)
         return out;
+    const PlanBoxes boxes(draws);
+    // A tag drops only when EVERY draw carrying it may — the mirror of
+    // the refine pass's union: a shared source stays exact for its
+    // neediest owner.
+    std::set<const void *> kept;
+    std::vector<const void *> candidates;
     std::set<const void *> seen;
     for (const auto &draw : draws) {
         if (!draw.mesh)
@@ -1130,13 +1192,13 @@ std::vector<const void *> Render::planMeshDemotes(
         // to (the registry answers its error; 0 = nothing resident).
         if (!mesh.sourceTag || mesh.levelError > 0.0f)
             continue;
-        if (seen.count(mesh.sourceTag))
+        if (kept.count(mesh.sourceTag))
             continue;
         const float coarseErr = demoteErrOf(mesh.sourceTag);
         if (coarseErr <= 0.0f)
             continue;
-        const BoxSight sight =
-            sightBox(draw, viewMatrix, projMatrix, viewportHeightPx);
+        const BoxSight sight = boxes.sight(draw, viewMatrix, projMatrix,
+                                           viewportHeightPx);
         // Off-screen frees outright; on screen only when the coarse
         // rung clears the tolerance by the demote margin — at the
         // refine boundary itself a drifting camera would trade a full
@@ -1145,10 +1207,17 @@ std::vector<const void *> Render::planMeshDemotes(
             || (sight.what == BoxSight::Visible
                 && coarseErr * sight.diagPx
                     <= tolerancePx * kPlanDemoteMargin);
-        if (droppable) {
+        if (!droppable) {
+            kept.insert(mesh.sourceTag);
+            continue;
+        }
+        if (!seen.count(mesh.sourceTag)) {
             seen.insert(mesh.sourceTag);
-            out.push_back(mesh.sourceTag);
+            candidates.push_back(mesh.sourceTag);
         }
     }
+    for (const void *tag : candidates)
+        if (!kept.count(tag))
+            out.push_back(tag);
     return out;
 }

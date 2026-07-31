@@ -3108,10 +3108,13 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
                                 std::move(onExact));
         return;
     }
-    // Exact-resident: registered at error 0 with the way back down
+    // Exact-resident: registered at error 0 with both ways back down
     // armed (§13 step 3) — the coarse triangulation never left the
-    // shape, so the demotion is a drop, a coarse node rebuild that
-    // finds its mesh resident, and a fresh climb.
+    // shape. The demote (CPU-memory ceiling only) drops the exact
+    // rung; the downgrade (GPU budget) merely re-activates the coarse
+    // one, keeping the exact resident so the climb back is instant.
+    // Either way the coarse node rebuild finds its mesh resident, and
+    // the coarse re-registration arms a fresh climb.
     auto onDemote = [=]() {
         if (!demoteMeshLevels(local))
             return;
@@ -3126,9 +3129,24 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
                                     coords, pcoords, norm, texcoords,
                                     faceset, lineset, nodeset);
     };
+    auto onDowngrade = [=]() {
+        if (!downgradeMeshLevels(local))
+            return;
+        int nt = 0, nn = 0, np = 0, nno = 0, nf = 0, ne = 0, nl = 0;
+        buildVisualNodes(local, coarseDefl, coarseAng, normalsFromUV,
+                         coords, pcoords, norm, texcoords,
+                         faceset, lineset, nodeset,
+                         nt, nn, np, nno, nf, ne, nl);
+        registerInstancedLevelEntry(local, false, builtError,
+                                    coarseDefl, coarseAng,
+                                    exactDefl, exactAng, normalsFromUV,
+                                    coords, pcoords, norm, texcoords,
+                                    faceset, lineset, nodeset);
+    };
     registerMeshLevelSource(local, normalsFromUV, faceset, lineset,
                             0.0f, exactDefl, exactAng, {},
-                            std::move(onDemote), builtError);
+                            std::move(onDemote), builtError,
+                            std::move(onDowngrade));
 }
 
 void ViewProviderPartExt::updateVisual()
@@ -3350,11 +3368,13 @@ void ViewProviderPartExt::updateVisual()
             };
         }
         // Exact by refine: the coarse triangulation never left the
-        // shape (transferMeshLevels keeps it), so the way back down is
-        // armed too (§13 step 3) — under an observed memory ceiling
-        // the plan drops the exact rung, and the rebuild finds the
-        // coarse mesh resident.
-        std::function<void()> onDemote;
+        // shape (transferMeshLevels keeps it), so both ways back down
+        // are armed (§13 step 3). The demote — only ever under an
+        // observed CPU-memory ceiling — drops the exact rung outright;
+        // the downgrade — the GPU budget's — merely re-activates the
+        // coarse rung for display and keeps the exact one resident,
+        // so the climb back is instant.
+        std::function<void()> onDemote, onDowngrade;
         if (exactResident && ExactMeshCoarseError > 0.0f) {
             const void *tsh = cShape.TShape().get();
             onDemote = [this, tsh]() {
@@ -3366,12 +3386,22 @@ void ViewProviderPartExt::updateVisual()
                 ExactMeshTShape = nullptr;
                 updateVisual();
             };
+            onDowngrade = [this, tsh]() {
+                TopoDS_Shape cur = cachedShape.getShape();
+                if (cur.IsNull() || cur.TShape().get() != tsh)
+                    return;
+                if (!downgradeMeshLevels(cur))
+                    return;
+                ExactMeshTShape = nullptr;
+                updateVisual();
+            };
         }
         registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
                                 builtError, exactDeflection, exactAngle,
                                 std::move(onExact), std::move(onDemote),
                                 exactResident ? ExactMeshCoarseError
-                                              : 0.0f);
+                                              : 0.0f,
+                                std::move(onDowngrade));
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());

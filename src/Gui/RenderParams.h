@@ -144,6 +144,26 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter GpuMemoryBudgetMB
+    ///
+    /// GPU geometry budget of the desktop mesh-level plan
+    /// (docs/SceneStreaming.md #13): while the uploaded geometry exceeds
+    /// it, a camera pause downgrades the *displayed* mesh of objects the
+    /// camera would not miss - off screen, or coarse within half the
+    /// Level tolerance - back to their coarse rung. Their exact meshes
+    /// stay in CPU RAM, so zooming back in re-activates them instantly,
+    /// with no re-tessellation. 0 means automatic: the graphics API's
+    /// own reported GPU memory limit where it states one (Direct3D and
+    /// Vulkan do; OpenGL reports nothing, and then no budget applies).
+    static const long & getGpuMemoryBudgetMB();
+    static const long & defaultGpuMemoryBudgetMB();
+    static void removeGpuMemoryBudgetMB();
+    static void setGpuMemoryBudgetMB(const long &v);
+    static const char *docGpuMemoryBudgetMB();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LevelTolerance
     ///
     /// Screen-space error, in pixels, a coarse tessellation may

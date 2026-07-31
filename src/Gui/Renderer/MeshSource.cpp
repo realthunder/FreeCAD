@@ -47,11 +47,7 @@ MeshSourceRegistry &MeshSourceRegistry::instance()
 }
 
 void MeshSourceRegistry::add(const void *tag, Generator gen,
-                             float publishedError,
-                             std::function<void()> refine,
-                             std::function<void()> cancelRefine,
-                             std::function<void()> demote,
-                             float demoteError)
+                             float publishedError, LevelHooks hooks)
 {
     if (!tag || !gen)
         return;
@@ -60,11 +56,8 @@ void MeshSourceRegistry::add(const void *tag, Generator gen,
     src.gen = std::make_shared<Generator>(std::move(gen));
     src.publishedError = publishedError;
     src.canonicalKey.clear();
-    src.refine = std::move(refine);
-    src.cancelRefine = std::move(cancelRefine);
+    src.hooks = std::move(hooks);
     src.asked = false;
-    src.demote = std::move(demote);
-    src.demoteErr = demoteError;
     if (debugOn())
         std::fprintf(stderr, "mesh source: add tag=%p err=%g (%zu sources)\n",
                      tag, double(publishedError), sources.size());
@@ -133,11 +126,11 @@ void MeshSourceRegistry::requestRefine(const void *tag)
     {
         std::lock_guard<std::mutex> guard(mutex);
         auto it = sources.find(tag);
-        if (it == sources.end() || !it->second.refine
+        if (it == sources.end() || !it->second.hooks.refine
             || it->second.asked)
             return;
         it->second.asked = true;
-        fn = it->second.refine;
+        fn = it->second.hooks.refine;
     }
     if (debugOn())
         std::fprintf(stderr, "mesh source: refine tag=%p\n", tag);
@@ -153,7 +146,7 @@ void MeshSourceRegistry::cancelRefine(const void *tag)
         if (it == sources.end() || !it->second.asked)
             return;
         it->second.asked = false;
-        fn = it->second.cancelRefine;
+        fn = it->second.hooks.cancelRefine;
     }
     if (debugOn())
         std::fprintf(stderr, "mesh source: cancel tag=%p\n", tag);
@@ -171,10 +164,10 @@ void MeshSourceRegistry::requestDemote(const void *tag)
     {
         std::lock_guard<std::mutex> guard(mutex);
         auto it = sources.find(tag);
-        if (it == sources.end() || !it->second.demote)
+        if (it == sources.end() || !it->second.hooks.demote)
             return;
-        fn = std::move(it->second.demote);
-        it->second.demote = nullptr;
+        fn = std::move(it->second.hooks.demote);
+        it->second.hooks.demote = nullptr;
     }
     if (debugOn())
         std::fprintf(stderr, "mesh source: demote tag=%p\n", tag);
@@ -185,9 +178,58 @@ float MeshSourceRegistry::demoteError(const void *tag)
 {
     std::lock_guard<std::mutex> guard(mutex);
     auto it = sources.find(tag);
-    if (it == sources.end() || !it->second.demote)
+    if (it == sources.end() || !it->second.hooks.demote)
         return 0.0f;
-    return it->second.demoteErr;
+    return it->second.hooks.fallbackError;
+}
+
+void MeshSourceRegistry::requestDowngrade(const void *tag)
+{
+    std::function<void()> fn;
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        auto it = sources.find(tag);
+        if (it == sources.end() || !it->second.hooks.downgrade)
+            return;
+        fn = std::move(it->second.hooks.downgrade);
+        it->second.hooks.downgrade = nullptr;
+    }
+    if (debugOn())
+        std::fprintf(stderr, "mesh source: downgrade tag=%p\n", tag);
+    fn();
+}
+
+float MeshSourceRegistry::downgradeError(const void *tag)
+{
+    std::lock_guard<std::mutex> guard(mutex);
+    auto it = sources.find(tag);
+    if (it == sources.end() || !it->second.hooks.downgrade)
+        return 0.0f;
+    return it->second.hooks.fallbackError;
+}
+
+void MeshSourceRegistry::dropHiddenLevels()
+{
+    // Collect under the lock, fire outside: each drop is a consumed
+    // demote of a source whose display already stands on its coarse
+    // rung — no camera to consult, nothing on screen changes.
+    std::vector<std::function<void()>> fns;
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        for (auto &entry : sources) {
+            Source &src = entry.second;
+            if (src.publishedError > 0.0f && src.hooks.demote) {
+                fns.push_back(std::move(src.hooks.demote));
+                src.hooks.demote = nullptr;
+                if (debugOn())
+                    std::fprintf(stderr,
+                                 "mesh source: drop hidden tag=%p\n",
+                                 entry.first);
+            }
+        }
+    }
+    for (auto &fn : fns)
+        fn();
 }
 
 void MeshSourceRegistry::observeMemoryCeiling()

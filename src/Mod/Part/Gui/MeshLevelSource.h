@@ -96,12 +96,19 @@ bool buildMeshLevel(const TopoDS_Shape &shape, const MeshLevelJob &job,
 /// or unregistered — which is also the cancellation: a build obsoleted
 /// mid-job completes, fails that check, and is dropped.
 ///
-/// \a onDemote is the way back down (§13 step 3): given by a source
-/// standing at its exact rung with the coarse one still resident
-/// beside it (transferMeshLevels keeps it), it fires — GUI thread,
-/// consumed on fire — when an observed memory ceiling makes the level
-/// plan want the bytes back; \a demoteError states the coarse rung's
-/// error so the plan can price the drop against the tolerance.
+/// \a onDemote and \a onDowngrade are the two ways back down (§13
+/// step 3), given by a source standing at its exact rung with the
+/// coarse one still resident beside it (transferMeshLevels keeps it);
+/// both fire on the GUI thread, consumed on fire. onDemote drops the
+/// exact rung from CPU RAM — fired only against an observed memory
+/// ceiling. onDowngrade merely re-activates the coarse rung for
+/// display, keeping the exact one resident — fired when the GPU
+/// budget wants upload bytes back; the climb back is then instant.
+/// \a demoteError states the coarse rung's error so the plan can
+/// price either drop against the tolerance. A coarse registration
+/// with a finer rung still resident (a downgraded source) arms its
+/// own hidden-rung demote internally, and its refine skips the
+/// worker.
 void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              SoNode *faceTag, SoNode *lineTag,
                              float builtError = 0.0f,
@@ -110,7 +117,8 @@ void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              std::function<void(const TopoDS_Shape &)>
                                  onExactBuilt = {},
                              std::function<void()> onDemote = {},
-                             float demoteError = 0.0f);
+                             float demoteError = 0.0f,
+                             std::function<void()> onDowngrade = {});
 
 /// Drop the registration made under these tags (before the nodes die;
 /// their addresses may be reused).
@@ -157,6 +165,19 @@ void transferMeshLevels(const TopoDS_Shape &from, const TopoDS_Shape &to);
 /// meshing after this is a no-op, the coarse rung never left. Returns
 /// whether anything was dropped. GUI thread, like the transfer.
 bool demoteMeshLevels(const TopoDS_Shape &shape);
+
+/// The GPU's way back down (§13 step 3): move each face's *active*
+/// mark to its coarsest resident triangulation, keeping every rung in
+/// CPU RAM — the coarse node rebuild then uploads the small arrays,
+/// and the climb back is transferMeshLevels(shape, shape): an instant
+/// re-activation of the finest rung, no worker, no re-tessellation.
+/// Returns whether anything changed. GUI thread.
+bool downgradeMeshLevels(const TopoDS_Shape &shape);
+
+/// Whether \a shape holds more than one resident triangulation on any
+/// face — i.e. a finer rung a refine could activate without the
+/// worker, and a hidden rung a CPU-memory ceiling could drop.
+bool meshLevelFinerResident(const TopoDS_Shape &shape);
 
 /// The linear / angular deflection of ladder level \a level for a
 /// shape of the given bbox diagonal — the generator's own grid

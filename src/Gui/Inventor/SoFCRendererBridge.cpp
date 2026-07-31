@@ -1567,6 +1567,15 @@ RendererBridge::translateLevelTolerance(View3DInventor * view)
             RenderParams::getLevelTolerance()));
 }
 
+size_t
+RendererBridge::translateGpuMemoryBudget(View3DInventor * view)
+{
+    long mb = long(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "GpuMemoryBudgetMB",
+            RenderParams::getGpuMemoryBudgetMB()));
+    return mb > 0 ? size_t(mb) << 20 : 0;
+}
+
 float
 RendererBridge::translateAutoZoomScale(SoState * state)
 {

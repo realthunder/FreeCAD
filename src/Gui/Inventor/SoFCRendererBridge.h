@@ -148,6 +148,7 @@ GuiExport float translateAutoZoomScale(SoState * state);
 GuiExport float translateEffectResolution(View3DInventor * view);
 GuiExport float translateSSAOResolution(View3DInventor * view);
 GuiExport float translateLevelTolerance(View3DInventor * view);
+GuiExport size_t translateGpuMemoryBudget(View3DInventor * view);
 
 } // namespace RendererBridge
 } // namespace Gui

@@ -133,6 +133,19 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     LevelMemoryFloorMB->setEntryName("LevelMemoryFloorMB");
     LevelMemoryFloorMB->setParamGrpPath("View/Render");
 
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutScenestreaming->addLayout(layoutRow);
+    labelGpuMemoryBudgetMB = new QLabel(this);
+    layoutRow->addWidget(labelGpuMemoryBudgetMB);
+    GpuMemoryBudgetMB = new Gui::PrefSpinBox(this);
+    layoutRow->addWidget(GpuMemoryBudgetMB);
+    GpuMemoryBudgetMB->setValue(Gui::RenderParams::defaultGpuMemoryBudgetMB());
+    GpuMemoryBudgetMB->setEntryName("GpuMemoryBudgetMB");
+    GpuMemoryBudgetMB->setParamGrpPath("View/Render");
+
 
     // Auto generated code (Tools/params_utils.py:448)
     groupAmbientocclusion = new QGroupBox(this);
@@ -612,6 +625,7 @@ void DlgSettingsRender::saveSettings()
     LevelTolerance->onSave();
     LevelThreads->onSave();
     LevelMemoryFloorMB->onSave();
+    GpuMemoryBudgetMB->onSave();
     AO->onSave();
     AOMethod->onSave();
     AOSlices->onSave();
@@ -654,6 +668,7 @@ void DlgSettingsRender::loadSettings()
     LevelTolerance->onRestore();
     LevelThreads->onRestore();
     LevelMemoryFloorMB->onRestore();
+    GpuMemoryBudgetMB->onRestore();
     AO->onRestore();
     AOMethod->onRestore();
     AOSlices->onRestore();
@@ -708,6 +723,9 @@ void DlgSettingsRender::retranslateUi()
     LevelMemoryFloorMB->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docLevelMemoryFloorMB()));
     labelLevelMemoryFloorMB->setText(QObject::tr("Level memory floor (MB)"));
     labelLevelMemoryFloorMB->setToolTip(LevelMemoryFloorMB->toolTip());
+    GpuMemoryBudgetMB->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docGpuMemoryBudgetMB()));
+    labelGpuMemoryBudgetMB->setText(QObject::tr("GPU memory budget (MB)"));
+    labelGpuMemoryBudgetMB->setToolTip(GpuMemoryBudgetMB->toolTip());
     groupAmbientocclusion->setTitle(QObject::tr("Ambient occlusion"));
     AO->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAO()));
     AO->setText(QObject::tr("Ambient occlusion"));

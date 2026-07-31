@@ -50,6 +50,7 @@ ParamGroup = (
         'LevelTolerance',
         'LevelThreads',
         'LevelMemoryFloorMB',
+        'GpuMemoryBudgetMB',
     )]),
 
     ('Ambient occlusion', [_RenderParams[name] for name in (

@@ -78,6 +78,16 @@ Params = [
         "0 sizes the floor automatically (at least 512 MB, or 1/16 of\n"
         "physical memory if that is more). Read when the first refine is\n"
         "queued."),
+    ParamInt('GpuMemoryBudgetMB',  0, title='GPU memory budget (MB)',
+        doc="GPU geometry budget of the desktop mesh-level plan\n"
+        "(docs/SceneStreaming.md #13): while the uploaded geometry exceeds\n"
+        "it, a camera pause downgrades the *displayed* mesh of objects the\n"
+        "camera would not miss - off screen, or coarse within half the\n"
+        "Level tolerance - back to their coarse rung. Their exact meshes\n"
+        "stay in CPU RAM, so zooming back in re-activates them instantly,\n"
+        "with no re-tessellation. 0 means automatic: the graphics API's\n"
+        "own reported GPU memory limit where it states one (Direct3D and\n"
+        "Vulkan do; OpenGL reports nothing, and then no budget applies)."),
     ParamFloat('LevelTolerance',  2.0, title='Level tolerance',
         doc="Screen-space error, in pixels, a coarse tessellation may\n"
         "commit before the exact one is built (docs/SceneStreaming.md\n"

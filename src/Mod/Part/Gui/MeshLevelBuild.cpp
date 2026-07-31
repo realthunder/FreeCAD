@@ -753,11 +753,49 @@ TopoDS_Shape PartGui::meshLevelExactCopy(const TopoDS_Shape &shape,
     }
 }
 
+namespace {
+
+/// Make one resident triangulation of \a face active: the one with the
+/// fewest nodes (coarsest = true) or the most (the exact). Answers
+/// whether anything changed.
+bool activateResident(const TopoDS_Face &face, bool coarsest)
+{
+    Handle(BRep_TFace) tface = Handle(BRep_TFace)::DownCast(face.TShape());
+    if (tface.IsNull() || tface->NbTriangulations() < 2)
+        return false;
+    Handle(Poly_Triangulation) pick;
+    for (Poly_ListOfTriangulation::Iterator it(tface->Triangulations());
+         it.More(); it.Next()) {
+        if (pick.IsNull()
+            || (coarsest ? it.Value()->NbNodes() < pick->NbNodes()
+                         : it.Value()->NbNodes() > pick->NbNodes()))
+            pick = it.Value();
+    }
+    if (pick.IsNull() || pick == tface->ActiveTriangulation())
+        return false;
+    // The contained-triangulation branch of BRep_TFace::Triangulation
+    // with theToReset false: just moves the active mark.
+    tface->Triangulation(pick, false);
+    face.TShape()->Modified(Standard_True);
+    return true;
+}
+
+} // anonymous namespace
+
 void PartGui::transferMeshLevels(const TopoDS_Shape &from,
                                  const TopoDS_Shape &to)
 {
     if (from.IsNull() || to.IsNull())
         return;
+    // The same shape "transferring onto itself" is the fast upgrade
+    // (§13 step 3): the exact triangulation never left — a downgrade
+    // only moved the active mark to the coarse one — so the climb is
+    // re-activating the finest resident rung, no worker, no copy.
+    if (from.IsSame(to)) {
+        for (TopExp_Explorer fx(to, TopAbs_FACE); fx.More(); fx.Next())
+            activateResident(TopoDS::Face(fx.Current()), false);
+        return;
+    }
     // The copy preserves sub-shape order (the same assumption the
     // level builder's table validation stands on); a count mismatch
     // means these are not copy and original, and nothing moves.
@@ -838,6 +876,32 @@ void PartGui::transferMeshLevels(const TopoDS_Shape &from,
         if (!poly.IsNull())
             builder.UpdateEdge(toEdge, poly);
     }
+}
+
+bool PartGui::downgradeMeshLevels(const TopoDS_Shape &shape)
+{
+    if (shape.IsNull())
+        return false;
+    // Only the active mark moves — every triangulation stays resident,
+    // which is the entire difference from demoteMeshLevels: the memory
+    // freed is the GPU's (and the node arrays'), never the CPU rung.
+    bool any = false;
+    for (TopExp_Explorer fx(shape, TopAbs_FACE); fx.More(); fx.Next())
+        any = activateResident(TopoDS::Face(fx.Current()), true) || any;
+    return any;
+}
+
+bool PartGui::meshLevelFinerResident(const TopoDS_Shape &shape)
+{
+    if (shape.IsNull())
+        return false;
+    for (TopExp_Explorer fx(shape, TopAbs_FACE); fx.More(); fx.Next()) {
+        Handle(BRep_TFace) tface =
+            Handle(BRep_TFace)::DownCast(fx.Current().TShape());
+        if (!tface.IsNull() && tface->NbTriangulations() >= 2)
+            return true;
+    }
+    return false;
 }
 
 bool PartGui::demoteMeshLevels(const TopoDS_Shape &shape)

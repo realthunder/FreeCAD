@@ -83,6 +83,8 @@ private:
     Gui::PrefSpinBox *LevelThreads = nullptr;
     QLabel *labelLevelMemoryFloorMB = nullptr;
     Gui::PrefSpinBox *LevelMemoryFloorMB = nullptr;
+    QLabel *labelGpuMemoryBudgetMB = nullptr;
+    Gui::PrefSpinBox *GpuMemoryBudgetMB = nullptr;
 
     // Auto generated code (Tools/params_utils.py:426)
     QGroupBox * groupAmbientocclusion = nullptr;

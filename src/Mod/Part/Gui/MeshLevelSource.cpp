@@ -302,7 +302,8 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                                       std::function<void(const TopoDS_Shape &)>
                                           onExactBuilt,
                                       std::function<void()> onDemote,
-                                      float demoteError)
+                                      float demoteError,
+                                      std::function<void()> onDowngrade)
 {
     if (shape.IsNull() || (!faceTag && !lineTag))
         return;
@@ -352,41 +353,68 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
     // build and its reset re-arms the pair as one. A face and line
     // draw of the same object share bounds and error, so a plan wants
     // or drops them together; the shared job relies on that.
-    std::function<void()> refine, cancel;
+    Render::MeshSourceRegistry::LevelHooks hooks;
     if (onExactBuilt && builtError > 0.0f
         && !std::getenv("FC_BGFX_SERVE_SCENE")) {
         const void *primary = faceTag ? faceTag : lineTag;
         auto fired = std::make_shared<std::atomic<bool>>(false);
-        refine = [primary, st, fired,
-                  apply = std::move(onExactBuilt)]() {
+        // The climb goes through the worker — unless a finer rung is
+        // still resident (a downgraded source): then the apply runs
+        // right here, GUI thread, with the live shape itself —
+        // transferMeshLevels reads same-shape as "activate the finest
+        // resident rung", no tessellation at all.
+        hooks.refine = [primary, st, fired,
+                        apply = std::move(onExactBuilt)]() {
             if (fired->exchange(true))
                 return;
+            if (meshLevelFinerResident(st->shape)) {
+                apply(st->shape);
+                return;
+            }
             queueExactRefine(primary, st, apply);
         };
-        cancel = [primary, fired]() {
+        hooks.cancelRefine = [primary, fired]() {
             if (!fired->exchange(false))
                 return;
             cancelExactRefine(primary);
         };
+        // A downgraded source still holds its exact rung in CPU RAM;
+        // a CPU memory ceiling drops that hidden rung outright
+        // (dropHiddenLevels) — nothing displayed changes, and the
+        // next climb goes back through the worker. Idempotent, so no
+        // fired flag: the second tag's drop finds one rung and stops.
+        if (meshLevelFinerResident(shape)) {
+            hooks.demote = [st]() { demoteMeshLevels(st->shape); };
+            hooks.fallbackError = builtError;
+        }
     }
-    // The way back down mirrors the climb: one shared closure under
-    // both tags, a shared flag keeping the pair to a single demotion.
-    std::function<void()> demote;
-    if (onDemote && demoteError > 0.0f) {
-        auto fired = std::make_shared<std::atomic<bool>>(false);
-        demote = [fired, apply = std::move(onDemote)]() {
-            if (fired->exchange(true))
-                return;
-            apply();
-        };
+    else if (builtError <= 0.0f && demoteError > 0.0f) {
+        // Exact-resident: the two ways back down (§13 step 3), one
+        // shared closure per direction under both tags, a shared flag
+        // keeping each pair to a single action.
+        if (onDemote) {
+            auto fired = std::make_shared<std::atomic<bool>>(false);
+            hooks.demote = [fired, apply = std::move(onDemote)]() {
+                if (fired->exchange(true))
+                    return;
+                apply();
+            };
+        }
+        if (onDowngrade) {
+            auto fired = std::make_shared<std::atomic<bool>>(false);
+            hooks.downgrade = [fired, apply = std::move(onDowngrade)]() {
+                if (fired->exchange(true))
+                    return;
+                apply();
+            };
+        }
+        hooks.fallbackError = demoteError;
     }
     auto &reg = Render::MeshSourceRegistry::instance();
     if (faceTag)
-        reg.add(faceTag, gen, builtError, refine, cancel, demote,
-                demoteError);
+        reg.add(faceTag, gen, builtError, hooks);
     if (lineTag)
-        reg.add(lineTag, gen, builtError, refine, cancel, demote,
-                demoteError);
+        reg.add(lineTag, gen, builtError, hooks);
 }
 
 void PartGui::unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag)
