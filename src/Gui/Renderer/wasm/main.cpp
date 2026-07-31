@@ -2488,6 +2488,160 @@ static bool blobPersistEnabled()
     return on != 0 && !s_idbUnresponsive;
 }
 
+//////////////////////////////////////////////////////////////////////
+// The persistent store's ledger, and its lazy collection
+// (docs/SceneStreaming.md §7, "the store is a cache with a budget").
+// IndexedDB otherwise only ever grows: every edit re-keys content, so
+// a working session strictly adds blobs, and the emscripten helpers
+// cannot even enumerate what is there. The ledger is a meta record in
+// the same database under a fixed non-hash key: every blob written is
+// noted with its size and an epoch-ms last-touched stamp, every store
+// hit refreshes the stamp, and a sweep runs only when the tracked
+// total exceeds the budget — losing your last reference makes you a
+// candidate, only storage pressure makes you garbage. Keys the live
+// scene names at any rung are never swept. Two tabs race on the meta
+// record last-writer-wins; the worst either can suffer is a key
+// deleted under the other's feet, which costs one refetch.
+
+struct StoreMetaEntry {
+    uint32_t bytes = 0;
+    double touched = 0.0;  ///< epoch ms — comparable across sessions
+};
+static std::map<std::string, StoreMetaEntry> s_storeMeta;
+static size_t s_storeMetaBytes = 0;
+static bool s_storeMetaLoaded = false;
+static bool s_storeMetaDirty = false;
+static bool s_storeMetaFlushArmed = false;
+static const char *kStoreMetaKey = "!meta";
+
+/// Bytes the persistent store may hold before a sweep;
+/// ?storebudget=<MB> overrides.
+static size_t storeBudget()
+{
+    static long mb = -1;
+    if (mb < 0) {
+        mb = EM_ASM_INT({
+            var v = new URLSearchParams(location.search).get('storebudget');
+            return v === null ? 512 : (parseInt(v) | 0);
+        });
+        if (mb <= 0)
+            mb = 512;
+    }
+    return size_t(mb) << 20;
+}
+
+static void armStoreMetaFlush();
+
+/// Note a blob written to or read from the store. An untracked key a
+/// warm session hits joins the ledger here, so a store predating the
+/// ledger converges to tracked as it is actually used.
+static void touchStoreMeta(const std::string &key, uint32_t bytes)
+{
+    if (!blobPersistEnabled())
+        return;
+    auto &meta = s_storeMeta[key];
+    if (!meta.bytes)
+        s_storeMetaBytes += bytes;
+    meta.bytes = bytes;
+    meta.touched = emscripten_date_now();
+    s_storeMetaDirty = true;
+    armStoreMetaFlush();
+}
+
+static void dropStoreMeta(const std::string &key)
+{
+    auto it = s_storeMeta.find(key);
+    if (it == s_storeMeta.end())
+        return;
+    s_storeMetaBytes -=
+        std::min<size_t>(s_storeMetaBytes, it->second.bytes);
+    s_storeMeta.erase(it);
+    s_storeMetaDirty = true;
+}
+
+/// Evict least-recently-touched blobs the live scene does not name
+/// until the tracked total is comfortably under the budget. Runs from
+/// the debounced flush only — collection is lazy by design. Defined
+/// after the staging state it reads (the live set spans the live AND
+/// the staged snapshot).
+static void sweepStore();
+
+static void flushStoreMeta()
+{
+    if (!s_storeMetaDirty || !blobPersistEnabled())
+        return;
+    s_storeMetaDirty = false;
+    std::string out;
+    out.reserve(s_storeMeta.size() * 64);
+    char line[96];
+    for (const auto &kv : s_storeMeta) {
+        std::snprintf(line, sizeof(line), "%s %u %.0f\n",
+                      kv.first.c_str(), kv.second.bytes,
+                      kv.second.touched);
+        out += line;
+    }
+    emscripten_idb_async_store(kBlobDb, kStoreMetaKey,
+                               const_cast<char *>(out.data()),
+                               int(out.size()), nullptr, [](void *) {},
+                               [](void *) {});
+}
+
+/// One debounced pass: sweep if over budget (it edits the ledger),
+/// then persist the ledger once. Ten seconds coalesces a whole load's
+/// worth of writes into one meta store.
+static void armStoreMetaFlush()
+{
+    if (s_storeMetaFlushArmed)
+        return;
+    s_storeMetaFlushArmed = true;
+    emscripten_async_call([](void *) {
+        s_storeMetaFlushArmed = false;
+        sweepStore();
+        flushStoreMeta();
+    }, nullptr, 10000);
+}
+
+static void loadStoreMeta()
+{
+    if (!blobPersistEnabled()) {
+        s_storeMetaLoaded = true;
+        return;
+    }
+    emscripten_idb_async_load(
+        kBlobDb, kStoreMetaKey, nullptr,
+        [](void *, void *ptr, int num) {
+            // The buffer belongs to the glue (it frees it after this
+            // returns) — parse, never free, never keep.
+            const char *p = static_cast<const char *>(ptr);
+            const char *end = p + num;
+            while (p < end) {
+                const char *nl = static_cast<const char *>(
+                    std::memchr(p, '\n', size_t(end - p)));
+                if (!nl)
+                    break;
+                char key[64];
+                unsigned bytes = 0;
+                double touched = 0.0;
+                std::string ln(p, size_t(nl - p));
+                if (std::sscanf(ln.c_str(), "%63s %u %lf", key, &bytes,
+                                &touched) == 3
+                        && bytes > 0) {
+                    auto &meta = s_storeMeta[key];
+                    if (!meta.bytes)
+                        s_storeMetaBytes += bytes;
+                    meta.bytes = bytes;
+                    meta.touched = std::max(meta.touched, touched);
+                }
+                p = nl + 1;
+            }
+            s_storeMetaLoaded = true;
+            // Over budget from previous sessions: collect soon.
+            if (s_storeMetaBytes > storeBudget())
+                armStoreMetaFlush();
+        },
+        [](void *) { s_storeMetaLoaded = true; });
+}
+
 /// Take a payload the store handed back, but only if it is the payload
 /// that key names. The store is content addressed, so the key IS the
 /// hash and checking costs one pass over bytes that would otherwise
@@ -2512,12 +2666,14 @@ static void blobFromDb(const std::string &key, const uint8_t *bytes,
                        size_t size, uint32_t batchSize)
 {
     if (Render::sha1Hex(bytes, size) == key) {
+        touchStoreMeta(key, uint32_t(size));
         blobResolved(key, std::make_shared<std::vector<uint8_t>>(
                               bytes, bytes + size), true);
         return;
     }
     std::printf("fcviewer: cached blob %s is not what its key names, "
                 "dropping it\n", key.c_str());
+    dropStoreMeta(key);
     emscripten_idb_async_delete(kBlobDb, key.c_str(), nullptr,
                                 [](void *) {}, [](void *) {});
     // Straight to the network: the store just proved untrustworthy for
@@ -2925,6 +3081,61 @@ static bool s_genLod = false;
 static bool s_noProgressive = false;
 static bool s_pendingValid = false;
 
+/// The store sweep, declared with the ledger above; the live set it
+/// must not touch spans the live and the staged snapshot.
+static void sweepStore()
+{
+    if (!blobPersistEnabled() || !s_storeMetaLoaded)
+        return;
+    if (s_storeMetaBytes <= storeBudget())
+        return;
+    std::set<std::string> live;
+    const auto note = [&live](const Render::SceneSnapshot &snap) {
+        for (const auto &entry : snap.deferredChunks) {
+            if (!entry.key.empty())
+                live.insert(entry.key);
+            for (const auto &lvl : entry.levels) {
+                if (!lvl.key.empty())
+                    live.insert(lvl.key);
+            }
+        }
+    };
+    note(s_snap);
+    if (s_pendingValid)
+        note(s_pendingSnap);
+    std::vector<std::pair<double, std::string>> order;
+    for (const auto &kv : s_storeMeta) {
+        if (!live.count(kv.first))
+            order.emplace_back(kv.second.touched, kv.first);
+    }
+    std::sort(order.begin(), order.end());
+    // To seven eighths, not to the line: a sweep per store-write once
+    // at the boundary would be collection per allocation.
+    const size_t target = storeBudget() - storeBudget() / 8;
+    size_t droppedBytes = 0, dropped = 0;
+    for (const auto &item : order) {
+        if (s_storeMetaBytes <= target)
+            break;
+        auto it = s_storeMeta.find(item.second);
+        if (it == s_storeMeta.end())
+            continue;
+        droppedBytes += it->second.bytes;
+        ++dropped;
+        dropStoreMeta(item.second);
+        emscripten_idb_async_delete(kBlobDb, item.second.c_str(), nullptr,
+                                    [](void *) {}, [](void *) {});
+    }
+    if (dropped) {
+        decLog("store sweep: %zu blobs, %zu KB dropped — %zu of %zu MB "
+               "tracked", dropped, droppedBytes >> 10,
+               s_storeMetaBytes >> 20, storeBudget() >> 20);
+        std::printf("fcviewer: store sweep: %zu blobs, %zu KB dropped — "
+                    "%zu of %zu MB tracked\n",
+                    dropped, droppedBytes >> 10, s_storeMetaBytes >> 20,
+                    storeBudget() >> 20);
+    }
+}
+
 /// The publish being shown still has payloads outstanding. A scene is
 /// put on screen as soon as any of it can be drawn
 /// (docs/SceneStreaming.md §6), so the snapshot that arrives keeps
@@ -3055,6 +3266,9 @@ static void blobResolved(const std::string &key, BlobData data,
     if (!fromDb && data && blobPersistEnabled()) {
         // Persist for the next page load. The store is keyed by content
         // hash, so this never overwrites anything with different bytes.
+        // Noted in the ledger optimistically — a failed store leaves a
+        // phantom entry whose sweep-delete is harmless.
+        touchStoreMeta(key, uint32_t(data->size()));
         emscripten_idb_async_store(
             kBlobDb, key.c_str(), data->data(), int(data->size()),
             nullptr, [](void *) {},
@@ -5393,6 +5607,9 @@ static void startInitialFetch()
 int main()
 {
     emscripten_set_canvas_element_size("#canvas", s_width, s_height);
+    // The persistent store's ledger (lazy blob collection, §7): load
+    // early so a warm session's touches land on real entries.
+    loadStoreMeta();
 
     Render::RendererFactory::setResourcePath("/assets");
     Render::BGFXRenderer::setWindowHandle(
