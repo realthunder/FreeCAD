@@ -502,81 +502,128 @@ TEST(PlanLevels, theSameInputsProduceTheSamePlan)
 
 TEST(PlanStep, coarseFirstWhenNothingIsResident)
 {
-    // Target exact with nothing on screen: fetch the coarsest built
+    // Exact needed with nothing on screen: fetch the coarsest built
     // rung first — kilobytes now, the target lands as an upgrade over
-    // it instead of over a box. With the coarse rung up, the target is
-    // fetched directly; at target, nothing.
+    // it instead of over a box. With the coarse rung up, the needed
+    // rung is fetched directly; with every needed rung held, the
+    // stand-in goes back and the ladder is silent.
     auto entry = levelEntry(true, true);
-    entry.plan = 2;
-    auto step = Render::planStep(entry, -1);
+    const uint16_t needed = 1u << 2;
+    entry.residentMask = 0;
+    auto step = Render::planStep(entry, needed);
     EXPECT_EQ(step.fetch, 0);
     EXPECT_EQ(step.generate, -1);
-    EXPECT_FALSE(step.release);
-    step = Render::planStep(entry, 0);
+    EXPECT_EQ(step.release, 0);
+    entry.residentMask = 1u << 0;
+    step = Render::planStep(entry, needed);
     EXPECT_EQ(step.fetch, 2);
-    step = Render::planStep(entry, 2);
+    EXPECT_EQ(step.release, 0);  // the stand-in stays until then
+    entry.residentMask = (1u << 0) | (1u << 2);
+    step = Render::planStep(entry, needed);
+    EXPECT_EQ(step.fetch, -1);
+    EXPECT_EQ(step.release, 1u << 0);
+    entry.residentMask = 1u << 2;
+    step = Render::planStep(entry, needed);
     EXPECT_EQ(step.fetch, -1);
     EXPECT_EQ(step.generate, -1);
-    EXPECT_FALSE(step.release);
+    EXPECT_EQ(step.release, 0);
 }
 
-TEST(PlanStep, anUnbuiltTargetGeneratesAndStandsOnTheNearestBuilt)
+TEST(PlanStep, anUnbuiltNeededRungGeneratesAndStandsOnTheNearestBuilt)
 {
-    // Level 1 targeted but not built: ask the producer. Standing on
-    // level 0 already, there is nothing worth fetching meanwhile; with
-    // nothing resident, the built coarser rung goes up first.
+    // Level 1 needed but not built: ask the producer. Standing on
+    // level 0 already, there is nothing worth fetching meanwhile — and
+    // nothing is released either, because the needed rung cannot be
+    // resident yet; with nothing resident, the built coarser rung goes
+    // up first.
     auto entry = levelEntry(true, false);
-    entry.plan = 1;
-    auto step = Render::planStep(entry, 0);
+    const uint16_t needed = 1u << 1;
+    entry.residentMask = 1u << 0;
+    auto step = Render::planStep(entry, needed);
     EXPECT_EQ(step.generate, 1);
     EXPECT_EQ(step.fetch, -1);
-    step = Render::planStep(entry, -1);
+    EXPECT_EQ(step.release, 0);
+    entry.residentMask = 0;
+    step = Render::planStep(entry, needed);
     EXPECT_EQ(step.generate, 1);
     EXPECT_EQ(step.fetch, 0);
     // Nothing built on the coarse side at all: the exact mesh is the
     // only rung there is.
     entry = levelEntry(false, false);
-    entry.plan = 1;
-    step = Render::planStep(entry, -1);
+    entry.residentMask = 0;
+    step = Render::planStep(entry, needed);
     EXPECT_EQ(step.generate, 1);
     EXPECT_EQ(step.fetch, 2);
 }
 
-TEST(PlanStep, aboveTheTargetWalksBackDown)
+TEST(PlanStep, nothingNeededReleasesEverything)
 {
-    // Downgrades are the plan's move now: resident above the target
-    // fetches the built target (the arrival bookkeeping releases the
-    // finer rung), and a box target releases outright.
+    // Every owner on its box: everything held goes back; holding
+    // nothing, nothing to do.
     auto entry = levelEntry(true, true);
-    entry.plan = 0;
-    auto step = Render::planStep(entry, 2);
-    EXPECT_EQ(step.fetch, 0);
-    EXPECT_FALSE(step.release);
-    entry.plan = Render::SceneSnapshot::DeferredChunk::kPlanBox;
-    step = Render::planStep(entry, 1);
-    EXPECT_TRUE(step.release);
+    entry.residentMask = (1u << 0) | (1u << 1);
+    auto step = Render::planStep(entry, 0);
+    EXPECT_EQ(step.release, entry.residentMask);
     EXPECT_EQ(step.fetch, -1);
-    step = Render::planStep(entry, -1);
-    EXPECT_FALSE(step.release);
+    entry.residentMask = 0;
+    step = Render::planStep(entry, 0);
+    EXPECT_EQ(step.release, 0);
     EXPECT_EQ(step.fetch, -1);
 }
 
-TEST(PlanStep, anUnplannedEntryTargetsItsFinestBuiltRung)
+TEST(PlanStep, twoOwnersHoldTwoRungsAtOnce)
 {
-    // kPlanUnset is "no plan has looked yet": behave as a consumer did
-    // before there was a plan — the finest built rung — so an entry
-    // discovered between plans is never stranded.
+    // The whiskers fix (§7, "one rung per instance"): a far owner
+    // needs the coarse rung and a near owner the exact one — BOTH stay
+    // resident, and only a rung nobody needs is surplus.
     auto entry = levelEntry(true, true);
-    ASSERT_EQ(entry.plan, Render::SceneSnapshot::DeferredChunk::kPlanUnset);
-    auto step = Render::planStep(entry, 0);
+    const uint16_t needed = (1u << 0) | (1u << 2);
+    entry.residentMask = 1u << 0;
+    auto step = Render::planStep(entry, needed);
     EXPECT_EQ(step.fetch, 2);
+    EXPECT_EQ(step.release, 0);
+    entry.residentMask = (1u << 0) | (1u << 2);
+    step = Render::planStep(entry, needed);
+    EXPECT_EQ(step.fetch, -1);
+    EXPECT_EQ(step.release, 0);  // both needed: nothing is surplus
+    entry.residentMask = (1u << 0) | (1u << 1) | (1u << 2);
+    step = Render::planStep(entry, needed);
+    EXPECT_EQ(step.release, 1u << 1);
+}
+
+TEST(PlanStep, planNeededUnionsTheOwnersRungs)
+{
+    // Two owners at different granted errors need different rungs; a
+    // boxed owner contributes nothing; an owner the plan has not seen
+    // defaults to the finest built rung; the view's own (ownerless)
+    // geometry always needs its finest built rung.
+    auto entry = levelEntry(true, true);
+    entry.owners = {1, 2};
+    auto errOf = [](uint64_t owner) -> float {
+        return owner == 1 ? 0.5f : 0.0f;  // coarse enough for rung 0 / exact
+    };
+    EXPECT_EQ(Render::planNeeded(entry, errOf),
+              uint16_t((1u << 0) | (1u << 2)));
+    auto boxed = [](uint64_t owner) -> float {
+        return owner == 1 ? 0.5f : -1.0f;
+    };
+    EXPECT_EQ(Render::planNeeded(entry, boxed), uint16_t(1u << 0));
+    auto unseen = [](uint64_t) -> float {
+        return std::numeric_limits<float>::quiet_NaN();
+    };
+    EXPECT_EQ(Render::planNeeded(entry, unseen), uint16_t(1u << 2));
+    entry.owners.clear();
+    EXPECT_EQ(Render::planNeeded(entry, errOf), uint16_t(1u << 2));
     // And an entry with no ladder at all is a one-rung ladder.
     Render::SceneSnapshot::DeferredChunk bare;
     bare.key = std::string(40, 'x');
     bare.size = 500;
+    bare.owners.push_back(1);
     bare.release = []() {};
-    step = Render::planStep(bare, -1);
+    EXPECT_EQ(Render::planNeeded(bare, unseen), uint16_t(1u << 0));
+    auto step = Render::planStep(bare, Render::planNeeded(bare, unseen));
     EXPECT_EQ(step.fetch, 0);
-    step = Render::planStep(bare, 0);
+    bare.residentMask = 1u << 0;
+    step = Render::planStep(bare, Render::planNeeded(bare, unseen));
     EXPECT_EQ(step.fetch, -1);
 }

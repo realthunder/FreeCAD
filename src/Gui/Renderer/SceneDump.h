@@ -37,6 +37,40 @@
 
 namespace Render {
 
+/// One geometry ladder's mesh objects, one per rung, keyed by the
+/// rung's CONTENT key (docs/SceneStreaming.md §7, "one rung per
+/// instance, not per content"). Rung indices shuffle when a delta
+/// re-declares a ladder's levels; content keys never do, so the store
+/// of arrays is keyed by what cannot move. Each rung's mesh object has
+/// its own cacheId derived from its key — to the GPU cache a rung is
+/// an ordinary immutable-ish mesh, and a refinement is a DIFFERENT
+/// object rather than an in-place overwrite (MeshData::generation now
+/// only moves on release-and-refill of the same rung).
+///
+/// Held by the DeferredChunk as a shared_ptr: closures and carried
+/// entries share the one store, and the draws parsed against the
+/// ladder hold the identity object below, so the arrays live exactly
+/// as long as something can still draw them.
+struct LevelMeshes {
+    virtual ~LevelMeshes() = default;
+    /// The parse-time mesh object every draw of this ladder holds —
+    /// the slot of the ladder's finest built rung when it was first
+    /// read. What a consumer with no level selection fills and draws.
+    virtual std::shared_ptr<const MeshData> identity() const = 0;
+    /// The rung stored under \a key, or null while nothing was ever
+    /// filled there. May be empty (released) — check its arrays.
+    virtual std::shared_ptr<const MeshData> at(
+        const std::string &key) const = 0;
+    /// Parse \a data as the rung stored under \a key, creating the
+    /// mesh object on first use. False = the bytes would not parse
+    /// (the arrays are left empty, never half-read).
+    virtual bool fill(const std::string &key, const void *data,
+                      size_t size) = 0;
+    /// Empty the rung stored under \a key, keeping the object (draws
+    /// may still name it; the GPU cache sees the generation move).
+    virtual void release(const std::string &key) = 0;
+};
+
 struct SceneSnapshot {
     DrawCallList scene;
     /// Selection feeds keyed by selection id (SelIdBits) and the
@@ -262,17 +296,23 @@ struct SceneSnapshot {
         /// refill" — a ladder below plan that could never be fetched.
         std::function<bool(SceneSnapshot &snap,
                            const void *data, size_t size)> refill;
-        /// The rung this ladder's arrays currently hold, an index in
-        /// planRungs() space, -1 for none (docs/SceneStreaming.md §7,
-        /// "the ladder owns its fetch state"). This is the residency
-        /// truth — the store's key-indexed books are accounting, not
-        /// authority. Set by the consumer when a rung's bytes fill,
-        /// cleared by release; a carried entry keeps it, which is
-        /// exactly what carrying is for. A ladder refresh (a delta
-        /// re-declaring levels under the same identity) re-maps it by
-        /// key, so resident geometry stays resident under a renamed
-        /// ladder.
-        int16_t resident = -1;
+        /// The rungs this ladder holds filled, bit i = rung i in
+        /// planRungs() space (docs/SceneStreaming.md §7, "the ladder
+        /// owns its fetch state"). This is the residency truth — the
+        /// store's key-indexed books are accounting, not authority.
+        /// A SET because instances share a ladder and stand at
+        /// different rungs ("one rung per instance, not per
+        /// content"): the near owner's exact and the far owner's
+        /// coarse rung are resident at once, each in its own mesh
+        /// object (LevelMeshes). Set by the consumer when a rung's
+        /// bytes fill, cleared per rung by release; a carried entry
+        /// keeps it. A ladder refresh (a delta re-declaring levels
+        /// under the same identity) re-maps the bits by key, so
+        /// resident geometry stays resident under a renamed ladder.
+        uint16_t residentMask = 0;
+        /// Per-rung mesh objects, shared with the parse closures and
+        /// every carried copy of this entry. Geometry only.
+        std::shared_ptr<LevelMeshes> levelMeshes;
         /// The rung a fetch is out for, -1 for none: the "one request
         /// per ladder" rule reads its own field instead of scanning
         /// every rung's key against the download table. Cleared when
@@ -440,6 +480,15 @@ struct SceneObjectModel {
         bool resolved() const { return drawsKey == entry.key; }
     };
     std::map<uint64_t, Object> objects;
+    /// The consumer's per-instance rung binding (docs/SceneStreaming.md
+    /// §7, "one rung per instance"): given a draw, the mesh object of
+    /// the rung ITS OWNER should stand on, or null to fall through to
+    /// the default (the parse-time identity mesh, the bridges, the
+    /// box). Unset = every instance draws the ladder's identity mesh,
+    /// the pre-Stage-B behavior; the desktop resolve and the tests
+    /// leave it unset.
+    std::function<std::shared_ptr<const MeshData>(const DrawCall &)>
+        rungBinder;
     /// The version the model holds, i.e. what a delta must be based on.
     uint64_t version = 0;
     /// The last live arrays seen per content-addressed mesh id

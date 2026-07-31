@@ -206,6 +206,12 @@ RendererExport float planRungError(
 RendererExport int finestBuiltRung(const SceneSnapshot::DeferredChunk &entry);
 RendererExport int coarsestBuiltRung(const SceneSnapshot::DeferredChunk &entry);
 
+/// The coarsest rung of \a entry whose stated error is within \a err.
+/// The exact rung closes every ladder at error 0, so this always
+/// answers on a well-formed entry.
+RendererExport int rungWithin(const SceneSnapshot::DeferredChunk &entry,
+                              float err);
+
 /// What one plan is asked to respect (docs/SceneStreaming.md §7,
 /// "Selection is a plan, not a reaction").
 struct PlanParams {
@@ -228,6 +234,13 @@ struct PlanParams {
     /// the box), and how many tiers it wanted.
     std::function<void(uint64_t key, float diamPx, int tier,
                        size_t tiers)> trace;
+    /// Out: the error tier each object was granted, keyed by object —
+    /// what per-instance rung binding consumes (§7, "one rung per
+    /// instance"): an entry's plan is the FINEST owner's rung, and
+    /// which rung THIS owner stands on is rungWithin(entry, its err).
+    /// Negative = the plan left the object on its box. Cleared and
+    /// refilled by every plan. Null = not wanted.
+    std::map<uint64_t, float> *objectErr = nullptr;
 };
 
 /// What a plan did, for the one report worth printing: how much of the
@@ -275,21 +288,35 @@ RendererExport PlanStats planLevels(SceneSnapshot &snap, RungRanker &ranker,
 /// currently holds. Pure — the caller owns every side effect — and
 /// idempotent by construction: acting on the answer moves the entry
 /// toward its plan, and an entry at plan answers "nothing".
+/// The rungs a ladder should hold — the union, over its owners, of the
+/// rung each owner's granted error maps to (§7, "one rung per
+/// instance"). \a errOf answers an owner's granted tier error:
+/// negative = the plan left it on its box (it needs nothing), NaN =
+/// the plan has not seen it (it needs the finest built rung, the
+/// pre-plan default). Ownerless entries — the view's own — always
+/// need their finest built rung.
+RendererExport uint16_t planNeeded(
+    const SceneSnapshot::DeferredChunk &entry,
+    const std::function<float(uint64_t)> &errOf);
+
 struct PlanStep {
-    /// Rung to acquire now, -1 for none. When nothing is resident and
-    /// the target is not the coarsest built rung, this is the coarsest
-    /// built rung instead: a few kilobytes on screen this round beat
-    /// the target in flight over a box — the consumer-side echo of the
-    /// producer's coarse-first publish (§7).
+    /// Rung to acquire now, -1 for none: the coarsest needed rung not
+    /// yet resident — and when nothing at all is resident, the
+    /// coarsest built rung outright: a few kilobytes on screen this
+    /// round beat the target in flight over a box — the consumer-side
+    /// echo of the producer's coarse-first publish (§7).
     int fetch = -1;
     /// Rung to ask the producer to build (RungProvider::generate), -1
-    /// for none: the plan targets it and no bytes exist yet.
+    /// for none: some owner needs it and no bytes exist yet.
     int generate = -1;
-    /// The plan says box and something is resident: give it back.
-    bool release = false;
+    /// Resident rungs to give back, as a mask. Only ever non-zero
+    /// once every needed rung is resident (or nothing is needed at
+    /// all — the box): until then a surplus rung is the stand-in some
+    /// owner is drawing.
+    uint16_t release = 0;
 };
 RendererExport PlanStep planStep(const SceneSnapshot::DeferredChunk &entry,
-                                 int residentRung);
+                                 uint16_t neededMask);
 
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.

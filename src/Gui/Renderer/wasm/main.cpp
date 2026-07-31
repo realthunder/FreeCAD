@@ -2407,10 +2407,12 @@ static void carryLadders(Render::SceneSnapshot &fresh)
 /// freshly parsed with resident = -1), which is the point of the
 /// ladder owning it.
 static void rebindHeld(const Render::SceneSnapshot &fresh);
+static void installRungBinder();
 
 static void commitSnapshot(Render::SceneSnapshot &&snap, uint64_t version)
 {
     s_sceneVersion = version;
+    installRungBinder();
     // The plan's universe is the whole scene, and a delta is not (§7):
     // carry the unchanged ladders over, then plan against the merged
     // set. This is also what makes abandoning the superseded
@@ -2597,6 +2599,105 @@ struct HeldRung {
 static std::map<std::string, HeldRung> s_held;
 static size_t s_residentBytes = 0;
 
+/// The error tier the last plan granted each object (planLevels'
+/// objectErr out-map): what turns an owner into a rung, both for the
+/// executor's needed set and for the per-instance draw binding (§7,
+/// "one rung per instance"). Negative = boxed; absent = the plan has
+/// not seen the object yet.
+static std::map<uint64_t, float> s_objectErr;
+static float objectErrOf(uint64_t owner)
+{
+    auto it = s_objectErr.find(owner);
+    return it == s_objectErr.end()
+        ? std::numeric_limits<float>::quiet_NaN()
+        : it->second;
+}
+
+/// draw.mesh (a ladder's identity object) → its entry in the LIVE
+/// scene's deferred list, for the per-instance binder below. Rebuilt
+/// when the scene version or the ladder count moves; a miss is not an
+/// error — a staged snapshot's fresh entries and bridged draws simply
+/// fall through to the identity mesh, the pre-Stage-B behavior.
+static std::map<const void *, size_t> s_meshEntryAt;
+static uint64_t s_meshMapVersion = ~0ull;
+static size_t s_meshMapCount = 0;
+
+static void refreshMeshEntryMap()
+{
+    if (s_meshMapVersion == s_sceneVersion
+            && s_meshMapCount == s_snap.deferredChunks.size())
+        return;
+    s_meshEntryAt.clear();
+    for (size_t i = 0; i < s_snap.deferredChunks.size(); ++i) {
+        const auto &entry = s_snap.deferredChunks[i];
+        if (entry.release && entry.levelMeshes) {
+            if (auto id = entry.levelMeshes->identity())
+                s_meshEntryAt.emplace(id.get(), i);
+        }
+    }
+    s_meshMapVersion = s_sceneVersion;
+    s_meshMapCount = s_snap.deferredChunks.size();
+}
+
+/// The per-instance rung binding (§7, "one rung per instance"),
+/// consulted by assembly for every geometry draw: which rung should
+/// THIS draw's owner stand on, and is it resident? Answering null
+/// falls through to the ladder's identity mesh, the bridges and the
+/// box — so every miss here degrades to exactly the old behavior.
+static void installRungBinder()
+{
+    if (s_objects.rungBinder)
+        return;
+    s_objects.rungBinder = [](const Render::DrawCall &d)
+        -> std::shared_ptr<const Render::MeshData> {
+        if (!d.mesh || !d.objectKey)
+            return nullptr;
+        refreshMeshEntryMap();
+        auto at = s_meshEntryAt.find(d.mesh.get());
+        if (at == s_meshEntryAt.end()
+                || at->second >= s_snap.deferredChunks.size())
+            return nullptr;
+        const auto &entry = s_snap.deferredChunks[at->second];
+        if (!entry.levelMeshes || !entry.residentMask)
+            return nullptr;
+        const float err = objectErrOf(d.objectKey);
+        // Unplanned → identity (the pre-plan default); boxed → the
+        // box path answers, not a mesh.
+        if (std::isnan(err) || err < 0.0f)
+            return nullptr;
+        const int count = std::min<int>(int(Render::planRungs(entry)), 16);
+        const int want =
+            std::min(Render::rungWithin(entry, err), count - 1);
+        if (want < 0)
+            return nullptr;
+        // The wanted rung if held; else the nearest resident FINER
+        // rung (paid for and better-looking); else the nearest
+        // coarser — the stand-in while the fetch climbs.
+        int pick = -1;
+        for (int r = want; r < count; ++r) {
+            if (entry.residentMask & uint16_t(1u << r)) {
+                pick = r;
+                break;
+            }
+        }
+        if (pick < 0) {
+            for (int r = want; r-- > 0;) {
+                if (entry.residentMask & uint16_t(1u << r)) {
+                    pick = r;
+                    break;
+                }
+            }
+        }
+        if (pick < 0)
+            return nullptr;
+        auto mesh =
+            entry.levelMeshes->at(Render::planRungKey(entry, size_t(pick)));
+        return (mesh && mesh->numVertices > 0 && mesh->positions)
+            ? mesh
+            : nullptr;
+    };
+}
+
 /// A ladder holds a rung: charge the bytes on the first binder only.
 static void bindRung(const std::string &key, uint32_t size)
 {
@@ -2634,16 +2735,21 @@ static void rebindHeld(const Render::SceneSnapshot &fresh)
     std::map<std::string, HeldRung> held;
     size_t bytes = 0;
     for (const auto &entry : fresh.deferredChunks) {
-        if (!entry.release || entry.resident < 0)
+        if (!entry.release || !entry.residentMask)
             continue;
-        const std::string &key =
-            Render::planRungKey(entry, size_t(entry.resident));
-        if (key.empty())
-            continue;
-        auto &h = held[key];
-        if (h.binders++ == 0) {
-            h.bytes = Render::planRungSize(entry, size_t(entry.resident));
-            bytes += h.bytes;
+        const int count = std::min<int>(int(Render::planRungs(entry)), 16);
+        for (int r = 0; r < count; ++r) {
+            if (!(entry.residentMask & uint16_t(1u << r)))
+                continue;
+            const std::string &key =
+                Render::planRungKey(entry, size_t(r));
+            if (key.empty())
+                continue;
+            auto &h = held[key];
+            if (h.binders++ == 0) {
+                h.bytes = Render::planRungSize(entry, size_t(r));
+                bytes += h.bytes;
+            }
         }
     }
     if (held.size() < s_held.size()) {
@@ -2818,6 +2924,7 @@ static bool s_genLod = false;
 /// neither.
 static bool s_noProgressive = false;
 static bool s_pendingValid = false;
+
 /// The publish being shown still has payloads outstanding. A scene is
 /// put on screen as soon as any of it can be drawn
 /// (docs/SceneStreaming.md §6), so the snapshot that arrives keeps
@@ -3248,10 +3355,10 @@ static void logStandIns(const Render::SceneSnapshot &snap)
                     owned = owned || owner == k;
                 if (!owned)
                     continue;
-                decLog("  box obj %llx chunk %.8s rung(resident %d, "
+                decLog("  box obj %llx chunk %.8s rung(resident %x, "
                        "plan %d, asked %d)%s%s%s",
                        (unsigned long long)k, entry.key.c_str(),
-                       int(entry.resident), int(entry.plan),
+                       unsigned(entry.residentMask), int(entry.plan),
                        int(entry.asked),
                        entry.fill ? " fill" : "",
                        entry.refill ? "" : " NO-REFILL",
@@ -3309,7 +3416,9 @@ static bool stillArriving(const Render::SceneSnapshot &snap)
         if (entry.release) {
             if (entry.asked >= 0)
                 return true;
-            if (Render::planStep(entry, entry.resident).fetch >= 0)
+            if (Render::planStep(entry,
+                                 Render::planNeeded(entry, objectErrOf))
+                    .fetch >= 0)
                 return true;
         }
         else if (entry.fill)
@@ -3337,7 +3446,8 @@ static bool sceneBelowPlan()
                 return true;
             continue;
         }
-        const auto step = Render::planStep(entry, entry.resident);
+        const auto step = Render::planStep(
+            entry, Render::planNeeded(entry, objectErrOf));
         if (step.fetch >= 0 || step.generate >= 0 || step.release)
             return true;
     }
@@ -3626,46 +3736,49 @@ static Render::RungRanker makeRanker()
 /// their bounds — the same choice it made while the mesh was still on
 /// its way. That is the whole point of the ladder running backwards:
 /// there is no eviction state, only a rung.
-static void releaseChunk(Render::SceneSnapshot::DeferredChunk &entry)
+static void releaseRungs(Render::SceneSnapshot::DeferredChunk &entry,
+                         uint16_t mask)
 {
-    if (!entry.release || !entry.refill || entry.resident < 0)
+    if (!entry.levelMeshes)
         return;
-    const std::string key =
-        Render::planRungKey(entry, size_t(entry.resident));
-    entry.release();
-    entry.fill = entry.refill;
-    entry.resident = -1;
-    // The payload itself, which is the other half of what it costs to
-    // hold. The local store keeps it, so what was just given up is a
-    // read and not a download.
-    s_blobCache.erase(key);
-    unbindRung(key);
-    // The feed still names the mesh that was just emptied, so the
+    const int count = std::min<int>(int(Render::planRungs(entry)), 16);
+    for (int r = 0; r < count; ++r) {
+        const uint16_t bit = uint16_t(1u << r);
+        if (!(mask & bit) || !(entry.residentMask & bit))
+            continue;
+        const std::string &key = Render::planRungKey(entry, size_t(r));
+        entry.levelMeshes->release(key);
+        entry.residentMask &= uint16_t(~bit);
+        // The payload itself, which is the other half of what it
+        // costs to hold. The local store keeps it, so what was just
+        // given up is a read and not a download.
+        s_blobCache.erase(key);
+        unbindRung(key);
+    }
+    // The feed may still name a mesh that was just emptied, so the
     // scene on screen is a rung out of date until it is rebuilt.
     s_liveUnapplied = true;
 }
 
-/// A geometry arrival: parse \a data into the entry's mesh through the
-/// ladder's own closure and move the residency books to \a rung. The
-/// fill overwrites whatever rung held the arrays, so the old rung's
-/// bind drops in the same motion — one resident rung per ladder is a
-/// consequence here, not an invariant anything else enforces.
-static bool fillRung(Render::SceneSnapshot &target,
-                     Render::SceneSnapshot::DeferredChunk &entry, int rung,
+/// A geometry arrival: parse \a data as \a rung into that rung's own
+/// mesh object (§7, "one rung per instance") and bind it in the books.
+/// Nothing is overwritten — a sibling rung another instance stands on
+/// keeps its arrays until the plan releases it.
+static bool fillRung(Render::SceneSnapshot::DeferredChunk &entry, int rung,
                      const void *data, size_t size)
 {
-    auto fill = entry.fill ? entry.fill : entry.refill;
-    if (!fill)
+    if (!entry.levelMeshes || rung < 0 || rung >= 16)
         return false;
+    const std::string &key = Render::planRungKey(entry, size_t(rung));
+    if (key.empty() || !entry.levelMeshes->fill(key, data, size))
+        return false;
+    // The identity parse is no longer outstanding either way — the
+    // generic closure and this are two doors into the same store.
     entry.fill = nullptr;
-    if (!fill(target, data, size))
-        return false;
-    if (entry.resident >= 0 && entry.resident != rung)
-        unbindRung(Render::planRungKey(entry, size_t(entry.resident)));
-    if (entry.resident != rung) {
-        entry.resident = int16_t(rung);
-        bindRung(Render::planRungKey(entry, size_t(rung)),
-                 Render::planRungSize(entry, size_t(rung)));
+    const uint16_t bit = uint16_t(1u << rung);
+    if (!(entry.residentMask & bit)) {
+        entry.residentMask |= bit;
+        bindRung(key, Render::planRungSize(entry, size_t(rung)));
     }
     if (entry.asked == rung)
         entry.asked = -1;
@@ -3704,6 +3817,9 @@ static void planIfStale(Render::SceneSnapshot &target)
     params.budgetBytes = geometryBudget();
     params.tolerancePx = s_lodPx;
     params.viewportPx = float(s_height);
+    // Per-object grants for the executor's needed sets and the
+    // per-instance draw binding (§7, "one rung per instance").
+    params.objectErr = &s_objectErr;
     /// The objects the plan left on the box, kept for the journal: a
     /// box that reads as "nearby" on the screen while far neighbors
     /// hold meshes is either a huge diamPx the greedy still skipped —
@@ -3816,9 +3932,14 @@ static void reportBudget(Render::SceneSnapshot &snap)
     for (const auto &entry : snap.deferredChunks) {
         if (!entry.release)
             continue;
-        if (entry.resident >= 0) {
+        if (entry.residentMask) {
             in.push_back(order.residency(entry));
-            inBytes += Render::planRungSize(entry, size_t(entry.resident));
+            const int count =
+                std::min<int>(int(Render::planRungs(entry)), 16);
+            for (int r = 0; r < count; ++r) {
+                if (entry.residentMask & uint16_t(1u << r))
+                    inBytes += Render::planRungSize(entry, size_t(r));
+            }
         }
         else {
             out.push_back(order.residency(entry));
@@ -4063,26 +4184,30 @@ static void resolvePending()
             auto &entry = target->deferredChunks[i];
             totalBytes += entry.size;
             if (entry.release) {
-                // Geometry answers to the plan: diff the rung this
-                // ladder holds against the rung it is targeted at, and
-                // act. The step is pure (SceneLadder); every side
-                // effect lives here, and every one of them moves the
-                // ladder toward its plan — which is what makes the
-                // round idempotent and a scene at plan silent.
-                const auto step = Render::planStep(entry, entry.resident);
+                // Geometry answers to the plan: diff the rungs this
+                // ladder holds against the rungs its owners need, and
+                // act (§7, "one rung per instance"). The step is pure
+                // (SceneLadder); every side effect lives here, and
+                // every one of them moves the ladder toward its plan —
+                // which is what makes the round idempotent and a scene
+                // at plan silent.
+                const uint16_t needed =
+                    Render::planNeeded(entry, objectErrOf);
+                const auto step = Render::planStep(entry, needed);
                 if (step.generate >= 0)
                     s_provider.generate(
                         levelRequestFor(entry, size_t(step.generate)));
                 if (step.release) {
-                    // Above an empty target: give the geometry back.
-                    // The entry keeps its refill closure, so a later
-                    // plan climbs the ladder again from the local
-                    // store rather than the network.
-                    decLog("release %.8s rung %d -> box, obj %llx",
-                           entry.key.c_str(), int(entry.resident),
+                    // Surplus above what any owner needs: give it
+                    // back. The ladder keeps its store and closures,
+                    // so a later plan climbs again from the local
+                    // cache rather than the network.
+                    decLog("release %.8s rungs %x of %x, obj %llx",
+                           entry.key.c_str(), unsigned(step.release),
+                           unsigned(entry.residentMask),
                            (unsigned long long)(entry.owners.empty()
                                                     ? 0 : entry.owners[0]));
-                    releaseChunk(entry);
+                    releaseRungs(entry, step.release);
                     ++rungsReleased;
                     continue;
                 }
@@ -4099,11 +4224,12 @@ static void resolvePending()
                 // kept it, so the climb is a parse, not a download.
                 auto cached = s_blobCache.find(wantKey);
                 if (cached != s_blobCache.end() && cached->second) {
-                    const int from = entry.resident;
-                    if (fillRung(*target, entry, step.fetch,
+                    const uint16_t before = entry.residentMask;
+                    if (fillRung(entry, step.fetch,
                                  cached->second->data(),
                                  cached->second->size())) {
-                        if (step.fetch > from)
+                        if (!before
+                                || uint16_t(1u << step.fetch) > before)
                             ++rungUp;
                         else
                             ++rungDown;
@@ -4283,9 +4409,9 @@ static void resolvePending()
                         == Render::SceneSnapshot::DeferredChunk::kPlanUnset
                     ? Render::finestBuiltRung(entry)
                     : int(entry.plan);
-                decLog("ask %.8s %uB rung(resident %d, target %d) obj %llx",
+                decLog("ask %.8s %uB rung(resident %x, target %d) obj %llx",
                        reqKey.c_str(), reqSize,
-                       int(entry.resident), target,
+                       unsigned(entry.residentMask), target,
                        (unsigned long long)(entry.owners.empty()
                                                 ? 0 : entry.owners[0]));
                 s_provider.request(reqKey, reqSize);

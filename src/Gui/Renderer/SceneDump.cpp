@@ -599,6 +599,81 @@ bool Render::encodeMeshChunk(const MeshData &m, std::vector<uint8_t> &out)
 
 namespace {
 
+/// The ladder's per-rung mesh store (SceneDump.h, LevelMeshes;
+/// docs/SceneStreaming.md §7 "one rung per instance"). Rungs are keyed
+/// by content key — the one name a rung keeps through ladder
+/// re-declarations — and each gets its own mesh object under its own
+/// cacheId, so to the GPU cache a refinement is a different mesh, not
+/// an overwrite. The identity object is the parse-time finest built
+/// rung's slot: it is what every draw of the ladder holds, and what a
+/// consumer with no level selection (the generic fill loop, the
+/// desktop resolve, the tests) fills through the entry's own closures.
+class LevelMeshStore : public Render::LevelMeshes {
+public:
+    LevelMeshStore(std::shared_ptr<OwnedMeshData> identity,
+                   const std::string &identityKey, uint32_t version)
+        : m_version(version), m_identity(std::move(identity))
+    {
+        m_rungs.emplace(identityKey, m_identity);
+    }
+    std::shared_ptr<const Render::MeshData> identity() const override
+    {
+        return m_identity;
+    }
+    std::shared_ptr<const Render::MeshData> at(
+        const std::string &key) const override
+    {
+        auto it = m_rungs.find(key);
+        return it == m_rungs.end() ? nullptr : it->second;
+    }
+    bool fill(const std::string &key, const void *data,
+              size_t size) override
+    {
+        auto &slot = m_rungs[key];
+        if (!slot) {
+            slot = std::make_shared<OwnedMeshData>();
+            slot->cacheId = meshIdFromKey(key);
+        }
+        // A null payload is the consumer probing whether the chunk can
+        // be given up on, and the answer for geometry is no — without
+        // destroying what an earlier fill already read.
+        if (!data)
+            return false;
+        const uint64_t id = slot->cacheId;
+        const uint32_t gen = slot->generation;
+        const uint32_t version = m_version;
+        bool ok = readChunk(data, size, [&slot, version](Reader &cr) {
+            readMeshChunk(cr, slot.get(), version);
+        });
+        if (!ok) {
+            // A partial parse leaves a vertex count with no arrays
+            // behind it, which a backend would read straight past the
+            // end of. Empty is the only safe failure.
+            *slot = OwnedMeshData();
+        }
+        slot->cacheId = id;
+        slot->generation = gen + 1;
+        return ok;
+    }
+    void release(const std::string &key) override
+    {
+        auto it = m_rungs.find(key);
+        if (it == m_rungs.end() || !it->second)
+            return;
+        auto &slot = it->second;
+        const uint64_t id = slot->cacheId;
+        const uint32_t gen = slot->generation;
+        *slot = OwnedMeshData();
+        slot->cacheId = id;
+        slot->generation = gen + 1;
+    }
+
+private:
+    uint32_t m_version;
+    std::shared_ptr<OwnedMeshData> m_identity;
+    std::map<std::string, std::shared_ptr<OwnedMeshData>> m_rungs;
+};
+
 /// Read one mesh table entry. A deferred entry (v28, streaming) yields
 /// an empty MeshData plus the means to fill it once its chunk arrives;
 /// the draw calls already alias it, so filling it in place is enough.
@@ -611,34 +686,20 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
         if (!readMeshLevels(r, version, entry))
             return nullptr;
         mesh->cacheId = meshIdFromKey(entry.key);
+        // The per-rung store (§7, "one rung per instance"); the
+        // entry's own closures fill/release the parse-time identity
+        // rung, which is all a consumer with no level selection uses.
         // Parse with the version of the snapshot that named the chunk,
         // not this build's: a viewer newer than the payload reads it
         // as it is, and only a payload newer than the viewer makes the
         // viewer reload.
-        entry.fill = [mesh, version](SceneSnapshot &, const void *data,
-                                     size_t size) {
-            uint64_t id = mesh->cacheId;
-            // Every fill REPLACES the arrays under this one cacheId —
-            // that is how a ladder's rungs share a mesh — and a GPU
-            // cache keyed by the id must see that it happened
-            // (MeshData::generation).
-            const uint32_t gen = mesh->generation;
-            bool ok = readChunk(data, size, [&mesh, version](Reader &cr) {
-                readMeshChunk(cr, mesh.get(), version);
-            });
-            if (!ok && data) {
-                // A partial parse leaves a vertex count with no arrays
-                // behind it, which a backend would read straight past
-                // the end. Empty is the only safe failure — but only
-                // when there were bytes to parse: a null payload asks
-                // whether this chunk can be given up on, and wiping
-                // there would answer by destroying what an earlier
-                // fill already read.
-                *mesh = OwnedMeshData();
-            }
-            mesh->cacheId = id;
-            mesh->generation = gen + 1;
-            return ok;
+        auto lm = std::make_shared<LevelMeshStore>(mesh, entry.key,
+                                                   version);
+        const std::string key0 = entry.key;
+        entry.levelMeshes = lm;
+        entry.fill = [lm, key0](SceneSnapshot &, const void *data,
+                                size_t size) {
+            return lm->fill(key0, data, size);
         };
         // Kept for the ladder's lifetime (DeferredChunk::refill), like
         // the manifest-layout reader's.
@@ -648,13 +709,7 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
         // the mesh's identity and outlives its contents: the backend
         // keys GPU buffers by it, and the box the draws fall back to
         // has an id of its own.
-        entry.release = [mesh] {
-            uint64_t id = mesh->cacheId;
-            const uint32_t gen = mesh->generation;
-            *mesh = OwnedMeshData();
-            mesh->cacheId = id;
-            mesh->generation = gen + 1;
-        };
+        entry.release = [lm, key0] { lm->release(key0); };
         snap.deferredChunks.push_back(std::move(entry));
         return mesh;
     }
@@ -1838,7 +1893,7 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
         if (at != st->chunkAt.end()
                 && at->second < snap.deferredChunks.size()) {
             auto &slot = snap.deferredChunks[at->second];
-            const auto remap = [&slot, &c](int16_t rung) -> int16_t {
+            const auto remap = [&slot, &c](int rung) -> int {
                 if (rung < 0 || size_t(rung) >= slot.levels.size())
                     return rung;
                 const std::string &held = slot.levels[size_t(rung)].key;
@@ -1846,12 +1901,20 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
                     return -1;
                 for (size_t i = 0; i < c.levels.size(); ++i) {
                     if (c.levels[i].key == held)
-                        return int16_t(i);
+                        return int(i);
                 }
                 return -1;
             };
-            slot.resident = remap(slot.resident);
-            slot.asked = remap(slot.asked);
+            uint16_t mask = 0;
+            for (size_t r = 0; r < slot.levels.size() && r < 16; ++r) {
+                if (!(slot.residentMask & uint16_t(1u << r)))
+                    continue;
+                const int to = remap(int(r));
+                if (to >= 0 && to < 16)
+                    mask |= uint16_t(1u << to);
+            }
+            slot.residentMask = mask;
+            slot.asked = int16_t(remap(slot.asked));
             slot.levels = std::move(c.levels);
         }
         return it->second;
@@ -1860,29 +1923,14 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
     mesh->cacheId = meshIdFromKey(key);
     st->meshes.emplace(key, mesh);
     uint32_t version = st->version;
-    c.fill = [mesh, version](SceneSnapshot &, const void *data, size_t size) {
-        uint64_t id = mesh->cacheId;
-        // As in readMesh: a fill replaces the arrays under the one
-        // cacheId, and the GPU cache must see it (MeshData::generation).
-        const uint32_t gen = mesh->generation;
-        bool ok = readChunk(data, size, [&mesh, version](Reader &cr) {
-            readMeshChunk(cr, mesh.get(), version);
-        });
-        if (!ok && data) {
-            // A partial parse leaves a vertex count with no arrays
-            // behind it, which a backend would read straight past the
-            // end of. Empty is the only safe failure.
-            //
-            // Only when there were bytes to parse, though: a null
-            // payload is the consumer asking whether this chunk can be
-            // given up on, and the answer for geometry is no (the
-            // false below). Wiping there would answer by destroying
-            // what a previous fill had already read.
-            *mesh = OwnedMeshData();
-        }
-        mesh->cacheId = id;
-        mesh->generation = gen + 1;
-        return ok;
+    // The per-rung store (§7, "one rung per instance"). The entry's
+    // own closures fill/release the parse-time identity rung — the
+    // generic consumer's view of the ladder; a level-selecting
+    // consumer talks to levelMeshes directly, one rung at a time.
+    auto lm = std::make_shared<LevelMeshStore>(mesh, key, version);
+    c.levelMeshes = lm;
+    c.fill = [lm, key](SceneSnapshot &, const void *data, size_t size) {
+        return lm->fill(key, data, size);
     };
     // The closure parses any rung of this ladder, so the ladder keeps
     // it for life: refetch-after-release and rung changes re-run it
@@ -1890,13 +1938,7 @@ std::shared_ptr<const MeshData> readMeshRef(Reader &r, SceneSnapshot &snap,
     c.refill = c.fill;
     // As in readMesh: geometry is the one payload with a coarser rung
     // to fall back to, so it is the one a viewer can give back (§6).
-    c.release = [mesh] {
-        uint64_t id = mesh->cacheId;
-        const uint32_t gen = mesh->generation;
-        *mesh = OwnedMeshData();
-        mesh->cacheId = id;
-        mesh->generation = gen + 1;
-    };
+    c.release = [lm, key] { lm->release(key); };
     snap.deferredChunks.push_back(std::move(c));
     noteChunkOwner(snap, st, key, snap.deferredChunks.size() - 1, owner);
     return mesh;
@@ -3194,6 +3236,26 @@ static void appendAtBestRung(Render::DrawCallList &scene,
             : 0;
         const auto role = std::make_tuple(d.objectKey,
                                           int(d.material.type), ordinal);
+        // Per-instance rung binding (§7, "one rung per instance"):
+        // the consumer may know a better rung for THIS draw's owner
+        // than the ladder's identity mesh — the far instance stands
+        // on its own coarse rung while a near sibling holds exact.
+        // Null falls through to everything below, unchanged.
+        if (model && model->rungBinder && d.mesh && d.objectKey) {
+            if (auto bound = model->rungBinder(d)) {
+                if (contentId) {
+                    model->lastGood[d.mesh->cacheId] = bound;
+                    auto &rd = model->lastRole[role];
+                    rd.mesh = bound;
+                    rd.draw = d;
+                    rd.draw.mesh.reset();
+                }
+                Render::DrawCall b = d;
+                b.mesh = std::move(bound);
+                scene.push_back(std::move(b));
+                continue;
+            }
+        }
         if (meshResident(d)) {
             if (model && contentId) {
                 model->lastGood[d.mesh->cacheId] = d.mesh;

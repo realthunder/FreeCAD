@@ -562,19 +562,6 @@ size_t rungCost(const Render::SceneSnapshot::DeferredChunk &entry, int rung)
     return builtIsCoarser ? base * scale : std::max<size_t>(base / scale, 1);
 }
 
-/// The coarsest rung of \a entry whose stated error is within \a err.
-/// The exact rung closes every ladder at error 0, so this always
-/// answers.
-int rungWithin(const Render::SceneSnapshot::DeferredChunk &entry, float err)
-{
-    const size_t count = Render::planRungs(entry);
-    for (size_t i = 0; i < count; ++i) {
-        if (Render::planRungError(entry, i) <= err)
-            return int(i);
-    }
-    return int(count) - 1;
-}
-
 /// The screen-space error of an object drawn as its box: the whole of
 /// it is wrong, so the relative error is the whole diagonal. What
 /// matters is only that it is larger than any declared rung's error,
@@ -594,6 +581,16 @@ constexpr float kBoxError = 1.0f;
 constexpr float kPlanKeepBonus = 1.3f;
 
 }  // namespace
+
+int Render::rungWithin(const SceneSnapshot::DeferredChunk &entry, float err)
+{
+    const size_t count = planRungs(entry);
+    for (size_t i = 0; i < count; ++i) {
+        if (planRungError(entry, i) <= err)
+            return int(i);
+    }
+    return int(count) - 1;
+}
 
 PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
                              const PlanParams &params)
@@ -821,6 +818,13 @@ PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
             params.trace(kv.first, kv.second.diamPx, kv.second.tier,
                          kv.second.tiers.size());
     }
+    if (params.objectErr) {
+        params.objectErr->clear();
+        for (auto &kv : objs) {
+            (*params.objectErr)[kv.first] =
+                kv.second.tier < 0 ? -1.0f : kv.second.tiers[kv.second.tier];
+        }
+    }
 
     for (size_t i = 0; i < snap.deferredChunks.size(); ++i) {
         if (plan[i] != kUntouched)
@@ -829,73 +833,85 @@ PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
     return stats;
 }
 
+uint16_t Render::planNeeded(const SceneSnapshot::DeferredChunk &entry,
+                            const std::function<float(uint64_t)> &errOf)
+{
+    if (!entry.release)
+        return 0;
+    const auto builtBit = [&entry](int rung) -> uint16_t {
+        return rung >= 0 && rung < 16 ? uint16_t(1u << rung) : 0;
+    };
+    if (entry.owners.empty()) {
+        // The view's own geometry always stands at its finest built
+        // rung, outside the budget (§7).
+        return builtBit(finestBuiltRung(entry));
+    }
+    uint16_t mask = 0;
+    for (uint64_t owner : entry.owners) {
+        const float err = errOf ? errOf(owner)
+                                : std::numeric_limits<float>::quiet_NaN();
+        if (std::isnan(err)) {
+            // The plan has not seen this owner: the pre-plan default
+            // is the finest built rung, exactly what an unplanned
+            // entry targeted before there were per-owner tiers.
+            mask |= builtBit(finestBuiltRung(entry));
+        }
+        else if (err >= 0.0f) {
+            mask |= builtBit(rungWithin(entry, err));
+        }
+        // err < 0: the plan left this owner on its box — it needs no
+        // rung, and contributes nothing.
+    }
+    return mask;
+}
+
 PlanStep Render::planStep(const SceneSnapshot::DeferredChunk &entry,
-                          int residentRung)
+                          uint16_t neededMask)
 {
     PlanStep step;
     if (!entry.release)
         return step;
-    const int count = int(planRungs(entry));
-    int target = entry.plan == SceneSnapshot::DeferredChunk::kPlanUnset
-        ? finestBuiltRung(entry)
-        : int(entry.plan);
-    target = std::min(target, count - 1);
-    if (target < -1)
-        target = -1;
-    if (target == residentRung)
-        return step;
-    if (target < 0) {
-        step.release = residentRung >= 0;
+    const int count = std::min(int(planRungs(entry)), 16);
+    const uint16_t resident = entry.residentMask;
+    if (!neededMask) {
+        // Every owner is on its box: everything held goes back.
+        step.release = resident;
         return step;
     }
-    int fetch = target;
-    if (planRungKey(entry, size_t(target)).empty()) {
-        // Declared but unbuilt: ask the producer, stand on the nearest
-        // built rung meanwhile — coarser side first, a cheap rung that
-        // shows the object beating a large one that shows it slightly
-        // better.
-        step.generate = target;
-        fetch = -1;
-        for (int i = target; i-- > 0;) {
-            if (!planRungKey(entry, size_t(i)).empty()) {
-                fetch = i;
-                break;
-            }
+    // Fetch the coarsest needed rung not yet held; an unbuilt needed
+    // rung is the producer's to make (generate) while the search goes
+    // on for one that can be fetched today.
+    int fetch = -1;
+    for (int r = 0; r < count; ++r) {
+        const uint16_t bit = uint16_t(1u << r);
+        if (!(neededMask & bit) || (resident & bit))
+            continue;
+        if (planRungKey(entry, size_t(r)).empty()) {
+            if (step.generate < 0)
+                step.generate = r;
+            continue;
         }
-        if (fetch < 0) {
-            for (int i = target + 1; i < count; ++i) {
-                if (!planRungKey(entry, size_t(i)).empty()) {
-                    fetch = i;
-                    break;
-                }
-            }
-        }
+        fetch = r;
+        break;
     }
-    if (target > residentRung) {
-        // En route, coarse first (§7): nothing on screen yet and the
-        // rung to fetch is not the cheapest built one — put the
-        // cheapest up this round, and the target lands as an upgrade
-        // over it instead of over a box.
-        if (residentRung < 0) {
-            const int coarsest = coarsestBuiltRung(entry);
-            if (coarsest >= 0 && coarsest < fetch)
-                fetch = coarsest;
-        }
-        if (fetch >= 0 && fetch != residentRung)
-            step.fetch = fetch;
+    // En route, coarse first (§7): nothing on screen yet and the rung
+    // to fetch is not the cheapest built one — put the cheapest up
+    // this round, and the target lands as an upgrade over it instead
+    // of over a box. Also the stand-in when every needed rung is
+    // unbuilt: a generate's answer is an announcement, and the object
+    // should not be a box while it waits.
+    if (resident == 0) {
+        const int coarsest = coarsestBuiltRung(entry);
+        if (coarsest >= 0 && (fetch < 0 || coarsest < fetch))
+            fetch = coarsest;
     }
-    else {
-        // Downgrade: the built rung at or below the target. None built
-        // down there means nothing to do but wait for the generate —
-        // holding the finer rung meanwhile is the right failure.
-        for (int i = std::min(fetch, target); i >= 0; --i) {
-            if (!planRungKey(entry, size_t(i)).empty()) {
-                step.fetch = i;
-                break;
-            }
-        }
-        if (step.fetch >= residentRung)
-            step.fetch = -1;
-    }
+    if (fetch >= 0 && !(resident & uint16_t(1u << fetch)))
+        step.fetch = fetch;
+    // A resident rung nobody needs goes back only once every needed
+    // rung is resident: until then it is the stand-in some owner is
+    // drawing. An unbuilt needed rung keeps the hold by construction —
+    // it cannot be resident yet.
+    if ((neededMask & resident) == neededMask)
+        step.release = uint16_t(resident & ~neededMask);
     return step;
 }
