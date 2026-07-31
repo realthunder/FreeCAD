@@ -110,7 +110,7 @@ public:
 
         Type = this->handle->GetASCII("Type", "Default");
         funcs["Type"] = &RenderParamsP::updateType;
-        CoarseTessellation = this->handle->GetInt("CoarseTessellation", 1);
+        CoarseTessellation = this->handle->GetInt("CoarseTessellation", 2);
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         LevelThreads = this->handle->GetInt("LevelThreads", 0);
         funcs["LevelThreads"] = &RenderParamsP::updateLevelThreads;
@@ -238,7 +238,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCoarseTessellation(RenderParamsP *self) {
-        self->CoarseTessellation = self->handle->GetInt("CoarseTessellation", 1);
+        self->CoarseTessellation = self->handle->GetInt("CoarseTessellation", 2);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelThreads(RenderParamsP *self) {
@@ -508,7 +508,7 @@ const long & RenderParams::getCoarseTessellation() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const long & RenderParams::defaultCoarseTessellation() {
-    const static long def = 1;
+    const static long def = 2;
     return def;
 }
 

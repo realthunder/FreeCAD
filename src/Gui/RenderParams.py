@@ -47,7 +47,7 @@ Params = [
     ParamString('Type', 'Default', title='Renderer type',
         doc="Type of the experimental render engine backend. 'Default' keeps\n"
         "the plain GL pipeline. Only effective with render cache mode 3."),
-    ParamInt('CoarseTessellation',  1, title='Coarse tessellation level',
+    ParamInt('CoarseTessellation',  2, title='Coarse tessellation level',
         doc="Ladder level shapes are tessellated at when the scene is being\n"
         "served to streaming viewers (docs/SceneStreaming.md #7,\n"
         "coarse-first publish): the display mesh is built at this rung of\n"
