@@ -30,9 +30,21 @@ if [ -z "${FC_USER_CFG:-}" ]; then
     [ -f "$HOME/.config/FreeCAD/user.cfg" ] && cp -f "$HOME/.config/FreeCAD/user.cfg" "$FC_USER_CFG" 2>/dev/null
 fi
 
-pkill -f '[c]onda-debug/bin/FreeCAD' 2>/dev/null
+# Replace only our previous instance, never serve backends on other
+# ports: prefer the process holding our serve port (kill its whole
+# setsid group), else match the desktop launch's --user-cfg signature.
+oldpid=
+[ -n "$PORT" ] && oldpid=$(ss -tlnpH "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)
+[ -z "$oldpid" ] && oldpid=$(pgrep -f "[c]onda-debug/bin/FreeCAD.*--user-cfg $FC_USER_CFG" | head -1)
+if [ -n "$oldpid" ]; then
+    pgid=$(ps -o pgid= -p "$oldpid" 2>/dev/null | tr -d ' ')
+    echo "replacing previous desktop instance (pid $oldpid, pgid ${pgid:-?})"
+    [ -n "$pgid" ] && kill -TERM -"$pgid" 2>/dev/null || kill -TERM "$oldpid" 2>/dev/null
+    for _ in $(seq 10); do kill -0 "$oldpid" 2>/dev/null || break; sleep 0.5; done
+fi
 rm -f "$HOME/.cache/FreeCAD/Cache/FreeCAD_"*.lock 2>/dev/null
-sleep 1
+
+[ -f "$LOG" ] && mv -f "$LOG" "$LOG.1"
 
 setsid nohup env \
   QT_QPA_PLATFORM="${FC_PLATFORM:-wayland}" \
@@ -45,7 +57,9 @@ setsid nohup env \
   MESA_D3D12_DEFAULT_ADAPTER_NAME="${FC_ADAPTER:-}" \
   __GLX_VENDOR_LIBRARY_NAME=mesa \
   ${PORT:+FC_BGFX_SERVE_SCENE=$PORT} \
-  "$REPO/.conda/run.sh" "$REPO/build/conda-debug/bin/FreeCAD" \
+  bash -c '"$@"; s=$?;
+           echo "desktop wrapper: FreeCAD exited status $s at $(date -Is)"' \
+  -- "$REPO/.conda/run.sh" "$REPO/build/conda-debug/bin/FreeCAD" \
   ${FC_USER_CFG:+--user-cfg "$FC_USER_CFG"} \
   "$SCENE" > "$LOG" 2>&1 </dev/null &
 disown
