@@ -287,10 +287,13 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
     // at error 0 out from under the streamed ladder. The level plan
     // pass fires it (MeshSourceRegistry::requestRefine) when the
     // camera settles on the source erring more than the tolerance
-    // (planMeshRefines); the face and line sources share one closure,
-    // and the fired flag keeps the pair to a single build when both
-    // exceed it in the same pass.
-    std::function<void()> refine;
+    // (planMeshRefines), and retracts it (cancelRefine) when a later
+    // plan stops wanting a job that has not built — the fired flag,
+    // shared by the face and line sources, keeps the pair to a single
+    // build and its reset re-arms the pair as one. A face and line
+    // draw of the same object share bounds and error, so a plan wants
+    // or drops them together; the shared job relies on that.
+    std::function<void()> refine, cancel;
     if (onExactBuilt && builtError > 0.0f
         && !std::getenv("FC_BGFX_SERVE_SCENE")) {
         const void *primary = faceTag ? faceTag : lineTag;
@@ -301,12 +304,17 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                 return;
             queueExactRefine(primary, st, apply);
         };
+        cancel = [primary, fired]() {
+            if (!fired->exchange(false))
+                return;
+            cancelExactRefine(primary);
+        };
     }
     auto &reg = Render::MeshSourceRegistry::instance();
     if (faceTag)
-        reg.add(faceTag, gen, builtError, refine);
+        reg.add(faceTag, gen, builtError, refine, cancel);
     if (lineTag)
-        reg.add(lineTag, gen, builtError, refine);
+        reg.add(lineTag, gen, builtError, refine, cancel);
 }
 
 void PartGui::unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag)

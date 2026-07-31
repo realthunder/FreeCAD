@@ -48,7 +48,8 @@ MeshSourceRegistry &MeshSourceRegistry::instance()
 
 void MeshSourceRegistry::add(const void *tag, Generator gen,
                              float publishedError,
-                             std::function<void()> refine)
+                             std::function<void()> refine,
+                             std::function<void()> cancelRefine)
 {
     if (!tag || !gen)
         return;
@@ -58,6 +59,8 @@ void MeshSourceRegistry::add(const void *tag, Generator gen,
     src.publishedError = publishedError;
     src.canonicalKey.clear();
     src.refine = std::move(refine);
+    src.cancelRefine = std::move(cancelRefine);
+    src.asked = false;
     if (debugOn())
         std::fprintf(stderr, "mesh source: add tag=%p err=%g (%zu sources)\n",
                      tag, double(publishedError), sources.size());
@@ -119,21 +122,39 @@ float MeshSourceRegistry::publishedError(const void *tag)
 
 void MeshSourceRegistry::requestRefine(const void *tag)
 {
-    // Consume the callback under the lock, run it outside: a refine
+    // Copy the callback out under the lock, run it outside: a refine
     // typically queues a worker job under its own mutex, and nothing
     // it does should be able to deadlock back into the registry.
     std::function<void()> fn;
     {
         std::lock_guard<std::mutex> guard(mutex);
         auto it = sources.find(tag);
-        if (it == sources.end() || !it->second.refine)
+        if (it == sources.end() || !it->second.refine
+            || it->second.asked)
             return;
-        fn = std::move(it->second.refine);
-        it->second.refine = nullptr;
+        it->second.asked = true;
+        fn = it->second.refine;
     }
     if (debugOn())
         std::fprintf(stderr, "mesh source: refine tag=%p\n", tag);
     fn();
+}
+
+void MeshSourceRegistry::cancelRefine(const void *tag)
+{
+    std::function<void()> fn;
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        auto it = sources.find(tag);
+        if (it == sources.end() || !it->second.asked)
+            return;
+        it->second.asked = false;
+        fn = it->second.cancelRefine;
+    }
+    if (debugOn())
+        std::fprintf(stderr, "mesh source: cancel tag=%p\n", tag);
+    if (fn)
+        fn();
 }
 
 bool MeshSourceRegistry::generate(const std::string &key, uint32_t level,

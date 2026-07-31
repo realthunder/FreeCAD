@@ -7278,6 +7278,21 @@ public:
                         levelPlanner.projMatrix(), h,
                         levelPlanner.tolerance());
                     auto &reg = Render::MeshSourceRegistry::instance();
+                    // Cancels first (§13 step 4): every coarse source
+                    // this plan does not want is de-wanted — a queued
+                    // tessellation the camera moved away from is work,
+                    // not a fetch to ignore. Before the requests, so a
+                    // same-pass flip lands wanted. cancelRefine only
+                    // fires where an ask actually stands.
+                    std::set<const void *> wanted(tags.begin(),
+                                                  tags.end());
+                    for (const auto &draw : scene) {
+                        if (!draw.mesh || !draw.mesh->sourceTag
+                            || draw.mesh->levelError <= 0.0f)
+                            continue;
+                        if (!wanted.count(draw.mesh->sourceTag))
+                            reg.cancelRefine(draw.mesh->sourceTag);
+                    }
                     for (const void *tag : tags)
                         reg.requestRefine(tag);
                 });

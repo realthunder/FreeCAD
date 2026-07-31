@@ -79,12 +79,17 @@ public:
     /// \a refine is the desktop tier's climb back to exact
     /// (docs/SceneStreaming.md §13): when the level plan finds this
     /// source's coarse tessellation too wrong on screen, requestRefine
-    /// fires it — once per registration — and the producer builds and
-    /// applies the exact mesh behind it. Empty means nothing to climb:
-    /// the source is already exact, or a serving process whose viewers
-    /// drive the exact rung themselves.
+    /// fires it and the producer builds and applies the exact mesh
+    /// behind it. \a cancelRefine is the way back down while nothing
+    /// is built yet (§13 step 4): a plan that no longer wants the
+    /// refine un-asks it, and the producer drops the job if it has not
+    /// run — a tessellation is *work*, not a fetch to ignore
+    /// (RungProvider::cancel's rationale, at this tier's granularity).
+    /// Empty means nothing to climb: the source is already exact, or a
+    /// serving process whose viewers drive the exact rung themselves.
     void add(const void *tag, Generator gen, float publishedError = 0.0f,
-             std::function<void()> refine = {});
+             std::function<void()> refine = {},
+             std::function<void()> cancelRefine = {});
     /// Drop \a tag and every chunk-key association pointing at it.
     /// Call before the geometry behind the tag dies; the tag's address
     /// may be reused.
@@ -116,11 +121,18 @@ public:
                   std::vector<uint8_t> &out);
 
     /// The level plan wants \a tag's exact tessellation: fire the
-    /// source's refine callback. At most once per registration — the
-    /// callback is consumed, and a re-registration (a re-tessellated
-    /// shape) is what arms a new one. No-op for unregistered tags and
-    /// sources without a callback, so a plan pass may ask blindly.
+    /// source's refine callback. Idempotent while the ask stands — a
+    /// plan that keeps wanting an unbuilt refine re-asks every settle
+    /// and only the first fires; cancelRefine (or a re-registration)
+    /// is what re-arms. No-op for unregistered tags and sources
+    /// without a callback, so a plan pass may ask blindly.
     void requestRefine(const void *tag);
+    /// The level plan stopped wanting \a tag's refine (the camera
+    /// moved away before it built): fire the source's cancel callback
+    /// and re-arm the ask. Only fires when an ask actually stands, so
+    /// a plan pass may cancel blindly too — its de-wanted set includes
+    /// every coarse source it never asked for.
+    void cancelRefine(const void *tag);
 
 private:
     struct Source {
@@ -128,8 +140,11 @@ private:
         float publishedError = 0.0f;
         /// The key the publisher last associated — the job identity.
         std::string canonicalKey;
-        /// The desktop refine trigger, consumed by requestRefine.
+        /// The desktop refine trigger and its retraction; `asked` is
+        /// the standing ask requestRefine sets and cancelRefine clears.
         std::function<void()> refine;
+        std::function<void()> cancelRefine;
+        bool asked = false;
     };
     std::mutex mutex;
     std::map<const void *, Source> sources;

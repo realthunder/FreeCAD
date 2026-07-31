@@ -2064,8 +2064,55 @@ arrays and stand on the coarse rung, which is always resident.
    would stay coarse forever). Serving processes are unchanged:
    never plan, never refine locally.
 3. GPU-memory ceiling into `MemoryBudget`; eviction under pressure.
-4. `cancel` wired to plan changes; measure how much work it saves
-   before making it cleverer.
+   **Open design question the sketch above glossed over** (proposal
+   below, not built): the budget paragraph assumed release means
+   "drop the finer arrays and stand on the coarse rung, which is
+   always resident" — but the as-built desktop refine does not keep
+   rungs side by side. It *transfers* the exact triangulation onto
+   the live shape and rebuilds the Coin nodes: one triangulation per
+   face, the coarse one replaced. So desktop eviction is not a drop,
+   it is a *re-tessellation to coarse* — cheap in CPU (a coarse rung
+   is the fast build by construction) but a build nonetheless, and
+   the churn guards the viewer needed (surplus-until-the-budget-
+   wants, hysteresis margins at the boundary) apply with more force
+   when both directions cost work. Candidate shapes, to discuss:
+   (a) evict-by-rebuild — account resident exact bytes per source
+   (the mesh arrays the renderer already holds); when
+   `MemoryBudget` (ceiling from `bgfx::getStats()`'s
+   gpuMemoryUsed/Max where the backend reports it — D3D/Vulkan do,
+   GL does not — plus caught `bad_alloc` in the tessellation worker
+   as `observeCeiling`) wants bytes back, the plan pass picks the
+   refined sources now within tolerance at coarse (camera moved
+   away), and the executor re-runs the coarse build for them
+   (clear `ExactMeshTShape`, re-tessellate at the ladder rung,
+   re-register with a fresh refine); (b) keep the coarse
+   triangulation beside the exact one (OCCT faces can hold several
+   triangulations) so release really is a drop — cheaper eviction,
+   but CPU memory holds both rungs and the node-rebuild plumbing
+   must select the active one; (c) do nothing until a model that
+   actually exhausts a desktop GPU exists to measure — the 200-
+   object scene refines a handful of sources under the default
+   tolerance, and the tolerance itself is already the pressure
+   valve. The viewer's lesson stands either way: eviction must be
+   driven by the budget, never by the replan.
+4. ✅ **As built (2026-07-31):** `cancel` wired to plan changes. The
+   ask became state instead of consumption:
+   `MeshSourceRegistry::requestRefine` sets a standing `asked` on
+   the source (idempotent while it stands), and the new
+   `cancelRefine` clears it and fires a paired cancel closure —
+   registered beside the refine by `registerMeshLevelSource`, it
+   resets the pair's shared fired flag and drops the worker job by
+   its token, queued or finished-but-unapplied; a build already
+   applied re-registered the source at error 0 and both calls
+   no-op. The plan callback cancels first — every coarse source the
+   new plan does not want — then requests, so a same-pass flip
+   lands wanted; a face and line draw of one object share bounds
+   and error, so a plan wants or drops the shared job as one.
+   Measured on the 200-object scene (zoom in, settle, zoom back
+   out 1.5 s later with one level thread): the in-zoom plan asked
+   250 refines, 32 had built by the out-zoom settle, and the
+   out-zoom plan canceled the standing 219 — seven-eighths of the
+   queued tessellation work never ran.
 
 **Decided (2026-07-31):** instanced leaves share one ladder per proto
 (the publish path's sourceTag rule). Desktop *picking goes to the
