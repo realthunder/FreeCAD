@@ -53,6 +53,7 @@ public:
     virtual bool animating() const override;
 
     virtual void setScene(DrawCallList &&draws) override;
+    virtual void setObjectInfo(ObjectInfoMap &&info) override;
     virtual void setBackground(const Background &bg) override;
     virtual void addSelection(int id, DrawCallList &&draws) override;
     virtual void removeSelection(int id) override;

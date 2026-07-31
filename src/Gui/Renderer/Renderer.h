@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -1068,6 +1069,19 @@ struct DrawCall {
 
 typedef std::vector<DrawCall> DrawCallList;
 
+/// The document object behind an objectKey, resolved by the scene
+/// producer (which alone can see the document — see setObjectInfo()).
+/// Everything is a plain string: the renderer and the serving path must
+/// stay free of App/Gui types.
+struct ObjectInfo {
+    std::string doc;    ///< document internal name
+    std::string obj;    ///< object internal name
+    std::string label;  ///< user-visible label at capture time
+    std::string type;   ///< DocumentObject type id, e.g. "Part::Box"
+};
+
+typedef std::unordered_map<uint64_t, ObjectInfo> ObjectInfoMap;
+
 /// Flag bits of the selection ids fed through Renderer::addSelection
 /// (mirroring SoFCRenderer::SelIdBits — the producer side of the feed).
 enum SelIdBits : int {
@@ -1110,6 +1124,13 @@ public:
     //@{
     /// Replace the whole scene. An empty list clears it.
     virtual void setScene(DrawCallList &&draws) { (void)draws; }
+    /// Which document object each objectKey renders, resolved by the
+    /// scene producer (the renderer itself has no document access — this
+    /// library stays App-free). Replaced wholesale alongside setScene();
+    /// keys the producer could not name are simply absent. Consumed by
+    /// the scene-serving snapshot so a remote viewer can name what it
+    /// picks (docs/ThinClient.md §4.1).
+    virtual void setObjectInfo(ObjectInfoMap &&info) { (void)info; }
     /// Describe the window background for the next render(). The bg color
     /// passed to render() stays the clear-color fallback for backends that
     /// ignore this.

@@ -471,10 +471,18 @@ protected:
     // variable length encoding
     class NodeKey {
     public:
+        /// Which document object a key's node chain renders. Captured as
+        /// strings when the key is composed (the only moment the whole
+        /// chain is in hand); a pointer would dangle across cache reuse.
+        struct Origin {
+            std::string doc;    ///< document internal name
+            std::string obj;    ///< object internal name
+        };
+
         NodeKey() {
             data.back() = 0;
         }
-        
+
         int size() const {
             if (!next)
                 return data.back();
@@ -492,6 +500,14 @@ protected:
         void clear() {
             data.back() = 0;
             next.reset();
+            origin.reset();
+        }
+
+        /// The deepest chain node's document object, if any node in the
+        /// chain belongs to one. Derived data: deliberately not part of
+        /// hash() or operator==.
+        const std::shared_ptr<const Origin> & getOrigin() const {
+            return origin;
         }
 
         std::size_t hash(std::size_t seed = 0) const {
@@ -530,6 +546,7 @@ protected:
                 bool res = _push(node->getSelNodeId());
                 (void)res;
                 assert(res);
+                noteOrigin(node);
             }
         }
 
@@ -542,6 +559,8 @@ protected:
         void append(const std::shared_ptr<NodeKey> &other);
 
     private:
+        void noteOrigin(SoFCSelectionRoot *node);
+
         bool _push(uintptr_t v) {
             assert(!next);
             uint8_t len = 0;
@@ -560,6 +579,7 @@ protected:
         }
 
         std::shared_ptr<NodeKey> next;
+        std::shared_ptr<const Origin> origin;
 
         // data.back() (i.e. the last element) stores the data count
         std::array<uint8_t, 32> data;

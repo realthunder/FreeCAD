@@ -32,6 +32,8 @@
 #include <QImage>
 
 #include <App/Application.h>
+#include <App/Document.h>
+#include <App/DocumentObject.h>
 #include <App/PropertyFile.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyStandard.h>
@@ -684,7 +686,8 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
 
 Render::DrawCallList
 RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
-                          int selId, bool highlight, bool sequentialOrder)
+                          int selId, bool highlight, bool sequentialOrder,
+                          Render::ObjectInfoMap * objectInfo)
 {
     Render::DrawCallList res;
 
@@ -828,6 +831,25 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             draw.material = rmat;
             draw.mesh = mesh;
             draw.objectKey = ventry.key ? ventry.key->hash() : 0;
+            if (objectInfo && draw.objectKey
+                    && !objectInfo->count(draw.objectKey)) {
+                if (const auto & org = ventry.key->getOrigin()) {
+                    Render::ObjectInfo info;
+                    info.doc = org->doc;
+                    info.obj = org->obj;
+                    // Label and type are read fresh: the origin was
+                    // captured at cache build, and a label can change
+                    // without touching the scene graph.
+                    if (auto doc = App::GetApplication().getDocument(
+                                org->doc.c_str())) {
+                        if (auto obj = doc->getObject(org->obj.c_str())) {
+                            info.label = obj->Label.getValue();
+                            info.type = obj->getTypeId().getName();
+                        }
+                    }
+                    (*objectInfo)[draw.objectKey] = std::move(info);
+                }
+            }
             draw.wholeObject = ventry.partidx < 0
                 && ventry.cache == ventry.cache->getWholeCache();
             draw.partIndex = ventry.partidx;

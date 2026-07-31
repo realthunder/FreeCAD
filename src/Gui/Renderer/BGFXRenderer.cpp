@@ -7229,6 +7229,7 @@ public:
         static const bool dumpSel = getenv("FC_BGFX_DUMP_SCENE_SEL") != nullptr;
         auto makeSnapshot = [&](Render::SceneSnapshot &snap) {
             snap.scene = scene;
+            snap.objectInfo = &objectInfo;
             snap.selections.assign(selections.begin(), selections.end());
             snap.highlight = highlight;
             snap.highlightWholeOnTop = hlWholeOnTop;
@@ -10974,6 +10975,9 @@ public:
     // upload happens lazily during render(), so the feed may arrive before
     // bgfx is initialized.
     Render::DrawCallList scene;
+    /// Draw identity resolved by the producer (setObjectInfo); consulted
+    /// by the snapshot writer for the published object entries.
+    Render::ObjectInfoMap objectInfo;
     // Cross-object instance groups of the scene feed: draws sharing one
     // geometry content (by hash — a shared cache OR coincidentally
     // identical flattened caches), index range and material (diffuse
@@ -11419,6 +11423,14 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
     // if the camera never moves again.
     pimpl->levelPlanner.markDirty();
 #endif
+}
+
+void BGFXRenderer::setObjectInfo(ObjectInfoMap &&info)
+{
+    pimpl->objectInfo = std::move(info);
+    // Identity rides the published root's object entries; a change to
+    // it alone (rename) only reaches viewers with the next publish.
+    pimpl->feedDirty = true;
 }
 
 void BGFXRenderer::setBackground(const Background &bg)

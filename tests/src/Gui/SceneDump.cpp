@@ -395,6 +395,53 @@ TEST(SceneDump, manifestRoundTrip)
     expectScene(loaded);
 }
 
+/// v38: an object entry names its document object, the naming survives
+/// the round trip into the consumer model, and an object the producer
+/// could not name stays unnamed rather than inventing one.
+TEST(SceneDump, anObjectEntryNamesItsDocumentObject)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    Render::ObjectInfoMap info;
+    info[0x1111] = {"MainDoc", "Box", "Bo\"x é", "Part::Box"};
+    snap.objectInfo = &info;
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.objectEntries = &entries;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    // The publisher's own copy is stamped: a later delta re-describing
+    // the object serializes the identity from these entries.
+    bool stamped = false;
+    for (const auto& e : entries) {
+        if (e.objectKey == 0x1111) {
+            stamped = true;
+            EXPECT_EQ(e.info.obj, "Box");
+        }
+    }
+    ASSERT_TRUE(stamped);
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    auto named = model.objects.find(0x1111);
+    ASSERT_TRUE(named != model.objects.end());
+    EXPECT_EQ(named->second.entry.info.doc, "MainDoc");
+    EXPECT_EQ(named->second.entry.info.obj, "Box");
+    EXPECT_EQ(named->second.entry.info.label, "Bo\"x é");
+    EXPECT_EQ(named->second.entry.info.type, "Part::Box");
+
+    auto unnamed = model.objects.find(0x2222);
+    ASSERT_TRUE(unnamed != model.objects.end());
+    EXPECT_TRUE(unnamed->second.entry.info.obj.empty());
+    EXPECT_TRUE(unnamed->second.entry.info.doc.empty());
+}
+
 /// What the whole phase is for: publishing an unchanged scene again
 /// must send no bytes, and the root must stay small because the draws
 /// are not in it.

@@ -1485,6 +1485,67 @@ static void rebuildSelection()
         s_renderer->addSelection(kClientSelId, std::move(draws));
 }
 
+EM_JS(void, fcviewer_selection_event, (const char *json), {
+    try {
+        var detail = JSON.parse(UTF8ToString(json));
+        window.dispatchEvent(new CustomEvent('fc:selection',
+                                             { detail: detail }));
+    } catch (e) {}
+});
+
+static void jsonEscapeTo(std::string &out, const std::string &s)
+{
+    for (char c : s) {
+        if (c == '"' || c == '\\') { out += '\\'; out += c; }
+        else if (uint8_t(c) < 0x20) {
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+            out += buf;
+        }
+        else out += c;
+    }
+}
+
+/// Tell the DOM layer what is selected (docs/ThinClient.md §3): a
+/// 'fc:selection' CustomEvent on window whose detail is the list of
+/// selected items with their resolved identity from the object entries
+/// (v38 — empty strings on older backends or unnamed draws). `sub` is
+/// the FreeCAD sub-element name reconstructed from the pick
+/// (Face3/Edge1/...), empty for a whole-object selection.
+static void emitSelectionEvent()
+{
+    std::string json = "[";
+    for (const auto &it : s_sel) {
+        if (json.size() > 1)
+            json += ',';
+        char head[64];
+        std::snprintf(head, sizeof(head), "{\"objectKey\":\"%llx\"",
+                      (unsigned long long)it.key);
+        json += head;
+        static const char *kindName[] = {"", "Face", "Edge", "Vertex"};
+        if (it.part >= 0 && it.kind != PickNone) {
+            char sub[32];
+            std::snprintf(sub, sizeof(sub), ",\"sub\":\"%s%d\"",
+                          kindName[it.kind], it.part + 1);
+            json += sub;
+        }
+        else
+            json += ",\"sub\":\"\"";
+        auto oit = s_objects.objects.find(it.key);
+        if (oit != s_objects.objects.end()) {
+            const auto &info = oit->second.entry.info;
+            json += ",\"doc\":\"";   jsonEscapeTo(json, info.doc);
+            json += "\",\"obj\":\""; jsonEscapeTo(json, info.obj);
+            json += "\",\"label\":\""; jsonEscapeTo(json, info.label);
+            json += "\",\"type\":\""; jsonEscapeTo(json, info.type);
+            json += '"';
+        }
+        json += '}';
+    }
+    json += ']';
+    fcviewer_selection_event(json.c_str());
+}
+
 /// Client-side select at canvas pixel: pick locally, update s_sel (Ctrl =
 /// toggle/extend, plain = replace), and show the highlight immediately.
 ///
@@ -1501,6 +1562,7 @@ static void selectAt(float px, float py, bool ctrl)
         if (!ctrl && !s_sel.empty()) {
             s_sel.clear();
             rebuildSelection();
+            emitSelectionEvent();
         }
         return;
     }
@@ -1524,6 +1586,7 @@ static void selectAt(float px, float py, bool ctrl)
         s_sel.push_back(item);
     }
     rebuildSelection();
+    emitSelectionEvent();
 }
 
 static bool fitCamera();

@@ -51,10 +51,16 @@ namespace RendererBridge {
 /// order. Overlay feeds need it: they render in a Sequential view where
 /// submission order is blending order (the material-keyed cache map
 /// itself has no traversal order).
+/// \a objectInfo, when given, collects the document identity of every
+/// named draw (docs/ThinClient.md §4.1): the cache key's captured origin
+/// (doc + object internal name) resolved against the live document for
+/// label and type. One entry per distinct objectKey; keys whose chain
+/// never crossed a ViewProvider stay absent.
 GuiExport Render::DrawCallList translate(
         const SoFCRenderCache::VertexCacheMap & vcachemap,
         int selId = 0, bool highlight = false,
-        bool sequentialOrder = false);
+        bool sequentialOrder = false,
+        Render::ObjectInfoMap * objectInfo = nullptr);
 
 /// Resolve the hidden-line draw style state from the traversal state
 /// (SoFCDisplayModeElement) into the backend-neutral per-frame config.

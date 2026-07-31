@@ -2123,11 +2123,30 @@ SoFCSelectionRoot::NodeKey::getSecondaryContext(Stack &stack, SoNode *node)
     return ctx;
 }
 
+void SoFCSelectionRoot::NodeKey::noteOrigin(SoFCSelectionRoot *node)
+{
+    auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+            node->getViewProvider());
+    if (!vpd)
+        return;
+    auto obj = vpd->getObject();
+    if (!obj || !obj->isAttachedToDocument() || !obj->getDocument())
+        return;
+    auto o = std::make_shared<Origin>();
+    o->doc = obj->getDocument()->getName();
+    o->obj = obj->getNameInDocument();
+    origin = std::move(o);
+}
+
 void SoFCSelectionRoot::NodeKey::append(const std::shared_ptr<NodeKey> &_other)
 {
     if (!_other || _other->empty())
         return;
     assert(!this->next);
+    // The appended chain is deeper in the scene graph: its origin, when
+    // it has one, names the leaf-most object and wins over ours.
+    if (_other->origin)
+        origin = _other->origin;
     auto & other = *_other;
     if (other.data.back() + data.back() <= data.size()-1) {
         memcpy(&data[data.back()], &other.data[0], other.data.back());

@@ -343,6 +343,13 @@ struct SceneSnapshot {
         float bbox[6] = {0, 0, 0, 0, 0, 0};
         std::string key;    ///< the group manifest's content key
         uint32_t size = 0;
+        /// Document identity of the object behind the key (v38,
+        /// docs/ThinClient.md §4.1), resolved by the producer via
+        /// Renderer::setObjectInfo. Empty when the producer could not
+        /// name the draws (merged caches, overlays). Deliberately NOT
+        /// part of the group manifest chunk: it must not disturb the
+        /// content keys, and a rename should not re-key geometry.
+        ObjectInfo info;
     };
 
     /// Which publish this one is, and which it is encoded against.
@@ -372,6 +379,11 @@ struct SceneSnapshot {
     /// versions a consumer might still hold.
     std::vector<ObjectEntry> baseObjects;
     std::vector<ObjectEntry> *objectEntries = nullptr;
+
+    /// Save side (v38): the producer's objectKey → document identity
+    /// map (Renderer::setObjectInfo). The writer stamps each object
+    /// entry's `info` from it; null = entries stay unnamed.
+    const ObjectInfoMap *objectInfo = nullptr;
 
     /// Where the parts of a root that may later be rewritten ended up
     /// in the payload, recorded on save when non-null.

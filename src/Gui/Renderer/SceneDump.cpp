@@ -115,7 +115,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     the bytes under their key and stages unconditionally. Full
 //     roots and leaves stay by reference (their keys usually ARE
 //     cached).
-const uint32_t kVersion = 37;
+// 38: each object entry in the root/delta object section carries the
+//     document identity of its object (doc, object internal name,
+//     label, type — four strings after the bbox), so a viewer can name
+//     what it picks without a round trip (docs/ThinClient.md §4.1).
+//     Outside the group chunk on purpose: identity must not disturb
+//     content keys.
+const uint32_t kVersion = 38;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -1790,6 +1796,11 @@ void writeObjectSection(Writer &w,
         const SceneSnapshot::ObjectEntry &e = *ref;
         w.u64(e.objectKey);
         w.floats(e.bbox, 6);
+        // v38: the object's document identity.
+        w.str(e.info.doc);
+        w.str(e.info.obj);
+        w.str(e.info.label);
+        w.str(e.info.type);
         writeGroupRef(w, e);
         if (bytesFor) {
             const std::vector<uint8_t> *bytes =
@@ -2477,6 +2488,11 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
                 w.ok = false;
                 break;
             }
+            if (snap.objectInfo) {
+                auto it = snap.objectInfo->find(group.first);
+                if (it != snap.objectInfo->end())
+                    entry.info = it->second;
+            }
             if (snap.baseVersion)
                 chunkCopies[entry.key] = std::move(copy);
             entries.push_back(std::move(entry));
@@ -2871,6 +2887,12 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             SceneSnapshot::ObjectUpdate up;
             up.entry.objectKey = r.u64();
             r.floats(up.entry.bbox, 6);
+            if (version >= 38) {
+                r.str(up.entry.info.doc, 0x1000u);
+                r.str(up.entry.info.obj, 0x1000u);
+                r.str(up.entry.info.label, 0x1000u);
+                r.str(up.entry.info.type, 0x1000u);
+            }
             up.group = snap.groups.size();
             GroupTarget t;
             t.kind = GroupTarget::Scene;

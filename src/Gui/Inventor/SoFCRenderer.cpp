@@ -1126,8 +1126,15 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
       PRIVATE(this)->external->setOverlay(PRIVATE(this)->overlayid,
           RendererBridge::translate(caches, 0, false, true),
           PRIVATE(this)->overlayanchor);
-    else
-      PRIVATE(this)->external->setScene(RendererBridge::translate(caches));
+    else {
+      // Resolve draw identities alongside the draws: the info map rides
+      // the same replace-wholesale cadence as the scene itself.
+      Render::ObjectInfoMap objinfo;
+      auto draws = RendererBridge::translate(caches, 0, false, false,
+                                             &objinfo);
+      PRIVATE(this)->external->setObjectInfo(std::move(objinfo));
+      PRIVATE(this)->external->setScene(std::move(draws));
+    }
   }
 
   PRIVATE(this)->applyKeys(PRIVATE(this)->highlightkeys);
