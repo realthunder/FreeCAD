@@ -3100,6 +3100,12 @@ static bool s_genLod = false;
 /// neither.
 static bool s_noProgressive = false;
 static bool s_pendingValid = false;
+/// Whether the staged snapshot has been offered the live scene's
+/// resident rungs yet (carryResidentRungs). Cleared at staging, set by
+/// the first resolve pass — which is the one that would otherwise ask
+/// the network for geometry the scene already holds (see the adoption
+/// site in resolvePending).
+static bool s_pendingAdopted = false;
 
 /// The store sweep, declared with the ledger above; the live set it
 /// must not touch spans the live and the staged snapshot.
@@ -4320,10 +4326,25 @@ static void resolvePending()
     // manifests appending their meshes — and entries the plan has
     // never seen must not fetch at a default the next plan would
     // contradict. Discovery is one of the plan's events (§7).
-    if (target->deferredChunks.size() != knownChunks) {
+    const bool ladderSetGrew = target->deferredChunks.size() != knownChunks;
+    if (ladderSetGrew) {
         s_planStale = true;
         decLog("ladder set grew %zu -> %zu -> replan", knownChunks,
                target->deferredChunks.size());
+    }
+    // A staged snapshot's fresh ladders start with nothing resident,
+    // and commit-time adoption has not run yet — but the executor
+    // below runs NOW, in the window between staging and commit.
+    // Without this, every ask it issues for a rung the live scene
+    // already holds is a real re-download and re-parse: on an
+    // announcement chain that was ~40 view-owned chunks fetched anew
+    // per delta, every ~200 ms, for the length of the chain.
+    if (s_haveScene && target == &s_pendingSnap
+            && (ladderSetGrew || !s_pendingAdopted)) {
+        s_pendingAdopted = true;
+        const size_t adopted = Render::carryResidentRungs(*target, s_snap);
+        if (adopted)
+            decLog("adopted %zu resident rungs at staging", adopted);
     }
     // Progress is what unblocks a held delta: the manifests it was
     // early for may just have landed. Only once none are outstanding —
@@ -4483,6 +4504,16 @@ static void resolvePending()
                     if (fillRung(entry, step.fetch,
                                  cached->second->data(),
                                  cached->second->size())) {
+                        // The arrival side of the fetch history: every
+                        // ask should eventually pair with one of these,
+                        // and an ask that never does is the journal's
+                        // evidence of a fill that went missing.
+                        decLog("fill %.8s rung %d (resident %x), obj %llx",
+                               wantKey.c_str(), step.fetch,
+                               unsigned(entry.residentMask),
+                               (unsigned long long)(entry.owners.empty()
+                                                        ? 0
+                                                        : entry.owners[0]));
                         if (!before
                                 || uint16_t(1u << step.fetch) > before)
                             ++rungUp;
@@ -5125,6 +5156,7 @@ static bool applyScenePayload(const char *data, size_t size)
         s_pendingSnap = std::move(snap);
         s_pendingVersion = version;
         s_pendingValid = true;
+        s_pendingAdopted = false;
         // A delta's group manifests ride in the payload itself (v37):
         // ingest them under their keys — cache, store and all, exactly
         // as if the network had just answered — so the resolve below
