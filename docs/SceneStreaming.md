@@ -755,6 +755,24 @@ this means concretely:
   own field, so the "one request per ladder" rule reads its own state
   instead of scanning every rung's key against the download table.
 
+**A ladder the delta re-names is not carried — its geometry is adopted.**
+`carryLadders` rides only entries the fresh publish did *not* name; a
+re-described object's ladder is replaced by a freshly parsed one, empty
+stores and `residentMask` zero. On a quiet stream that is one object per
+edit; on an announcement chain (a cold backend building levels, one
+delta per ~200 ms, inline manifests re-describing everything) it was the
+whole scene, every cycle — measured as the same rungs re-asked from the
+network for as long as the chain lasted, the model crawling behind its
+own refetches. `carryResidentRungs` (SceneDump) closes the gap at
+commit: every rung the superseded snapshot holds filled is offered to
+the fresh ladders by **content key** — the one name a re-parse cannot
+shuffle — the fresh store adopts the mesh object (the aliased identity
+slot by copy, any other rung by sharing), and the matching
+`residentMask` bits are set before the residency ledger is rebooked.
+The fresh entry keeps its own parse-born closures, so later
+release-and-climb behaves exactly as if the rung had arrived over the
+wire.
+
 **Accounting moves to the store, refcounted.** Residency bytes are counted
 once per content key today because the books are keyed that way; with
 state on entries, the store keeps `key → {bytes, binders}` where binders

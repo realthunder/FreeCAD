@@ -2419,6 +2419,19 @@ static void commitSnapshot(Render::SceneSnapshot &&snap, uint64_t version)
     // snapshot's outstanding geometry safe.
     if (snap.baseVersion)
         carryLadders(snap);
+    // Ladders the fresh publish re-declared were NOT carried — they
+    // are covered, and their replacements parse empty. Their geometry
+    // survives by content key instead: without this, an announcement
+    // chain (a cold backend building levels) re-described the scene
+    // every ~200 ms and each commit dumped the whole resident set back
+    // onto the network — the journal's endless re-asks of the same
+    // keys, the crawl, and the boxes that outstayed the load.
+    if (s_haveScene) {
+        const size_t adopted = Render::carryResidentRungs(snap, s_snap);
+        if (adopted)
+            decLog("adopted %zu resident rungs across the re-parse",
+                   adopted);
+    }
     rebindHeld(snap);
     s_planStale = true;
     // Refit not only on the very first scene: while the camera is

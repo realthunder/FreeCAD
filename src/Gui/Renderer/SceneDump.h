@@ -548,6 +548,21 @@ struct SceneObjectModel {
 /// upload however much of the model is still in flight.
 RendererExport const std::shared_ptr<const MeshData> &standInMesh();
 
+/// Carry resident geometry from a superseded snapshot into the one
+/// replacing it, matched by rung content key (docs/SceneStreaming.md
+/// §7: "rung indices shuffle on re-declaration; content keys never
+/// do"). A publish that re-describes an object replaces its ladder
+/// with a freshly parsed one — empty stores, residentMask zero — and
+/// without this every announcement in a chain dumped the whole
+/// resident set back onto the network: measured as the same rungs
+/// re-asked every ~200 ms for as long as a cold backend kept building
+/// levels. Fills the fresh ladders' stores from the old ones and sets
+/// the matching residentMask bits; returns how many rungs moved. Call
+/// before rebooking residency (the consumer's held-payload ledger),
+/// which is derived from the masks this writes.
+RendererExport size_t carryResidentRungs(SceneSnapshot &fresh,
+                                         const SceneSnapshot &old);
+
 /// Merge a loaded publish into \a model and rebuild `snap.scene` from
 /// the result. Returns false when the publish is a delta against a
 /// version the model does not hold — the caller has to ask for a full

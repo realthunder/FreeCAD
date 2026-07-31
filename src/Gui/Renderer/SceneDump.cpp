@@ -668,7 +668,66 @@ public:
         slot->generation = gen + 1;
     }
 
+    /// The filled mesh under \a key, for carrying residency across a
+    /// re-parse (carryResidentRungs); null when the rung is empty.
+    std::shared_ptr<OwnedMeshData> owned(const std::string &key) const
+    {
+        auto it = m_rungs.find(key);
+        return it != m_rungs.end() && it->second
+                && it->second->numVertices > 0 && it->second->positions
+            ? it->second
+            : nullptr;
+    }
+
+    /// Take over a rung another store already holds under the same
+    /// content key. The identity slot is aliased by this parse's draws
+    /// and cannot be re-pointed, so it takes the content by copy; any
+    /// other slot simply shares the mesh object — the superseded
+    /// snapshot is on its way out, and a content key never names two
+    /// different meshes.
+    bool adopt(const std::string &key,
+               const std::shared_ptr<OwnedMeshData> &mesh)
+    {
+        auto it = m_rungs.find(key);
+        if (it == m_rungs.end()) {
+            m_rungs.emplace(key, mesh);
+            return true;
+        }
+        auto &slot = it->second;
+        if (!slot) {
+            slot = mesh;
+            return true;
+        }
+        if (slot->numVertices > 0 && slot->positions)
+            return true;   // already filled — an inline delta payload
+        const uint64_t id = slot->cacheId;
+        const uint32_t gen = slot->generation;
+        copyParsedMesh(*slot, *mesh);
+        slot->cacheId = id;
+        slot->generation = gen + 1;
+        return true;
+    }
+
 private:
+    /// Value-copy a parsed mesh. The base MeshData points into the
+    /// store vectors, so a member-wise copy would alias the source's
+    /// arrays — every pointer has to be re-anchored in the copy.
+    static void copyParsedMesh(OwnedMeshData &dst, const OwnedMeshData &src)
+    {
+        dst = src;
+        dst.positions = dst.posStore.data();
+        dst.normals = src.normals ? dst.normStore.data() : nullptr;
+        dst.colors = src.colors ? dst.colorStore.data() : nullptr;
+        dst.texCoords = src.texCoords ? dst.uvStore.data() : nullptr;
+        dst.triangleIndices =
+            src.triangleIndices ? dst.triStore.data() : nullptr;
+        dst.lineIndices = src.lineIndices ? dst.lineStore.data() : nullptr;
+        dst.pointIndices =
+            src.pointIndices ? dst.pointStore.data() : nullptr;
+        dst.noSeamLineIndices =
+            src.noSeamLineIndices ? dst.noSeamStore.data() : nullptr;
+    }
+
     uint32_t m_version;
     std::shared_ptr<OwnedMeshData> m_identity;
     std::map<std::string, std::shared_ptr<OwnedMeshData>> m_rungs;
@@ -3417,6 +3476,65 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
     appendAtBestRung(scene, snap.keyless, &model);
     snap.scene = std::move(scene);
     return true;
+}
+
+size_t Render::carryResidentRungs(SceneSnapshot &fresh,
+                                  const SceneSnapshot &old)
+{
+    // Everything the superseded scene holds filled, by content key.
+    // Content keys are hashes of the bytes, so a key either names the
+    // same mesh in both scenes or appears in only one — identity is
+    // exactly what makes the transfer safe across a re-parse that
+    // renamed every ladder and re-numbered every rung.
+    std::map<std::string, std::shared_ptr<OwnedMeshData>> held;
+    for (const auto &entry : old.deferredChunks) {
+        if (!entry.release || !entry.residentMask || !entry.levelMeshes)
+            continue;
+        auto *store = dynamic_cast<LevelMeshStore *>(entry.levelMeshes.get());
+        if (!store)
+            continue;
+        const size_t count = std::min<size_t>(planRungs(entry), 16);
+        for (size_t r = 0; r < count; ++r) {
+            if (!(entry.residentMask & uint16_t(1u << r)))
+                continue;
+            const std::string &key = planRungKey(entry, r);
+            if (key.empty())
+                continue;
+            if (auto mesh = store->owned(key))
+                held.emplace(key, std::move(mesh));
+        }
+    }
+    if (held.empty())
+        return 0;
+    // Hand each still-declared rung to the fresh ladder that names it.
+    // The fresh entry keeps its own parse-born closures — adoption
+    // moves geometry, not machinery — so a later release-and-climb
+    // fetches through the new snapshot exactly as if the rung had
+    // arrived over the wire.
+    size_t adopted = 0;
+    for (auto &entry : fresh.deferredChunks) {
+        if (!entry.release || !entry.levelMeshes)
+            continue;
+        auto *store = dynamic_cast<LevelMeshStore *>(entry.levelMeshes.get());
+        if (!store)
+            continue;
+        const size_t count = std::min<size_t>(planRungs(entry), 16);
+        for (size_t r = 0; r < count; ++r) {
+            if (entry.residentMask & uint16_t(1u << r))
+                continue;
+            const std::string &key = planRungKey(entry, r);
+            if (key.empty())
+                continue;
+            auto it = held.find(key);
+            if (it == held.end())
+                continue;
+            if (store->adopt(key, it->second)) {
+                entry.residentMask |= uint16_t(1u << r);
+                ++adopted;
+            }
+        }
+    }
+    return adopted;
 }
 
 void Render::diffObjectLists(

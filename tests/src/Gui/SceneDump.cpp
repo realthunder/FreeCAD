@@ -2026,3 +2026,62 @@ TEST(SceneDump, aReparsedMeshBridgesFromTheLastLiveCopy)
     }
     EXPECT_GT(seen, 0u);
 }
+
+// A publish that re-describes an object replaces its ladder with a
+// freshly parsed one — empty stores, residentMask zero. The geometry
+// must ride across by content key (carryResidentRungs), or an
+// announcement chain refetches the whole resident set every commit.
+TEST(SceneDump, residentRungsSurviveAReparse)
+{
+    auto snap = makeScene();
+    BlobStore store;
+    attachSinks(snap, store);
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    Render::SceneSnapshot a;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), a));
+    ASSERT_TRUE(resolve(a, store));
+    // Mark the geometry ladders resident the way the viewer's fill
+    // does: the finest built rung of every release-capable entry.
+    size_t ladders = 0;
+    for (auto& e : a.deferredChunks) {
+        if (!e.release || !e.levelMeshes) {
+            continue;
+        }
+        const int rung = Render::finestBuiltRung(e);
+        ASSERT_GE(rung, 0);
+        e.residentMask = uint16_t(1u << rung);
+        ++ladders;
+    }
+    ASSERT_GT(ladders, 0u);
+
+    // The re-parse: the same publish read fresh, nothing resolved —
+    // the mesh bytes never arrive a second time.
+    Render::SceneSnapshot b;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), b));
+    EXPECT_EQ(Render::carryResidentRungs(b, a), ladders);
+    for (const auto& e : b.deferredChunks) {
+        if (!e.release || !e.levelMeshes) {
+            continue;
+        }
+        EXPECT_NE(e.residentMask, 0u)
+            << "ladder " << e.key << " lost residency across the re-parse";
+        auto mesh = e.levelMeshes->at(e.key);
+        ASSERT_TRUE(mesh) << "ladder " << e.key << " has no adopted rung";
+        EXPECT_GT(mesh->numVertices, 0)
+            << "adopted rung of " << e.key << " is empty";
+        // The adopted content landed in the identity object the fresh
+        // parse's draws alias, so the scene renders it immediately.
+        EXPECT_EQ(e.levelMeshes->identity().get(), mesh.get());
+    }
+    // An unrelated old scene offers nothing: adoption is keyed by
+    // content, not position.
+    Render::SceneSnapshot c;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), c));
+    Render::SceneSnapshot empty;
+    EXPECT_EQ(Render::carryResidentRungs(c, empty), 0u);
+}
