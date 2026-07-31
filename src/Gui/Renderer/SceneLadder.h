@@ -234,12 +234,21 @@ struct PlanParams {
     /// the box), and how many tiers it wanted.
     std::function<void(uint64_t key, float diamPx, int tier,
                        size_t tiers)> trace;
-    /// Out: the error tier each object was granted, keyed by object —
-    /// what per-instance rung binding consumes (§7, "one rung per
-    /// instance"): an entry's plan is the FINEST owner's rung, and
+    /// In/out: the error tier each object was granted, keyed by
+    /// object — what per-instance rung binding consumes (§7, "one rung
+    /// per instance"): an entry's plan is the FINEST owner's rung, and
     /// which rung THIS owner stands on is rungWithin(entry, its err).
     /// Negative = the plan left the object on its box. Cleared and
     /// refilled by every plan. Null = not wanted.
+    ///
+    /// Read before it is refilled: the incoming grants are the
+    /// PREVIOUS plan's, and an object they placed on a finer tier
+    /// keeps it unless the newly desired error clears the boundary
+    /// tier's error by a margin — the hysteresis that stops a
+    /// drifting camera from walking an object across a rung boundary
+    /// and back every replan (the tier-cut twin of kPlanKeepBonus).
+    /// A caller that passes a fresh map each plan simply gets no
+    /// hysteresis.
     std::map<uint64_t, float> *objectErr = nullptr;
 };
 
@@ -309,11 +318,16 @@ struct PlanStep {
     /// Rung to ask the producer to build (RungProvider::generate), -1
     /// for none: some owner needs it and no bytes exist yet.
     int generate = -1;
-    /// Resident rungs to give back, as a mask. Only ever non-zero
-    /// once every needed rung is resident (or nothing is needed at
-    /// all — the box): until then a surplus rung is the stand-in some
-    /// owner is drawing.
-    uint16_t release = 0;
+    /// Resident rungs no owner needs, as a mask — reported, never
+    /// shed here. Releasing at replan is what made the camera's every
+    /// drift a fetch/release cycle (measured: one object re-asking the
+    /// same rung seven times in a minute of orbiting); eviction is the
+    /// reverse of arrival, driven by the budget, so the executor keeps
+    /// a surplus rung resident until its bytes are actually wanted.
+    /// Only ever non-zero once every needed rung is resident (or
+    /// nothing is needed at all — the box): until then a surplus rung
+    /// is the stand-in some owner is drawing.
+    uint16_t surplus = 0;
 };
 RendererExport PlanStep planStep(const SceneSnapshot::DeferredChunk &entry,
                                  uint16_t neededMask);

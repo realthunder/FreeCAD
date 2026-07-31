@@ -667,7 +667,7 @@ Three consequences of planning per *object* rather than per chunk:
 
 **The executor** makes the scene match the plan, and holds no policy of its
 own: diff what is resident against what is targeted, fetch what is missing,
-release what is above target, and stop. It runs wherever the fetch already
+report what is above target as surplus, and stop. It runs wherever the fetch already
 ran — arrivals, the camera pump, the retry timer — and is idempotent:
 every step moves one ladder toward the plan, nothing ever moves away from
 it, so a scene at plan issues nothing and a stationary camera goes silent.
@@ -688,6 +688,38 @@ This is the consumer-side echo of the producer's coarse-first publish (5f) —
 the same policy at both ends of the wire, something on screen beats fidelity
 in flight — and it costs almost nothing, because the coarse rungs exist
 precisely to be cheap.
+
+**Surplus is kept; eviction is the budget's, and it is the reverse of
+arrival.** The executor's diff *reports* a resident rung no owner needs
+(`PlanStep::surplus`) but never sheds it: shedding at replan turned every
+camera drift across a rung boundary into a release/refetch cycle — measured
+on a real orbit journal as one object re-asking the same rung seven times in
+under a minute, 2 695 asks against 2 716 releases across the window, ~95 MB
+re-requested in 57 s of orbiting, every cycle a fetch round-trip plus a
+parse plus a GPU re-upload for bytes the viewer had just held. Instead the
+surplus rungs stay resident (still drawable, should the camera drift back)
+and one budget pass per round releases them **only when resident + pledged
+bytes actually overrun the budget**, least valuable first by the ranker's
+residency score, and only as many as it takes. A scene whose budget has
+room keeps every stand-in it ever fetched — which is what makes a drifting
+camera free — and the stationary orbit test now measures zero asks and zero
+releases at a 512 MB budget, while `membudget=8` still pins resident bytes
+at the budget through hundreds of evictions with a silent stationary tail.
+
+**The tier cut gets hysteresis, because its input drifts.** The desired
+error is the tolerance over a projected diameter, a continuous function of
+the camera, and the cut is a threshold on it — so an object sitting exactly
+at a rung boundary flips between two rungs with every settling epsilon.
+The plan reads the *previous* grants out of the objectErr map it is about to
+refill, and an object granted a finer tier than a fresh cut would give only
+steps down once the desired error clears **the boundary tier's error** — the
+coarser tier it would land on — by 25 % (`kPlanDowngradeMargin`). Measured
+against the boundary rather than the old grant, because the commonest flip
+is exact (error 0) against the first coarse tier, and no multiple of zero is
+a margin. Downgrades only: an upgrade is the camera actually asking for
+more, and the same asymmetry is what lets a real pull-back still demote.
+This is the tier-cut twin of the budget boundary's `kPlanKeepBonus`
+incumbency.
 
 **Completeness becomes a checkable property, and the deltas need it.** The
 reactive version had no way to say a scene was "done": a refused entry kept

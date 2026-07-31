@@ -3673,9 +3673,13 @@ static bool sceneBelowPlan()
                 return true;
             continue;
         }
+        // Surplus is deliberately not "below plan": a kept stand-in is
+        // the budget's business (evicted under pressure, not on a
+        // heartbeat), and counting it would keep the heartbeat awake
+        // over a scene that is finished.
         const auto step = Render::planStep(
             entry, Render::planNeeded(entry, objectErrOf));
-        if (step.fetch >= 0 || step.generate >= 0 || step.release)
+        if (step.fetch >= 0 || step.generate >= 0)
             return true;
     }
     return false;
@@ -4389,6 +4393,17 @@ static void resolvePending()
             int rung;
         };
         std::vector<WantItem> want;
+        /// Resident rungs no owner needs, collected rather than shed:
+        /// eviction is the reverse of arrival, driven by the budget —
+        /// a surplus rung stays resident (and drawable, should the
+        /// camera drift back) until its bytes are actually wanted.
+        /// Scored by residency so the least valuable go first.
+        struct SurplusItem {
+            float score;
+            size_t index;
+            uint16_t mask;
+        };
+        std::vector<SurplusItem> surplus;
         Render::RungRanker order = makeRanker();
         /// Whether the view's own chunks are all in hand yet — counting
         /// the ones already asked for, since the point is to wait for
@@ -4424,18 +4439,14 @@ static void resolvePending()
                 if (step.generate >= 0)
                     s_provider.generate(
                         levelRequestFor(entry, size_t(step.generate)));
-                if (step.release) {
-                    // Surplus above what any owner needs: give it
-                    // back. The ladder keeps its store and closures,
-                    // so a later plan climbs again from the local
-                    // cache rather than the network.
-                    decLog("release %.8s rungs %x of %x, obj %llx",
-                           entry.key.c_str(), unsigned(step.release),
-                           unsigned(entry.residentMask),
-                           (unsigned long long)(entry.owners.empty()
-                                                    ? 0 : entry.owners[0]));
-                    releaseRungs(entry, step.release);
-                    ++rungsReleased;
+                if (step.surplus) {
+                    // Surplus above what any owner needs is NOT shed
+                    // here: shedding at replan turned every camera
+                    // drift across a rung boundary into a release/
+                    // refetch cycle. It stays resident until the
+                    // budget pass below actually wants the bytes.
+                    surplus.push_back({order.residency(entry), i,
+                                       step.surplus});
                     continue;
                 }
                 if (step.fetch < 0)
@@ -4649,6 +4660,48 @@ static void resolvePending()
                    (unsigned long long)(entry.owners.empty()
                                             ? 0 : entry.owners[0]));
             s_provider.request(entry.key, entry.size);
+        }
+        // The budget's eviction pass — the only place a resident rung
+        // is given back. Arrival's reverse: only when what is held
+        // plus what is pledged overruns the budget do surplus rungs
+        // go, least valuable first, and only as many as it takes. A
+        // scene whose budget has room keeps every stand-in it ever
+        // fetched, which is what makes a drifting camera free.
+        if (!surplus.empty()) {
+            const size_t budget = geometryBudget();
+            size_t holding = residentBytes() + pledged;
+            if (budget && holding > budget) {
+                std::sort(surplus.begin(), surplus.end(),
+                          [](const SurplusItem &a, const SurplusItem &b) {
+                              return a.score < b.score;
+                          });
+                for (const auto &item : surplus) {
+                    if (holding <= budget)
+                        break;
+                    auto &entry = target->deferredChunks[item.index];
+                    const uint16_t mask =
+                        uint16_t(item.mask & entry.residentMask);
+                    if (!mask)
+                        continue;
+                    size_t bytes = 0;
+                    const int count = std::min<int>(
+                        int(Render::planRungs(entry)), 16);
+                    for (int r = 0; r < count; ++r) {
+                        if (mask & uint16_t(1u << r))
+                            bytes += Render::planRungSize(entry, size_t(r));
+                    }
+                    decLog("evict %.8s rungs %x of %x (%zu KB), "
+                           "%zu of %zu MB, obj %llx",
+                           entry.key.c_str(), unsigned(mask),
+                           unsigned(entry.residentMask), bytes >> 10,
+                           holding >> 20, budget >> 20,
+                           (unsigned long long)(entry.owners.empty()
+                                                    ? 0 : entry.owners[0]));
+                    releaseRungs(entry, mask);
+                    ++rungsReleased;
+                    holding -= std::min(holding, bytes);
+                }
+            }
         }
         // Whatever is left half-packed goes now. queueBatch would send
         // it on the next tick, which is right when more keys may still

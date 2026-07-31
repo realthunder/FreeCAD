@@ -580,6 +580,19 @@ constexpr float kBoxError = 1.0f;
 /// outbids it by this margin.
 constexpr float kPlanKeepBonus = 1.3f;
 
+/// How far past the boundary tier's error — the coarser tier a fresh
+/// cut would grant — the desired error must drift before the plan
+/// lets an object DOWN off a finer grant. The tier cut is a
+/// threshold on a continuous input — tolerancePx over a projected
+/// diameter that changes with every camera epsilon — so an object
+/// sitting exactly at a boundary flips between two rungs as the camera
+/// drifts, and each flip is a fetch round-trip, a parse and a GPU
+/// upload (measured: 2695 asks against 2716 releases in under a minute
+/// of orbiting, the same rungs over and over). A quarter of margin
+/// keeps the finer tier through drift; a camera that genuinely pulled
+/// back still downgrades.
+constexpr float kPlanDowngradeMargin = 1.25f;
+
 }  // namespace
 
 int Render::rungWithin(const SceneSnapshot::DeferredChunk &entry, float err)
@@ -656,7 +669,7 @@ PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
         // tolerance. Non-positive tolerance, or an object whose size
         // on screen is unknown, desires exact — the answer that is
         // right whatever the camera turns out to see.
-        const float desired =
+        float desired =
             (params.tolerancePx > 0.0f && o.diamPx > 0.0f)
             ? params.tolerancePx / o.diamPx
             : 0.0f;
@@ -669,6 +682,32 @@ PlanStats Render::planLevels(SceneSnapshot &snap, RungRanker &ranker,
             const auto &entry = snap.deferredChunks[idx];
             for (size_t r = 0; r < planRungs(entry); ++r)
                 tiers.insert(planRungError(entry, r));
+        }
+        // Hysteresis on the tier cut (kPlanDowngradeMargin): the
+        // incoming objectErr map still holds the PREVIOUS plan's
+        // grants, and an object it placed on a finer tier than a
+        // fresh cut would grant only steps down once the desired
+        // error clears the coarser tier's — the boundary being
+        // crossed — by the margin. Measured against the boundary
+        // rather than the old grant, because the commonest flip is
+        // exact (error 0) against the first coarse tier, and no
+        // multiple of zero is a margin. Only downgrades are damped —
+        // an upgrade is the camera actually asking for more.
+        if (params.objectErr && desired > 0.0f) {
+            auto held = params.objectErr->find(kv.first);
+            if (held != params.objectErr->end() && held->second >= 0.0f
+                && held->second < desired) {
+                float boundary = -1.0f;
+                for (float t : tiers) {
+                    if (t <= desired) {
+                        boundary = t;
+                        break;
+                    }
+                }
+                if (boundary > held->second
+                    && desired <= boundary * kPlanDowngradeMargin)
+                    desired = held->second;
+            }
         }
         for (float t : tiers) {
             o.tiers.push_back(t);
@@ -874,8 +913,8 @@ PlanStep Render::planStep(const SceneSnapshot::DeferredChunk &entry,
     const int count = std::min(int(planRungs(entry)), 16);
     const uint16_t resident = entry.residentMask;
     if (!neededMask) {
-        // Every owner is on its box: everything held goes back.
-        step.release = resident;
+        // Every owner is on its box: everything held is surplus.
+        step.surplus = resident;
         return step;
     }
     // Fetch the coarsest needed rung not yet held; an unbuilt needed
@@ -907,11 +946,11 @@ PlanStep Render::planStep(const SceneSnapshot::DeferredChunk &entry,
     }
     if (fetch >= 0 && !(resident & uint16_t(1u << fetch)))
         step.fetch = fetch;
-    // A resident rung nobody needs goes back only once every needed
-    // rung is resident: until then it is the stand-in some owner is
-    // drawing. An unbuilt needed rung keeps the hold by construction —
-    // it cannot be resident yet.
+    // A resident rung nobody needs counts as surplus only once every
+    // needed rung is resident: until then it is the stand-in some
+    // owner is drawing. An unbuilt needed rung keeps the hold by
+    // construction — it cannot be resident yet.
     if ((neededMask & resident) == neededMask)
-        step.release = uint16_t(resident & ~neededMask);
+        step.surplus = uint16_t(resident & ~neededMask);
     return step;
 }

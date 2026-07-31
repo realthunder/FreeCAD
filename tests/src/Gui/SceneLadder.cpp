@@ -469,6 +469,61 @@ TEST(PlanLevels, aDriftingCameraDoesNotFlipTheBudgetBoundary)
         << "real change must override incumbency";
 }
 
+TEST(PlanLevels, aDriftingCameraDoesNotFlipTheRungThreshold)
+{
+    // The tier cut is a threshold on tolerancePx over a projected
+    // diameter, and an object sitting at a rung boundary crosses it
+    // with every camera epsilon — measured as one object cycling
+    // ask-rung/release-rung seven times in a minute of orbiting, and
+    // 2695 asks against 2716 releases across the scene. A granted
+    // finer tier must survive a marginal drift (the objectErr map
+    // passed back in carries the previous grants) and still yield to a
+    // camera that genuinely pulled back.
+    Render::SceneSnapshot snap;
+    snap.deferredChunks.push_back(levelEntry(true, true));
+    Render::RungRanker ranker(levelView(),
+                              [](uint64_t) -> const float * { return kFarBox; });
+    std::map<uint64_t, float> grants;
+    auto p = params(2.4f);
+    p.objectErr = &grants;
+
+    // 2.4 px allowed: level 1 (2.5 px) misses the tolerance, the plan
+    // wants exact — the grant the drift will lean on.
+    Render::planLevels(snap, ranker, p);
+    EXPECT_EQ(snap.deferredChunks[0].plan, 2);
+    ASSERT_EQ(grants.count(1), 1u);
+    EXPECT_EQ(grants[1], 0.0f);
+
+    // Drift: 2.6 px now clears level 1, a fresh cut would step the
+    // object down — but 2.6 px is within 25% of the 2.5 px boundary,
+    // so the exact grant holds. This is the commonest flip in the
+    // journal: exact against the first coarse tier.
+    p.tolerancePx = 2.6f;
+    Render::planLevels(snap, ranker, p);
+    EXPECT_EQ(snap.deferredChunks[0].plan, 2)
+        << "a boundary epsilon must not walk the object down a rung";
+    EXPECT_EQ(grants[1], 0.0f) << "the held grant re-records itself";
+
+    // 3.2 px: past the margin (2.5 × 1.25 = 3.125). The camera really
+    // pulled back, and the object steps down to level 1.
+    p.tolerancePx = 3.2f;
+    Render::planLevels(snap, ranker, p);
+    EXPECT_EQ(snap.deferredChunks[0].plan, 1)
+        << "real change must still downgrade";
+    EXPECT_EQ(grants[1], 1.0f / 16.0f);
+
+    // The same margin guards the next boundary too: 5.5 px would
+    // freshly cut at level 0 (5 px) but holds level 1; 6.5 px is past
+    // 5 × 1.25 and lets it down.
+    p.tolerancePx = 5.5f;
+    Render::planLevels(snap, ranker, p);
+    EXPECT_EQ(snap.deferredChunks[0].plan, 1)
+        << "a drift within the margin keeps the finer rung";
+    p.tolerancePx = 6.5f;
+    Render::planLevels(snap, ranker, p);
+    EXPECT_EQ(snap.deferredChunks[0].plan, 0);
+}
+
 TEST(PlanLevels, theSameInputsProduceTheSamePlan)
 {
     // Determinism is what the plan has instead of damping: a plan that
@@ -513,20 +568,20 @@ TEST(PlanStep, coarseFirstWhenNothingIsResident)
     auto step = Render::planStep(entry, needed);
     EXPECT_EQ(step.fetch, 0);
     EXPECT_EQ(step.generate, -1);
-    EXPECT_EQ(step.release, 0);
+    EXPECT_EQ(step.surplus, 0);
     entry.residentMask = 1u << 0;
     step = Render::planStep(entry, needed);
     EXPECT_EQ(step.fetch, 2);
-    EXPECT_EQ(step.release, 0);  // the stand-in stays until then
+    EXPECT_EQ(step.surplus, 0);  // the stand-in stays until then
     entry.residentMask = (1u << 0) | (1u << 2);
     step = Render::planStep(entry, needed);
     EXPECT_EQ(step.fetch, -1);
-    EXPECT_EQ(step.release, 1u << 0);
+    EXPECT_EQ(step.surplus, 1u << 0);
     entry.residentMask = 1u << 2;
     step = Render::planStep(entry, needed);
     EXPECT_EQ(step.fetch, -1);
     EXPECT_EQ(step.generate, -1);
-    EXPECT_EQ(step.release, 0);
+    EXPECT_EQ(step.surplus, 0);
 }
 
 TEST(PlanStep, anUnbuiltNeededRungGeneratesAndStandsOnTheNearestBuilt)
@@ -542,7 +597,7 @@ TEST(PlanStep, anUnbuiltNeededRungGeneratesAndStandsOnTheNearestBuilt)
     auto step = Render::planStep(entry, needed);
     EXPECT_EQ(step.generate, 1);
     EXPECT_EQ(step.fetch, -1);
-    EXPECT_EQ(step.release, 0);
+    EXPECT_EQ(step.surplus, 0);
     entry.residentMask = 0;
     step = Render::planStep(entry, needed);
     EXPECT_EQ(step.generate, 1);
@@ -556,18 +611,19 @@ TEST(PlanStep, anUnbuiltNeededRungGeneratesAndStandsOnTheNearestBuilt)
     EXPECT_EQ(step.fetch, 2);
 }
 
-TEST(PlanStep, nothingNeededReleasesEverything)
+TEST(PlanStep, nothingNeededMakesEverythingSurplus)
 {
-    // Every owner on its box: everything held goes back; holding
-    // nothing, nothing to do.
+    // Every owner on its box: everything held is surplus — reported
+    // for the budget's eviction pass, never shed by the step itself;
+    // holding nothing, nothing to do.
     auto entry = levelEntry(true, true);
     entry.residentMask = (1u << 0) | (1u << 1);
     auto step = Render::planStep(entry, 0);
-    EXPECT_EQ(step.release, entry.residentMask);
+    EXPECT_EQ(step.surplus, entry.residentMask);
     EXPECT_EQ(step.fetch, -1);
     entry.residentMask = 0;
     step = Render::planStep(entry, 0);
-    EXPECT_EQ(step.release, 0);
+    EXPECT_EQ(step.surplus, 0);
     EXPECT_EQ(step.fetch, -1);
 }
 
@@ -581,14 +637,14 @@ TEST(PlanStep, twoOwnersHoldTwoRungsAtOnce)
     entry.residentMask = 1u << 0;
     auto step = Render::planStep(entry, needed);
     EXPECT_EQ(step.fetch, 2);
-    EXPECT_EQ(step.release, 0);
+    EXPECT_EQ(step.surplus, 0);
     entry.residentMask = (1u << 0) | (1u << 2);
     step = Render::planStep(entry, needed);
     EXPECT_EQ(step.fetch, -1);
-    EXPECT_EQ(step.release, 0);  // both needed: nothing is surplus
+    EXPECT_EQ(step.surplus, 0);  // both needed: nothing is surplus
     entry.residentMask = (1u << 0) | (1u << 1) | (1u << 2);
     step = Render::planStep(entry, needed);
-    EXPECT_EQ(step.release, 1u << 1);
+    EXPECT_EQ(step.surplus, 1u << 1);
 }
 
 TEST(PlanStep, planNeededUnionsTheOwnersRungs)

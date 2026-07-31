@@ -67,11 +67,19 @@ const puppeteer = require(path);
   await new Promise(r => setTimeout(r, 5000));
 
   const after = lines.slice(settled);
+  // "rungs: N up, M down, K released" is the executor's round line
+  // (?stream); evictions journal as "evict ..." and mirror to the
+  // console under ?decisions.
+  const sumRungs = (arr, idx) => arr.reduce((n, l) => {
+    const m = l.match(/rungs: (\d+) up, (\d+) down, (\d+) released/);
+    return n + (m ? parseInt(m[idx], 10) : 0);
+  }, 0);
   const count = (arr, re) => arr.filter(l => re.test(l)).length;
   console.log('=== ORBIT SUMMARY ===');
-  console.log('released-after-orbit:', count(after, /released \d+ B of geometry/));
-  console.log('noroom-after-orbit:  ', count(after, /no room for a chunk/));
-  console.log('released-while-settling:', count(lines.slice(0, settled), /released \d+ B of geometry/));
+  console.log('rungs-released-after-orbit:', sumRungs(after, 3));
+  console.log('rungs-up-after-orbit:      ', sumRungs(after, 1));
+  console.log('evicts-after-orbit:        ', count(after, / evict /));
+  console.log('released-while-settling:   ', sumRungs(lines.slice(0, settled), 3));
   const last = after.filter(l => /scene at \d+ draws/.test(l)).pop();
   console.log('final:', last || '(none)');
   await browser.close();
