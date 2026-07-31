@@ -2712,6 +2712,13 @@ static std::map<std::string, BlobData> s_blobCache;
 /// *zero* requests actually in flight, and a scene of grey boxes.
 static std::map<std::string, double> s_blobInFlight;
 
+/// The subset of in-flight keys that actually went to the NETWORK —
+/// the IndexedDB probe missed, or the store is off. What the loading
+/// indicator answers to: a warm store repaints the scene from local
+/// reads the user cannot perceive as "loading", and flashing a
+/// progress bar over that work reads as a problem where there is none.
+static std::set<std::string> s_netInFlight;
+
 /// How long a payload may be outstanding before it is presumed lost
 /// and may be asked for again. Long enough that a slow link is never
 /// mistaken for a dead one — the point is to recover from silence, not
@@ -3275,6 +3282,7 @@ static void blobResolved(const std::string &key, BlobData data,
     if (s_blobStoreReset)
         return;
     s_blobInFlight.erase(key);
+    s_netInFlight.erase(key);
     s_blobCache[key] = data;
     if (!fromDb && data && blobPersistEnabled()) {
         // Persist for the next page load. The store is keyed by content
@@ -3296,6 +3304,7 @@ static void blobResolved(const std::string &key, BlobData data,
 static void blobFailed(const std::string &key)
 {
     s_blobInFlight.erase(key);
+    s_netInFlight.erase(key);
     s_blobFailed.insert(key);
     std::printf("fcviewer: blob %s unavailable, dropped\n", key.c_str());
     if (!s_batchApplying)
@@ -3492,6 +3501,13 @@ static const size_t kOwnRequestBytes = kRequestBytes;
 
 static void fetchFromNetwork(const std::string &key, uint32_t size)
 {
+    // The loading indicator answers to this set, and the IndexedDB
+    // probe that routes here is asynchronous — on a cold store the
+    // status round runs before any miss has landed, so the transition
+    // to "the network is actually involved" has to say so itself or
+    // the bar would wait for the first arrival to appear.
+    if (s_netInFlight.insert(key).second && s_netInFlight.size() == 1)
+        fcviewer_status("loading scene", 0.0, 0.0);
     if (size && size < kOwnRequestBytes)
         queueBatch(key, size);
     else
@@ -4356,6 +4372,7 @@ static void resolvePending()
                     continue;
                 }
                 ++lost;
+                s_netInFlight.erase(it->first);
                 it = s_blobInFlight.erase(it);
             }
             if (lost) {
@@ -4802,32 +4819,44 @@ static void resolvePending()
         s_atBudgetReported = false;
     }
     if (missing) {
-        // Until every object's manifest is in, the byte total is not
-        // known — a manifest is what names the meshes under it, so
-        // most of the scene's weight is undiscovered and a fraction
-        // over what is known would run to nearly full and then fall
-        // back as the rest appeared. Indeterminate is what "the size
-        // is not known yet" means, and it is the honest answer for
-        // the second or two that phase lasts.
-        bool discovering = s_objects.objects.empty();
-        for (const auto &item : s_objects.objects) {
-            // An empty drawsKey is an object no manifest has ever been
-            // read for, so its meshes are not in the totals yet. Not
-            // `unresolved()`, which also counts an object whose
-            // manifest arrived and whose material has not — its bytes
-            // are known, and waiting for them would leave the bar
-            // indeterminate for most of the load.
-            if (item.second.drawsKey.empty()) {
-                discovering = true;
-                break;
-            }
+        // A load the network never touched is not one the user should
+        // watch: a warm store answers everything from IndexedDB, the
+        // scene repaints in well under a perceptible "load", and a
+        // progress bar over it reads as a problem where there is none.
+        // The bar (and its status text) appears only while a request
+        // is actually out on the wire — s_netInFlight, joined at the
+        // IndexedDB miss — and folds away the moment none is.
+        if (s_netInFlight.empty() && s_batchQueue.empty()) {
+            fcviewer_status(nullptr, 0.0, 0.0);
         }
-        if (discovering)
-            fcviewer_status("loading scene", 0.0, 0.0);
-        else
-            fcviewer_status("loading scene",
-                            double(totalBytes - missingBytes),
-                            double(totalBytes));
+        else {
+            // Until every object's manifest is in, the byte total is
+            // not known — a manifest is what names the meshes under
+            // it, so most of the scene's weight is undiscovered and a
+            // fraction over what is known would run to nearly full and
+            // then fall back as the rest appeared. Indeterminate is
+            // what "the size is not known yet" means, and it is the
+            // honest answer for the second or two that phase lasts.
+            bool discovering = s_objects.objects.empty();
+            for (const auto &item : s_objects.objects) {
+                // An empty drawsKey is an object no manifest has ever
+                // been read for, so its meshes are not in the totals
+                // yet. Not `unresolved()`, which also counts an object
+                // whose manifest arrived and whose material has not —
+                // its bytes are known, and waiting for them would
+                // leave the bar indeterminate for most of the load.
+                if (item.second.drawsKey.empty()) {
+                    discovering = true;
+                    break;
+                }
+            }
+            if (discovering)
+                fcviewer_status("loading scene", 0.0, 0.0);
+            else
+                fcviewer_status("loading scene",
+                                double(totalBytes - missingBytes),
+                                double(totalBytes));
+        }
         if (!filled && !s_liveUnapplied) {
             // Nothing new became drawable — the requests above are
             // what this round accomplished. An eviction counts as
