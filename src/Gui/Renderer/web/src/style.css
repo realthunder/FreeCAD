@@ -1,0 +1,175 @@
+/* The inspector card. Touch policy (docs/ThinClient.md §3): every
+ * interactive element declares touch-action explicitly; the scrolling
+ * body contains its overscroll so panel gestures never leak into
+ * canvas orbit/zoom. */
+
+#fc-ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;   /* the canvas owns everything we don't */
+  z-index: 10;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.fc-inspector {
+  pointer-events: auto;
+  touch-action: pan-y;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: min(340px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px - env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 30, 34, 0.92);
+  color: #e8e8ea;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  font-size: 13px;
+}
+
+/* Narrow screens: bottom sheet, thumb-reachable. */
+@media (max-width: 640px) {
+  .fc-inspector {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 55vh;
+    border-radius: 14px 14px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+.fc-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px 6px;
+}
+
+.fc-title { flex: 1; min-width: 0; }
+
+.fc-label {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc-count { color: #9aa0a6; font-weight: 400; font-size: 12px; }
+
+.fc-subtitle {
+  color: #9aa0a6;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc-close {
+  touch-action: manipulation;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #9aa0a6;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.fc-close:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+
+.fc-nav {
+  display: flex;
+  gap: 6px;
+  padding: 4px 12px 8px;
+}
+
+.fc-group, .fc-filter {
+  touch-action: manipulation;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+.fc-group { flex: none; max-width: 45%; }
+.fc-group:disabled { opacity: 0.5; }
+.fc-filter { flex: 1; min-width: 0; }
+.fc-filter::placeholder { color: #7d838a; }
+
+.fc-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 4px 8px;
+}
+
+.fc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  min-height: 30px;   /* ~44px touch target with padding */
+}
+.fc-row:hover { background: rgba(255, 255, 255, 0.05); }
+
+.fc-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #c6c9cd;
+}
+.fc-name mark {
+  background: rgba(255, 214, 90, 0.35);
+  color: inherit;
+  border-radius: 2px;
+}
+.fc-ro { opacity: 0.65; }
+
+.fc-grouptag {
+  margin-left: 6px;
+  font-size: 10px;
+  color: #7d838a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.fc-val {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fc-unit { color: #9aa0a6; font-size: 11px; }
+.fc-vec { font-size: 12px; }
+.fc-raw { color: #7d838a; font-size: 11px; }
+
+.fc-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+
+.fc-note { padding: 12px; color: #9aa0a6; }
+.fc-err { color: #ff8a80; }

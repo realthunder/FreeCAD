@@ -2084,8 +2084,22 @@ static EM_BOOL onWheel(int, const EmscriptenWheelEvent *e, void *)
 
 // 'v' prints (and copies) the current camera as a ?cam= string so an exact
 // viewport can be reproduced by reloading with it appended to the URL.
+// True while a DOM form control (the inspector's filter box, a future
+// numeric field) owns the keyboard: the viewer's shortcuts must never
+// eat keystrokes typed into the UI layer.
+EM_JS(int, fcviewer_dom_has_keyboard, (), {
+    var el = document.activeElement;
+    if (!el)
+        return 0;
+    var tag = el.tagName;
+    return (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+            || el.isContentEditable) ? 1 : 0;
+});
+
 static EM_BOOL onKeyDown(int, const EmscriptenKeyboardEvent *e, void *)
 {
+    if (fcviewer_dom_has_keyboard())
+        return EM_FALSE;
     const char k = e->key[0];
     if (k == 'v' || k == 'V') {
         char buf[256];

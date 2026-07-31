@@ -6,6 +6,8 @@
 #   defaults: 8000  8077
 # Rebuild the viewer first after any renderer/shader change:
 #   source ~/works/sw/emsdk/emsdk_env.sh && cmake --build build/wasm
+# The DOM UI layer (inspector etc.) builds separately into build/wasm/web:
+#   cd src/Gui/Renderer/web && npm install && npm run build
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 HTTP=${1:-8000}

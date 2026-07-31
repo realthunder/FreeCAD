@@ -204,5 +204,12 @@
     window.onerror = function () { window.fcviewerStatus('Exception — see console', 0, -1); };
   </script>
   {{{ SCRIPT }}}
+  <!-- The DOM UI layer (docs/ThinClient.md §3): built separately by
+       src/Gui/Renderer/web (npm run build) into web/ next to this
+       bundle. A page served without it just 404s these two requests
+       and the viewer runs bare — the canvas never depends on the
+       chrome. -->
+  <link rel="stylesheet" href="web/inspector.css">
+  <script type="module" src="web/inspector.js"></script>
 </body>
 </html>
