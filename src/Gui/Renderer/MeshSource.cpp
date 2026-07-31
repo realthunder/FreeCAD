@@ -22,8 +22,13 @@
 #include "MeshSource.h"
 #include "SceneDump.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+
+#include <QTimer>
 
 using namespace Render;
 
@@ -42,7 +47,8 @@ MeshSourceRegistry &MeshSourceRegistry::instance()
 }
 
 void MeshSourceRegistry::add(const void *tag, Generator gen,
-                             float publishedError)
+                             float publishedError,
+                             std::function<void()> refine)
 {
     if (!tag || !gen)
         return;
@@ -51,6 +57,7 @@ void MeshSourceRegistry::add(const void *tag, Generator gen,
     src.gen = std::make_shared<Generator>(std::move(gen));
     src.publishedError = publishedError;
     src.canonicalKey.clear();
+    src.refine = std::move(refine);
     if (debugOn())
         std::fprintf(stderr, "mesh source: add tag=%p err=%g (%zu sources)\n",
                      tag, double(publishedError), sources.size());
@@ -110,6 +117,25 @@ float MeshSourceRegistry::publishedError(const void *tag)
     return it == sources.end() ? 0.0f : it->second.publishedError;
 }
 
+void MeshSourceRegistry::requestRefine(const void *tag)
+{
+    // Consume the callback under the lock, run it outside: a refine
+    // typically queues a worker job under its own mutex, and nothing
+    // it does should be able to deadlock back into the registry.
+    std::function<void()> fn;
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        auto it = sources.find(tag);
+        if (it == sources.end() || !it->second.refine)
+            return;
+        fn = std::move(it->second.refine);
+        it->second.refine = nullptr;
+    }
+    if (debugOn())
+        std::fprintf(stderr, "mesh source: refine tag=%p\n", tag);
+    fn();
+}
+
 bool MeshSourceRegistry::generate(const std::string &key, uint32_t level,
                                   const void *sourceChunk, size_t sourceSize,
                                   std::vector<uint8_t> &out)
@@ -149,4 +175,82 @@ bool MeshSourceRegistry::generate(const std::string &key, uint32_t level,
             keys[outKey] = tag;
     }
     return ok;
+}
+
+//////////////////////////////////////////////////////////////////////
+// MeshLevelPlanner — when to run the desktop level plan (§13 step 2).
+
+namespace {
+
+/// Whether two GL-layout matrices differ beyond float noise. Relative
+/// per element, because a view matrix mixes unit rotation terms with
+/// arbitrarily large translations.
+bool matricesDiffer(const float *a, const float *b)
+{
+    for (int i = 0; i < 16; ++i) {
+        float m = std::max({1.0f, std::fabs(a[i]), std::fabs(b[i])});
+        if (std::fabs(a[i] - b[i]) > 1e-4f * m)
+            return true;
+    }
+    return false;
+}
+
+} // anonymous namespace
+
+MeshLevelPlanner::MeshLevelPlanner() = default;
+
+MeshLevelPlanner::~MeshLevelPlanner() = default;
+
+void MeshLevelPlanner::setTolerance(float px)
+{
+    if (px == m_tolerance)
+        return;
+    m_tolerance = px;
+    m_dirty = true;
+}
+
+bool MeshLevelPlanner::moved(const float *view, const float *proj) const
+{
+    return matricesDiffer(view, m_view) || matricesDiffer(proj, m_proj);
+}
+
+void MeshLevelPlanner::observe(const float *viewMatrix,
+                               const float *projMatrix,
+                               std::function<void()> planFn)
+{
+    if (!viewMatrix || !projMatrix)
+        return;
+    m_planFn = std::move(planFn);
+    if (!m_timer) {
+        // Lazily on the first observed frame, which is the GUI thread —
+        // the thread the timer must fire on, because the plan callback
+        // walks the live draw list and asks the registry to refine.
+        m_timer = std::make_unique<QTimer>();
+        m_timer->setSingleShot(true);
+        m_timer->setInterval(300);
+        QObject::connect(m_timer.get(), &QTimer::timeout, [this]() {
+            std::memcpy(m_viewPlanned, m_view, sizeof(m_view));
+            std::memcpy(m_projPlanned, m_proj, sizeof(m_proj));
+            m_havePlanned = true;
+            m_dirty = false;
+            if (m_planFn)
+                m_planFn();
+        });
+    }
+    if (!m_haveObserved || moved(viewMatrix, projMatrix)) {
+        // The camera is going somewhere: (re)start the settle window.
+        std::memcpy(m_view, viewMatrix, sizeof(m_view));
+        std::memcpy(m_proj, projMatrix, sizeof(m_proj));
+        m_haveObserved = true;
+        m_timer->start();
+        return;
+    }
+    // Still camera: a pass is only due when the scene moved under it
+    // (markDirty) or this camera was never planned — and one is already
+    // pending if the timer runs.
+    if ((m_dirty || !m_havePlanned
+         || matricesDiffer(m_view, m_viewPlanned)
+         || matricesDiffer(m_proj, m_projPlanned))
+        && !m_timer->isActive())
+        m_timer->start();
 }

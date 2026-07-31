@@ -2034,9 +2034,35 @@ arrays and stand on the coarse rung, which is always resident.
    once with stale jobs canceled through the rebuilds; a serving
    process stays coarse locally while 40 viewer-asked exact levels
    still build over the stream.
-2. The plan pass proper (camera events → `planLevels` over bridge
-   sources) — pays the residency bill; `lodpx` becomes the
-   `Render_LevelTolerance` preference it already wants to be (§5d).
+2. ✅ **As built (2026-07-31):** the plan pass — pays the residency
+   bill. Policy is the pure `planMeshRefines` (SceneLadder): among the
+   backend's live draws, the source tags whose stated coarse error
+   (`MeshData::levelError` × the bounding box diagonal projected at
+   the box centre) exceeds the tolerance in pixels; off-screen and
+   wholly-behind-camera draws never refine — the camera that turns
+   toward them is a new plan — and a camera inside a box's span
+   refines it outright. Events are `MeshLevelPlanner` (MeshSource):
+   the backend feeds it each rendered frame's camera, and ~300 ms
+   after the camera settles somewhere the last plan did not see (or
+   the scene feed / tolerance changed under a still camera — a
+   QTimer, so the last frame of a drag suffices on a desktop that
+   renders on demand) the plan runs once on the GUI thread and asks
+   `MeshSourceRegistry::requestRefine` per tag. The refine callback
+   is now *armed* at registration rather than run — `requestRefine`
+   consumes it (once per registration; face and line sources share
+   one closure and a fired flag), which is what turned step 1's
+   "refine everything immediately" into "refine what the camera
+   cares about"; a tolerance of 0 or less keeps the step-1 reading.
+   The tolerance is the `Render_LevelTolerance` view property /
+   RenderParams preference (default 2 px — the viewer's `lodpx`
+   default; §5d), fed per frame through
+   `Renderer::setLevelTolerance` like the other render params.
+   Because the climb is now renderer-driven, coarse-first only
+   engages for a desktop view whose backend answers
+   `Renderer::drivesMeshLevels()` true (bgfx does; a Default/GL or
+   Diligent view keeps exact tessellation — a coarse build there
+   would stay coarse forever). Serving processes are unchanged:
+   never plan, never refine locally.
 3. GPU-memory ceiling into `MemoryBudget`; eviction under pressure.
 4. `cancel` wired to plan changes; measure how much work it saves
    before making it cleverer.

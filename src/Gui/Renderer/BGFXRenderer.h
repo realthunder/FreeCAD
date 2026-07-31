@@ -96,6 +96,10 @@ public:
     /// (reflection re-render, SSAO resolve); see Render::Renderer.
     virtual void setEffectResolution(float scale) override;
     virtual void setSSAOResolution(float scale) override;
+#ifndef FC_RENDERER_STANDALONE
+    virtual void setLevelTolerance(float px) override;
+    virtual bool drivesMeshLevels() const override;
+#endif
 
 #ifdef FC_RENDERER_STANDALONE
     /// Standalone (no Qt) build: the host app hands bgfx the native

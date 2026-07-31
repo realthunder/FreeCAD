@@ -123,6 +123,28 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LevelTolerance
+    ///
+    /// Screen-space error, in pixels, a coarse tessellation may
+    /// commit before the exact one is built (docs/SceneStreaming.md
+    /// #13): on a coarse-first desktop view (render cache mode 3 with
+    /// a backend that drives the level plan), a camera pause re-plans
+    /// the scene and only objects whose coarse mesh errs by more than
+    /// this many pixels on screen re-tessellate exactly - off-screen
+    /// and distant objects stay at the cheap coarse mesh until the
+    /// camera makes them matter. 0 or less refines everything
+    /// immediately; larger keeps more of the scene coarse. The
+    /// streamed viewer's own tolerance is its lodpx URL parameter
+    /// (same meaning, same default).
+    static const double & getLevelTolerance();
+    static const double & defaultLevelTolerance();
+    static void removeLevelTolerance();
+    static void setLevelTolerance(const double &v);
+    static const char *docLevelTolerance();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter EffectResolution
     ///
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect

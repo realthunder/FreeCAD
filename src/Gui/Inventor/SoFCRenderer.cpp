@@ -2349,6 +2349,8 @@ SoFCRenderer::render(SoGLRenderAction * action)
         RendererBridge::translateEffectResolution(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setSSAOResolution(
         RendererBridge::translateSSAOResolution(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setLevelTolerance(
+        RendererBridge::translateLevelTolerance(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setAutoZoomScale(
         RendererBridge::translateAutoZoomScale(action->getState()));
   }

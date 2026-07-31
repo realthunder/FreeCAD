@@ -24,6 +24,7 @@
 #include "BGFXRenderer.h"
 #include "SceneDump.h"
 #include "MeshSource.h"
+#include "SceneLadder.h"
 #ifndef FC_RENDERER_STANDALONE
 #include "SceneServer.h"
 #endif
@@ -7259,6 +7260,29 @@ public:
         }
 
 #ifndef FC_RENDERER_STANDALONE
+        // Desktop level plan (§13 step 2): feed the settle detector
+        // this frame's camera; ~300ms after it stops somewhere new the
+        // callback asks the registry to refine every coarse-first
+        // source erring more than the tolerance on screen. A serving
+        // process's own window never plans — its viewers' cameras
+        // decide, and the registry arms no refine there anyway.
+        if (!getenv("FC_BGFX_SERVE_SCENE") && viewMatrix && projMatrix) {
+            levelPlanner.observe(
+                reinterpret_cast<const float *>(viewMatrix),
+                reinterpret_cast<const float *>(projMatrix),
+                [this]() {
+                    const float h = float(widget->height()
+                                          * widget->devicePixelRatioF());
+                    auto tags = Render::planMeshRefines(
+                        scene, levelPlanner.viewMatrix(),
+                        levelPlanner.projMatrix(), h,
+                        levelPlanner.tolerance());
+                    auto &reg = Render::MeshSourceRegistry::instance();
+                    for (const void *tag : tags)
+                        reg.requestRefine(tag);
+                });
+        }
+
         // FC_BGFX_SERVE_SCENE=<port>: publish the feeds to the
         // standalone/wasm viewer over the snapshot HTTP server whenever
         // they change (SceneServer.h).
@@ -11118,6 +11142,13 @@ public:
     // viewer keeps redrawing while set so the animation advances.
     bool animatedFrame = false;
     float bboxMin[3], bboxMax[3];
+
+#ifndef FC_RENDERER_STANDALONE
+    // The desktop level plan's event half (§13 step 2): fed the camera
+    // every rendered frame, fires the plan pass ~300ms after it
+    // settles somewhere new. The policy half is planMeshRefines.
+    Render::MeshLevelPlanner levelPlanner;
+#endif
 };
 
 BGFXRenderer::BGFXRenderer(QOpenGLWidget *widget)
@@ -11238,6 +11269,12 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
     pimpl->sceneDirty = true;
     pimpl->feedDirty = true;
     pimpl->updateBBox();
+#ifndef FC_RENDERER_STANDALONE
+    // New geometry may carry coarse-first sources the level plan has
+    // not judged (§13 step 2): replan on the next settled frame even
+    // if the camera never moves again.
+    pimpl->levelPlanner.markDirty();
+#endif
 }
 
 void BGFXRenderer::setBackground(const Background &bg)
@@ -11573,6 +11610,18 @@ void BGFXRenderer::setSSAOResolution(float scale)
 {
     _BGFXLib.ssaoResolution = std::min(std::max(scale, 0.25f), 1.0f);
 }
+
+#ifndef FC_RENDERER_STANDALONE
+void BGFXRenderer::setLevelTolerance(float px)
+{
+    pimpl->levelPlanner.setTolerance(px);
+}
+
+bool BGFXRenderer::drivesMeshLevels() const
+{
+    return true;
+}
+#endif
 
 //////////////////////////////////////////////////////////////////////
 

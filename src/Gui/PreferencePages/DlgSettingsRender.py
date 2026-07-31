@@ -47,6 +47,7 @@ ParamGroup = (
 
     ('Scene streaming', [_RenderParams[name] for name in (
         'CoarseTessellation',
+        'LevelTolerance',
         'LevelThreads',
     )]),
 

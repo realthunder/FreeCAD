@@ -683,3 +683,118 @@ TEST(PlanStep, planNeededUnionsTheOwnersRungs)
     step = Render::planStep(bare, Render::planNeeded(bare, unseen));
     EXPECT_EQ(step.fetch, -1);
 }
+
+//////////////////////////////////////////////////////////////////////
+// The desktop plan pass (§13 step 2): which coarse-first sources err
+// more than the tolerance on the screen.
+
+namespace
+{
+
+Render::DrawCall meshDraw(const void *tag, float levelError,
+                          float cx, float cy, float cz, float half)
+{
+    auto mesh = std::make_shared<Render::MeshData>();
+    mesh->sourceTag = tag;
+    mesh->levelError = levelError;
+    Render::DrawCall d;
+    d.mesh = mesh;
+    d.bboxMin[0] = cx - half; d.bboxMin[1] = cy - half;
+    d.bboxMin[2] = cz - half;
+    d.bboxMax[0] = cx + half; d.bboxMax[1] = cy + half;
+    d.bboxMax[2] = cz + half;
+    return d;
+}
+
+/// Identity view (eye at the origin looking down -z) and a 90° fovY
+/// perspective, so p11 = 1 and the arithmetic stays checkable by hand.
+struct PlanCamera {
+    float view[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    float proj[16] = {1, 0, 0, 0, 0, 1, 0, 0,
+                      0, 0, -1.0002f, -1, 0, 0, -0.20002f, 0};
+};
+
+}  // namespace
+
+TEST(PlanMeshRefines, nearRefinesWhileFarStaysCoarse)
+{
+    // Same object, same coarse error, two distances. Half 5 → diagonal
+    // 17.32; at depth ~91 that is ~95 px on a 1000 px viewport, so a
+    // 3% coarse error is ~2.8 px — over a 2 px tolerance. At ten times
+    // the distance it is ~0.26 px — far under it.
+    PlanCamera cam;
+    int nearTag = 0, farTag = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&nearTag, 0.03f, 0, 0, -100, 5));
+    draws.push_back(meshDraw(&farTag, 0.03f, 0, 0, -1000, 5));
+    auto tags = Render::planMeshRefines(draws, cam.view, cam.proj,
+                                        1000.0f, 2.0f);
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_EQ(tags[0], &nearTag);
+}
+
+TEST(PlanMeshRefines, offscreenAndBehindNeverRefine)
+{
+    // A source erring badly but out of the frustum is exactly the
+    // residency bill: refining it would tessellate what nobody sees.
+    // The camera that turns toward it is a new settle, a new plan.
+    PlanCamera cam;
+    int aside = 0, behind = 0, inside = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&aside, 0.03f, 500, 0, -100, 5));
+    draws.push_back(meshDraw(&behind, 0.03f, 0, 0, 100, 5));
+    // The camera sits inside this box's span: as big as it gets.
+    draws.push_back(meshDraw(&inside, 0.03f, 0, 0, 0, 5));
+    auto tags = Render::planMeshRefines(draws, cam.view, cam.proj,
+                                        1000.0f, 2.0f);
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_EQ(tags[0], &inside);
+}
+
+TEST(PlanMeshRefines, nonPositiveToleranceRefinesEveryCoarseSource)
+{
+    // "Every object desires its exact content" — the step-1 reading,
+    // kept reachable: no camera math, no frustum, just every source
+    // that is not exact yet.
+    PlanCamera cam;
+    int near = 0, offscreen = 0, exact = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&near, 0.03f, 0, 0, -100, 5));
+    draws.push_back(meshDraw(&offscreen, 0.03f, 500, 0, -100, 5));
+    draws.push_back(meshDraw(&exact, 0.0f, 0, 0, -100, 5));
+    auto tags = Render::planMeshRefines(draws, cam.view, cam.proj,
+                                        1000.0f, 0.0f);
+    ASSERT_EQ(tags.size(), 2u);
+    EXPECT_NE(std::find(tags.begin(), tags.end(), &near), tags.end());
+    EXPECT_NE(std::find(tags.begin(), tags.end(), &offscreen), tags.end());
+}
+
+TEST(PlanMeshRefines, aTagAppearsOnceHoweverManyDrawsShareIt)
+{
+    // Instanced draws share the proto's source tag; the plan names the
+    // job once (and requestRefine is consume-once besides).
+    PlanCamera cam;
+    int tag = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&tag, 0.03f, 0, 0, -100, 5));
+    draws.push_back(meshDraw(&tag, 0.03f, 20, 0, -100, 5));
+    auto tags = Render::planMeshRefines(draws, cam.view, cam.proj,
+                                        1000.0f, 2.0f);
+    EXPECT_EQ(tags.size(), 1u);
+}
+
+TEST(PlanMeshRefines, orthographicErrorIsSizeNotDepth)
+{
+    // Under an orthographic camera distance changes nothing: the same
+    // box errs the same at any depth, and refines at both.
+    float view[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    // glOrtho with a 200-unit view height and [1, 2000] depth range.
+    float proj[16] = {0.01f, 0, 0, 0, 0, 0.01f, 0, 0,
+                      0, 0, -0.0010005f, 0, 0, 0, -1.0010005f, 1};
+    int near = 0, far = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&near, 0.03f, 0, 0, -100, 5));
+    draws.push_back(meshDraw(&far, 0.03f, 0, 0, -1000, 5));
+    auto tags = Render::planMeshRefines(draws, view, proj, 1000.0f, 2.0f);
+    EXPECT_EQ(tags.size(), 2u);
+}

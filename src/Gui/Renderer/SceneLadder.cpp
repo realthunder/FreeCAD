@@ -954,3 +954,91 @@ PlanStep Render::planStep(const SceneSnapshot::DeferredChunk &entry,
         step.surplus = uint16_t(resident & ~neededMask);
     return step;
 }
+
+std::vector<const void *> Render::planMeshRefines(
+    const DrawCallList &draws, const float *viewMatrix,
+    const float *projMatrix, float viewportHeightPx, float tolerancePx)
+{
+    std::vector<const void *> out;
+    if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f)
+        return out;
+    std::set<const void *> seen;
+    const float *V = viewMatrix;
+    const float *P = projMatrix;
+    // GL layout: column-major, points transform as M * p. proj[15] == 1
+    // is orthographic (w does not depend on z), 0 is perspective.
+    const bool ortho = P[15] != 0.0f;
+    const float p11 = P[5];
+    for (const auto &draw : draws) {
+        if (!draw.mesh)
+            continue;
+        const MeshData &mesh = *draw.mesh;
+        if (!mesh.sourceTag || mesh.levelError <= 0.0f)
+            continue;
+        if (seen.count(mesh.sourceTag))
+            continue;
+        if (draw.bboxMin[0] > draw.bboxMax[0])
+            continue;
+        const float dx = draw.bboxMax[0] - draw.bboxMin[0];
+        const float dy = draw.bboxMax[1] - draw.bboxMin[1];
+        const float dz = draw.bboxMax[2] - draw.bboxMin[2];
+        const float diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (!(diag > 0.0f))
+            continue;
+        if (tolerancePx <= 0.0f) {
+            // "Every object desires its exact content" — the step-1
+            // behavior, and the same reading as PlanParams::tolerancePx.
+            seen.insert(mesh.sourceTag);
+            out.push_back(mesh.sourceTag);
+            continue;
+        }
+        const float cx = 0.5f * (draw.bboxMin[0] + draw.bboxMax[0]);
+        const float cy = 0.5f * (draw.bboxMin[1] + draw.bboxMax[1]);
+        const float cz = 0.5f * (draw.bboxMin[2] + draw.bboxMax[2]);
+        // View space; the camera looks down -z.
+        const float vx = V[0] * cx + V[4] * cy + V[8] * cz + V[12];
+        const float vy = V[1] * cx + V[5] * cy + V[9] * cz + V[13];
+        const float vz = V[2] * cx + V[6] * cy + V[10] * cz + V[14];
+        // Projected size of the diagonal in pixels: NDC height of a
+        // length d is d * P11 (orthographic) or d * P11 / depth
+        // (perspective), and one NDC unit is half the viewport.
+        float diagPx;
+        if (ortho) {
+            diagPx = diag * p11 * 0.5f * viewportHeightPx;
+        }
+        else {
+            // Depth of the box's near side. A box wholly behind the
+            // camera is off-screen; a camera *inside* the box span sees
+            // it as large as anything gets — refine.
+            if (-vz + 0.5f * diag <= 0.0f)
+                continue;
+            const float depth = -vz - 0.5f * diag;
+            if (depth <= 0.0f) {
+                seen.insert(mesh.sourceTag);
+                out.push_back(mesh.sourceTag);
+                continue;
+            }
+            diagPx = diag * p11 / depth * 0.5f * viewportHeightPx;
+        }
+        // Off-screen never refines — the residency bill this pass
+        // exists to stop paying. Clip-space test at the box centre,
+        // inflated by the projected half diagonal (in NDC units of the
+        // viewport height; the width margin is approximated with the
+        // same value, conservatively).
+        const float ndcMargin = diagPx / (0.5f * viewportHeightPx);
+        const float cxc = P[0] * vx + P[4] * vy + P[8] * vz + P[12];
+        const float cyc = P[1] * vx + P[5] * vy + P[9] * vz + P[13];
+        const float w = ortho
+            ? 1.0f : P[3] * vx + P[7] * vy + P[11] * vz + P[15];
+        if (w <= 0.0f)
+            continue;  // fully behind the camera (near box handled above)
+        if (std::fabs(cxc) > w * (1.0f + ndcMargin)
+            || std::fabs(cyc) > w * (1.0f + ndcMargin))
+            continue;
+        if (mesh.levelError * diagPx > tolerancePx) {
+            seen.insert(mesh.sourceTag);
+            out.push_back(mesh.sourceTag);
+        }
+    }
+    return out;
+}

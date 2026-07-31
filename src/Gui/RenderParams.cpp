@@ -53,6 +53,7 @@ public:
     std::string Type;
     long CoarseTessellation;
     long LevelThreads;
+    double LevelTolerance;
     double EffectResolution;
     bool AO;
     bool Shadow;
@@ -114,6 +115,8 @@ public:
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         LevelThreads = this->handle->GetInt("LevelThreads", 0);
         funcs["LevelThreads"] = &RenderParamsP::updateLevelThreads;
+        LevelTolerance = this->handle->GetFloat("LevelTolerance", 2.0);
+        funcs["LevelTolerance"] = &RenderParamsP::updateLevelTolerance;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
         funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
         AO = this->handle->GetBool("AO", false);
@@ -243,6 +246,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelThreads(RenderParamsP *self) {
         self->LevelThreads = self->handle->GetInt("LevelThreads", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelTolerance(RenderParamsP *self) {
+        self->LevelTolerance = self->handle->GetFloat("LevelTolerance", 2.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateEffectResolution(RenderParamsP *self) {
@@ -554,6 +561,44 @@ void RenderParams::setLevelThreads(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelThreads() {
     instance()->handle->RemoveInt("LevelThreads");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelTolerance() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Screen-space error, in pixels, a coarse tessellation may\n"
+"commit before the exact one is built (docs/SceneStreaming.md\n"
+"#13): on a coarse-first desktop view (render cache mode 3 with\n"
+"a backend that drives the level plan), a camera pause re-plans\n"
+"the scene and only objects whose coarse mesh errs by more than\n"
+"this many pixels on screen re-tessellate exactly - off-screen\n"
+"and distant objects stay at the cheap coarse mesh until the\n"
+"camera makes them matter. 0 or less refines everything\n"
+"immediately; larger keeps more of the scene coarse. The\n"
+"streamed viewer's own tolerance is its lodpx URL parameter\n"
+"(same meaning, same default).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLevelTolerance() {
+    return instance()->LevelTolerance;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLevelTolerance() {
+    const static double def = 2.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelTolerance(const double &v) {
+    instance()->handle->SetFloat("LevelTolerance",v);
+    instance()->LevelTolerance = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelTolerance() {
+    instance()->handle->RemoveFloat("LevelTolerance");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

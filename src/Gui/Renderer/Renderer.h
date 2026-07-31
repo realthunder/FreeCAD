@@ -1205,6 +1205,20 @@ public:
     /// so it has its own control. Takes effect when the targets are next
     /// (re)created.
     virtual void setSSAOResolution(float scale) { (void)scale; }
+    /// Screen-space error tolerance in pixels of the desktop mesh-level
+    /// plan (docs/SceneStreaming.md §13): a coarse-first tessellation
+    /// whose stated error projects to more than this many pixels is
+    /// re-tessellated exactly when the camera settles on it; 0 or less
+    /// refines everything as soon as it appears. Only meaningful on a
+    /// backend that drivesMeshLevels().
+    virtual void setLevelTolerance(float px) { (void)px; }
+    /// Whether this backend runs the desktop mesh-level plan pass (§13):
+    /// a coarse-first display build (MeshSourceRegistry with a refine
+    /// callback) only climbs back to exact when something plans it, so
+    /// the coarse-first tessellation must not engage for a desktop view
+    /// whose backend answers false here — the build would simply stay
+    /// coarse.
+    virtual bool drivesMeshLevels() const { return false; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

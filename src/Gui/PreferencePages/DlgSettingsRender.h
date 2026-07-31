@@ -77,6 +77,8 @@ private:
     QGroupBox * groupScenestreaming = nullptr;
     QLabel *labelCoarseTessellation = nullptr;
     Gui::PrefSpinBox *CoarseTessellation = nullptr;
+    QLabel *labelLevelTolerance = nullptr;
+    Gui::PrefDoubleSpinBox *LevelTolerance = nullptr;
     QLabel *labelLevelThreads = nullptr;
     Gui::PrefSpinBox *LevelThreads = nullptr;
 

@@ -50,6 +50,8 @@
 
 #include "Renderer.h"
 
+class QTimer;
+
 namespace Render {
 
 class RendererExport MeshSourceRegistry {
@@ -74,7 +76,15 @@ public:
     /// shape diagonal) when the producer tessellated coarse-first —
     /// which is what tells the serializer to declare the exact mesh as
     /// an unbuilt rung above it.
-    void add(const void *tag, Generator gen, float publishedError = 0.0f);
+    /// \a refine is the desktop tier's climb back to exact
+    /// (docs/SceneStreaming.md §13): when the level plan finds this
+    /// source's coarse tessellation too wrong on screen, requestRefine
+    /// fires it — once per registration — and the producer builds and
+    /// applies the exact mesh behind it. Empty means nothing to climb:
+    /// the source is already exact, or a serving process whose viewers
+    /// drive the exact rung themselves.
+    void add(const void *tag, Generator gen, float publishedError = 0.0f,
+             std::function<void()> refine = {});
     /// Drop \a tag and every chunk-key association pointing at it.
     /// Call before the geometry behind the tag dies; the tag's address
     /// may be reused.
@@ -105,16 +115,81 @@ public:
                   const void *sourceChunk, size_t sourceSize,
                   std::vector<uint8_t> &out);
 
+    /// The level plan wants \a tag's exact tessellation: fire the
+    /// source's refine callback. At most once per registration — the
+    /// callback is consumed, and a re-registration (a re-tessellated
+    /// shape) is what arms a new one. No-op for unregistered tags and
+    /// sources without a callback, so a plan pass may ask blindly.
+    void requestRefine(const void *tag);
+
 private:
     struct Source {
         std::shared_ptr<Generator> gen;
         float publishedError = 0.0f;
         /// The key the publisher last associated — the job identity.
         std::string canonicalKey;
+        /// The desktop refine trigger, consumed by requestRefine.
+        std::function<void()> refine;
     };
     std::mutex mutex;
     std::map<const void *, Source> sources;
     std::unordered_map<std::string, const void *> keys;
+};
+
+/// The desktop tier's plan *events* (docs/SceneStreaming.md §13 step 2):
+/// when to run a level plan, owned by the backend that has the camera.
+///
+/// The policy half — which sources err too much on screen — is the pure
+/// planMeshRefines (SceneLadder.h); this class only decides when it is
+/// worth asking: the camera has stopped somewhere the last plan did not
+/// see, or the scene feed changed under a still camera. Feed observe()
+/// from every rendered frame; ~300 ms after the camera settles the
+/// stored plan callback runs once, on the GUI thread. The debounce is a
+/// QTimer, so the last frame of a drag is enough — no further frames
+/// need to arrive for the plan to fire, which matters on a desktop that
+/// only renders on demand.
+class RendererExport MeshLevelPlanner {
+public:
+    MeshLevelPlanner();
+    ~MeshLevelPlanner();
+
+    /// Tolerance for the plan pass, from the per-frame config feed
+    /// (Renderer::setLevelTolerance). A change marks the plan stale so
+    /// the new value applies without waiting for a camera move.
+    void setTolerance(float px);
+    float tolerance() const { return m_tolerance; }
+
+    /// One rendered frame's camera (GL-layout 4x4, the matrices
+    /// Renderer::render receives). Schedules \a planFn when a plan is
+    /// due; the callback must stay valid until this planner dies —
+    /// capture the owning backend, which owns this.
+    void observe(const float *viewMatrix, const float *projMatrix,
+                 std::function<void()> planFn);
+
+    /// The scene feed changed: replan even with a still camera.
+    void markDirty() { m_dirty = true; }
+
+    /// The camera the pending/last plan is for — what a plan callback
+    /// should pass to planMeshRefines (stable while the callback runs,
+    /// unlike whatever pointer the render loop had).
+    const float *viewMatrix() const { return m_view; }
+    const float *projMatrix() const { return m_proj; }
+
+private:
+    bool moved(const float *view, const float *proj) const;
+
+    std::unique_ptr<QTimer> m_timer;
+    std::function<void()> m_planFn;
+    float m_tolerance = 2.0f;
+    float m_view[16] {};
+    float m_proj[16] {};
+    /// The camera the last *fired* plan saw; a settle on the same
+    /// camera with a clean scene is not worth a pass.
+    float m_viewPlanned[16] {};
+    float m_projPlanned[16] {};
+    bool m_haveObserved = false;
+    bool m_havePlanned = false;
+    bool m_dirty = false;
 };
 
 } // namespace Render

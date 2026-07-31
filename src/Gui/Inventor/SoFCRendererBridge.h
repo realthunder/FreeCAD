@@ -147,6 +147,7 @@ GuiExport float translateAutoZoomScale(SoState * state);
 /// re-render, SSAO resolve) from Render_EffectResolution / RenderParams.
 GuiExport float translateEffectResolution(View3DInventor * view);
 GuiExport float translateSSAOResolution(View3DInventor * view);
+GuiExport float translateLevelTolerance(View3DInventor * view);
 
 } // namespace RendererBridge
 } // namespace Gui

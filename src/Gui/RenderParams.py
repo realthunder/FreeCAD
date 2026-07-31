@@ -67,6 +67,18 @@ Params = [
         "build already parallelizes internally over OCCT's shared thread\n"
         "pool. The FC_LEVEL_THREADS environment variable overrides it.\n"
         "Read when the server spawns its first level worker."),
+    ParamFloat('LevelTolerance',  2.0, title='Level tolerance',
+        doc="Screen-space error, in pixels, a coarse tessellation may\n"
+        "commit before the exact one is built (docs/SceneStreaming.md\n"
+        "#13): on a coarse-first desktop view (render cache mode 3 with\n"
+        "a backend that drives the level plan), a camera pause re-plans\n"
+        "the scene and only objects whose coarse mesh errs by more than\n"
+        "this many pixels on screen re-tessellate exactly - off-screen\n"
+        "and distant objects stay at the cheap coarse mesh until the\n"
+        "camera makes them matter. 0 or less refines everything\n"
+        "immediately; larger keeps more of the scene coarse. The\n"
+        "streamed viewer's own tolerance is its lodpx URL parameter\n"
+        "(same meaning, same default)."),
     ParamFloat('EffectResolution',  1.0, title='Effect resolution',
         doc="Resolution scale (0.25-1.0) of the expensive screen-space effect\n"
         "passes -- the planar/ground reflection scene re-render, the water\n"

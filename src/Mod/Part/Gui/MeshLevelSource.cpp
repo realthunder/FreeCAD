@@ -36,6 +36,7 @@
 # include <TopoDS_Shape.hxx>
 #endif
 
+#include <atomic>
 #include <cmath>
 #include <condition_variable>
 #include <cstdlib>
@@ -52,9 +53,11 @@
 #include <Gui/Application.h>
 #include <Gui/RenderParams.h>
 #include <Gui/Renderer/MeshSource.h>
+#include <Gui/Renderer/Renderer.h>
 #include <Gui/Renderer/SceneDump.h>
 #include <Gui/Renderer/SceneLadder.h>
 #include <Gui/View3DInventor.h>
+#include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewParams.h>
 
 #include "MeshLevelSource.h"
@@ -205,13 +208,22 @@ int PartGui::coarseTessellationLevel()
     }
     // Coarse-first tessellation only pays off where something can
     // deliver the exact rung on demand: a scene stream server (its
-    // viewers ask), or a desktop view on the bgfx renderer — the
-    // refine worker climbs the build back to exact (§13). Plain Coin
-    // display has neither, and a coarse build there would simply stay
-    // coarse.
-    if (!std::getenv("FC_BGFX_SERVE_SCENE")
-        && Gui::ViewParams::getRenderCache() != 3)
-        return -1;
+    // viewers ask), or a desktop view whose render backend runs the
+    // level plan pass — the plan fires the refine worker when the
+    // camera settles on a source erring too much (§13 step 2). Plain
+    // Coin display and a backend that answers drivesMeshLevels()
+    // false have neither, and a coarse build there would simply stay
+    // coarse forever.
+    if (!std::getenv("FC_BGFX_SERVE_SCENE")) {
+        if (Gui::ViewParams::getRenderCache() != 3)
+            return -1;
+        auto *view3d = qobject_cast<Gui::View3DInventor *>(
+            Gui::Application::Instance->activeView());
+        auto *viewer = view3d ? view3d->getViewer() : nullptr;
+        auto *renderer = viewer ? viewer->getExternalRenderer() : nullptr;
+        if (!renderer || !renderer->drivesMeshLevels())
+            return -1;
+    }
     // The per-view Render_CoarseTessellation property overrides the
     // global parameter, like every other render parameter; the serving
     // process has one 3D view, so the active view is the served one.
@@ -268,21 +280,33 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
         job.level = level;
         return buildMeshLevel(st->shape, job, chunk, size, out);
     };
+    // The desktop tier's climb back to exact (§13): armed — not run —
+    // when the build itself was coarse, and never on a serving process:
+    // there the viewers' cameras decide whether the exact rung is worth
+    // building at all, and a local refine would republish every mesh
+    // at error 0 out from under the streamed ladder. The level plan
+    // pass fires it (MeshSourceRegistry::requestRefine) when the
+    // camera settles on the source erring more than the tolerance
+    // (planMeshRefines); the face and line sources share one closure,
+    // and the fired flag keeps the pair to a single build when both
+    // exceed it in the same pass.
+    std::function<void()> refine;
+    if (onExactBuilt && builtError > 0.0f
+        && !std::getenv("FC_BGFX_SERVE_SCENE")) {
+        const void *primary = faceTag ? faceTag : lineTag;
+        auto fired = std::make_shared<std::atomic<bool>>(false);
+        refine = [primary, st, fired,
+                  apply = std::move(onExactBuilt)]() {
+            if (fired->exchange(true))
+                return;
+            queueExactRefine(primary, st, apply);
+        };
+    }
     auto &reg = Render::MeshSourceRegistry::instance();
     if (faceTag)
-        reg.add(faceTag, gen, builtError);
+        reg.add(faceTag, gen, builtError, refine);
     if (lineTag)
-        reg.add(lineTag, gen, builtError);
-
-    // The desktop tier's climb back to exact (§13): only when the
-    // build itself was coarse, and never on a serving process — there
-    // the viewers' cameras decide whether the exact rung is worth
-    // building at all, and a local refine would republish every mesh
-    // at error 0 out from under the streamed ladder.
-    if (onExactBuilt && builtError > 0.0f
-        && !std::getenv("FC_BGFX_SERVE_SCENE"))
-        queueExactRefine(faceTag ? faceTag : lineTag, st,
-                         std::move(onExactBuilt));
+        reg.add(lineTag, gen, builtError, refine);
 }
 
 void PartGui::unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag)

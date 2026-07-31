@@ -332,6 +332,27 @@ struct PlanStep {
 RendererExport PlanStep planStep(const SceneSnapshot::DeferredChunk &entry,
                                  uint16_t neededMask);
 
+/// The desktop tier's plan pass (docs/SceneStreaming.md §13 step 2),
+/// pure policy: among \a draws, the source tags whose coarse-first
+/// tessellation commits more screen-space error than \a tolerancePx.
+///
+/// A draw participates when its mesh names a source (MeshData::
+/// sourceTag) and states a coarse error (MeshData::levelError, relative
+/// to the shape diagonal); the error on screen is that fraction of the
+/// bounding box diagonal projected at the box centre. Off-screen draws
+/// never refine — that is the residency bill this pass exists to stop
+/// paying; the camera that turns toward them is a new plan. A
+/// non-positive tolerance refines every coarse source, the same "every
+/// object desires exact" reading as PlanParams::tolerancePx — the
+/// step-1 behavior, kept reachable.
+///
+/// Matrices are GL-layout 4x4 (what Renderer::render receives). Each
+/// tag appears at most once; the caller feeds them to
+/// MeshSourceRegistry::requestRefine, which is idempotent anyway.
+RendererExport std::vector<const void *> planMeshRefines(
+    const DrawCallList &draws, const float *viewMatrix,
+    const float *projMatrix, float viewportHeightPx, float tolerancePx);
+
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.
 ///

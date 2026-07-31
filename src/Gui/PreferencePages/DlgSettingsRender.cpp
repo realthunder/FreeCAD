@@ -99,6 +99,19 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:467)
     layoutScenestreaming->addLayout(layoutRow);
+    labelLevelTolerance = new QLabel(this);
+    layoutRow->addWidget(labelLevelTolerance);
+    LevelTolerance = new Gui::PrefDoubleSpinBox(this);
+    layoutRow->addWidget(LevelTolerance);
+    LevelTolerance->setValue(Gui::RenderParams::defaultLevelTolerance());
+    LevelTolerance->setEntryName("LevelTolerance");
+    LevelTolerance->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutScenestreaming->addLayout(layoutRow);
     labelLevelThreads = new QLabel(this);
     layoutRow->addWidget(labelLevelThreads);
     LevelThreads = new Gui::PrefSpinBox(this);
@@ -583,6 +596,7 @@ void DlgSettingsRender::saveSettings()
     // Auto generated code (Tools/params_utils.py:497)
     Type->onSave();
     CoarseTessellation->onSave();
+    LevelTolerance->onSave();
     LevelThreads->onSave();
     AO->onSave();
     AOMethod->onSave();
@@ -623,6 +637,7 @@ void DlgSettingsRender::loadSettings()
     // Auto generated code (Tools/params_utils.py:484)
     Type->onRestore();
     CoarseTessellation->onRestore();
+    LevelTolerance->onRestore();
     LevelThreads->onRestore();
     AO->onRestore();
     AOMethod->onRestore();
@@ -669,6 +684,9 @@ void DlgSettingsRender::retranslateUi()
     CoarseTessellation->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docCoarseTessellation()));
     labelCoarseTessellation->setText(QObject::tr("Coarse tessellation level"));
     labelCoarseTessellation->setToolTip(CoarseTessellation->toolTip());
+    LevelTolerance->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docLevelTolerance()));
+    labelLevelTolerance->setText(QObject::tr("Level tolerance"));
+    labelLevelTolerance->setToolTip(LevelTolerance->toolTip());
     LevelThreads->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docLevelThreads()));
     labelLevelThreads->setText(QObject::tr("Level build threads"));
     labelLevelThreads->setToolTip(LevelThreads->toolTip());
