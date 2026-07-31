@@ -72,7 +72,9 @@ carrying the whole render feed — `scene` draw calls, `selections`, `highlight`
 `overlays` (NaviCube = id 5, axis cross, editing graph), all per-frame configs (AO, PBR,
 water, bloom, highlight styling…), and camera/viewport matrices. **One inbound wire message
 type today: the binary snapshot** (`main.cpp:onWsMessage → applyScenePayload`). Text frames
-are received but ignored — a free channel we will use (§5).
+already carry a small JSON control vocabulary both ways (`hello`/`resync` up;
+`reload`/`config` down; `SceneServer::handleMessage` + `pendingText`) — the property channel
+extends this lane with id-correlated request/response (§5).
 
 **Object identity — the crux.** Each `DrawCall` carries `uint64_t objectKey` = a **content
 hash of the scene-graph node path** (`Renderer.h:826`, assigned at
@@ -143,9 +145,9 @@ Three cooperating pieces in the browser, **one transport**:
    the control client. This is where all Shapr3D-style chrome lives.
 
 3. **Control client** (new, thin) — a JSON message client over **WebSocket text frames on the
-   same `/scene` connection** (text frames are already ignored server-side, so no second
-   socket, no new port, no extra CORS/TLS story). Carries the semantic tier: `getProperties`,
-   `setProperty`, later `runOp` / `commit`.
+   same `/scene` connection** (the text lane already exists for `hello`/`resync`/`reload`, so
+   no second socket, no new port, no extra CORS/TLS story). Carries the semantic tier:
+   `getProperties`, `setProperty`, later `runOp` / `commit`.
 
 Why text frames on the existing socket rather than a separate connection or the MCP endpoint:
 the `/scene` WS already exists, is already secure-context-clean through the tunnels, and its
@@ -159,14 +161,37 @@ socket on a worker thread. The control dispatch must **marshal onto the GUI/main
 (post a queued event, mirror the existing pick-handler path and the `dfd144024b` queued-
 notification fix) and reply asynchronously. Never touch the document from the socket thread.
 
-**Framework choice:** start the DOM layer as **vanilla TS + Web Components** (or a
-featherweight signal lib) — no heavy framework commitment while the surface is small, and it
-double-serves the browser page and a future **Tauri** desktop/mobile shell reusing the same
-bundle (ViewerUIResearch §(b)). React is a fine later swap; the control-client and event
-contract below are framework-agnostic on purpose. This also means **moving UI out of
-`main.cpp` `EM_JS` strings into a proper `web/` bundle**, with a tiny `cwrap`/embind bridge
-for the few calls the DOM makes into WASM (e.g. "project this 3D point to a screen pixel" for
-anchoring a popover).
+**Framework choice (decided 2026-07-31): SolidJS + TypeScript, built with Vite.** The DOM
+layer's state is a handful of reactive streams (selection, property rows, pending acks,
+connection state) and Solid's fine-grained signals update exactly the DOM nodes a change
+touches — no virtual-DOM re-render, ~7 KB runtime, top-of-benchmark update cost, which
+matters on phones where the WASM viewer owns most of the frame budget. The trade-off
+accepted: Solid's compiler is the framework (component code ports nowhere), and there is no
+React-ecosystem escape hatch — bespoke CAD chrome doesn't need one. Vite provides the dev
+server/HMR lane and emits a static bundle `wasm-viewer.sh` serves like any other file; one
+`package.json` under `src/Gui/Renderer/web/`. The control-client and event contract below
+stay framework-agnostic on purpose, and the same bundle serves a future **Tauri**
+desktop/mobile shell (ViewerUIResearch §(b)). This also means **moving UI out of `main.cpp`
+`EM_JS` strings into the `web/` bundle**, with a tiny `cwrap`/embind bridge for the few calls
+the DOM makes into WASM (e.g. "project this 3D point to a screen pixel" for anchoring a
+popover).
+
+**Touch policy:** gestures are hand-rolled over the standard Pointer Events API
+(`setPointerCapture`); sheet detents and scroll physics are CSS (`scroll-snap`,
+`overscroll-behavior: contain`, `env(safe-area-inset-*)`); text/number entry is always a
+native DOM input (`inputmode`, native pickers). No gesture or motion library. Every
+interactive element declares `touch-action` explicitly so the canvas-vs-panel gesture split
+is auditable in one grep.
+
+**Prior art — Onshape (verified from their engineering blog + forums, 2026-07):** a
+decade-scale existence proof that no client kernel is needed. Their clients are "not thin
+clients, but incomplete CAD systems" — custom WebGL/OpenGL renderers receiving tessellation
+only; the ~72 MB iOS / ~142 MB Android apps are fully native rendering clients with zero
+offline mode; every kernel operation (booleans, fillets, tessellation, assembly solve, and
+even D-Cubed sketch solving) runs server-side, with progressive tessellation refined after
+interaction stops. Their known weakness — interactive edits feel round-trip latency on slow
+links — is exactly what our local tier (client-side picking today; ghost previews and a
+client sketch solver later, per ComputeBoundaries §1) is positioned to improve on.
 
 ---
 
@@ -226,6 +251,15 @@ JSON text frames. Request/response correlated by `id`. Minimal v0:
   "message":"Length must be > 0" }
 ```
 
+**Forward hook — preview/commit + supersedes.** When drag-driven ops arrive (§5), they reuse
+this channel at 5–10 Hz with a `"preview": true` flag and a final committed call. Two
+semantics to bake in early so the protocol doesn't need a breaking change: (a) a request may
+carry `"gesture": <id>`; a newer preview in the same gesture **supersedes** any queued older
+one server-side (the dispatcher keeps only the latest un-run preview per gesture — a slow
+recompute never builds a backlog); (b) previews run inside the gesture's single open
+transaction, and only the commit closes it. `setProperty`/`getProperties` v0 ignores both
+fields; the dispatcher just reserves the queue-per-gesture slot.
+
 The **property descriptor** is the serializable generalization of the hand-written table in
 `TaskRenderSettings.cpp:331`: `{ name, group, type, value, readonly, hidden, unit?,
 constraints?{min,max,step}, enums?[] }`. The `type` set maps 1:1 onto DOM controls:
@@ -266,9 +300,14 @@ never a crash.
   the card can tether to the object and follow orbit, with edge-avoidance so it never leaves
   the viewport. On narrow/mobile widths, collapse to a **bottom sheet** (thumb-reachable,
   swipe-to-dismiss).
-- **Content.** Header = `Label` + type + a color swatch; body = property rows **grouped by
-  `group`** (collapsible sections: `Base`, `Object`, `Render`, …), the most-edited group
-  (e.g. the primitive's own dims) expanded first. Multi-select → show the **common** subset.
+- **Content.** Header = `Label` + type + a color swatch. Below it, two navigation controls
+  (user-specified 2026-07-31): a **group drop-down** (`All` + the distinct `group` values:
+  `Base`, `Object`, `Render`, …) selecting which property group is shown, and a **keyword
+  box** doing QCompleter-style **live filtering** — each keystroke narrows the visible rows
+  by case-insensitive substring match on property name (and label), with the matched
+  substring highlighted. A non-empty keyword searches across *all* groups (the drop-down
+  shows `All` while filtering); clearing it restores the selected group. Body = the
+  filtered property rows. Multi-select → show the **common** subset.
 - **Live editing.** Number fields commit on blur/Enter; sliders (constrained floats) preview
   continuously but only send `setProperty` on release (respect the semantic tier — no 60 Hz
   spam; local preview can come later via the interaction tier). Every field is a real DOM
@@ -358,9 +397,9 @@ Each phase ships standalone value; later phases proceed on evidence, per RoadMap
   properties need editor semantics beyond a scalar field. v0 renders them read-only; stage
   richer editors. Expression bindings especially must be surfaced (read-only) before they can
   be edited, or the user edits a value the expression overwrites on recompute.
-- **Framework longevity.** Vanilla-TS keeps Phase 1–3 cheap; re-evaluate a component
-  framework when the panel/state surface justifies it. Keep the control-client and
-  `fc:selection` contract framework-neutral so the swap is local.
+- **Framework longevity.** Solid is a compiler-level commitment with no React-compat escape
+  hatch — accepted deliberately (§3). Keep the control-client and `fc:selection` contract
+  framework-neutral so a swap, if ever needed, stays local to the components.
 - **Where the DOM bundle is served.** Today `main.cpp`+`shell.html` are emscripten output. The
   new `web/` bundle needs its own build/serve lane alongside `build/wasm`; fold it into
   `wasm-viewer.sh`.
