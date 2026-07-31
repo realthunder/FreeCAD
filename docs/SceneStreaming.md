@@ -712,6 +712,131 @@ memory budget and its adaptation, the provider seam, the ordered fetch
 window, the batches, and the overlay barrier — the transport layer was
 never the problem.
 
+### The ladder owns its fetch state (design, next)
+
+The planner half of the redesign gave every entry an explicit target
+(`DeferredChunk::plan`). The executor half still reconstructs the other two
+thirds of its state — what is resident, what is in flight — from maps
+indexed by **content key** (`s_resident`, `s_refill`, `s_blobInFlight`),
+and every bug the streaming layer has produced since levels arrived traces
+to that choice: a content key *changes* whenever content legitimately
+changes — a worker builds a finer rung, an edit re-keys a mesh, an
+announcement moves the finest-built level — and at that moment the
+key-indexed books say "never heard of it" about geometry that is sitting in
+memory. `filled` exists because per-key residency lies across re-parses;
+`lastRole` and `lastGood` exist because a re-keyed entry cannot find its
+own arrays; the sibling-stand existed because an announcement demoted what
+it refined. Each is a bridge across the same gap.
+
+The fix is to put the state where the identity is. **A ladder — one
+`DeferredChunk`, unique per content identity within a snapshot, carried
+across deltas by `carryLadders` — owns `{residentRung(s), plan,
+in-flight ask}` and its refill closure outright.** Content keys demote to
+pure store addresses: the store answers "do you have bytes for this key"
+and "a download for this key is already running", and nothing else. What
+this means concretely:
+
+- `residentRungOf` becomes a field read, not a scan of a global map
+  through `filled`'s veto. A re-key updates the ladder's rung→key table
+  and touches nothing else — resident stays resident under its new name,
+  which retires the `lastRole`/`lastGood` bridging for the geometry case
+  (the draw-array bridge stays for the interregnum while a *manifest* is
+  being re-parsed, which is a different gap).
+- The refill closure lives on the entry (`refill`), set once at parse.
+  `s_refill` — a key-indexed map whose entries went stale on every re-key,
+  the "no refill" skip in the journal — is deleted.
+- `entry.key` stops being retargeted. It names the ladder (the finest
+  built rung, the dedup identity, the announcement subject); which rung to
+  *fetch* is `planStep`'s answer and is asked for under the rung's own
+  key. The `retargetRung` hack, and the class of bugs where fetch identity
+  and ladder identity disagreed mid-flight, go with it.
+- In-flight download dedup stays key-indexed in the store — a download IS
+  of a key — but *which rung this ladder is waiting on* is the ladder's
+  own field, so the "one request per ladder" rule reads its own state
+  instead of scanning every rung's key against the download table.
+
+**Accounting moves to the store, refcounted.** Residency bytes are counted
+once per content key today because the books are keyed that way; with
+state on entries, the store keeps `key → {bytes, binders}` where binders
+counts the ladders currently holding that rung filled. The budget charges
+keys with `binders > 0`. The count is maintained incrementally by
+fill/release and re-swept at commit (the moment payload objects die),
+which replaces `reconcileResident` with the same walk it already does.
+
+### One rung per instance, not per content (design, next)
+
+Content dedup gives N instances of a part one ladder, and the ladder fills
+one mesh object at one rung — so every instance stands at the rung of its
+most demanding sibling (`planLevels` resolves the conflict finest-wins).
+For faces that is over-service; the visible artifact is that face and edge
+chunks are *separate* ladders with separate owner sets, so a near instance
+can hold the shared **edge** ladder at exact while a far sibling's **face**
+ladder stands coarse: exact polylines over coarse facets — whiskers — the
+5e artifact reintroduced through sharing. No assignment of one rung per
+ladder can pair face with edge for every owner at once; the pairing the
+plan already computes per object has nowhere to land.
+
+**The fix: a draw binds (ladder, rung), and rungs get their own mesh
+objects.** Each built rung already has its own content key; it gets its
+own `MeshData` under its own cacheId (`meshIdFromKey(rung.key)`), created
+lazily when some owner targets it. The parse-time draw keeps naming the
+ladder; **assembly resolves the draw's mesh through its owner's planned
+tier** — the same substitution seam the draw-array bridge already uses,
+emitted-scene-only. Consequences, each smaller than what it replaces:
+
+- "One resident rung per ladder" stops being an invariant: the resident
+  set of a ladder is the set of rungs any owner is planned at. Coarse
+  rungs are kilobytes beside the exact mesh, so the duplication is
+  bounded and the budget simply charges the rungs actually bound.
+- The plan's finest-owner-wins rule and the lazy-heap re-score that
+  exists to serve it retire; a shared ladder's cost is the sum of the
+  distinct rungs its owners want, priced once each (still shared: two
+  owners at the same tier bind the same rung).
+- Refinement stops being an in-place overwrite: an upgrade fills a
+  *different* mesh object, and the coarse rung's arrays survive until the
+  plan releases them — the GPU cache sees distinct cacheIds instead of
+  generation churn, and release-to-coarse is a rebind rather than a
+  refetch. `MeshData::generation` survives only for release-in-place.
+- The backend batches instanced draws per (mesh, rung) — the batch key is
+  the mesh object, which per-rung objects already are. Rung count is 3–5,
+  so the split is bounded.
+- Selection, hover, and picking need nothing: they copy the emitted draw,
+  so they stand on that instance's rung by construction (§6, "Picking
+  follows the rung" — verified against the live viewer 2026-07-31).
+
+### The store is a cache with a budget, and collection is lazy
+
+Three tiers hold payload bytes, and the same policy governs all three:
+**losing your last reference makes you a candidate; only pressure makes
+you garbage.** A key nobody currently binds is exactly the key a revisit,
+an undo, or a camera swing is about to want, and the whole point of a
+content-addressed store is that re-acquiring it is a read, not a
+download — so nothing is deleted for being unreferenced, and everything
+is deletable when space is needed, least-recently-useful first.
+
+- **Geometry arrays** (the resident set): bounded by the geometry budget,
+  released only by the plan (§7). Unchanged.
+- **The in-memory payload cache** (`s_blobCache`): bounded by its own
+  budget; past it, keys the applied scene does not name are dropped —
+  IndexedDB still has them. Unchanged.
+- **IndexedDB** (new): currently unbounded — it accretes every key any
+  session ever fetched, and every edit re-keys content, so a working
+  session strictly grows the store. The emscripten helpers cannot
+  enumerate keys, so the store gains a **meta record** under a fixed
+  non-hash key in the same database: `key → {bytes, lastTouched}` for
+  every blob written, loaded at startup, touched on every store hit
+  (batched — rewritten at commit/idle, not per read), rewritten on every
+  write. A sweep runs only when the tracked total exceeds the store
+  budget (default derived from `navigator.storage.estimate()` where
+  present, a fixed cap otherwise), and evicts in `lastTouched` order,
+  **skipping every key the live scene names at any rung** — the
+  candidates are the keys no current ladder can reach, which after an
+  edit session is mostly the re-keyed-away generations of meshes the
+  document no longer contains. Two tabs race on the meta record
+  last-writer-wins; the worst outcome either can suffer is a key deleted
+  under the other's feet, which costs one refetch — the store is a pure
+  optimization and stays one.
+
 ## 8. Server and viewer state
 
 **Server.** One chunk store, key → bytes, plus the manifests of the last K
