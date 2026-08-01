@@ -5279,6 +5279,16 @@ static bool applyScenePayload(const char *data, size_t size)
         s_pendingVersion = version;
         s_pendingValid = true;
         s_pendingAdopted = false;
+        // First scene on a blank canvas: the commit below waits for the
+        // root's manifests, which on a cold cache over a slow link is
+        // seconds to minutes of black. The background is already in
+        // hand and costs nothing — paint it now, so the wait happens
+        // over the scene's backdrop and the loading bar instead of a
+        // dead page (user report: "long pause with no background").
+        if (s_snap.scene.empty() && !s_pendingSnap.baseVersion) {
+            s_renderer->setBackground(s_pendingSnap.background);
+            markDirty();
+        }
         // A delta's group manifests ride in the payload itself (v37):
         // ingest them under their keys — cache, store and all, exactly
         // as if the network had just answered — so the resolve below
