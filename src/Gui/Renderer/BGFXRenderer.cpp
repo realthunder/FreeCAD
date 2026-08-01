@@ -3514,6 +3514,17 @@ public:
             GpuGeometry &geom = res.first->second;
             if (!bgfx::isValid(geom.vbh))
                 geom.upload(data);
+            if (!bgfx::isValid(geom.vbh)) {
+                // handle pool exhausted: the draw sites skip an
+                // invalid upload instead of fatally binding it
+                static bool warned = false;
+                if (!warned) {
+                    warned = true;
+                    fprintf(stderr,
+                            "bgfx: vertex buffer handle pool exhausted, "
+                            "some meshes will not be drawn\n");
+                }
+            }
             mesh.geom = &geom;
             mesh.upload(data);
             static const bool dbgfeed =
@@ -3815,7 +3826,7 @@ public:
         // Validate the edge passes up front so a mesh that cannot draw
         // them leaves no stray stencil marks.
         GpuMesh *gpu = getMesh(*draw.mesh);
-        if (!bgfx::isValid(gpu->geom->tri))
+        if (!bgfx::isValid(gpu->geom->vbh) || !bgfx::isValid(gpu->geom->tri))
             return;
         gpu->geom->ensureOutline(*draw.mesh);
         if (!bgfx::isValid(gpu->geom->triEdgeInst))
@@ -6008,6 +6019,10 @@ public:
             return;
 
         GpuMesh *mesh = getMesh(*draw.mesh);
+        // An exhausted handle pool leaves the upload invalid; binding
+        // it would be fatal, skipping the draw is not.
+        if (!bgfx::isValid(mesh->geom->vbh))
+            return;
         // Hidden-line hideSeam: whole-cache line draws switch to the
         // seam-filtered index set (GL: renderLines' noseam argument).
         if (noseam && mat.type == Render::Material::Line)

@@ -8,6 +8,12 @@ if (BUILD_BGFX)
     # example-common (bgfx_utils/entry, used by the renderer) is still built
     # via BGFX_BUILD_TOOLS; skip the ~50 example executables.
     set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "")
+    # A large assembly holds one vertex + up to three index buffers per
+    # distinct mesh; the 4096 defaults die on 100k+ object scenes. The
+    # cap sits just under the uint16 invalid-handle sentinel (a 65536th
+    # slot would collide with it); handle tables cost bytes per slot.
+    set(BGFX_CONFIG_MAX_VERTEX_BUFFERS "65535" CACHE STRING "" FORCE)
+    set(BGFX_CONFIG_MAX_INDEX_BUFFERS "65535" CACHE STRING "" FORCE)
     add_subdirectory(bgfx)
 endif()
 
