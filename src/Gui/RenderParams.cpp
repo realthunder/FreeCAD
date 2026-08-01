@@ -52,6 +52,7 @@ public:
     std::unordered_map<const char *,void(*)(RenderParamsP*),App::CStringHasher,App::CStringHasher> funcs;
     std::string Type;
     long CoarseTessellation;
+    long CoarseDeferFaces;
     long LevelThreads;
     long LevelMemoryFloorMB;
     long GpuMemoryBudgetMB;
@@ -115,6 +116,8 @@ public:
         funcs["Type"] = &RenderParamsP::updateType;
         CoarseTessellation = this->handle->GetInt("CoarseTessellation", 2);
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
+        CoarseDeferFaces = this->handle->GetInt("CoarseDeferFaces", 1000);
+        funcs["CoarseDeferFaces"] = &RenderParamsP::updateCoarseDeferFaces;
         LevelThreads = this->handle->GetInt("LevelThreads", 0);
         funcs["LevelThreads"] = &RenderParamsP::updateLevelThreads;
         LevelMemoryFloorMB = this->handle->GetInt("LevelMemoryFloorMB", 0);
@@ -248,6 +251,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCoarseTessellation(RenderParamsP *self) {
         self->CoarseTessellation = self->handle->GetInt("CoarseTessellation", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCoarseDeferFaces(RenderParamsP *self) {
+        self->CoarseDeferFaces = self->handle->GetInt("CoarseDeferFaces", 1000);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelThreads(RenderParamsP *self) {
@@ -542,6 +549,39 @@ void RenderParams::setCoarseTessellation(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeCoarseTessellation() {
     instance()->handle->RemoveInt("CoarseTessellation");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCoarseDeferFaces() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"During a progressive import on the bgfx renderer, a shape with\n"
+"more faces than this gets a bounding-box stand-in immediately and\n"
+"even its coarse tessellation is built on the refine worker pool,\n"
+"swapped in when it arrives (docs/SceneStreaming.md #13) - the\n"
+"import stall otherwise scales with the largest single part. -1\n"
+"disables the stand-in so every shape tessellates inline.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getCoarseDeferFaces() {
+    return instance()->CoarseDeferFaces;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultCoarseDeferFaces() {
+    const static long def = 1000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCoarseDeferFaces(const long &v) {
+    instance()->handle->SetInt("CoarseDeferFaces",v);
+    instance()->CoarseDeferFaces = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCoarseDeferFaces() {
+    instance()->handle->RemoveInt("CoarseDeferFaces");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

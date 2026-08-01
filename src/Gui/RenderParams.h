@@ -106,6 +106,23 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter CoarseDeferFaces
+    ///
+    /// During a progressive import on the bgfx renderer, a shape with
+    /// more faces than this gets a bounding-box stand-in immediately and
+    /// even its coarse tessellation is built on the refine worker pool,
+    /// swapped in when it arrives (docs/SceneStreaming.md #13) - the
+    /// import stall otherwise scales with the largest single part. -1
+    /// disables the stand-in so every shape tessellates inline.
+    static const long & getCoarseDeferFaces();
+    static const long & defaultCoarseDeferFaces();
+    static void removeCoarseDeferFaces();
+    static void setCoarseDeferFaces(const long &v);
+    static const char *docCoarseDeferFaces();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LevelThreads
     ///
     /// How many mesh level builds (the scene server's on-demand

@@ -178,6 +178,10 @@ public:
 
     Part::TopoShape getShape() const;
     virtual void updateVisual();
+    /// Bounding-box stand-in of an oversized part during a progressive
+    /// import; the coarse mesh follows from the refine pool. See the
+    /// definition. Returns whether the stand-in was built.
+    bool buildCoarseStandIn();
 
     virtual void reattach(App::DocumentObject *) override;
     virtual void beforeDelete() override;
@@ -303,6 +307,13 @@ protected:
     /// the exact one — what a demotion under memory pressure falls
     /// back to, and what the plan prices it by (§13 step 3).
     float ExactMeshCoarseError = 0.0f;
+    /// The TShape whose coarse tessellation the refine pool has
+    /// already delivered behind a bounding-box stand-in (progressive
+    /// import of an oversized part): while the current shape still is
+    /// that one, updateVisual takes the ordinary coarse-first path —
+    /// the coarse triangulation is resident, meshing is a no-op —
+    /// instead of standing in again.
+    const void *CoarseMeshTShape = nullptr;
     bool UpdatingColor;
     bool highlightFaceEdges = false;
 

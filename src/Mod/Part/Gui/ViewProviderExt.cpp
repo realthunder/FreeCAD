@@ -105,6 +105,7 @@
 #include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/ViewParams.h>
 #include <Gui/RenderParams.h>
+#include <BRepPrimAPI_MakeBox.hxx>
 #include <Gui/Renderer/Renderer.h>
 #include <Mod/Part/App/Tools.h>
 
@@ -3149,6 +3150,95 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
                             std::move(onDowngrade));
 }
 
+// Progressive import of an oversized part (docs/SceneStreaming.md
+// §13): a shape over the CoarseDeferFaces threshold shows a
+// 12-triangle bounding-box stand-in immediately, and even its coarse
+// tessellation runs on the refine worker pool. The registration
+// declares the stand-in's error (0.5 of the diagonal) and names the
+// coarse rung parameters as its climb target, so the ordinary level
+// plan fires the build; the meshed copy arrives on the GUI thread,
+// its triangulation transfers onto the live shape, and the rerun of
+// updateVisual() finds every face resident — an instant rebuild. The
+// exact rung follows the normal ladder from there. Returns whether
+// the stand-in was built (the caller is done then).
+bool ViewProviderPartExt::buildCoarseStandIn()
+{
+    const long deferFaces = Gui::RenderParams::getCoarseDeferFaces();
+    if (deferFaces < 0 || cachedShape.isNull()) {
+        return false;
+    }
+    TopoDS_Shape cShape = cachedShape.getShape();
+    if (cShape.IsNull() || CoarseMeshTShape == cShape.TShape().get()
+        || ExactMeshTShape == cShape.TShape().get()) {
+        return false;
+    }
+    auto doc = pcObject ? pcObject->getDocument() : nullptr;
+    if (!doc || !doc->testStatus(App::Document::LiveImport)) {
+        return false;
+    }
+    const int coarseLvl = coarseTessellationLevel();
+    if (coarseLvl < 0) {
+        return false;
+    }
+    if (long(cachedShape.countSubShapes(TopAbs_FACE)) <= deferFaces) {
+        return false;
+    }
+    try {
+        Bnd_Box bounds;
+        BRepBndLib::Add(cShape, bounds);
+        bounds.SetGap(0.0);
+        if (bounds.IsVoid()) {
+            return false;
+        }
+        Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+        bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+        double dx = xMax - xMin, dy = yMax - yMin, dz = zMax - zMin;
+        double diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (!(diag > 0)) {
+            return false;
+        }
+        double deflection = meshLevelDeflection(diag, unsigned(coarseLvl));
+        double angDefl = meshLevelAngle(unsigned(coarseLvl));
+        TopoDS_Shape standIn =
+            BRepPrimAPI_MakeBox(gp_Pnt(xMin, yMin, zMin),
+                                std::max(dx, double(Precision::Confusion())),
+                                std::max(dy, double(Precision::Confusion())),
+                                std::max(dz, double(Precision::Confusion())))
+                .Shape();
+        int nt = 0, nn = 0, np = 0, nno = 0, nf = 0, ne = 0, nl = 0;
+        buildVisualNodes(standIn, deflection, angDefl, false,
+                         coords, pcoords, norm, texcoords,
+                         faceset, lineset, nodeset,
+                         nt, nn, np, nno, nf, ne, nl);
+        // whatever the instance table held indexes the real shape's
+        // faces, not the stand-in's six
+        faceset->shapeInfo.setNum(0);
+        FC_LOG(getFullName() << " bounding-box stand-in ("
+               << cachedShape.countSubShapes(TopAbs_FACE)
+               << " faces deferred to the refine pool)");
+        const void *tsh = cShape.TShape().get();
+        auto onCoarse = [this, tsh](const TopoDS_Shape &meshed) {
+            TopoDS_Shape cur = cachedShape.getShape();
+            if (cur.IsNull() || cur.TShape().get() != tsh) {
+                return;
+            }
+            transferMeshLevels(meshed, cur);
+            CoarseMeshTShape = tsh;
+            FC_LOG(getFullName() << " stand-in resolved: coarse mesh in");
+            updateVisual();
+        };
+        registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
+                                /*builtError*/ 0.5f, deflection, angDefl,
+                                std::move(onCoarse));
+    }
+    catch (const Standard_Failure &e) {
+        FC_ERR("Failed to build the stand-in for the shape of "
+               << pcObject->getFullName() << ": " << e.GetMessageString());
+        return false;
+    }
+    return true;
+}
+
 void ViewProviderPartExt::updateVisual()
 {
     if (!getObject()
@@ -3209,12 +3299,32 @@ void ViewProviderPartExt::updateVisual()
         return;
     }
 
+    // Progressive import of an oversized part (§13): even the coarse
+    // build of a many-face shape (or many-leaf compound) stalls the
+    // GUI for seconds, and the import stall scales with the largest
+    // single part. Build a 12-triangle bounding-box stand-in instead
+    // and let the level plan run the coarse build on the refine pool.
+    if (buildCoarseStandIn()) {
+        VisualTouched = false;
+        setHighlightedFaces(DiffuseColor.getValues());
+        setHighlightedEdges(LineColorArray.getValues());
+        setHighlightedPoints(PointColorArray.getValue());
+        return;
+    }
+
     // TShape-instanced build of qualifying compounds (shared sub-shape
     // tessellation under per-instance transforms); everything else runs
-    // the flattened build below, unchanged.
+    // the flattened build below, unchanged. A shape whose coarse mesh
+    // arrived behind a stand-in stays on the flattened build: the
+    // resident triangulation was built at the whole-shape rung, and the
+    // instanced build's per-leaf rungs would re-tessellate every leaf
+    // inline — the very stall the stand-in existed to avoid.
     bool instancedOk = false;
+    const bool standInResolved =
+        cachedShape.getShape().TShape().get() == CoarseMeshTShape;
     try {
-        instancedOk = buildInstanced();
+        if (!standInResolved)
+            instancedOk = buildInstanced();
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed instanced representation for the shape of "

@@ -60,6 +60,13 @@ Params = [
         "automatically for a headless serving process. The\n"
         "FC_COARSE_TESSELLATION environment variable overrides it for a\n"
         "whole process. Takes effect when a shape (re)tessellates."),
+    ParamInt('CoarseDeferFaces',  1000, title='Coarse defer face threshold',
+        doc="During a progressive import on the bgfx renderer, a shape with\n"
+        "more faces than this gets a bounding-box stand-in immediately and\n"
+        "even its coarse tessellation is built on the refine worker pool,\n"
+        "swapped in when it arrives (docs/SceneStreaming.md #13) - the\n"
+        "import stall otherwise scales with the largest single part. -1\n"
+        "disables the stand-in so every shape tessellates inline."),
     ParamInt('LevelThreads',  0, title='Level build threads',
         doc="How many mesh level builds (the scene server's on-demand\n"
         "re-tessellations, docs/SceneStreaming.md #7) may run at once.\n"
