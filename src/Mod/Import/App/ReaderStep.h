@@ -24,6 +24,8 @@
 #ifndef IMPORT_READER_STEP_H
 #define IMPORT_READER_STEP_H
 
+#include <memory>
+
 #include <Mod/Import/ImportGlobal.h>
 #include <Base/FileInfo.h>
 #include <TDocStd_Document.hxx>
@@ -35,11 +37,27 @@ class ImportExport ReaderStep
 {
 public:
     explicit ReaderStep(const Base::FileInfo& file);
+    ~ReaderStep();
 
     void read(Handle(TDocStd_Document) hDoc);
 
+    /** @name Streamed (batched) reading
+     * openStream() parses the file and returns the number of transferable
+     * roots, keeping the OCCT reader alive; transferRootRange() then moves a
+     * contiguous batch of roots into the XCAF document (shape healing runs
+     * deferred over the batch, in parallel when enabled). One progress
+     * indicator spans the whole file and Escape aborts between batches.
+     */
+    //@{
+    int openStream();
+    void transferRootRange(Handle(TDocStd_Document) hDoc, int first, int last);
+    void closeStream();
+    //@}
+
 private:
     Base::FileInfo file;
+    struct Stream;
+    std::unique_ptr<Stream> stream;
 };
 
 }  // namespace Import

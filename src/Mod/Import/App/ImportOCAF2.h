@@ -25,9 +25,11 @@
 
 #include <climits>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <TDocStd_Document.hxx>
@@ -113,11 +115,31 @@ public:
     {
         return myProgApplied;
     }
-    /// Apply the next pending op. Returns false when no ops remain.
+    /// Apply the next published op. Returns false when none are pending.
     bool applyNextOp();
     /// Terminal pass after the ops (or a canceled prefix of them) have
     /// been applied: recompute and return the root object.
     App::DocumentObject* finishOps();
+    //@}
+
+    /** @name Streamed analysis
+     * The batched form of analyze() for streamed transfers: begin() checks
+     * eligibility and reserves the root container, analyzeRoots() consumes
+     * whatever free shapes the transferred batches have added so far, and
+     * analyzeEnd() takes the final single-root decisions. Sealed ops become
+     * visible to the GUI thread in batches ("published"); the GUI may apply
+     * them (applyNextOp) while the worker keeps transferring, but nothing is
+     * published before a second root confirms the root group is final.
+     */
+    //@{
+    bool analyzeBegin();
+    bool analyzeRoots();
+    bool analyzeEnd();
+    /// Number of ops the GUI thread may apply (mutex-guarded).
+    std::size_t opsPublished() const;
+    /// Delete every object created by applied ops (falling back or aborting
+    /// mid-stream). GUI thread only.
+    void rollbackOps();
     //@}
 
     static ImportOCAFOptions customImportOptions();
@@ -191,6 +213,8 @@ private:
             LinkArray,  ///< App::Link with ElementCount instances
             Collapsed,  ///< reduced single-child group: aliases resolveTo
             Dropped,    ///< analysis discarded it; skipped at apply
+            Claim,      ///< first-use claim of an already applied op's
+                        ///< object: relabel/re-place/reparent it
         };
         Type type = Dropped;
         int parent = -1;     ///< op index of the owning Group (-1 = root)
@@ -342,7 +366,12 @@ private:
     std::vector<DocumentInfo> myDocumentStack;
     std::vector<App::Document*> myNewDocuments;
 
-    // Progressive import state
+    // Progressive import state.
+    // Streaming contract: ops with index < myProgPublished are sealed - the
+    // worker neither writes their fields nor depends on them changing, and
+    // the GUI thread copies them (under myProgMutex, which also serializes
+    // the vector reallocation in newProgOp) before applying. myProgObjs is
+    // GUI-thread-only and grown lazily to the published size.
     std::vector<ProgOp> myProgOps;
     std::vector<App::DocumentObject*> myProgObjs;
     std::size_t myProgApplied = 0;
@@ -350,6 +379,23 @@ private:
     bool myProgFailed = false;
     std::unordered_map<TopoDS_Shape, int, ShapeHasher> myShapeNodes;
     std::unordered_map<TDF_Label, std::pair<int, int>, LabelHasher> myLabelNodes;
+
+    // Streamed analysis state (worker side unless noted)
+    mutable std::mutex myProgMutex;
+    std::size_t myProgPublished = 0;  ///< guarded by myProgMutex
+    bool myProgStreaming = false;
+    int myRootGroup = -1;
+    int myRootChildren = 0;
+    int myLastRootChild = -1;
+    std::unordered_map<TDF_Label, bool, LabelHasher> myAnalyzedRoots;
+    std::unordered_set<int> myClaimedSealed;  ///< sealed ops claimed via Claim op
+
+    void publishOps();
+    /// free-flag view that folds in claims of sealed ops
+    bool opFree(int node) const
+    {
+        return myProgOps[node].free && myClaimedSealed.find(node) == myClaimedSealed.end();
+    }
 
     Base::SequencerLauncher* sequencer {nullptr};
 };

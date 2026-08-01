@@ -24,10 +24,12 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <algorithm>
 #include <Standard_Version.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #if OCC_VERSION_HEX >= 0x070500
 #include <Message_ProgressRange.hxx>
+#include <Message_ProgressScope.hxx>
 #endif
 #include <Transfer_TransientProcess.hxx>
 #include <XSControl_TransferReader.hxx>
@@ -41,9 +43,72 @@
 
 using namespace Import;
 
+struct ReaderStep::Stream
+{
+    STEPCAFControl_Reader reader;
+    opencascade::handle<Part::ProgressIndicator> progress;
+    std::unique_ptr<Message_ProgressScope> scope;
+    int roots = 0;
+};
+
 ReaderStep::ReaderStep(const Base::FileInfo& file)  // NOLINT
     : file {file}
 {}
+
+ReaderStep::~ReaderStep() = default;
+
+int ReaderStep::openStream()
+{
+#if OCC_VERSION_HEX < 0x080000
+    // The fork's STEPCAFControl_Reader::TransferRootRange only exists on the
+    // OCCT 8 branch; report "not streamable" so the caller falls back to the
+    // one-shot read().
+    return 0;
+#else
+    std::string utf8Name = file.filePath();
+    std::string name8bit = Part::encodeFilename(utf8Name);
+    stream = std::make_unique<Stream>();
+    auto& reader = stream->reader;
+    reader.SetColorMode(true);
+    reader.SetNameMode(true);
+    reader.SetLayerMode(true);
+    reader.SetSHUOMode(true);
+    if (reader.ReadFile(name8bit.c_str()) != IFSelect_RetDone) {
+        stream.reset();
+        throw Base::FileException("Cannot read STEP file", file);
+    }
+    stream->roots = reader.NbRootsForTransfer();
+    stream->progress = new Part::ProgressIndicator(100);
+    stream->scope = std::make_unique<Message_ProgressScope>(stream->progress->Start(),
+                                                           "Reading STEP file...",
+                                                           std::max(stream->roots, 1));
+    return stream->roots;
+#endif
+}
+
+void ReaderStep::transferRootRange(Handle(TDocStd_Document) hDoc, int first, int last)  // NOLINT
+{
+#if OCC_VERSION_HEX < 0x080000
+    (void)hDoc;
+    (void)first;
+    (void)last;
+    throw Base::RuntimeError("ReaderStep: streamed transfer requires OCCT 8");
+#else
+    if (!stream) {
+        throw Base::RuntimeError("ReaderStep: no open stream");
+    }
+    auto& s = *stream;
+    s.reader.TransferRootRange(first, last, hDoc, s.scope->Next(double(last - first + 1)));
+    if (s.progress->UserBreak()) {
+        throw Base::AbortException("STEP import aborted by user");
+    }
+#endif
+}
+
+void ReaderStep::closeStream()
+{
+    stream.reset();
+}
 
 void ReaderStep::read(Handle(TDocStd_Document) hDoc)  // NOLINT
 {

@@ -922,6 +922,9 @@ App::DocumentObject* ImportOCAF2::loadShapes()
 
 int ImportOCAF2::newProgOp(ProgOp::Type type)
 {
+    // The lock serializes the vector reallocation against the GUI thread's
+    // locked reads (applyNextOp/resolveOp/progObject) during streaming.
+    std::lock_guard<std::mutex> guard(myProgMutex);
     myProgOps.emplace_back();
     myProgOps.back().type = type;
     return int(myProgOps.size()) - 1;
@@ -929,13 +932,14 @@ int ImportOCAF2::newProgOp(ProgOp::Type type)
 
 int ImportOCAF2::resolveOp(int node) const
 {
+    std::lock_guard<std::mutex> guard(myProgMutex);
     while (node >= 0 && myProgOps[node].type == ProgOp::Collapsed) {
         node = myProgOps[node].resolveTo;
     }
     return node;
 }
 
-bool ImportOCAF2::analyze()
+bool ImportOCAF2::analyzeBegin()
 {
     myProgOps.clear();
     myProgObjs.clear();
@@ -944,6 +948,12 @@ bool ImportOCAF2::analyze()
     myProgFailed = false;
     myShapeNodes.clear();
     myLabelNodes.clear();
+    myProgPublished = 0;
+    myRootGroup = -1;
+    myRootChildren = 0;
+    myLastRootChild = -1;
+    myAnalyzedRoots.clear();
+    myClaimedSealed.clear();
 
     // Excluded per design: multi-document modes mutate documents during
     // the traversal, merge throws the intermediate objects away again,
@@ -953,69 +963,102 @@ bool ImportOCAF2::analyze()
     }
 
     aShapeTool->SetAutoNaming(Standard_False);
-
-    if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
-        Tools::dumpLabels(pDoc->Main(), aShapeTool, aColorTool);
-    }
     sequencer = nullptr;
 
+    // Always reserve the root container: whether it survives is only known
+    // once all roots are seen, and analyzeEnd() collapses it for a single
+    // child (loadShapes() creates none then). The publication gate below
+    // keeps it unapplied until a second child proves it final.
+    myRootGroup = newProgOp(ProgOp::Group);
+    return true;
+}
+
+bool ImportOCAF2::analyzeRoots()
+{
     TDF_LabelSequence labels;
     aShapeTool->GetFreeShapes(labels);
-    int count = 0;
     for (Standard_Integer i = 1; i <= labels.Length(); i++) {
         auto label = labels.Value(i);
-        if (!options.importHidden && !aColorTool->IsVisible(label)) {
+        if (!myAnalyzedRoots.emplace(label, true).second) {
             continue;
         }
-        ++count;
-    }
-    int rootGroup = -1;
-    if (count > 1) {
-        rootGroup = newProgOp(ProgOp::Group);
-    }
-    int children = 0;
-    int lastChild = -1;
-    for (Standard_Integer i = 1; i <= labels.Length(); i++) {
-        auto label = labels.Value(i);
         if (!options.importHidden && !aColorTool->IsVisible(label)) {
             continue;
         }
         int node = analyzeShape(label,
                                 aShapeTool->GetShape(label),
-                                rootGroup,
+                                myRootGroup,
                                 aColorTool->IsVisible(label));
         if (myProgFailed) {
             return false;
         }
         if (node >= 0) {
-            ++children;
-            lastChild = node;
+            ++myRootChildren;
+            myLastRootChild = node;
         }
     }
-    if (rootGroup >= 0) {
-        if (children == 0) {
-            return false;
-        }
-        if (children == 1) {
-            // loadShapes() creates no root group around a single result
-            auto &root = myProgOps[rootGroup];
-            root.type = ProgOp::Collapsed;
-            root.resolveTo = lastChild;
-            int emitted = resolveOp(lastChild);
-            if (emitted >= 0) {
-                myProgOps[emitted].parent = -1;
-            }
-        }
-        myProgRoot = rootGroup;
+    if (myRootChildren >= 2) {
+        publishOps();
     }
-    else {
-        myProgRoot = lastChild;
+    return true;
+}
+
+bool ImportOCAF2::analyzeEnd()
+{
+    if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+        Tools::dumpLabels(pDoc->Main(), aShapeTool, aColorTool);
     }
-    if (myProgRoot < 0) {
+    if (myProgFailed || myRootGroup < 0 || myRootChildren == 0) {
         return false;
     }
-    myProgObjs.assign(myProgOps.size(), nullptr);
+    if (myRootChildren == 1) {
+        // loadShapes() creates no root group around a single result; the
+        // publication gate guarantees these ops are still unapplied.
+        auto& root = myProgOps[myRootGroup];
+        root.type = ProgOp::Collapsed;
+        root.resolveTo = myLastRootChild;
+        int emitted = resolveOp(myLastRootChild);
+        if (emitted >= 0) {
+            myProgOps[emitted].parent = -1;
+        }
+    }
+    myProgRoot = myRootGroup;
+    publishOps();
     return true;
+}
+
+bool ImportOCAF2::analyze()
+{
+    if (!analyzeBegin()) {
+        return false;
+    }
+    if (!analyzeRoots()) {
+        return false;
+    }
+    return analyzeEnd();
+}
+
+void ImportOCAF2::publishOps()
+{
+    std::lock_guard<std::mutex> guard(myProgMutex);
+    myProgPublished = myProgOps.size();
+}
+
+std::size_t ImportOCAF2::opsPublished() const
+{
+    std::lock_guard<std::mutex> guard(myProgMutex);
+    return myProgPublished;
+}
+
+void ImportOCAF2::rollbackOps()
+{
+    for (auto rit = myProgObjs.rbegin(); rit != myProgObjs.rend(); ++rit) {
+        auto obj = *rit;
+        if (obj && obj->getNameInDocument()) {
+            pDocument->removeObject(obj->getNameInDocument());
+        }
+    }
+    myProgObjs.clear();
 }
 
 int ImportOCAF2::analyzeShape(TDF_Label label,
@@ -1071,7 +1114,28 @@ int ImportOCAF2::analyzeShape(TDF_Label label,
     auto placement =
         Base::Placement(Part::TopoShape::convert(shape.Location().Transformation()));
 
-    if (myProgOps[facadeIdx].free) {
+    if (opFree(facadeIdx)) {
+        bool sealed;
+        {
+            std::lock_guard<std::mutex> guard(myProgMutex);
+            sealed = std::size_t(facadeIdx) < myProgPublished
+                || std::size_t(nodeIdx) < myProgPublished;
+        }
+        if (sealed) {
+            // The op (or its collapsed replacement) may already be applied;
+            // claim its object through an op of its own instead of mutating
+            // the sealed record.
+            myClaimedSealed.insert(facadeIdx);
+            int claim = newProgOp(ProgOp::Claim);
+            auto &cop = myProgOps[claim];
+            cop.target = nodeIdx;
+            cop.parent = parent;
+            cop.visible = visible;
+            cop.placement = placement;
+            cop.label = getLabelName(label);
+            myLabelNodes.emplace(label, std::make_pair(nodeIdx, -1));
+            return facadeIdx;
+        }
         // First use claims the object directly (the synchronous path's
         // color re-application here re-applies the base color, i.e. is
         // a no-op, so no color fields change on a claim).
@@ -1362,16 +1426,31 @@ App::DocumentObject* ImportOCAF2::progObject(int node) const
 
 bool ImportOCAF2::applyNextOp()
 {
-    while (myProgApplied < myProgOps.size()) {
-        auto idx = myProgApplied++;
-        auto &op = myProgOps[idx];
-        if (op.type == ProgOp::Dropped || op.type == ProgOp::Collapsed) {
-            continue;
+    // Copy the op out under the lock: the worker may still be appending to
+    // myProgOps (sealed ops themselves never change, but the vector storage
+    // moves), and applyOp() must run unlocked (it re-enters resolveOp()).
+    ProgOp op;
+    int idx;
+    {
+        std::lock_guard<std::mutex> guard(myProgMutex);
+        if (myProgObjs.size() < myProgPublished) {
+            myProgObjs.resize(myProgPublished, nullptr);
         }
-        applyOp(op, int(idx));
-        return true;
+        for (;;) {
+            if (myProgApplied >= myProgPublished) {
+                return false;
+            }
+            idx = int(myProgApplied++);
+            if (myProgOps[idx].type == ProgOp::Dropped
+                || myProgOps[idx].type == ProgOp::Collapsed) {
+                continue;
+            }
+            op = myProgOps[idx];
+            break;
+        }
     }
-    return false;
+    applyOp(op, idx);
+    return true;
 }
 
 void ImportOCAF2::applyOp(ProgOp& op, int index)
@@ -1429,6 +1508,22 @@ void ImportOCAF2::applyOp(ProgOp& op, int index)
             applyLinkColor(link, -1, op.linkColor);
         }
         obj = link;
+        break;
+    }
+    case ProgOp::Claim: {
+        // First use of an object applied in an earlier batch: relabel,
+        // re-place and reparent it (what the direct claim would have done
+        // to the op before it was sealed).
+        auto target = progObject(op.target);
+        if (!target) {
+            return;
+        }
+        auto pla = Base::freecad_dynamic_cast<App::PropertyPlacement>(
+            target->getPropertyByName("Placement"));
+        if (pla) {
+            pla->setValue(op.placement * pla->getValue());
+        }
+        obj = target;
         break;
     }
     case ProgOp::LinkArray: {

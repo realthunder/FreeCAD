@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <set>
+#include <atomic>
 #include <thread>
 
 #include <QApplication>
@@ -151,37 +152,141 @@ private:
         App::DocumentWeakPtrT docPtr(pcDoc);
         std::exception_ptr readError;
         bool analyzed = false;
-        QEventLoop loop;
+        std::atomic<bool> streaming {false};
+        std::atomic<bool> workerDone {false};
         std::thread worker([&] {
             try {
                 Import::ReaderStep reader(file);
-                reader.read(hDoc);
+                int roots = 0;
                 if (analyzer) {
-                    try {
-                        analyzed = analyzer->analyze();
+                    roots = reader.openStream();
+                }
+                if (analyzer && roots > 0 && analyzer->analyzeBegin()) {
+                    // Streamed: transfer geometrically growing root batches
+                    // and analyze each, publishing sealed ops the GUI thread
+                    // applies meanwhile. Growing batches bound the repeated
+                    // per-batch attribute passes to O(log roots) while the
+                    // first parts still appear quickly.
+                    streaming = true;
+                    bool ok = true;
+                    int first = 1;
+                    int batch = 1;
+                    while (first <= roots) {
+                        int last = std::min(first + batch - 1, roots);
+                        reader.transferRootRange(hDoc, first, last);
+                        first = last + 1;
+                        batch *= 2;
+                        try {
+                            if (!analyzer->analyzeRoots()) {
+                                ok = false;
+                                break;
+                            }
+                        }
+                        catch (Base::Exception& e) {
+                            FC_WARN("progressive import analysis failed, "
+                                    "falling back: " << e.what());
+                            ok = false;
+                            break;
+                        }
+                        catch (Standard_Failure& e) {
+                            FC_WARN("progressive import analysis failed, falling back: "
+                                    << (e.GetMessageString() ? e.GetMessageString()
+                                                             : "OCCT failure"));
+                            ok = false;
+                            break;
+                        }
                     }
-                    catch (Base::Exception& e) {
-                        FC_WARN("progressive import analysis failed, "
-                                "falling back: " << e.what());
+                    if (ok) {
+                        ok = analyzer->analyzeEnd();
                     }
-                    catch (Standard_Failure& e) {
-                        FC_WARN("progressive import analysis failed, falling back: "
-                                << (e.GetMessageString() ? e.GetMessageString()
-                                                         : "OCCT failure"));
+                    else if (first <= roots) {
+                        // finish the transfer so the synchronous fallback
+                        // sees the complete document
+                        reader.transferRootRange(hDoc, first, roots);
+                    }
+                    analyzed = ok;
+                }
+                else {
+                    if (roots > 0) {
+                        // parsed but not streamable (or analysis ineligible):
+                        // reuse the open stream for a single full transfer
+                        reader.transferRootRange(hDoc, 1, roots);
+                    }
+                    else {
+                        reader.closeStream();
+                        reader.read(hDoc);
+                    }
+                    if (analyzer) {
+                        try {
+                            analyzed = analyzer->analyze();
+                        }
+                        catch (Base::Exception& e) {
+                            FC_WARN("progressive import analysis failed, "
+                                    "falling back: " << e.what());
+                        }
+                        catch (Standard_Failure& e) {
+                            FC_WARN("progressive import analysis failed, falling back: "
+                                    << (e.GetMessageString() ? e.GetMessageString()
+                                                             : "OCCT failure"));
+                        }
                     }
                 }
             }
             catch (...) {
                 readError = std::current_exception();
             }
-            QMetaObject::invokeMethod(&loop, &QEventLoop::quit, Qt::QueuedConnection);
+            workerDone = true;
         });
+        int undoMode = pcDoc->getUndoMode();
+        bool live = false;
         {
             Base::PyGILStateRelease unlock;
-            loop.exec();
+            while (!workerDone) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents
+                                                    | QEventLoop::WaitForMoreEvents,
+                                                50);
+                if (!streaming || docPtr.expired()) {
+                    continue;
+                }
+                if (!live && analyzer->opsPublished() > 0) {
+                    // same regime as applyProgressive(): no undo of a
+                    // progressive import, doc-mutating commands gated
+                    pcDoc->setUndoMode(0);
+                    pcDoc->setStatus(App::Document::LiveImport, true);
+                    live = true;
+                }
+                if (live) {
+                    try {
+                        QElapsedTimer timer;
+                        timer.start();
+                        while (timer.elapsed() < 50 && !docPtr.expired()
+                               && analyzer->applyNextOp()) {
+                        }
+                    }
+                    catch (Base::Exception& e) {
+                        FC_ERR("progressive op failed during streamed import: "
+                               << e.what());
+                    }
+                    catch (Standard_Failure& e) {
+                        FC_ERR("progressive op failed during streamed import: "
+                               << (e.GetMessageString() ? e.GetMessageString()
+                                                        : "OCCT failure"));
+                    }
+                }
+            }
         }
         worker.join();
-        if (docPtr.expired()) {
+        bool expired = docPtr.expired();
+        if (!expired && live && (readError || !analyzed)) {
+            // cancel/error mid-stream or late fallback: leave a clean slate
+            // (removals record no undo while the modes are still overridden)
+            analyzer->rollbackOps();
+        }
+        if (!expired && live) {
+            pcDoc->setStatus(App::Document::LiveImport, false);
+            pcDoc->setUndoMode(undoMode);
+        }
+        if (expired) {
             throw Base::RuntimeError("Target document was closed during STEP import");
         }
         if (readError) {
