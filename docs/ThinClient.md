@@ -176,6 +176,23 @@ desktop/mobile shell (ViewerUIResearch §(b)). This also means **moving UI out o
 the DOM makes into WASM (e.g. "project this 3D point to a screen pixel" for anchoring a
 popover).
 
+**Why not Qt Quick/QML (considered, rejected 2026-08-01):** QML-in-WASM fights everything
+this design optimizes for. (a) *Payload* — Qt6+QML compiled to WASM is ~20–30 MB even
+aggressively trimmed, against ~7.5 KB gzipped for the Solid bundle; first paint over a
+tunneled mobile link is a headline requirement (§2), and a Qt runtime download sinks it.
+(b) *Canvas ownership* — QML draws through its own scene graph into a GL context and wants
+the Emscripten main loop; our canvas and frame pacing belong to bgfx. Embedding QML means a
+second canvas composited over the viewport or ceding the render loop — both conflict with
+the viewer's architecture. (c) *Text input* — QML in the browser renders its controls
+in-canvas, reimplementing input handling: mobile soft keyboards, IME (the CJK contract,
+§4.2), clipboard, and accessibility are precisely where that is weakest, and native DOM
+inputs give them for free (see Touch policy below). (d) *Debuggability* — DOM is live in
+devtools (our devtools-less-phone breadcrumbs build on that); a canvas UI is opaque.
+(e) *No reuse dividend* — the desktop GUI is Qt Widgets, not QML, so QML would be a third
+UI technology with nothing to share. QML becomes interesting only if we ship a fully native
+Qt mobile client sharing UI with a QML desktop — neither is on the roadmap; the native-shell
+path here is Tauri wrapping this same DOM bundle.
+
 **Touch policy:** gestures are hand-rolled over the standard Pointer Events API
 (`setPointerCapture`); sheet detents and scroll physics are CSS (`scroll-snap`,
 `overscroll-behavior: contain`, `env(safe-area-inset-*)`); text/number entry is always a
