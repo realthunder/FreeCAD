@@ -27,8 +27,13 @@
 #ifndef _PreComp_
 #include <climits>
 #include <iostream>
+#include <set>
+#include <thread>
 
+#include <QApplication>
+#include <QEventLoop>
 #include <QString>
+#include <QThread>
 
 #if defined(__clang__)
 #pragma clang diagnostic push
@@ -54,9 +59,12 @@
 #include "dxf/ImpExpDxfGui.h"
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
+#include <App/DocumentObserver.h>
 #include <App/PropertyFile.h>
 #include <Base/Console.h>
+#include <Base/Interpreter.h>
 #include <Base/PyWrapParseTupleAndKeywords.h>
+#include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
@@ -113,6 +121,48 @@ public:
     }
 
 private:
+    // Run the STEP read + XCAF transfer. When called on the GUI thread, the
+    // OCCT work runs on a worker thread while a local event loop keeps the
+    // application pumping (progress bar, redraws, scene publishing); the
+    // sequencer provides progress and Escape-cancel. The XCAF document is the
+    // only state the worker touches.
+    static void readStep(const Base::FileInfo& file,
+                         Handle(TDocStd_Document) hDoc,  // NOLINT
+                         App::Document* pcDoc)
+    {
+        static bool reading;
+        if (reading || !qApp || QThread::currentThread() != qApp->thread()) {
+            Import::ReaderStep reader(file);
+            reader.read(hDoc);
+            return;
+        }
+        Base::StateLocker nestGuard(reading);
+        App::DocumentWeakPtrT docPtr(pcDoc);
+        std::exception_ptr readError;
+        QEventLoop loop;
+        std::thread worker([&] {
+            try {
+                Import::ReaderStep reader(file);
+                reader.read(hDoc);
+            }
+            catch (...) {
+                readError = std::current_exception();
+            }
+            QMetaObject::invokeMethod(&loop, &QEventLoop::quit, Qt::QueuedConnection);
+        });
+        {
+            Base::PyGILStateRelease unlock;
+            loop.exec();
+        }
+        worker.join();
+        if (docPtr.expired()) {
+            throw Base::RuntimeError("Target document was closed during STEP import");
+        }
+        if (readError) {
+            std::rethrow_exception(readError);
+        }
+    }
+
     Py::Object insert(const Py::Tuple& args, const Py::Dict& kwds)
     {
         char* Name;
@@ -181,8 +231,7 @@ private:
                 }
 
                 try {
-                    Import::ReaderStep reader(file);
-                    reader.read(hDoc);
+                    readStep(file, hDoc, pcDoc);
                 }
                 catch (OSD_Exception& e) {
                     Base::Console().Error("%s\n", e.GetMessageString());
@@ -229,7 +278,40 @@ private:
             if (mode >= 0) {
                 ocaf.setMode(mode);
             }
-            auto ret = ocaf.loadShapes();
+            // Defer per-object tessellation while objects are being created;
+            // Application::importFrom() sets the same guard around insert(),
+            // in which case it also runs the finishRestoring pass itself.
+            bool outerRestoring = pcDoc->testStatus(App::Document::Restoring);
+            std::set<long> existingIds;
+            App::DocumentObject* ret = nullptr;
+            {
+                Base::ObjectStatusLocker<App::Document::Status, App::Document>
+                    guard(App::Document::Restoring, pcDoc);
+                if (!outerRestoring) {
+                    for (auto obj : pcDoc->getObjects()) {
+                        existingIds.insert(obj->getID());
+                    }
+                }
+                ret = ocaf.loadShapes();
+            }
+            if (!outerRestoring) {
+                auto gdoc = Gui::Application::Instance->getDocument(pcDoc);
+                // copy: afterImport() may add objects and invalidate the array
+                std::vector<App::DocumentObject*> objs = pcDoc->getObjects();
+                for (auto obj : objs) {
+                    if (existingIds.count(obj->getID())) {
+                        continue;
+                    }
+                    pcDoc->afterImport(obj);
+                    if (gdoc) {
+                        auto vp = Base::freecad_dynamic_cast<Gui::ViewProviderDocumentObject>(
+                            gdoc->getViewProvider(obj));
+                        if (vp) {
+                            vp->finishRestoring();
+                        }
+                    }
+                }
+            }
             hApp->Close(hDoc);
             FC_DURATION_PLUS(d2, t);
             FC_DURATION_LOG(d1, "file read");

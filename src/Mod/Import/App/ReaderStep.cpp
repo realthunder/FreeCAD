@@ -26,6 +26,9 @@
 #ifndef _PreComp_
 #include <Standard_Version.hxx>
 #include <STEPCAFControl_Reader.hxx>
+#if OCC_VERSION_HEX >= 0x070500
+#include <Message_ProgressRange.hxx>
+#endif
 #include <Transfer_TransientProcess.hxx>
 #include <XSControl_TransferReader.hxx>
 #include <XSControl_WorkSession.hxx>
@@ -55,14 +58,18 @@ void ReaderStep::read(Handle(TDocStd_Document) hDoc)  // NOLINT
         throw Base::FileException("Cannot read STEP file", file);
     }
 
-#if OCC_VERSION_HEX < 0x070500
+#if OCC_VERSION_HEX >= 0x070500
+    opencascade::handle<Part::ProgressIndicator> pi = new Part::ProgressIndicator(100);
+    aReader.Transfer(hDoc, pi->Start());
+    if (pi->UserBreak()) {
+        throw Base::AbortException("STEP import aborted by user");
+    }
+#else
     Handle(Message_ProgressIndicator) pi = new Part::ProgressIndicator(100);
     aReader.Reader().WS()->MapReader()->SetProgress(pi);
     pi->NewScope(100, "Reading STEP file...");
     pi->Show();
-#endif
     aReader.Transfer(hDoc);
-#if OCC_VERSION_HEX < 0x070500
     pi->EndScope();
 #endif
 }
