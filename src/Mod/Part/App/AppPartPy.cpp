@@ -74,7 +74,7 @@
 # include <TopoDS_Face.hxx>
 # include <TopoDS_Shell.hxx>
 # include <TopoDS_Solid.hxx>
-# include <TopTools_ListIteratorOfListOfShape.hxx>
+# include <TopTools_ListOfShape.hxx>
 #endif
 # include <BRepFill_Generator.hxx>
 
@@ -1418,7 +1418,7 @@ private:
                 }
 
                 if (count == 0)//no shells?
-                    Standard_Failure::Raise("No shells or compsolids found in shape");
+                    throw Standard_Failure("No shells or compsolids found in shape");
 
                 TopoDS_Solid solid = mkSolid.Solid();
                 BRepLib::OrientClosedSolid(solid);
@@ -1428,7 +1428,7 @@ private:
                 TopoDS_Solid solid = mkSolid.Solid();
                 return Py::asObject(new TopoShapeSolidPy(new TopoShape(solid)));
             } else { // if (count > 1)
-                Standard_Failure::Raise("Only one compsolid can be accepted. Provided shape has more than one compsolid.");
+                throw Standard_Failure("Only one compsolid can be accepted. Provided shape has more than one compsolid.");
                 return Py::None(); //prevents compiler warning
             }
         }
@@ -1661,7 +1661,7 @@ private:
             }
 
             if (!mkPoly.IsDone())
-                Standard_Failure::Raise("Cannot create polygon because less than two vertices are given");
+                throw Standard_Failure("Cannot create polygon because less than two vertices are given");
 
             // if the polygon should be closed
             if (Base::asBoolean(pclosed)) {

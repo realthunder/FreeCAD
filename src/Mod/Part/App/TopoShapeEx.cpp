@@ -27,6 +27,7 @@
 # include <cstdlib>
 # include <sstream>
 # include <QString>
+# include <TColgp_Array1OfPnt2d.hxx>
 # include <BRepLib.hxx>
 # include <BSplCLib.hxx>
 # include <Bnd_Box.hxx>
@@ -59,7 +60,7 @@
 # include <BRepBuilderAPI_Copy.hxx>
 # include <BRepBuilderAPI_Transform.hxx>
 # include <BRepCheck_Analyzer.hxx>
-# include <BRepCheck_ListIteratorOfListOfStatus.hxx>
+# include <BRepCheck_ListOfStatus.hxx>
 # include <BRepCheck_Result.hxx>
 # include <BRepClass_FaceClassifier.hxx>
 # include <BRepFilletAPI_MakeFillet.hxx>
@@ -124,7 +125,7 @@
 # include <TopoDS_Vertex.hxx>
 # include <TopExp.hxx>
 # include <TopExp_Explorer.hxx>
-# include <TopTools_ListIteratorOfListOfShape.hxx>
+# include <TopTools_ListOfShape.hxx>
 # include <Geom2d_Ellipse.hxx>
 # include <Geom_BezierCurve.hxx>
 # include <Geom_BezierSurface.hxx>
@@ -175,7 +176,7 @@
 #include <ShapeAnalysis_FreeBoundData.hxx>
 #include <ShapeAnalysis_FreeBounds.hxx>
 #include <BRepOffsetAPI_MakeFilling.hxx>
-#include <TopTools_DataMapIteratorOfDataMapOfShapeListOfShape.hxx>
+#include <TopTools_DataMapOfShapeListOfShape.hxx>
 #include <GeomFill_FillingStyle.hxx>
 #include <GeomFill_BSplineCurves.hxx>
 #include <GeomFill_BezierCurves.hxx>
@@ -3529,7 +3530,7 @@ TopoShape &TopoShape::makEBoolean(const char *maker,
 {
 #if OCC_VERSION_HEX <= 0x060800
     if (tol > 0.0)
-        Standard_Failure::Raise("Fuzzy Booleans are not supported in this version of OCCT");
+        throw Standard_Failure("Fuzzy Booleans are not supported in this version of OCCT");
 #endif
 
     if(!maker)
@@ -5565,9 +5566,9 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
         auto e4 = mk4.Edge();
 
         ShapeMapper mapper;
-        mapper.populate(true, e, {e1, e2, e3, e4});
-        mapper.populate(false, v, {TopExp::FirstVertex(e1)});
-        mapper.populate(false, v, {TopExp::LastVertex(e4)});
+        mapper.populate(true, e, std::vector<TopoShape>{e1, e2, e3, e4});
+        mapper.populate(false, v, std::vector<TopoShape>{TopExp::FirstVertex(e1)});
+        mapper.populate(false, v, std::vector<TopoShape>{TopExp::LastVertex(e4)});
 
         BRep_Builder builder;
         TopoDS_Compound comp;
@@ -5660,7 +5661,7 @@ TopoShape & TopoShape::makEBSplineFace(const std::vector<TopoShape> &input,
                     ShapeConstruct_Curve scc;
                     Handle(Geom_BSplineCurve) spline = scc.ConvertToBSpline(c_geom, u1, u2, Precision::Confusion());
                     if (spline.IsNull())
-                        Standard_Failure::Raise("A curve was not a B-spline and could not be converted into one.");
+                        throw Standard_Failure("A curve was not a B-spline and could not be converted into one.");
                     curves.push_back(spline);
                 }
             }
@@ -6021,7 +6022,7 @@ bool TopoShape::isLinearEdge(Base::Vector3d *dir, Base::Vector3d *base) const
         return false;
 
     Standard_Real p1, p2;
-    Handle_Geom_Curve curve = BRep_Tool::Curve(TopoDS::Edge(getShape()), p1, p2);
+    Handle(Geom_Curve) curve = BRep_Tool::Curve(TopoDS::Edge(getShape()), p1, p2);
     if (!GeomCurve::isLinear(curve, dir, base))
         return false;
 

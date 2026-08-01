@@ -40,7 +40,7 @@
 # include <TopoDS_Iterator.hxx>
 # include <TopoDS_Shell.hxx>
 # include <TopTools_HSequenceOfShape.hxx>
-# include <TopTools_ListIteratorOfListOfShape.hxx>
+# include <TopTools_ListOfShape.hxx>
 #endif
 
 #include <App/Link.h>
@@ -608,7 +608,7 @@ App::DocumentObjectExecReturn *Sweep::execute()
         }
 
         if (!mkPipeShell.IsReady())
-            Standard_Failure::Raise("shape is not ready to build");
+            throw Standard_Failure("shape is not ready to build");
         mkPipeShell.Build();
         if (isSolid)
             mkPipeShell.MakeSolid();

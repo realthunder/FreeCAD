@@ -26,6 +26,7 @@
 
 #ifndef _PreComp_
 # include <cfloat>
+# include <TColgp_Array1OfPnt.hxx>
 # include <BRep_Tool.hxx>
 # include <Poly_Polygon3D.hxx>
 # include <Geom_BSplineCurve.hxx>

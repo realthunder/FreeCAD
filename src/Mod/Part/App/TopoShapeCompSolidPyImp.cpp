@@ -108,7 +108,7 @@ PyObject*  TopoShapeCompSolidPy::add(PyObject *args)
             if(!s.isNull())
                 builder.Add(comp,s.getShape());
             else
-                Standard_Failure::Raise("Cannot empty shape to compound solid");
+                throw Standard_Failure("Cannot empty shape to compound solid");
         }
 
 #ifndef FC_NO_ELEMENT_MAP

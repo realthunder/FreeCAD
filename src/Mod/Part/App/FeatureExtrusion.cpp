@@ -304,14 +304,14 @@ void Extrusion::extrudeShape(TopoShape &result,
         Base::SignalException se;
 #endif
         if (source.isNull())
-            Standard_Failure::Raise("Cannot extrude empty shape");
+            throw Standard_Failure("Cannot extrude empty shape");
         // #0000910: Circles Extrude Only Surfaces, thus use BRepBuilderAPI_Copy
         TopoShape myShape(source.makECopy());
 
         std::vector<TopoShape> drafts;
         ExtrusionHelper::makeDraft(params, myShape, drafts, result.Hasher);
         if (drafts.empty()) {
-            Standard_Failure::Raise("Drafting shape failed");
+            throw Standard_Failure("Drafting shape failed");
         }
         else {
             result.makECompound(drafts,0,false);
@@ -320,7 +320,7 @@ void Extrusion::extrudeShape(TopoShape &result,
     else {
         //Regular (non-tapered) extrusion!
         if (source.isNull())
-            Standard_Failure::Raise("Cannot extrude empty shape");
+            throw Standard_Failure("Cannot extrude empty shape");
 
         // #0000910: Circles Extrude Only Surfaces, thus use BRepBuilderAPI_Copy
         TopoShape myShape(source.makECopy());

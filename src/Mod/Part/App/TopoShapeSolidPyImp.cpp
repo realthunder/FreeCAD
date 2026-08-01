@@ -114,7 +114,7 @@ int TopoShapeSolidPy::PyInit(PyObject* args, PyObject* /*kwd*/)
             }
 
             if (count == 0)//no shells?
-                Standard_Failure::Raise("No shells or compsolids found in shape");
+                throw Standard_Failure("No shells or compsolids found in shape");
 
             TopoDS_Solid solid = mkSolid.Solid();
             BRepLib::OrientClosedSolid(solid);
@@ -124,7 +124,7 @@ int TopoShapeSolidPy::PyInit(PyObject* args, PyObject* /*kwd*/)
             TopoDS_Solid solid = mkSolid.Solid();
             getTopoShapePtr()->setShape(solid);
         } else /*if (count > 1)*/ {
-            Standard_Failure::Raise("Only one compsolid can be accepted. Provided shape has more than one compsolid.");
+            throw Standard_Failure("Only one compsolid can be accepted. Provided shape has more than one compsolid.");
         }
 
 #endif

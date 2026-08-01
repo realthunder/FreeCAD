@@ -44,7 +44,7 @@
 #include <Precision.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
-#include <TopTools_MapIteratorOfMapOfShape.hxx>
+#include <TopTools_MapOfShape.hxx>
 #include <TopTools_MapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>

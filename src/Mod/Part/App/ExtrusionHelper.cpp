@@ -172,7 +172,7 @@ void ExtrusionHelper::makeDraft(const Parameters& params,
     TopoShape shape = _shape;
     TopoShape sourceWire;
     if (shape.isNull())
-        Standard_Failure::Raise("Not a valid shape");
+        throw Standard_Failure("Not a valid shape");
 
     if (params.solid)
         shape = shape.makEFace(nullptr, params.faceMakerClass.c_str());
@@ -183,14 +183,14 @@ void ExtrusionHelper::makeDraft(const Parameters& params,
         std::vector<TopoShape> wires;
         TopoShape outerWire = shape.splitWires(&wires, TopoShape::ReorientForward);
         if (outerWire.isNull())
-            Standard_Failure::Raise("Missing outer wire");
+            throw Standard_Failure("Missing outer wire");
         if (wires.empty())
             shape = outerWire.getShape();
         else {
             unsigned pos = drafts.size();
             makeDraft(params, outerWire, drafts, hasher);
             if (drafts.size() != pos+1)
-                Standard_Failure::Raise("Failed to make drafted extrusion");
+                throw Standard_Failure("Failed to make drafted extrusion");
             std::vector<TopoShape> inner;
             TopoShape innerWires(0, hasher);
             innerWires.makECompound(wires,"",false);
@@ -199,7 +199,7 @@ void ExtrusionHelper::makeDraft(const Parameters& params,
             copy.taperAngleRev = params.innerTaperAngleRev;
             makeDraft(copy, innerWires, inner, hasher);
             if (inner.empty())
-                Standard_Failure::Raise("Failed to make drafted extrusion with inner hole");
+                throw Standard_Failure("Failed to make drafted extrusion with inner hole");
             inner.insert(inner.begin(), drafts.back());
             drafts.back().makECut(inner);
             return;
@@ -221,7 +221,7 @@ void ExtrusionHelper::makeDraft(const Parameters& params,
             makeDraft(params, s, drafts, hasher);
     }
     else {
-        Standard_Failure::Raise("Only a wire or a face is supported");
+        throw Standard_Failure("Only a wire or a face is supported");
     }
 
     if (!sourceWire.isNull()) {
@@ -239,7 +239,7 @@ void ExtrusionHelper::makeDraft(const Parameters& params,
         if (bRev){
             auto offsetShape = makeOffset(vecRev, distanceRev);
             if (offsetShape.isNull())
-                Standard_Failure::Raise("Tapered shape is empty");
+                throw Standard_Failure("Tapered shape is empty");
             TopAbs_ShapeEnum type = offsetShape.getShape().ShapeType();
             if (type == TopAbs_WIRE) {
                 list_of_sections.push_back(offsetShape);
@@ -248,7 +248,7 @@ void ExtrusionHelper::makeDraft(const Parameters& params,
                 list_of_sections.push_back(offsetShape.makEWires());
             }
             else {
-                Standard_Failure::Raise("Tapered shape type is not supported");
+                throw Standard_Failure("Tapered shape type is not supported");
             }
         }
 
@@ -261,7 +261,7 @@ void ExtrusionHelper::makeDraft(const Parameters& params,
         if (bFwd){
             auto offsetShape = makeOffset(vecFwd, distanceFwd);
             if (offsetShape.isNull())
-                Standard_Failure::Raise("Tapered shape is empty");
+                throw Standard_Failure("Tapered shape is empty");
             TopAbs_ShapeEnum type = offsetShape.getShape().ShapeType();
             if (type == TopAbs_WIRE) {
                 list_of_sections.push_back(offsetShape);
@@ -270,7 +270,7 @@ void ExtrusionHelper::makeDraft(const Parameters& params,
                 list_of_sections.push_back(offsetShape.makEWires());
             }
             else {
-                Standard_Failure::Raise("Tapered shape type is not supported");
+                throw Standard_Failure("Tapered shape type is not supported");
             }
         }
 

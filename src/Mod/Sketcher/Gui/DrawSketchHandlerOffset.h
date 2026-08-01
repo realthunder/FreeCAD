@@ -26,6 +26,7 @@
 
 #include <QApplication>
 
+#include <TopExp_Explorer.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepClass_FaceClassifier.hxx>

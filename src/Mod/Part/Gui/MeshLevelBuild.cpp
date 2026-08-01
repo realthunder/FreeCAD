@@ -29,6 +29,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <TColgp_Array1OfPnt.hxx>
 # include <BRepBndLib.hxx>
 # include <BRep_Builder.hxx>
 # include <BRepBuilderAPI_Copy.hxx>
@@ -45,6 +46,7 @@
 # include <Poly_Triangulation.hxx>
 # include <Precision.hxx>
 # include <Standard_Failure.hxx>
+# include <Standard_OutOfMemory.hxx>
 # include <TColgp_Array1OfDir.hxx>
 # include <TColStd_Array1OfInteger.hxx>
 # include <TopExp.hxx>
@@ -739,7 +741,7 @@ TopoDS_Shape PartGui::meshLevelExactCopy(const TopoDS_Shape &shape,
         // subclass; report it like the language-level one — the caller
         // treats either as a ceiling observation (§13 step 3).
         if (outOfMemory
-            && e.DynamicType()->SubType("Standard_OutOfMemory"))
+            && dynamic_cast<const Standard_OutOfMemory*>(&e))
             *outOfMemory = true;
         if (debugOn())
             std::fprintf(stderr, "mesh refine: OCCT failure: %s\n",

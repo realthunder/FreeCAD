@@ -257,7 +257,7 @@ App::DocumentObjectExecReturn *Mirroring::execute()
 #ifdef FC_NO_ELEMENT_MAP
         const TopoDS_Shape& shape = Feature::getShape(link);
         if (shape.IsNull())
-            Standard_Failure::Raise(std::string(std::string(this->getFullLabel()) + ": Cannot mirror empty shape").c_str());
+            throw Standard_Failure(std::string(std::string(this->getFullLabel()) + ": Cannot mirror empty shape").c_str());
         gp_Trsf mat;
         mat.SetMirror(ax2);
         TopLoc_Location loc = shape.Location();
@@ -268,7 +268,7 @@ App::DocumentObjectExecReturn *Mirroring::execute()
 #else
         auto shape = Feature::getTopoShape(link);
         if (shape.isNull())
-            Standard_Failure::Raise("Cannot mirror empty shape");
+            throw Standard_Failure("Cannot mirror empty shape");
         this->Shape.setValue(TopoShape(0,getDocument()->getStringHasher()).makEMirror(shape,ax2));
 #endif
         return Part::Feature::execute();

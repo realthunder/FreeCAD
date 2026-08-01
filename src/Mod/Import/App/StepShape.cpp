@@ -28,6 +28,7 @@
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
 
+#include <TColStd_HSequenceOfTransient.hxx>
 #include <Interface_Static.hxx>
 #include <Message_Messenger.hxx>
 #include <Message_PrinterOStream.hxx>

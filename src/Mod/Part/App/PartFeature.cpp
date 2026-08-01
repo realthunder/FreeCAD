@@ -52,7 +52,7 @@
 # include <TopExp_Explorer.hxx>
 # include <TopoDS.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
-# include <TopTools_ListIteratorOfListOfShape.hxx>
+# include <TopTools_ListOfShape.hxx>
 #endif
 
 #include <boost/range.hpp>
@@ -412,7 +412,7 @@ App::DocumentObject *Feature::getSubObject(const char *subname,
         Standard_CString msg = e.GetMessageString();
 
         // Avoid name mangling
-        str << e.DynamicType()->get_type_name() << " ";
+        str << typeid(e).name() << " ";
 
         if (msg) {str << msg;}
         else     {str << "No OCCT Exception Message";}

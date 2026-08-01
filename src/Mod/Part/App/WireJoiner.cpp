@@ -26,6 +26,9 @@
 #include <boost/graph/graph_concepts.hpp>
 
 #ifndef _PreComp_
+# include <IntRes2d_SequenceOfIntersectionPoint.hxx>
+# include <TColgp_SequenceOfPnt.hxx>
+# include <TColStd_SequenceOfReal.hxx>
 # include <BRepLib.hxx>
 # include <BRep_Builder.hxx>
 # include <BRep_Tool.hxx>
@@ -187,7 +190,7 @@ public:
         std::unique_ptr<Geometry> geo;
         Standard_Real firstParam;
         Standard_Real lastParam;
-        Handle_Geom_Curve curve;
+        Handle(Geom_Curve) curve;
         GeomAbs_CurveType type;
         bool isLinear;
 

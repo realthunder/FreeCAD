@@ -22,6 +22,10 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <TColGeom2d_HArray1OfCurve.hxx>
+# include <TColStd_HArray1OfInteger.hxx>
+# include <TColgp_SequenceOfXY.hxx>
+# include <TColgp_SequenceOfXYZ.hxx>
 # include <Standard_Failure.hxx>
 #endif
 

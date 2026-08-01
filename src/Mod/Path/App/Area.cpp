@@ -336,7 +336,7 @@ static std::vector<gp_Pnt> discretize(const TopoDS_Edge& edge, double deflection
     //
     GCPnts_UniformDeflection discretizer(curve, deflection, efirst, elast);
     if (!discretizer.IsDone())
-        Standard_Failure::Raise("Curve discretization failed");
+        throw Standard_Failure("Curve discretization failed");
     if (discretizer.NbPoints() > 1) {
         int nbPoints = discretizer.NbPoints();
         //strangely OCC discretizer points are one-based, not zero-based, why?
@@ -869,7 +869,7 @@ struct WireJoiner {
             }
 
             Standard_Real first, last;
-            Handle_Geom_Curve curve = BRep_Tool::Curve(it->edge, first, last);
+            Handle(Geom_Curve) curve = BRep_Tool::Curve(it->edge, first, last);
             bool reversed = pstart.SquareDistance(curve->Value(last)) <=
                 Precision::SquareConfusion();
 
@@ -1317,7 +1317,7 @@ int Area::project(TopoDS_Shape& shape_out,
     const TopoDS_Shape* work_plane)
 {
     FC_TIME_INIT2(t, t1);
-    Handle_HLRBRep_Algo brep_hlr;
+    Handle(HLRBRep_Algo) brep_hlr;
     gp_Dir dir(0, 0, 1);
     try {
         brep_hlr = new HLRBRep_Algo();
@@ -2720,7 +2720,7 @@ struct ShapeInfo {
                 // PointProjectionFailed. Why??
 
                 Standard_Real first, last;
-                Handle_Geom_Curve curve = BRep_Tool::Curve(edge, first, last);
+                Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, first, last);
                 pt = curve->Value(last);
                 bool reversed;
                 if (pprev.SquareDistance(pt) <= Precision::SquareConfusion()) {

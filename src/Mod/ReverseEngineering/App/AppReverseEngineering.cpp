@@ -239,7 +239,7 @@ private:
                 }
             }
 
-            TColgp_Array1OfPnt clPoints(0, pts.size()-1);
+            TColgp_Array1OfPnt clPoints(0, int(pts.size())-1);
             if (clPoints.Length() < uPoles * vPoles) {
                 throw Py::ValueError("Too less data points for the specified number of poles");
             }

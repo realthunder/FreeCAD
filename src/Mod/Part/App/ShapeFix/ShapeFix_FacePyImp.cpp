@@ -22,6 +22,7 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <TopTools_SequenceOfShape.hxx>
 # include <TopoDS.hxx>
 #endif
 

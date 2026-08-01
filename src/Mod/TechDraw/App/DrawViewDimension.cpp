@@ -32,6 +32,7 @@
 # include <QString>
 # include <QStringList>
 
+# include <TopTools_IndexedMapOfShape.hxx>
 # include <BRep_Tool.hxx>
 # include <BRepAdaptor_Curve.hxx>
 # include <BRepBuilderAPI_MakeEdge.hxx>

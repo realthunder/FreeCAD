@@ -36,7 +36,7 @@
 #include "SMESH_subMesh.hxx"
 
 #include <BRepTools_WireExplorer.hxx>
-#include <TopTools_ListIteratorOfListOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <TopTools_MapOfShape.hxx>
 #include <TopoDS.hxx>
 

@@ -23,6 +23,9 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <TColStd_Array1OfInteger.hxx>
+#include <TColStd_Array1OfReal.hxx>
+#include <TColgp_HArray1OfPnt.hxx>
 #include <Standard_Version.hxx>
 #if OCC_VERSION_HEX < 0x070600
 #include <BRepAdaptor_HCurve.hxx>

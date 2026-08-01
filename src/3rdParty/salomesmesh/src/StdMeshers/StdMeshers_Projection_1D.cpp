@@ -48,7 +48,7 @@
 #include <TopExp.hxx>
 #include <TopoDS.hxx>
 #include <gp_Pnt.hxx>
-#include <TopTools_ListIteratorOfListOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
 
 #include "utilities.h"
 

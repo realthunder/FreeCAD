@@ -44,7 +44,13 @@
 # include <Geom2dAPI_InterCurveCurve.hxx>
 # include <Geom2dAPI_ProjectPointOnCurve.hxx>
 # include <Geom2dConvert_ApproxCurve.hxx>
-# include <Geom2dLProp_CLProps2d.hxx>
+# include <Standard_Version.hxx>
+# if OCC_VERSION_HEX >= 0x080000
+#  include <GeomLProp_CLProps.hxx>
+# else
+#  include <Geom2dLProp_CLProps2d.hxx>
+typedef Geom2dLProp_CLProps2d GeomLProp_CLProps2d;
+# endif
 # include <gp_Dir2d.hxx>
 # include <Precision.hxx>
 # include <ShapeConstruct_Curve.hxx>
@@ -537,7 +543,7 @@ PyObject* Curve2dPy::tangent(PyObject *args)
             if (!PyArg_ParseTuple(args, "d", &u))
                 return nullptr;
             gp_Dir2d dir;
-            Geom2dLProp_CLProps2d prop(c,u,2,Precision::Confusion());
+            GeomLProp_CLProps2d prop(c,u,2,Precision::Confusion());
             if (prop.IsTangentDefined()) {
                 prop.Tangent(dir);
             }
@@ -564,7 +570,7 @@ PyObject* Curve2dPy::normal(PyObject *args)
             if (!PyArg_ParseTuple(args, "d", &u))
                 return nullptr;
             gp_Dir2d dir;
-            Geom2dLProp_CLProps2d prop(c,u,2,Precision::Confusion());
+            GeomLProp_CLProps2d prop(c,u,2,Precision::Confusion());
             prop.Normal(dir);
 
             return Py::new_reference_to(Base::Vector2dPy::create(dir.X(), dir.Y()));
@@ -588,7 +594,7 @@ PyObject* Curve2dPy::curvature(PyObject *args)
             double u;
             if (!PyArg_ParseTuple(args, "d", &u))
                 return nullptr;
-            Geom2dLProp_CLProps2d prop(c,u,2,Precision::Confusion());
+            GeomLProp_CLProps2d prop(c,u,2,Precision::Confusion());
             double C = prop.Curvature();
             return Py::new_reference_to(Py::Float(C));
         }
@@ -611,7 +617,7 @@ PyObject* Curve2dPy::centerOfCurvature(PyObject *args)
             double u;
             if (!PyArg_ParseTuple(args, "d", &u))
                 return nullptr;
-            Geom2dLProp_CLProps2d prop(c,u,2,Precision::Confusion());
+            GeomLProp_CLProps2d prop(c,u,2,Precision::Confusion());
             gp_Pnt2d pnt ;
             prop.CentreOfCurvature(pnt);
 
@@ -667,7 +673,7 @@ PyObject* Curve2dPy::toBSpline(PyObject * args)
             ShapeConstruct_Curve scc;
             Handle(Geom2d_BSplineCurve) spline = scc.ConvertToBSpline(c, u, v, Precision::Confusion());
             if (spline.IsNull())
-                Standard_NullValue::Raise("Conversion to B-spline failed");
+                throw Standard_NullValue("Conversion to B-spline failed");
             return new BSplineCurve2dPy(new Geom2dBSplineCurve(spline));
         }
     }

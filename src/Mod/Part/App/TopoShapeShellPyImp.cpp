@@ -117,10 +117,10 @@ int TopoShapeShellPy::PyInit(PyObject* args, PyObject* /*kwd*/)
         }
 
         if (shape.IsNull())
-            Standard_Failure::Raise("Shape is null");
+            throw Standard_Failure("Shape is null");
 
         if (shape.ShapeType() != TopAbs_SHELL)
-            Standard_Failure::Raise("Shape is not a shell");
+            throw Standard_Failure("Shape is not a shell");
     } _PY_CATCH_OCC(return(-1))
 
     getTopoShapePtr()->setShape(shape);
@@ -152,7 +152,7 @@ PyObject*  TopoShapeShellPy::add(PyObject *args)
             }
         }
         else {
-            Standard_Failure::Raise("cannot add empty shape");
+            throw Standard_Failure("cannot add empty shape");
         }
     } PY_CATCH_OCC
 

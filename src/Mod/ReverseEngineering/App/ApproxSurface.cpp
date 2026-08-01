@@ -62,7 +62,7 @@ SplineBasisfunction::SplineBasisfunction(TColStd_Array1OfReal& vKnots,
 
     if (vKnots.Length() != vMults.Length() || iSize != sum) {
         // Throw exception
-        Standard_ConstructionError::Raise("BSplineBasis");
+        throw Standard_ConstructionError("BSplineBasis");
     }
 
     int k = 0;
@@ -88,7 +88,7 @@ SplineBasisfunction::~SplineBasisfunction() = default;
 void SplineBasisfunction::SetKnots(TColStd_Array1OfReal& vKnots, int iOrder)
 {
     if (_vKnotVector.Length() != vKnots.Length()) {
-        Standard_RangeError::Raise("BSplineBasis");
+        throw Standard_RangeError("BSplineBasis");
     }
 
     _vKnotVector = vKnots;
@@ -106,7 +106,7 @@ void SplineBasisfunction::SetKnots(TColStd_Array1OfReal& vKnots,
 
     if (vKnots.Length() != vMults.Length() || _vKnotVector.Length() != sum) {
         // Throw exception
-        Standard_RangeError::Raise("BSplineBasis");
+        throw Standard_RangeError("BSplineBasis");
     }
     int k = 0;
     for (int i = vMults.Lower(); i <= vMults.Upper(); i++) {
@@ -165,7 +165,7 @@ int BSplineBasis::FindSpan(double fParam)
 void BSplineBasis::AllBasisFunctions(double fParam, TColStd_Array1OfReal& vFuncVals)
 {
     if (vFuncVals.Length() != _iOrder) {
-        Standard_RangeError::Raise("BSplineBasis");
+        throw Standard_RangeError("BSplineBasis");
     }
 
     int iIndex = FindSpan(fParam);
@@ -265,7 +265,7 @@ void BSplineBasis::DerivativesOfBasisFunction(int iIndex,
 {
     int iMax = iMaxDer;
     if (Derivat.Length() != iMax + 1) {
-        Standard_RangeError::Raise("BSplineBasis");
+        throw Standard_RangeError("BSplineBasis");
     }
     // kth derivatives (k> degrees) are zero
     if (iMax >= _iOrder) {

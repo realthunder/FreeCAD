@@ -26,6 +26,7 @@
 #include <boost/core/ignore_unused.hpp>
 #include <numeric>
 
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>

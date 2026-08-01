@@ -132,7 +132,7 @@
 #include <BRepBuilderAPI_Transform.hxx>
 
 #include <BRepCheck_Analyzer.hxx>
-#include <BRepCheck_ListIteratorOfListOfStatus.hxx>
+#include <BRepCheck_ListOfStatus.hxx>
 #include <BRepCheck_Result.hxx>
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRepClass3d.hxx>
@@ -276,7 +276,7 @@
 #include <Geom2dConvert_ApproxCurve.hxx>
 #include <Geom2dConvert_BSplineCurveToBezierCurve.hxx>
 #include <Geom2dConvert_CompCurveToBSplineCurve.hxx>
-#include <Geom2dLProp_CLProps2d.hxx>
+#include <GeomLProp_CLProps.hxx>
 #include <GeomAdaptor_Curve.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <GeomAdaptor.hxx>
@@ -461,7 +461,7 @@
 #include <TColStd_Array2OfReal.hxx>
 #include <TColStd_HArray1OfBoolean.hxx>
 #include <TColStd_HSequenceOfTransient.hxx>
-#include <TColStd_MapIteratorOfMapOfTransient.hxx>
+#include <TColStd_MapOfTransient.hxx>
 #include <TColStd_MapOfTransient.hxx>
 #include <TColStd_SequenceOfExtendedString.hxx>
 
@@ -481,15 +481,15 @@
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
-#include <TopTools_DataMapIteratorOfDataMapOfShapeShape.hxx>
-#include <TopTools_DataMapIteratorOfDataMapOfIntegerListOfShape.hxx>
+#include <TopTools_DataMapOfShapeShape.hxx>
+#include <TopTools_DataMapOfIntegerListOfShape.hxx>
 #include <TopTools_DataMapOfIntegerListOfShape.hxx>
 #include <TopTools_DataMapOfIntegerShape.hxx>
 #include <TopTools_HSequenceOfShape.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
-#include <TopTools_ListIteratorOfListOfShape.hxx>
-#include <TopTools_ListIteratorOfListOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopTools_MapOfShape.hxx>
 

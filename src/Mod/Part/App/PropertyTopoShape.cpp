@@ -36,7 +36,8 @@
 # include <gp_GTrsf.hxx>
 # include <gp_Trsf.hxx>
 # include <BRepBuilderAPI_MakeShape.hxx>
-# include <TopTools_ListIteratorOfListOfShape.hxx>
+# include <TopTools_ListOfShape.hxx>
+# include <TopTools_IndexedMapOfShape.hxx>
 
 # include <TopoDS.hxx>
 #endif // _PreComp_

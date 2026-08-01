@@ -23,8 +23,11 @@
 #ifndef IMPORT_TOOLS_H
 #define IMPORT_TOOLS_H
 
+#include <Standard_Version.hxx>
 #include <Quantity_ColorRGBA.hxx>
+#if OCC_VERSION_HEX < 0x070800
 #include <TDF_LabelMapHasher.hxx>
+#endif
 #include <TopoDS_Shape.hxx>
 #include <XCAFDoc_ColorTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
