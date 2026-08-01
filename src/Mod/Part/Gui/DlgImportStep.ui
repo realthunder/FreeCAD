@@ -118,6 +118,22 @@ during file reading (slower but higher details).</string>
        </widget>
       </item>
       <item>
+       <widget class="Gui::PrefCheckBox" name="checkBoxProgressiveImport">
+        <property name="toolTip">
+         <string>Create the imported objects incrementally so the model shows up while the import is still running (single document mode only)</string>
+        </property>
+        <property name="text">
+         <string>Progressive import</string>
+        </property>
+        <property name="prefEntry" stdset="0">
+         <cstring>ProgressiveImport</cstring>
+        </property>
+        <property name="prefPath" stdset="0">
+         <cstring>Mod/Import</cstring>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="Gui::PrefCheckBox" name="checkBoxUseBaseName">
         <property name="toolTip">
          <string>Do not use instance name. Useful for some legacy STEP file with non-meaningful auto generated instance names.</string>

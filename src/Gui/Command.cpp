@@ -469,6 +469,18 @@ void Command::invoke(int i, TriggerSource trigger)
     Base::Console().Log("CmdG: %s\n",sName);
 #endif
 
+    // A progressive import is still filling the active document; a
+    // document-mutating command interleaved with the pending create ops
+    // would corrupt the import, so gate those until it finishes.
+    if (eType & AlterDoc) {
+        auto doc = App::GetApplication().getActiveDocument();
+        if (doc && doc->testStatus(App::Document::LiveImport)) {
+            getMainWindow()->showMessage(
+                QObject::tr("The document is busy importing, please wait..."), 3000);
+            return;
+        }
+    }
+
     _invoke(i, bCanLog && !_busy);
 }
 

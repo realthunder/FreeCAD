@@ -44,6 +44,7 @@ DlgImportStep::DlgImportStep(QWidget* parent)
     ui->checkBoxUseBaseName->setChecked(settings.getUseBaseName());
     ui->checkBoxReduceObjects->setChecked(settings.getReduceObjects());
     ui->checkBoxShowProgress->setChecked(settings.getShowProgress());
+    ui->checkBoxProgressiveImport->setChecked(settings.getProgressiveImport());
 }
 
 /**
@@ -60,6 +61,7 @@ void DlgImportStep::saveSettings()
     ui->checkBoxUseBaseName->onSave();
     ui->checkBoxReduceObjects->onSave();
     ui->checkBoxShowProgress->onSave();
+    ui->checkBoxProgressiveImport->onSave();
     ui->comboBoxImportMode->onSave();
 }
 
@@ -72,6 +74,7 @@ void DlgImportStep::loadSettings()
     ui->checkBoxUseBaseName->onRestore();
     ui->checkBoxReduceObjects->onRestore();
     ui->checkBoxShowProgress->onRestore();
+    ui->checkBoxProgressiveImport->onRestore();
     ui->comboBoxImportMode->onRestore();
 }
 

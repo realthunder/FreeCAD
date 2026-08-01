@@ -83,6 +83,8 @@ public:
         LinkStampChanged = 11, // Indicates during restore time if any linked document's time stamp has changed
         IgnoreErrorOnRecompute = 12, // Don't report errors if the recompute failed
         RecomputeOnRestore = 13, // Mark pending recompute on restore for migration purpose
+        LiveImport = 14, // A progressive import is filling the document while the GUI
+                         // stays interactive; doc-mutating commands are gated meanwhile
     };
 
     /** @name Properties */

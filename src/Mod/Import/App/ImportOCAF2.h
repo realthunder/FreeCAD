@@ -37,6 +37,7 @@
 #include <XCAFDoc_VisMaterial.hxx>
 #include <XCAFDoc_VisMaterialTool.hxx>
 
+#include <Base/Placement.h>
 #include <Base/Sequencer.h>
 #include <Mod/Part/App/TopoShape.h>
 
@@ -85,6 +86,39 @@ public:
     ImportOCAF2(const ImportOCAF2 &) = delete;
     ImportOCAF2 & operator=(const ImportOCAF2 &) = delete;
     App::DocumentObject* loadShapes();
+
+    /** @name Progressive (two-stage) import
+     *
+     * analyze() walks the XCAF document into an ordered list of create
+     * ops without touching the App document, so it can run on a worker
+     * thread while the GUI pumps. The op order is skeleton-first:
+     * containers come before their members and link targets before the
+     * links, so every applied object lands at its correct global
+     * placement immediately. applyNextOp()/finishOps() then materialize
+     * the ops on the GUI thread, one call per op, letting the caller
+     * interleave event processing between batches.
+     *
+     * analyze() returns false when this import cannot run progressively
+     * (multi-document modes, merge, the legacy importer, or per-face
+     * visualization materials that would split an object); the caller
+     * falls back to loadShapes().
+     */
+    //@{
+    bool analyze();
+    std::size_t opCount() const
+    {
+        return myProgOps.size();
+    }
+    std::size_t opsApplied() const
+    {
+        return myProgApplied;
+    }
+    /// Apply the next pending op. Returns false when no ops remain.
+    bool applyNextOp();
+    /// Terminal pass after the ops (or a canceled prefix of them) have
+    /// been applied: recompute and return the root object.
+    App::DocumentObject* finishOps();
+    //@}
 
     static ImportOCAFOptions customImportOptions();
     void setImportOptions(ImportOCAFOptions opts);
@@ -143,6 +177,72 @@ private:
     };
 
     struct ColorInfo;
+
+    /// One deferred object-creation step of a progressive import.
+    /// Ops reference each other by index into myProgOps; the index
+    /// order is the apply order.
+    struct ProgOp
+    {
+        enum Type
+        {
+            Object,     ///< Part::Feature from a base shape
+            Group,      ///< App::LinkGroup / App::Part container
+            Link,       ///< App::Link to an earlier op's object
+            LinkArray,  ///< App::Link with ElementCount instances
+            Collapsed,  ///< reduced single-child group: aliases resolveTo
+            Dropped,    ///< analysis discarded it; skipped at apply
+        };
+        Type type = Dropped;
+        int parent = -1;     ///< op index of the owning Group (-1 = root)
+        int target = -1;     ///< linked op for Link/LinkArray
+        int resolveTo = -1;  ///< replacement child for Collapsed
+        bool visible = true;
+        bool free = true;    ///< first-use claim still available
+        bool collapsedRep = false;  ///< a collapsed group resolves to me
+        std::string label;
+        std::string internalName;  ///< addObject() base name
+        Base::Placement placement;
+        // Object
+        TopoDS_Shape shape;  ///< base shape (location-free)
+        App::Color faceColor;
+        App::Color edgeColor;
+        bool hasFaceColor = false;
+        bool hasEdgeColor = false;
+        std::vector<App::Color> faceColors;
+        std::vector<App::Color> edgeColors;
+        RenderMaterial material;
+        // Group
+        App::Color groupColor;
+        bool hasGroupColor = false;
+        // Link
+        App::Color linkColor;
+        bool hasLinkColor = false;
+        // LinkArray
+        std::vector<Base::Placement> placements;
+        boost::dynamic_bitset<> visList;
+        std::map<int, App::Color> elemColors;
+    };
+
+    struct MaterialGroups;
+    void scanElementColors(TDF_Label label,
+                           ColorInfo& colors,
+                           Info& info,
+                           bool& hasFaceColors,
+                           bool& hasEdgeColors);
+    void scanMaterialGroups(TDF_Label label, Part::TopoShape& tshape, MaterialGroups& groups);
+
+    int newProgOp(ProgOp::Type type);
+    int resolveOp(int node) const;
+    int analyzeShape(TDF_Label label,
+                     const TopoDS_Shape& shape,
+                     int parent,
+                     bool visible,
+                     bool baseOnly = false);
+    int analyzeObject(TDF_Label label, const TopoDS_Shape& shape);
+    int analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape);
+    bool hasSHUOColors(TDF_Label label);
+    void applyOp(ProgOp& op, int index);
+    App::DocumentObject* progObject(int node) const;
 
     App::DocumentObject* loadShape(App::Document* doc,
                                    TDF_Label label,
@@ -241,6 +341,15 @@ private:
     };
     std::vector<DocumentInfo> myDocumentStack;
     std::vector<App::Document*> myNewDocuments;
+
+    // Progressive import state
+    std::vector<ProgOp> myProgOps;
+    std::vector<App::DocumentObject*> myProgObjs;
+    std::size_t myProgApplied = 0;
+    int myProgRoot = -1;
+    bool myProgFailed = false;
+    std::unordered_map<TopoDS_Shape, int, ShapeHasher> myShapeNodes;
+    std::unordered_map<TDF_Label, std::pair<int, int>, LabelHasher> myLabelNodes;
 
     Base::SequencerLauncher* sequencer {nullptr};
 };

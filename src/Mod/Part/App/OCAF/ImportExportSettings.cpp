@@ -247,6 +247,16 @@ bool ImportExportSettings::getShowProgress() const
     return pGroup->GetBool("ShowProgress", true);
 }
 
+void ImportExportSettings::setProgressiveImport(bool on)
+{
+    pGroup->SetBool("ProgressiveImport", on);
+}
+
+bool ImportExportSettings::getProgressiveImport() const
+{
+    return pGroup->GetBool("ProgressiveImport", true);
+}
+
 void ImportExportSettings::setImportMode(ImportExportSettings::ImportMode mode)
 {
     pGroup->SetInt("ImportMode", static_cast<long>(mode));

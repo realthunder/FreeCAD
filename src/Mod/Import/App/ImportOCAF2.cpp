@@ -389,29 +389,13 @@ bool ImportOCAF2::extractRenderMaterial(const Handle(XCAFDoc_VisMaterial)& visMa
     return true;
 }
 
-bool ImportOCAF2::createObject(App::Document* doc,
-                               TDF_Label label,
-                               const TopoDS_Shape& shape,
-                               Info& info,
-                               bool newDoc)
+void ImportOCAF2::scanElementColors(TDF_Label label,
+                                    ColorInfo& colors,
+                                    Info& info,
+                                    bool& hasFaceColors,
+                                    bool& hasEdgeColors)
 {
-    // a purely triangulated face (e.g. a textured glTF mesh kept as-is to
-    // preserve its UV nodes) has no vertices — check for faces too
-    if (shape.IsNull()
-        || (!TopExp_Explorer(shape, TopAbs_VERTEX).More()
-            && !TopExp_Explorer(shape, TopAbs_FACE).More())) {
-        FC_WARN(Tools::labelName(label) << " has empty shape");
-        return false;
-    }
-
-    getColor(shape, info);
-    bool hasFaceColors = false;
-    bool hasEdgeColors = false;
-
-    ColorInfo colors;
-    colors.tshape.setShape(shape);
     Part::TopoShape &tshape = colors.tshape;
-
     TDF_LabelSequence seq;
     if(!label.IsNull() && aShapeTool->GetSubShapes(label,seq)) {
         colors.faceColors.assign(tshape.countSubShapes(TopAbs_FACE),info.faceColor);
@@ -482,36 +466,39 @@ bool ImportOCAF2::createObject(App::Document* doc,
             }
         }
     }
+}
 
-    Part::Feature* feature;
+// glTF meshes may carry a distinct visualization material per face
+// (each glTF primitive imports as one face). A single object holds a
+// single Render_* material set, so when the face sub shape labels
+// resolve to more than one render-relevant material - or to one that
+// does not cover every face - the shape splits into one feature per
+// material group under the same group container an assembly uses
+// (links to the label then reference the container). Color-only
+// faces form their own group and keep the per-face color path; a
+// single material covering the whole shape keeps the plain
+// one-feature import below.
+struct ImportOCAF2::MaterialGroups
+{
+    std::vector<int> faceGroup;
+    std::vector<RenderMaterial> mats;
+    std::vector<std::string> names;
+    bool split = false;
+};
 
-    if (newDoc && (options.mode == ObjectPerDoc || options.mode == ObjectPerDir)) {
-        doc = getDocument(doc, label);
+void ImportOCAF2::scanMaterialGroups(TDF_Label label,
+                                     Part::TopoShape& tshape,
+                                     MaterialGroups& groups)
+{
+    TDF_LabelSequence seq;
+    if (label.IsNull() || !aShapeTool->GetSubShapes(label, seq)) {
+        return;
     }
-
-    mergeColor(hasFaceColors,info.faceColor,colors.faceColors);
-    mergeColor(hasEdgeColors,info.edgeColor,colors.edgeColors);
-
-    colors.faceColor = info.faceColor;
-    colors.edgeColor = info.edgeColor;
-    colors.hasFaceColor = info.hasFaceColor;
-    colors.hasEdgeColor = info.hasEdgeColor;
-
-    // glTF meshes may carry a distinct visualization material per face
-    // (each glTF primitive imports as one face). A single object holds a
-    // single Render_* material set, so when the face sub shape labels
-    // resolve to more than one render-relevant material - or to one that
-    // does not cover every face - the shape splits into one feature per
-    // material group under the same group container an assembly uses
-    // (links to the label then reference the container). Color-only
-    // faces form their own group and keep the per-face color path; a
-    // single material covering the whole shape keeps the plain
-    // one-feature import below.
     if (seq.Length() > 0 && !aMaterialTool.IsNull()) {
         int numFaces = (int)tshape.countSubShapes(TopAbs_FACE);
         std::vector<int> faceGroup(numFaces, 0);
-        std::vector<RenderMaterial> groupMats;
-        std::vector<std::string> groupNames;
+        std::vector<RenderMaterial> &groupMats = groups.mats;
+        std::vector<std::string> &groupNames = groups.names;
         // Group by material content EXCLUDING the base color: materials
         // that only differ in color merge into one group (the per-face
         // color path keeps the distinction), so a multi-color mesh with
@@ -575,6 +562,59 @@ bool ImportOCAF2::createObject(App::Document* doc,
         bool ungrouped =
             std::find(faceGroup.begin(), faceGroup.end(), 0) != faceGroup.end();
         if (grouped && numFaces > 1 && (groupMats.size() > 1 || ungrouped)) {
+            groups.split = true;
+            groups.faceGroup = std::move(faceGroup);
+        }
+    }
+}
+
+bool ImportOCAF2::createObject(App::Document* doc,
+                               TDF_Label label,
+                               const TopoDS_Shape& shape,
+                               Info& info,
+                               bool newDoc)
+{
+    // a purely triangulated face (e.g. a textured glTF mesh kept as-is to
+    // preserve its UV nodes) has no vertices — check for faces too
+    if (shape.IsNull()
+        || (!TopExp_Explorer(shape, TopAbs_VERTEX).More()
+            && !TopExp_Explorer(shape, TopAbs_FACE).More())) {
+        FC_WARN(Tools::labelName(label) << " has empty shape");
+        return false;
+    }
+
+    getColor(shape, info);
+    bool hasFaceColors = false;
+    bool hasEdgeColors = false;
+
+    ColorInfo colors;
+    colors.tshape.setShape(shape);
+    Part::TopoShape &tshape = colors.tshape;
+
+    scanElementColors(label, colors, info, hasFaceColors, hasEdgeColors);
+
+    Part::Feature* feature;
+
+    if (newDoc && (options.mode == ObjectPerDoc || options.mode == ObjectPerDir)) {
+        doc = getDocument(doc, label);
+    }
+
+    mergeColor(hasFaceColors,info.faceColor,colors.faceColors);
+    mergeColor(hasEdgeColors,info.edgeColor,colors.edgeColors);
+
+    colors.faceColor = info.faceColor;
+    colors.edgeColor = info.edgeColor;
+    colors.hasFaceColor = info.hasFaceColor;
+    colors.hasEdgeColor = info.hasEdgeColor;
+
+    MaterialGroups matGroups;
+    scanMaterialGroups(label, tshape, matGroups);
+    if (matGroups.split) {
+        const auto &faceGroup = matGroups.faceGroup;
+        const auto &groupMats = matGroups.mats;
+        const auto &groupNames = matGroups.names;
+        int numFaces = (int)tshape.countSubShapes(TopAbs_FACE);
+        {
             std::vector<App::DocumentObject*> children;
             boost::dynamic_bitset<> visibilities;
             for (int g = 0; g <= (int)groupMats.size(); ++g) {
@@ -863,6 +903,591 @@ App::DocumentObject* ImportOCAF2::loadShapes()
     sequencer = nullptr;
     for (auto doc : myNewDocuments)
         doc->setUndoMode(1);
+    return ret;
+}
+
+// ---------------------------------------------------------------------------
+// Progressive (two-stage) import
+//
+// analyze() mirrors the loadShapes()/loadShape()/createObject()/
+// createAssembly() traversal but produces ProgOp descriptors instead of
+// document objects, touching only the XCAF document (worker-thread
+// safe). Node creation order is the apply order: a group op is reserved
+// before its members are walked and a shape's first use creates its op
+// before any reuse can reference it, so parents always precede children
+// and link targets always precede links. SHUO element colors are only
+// checked for existence (they feed the reduce decision); the concrete
+// importers' applyElementColors() overrides are all empty, so nothing
+// is lost by not applying them.
+
+int ImportOCAF2::newProgOp(ProgOp::Type type)
+{
+    myProgOps.emplace_back();
+    myProgOps.back().type = type;
+    return int(myProgOps.size()) - 1;
+}
+
+int ImportOCAF2::resolveOp(int node) const
+{
+    while (node >= 0 && myProgOps[node].type == ProgOp::Collapsed) {
+        node = myProgOps[node].resolveTo;
+    }
+    return node;
+}
+
+bool ImportOCAF2::analyze()
+{
+    myProgOps.clear();
+    myProgObjs.clear();
+    myProgApplied = 0;
+    myProgRoot = -1;
+    myProgFailed = false;
+    myShapeNodes.clear();
+    myLabelNodes.clear();
+
+    // Excluded per design: multi-document modes mutate documents during
+    // the traversal, merge throws the intermediate objects away again,
+    // and the legacy importer is its own code path.
+    if (options.merge || options.useLegacyImporter || options.mode != SingleDoc) {
+        return false;
+    }
+
+    aShapeTool->SetAutoNaming(Standard_False);
+
+    if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+        Tools::dumpLabels(pDoc->Main(), aShapeTool, aColorTool);
+    }
+    sequencer = nullptr;
+
+    TDF_LabelSequence labels;
+    aShapeTool->GetFreeShapes(labels);
+    int count = 0;
+    for (Standard_Integer i = 1; i <= labels.Length(); i++) {
+        auto label = labels.Value(i);
+        if (!options.importHidden && !aColorTool->IsVisible(label)) {
+            continue;
+        }
+        ++count;
+    }
+    int rootGroup = -1;
+    if (count > 1) {
+        rootGroup = newProgOp(ProgOp::Group);
+    }
+    int children = 0;
+    int lastChild = -1;
+    for (Standard_Integer i = 1; i <= labels.Length(); i++) {
+        auto label = labels.Value(i);
+        if (!options.importHidden && !aColorTool->IsVisible(label)) {
+            continue;
+        }
+        int node = analyzeShape(label,
+                                aShapeTool->GetShape(label),
+                                rootGroup,
+                                aColorTool->IsVisible(label));
+        if (myProgFailed) {
+            return false;
+        }
+        if (node >= 0) {
+            ++children;
+            lastChild = node;
+        }
+    }
+    if (rootGroup >= 0) {
+        if (children == 0) {
+            return false;
+        }
+        if (children == 1) {
+            // loadShapes() creates no root group around a single result
+            auto &root = myProgOps[rootGroup];
+            root.type = ProgOp::Collapsed;
+            root.resolveTo = lastChild;
+            int emitted = resolveOp(lastChild);
+            if (emitted >= 0) {
+                myProgOps[emitted].parent = -1;
+            }
+        }
+        myProgRoot = rootGroup;
+    }
+    else {
+        myProgRoot = lastChild;
+    }
+    if (myProgRoot < 0) {
+        return false;
+    }
+    myProgObjs.assign(myProgOps.size(), nullptr);
+    return true;
+}
+
+int ImportOCAF2::analyzeShape(TDF_Label label,
+                              const TopoDS_Shape& shape,
+                              int parent,
+                              bool visible,
+                              bool baseOnly)
+{
+    if (shape.IsNull()) {
+        return -1;
+    }
+    auto baseShape = shape.Located(TopLoc_Location());
+    auto it = myShapeNodes.find(baseShape);
+    if (it == myShapeNodes.end()) {
+        auto baseLabel = aShapeTool->FindShape(baseShape);
+        int node;
+        if (baseLabel.IsNull() || !aShapeTool->IsAssembly(baseLabel)) {
+            node = analyzeObject(baseLabel, baseShape);
+        }
+        else {
+            node = analyzeAssembly(baseLabel, baseShape);
+        }
+        if (node < 0 || myProgFailed) {
+            return -1;
+        }
+        // Like setObjectName() after the create: name from the base
+        // label onto the created object (the replacement child when a
+        // group collapsed); an empty name keeps what is already there
+        // (the apply-time linked-label fallback covers links).
+        std::string baseName = getLabelName(baseLabel);
+        if (!baseName.empty()) {
+            myProgOps[resolveOp(node)].label = std::move(baseName);
+        }
+        it = myShapeNodes.emplace(baseShape, node).first;
+    }
+    int facadeIdx = it->second;
+    if (baseOnly) {
+        return facadeIdx;
+    }
+
+    // A collapsed group keeps its own free flag and color basis while
+    // placement/label/parent claims write through to the replacement
+    // child, mirroring the two Info records of the synchronous path.
+    int nodeIdx = resolveOp(facadeIdx);
+
+    Info useInfo;
+    useInfo.faceColor = myProgOps[facadeIdx].faceColor;
+    useInfo.edgeColor = myProgOps[facadeIdx].edgeColor;
+    useInfo.hasFaceColor = myProgOps[facadeIdx].hasFaceColor;
+    useInfo.hasEdgeColor = myProgOps[facadeIdx].hasEdgeColor;
+    getColor(shape, useInfo, true);
+
+    auto placement =
+        Base::Placement(Part::TopoShape::convert(shape.Location().Transformation()));
+
+    if (myProgOps[facadeIdx].free) {
+        // First use claims the object directly (the synchronous path's
+        // color re-application here re-applies the base color, i.e. is
+        // a no-op, so no color fields change on a claim).
+        myProgOps[facadeIdx].free = false;
+        auto &op = myProgOps[nodeIdx];
+        std::string name = getLabelName(label);
+        if (!name.empty()) {
+            op.label = std::move(name);
+        }
+        op.placement = placement * op.placement;
+        op.parent = parent;
+        op.visible = visible;
+        myLabelNodes.emplace(label, std::make_pair(nodeIdx, -1));
+        return facadeIdx;
+    }
+
+    int link = newProgOp(ProgOp::Link);
+    auto &lop = myProgOps[link];
+    lop.target = nodeIdx;
+    lop.parent = parent;
+    lop.visible = visible;
+    lop.placement = placement;
+    lop.label = getLabelName(label);
+    if (useInfo.faceColor != myProgOps[facadeIdx].faceColor) {
+        lop.linkColor = useInfo.faceColor;
+        lop.hasLinkColor = true;
+    }
+    myLabelNodes.emplace(label, std::make_pair(link, -1));
+    return link;
+}
+
+int ImportOCAF2::analyzeObject(TDF_Label label, const TopoDS_Shape& shape)
+{
+    if (shape.IsNull()
+        || (!TopExp_Explorer(shape, TopAbs_VERTEX).More()
+            && !TopExp_Explorer(shape, TopAbs_FACE).More())) {
+        FC_WARN(Tools::labelName(label) << " has empty shape");
+        return -1;
+    }
+
+    Info info;
+    getColor(shape, info);
+    bool hasFaceColors = false;
+    bool hasEdgeColors = false;
+
+    ColorInfo colors;
+    colors.tshape.setShape(shape);
+
+    scanElementColors(label, colors, info, hasFaceColors, hasEdgeColors);
+
+    MaterialGroups matGroups;
+    scanMaterialGroups(label, colors.tshape, matGroups);
+    if (matGroups.split) {
+        // Would split into one feature per material group; hand the
+        // whole import back to the synchronous path.
+        myProgFailed = true;
+        return -1;
+    }
+
+    mergeColor(hasFaceColors, info.faceColor, colors.faceColors);
+    mergeColor(hasEdgeColors, info.edgeColor, colors.edgeColors);
+
+    std::string internalName = colors.tshape.shapeName();
+    RenderMaterial rmat;
+    getRenderMaterial(label, rmat);
+
+    int node = newProgOp(ProgOp::Object);
+    auto &op = myProgOps[node];
+    op.shape = shape;
+    op.internalName = std::move(internalName);
+    op.faceColor = info.faceColor;
+    op.edgeColor = info.edgeColor;
+    op.hasFaceColor = info.hasFaceColor;
+    op.hasEdgeColor = info.hasEdgeColor;
+    op.faceColors = std::move(colors.faceColors);
+    op.edgeColors = std::move(colors.edgeColors);
+    op.material = std::move(rmat);
+    return node;
+}
+
+int ImportOCAF2::analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape)
+{
+    (void)label;
+
+    int groupIdx = newProgOp(ProgOp::Group);
+
+    struct AChild
+    {
+        TopoDS_Shape shape;
+        bool vis = true;
+        std::vector<Base::Placement> plas;
+        boost::dynamic_bitset<> visList;
+        std::map<int, App::Color> colors;
+        std::vector<TDF_Label> labels;
+    };
+    std::vector<int> order;
+    std::map<int, AChild> childMap;
+
+    int childCount = 0;
+    int lastChild = -1;
+    bool hasSHUO = false;
+
+    for (TopoDS_Iterator it(shape, Standard_False, Standard_False); it.More(); it.Next()) {
+        TopoDS_Shape childShape = it.Value();
+        if (childShape.IsNull()) {
+            continue;
+        }
+        TDF_Label childLabel;
+        aShapeTool->Search(childShape, childLabel, Standard_True, Standard_True, Standard_False);
+        if (!childLabel.IsNull() && !options.importHidden && !aColorTool->IsVisible(childLabel)) {
+            continue;
+        }
+        bool vis = true;
+        if (!childLabel.IsNull() && aShapeTool->IsComponent(childLabel)) {
+            vis = aColorTool->IsVisible(childLabel);
+        }
+        if (!options.reduceObjects) {
+            int c = analyzeShape(childLabel, childShape, groupIdx, vis);
+            if (myProgFailed) {
+                return -1;
+            }
+            if (c < 0) {
+                continue;
+            }
+            ++childCount;
+            lastChild = c;
+            continue;
+        }
+
+        int base = analyzeShape(childLabel, childShape, groupIdx, vis, true);
+        if (myProgFailed) {
+            return -1;
+        }
+        if (base < 0) {
+            continue;
+        }
+        auto &ci = childMap[base];
+        if (ci.plas.empty()) {
+            order.push_back(base);
+            ci.vis = vis;
+            ci.shape = childShape;
+        }
+        ci.visList.push_back(vis);
+        ci.labels.push_back(childLabel);
+        ci.plas.emplace_back(
+            Part::TopoShape::convert(childShape.Location().Transformation()));
+        Quantity_ColorRGBA aColor;
+        if (aColorTool->GetColor(childShape, XCAFDoc_ColorSurf, aColor)) {
+            ci.colors[int(ci.plas.size()) - 1] = Tools::convertColor(aColor);
+        }
+    }
+
+    if (options.reduceObjects) {
+        for (int base : order) {
+            auto &ci = childMap[base];
+            if (ci.plas.size() == 1) {
+                int c = analyzeShape(ci.labels.front(), ci.shape, groupIdx, ci.vis);
+                if (myProgFailed) {
+                    return -1;
+                }
+                if (c < 0) {
+                    continue;
+                }
+                ++childCount;
+                lastChild = c;
+                if (hasSHUOColors(ci.labels.front())) {
+                    hasSHUO = true;
+                }
+                continue;
+            }
+
+            int resolved = resolveOp(base);
+            int arr = newProgOp(ProgOp::LinkArray);
+            auto &aop = myProgOps[arr];
+            aop.parent = groupIdx;
+            aop.visible = true;
+            aop.target = resolved;
+            if (myProgOps[base].type == ProgOp::Collapsed) {
+                // The collapsed single-component assembly's placement
+                // must be honoured by every array element.
+                for (auto &pla : ci.plas) {
+                    pla *= myProgOps[resolved].placement;
+                }
+            }
+            aop.placements = std::move(ci.plas);
+            aop.visList = ci.visList;
+            aop.elemColors = std::move(ci.colors);
+            aop.label = getLabelName(ci.labels.front());
+            ++childCount;
+            lastChild = arr;
+            int elem = 0;
+            for (auto &cl : ci.labels) {
+                myLabelNodes.emplace(cl, std::make_pair(arr, elem++));
+                if (hasSHUOColors(cl)) {
+                    hasSHUO = true;
+                }
+            }
+        }
+    }
+
+    if (!childCount) {
+        myProgOps[groupIdx].type = ProgOp::Dropped;
+        return -1;
+    }
+
+    Info ginfo;
+    bool hasColor = getColor(shape, ginfo, false, true);
+    if (!hasSHUO && !hasColor && options.reduceObjects && childCount == 1) {
+        int emitted = resolveOp(lastChild);
+        if (emitted >= 0 && myProgOps[emitted].visible) {
+            auto &g = myProgOps[groupIdx];
+            g.type = ProgOp::Collapsed;
+            g.resolveTo = lastChild;
+            g.free = true;
+            // The claim of this assembly re-parents the child.
+            myProgOps[emitted].parent = -1;
+            return groupIdx;
+        }
+    }
+
+    auto &g = myProgOps[groupIdx];
+    g.faceColor = ginfo.faceColor;
+    g.edgeColor = ginfo.edgeColor;
+    g.hasFaceColor = ginfo.hasFaceColor;
+    g.hasEdgeColor = ginfo.hasEdgeColor;
+    if (ginfo.hasFaceColor) {
+        g.groupColor = ginfo.faceColor;
+        g.hasGroupColor = true;
+    }
+    return groupIdx;
+}
+
+// Existence-only mirror of getSHUOColors(): does this component label
+// carry style-usage overrides that would have produced element color
+// entries? Only the reduce decision consumes the answer.
+bool ImportOCAF2::hasSHUOColors(TDF_Label label)
+{
+    TDF_AttributeSequence seq;
+    if (label.IsNull() || !aShapeTool->GetAllComponentSHUO(label, seq)) {
+        return false;
+    }
+    for (int i = 1; i <= seq.Length(); ++i) {
+        Handle(XCAFDoc_GraphNode) shuo = Handle(XCAFDoc_GraphNode)::DownCast(seq.Value(i));
+        if (shuo.IsNull()) {
+            continue;
+        }
+        TDF_Label slabel = shuo->Label();
+        TDF_LabelSequence uppers;
+        aShapeTool->GetSHUOUpperUsage(slabel, uppers);
+        if (uppers.Length()) {
+            continue;
+        }
+        bool resolved = true;
+        while (true) {
+            TDF_Label l = shuo->Label().Father();
+            if (!myLabelNodes.count(l)) {
+                resolved = false;
+                break;
+            }
+            if (!shuo->NbChildren()) {
+                break;
+            }
+            shuo = shuo->GetChild(1);
+        }
+        if (!resolved) {
+            continue;
+        }
+        if (!aColorTool->IsVisible(slabel)) {
+            return true;
+        }
+        Quantity_ColorRGBA aColor;
+        if (aColorTool->GetColor(slabel, XCAFDoc_ColorSurf, aColor)
+            || aColorTool->GetColor(slabel, XCAFDoc_ColorGen, aColor)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+App::DocumentObject* ImportOCAF2::progObject(int node) const
+{
+    node = resolveOp(node);
+    if (node < 0 || node >= int(myProgObjs.size())) {
+        return nullptr;
+    }
+    return myProgObjs[node];
+}
+
+bool ImportOCAF2::applyNextOp()
+{
+    while (myProgApplied < myProgOps.size()) {
+        auto idx = myProgApplied++;
+        auto &op = myProgOps[idx];
+        if (op.type == ProgOp::Dropped || op.type == ProgOp::Collapsed) {
+            continue;
+        }
+        applyOp(op, int(idx));
+        return true;
+    }
+    return false;
+}
+
+void ImportOCAF2::applyOp(ProgOp& op, int index)
+{
+    App::DocumentObject *obj = nullptr;
+    switch (op.type) {
+    case ProgOp::Dropped:
+    case ProgOp::Collapsed:
+        return;
+    case ProgOp::Object: {
+        auto feature = static_cast<Part::Feature*>(
+            pDocument->addObject("Part::Feature", op.internalName.c_str()));
+        feature->Shape.setValue(op.shape);
+        applyFaceColors(feature, {op.faceColor});
+        applyEdgeColors(feature, {op.edgeColor});
+        if (!op.faceColors.empty()) {
+            applyFaceColors(feature, op.faceColors);
+        }
+        if (!op.edgeColors.empty()) {
+            applyEdgeColors(feature, op.edgeColors);
+        }
+        if (op.material.valid) {
+            applyRenderMaterial(feature, op.material);
+        }
+        feature->Placement.setValue(op.placement);
+        obj = feature;
+        break;
+    }
+    case ProgOp::Group: {
+        if (!options.useLinkGroup) {
+            auto part = static_cast<App::Part*>(pDocument->addObject("App::Part", "Part"));
+            part->Placement.setValue(op.placement);
+            obj = part;
+        }
+        else {
+            auto group = static_cast<App::LinkGroup*>(
+                pDocument->addObject("App::LinkGroup", "LinkGroup"));
+            group->Placement.setValue(op.placement);
+            obj = group;
+        }
+        if (op.hasGroupColor) {
+            applyLinkColor(obj, -1, op.groupColor);
+        }
+        break;
+    }
+    case ProgOp::Link: {
+        auto target = progObject(op.target);
+        if (!target) {
+            return;
+        }
+        auto link = static_cast<App::Link*>(pDocument->addObject("App::Link", "Link"));
+        link->setLink(-1, target);
+        link->Placement.setValue(op.placement);
+        if (op.hasLinkColor) {
+            applyLinkColor(link, -1, op.linkColor);
+        }
+        obj = link;
+        break;
+    }
+    case ProgOp::LinkArray: {
+        auto target = progObject(op.target);
+        if (!target) {
+            return;
+        }
+        auto link = static_cast<App::Link*>(pDocument->addObject("App::Link", "Link"));
+        link->setLink(-1, target);
+        link->ShowElement.setValue(false);
+        link->ElementCount.setValue(int(op.placements.size()));
+        link->PlacementList.setValue(op.placements);
+        link->VisibilityList.setValue(op.visList);
+        for (auto &v : op.elemColors) {
+            applyLinkColor(link, v.first, v.second);
+        }
+        obj = link;
+        break;
+    }
+    }
+    if (!obj) {
+        return;
+    }
+    myProgObjs[index] = obj;
+
+    if (!op.label.empty()) {
+        obj->Label.setValue(op.label.c_str());
+    }
+    else {
+        auto linked = obj->getLinkedObject(false);
+        if (linked && linked != obj) {
+            obj->Label.setValue(linked->Label.getValue());
+        }
+    }
+
+    int parent = resolveOp(op.parent);
+    if (parent >= 0 && parent < int(myProgObjs.size()) && myProgObjs[parent]) {
+        auto parentObj = myProgObjs[parent];
+        if (auto group = Base::freecad_dynamic_cast<App::LinkGroup>(parentObj)) {
+            auto elems = group->ElementList.getValues();
+            elems.push_back(obj);
+            group->ElementList.setValues(elems);
+            boost::dynamic_bitset<> vis = group->VisibilityList.getValues();
+            vis.push_back(op.visible);
+            group->VisibilityList.setValue(vis);
+        }
+        else if (auto part = Base::freecad_dynamic_cast<App::Part>(parentObj)) {
+            obj->Visibility.setValue(op.visible);
+            part->addObject(obj);
+        }
+    }
+}
+
+App::DocumentObject* ImportOCAF2::finishOps()
+{
+    auto ret = progObject(myProgRoot);
+    if (ret) {
+        ret->recomputeFeature(true);
+    }
     return ret;
 }
 

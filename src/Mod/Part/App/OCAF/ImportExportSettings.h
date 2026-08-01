@@ -91,6 +91,9 @@ public:
     void setShowProgress(bool);
     bool getShowProgress() const;
 
+    void setProgressiveImport(bool);
+    bool getProgressiveImport() const;
+
     void setImportMode(ImportMode);
     ImportMode getImportMode() const;
 

@@ -26,11 +26,13 @@
 #endif
 #ifndef _PreComp_
 #include <climits>
+#include <cstdlib>
 #include <iostream>
 #include <set>
 #include <thread>
 
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QString>
 #include <QThread>
@@ -64,11 +66,13 @@
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Base/PyWrapParseTupleAndKeywords.h>
+#include <Base/Sequencer.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/WaitCursor.h>
 #include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/ViewProviderLink.h>
 #include <Mod/Import/App/ExportOCAF2.h>
@@ -121,29 +125,51 @@ public:
     }
 
 private:
+    // Guards against a nested import starting from the pumped event loops
+    // below; a nested call falls back to the fully synchronous path.
+    static inline bool importBusy;
+
     // Run the STEP read + XCAF transfer. When called on the GUI thread, the
     // OCCT work runs on a worker thread while a local event loop keeps the
     // application pumping (progress bar, redraws, scene publishing); the
     // sequencer provides progress and Escape-cancel. The XCAF document is the
-    // only state the worker touches.
-    static void readStep(const Base::FileInfo& file,
+    // only state the worker touches. With an analyzer, the worker also runs
+    // the progressive-import analysis after the read; returns whether that
+    // analysis succeeded (false = caller must use the synchronous
+    // loadShapes() path).
+    static bool readStep(const Base::FileInfo& file,
                          Handle(TDocStd_Document) hDoc,  // NOLINT
-                         App::Document* pcDoc)
+                         App::Document* pcDoc,
+                         Import::ImportOCAF2* analyzer)
     {
-        static bool reading;
-        if (reading || !qApp || QThread::currentThread() != qApp->thread()) {
+        if (importBusy || !qApp || QThread::currentThread() != qApp->thread()) {
             Import::ReaderStep reader(file);
             reader.read(hDoc);
-            return;
+            return false;
         }
-        Base::StateLocker nestGuard(reading);
+        Base::StateLocker nestGuard(importBusy);
         App::DocumentWeakPtrT docPtr(pcDoc);
         std::exception_ptr readError;
+        bool analyzed = false;
         QEventLoop loop;
         std::thread worker([&] {
             try {
                 Import::ReaderStep reader(file);
                 reader.read(hDoc);
+                if (analyzer) {
+                    try {
+                        analyzed = analyzer->analyze();
+                    }
+                    catch (Base::Exception& e) {
+                        FC_WARN("progressive import analysis failed, "
+                                "falling back: " << e.what());
+                    }
+                    catch (Standard_Failure& e) {
+                        FC_WARN("progressive import analysis failed, falling back: "
+                                << (e.GetMessageString() ? e.GetMessageString()
+                                                         : "OCCT failure"));
+                    }
+                }
             }
             catch (...) {
                 readError = std::current_exception();
@@ -161,6 +187,70 @@ private:
         if (readError) {
             std::rethrow_exception(readError);
         }
+        return analyzed;
+    }
+
+    // Materialize the analyzed ops on the GUI thread: ~50ms of object
+    // creation per slot, then a full event-loop pass, so the model grows
+    // on screen while the view stays interactive (the wait cursor and its
+    // input filter are lifted; doc-mutating commands are gated through
+    // the LiveImport status). Escape keeps the partial result, as does a
+    // failing op; there is no undo of a progressive import.
+    static App::DocumentObject* applyProgressive(Import::ImportOCAF2& ocaf,
+                                                 App::Document* pcDoc)
+    {
+        Base::StateLocker nestGuard(importBusy);
+        Base::SequencerLauncher seq("Creating objects...", ocaf.opCount());
+        Gui::WaitCursorRestorer cursorRestorer;
+        App::DocumentWeakPtrT docPtr(pcDoc);
+        int undoMode = pcDoc->getUndoMode();
+        pcDoc->setUndoMode(0);
+        pcDoc->setStatus(App::Document::LiveImport, true);
+        bool canceled = false;
+        std::string error;
+        try {
+            QElapsedTimer timer;
+            while (!docPtr.expired() && ocaf.opsApplied() < ocaf.opCount()) {
+                timer.start();
+                do {
+                    if (!ocaf.applyNextOp()) {
+                        break;
+                    }
+                    seq.next(true);  // throws Base::AbortException on Escape
+                } while (!docPtr.expired() && timer.elapsed() < 50
+                         && ocaf.opsApplied() < ocaf.opCount());
+                QCoreApplication::processEvents();
+            }
+        }
+        catch (Base::AbortException&) {
+            canceled = true;
+        }
+        catch (Base::Exception& e) {
+            error = e.what();
+        }
+        catch (Standard_Failure& e) {
+            error = e.GetMessageString() ? e.GetMessageString() : "OCCT failure";
+        }
+        if (docPtr.expired()) {
+            throw Base::RuntimeError("Target document was closed during STEP import");
+        }
+        // the terminal recompute must still run with undo disabled (an
+        // App::Part's origin creation, for one, records a transaction)
+        auto ret = ocaf.finishOps();
+        pcDoc->setStatus(App::Document::LiveImport, false);
+        pcDoc->setUndoMode(undoMode);
+        if (canceled) {
+            Base::Console().Warning(
+                "STEP import canceled: partial result kept (%zu of %zu objects)\n",
+                ocaf.opsApplied(), ocaf.opCount());
+        }
+        else if (!error.empty()) {
+            Base::Console().Error(
+                "STEP import failed after %zu of %zu objects, partial result "
+                "kept: %s\n",
+                ocaf.opsApplied(), ocaf.opCount(), error.c_str());
+        }
+        return ret;
     }
 
     Py::Object insert(const Py::Tuple& args, const Py::Dict& kwds)
@@ -172,11 +262,13 @@ private:
         PyObject* useLinkGroup = Py_None;
         int mode = -1;
         PyObject *legacy = Py_None;
-        static const std::array<const char*, 8>
-            kwd_list {"name", "docName", "importHidden", "merge", "useLinkGroup", "mode", "legacy", nullptr};
+        PyObject *progressive = Py_None;
+        static const std::array<const char*, 9>
+            kwd_list {"name", "docName", "importHidden", "merge", "useLinkGroup", "mode", "legacy",
+                      "progressive", nullptr};
         if (!Base::Wrapped_ParseTupleAndKeywords(args.ptr(),
                                                  kwds.ptr(),
-                                                 "et|etO!O!O!iO",
+                                                 "et|etO!O!O!iOO!",
                                                  kwd_list,
                                                  "utf-8",
                                                  &Name,
@@ -189,7 +281,9 @@ private:
                                                  &PyBool_Type,
                                                  &useLinkGroup,
                                                  &mode,
-                                                 &legacy)) {
+                                                 &legacy,
+                                                 &PyBool_Type,
+                                                 &progressive)) {
             throw Py::Exception();
         }
 
@@ -215,9 +309,25 @@ private:
             hApp->NewDocument(TCollection_ExtendedString("MDTV-CAF"), hDoc);
             ImportOCAFGui ocaf(hDoc, pcDoc, file.fileNamePure());
             ocaf.setImportOptions(ImportOCAFGui::customImportOptions());
+            // Apply keyword overrides before the read so the worker-thread
+            // analysis (and the reader's auto-naming setup) see the final
+            // options.
+            if (merge != Py_None) {
+                ocaf.setMerge(Base::asBoolean(merge));
+            }
+            if (importHidden != Py_None) {
+                ocaf.setImportHiddenObject(Base::asBoolean(importHidden));
+            }
+            if (useLinkGroup != Py_None) {
+                ocaf.setUseLinkGroup(Base::asBoolean(useLinkGroup));
+            }
+            if (legacy != Py_None) {
+                ocaf.setUseLegacyImporter(Base::asBoolean(legacy));
+            }
             FC_TIME_INIT(t);
             FC_DURATION_DECL_INIT2(d1, d2);
 
+            bool analyzed = false;
             if (file.hasExtension({"stp", "step"})) {
 
                 if (mode < 0) {
@@ -229,9 +339,31 @@ private:
                         return Py::Object();
                     }
                 }
+                // after the save, so a multi-document mode resolves its
+                // output directory
+                ocaf.setMode(mode);
+
+                bool wantProgressive;
+                if (progressive != Py_None) {
+                    wantProgressive = Base::asBoolean(progressive);
+                }
+                else {
+                    // Scene-serving backends keep the synchronous path
+                    // unless the import script opts in explicitly.
+                    wantProgressive =
+                        Part::OCAF::ImportExportSettings().getProgressiveImport()
+                        && !std::getenv("FC_BGFX_SERVE_SCENE");
+                }
+                if (wantProgressive
+                    && (!Gui::Application::Instance->getDocument(pcDoc)
+                        || pcDoc->testStatus(App::Document::Restoring))) {
+                    // no GUI document, or inside an importFrom() that
+                    // defers all visuals: nothing to show progressively
+                    wantProgressive = false;
+                }
 
                 try {
-                    readStep(file, hDoc, pcDoc);
+                    analyzed = readStep(file, hDoc, pcDoc, wantProgressive ? &ocaf : nullptr);
                 }
                 catch (OSD_Exception& e) {
                     Base::Console().Error("%s\n", e.GetMessageString());
@@ -263,27 +395,22 @@ private:
             }
 
             FC_DURATION_PLUS(d1, t);
-            if (merge != Py_None) {
-                ocaf.setMerge(Base::asBoolean(merge));
-            }
-            if (importHidden != Py_None) {
-                ocaf.setImportHiddenObject(Base::asBoolean(importHidden));
-            }
-            if (useLinkGroup != Py_None) {
-                ocaf.setUseLinkGroup(Base::asBoolean(useLinkGroup));
-            }
-            if(legacy!=Py_None) {
-                ocaf.setUseLegacyImporter(Base::asBoolean(legacy));
-            }
-            if (mode >= 0) {
+            if (mode >= 0 && !file.hasExtension({"stp", "step"})) {
                 ocaf.setMode(mode);
             }
+            App::DocumentObject* ret = nullptr;
+            if (analyzed) {
+                // Progressive path: objects appear as they are created,
+                // tessellated inline (coarse-first under the bgfx level
+                // machinery), so no deferral pass is needed.
+                ret = applyProgressive(ocaf, pcDoc);
+            }
+            else {
             // Defer per-object tessellation while objects are being created;
             // Application::importFrom() sets the same guard around insert(),
             // in which case it also runs the finishRestoring pass itself.
             bool outerRestoring = pcDoc->testStatus(App::Document::Restoring);
             std::set<long> existingIds;
-            App::DocumentObject* ret = nullptr;
             {
                 Base::ObjectStatusLocker<App::Document::Status, App::Document>
                     guard(App::Document::Restoring, pcDoc);
@@ -311,6 +438,7 @@ private:
                         }
                     }
                 }
+            }
             }
             hApp->Close(hDoc);
             FC_DURATION_PLUS(d2, t);

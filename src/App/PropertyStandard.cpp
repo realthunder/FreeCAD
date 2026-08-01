@@ -1540,6 +1540,9 @@ void PropertyString::setValue(const char* newLabel)
     if(obj && obj->isAttachedToDocument() && this==&obj->Label &&
        (!obj->getDocument()->testStatus(App::Document::Restoring)||
         obj->getDocument()->testStatus(App::Document::Importing)) &&
+       // a progressive import keeps duplicate labels exactly like the
+       // synchronous importer's Restoring-guarded object creation does
+       !obj->getDocument()->testStatus(App::Document::LiveImport) &&
        !obj->getDocument()->isPerformingTransaction())
     {
         // Special handling on importing. If the imported label starts with the
