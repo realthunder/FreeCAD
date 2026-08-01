@@ -67,6 +67,9 @@ export interface SelectionItem {
   obj?: string;
   label?: string;
   type?: string;
+  /// False when the object lives outside the scene's home document
+  /// (an external link) — only then is the path doc-qualified.
+  home?: boolean;
 }
 
 export interface PropDescriptor {

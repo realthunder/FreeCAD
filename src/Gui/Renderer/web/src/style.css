@@ -199,3 +199,62 @@
   border-radius: 4px;
   padding: 0 4px;
 }
+
+/* The selection pill: one line — label, full path, expand — shown
+ * instead of the card until asked (user spec). Same anchoring as the
+ * card on both form factors. */
+.fc-pill {
+  pointer-events: auto;
+  touch-action: manipulation;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  max-width: min(420px, calc(100vw - 24px));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  background: rgba(28, 30, 34, 0.92);
+  color: #e8e8ea;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  font-size: 13px;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .fc-pill {
+    top: auto;
+    right: 12px;
+    left: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    max-width: none;
+  }
+}
+.fc-pill-label { font-weight: 600; flex: none; }
+.fc-pill-path {
+  color: #9aa0a6;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+.fc-expand {
+  touch-action: manipulation;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8e8ea;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.fc-expand:hover { background: rgba(255, 255, 255, 0.16); }
+.fc-collapse { border: 0; background: transparent; color: #9aa0a6; }
+.fc-collapse:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.fc-pill .fc-close { width: 28px; height: 28px; }

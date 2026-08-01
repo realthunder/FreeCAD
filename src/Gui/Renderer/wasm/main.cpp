@@ -1539,6 +1539,24 @@ static void jsonEscapeTo(std::string &out, const std::string &s)
 /// (Face3/Edge1/...), empty for a whole-object selection.
 static void emitSelectionEvent()
 {
+    // The scene's home document: where most named objects live. An
+    // item from any other document is flagged so the UI shows its
+    // doc-qualified path (external links); home objects stay short.
+    std::string homeDoc;
+    {
+        std::map<std::string, int> counts;
+        int best = 0;
+        for (const auto &v : s_objects.objects) {
+            const auto &d = v.second.entry.info.doc;
+            if (d.empty())
+                continue;
+            int n = ++counts[d];
+            if (n > best) {
+                best = n;
+                homeDoc = d;
+            }
+        }
+    }
     std::string json = "[";
     for (const auto &it : s_sel) {
         if (json.size() > 1)
@@ -1564,6 +1582,8 @@ static void emitSelectionEvent()
             json += "\",\"label\":\""; jsonEscapeTo(json, info.label);
             json += "\",\"type\":\""; jsonEscapeTo(json, info.type);
             json += '"';
+            json += info.doc == homeDoc ? ",\"home\":true"
+                                        : ",\"home\":false";
         }
         json += '}';
     }
