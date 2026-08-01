@@ -5,7 +5,21 @@ import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import { Inspector } from './inspector';
 import type { SelectionItem } from './control';
+// Extraction only (cssCodeSplit: false emits it as web/inspector.css);
+// the injection below is what actually loads it.
 import './style.css';
+
+// The stylesheet is injected from here rather than linked in
+// shell.html: a <link rel="stylesheet"> pending on a slow connection
+// blocks the whole page's first paint, and the canvas must never wait
+// for the chrome. inspector.css sits beside this module (stable name
+// via vite assetFileNames).
+{
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = new URL('inspector.css', import.meta.url).href;
+  document.head.appendChild(link);
+}
 
 const [selection, setSelection] = createSignal<SelectionItem[]>([]);
 

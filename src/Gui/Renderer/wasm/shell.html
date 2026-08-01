@@ -206,10 +206,12 @@
   {{{ SCRIPT }}}
   <!-- The DOM UI layer (docs/ThinClient.md §3): built separately by
        src/Gui/Renderer/web (npm run build) into web/ next to this
-       bundle. A page served without it just 404s these two requests
-       and the viewer runs bare — the canvas never depends on the
-       chrome. -->
-  <link rel="stylesheet" href="web/inspector.css">
+       bundle. A page served without it just 404s this one request and
+       the viewer runs bare — the canvas never depends on the chrome.
+       Module only, NO stylesheet link here: a pending stylesheet
+       blocks the whole page's first paint (a slow link showed the
+       viewer as a long blank "loading scene"); the module injects its
+       own CSS after paint. -->
   <script type="module" src="web/inspector.js"></script>
 </body>
 </html>
