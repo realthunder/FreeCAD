@@ -33,3 +33,12 @@ host.id = 'fc-ui';
 document.body.appendChild(host);
 
 render(() => <Inspector selection={selection} />, host);
+
+// Breadcrumbs for devices with no devtools: the viewer's ?log overlay
+// mirrors the console, so these two lines are how a phone tells us the
+// UI layer booted and saw a selection at all.
+console.log('fcviewer-ui: mounted');
+window.addEventListener('fc:selection', (e: Event) => {
+  console.log('fcviewer-ui: selection '
+      + JSON.stringify((e as CustomEvent).detail));
+});

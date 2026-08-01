@@ -212,6 +212,7 @@
        blocks the whole page's first paint (a slow link showed the
        viewer as a long blank "loading scene"); the module injects its
        own CSS after paint. -->
-  <script type="module" src="web/inspector.js"></script>
+  <script type="module" src="web/inspector.js"
+          onerror="console.log('fcviewer-ui: bundle failed to load')"></script>
 </body>
 </html>
