@@ -573,6 +573,18 @@ public:
     struct Private;
     friend struct Private;
 
+public Q_SLOTS:
+    /** Redraw the view, subject to the live-operation redraw throttle.
+     *
+     * While a progressive import fills the document, every new object makes
+     * the next frame rebuild the whole render cache, so unthrottled redraws
+     * cost more than the import itself. Requests are then held to a share of
+     * the wall clock (ViewParams::LiveImportRedrawBudget, floored at
+     * LiveImportRedrawInterval); anything the user does with the mouse
+     * renders immediately, and \a force always renders.
+     */
+    void redraw(bool force = false) override;
+
 protected:
     static GLenum getInternalTextureFormat();
     void renderScene();

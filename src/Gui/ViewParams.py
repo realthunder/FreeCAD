@@ -459,6 +459,21 @@ Params = [
         "Maximum hierarchy depth that the cache merge can happen. Less than 0 means no limit."),
     ParamInt('RenderCacheMergeDepthMin',  1,
         "Minimum hierarchy depth that the cache merge can happen."),
+    ParamInt('LiveImportRedrawInterval',  200,
+        "Minimum interval in milliseconds between 3D view redraws while a\n"
+        "progressive import is filling the document, and the window after\n"
+        "any mouse input during which redraws are never held back. Set zero\n"
+        "to redraw on every change."),
+    ParamInt('LiveImportRedrawBudget',  10,
+        "Percentage of the time the 3D view may spend redrawing while a\n"
+        "progressive import is filling the document. Each new object makes\n"
+        "the next frame rebuild the render cache of the whole scene, so on a\n"
+        "large import a single frame costs far more than the objects drawn\n"
+        "in it; keeping frames to a share of the time is what bounds that\n"
+        "cost. The resulting wait scales with the measured frame cost, is\n"
+        "never shorter than LiveImportRedrawInterval nor longer than ten\n"
+        "times it, and mouse input renders immediately regardless. Set zero\n"
+        "to budget nothing and use the plain interval."),
     # The experimental render engine parameters (former Renderer* keys)
     # live in RenderParams.py (Preferences/View/Render); see
     # RenderParams::migrate() for the key migration.

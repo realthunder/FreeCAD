@@ -182,7 +182,7 @@ public Q_SLOTS:
   virtual void viewAll();
   virtual void seek();
 
-  void redraw(bool force=false);
+  virtual void redraw(bool force=false);
 
   void setRenderMode(SIM::Coin3D::Quarter::QuarterWidget::RenderMode mode);
   void setStereoMode(SIM::Coin3D::Quarter::QuarterWidget::StereoMode mode);

@@ -213,6 +213,8 @@ public:
     long RenderCacheMergeCountMax;
     long RenderCacheMergeDepthMax;
     long RenderCacheMergeDepthMin;
+    long LiveImportRedrawInterval;
+    long LiveImportRedrawBudget;
     double RenderHighlightPolygonOffsetFactor;
     double RenderHighlightPolygonOffsetUnits;
     bool ForceSolidSingleSideLighting;
@@ -546,6 +548,10 @@ public:
         funcs["RenderCacheMergeDepthMax"] = &ViewParamsP::updateRenderCacheMergeDepthMax;
         RenderCacheMergeDepthMin = this->handle->GetInt("RenderCacheMergeDepthMin", 1);
         funcs["RenderCacheMergeDepthMin"] = &ViewParamsP::updateRenderCacheMergeDepthMin;
+        LiveImportRedrawInterval = this->handle->GetInt("LiveImportRedrawInterval", 200);
+        funcs["LiveImportRedrawInterval"] = &ViewParamsP::updateLiveImportRedrawInterval;
+        LiveImportRedrawBudget = this->handle->GetInt("LiveImportRedrawBudget", 10);
+        funcs["LiveImportRedrawBudget"] = &ViewParamsP::updateLiveImportRedrawBudget;
         RenderHighlightPolygonOffsetFactor = this->handle->GetFloat("RenderHighlightPolygonOffsetFactor", 1);
         funcs["RenderHighlightPolygonOffsetFactor"] = &ViewParamsP::updateRenderHighlightPolygonOffsetFactor;
         RenderHighlightPolygonOffsetUnits = this->handle->GetFloat("RenderHighlightPolygonOffsetUnits", 1);
@@ -1239,6 +1245,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderCacheMergeDepthMin(ViewParamsP *self) {
         self->RenderCacheMergeDepthMin = self->handle->GetInt("RenderCacheMergeDepthMin", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLiveImportRedrawInterval(ViewParamsP *self) {
+        self->LiveImportRedrawInterval = self->handle->GetInt("LiveImportRedrawInterval", 200);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLiveImportRedrawBudget(ViewParamsP *self) {
+        self->LiveImportRedrawBudget = self->handle->GetInt("LiveImportRedrawBudget", 10);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderHighlightPolygonOffsetFactor(ViewParamsP *self) {
@@ -5662,6 +5676,73 @@ void ViewParams::removeRenderCacheMergeDepthMin() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docLiveImportRedrawInterval() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Minimum interval in milliseconds between 3D view redraws while a\n"
+"progressive import is filling the document, and the window after\n"
+"any mouse input during which redraws are never held back. Set zero\n"
+"to redraw on every change.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & ViewParams::getLiveImportRedrawInterval() {
+    return instance()->LiveImportRedrawInterval;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & ViewParams::defaultLiveImportRedrawInterval() {
+    const static long def = 200;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setLiveImportRedrawInterval(const long &v) {
+    instance()->handle->SetInt("LiveImportRedrawInterval",v);
+    instance()->LiveImportRedrawInterval = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeLiveImportRedrawInterval() {
+    instance()->handle->RemoveInt("LiveImportRedrawInterval");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docLiveImportRedrawBudget() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Percentage of the time the 3D view may spend redrawing while a\n"
+"progressive import is filling the document. Each new object makes\n"
+"the next frame rebuild the render cache of the whole scene, so on a\n"
+"large import a single frame costs far more than the objects drawn\n"
+"in it; keeping frames to a share of the time is what bounds that\n"
+"cost. The resulting wait scales with the measured frame cost, is\n"
+"never shorter than LiveImportRedrawInterval nor longer than ten\n"
+"times it, and mouse input renders immediately regardless. Set zero\n"
+"to budget nothing and use the plain interval.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & ViewParams::getLiveImportRedrawBudget() {
+    return instance()->LiveImportRedrawBudget;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & ViewParams::defaultLiveImportRedrawBudget() {
+    const static long def = 10;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setLiveImportRedrawBudget(const long &v) {
+    instance()->handle->SetInt("LiveImportRedrawBudget",v);
+    instance()->LiveImportRedrawBudget = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeLiveImportRedrawBudget() {
+    instance()->handle->RemoveInt("LiveImportRedrawBudget");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docRenderHighlightPolygonOffsetFactor() {
     return "";
 }
@@ -6128,7 +6209,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:527)
+// Auto generated code (Gui/ViewParams.py:542)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6173,7 +6254,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:535)
+// Auto generated code (Gui/ViewParams.py:550)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6187,7 +6268,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:545)
+// Auto generated code (Gui/ViewParams.py:560)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -6201,13 +6282,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:555)
+// Auto generated code (Gui/ViewParams.py:570)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:562)
+// Auto generated code (Gui/ViewParams.py:577)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6215,7 +6296,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:571)
+// Auto generated code (Gui/ViewParams.py:586)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6227,7 +6308,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:584)
+// Auto generated code (Gui/ViewParams.py:599)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)

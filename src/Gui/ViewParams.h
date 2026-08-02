@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:495)
+// Auto generated code (Gui/ViewParams.py:510)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -1880,6 +1880,41 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LiveImportRedrawInterval
+    ///
+    /// Minimum interval in milliseconds between 3D view redraws while a
+    /// progressive import is filling the document, and the window after
+    /// any mouse input during which redraws are never held back. Set zero
+    /// to redraw on every change.
+    static const long & getLiveImportRedrawInterval();
+    static const long & defaultLiveImportRedrawInterval();
+    static void removeLiveImportRedrawInterval();
+    static void setLiveImportRedrawInterval(const long &v);
+    static const char *docLiveImportRedrawInterval();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LiveImportRedrawBudget
+    ///
+    /// Percentage of the time the 3D view may spend redrawing while a
+    /// progressive import is filling the document. Each new object makes
+    /// the next frame rebuild the render cache of the whole scene, so on a
+    /// large import a single frame costs far more than the objects drawn
+    /// in it; keeping frames to a share of the time is what bounds that
+    /// cost. The resulting wait scales with the measured frame cost, is
+    /// never shorter than LiveImportRedrawInterval nor longer than ten
+    /// times it, and mouse input renders immediately regardless. Set zero
+    /// to budget nothing and use the plain interval.
+    static const long & getLiveImportRedrawBudget();
+    static const long & defaultLiveImportRedrawBudget();
+    static void removeLiveImportRedrawBudget();
+    static void setLiveImportRedrawBudget(const long &v);
+    static const char *docLiveImportRedrawBudget();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter RenderHighlightPolygonOffsetFactor
     static const double & getRenderHighlightPolygonOffsetFactor();
     static const double & defaultRenderHighlightPolygonOffsetFactor();
@@ -2064,7 +2099,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:501)
+    // Auto generated code (Gui/ViewParams.py:516)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2092,7 +2127,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:511)
+// Auto generated code (Gui/ViewParams.py:526)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

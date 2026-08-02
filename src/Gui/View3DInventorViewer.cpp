@@ -82,6 +82,7 @@
 # include <Inventor/nodes/SoTexture2.h>
 # include <QApplication>
 # include <QBitmap>
+# include <QElapsedTimer>
 # include <QPointer>
 # include <QEventLoop>
 # include <QKeyEvent>
@@ -521,13 +522,45 @@ struct View3DInventorViewer::Private
     std::string debugLabelFedText;
     SbVec2s debugLabelFedVp {0, 0};
 
+    // Redraw throttle for a document being filled by a live operation. The
+    // clock is monotonic and starts with the viewer, so the zero stamps below
+    // read as long overdue: the first request of an import always renders at
+    // once rather than waiting out a phantom interval.
+    QElapsedTimer throttleClock;
+    QTimer throttleTimer;
+    qint64 lastRedrawMs = 0;
+    qint64 lastInputMs = 0;
+    double frameCostMs = 0.0;
+
     Private(View3DInventorViewer *owner)
         :view(qobject_cast<View3DInventor*>(owner->parent()))
         ,owner(owner)
         ,tmpPath(new SoTempPath(10))
         ,pickAction(SbViewportRegion())
         ,pickMatrixAction(SbViewportRegion())
-    {}
+    {
+        throttleClock.start();
+    }
+
+    /** Whether this redraw request should be held back.
+     *
+     * Returns true when the frame is dropped, having armed the timer that
+     * asks for it again once the interval is up — a deferred request is never
+     * lost, so the last state of a finished import is always drawn.
+     */
+    bool deferRedraw();
+    void noteInput()
+    {
+        lastInputMs = throttleClock.elapsed();
+    }
+    void noteFrameCost(double ms)
+    {
+        // Smoothed, because the throttle should follow what a frame costs on
+        // this scene, not what one unlucky frame cost: a shadow map rebuild
+        // must not lock the view down for the rest of an import, and one
+        // cheap frame must not unlock it.
+        frameCostMs = frameCostMs > 0.0 ? 0.5 * frameCostMs + 0.5 * ms : ms;
+    }
 
     void updateOverlayCaptures(SoGLRenderAction *glra);
     void clearOverlayCaptures();
@@ -1216,6 +1249,11 @@ void View3DInventorViewer::init()
     _pimpl.reset(new Private(this));
     _pimpl->timer.setSingleShot(true);
     connect(&_pimpl->timer,SIGNAL(timeout()),this,SLOT(redrawShadow()));
+
+    // A redraw held back by the throttle comes back through this timer, so a
+    // scene that stops changing still gets its last frame.
+    _pimpl->throttleTimer.setSingleShot(true);
+    connect(&_pimpl->throttleTimer, &QTimer::timeout, this, [this] { redraw(); });
 
     static bool _cacheModeInited;
     if (!_cacheModeInited) {
@@ -3775,6 +3813,9 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
 
 void View3DInventorViewer::actualRedraw()
 {
+    QElapsedTimer frameTimer;
+    frameTimer.start();
+
     switch (renderType) {
     case Native:
         if (guiDocument && guiDocument->getDocument()->testStatus(App::Document::Recomputing))
@@ -3788,6 +3829,13 @@ void View3DInventorViewer::actualRedraw()
         renderGLImage();
         break;
     }
+
+    // What a frame costs is what the redraw throttle budgets against. A
+    // sub-millisecond result means nothing was drawn (the Recomputing case
+    // above), and feeding that in would tell the throttle the scene is cheap.
+    const double ms = double(frameTimer.nsecsElapsed()) / 1e6;
+    if (ms >= 1.0)
+        _pimpl->noteFrameCost(ms);
 }
 
 void View3DInventorViewer::renderFramebuffer()
@@ -4633,6 +4681,10 @@ void View3DInventorViewer::selectAll()
 
 bool View3DInventorViewer::processSoEvent(const SoEvent* ev)
 {
+    // Every event the view sees is a person interacting with it; the redraw
+    // throttle gets out of their way for the next little while.
+    _pimpl->noteInput();
+
     if (naviCubeEnabled && naviCube->processSoEvent(ev)) {
         return true;
     }
@@ -6688,6 +6740,65 @@ void View3DInventorViewer::Private::onRender()
 void View3DInventorViewer::redrawShadow()
 {
     _pimpl->redraw();
+}
+
+bool View3DInventorViewer::Private::deferRedraw()
+{
+    const qint64 interval = ViewParams::getLiveImportRedrawInterval();
+    if (interval <= 0)
+        return false;
+
+    // Only a document that a live operation is filling behind the user's back
+    // produces frames nobody asked for. Everything else — including a normal
+    // recompute, which redraws once at the end — renders as it always did.
+    auto doc = owner->guiDocument ? owner->guiDocument->getDocument() : nullptr;
+    if (!doc || !doc->testStatus(App::Document::LiveImport))
+        return false;
+
+    // The interval alone is a poor throttle, because it is not what grows
+    // with the model: a frame does. Every new object invalidates the render
+    // cache of the whole scene, so on a large import a single frame costs
+    // ~100ms and the view already redraws at only a few frames per second —
+    // a fixed 200ms floor removes almost nothing. Budgeting instead: let the
+    // view spend at most `budget` percent of the time drawing, which means
+    // waiting cost * (100 - budget) / budget between frames. The wait scales
+    // itself, disappearing on scenes whose frames are cheap.
+    const qint64 budget = ViewParams::getLiveImportRedrawBudget();
+    qint64 gap = interval;
+    if (budget > 0 && budget < 100 && frameCostMs > 0.0) {
+        auto want = qint64(frameCostMs * double(100 - budget) / double(budget));
+        // ...but never leave the view without a frame for an absurd stretch,
+        // however expensive frames have become
+        gap = std::max(gap, std::min(want, interval * 10));
+    }
+
+    const qint64 now = throttleClock.elapsed();
+
+    // Someone is working the mouse: that person is waiting for this frame, so
+    // it is not the one to drop. A drag keeps re-arming this window, so it
+    // runs at full frame rate while the import grows the scene underneath it;
+    // the window is the plain interval, not the budgeted gap, so one stray
+    // mouse move does not lift the throttle for seconds.
+    if (lastInputMs && now - lastInputMs < interval) {
+        lastRedrawMs = now;
+        return false;
+    }
+
+    if (now - lastRedrawMs >= gap) {
+        lastRedrawMs = now;
+        return false;
+    }
+
+    if (!throttleTimer.isActive())
+        throttleTimer.start(int(gap - (now - lastRedrawMs)));
+    return true;
+}
+
+void View3DInventorViewer::redraw(bool force)
+{
+    if (!force && _pimpl && _pimpl->deferRedraw())
+        return;
+    inherited::redraw(force);
 }
 
 void View3DInventorViewer::Private::redraw()
