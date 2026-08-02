@@ -95,6 +95,7 @@
 #include "SoFCVertexCache.h"
 #include "SoFCDisplayModeElement.h"
 #include "../Renderer/Renderer.h"
+#include "../RenderTiming.h"
 #include "../ViewParams.h"
 
 FC_LOG_LEVEL_INIT("Renderer", true, true)
@@ -1058,7 +1059,17 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
   PRIVATE(this)->scenebbox = SbBox3f();
 
   int mergecount = 0;
-  const auto & caches = cache->getVertexCaches(true);
+  const SoFCRenderCache::VertexCacheMap * cachesp;
+  {
+    // Flattening every child cache into one material-keyed map. Memoized
+    // per cache object, and therefore recomputed in full whenever the
+    // scene cache is rebuilt from scratch.
+    Gui::RenderTiming::Scope timing(Gui::RenderTiming::Flatten);
+    cachesp = &cache->getVertexCaches(true);
+  }
+  const auto & caches = *cachesp;
+
+  Gui::RenderTiming::Scope entrytiming(Gui::RenderTiming::Entries);
   for (const auto & v : caches) {
     auto & material = v.first;
     auto & ventries = v.second;
@@ -1117,6 +1128,8 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
     }
   }
 
+  entrytiming.stop();
+
   FC_TRACE("update scene " << caches.size() << " materials, "
         << PRIVATE(this)->drawentries.size() << " entries, "
         << mergecount << " after merge");
@@ -1130,8 +1143,11 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
       // Resolve draw identities alongside the draws: the info map rides
       // the same replace-wholesale cadence as the scene itself.
       Render::ObjectInfoMap objinfo;
+      Gui::RenderTiming::Scope xlate(Gui::RenderTiming::Translate);
       auto draws = RendererBridge::translate(caches, 0, false, false,
                                              &objinfo);
+      xlate.stop();
+      Gui::RenderTiming::Scope backend(Gui::RenderTiming::Backend);
       PRIVATE(this)->external->setObjectInfo(std::move(objinfo));
       PRIVATE(this)->external->setScene(std::move(draws));
     }
@@ -2320,6 +2336,9 @@ SoFCRenderer::render(SoGLRenderAction * action)
   // push per-frame configs.
   if (PRIVATE(this)->overlaymode)
     return;
+
+  // Drawing the frame from the state the stages above produced.
+  Gui::RenderTiming::Scope timing(Gui::RenderTiming::Submit);
 
   // The hidden-line draw style configuration lives in the traversal state
   // and is resolved per render; mirror it to the external backend (which

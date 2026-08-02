@@ -98,23 +98,38 @@ steps 2 through 5 above rebuild whole-scene structures from parts that
 mostly did not change. That is a narrower and more tractable problem
 than it first appears.
 
-## 4. Step 0: measure the split before designing further
+## 4. Where the time goes, measured
 
-The four aggregation steps are not equally expensive, and the design
-below is only worth its complexity for the ones that are. An earlier
-attempt to profile this path produced conclusions that had to be
-retracted, because the "release" build was linked against a debug
-Coin (`docs/DevEnvironment.md` records the trap and the `ldd` check
-that catches it).
+The aggregation steps are not equally expensive, and the design below
+is only worth its complexity for the ones that are. An earlier attempt
+to profile this path produced conclusions that had to be retracted,
+because the "release" build was linked against a debug Coin
+(`docs/DevEnvironment.md` records the trap and the `ldd` check that
+catches it). So the instrumentation is permanent rather than
+improvised: the `RenderDebug_Timing` view property times each stage
+*exclusively* (a nested stage is subtracted from its parent) and logs
+one summary line per second, which over a progressive import gives the
+growth of each stage against the object count instead of one average.
 
-Before implementing, add a per-stage timing readout as a real runtime
-knob rather than temporary instrumentation: a `RenderDebug_Timing`
-parameter that accumulates the four stage costs and reports them
-through the existing render-debug readout (`docs/RenderDebug.md`).
-One instrumented import then says which stages to attack, and the same
-knob keeps reporting after the work lands — the numbers above should
-never again come from a build whose configuration is assumed rather
-than checked.
+Measured over the same 6002-object import, unthrottled, cost of
+publishing one frame:
+
+| objects | traverse | flatten | entries | translate | backend | total |
+|---|---|---|---|---|---|---|
+| 525 | 4.5 | 0.0 | 0.0 | 0.0 | 0.0 | 4.5ms |
+| 2500 | 5.4 | 11.8 | 1.4 | 15.0 | 5.8 | 39.4ms |
+| 4200 | 9.8 | 25.6 | 3.2 | 33.0 | 15.0 | 86.6ms |
+| 5900 | 13.5 | 36.2 | 5.0 | 49.5 | 25.5 | 129.8ms |
+
+Linear in the object count, at roughly 22µs per object per frame, and
+the shares at the end are **translate 38%, flatten 27%, backend 19%,
+traverse 10%, entries 3%**.
+
+Two consequences for the design. The work worth attacking is
+translate + flatten + backend, which together are 84% of a publish.
+And the draw-entry build — the stage whose incremental version needs
+the most machinery, because vector indices have to stay stable — is
+3%, which settles §6.2 below.
 
 ## 5. Design: per-child slices
 
@@ -127,15 +142,12 @@ derived from it alive across frames instead of discarding them whenever
 the root node id moves. `sceneid` stops being a rebuild trigger and
 becomes a *staleness* signal that opens a delta pass.
 
-**Slices.** Every child separator owns a slice of each aggregate: its
-range of the flattened vertex-cache map, its range of `drawentries`,
-and its range of backend draw calls. Publishing a change means removing
-that child's slices and splicing in new ones. `SoFCRenderer` already
-maps `CacheKey -> draw entry indices` in `cachetable`, which is the
-removal hook; `drawentries` is a vector, so indices must stay stable
-across removals — a free list with tombstones, compacted when the
-fraction of dead entries crosses a threshold, rather than an erase that
-renumbers everything.
+**Slices.** Every child separator owns a slice of the flattened
+vertex-cache map and of the backend draw calls; publishing a change
+means removing that child's slices and splicing in new ones. Draw
+entries and the sorted lists are deliberately *not* sliced — they are
+rebuilt wholesale from the maintained map, per §6.2, which removes the
+index-stability problem entirely.
 
 **Backend delta.** The `Render::Renderer` interface grows an explicit
 delta entry point (`updateScene(added, removed)`) alongside `setScene`.
@@ -170,21 +182,26 @@ Worth noting for scope: `RenderCacheMergeCount` defaults to 0, so
 merging is off unless a user turns it on. The suppression matters for
 correctness of the delta path, not for the common case.
 
-### 6.2 Ordering: open
+### 6.2 Ordering: the sorted lists stay whole
 
 The flattened order carries meaning: transparency sorting and the
-on-top passes depend on it. Per-child contiguous slices plus an ordered
-child index preserves determinism for the common case, but a child
-whose transparency classification flips has to *move* between lists
-rather than patch in place, and the on-top lists are keyed
-independently of the scene order.
+on-top passes depend on it. Per-child contiguous slices would preserve
+determinism, but a child whose transparency classification flips has to
+*move* between lists rather than patch in place, and the on-top lists
+are keyed independently of the scene order — machinery that only pays
+if deriving those lists is expensive.
 
-This is not yet decided. The options are (a) slices ordered by child
-with re-sorting confined to the affected lists, or (b) keeping the
-sorted structures whole and rebuilding only those, on the theory that
-sorting N entries is far cheaper than deriving them. The measurement in
-§4 informs the choice: if the sorted-list rebuild is a small fraction
-of the frame, (b) is much less machinery for nearly the same win.
+It is not. §4 measures the whole draw-entry stage, sorted lists
+included, at 3% of a publish and 5ms at 6000 objects. **Decision: keep
+`drawentries` and the sorted lists as a wholesale rebuild** from the
+incrementally maintained vertex-cache map, and spend the complexity on
+flatten, translate and the backend instead. No free list, no
+tombstones, no index stability requirement — the structure that needed
+them is the one not worth making incremental.
+
+This should be revisited only if the rebuild stops being cheap; the
+`RenderDebug_Timing` line reports it continuously, so that would show
+up rather than being assumed.
 
 ## 7. Non-goals and risks
 
@@ -204,12 +221,17 @@ of the frame, (b) is much less machinery for nearly the same win.
 
 ## 8. Phasing
 
-1. `RenderDebug_Timing` stage split (§4), and a baseline import profile.
+1. ~~`RenderDebug_Timing` stage split, and a baseline import profile.~~
+   Done — the numbers are §4, and they set the order of what follows.
 2. Persistent root aggregate with a recorded change set, still
    publishing whole-scene: no behavior change, but the diff exists and
    can be asserted against.
-3. Incremental `drawentries` with slice bookkeeping and the free list.
-4. `updateScene` delta on the `Renderer` interface, plus incremental
-   instance grouping/bbox in the bgfx backend.
-5. Verification mode (§7) and the equivalence runs; then revisit the
+3. Incremental flatten — the maintained vertex-cache map (27%), with
+   draw entries rebuilt from it wholesale (§6.2).
+4. Incremental translate (38%): per-child draw-call slices, and an
+   `updateScene` delta on the `Renderer` interface so the list is not
+   rebuilt to be handed over.
+5. Incremental backend bookkeeping (19%): instance groups, bbox and
+   level-plan invalidation, which otherwise inherit the O(N).
+6. Verification mode (§7) and the equivalence runs; then revisit the
    throttle default, which should be able to loosen considerably.

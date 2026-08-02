@@ -173,6 +173,7 @@
 
 #include "ViewParams.h"
 #include "RenderParams.h"
+#include "RenderTiming.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderLink.h"
 #include "Renderer/Renderer.h"
@@ -3816,6 +3817,14 @@ void View3DInventorViewer::actualRedraw()
     QElapsedTimer frameTimer;
     frameTimer.start();
 
+    // The stage timers live deep in the publish pipeline, which knows
+    // nothing of views; the view that is drawing states whether they run.
+    if (auto view = _pimpl->view) {
+        if (auto prop = dynamic_cast<App::PropertyBool*>(
+                view->getPropertyByName("RenderDebug_Timing")))
+            RenderTiming::setEnabled(prop->getValue());
+    }
+
     switch (renderType) {
     case Native:
         if (guiDocument && guiDocument->getDocument()->testStatus(App::Document::Recomputing))
@@ -3836,6 +3845,8 @@ void View3DInventorViewer::actualRedraw()
     const double ms = double(frameTimer.nsecsElapsed()) / 1e6;
     if (ms >= 1.0)
         _pimpl->noteFrameCost(ms);
+
+    RenderTiming::frameDone();
 }
 
 void View3DInventorViewer::renderFramebuffer()
@@ -4333,6 +4344,14 @@ void View3DInventorViewer::initRenderProperties()
                                          "RenderDebug_Label", "RenderDebug",
                                          RenderParams::docDebugLabel()));
         prop->setValue(RenderParams::getDebugLabel());
+        prop->setStatus(App::Property::Hidden, true);
+    }
+    if (!view->getPropertyByName("RenderDebug_Timing")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "RenderDebug_Timing", "RenderDebug",
+                                         RenderParams::docDebugTiming()));
+        prop->setValue(RenderParams::getDebugTiming());
         prop->setStatus(App::Property::Hidden, true);
     }
 }

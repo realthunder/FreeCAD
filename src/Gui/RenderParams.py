@@ -333,6 +333,13 @@ Params = [
         "freeze-frame state and any custom RenderDebug_* parameter values.\n"
         "A captured PNG then documents its own settings without its\n"
         "sidecar (docs/RenderDebug.md)."),
+    ParamBool('DebugTiming',  False, title='Render stage timing',
+        doc="Log where the time of a rendered frame goes, by pipeline\n"
+        "stage: the Coin traversal, the flattening of the vertex caches,\n"
+        "the draw-entry build, the translation to the backend, the\n"
+        "backend's own bookkeeping and the draw itself. One summary line\n"
+        "per second, so a long operation shows how each stage grows with\n"
+        "the scene rather than one average (docs/IncrementalPublish.md)."),
 ]
 
 def declare_begin():

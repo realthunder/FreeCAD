@@ -77,6 +77,7 @@
 
 #include <Base/Console.h>
 #include "../ViewParams.h"
+#include "../RenderTiming.h"
 #include "../InventorBase.h"
 #include "../SoFCUnifiedSelection.h"
 #include "../SoFCSelection.h"
@@ -1227,6 +1228,12 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
     unsigned int shapestyleflags = shapestyle->getFlags();
     if (!(shapestyleflags & SoShapeStyleElement::SHADOWMAP))
       PRIVATE(this)->sceneid = path->getTail()->getNodeId();
+
+    // Everything below is the whole-scene republish this node-id test
+    // triggers on any change beneath the root (docs/IncrementalPublish.md);
+    // the traversal is what this stage measures, the stages nested inside
+    // renderer->setScene() account for themselves.
+    Gui::RenderTiming::Scope timing(Gui::RenderTiming::Traverse);
 
     RenderCachePtr cache = new SoFCRenderCache(state, path->getTail());
     cache->open(state);

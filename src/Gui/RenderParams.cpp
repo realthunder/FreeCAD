@@ -106,6 +106,7 @@ public:
     long DebugViewMode;
     bool DebugFreezeFrame;
     bool DebugLabel;
+    bool DebugTiming;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -224,6 +225,8 @@ public:
         funcs["DebugFreezeFrame"] = &RenderParamsP::updateDebugFreezeFrame;
         DebugLabel = this->handle->GetBool("DebugLabel", false);
         funcs["DebugLabel"] = &RenderParamsP::updateDebugLabel;
+        DebugTiming = this->handle->GetBool("DebugTiming", false);
+        funcs["DebugTiming"] = &RenderParamsP::updateDebugTiming;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -467,6 +470,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugLabel(RenderParamsP *self) {
         self->DebugLabel = self->handle->GetBool("DebugLabel", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugTiming(RenderParamsP *self) {
+        self->DebugTiming = self->handle->GetBool("DebugTiming", false);
     }
 };
 
@@ -2221,6 +2228,39 @@ void RenderParams::setDebugLabel(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeDebugLabel() {
     instance()->handle->RemoveBool("DebugLabel");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugTiming() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Log where the time of a rendered frame goes, by pipeline\n"
+"stage: the Coin traversal, the flattening of the vertex caches,\n"
+"the draw-entry build, the translation to the backend, the\n"
+"backend's own bookkeeping and the draw itself. One summary line\n"
+"per second, so a long operation shows how each stage grows with\n"
+"the scene rather than one average (docs/IncrementalPublish.md).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugTiming() {
+    return instance()->DebugTiming;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugTiming() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugTiming(const bool &v) {
+    instance()->handle->SetBool("DebugTiming",v);
+    instance()->DebugTiming = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugTiming() {
+    instance()->handle->RemoveBool("DebugTiming");
 }
 //[[[end]]]
 

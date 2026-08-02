@@ -911,6 +911,23 @@ public:
     static void setDebugLabel(const bool &v);
     static const char *docDebugLabel();
     //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugTiming
+    ///
+    /// Log where the time of a rendered frame goes, by pipeline
+    /// stage: the Coin traversal, the flattening of the vertex caches,
+    /// the draw-entry build, the translation to the backend, the
+    /// backend's own bookkeeping and the draw itself. One summary line
+    /// per second, so a long operation shows how each stage grows with
+    /// the scene rather than one average (docs/IncrementalPublish.md).
+    static const bool & getDebugTiming();
+    static const bool & defaultDebugTiming();
+    static void removeDebugTiming();
+    static void setDebugTiming(const bool &v);
+    static const char *docDebugTiming();
+    //@}
 //[[[end]]]
 
     /// Called on any parameter change: re-selects the renderer backend on
