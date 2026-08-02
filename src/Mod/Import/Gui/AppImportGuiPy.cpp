@@ -155,20 +155,30 @@ private:
         bool analyzed = false;
         std::atomic<bool> streaming {false};
         std::atomic<bool> workerDone {false};
+        Base::TimeInfo importStart;
         std::thread worker([&] {
             try {
                 Import::ReaderStep reader(file);
                 int roots = 0;
                 if (analyzer) {
+                    Base::TimeInfo parseStart;
                     roots = reader.openStream();
+                    FC_LOG("file parsed in " << Base::TimeInfo::diffTimeF(parseStart) << "s, "
+                                             << roots << " roots");
                 }
                 // A file with a single root - the common assembly - transfers
                 // as one unit and would show nothing until it is through, so
                 // its components are streamed ahead of it instead, at any
                 // depth of the assembly tree.
                 int components = 0;
-                if (analyzer && roots == 1 && reader.openAssemblyTree(hDoc, 1) > 0) {
-                    components = reader.componentCount();
+                if (analyzer && roots == 1) {
+                    Base::TimeInfo treeStart;
+                    const int nodes = reader.openAssemblyTree(hDoc, 1);
+                    FC_LOG("assembly tree walked in " << Base::TimeInfo::diffTimeF(treeStart)
+                                                      << "s, " << nodes << " nodes");
+                    if (nodes > 0) {
+                        components = reader.componentCount();
+                    }
                 }
                 if (analyzer && roots > 0 && analyzer->analyzeBegin()) {
                     // Streamed: transfer geometrically growing batches and
@@ -204,10 +214,12 @@ private:
                         // The containers of the tree are reserved before any
                         // of it transfers, so a component of any depth lands
                         // in its own the moment it arrives.
+                        Base::TimeInfo skeletonStart;
                         ok = analyzer->beginSkeleton(reader.assemblyNodes());
                         FC_LOG("streaming " << components << " components of the single root, "
                                             << reader.assemblyNodes().size() - components
-                                            << " assemblies deep");
+                                            << " assemblies deep, skeleton reserved in "
+                                            << Base::TimeInfo::diffTimeF(skeletonStart) << "s");
                     }
                     else {
                         FC_LOG("streaming " << roots << " roots");
@@ -290,6 +302,7 @@ private:
         });
         int undoMode = pcDoc->getUndoMode();
         bool live = false;
+        bool appliedAny = false;
         {
             Base::PyGILStateRelease unlock;
             while (!workerDone) {
@@ -310,8 +323,14 @@ private:
                     try {
                         QElapsedTimer timer;
                         timer.start();
+                        const bool wasFirst = !appliedAny;
                         while (timer.elapsed() < 50 && !docPtr.expired()
                                && analyzer->applyNextOp()) {
+                            appliedAny = true;
+                        }
+                        if (wasFirst && appliedAny) {
+                            FC_LOG("first op applied " << Base::TimeInfo::diffTimeF(importStart)
+                                                       << "s into the import");
                         }
                     }
                     catch (Base::Exception& e) {
