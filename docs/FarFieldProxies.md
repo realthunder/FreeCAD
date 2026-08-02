@@ -68,11 +68,22 @@ one rung serves many objects at once.
 
 ## 3. The mechanism
 
-Build a spatial hierarchy over the assembly's parts — the scene already
-has the tree and the per-object world bounds that streaming selection
-uses. For each interior node, generate a **proxy**: one merged,
-decimated representation of everything beneath it, with one material
-set and no per-part state.
+Build a spatial hierarchy over the assembly's parts, and generate for
+each interior node a **proxy**: one merged, decimated representation of
+everything beneath it, with one material set and no per-part state.
+
+**The hierarchy is graded by extent, not taken from the document
+tree.** An assembly's tree groups by function, not by location — a
+"fasteners" group can span the whole machine — so it is useless as a
+culling structure and worse as a proxy structure, since a node that is
+spatially everywhere has no meaningful projected size. What is built
+instead is an ordinary spatial hierarchy over per-object world bounds
+(median or SAH split), subdivided until node extent falls below a
+target, so that for any camera there exists a level whose nodes project
+to roughly the size the cut wants.
+
+**And it is graded *finely*, which is a requirement rather than a
+tuning choice** — see §8: the size of a node is the size of a pop.
 
 At runtime, choose a *cut* through the tree by projected screen-space
 error, exactly as level selection already chooses a rung per object.
@@ -94,6 +105,8 @@ aggregation *above* the part. So take the idea of a cut through a
 hierarchy chosen by screen-space error, and the treatment of a node as
 the unit of culling and streaming. Leave the DAG, the software raster
 and the visibility buffer.
+
+**And take its answer to popping, which is not a blending trick** — §8.
 
 **From Far Voxels (Gobbetti & Marton, 2005): what the proxy is when a
 surface is the wrong answer.** For a node whose contents mutually
@@ -139,6 +152,19 @@ a part table keyed by source object, built for free during the merge
 because the merge knows which object each cluster came from. So a click
 on a distant subassembly still names the part it hit.
 
+**The table must key by scene path, not by object pointer.** Selection
+in this codebase is path-based — the `SoFCSelectionRoot` chain
+compressed into a `NodeKey`, which the thin-client identity work has to
+capture at `push()` time (`docs/ThinClient.md`). A proxy that resolves
+a cluster to a `DocumentObject` alone would not line up with what the
+selection system and the element map believe, particularly for a part
+that appears through several links. Storing the same key the selection
+system already uses is the difference between this integrating and this
+producing a class of subtle identity bugs.
+
+Finer hierarchy nodes (§3) help here rather than hurt: smaller merged
+meshes mean tighter part tables and fewer candidates per ray hit.
+
 Sub-element queries do not degrade, because **the proxy is a rendering
 substitute only**. The exact geometry still exists in the document and
 still answers; a ray test against the spatial hierarchy resolves to an
@@ -182,10 +208,9 @@ out-of-process geometry queue of `docs/ComputeBoundaries.md`.
   after a document settles, and to let an ancestor whose proxy is stale
   simply fall back to drawing its children until the new one arrives.
   This falls out of the ladder — a missing rung is not an error.
-- **Popping.** Switching a subtree between proxy and parts is visible.
-  The streaming scheduler already carries hysteresis for exactly this
-  class of decision; a dither or fade across a few frames is the
-  fallback if hysteresis alone reads badly.
+- **Popping — decided by the hierarchy, not by a fade.** See §8.1; it
+  is the constraint that shapes §3, so it is written out rather than
+  listed.
 - **Shadows and the prepass.** §6's rules for stand-in draws were
   decided on the same grounds and should be inherited rather than
   re-argued: occupancy behaviour (depth) yes, shading behaviour
@@ -203,6 +228,94 @@ out-of-process geometry queue of `docs/ComputeBoundaries.md`.
   existing byte budget (`SceneLadder.h`) rather than beside it. They
   should pay for themselves: a resident proxy is only worth its bytes
   while it is replacing residents that are larger.
+
+### 8.1 Popping is a granularity problem
+
+Nanite is the useful reference here, and what it teaches is that the
+answer is not a blending trick. Its transitions are invisible because
+they are *small*, *local* and *unsynchronised*: the switching unit is a
+group of ~128-triangle clusters rather than a whole mesh, group
+boundaries are locked during simplification so mixed-level cuts stay
+crack-free, error is forced monotonic up the DAG so each group decides
+independently and the cut is still globally consistent, and the error
+threshold is about one pixel per edge — so the geometry that changes at
+a switch moves by roughly a pixel, somewhere in the middle of a
+surface, at a moment when no neighbour is switching. Temporal AA
+absorbs the residue. Unreal's *classic* static-mesh LOD, which switches
+a whole mesh at once, is the one that needs dithered transitions.
+
+A whole-subtree proxy switch is structurally the classic case, not the
+Nanite case, and three things follow.
+
+**Hysteresis does not solve this.** It prevents oscillation at a
+threshold; it does nothing about the visible snap of a single crossing.
+It is still wanted, for the problem it does solve.
+
+**We cannot buy our way out with a tighter threshold.** A proxy
+standing in for two hundred parts differs from them by far more than a
+pixel at any memory budget worth having. Nanite's sub-pixel property
+comes from the *unit* being small, not from the threshold being tight.
+
+**So the hierarchy has to be graded finely** (§3): many small nodes
+rather than a few large ones, so switches are local, staggered across
+siblings, and each one changes a small part of the image. This is the
+reason §3 specifies a target extent instead of following the document
+tree, and it is a correctness-of-appearance requirement rather than a
+tuning knob.
+
+What remains after that is a cross-fade for the residual, and it is
+worth knowing the cost before assuming it: this renderer has no
+full-scene temporal AA. Temporal accumulation exists per effect
+(volumetric raymarch, AO) without reprojection, so there is no free
+resolve to dissolve a screen-door dither. A short alpha fade drawing
+both representations for a few frames is the more likely fit, and it is
+bounded — only nodes actually crossing their threshold pay it. A third
+option costs nothing when it is available: switch a node while it is
+off-screen or occluded.
+
+### 8.2 Selection must never change a proxy's contents
+
+This is a hard rule, and the reasoning is worth keeping because the
+tempting design fails catastrophically rather than mildly.
+
+A proxy is named by the identities of its children (§7). If
+highlighting a part excluded it from its proxy — to avoid drawing it
+twice, or to show it at full fidelity — the node's contents would
+change, minting a new key and cascading a rebuild up the ancestor
+chain. Preselection changes on **every mouse move**. That design
+re-merges and re-decimates subtrees at hover rate.
+
+**Proxies are therefore immutable with respect to selection state**,
+which is also how the renderer already works: `buildHighlightCache`
+produces a *separate* cache drawn on top and never edits the base
+scene. Highlight is additive. Two regimes cover the cases:
+
+**Few objects — hover, click, up to `MaxOnTopSelections`.** Build the
+exact highlight geometry on demand for those objects only and draw it
+on top; the proxy underneath keeps drawing its approximate version,
+unhighlighted. The cost is one object's tessellation (a fetch, on a
+thin client, so the highlight can land a frame late — "picking follows
+the rung" again). The artifact is a silhouette mismatch: the exact
+highlight does not perfectly cover the proxy's version of that part, so
+a sliver of unhighlighted surface can show. At proxy distances that is
+a pixel or two, and the existing selection outline both hides it and
+reads as deliberate.
+
+**Many objects — select-all, a filter selecting thousands.** Build no
+exact geometry at all. **Tint in place**: the part table of §6 already
+tags every cluster with its source object, so the shader recolors the
+clusters belonging to selected objects. No rebuild, no exclusion, no
+exact geometry, and it scales to the whole assembly.
+
+That second regime is the stronger argument for the part table. It is
+not only a picking mechanism — it is what lets selection state be
+expressed *inside* a proxy, which is what protects content-addressed
+identity from a hover-rate rebuild.
+
+One consequence to accept rather than fix: with whole-object-on-top
+selection, a highlighted part inside a proxy is drawn twice, once
+approximately in place and once exactly on top. That is correct, but it
+does mean on-top mode costs more at proxy distance than it does today.
 
 ## 9. What would justify starting
 
@@ -223,6 +336,46 @@ Measuring these honestly matters more than starting: this is a larger
 workstream than incremental publish, and it is the one that would be
 easiest to justify by intuition and hardest to justify by data.
 
+### 9.1 Rough effort
+
+Estimates, for a desktop-first version, to be treated as the shape of
+the work rather than a schedule:
+
+| piece | estimate |
+|---|---|
+| spatial hierarchy, incrementally updatable, stable node identity | 3-5 days |
+| proxy generation (merge, decimate, part table, material resolve) plus its job plumbing and cache | 1-1.5 weeks |
+| cut selection by projected error, with the `SceneLadder` budget | 3-5 days |
+| picking integration (part table by scene path, ray fallback, on-demand exact geometry) | 3-5 days |
+| highlight regimes of §8.2 including in-proxy tint | 2-4 days |
+| **total, desktop only** | **4-7 weeks** |
+
+Streaming the same rungs to remote viewers is on top of that, and is
+mostly format and scheduling rather than new design (§10 step 5).
+
+**The fine grading of §3 is a small part of this — 1.5-2 weeks
+marginal — and almost none of it is the splitting rule.** The splitting
+predicate is a few lines; a spatial hierarchy is needed either way. The
+cost is what the node count does downstream. Leaves of ~16 parts rather
+than ~500 across a 20000-part assembly means on the order of 2500
+proxies rather than 80, so:
+
+- **Generation throughput becomes a scheduler problem**, not a loop:
+  batching, prioritisation by likely visibility, idle-time execution
+  that yields to recompute.
+- **Chunk count becomes a streaming problem, and there is a measured
+  precedent for it going wrong**: the mobile blank-page pause was the
+  first commit waiting on ~200 group manifests over a cold link
+  (`docs/SceneStreaming.md`, and the thin-client work that fixed it).
+  Thousands of small proxy chunks would reproduce it. Bundling the
+  coarse levels into single chunks is the mitigation, and it is format
+  work that should be designed in rather than retrofitted.
+- **Total bytes barely move.** If each level halves the triangle count,
+  the sum over levels is a geometric series of roughly 1.5-2x the base
+  data whatever the granularity. Fine grading multiplies the number of
+  objects, not the volume — which is why the cost lands on schedulers
+  and chunk counts rather than on memory.
+
 ## 10. Sequencing
 
 Incremental publish comes first, and not only because it is smaller.
@@ -236,12 +389,14 @@ The phase order, then:
 
 1. `docs/IncrementalPublish.md` phases 2-6.
 2. The two measurements in §9.
-3. Node hierarchy and merged-mesh proxies (§5.1) on the desktop, as
-   rungs above the object, with the part table of §6.
+3. Node hierarchy graded by extent (§3) and merged-mesh proxies (§5.1)
+   on the desktop, as rungs above the object, with the part table of
+   §6 keyed by scene path.
 4. Cut selection by screen-space error with hysteresis, reusing the
-   selection machinery of `docs/SceneStreaming.md` §7.
-5. Streaming the same rungs to remote viewers — which needs no format
-   work if the naming of §7 holds, since a proxy is a chunk like any
-   other.
+   selection machinery of `docs/SceneStreaming.md` §7, and the
+   transition treatment of §8.1.
+5. Streaming the same rungs to remote viewers. The naming of §7 means
+   no new format design, but the chunk count of §9.1 does need
+   bundling of coarse levels, which is format work.
 6. View-dependent volumetric proxies (§5.2), only where §5.1 is shown
    to fail.
