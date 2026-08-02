@@ -27,6 +27,7 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectExtension.h>
 #include <App/ExtensionPython.h>
+#include <unordered_map>
 #include <vector>
 
 
@@ -183,7 +184,17 @@ public:
 
 protected:
     void initSetup();
-    void syncChildConnections();
+    /** Bring the child signal connections in line with the Group property
+     *
+     * @param exportModeChanged: whether the sync was triggered by a change of
+     * ExportMode, in which case the export query is redone for every child and
+     * not just for the newly added ones.
+     *
+     * Only the difference is applied, because this runs on every single change
+     * of Group: reconnecting all children here would make filling a group
+     * quadratic in the number of children.
+     */
+    void syncChildConnections(bool exportModeChanged = false);
 
 private:
     void removeObjectFromDocument(DocumentObject*);
@@ -193,7 +204,16 @@ private:
 
     // for tracking children visibility
     void slotChildChanged(const App::Property&);
-    std::vector<boost::signals2::scoped_connection> _Conns;
+
+    struct ChildConnections {
+        boost::signals2::scoped_connection visibility;
+        boost::signals2::scoped_connection groupTouched;
+        // Marks the entry as seen by the running sync, so that children gone
+        // from Group can be swept without building a second lookup structure.
+        unsigned long stamp = 0;
+    };
+    std::unordered_map<const App::DocumentObject*, ChildConnections> _Conns;
+    unsigned long _ConnStamp = 0;
 
     bool _togglingVisibility = false;
 

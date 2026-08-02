@@ -23,6 +23,8 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
+
 #include <QDir>
 #include <QFileInfo>
 #include <boost/algorithm/string/predicate.hpp>
@@ -909,7 +911,24 @@ void PropertyLinkList::setValues(std::vector<DocumentObject*> &&lValue) {
                     "Cannot link to  external object " << obj->getFullName()
                     << " in " << getFullName());
     }
-    _nameMap.clear();
+    // Filling a group (or any other link list) appends one object at a time,
+    // which arrives here as a new list holding the old one as its prefix. Both
+    // the name map and the back links can be carried over in that case; redoing
+    // them for the whole list would cost O(size) on every single append.
+    const bool append = lValue.size() >= _lValueList.size()
+        && std::equal(_lValueList.begin(), _lValueList.end(), lValue.begin());
+
+    // Only a map that is complete for the current list can be extended - an
+    // incomplete one is indistinguishable from a stale one to find().
+    if (append && !_nameMap.empty() && _nameMap.size() == _lValueList.size()) {
+        for (int i=(int)_lValueList.size(); i<(int)lValue.size(); ++i) {
+            auto obj = lValue[i];
+            if (obj && obj->isAttachedToDocument())
+                _nameMap[obj->getNameInDocument()] = i;
+        }
+    }
+    else
+        _nameMap.clear();
 
 #ifndef USE_OLD_DAG
     //maintain the back link in the DocumentObject class
@@ -917,13 +936,20 @@ void PropertyLinkList::setValues(std::vector<DocumentObject*> &&lValue) {
         // before accessing internals make sure the object is not about to be destroyed
         // otherwise the backlink contains dangling pointers
         if (!parent->testStatus(ObjectStatus::Destroy) && _pcScope!=LinkScope::Hidden) {
-            for(auto *obj : _lValueList) {
-                if (obj) 
-                    obj->_removeBackLink(parent);
+            // Removing and re-adding the back link of an unchanged element
+            // leaves the child's in-list unchanged, so skip the common prefix.
+            std::size_t begin = 0;
+            if (append)
+                begin = _lValueList.size();
+            else {
+                for(auto *obj : _lValueList) {
+                    if (obj)
+                        obj->_removeBackLink(parent);
+                }
             }
-            for(auto *obj : lValue) {
-                if (obj) 
-                    obj->_addBackLink(parent);
+            for(std::size_t i=begin; i<lValue.size(); ++i) {
+                if (lValue[i])
+                    lValue[i]->_addBackLink(parent);
             }
         }
     }

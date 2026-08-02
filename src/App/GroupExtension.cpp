@@ -204,8 +204,8 @@ std::vector< DocumentObject* > GroupExtension::addObjects(std::vector< DocumentO
     }
     
     Base::ObjectStatusLocker<Property::Status, Property> guard(Property::User3, &Group);
-    Group.setValues(grp);
-    
+    Group.setValues(std::move(grp));
+
     return added;
 }
 
@@ -500,7 +500,7 @@ void GroupExtension::extensionOnChanged(const Property* p) {
     }
 
     if(p == &Group || p == &ExportMode) {
-        syncChildConnections();
+        syncChildConnections(p == &ExportMode);
     } else if(p == &owner->Visibility) {
         if(!_togglingVisibility 
                 && !owner->getDocument()->testStatus(Document::Restoring)
@@ -574,20 +574,47 @@ void GroupExtension::extensionOnChanged(const Property* p) {
     App::Extension::extensionOnChanged(p);
 }
 
-void GroupExtension::syncChildConnections()
+void GroupExtension::syncChildConnections(bool exportModeChanged)
 {
-    _Conns.clear();
+    // This is called for every single change of Group, so it must not cost more
+    // than the change itself. Connect only the children that are new to the
+    // group, and disconnect only those that left it.
+    const unsigned long stamp = ++_ConnStamp;
+    std::size_t seen = 0;
+
     for(auto obj : Group.getValues()) {
         if(!obj || !obj->isAttachedToDocument())
             continue;
-        queryChildExport(obj, DocumentObject::GS_DEFAULT);
-        _Conns.push_back(obj->Visibility.signalChanged.connect(std::bind(
-                        &GroupExtension::slotChildChanged,this,sp::_1)));
-        auto groupTouched = Base::freecad_dynamic_cast<PropertyBool>(
-                obj->getPropertyByName("_GroupTouched"));
-        if(groupTouched && groupTouched->getContainer() == obj)
-            _Conns.push_back(groupTouched->signalChanged.connect(std::bind(
-                            &GroupExtension::slotChildChanged,this,sp::_1)));
+
+        auto res = _Conns.try_emplace(obj);
+        auto &conns = res.first->second;
+        if(res.second) {
+            queryChildExport(obj, DocumentObject::GS_DEFAULT);
+            conns.visibility = obj->Visibility.signalChanged.connect(std::bind(
+                        &GroupExtension::slotChildChanged,this,sp::_1));
+            auto groupTouched = Base::freecad_dynamic_cast<PropertyBool>(
+                    obj->getPropertyByName("_GroupTouched"));
+            if(groupTouched && groupTouched->getContainer() == obj)
+                conns.groupTouched = groupTouched->signalChanged.connect(std::bind(
+                            &GroupExtension::slotChildChanged,this,sp::_1));
+        } else if(exportModeChanged)
+            queryChildExport(obj, DocumentObject::GS_DEFAULT);
+
+        // Group may legally list the same object more than once, so count
+        // entries and not children.
+        if(conns.stamp != stamp) {
+            conns.stamp = stamp;
+            ++seen;
+        }
+    }
+
+    if(seen != _Conns.size()) {
+        for(auto it=_Conns.begin(); it!=_Conns.end();) {
+            if(it->second.stamp != stamp)
+                it = _Conns.erase(it);
+            else
+                ++it;
+        }
     }
 }
 
@@ -710,6 +737,12 @@ int GroupExtension::extensionSetElementVisible(const char *element, bool vis)
 }
 
 void GroupExtension::onExtendedDocumentRestored() {
+    // A child may have gained its extensions - and with them the
+    // '_GroupTouched' property - only after this group's Group property was
+    // restored, so re-check every child now that the document is complete.
+    _Conns.clear();
+    syncChildConnections();
+
     if(_GroupVersion.getValue()==0) {
         initSetup();
         auto hiddenChildren = Base::freecad_dynamic_cast<PropertyMap>(
