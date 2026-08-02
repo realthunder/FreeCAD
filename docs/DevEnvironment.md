@@ -162,21 +162,27 @@ $RUN cmake --build build/conda-debug --target Import ImportGui
 The debug stack is unusable for performance work: a large STEP import runs ~6x slower,
 which turns a single experiment into an afternoon. Build the dependencies a second time
 as `RelWithDebInfo` (optimized, still symbolized for gdb and callgrind) into parallel
-prefixes, and configure FreeCAD with the `conda-relwithdebinfo-local` user preset
-(`build/conda-relwithdebinfo`):
+prefixes, and configure FreeCAD with the `conda-relwithdebinfo-801` user preset
+(`build/conda-relwithdebinfo-801`):
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
 
 # OCCT and Coin: same recipes as above, only the build type and prefixes differ
 #   -DCMAKE_BUILD_TYPE=RelWithDebInfo
-#   -DINSTALL_DIR=$HOME/works/sw/occt/install/conda-relwithdebinfo      (OCCT)
+#   -DINSTALL_DIR=$HOME/works/sw/occt/install/conda-relwithdebinfo-801  (OCCT, LinkVibe-801)
 #   -DCMAKE_INSTALL_PREFIX=$HOME/works/sw/coin/install/conda-relwithdebinfo  (Coin)
 # then rebuild pivy against the release Coin (same recipe, new prefix).
 
-$RUN cmake --preset conda-relwithdebinfo-local
-$RUN cmake --build build/conda-relwithdebinfo -j 14
+$RUN cmake --preset conda-relwithdebinfo-801
+$RUN cmake --build build/conda-relwithdebinfo-801 -j 14
 ```
+
+**Measure on the same OCCT the debug stack uses.** The streamed STEP transfer and
+parallel healing only exist on the 8.0.1 fork; against 7.7.2 they compile, but fall
+back to the one-shot path, so a timing taken there measures a different importer.
+`conda-relwithdebinfo-local` (OCCT 7.7.2, `build/conda-relwithdebinfo`) is kept only
+as the before-picture for that comparison.
 
 **Build every dependency optimized, not just OCCT.** Leaving Coin in debug is the easy
 mistake, and a costly one: in a progressive-import profile ~77% of the instructions
@@ -190,7 +196,7 @@ build silently links the previous library. Set them explicitly:
 
 ```sh
 NEW=$HOME/works/sw/coin/install/conda-relwithdebinfo
-$RUN cmake -B build/conda-relwithdebinfo \
+$RUN cmake -B build/conda-relwithdebinfo-801 \
   -DCoin_DIR=$NEW/lib/cmake/Coin-4.0.6 \
   -DCOIN3D_INCLUDE_DIRS=$NEW/include -DCOIN3D_LIBRARIES=$NEW/lib/libCoin.so
 ```
@@ -199,7 +205,7 @@ $RUN cmake -B build/conda-relwithdebinfo \
 traps above:
 
 ```sh
-ldd build/conda-relwithdebinfo/lib/libFreeCADGui.so | grep -i coin
+ldd build/conda-relwithdebinfo-801/lib/libFreeCADGui.so | grep -i coin
 ```
 
 Also note `-DCMAKE_DISABLE_FIND_PACKAGE_Spnav=TRUE` in the preset: a system `libspnav`
