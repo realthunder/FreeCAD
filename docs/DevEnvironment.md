@@ -14,7 +14,7 @@ Qt6 / toolchain / mcp_console work.
 | Repo | Path | Branch (→ remote) | Role |
 |---|---|---|---|
 | FreeCAD fork | `~/works/sw/fcad` | `LinkVibe` → `realthunder/FreeCAD` | main project |
-| OCCT fork | `~/works/sw/occt` | `LinkVibe` → `realthunder/OCCT` | geometry kernel (patched) |
+| OCCT fork | `~/works/sw/occt` | `LinkVibe-801` → `realthunder/OCCT` | geometry kernel (patched), **the version FreeCAD builds against**; `LinkVibe` is the same fork on 7.7.2 |
 | Coin3D fork | `~/works/sw/coin` | `LinkVibe` → `realthunder/coin` | scene graph |
 | pivy 0.6.10 | `~/works/sw/pivy` | `rt-0.6.10` (local; origin is upstream `coin3d/pivy`) | Coin Python bindings (patched) |
 | freecad-rt-feedstock | `~/works/sw/freecad-rt-feedstock` | `LinkVibe` → `realthunder/...` | FreeCAD conda recipe (Qt6, builds from FreeCAD `LinkVibe`) |
@@ -86,22 +86,30 @@ ln -sfn share/PySide6/glue glue
 Build dirs / installs are parallel to the system stack and never collide:
 `<repo>/build_conda_debug` → `<repo>/install/conda-debug`.
 
+**OCCT is built from `LinkVibe-801` (OCCT 8.0.1) into `install/conda-debug-801`** —
+that is what FreeCAD links. The 7.7.2 build below (`LinkVibe` → `install/conda-debug`)
+is kept only to compile-check the version-guarded fallback paths; see
+[Building FreeCAD](#building-freecad-conda-stack). Swap branch and `INSTALL_DIR`
+to build either.
+
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
 
 # OCCT — POLICY shim needed under cmake 4; $ORIGIN rpath is REQUIRED
 # (OCCT installs libs with empty RUNPATH otherwise, and RUNPATH is not
 # transitive: Part.so finds libTKPart, but libTKPart can't find libTKXDE)
-$RUN cmake -S ~/works/sw/occt -B ~/works/sw/occt/build_conda_debug -G Ninja \
+git -C ~/works/sw/occt switch LinkVibe-801
+$RUN cmake -S ~/works/sw/occt -B ~/works/sw/occt/build_conda_debug_801 -G Ninja \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DINSTALL_DIR=$HOME/works/sw/occt/install/conda-debug \
+  -DINSTALL_DIR=$HOME/works/sw/occt/install/conda-debug-801 \
   -DCMAKE_INSTALL_RPATH='$ORIGIN' \
   -DBUILD_LIBRARY_TYPE=Shared -DBUILD_MODULE_Draw=OFF \
   -DUSE_TBB=OFF -DUSE_VTK=OFF -DUSE_DRACO=OFF \
   -DUSE_FREETYPE=ON -DUSE_FREEIMAGE=ON -DUSE_RAPIDJSON=ON \
   -DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF
-$RUN cmake --build ~/works/sw/occt/build_conda_debug && $RUN cmake --install ~/works/sw/occt/build_conda_debug
+$RUN cmake --build ~/works/sw/occt/build_conda_debug_801 \
+  && $RUN cmake --install ~/works/sw/occt/build_conda_debug_801
 
 # Coin
 $RUN cmake -S ~/works/sw/coin -B ~/works/sw/coin/build_conda_debug -G Ninja \
@@ -123,9 +131,10 @@ $RUN cmake --build ~/works/sw/pivy/build_conda_debug && $RUN cmake --install ~/w
 ### Building FreeCAD (conda stack)
 
 The user preset `conda-debug-local` (in `CMakeUserPresets.json`, gitignored) inherits
-the repo's `conda-linux-debug` preset and overrides: build dir `build/conda-debug`,
-`CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at the local `install/conda-debug`
-prefixes, `CMAKE_POLICY_VERSION_MINIMUM=3.5` (for bgfx's old cmake_minimum_required
+the repo's `conda-linux-debug` preset and overrides: build dir
+`build/conda-debug-occt801`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at the
+local `install/conda-debug-801` (OCCT) and `install/conda-debug` (Coin) prefixes,
+`CMAKE_POLICY_VERSION_MINIMUM=3.5` (for bgfx's old cmake_minimum_required
 under cmake 4), `BUILD_BGFX=ON`, and `BUILD_FEM/BUILD_WEB/FREECAD_USE_PCL/`
 `FREECAD_USE_EXTERNAL_SMESH/ENABLE_DEVELOPER_TESTS` OFF (avoids VTK/netgen/WebEngine/
 PCL/smesh packages; enable selectively when needed — conda-forge now has qt6-webengine).
@@ -134,16 +143,27 @@ PCL/smesh packages; enable selectively when needed — conda-forge now has qt6-w
 RUN=~/works/sw/fcad/.conda/run.sh
 cd ~/works/sw/fcad
 $RUN cmake --preset conda-debug-local
-$RUN cmake --build build/conda-debug          # ninja, add -j N to limit parallelism
+$RUN cmake --build build/conda-debug-occt801   # ninja, add -j N to limit parallelism
+```
+
+Sources build against both OCCT versions (`OCC_VERSION_HEX` guards; features that
+need the 8.0.1 fork — parallel healing, streamed STEP transfer — fall back to the
+one-shot path on 7.7.2). The `conda-debug-occt772` preset builds the same tree
+against `install/conda-debug` in `build/conda-debug` to keep that compile-checked;
+run it after touching anything version-guarded:
+
+```sh
+$RUN cmake --preset conda-debug-occt772
+$RUN cmake --build build/conda-debug --target Import ImportGui
 ```
 
 ### Running & debugging
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
-$RUN ~/works/sw/fcad/build/conda-debug/bin/FreeCAD       # GUI (WSLg)
-$RUN ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd    # headless
-$RUN gdb --args ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd script.py
+$RUN ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCAD     # GUI (WSLg)
+$RUN ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCADCmd  # headless
+$RUN gdb --args ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCADCmd script.py
 ```
 
 - All of fcad/OCCT/Coin have full debug info; gdb breakpoints resolve with source lines
@@ -157,7 +177,7 @@ $RUN gdb --args ~/works/sw/fcad/build/conda-debug/bin/FreeCADCmd script.py
 
 ```sh
 # headless kernel sanity (expects volume 500 and "SMOKE OK" pattern)
-$RUN build/conda-debug/bin/FreeCADCmd /path/to/smoke.py
+$RUN build/conda-debug-occt801/bin/FreeCADCmd /path/to/smoke.py
 # GUI + PySide6: launch and confirm no "No module named 'PySide6'" in output,
 # Draft/Arch/Assembly/AddonManager appear in the workbench selector
 ```
@@ -198,7 +218,7 @@ Qt/compiler generation.
 - apt deps: qt6-{base,base-private,svg,tools}-dev, qt6-tools-dev-tools, qt6-l10n-tools,
   libxerces-c-dev, libeigen3-dev, boost dev libs incl. libboost-python-dev,
   libyaml-cpp-dev, libfreeimage-dev, rapidjson-dev, GL/X11 dev, swig, cmake, ninja.
-- Builds: `<repo>/build_debug` → `<repo>/install/debug` (OCCT configured with
+- Builds: `<repo>/build_debug` → `<repo>/install/debug` (OCCT 7.7.2 here, configured with
   `-DCMAKE_INSTALL_RPATH='$ORIGIN'` — same transitivity reason as above).
 - fcad preset: `debug-local` (inherits `debug`, Makefiles, `build/debug`,
   `FREECAD_QT_VERSION=6`, BUILD_BGFX=ON, BUILD_FEM/WEB=OFF). `sh src/make.sh -j8` works.

@@ -23,7 +23,7 @@ Underlying tech: **OpenCASCADE (OCCT)** geometry kernel, **Coin3D** (Open Invent
 
 This project is developed together with local forks kept as sibling directories; the dev build links against their **local installed builds**:
 - `~/works/sw/coin` — forked Coin3D (`realthunder/coin`, tracks `coin3d/coin`).
-- `~/works/sw/occt` — forked OCCT (`realthunder/OCCT`, tracks upstream). Improving this kernel is an explicit project focus.
+- `~/works/sw/occt` — forked OCCT (`realthunder/OCCT`, tracks upstream). Improving this kernel is an explicit project focus. **Branch `LinkVibe-801` (OCCT 8.0.1) is what FreeCAD builds against**; `LinkVibe` is the same fork on 7.7.2, kept for the version-guarded fallback paths and for what the released packages still link.
 - `~/works/sw/{coin3d-feedstock, freecad-rt-feedstock, pivy-feedstock}` — conda-forge recipes used for distribution image releases.
 
 When a change requires a matching Coin or OCCT change, expect to edit those repos too.
@@ -32,7 +32,7 @@ When a change requires a matching Coin or OCCT change, expect to edit those repo
 
 **Read `docs/DevEnvironment.md` first** — it documents the two build stacks on this box in full (layouts, exact commands, quirks). Summary:
 
-- **Primary: conda-based debug stack** (Qt 6.10.1 + PySide6 6.10.1, gcc 15) — the only way to get a matched Qt6+PySide6 on Ubuntu 24.04. Env at `.conda/freecad`; wrap every build/run/debug command with `~/works/sw/fcad/.conda/run.sh` (activates env, keeps builds truly Debug). Configure with the `conda-debug-local` user preset → `build/conda-debug` (Ninja). Local occt/coin debug installs live in `<repo>/install/conda-debug`.
+- **Primary: conda-based debug stack** (Qt 6.10.1 + PySide6 6.10.1, gcc 15) — the only way to get a matched Qt6+PySide6 on Ubuntu 24.04. Env at `.conda/freecad`; wrap every build/run/debug command with `~/works/sw/fcad/.conda/run.sh` (activates env, keeps builds truly Debug). Configure with the `conda-debug-local` user preset → `build/conda-debug-occt801` (Ninja). Local debug installs: OCCT 8.0.1 in `occt/install/conda-debug-801`, Coin in `coin/install/conda-debug`. The `conda-debug-occt772` preset (→ `build/conda-debug`, OCCT 7.7.2 in `occt/install/conda-debug`) compile-checks the fallback paths.
 - **Fallback: system gcc + apt Qt 6.4.2** — `debug-local` user preset → `build/debug` (Makefiles; `sh src/make.sh -j$(nproc)` works). No PySide6 possible here, so Python workbenches don't load. Local occt/coin installs in `<repo>/install/debug`.
 
 Key points that apply to both:
