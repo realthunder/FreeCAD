@@ -781,12 +781,37 @@ public:
     DocumentObject *find(const std::string &, int *pindex=nullptr) const;
     DocumentObject *find(const char *sub, int *pindex=nullptr) const;
 
+    /** How many leading elements the last change left untouched
+     *
+     * Returns -1 whenever nothing may be assumed, which is the answer for every
+     * change except a plain append. A consumer that keeps per-element state can
+     * use this to rescan only the tail instead of the whole list.
+     *
+     * Safe by default: a mutator that declares nothing reports -1, so
+     * forgetting to declare a prefix costs performance and never correctness.
+     */
+    int getUnchangedPrefix() const { return _changePrefix; }
+
 protected:
     DocumentObject *getPyValue(PyObject *item) const override;
+
+    void hasSetValue() override;
+
+    /** Declare what the change being made right now leaves untouched
+     *
+     * @param prefix: number of leading elements that keep their current value,
+     * or -1 for "unknown". @sa getUnchangedPrefix()
+     */
+    void declareUnchangedPrefix(int prefix);
 
 protected:
     mutable std::unordered_map<std::string, int> _nameMap;
     std::vector<int> _revisions;
+
+private:
+    int _changePrefix = -1;
+    int _pendingPrefix = -1;
+    bool _prefixPending = false;
 };
 
 /** The general Link Property with Child scope

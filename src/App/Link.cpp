@@ -1906,7 +1906,15 @@ void LinkBaseExtension::update(App::DocumentObject *parent, const Property *prop
                 }
             }
         }
-        syncElementList();
+        // An appended element needs configuring; the ones already in the list
+        // do not, because nothing here depends on the list as a whole. This is
+        // the difference between one element and all of them on every add.
+        int syncFrom = 0;
+        if (auto elementProp = getElementListProperty()) {
+            if (prop == elementProp)
+                syncFrom = elementProp->getUnchangedPrefix();
+        }
+        syncElementList(syncFrom);
         if(_getShowElementValue()
                 && _getElementCountProperty()
                 && getElementListProperty()
@@ -2088,7 +2096,7 @@ bool LinkBaseExtension::linkTransform() const {
     return getLinkTransformValue();
 }
 
-void LinkBaseExtension::syncElementList() {
+void LinkBaseExtension::syncElementList(int from) {
     auto transform = getLinkTransformProperty();
     auto link = getLinkedObjectProperty();
     auto xlink = freecad_dynamic_cast<const PropertyXLink>(link);
@@ -2096,7 +2104,10 @@ void LinkBaseExtension::syncElementList() {
     auto owner = getContainer();
     auto ownerID = owner?owner->getID():0;
     auto elements = getElementListValue();
-    for (auto i : elements) {
+    if (from < 0 || from > (int)elements.size())
+        from = 0;
+    for (std::size_t idx = (std::size_t)from; idx < elements.size(); ++idx) {
+        auto i = elements[idx];
         auto element = freecad_dynamic_cast<LinkElement>(i);
         if (!element
             || (element->_LinkOwner.getValue()

@@ -665,7 +665,14 @@ protected:
     void checkCopyOnChange(App::DocumentObject *parent, const App::Property &prop);
     void setupCopyOnChange(App::DocumentObject *parent, bool checkSource = false);
     App::DocumentObject *makeCopyOnChange();
-    void syncElementList();
+    /** Push this link's configuration onto its LinkElement children
+     *
+     * @param from: index of the first element to visit. Only a caller that
+     * knows the earlier elements are unchanged may pass anything but 0 - the
+     * per-element work depends on this link's own properties, so a change to
+     * those must revisit the whole list.
+     */
+    void syncElementList(int from = 0);
     void detachElement(App::DocumentObject *obj);
     void detachElements();
     void checkGeoElementMap(const App::DocumentObject *obj,

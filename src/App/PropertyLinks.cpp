@@ -842,8 +842,32 @@ PropertyLinkList::~PropertyLinkList()
 
 }
 
+void PropertyLinkList::declareUnchangedPrefix(int prefix)
+{
+    // Changes can be batched (AtomicPropertyChange) so that one notification
+    // covers several of them. What survived all of them is the shortest prefix,
+    // and a single undeclared change poisons the whole batch.
+    if (!_prefixPending) {
+        _prefixPending = true;
+        _pendingPrefix = prefix;
+    }
+    else if (_pendingPrefix >= 0)
+        _pendingPrefix = (prefix < 0) ? -1 : std::min(_pendingPrefix, prefix);
+}
+
+void PropertyLinkList::hasSetValue()
+{
+    // The prefix belongs to the notification about to be sent; anything that
+    // changed the list without declaring one leaves it at "unknown".
+    _changePrefix = _prefixPending ? _pendingPrefix : -1;
+    _prefixPending = false;
+    _pendingPrefix = -1;
+    inherited::hasSetValue();
+}
+
 void PropertyLinkList::setSize(int newSize)
 {
+    declareUnchangedPrefix(-1);
     for(int i=newSize;i<(int)_lValueList.size();++i) {
         auto obj = _lValueList[i];
         if (!obj || !obj->isAttachedToDocument())
@@ -865,6 +889,7 @@ void PropertyLinkList::setSize(int newSize, const_reference def) {
 }
 
 void PropertyLinkList::set1Value(int idx, DocumentObject* const &value) {
+    declareUnchangedPrefix(-1);
     DocumentObject *obj = nullptr;
     if(idx>=0 && idx<(int)_lValueList.size()) {
         obj = _lValueList[idx];
@@ -917,6 +942,9 @@ void PropertyLinkList::setValues(std::vector<DocumentObject*> &&lValue) {
     // them for the whole list would cost O(size) on every single append.
     const bool append = lValue.size() >= _lValueList.size()
         && std::equal(_lValueList.begin(), _lValueList.end(), lValue.begin());
+
+    // Consumers that keep per-element state can skip the prefix too
+    declareUnchangedPrefix(append ? (int)_lValueList.size() : -1);
 
     // Only a map that is complete for the current list can be extended - an
     // incomplete one is indistinguishable from a stale one to find().
@@ -1026,6 +1054,7 @@ void PropertyLinkList::Save(Base::Writer &writer) const
 
 void PropertyLinkList::Restore(Base::XMLReader &reader)
 {
+    declareUnchangedPrefix(-1);
     // read my element
     reader.readElement("LinkList");
     // get the value of my attribute
