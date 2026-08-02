@@ -25,13 +25,32 @@
 #define IMPORT_READER_STEP_H
 
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include <Mod/Import/ImportGlobal.h>
 #include <Base/FileInfo.h>
+#include <Base/Placement.h>
 #include <TDocStd_Document.hxx>
+#include <TopoDS_Shape.hxx>
 
 namespace Import
 {
+
+/// One occurrence of the assembly tree of a STEP root, as read from the
+/// product structure before anything is transferred.
+struct AssemblyNode
+{
+    /// One-based index of the owning node, 0 for a component of the root.
+    int parent = 0;
+    /// Whether this component is an assembly, i.e. holds components itself.
+    bool isAssembly = false;
+    /// Name of the component's product.
+    std::string name;
+    /// Placement of the component inside its owner.
+    Base::Placement placement;
+};
 
 class ImportExport ReaderStep
 {
@@ -56,23 +75,32 @@ public:
 
     /** @name Streamed component reading
      * A single-root assembly transfers as one unit, so nothing appears until
-     * the whole file is through. openRootComponents() lists the components of
-     * a root that may be transferred on their own - those no reducing importer
-     * would merge with a sibling - and returns how many there are;
-     * transferComponentRange() then moves a batch of them into the document,
-     * where they show up as free shapes. Transferring the root afterwards
-     * (transferRootRange) reuses their results and gathers them under the
-     * assembly.
+     * the whole file is through. openAssemblyTree() reads the assembly tree of
+     * a root from the product structure - every occurrence that may be handed
+     * over on its own, with its placement and product name, an owner always
+     * before the components it holds - so an importer can build the containers
+     * before any geometry exists. Its leaves are the transferable components:
+     * transferComponentRange() moves a batch of them into the document, where
+     * they show up as free shapes, and reports each result shape with the node
+     * it came from. Transferring the root afterwards (transferRootRange)
+     * reuses those results and gathers them under the assembly.
      */
     //@{
-    int openRootComponents(int root);
-    void transferComponentRange(Handle(TDocStd_Document) hDoc, int first, int last);
+    int openAssemblyTree(Handle(TDocStd_Document) hDoc, int root);
+    const std::vector<AssemblyNode>& assemblyNodes() const;
+    /// Number of transferable components, i.e. of leaves of the tree.
+    int componentCount() const;
+    void transferComponentRange(Handle(TDocStd_Document) hDoc,
+                                int first,
+                                int last,
+                                std::vector<std::pair<TopoDS_Shape, int>>& results);
     //@}
 
 private:
     Base::FileInfo file;
     struct Stream;
     std::unique_ptr<Stream> stream;
+    std::vector<AssemblyNode> nodes;
 };
 
 }  // namespace Import

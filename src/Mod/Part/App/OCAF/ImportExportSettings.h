@@ -98,6 +98,8 @@ public:
     /// batch of a streamed import transfers.
     int getStreamBatchStart() const;
     /// Factor each streamed batch grows by; 1 keeps a constant batch size.
+    /// Batches are expensive - each one repeats the passes qualifying the
+    /// shapes over the whole file - so this grows steeply.
     int getStreamBatchFactor() const;
 
     void setImportMode(ImportMode);

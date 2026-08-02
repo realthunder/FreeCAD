@@ -39,6 +39,7 @@
 
 #include "ReaderStep.h"
 #include <Base/Exception.h>
+#include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/encodeFilename.h>
 #include <Mod/Part/App/ProgressIndicator.h>
 
@@ -51,10 +52,11 @@ struct ReaderStep::Stream
     std::unique_ptr<Message_ProgressScope> scope;
     int roots = 0;
 #if OCC_VERSION_HEX >= 0x080000
-    /// Components of the root opened by openRootComponents(), split into the
-    /// ones that may be streamed on their own and the ones left to the root.
-    Handle(NCollection_HSequence<Handle(Standard_Transient)>) uniqueComponents;
-    Handle(NCollection_HSequence<Handle(Standard_Transient)>) sharedComponents;
+    /// The assembly tree opened by openAssemblyTree(): every occurrence that
+    /// may be handed over on its own, an owner before its components.
+    NCollection_Sequence<STEPCAFControl_Reader::AssemblyNode> tree;
+    /// Indices (into tree) of the leaves, in transfer order.
+    std::vector<int> components;
 #endif
 
     /// (Re)start the progress scope over the given number of steps.
@@ -99,9 +101,10 @@ int ReaderStep::openStream()
 #endif
 }
 
-int ReaderStep::openRootComponents(int root)
+int ReaderStep::openAssemblyTree(Handle(TDocStd_Document) hDoc, int root)  // NOLINT
 {
 #if OCC_VERSION_HEX < 0x080000
+    (void)hDoc;
     (void)root;
     return 0;
 #else
@@ -109,35 +112,68 @@ int ReaderStep::openRootComponents(int root)
         throw Base::RuntimeError("ReaderStep: no open stream");
     }
     auto& s = *stream;
-    if (s.reader.RootComponents(root, s.uniqueComponents, s.sharedComponents) == 0) {
+    nodes.clear();
+    s.components.clear();
+    if (s.reader.RootAssemblyTree(root, hDoc, s.tree) == 0) {
         return 0;
     }
-    int count = s.uniqueComponents->Size();
+    nodes.reserve(s.tree.Size());
+    for (int i = 1; i <= int(s.tree.Size()); ++i) {
+        const auto& node = s.tree.Value(i);
+        AssemblyNode out;
+        out.parent = node.Parent;
+        out.isAssembly = node.IsAssembly;
+        out.name = node.Name.ToCString();
+        out.placement = Base::Placement(Part::TopoShape::convert(node.Location));
+        nodes.push_back(std::move(out));
+        if (!node.IsAssembly) {
+            s.components.push_back(i);
+        }
+    }
     // One step per streamed component plus one for the owning root, which
     // still has to gather them (and translate whatever was left to it).
-    s.openScope(count + 1);
-    return count;
+    s.openScope(int(s.components.size()) + 1);
+    return int(nodes.size());
+#endif
+}
+
+const std::vector<AssemblyNode>& ReaderStep::assemblyNodes() const
+{
+    return nodes;
+}
+
+int ReaderStep::componentCount() const
+{
+#if OCC_VERSION_HEX < 0x080000
+    return 0;
+#else
+    return stream ? int(stream->components.size()) : 0;
 #endif
 }
 
 void ReaderStep::transferComponentRange(Handle(TDocStd_Document) hDoc,  // NOLINT
                                         int first,
-                                        int last)
+                                        int last,
+                                        std::vector<std::pair<TopoDS_Shape, int>>& results)
 {
 #if OCC_VERSION_HEX < 0x080000
     (void)hDoc;
     (void)first;
     (void)last;
+    (void)results;
     throw Base::RuntimeError("ReaderStep: streamed transfer requires OCCT 8");
 #else
-    if (!stream || stream->uniqueComponents.IsNull()) {
+    if (!stream || stream->components.empty()) {
         throw Base::RuntimeError("ReaderStep: no open component stream");
     }
     auto& s = *stream;
     Handle(NCollection_HSequence<Handle(Standard_Transient)>) batch =
         new NCollection_HSequence<Handle(Standard_Transient)>;
-    for (int i = first; i <= last && i <= s.uniqueComponents->Size(); ++i) {
-        batch->Append(s.uniqueComponents->Value(i));
+    std::vector<int> batchNodes;
+    for (int i = first; i <= last && i <= int(s.components.size()); ++i) {
+        int node = s.components[i - 1];
+        batch->Append(s.tree.Value(node).Component);
+        batchNodes.push_back(node);
     }
     if (batch->IsEmpty()) {
         return;
@@ -145,6 +181,15 @@ void ReaderStep::transferComponentRange(Handle(TDocStd_Document) hDoc,  // NOLIN
     s.reader.TransferComponents(batch, hDoc, s.scope->Next(double(batch->Size())));
     if (s.progress->UserBreak()) {
         throw Base::AbortException("STEP import aborted by user");
+    }
+    // Report what each component became, so the caller can tell which node of
+    // the tree - and so which container - a new free shape belongs to.
+    results.clear();
+    for (std::size_t i = 0; i < batchNodes.size(); ++i) {
+        TopoDS_Shape shape = s.reader.ComponentShape(batch->Value(int(i) + 1));
+        if (!shape.IsNull()) {
+            results.emplace_back(shape, batchNodes[i]);
+        }
     }
 #endif
 }

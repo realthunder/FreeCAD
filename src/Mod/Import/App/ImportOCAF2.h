@@ -45,6 +45,7 @@
 
 #include "ExportOCAF.h"
 #include "ImportOCAF.h"
+#include "ReaderStep.h"
 #include "RenderMaterial.h"
 #include "Tools.h"
 
@@ -143,6 +144,15 @@ public:
      * the root is transferred - recognizes them instead of emitting them a
      * second time, and adopts the reserved root container as the assembly's
      * group rather than nesting one inside the other.
+     *
+     * Components deeper than the top level need their container to exist
+     * before they arrive, because a claim can only add an object to a group,
+     * never move it out of one. beginSkeleton() therefore reserves a
+     * container per assembly of the tree - read from the product structure,
+     * so before any geometry exists - and addStreamedShapes() says which node
+     * each transferred occurrence became: a component goes into the container
+     * of its owner, an assembly is the container itself and the root pass
+     * analyzes it into that one instead of nesting another.
      */
     //@{
     void setComponentStreaming(bool enable)
@@ -153,6 +163,8 @@ public:
     {
         myRootAssemblyPending = true;
     }
+    bool beginSkeleton(const std::vector<AssemblyNode>& nodes);
+    void addStreamedShapes(const std::vector<std::pair<TopoDS_Shape, int>>& shapes);
     //@}
     /// Number of ops the GUI thread may apply (mutex-guarded).
     std::size_t opsPublished() const;
@@ -288,6 +300,15 @@ private:
     int analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape, int groupIdx = -1);
     /// Analyze the streamed root's assembly into the reserved root container.
     bool analyzeRootAssembly(TDF_Label label);
+    /// Analyze a streamed sub-assembly into the container reserved for it.
+    bool adoptSkeleton(TDF_Label label, const TopoDS_Shape& shape, int group);
+    /// The node a translated assembly stands for, told by the components
+    /// streamed into it; 0 when none of them is recognized.
+    int skeletonNodeOf(const TopoDS_Shape& shape) const;
+    /// Bring an applied container to the given placement, label and color.
+    void claimGroup(int group,
+                    const Base::Placement& placement,
+                    const std::string& label);
     bool hasSHUOColors(TDF_Label label);
     void applyOp(ProgOp& op, int index);
     App::DocumentObject* progObject(int node) const;
@@ -417,6 +438,14 @@ private:
     bool myRootAssemblyPending = false;
     /// located shape of a streamed component instance -> its op
     std::unordered_map<TopoDS_Shape, int, ShapeHasher> myInstanceNodes;
+    /// the assembly tree the containers were reserved from (1-based nodes)
+    std::vector<AssemblyNode> mySkeleton;
+    /// node -> its container op, [0] being the reserved root container
+    std::vector<int> myNodeGroups;
+    /// located shape of a streamed component -> its node
+    std::unordered_map<TopoDS_Shape, int, ShapeHasher> myStreamedNodes;
+    /// nodes whose reserved container the root pass has taken over
+    std::unordered_set<int> myAdoptedNodes;
 
     void publishOps();
     /// free-flag view that folds in claims of sealed ops

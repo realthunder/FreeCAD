@@ -955,6 +955,10 @@ bool ImportOCAF2::analyzeBegin()
     myAnalyzedRoots.clear();
     myClaimedSealed.clear();
     myInstanceNodes.clear();
+    mySkeleton.clear();
+    myNodeGroups.clear();
+    myStreamedNodes.clear();
+    myAdoptedNodes.clear();
     myRootAssemblyPending = false;
 
     // Excluded per design: multi-document modes mutate documents during
@@ -973,6 +977,65 @@ bool ImportOCAF2::analyzeBegin()
     // keeps it unapplied until a second child proves it final.
     myRootGroup = newProgOp(ProgOp::Group);
     return true;
+}
+
+bool ImportOCAF2::beginSkeleton(const std::vector<AssemblyNode>& nodes)
+{
+    mySkeleton = nodes;
+    // Node 0 is the root itself, standing for the reserved root container.
+    myNodeGroups.assign(nodes.size() + 1, -1);
+    myNodeGroups[0] = myRootGroup;
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        const auto& node = nodes[i];
+        if (!node.isAssembly) {
+            continue;
+        }
+        // An owner always precedes what it holds, so its container is
+        // reserved by now; anything else is a tree this analysis cannot use.
+        if (node.parent < 0 || node.parent >= int(myNodeGroups.size())
+            || myNodeGroups[node.parent] < 0) {
+            return false;
+        }
+        int group = newProgOp(ProgOp::Group);
+        auto& op = myProgOps[group];
+        op.parent = myNodeGroups[node.parent];
+        op.placement = node.placement;
+        op.label = node.name;
+        myNodeGroups[i + 1] = group;
+    }
+    return true;
+}
+
+void ImportOCAF2::addStreamedShapes(const std::vector<std::pair<TopoDS_Shape, int>>& shapes)
+{
+    for (const auto& v : shapes) {
+        int node = v.second;
+        if (!v.first.IsNull() && node > 0 && node <= int(mySkeleton.size())) {
+            myStreamedNodes[v.first] = node;
+        }
+    }
+}
+
+int ImportOCAF2::skeletonNodeOf(const TopoDS_Shape& shape) const
+{
+    // The assembly a shape stands for is told by the components streamed into
+    // it: those arrived as free shapes and are the same shapes the assembly
+    // holds, while the assembly itself is rebuilt when its parts are healed
+    // and so cannot be recognized by its own shape.
+    for (TopoDS_Iterator it(shape, Standard_False, Standard_False); it.More(); it.Next()) {
+        auto found = myStreamedNodes.find(it.Value());
+        if (found != myStreamedNodes.end()) {
+            return mySkeleton[found->second - 1].parent;
+        }
+        if (it.Value().ShapeType() != TopAbs_COMPOUND) {
+            continue;
+        }
+        int deeper = skeletonNodeOf(it.Value());
+        if (deeper > 0) {
+            return mySkeleton[deeper - 1].parent;
+        }
+    }
+    return 0;
 }
 
 bool ImportOCAF2::analyzeRoots()
@@ -998,19 +1061,43 @@ bool ImportOCAF2::analyzeRoots()
             }
             continue;
         }
-        int node = analyzeShape(label, shape, myRootGroup, aColorTool->IsVisible(label));
+        // A component streamed from below the top level belongs to the
+        // container reserved for its owner, not to the root.
+        int parent = myRootGroup;
+        const AssemblyNode* streamed = nullptr;
+        auto it = myStreamedNodes.find(shape);
+        if (it != myStreamedNodes.end()) {
+            streamed = &mySkeleton[it->second - 1];
+            if (myNodeGroups[streamed->parent] >= 0) {
+                parent = myNodeGroups[streamed->parent];
+            }
+        }
+        int node = analyzeShape(label, shape, parent, aColorTool->IsVisible(label));
         if (myProgFailed) {
             return false;
         }
         if (node >= 0) {
-            ++myRootChildren;
-            myLastRootChild = node;
+            if (parent == myRootGroup) {
+                ++myRootChildren;
+                myLastRootChild = node;
+            }
             if (myStreamComponents) {
                 myInstanceNodes.emplace(shape, resolveOp(node));
             }
+            // Names are read with the root, so a streamed object would carry
+            // none until then; the product structure knows one already.
+            int emitted = resolveOp(node);
+            if (streamed && !streamed->name.empty() && emitted >= 0
+                && myProgOps[emitted].label.empty()) {
+                myProgOps[emitted].label = streamed->name;
+            }
         }
     }
-    if (myRootChildren >= 2) {
+    // Streaming the components of a root means the root container is that
+    // root's assembly and stays, so its ops may be handed over right away -
+    // including the reserved containers, which show the assembly tree while
+    // the parts are still coming.
+    if (myRootChildren >= 2 || myStreamComponents) {
         publishOps();
     }
     return true;
@@ -1023,6 +1110,15 @@ bool ImportOCAF2::analyzeEnd()
     }
     if (myProgFailed || myRootGroup < 0 || myRootChildren == 0) {
         return false;
+    }
+    for (std::size_t node = 1; node < myNodeGroups.size(); ++node) {
+        // Every reserved container must have been taken over by the assembly
+        // it stands for; one that was not is a container the synchronous path
+        // does not have, so hand the import back rather than diverge.
+        if (myNodeGroups[node] >= 0 && !myAdoptedNodes.count(int(node))) {
+            FC_WARN("reserved container " << node << " never met its assembly");
+            return false;
+        }
     }
     if (myRootChildren == 1) {
         // loadShapes() creates no root group around a single result; the
@@ -1262,6 +1358,21 @@ int ImportOCAF2::analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape, int
         TDF_Label childLabel;
         aShapeTool->Search(childShape, childLabel, Standard_True, Standard_True, Standard_False);
         auto streamed = myInstanceNodes.find(childShape);
+        if (streamed == myInstanceNodes.end() && !mySkeleton.empty()
+            && childShape.ShapeType() == TopAbs_COMPOUND) {
+            // A sub-assembly whose container was reserved before its parts
+            // arrived is analyzed into that container rather than a second
+            // one nested in it.
+            int snode = skeletonNodeOf(childShape);
+            if (snode > 0 && myNodeGroups[snode] >= 0 && myAdoptedNodes.insert(snode).second) {
+                if (!adoptSkeleton(childLabel, childShape, myNodeGroups[snode])) {
+                    return -1;
+                }
+                ++childCount;
+                lastChild = myNodeGroups[snode];
+                continue;
+            }
+        }
         if (streamed != myInstanceNodes.end()) {
             // This very instance streamed ahead of the assembly and is
             // already a child of the group: it only counts here, except
@@ -1375,12 +1486,27 @@ int ImportOCAF2::analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape, int
     }
 
     if (!childCount) {
+        if (!ownGroup) {
+            // An adopted container is handed over already and cannot be
+            // dropped the way this one would be; hand the import back.
+            myProgFailed = true;
+            return -1;
+        }
         myProgOps[groupIdx].type = ProgOp::Dropped;
         return -1;
     }
 
     Info ginfo;
     bool hasColor = getColor(shape, ginfo, false, true);
+    if (!hasSHUO && !hasColor && options.reduceObjects && childCount == 1 && !ownGroup
+        && groupIdx != myRootGroup) {
+        // Same for a container the synchronous path would dissolve into its
+        // only child: the reserved ones are chosen so that this does not
+        // happen, so reaching here means the tree was read differently than
+        // it translated.
+        myProgFailed = true;
+        return -1;
+    }
     if (!hasSHUO && !hasColor && options.reduceObjects && childCount == 1 && ownGroup) {
         int emitted = resolveOp(lastChild);
         if (emitted >= 0 && myProgOps[emitted].visible) {
@@ -1443,21 +1569,67 @@ bool ImportOCAF2::analyzeRootAssembly(TDF_Label label)
 
     // The container is applied by now, so its name (and the placement of a
     // located root) are claimed rather than written into the sealed record.
-    std::string name = getLabelName(label);
-    auto placement =
-        Base::Placement(Part::TopoShape::convert(shape.Location().Transformation()));
-    if (!name.empty() || !placement.isIdentity()) {
-        int claim = newProgOp(ProgOp::Claim);
-        auto& cop = myProgOps[claim];
-        cop.target = myRootGroup;
-        cop.parent = -1;
-        cop.placement = placement;
-        cop.label = std::move(name);
-    }
+    claimGroup(myRootGroup,
+               Base::Placement(Part::TopoShape::convert(shape.Location().Transformation())),
+               getLabelName(label));
     // The root container is the assembly itself: analyzeEnd() must not
     // collapse it into a single child.
     myRootChildren = 2;
     return true;
+}
+
+bool ImportOCAF2::adoptSkeleton(TDF_Label label, const TopoDS_Shape& shape, int group)
+{
+    auto baseShape = shape.Located(TopLoc_Location());
+    myShapeNodes.emplace(baseShape, group);
+    auto baseLabel = aShapeTool->FindShape(baseShape);
+    if (analyzeAssembly(baseLabel, baseShape, group) < 0 || myProgFailed) {
+        return false;
+    }
+    std::string name = getLabelName(label);
+    if (name.empty()) {
+        name = getLabelName(baseLabel);
+    }
+    // The container was placed from the product structure, ahead of the
+    // transfer; this is where the placement the transfer produced arrives,
+    // which is the one that counts.
+    claimGroup(group,
+               Base::Placement(Part::TopoShape::convert(shape.Location().Transformation())),
+               name);
+    return true;
+}
+
+void ImportOCAF2::claimGroup(int group,
+                             const Base::Placement& placement,
+                             const std::string& label)
+{
+    bool sealed;
+    {
+        std::lock_guard<std::mutex> guard(myProgMutex);
+        sealed = std::size_t(group) < myProgPublished;
+    }
+    auto& op = myProgOps[group];
+    if (!sealed) {
+        op.placement = placement;
+        if (!label.empty()) {
+            op.label = label;
+        }
+        return;
+    }
+    // A claim composes with what the object carries, so the difference to
+    // the placement it was reserved with is what has to be claimed.
+    Base::Placement delta = placement * op.placement.inverse();
+    if (delta.isIdentity() && (label.empty() || label == op.label)) {
+        return;
+    }
+    int claim = newProgOp(ProgOp::Claim);
+    auto& cop = myProgOps[claim];
+    cop.target = group;
+    cop.parent = -1;
+    cop.placement = delta;
+    if (!label.empty() && label != op.label) {
+        cop.label = label;
+    }
 }
 
 // Existence-only mirror of getSHUOColors(): does this component label

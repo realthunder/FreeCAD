@@ -265,7 +265,7 @@ int ImportExportSettings::getStreamBatchStart() const
 
 int ImportExportSettings::getStreamBatchFactor() const
 {
-    return std::max(1, static_cast<int>(pGroup->GetInt("StreamBatchFactor", 2)));
+    return std::max(1, static_cast<int>(pGroup->GetInt("StreamBatchFactor", 8)));
 }
 
 void ImportExportSettings::setImportMode(ImportExportSettings::ImportMode mode)

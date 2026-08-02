@@ -164,10 +164,11 @@ private:
                 }
                 // A file with a single root - the common assembly - transfers
                 // as one unit and would show nothing until it is through, so
-                // its components are streamed ahead of it instead.
+                // its components are streamed ahead of it instead, at any
+                // depth of the assembly tree.
                 int components = 0;
-                if (analyzer && roots == 1) {
-                    components = reader.openRootComponents(1);
+                if (analyzer && roots == 1 && reader.openAssemblyTree(hDoc, 1) > 0) {
+                    components = reader.componentCount();
                 }
                 if (analyzer && roots > 0 && analyzer->analyzeBegin()) {
                     // Streamed: transfer geometrically growing batches and
@@ -197,25 +198,32 @@ private:
                     int batch = settings.getStreamBatchStart();
                     const int growth = settings.getStreamBatchFactor();
                     const int units = components >= 2 ? components : roots;
+                    std::vector<std::pair<TopoDS_Shape, int>> streamed;
                     if (components >= 2) {
                         analyzer->setComponentStreaming(true);
-                        FC_LOG("streaming " << components << " components of the single root");
+                        // The containers of the tree are reserved before any
+                        // of it transfers, so a component of any depth lands
+                        // in its own the moment it arrives.
+                        ok = analyzer->beginSkeleton(reader.assemblyNodes());
+                        FC_LOG("streaming " << components << " components of the single root, "
+                                            << reader.assemblyNodes().size() - components
+                                            << " assemblies deep");
                     }
                     else {
                         FC_LOG("streaming " << roots << " roots");
                     }
-                    while (first <= units) {
+                    while (ok && first <= units) {
                         int last = std::min(first + batch - 1, units);
                         Base::TimeInfo batchStart;
                         if (components >= 2) {
-                            reader.transferComponentRange(hDoc, first, last);
+                            reader.transferComponentRange(hDoc, first, last, streamed);
+                            analyzer->addStreamedShapes(streamed);
                         }
                         else {
                             reader.transferRootRange(hDoc, first, last);
                         }
                         FC_LOG("batch " << first << ".." << last << " transferred in "
-                                        << Base::TimeInfo::diffTimeF(batchStart)
-                                        << "s");
+                                        << Base::TimeInfo::diffTimeF(batchStart) << "s");
                         first = last + 1;
                         batch *= growth;
                         if (!analyzeBatch()) {
