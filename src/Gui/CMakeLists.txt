@@ -1284,6 +1284,7 @@ SET(FreeCADGui_CPP_SRCS
     PreferencePackManager.cpp
     Thumbnail.cpp
     Utilities.cpp
+    LiveViewInteraction.cpp
     WaitCursor.cpp
     ManualAlignment.cpp
     TransactionObject.cpp
@@ -1321,6 +1322,7 @@ SET(FreeCADGui_SRCS
     Thumbnail.h
     Tools.h
     Utilities.h
+    LiveViewInteraction.h
     WaitCursor.h
     ManualAlignment.h
     TransactionObject.h

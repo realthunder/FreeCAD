@@ -35,6 +35,7 @@
 #endif
 
 #include "WaitCursor.h"
+#include "LiveViewInteraction.h"
 
 using namespace Gui;
 
@@ -135,6 +136,8 @@ bool WaitCursorP::eventFilter(QObject* o, QEvent* e)
         e->type() == QEvent::MouseButtonRelease ||
         e->type() == QEvent::MouseButtonDblClick) {
         if (isModalDialog(o))
+            return false;
+        if (LiveViewInteraction::passes(o, e))
             return false;
         if (this->flags & WaitCursor::MouseEvents)
             return true;

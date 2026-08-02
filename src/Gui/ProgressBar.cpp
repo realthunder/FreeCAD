@@ -34,6 +34,7 @@
 #endif
 
 #include "ProgressBar.h"
+#include "LiveViewInteraction.h"
 #include "MainWindow.h"
 #include "ProgressDialog.h"
 #include "WaitCursor.h"
@@ -619,7 +620,7 @@ bool ProgressBar::eventFilter(QObject* o, QEvent* e)
         case QEvent::NativeGesture:
         case QEvent::ContextMenu:
             {
-                if (!d->isModalDialog(o))
+                if (!d->isModalDialog(o) && !LiveViewInteraction::passes(o, e))
                     return true;
             }   break;
 
@@ -637,7 +638,7 @@ bool ProgressBar::eventFilter(QObject* o, QEvent* e)
         // do a system beep and ignore the event
         case QEvent::MouseButtonPress:
             {
-                if (!d->isModalDialog(o)) {
+                if (!d->isModalDialog(o) && !LiveViewInteraction::passes(o, e)) {
                     QApplication::beep();
                     return true;
                 }

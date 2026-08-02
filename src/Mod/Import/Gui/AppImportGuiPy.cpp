@@ -74,6 +74,7 @@
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/LiveViewInteraction.h>
 #include <Gui/WaitCursor.h>
 #include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/ViewProviderLink.h>
@@ -150,6 +151,9 @@ private:
             return false;
         }
         Base::StateLocker nestGuard(importBusy);
+        // the read owns a worker thread, not the GUI thread: whatever is
+        // already in the document stays navigable while it runs
+        Gui::LiveViewInteraction navigable;
         App::DocumentWeakPtrT docPtr(pcDoc);
         std::exception_ptr readError;
         bool analyzed = false;
@@ -367,16 +371,20 @@ private:
 
     // Materialize the analyzed ops on the GUI thread: ~50ms of object
     // creation per slot, then a full event-loop pass, so the model grows
-    // on screen while the view stays interactive (the wait cursor and its
-    // input filter are lifted; doc-mutating commands are gated through
-    // the LiveImport status). Escape keeps the partial result, as does a
-    // failing op; there is no undo of a progressive import.
+    // on screen while the user orbits it (the wait cursor is lifted and
+    // both input filters let 3D-view navigation through; doc-mutating
+    // commands are gated through the LiveImport status). Escape keeps
+    // the partial result, as does a failing op; there is no undo of a
+    // progressive import.
     static App::DocumentObject* applyProgressive(Import::ImportOCAF2& ocaf,
                                                  App::Document* pcDoc)
     {
         Base::StateLocker nestGuard(importBusy);
         Base::SequencerLauncher seq("Creating objects...", ocaf.opCount());
         Gui::WaitCursorRestorer cursorRestorer;
+        // ...and the sequencer's own input filter has to make the same
+        // exception, or the wait cursor is the only thing that lifts
+        Gui::LiveViewInteraction navigable;
         App::DocumentWeakPtrT docPtr(pcDoc);
         int undoMode = pcDoc->getUndoMode();
         pcDoc->setUndoMode(0);
