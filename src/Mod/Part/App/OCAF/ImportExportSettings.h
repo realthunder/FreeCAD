@@ -94,6 +94,12 @@ public:
     void setProgressiveImport(bool);
     bool getProgressiveImport() const;
 
+    /// Number of units (roots, or components of a single root) the first
+    /// batch of a streamed import transfers.
+    int getStreamBatchStart() const;
+    /// Factor each streamed batch grows by; 1 keeps a constant batch size.
+    int getStreamBatchFactor() const;
+
     void setImportMode(ImportMode);
     ImportMode getImportMode() const;
 

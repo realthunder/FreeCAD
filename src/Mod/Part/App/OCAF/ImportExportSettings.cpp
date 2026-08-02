@@ -22,6 +22,7 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <algorithm>
 # include <Interface_Static.hxx>
 #endif
 
@@ -255,6 +256,16 @@ void ImportExportSettings::setProgressiveImport(bool on)
 bool ImportExportSettings::getProgressiveImport() const
 {
     return pGroup->GetBool("ProgressiveImport", true);
+}
+
+int ImportExportSettings::getStreamBatchStart() const
+{
+    return std::max(1, static_cast<int>(pGroup->GetInt("StreamBatchStart", 1)));
+}
+
+int ImportExportSettings::getStreamBatchFactor() const
+{
+    return std::max(1, static_cast<int>(pGroup->GetInt("StreamBatchFactor", 2)));
 }
 
 void ImportExportSettings::setImportMode(ImportExportSettings::ImportMode mode)

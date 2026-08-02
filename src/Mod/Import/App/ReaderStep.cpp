@@ -26,6 +26,7 @@
 #ifndef _PreComp_
 #include <algorithm>
 #include <Standard_Version.hxx>
+#include <NCollection_HSequence.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #if OCC_VERSION_HEX >= 0x070500
 #include <Message_ProgressRange.hxx>
@@ -49,6 +50,20 @@ struct ReaderStep::Stream
     opencascade::handle<Part::ProgressIndicator> progress;
     std::unique_ptr<Message_ProgressScope> scope;
     int roots = 0;
+#if OCC_VERSION_HEX >= 0x080000
+    /// Components of the root opened by openRootComponents(), split into the
+    /// ones that may be streamed on their own and the ones left to the root.
+    Handle(NCollection_HSequence<Handle(Standard_Transient)>) uniqueComponents;
+    Handle(NCollection_HSequence<Handle(Standard_Transient)>) sharedComponents;
+#endif
+
+    /// (Re)start the progress scope over the given number of steps.
+    void openScope(int steps)
+    {
+        scope = std::make_unique<Message_ProgressScope>(progress->Start(),
+                                                       "Reading STEP file...",
+                                                       std::max(steps, 1));
+    }
 };
 
 ReaderStep::ReaderStep(const Base::FileInfo& file)  // NOLINT
@@ -79,10 +94,58 @@ int ReaderStep::openStream()
     }
     stream->roots = reader.NbRootsForTransfer();
     stream->progress = new Part::ProgressIndicator(100);
-    stream->scope = std::make_unique<Message_ProgressScope>(stream->progress->Start(),
-                                                           "Reading STEP file...",
-                                                           std::max(stream->roots, 1));
+    stream->openScope(stream->roots);
     return stream->roots;
+#endif
+}
+
+int ReaderStep::openRootComponents(int root)
+{
+#if OCC_VERSION_HEX < 0x080000
+    (void)root;
+    return 0;
+#else
+    if (!stream) {
+        throw Base::RuntimeError("ReaderStep: no open stream");
+    }
+    auto& s = *stream;
+    if (s.reader.RootComponents(root, s.uniqueComponents, s.sharedComponents) == 0) {
+        return 0;
+    }
+    int count = s.uniqueComponents->Size();
+    // One step per streamed component plus one for the owning root, which
+    // still has to gather them (and translate whatever was left to it).
+    s.openScope(count + 1);
+    return count;
+#endif
+}
+
+void ReaderStep::transferComponentRange(Handle(TDocStd_Document) hDoc,  // NOLINT
+                                        int first,
+                                        int last)
+{
+#if OCC_VERSION_HEX < 0x080000
+    (void)hDoc;
+    (void)first;
+    (void)last;
+    throw Base::RuntimeError("ReaderStep: streamed transfer requires OCCT 8");
+#else
+    if (!stream || stream->uniqueComponents.IsNull()) {
+        throw Base::RuntimeError("ReaderStep: no open component stream");
+    }
+    auto& s = *stream;
+    Handle(NCollection_HSequence<Handle(Standard_Transient)>) batch =
+        new NCollection_HSequence<Handle(Standard_Transient)>;
+    for (int i = first; i <= last && i <= s.uniqueComponents->Size(); ++i) {
+        batch->Append(s.uniqueComponents->Value(i));
+    }
+    if (batch->IsEmpty()) {
+        return;
+    }
+    s.reader.TransferComponents(batch, hDoc, s.scope->Next(double(batch->Size())));
+    if (s.progress->UserBreak()) {
+        throw Base::AbortException("STEP import aborted by user");
+    }
 #endif
 }
 

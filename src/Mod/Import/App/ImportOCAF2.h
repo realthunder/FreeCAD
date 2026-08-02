@@ -135,6 +135,25 @@ public:
     bool analyzeBegin();
     bool analyzeRoots();
     bool analyzeEnd();
+    /** @name Component streaming
+     * When the components of a single root are transferred ahead of the root
+     * itself they appear as free shapes and analyzeRoots() picks them up as
+     * root children. setComponentStreaming() remembers each such instance so
+     * that the root's own analysis - announced by expectRootAssembly() before
+     * the root is transferred - recognizes them instead of emitting them a
+     * second time, and adopts the reserved root container as the assembly's
+     * group rather than nesting one inside the other.
+     */
+    //@{
+    void setComponentStreaming(bool enable)
+    {
+        myStreamComponents = enable;
+    }
+    void expectRootAssembly()
+    {
+        myRootAssemblyPending = true;
+    }
+    //@}
     /// Number of ops the GUI thread may apply (mutex-guarded).
     std::size_t opsPublished() const;
     /// Delete every object created by applied ops (falling back or aborting
@@ -263,7 +282,12 @@ private:
                      bool visible,
                      bool baseOnly = false);
     int analyzeObject(TDF_Label label, const TopoDS_Shape& shape);
-    int analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape);
+    /// @param groupIdx existing group op to fill (-1 = create one); an
+    /// existing one may already be published, so its own record is left
+    /// alone and label/color arrive through a Claim op instead.
+    int analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape, int groupIdx = -1);
+    /// Analyze the streamed root's assembly into the reserved root container.
+    bool analyzeRootAssembly(TDF_Label label);
     bool hasSHUOColors(TDF_Label label);
     void applyOp(ProgOp& op, int index);
     App::DocumentObject* progObject(int node) const;
@@ -389,6 +413,10 @@ private:
     int myLastRootChild = -1;
     std::unordered_map<TDF_Label, bool, LabelHasher> myAnalyzedRoots;
     std::unordered_set<int> myClaimedSealed;  ///< sealed ops claimed via Claim op
+    bool myStreamComponents = false;
+    bool myRootAssemblyPending = false;
+    /// located shape of a streamed component instance -> its op
+    std::unordered_map<TopoDS_Shape, int, ShapeHasher> myInstanceNodes;
 
     void publishOps();
     /// free-flag view that folds in claims of sealed ops

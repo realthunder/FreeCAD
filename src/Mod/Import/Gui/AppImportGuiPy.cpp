@@ -68,6 +68,7 @@
 #include <Base/Interpreter.h>
 #include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Base/Sequencer.h>
+#include <Base/TimeInfo.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
@@ -161,48 +162,90 @@ private:
                 if (analyzer) {
                     roots = reader.openStream();
                 }
+                // A file with a single root - the common assembly - transfers
+                // as one unit and would show nothing until it is through, so
+                // its components are streamed ahead of it instead.
+                int components = 0;
+                if (analyzer && roots == 1) {
+                    components = reader.openRootComponents(1);
+                }
                 if (analyzer && roots > 0 && analyzer->analyzeBegin()) {
-                    // Streamed: transfer geometrically growing root batches
-                    // and analyze each, publishing sealed ops the GUI thread
+                    // Streamed: transfer geometrically growing batches and
+                    // analyze each, publishing sealed ops the GUI thread
                     // applies meanwhile. Growing batches bound the repeated
-                    // per-batch attribute passes to O(log roots) while the
-                    // first parts still appear quickly.
+                    // per-batch attribute passes to O(log n) while the first
+                    // parts still appear quickly.
                     streaming = true;
-                    bool ok = true;
-                    int first = 1;
-                    int batch = 1;
-                    while (first <= roots) {
-                        int last = std::min(first + batch - 1, roots);
-                        reader.transferRootRange(hDoc, first, last);
-                        first = last + 1;
-                        batch *= 2;
+                    auto analyzeBatch = [&analyzer]() {
                         try {
-                            if (!analyzer->analyzeRoots()) {
-                                ok = false;
-                                break;
-                            }
+                            return analyzer->analyzeRoots();
                         }
                         catch (Base::Exception& e) {
                             FC_WARN("progressive import analysis failed, "
                                     "falling back: " << e.what());
-                            ok = false;
-                            break;
                         }
                         catch (Standard_Failure& e) {
                             FC_WARN("progressive import analysis failed, falling back: "
                                     << (e.GetMessageString() ? e.GetMessageString()
                                                              : "OCCT failure"));
+                        }
+                        return false;
+                    };
+                    Part::OCAF::ImportExportSettings settings;
+                    bool ok = true;
+                    int first = 1;
+                    int batch = settings.getStreamBatchStart();
+                    const int growth = settings.getStreamBatchFactor();
+                    const int units = components >= 2 ? components : roots;
+                    if (components >= 2) {
+                        analyzer->setComponentStreaming(true);
+                        FC_LOG("streaming " << components << " components of the single root");
+                    }
+                    else {
+                        FC_LOG("streaming " << roots << " roots");
+                    }
+                    while (first <= units) {
+                        int last = std::min(first + batch - 1, units);
+                        Base::TimeInfo batchStart;
+                        if (components >= 2) {
+                            reader.transferComponentRange(hDoc, first, last);
+                        }
+                        else {
+                            reader.transferRootRange(hDoc, first, last);
+                        }
+                        FC_LOG("batch " << first << ".." << last << " transferred in "
+                                        << Base::TimeInfo::diffTimeF(batchStart)
+                                        << "s");
+                        first = last + 1;
+                        batch *= growth;
+                        if (!analyzeBatch()) {
                             ok = false;
                             break;
                         }
                     }
-                    if (ok) {
-                        ok = analyzer->analyzeEnd();
+                    if (components >= 2) {
+                        // The root itself still has to run: it reuses the
+                        // streamed components and adds whatever was left to
+                        // it (the instances a reduced import merges).
+                        if (ok) {
+                            analyzer->expectRootAssembly();
+                        }
+                        Base::TimeInfo rootStart;
+                        reader.transferRootRange(hDoc, 1, 1);
+                        FC_LOG("root gathered in "
+                               << Base::TimeInfo::diffTimeF(rootStart)
+                               << "s");
+                        if (ok) {
+                            ok = analyzeBatch();
+                        }
                     }
-                    else if (first <= roots) {
+                    else if (!ok && first <= roots) {
                         // finish the transfer so the synchronous fallback
                         // sees the complete document
                         reader.transferRootRange(hDoc, first, roots);
+                    }
+                    if (ok) {
+                        ok = analyzer->analyzeEnd();
                     }
                     analyzed = ok;
                 }

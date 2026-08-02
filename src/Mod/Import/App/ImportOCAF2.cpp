@@ -954,6 +954,8 @@ bool ImportOCAF2::analyzeBegin()
     myLastRootChild = -1;
     myAnalyzedRoots.clear();
     myClaimedSealed.clear();
+    myInstanceNodes.clear();
+    myRootAssemblyPending = false;
 
     // Excluded per design: multi-document modes mutate documents during
     // the traversal, merge throws the intermediate objects away again,
@@ -985,16 +987,27 @@ bool ImportOCAF2::analyzeRoots()
         if (!options.importHidden && !aColorTool->IsVisible(label)) {
             continue;
         }
-        int node = analyzeShape(label,
-                                aShapeTool->GetShape(label),
-                                myRootGroup,
-                                aColorTool->IsVisible(label));
+        auto shape = aShapeTool->GetShape(label);
+        if (myRootAssemblyPending && !shape.IsNull() && aShapeTool->IsAssembly(label)) {
+            // The root whose components streamed ahead of it: its assembly
+            // takes over the reserved root container rather than nesting a
+            // second group inside it.
+            myRootAssemblyPending = false;
+            if (!analyzeRootAssembly(label)) {
+                return false;
+            }
+            continue;
+        }
+        int node = analyzeShape(label, shape, myRootGroup, aColorTool->IsVisible(label));
         if (myProgFailed) {
             return false;
         }
         if (node >= 0) {
             ++myRootChildren;
             myLastRootChild = node;
+            if (myStreamComponents) {
+                myInstanceNodes.emplace(shape, resolveOp(node));
+            }
         }
     }
     if (myRootChildren >= 2) {
@@ -1216,11 +1229,14 @@ int ImportOCAF2::analyzeObject(TDF_Label label, const TopoDS_Shape& shape)
     return node;
 }
 
-int ImportOCAF2::analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape)
+int ImportOCAF2::analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape, int groupIdx)
 {
     (void)label;
 
-    int groupIdx = newProgOp(ProgOp::Group);
+    const bool ownGroup = groupIdx < 0;
+    if (ownGroup) {
+        groupIdx = newProgOp(ProgOp::Group);
+    }
 
     struct AChild
     {
@@ -1245,6 +1261,28 @@ int ImportOCAF2::analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape)
         }
         TDF_Label childLabel;
         aShapeTool->Search(childShape, childLabel, Standard_True, Standard_True, Standard_False);
+        auto streamed = myInstanceNodes.find(childShape);
+        if (streamed != myInstanceNodes.end()) {
+            // This very instance streamed ahead of the assembly and is
+            // already a child of the group: it only counts here, except
+            // for its name, which the batches it streamed in did not read
+            // yet (that pass scans the whole model and runs once, with the
+            // root). A claim carries it to the object.
+            ++childCount;
+            lastChild = streamed->second;
+            std::string name = getLabelName(childLabel);
+            if (name.empty()) {
+                name = getLabelName(aShapeTool->FindShape(childShape.Located(TopLoc_Location())));
+            }
+            if (!name.empty() && name != myProgOps[streamed->second].label) {
+                int claim = newProgOp(ProgOp::Claim);
+                auto& cop = myProgOps[claim];
+                cop.target = streamed->second;
+                cop.parent = -1;
+                cop.label = std::move(name);
+            }
+            continue;
+        }
         if (!childLabel.IsNull() && !options.importHidden && !aColorTool->IsVisible(childLabel)) {
             continue;
         }
@@ -1343,7 +1381,7 @@ int ImportOCAF2::analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape)
 
     Info ginfo;
     bool hasColor = getColor(shape, ginfo, false, true);
-    if (!hasSHUO && !hasColor && options.reduceObjects && childCount == 1) {
+    if (!hasSHUO && !hasColor && options.reduceObjects && childCount == 1 && ownGroup) {
         int emitted = resolveOp(lastChild);
         if (emitted >= 0 && myProgOps[emitted].visible) {
             auto &g = myProgOps[groupIdx];
@@ -1356,6 +1394,26 @@ int ImportOCAF2::analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape)
         }
     }
 
+    bool sealed = false;
+    if (!ownGroup) {
+        std::lock_guard<std::mutex> guard(myProgMutex);
+        sealed = std::size_t(groupIdx) < myProgPublished;
+    }
+    if (sealed) {
+        // The adopted container may already be applied, so its color reaches
+        // the object through an op of its own rather than a field of the
+        // sealed record (analyzeRootAssembly() claims the name the same way).
+        if (ginfo.hasFaceColor) {
+            int claim = newProgOp(ProgOp::Claim);
+            auto& cop = myProgOps[claim];
+            cop.target = groupIdx;
+            cop.parent = -1;
+            cop.groupColor = ginfo.faceColor;
+            cop.hasGroupColor = true;
+        }
+        return groupIdx;
+    }
+
     auto &g = myProgOps[groupIdx];
     g.faceColor = ginfo.faceColor;
     g.edgeColor = ginfo.edgeColor;
@@ -1366,6 +1424,40 @@ int ImportOCAF2::analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape)
         g.hasGroupColor = true;
     }
     return groupIdx;
+}
+
+bool ImportOCAF2::analyzeRootAssembly(TDF_Label label)
+{
+    auto shape = aShapeTool->GetShape(label);
+    if (shape.IsNull()) {
+        return false;
+    }
+    auto baseShape = shape.Located(TopLoc_Location());
+    // The reserved root container stands for this assembly, so the assembly's
+    // shape must resolve to it for any later reference.
+    myShapeNodes.emplace(baseShape, myRootGroup);
+    if (analyzeAssembly(aShapeTool->FindShape(baseShape), baseShape, myRootGroup) < 0
+        || myProgFailed) {
+        return false;
+    }
+
+    // The container is applied by now, so its name (and the placement of a
+    // located root) are claimed rather than written into the sealed record.
+    std::string name = getLabelName(label);
+    auto placement =
+        Base::Placement(Part::TopoShape::convert(shape.Location().Transformation()));
+    if (!name.empty() || !placement.isIdentity()) {
+        int claim = newProgOp(ProgOp::Claim);
+        auto& cop = myProgOps[claim];
+        cop.target = myRootGroup;
+        cop.parent = -1;
+        cop.placement = placement;
+        cop.label = std::move(name);
+    }
+    // The root container is the assembly itself: analyzeEnd() must not
+    // collapse it into a single child.
+    myRootChildren = 2;
+    return true;
 }
 
 // Existence-only mirror of getSHUOColors(): does this component label
@@ -1522,6 +1614,9 @@ void ImportOCAF2::applyOp(ProgOp& op, int index)
             target->getPropertyByName("Placement"));
         if (pla) {
             pla->setValue(op.placement * pla->getValue());
+        }
+        if (op.hasGroupColor) {
+            applyLinkColor(target, -1, op.groupColor);
         }
         obj = target;
         break;

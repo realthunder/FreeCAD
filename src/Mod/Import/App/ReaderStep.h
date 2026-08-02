@@ -54,6 +54,21 @@ public:
     void closeStream();
     //@}
 
+    /** @name Streamed component reading
+     * A single-root assembly transfers as one unit, so nothing appears until
+     * the whole file is through. openRootComponents() lists the components of
+     * a root that may be transferred on their own - those no reducing importer
+     * would merge with a sibling - and returns how many there are;
+     * transferComponentRange() then moves a batch of them into the document,
+     * where they show up as free shapes. Transferring the root afterwards
+     * (transferRootRange) reuses their results and gathers them under the
+     * assembly.
+     */
+    //@{
+    int openRootComponents(int root);
+    void transferComponentRange(Handle(TDocStd_Document) hDoc, int first, int last);
+    //@}
+
 private:
     Base::FileInfo file;
     struct Stream;
