@@ -1,7 +1,8 @@
 if(WIN32)
     add_definitions(-DFCBase)
     add_definitions(-DPYCXX_DLL)
-    add_definitions(-DBOOST_DYN_LINK)
+    # See the note in src/App/CMakeLists.txt: BOOST_DYN_LINK is not a Boost macro.
+    add_definitions(-DBOOST_ALL_DYN_LINK)
     add_definitions(-DZIPIOS_UTF8)
 endif(WIN32)
 

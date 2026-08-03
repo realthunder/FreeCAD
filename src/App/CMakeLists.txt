@@ -1,6 +1,12 @@
 if(WIN32)
     add_definitions(-DFCApp)
-    add_definitions(-DBOOST_DYN_LINK)
+    # BOOST_ALL_DYN_LINK, not BOOST_DYN_LINK: the latter is not a Boost macro and
+    # has never done anything. Boost only marks its symbols __declspec(dllimport)
+    # when told it is being linked dynamically; without it, calls still resolve
+    # through import thunks but *data* symbols do not, so linking against a shared
+    # Boost fails on boost::program_options::arg and options_description::
+    # m_default_line_length. Static-Boost builds (LibPack) never noticed.
+    add_definitions(-DBOOST_ALL_DYN_LINK)
 endif(WIN32)
 
 if(FREECAD_RELEASE_SEH)
