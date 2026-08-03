@@ -448,6 +448,44 @@ Example - create and measure a box:
 """
 
 
+def _make_server(host: str, port: int):
+    """Return ``(server, serve)`` for whichever major version of ``mcp`` is present.
+
+    The high-level server class moved between major versions, and so did where the
+    bind address is given:
+
+    * ``mcp`` 1.x — ``mcp.server.fastmcp.FastMCP``, host/port on the constructor,
+      ``run(transport=...)`` takes no address.
+    * ``mcp`` 2.x — ``FastMCP`` is gone, replaced by ``mcp.server.MCPServer``, whose
+      constructor has no host/port; they are passed through ``run()`` instead.
+
+    ``serve`` is a zero-argument callable that blocks serving Streamable HTTP, so
+    the caller does not have to care which one it got. Both versions expose the
+    same ``tool(name=..., description=...)`` decorator and default the endpoint
+    path to ``/mcp``, so the rest of this module is version-agnostic.
+    """
+    try:
+        from mcp.server.fastmcp import FastMCP  # mcp 1.x
+    except ImportError:
+        pass
+    else:
+        server = FastMCP("FreeCAD Debug Console", host=host, port=port)
+        return server, lambda: server.run(transport="streamable-http")
+
+    try:
+        from mcp.server import MCPServer  # mcp 2.x
+    except ImportError as exc:
+        raise ImportError(
+            "freecad.mcp_console needs the 'mcp' package: neither "
+            "mcp.server.fastmcp.FastMCP (1.x) nor mcp.server.MCPServer (2.x) "
+            "could be imported"
+        ) from exc
+
+    server = MCPServer("FreeCAD Debug Console")
+    return server, (lambda: server.run(transport="streamable-http",
+                                       host=host, port=port))
+
+
 def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT) -> str:
     """Start the MCP console server on a background thread.
 
@@ -459,12 +497,10 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT) -> str:
     if is_running():
         return "MCP console already running at " + url()
 
-    from mcp.server.fastmcp import FastMCP
-
     _bound = (host, port)
     _seed_namespace()
     _executor = _make_executor()
-    _mcp = FastMCP("FreeCAD Debug Console", host=host, port=port)
+    _mcp, _serve_forever = _make_server(host, port)
 
     @_mcp.tool(name="run_python", description=_RUN_PYTHON_DESCRIPTION)
     def run_python(code: str) -> RunResult:
@@ -479,10 +515,8 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT) -> str:
         return _executor.run_on_main(
             lambda: _search_api(query, modules, limit))
 
-    def _serve():
-        _mcp.run(transport="streamable-http")
-
-    _server_thread = threading.Thread(target=_serve, name="mcp-console", daemon=True)
+    _server_thread = threading.Thread(target=_serve_forever, name="mcp-console",
+                                      daemon=True)
     _server_thread.start()
     return "MCP console running at " + url()
 
