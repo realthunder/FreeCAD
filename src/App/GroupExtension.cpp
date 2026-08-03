@@ -437,6 +437,24 @@ GroupExtension::ToggleNestedVisibility::~ToggleNestedVisibility() {
         --_ToggleNestedVisibility;
 }
 
+static int _VisibilityOnlyTouch;
+
+GroupExtension::VisibilityOnlyTouch::VisibilityOnlyTouch(bool active)
+    :active(active)
+{
+    if(active)
+        ++_VisibilityOnlyTouch;
+}
+
+GroupExtension::VisibilityOnlyTouch::~VisibilityOnlyTouch() {
+    if(active && _VisibilityOnlyTouch>0)
+        --_VisibilityOnlyTouch;
+}
+
+bool GroupExtension::isVisibilityOnlyTouch() {
+    return _VisibilityOnlyTouch > 0;
+}
+
 void GroupExtension::extensionOnChanged(const Property* p) {
 
     auto owner = getExtendedObject();
@@ -624,6 +642,12 @@ void GroupExtension::slotChildChanged(const Property &prop) {
            && !obj->getDocument()->testStatus(Document::Restoring) 
            && !obj->getDocument()->isPerformingTransaction())
     {
+        // Mark what caused this notification. A listener that only tracks the
+        // claiming structure can then skip an O(children) rebuild, because no
+        // claimChildren() implementation looks at visibility. The guard spans
+        // the touch, so groups relaying it upwards stay marked.
+        VisibilityOnlyTouch visGuard(strcmp(prop.getName(), "Visibility") == 0);
+
         if(ExportMode.getValue() == ExportByVisibility
                 || _GroupTouched.testStatus(Property::Output))
         {

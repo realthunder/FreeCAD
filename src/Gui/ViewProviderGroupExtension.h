@@ -60,6 +60,19 @@ public:
 
 protected:
     void buildExport() const;
+
+    /** Request a buildExport(), coalesced to at most one per event loop turn.
+     *
+     * buildExport() is O(children), so a burst of changes touching the group
+     * (filling it, or a recompute cascading through it) would otherwise pay
+     * the full scan once per change. Any pending rebuild is flushed
+     * synchronously before the children are read, so no caller observes a
+     * stale export list through the view provider.
+     */
+    void scheduleBuildExport() const;
+    /// Run this group's pending buildExport(), if any.
+    void flushBuildExport() const;
+
     virtual bool shouldCheckExport(App::DocumentObject *) const;
 };
 

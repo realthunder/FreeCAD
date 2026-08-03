@@ -23,8 +23,10 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <set>
 # include <QMouseEvent>
 # include <QMessageBox>
+# include <QTimer>
 #endif
 
 #include <App/Document.h>
@@ -50,7 +52,46 @@ ViewProviderGroupExtension::ViewProviderGroupExtension()
     initExtensionType(ViewProviderGroupExtension::getExtensionClassTypeId());
 }
 
-ViewProviderGroupExtension::~ViewProviderGroupExtension() = default;
+namespace {
+// Groups waiting for a coalesced buildExport(). Rebuilding is O(children),
+// so a burst of changes must not pay it once per change.
+std::set<const Gui::ViewProviderGroupExtension*> &pendingExports()
+{
+    static std::set<const Gui::ViewProviderGroupExtension*> pending;
+    return pending;
+}
+bool exportFlushQueued = false;
+}
+
+ViewProviderGroupExtension::~ViewProviderGroupExtension()
+{
+    pendingExports().erase(this);
+}
+
+void ViewProviderGroupExtension::scheduleBuildExport() const
+{
+    pendingExports().insert(this);
+    if (exportFlushQueued)
+        return;
+    exportFlushQueued = true;
+    // Zero timer: everything touching this group in the current turn is
+    // collapsed into a single rebuild. Readers going through
+    // extensionClaimChildren() flush earlier than this and never see a
+    // stale list.
+    QTimer::singleShot(0, []() {
+        exportFlushQueued = false;
+        auto pending = std::move(pendingExports());
+        pendingExports().clear();
+        for (auto ext : pending)
+            ext->buildExport();
+    });
+}
+
+void ViewProviderGroupExtension::flushBuildExport() const
+{
+    if (pendingExports().erase(this))
+        buildExport();
+}
 
 bool ViewProviderGroupExtension::extensionCanDragObjects() const {
     return true;
@@ -121,8 +162,29 @@ void ViewProviderGroupExtension::extensionUpdateData(const App::Property *prop)
                         if (vp)
                             vp->signalChangeIcon();
                     }
-                } else if (prop == &ext->_GroupTouched || prop == &ext->Group)
-                    buildExport();
+                } else if (prop == &ext->Group)
+                    scheduleBuildExport();
+                else if (prop == &ext->_GroupTouched) {
+                    // buildExport() derives the membership list purely from
+                    // the claiming structure -- which object claims which
+                    // child, plus link scope. Nothing in it reads Visibility,
+                    // so a notification caused by a child being shown or
+                    // hidden cannot change the result. Rebuilding anyway cost
+                    // a full O(children) scan per toggle, which is what made
+                    // hiding a large assembly quadratic.
+                    //
+                    // This applies to ExportByVisibility as well: consumers
+                    // that honour visibility read it live off the child, they
+                    // do not expect it baked into the list. The shape gather
+                    // behind getSubObjects(GS_DEFAULT) skips an invisible
+                    // sub-object as it walks, which is how a boolean using
+                    // this group as a tool sees a hidden child at recompute.
+                    // That still works: the App side touches the group for
+                    // visibility exactly as before, so dependents recompute --
+                    // only this rebuild is skipped.
+                    if (!App::GroupExtension::isVisibilityOnlyTouch())
+                        scheduleBuildExport();
+                }
             }
         }
     }
@@ -133,6 +195,10 @@ void ViewProviderGroupExtension::extensionClaimChildren(
         std::vector<App::DocumentObject *> &children) const 
 {
     auto* group = getExtendedViewProvider()->getObject()->getExtensionByType<App::GroupExtension>();
+    // Never hand out a stale export list: run this group's coalesced rebuild
+    // first if one is still pending.
+    if (!group->ClaimAllChildren.getValue())
+        flushBuildExport();
     auto & prop = group->ClaimAllChildren.getValue() ? group->Group : group->_ExportChildren;
     auto objs = prop.getValues();
     children.insert(children.end(), objs.begin(), objs.end());

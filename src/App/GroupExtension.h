@@ -166,6 +166,36 @@ public:
         ~ ToggleNestedVisibility();
     };
 
+    /** Whether the '_GroupTouched' notification being emitted right now was
+     * caused solely by a child's visibility change.
+     *
+     * Visibility does not affect which object claims which child, so a
+     * listener that only cares about the claiming structure (the view
+     * provider rebuilding '_ExportChildren') can skip the work.
+     *
+     * This holds for ExportByVisibility too. '_ExportChildren' is only a
+     * membership list -- which children the group exposes as sub-objects.
+     * Everything that cares about visibility reads it live off the child
+     * instead: the shape gather behind getSubObjects(GS_DEFAULT) tests
+     * Visibility as it walks (Part::Feature, _getTopoShape), which is how a
+     * boolean taking this group as a tool picks up a hidden child at
+     * recompute. So visibility still has to touch the group -- it just must
+     * not rebuild the membership list.
+     */
+    static bool isVisibilityOnlyTouch();
+
+    /** Scope guard marking a '_GroupTouched' touch as visibility-only.
+     *
+     * Holds a depth counter rather than a flag, so that the notification
+     * cascading up through nested groups stays marked for the whole chain.
+     */
+    struct AppExport VisibilityOnlyTouch {
+        explicit VisibilityOnlyTouch(bool active = true);
+        ~VisibilityOnlyTouch();
+    private:
+        bool active;
+    };
+
     /** Return the link list property for holding the children for export
      * @param reason: specify the reason for export. @sa App::DocumentObject::GSReason
      */
