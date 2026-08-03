@@ -4,7 +4,18 @@ else(MSVC)
     add_definitions(-DHAVE_LIMITS_H -DHAVE_CONFIG_H)
 endif(MSVC)
 
-add_definitions(-DYAML_CPP_STATIC_DEFINE)
+# Only tell yaml-cpp's headers it is a static build when it actually is. conda
+# ships a shared yaml-cpp, where the define suppresses the dllimport attributes
+# its API needs.
+if(NOT TARGET yaml-cpp::yaml-cpp)
+    add_definitions(-DYAML_CPP_STATIC_DEFINE)
+else()
+    get_target_property(_yaml_cpp_type yaml-cpp::yaml-cpp TYPE)
+    if(_yaml_cpp_type STREQUAL "STATIC_LIBRARY")
+        add_definitions(-DYAML_CPP_STATIC_DEFINE)
+    endif()
+    unset(_yaml_cpp_type)
+endif()
 
 include_directories(
     ${CMAKE_BINARY_DIR}
@@ -30,8 +41,17 @@ include_directories(
 )
 list(APPEND Material_LIBS
     ${QtConcurrent_LIBRARIES}
-    ${YAML_CPP_LIBRARIES}
 )
+# Prefer the imported target: YAML_CPP_LIBRARIES is the bare string "yaml-cpp",
+# and YAML_CPP_LIBRARY_DIR is not set by yaml-cpp's own config, so the
+# link_directories() above is a no-op and the bare name has no search path.
+# Linux gets away with it because conda's compiler wrapper adds -L$PREFIX/lib;
+# on Windows the link fails with LNK1104 "cannot open file yaml-cpp.lib".
+if(TARGET yaml-cpp::yaml-cpp)
+    list(APPEND Material_LIBS yaml-cpp::yaml-cpp)
+else()
+    list(APPEND Material_LIBS ${YAML_CPP_LIBRARIES})
+endif()
 
 generate_from_xml(Array2DPy)
 generate_from_xml(Array3DPy)
