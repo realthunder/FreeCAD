@@ -1356,7 +1356,14 @@ int ImportOCAF2::analyzeAssembly(TDF_Label label, const TopoDS_Shape& shape, int
             continue;
         }
         TDF_Label childLabel;
-        aShapeTool->Search(childShape, childLabel, Standard_True, Standard_True, Standard_False);
+        // SearchUsingMap, not Search: for a located shape - which every
+        // assembly component is - Search enumerates every shape in the
+        // document and walks each assembly's components, so filling a tree
+        // of N components costs O(N^2). SearchUsingMap answers the same two
+        // questions (top-level instance, then component of an assembly) from
+        // myShapeLabels and the label's back references, which XCAF maintains
+        // anyway. OCCT's own STEPCAFControl_Reader uses it for this reason.
+        aShapeTool->SearchUsingMap(childShape, childLabel, Standard_False, Standard_False);
         auto streamed = myInstanceNodes.find(childShape);
         if (streamed == myInstanceNodes.end() && !mySkeleton.empty()
             && childShape.ShapeType() == TopAbs_COMPOUND) {
@@ -2097,7 +2104,9 @@ bool ImportOCAF2::createAssembly(App::Document* _doc,
             continue;
         }
         TDF_Label childLabel;
-        aShapeTool->Search(childShape, childLabel, Standard_True, Standard_True, Standard_False);
+        // Same O(N^2) as the streamed path above; the synchronous importer
+        // walks assemblies the same way.
+        aShapeTool->SearchUsingMap(childShape, childLabel, Standard_False, Standard_False);
         if (!childLabel.IsNull() && !options.importHidden && !aColorTool->IsVisible(childLabel)) {
             continue;
         }
