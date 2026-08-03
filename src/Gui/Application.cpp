@@ -43,7 +43,9 @@
 # include <QWindow>
 #endif
 
-# if QT_VERSION >= 0x050600 && defined(Q_OS_WIN32)
+// Qt6 removed the QtPlatformHeaders module; see the use site below for why the
+// workaround it provided is not carried over.
+# if QT_VERSION >= 0x050600 && QT_VERSION < 0x060000 && defined(Q_OS_WIN32)
 #  include <QtPlatformHeaders/QWindowsWindowFunctions>
 # endif
 
@@ -2604,11 +2606,18 @@ void postMainWindowSetup(MainWindow &mw)
     Application::Instance->setStyleSheet(QString::fromUtf8(style.c_str()),
             hGrp->GetBool("TiledBackground", false));
 
-#if QT_VERSION >= 0x050600 && defined(Q_OS_WIN32)
+#if QT_VERSION >= 0x050600 && QT_VERSION < 0x060000 && defined(Q_OS_WIN32)
     // Fix menu not shown when in full screen on windows.
     // See https://doc.qt.io/qt-5/windows-issues.html#fullscreen-opengl-based-windows
     QWindowsWindowFunctions::setHasBorderInFullScreen(getMainWindow()->windowHandle(),true);
 #endif
+    // Qt6 has no public replacement: QWindowsWindowFunctions is gone with the
+    // QtPlatformHeaders module, and the equivalent is
+    // QNativeInterface::Private::QWindowsWindow::setHasBorderInFullScreen(),
+    // reachable only through a private QPA header and Qt6::GuiPrivate. That is
+    // an ABI-unstable dependency to take on for a cosmetic fix, so the
+    // workaround is left to Qt5. Worth re-checking whether Qt6 still shows the
+    // bug (menu hidden in fullscreen on an OpenGL window) before deciding.
 
     //initialize spaceball.
     if (auto app = qobject_cast<GUIApplicationNativeEventAware*>(qApp)) {
