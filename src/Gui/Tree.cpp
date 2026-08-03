@@ -124,7 +124,14 @@ public:
     };
     void selectItems(SelectionReason reason=SR_SELECT);
 
-    void testItemStatus(void);
+    /** Refresh the on-top bookkeeping, and optionally every item's status.
+     *
+     * @param refreshItems: false to do the on-top part only. The per-item
+     * status pass is O(items in the document) and purely cosmetic (icons and
+     * status flags), so a caller that only needs the tree structure to be
+     * current can skip it and let the status timer do it once instead.
+     */
+    void testItemStatus(bool refreshItems = true);
     void setData(int column, int role, const QVariant & value) override;
     void populateItem(DocumentObjectItem *item, bool refresh=false, bool delayUpdate=true);
     void forcePopulateItem(QTreeWidgetItem *item);
@@ -1535,8 +1542,19 @@ void TreeWidget::updateStatus(bool delay) {
 
 void TreeWidget::_updateStatus(bool delay) {
     if(!delay) {
-        if(!ChangedObjects.empty() || !NewObjects.empty())
+        if(!ChangedObjects.empty() || !NewObjects.empty()) {
+            // A synchronous flush is asked for because the caller needs the
+            // tree STRUCTURE to be current -- checkTopParent() is about to
+            // resolve a top parent through the items. The per-item status pass
+            // is only icons and status flags, and it walks every item in the
+            // document; running it on each forced flush made hiding N objects
+            // cost N full walks. Leave it to the timer, which coalesces it to
+            // one pass per event loop turn.
+            Base::StateLocker guard(deferItemStatus);
             onUpdateStatus();
+        }
+        if(itemStatusPending)
+            _updateStatus(true);
         return;
     }
     int timeout = TreeParams::getStatusTimeout();
@@ -4250,8 +4268,12 @@ void TreeWidget::onUpdateStatus()
     FC_LOG("update item status");
     TimingInit();
     for (auto pos = DocumentMap.begin();pos!=DocumentMap.end();++pos) {
-        pos->second->testItemStatus();
+        // The on-top bookkeeping runs either way -- it drives what the 3D view
+        // draws on top, so it must not lag. Only the per-item status pass is
+        // deferred.
+        pos->second->testItemStatus(!deferItemStatus);
     }
+    itemStatusPending = deferItemStatus;
     TimingPrint();
 
     // Checking for just restored documents
@@ -6571,7 +6593,7 @@ void DocumentItem::removeItemOnTop(DocumentObjectItem *item)
     }
 }
 
-void DocumentItem::testItemStatus(void)
+void DocumentItem::testItemStatus(bool refreshItems)
 {
     if (auto view = Base::freecad_dynamic_cast<View3DInventor>(
                 document()->getActiveView()))
@@ -6618,6 +6640,9 @@ void DocumentItem::testItemStatus(void)
         }
         itemsOnTop.clear();
     }
+    if (!refreshItems)
+        return;
+
     for(const auto &v : ObjectMap) {
         for(auto item : v.second->items)
             item->testItemStatus();

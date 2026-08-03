@@ -299,6 +299,14 @@ private:
 
     std::unordered_map<std::string,std::vector<long> > NewObjects;
 
+    /** Set while onUpdateStatus() is being run just to bring the tree
+     * structure up to date, so it leaves the O(items) per-item status pass to
+     * the status timer. @sa _updateStatus
+     */
+    bool deferItemStatus = false;
+    /// A deferred per-item status pass is owed.
+    bool itemStatusPending = false;
+
     static std::set<TreeWidget*> Instances;
 
     std::string myName; // for debugging purpose
