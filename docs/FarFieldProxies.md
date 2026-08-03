@@ -336,6 +336,41 @@ Measuring these honestly matters more than starting: this is a larger
 workstream than incremental publish, and it is the one that would be
 easiest to justify by intuition and hardest to justify by data.
 
+### 9.2 measured (MiSTer Express, 17800 objects, 2026-08-03)
+
+`RenderDebug_Coverage` (§2.4b of `docs/RenderDebug.md`) on a 1920x1200
+viewport, real GPU, camera isometric and fitted to the whole assembly,
+then walked in by fixed factors:
+
+| camera | on screen | <=1px | <=4px | share <=4px | off screen |
+|---|---|---|---|---|---|
+| whole assembly | 19362 | 4261 | 12935 | **66.8%** | 0 |
+| 2x | 19333 | 1570 | 9764 | 50.5% | 29 |
+| 4x | 18705 | 589 | 4261 | 22.8% | 657 |
+| 8x | 16087 | 352 | 1474 | 9.2% | 3275 |
+| 16x | 1532 | 4 | 4 | 0.3% | 17830 |
+
+**The second measurement passes, and not marginally.** At the camera
+this document is about, two thirds of what the renderer draws is four
+pixels or less, and 22% of it is literally sub-pixel — 4261 objects
+each paying for a cache entry, a draw entry, a material and an identity
+to produce less than one pixel. Only 301 objects (1.6%) exceed 64px.
+
+The walk in is the same finding from the other side: by 16x, 92% of the
+assembly is off screen, which is the population a cut stops touching
+rather than draws smaller.
+
+Counted per drawn *instance* (19362) rather than per document object
+(17800) — instances are what pay the per-object cost. The 1562 gap is
+not yet accounted for and is worth a look before the number is leaned
+on hard.
+
+**Measurement 1 is still missing**, and it is the one that decides the
+size of the prize: this says how many objects are too small to resolve,
+not what fraction of a frame they cost. A small model is no substitute
+either — FGC-9_MkII (150 parts) has *nothing* under 4px at its own fitted
+camera, so this effect only exists at assembly scale.
+
 ### 9.1 Rough effort
 
 Estimates, for a desktop-first version, to be treated as the shape of
