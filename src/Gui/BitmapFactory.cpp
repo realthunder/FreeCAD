@@ -36,6 +36,7 @@
 # include <QSvgRenderer>
 # include <QStyleOption>
 # include <sstream>
+# include <tuple>
 # include <unordered_map>
 #endif
 
@@ -144,6 +145,11 @@ public:
     // increase buket size.
     std::map<std::string, XpmInfo> xpmCache;
     std::unordered_map<const char *, XpmInfo *, App::CStringHasher, App::CStringHasher> pathMap;
+
+    // Rendered SVG icons, keyed by name, requested size and color substitution.
+    // The xpmCache above cannot serve these because it is not size aware.
+    using SvgKey = std::tuple<std::string, qreal, qreal, std::map<unsigned long, unsigned long>>;
+    std::map<SvgKey, QPixmap> svgCache;
 };
 }
 
@@ -204,6 +210,8 @@ void BitmapFactoryInst::restoreCustomPaths()
 void BitmapFactoryInst::addPath(const QString& path)
 {
     QDir::addSearchPath(QStringLiteral("icons"), path);
+    // A new search path may shadow an icon that was already rendered
+    d->svgCache.clear();
 }
 
 void BitmapFactoryInst::removePath(const QString& path)
@@ -213,6 +221,7 @@ void BitmapFactoryInst::removePath(const QString& path)
     if (pos != -1) {
         iconPaths.removeAt(pos);
         QDir::setSearchPaths(QStringLiteral("icons"), iconPaths);
+        d->svgCache.clear();
     }
 }
 
@@ -473,6 +482,17 @@ QPixmap BitmapFactoryInst::pixmap(const char* name,
 QPixmap BitmapFactoryInst::pixmapFromSvg(const char* name, const QSizeF& size,
     const std::map<unsigned long, unsigned long>& colorMapping) const
 {
+    // Some icons are re-fetched on every tree status update, and rendering an
+    // SVG means searching the icon paths, reading the file and parsing the XML
+    // again each time. Caching is not only about that cost: a freshly rendered
+    // pixmap also gets a new QPixmap::cacheKey(), which silently defeats the
+    // callers that key their own icon caches on it (see ViewProviderLink).
+    BitmapFactoryInstP::SvgKey cacheKey(name ? name : "",
+                                        size.width(), size.height(), colorMapping);
+    auto cached = d->svgCache.find(cacheKey);
+    if (cached != d->svgCache.end())
+        return cached->second;
+
     // If an absolute path is given
     QPixmap icon;
     QString iconPath;
@@ -509,6 +529,11 @@ QPixmap BitmapFactoryInst::pixmapFromSvg(const char* name, const QSizeF& size,
             }
          }
     }
+
+    // Only remember what actually resolved, so that an icon that appears later
+    // (a search path added at run time) is still picked up.
+    if (!icon.isNull())
+        d->svgCache[cacheKey] = icon;
 
     return icon;
 }
