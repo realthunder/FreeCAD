@@ -928,6 +928,24 @@ public:
     static void setDebugTiming(const bool &v);
     static const char *docDebugTiming();
     //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugCoverage
+    ///
+    /// Log how much of the screen each drawn object actually covers,
+    /// as a histogram over its projected size in pixels. A camera that
+    /// sees a whole assembly draws most of it at a few pixels, and every
+    /// one of those parts still costs a full object; the histogram says
+    /// how much of the model is in that state, which is what decides
+    /// whether aggregating distant parts is worth building
+    /// (docs/FarFieldProxies.md §9).
+    static const bool & getDebugCoverage();
+    static const bool & defaultDebugCoverage();
+    static void removeDebugCoverage();
+    static void setDebugCoverage(const bool &v);
+    static const char *docDebugCoverage();
+    //@}
 //[[[end]]]
 
     /// Called on any parameter change: re-selects the renderer backend on

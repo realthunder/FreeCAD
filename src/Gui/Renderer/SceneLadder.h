@@ -353,6 +353,38 @@ RendererExport std::vector<const void *> planMeshRefines(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx);
 
+/// How much of the screen the drawn objects actually cover
+/// (docs/FarFieldProxies.md §9): the measurement that says whether
+/// aggregating distant parts would pay, before any of it is built.
+///
+/// A part costs a full object — a cache entry, a draw entry, a material,
+/// an identity — whether it fills the screen or four pixels of it, so
+/// what matters is not the triangle count but how many objects the
+/// camera cannot resolve. Buckets every drawn object by its projected
+/// bounding-box diagonal, using the same projection the plan pass ranks
+/// with, so the two agree by construction about what "small on screen"
+/// means.
+///
+/// Off-screen draws are counted separately rather than as size 0: they
+/// are the population a cut would stop touching altogether, and lumping
+/// them in with the sub-pixel ones would overstate what the near field
+/// has to aggregate. Matrices are GL-layout 4x4.
+struct CoverageHistogram {
+    /// Bucket upper bounds in pixels; the last bucket is everything above.
+    static constexpr int kBuckets = 6;
+    static constexpr float kEdges[kBuckets - 1] = {1.0f, 4.0f, 16.0f, 64.0f, 256.0f};
+    int counts[kBuckets] {};
+    int offScreen = 0;
+    int noBounds = 0;
+    int total = 0;
+    /// Objects at or under \a px pixels, off-screen ones excluded.
+    int atOrUnder(float px) const;
+};
+RendererExport CoverageHistogram coverageHistogram(const DrawCallList &draws,
+                                                   const float *viewMatrix,
+                                                   const float *projMatrix,
+                                                   float viewportHeightPx);
+
 /// A demotion only ever runs when the camera would not notice it by a
 /// margin: the coarse rung must err at most this fraction of the
 /// tolerance. Demoting at the refine boundary itself would make a

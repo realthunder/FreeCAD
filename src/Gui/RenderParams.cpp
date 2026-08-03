@@ -107,6 +107,7 @@ public:
     bool DebugFreezeFrame;
     bool DebugLabel;
     bool DebugTiming;
+    bool DebugCoverage;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -227,6 +228,8 @@ public:
         funcs["DebugLabel"] = &RenderParamsP::updateDebugLabel;
         DebugTiming = this->handle->GetBool("DebugTiming", false);
         funcs["DebugTiming"] = &RenderParamsP::updateDebugTiming;
+        DebugCoverage = this->handle->GetBool("DebugCoverage", false);
+        funcs["DebugCoverage"] = &RenderParamsP::updateDebugCoverage;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -474,6 +477,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugTiming(RenderParamsP *self) {
         self->DebugTiming = self->handle->GetBool("DebugTiming", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugCoverage(RenderParamsP *self) {
+        self->DebugCoverage = self->handle->GetBool("DebugCoverage", false);
     }
 };
 
@@ -2261,6 +2268,40 @@ void RenderParams::setDebugTiming(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeDebugTiming() {
     instance()->handle->RemoveBool("DebugTiming");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugCoverage() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Log how much of the screen each drawn object actually covers,\n"
+"as a histogram over its projected size in pixels. A camera that\n"
+"sees a whole assembly draws most of it at a few pixels, and every\n"
+"one of those parts still costs a full object; the histogram says\n"
+"how much of the model is in that state, which is what decides\n"
+"whether aggregating distant parts is worth building\n"
+"(docs/FarFieldProxies.md §9).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugCoverage() {
+    return instance()->DebugCoverage;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugCoverage() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugCoverage(const bool &v) {
+    instance()->handle->SetBool("DebugCoverage",v);
+    instance()->DebugCoverage = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugCoverage() {
+    instance()->handle->RemoveBool("DebugCoverage");
 }
 //[[[end]]]
 

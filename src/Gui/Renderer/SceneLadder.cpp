@@ -1167,6 +1167,85 @@ std::vector<const void *> Render::planMeshRefines(
     return out;
 }
 
+int Render::CoverageHistogram::atOrUnder(float px) const
+{
+    int n = 0;
+    for (int i = 0; i < kBuckets - 1; ++i) {
+        if (kEdges[i] <= px)
+            n += counts[i];
+    }
+    return n;
+}
+
+Render::CoverageHistogram Render::coverageHistogram(const DrawCallList &draws,
+                                                    const float *viewMatrix,
+                                                    const float *projMatrix,
+                                                    float viewportHeightPx)
+{
+    CoverageHistogram out;
+    if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f)
+        return out;
+    // Per object, not per draw. One part can draw several times — opaque
+    // and transparent, faces and lines — and still costs one object's
+    // worth of the overhead this measurement is about, so counting draws
+    // would inflate exactly the number in question.
+    std::map<uint64_t, DrawCall> boxes;
+    std::vector<DrawCall> anonymous;
+    for (const auto &draw : draws) {
+        if (draw.bboxMin[0] > draw.bboxMax[0]) {
+            ++out.noBounds;
+            continue;
+        }
+        if (!draw.objectKey) {
+            // No identity to merge on: judge it on its own rather than
+            // dropping it, so overlays and one-off geometry still show up.
+            anonymous.push_back(draw);
+            continue;
+        }
+        auto res = boxes.try_emplace(draw.objectKey, draw);
+        if (res.second)
+            continue;
+        DrawCall &box = res.first->second;
+        for (int i = 0; i < 3; ++i) {
+            box.bboxMin[i] = std::min(box.bboxMin[i], draw.bboxMin[i]);
+            box.bboxMax[i] = std::max(box.bboxMax[i], draw.bboxMax[i]);
+        }
+    }
+
+    const auto tally = [&](const DrawCall &box) {
+        ++out.total;
+        const BoxSight sight = sightBox(box, viewMatrix, projMatrix,
+                                        viewportHeightPx);
+        switch (sight.what) {
+        case BoxSight::Empty:
+            ++out.noBounds;
+            return;
+        case BoxSight::Offscreen:
+            ++out.offScreen;
+            return;
+        case BoxSight::Inside:
+            // The camera is inside this object's span: it is as large as
+            // an object gets, whatever the diagonal projects to.
+            ++out.counts[CoverageHistogram::kBuckets - 1];
+            return;
+        case BoxSight::Visible:
+            break;
+        }
+        for (int i = 0; i < CoverageHistogram::kBuckets - 1; ++i) {
+            if (sight.diagPx <= CoverageHistogram::kEdges[i]) {
+                ++out.counts[i];
+                return;
+            }
+        }
+        ++out.counts[CoverageHistogram::kBuckets - 1];
+    };
+    for (const auto &entry : boxes)
+        tally(entry.second);
+    for (const auto &box : anonymous)
+        tally(box);
+    return out;
+}
+
 std::vector<const void *> Render::planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,

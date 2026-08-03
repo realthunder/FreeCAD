@@ -1007,6 +1007,9 @@ RendererBridge::translateRenderDebugConfig(View3DInventor * view)
     res.freezeFrame = viewParamOverride<App::PropertyBool>(
             view, "RenderDebug", "FreezeFrame",
             RenderParams::getDebugFreezeFrame());
+    res.coverage = viewParamOverride<App::PropertyBool>(
+            view, "RenderDebug", "Coverage",
+            RenderParams::getDebugCoverage());
 
     // Dynamic named shader parameters (docs/RenderDebug.md §2.5): every
     // further RenderDebug_* property becomes a like-named vec4(-array)
@@ -1025,7 +1028,9 @@ RendererBridge::translateRenderDebugConfig(View3DInventor * view)
                 continue;
             std::string name = v.first.substr(prefixLen);
             if (name.empty() || name == "ViewMode" || name == "FreezeFrame"
-                    || name == "Label")   // the §4.3 burn-in toggle
+                    || name == "Label"      // the §4.3 burn-in toggle
+                    || name == "Timing"     // measurement switches, not
+                    || name == "Coverage")  // shader inputs
                 continue;
             Render::RenderDebugConfig::UserParam param;
             param.name = name.compare(0, 2, "u_") == 0 ? name : "u_" + name;

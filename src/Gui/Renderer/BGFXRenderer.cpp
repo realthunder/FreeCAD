@@ -255,6 +255,48 @@ class BGFXView;
 
 namespace Render {
 
+/// One line a second summarising what the camera can resolve
+/// (docs/FarFieldProxies.md §9). Rate-limited here rather than at the
+/// call site so the caller stays a plain "measure this frame".
+static void reportCoverage(const CoverageHistogram &hist)
+{
+    static int64_t lastReport = 0;
+    const int64_t now = bx::getHPCounter();
+    const int64_t freq = bx::getHPFrequency();
+    if (lastReport && now - lastReport < freq)
+        return;
+    lastReport = now;
+    if (!hist.total)
+        return;
+    std::string line;
+    char buf[128];
+    const float *edges = CoverageHistogram::kEdges;
+    for (int i = 0; i < CoverageHistogram::kBuckets; ++i) {
+        if (i == 0)
+            snprintf(buf, sizeof(buf), "<=%gpx:%d", double(edges[0]),
+                     hist.counts[0]);
+        else if (i == CoverageHistogram::kBuckets - 1)
+            snprintf(buf, sizeof(buf), " >%gpx:%d",
+                     double(edges[CoverageHistogram::kBuckets - 2]),
+                     hist.counts[i]);
+        else
+            snprintf(buf, sizeof(buf), " <=%gpx:%d", double(edges[i]),
+                     hist.counts[i]);
+        line += buf;
+    }
+    // The headline is the share a far-field cut could aggregate: objects
+    // the camera resolves at a handful of pixels, each still paying for a
+    // whole object.
+    const int tiny = hist.atOrUnder(4.0f);
+    const int onScreen = hist.total - hist.offScreen - hist.noBounds;
+    snprintf(buf, sizeof(buf),
+             " | on-screen:%d offscreen:%d nobounds:%d | <=4px %.1f%% of on-screen",
+             onScreen, hist.offScreen, hist.noBounds,
+             onScreen > 0 ? 100.0 * double(tiny) / double(onScreen) : 0.0);
+    Base::Console().Message("render coverage: objects:%d %s%s\n", hist.total,
+                            line.c_str(), buf);
+}
+
 /// A user shader is animated when its source references the engine
 /// clock uniform u_fcTime — no declared flag anywhere, the reference
 /// itself is the opt-in (docs/RenderDebug.md §6).
@@ -7411,6 +7453,19 @@ public:
                     for (const void *tag : tags)
                         reg.requestRefine(tag);
                 });
+
+            // docs/FarFieldProxies.md §9: how much of the model this
+            // camera cannot resolve. Reported on the plan's own schedule
+            // rather than per frame — it is a property of where the
+            // camera settled, and one line a second is what makes it
+            // readable while orbiting a large assembly.
+            if (debugconf.coverage) {
+                const float h = float(widget->height()
+                                      * widget->devicePixelRatioF());
+                reportCoverage(Render::coverageHistogram(
+                        scene, reinterpret_cast<const float *>(viewMatrix),
+                        reinterpret_cast<const float *>(projMatrix), h));
+            }
         }
 
         // FC_BGFX_SERVE_SCENE=<port>: publish the feeds to the

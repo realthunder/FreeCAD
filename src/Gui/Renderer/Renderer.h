@@ -367,6 +367,10 @@ struct RenderDebugConfig {
     /// repeat frame renders identically — the determinism switch for
     /// golden-image comparison.
     bool freezeFrame = false;
+    /// Log a histogram of how many pixels each drawn object covers, once
+    /// a second (docs/FarFieldProxies.md §9). Costs one projection per
+    /// object on the frames it reports and nothing while off.
+    bool coverage = false;
 
     /// A dynamically bound named shader parameter (docs/RenderDebug.md
     /// §2.5): any RenderDebug_* view property beyond the fixed knobs
@@ -392,7 +396,7 @@ struct RenderDebugConfig {
 
     bool operator==(const RenderDebugConfig &o) const {
         return viewMode == o.viewMode && freezeFrame == o.freezeFrame
-            && userParams == o.userParams;
+            && coverage == o.coverage && userParams == o.userParams;
     }
     bool operator!=(const RenderDebugConfig &o) const { return !(*this == o); }
 };

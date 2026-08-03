@@ -340,6 +340,14 @@ Params = [
         "backend's own bookkeeping and the draw itself. One summary line\n"
         "per second, so a long operation shows how each stage grows with\n"
         "the scene rather than one average (docs/IncrementalPublish.md)."),
+    ParamBool('DebugCoverage',  False, title='Screen coverage histogram',
+        doc="Log how much of the screen each drawn object actually covers,\n"
+        "as a histogram over its projected size in pixels. A camera that\n"
+        "sees a whole assembly draws most of it at a few pixels, and every\n"
+        "one of those parts still costs a full object; the histogram says\n"
+        "how much of the model is in that state, which is what decides\n"
+        "whether aggregating distant parts is worth building\n"
+        "(docs/FarFieldProxies.md §9)."),
 ]
 
 def declare_begin():

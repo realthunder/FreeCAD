@@ -167,6 +167,31 @@ frames of the same scene+camera+params are bit-stable per backend.
 This is also the knob the capture API (section 4) sets implicitly when asked
 for a "verification capture".
 
+### 2.4b `RenderDebug_Coverage` — what the camera can resolve
+
+A boolean that logs, once a second, a histogram of how many pixels each
+drawn object covers: its projected bounding-box diagonal, bucketed
+(`<=1px`, `<=4`, `<=16`, `<=64`, `<=256`, above), with on-screen,
+off-screen and no-bounds counts and the share of on-screen objects at or
+under 4px.
+
+It answers the measurement `docs/FarFieldProxies.md` §9 gates that
+workstream on: a part costs a whole object — a cache entry, a draw entry,
+a material, an identity — whether it fills the screen or four pixels of
+it, so what decides whether aggregating distant parts pays is how much of
+the model a normal camera cannot resolve.
+
+The projection is `PlanBoxes::sight()`, the same one the level plan ranks
+with, so the histogram and the refine pass agree by construction about
+what "small on screen" means. It is computed per *object*, not per draw —
+a part drawing several times (opaque and transparent, faces and lines)
+costs one object's worth of the overhead in question. Reported on the
+level planner's schedule rather than per frame, since it is a property of
+where the camera settled.
+
+Note both this and `RenderDebug_Timing` are measurement switches, not
+shader inputs, so §2.5's dynamic-uniform binding skips them.
+
 ### 2.5 Generic named parameters — dynamic, not pre-declared
 
 Debug shading frequently needs a couple of tweakable values (a bias to

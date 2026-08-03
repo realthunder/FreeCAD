@@ -4354,6 +4354,14 @@ void View3DInventorViewer::initRenderProperties()
         prop->setValue(RenderParams::getDebugTiming());
         prop->setStatus(App::Property::Hidden, true);
     }
+    if (!view->getPropertyByName("RenderDebug_Coverage")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "RenderDebug_Coverage", "RenderDebug",
+                                         RenderParams::docDebugCoverage()));
+        prop->setValue(RenderParams::getDebugCoverage());
+        prop->setStatus(App::Property::Hidden, true);
+    }
 }
 
 // #define ENABLE_GL_DEPTH_RANGE
