@@ -44,12 +44,19 @@
 #include "InventorBase.h"
 
 class QPaintDevice;
-class SoSeparator;
-class SoCoordinate3;
-class SoIndexedLineSet;
+// The CoinPtr<> members below hold these node types, and ~intrusive_ptr<T> calls
+// intrusive_ptr_release(T*), which needs T complete for the derived-to-SoBase
+// conversion. A forward declaration is not enough: any translation unit that
+// destroys a GLGraphicsItem without having included these itself fails to
+// compile (MSVC C2664, "pointed-to types are unrelated"). It happens to work on
+// Linux only because those TUs pull the definitions in by another route.
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoCoordinate3.h>
+#include <Inventor/nodes/SoIndexedLineSet.h>
+#include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoDrawStyle.h>
+
 class SoIndexedFaceSet;
-class SoMaterial;
-class SoDrawStyle;
 
 namespace Gui {
 class View3DInventorViewer;
