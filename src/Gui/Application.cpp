@@ -2446,6 +2446,45 @@ void postMainWindowSetup(MainWindow &mw)
 #endif
             const char* glVersion = reinterpret_cast<const char*>(glGetString(GL_VERSION));
             Base::Console().Log("OpenGL version is: %d.%d (%s)\n", major, minor, glVersion);
+
+            // The version string cannot answer "did this session get the GPU?".
+            // A Mesa software context and a Mesa hardware context both report
+            // "Mesa <x.y>", so a timing taken on the rasterizer is indistinguishable
+            // in the log from one taken on the GPU. The renderer string is what
+            // separates them, so record it and say plainly which one this is.
+            const char* glRenderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+            const char* glVendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+            Base::Console().Log("OpenGL renderer is: %s\n", glRenderer ? glRenderer : "<unknown>");
+            Base::Console().Log("OpenGL vendor is: %s\n", glVendor ? glVendor : "<unknown>");
+
+            // Software renderers by platform, matched case-insensitively:
+            //   Mesa (Linux, and Windows/macOS builds of Mesa) - llvmpipe,
+            //     softpipe, swrast
+            //   ANGLE / Chromium-derived stacks - SwiftShader
+            //   Windows - "GDI Generic" (the OpenGL 1.1 fallback when no ICD is
+            //     installed) and "Microsoft Basic Render Driver" (WARP, which
+            //     ANGLE reports inside its own renderer string)
+            //   macOS - "Apple Software Renderer", covered by "software renderer"
+            const QString renderer = QString::fromLatin1(glRenderer ? glRenderer : "");
+            static const char* const softwareMarkers[] = {"llvmpipe",
+                                                          "softpipe",
+                                                          "swrast",
+                                                          "swiftshader",
+                                                          "basic render",
+                                                          "gdi generic",
+                                                          "software renderer",
+                                                          "software rasterizer"};
+            bool software = false;
+            for (const char* marker : softwareMarkers) {
+                if (renderer.contains(QLatin1String(marker), Qt::CaseInsensitive)) {
+                    software = true;
+                    break;
+                }
+            }
+            Base::Console().Log("OpenGL acceleration: %s\n",
+                                software ? "SOFTWARE rasterizer (timings are not "
+                                           "representative of GPU performance)"
+                                         : "hardware");
         }
     }
 
