@@ -400,3 +400,88 @@ The phase order, then:
    bundling of coarse levels, which is format work.
 6. View-dependent volumetric proxies (§5.2), only where §5.1 is shown
    to fail.
+
+## 11. Implementation plan
+
+The sequencing of §10 stands; this states what each step touches in the
+code, and how each one is shown to work. Phase 0 is the gate of §9 and
+is the only part that can conclude "do not build this".
+
+### 11.0 The two measurements (small, and first)
+
+**0a — the sub-pixel histogram (§9.2).** Nearly free: `PlanBoxes::sight()`
+in `SceneLadder.cpp` already computes a projected `diagPx` for every draw
+on the refine pass. The same arithmetic, bucketed over all draws and
+logged once a second, answers "how many parts can this camera not
+resolve". Delivered as `RenderDebug_Coverage`, a `RenderDebug_*` view
+property per §2 of `docs/RenderDebug.md` — the policy there forbids a
+throwaway macro for exactly this kind of question.
+
+**0b — per-object overhead against rasterization (§9.1).**
+`Gui/RenderTiming.h` already splits a frame into six exclusive stages,
+but its last stage mixes draw submission with fill. Separating them does
+not need finer instrumentation, it needs an ablation: sweep object count
+at a fixed camera (slope = cost per object), then sweep resolution at a
+fixed object count (slope = cost per pixel). `Render_EffectResolution`
+already scales fill-bound passes and gives the second sweep for free.
+
+**The gate.** Proceed only if per-object cost dominates a steady-state
+frame *and* a whole-assembly camera leaves most parts at a few pixels.
+If large assemblies are usually inspected up close, `IncrementalPublish`
+is worth more and this should wait.
+
+### 11.1 Where each phase lands
+
+| phase | new/changed | note |
+|---|---|---|
+| 1 hierarchy | **new** `Gui/Renderer/ProxyHierarchy.{h,cpp}` | plain floats, no bgfx/Coin/OCCT — the discipline `SceneLadder.h` already keeps, so both tiers can share the policy |
+| 2 generation | `Gui/Renderer/MeshSimplify.*`, refine pool | merge N transformed meshes, then decimate |
+| 3 the cut | `Gui/Renderer/SceneLadder.cpp` | beside `planMeshRefines`, sharing `PlanBoxes` |
+| 4 drawing | `Gui/Inventor/SoFCRendererBridge.cpp`, `BGFXRenderer.cpp` | needs the per-child slices of `IncrementalPublish` phase 4 |
+| 5 picking/highlight | `ProxyHierarchy`, selection path, shaders | the tint regime is the shader work |
+| 6 transitions | phase 3's selection | fade only for nodes actually crossing |
+| 7 streaming | wire format | bundling, per §9.1 |
+
+### 11.2 What the code already gives us
+
+`simplifyMesh()` is a better starting point than §5.1 claims. It is a
+grid-clustering decimator that keeps adjacent surfaces sewn (coincident
+boundary vertices fall in one cell), and it already carries **element
+tables as `(start, count)` runs preserved index for index**. The part
+table of §6 is that same mechanism with one run per *source object*
+instead of per element — so the part table is close to free, and the
+merge only has to record which object each input run came from.
+
+The identity story likewise reduces to existing practice: a node's key
+is a hash over its children's content keys and placements (§7), which is
+the `(TShape, level)` cache of `docs/TShapeRenderCache.md` with a
+different key.
+
+### 11.3 The invariant to write down first
+
+Two ladders now overlap. Every object today picks its own rung through
+`planMeshRefines`; with proxies, an ancestor drawing a proxy must
+*supersede* its children. The two must not both draw:
+
+> **No object may be drawn while any ancestor node is drawing a proxy.**
+
+The cut decides *who* draws; the per-object ladder decides *at what
+fidelity*, below the cut only. This is cheap to assert in phase 3 and
+expensive to discover in phase 4, so it is asserted from the start —
+in the same spirit as §8.2's rule about selection.
+
+### 11.4 Risks this plan carries
+
+- **Phase 5's tint needs renderer plumbing that does not exist.**
+  Highlighting today builds a *separate* cache drawn on top
+  (`buildHighlightCache`) and never touches the base scene. Tinting
+  inside a proxy means a per-cluster attribute plus a selection buffer
+  the shader reads. That is new, and the 2-4 day estimate of §9.1 should
+  be re-checked against `docs/ShaderDesign.md` before it is trusted.
+- **Merging across materials.** §5.1 assumes materials resolve per
+  cluster; a node whose parts carry many distinct materials either
+  fragments the proxy into many draws — losing the win — or averages
+  them and looks wrong. The material count per node is a property worth
+  measuring in phase 1, before phase 2 is designed around it.
+- **Generation throughput** is a scheduler problem at the node counts
+  fine grading implies (§9.1), not a loop.
