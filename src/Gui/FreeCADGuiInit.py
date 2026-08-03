@@ -296,10 +296,10 @@ try:
 except Exception:
     pass
 
-# Monkey patching PySide2.QtWidgets.QFileDialog static function to enforce not
+# Monkey patching QtWidgets.QFileDialog static function to enforce not
 # using native dialog to work around snap build file access problem
 try:
-    from PySide2 import QtWidgets
+    from PySide import QtWidgets
     QtWidgets.QFileDialog.getOpenFileName = FreeCADGui.FileDialog.getOpenFileName
     QtWidgets.QFileDialog.getOpenFileNames = FreeCADGui.FileDialog.getOpenFileNames
     QtWidgets.QFileDialog.getSaveFileName = FreeCADGui.FileDialog.getSaveFileName
