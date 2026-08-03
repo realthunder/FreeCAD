@@ -365,11 +365,50 @@ Counted per drawn *instance* (19362) rather than per document object
 not yet accounted for and is worth a look before the number is leaned
 on hard.
 
-**Measurement 1 is still missing**, and it is the one that decides the
-size of the prize: this says how many objects are too small to resolve,
-not what fraction of a frame they cost. A small model is no substitute
-either — FGC-9_MkII (150 parts) has *nothing* under 4px at its own fitted
-camera, so this effect only exists at assembly scale.
+A small model is no substitute either — FGC-9_MkII (150 parts) has
+*nothing* under 4px at its own fitted camera, so this effect only exists
+at assembly scale.
+
+### 9.1 measured, provisional (same model and camera)
+
+Ablation rather than instrumentation, for a reason worth recording:
+**`RenderTiming` cannot answer this question.** Its six stages instrument
+the *publish* pipeline, which only runs when the scene changes; across a
+static-camera redraw all six sum to 0.00-0.06 ms of a 139 ms frame and
+the whole cost sits in `other`. Frame rate against visible object count
+is the instrument that works.
+
+Visible objects varied by stride at a fixed camera and viewport:
+
+| visible objects | ms/frame |
+|---|---|
+| 17737 | 139.4 |
+| 8869 | 81.9 |
+| 4435 | 48.6 |
+| 2218 | 33.1 |
+
+Least squares over those four points: **6.85 us per object**, fixed cost
+**18.8 ms**, and the fit is tight (48.3 predicted against 48.6 measured
+at 4435). At the full scene that is **121.5 ms of a 139.4 ms frame —
+87% per-object**.
+
+⚠️ **Provisional, because hiding an object also removes its pixels**, so
+that slope conflates per-object cost with the fill of the objects
+removed. §9.2 bounds the confound by argument — the 12935 objects at
+<=4px cannot contribute more than ~0.2 Mpx of a 2.3 Mpx viewport — but
+the control that would measure it (fill varied at a fixed object count)
+is not yet in hand. A first attempt varying the window size was invalid:
+under xvfb no window manager honours the resize and the sweep came back
+non-monotonic. Zooming out at fixed object count is the sound version.
+
+### 9.3 an unprompted finding: visibility costs 43 ms per object
+
+Hiding the strides above took 384.1s for 8868 objects, then 192.3s for
+4434, then 96.4s for 2217 — **43.3, 43.4, 43.5 ms per toggle**. It does
+not fall as the scene shrinks, so it is not simply the whole-scene
+republish of `docs/IncrementalPublish.md` §2; something costs a flat
+~43 ms per visibility change. Hiding a 500-part subassembly therefore
+takes 21 seconds. Unrelated to proxies, and worth its own look.
 
 ### 9.1 Rough effort
 
