@@ -21,15 +21,49 @@ macro(SetGlobalCompilerAndLinkerSettings)
 
     if(MSVC)
         # set default compiler settings
-        set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zm150 /bigobj")
-        set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DFC_DEBUG /Zm150 /bigobj")
+        # /Zm150 and /bigobj are configuration-independent: App/Document.cpp
+        # exceeds the object-file section limit (C1128) whatever the optimisation
+        # level. They used to be attached to Release and Debug only, so
+        # RelWithDebInfo and MinSizeRel could not build at all. Set them once.
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zm150 /bigobj")
+        set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DFC_DEBUG")
         # set default libs
         set (CMAKE_C_STANDARD_LIBRARIES "kernel32.lib user32.lib gdi32.lib winspool.lib SHFolder.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib winmm.lib comsupp.lib Ws2_32.lib dbghelp.lib ")
         set (CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_C_STANDARD_LIBRARIES}")
-        # set linker flag /nodefaultlib
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /NODEFAULTLIB")
-        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} /NODEFAULTLIB")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB")
+        # Qt6 forces -permissive- on every MSVC consumer via its
+        # INTERFACE_COMPILE_OPTIONS, and -permissive- implies /Zc:strictStrings,
+        # which rejects initialising a char* from a string literal. That is the
+        # documented CPython idiom for PyArg_ParseTupleAndKeywords' kwlist, used
+        # in 17 places here, so relax that single rule rather than rewrite them.
+        # With MSVC the last /Zc setting on the line wins, and a linked target's
+        # interface options are emitted after anything add_compile_options() or
+        # CMAKE_CXX_FLAGS can place -- so the override has to ride on the same
+        # interface list, appended after Qt's own entries. This relaxes only
+        # strictStrings; the rest of -permissive- stays in force.
+        if (TARGET Qt6::Platform)
+            set_property(TARGET Qt6::Platform APPEND PROPERTY INTERFACE_COMPILE_OPTIONS
+                "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<COMPILE_LANGUAGE:CXX>>:/Zc:strictStrings->")
+        endif()
+
+        # Exclude the C runtimes this configuration is not using.
+        # A bare /NODEFAULTLIB used to be set here to keep a dependency from
+        # dragging in a mismatched CRT, but with no argument it discards every
+        # default library including the CRT this build needs -- and the library
+        # list above supplies none -- so no C++ target can link. bgfx surfaces it
+        # first: 92 unresolved CRT math symbols out of bimg.lib. Name the
+        # flavours to exclude instead: the static CRTs always (we always build
+        # against the DLL runtime), plus whichever dynamic CRT is the opposite of
+        # the current configuration, which is the mismatch actually worth blocking.
+        set (_fc_exclude_static_crt "/NODEFAULTLIB:libcmt.lib /NODEFAULTLIB:libcmtd.lib")
+        foreach (_fc_link_kind SHARED MODULE EXE)
+            set (CMAKE_${_fc_link_kind}_LINKER_FLAGS_DEBUG
+                 "${CMAKE_${_fc_link_kind}_LINKER_FLAGS_DEBUG} ${_fc_exclude_static_crt} /NODEFAULTLIB:msvcrt.lib")
+            foreach (_fc_config RELEASE RELWITHDEBINFO MINSIZEREL)
+                set (CMAKE_${_fc_link_kind}_LINKER_FLAGS_${_fc_config}
+                     "${CMAKE_${_fc_link_kind}_LINKER_FLAGS_${_fc_config}} ${_fc_exclude_static_crt} /NODEFAULTLIB:msvcrtd.lib")
+            endforeach()
+        endforeach()
+        unset (_fc_exclude_static_crt)
         if(FREECAD_RELEASE_PDB)
             set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi")
             set (CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /DEBUG")
