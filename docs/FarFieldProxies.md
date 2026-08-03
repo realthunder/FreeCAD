@@ -369,7 +369,7 @@ A small model is no substitute either — FGC-9_MkII (150 parts) has
 *nothing* under 4px at its own fitted camera, so this effect only exists
 at assembly scale.
 
-### 9.1 measured, provisional (same model and camera)
+### 9.1 measured (same model and camera)
 
 Ablation rather than instrumentation, for a reason worth recording:
 **`RenderTiming` cannot answer this question.** Its six stages instrument
@@ -388,27 +388,55 @@ Visible objects varied by stride at a fixed camera and viewport:
 | 2218 | 33.1 |
 
 Least squares over those four points: **6.85 us per object**, fixed cost
-**18.8 ms**, and the fit is tight (48.3 predicted against 48.6 measured
-at 4435). At the full scene that is **121.5 ms of a 139.4 ms frame —
-87% per-object**.
+**18.8 ms**. At the full scene that is **121.5 ms of a 139.4 ms frame —
+87% per-object**. A second independent run gave 6.89 us and 18.9 ms,
+87% — the numbers reproduce.
 
-⚠️ **Provisional, because hiding an object also removes its pixels**, so
-that slope conflates per-object cost with the fill of the objects
-removed. §9.2 bounds the confound by argument — the 12935 objects at
-<=4px cannot contribute more than ~0.2 Mpx of a 2.3 Mpx viewport — but
-the control that would measure it (fill varied at a fixed object count)
-is not yet in hand. A first attempt varying the window size was invalid:
-under xvfb no window manager honours the resize and the sweep came back
-non-monotonic. Zooming out at fixed object count is the sound version.
+**The control: fill, varied 64-fold at a fixed object count.** Hiding an
+object also removes its pixels, so the slope above would conflate
+per-object cost with fill if fill cost anything. Zooming out at a fixed
+object count varies coverage while the viewport and the object count
+stay exactly as they are:
+
+| zoom out | fill | ms/frame |
+|---|---|---|
+| 1x | 1/1 | 140.0 |
+| 2x | 1/4 | 139.9 |
+| 4x | 1/16 | 140.0 |
+| 8x | 1/64 | 139.8 |
+
+**Sixty-four times less fill changes the frame by 0.2%.** Rasterization
+is not a measurable part of this frame, so the slope is per-object cost
+and the confound is measured at zero rather than argued away. It also
+says what the 18.9 ms intercept is *not*: not fill, but the fixed
+per-frame cost (clear, swap, effect passes, and the harness's own loop).
+
+⚠️ Vary fill by *zooming*, not by resizing the window: under xvfb no
+window manager honours a resize, and that version of the sweep came back
+non-monotonic (144.7 / 56.8 / 149.8 / 56.2 ms) — an invalid measurement
+that looks like a noisy one.
+
+**Both gates of §9 are therefore met**: two thirds of the drawn objects
+are beyond the camera's resolution, and 87% of the frame is the
+per-object cost of drawing them. What remains before phase 1 is §10's
+ordering, which is unchanged — `docs/IncrementalPublish.md` phases 2-6
+first, because its per-child slices are the delta a proxy needs.
 
 ### 9.3 an unprompted finding: visibility costs 43 ms per object
 
 Hiding the strides above took 384.1s for 8868 objects, then 192.3s for
-4434, then 96.4s for 2217 — **43.3, 43.4, 43.5 ms per toggle**. It does
-not fall as the scene shrinks, so it is not simply the whole-scene
-republish of `docs/IncrementalPublish.md` §2; something costs a flat
-~43 ms per visibility change. Hiding a 500-part subassembly therefore
-takes 21 seconds. Unrelated to proxies, and worth its own look.
+4434, then 96.4s for 2217 — **43.3, 43.4, 43.5 ms per toggle**, and the
+second run reproduced it (43.7, 45.0, 43.3). It does not fall as the
+scene shrinks, so it is not simply the whole-scene republish of
+`docs/IncrementalPublish.md` §2. Hiding a 500-part subassembly therefore
+takes 21 seconds.
+
+The cost is **entirely on the Gui side**: the same toggle on a headless
+document costs **0.002 ms** and does not grow with object count (1000 to
+8000 objects, `App::Part` container). So the App layer — the property,
+`GroupExtension::slotChildChanged`, the `_GroupTouched` propagation — is
+not involved, and neither is anything a headless import would exercise.
+Unrelated to proxies, and worth its own look.
 
 ### 9.1 Rough effort
 
