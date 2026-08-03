@@ -13,6 +13,14 @@ set(Renderer_LIBS FreeCADBase
                   ${QtOpenGL_LIBRARIES}
                   ${QtOpenGLWidgets_LIBRARIES})
 
+if(WIN32)
+    # The GL 1.1 entry points (glGetError, glReadPixels, glDrawBuffer, ...) are
+    # declared dllimport by <GL/gl.h> and live in opengl32.lib. Qt6::OpenGL hands
+    # consumers libGL on Linux but nothing equivalent on Windows, so link it here.
+    # Anything newer than 1.1 is resolved at runtime via QOpenGLExtraFunctions.
+    list(APPEND Renderer_LIBS opengl32)
+endif()
+
 if(BUILD_BGFX)
     add_definitions(-DHAVE_BGFX)
     list(APPEND Renderer_CPP_SRCS BGFXRenderer.cpp)

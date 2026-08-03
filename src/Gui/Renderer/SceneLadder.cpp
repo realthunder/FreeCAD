@@ -32,6 +32,11 @@
 #include <emscripten/em_asm.h>
 #include <emscripten/heap.h>
 #elif defined(_WIN32)
+// windows.h defines min/max as macros unless told not to, which turns every
+// std::min/std::max below into a syntax error (C2589).
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #elif defined(__APPLE__)
 #include <sys/sysctl.h>

@@ -38,7 +38,15 @@
 #ifndef _PreComp_
 # include <float.h>
 # ifdef FC_OS_WIN32
+#  ifndef NOMINMAX
+#   define NOMINMAX
+#  endif
 #  include <windows.h>
+// windows.h still defines the 16-bit memory-model keywords near/far as empty
+// macros, which silently eats the type in declarations like "float near = ...".
+// It also defines a couple of names this file uses as identifiers.
+#  undef near
+#  undef far
 # endif
 # ifdef FC_OS_MACOSX
 # include <OpenGL/gl.h>
@@ -78,6 +86,7 @@
 #include <QOffscreenSurface>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLContext>
+#include <QOpenGLExtraFunctions>
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
 #include <QWindow>
@@ -195,7 +204,8 @@ namespace
 
     bool _checkFramebufferStatus(int line)
     {
-        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        auto *f = QOpenGLContext::currentContext()->extraFunctions();
+        GLenum status = f->glCheckFramebufferStatus(GL_FRAMEBUFFER);
         switch(status) {
         case GL_NO_ERROR:
         case GL_FRAMEBUFFER_COMPLETE:
@@ -6563,6 +6573,12 @@ public:
     void blit(const Render::FrameDumpRequest *dump,
               Render::RenderStats *stats)
     {
+        // Only GL 1.1 is exported by Windows' opengl32, so the framebuffer entry
+        // points below must be resolved against the current context rather than
+        // called directly -- ELF systems get them from libGL and never noticed.
+        // QOpenGLExtraFunctions (not the base QOpenGLFunctions set) is what
+        // carries glBlitFramebuffer.
+        auto *f = QOpenGLContext::currentContext()->extraFunctions();
         GLint prevFbo;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint *) &prevFbo);
         if (!hasFBO) {
@@ -6579,42 +6595,42 @@ public:
             // stays a renderbuffer — under MSAA their sample counts
             // differ, so the color and depth transfers use separate
             // read framebuffers.
-            glGenFramebuffers(1, &fbo);
-            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            f->glGenFramebuffers(1, &fbo);
+            f->glBindFramebuffer(GL_FRAMEBUFFER, fbo);
             if (glIsTexture(colorBuffer))
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                       GL_TEXTURE_2D, colorBuffer, 0);
+                f->glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                          GL_TEXTURE_2D, colorBuffer, 0);
             else
-                glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                          GL_RENDERBUFFER, colorBuffer);
+                f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                             GL_RENDERBUFFER, colorBuffer);
             if (!checkFramebufferStatus()) {
-                glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+                f->glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
                 destroy();
                 return;
             }
-            glGenFramebuffers(1, &fboDepth);
-            glBindFramebuffer(GL_FRAMEBUFFER, fboDepth);
-            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+            f->glGenFramebuffers(1, &fboDepth);
+            f->glBindFramebuffer(GL_FRAMEBUFFER, fboDepth);
+            f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
                                         GL_RENDERBUFFER, depthBuffer);
-            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
+            f->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
                                         GL_RENDERBUFFER, depthBuffer);
             // No color attachment: complete only with the draw/read
             // buffers off.
             glDrawBuffer(GL_NONE);
             glReadBuffer(GL_NONE);
             if (!checkFramebufferStatus()) {
-                glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+                f->glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
                 destroy();
                 return;
             }
         }
 
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prevFbo);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-        glBlitFramebuffer(0, 0, width, height,
-                          0, 0, width, height,
-                          GL_COLOR_BUFFER_BIT,
-                          GL_NEAREST);
+        f->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prevFbo);
+        f->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+        f->glBlitFramebuffer(0, 0, width, height,
+                             0, 0, width, height,
+                             GL_COLOR_BUFFER_BIT,
+                             GL_NEAREST);
         if (glGetError() != GL_NO_ERROR) {
             static int logged = 0;
             if (logged++ < 4) {
@@ -6623,15 +6639,15 @@ public:
                             "status 0x%x cached-color tex %u (isTex %d) "
                             "current-internal %u\n",
                             msaaSamples, fbo,
-                            glCheckFramebufferStatus(GL_READ_FRAMEBUFFER),
+                            f->glCheckFramebufferStatus(GL_READ_FRAMEBUFFER),
                             blitColorId, int(glIsTexture(blitColorId)), cb);
             }
         }
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, fboDepth);
-        glBlitFramebuffer(0, 0, width, height,
-                          0, 0, width, height,
-                          GL_DEPTH_BUFFER_BIT,
-                          GL_NEAREST);
+        f->glBindFramebuffer(GL_READ_FRAMEBUFFER, fboDepth);
+        f->glBlitFramebuffer(0, 0, width, height,
+                             0, 0, width, height,
+                             GL_DEPTH_BUFFER_BIT,
+                             GL_NEAREST);
         checkGLError("blit depth");
 
         // Frame readback: the grandfathered per-frame env gates
@@ -6650,7 +6666,7 @@ public:
             // The color lives in the bgfx color FBO — the read binding
             // still points at the depth-only FBO here (color would read
             // back all zero).
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+            f->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
             glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE,
                          color.data());
             long n = 0, r = 0, g = 0, b = 0;
@@ -6686,7 +6702,7 @@ public:
                 fprintf(stderr, "bgfx: frame dump write failed: %s\n",
                         dump->path.c_str());
         }
-        glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+        f->glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
     }
 #endif // !FC_RENDERER_STANDALONE
 
