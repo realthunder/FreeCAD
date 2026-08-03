@@ -246,6 +246,18 @@ private:
     friend class DocumentObjectItem;
 };
 
+/** Bumped on every structural change to the tree.
+ *
+ * DocumentObjectItem::requiredAtRoot() reads state that does not belong to the
+ * item being populated: all items of the child object (whatever their parent),
+ * those parents' removeChildrenFromRoot, and the object's root item. Of those,
+ * removeChildrenFromRoot is fixed for the lifetime of the item data, so only
+ * item creation/destruction and root item assignment can change the answer.
+ * Counting them lets populateItem() invalidate its snapshot conservatively:
+ * a structural change anywhere invalidates every snapshot in the tree.
+ */
+static unsigned long _TreeItemGeneration = 1;
+
 /** The link between the tree and a document object.
  * Every object in the document gets its associated DocumentObjectItem which controls
  * the visibility and the functions of the object.
@@ -356,6 +368,11 @@ private:
     int previousStatus;
     int selected;
     bool populated;
+    // The claimed children this item was last fully populated from, and the
+    // structural generation that was current at the time. Together they let
+    // populateItem() skip a walk that provably has nothing to do.
+    std::vector<App::DocumentObject*> populatedChildren;
+    unsigned long populatedGeneration = 0;
     bool selGroup = false;
     App::SubObjectT showOnTop;
     Gui::HighlightMode highlightMode = Gui::HighlightMode::None;
@@ -5804,6 +5821,7 @@ bool DocumentItem::createNewItem(const Gui::ViewProviderDocumentObject& obj,
     if(!parent || parent==this) {
         parent = this;
         data->rootItem = item;
+        ++_TreeItemGeneration;
         if (newData)
             setupTreeRank(item);
         if(index<0)
@@ -5950,6 +5968,19 @@ void DocumentItem::populateItem(DocumentObjectItem *item, bool refresh, bool del
     // child originally located at root.
 
     const auto &children = item->object()->getCachedChildren();
+
+    // A refresh is requested for every touched object, and a child's visibility
+    // change touches its group -- so a group gets refreshed once per toggle,
+    // and the sync walk below is O(its children) with two scattered cache
+    // misses each. When neither the claimed children nor the tree structure
+    // moved since the last full walk, that walk provably has nothing to do:
+    // it would match every child in place, and the only cross-object state it
+    // acts on (requiredAtRoot) can change only through item creation,
+    // destruction or root item assignment, all of which bump the generation.
+    if (item->populated
+            && item->populatedGeneration == _TreeItemGeneration
+            && item->populatedChildren == children)
+        return;
     item->setChildIndicatorPolicy(children.empty()?
             QTreeWidgetItem::DontShowIndicator:QTreeWidgetItem::ShowIndicator);
 
@@ -6065,6 +6096,7 @@ void DocumentItem::populateItem(DocumentObjectItem *item, bool refresh, bool del
                 continue;
             }
             it->second->rootItem = nullptr;
+            ++_TreeItemGeneration;
             childItem->setHighlight(false);
             this->removeChild(childItem);
             childItem->selected = 0;
@@ -6094,6 +6126,7 @@ void DocumentItem::populateItem(DocumentObjectItem *item, bool refresh, bool del
                 if(checkHidden)
                     updateItemsVisibility(childItem,false);
                 childItem->myData->rootItem = childItem;
+                ++_TreeItemGeneration;
                 setupTreeRank(childItem);
                 continue;
             }
@@ -6102,6 +6135,15 @@ void DocumentItem::populateItem(DocumentObjectItem *item, bool refresh, bool del
         QSignalBlocker blocker(getTree());
         delete ci;
     }
+
+    // Remember what this walk synchronised against. Re-read the claimed
+    // children rather than reusing the reference above: creating child items
+    // recurses into populateItem, which can rebuild the cache. The generation
+    // is taken now, after any item this walk created or deleted, so it
+    // describes the tree as we are leaving it.
+    item->populatedChildren = item->object()->getCachedChildren();
+    item->populatedGeneration = _TreeItemGeneration;
+
     if(updated)
         getTree()->_updateStatus();
 }
@@ -7190,6 +7232,7 @@ DocumentObjectItem::DocumentObjectItem(DocumentItem *ownerDocItem, DocumentObjec
 
     myData->items.insert(this);
     ++countItems;
+    ++_TreeItemGeneration;
     TREE_TRACE("Create item: " << countItems << ", " << object()->getObject()->getFullName());
 }
 
@@ -7203,6 +7246,7 @@ DocumentObjectItem::~DocumentObjectItem()
         TreeWidget::contextItem = nullptr;
 
     --countItems;
+    ++_TreeItemGeneration;
     TREE_TRACE("Delete item: " << countItems << ", " << object()->getObject()->getFullName());
     myData->items.erase(this);
 
