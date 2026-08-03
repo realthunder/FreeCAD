@@ -1491,6 +1491,14 @@ bool SelectionSingleton::updateSelection(bool show, const char* pDocName,
 {
     if(!pDocName || !pObjectName)
         return false;
+    // With nothing selected checkSelection() below can only return 0, so this
+    // call cannot do anything -- but getting there is not free: it resolves
+    // the top parent, which forces the tree view to flush its deferred status
+    // update, and that walks every item in the document. Hiding an object
+    // goes through here, so without this a mass hide paid a full tree scan
+    // per object.
+    if(_SelList.empty())
+        return false;
     if(!pSubName)
         pSubName = "";
     auto pDoc = getDocument(pDocName);
