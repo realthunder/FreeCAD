@@ -2475,6 +2475,10 @@ public:
             bgfx::destroy(m_whiteTex);
             m_whiteTex = BGFX_INVALID_HANDLE;
         }
+        if (bgfx::isValid(m_blackTex)) {
+            bgfx::destroy(m_blackTex);
+            m_blackTex = BGFX_INVALID_HANDLE;
+        }
         if (bgfx::isValid(m_hatchTex)) {
             bgfx::destroy(m_hatchTex);
             m_hatchTex = BGFX_INVALID_HANDLE;
@@ -2772,6 +2776,13 @@ public:
         m_whiteTex = bgfx::createTexture2D(1, 1, false, 1,
             bgfx::TextureFormat::RGBA8, 0,
             bgfx::copy(&white, sizeof(white)));
+        // 1x1 fully transparent black: a stand-in whose *coverage* is
+        // zero, for debug binds where the white texture would read as a
+        // target full of opaque white (RenderDebug mode 9).
+        static const uint32_t black = 0x00000000;
+        m_blackTex = bgfx::createTexture2D(1, 1, false, 1,
+            bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(&black, sizeof(black)));
         CapVertex::init();
 
         // PBR: the mesh programs always carry the environment sampler
@@ -4101,15 +4112,45 @@ public:
         submitOutlineEdges(draw, refCounter, spec);
     }
 
+    /// Does this draw need a discard-clipping shader variant: its own
+    /// section planes, or the mirror pass's water/ground plane.
+    bool clipActiveFor(const Render::Material &mat) const
+    {
+        return mat.numclipplanes > 0 || reflClipActive(mat);
+    }
+
+    /// The mirror pass clips the world to the half-space above its
+    /// plane. Without it every surface BELOW the plane — the ground the
+    /// basin stands on, the pool floor, the submerged half of the rim —
+    /// is mirrored upward and lands in front of the camera, so the
+    /// reflection target fills with the underside of the scene and the
+    /// water reflects a slab instead of the sky and whatever stands in
+    /// it. Concave (union-mode) section clipping is left alone: the
+    /// shader has one mode for all planes, and intersecting a plane
+    /// with a union needs a second one.
+    bool reflClipActive(const Render::Material &mat) const
+    {
+        return reflPass && reflClip && !mat.clipconcave;
+    }
+
     void setClipUniforms(const Render::Material &mat)
     {
-        if (mat.numclipplanes == 0)
+        const bool refl = reflClipActive(mat);
+        if (mat.numclipplanes == 0 && !refl)
             return;
-        float clipParams[4] = {float(mat.numclipplanes),
+        int n = mat.numclipplanes;
+        float planes[Render::Material::MaxClipPlanes][4];
+        if (n > 0)
+            std::memcpy(planes, mat.clipplanes, sizeof(float) * 4 * n);
+        if (refl && n < Render::Material::MaxClipPlanes) {
+            std::memcpy(planes[n], reflClipPlane, sizeof(float) * 4);
+            ++n;
+        }
+        float clipParams[4] = {float(n),
                                mat.clipconcave ? 1.0f : 0.0f,
                                0.0f, 0.0f};
         bgfx::setUniform(u_clipParams, clipParams);
-        bgfx::setUniform(u_clipPlanes, mat.clipplanes, mat.numclipplanes);
+        bgfx::setUniform(u_clipPlanes, planes, uint16_t(n));
     }
 
     /// Stencil-mark pass of an outline: rasterize (part of) the triangle
@@ -4519,6 +4560,14 @@ public:
             bgfx::setTexture(4, s_texDebugScene,
                              bgfx::isValid(debugSceneTex)
                                  ? debugSceneTex : m_whiteTex);
+        // Mode 9 shows the mirror target itself. Binding the black
+        // texture when there is none keeps "no reflection pass ran"
+        // distinguishable from "the pass ran and mirrored nothing":
+        // the mode tints zero coverage, and a black bind reads as
+        // coverage 0 everywhere.
+        if (bgfx::isValid(s_texRefl))
+            bgfx::setTexture(5, s_texRefl,
+                             bgfx::isValid(reflTex) ? reflTex : m_blackTex);
         fullscreen(ViewDebug, m_progDebug,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
     }
@@ -5102,6 +5151,7 @@ public:
     {
         for (auto &v : particles)
             v.second.slot = -1;
+        particlesLive = false;
         if (!particleStateOk || !bgfx::isValid(m_progPSimInit)) {
             // Nothing can hold state on this backend; the emitters
             // still draw, from their stateless vertex stage alone.
@@ -5229,6 +5279,10 @@ public:
                 st.needInit = true;
             if (st.needInit)
                 st.simTime = freeze ? 0.0f : animTime;
+            // This emitter is bound and its sprites move from here on;
+            // a frozen frame deliberately does not count, since it is
+            // meant to render identically twice.
+            particlesLive = particlesLive || !freeze;
 
             static const bool dbgP = getenv("FC_BGFX_DEBUG_PARTICLES");
             if (dbgP)
@@ -6752,15 +6806,9 @@ public:
         // programs contain no discard so the rest of the scene keeps
         // early-Z. The depth prepass clips too (unlike the stateful GL
         // path, which leaves whatever planes happen to be enabled).
-        bool clipped = mat.numclipplanes > 0;
-        if (clipped) {
-            float clipParams[4] = {float(mat.numclipplanes),
-                                   mat.clipconcave ? 1.0f : 0.0f,
-                                   0.0f, 0.0f};
-            bgfx::setUniform(u_clipParams, clipParams);
-            bgfx::setUniform(u_clipPlanes, mat.clipplanes,
-                             mat.numclipplanes);
-        }
+        bool clipped = clipActiveFor(mat);
+        if (clipped)
+            setClipUniforms(mat);
 
         if (textured)
             bindTextureStage(mat, bumped, mapped);
@@ -7263,6 +7311,7 @@ public:
     bgfx::ProgramHandle m_progCapClip = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texHatch = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_whiteTex = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_blackTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_hatchTex = BGFX_INVALID_HANDLE;
     uint64_t m_hatchVersion = 0;   // Private's hatch pixel generation
     static constexpr int kAOSamples = 16;
@@ -7611,9 +7660,20 @@ public:
     /// caps. Without it there is nowhere to keep particle state and
     /// stateful emitters fall back to their stateless vertex stage.
     bool particleStateOk = false;
+    /// A stateful emitter drew this frame and its simulation is running
+    /// (not frozen). Unlike the step budget's "still owes steps", this
+    /// stays true once an emitter has caught up with the clock, which
+    /// is exactly when its sprites keep moving — what the mirrored and
+    /// cached passes have to follow.
+    bool particlesLive = false;
     // Redirect submit() into the ground reflection view (mirrored
     // camera, flipped culling).
     bool reflPass = false;
+    /// Clip the mirror pass to the half-space above its plane, and the
+    /// world-space plane equation to clip against (dot(pos, p) >= 0
+    /// keeps the fragment, so z >= planeZ is (0,0,1,-planeZ)).
+    bool reflClip = false;
+    float reflClipPlane[4] = {0.0f, 0.0f, 1.0f, 0.0f};
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
     std::unordered_map<uint64_t, GpuMesh> meshes;
@@ -9594,6 +9654,18 @@ public:
         if (waterSurfActive && waterconf.reflection)
             waterReflMode = waterReflActive ? 3
                 : (waterconf.planarReflection ? 1 : 2);
+        if (getenv("FC_BGFX_DEBUG_FEED"))
+            fprintf(stderr,
+                    "bgfx water refl: mode=%d active=%d surf=%d refl=%d "
+                    "planar=%d planeSet=%d groundRefl=%d bbox=%d hl=%d "
+                    "prog=%d fbo=%d\n",
+                    waterReflMode, int(waterReflActive),
+                    int(waterSurfActive), int(waterconf.reflection),
+                    int(waterconf.planarReflection), int(waterPlaneSet),
+                    int(groundReflActive), int(bboxValid),
+                    int(hlconfig.show),
+                    int(bgfx::isValid(view->m_progGroundRefl)),
+                    int(bgfx::isValid(view->reflFbo)));
         float waterReflViewMtx[16], waterReflShadowMtx[16];
         if (waterReflActive) {
             const float *vm = reinterpret_cast<const float *>(viewMatrix);
@@ -9634,8 +9706,6 @@ public:
             && !staticNoCache && camH == view->camFrameHash;
         view->camFrameHash = camH;
         const bool mediumRender = !staticFrame;
-        const bool reflRender = !staticFrame || shadowRender || fireActive
-            || cloudActive;
 
         // Stateful particle emitters advance before anything draws:
         // their views come first in id order and configure/submit
@@ -9645,6 +9715,15 @@ public:
         // reaches its warm-up state.
         if (view->stepParticles(scene, animTime, debugconf.freezeFrame))
             animatedFrame = true;
+        // The mirrored render is cached against a static frame, and a
+        // live emitter changes the picture every frame without ever
+        // touching the dirty flags — its motion is in state textures,
+        // not in the scene. Without this the reflection keeps whatever
+        // it was rendered from, which for a fountain means a pool
+        // reflecting everything except the jet standing in it. Same
+        // escape hatch the analytic media already take.
+        const bool reflRender = !staticFrame || shadowRender || fireActive
+            || cloudActive || view->particlesLive;
 
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
             uint16_t id = base + i;
@@ -10851,6 +10930,14 @@ public:
         }
         if ((groundReflActive || waterReflActive) && reflRender) {
             view->reflPass = true;
+            // Keep only what is above the mirror plane; everything
+            // under it would otherwise fold up over the reflection.
+            view->reflClip = true;
+            view->reflClipPlane[0] = 0.0f;
+            view->reflClipPlane[1] = 0.0f;
+            view->reflClipPlane[2] = 1.0f;
+            view->reflClipPlane[3] = -(groundReflActive ? bboxMin[2]
+                                                        : waterPlaneZ);
             float savedShadowMtx[16];
             std::memcpy(savedShadowMtx, view->shadowMtx,
                         sizeof(savedShadowMtx));
@@ -10884,6 +10971,7 @@ public:
             std::memcpy(view->shadowMtx, savedShadowMtx,
                         sizeof(savedShadowMtx));
             view->reflPass = false;
+            view->reflClip = false;
             // The reflection shows the fountain plume / flame too: an
             // analytic media march composited over the mirrored scene.
             if (volActive && (cloudActive || fireActive))
