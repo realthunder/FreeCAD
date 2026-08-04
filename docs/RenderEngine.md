@@ -615,11 +615,14 @@ desktop and browser run the identical program.
   holding the most recent hit there (where, when, how hard) — an
   RGBA32F target the splat pass (`vs/fs_fc_pimpact`) writes one
   quad-per-particle into, immediately after the steps and before
-  anything draws. Deliberately never cleared and never blended: a
-  record is a standing statement that something struck this place at
-  this time, a newer hit in the same cell simply overwrites it, and an
+  anything draws. Deliberately never blended, and cleared only when
+  what it holds stops being about anywhere — an emitter replaying its
+  history from a reset, or a footprint that moved. Otherwise a record
+  is a standing statement that something struck this place at this
+  time: a newer hit in the same cell simply overwrites it, and an
   expired one ages out on its own when the surface compares it against
-  the clock. The exact world position rides in the texel rather than
+  the clock. Clearing on the reset is what keeps a frozen frame a pure
+  function of the warm-up with water in the scene as well as without. The exact world position rides in the texel rather than
   being implied by its address, so a ring is centred on the hit and not
   on the cell that caught it. The water surface raises its rings from
   it (§5.11, `Render_WaterImpactStrength`/`Life`); `RenderDebug_ViewMode

@@ -5287,6 +5287,7 @@ public:
         }
 
         bool pending = false;
+        impactReset = false;
         int slot = 0;
         std::set<uint64_t> seen;
         for (const auto &d : scene) {
@@ -5512,7 +5513,9 @@ public:
                 // The reset reports no impacts (it is a birth, not a
                 // collision), so only real steps owe the splat pass
                 // anything.
-                if (!init && st.stepCount < kParticleSteps)
+                if (init)
+                    impactReset = true;
+                else if (st.stepCount < kParticleSteps)
                     st.stepBuf[st.stepCount++] = dst;
                 ++steps;
             }
@@ -5567,11 +5570,13 @@ public:
         const float frame4[4] = {cx - ext * 0.5f, cy - ext * 0.5f,
                                  1.0f / ext, float(kImpactRes)};
 
-        // A refit moves every cell onto a different piece of the world,
-        // so what the map holds stops being about anywhere and has to
-        // go. Only a real move counts: a bbox that jitters in its last
+        // The map goes when it stops being about anywhere: an emitter
+        // replaying its history from a reset, or a footprint that moved
+        // so that every cell now covers a different piece of the world.
+        // Only a real move counts — a bbox that jitters in its last
         // digits would otherwise wipe the rings every frame.
-        bool refit = std::fabs(frame4[2] - impactFrame[2])
+        bool refit = impactReset
+            || std::fabs(frame4[2] - impactFrame[2])
                 > impactFrame[2] * 1.0e-3f
             || std::fabs(frame4[0] - impactFrame[0]) * frame4[2] > 1.0e-3f
             || std::fabs(frame4[1] - impactFrame[1]) * frame4[2] > 1.0e-3f;
@@ -8029,6 +8034,12 @@ public:
     /// The map holds this frame's impacts and the water surface may
     /// read it.
     bool impactActive = false;
+    /// An emitter reset this frame, so its history is being replayed
+    /// from the start and what it struck on the way there is no longer
+    /// about anything. Clearing on that is what keeps a frozen frame a
+    /// pure function of the warm-up with water in the scene, the same
+    /// as it is without.
+    bool impactReset = false;
     /// Cells across the map. Rings die two cells out (the water
     /// surface's 5x5 neighbourhood), so this is what sets their size
     /// relative to the pool: coarser cells make bigger, longer rings
