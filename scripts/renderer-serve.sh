@@ -28,6 +28,10 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 SCENE=${1:-"$REPO/scripts/demo-water.py"}
 PORT=${2:-8077}
 LOG=${FC_LOG:-/tmp/fc-serve-$PORT.log}
+# FC_BUILD selects the build tree to serve from; the default is
+# unchanged so an existing rig keeps launching what it always did.
+FCBIN="${FC_BUILD:-$REPO/build/conda-debug}/bin/FreeCAD"
+[ -x "$FCBIN" ] || { echo "no FreeCAD binary at $FCBIN (set FC_BUILD)"; exit 2; }
 MCP_PORT=${FC_MCP_PORT:-8765}
 EXTRA=()
 [ "$MCP_PORT" != 0 ] && EXTRA=("$REPO/scripts/mcp-console.py")
@@ -58,7 +62,7 @@ setsid nohup env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb \
   FC_BGFX_VIEWER_BUILD="${FC_BGFX_VIEWER_BUILD:-$REPO/build/wasm}" \
   bash -c 'xvfb-run -a -s "-screen 0 1280x1024x24" "$@"; s=$?;
            echo "serve wrapper: FreeCAD (:$FC_BGFX_SERVE_SCENE) exited status $s at $(date -Is)"' \
-  -- "$REPO/.conda/run.sh" "$REPO/build/conda-debug/bin/FreeCAD" \
+  -- "$REPO/.conda/run.sh" "$FCBIN" \
   "$SCENE" ${EXTRA[@]+"${EXTRA[@]}"} > "$LOG" 2>&1 </dev/null &
 disown
 echo "launched headless serve on :$PORT -> $LOG"
