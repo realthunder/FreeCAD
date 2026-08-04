@@ -38,6 +38,14 @@
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 RUN="$REPO/.conda/run.sh"
+# The tree the fork builds against (docs/DevEnvironment.md); FC_BUILD
+# repoints the capture runs at another one.
+BUILD=${FC_BUILD:-"$REPO/build/conda-debug-occt801"}
+FCBIN="$BUILD/bin/FreeCAD"
+[ -x "$FCBIN" ] || {
+    echo "no FreeCAD binary at $FCBIN (set FC_BUILD to another build tree)"
+    exit 2
+}
 
 cmd=${1:-}
 shift || true
@@ -108,7 +116,7 @@ if [ "$GPU" = 1 ]; then
         LIBGL_ALWAYS_SOFTWARE=0 GALLIUM_DRIVER=d3d12 \
         MESA_LOADER_DRIVER_OVERRIDE=d3d12 __GLX_VENDOR_LIBRARY_NAME=mesa \
         MESA_D3D12_DEFAULT_ADAPTER_NAME="${FC_ADAPTER:-}" \
-        "$RUN" "$REPO/build/conda-debug/bin/FreeCAD" \
+        "$RUN" "$FCBIN" \
         --user-cfg "$ISO/user.cfg" \
         "$SCENE" "$REPO/scripts/render_verify.py" \
         > "$LOG" 2>&1 </dev/null &
@@ -116,7 +124,7 @@ else
     setsid nohup env -u WAYLAND_DISPLAY "${COMMON_ENV[@]}" \
         QT_QPA_PLATFORM=xcb \
         xvfb-run -a -s "-screen 0 1280x1024x24" \
-        "$RUN" "$REPO/build/conda-debug/bin/FreeCAD" \
+        "$RUN" "$FCBIN" \
         --user-cfg "$ISO/user.cfg" \
         "$SCENE" "$REPO/scripts/render_verify.py" \
         > "$LOG" 2>&1 </dev/null &
