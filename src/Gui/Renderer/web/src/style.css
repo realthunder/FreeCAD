@@ -4,6 +4,12 @@
  * canvas orbit/zoom. */
 
 #fc-ui {
+  /* The chrome is dark whatever the page is, and a <select>'s POPUP is
+   * drawn by the browser, not by us: it takes our light text but keeps
+   * the system's light background, which is white-on-white. This is
+   * what tells the browser to render every native control — popup
+   * lists, number steppers, the colour picker — in its dark form. */
+  color-scheme: dark;
   position: fixed;
   inset: 0;
   pointer-events: none;   /* the canvas owns everything we don't */
@@ -316,5 +322,13 @@
 .fc-subj-on {
   background: rgba(106, 169, 255, 0.18);
   border-color: rgba(106, 169, 255, 0.45);
+  color: #e8e8ea;
+}
+
+/* Belt and braces for engines that ignore color-scheme on a subtree:
+ * name the popup's own colours. Firefox honours these on <option>,
+ * Chrome honours color-scheme above; neither hurts the other. */
+.fc-group option, .fc-enum option {
+  background: #1c1e22;
   color: #e8e8ea;
 }
