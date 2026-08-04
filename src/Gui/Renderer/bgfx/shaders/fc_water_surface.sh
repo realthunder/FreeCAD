@@ -34,6 +34,12 @@ SAMPLER2D(s_texShadow, 5);
 // apply pass depth-gating against the prepass disagrees with this
 // pass's own depth test along the waterline and dots a phantom edge.
 SAMPLER2D(s_texVolFront, 6);
+// Particle impact map (fs_fc_pimpact, docs/RenderEngine.md §5.8): the
+// most recent hit in each cell of the water's world footprint —
+// xy = where it landed, z = when, w = how hard. Point sampled: a cell
+// is a record, not a sample of a field, so there is nothing between
+// two of them to interpolate.
+SAMPLER2D(s_texImpact, 7);
 
 uniform vec4 u_matColor;   // rgb = water tint; a > 0.5 = planar refl in s_texRefl
 uniform vec4 u_lightDir;
@@ -57,6 +63,14 @@ uniform vec4 u_waterSplash[4];
 // xy = half-res texel size of the front volumetric target, zw = its
 // size in texels; x <= 0 = no front volumetric this frame.
 uniform vec4 u_volTexel;
+// Impact map frame: xy = world min corner of its footprint,
+// z = 1 / its world extent (square, so one number), w = resolution.
+uniform vec4 u_waterImpact;
+// x = map resolution in cells (0 = no impact map this frame),
+// y = the animation clock in seconds, on the same reading the map's
+// records were stamped with, z = ring lifetime in seconds,
+// w = ring amplitude scale.
+uniform vec4 u_waterImpactCfg;
 
 // Per-cell random pair/scalar for the rain drop field.
 vec2 fc_rainHash2(vec2 cell)
@@ -206,6 +220,66 @@ vec4 fcWaterShadeFragment(vec3 normal, vec3 vpos, vec2 fragCoord)
 		hq += env * sin(ph);
 		float dh = env * (k * cos(ph) - dk * sin(ph));
 		grad += (dq / rw) * (dh / max(u_waterSurf.y, 1.0e-4));
+	}
+	// Droplet impact rings: a wave packet expanding from every place a
+	// particle actually struck the surface (the impact map, §5.8). The
+	// rain field above is the same shape of ring put wherever a hash
+	// puts it — which is exactly the tell, since a fountain's rings
+	// belong under its falling water and nowhere else.
+	//
+	// A record's own world position rides in the texel, so the ring is
+	// centred on the hit rather than on the cell that caught it. The
+	// ring reaches two cells before it dies, which is what makes the
+	// 5x5 neighbourhood complete: no ring can reach this fragment from
+	// a cell further out than that.
+	if (u_waterImpactCfg.x > 0.5)
+	{
+		float res = u_waterImpactCfg.x;
+		float cell = 1.0 / max(u_waterImpact.z * res, 1.0e-6);
+		float life = max(u_waterImpactCfg.z, 1.0e-3);
+		float speed = 2.0 * cell / life;
+		float lam = max(cell * 0.55, 1.0e-4);
+		float kk = 6.2832 / lam;
+		float sig = lam * 0.8;
+		vec2 gc = floor((wp.xy - u_waterImpact.xy) * u_waterImpact.z
+		                * res);
+		for (int j = -2; j <= 2; ++j)
+		{
+			for (int m = -2; m <= 2; ++m)
+			{
+				vec2 cc = gc + vec2(float(j), float(m));
+				vec4 rec = texture2DLod(s_texImpact,
+				                        (cc + 0.5) / res, 0.0);
+				float age = u_waterImpactCfg.y - rec.z;
+				if (rec.w <= 0.0 || age <= 0.0 || age >= life)
+					continue;
+				vec3 dw3 = vec3(wp.xy - rec.xy, 0.0);
+				vec2 dq = vec2(dot(dw3, t1), dot(dw3, t2));
+				float rw = max(length(dq), 1.0e-4);
+				// Distance behind the travelling front. The packet is
+				// a couple of wavelengths wide, so what passes is a
+				// short train and not an endless corrugation.
+				float x = rw - speed * age;
+				float packet = exp(-(x * x) / (2.0 * sig * sig));
+				if (packet < 0.002)
+					continue;
+				// Dies with age, and spreads its energy round an ever
+				// longer circle on the way out.
+				float fade = (1.0 - age / life)
+				    * smoothstep(0.0, 0.05 * life, age);
+				// The gain sets what a strength of one means: an
+				// impact ring reads about as deep as the rain
+				// field's own rings, so the two are interchangeable
+				// at their default settings.
+				float amp = 3.0 * u_waterImpactCfg.w * rec.w * fade
+				    / sqrt(1.0 + rw / lam);
+				float ph = kk * x;
+				hq += amp * packet * sin(ph);
+				float dh = amp * packet
+				    * (kk * cos(ph) - (x / (sig * sig)) * sin(ph));
+				grad += (dq / rw) * (dh / max(u_waterSurf.y, 1.0e-4));
+			}
+		}
 	}
 	grad *= u_waterSurf.x * 0.02;
 	vec3 npw = normalize(nw - t1 * grad.x - t2 * grad.y);

@@ -94,6 +94,8 @@ public:
     bool WaterShadow;
     long WaterRippleType;
     double WaterRippleDensity;
+    double WaterImpactStrength;
+    double WaterImpactLife;
     double WaterShadowWobble;
     bool Bloom;
     double BloomThreshold;
@@ -202,6 +204,10 @@ public:
         funcs["WaterRippleType"] = &RenderParamsP::updateWaterRippleType;
         WaterRippleDensity = this->handle->GetFloat("WaterRippleDensity", 1.0);
         funcs["WaterRippleDensity"] = &RenderParamsP::updateWaterRippleDensity;
+        WaterImpactStrength = this->handle->GetFloat("WaterImpactStrength", 1.0);
+        funcs["WaterImpactStrength"] = &RenderParamsP::updateWaterImpactStrength;
+        WaterImpactLife = this->handle->GetFloat("WaterImpactLife", 1.1);
+        funcs["WaterImpactLife"] = &RenderParamsP::updateWaterImpactLife;
         WaterShadowWobble = this->handle->GetFloat("WaterShadowWobble", 1.0);
         funcs["WaterShadowWobble"] = &RenderParamsP::updateWaterShadowWobble;
         Bloom = this->handle->GetBool("Bloom", false);
@@ -425,6 +431,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateWaterRippleDensity(RenderParamsP *self) {
         self->WaterRippleDensity = self->handle->GetFloat("WaterRippleDensity", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterImpactStrength(RenderParamsP *self) {
+        self->WaterImpactStrength = self->handle->GetFloat("WaterImpactStrength", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWaterImpactLife(RenderParamsP *self) {
+        self->WaterImpactLife = self->handle->GetFloat("WaterImpactLife", 1.1);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateWaterShadowWobble(RenderParamsP *self) {
@@ -1870,6 +1884,70 @@ void RenderParams::removeWaterRippleDensity() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterImpactStrength() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Height of the rings raised where particles actually strike\n"
+"the water - a fountain's droplets landing in its own basin.\n"
+"Unlike the rain ripple type these are not a pattern: nothing\n"
+"appears unless something hits the surface, and it appears\n"
+"where it hit. Zero turns them off. Needs a stateful emitter\n"
+"whose step program reports its impacts.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getWaterImpactStrength() {
+    return instance()->WaterImpactStrength;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultWaterImpactStrength() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterImpactStrength(const double &v) {
+    instance()->handle->SetFloat("WaterImpactStrength",v);
+    instance()->WaterImpactStrength = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterImpactStrength() {
+    instance()->handle->RemoveFloat("WaterImpactStrength");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWaterImpactLife() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How long an impact ring lives, in seconds - which is also\n"
+"how far it travels, since a ring is sized to have crossed two\n"
+"cells of the impact map when it dies. Longer makes slower,\n"
+"wider-travelling rings out of the same hits.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getWaterImpactLife() {
+    return instance()->WaterImpactLife;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultWaterImpactLife() {
+    const static double def = 1.1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWaterImpactLife(const double &v) {
+    instance()->handle->SetFloat("WaterImpactLife",v);
+    instance()->WaterImpactLife = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWaterImpactLife() {
+    instance()->handle->RemoveFloat("WaterImpactLife");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docWaterShadowWobble() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "How much the shadow band on the water surface wobbles with\n"
@@ -2146,7 +2224,9 @@ const char *RenderParams::docDebugViewMode() {
 "3 = ambient occlusion term only, 4 = shadow term only, 5 = shadow\n"
 "map / bulb-tile coverage as color, 6 = overdraw heatmap, 7 =\n"
 "shadow-moment filtering-precision probe, 8 = UV / texcoord,\n"
-"9 = the planar reflection target.\n"
+"9 = the planar reflection target, 10 = the particle impact map\n"
+"(green where a hit is recorded, brightness its age, red where\n"
+"nothing has ever struck).\n"
 "0 renders normally. The on-top, highlight and overlay passes\n"
 "still draw on top so the view stays navigable.");
 }

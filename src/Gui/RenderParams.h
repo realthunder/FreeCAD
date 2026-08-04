@@ -738,6 +738,38 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter WaterImpactStrength
+    ///
+    /// Height of the rings raised where particles actually strike
+    /// the water - a fountain's droplets landing in its own basin.
+    /// Unlike the rain ripple type these are not a pattern: nothing
+    /// appears unless something hits the surface, and it appears
+    /// where it hit. Zero turns them off. Needs a stateful emitter
+    /// whose step program reports its impacts.
+    static const double & getWaterImpactStrength();
+    static const double & defaultWaterImpactStrength();
+    static void removeWaterImpactStrength();
+    static void setWaterImpactStrength(const double &v);
+    static const char *docWaterImpactStrength();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WaterImpactLife
+    ///
+    /// How long an impact ring lives, in seconds - which is also
+    /// how far it travels, since a ring is sized to have crossed two
+    /// cells of the impact map when it dies. Longer makes slower,
+    /// wider-travelling rings out of the same hits.
+    static const double & getWaterImpactLife();
+    static const double & defaultWaterImpactLife();
+    static void removeWaterImpactLife();
+    static void setWaterImpactLife(const double &v);
+    static const char *docWaterImpactLife();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter WaterShadowWobble
     ///
     /// How much the shadow band on the water surface wobbles with
@@ -869,7 +901,10 @@ public:
     /// shaded scene: 1 = linearized scene depth, 2 = view-space normals,
     /// 3 = ambient occlusion term only, 4 = shadow term only, 5 = shadow
     /// map / bulb-tile coverage as color, 6 = overdraw heatmap, 7 =
-    /// shadow-moment filtering-precision probe, 8 = UV / texcoord.
+    /// shadow-moment filtering-precision probe, 8 = UV / texcoord,
+    /// 9 = the planar reflection target, 10 = the particle impact map
+    /// (green where a hit is recorded, brightness its age, red where
+    /// nothing has ever struck).
     /// 0 renders normally. The on-top, highlight and overlay passes
     /// still draw on top so the view stays navigable.
     static const long & getDebugViewMode();

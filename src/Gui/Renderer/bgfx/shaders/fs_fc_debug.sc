@@ -31,8 +31,14 @@ SAMPLER2D(s_texAO, 2);
 SAMPLER2D(s_texBulbShadow, 3);
 SAMPLER2D(s_texDebugScene, 4);
 SAMPLER2D(s_texRefl, 5);
+SAMPLER2D(s_texImpact, 6);
 
 uniform vec4 u_debugParams;
+// The water surface's own impact-map configuration (fc_water_surface):
+// x = resolution, y = the clock the records are stamped against,
+// z = ring lifetime, w = ring strength. Mode 10 ages the map with it,
+// so the debug view and the surface read the same records the same way.
+uniform vec4 u_waterImpactCfg;
 // Bootstrap fallback pool of the dynamic named-parameter binding
 // (docs/RenderDebug.md §2.5): lanes a no-compiler tier (stock WASM
 // binaries) can map RenderDebug_userParams onto. Lane 0 here is an
@@ -125,6 +131,22 @@ void main()
 		float full = u_userParams[0].z > 0.0 ? u_userParams[0].z : 8.0;
 		float count = texture2D(s_texDebugScene, v_texcoord0).x;
 		rgb = heatRamp(count / full);
+	}
+	else if (mode > 9.5)
+	{
+		// The particle impact map (docs/RenderEngine.md §5.8), laid
+		// over the screen: green where a hit is recorded, its
+		// brightness the age of that record against the ring lifetime,
+		// red where the cell has never been struck. It answers, on its
+		// own, whether nothing was reported, whether it was reported in
+		// the wrong place, or whether the surface simply fails to show
+		// what is there.
+		vec4 im = texture2D(s_texImpact, v_texcoord0);
+		float life = max(u_waterImpactCfg.z, 1.0e-3);
+		float age = (u_waterImpactCfg.y - im.z) / life;
+		rgb = im.w > 0.0
+			? vec3(0.0, clamp(1.0 - age, 0.0, 1.0), im.w)
+			: vec3(0.15, 0.0, 0.0);
 	}
 	else if (mode > 8.5)
 	{

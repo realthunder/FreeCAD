@@ -274,6 +274,18 @@ Params = [
         "fit per wave-scale unit. Higher rains harder - more, smaller\n"
         "rings; lower gives sparse large rings. The wave ripple type\n"
         "ignores it."),
+    ParamFloat('WaterImpactStrength',  1.0, title='Impact ring strength',
+        doc="Height of the rings raised where particles actually strike\n"
+        "the water - a fountain's droplets landing in its own basin.\n"
+        "Unlike the rain ripple type these are not a pattern: nothing\n"
+        "appears unless something hits the surface, and it appears\n"
+        "where it hit. Zero turns them off. Needs a stateful emitter\n"
+        "whose step program reports its impacts."),
+    ParamFloat('WaterImpactLife',  1.1, title='Impact ring life',
+        doc="How long an impact ring lives, in seconds - which is also\n"
+        "how far it travels, since a ring is sized to have crossed two\n"
+        "cells of the impact map when it dies. Longer makes slower,\n"
+        "wider-travelling rings out of the same hits."),
     ParamFloat('WaterShadowWobble',  1.0, title='Shadow wobble',
         doc="How much the shadow band on the water surface wobbles with\n"
         "the wave field: the shadow is looked up at the wave-displaced\n"
@@ -311,13 +323,16 @@ Params = [
     ParamInt('DebugViewMode',  0, title='Debug view mode',
         proxy=ParamComboBox(items=['Off', 'Depth', 'Normal', 'AO', 'Shadow',
                                    'ShadowTile', 'Overdraw', 'ShadowFilter',
-                                   'UV']),
+                                   'UV', 'Reflection', 'ImpactMap']),
         doc="Render debugging buffer visualization (docs/RenderDebug.md).\n"
         "Routes an intermediate render target to the screen instead of the\n"
         "shaded scene: 1 = linearized scene depth, 2 = view-space normals,\n"
         "3 = ambient occlusion term only, 4 = shadow term only, 5 = shadow\n"
         "map / bulb-tile coverage as color, 6 = overdraw heatmap, 7 =\n"
-        "shadow-moment filtering-precision probe, 8 = UV / texcoord.\n"
+        "shadow-moment filtering-precision probe, 8 = UV / texcoord,\n"
+        "9 = the planar reflection target, 10 = the particle impact map\n"
+        "(green where a hit is recorded, brightness its age, red where\n"
+        "nothing has ever struck).\n"
         "0 renders normally. The on-top, highlight and overlay passes\n"
         "still draw on top so the view stays navigable."),
     ParamBool('DebugFreezeFrame',  False, title='Debug freeze frame',

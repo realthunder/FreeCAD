@@ -39,11 +39,15 @@ _render.SetBool("AO", True)
 _render.SetBool("Volumetric", True)
 _render.SetBool("WaterSurface", True)
 _render.SetFloat("WaterWaveStrength", 0.22)
-# Rings expanding from impacts rather than the directional swell: a
-# round basin has no fetch for a travelling wave train, and what
-# disturbs this pool is droplets landing in it.
-_render.SetInt("WaterRippleType", 1)
-_render.SetFloat("WaterRippleDensity", 1.6)
+# What disturbs this pool is the jets' own droplets landing in it, and
+# that is now literally what raises the rings: the step program reports
+# each absorbed droplet and the surface rings from where it was struck
+# (docs/RenderEngine.md 5.8). The rain ripple type is the stand-in for
+# exactly this and puts its rings wherever a hash puts them, so the
+# ambient field goes back to a faint directional swell and the fountain
+# writes its own.
+_render.SetInt("WaterRippleType", 0)
+_render.SetFloat("WaterImpactStrength", 1.4)
 _render.SetBool("WaterRefraction", True)
 _render.SetBool("WaterReflection", True)
 _render.SetBool("WaterPlanarReflection", True)

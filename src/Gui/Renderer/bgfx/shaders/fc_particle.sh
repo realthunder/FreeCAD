@@ -9,6 +9,15 @@
  *   s_pstate1 : xyz = velocity in model units per second,
  *               w   = lifetime in seconds
  *
+ * A third target carries what the step reports rather than what it
+ * remembers:
+ *
+ *   impact    : xyz = where the particle struck, in model space,
+ *               w   = strength (0 = no impact this step)
+ *
+ * It is written every step and read by nothing the particle owns — the
+ * engine scatters it into the water impact map (fcParticleStoreHit).
+ *
  * The step program (App::ShaderProgram.SimulateProgram) is a fragment
  * shader over that grid: one fragment = one particle. It reads the
  * previous state through fcParticleLoad, advances it, and writes the
@@ -130,14 +139,48 @@ Particle fcParticleLoad(vec2 uv)
 	return p;
 }
 
-/// Next state. Must be the last thing a step program does.
+/// A step that struck nothing. The value a step program starts its
+/// impact from, and what fcParticleStore reports on its behalf.
+#define fcParticleNoImpact vec4(0.0, 0.0, 0.0, 0.0)
+
+/// An impact report: where the particle struck, in the emitter's model
+/// space, and how hard — roughly 0..1, the relative violence of the
+/// hit, which scales the ring the water surface raises from it.
+///
+/// It is a per-step event, not a state: report it on the step that
+/// detects the hit, not for as long as the particle sits where it
+/// landed.
+#define fcParticleHit(_pos, _strength) \
+	vec4(_pos, max(_strength, 0.0))
+
+/// Next state, and nothing struck. Must be the last thing a step
+/// program does.
 ///
 /// A macro, not a function: shaderc rewrites gl_FragData into out
 /// parameters of main, so only main can write them.
-#define fcParticleStore(_p)                        \
-	{                                              \
-		gl_FragData[0] = vec4((_p).pos, (_p).age); \
-		gl_FragData[1] = vec4((_p).vel, (_p).life); \
+#define fcParticleStore(_p)                          \
+	{                                                \
+		gl_FragData[0] = vec4((_p).pos, (_p).age);   \
+		gl_FragData[1] = vec4((_p).vel, (_p).life);  \
+		gl_FragData[2] = fcParticleNoImpact;         \
+	}
+
+/// Next state, plus what this step struck (fcParticleHit, or
+/// fcParticleNoImpact for a step that struck nothing). The engine
+/// scatters the reports into the water impact map, where the water
+/// surface reads them as the origins of its rings
+/// (docs/RenderEngine.md §5.8).
+///
+/// The report travels as an argument rather than through a variable
+/// the header owns: a mutable file-scope global does not survive the
+/// runtime translation of a user shader — the program silently fails
+/// to build and the emitter falls back to its stateless stage, which
+/// looks exactly like an emitter that draws nothing.
+#define fcParticleStoreHit(_p, _hit)                 \
+	{                                                \
+		gl_FragData[0] = vec4((_p).pos, (_p).age);   \
+		gl_FragData[1] = vec4((_p).vel, (_p).life);  \
+		gl_FragData[2] = (_hit);                     \
 	}
 
 #endif // FC_PARTICLE_SH

@@ -82,6 +82,7 @@ void main()
 {
 	Particle p = fcParticleLoad(v_texcoord0);
 	float dt = fcParticleStep();
+	vec4 hit = fcParticleNoImpact;
 
 	p.age += dt;
 	if (p.age > p.life)
@@ -109,6 +110,15 @@ void main()
 			// seconds more so the surface does not collect droplets.
 			vec3 s = fcParticleHash3(fcParticleIndex(v_texcoord0) * 7.7
 			                         + floor(p.age * 13.0));
+			// Tell the surface where it was hit and how hard, so the
+			// ring it raises belongs to this droplet instead of to a
+			// noise field that only looks like rain. The launch speed
+			// is the natural full-strength hit: a droplet cannot come
+			// down faster than it was thrown up.
+			hit = fcParticleHit(vec3(p.pos.xy, floorZ),
+			                    clamp(abs(p.vel.z)
+			                          / max(u_Launch.x, 1.0e-4),
+			                          0.0, 1.0));
 			p.pos.z = floorZ;
 			p.vel.z = abs(p.vel.z) * u_Splash.x;
 			p.vel.xy = p.vel.xy * 0.35
@@ -117,5 +127,5 @@ void main()
 		}
 	}
 
-	fcParticleStore(p);
+	fcParticleStoreHit(p, hit);
 }

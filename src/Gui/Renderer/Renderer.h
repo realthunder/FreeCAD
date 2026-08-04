@@ -733,6 +733,16 @@ struct WaterConfig {
     /// more, smaller rings on the same surface. Directional waves
     /// ignore it.
     float rippleDensity = 1.0f;
+    /// Height of the rings raised where particles report striking the
+    /// surface (the impact map, docs/RenderEngine.md §5.8), relative to
+    /// the wave strength. 0 = off. These are events, not a pattern:
+    /// with nothing hitting the water there is nothing to see, which
+    /// is what separates them from the rain ripple type.
+    float impactStrength = 1.0f;
+    /// Lifetime of one impact ring in seconds — also how far it
+    /// travels, since a ring is sized to cross two impact-map cells in
+    /// its life.
+    float impactLife = 1.1f;
 
     bool operator==(const WaterConfig &o) const {
         return enabled == o.enabled && waveStrength == o.waveStrength
@@ -742,7 +752,9 @@ struct WaterConfig {
             && planarReflection == o.planarReflection
             && shadow == o.shadow && shadowWobble == o.shadowWobble
             && rippleType == o.rippleType
-            && rippleDensity == o.rippleDensity;
+            && rippleDensity == o.rippleDensity
+            && impactStrength == o.impactStrength
+            && impactLife == o.impactLife;
     }
     bool operator!=(const WaterConfig &o) const { return !(*this == o); }
 };

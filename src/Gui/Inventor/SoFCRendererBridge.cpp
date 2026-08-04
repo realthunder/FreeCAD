@@ -1466,6 +1466,12 @@ RendererBridge::translateWaterConfig(View3DInventor * view)
     res.rippleDensity = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "WaterRippleDensity",
             RenderParams::getWaterRippleDensity()));
+    res.impactStrength = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "WaterImpactStrength",
+            RenderParams::getWaterImpactStrength()));
+    res.impactLife = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "WaterImpactLife",
+            RenderParams::getWaterImpactLife()));
     return res;
 }
 

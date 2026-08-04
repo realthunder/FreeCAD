@@ -4308,6 +4308,12 @@ void View3DInventorViewer::initRenderProperties()
     _renderParam<App::PropertyFloat>(view, "WaterRippleDensity",
             RenderParams::docWaterRippleDensity(),
             RenderParams::getWaterRippleDensity());
+    _renderParam<App::PropertyFloat>(view, "WaterImpactStrength",
+            RenderParams::docWaterImpactStrength(),
+            RenderParams::getWaterImpactStrength());
+    _renderParam<App::PropertyFloat>(view, "WaterImpactLife",
+            RenderParams::docWaterImpactLife(),
+            RenderParams::getWaterImpactLife());
     _renderParam<App::PropertyBool>(view, "GroundReflection",
             RenderParams::docGroundReflection(),
             RenderParams::getGroundReflection());
@@ -4321,7 +4327,8 @@ void View3DInventorViewer::initRenderProperties()
     if (!view->getPropertyByName("RenderDebug_ViewMode")) {
         static const char* _debugViewModeEnums[] =
             {"Off", "Depth", "Normal", "AO", "Shadow", "ShadowTile",
-             "Overdraw", "ShadowFilter", "UV", "Reflection", nullptr};
+             "Overdraw", "ShadowFilter", "UV", "Reflection",
+             "ImpactMap", nullptr};
         auto prop = static_cast<App::PropertyEnumeration*>(
                 view->addDynamicProperty("App::PropertyEnumeration",
                                          "RenderDebug_ViewMode", "RenderDebug",

@@ -922,6 +922,32 @@ struct TransientVertex
 bgfx::VertexLayout TransientVertex::ms_layout;
 bool TransientVertex::ms_initialized = false;
 
+// Position-only stream of the particle impact splat: one vertex per
+// particle whose x is that particle's index (docs/RenderEngine.md
+// §5.8). Everything the point draws with is fetched from the state
+// grid, so the buffer carries no payload of its own.
+struct PointVertex
+{
+    float px, py, pz;
+
+    static void init()
+    {
+        if (ms_initialized)
+            return;
+        ms_initialized = true;
+        ms_layout
+            .begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .end();
+    };
+
+    static bgfx::VertexLayout ms_layout;
+    static bool ms_initialized;
+};
+
+bgfx::VertexLayout PointVertex::ms_layout;
+bool PointVertex::ms_initialized = false;
+
 // Texture-coordinate vertex stream of textured meshes: 2D texture
 // coordinates, bound only by the textured mesh programs (texcoords live
 // outside SceneVertex so untextured scenes don't pay for them).
@@ -1859,6 +1885,12 @@ public:
         // particles reads the state these wrote this frame.
         ViewParticleSim0 = 0,
         ViewParticleSimLast = ViewParticleSim0 + kParticleViews - 1,
+        ViewParticleImpact, // impacts the steps just reported, scattered
+                            // into the water impact map (one point per
+                            // particle, own framebuffer): every emitter
+                            // and every step of this frame splat into
+                            // the same map, so one view id carries the
+                            // lot (docs/RenderEngine.md §5.8)
         ViewBackground,     // clear + gradient background quad (clip space)
         ViewSunDisc,        // visible sun (disc + limb glow) along the
                             // directional scene light, over the
@@ -2130,6 +2162,35 @@ public:
                                       BGFX_INVALID_HANDLE};
         bgfx::TextureHandle vel[2] = {BGFX_INVALID_HANDLE,
                                       BGFX_INVALID_HANDLE};
+        /// What each step REPORTED rather than what it remembers:
+        /// xyz = where this particle struck (model space), w = how
+        /// hard (0 = it did not). Per step, so both buffers of a
+        /// two-step frame hold a report the splat pass still owes the
+        /// impact map — which is the reason it ping-pongs with the
+        /// state instead of being one shared target.
+        bgfx::TextureHandle imp[2] = {BGFX_INVALID_HANDLE,
+                                      BGFX_INVALID_HANDLE};
+        /// One quad per particle carrying its index and its corner,
+        /// and nothing else: the impact splat's payload comes from
+        /// `imp`, so its vertex buffer is a counter.
+        bgfx::VertexBufferHandle idxVb = BGFX_INVALID_HANDLE;
+        /// Buffers written by this frame's steps, oldest first, and
+        /// how many — what the splat pass has to drain.
+        int stepBuf[kParticleSteps] = {};
+        int stepCount = 0;
+        /// The clock this frame's impacts are stamped with. Live, that
+        /// is the shared animation clock. Frozen, the animation clock
+        /// stands still at zero while the emitter walks to its warm-up
+        /// over several frames, so the emitter's own simulated time is
+        /// the only reading under which a ring can age — and it makes
+        /// the rings of a frozen frame a function of the warm-up, like
+        /// everything else about it.
+        float stamp = 0.0f;
+        /// The emitter's model matrix this frame — how the splat pass
+        /// turns a model-space impact into a place in the world.
+        float model[16] = {1, 0, 0, 0, 0, 1, 0, 0,
+                           0, 0, 1, 0, 0, 0, 0, 1};
+        bool modelIdentity = true;
         uint16_t gridW = 0;         ///< state texture size in texels
         uint16_t gridH = 0;
         int count = 0;              ///< particles (<= gridW * gridH)
@@ -2152,13 +2213,18 @@ public:
                 }
             }
             for (int i = 0; i < 2; ++i) {
-                for (auto tex : {&pos[i], &vel[i]}) {
+                for (auto tex : {&pos[i], &vel[i], &imp[i]}) {
                     if (bgfx::isValid(*tex)) {
                         bgfx::destroy(*tex);
                         *tex = BGFX_INVALID_HANDLE;
                     }
                 }
             }
+            if (bgfx::isValid(idxVb)) {
+                bgfx::destroy(idxVb);
+                idxVb = BGFX_INVALID_HANDLE;
+            }
+            stepCount = 0;
         }
     };
     /// Live particle states keyed by the draw's objectKey — the stable
@@ -2173,6 +2239,12 @@ public:
         for (auto &v : particles)
             v.second.destroy();
         particles.clear();
+        // Sized by the map resolution, not by the window, so it lives
+        // outside destroy() the same way particle state does.
+        if (bgfx::isValid(impactFbo))
+            bgfx::destroy(impactFbo);
+        if (bgfx::isValid(impactTex))
+            bgfx::destroy(impactTex);
     }
 
     void destroy()
@@ -3480,6 +3552,20 @@ public:
             if (!particleStateOk)
                 std::printf("bgfx: no RGBA32F render target — stateful "
                             "particle emitters fall back to stateless\n");
+            m_progPImpact = loadProgram("vs_fc_pimpact", "fs_fc_pimpact",
+                                        _BGFXLib.shaderPath().c_str());
+            s_pimpsrc = bgfx::createUniform("s_pimpsrc",
+                                            bgfx::UniformType::Sampler);
+            u_impactFrame = bgfx::createUniform("u_impactFrame",
+                                                bgfx::UniformType::Vec4);
+            u_impactNow = bgfx::createUniform("u_impactNow",
+                                              bgfx::UniformType::Vec4);
+            s_texImpact = bgfx::createUniform("s_texImpact",
+                                              bgfx::UniformType::Sampler);
+            u_waterImpact = bgfx::createUniform("u_waterImpact",
+                                                bgfx::UniformType::Vec4);
+            u_waterImpactCfg = bgfx::createUniform(
+                "u_waterImpactCfg", bgfx::UniformType::Vec4);
         }
     }
 
@@ -4510,7 +4596,7 @@ public:
     /// filtering-precision probe (7). Runs before the
     /// on-top/highlight/overlay passes so those still draw on top.
     void submitDebug(const Render::RenderDebugConfig &conf, float maxDepth,
-                     int aoMethod, bool shadowValid)
+                     int aoMethod, bool shadowValid, float impactLife)
     {
         if (!bgfx::isValid(m_progDebug) || !bgfx::isValid(aoNormalZ))
             return;
@@ -4593,6 +4679,20 @@ public:
         if (bgfx::isValid(s_texRefl))
             bgfx::setTexture(5, s_texRefl,
                              bgfx::isValid(reflTex) ? reflTex : m_blackTex);
+        // Mode 10 shows the particle impact map. Black when there is
+        // none, which the mode reads as "no cell was ever struck" — the
+        // same picture a map that nothing has reported into gives, and
+        // the distinction that matters (map vs surface) is elsewhere.
+        if (bgfx::isValid(s_texImpact)) {
+            bgfx::setTexture(6, s_texImpact,
+                             bgfx::isValid(impactTex) ? impactTex
+                                                      : m_blackTex);
+            // Recorded with this draw: a uniform pushed for the water
+            // pass belongs to that draw, not to the frame.
+            const float cfg[4] = {float(kImpactRes), impactNow,
+                                  impactLife, 1.0f};
+            bgfx::setUniform(u_waterImpactCfg, cfg);
+        }
         fullscreen(ViewDebug, m_progDebug,
                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
     }
@@ -5232,7 +5332,10 @@ public:
             const uint16_t gridW = uint16_t(std::min(count, 256));
             const uint16_t gridH =
                 uint16_t((count + gridW - 1) / std::max<int>(1, gridW));
-            if (st.gridW != gridW || st.gridH != gridH
+            // The count is part of the allocation, not just of the grid:
+            // two counts can round to the same grid, and the splat's
+            // index buffer is sized by the count itself.
+            if (st.gridW != gridW || st.gridH != gridH || st.count != count
                     || !bgfx::isValid(st.fbo[0])) {
                 st.destroy();
                 const uint64_t flags = BGFX_TEXTURE_RT
@@ -5246,8 +5349,35 @@ public:
                     st.vel[i] = bgfx::createTexture2D(
                         gridW, gridH, false, 1,
                         bgfx::TextureFormat::RGBA32F, flags);
-                    bgfx::TextureHandle att[2] = {st.pos[i], st.vel[i]};
-                    st.fbo[i] = bgfx::createFrameBuffer(2, att, false);
+                    st.imp[i] = bgfx::createTexture2D(
+                        gridW, gridH, false, 1,
+                        bgfx::TextureFormat::RGBA32F, flags);
+                    bgfx::TextureHandle att[3] = {st.pos[i], st.vel[i],
+                                                  st.imp[i]};
+                    st.fbo[i] = bgfx::createFrameBuffer(3, att, false);
+                }
+                // The counter the impact splat draws from: one quad per
+                // particle carrying its index and the corner. Static —
+                // it only ever says 0, 1, 2, ... and what changes
+                // underneath it is the grid those index.
+                {
+                    static const float corner[6][2] = {
+                        {0, 0}, {1, 0}, {1, 1},
+                        {0, 0}, {1, 1}, {0, 1}};
+                    const bgfx::Memory *mem = bgfx::alloc(
+                        uint32_t(count * 6 * sizeof(float) * 3));
+                    auto *v = reinterpret_cast<float *>(mem->data);
+                    for (int i = 0; i < count; ++i) {
+                        for (int c = 0; c < 6; ++c) {
+                            float *p = v + (i * 6 + c) * 3;
+                            p[0] = float(i);
+                            p[1] = corner[c][0];
+                            p[2] = corner[c][1];
+                        }
+                    }
+                    PointVertex::init();
+                    st.idxVb = bgfx::createVertexBuffer(
+                        mem, PointVertex::ms_layout);
                 }
                 st.gridW = gridW;
                 st.gridH = gridH;
@@ -5255,6 +5385,9 @@ public:
             }
             st.count = count;
             st.slot = slot++;
+            st.modelIdentity = d.identity;
+            if (!d.identity)
+                std::memcpy(st.model, d.model, sizeof(st.model));
 
             // Spawn box: the emitter geometry's own bounds, brought
             // back into the model space the particle positions and the
@@ -5342,6 +5475,7 @@ public:
                             double(st.simTime), double(target), double(dt));
 
             int steps = 0;
+            st.stepCount = 0;
             while (steps < kParticleSteps
                     && (st.needInit || st.simTime + dt <= target)) {
                 const bool init = st.needInit;
@@ -5375,8 +5509,14 @@ public:
                            BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
                 st.cur = dst;
                 st.needInit = false;
+                // The reset reports no impacts (it is a birth, not a
+                // collision), so only real steps owe the splat pass
+                // anything.
+                if (!init && st.stepCount < kParticleSteps)
+                    st.stepBuf[st.stepCount++] = dst;
                 ++steps;
             }
+            st.stamp = freeze ? st.simTime : animTime;
             if (st.simTime + dt <= target)
                 pending = true;   // still owes steps: keep redrawing
         }
@@ -5392,6 +5532,125 @@ public:
                 ++it;
         }
         return pending;
+    }
+
+    /// Scatter the impacts this frame's steps reported into the water
+    /// impact map (docs/RenderEngine.md §5.8), so the water surface can
+    /// raise its rings where particles actually struck it.
+    ///
+    /// `foot` is the world xy footprint the map covers — the bounds of
+    /// the water bodies in the scene — as {xmin, ymin, xmax, ymax}, or
+    /// null when there is no water to disturb. The map is framed on a
+    /// square covering it, so a cell is square and a ring is round.
+    ///
+    /// Nothing here clears the map: a record is a standing statement
+    /// that something struck this place at this time, and it stops
+    /// mattering when the surface ages it past the ring lifetime, not
+    /// when the frame that wrote it ends.
+    void splatImpacts(float animTime, bool freeze, const float *foot)
+    {
+        impactActive = false;
+        impactNow = animTime;
+        if (!foot || !particleStateOk || !bgfx::isValid(m_progPImpact))
+            return;
+        float ext = std::max(foot[2] - foot[0], foot[3] - foot[1]);
+        if (!(ext > 0.0f))
+            return;
+        // Square, and two cells of margin on every side. The margin is
+        // what keeps the water off the map's border: a fragment there
+        // would have its neighbourhood clamped, tapping one border cell
+        // several times and raising that one hit's ring two or three
+        // times over — a bright arc along the rim.
+        ext *= float(kImpactRes + 4) / float(kImpactRes);
+        const float cx = (foot[0] + foot[2]) * 0.5f;
+        const float cy = (foot[1] + foot[3]) * 0.5f;
+        const float frame4[4] = {cx - ext * 0.5f, cy - ext * 0.5f,
+                                 1.0f / ext, float(kImpactRes)};
+
+        // A refit moves every cell onto a different piece of the world,
+        // so what the map holds stops being about anywhere and has to
+        // go. Only a real move counts: a bbox that jitters in its last
+        // digits would otherwise wipe the rings every frame.
+        bool refit = std::fabs(frame4[2] - impactFrame[2])
+                > impactFrame[2] * 1.0e-3f
+            || std::fabs(frame4[0] - impactFrame[0]) * frame4[2] > 1.0e-3f
+            || std::fabs(frame4[1] - impactFrame[1]) * frame4[2] > 1.0e-3f;
+        if (!bgfx::isValid(impactFbo)) {
+            impactTex = bgfx::createTexture2D(
+                kImpactRes, kImpactRes, false, 1,
+                bgfx::TextureFormat::RGBA32F,
+                BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+                | BGFX_SAMPLER_MIP_POINT
+                | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            if (!bgfx::isValid(impactTex))
+                return;
+            impactFbo = bgfx::createFrameBuffer(1, &impactTex, false);
+            if (!bgfx::isValid(impactFbo))
+                return;
+            refit = true;
+        }
+        std::memcpy(impactFrame, frame4, sizeof(impactFrame));
+
+        const uint16_t vid = uint16_t(viewId + ViewParticleImpact);
+        bgfx::setViewFrameBuffer(vid, impactFbo);
+        bgfx::setViewClear(vid,
+                           uint16_t(refit ? BGFX_CLEAR_COLOR
+                                          : BGFX_CLEAR_NONE),
+                           0, 1.0f, 0);
+        bgfx::setViewRect(vid, 0, 0, kImpactRes, kImpactRes);
+        bgfx::setViewTransform(vid, nullptr, nullptr);
+        // Sequential: two steps of one emitter are two reports about
+        // the same instant of the same particles, and the later one is
+        // the newer news wherever they land in the same cell.
+        bgfx::setViewMode(vid, bgfx::ViewMode::Sequential);
+        bgfx::touch(vid);   // a refit must clear even with no impacts
+
+        float frozenNow = 0.0f;
+        for (auto &kv : particles) {
+            auto &st = kv.second;
+            const int steps = st.stepCount;
+            st.stepCount = 0;   // reported once, whatever happens next
+            if (st.slot < 0)
+                continue;
+            // Every live emitter's reading counts, not only that of one
+            // that struck something this frame: a warmed-up frozen
+            // emitter takes no more steps and reports no more impacts,
+            // and a clock that fell back to zero there would age every
+            // ring in the map into the future and show none of them.
+            frozenNow = std::max(frozenNow, st.stamp);
+            if (steps <= 0 || !bgfx::isValid(st.idxVb))
+                continue;
+            for (int s = 0; s < steps; ++s) {
+                if (!bgfx::isValid(st.imp[st.stepBuf[s]]))
+                    continue;
+                bgfx::setTexture(12, s_pimpsrc, st.imp[st.stepBuf[s]]);
+                const float grid[4] = {float(st.gridW), float(st.gridH),
+                                       float(st.count), 0.0f};
+                bgfx::setUniform(u_pgrid, grid);
+                bgfx::setUniform(u_impactFrame, frame4);
+                // Every step of this frame is stamped with the frame's
+                // reading: they are at most a step apart, which is far
+                // below what a ring's shape can show.
+                const float now[4] = {st.stamp, 0.0f, 0.0f, 0.0f};
+                bgfx::setUniform(u_impactNow, now);
+                if (!st.modelIdentity)
+                    bgfx::setTransform(st.model);
+                bgfx::setVertexBuffer(0, st.idxVb);
+                bgfx::setState(BGFX_STATE_WRITE_RGB
+                               | BGFX_STATE_WRITE_A);
+                bgfx::submit(vid, m_progPImpact);
+                ++drawcount;
+            }
+        }
+        // Frozen, the surface ages the rings against how far the
+        // emitters have simulated. Two emitters on different time
+        // scales disagree about that by the difference in their
+        // scales; nothing about a warm-up capture depends on them
+        // agreeing to better than a ring's lifetime.
+        if (freeze)
+            impactNow = frozenNow;
+        impactActive = true;
     }
 
     /// One clip-space triangle covering the viewport, submitted to a
@@ -5845,6 +6104,7 @@ public:
                             float inscatter, bool shadow,
                             float shadowWobble,
                             int rippleType, float rippleDensity,
+                            float impactStrength, float impactLife,
                             const float (*splash)[4], bool volFront)
     {
         bool planarRefl = reflMode == 3;
@@ -5885,6 +6145,19 @@ public:
         bgfx::setUniform(u_waterAbsorb, absorbP);
         float ripple[4] = {float(rippleType), rippleDensity, 0.0f, 0.0f};
         bgfx::setUniform(u_waterRipple, ripple);
+        // Particle impact map: the rings the surface raises where
+        // droplets actually landed (docs/RenderEngine.md §5.8). Config
+        // x = 0 disables the lookup — the sampler still needs a valid
+        // bind, and any texture will do since the shader skips it.
+        const bool haveImpact = impactActive && bgfx::isValid(impactTex)
+            && impactStrength > 0.0f;
+        bgfx::setUniform(u_waterImpact, impactFrame);
+        const float impactCfg[4] = {
+            haveImpact ? float(kImpactRes) : 0.0f, impactNow,
+            std::max(impactLife, 0.05f), impactStrength};
+        bgfx::setUniform(u_waterImpactCfg, impactCfg);
+        bgfx::setTexture(7, s_texImpact,
+                         haveImpact ? impactTex : sceneCopyTex);
         // Fountain splash sources: xyz = world base center, w = impact
         // ring radius (0 = slot inactive).
         static const float noSplash[kMediumSlots][4] = {};
@@ -7732,6 +8005,35 @@ public:
     /// caps. Without it there is nowhere to keep particle state and
     /// stateful emitters fall back to their stateless vertex stage.
     bool particleStateOk = false;
+    /// Particle impact map (docs/RenderEngine.md §5.8): one RGBA32F
+    /// texel per cell of the water's world footprint holding the most
+    /// recent hit there — xy = where, z = when, w = how hard. Written
+    /// by the splat pass, read by the water surface, and deliberately
+    /// never cleared: a ring outlives by far the step that started it,
+    /// and an expired record ages out on its own.
+    bgfx::ProgramHandle m_progPImpact = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_pimpsrc = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_impactFrame = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_impactNow = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_texImpact = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_waterImpact = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_waterImpactCfg = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle impactTex = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle impactFbo = BGFX_INVALID_HANDLE;
+    /// xy = world min corner of the map's footprint, zw = 1 / extent.
+    float impactFrame[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    /// The clock the map's records are stamped against — the raw
+    /// animation seconds, not the wave clock, so the wave speed can be
+    /// tuned without ageing every ring that is already travelling.
+    float impactNow = 0.0f;
+    /// The map holds this frame's impacts and the water surface may
+    /// read it.
+    bool impactActive = false;
+    /// Cells across the map. Rings die two cells out (the water
+    /// surface's 5x5 neighbourhood), so this is what sets their size
+    /// relative to the pool: coarser cells make bigger, longer rings
+    /// and lose more of them to hits sharing a cell.
+    static constexpr uint16_t kImpactRes = 24;
     /// A stateful emitter drew this frame and its simulation is running
     /// (not frozen). Unlike the step budget's "still owes steps", this
     /// stays true once an emitter has caught up with the clock, which
@@ -8667,6 +8969,10 @@ public:
         float waterDiag = 0.0f;   // first body's, for the wave-scale auto
         float waterPlaneZ = 0.0f; // top of the water body/bodies, the plane
         bool waterPlaneSet = false; // the planar reflection mirrors about
+        // World xy the water covers, which is the footprint the particle
+        // impact map is framed on: {xmin, ymin, xmax, ymax}. Every body
+        // counts, since a droplet may land in any of them.
+        float waterFoot[4] = {FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX};
         std::unordered_map<uint64_t, int> waterSlots;
         auto slotOf = [](const std::unordered_map<uint64_t, int> &slots,
                          uint64_t key) {
@@ -8679,6 +8985,13 @@ public:
             if (!mat.water || mat.ontop
                     || mat.type != Render::Material::Triangle)
                 continue;
+            // Footprint before the slot bookkeeping: a body past the
+            // slot budget, or a second draw of one already slotted,
+            // still holds water a droplet can land in.
+            waterFoot[0] = std::min(waterFoot[0], draw.bboxMin[0]);
+            waterFoot[1] = std::min(waterFoot[1], draw.bboxMin[1]);
+            waterFoot[2] = std::max(waterFoot[2], draw.bboxMax[0]);
+            waterFoot[3] = std::max(waterFoot[3], draw.bboxMax[1]);
             if (waterSlots.count(draw.objectKey))
                 continue;
             if (waterSlotCount >= kSlots) {
@@ -9787,6 +10100,11 @@ public:
         // reaches its warm-up state.
         if (view->stepParticles(scene, animTime, debugconf.freezeFrame))
             animatedFrame = true;
+        // ... and immediately hand what they hit to the water, which is
+        // the only consumer that has to see it before anything draws.
+        view->splatImpacts(animTime, debugconf.freezeFrame,
+                           hasWaterBody && waterSurfActive ? waterFoot
+                                                           : nullptr);
         // The mirrored render is cached against a static frame, and a
         // live emitter changes the picture every frame without ever
         // touching the dirty flags — its motion is in state textures,
@@ -9799,8 +10117,8 @@ public:
 
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
             uint16_t id = base + i;
-            if (i <= BGFXView::ViewParticleSimLast) {
-                continue;
+            if (i <= BGFXView::ViewParticleImpact) {
+                continue;   // the particle passes configure themselves
             } else if (i == BGFXView::ViewTransparent && oitActive) {
                 // Accumulation targets: accum clears to 0, revealage
                 // to 1; the shared depth attachment is not cleared.
@@ -10881,6 +11199,8 @@ public:
                                          waterconf.shadowWobble,
                                          waterconf.rippleType,
                                          waterconf.rippleDensity,
+                                         waterconf.impactStrength,
+                                         waterconf.impactLife,
                                          volActive && cloudActive
                                              ? fountainSplash : nullptr,
                                          volActive && waterActive);
@@ -11205,7 +11525,8 @@ public:
                 }
             }
             view->submitDebug(debugconf, maxDepth, aoconf.method,
-                              shadowActive && bgfx::isValid(view->shadowTex));
+                              shadowActive && bgfx::isValid(view->shadowTex),
+                              waterconf.impactLife);
         }
 
         // 2. Selection whole-object fills; positive ids are on-top
