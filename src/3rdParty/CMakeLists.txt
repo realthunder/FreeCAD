@@ -4,7 +4,17 @@ if (BUILD_SMESH AND NOT FREECAD_USE_EXTERNAL_SMESH)
 endif()
 
 if (BUILD_BGFX)
-    set(BGFX_LIBRARY_TYPE "SHARED")
+    # bgfx applies its export macro only to the C99 API, so a bgfx DLL exports
+    # the C entry points and not a single C++ symbol (209 exports, 0 mangled).
+    # Every C++ consumer -- our renderer, and bgfx's own example-common,
+    # geometryv and texturev -- then fails to link with ~78 unresolved
+    # externals. ELF default visibility exports everything regardless, which is
+    # why only Windows sees it.
+    if (WIN32)
+        set(BGFX_LIBRARY_TYPE "STATIC")
+    else()
+        set(BGFX_LIBRARY_TYPE "SHARED")
+    endif()
     # example-common (bgfx_utils/entry, used by the renderer) is still built
     # via BGFX_BUILD_TOOLS; skip the ~50 example executables.
     set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "")
