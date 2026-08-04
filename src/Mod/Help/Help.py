@@ -110,7 +110,7 @@ def show(page, view=None, conv=None):
     pagename = os.path.basename(page.replace("_", " ").replace(".md", ""))
     title = translate("Help", "Help") + ": " + pagename
     if FreeCAD.GuiUp:
-        if PREFS.GetBool("optionBrowser", False):  # desktop web browser
+        if PREFS.GetBool("optionBrowser", False) or not has_webview():  # desktop web browser
             show_browser(location)
         elif PREFS.GetBool("optionDialog", False):  # floating dock window
             show_dialog(html, baseurl, title, view)
@@ -185,6 +185,27 @@ def get_location(page):
             location = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "Documentation", "wiki")
         location += page + "md"
     return location
+
+
+def has_webview():
+    """True if a page can be rendered inside FreeCAD, by Qt WebEngine or the Web module.
+
+    Neither is guaranteed: conda's PySide6 is built without QtWebEngineWidgets, and the
+    Web module only builds when Qt WebEngine was present. With both absent the in-app
+    viewers cannot work, and the caller should use the desktop browser instead."""
+
+    try:
+        from PySide import QtWebEngineWidgets  # noqa: F401
+
+        return True
+    except ImportError:
+        pass
+    try:
+        import WebGui  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
 
 
 def show_browser(url):
