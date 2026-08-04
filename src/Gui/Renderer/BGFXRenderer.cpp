@@ -5209,6 +5209,15 @@ public:
             if (st.needInit)
                 st.simTime = freeze ? 0.0f : animTime;
 
+            static const bool dbgP = getenv("FC_BGFX_DEBUG_PARTICLES");
+            if (dbgP)
+                std::printf("bgfx particles: key=%llx slot=%d count=%d "
+                            "grid=%dx%d init=%d simTime=%.3f target=%.3f "
+                            "dt=%.4f\n",
+                            (unsigned long long)d.objectKey, st.slot, count,
+                            int(gridW), int(gridH), int(st.needInit),
+                            double(st.simTime), double(target), double(dt));
+
             int steps = 0;
             while (steps < kParticleSteps
                     && (st.needInit || st.simTime + dt <= target)) {
