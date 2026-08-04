@@ -383,18 +383,32 @@ QIcon BitmapFactoryInst::iconFromTheme(const char* name, bool silent, const QIco
         it->second.checkContext();
         if (!it->second.styledPixmap.isNull())
             return it->second.styledPixmap;
+        if (!it->second.pixmap.isNull())
+            return it->second.pixmap;
+        if (!it->second.xpm.isNull())
+            return it->second.xpm;
+    }
+    else {
+        // Our own artwork wins over the desktop icon theme. Since Qt 6.7 QIcon::fromTheme()
+        // answers out of a theme built into QtGui even when no desktop theme is configured -
+        // on Windows themeName() and fallbackThemeName() are both empty and it still returns
+        // an icon - so asking the theme first replaced our SVGs with Qt's stock artwork for
+        // every freedesktop name we use: document-open, document-save, edit-undo, folder,
+        // view-refresh and the rest. Only names Qt does not know, like Std_ViewFitAll, came
+        // out looking like FreeCAD, which is why the toolbars looked half borrowed.
+        // addPath() puts the user icon directories ahead of :/icons/, so a user override
+        // still beats both. Ask silently: a miss has to fall through to the theme.
+        QPixmap px = pixmap(name, true);
+        if (!px.isNull())
+            return px;
     }
 
     QIcon icon = QIcon::fromTheme(iconName, fallback);
     if (!icon.isNull())
         return icon;
 
-    if (it == d->xpmCache.end())
-        return pixmap(name, silent);
-    else if (!it->second.pixmap.isNull())
-        return it->second.pixmap;
-    else
-        return it->second.xpm;
+    // Neither ours nor themed. Repeat the lookup so a miss is reported as it used to be.
+    return pixmap(name, silent);
 }
 
 bool BitmapFactoryInst::loadPixmap(const QString& filename, QPixmap& icon) const
