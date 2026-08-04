@@ -175,7 +175,10 @@ translateCache(SoFCVertexCache * cache)
     mesh->hasTransparency = cache->hasTransparency();
     mesh->hasOpaqueParts = cache->hasOpaqueParts();
 
-    if (getenv("FC_BGFX_DEBUG_FEED"))
+    // Once, not once per cache: this runs for every cache a publish
+    // translates, and the lookup cost 5.8% of a 2000-object publish.
+    static const bool debugfeed = (getenv("FC_BGFX_DEBUG_FEED") != nullptr);
+    if (debugfeed)
         fprintf(stderr,
                 "bridge cache=%llx nv=%d nti=%d tri=%p pos=%p\n",
                 (unsigned long long)mesh->cacheId, mesh->numVertices,
