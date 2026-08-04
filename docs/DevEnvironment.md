@@ -647,7 +647,20 @@ break interpreter startup entirely. Copying the dependency DLLs into `build\bin`
 alongside the executables works too and is closer to the shipped layout, at the cost
 of duplicating them after every OCCT or Coin rebuild.
 
-### No toolbars at startup — the Start page needs Qt WebEngine
+### No toolbars at startup — historical, fixed by the Start rewrite
+
+> **Resolved.** Start is now the QtWidgets implementation ported from upstream, so it no
+> longer pulls in Web/Chromium and `BUILD_START` no longer depends on `BUILD_WEB`. Start
+> is not a workbench any more either — it is an MDI view opened by a `Start_Start`
+> command — so `Config["StartWorkbench"]` names `PartDesignWorkbench`, a workbench that
+> actually exists, and step 3 below can no longer happen. `StartMigrator.py` rewrites an
+> existing profile on first run. The rest of this section is kept because the *shape* of
+> the failure recurs: a `REQUIRES_MODS` dependency turning a module off while
+> `CMakeCache.txt` still claims it is on.
+>
+> WebEngine is still needed for Web/Help/AddonManager, so the version-skewed
+> `qt6-webengine` install below still applies — it is just no longer what stands between
+> you and a usable GUI.
 
 A GUI that comes up with **no toolbars at all**, a menu bar of only File/Edit/View/Help,
 and no workbench selector is not a broken build. It is `NoneWorkbench`, and the chain
@@ -842,6 +855,20 @@ RelWithDebInfo. Neither has been tried here yet.
   `from pivy import coin` reports `SIM Coin 4.0.6rt` both in a bare env `python` and
   inside `FreeCADCmd`, and `Draft.make_line` produces a shape of the right length —
   so Draft/Arch load.
+- **The Start page is upstream's QtWidgets one**, ported over the old Python/HTML page.
+  Verified on this box: the page renders, the First Start wizard comes up (it is gated
+  on `FirstStart2024`, default true, and re-openable from the footer button), recent
+  files show thumbnails, and **no `QtWebEngineProcess` is spawned** — that last one is
+  the check that the Chromium dependency really is gone, since a window alone proves
+  nothing. Three fork behaviours the upstream page lacks were restored on top:
+  directory-saved projects are listed, the tooltip carries the file info the old MRU
+  tooltip had (including the path), and the list follows the MRU instead of being read
+  once at construction.
+
+**When testing the GUI, turn autosave off first** (`BaseApp/Preferences/Document` →
+`AutoSaveEnabled`, with FreeCAD closed). A session that is killed or closed with an
+open document leaves recovery data behind, and the *next* launch puts a modal Document
+Recovery dialog over the window — which is exactly what you were trying to look at.
 
 ## Porting state / caveats
 
