@@ -1,0 +1,27 @@
+{
+  "label": "Water jet",
+  "description": "Stateful water fountain (docs/RenderEngine.md §5.8): droplets leave a nozzle inside a narrow cone, arc over under gravity against drag, and are absorbed by the pool they land in — the impact damps them, scatters them sideways and shortens their remaining life, so the fall reads as water meeting water. Sprites are stretched along their own screen-space velocity and coloured by speed (foam-white leaving the nozzle, thin blue on the way down), which is what separates spray from a cloud of dots. Particle-only, alpha blended: unlike the additive stateless fountain companion it does not blow out to white where the jet is deep. Bind with an Object- or Instance-scope Appearance, or set the Shader's Demo shape.",
+  "programs": [
+    {
+      "name": "WaterJet",
+      "stage": "particle",
+      "vertex": "waterjet_vs.sc",
+      "fragment": "waterjet_fs.sc",
+      "simulate": "waterjet_sim.sc",
+      "blend": "Alpha",
+      "depthwrite": false,
+      "enabled": true,
+      "emitter": {"count": 1400, "seed": 5,
+                  "spread": [0.9, 0.9, 0.2],
+                  "offset": [0.0, 0.0, -0.3],
+                  "margin": 1.4,
+                  "rate": 30.0,
+                  "warmup": 3.0},
+      "params": {"Gravity": 16.0, "Launch": 15.0,
+                 "Spread": [0.22, 0.35], "Drag": 0.5,
+                 "Life": 3.4, "Size": 0.10, "Streak": 2.6,
+                 "Opacity": 0.85, "Nozzle": [0.06, 0.12],
+                 "Splash": [0.22, 0.35], "Stagger": 0.25}
+    }
+  ]
+}
