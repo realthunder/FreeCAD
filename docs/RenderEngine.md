@@ -625,7 +625,13 @@ desktop and browser run the identical program.
   function of the warm-up with water in the scene as well as without. The exact world position rides in the texel rather than
   being implied by its address, so a ring is centred on the hit and not
   on the cell that caught it. The water surface raises its rings from
-  it (§5.11, `Render_WaterImpactStrength`/`Life`); `RenderDebug_ViewMode
+  it (§5.11, `Render_WaterImpactStrength`/`Life`) on top of whatever
+  the ambient ripple field is doing — including nothing:
+  `Render_WaterRippleType = None` stills that field and leaves the
+  rings as the only motion, which is the pool that is glass until a
+  droplet lands in it. The impacts are events and the ripple types are
+  patterns, so they are separate switches; `Render_WaterWaveStrength`
+  remains the amplitude both are measured in. `RenderDebug_ViewMode
   = 10` shows the map itself, which separates "nothing was reported"
   from "reported in the wrong place" from "the surface fails to show
   what is there".

@@ -4297,7 +4297,8 @@ void View3DInventorViewer::initRenderProperties()
     // create it (the generic helper sets the default value before the
     // enum strings exist), so materialize it explicitly.
     if (!view->getPropertyByName("Render_WaterRippleType")) {
-        static const char* _rippleTypeEnums[] = {"Waves", "Rain", nullptr};
+        static const char* _rippleTypeEnums[] = {"Waves", "Rain", "None",
+                                                 nullptr};
         auto prop = static_cast<App::PropertyEnumeration*>(
                 view->addDynamicProperty("App::PropertyEnumeration",
                                          "Render_WaterRippleType", "Render",

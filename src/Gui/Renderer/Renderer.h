@@ -725,9 +725,14 @@ struct WaterConfig {
     /// by this factor. 0 = straight boundary on the flat surface, 1 =
     /// physical wave height, larger exaggerates the ripple.
     float shadowWobble = 1.0f;
-    /// The animated ripple pattern: 0 = directional waves (the default
-    /// four-octave slope-wave sum), 1 = rain drops (hashed cells each
-    /// cycling an expanding circular ring).
+    /// The ambient ripple pattern — what the surface does on its own:
+    /// 0 = directional waves (the default four-octave slope-wave sum),
+    /// 1 = rain drops (hashed cells each cycling an expanding circular
+    /// ring), 2 = none, a still surface. None does not mean a dead
+    /// surface: the disturbances the scene causes — fountain splash
+    /// rings and the impact rings below — are added on top of the
+    /// ambient field and survive it being switched off, which is how a
+    /// pool reads as glass until something lands in it.
     int rippleType = 0;
     /// Rain drop density: cells per wave-frequency unit — higher packs
     /// more, smaller rings on the same surface. Directional waves

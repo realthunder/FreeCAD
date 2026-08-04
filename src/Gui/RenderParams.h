@@ -710,10 +710,13 @@ public:
     //@{
     /// Accessor for parameter WaterRippleType
     ///
-    /// The animated ripple pattern on the water surface. 0 = waves:
-    /// the default sum of directional wind waves. 1 = rain: circular
-    /// rings expanding from randomly placed, randomly timed drop
-    /// impacts, as on a pond in rainfall.
+    /// The ambient ripple pattern on the water surface - the motion
+    /// the surface has of its own accord. 0 = waves: the default sum
+    /// of directional wind waves. 1 = rain: circular rings expanding
+    /// from randomly placed, randomly timed drop impacts, as on a pond
+    /// in rainfall. 2 = none: a still surface, which leaves only what
+    /// the scene disturbs - fountain splash rings and the impact rings
+    /// of particles striking the water still show.
     static const long & getWaterRippleType();
     static const long & defaultWaterRippleType();
     static void removeWaterRippleType();

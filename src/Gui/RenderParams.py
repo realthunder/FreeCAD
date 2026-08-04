@@ -264,11 +264,15 @@ Params = [
         "The refracted scene below the surface keeps its own shadow\n"
         "regardless."),
     ParamInt('WaterRippleType',  0, title='Ripple type',
-        proxy=ParamComboBox(items=['Waves (directional)', 'Rain (drops)']),
-        doc="The animated ripple pattern on the water surface. 0 = waves:\n"
-        "the default sum of directional wind waves. 1 = rain: circular\n"
-        "rings expanding from randomly placed, randomly timed drop\n"
-        "impacts, as on a pond in rainfall."),
+        proxy=ParamComboBox(items=['Waves (directional)', 'Rain (drops)',
+                                   'None (still)']),
+        doc="The ambient ripple pattern on the water surface - the motion\n"
+        "the surface has of its own accord. 0 = waves: the default sum\n"
+        "of directional wind waves. 1 = rain: circular rings expanding\n"
+        "from randomly placed, randomly timed drop impacts, as on a pond\n"
+        "in rainfall. 2 = none: a still surface, which leaves only what\n"
+        "the scene disturbs - fountain splash rings and the impact rings\n"
+        "of particles striking the water still show."),
     ParamFloat('WaterRippleDensity',  1.0, title='Ripple density',
         doc="Drop density of the rain ripple type: how many drop cells\n"
         "fit per wave-scale unit. Higher rains harder - more, smaller\n"

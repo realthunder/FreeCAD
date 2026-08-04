@@ -53,8 +53,9 @@ uniform vec4 u_shadowParams;
 uniform vec4 u_evsm;
 // Maps view space to shadow map uv (xy) + light-window depth (z).
 uniform mat4 u_shadowMatrix;
-// x = ripple type (0 = directional waves, 1 = rain drops),
-// y = rain drop density (cells per wave-frequency unit).
+// x = ambient ripple type (0 = directional waves, 1 = rain drops,
+// 2 = none — a still surface, leaving only the rings the scene's own
+// events raise), y = rain drop density (cells per wave-frequency unit).
 uniform vec4 u_waterRipple;
 // Fountain splash sources: xyz = world base center, w = impact ring
 // radius (0 = slot inactive). Continuous ring trains added on top of
@@ -139,8 +140,10 @@ vec4 fcWaterShadeFragment(vec3 normal, vec3 vpos, vec2 fragCoord)
 
 	// The wave field: a q-space height gradient (grad, world-space
 	// slope after the strength scale below) and the matching
-	// dimensionless height (hq). Two ripple types share the outputs
-	// so refraction, glint and the shadow wobble follow either.
+	// dimensionless height (hq). The ripple types share the outputs
+	// so refraction, glint and the shadow wobble follow any of them —
+	// including type 2, which contributes nothing and leaves the
+	// splash and impact rings below as the only thing moving.
 	vec2 grad = vec2_splat(0.0);
 	float hq = 0.0;
 	if (u_waterRipple.x < 0.5)
@@ -162,7 +165,7 @@ vec4 fcWaterShadeFragment(vec3 normal, vec3 vpos, vec2 fragCoord)
 		hq += 0.20 * sin(dot(q, d2) * 22.9 + t * 2.3);
 		hq += 0.15 * sin(dot(q, d3) * 41.3 - t * 3.1);
 	}
-	else
+	else if (u_waterRipple.x < 1.5)
 	{
 		// Rain drops: the surface tiles into hashed cells (density =
 		// cells per q unit), each cycling a drop at a random spot and

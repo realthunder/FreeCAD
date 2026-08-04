@@ -1824,10 +1824,13 @@ void RenderParams::removeWaterShadow() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docWaterRippleType() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"The animated ripple pattern on the water surface. 0 = waves:\n"
-"the default sum of directional wind waves. 1 = rain: circular\n"
-"rings expanding from randomly placed, randomly timed drop\n"
-"impacts, as on a pond in rainfall.");
+"The ambient ripple pattern on the water surface - the motion\n"
+"the surface has of its own accord. 0 = waves: the default sum\n"
+"of directional wind waves. 1 = rain: circular rings expanding\n"
+"from randomly placed, randomly timed drop impacts, as on a pond\n"
+"in rainfall. 2 = none: a still surface, which leaves only what\n"
+"the scene disturbs - fountain splash rings and the impact rings\n"
+"of particles striking the water still show.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
