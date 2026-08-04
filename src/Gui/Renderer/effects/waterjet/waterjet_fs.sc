@@ -1,14 +1,22 @@
 $input v_normal, v_color0, v_vpos
 
 /*
- * Water-jet fragment stage: a soft droplet with a bright core.
+ * Water-jet fragment stage: a soft round droplet.
  *
- * The falloff is squared for the body and raised to a high power for
- * the highlight, so a droplet has an edge instead of being a gaussian
- * blob — spray is made of things with surfaces, and a pure gaussian
- * reads as smoke. The alpha blend (Blend=Alpha, depth write off) is
- * what keeps a deep jet from blowing out to white the way the
- * additive stateless fountain does.
+ * The shape lives in the ALPHA alone and the colour stays flat across
+ * the sprite. That is not a stylistic choice — the blend is ordinary
+ * non-premultiplied source-alpha, so anything that dims the colour
+ * towards the rim makes the mid-radius darker than both the bright
+ * centre and the transparent edge, and against a bright sky every
+ * droplet reads as a small dark ring. (Which is what a boosted "wet"
+ * core does, and what premultiplying the falloff into the colour does
+ * as well.)
+ *
+ * Note for anyone reusing this under Blend=Additive: additive never
+ * consults the alpha channel, so a sprite shaped only in alpha is
+ * drawn there as a hard opaque quad. An additive particle has to carry
+ * its falloff in the colour instead — the bundled sparks effect does
+ * exactly that.
  */
 
 #include <bgfx_shader.sh>
@@ -17,8 +25,5 @@ void main()
 {
 	float r = dot(v_normal.xy, v_normal.xy);
 	float a = max(0.0, 1.0 - r);
-	float body = a * a;
-	float core = body * body * body;
-	vec3 c = v_color0.rgb * (0.82 + 0.75 * core);
-	gl_FragColor = vec4(c, v_color0.a * body);
+	gl_FragColor = vec4(v_color0.rgb, v_color0.a * a * a);
 }
