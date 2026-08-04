@@ -611,6 +611,7 @@ Uncommitted in the FreeCAD tree at the time of writing:
 | `src/Gui/Application.cpp` | `QtPlatformHeaders/QWindowsWindowFunctions` was removed in Qt6. **Behaviour change:** the fullscreen workaround it provided is now Qt5-only. Qt6's equivalent is `QNativeInterface::Private::QWindowsWindow`, reachable only through a private QPA header and `Qt6::GuiPrivate` — an ABI-unstable dependency for a cosmetic fix. Re-check whether Qt6 still hides the menu in fullscreen on an OpenGL window before deciding. |
 | `src/Mod/Part/App/AppPartPy.cpp` | `LoadLibrary("TKBRep.dll")` → `LoadLibraryA`. The build defines `UNICODE`, so the unsuffixed macro is `LoadLibraryW` and rejects a narrow literal — this Windows-only branch cannot ever have compiled. |
 | `src/3rdParty/CMakeLists.txt` | build bgfx STATIC on Windows. It forced `SHARED` for every platform, and because that is a plain variable it also shadows any cache override — see the bgfx note above. |
+| `src/Mod/Web/Gui/BrowserView.cpp` | `WebView::contextMenuEvent()` used `r.linkUrl()` in the view-source branch, but on Qt6 `r` is a pointer (`lastContextMenuRequest()`), dereferenced correctly forty lines earlier. The line sits under `#if defined(QTWEBENGINE)` with no version guard, so it only ever compiled against Qt5. Now uses the `linkUrl` local the function already computed for both branches — same value, no behaviour change. **Not Windows-specific**: any Qt6 build with `BUILD_WEB=ON` hits it; nothing had built Web on Qt6 before. |
 | `src/Mod/Material/App/CMakeLists.txt` | link `yaml-cpp::yaml-cpp` instead of `${YAML_CPP_LIBRARIES}`, which is the bare string `"yaml-cpp"`; `YAML_CPP_LIBRARY_DIR` is not set by yaml-cpp's config, so the `link_directories()` beside it is a no-op and the bare name has no search path (`LNK1104`). Also made the unconditional `-DYAML_CPP_STATIC_DEFINE` conditional on the imported target actually being static — conda's yaml-cpp is shared, and the define suppresses the `dllimport` attributes its API needs. |
 
 Unfixed, noticed in passing: `AppPartPy.cpp:380` formats a `size_t` hash with `%x`,
@@ -645,6 +646,88 @@ matters: `os.add_dll_directory()` raises on a missing path, which would otherwis
 break interpreter startup entirely. Copying the dependency DLLs into `build\bin`
 alongside the executables works too and is closer to the shipped layout, at the cost
 of duplicating them after every OCCT or Coin rebuild.
+
+### No toolbars at startup — the Start page needs Qt WebEngine
+
+A GUI that comes up with **no toolbars at all**, a menu bar of only File/Edit/View/Help,
+and no workbench selector is not a broken build. It is `NoneWorkbench`, and the chain
+that gets you there is worth knowing because nothing in it prints a warning at the point
+it matters:
+
+1. `BUILD_WEB=OFF` (the preset's original value — conda's `qt6-main` does **not** include
+   WebEngine, so it could not have been ON).
+2. `CheckInterModuleDependencies.cmake:39` — `REQUIRES_MODS(BUILD_START BUILD_WEB)` — turns
+   `BUILD_START` off. It does so with `set(... PARENT_SCOPE)`, so **`CMakeCache.txt` still
+   says `BUILD_START:BOOL=ON`** while `add_subdirectory(Start)` never runs. The only trace
+   is one `-- BUILD_START requires BUILD_WEB to be ON` line in the configure output.
+3. `MainGui.cpp:196` sets `Config["StartWorkbench"] = "StartWorkbench"`, and
+   `Gui/Application.cpp:2553` starts that workbench. Its own guard for "the auto workbench
+   is not visible" (2569) falls back to *the same* missing name, so it cannot recover.
+4. `NoneWorkbench::setupToolBars()` (`Gui/Workbench.cpp:1013`) returns an empty root.
+
+Escape hatch without rebuilding: **View → Workbench** still lists everything that did
+build, or set `AutoloadModule` to e.g. `PartDesignWorkbench` under
+`BaseApp/Preferences/General` in `user.cfg` (with FreeCAD closed — it rewrites the file on
+exit).
+
+To actually get the Start page, `Mod/Web/Gui` must build: `src/Mod/Web/CMakeLists.txt:9`
+gates it on `QtWebEngineWidgets_FOUND`, and the non-WebEngine branch of `BrowserView.h`
+falls back to QtWebKit's `QWebView`, which does not exist in Qt6. So WebEngine is not
+optional here.
+
+**Installing it.** conda-forge splits WebEngine out of `qt6-main`, and its oldest build is
+**6.10.2** while this env is pinned to 6.10.1 (`conda-meta/pinned`). Rather than bump the
+whole Qt stack — which rewrites every Qt header and forces a rebuild of all of Gui and
+every module's Gui lib — install the one package against the older Qt. Qt patch releases
+are binary-compatible, and this one verifiably is:
+
+```bat
+:: 1. its leaf dependencies, solved normally
+conda install -p .conda\freecad --override-channels -c https://prefix.dev/conda-forge ^
+    snappy minizip libevent re2 libre2-11
+
+:: 2. the package itself. --no-deps does NOT help: conda still SOLVES the dependency and
+::    fails on qt6-main 6.10.2. An @EXPLICIT spec file skips the solver entirely and still
+::    registers the package in conda-meta.
+::      @EXPLICIT
+::      https://prefix.dev/conda-forge/win-64/qt6-webengine-6.10.2-pl5321h04170d5_0.conda#<md5>
+conda install -p .conda\freecad --file webengine-explicit.txt
+```
+
+Then relax the version requests in the WebEngine CMake config packages, which demand their
+Qt dependencies at the exact build version (`Qt6Quick;6.10.2`) and otherwise fail configure
+with "dependency Qt6Quick could not be found":
+
+```bash
+cd .conda/freecad/Library/lib/cmake
+sed -i.bak-6102 's/;6\.10\.2/;6.10.1/g' Qt6WebEngine*/*Dependencies.cmake
+```
+
+Only version *requests* change; no binary is touched. Verify the real compatibility claim
+separately — a missing entry point would show up here, not at configure time:
+
+```bat
+.conda\run.cmd python -c "import ctypes,os; os.add_dll_directory(os.path.join(os.environ['CONDA_PREFIX'],'Library','bin')); [ctypes.WinDLL(d) for d in ('Qt6WebEngineCore.dll','Qt6WebEngineWidgets.dll')]"
+```
+
+Finally set `BUILD_WEB=ON` in `CMakeUserPresets.json` and rebuild. Expect ~700 targets, not
+just Web and Start: `src/Gui/CMakeLists.txt:84` adds `-DQTWEBENGINE` once WebEngine is
+found, which changes every FreeCADGui translation unit's command line.
+
+Three things that are *not* problems:
+
+- **No `qt.conf` anywhere in the env.** Qt6Core resolves its own relocatable prefix from the
+  DLL path, so it finds `QtWebEngineProcess.exe` in `Library\lib\qt6\` and the resource paks
+  in `Library\share\qt6\resources\` without help. Confirmation that the page really rendered
+  is a live `QtWebEngineProcess` child process, not just a window.
+- **conda's `pyside6` has no `QtWebEngineWidgets` module** (it was built without WebEngine).
+  The Start page does not care — it is C++ (`Mod/Start/Gui/Workbench.cpp:82` calls
+  `WebGui.openBrowserWindow`). The Python users of it, `Mod/Help/Help.py:243` and
+  `Mod/AddonManager/package_details.py`, are both inside `try/except` and fall back to
+  `WebGui`.
+- **This env is now version-skewed on purpose.** A later `conda update qt6-main` reverts the
+  patched `*Dependencies.cmake` files (`.bak-6102` backups sit beside them) and is the point
+  to do the clean 6.10.2 bump instead.
 
 ### Debugging
 
