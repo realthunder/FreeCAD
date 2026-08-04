@@ -442,6 +442,24 @@ Two things `run.cmd` works around, both worth knowing if you rewrite it:
   install. Harmless; `run.cmd` silences it by putting the Installer directory on
   `PATH` first.
 
+**Calling it from PowerShell: quote every `-D` whose value contains a dot.** Windows
+PowerShell 5.1 splits an unquoted native-command argument at the first `.` after an
+`=`, and passes the halves as two arguments:
+
+```
+-DA=3.5      ->  '-DA=3'  '.5'
+-DB=a.b      ->  '-DB=a'  '.b'
+-DC=Release  ->  '-DC=Release'      (no dot, survives)
+"-DA=3.5"    ->  '-DA=3.5'          (quoted, survives)
+```
+
+Every path here has a dot in it (`Zheng.Lei`, `.conda`), as do version-valued
+variables, so this hits constantly — and it is nasty because CMake usually accepts
+the truncated value and only complains about the orphaned `.5` as an *"Ignoring extra
+path from command line"* warning, tens of lines above whatever eventually fails. The
+symptom looks like a defect in the project being configured. `cmd`, and the
+`.bat`-style blocks in this document, are unaffected.
+
 ### Building OCCT and Coin
 
 Same recipes as the Linux conda stack, with `-DCMAKE_BUILD_TYPE=RelWithDebInfo`,
@@ -514,6 +532,53 @@ Note also that `BGFX_BUILD_TOOLS_SHADER=ON` drags in **tint/Dawn** from bgfx's
 3rdparty tree — hundreds of heavy C++ TUs that dwarf FreeCAD's own code. It is needed
 to compile shaders (`ninja Renderer_assets`), but it is the single largest
 contributor to a cold Windows build.
+
+### Building pivy
+
+Draft and Arch import `pivy.coin` at load time, so without pivy those workbenches
+fail to register. There is no pivy source checkout in the layout table by default —
+clone one beside the others:
+
+```bat
+git clone --depth 1 --branch 0.6.10 https://github.com/coin3d/pivy.git D:\Zheng.Lei\sw\pivy
+```
+
+0.6.10 is the version `pivy-feedstock` packages. The feedstock's two patches do not
+both apply here: `extend_install_rpath.patch` is meaningless on Windows, while
+`windows_cmake_install_path_fix.patch` (upstream `fc622b3b`, one
+`file(TO_CMAKE_PATH ...)` on `PIVY_Python_SITEARCH`) **is** needed — `Python_SITEARCH`
+comes back with backslashes and the `install(DESTINATION)` that consumes it is not
+path-normalised. Apply it to the checkout.
+
+```bat
+.conda\run.cmd cmake -G Ninja -B D:\Zheng.Lei\sw\pivy\build\win-relwithdebinfo ^
+    -S D:\Zheng.Lei\sw\pivy ^
+    -D CMAKE_BUILD_TYPE=RelWithDebInfo ^
+    -D CMAKE_PREFIX_PATH=D:/Zheng.Lei/sw/install/coin-win-relwithdebinfo ^
+    -D CMAKE_MODULE_LINKER_FLAGS=/LIBPATH:D:/Zheng.Lei/sw/fcad/.conda/freecad/libs ^
+    -D DISABLE_SWIG_WARNINGS=ON
+.conda\run.cmd cmake --build   D:\Zheng.Lei\sw\pivy\build\win-relwithdebinfo
+.conda\run.cmd cmake --install D:\Zheng.Lei\sw\pivy\build\win-relwithdebinfo
+```
+
+Install destinations are absolute (`PIVY_Python_SITEARCH`), so `CMAKE_INSTALL_PREFIX`
+is irrelevant and the module lands in the env's `Lib\site-packages\pivy` directly.
+Two things differ from the feedstock's `bld.bat`:
+
+- **The Python import library must be findable.** `interfaces/CMakeLists.txt` links
+  `${Python_LIBRARIES}` only on the `elseif(WIN32)` (i.e. MinGW) branch; the MSVC
+  branch just sets `/bigobj` and relies on the `#pragma comment(lib, "python312.lib")`
+  that `Python.h` emits, which needs the directory on the linker search path.
+  conda-build gets that from the activation script's `LIB`; `run.cmd` does not set it,
+  so the `/LIBPATH` above supplies it (`LNK1104: cannot open file 'python312.lib'`
+  otherwise). It has to be `CMAKE_MODULE_LINKER_FLAGS` — the SWIG target is a MODULE.
+- **SoQt is not built here**, so `find_package(SoQt CONFIG)` (not `REQUIRED`) misses
+  and `pivy.gui.soqt` is skipped. FreeCAD only ever imports `pivy.coin`, so this
+  costs nothing; `PIVY_USE_QT6` is irrelevant while SoQt is absent.
+
+`_coin.pyd` links `Coin4.lib` and needs `Coin4.dll` at runtime, which is the same
+no-rpath problem as everything else — the `.pth` in the section below already covers
+it, and `run.cmd`'s `PATH` covers a plain `python -c "from pivy import coin"`.
 
 ### Windows-only source fixes
 
@@ -597,12 +662,12 @@ of duplicating them after every OCCT or Coin rebuild.
   replace it headlessly), so it is block-buffered when redirected to a file, while
   the C++ `Base::Console` writes to the handle directly — the two interleave, and an
   early exit can skip Python's flush. End with `sys.stdout.flush()` instead.
-- **The GUI has not been launched yet**, so PySide6 loading, the workbench list, and
-  anything Coin- or renderer-related are unverified at runtime.
-- **pivy is not built.** It is needed at runtime for Draft/Arch. The Linux
-  `rt-0.6.10` branch is local to that box and carries only an `INSTALL_RPATH` patch,
-  which is meaningless on Windows — vanilla pivy 0.6.10 built against our Coin
-  should do.
+- **The GUI launches**, with PySide6 6.10.1 / Qt 6.10.1 loading in-process. The
+  renderer path (render-cache mode 3) is still unexercised.
+- **pivy 0.6.10 builds and installs** against our Coin, per the section above.
+  `from pivy import coin` reports `SIM Coin 4.0.6rt` both in a bare env `python` and
+  inside `FreeCADCmd`, and `Draft.make_line` produces a shape of the right length —
+  so Draft/Arch load.
 
 ## Porting state / caveats
 
