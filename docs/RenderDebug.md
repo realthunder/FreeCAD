@@ -135,6 +135,7 @@ is the "view mode" dropdown every production engine ships.
 | 7 | ShadowFilter | shadow-moment filtering-precision probe: hardware bilinear vs the same four texels blended at full shader precision, amplified; B = the variance term | filtering-precision issues (exactly the RG16F stipple class) |
 | 8 | UV | UV / texcoord of the visible surface (depth-tested re-render) | mapping bugs |
 | 9 | Reflection | the planar reflection target, tinted dark red where the mirror covered nothing | mirror pass not running/stale, mirrored camera framing, what does and does not reach the mirror |
+| 10 | ImpactMap | the particle impact map (docs/RenderEngine.md §5.8) stretched over the screen: green where a hit is recorded, brightness its age against the ring lifetime, blue its strength, dark red where nothing has ever struck | impact-driven water rings — separates "the step program reported nothing" from "reported in the wrong place" from "the surface fails to show what is there" |
 
 Implementation shape: the mode rides `u_debugParams.x`; the final composite
 shader (`fs_fc_debug.sc`) ends in a mode `switch` that samples the relevant

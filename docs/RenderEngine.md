@@ -597,6 +597,35 @@ desktop and browser run the identical program.
   motion identical across machines; a frame too slow to afford its
   steps lets the simulation fall behind rather than stretching them,
   because a stretched step is a different simulation.
+- **Impacts**: a step may *report* as well as remember. A third
+  attachment carries what the step struck — `fcParticleHit(pos,
+  strength)` written through `fcParticleStoreHit`, or
+  `fcParticleNoImpact` for a step that struck nothing. It is a per-step
+  event, not a state, so a droplet reports on the step that reaches the
+  pool and not for as long as it floats there. The engine turns the
+  per-particle reports into per-*place* ones (below), which is the form
+  a water surface can read: a surface has no way to visit fourteen
+  hundred droplets per pixel. The report travels as a macro argument
+  rather than through a variable the header owns, because a mutable
+  file-scope global does not survive the runtime translation of a user
+  shader — the program silently fails to build and the emitter falls
+  back to its stateless stage, which looks exactly like an emitter that
+  draws nothing.
+- **Impact map**: one texel per cell of the water's world footprint,
+  holding the most recent hit there (where, when, how hard) — an
+  RGBA32F target the splat pass (`vs/fs_fc_pimpact`) writes one
+  quad-per-particle into, immediately after the steps and before
+  anything draws. Deliberately never cleared and never blended: a
+  record is a standing statement that something struck this place at
+  this time, a newer hit in the same cell simply overwrites it, and an
+  expired one ages out on its own when the surface compares it against
+  the clock. The exact world position rides in the texel rather than
+  being implied by its address, so a ring is centred on the hit and not
+  on the cell that caught it. The water surface raises its rings from
+  it (§5.11, `Render_WaterImpactStrength`/`Life`); `RenderDebug_ViewMode
+  = 10` shows the map itself, which separates "nothing was reported"
+  from "reported in the wrong place" from "the surface fails to show
+  what is there".
 - **Draw**: the beauty vertex stage reads the same texel by vertex
   texture fetch (`fcParticleUV(a_normal.z)` → `fcParticleLoad`), so
   the look and the motion stay in step without either knowing how the
@@ -643,7 +672,10 @@ desktop and browser run the identical program.
   lane stops short of it and takes the default, which is what it would
   have used anyway.
 - **Budget**: `kParticleSlots` (3) stateful emitters per view ×
-  `kParticleSteps` (2) steps per frame. This is bgfx view-id budget —
+  `kParticleSteps` (2) steps per frame, plus one shared view for the
+  impact splat — every emitter and every step of the frame splat into
+  the one map, so the whole of it costs a single id. This is bgfx
+  view-id budget —
   a viewer occupies `NUM_VIEWS` contiguous ids out of 256, and these
   numbers are what keeps three viewers open at once. The state views
   come **first** in id order, before anything that draws.
