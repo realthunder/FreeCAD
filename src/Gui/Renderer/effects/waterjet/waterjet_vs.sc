@@ -65,8 +65,13 @@ void main()
 
 	// v_normal carries the sprite corner for the radial falloff.
 	v_normal = vec3(corner, 1.0);
-	vec3 foam = vec3(0.96, 0.99, 1.00);
-	vec3 deep = vec3(0.42, 0.66, 0.95);
+	// Spray is white. A droplet in air is far too small to carry the
+	// path length that makes a body of water blue — the colour of a
+	// fountain comes from what it scatters, which is daylight. Only
+	// the slow fall keeps a trace of cool cast, and even that is
+	// nearly white; a saturated blue reads as dyed water.
+	vec3 foam = vec3(0.99, 1.00, 1.00);
+	vec3 deep = vec3(0.86, 0.91, 0.95);
 	vec3 tint = mix(deep, foam, clamp(speed * 0.055, 0.0, 1.0));
 	// In fast, out slow: a droplet that pops into existence at full
 	// opacity is visible as a flicker at the nozzle, and one that
