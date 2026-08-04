@@ -336,3 +336,18 @@
   background: #1c1e22;
   color: #e8e8ea;
 }
+
+/* Drag handles. touch-action: none is what stops the browser claiming
+ * the gesture as a scroll before the pointer events arrive; the narrow
+ * layout is a pinned bottom sheet, so it keeps the normal cursor and
+ * the sheet's own pan gesture. */
+.fc-drag { cursor: move; }
+.fc-pill { cursor: move; }
+@media (max-width: 640px) {
+  .fc-drag, .fc-pill { cursor: default; }
+}
+@media (min-width: 641px) {
+  .fc-drag, .fc-pill { touch-action: none; }
+  /* The controls inside a handle keep their own gestures. */
+  .fc-drag button, .fc-pill button { touch-action: manipulation; }
+}
