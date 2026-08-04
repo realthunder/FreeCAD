@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-This is the **realthunder fork of FreeCAD** (remote `realthunder/FreeCAD`, working branch `LinkMerge`) — an open-source parametric 3D CAD modeler. It historically pioneered the `App::Link` feature and the Topological Naming Problem (TNP) fix; **the TNP problem is now considered essentially solved and is no longer the active focus.** Treat this fork as a **frontier for feature exploration**, not as code that must strictly conform to upstream FreeCAD conventions.
+This is the **realthunder fork of FreeCAD** (remote `realthunder/FreeCAD`) — an open-source parametric 3D CAD modeler. **Day-to-day work happens on `LinkVibe`**; `LinkMerge` is the integration branch that work eventually lands on, so git will offer it as the PR target — that is not where you commit. It historically pioneered the `App::Link` feature and the Topological Naming Problem (TNP) fix; **the TNP problem is now considered essentially solved and is no longer the active focus.** Treat this fork as a **frontier for feature exploration**, not as code that must strictly conform to upstream FreeCAD conventions.
 
 **Project direction (what to optimize for):**
 - Run FreeCAD across **browser, mobile, and traditional desktop** from one codebase.
@@ -25,6 +25,8 @@ This project is developed together with local forks kept as sibling directories;
 - `~/works/sw/coin` — forked Coin3D (`realthunder/coin`, tracks `coin3d/coin`).
 - `~/works/sw/occt` — forked OCCT (`realthunder/OCCT`, tracks upstream). Improving this kernel is an explicit project focus. **Branch `LinkVibe-801` (OCCT 8.0.1) is what FreeCAD builds against**; `LinkVibe` is the same fork on 7.7.2, kept for the version-guarded fallback paths and for what the released packages still link.
 - `~/works/sw/{coin3d-feedstock, freecad-rt-feedstock, pivy-feedstock}` — conda-forge recipes used for distribution image releases.
+
+**`LinkVibe` is the working branch in these repos too** — in the coin fork, and in `freecad-rt-feedstock` and `pivy-feedstock`, whose `main` branches build a pinned older tag. The exceptions are occt, where it is `LinkVibe-801` as above, and `coin3d-feedstock`, which has only `master`. A repo checked out on `main`/`master` is not evidence to the contrary; a change asked for "everywhere" belongs on the `LinkVibe` branches.
 
 When a change requires a matching Coin or OCCT change, expect to edit those repos too.
 
