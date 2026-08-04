@@ -2145,7 +2145,8 @@ const char *RenderParams::docDebugViewMode() {
 "shaded scene: 1 = linearized scene depth, 2 = view-space normals,\n"
 "3 = ambient occlusion term only, 4 = shadow term only, 5 = shadow\n"
 "map / bulb-tile coverage as color, 6 = overdraw heatmap, 7 =\n"
-"shadow-moment filtering-precision probe, 8 = UV / texcoord.\n"
+"shadow-moment filtering-precision probe, 8 = UV / texcoord,\n"
+"9 = the planar reflection target.\n"
 "0 renders normally. The on-top, highlight and overlay passes\n"
 "still draw on top so the view stays navigable.");
 }

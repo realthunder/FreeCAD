@@ -4321,7 +4321,7 @@ void View3DInventorViewer::initRenderProperties()
     if (!view->getPropertyByName("RenderDebug_ViewMode")) {
         static const char* _debugViewModeEnums[] =
             {"Off", "Depth", "Normal", "AO", "Shadow", "ShadowTile",
-             "Overdraw", "ShadowFilter", "UV", nullptr};
+             "Overdraw", "ShadowFilter", "UV", "Reflection", nullptr};
         auto prop = static_cast<App::PropertyEnumeration*>(
                 view->addDynamicProperty("App::PropertyEnumeration",
                                          "RenderDebug_ViewMode", "RenderDebug",

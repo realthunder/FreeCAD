@@ -134,6 +134,7 @@ is the "view mode" dropdown every production engine ships.
 | 6 | Overdraw | overdraw heatmap (dedicated counting re-render, additive, depth test off) | transparency sorting, instancing regressions |
 | 7 | ShadowFilter | shadow-moment filtering-precision probe: hardware bilinear vs the same four texels blended at full shader precision, amplified; B = the variance term | filtering-precision issues (exactly the RG16F stipple class) |
 | 8 | UV | UV / texcoord of the visible surface (depth-tested re-render) | mapping bugs |
+| 9 | Reflection | the planar reflection target, tinted dark red where the mirror covered nothing | mirror pass not running/stale, mirrored camera framing, what does and does not reach the mirror |
 
 Implementation shape: the mode rides `u_debugParams.x`; the final composite
 shader (`fs_fc_debug.sc`) ends in a mode `switch` that samples the relevant

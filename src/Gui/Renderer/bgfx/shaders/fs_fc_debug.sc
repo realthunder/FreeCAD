@@ -18,6 +18,7 @@ $input v_texcoord0
  * Stage 1: shadow moments (fc_volume_shadow.sh's fixed stage).
  * Stage 2: the finished AO term.
  * Stage 3: the bulb shadow tile atlas (mode 5 coverage tint).
+ * Stage 5: the planar reflection target (mode 9).
  * Stage 4: the debug scene re-render target (modes 6/8 — overdraw
  *          counts in .x, or texcoords in .xy with .w marking coverage).
  */
@@ -29,6 +30,7 @@ SAMPLER2D(s_texNormalZ, 0);
 SAMPLER2D(s_texAO, 2);
 SAMPLER2D(s_texBulbShadow, 3);
 SAMPLER2D(s_texDebugScene, 4);
+SAMPLER2D(s_texRefl, 5);
 
 uniform vec4 u_debugParams;
 // Bootstrap fallback pool of the dynamic named-parameter binding
@@ -123,6 +125,16 @@ void main()
 		float full = u_userParams[0].z > 0.0 ? u_userParams[0].z : 8.0;
 		float count = texture2D(s_texDebugScene, v_texcoord0).x;
 		rgb = heatRamp(count / full);
+	}
+	else if (mode > 8.5)
+	{
+		// The planar reflection target: what the mirrored camera
+		// actually rendered, before the water surface samples it.
+		// Alpha is the mirror's own coverage (the pass clears to 0 =
+		// nothing reflected), so an empty mirror and a mirror the
+		// surface merely fails to show are different pictures here.
+		vec4 rf = texture2D(s_texRefl, v_texcoord0);
+		rgb = mix(vec3(0.15, 0.0, 0.0), rf.xyz, rf.w);
 	}
 	else if (mode > 7.5)
 	{
