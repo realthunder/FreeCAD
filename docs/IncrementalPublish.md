@@ -232,22 +232,105 @@ memory, so they still go.
 
 Forty times fewer flattens, and the import is 5.8% faster for 15MB.
 
-**What the remaining 20ms is.** Not the copying. The scene root moves
+**What the remaining 20ms was.** Not the copying. The scene root moves
 the same ~6000 entries out of a single bucket for 2ms; the container
 pays ~20ms for the identical entries because it merges them out of
 ~6000 separate child maps. So the stage is priced **per child, at
-roughly ten times what an entry costs to copy** — that much is measured.
-The likely reason is the per-child material work in the merge loop
-(`mergeMaterial` and the map key, each a copy of a struct carrying a
-dozen COW maps), but that has not been profiled and phase 3 should
-confirm it before optimizing for it.
+roughly ten times what an entry costs to copy**.
 
-Either way an incremental flatten has to stop redoing that work for
+The paragraph that used to stand here guessed the reason was the
+per-child material work, and said to profile before optimizing for it.
+Profiling says the guess named the smaller half. What separates a
+parent that pays 10x from one that does not is whether it is an
+`SoFCSelectionRoot`: the scene root is a plain `SoSeparator`, so it
+skips two things the flatten does per child entry under a selection
+root — composing a `CacheKey` (`key->push(selnode)` + `append`) and
+asking that key for a secondary selection context.
+
+Hanging the same 6000 children off the scene root instead of a
+container isolates exactly that difference, and nothing else about the
+merge:
+
+| parent of the 6000 children | merge |
+|---|---|
+| `App::Part` container (a selection root) | **21ms** (+3ms for the root to re-copy) |
+| the scene root (no selection root) | **9ms** |
+
+So **~57% of the container merge was selection-key work** and ~43% is
+the material work. Callgrind agrees on where that 57% sits — collection
+scoped to `SoFCRenderer::setScene` over 10 publishes of a 2000-object
+synthetic, on the unmodified binary: `getSecondaryContext` 5.2M Ir plus
+the `getLastNode` it calls 7.4M, against `mergeMaterial` 10.6M and
+`_Material`'s copy constructor 23.4M.
+
+`getLastNode()` decodes the key's last id and looks it up in a global
+map **under a mutex**, and it is asked once per child entry only to
+answer "no" — no scene without element colours or partial rendering has
+a secondary context at all. `SoFCSelectionRoot::hasSecondaryContext()`
+answers that from a counter maintained where `contextMap2` is added to,
+erased from, and destroyed (the only three places it changes).
+**Container merge 21ms → 15ms, −30%**, medians of 6 publishes each.
+
+Two notes on what this cost, and did not:
+
+- **Memoizing the key `Origin` per node was tried and dropped.**
+  `NodeKey::push()` derives the origin of the node being pushed, which
+  allocates an `Origin` and casts the view provider once per child, and
+  `append()` then discards it whenever the child names an object of its
+  own — so caching it on the node looked free. Measured on its own it
+  moved the merge from 21ms to 21ms. Not shipped: the change would have
+  added a cached member and an invalidation obligation for nothing.
+- **Verification gap.** The short-circuit is the kind of global fast
+  path that wants an end-to-end test, and it could not get one:
+  `ViewProvider::partialRender()` — the API that creates a secondary
+  context — produced no change in the rendered frame on the *unmodified*
+  build either, in plain Coin (render cache 0), in `SoFCRenderer`'s GL
+  path (2) and in the external backend (3) alike. Whether that is a
+  defect or a misuse of the API was not determined; either way the probe
+  cannot distinguish a working short-circuit from a broken one. What the
+  change rests on instead is that `contextMap2` is private to one file
+  and has exactly three mutation sites, all of which maintain the
+  counter, so a zero count provably means every `contextMap2` is empty —
+  which is the condition `getSecondaryContext` was testing for anyway.
+
+An incremental flatten still has to stop redoing the remaining work for
 children that did not change, and to splice it needs the predecessor's
 map to survive — which is exactly what the keep policy denies to maps
 that size. Lifting that bound for one generation is the next question,
 and it is a memory question: every level kept is another copy of its
 whole subtree.
+
+**What the splice now has to beat** is the material work alone, and the
+profile says it is not `mergeMaterial` so much as the map itself:
+`flat_tree::insert_unique` calls `_Material::operator<` 268k times over
+10 publishes at ~144 Ir a comparison, because the comparator walks a
+struct carrying a dozen COW maps. A child whose contribution did not
+change should not be re-inserted at all.
+
+**Unrelated finding from the same profile.** `translateCache()` called
+`getenv("FC_BGFX_DEBUG_FEED")` once per translated cache — 66k lookups,
+**5.8% of the whole publish**, for a debug print that is off. Hoisted to
+a `static const`; it belongs to the translate stage (phase 4).
+
+**What this does not show up in, and why.** The synth6000 progressive
+import is unchanged: 119.7 / 120.1 / 121.9 / 126.6 / 133.1s, median
+121.9s, against 119.6s before. It could not have shown up. The import
+paints ~75 frames, so 6ms off a publish is ~0.45s of a two-minute
+import, and the redraw throttle spends a *budget* rather than a fixed
+cost — a cheaper publish buys more frames (73 → 75-78) at the same
+share of the import, it does not shorten it. The stage timer is where
+this change is visible, and the models it matters for are the ones
+where the flatten dominates a frame the user is waiting on: every
+redraw that rebuilds the scene cache on a large assembly, not the
+import.
+
+⚠️ **That spread is also a caution about the row above.** Five runs of
+one build vary by 13.4s (11%) on this harness, which is larger than the
+127.0 → 119.6s difference the keep-policy row attributes to
+`RenderCacheKeepMax` from one run each. The stage numbers in that table
+(6003 → ~150 calls, 28ms → 20ms) are measured and reproducible; **the
+−5.8% import figure should be read as unconfirmed** until someone runs
+it n≥5 both ways.
 
 **Equivalence.** A memo that outlives its publish can serve a stale
 frame, because the flatten reads selection state that no cache rebuild
@@ -366,9 +449,12 @@ up rather than being assumed.
 3. Incremental flatten — the maintained vertex-cache map (27%), with
    draw entries rebuilt from it wholesale (§6.2). Started: §4b keeps the
    per-object maps that were being thrown away every publish (28ms →
-   20ms, import −5.8%). What is left of the stage is one container
-   merging thousands of child maps, priced per child rather than per
-   entry, which is the splice proper.
+   20ms), then removes the per-child secondary-context lookup a
+   selection root was paying for every one of its children (20ms →
+   15ms). What is left of the stage is one container merging thousands
+   of child maps, priced per child rather than per entry — now almost
+   entirely `flat_map` insertion under an expensive material comparator
+   — which is the splice proper.
 4. Incremental translate (38%): per-child draw-call slices, and an
    `updateScene` delta on the `Renderer` interface so the list is not
    rebuilt to be handed over.
