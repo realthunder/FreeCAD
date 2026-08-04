@@ -169,8 +169,12 @@ OverlayProxyWidget::HitTest OverlayProxyWidget::hitTest(const QPoint &globalPt, 
             drawLine = true;
             update();
         }
+        auto activeView = getMainWindow()->activeWindow();
+        bool overlayOnHoverAllowed = activeView && activeView->onHasMsg("AllowsOverlayOnHover");
+
         if(owner->getState() != OverlayTabWidget::State::Hidden
                 && hit == HitTest::HitOuter
+                && overlayOnHoverAllowed
                 && OverlayParams::getDockOverlayActivateOnHover()) {
             if (owner->isVisible() && owner->tabBar()->isVisible()) {
                 QSize size = owner->tabBar()->size();
@@ -1019,6 +1023,8 @@ bool OverlayTabWidget::checkAutoHide() const
     if(OverlayParams::getDockOverlayAutoView()) {
         auto view = getMainWindow()->activeWindow();
         if (!view) return true;
+        if (!view->onHasMsg("AllowsOverlayOnHover"))
+            return true;
         if(!view->onHasMsg("CanPan")
                 && view->parentWidget()
                 && view->parentWidget()->isMaximized())

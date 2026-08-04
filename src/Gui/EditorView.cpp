@@ -270,6 +270,8 @@ bool EditorView::onHasMsg(const char* pMsg) const
     // don't allow any actions if the editor is being closed
     if (d->aboutToClose)
         return false;
+    if (strcmp("AllowsOverlayOnHover",pMsg) == 0)
+        return true;
     if (strcmp(pMsg, "Run") == 0)
         return true;
     if (strcmp(pMsg, "DebugStart") == 0)

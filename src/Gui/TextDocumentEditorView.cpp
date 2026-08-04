@@ -195,6 +195,8 @@ bool TextDocumentEditorView::onHasMsg(const char* msg) const
     // don't allow any actions if the editor is being closed
     if (aboutToClose)
         return false;
+    if (strcmp("AllowsOverlayOnHover",msg) == 0)
+        return true;
 
     if (strcmp(msg,"Save") == 0) {
         return true;

@@ -204,6 +204,8 @@ bool AbstractSplitView::onMsg(const char* pMsg, const char**)
 
 bool AbstractSplitView::onHasMsg(const char* pMsg) const
 {
+    if (strcmp("AllowsOverlayOnHover",pMsg) == 0)
+        return true;
     if (strcmp("CanPan",pMsg) == 0) {
         return true;
     }

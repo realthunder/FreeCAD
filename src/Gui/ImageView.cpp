@@ -349,6 +349,8 @@ bool ImageView::onMsg(const char* pMsg,const char** ppReturn)
 
 bool ImageView::onHasMsg(const char* pMsg) const
 {
+    if (strcmp("AllowsOverlayOnHover",pMsg) == 0)
+        return true;
     if (strcmp("ViewFit", pMsg) == 0) {
         return true;
     }

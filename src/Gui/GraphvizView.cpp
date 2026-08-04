@@ -506,6 +506,8 @@ bool GraphvizView::onMsg(const char* pMsg, const char**)
 
 bool GraphvizView::onHasMsg(const char* pMsg) const
 {
+    if (strcmp("AllowsOverlayOnHover",pMsg) == 0)
+        return true;
     if (strcmp("Save",pMsg) == 0)
         return true;
     else if (strcmp("SaveAs",pMsg) == 0)

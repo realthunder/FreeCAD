@@ -435,6 +435,8 @@ bool DrawingView::onMsg(const char* pMsg, const char**)
 
 bool DrawingView::onHasMsg(const char* pMsg) const
 {
+    if (strcmp("AllowsOverlayOnHover",pMsg) == 0)
+        return true;
     if (strcmp("ViewFit", pMsg) == 0) {
         return true;
     }

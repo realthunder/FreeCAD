@@ -238,6 +238,8 @@ bool MDIViewPage::onMsg(const char *pMsg, const char **ppReturn)
 
 bool MDIViewPage::onHasMsg(const char* pMsg) const
 {
+    if (strcmp("AllowsOverlayOnHover",pMsg) == 0)
+        return true;
     if (strcmp("CanPan",pMsg) == 0) {
         return true;
     }

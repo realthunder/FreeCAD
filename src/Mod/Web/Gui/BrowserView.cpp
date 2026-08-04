@@ -982,6 +982,8 @@ bool BrowserView::onMsg(const char* pMsg, const char**)
  */
 bool BrowserView::onHasMsg(const char* pMsg) const
 {
+    if (strcmp("AllowsOverlayOnHover",pMsg) == 0)
+        return true;
     if (strcmp(pMsg, "Back") == 0) {
         return view->page()->action(QWebEnginePage::Back)->isEnabled();
     }

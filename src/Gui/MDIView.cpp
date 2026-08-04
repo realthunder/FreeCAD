@@ -233,7 +233,12 @@ bool MDIView::onMsg(const char* pMsg,const char** ppReturn)
 
 bool MDIView::onHasMsg(const char* pMsg) const
 {
-    if (strcmp("Save",pMsg) == 0)
+    // Views opt out of the hover-activated overlay panels by answering false; the
+    // default is to allow them, so that only a view that says otherwise (Start)
+    // changes behaviour.
+    if (strcmp("AllowsOverlayOnHover",pMsg) == 0)
+        return true;
+    else if (strcmp("Save",pMsg) == 0)
         return true;
     else if (strcmp("SaveAs",pMsg) == 0)
         return true;

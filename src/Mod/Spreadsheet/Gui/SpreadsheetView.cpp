@@ -192,6 +192,8 @@ bool SheetView::onMsg(const char *pMsg, const char **ppReturn)
 
 bool SheetView::onHasMsg(const char* pMsg) const
 {
+    if (strcmp("AllowsOverlayOnHover",pMsg) == 0)
+        return true;
     if (strcmp("Undo", pMsg) == 0) {
         App::Document* doc = getAppDocument();
         return doc && doc->getAvailableUndos() > 0;
