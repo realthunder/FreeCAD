@@ -785,8 +785,18 @@ OCCT/Coin `PATH`, and the process dies at load with a bare `0xc0000135` before a
 this matters — the same problem the two sections above describe, arriving through a
 new door.
 
-#### Three things that will waste your time
+#### Four things that will waste your time
 
+- **Launch with `_NO_DEBUG_HEAP=1`, or the app crawls.** A process *created by* a debugger
+  gets the NT debug heap: `NtGlobalFlag` comes up `0x70` (heap tail check, free check,
+  parameter validation), so every allocation and free walks validation lists. OCCT boolean
+  operations churn through huge numbers of small blocks, and the cost lands where you least
+  expect it — a PartDesign pattern recompute sat in
+  `~IntTools_Context → RtlDebugFreeHeap → RtlpFindEntry`, i.e. burning its time in `free()`,
+  not in geometry. It looks exactly like a hang: unresponsive window, no progress, plenty of
+  CPU. Set the variable in the environment the debugger inherits, and confirm with
+  `!peb` — `BeingDebugged: Yes` with `NtGlobalFlag: 0` is what you want. Attaching to an
+  already-running process never enables it, so attach-after-launch works too.
 - **Do not break on all C++ exceptions.** OCCT throws `Standard_Failure` as ordinary
   control flow and FreeCAD catches it; `sxe eh` drowns you in first-chance stops that
   mean nothing. Break at the specific throw site instead.
@@ -798,8 +808,11 @@ new door.
 
 #### What the release CRT costs at runtime
 
-No debug heap and no checked iterators (`_ITERATOR_DEBUG_LEVEL` is 0), so
+No CRT debug heap and no checked iterators (`_ITERATOR_DEBUG_LEVEL` is 0), so
 use-after-free and heap corruption stay silent until they crash somewhere unrelated.
+(The *NT* debug heap is a different thing and the debugger switches it on regardless —
+see the previous section. It validates block headers, so it catches some corruption, but
+it costs far too much to leave on while working.)
 Do **not** try to set `_ITERATOR_DEBUG_LEVEL=1` to get the checks back: it changes
 container layout, and conda's prebuilt boost and Qt cannot be rebuilt to match. The
 two substitutes that work on a release build are PageHeap (needs the SDK's `gflags`,
