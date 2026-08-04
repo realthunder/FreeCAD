@@ -16,8 +16,11 @@ with the user fragment program replacing fs_fc_water.
   capture on every pixel (same scene draws, same pass set, same
   shading core — only the program object differs). Captures are taken
   under RenderDebug_FreezeFrame (the water surface animates).
-- tint: a variant multiplying the refraction tint red differs from
-  stock and shows red-hued water pixels.
+- tint: a variant that keeps red and quarters green and blue differs
+  from stock, and its water pixels carry exactly that arithmetic. The
+  check is the arithmetic and not the hue: the pool is dark blue, so a
+  quarter of its blue still sits level with its red and the tinted
+  water does not read as red at all.
 - broken shader: an uncompilable program falls back to the stock
   surface program while the body stays a water body — byte-equal to
   the stock capture.
@@ -109,13 +112,25 @@ def byte_equal(a, b, label):
     log("%s: %s" % (label, "BYTE-EQUAL" if eq else "DIFFERS"))
     return eq
 
-def red_water_pixels(a_stock, b_red):
-    """Pixels red-shifted vs the stock water capture."""
+def tinted_water_pixels(a_stock, b_red):
+    """Pixels carrying the tint program's own arithmetic: it keeps red
+    and quarters green and blue, so a water pixel must hold its red
+    still while those two land on a quarter of what stock had.
+
+    Deliberately not "looks red": the pool is a dark blue, and a
+    quarter of its blue still sits about level with its red, so a
+    hue test reports failure over a capture the shader tinted
+    exactly as written.
+    """
     import numpy as np
     ia, ib = load(a_stock), load(b_red)
-    changed = np.any(np.abs(ia - ib) > 3, axis=2)
-    red = (ib[:, :, 0] > ib[:, :, 1] + 20) & (ib[:, :, 0] > ib[:, :, 2] + 20)
-    return int((changed & red).sum())
+    # Enough green to quarter visibly — excludes the background and
+    # anything the water does not cover.
+    lit = ia[:, :, 1] > 40
+    kept = np.abs(ib[:, :, 0] - ia[:, :, 0]) <= 3
+    quartered = (np.abs(ib[:, :, 1] - ia[:, :, 1] * 0.25) <= 8) \
+        & (np.abs(ib[:, :, 2] - ia[:, :, 2] * 0.25) <= 8)
+    return int((lit & kept & quartered).sum())
 
 def run():
     try:
@@ -194,8 +209,8 @@ def run():
         doc.recompute()
         settle()
         red = cap("w_red")
-        nred = red_water_pixels(stock, red)
-        log("red-tint red-shifted px vs stock: %d" % nred)
+        nred = tinted_water_pixels(stock, red)
+        log("red-tint tinted px vs stock: %d" % nred)
         log("ASSERT tint-applies: %s" % ("PASS" if nred > 500 else "FAIL"))
 
         # --- broken shader: stock surface stands in -------------------
