@@ -1758,17 +1758,23 @@ static inline uint32_t vertexColor(uint32_t rgba)
 /// The reserved "fc_emitter" parameter of a stateful particle
 /// program (docs/RenderEngine.md §5.8): x = particle count,
 /// y = fixed steps per second, z = freeze-frame warm-up seconds,
-/// w = travel headroom as a fraction of the seed box diagonal.
-/// Absent or malformed leaves the defaults, which still run.
+/// w = travel headroom as a fraction of the seed box diagonal, and
+/// the next vector's x = the rate of the emitter's clock against the
+/// wall clock. Absent or malformed leaves the defaults, which still
+/// run — including a sender too old to carry the fifth lane, whose
+/// emitters simply play in real time.
 static void emitterParams(const Render::UserShader &shader,
                           int &count, float &rate, float &warmup,
-                          float *margin = nullptr)
+                          float *margin = nullptr,
+                          float *timeScale = nullptr)
 {
     count = 0;
     rate = 60.0f;
     warmup = 0.0f;
     if (margin)
         *margin = 0.0f;
+    if (timeScale)
+        *timeScale = 1.0f;
     for (const auto &p : shader.params) {
         if (p.name != "fc_emitter" || p.values.size() < 3)
             continue;
@@ -1778,6 +1784,8 @@ static void emitterParams(const Render::UserShader &shader,
         warmup = std::max(0.0f, p.values[2]);
         if (margin && p.values.size() >= 4)
             *margin = std::max(0.0f, p.values[3]);
+        if (timeScale && p.values.size() >= 5)
+            *timeScale = std::max(0.0f, p.values[4]);
         break;
     }
 }
@@ -5192,8 +5200,8 @@ public:
                 continue;   // over budget: falls back to stateless
 
             int count = 0;
-            float rate = 60.0f, warmup = 0.0f;
-            emitterParams(*sh, count, rate, warmup);
+            float rate = 60.0f, warmup = 0.0f, timeScale = 1.0f;
+            emitterParams(*sh, count, rate, warmup, nullptr, &timeScale);
             if (count <= 0)
                 continue;
             auto &st = particles[d.objectKey];
@@ -5284,8 +5292,18 @@ public:
             // session starts now instead of catching up from zero.
             // Frozen: the warm-up, reached over as many frames as the
             // per-frame step budget needs.
+            //
+            // Both are wall-clock durations, and the time scale is
+            // what turns them into the emitter's own time — the whole
+            // of what the scale does. The step keeps its length, so
+            // each step advances the same slice of the trajectory it
+            // did before and the arc is unchanged; a scale of k simply
+            // demands k times as many of them per second, which is the
+            // motion playing k times faster. Doing this by scaling the
+            // step instead would be a different simulation
+            // (kParticleSteps).
             const float dt = 1.0f / std::max(1.0f, rate);
-            const float target = freeze ? warmup : animTime;
+            const float target = (freeze ? warmup : animTime) * timeScale;
             // A frozen frame's state is a pure function of the warm-up,
             // never of what the emitter happened to have simulated
             // before it: a target the state has already run past
@@ -5295,13 +5313,20 @@ public:
             if (freeze && st.simTime > target + dt * 0.5f)
                 st.needInit = true;
             if (st.needInit)
-                st.simTime = freeze ? 0.0f : animTime;
+                st.simTime = freeze ? 0.0f : target;
             // Write off a long absence rather than fast-forwarding
             // through it. A frozen frame is exempt: its whole point is
             // to reach a fixed warm-up from zero, however many frames
             // that takes.
-            if (!freeze && st.simTime < target - kParticleMaxLag)
-                st.simTime = target - kParticleMaxLag;
+            // The allowance is wall-clock time, so it is worth the
+            // same scaling as the target: a scaled clock owes
+            // proportionally more simulated time for the same absence,
+            // and this is also what absorbs the jump when the scale
+            // itself is edited live — the emitter resumes at the new
+            // rate instead of fast-forwarding through the difference.
+            const float maxLag = kParticleMaxLag * timeScale;
+            if (!freeze && st.simTime < target - maxLag)
+                st.simTime = target - maxLag;
             // This emitter is bound and its sprites move from here on;
             // a frozen frame deliberately does not count, since it is
             // meant to render identically twice.

@@ -317,6 +317,7 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
                 || prop == &obj->EmitterOffset
                 || prop == &obj->EmitterMargin
                 || prop == &obj->EmitterRate
+                || prop == &obj->EmitterTimeScale
                 || prop == &obj->EmitterWarmup)) {
         if (dynParam)
             syncParameters();
@@ -426,12 +427,17 @@ static void syncShaderNodes(App::ShaderProgram *obj,
     // the renderer can widen what it culls against without widening
     // what anything frames. Same no-new-fields channel as fc_state —
     // it reaches Appearance clones and the snapshot transport for free.
+    // The fifth lane (the time scale) is why this is two vec4s rather
+    // than one: the values are zero-padded to the vector width on the
+    // way to the backend, and a reader older than the lane simply
+    // stops at four, which is the default it would have used anyway.
     if (ss && ss[0])
         allParams.emplace_back("fc_emitter", std::vector<float>{
                 float(std::max(1L, obj->EmitterCount.getValue())),
                 float(obj->EmitterRate.getValue()),
                 float(obj->EmitterWarmup.getValue()),
-                float(std::max(0.0, obj->EmitterMargin.getValue()))});
+                float(std::max(0.0, obj->EmitterMargin.getValue())),
+                float(std::max(0.0, obj->EmitterTimeScale.getValue()))});
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> next;
     for (const auto &v : allParams) {
         auto &node = next[v.first];

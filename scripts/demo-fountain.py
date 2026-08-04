@@ -53,10 +53,6 @@ _render.SetBool("WaterShadow", True)
 # effect ships defaults for an emitter a few units wide, and this basin
 # is twenty units across.
 TIME_SCALE = 1.5     # motion rate; the plume's shape is unchanged
-GRAVITY = 16.0       # package default, before the time scale
-DRAG = 0.5
-STAGGER = 0.25
-EMITTER_RATE = 30.0
 OPACITY = 0.65
 
 DOC = os.environ.get("FN_DOC", "")
@@ -116,21 +112,15 @@ def jet(doc, rendereffects, label, x, y, nozzle_z, width, height, launch,
     prog.Label = label + "_Step"
     # Time scale. Water at this size moves faster than the package
     # default reads: the launch alone cannot fix that, since raising it
-    # throws the jet higher instead of making it brisker. Scaling the
-    # clock keeps the arc — height is v^2/2g, so v*k against g*k^2 is
-    # the same plume — and only the rate of it changes. Everything with
-    # time in its units follows: a per-second drag scales with k, and a
-    # lifetime and an emission stagger are durations, so they divide.
-    k = TIME_SCALE
-    prog.Param_Launch = launch * k
-    prog.Param_Gravity = GRAVITY * k * k
-    prog.Param_Drag = DRAG * k
-    prog.Param_Stagger = STAGGER / k
+    # throws the jet higher instead of making it brisker. The emitter's
+    # clock is what to change — the arc is height v^2/2g, which the
+    # clock does not enter, so the same plume is simply traced faster.
+    # Everything with time in its units follows on its own, because
+    # nothing about the step changes but how often it is asked for.
+    prog.EmitterTimeScale = TIME_SCALE
+    prog.Param_Launch = launch
     prog.Param_Spread = (spread, 0.35, 0.0)
-    prog.Param_Life = life / k
-    # A faster arc needs finer steps to stay resolved: the step is a
-    # fixed slice of simulated time, not of the frame.
-    prog.EmitterRate = EMITTER_RATE * k
+    prog.Param_Life = life
     # Spray thin enough to read as water rather than as a solid body:
     # a stack of sprites reaches 1-(1-a)^N, so the package default
     # saturates the jet core after about three overlaps.

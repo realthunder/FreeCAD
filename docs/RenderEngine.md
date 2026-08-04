@@ -606,12 +606,26 @@ desktop and browser run the identical program.
   lifetime so the emitter is in full flow at t = 0. Deliberately not
   user code — a reset a step program could get wrong would take the
   determinism guarantee with it.
+- **Clock rate**: `EmitterTimeScale` (default 1) is how fast the
+  emitter's clock runs against the wall clock. It scales the *target*
+  the simulation is asked to reach, never the step: each step still
+  advances the same slice of the trajectory, there are simply more of
+  them per second. So the shape of the motion is untouched — a jet's
+  apex is `v²/2g`, which the clock does not enter — and only its pace
+  changes. It exists because doing that by hand means scaling launch,
+  gravity (by `k²`), drag, lifetime, stagger and the step rate in
+  concert, and getting one of them wrong changes the shape too. The
+  budget still applies: `k × EmitterRate` steps a second have to fit
+  in `kParticleSteps` per frame, or the emitter falls behind. Editing
+  the scale live does not reset the state — the lag allowance (also
+  scaled) absorbs the jump, so the emitter resumes at the new pace.
 - **Freeze-frame**: `EmitterWarmup` seconds are simulated from the
   reset before a frozen frame draws, in steps the same length as the
   live ones, over as many frames as the per-frame budget needs (the
   view keeps reporting `animating()` until the warm-up lands). Frozen
   state is therefore a pure function of (seed, count, program,
-  warm-up) — never of how long the session has been running — and a
+  warm-up × time scale) — never of how long the session has been
+  running — and a
   warm-up shorter than what the state already ran rewinds to the reset
   and replays. That is what keeps stateful effects golden-image
   comparable (`scripts/user_shader_particles_state.py`).
@@ -623,8 +637,11 @@ desktop and browser run the identical program.
   `SoFragmentShader` (Coin's node triple has room for two sources, and
   this needs three) and as `UserShader::simulateSource`; the snapshot
   ships its viewer binary in `Compiled::simBin` (v39). The emitter's
-  count/rate/warm-up reach the backend as the reserved `fc_emitter`
-  parameter, the same no-new-fields channel as `fc_state`.
+  count/rate/warm-up/margin/time-scale reach the backend as the
+  reserved `fc_emitter` parameter (two vec4s since the time scale),
+  the same no-new-fields channel as `fc_state`. A reader older than a
+  lane stops short of it and takes the default, which is what it would
+  have used anyway.
 - **Budget**: `kParticleSlots` (3) stateful emitters per view ×
   `kParticleSteps` (2) steps per frame. This is bgfx view-id budget —
   a viewer occupies `NUM_VIEWS` contiguous ids out of 256, and these

@@ -88,6 +88,11 @@ public:
     PropertyFloat EmitterMargin;
     /// Fixed simulation steps per second of a stateful emitter
     PropertyFloat EmitterRate;
+    /// Rate of the emitter's clock against the wall clock (1 = real
+    /// time). Scales only how fast the motion plays, never its shape:
+    /// the step length and every step-program parameter stay put, so
+    /// the trajectory is the same one, traced faster or slower
+    PropertyFloat EmitterTimeScale;
     /// Seconds of simulation run from the reset state before a frozen
     /// frame is drawn, so a freeze-frame capture of a stateful effect
     /// shows settled motion and still reproduces byte for byte

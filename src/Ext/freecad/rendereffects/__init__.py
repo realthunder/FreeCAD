@@ -37,8 +37,12 @@ A particle program with ``simulate`` is a *stateful* emitter: the named
 fragment program advances its particles one fixed step at a time in
 ping-pong state textures, and the vertex stage reads the result instead
 of computing position from the clock. Its ``emitter`` block then also
-accepts ``rate`` (fixed steps per second) and ``warmup`` (seconds
-simulated before a frozen frame draws).
+accepts ``rate`` (fixed steps per second), ``warmup`` (seconds
+simulated before a frozen frame draws) and ``timescale`` (the rate of
+the emitter's clock against the wall clock, 1 = real time). The time
+scale changes how briskly the motion plays and nothing about its
+shape, so it is the knob for an effect that reads too slow or too
+hurried at the size of the scene it was dropped into.
 
 ``viewProps`` are boolean view properties switched on in the active 3D
 view at activation (e.g. the global water-surface toggle, which
@@ -194,6 +198,8 @@ def instantiate(name, doc=None, view_props=True):
                 prog.EmitterRate = float(em["rate"])
             if "warmup" in em:
                 prog.EmitterWarmup = float(em["warmup"])
+            if "timescale" in em:
+                prog.EmitterTimeScale = float(em["timescale"])
         for pname, pval in (pm.get("params") or {}).items():
             # A scalar feeds u_<Name>.x; a list feeds the vec4 lanes,
             # so a program can take a couple of related numbers without

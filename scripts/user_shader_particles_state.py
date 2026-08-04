@@ -20,6 +20,9 @@ fragment program.
   the property that makes the tier usable in the verify harness at
   all: state must be a function of (reset, N steps), never of how long
   the session has been running.
+- state-timescale: a quarter of the warm-up on a four-times clock is
+  byte-equal to the full warm-up at real time — the clock rate scales
+  what the simulation is asked to reach, never the step it takes.
 - stateless-fallback: dropping SimulateProgram returns the emitter to
   its stateless path, byte-exact.
 
@@ -227,6 +230,23 @@ def run():
         redo = cap("ps_warm05_redo")
         ok = byte_equal(warm05, redo, "stateful reset reproducibility")
         log("ASSERT state-reproduces: %s" % ("PASS" if ok else "FAIL"))
+
+        # ---- the clock rate scales the target, not the step ----
+        # A quarter of the warm-up on a clock running four times as
+        # fast has to reach the SAME state, byte for byte: the step
+        # length is untouched, so it is the same sequence of steps,
+        # asked for over less wall time. That equality is the whole
+        # claim of EmitterTimeScale — pace changes, motion does not.
+        prog.EmitterWarmup = 0.5
+        prog.EmitterTimeScale = 4.0
+        doc.recompute()
+        settle()
+        scaled = cap("ps_scaled")
+        ok = byte_equal(warm20, scaled, "warmup 2.0 vs 0.5 at 4x clock")
+        log("ASSERT state-timescale: %s" % ("PASS" if ok else "FAIL"))
+        prog.EmitterTimeScale = 1.0
+        doc.recompute()
+        settle()
 
         # ---- dropping the step program falls back to stateless ----
         # With no simulation the vertex stage reads unbound samplers,

@@ -100,6 +100,17 @@ ShaderProgram::ShaderProgram()
             "motion is the same on every machine; a frame too slow to\n"
             "afford its steps lets the simulation fall behind rather\n"
             "than stretching them");
+    ADD_PROPERTY_TYPE(EmitterTimeScale, (1.0), "Emitter", Prop_None,
+            "How fast the simulation's clock runs against the wall\n"
+            "clock: 2 plays the same motion twice as briskly, 0.5 half\n"
+            "as briskly, 0 holds it still. The step length is unchanged\n"
+            "and so is every parameter of the step program, so the\n"
+            "trajectory keeps its shape (a jet's height is v^2/2g,\n"
+            "which the clock does not enter) and only the rate of it\n"
+            "changes. This is the one knob for that: doing it by hand\n"
+            "means scaling launch, gravity, drag, lifetime, stagger and\n"
+            "the step rate together, and getting any one of them wrong\n"
+            "changes the shape as well as the speed");
     ADD_PROPERTY_TYPE(EmitterWarmup, (0.0), "Emitter", Prop_None,
             "Seconds of simulation run from the reset state before a\n"
             "frozen frame is drawn (RenderDebug_FreezeFrame). Gives a\n"
