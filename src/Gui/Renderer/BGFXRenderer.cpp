@@ -303,8 +303,16 @@ static void reportCoverage(const CoverageHistogram &hist)
              " | on-screen:%d offscreen:%d nobounds:%d | <=4px %.1f%% of on-screen",
              onScreen, hist.offScreen, hist.noBounds,
              onScreen > 0 ? 100.0 * double(tiny) / double(onScreen) : 0.0);
+    // Shared code: the standalone/WASM tier has no App layer to log
+    // through, but the desktop's line belongs in the report view and
+    // the console capture like every other coverage diagnostic.
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("render coverage: objects:%d %s%s\n", hist.total,
+                line.c_str(), buf);
+#else
     Base::Console().Message("render coverage: objects:%d %s%s\n", hist.total,
                             line.c_str(), buf);
+#endif
 }
 
 /// A user shader is animated when its source references the engine
