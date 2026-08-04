@@ -201,7 +201,7 @@ StartView::StartView(QWidget* parent)
     _contents->setCurrentWidget(firstStart ? firstStartScrollArea : documentsWidget);
 
     configureExamplesListWidget(examplesListWidget);
-    configureRecentFilesListWidget(recentFilesListWidget, _recentFilesLabel);
+    configureRecentFilesListWidget(recentFilesListWidget);
 
     retranslateUi();
 }
@@ -312,23 +312,30 @@ void StartView::configureFileCardWidget(QListView* fileCardWidget)
 }
 
 
-void StartView::configureRecentFilesListWidget(QListView* recentFilesListWidget,
-                                               QLabel* recentFilesLabel)
+void StartView::configureRecentFilesListWidget(QListView* recentFilesListWidget)
 {
+    _recentFilesListWidget = recentFilesListWidget;
     _recentFilesModel.loadRecentFiles();
     recentFilesListWidget->setModel(&_recentFilesModel);
     configureFileCardWidget(recentFilesListWidget);
 
-    auto recentFilesGroup = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/RecentFiles");
-    auto numRecentFiles {recentFilesGroup->GetInt("RecentFiles", 0)};
-    if (numRecentFiles == 0) {
-        recentFilesListWidget->hide();
-        recentFilesLabel->hide();
+    // The model reloads itself when the MRU list changes, so the section has to follow it
+    // rather than be sized once - a first-ever save has to bring it into view.
+    connect(&_recentFilesModel,
+            &QAbstractItemModel::modelReset,
+            this,
+            &StartView::updateRecentFilesVisibility);
+    updateRecentFilesVisibility();
+}
+
+void StartView::updateRecentFilesVisibility()
+{
+    bool haveFiles = _recentFilesModel.rowCount() > 0;
+    if (_recentFilesListWidget) {
+        _recentFilesListWidget->setVisible(haveFiles);
     }
-    else {
-        recentFilesListWidget->show();
-        recentFilesLabel->show();
+    if (_recentFilesLabel) {
+        _recentFilesLabel->setVisible(haveFiles);
     }
 }
 

@@ -23,6 +23,7 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <cstring>
 #endif
 
 #include "RecentFilesModel.h"
@@ -31,12 +32,52 @@
 
 using namespace Start;
 
+/// Reloads the model whenever the MRU list is rewritten, which is what opening or saving
+/// a document does. Same shape as Gui::RecentFilesAction::Private.
+class RecentFilesModel::Observer: public ParameterGrp::ObserverType
+{
+public:
+    Observer(RecentFilesModel* master, Base::Reference<ParameterGrp> handle)
+        : _master(master)
+        , _handle(std::move(handle))
+    {
+        _handle->Attach(this);
+    }
+
+    ~Observer() override
+    {
+        _handle->Detach(this);
+    }
+
+    Observer(const Observer&) = delete;
+    Observer(Observer&&) = delete;
+    Observer& operator=(const Observer&) = delete;
+    Observer& operator=(Observer&&) = delete;
+
+    void OnChange(Base::Subject<const char*>& sub, const char* reason) override
+    {
+        Q_UNUSED(sub)
+        // "RecentFiles" is the count, rewritten last when the list changes; the MRUn
+        // entries themselves arrive one at a time and would reload once each.
+        if (reason && strcmp(reason, "RecentFiles") == 0) {
+            _master->loadRecentFiles();
+        }
+    }
+
+private:
+    RecentFilesModel* _master;
+    Base::Reference<ParameterGrp> _handle;
+};
+
 RecentFilesModel::RecentFilesModel(QObject* parent)
     : DisplayedFilesModel(parent)
 {
     _parameterGroup = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/RecentFiles");
+    _observer = std::make_unique<Observer>(this, _parameterGroup);
 }
+
+RecentFilesModel::~RecentFilesModel() = default;
 
 void RecentFilesModel::loadRecentFiles()
 {

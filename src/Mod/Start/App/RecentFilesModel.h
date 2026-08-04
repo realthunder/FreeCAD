@@ -24,6 +24,8 @@
 #ifndef FREECAD_START_RECENTFILESMODEL_H
 #define FREECAD_START_RECENTFILESMODEL_H
 
+#include <memory>
+
 #include <QAbstractListModel>
 #include <Base/Parameter.h>
 
@@ -40,11 +42,23 @@ class StartExport RecentFilesModel: public DisplayedFilesModel
     Q_OBJECT
 public:
     explicit RecentFilesModel(QObject* parent = nullptr);
+    ~RecentFilesModel() override;
+
+    RecentFilesModel(const RecentFilesModel&) = delete;
+    RecentFilesModel(RecentFilesModel&&) = delete;
+    RecentFilesModel& operator=(const RecentFilesModel&) = delete;
+    RecentFilesModel& operator=(RecentFilesModel&&) = delete;
 
     void loadRecentFiles();
 
 private:
+    /// Opening or saving a document rewrites the MRU list while the Start view is still
+    /// alive - it is created once and reused - so the list has to follow the parameter
+    /// rather than be read once at construction.
+    class Observer;
+
     Base::Reference<ParameterGrp> _parameterGroup;
+    std::unique_ptr<Observer> _observer;
 };
 
 }  // namespace Start

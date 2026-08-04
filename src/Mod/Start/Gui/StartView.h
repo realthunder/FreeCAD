@@ -84,7 +84,7 @@ protected:
 
     void configureNewFileButtons(QLayout* layout) const;
     static void configureFileCardWidget(QListView* fileCardWidget);
-    void configureRecentFilesListWidget(QListView* recentFilesListWidget, QLabel* recentFilesLabel);
+    void configureRecentFilesListWidget(QListView* recentFilesListWidget);
     void configureExamplesListWidget(QListView* examplesListWidget);
 
     void postStart(PostStartBehavior behavior) const;
@@ -98,6 +98,7 @@ protected:
 
 private:
     void retranslateUi();
+    void updateRecentFilesVisibility();
 
     QStackedWidget* _contents = nullptr;
     Start::RecentFilesModel _recentFilesModel;
@@ -106,6 +107,7 @@ private:
     QLabel* _newFileLabel;
     QLabel* _examplesLabel;
     QLabel* _recentFilesLabel;
+    QListView* _recentFilesListWidget = nullptr;
     QPushButton* _openFirstStart;
     QCheckBox* _showOnStartupCheckBox;
 
