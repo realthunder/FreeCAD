@@ -6645,8 +6645,9 @@ public:
         // material is concerned, so without this the sprites sit in the
         // opaque bucket and are fogged at the depth of the background
         // behind them (see ViewParticles).
-        const bool blendedParticles = mat.usershader
-            && mat.usershader->stage == "particle"
+        const bool particleDraw = mat.usershader
+            && mat.usershader->stage == "particle";
+        const bool blendedParticles = particleDraw
             && userDrawBlends(*mat.usershader);
         uint16_t passView = ontop ? ViewHighlight
             : mat.ontop ? ViewOnTop
@@ -6732,7 +6733,15 @@ public:
         }
         else if (blend)
             state |= BGFX_STATE_BLEND_ALPHA;
-        if (culling && !twoside
+        // A particle emitter's sprites are built in the vertex stage as
+        // camera-facing quads in view space, so their winding does not
+        // follow the model the way a mesh triangle's does. The mirror
+        // pass flips culling to compensate for the mirrored handedness
+        // — which for those quads flips them from facing to backfacing
+        // and culls the whole emitter, leaving a reflection with the
+        // scene in it but no spray. Winding carries no meaning for a
+        // billboard; do not cull it in any pass.
+        if (culling && !twoside && !particleDraw
                         && mat.type == Render::Material::Triangle)
             state |= (mat.ccw != reflPass) ? BGFX_STATE_CULL_CW
                                            : BGFX_STATE_CULL_CCW;
