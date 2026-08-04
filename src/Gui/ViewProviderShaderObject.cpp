@@ -93,18 +93,28 @@ const SbName StagePost("post");
 // particle's 0..1 index, a_color0 = the per-particle random seed).
 // Deterministic per seed/count/box. Explicit element nodes, not
 // SoVertexProperty — the render cache does not capture
-// vertex-property-fed shapes. margin > 0 adds two INERT quads (zero
-// billboard corners — invisible even expanded) at the margin-expanded
-// box corners, so the geometry's own bounds cover the billboard travel
-// and the auto near/far fit does not clip displaced particles.
+// vertex-property-fed shapes.
+//
+// The travel headroom (EmitterMargin) is deliberately NOT geometry
+// here. It used to be two inert quads at the margin-expanded corners,
+// which did cover the billboard travel — but a bounding box has more
+// than one consumer, and they do not want the same box. Framing wants
+// the seed box: expanded, a 7-wide emitter reports 24 and "fit all"
+// backs off over a box nothing ever fills, so any scene carrying an
+// effect opened badly framed. Culling wants the expansion, because a
+// particle displaced out of the seed box is still on screen. The
+// spawn box wants the seed box too — fcParticleSpawn is documented as
+// a uniform anchor in the SEED box, and the expanded bounds silently
+// made it spawn over the headroom as well. So the geometry stays
+// tight and the margin travels as data (the reserved fc_emitter
+// parameter), applied by the renderer at the one consumer that wants
+// it.
 static void buildEmitterSeedNodes(SoGroup *parent, int count,
                                   uint32_t seedval,
-                                  const SbVec3f &bmin, const SbVec3f &bmax,
-                                  float margin)
+                                  const SbVec3f &bmin, const SbVec3f &bmax)
 {
     count = std::max(1, count);
-    int bounds = margin > 0.0f ? 2 : 0;
-    int total = count + bounds;
+    int total = count;
     std::mt19937 gen(seedval);
     std::uniform_real_distribution<float> uni(0.0f, 1.0f);
     auto coords = new SoCoordinate3;
@@ -139,21 +149,6 @@ static void buildEmitterSeedNodes(SoGroup *parent, int count,
             idx[i * 5 + c] = i * 4 + c;
         }
         idx[i * 5 + 4] = -1;
-    }
-    if (bounds) {
-        float pad = margin * ext.length();
-        SbVec3f cmin = bmin - SbVec3f(pad, pad, pad);
-        SbVec3f cmax = bmax + SbVec3f(pad, pad, pad);
-        for (int b = 0; b < 2; ++b) {
-            int i = count + b;
-            for (int c = 0; c < 4; ++c) {
-                verts[i * 4 + c] = b ? cmax : cmin;
-                normals[i * 4 + c] = SbVec3f(0.0f, 0.0f, 0.0f);
-                colors[i * 4 + c] = SbColor(0.0f, 0.0f, 0.0f);
-                idx[i * 5 + c] = i * 4 + c;
-            }
-            idx[i * 5 + 4] = -1;
-        }
     }
     coords->point.finishEditing();
     norms->vector.finishEditing();
@@ -425,15 +420,18 @@ static void syncShaderNodes(App::ShaderProgram *obj,
                 obj->DepthWrite.getValue() ? 1.0f : 0.0f, 0.0f, 0.0f});
     // Reserved "fc_emitter" = what the backend must know to run a
     // stateful emitter's state grid (docs/RenderEngine.md §5.8): how
-    // many particles the seed geometry encodes, and the fixed step
-    // rate and warm-up of the simulation. Same no-new-fields channel
-    // as fc_state — it reaches Appearance clones and the snapshot
-    // transport for free.
+    // many particles the seed geometry encodes, the fixed step rate
+    // and warm-up of the simulation, and the travel headroom the seed
+    // geometry deliberately does not carry (buildEmitterSeedNodes) so
+    // the renderer can widen what it culls against without widening
+    // what anything frames. Same no-new-fields channel as fc_state —
+    // it reaches Appearance clones and the snapshot transport for free.
     if (ss && ss[0])
         allParams.emplace_back("fc_emitter", std::vector<float>{
                 float(std::max(1L, obj->EmitterCount.getValue())),
                 float(obj->EmitterRate.getValue()),
-                float(obj->EmitterWarmup.getValue()), 0.0f});
+                float(obj->EmitterWarmup.getValue()),
+                float(std::max(0.0, obj->EmitterMargin.getValue()))});
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> next;
     for (const auto &v : allParams) {
         auto &node = next[v.first];
@@ -642,15 +640,14 @@ void ViewProviderShader::updateDemo()
     }
     case 5: { // Emitter: N degenerate seed quads (particle groundwork)
         // Shared seed builder (buildEmitterSeedNodes above); anchors
-        // spread over the DemoSize box centered on the origin, with
-        // the standard travel-headroom bounds quads.
+        // spread over the DemoSize box centered on the origin.
         const auto &size = obj->DemoSize.getValue();
         SbVec3f half(float(size.x) * 0.5f, float(size.y) * 0.5f,
                      float(size.z) * 0.5f);
         buildEmitterSeedNodes(pcDemoRoot,
                               int(std::max(1L, obj->EmitterCount.getValue())),
                               uint32_t(obj->EmitterSeed.getValue()),
-                              -half, half, 0.5f);
+                              -half, half);
         break;
     }
     default:
@@ -706,8 +703,7 @@ void ViewProviderShader::updateDemo()
         sep->addChild(pvp->getShaderNode());
         buildEmitterSeedNodes(sep, int(p->EmitterCount.getValue()),
                               uint32_t(p->EmitterSeed.getValue()),
-                              c - h, c + h,
-                              float(p->EmitterMargin.getValue()));
+                              c - h, c + h);
         pcDemoRoot->addChild(sep);
     }
 }
@@ -1150,8 +1146,7 @@ static SoFCSelectionRoot *buildEmitterRoot(App::ShaderProgram *p,
     sep->addChild(pvp->getShaderNode());
     buildEmitterSeedNodes(sep, int(p->EmitterCount.getValue()),
                           uint32_t(p->EmitterSeed.getValue()),
-                          c - half, c + half,
-                          float(p->EmitterMargin.getValue()));
+                          c - half, c + half);
     return sep;
 }
 

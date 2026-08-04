@@ -1755,6 +1755,60 @@ static inline uint32_t vertexColor(uint32_t rgba)
 
 ////////////////////////////////////////////////////////
 
+/// The reserved "fc_emitter" parameter of a stateful particle
+/// program (docs/RenderEngine.md §5.8): x = particle count,
+/// y = fixed steps per second, z = freeze-frame warm-up seconds,
+/// w = travel headroom as a fraction of the seed box diagonal.
+/// Absent or malformed leaves the defaults, which still run.
+static void emitterParams(const Render::UserShader &shader,
+                          int &count, float &rate, float &warmup,
+                          float *margin = nullptr)
+{
+    count = 0;
+    rate = 60.0f;
+    warmup = 0.0f;
+    if (margin)
+        *margin = 0.0f;
+    for (const auto &p : shader.params) {
+        if (p.name != "fc_emitter" || p.values.size() < 3)
+            continue;
+        count = int(p.values[0]);
+        if (p.values[1] > 0.0f)
+            rate = p.values[1];
+        warmup = std::max(0.0f, p.values[2]);
+        if (margin && p.values.size() >= 4)
+            *margin = std::max(0.0f, p.values[3]);
+        break;
+    }
+}
+
+/// How far past its own bounds a draw can put pixels on screen.
+///
+/// Only a particle emitter has any: its seed geometry is a cloud of
+/// zero-area quads at the spawn anchors, and the vertex stage flies
+/// the billboards away from them, so the drawn result leaves the
+/// box the vertices describe. The headroom is deliberately absent
+/// from the geometry (buildEmitterSeedNodes) — it belongs to what
+/// is culled, not to what is framed, spawned in, or streamed
+/// against — so it is added back here, at the one consumer that
+/// would otherwise cull a visible emitter the moment its anchors
+/// left the frustum.
+static float drawHeadroom(const Render::DrawCall &d)
+{
+    const auto &sh = d.material.usershader;
+    if (!sh || sh->stage != "particle")
+        return 0.0f;
+    int count = 0;
+    float rate = 0.0f, warmup = 0.0f, margin = 0.0f;
+    emitterParams(*sh, count, rate, warmup, &margin);
+    if (margin <= 0.0f)
+        return 0.0f;
+    const float dx = d.bboxMax[0] - d.bboxMin[0];
+    const float dy = d.bboxMax[1] - d.bboxMin[1];
+    const float dz = d.bboxMax[2] - d.bboxMin[2];
+    return margin * std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
 class BGFXView
 {
 public:
@@ -5009,26 +5063,6 @@ public:
         ++drawcount;
     }
 
-    /// The reserved "fc_emitter" parameter of a stateful particle
-    /// program (docs/RenderEngine.md §5.8): x = particle count,
-    /// y = fixed steps per second, z = freeze-frame warm-up seconds.
-    /// Absent or malformed leaves the defaults, which still run.
-    static void emitterParams(const Render::UserShader &shader,
-                              int &count, float &rate, float &warmup)
-    {
-        count = 0;
-        rate = 60.0f;
-        warmup = 0.0f;
-        for (const auto &p : shader.params) {
-            if (p.name != "fc_emitter" || p.values.size() < 3)
-                continue;
-            count = int(p.values[0]);
-            if (p.values[1] > 0.0f)
-                rate = p.values[1];
-            warmup = std::max(0.0f, p.values[2]);
-            break;
-        }
-    }
 
     /// Advance every stateful particle emitter in this frame's scene by
     /// whole fixed steps (docs/RenderEngine.md §5.8), then leave each
@@ -10149,16 +10183,23 @@ public:
                 if (d.bboxMin[0] > d.bboxMax[0]
                         || !d.material.autozoom.empty())
                     continue;
+                // An emitter draws outside its own bounds: test the
+                // box its billboards can actually reach, not the one
+                // its anchors sit in.
+                const float pad = drawHeadroom(d);
+                const float lo[3] = {d.bboxMin[0] - pad,
+                                     d.bboxMin[1] - pad,
+                                     d.bboxMin[2] - pad};
+                const float hi[3] = {d.bboxMax[0] + pad,
+                                     d.bboxMax[1] + pad,
+                                     d.bboxMax[2] + pad};
                 for (const auto &pl : planes) {
                     // Positive-vertex test: the bbox corner farthest
                     // along the plane normal decides containment.
                     float dist = pl[3]
-                        + pl[0] * (pl[0] >= 0.0f ? d.bboxMax[0]
-                                                 : d.bboxMin[0])
-                        + pl[1] * (pl[1] >= 0.0f ? d.bboxMax[1]
-                                                 : d.bboxMin[1])
-                        + pl[2] * (pl[2] >= 0.0f ? d.bboxMax[2]
-                                                 : d.bboxMin[2]);
+                        + pl[0] * (pl[0] >= 0.0f ? hi[0] : lo[0])
+                        + pl[1] * (pl[1] >= 0.0f ? hi[1] : lo[1])
+                        + pl[2] * (pl[2] >= 0.0f ? hi[2] : lo[2]);
                     if (dist < 0.0f) {
                         sceneCulled[i] = 1;
                         ++nculled;

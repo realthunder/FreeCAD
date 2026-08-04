@@ -89,9 +89,11 @@ ShaderProgram::ShaderProgram()
             "Seed box center offset in target-bounding-box-size units\n"
             "(z = 0.5 centers the box on the target's top face)");
     ADD_PROPERTY_TYPE(EmitterMargin, (0.5), "Emitter", Prop_None,
-            "Travel headroom as a fraction of the seed box diagonal,\n"
-            "folded into the generated bounds so displaced billboards\n"
-            "are not clipped by the auto near/far planes");
+            "Travel headroom as a fraction of the seed box diagonal.\n"
+            "Widens what the emitter is culled against, so displaced\n"
+            "billboards are not dropped once their anchors leave the\n"
+            "view; it does not enlarge the seed box itself, which is\n"
+            "what particles spawn in and what a view fit frames");
     ADD_PROPERTY_TYPE(EmitterRate, (60.0), "Emitter", Prop_None,
             "Fixed simulation steps per second of a stateful emitter\n"
             "(SimulateProgram). The step length is constant, so the\n"

@@ -763,9 +763,12 @@ them); on an Instance-scope binding they are generated per matched
 occurrence — bounds from the occurrence chain's accumulated transform
 — and attach at the occurrence's top-level scene instance, so only
 the bound occurrence(s) emit. Element-scope bindings carry no
-emitters (a face restriction has no emitter volume). `EmitterMargin` adds travel headroom as
-inert corner quads folded into the geometry's bounds, so the auto
-near/far fit does not clip displaced billboards. Bundled: `Embers` on
+emitters (a face restriction has no emitter volume). `EmitterMargin` adds travel headroom, carried as data on the
+reserved `fc_emitter` parameter rather than as geometry: the renderer
+widens what it culls an emitter against, so billboards displaced out
+of the seed box are not dropped once the anchors leave the view. It
+deliberately does not enlarge the seed box, because framing, spawning
+and streaming all want the tight box (§7). Bundled: `Embers` on
 the fire effect, `WaterSpray` on the water effect — both additive,
 depth-write off, stateless (`u_fcTime` + seed attributes), tuned via
 `Param_Rise`/`Param_Size`.
@@ -850,15 +853,17 @@ phone).
 
 - Stock passes keep stock programs: a material-stage override does not
   affect shadows, picking, AO or section clipping; a displacing VS
-  shows the artifacts listed in §5.3. Emitter bounds are handled by
-  `EmitterMargin`'s inert corner quads (§5.11); a stateful emitter
-  whose simulation carries particles beyond that margin still clips,
-  because the bounds are geometry-time and the state is not.
+  shows the artifacts listed in §5.3. Emitter culling headroom is
+  handled by `EmitterMargin` (§5.11); a stateful emitter whose
+  simulation carries particles beyond that margin can still be culled,
+  because the margin is authored once and the state is not.
 - A stateful emitter's spawn volume is the emitter geometry's own
-  bounds inverse-transformed into model space (§5.8), which is the
-  seed box *plus* `EmitterMargin` — and, under a rotating model
-  matrix, the axis-aligned hull of it. Bigger than the stateless seed
-  box, never smaller.
+  bounds inverse-transformed into model space (§5.8) — the seed box,
+  and under a rotating model matrix the axis-aligned hull of it, which
+  is bigger than the seed box but never smaller. `EmitterMargin` is
+  not part of it: the headroom widens culling only, so spawning
+  matches the `fcParticleSpawn` contract and a view fit frames what
+  the emitter actually occupies rather than its travel allowance.
 - Neighbour queries (SPH-class fluid) stay out of reach without
   compute shaders; see the §5.8 closing note.
 - Stages are currently `material` and `post`; the `water`/`volume`

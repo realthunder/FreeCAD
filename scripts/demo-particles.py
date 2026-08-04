@@ -137,15 +137,6 @@ def build():
         doc.recompute()
         view.viewIsometric()
         view.fitAll()
-        # The emitters' travel headroom (EmitterMargin) is part of the
-        # scene bounds, so fitAll frames a box much larger than anything
-        # visible. Pull back in so the terrace fills the frame.
-        try:
-            cam = view.getCameraNode()
-            if hasattr(cam, "height"):
-                cam.height.setValue(cam.height.getValue() * 0.55)
-        except Exception:
-            pass
         settle()
         settle()
 
