@@ -467,7 +467,6 @@ inherits `conda-windows-release` and overrides:
 | `CMAKE_BUILD_TYPE=RelWithDebInfo` | the CRT constraint above |
 | `CMAKE_PREFIX_PATH`, `OCC_INCLUDE_DIR` | point at the local OCCT/Coin installs instead of conda packages |
 | `OCCT_CMAKE_FALLBACK=OFF` | **required** — see below |
-| `BGFX_LIBRARY_TYPE=STATIC` | **required** — see below |
 | `BUILD_BGFX=ON` | the renderer |
 | `BUILD_FEM/BUILD_WEB/FREECAD_USE_PCL/FREECAD_USE_EXTERNAL_SMESH/ENABLE_DEVELOPER_TESTS=OFF` | same trims as the Linux local preset |
 
@@ -481,11 +480,22 @@ prints a plausible OCCT version and library directory; the failure only appears 
 link step thousands of targets later. Our OCCT ships
 `cmake/OpenCASCADEConfig.cmake`, which resolves every toolkit to an absolute path.
 
-**bgfx must be STATIC on Windows**, unlike the SHARED build used on Linux. bgfx
-applies its export macro only to the C99 API, so a bgfx DLL exports the C entry
-points and not one C++ symbol (verified: 209 exports, zero mangled). Every C++
-consumer — `BGFXRenderer.cpp` and bgfx's own `example-common` — then fails to link
-with ~78 unresolved externals. ELF default visibility hides this on Linux.
+**bgfx is STATIC on Windows**, unlike the SHARED build used on Linux, and
+`src/3rdParty/CMakeLists.txt` now selects that per platform. bgfx applies its
+export macro only to the C99 API, so a bgfx DLL exports the C entry points and not
+one C++ symbol (verified: 209 exports, zero mangled). Every C++ consumer —
+`BGFXRenderer.cpp`, and bgfx's own `example-common`, `geometryv` and `texturev` —
+then fails to link with ~78 unresolved externals, all of them C++ (`bgfx::init`,
+`bgfx::frame`, `bgfx::Init::Init`) while the C entry points resolve fine. That
+asymmetry is the fingerprint of bgfx-as-DLL; ELF default visibility hides it on
+Linux.
+
+**Do not try to fix this from the preset.** `src/3rdParty/CMakeLists.txt` sets
+`BGFX_LIBRARY_TYPE` as a *plain* variable, which shadows the cache entry a preset
+or `-D` provides. A cache override appears to work immediately after
+`cmake --preset` and then silently reverts to SHARED the next time anything
+regenerates the build — a pull touching any `CMakeLists.txt` is enough — leaving a
+`bgfx.dll` plus a small import library and the unresolved-symbol wall above.
 
 ```bat
 .conda\run.cmd cmake --preset win-relwithdebinfo-local
@@ -535,6 +545,7 @@ Uncommitted in the FreeCAD tree at the time of writing:
 | `src/Gui/GLPainter.h` | forward-declared Coin node types used as `CoinPtr<>` members; `~intrusive_ptr<T>` needs `T` complete to convert to `SoBase*`. Now includes them. Latent on Linux too — it only works there by luck of include order. |
 | `src/Gui/Application.cpp` | `QtPlatformHeaders/QWindowsWindowFunctions` was removed in Qt6. **Behaviour change:** the fullscreen workaround it provided is now Qt5-only. Qt6's equivalent is `QNativeInterface::Private::QWindowsWindow`, reachable only through a private QPA header and `Qt6::GuiPrivate` — an ABI-unstable dependency for a cosmetic fix. Re-check whether Qt6 still hides the menu in fullscreen on an OpenGL window before deciding. |
 | `src/Mod/Part/App/AppPartPy.cpp` | `LoadLibrary("TKBRep.dll")` → `LoadLibraryA`. The build defines `UNICODE`, so the unsuffixed macro is `LoadLibraryW` and rejects a narrow literal — this Windows-only branch cannot ever have compiled. |
+| `src/3rdParty/CMakeLists.txt` | build bgfx STATIC on Windows. It forced `SHARED` for every platform, and because that is a plain variable it also shadows any cache override — see the bgfx note above. |
 | `src/Mod/Material/App/CMakeLists.txt` | link `yaml-cpp::yaml-cpp` instead of `${YAML_CPP_LIBRARIES}`, which is the bare string `"yaml-cpp"`; `YAML_CPP_LIBRARY_DIR` is not set by yaml-cpp's config, so the `link_directories()` beside it is a no-op and the bare name has no search path (`LNK1104`). Also made the unconditional `-DYAML_CPP_STATIC_DEFINE` conditional on the imported target actually being static — conda's yaml-cpp is shared, and the define suppresses the `dllimport` attributes its API needs. |
 
 Unfixed, noticed in passing: `AppPartPy.cpp:380` formats a `size_t` hash with `%x`,
