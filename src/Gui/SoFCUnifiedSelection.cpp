@@ -2040,6 +2040,7 @@ SO_NODE_SOURCE(SoFCSelectionRoot)
 
 static FC_COIN_COUNTER(uint32_t) SelectionRootCount;
 static FC_COIN_COUNTER(uint32_t) SelectionRootId;
+FC_COIN_COUNTER(int) SoFCSelectionRoot::SecondaryContextCount;
 std::unordered_map<uint32_t, SoFCSelectionRoot*> SelectionRootMap;
 FC_COIN_STATIC_MUTEX(SelectionRootMapMutex);
 #define SelectionRootMapLock(_name) FC_COIN_LOCK(_name, SelectionRootMapMutex)
@@ -2106,6 +2107,12 @@ SoFCSelectionRoot::NodeKey::getSecondaryContext(Stack &stack, SoNode *node)
 
     SoFCSelectionContextExPtr ctx;
     if (!node)
+        return ctx;
+
+    // Asked once per child entry by the flatten, and answering it properly
+    // means decoding the key's last id and looking it up under the selection
+    // root mutex. Nothing can be found while no node holds one at all.
+    if (!hasSecondaryContext())
         return ctx;
 
     auto selnode = getLastNode();
@@ -2189,6 +2196,8 @@ SoFCSelectionRoot::~SoFCSelectionRoot()
         SelectionRootMapLock(guard);
         SelectionRootMap.erase(this->selnodeid);
     }
+    if (!this->contextMap2.empty())
+        --SecondaryContextCount;
     if (--SelectionRootCount == 0)
         SelectionRootId = 0;
 }
@@ -2332,14 +2341,21 @@ std::pair<bool,SoFCSelectionContextBasePtr*> SoFCSelectionRoot::findActionContex
         auto back = dynamic_cast<SoFCSelectionRoot*>(stack.back());
         if (back != nullptr) {
             stack.back() = _node;
-            if(create)
+            if(create) {
+                bool wasempty = back->contextMap2.empty();
                 res.second = &back->contextMap2[stack];
+                if (wasempty)
+                    ++SecondaryContextCount;
+            }
             else {
                 auto it = back->contextMap2.find(stack);
                 if(it!=back->contextMap2.end()) {
                     res.second = &it->second;
-                    if(erase)
+                    if(erase) {
                         back->contextMap2.erase(it);
+                        if (back->contextMap2.empty())
+                            --SecondaryContextCount;
+                    }
                 }
             }
             stack.back() = back;

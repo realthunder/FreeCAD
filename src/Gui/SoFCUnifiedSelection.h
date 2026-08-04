@@ -585,6 +585,11 @@ protected:
         std::array<uint8_t, 32> data;
     };
 
+    /// Whether any selection root anywhere holds a secondary context. The
+    /// flatten asks per child entry, and the answer is no for every scene
+    /// that has no element colours or partial rendering in it.
+    static bool hasSecondaryContext() { return SecondaryContextCount > 0; }
+
     static void setActionStack(SoAction *action, Stack *stack);
     static Stack *getActionStack(SoAction *action, bool create=false);
 
@@ -612,6 +617,11 @@ protected:
     using ContextMap = std::map<Stack,SoFCSelectionContextBasePtr,StackComp>;
     ContextMap contextMap;
     ContextMap contextMap2;//holding secondary context
+
+    /// How many selection roots currently hold a secondary context; kept by
+    /// findActionContext(), which is the only place contextMap2 is added to
+    /// or erased from, and by the destructor.
+    static FC_COIN_COUNTER(int) SecondaryContextCount;
 
     struct SelContext: SoFCSelectionContextBase {
     public:
