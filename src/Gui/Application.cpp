@@ -2188,6 +2188,24 @@ void preAppSetup()
     QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
 #endif
 
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // The 3D view is a QOpenGLWidget, and Qt6 composites a top-level window through QRhi as
+    // soon as one is present. A QQuickWidget in the same window then decides the backend --
+    // and in Qt6 QWebEngineView *is* a QQuickWidget, so opening the Start page switches the
+    // main window to the scene graph's default, which on Windows is D3D11. QOpenGLWidget
+    // refuses to initialize into that window:
+    //   "The top-level window is not using OpenGL for composition, 'D3D11' is not compatible
+    //    with QOpenGLWidget"
+    // followed by "No valid GL context found!" and a black 3D view. Pin both composition
+    // paths to OpenGL, but let the environment win so the choice stays overridable.
+    if (qEnvironmentVariableIsEmpty("QT_WIDGETS_RHI_BACKEND")) {
+        qputenv("QT_WIDGETS_RHI_BACKEND", "opengl");  // read by QtGui, widget composition
+    }
+    if (qEnvironmentVariableIsEmpty("QSG_RHI_BACKEND")) {
+        qputenv("QSG_RHI_BACKEND", "opengl");  // read by QtQuick, scene graph
+    }
+#endif
+
     // Automatic scaling for legacy apps (disable once all parts of GUI are aware of HiDpi)
     ParameterGrp::handle hDPI =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/HighDPI");
