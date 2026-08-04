@@ -50,6 +50,14 @@
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 RUN="$REPO/.conda/run.sh"
+# The OCCT 8.0.1 conda tree is what the fork builds against
+# (docs/DevEnvironment.md); FC_BUILD repoints the suites at another one.
+BUILD=${FC_BUILD:-"$REPO/build/conda-debug-occt801"}
+FCBIN="$BUILD/bin/FreeCAD"
+[ -x "$FCBIN" ] || {
+    echo "no FreeCAD binary at $FCBIN (set FC_BUILD to another build tree)"
+    exit 2
+}
 
 cmd=${1:-}
 case "$cmd" in desktop|viewer|all) ;; *)
@@ -104,7 +112,7 @@ run_desktop() { # <driver.py> <name>
         US_OUT="$sub" US_RESULT="$sub/result.txt" \
         xvfb-run -a -s "-screen 0 1920x1080x24" \
         timeout -k 5 "$TIMEOUT" \
-        "$RUN" "$REPO/build/conda-debug/bin/FreeCAD" \
+        "$RUN" "$FCBIN" \
         --user-cfg "$iso/user.cfg" \
         "$REPO/scripts/$1" > "$sub/run.log" 2>&1
     judge "$sub/result.txt" "$2"
@@ -124,7 +132,7 @@ run_viewer() { # <driver.py> <name>
         FC_BGFX_SERVE_SCENE=$PORT \
         QT_QPA_PLATFORM=xcb \
         xvfb-run -a -s "-screen 0 1280x1024x24" \
-        "$RUN" "$REPO/build/conda-debug/bin/FreeCAD" \
+        "$RUN" "$FCBIN" \
         --user-cfg "$iso/user.cfg" \
         "$REPO/scripts/demo-lights.py" "$REPO/scripts/$1" \
         > "$sub/run.log" 2>&1 </dev/null &
