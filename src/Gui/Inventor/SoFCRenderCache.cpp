@@ -82,6 +82,7 @@ typedef CoinPtr<SoFCVertexCache> VertexCachePtr;
 typedef CoinPtr<SoFCRenderCache> RenderCachePtr;
 typedef SoFCRenderCache::Material Material;
 typedef SoFCRenderCache::VertexCacheEntry VertexCacheEntry;
+typedef SoFCRenderCache::VertexCacheArray VertexCacheArray;
 
 #ifdef _FC_RENDER_MEM_TRACE
 SbFCMemUnitStats *SbFCMemUnitStats::get()
@@ -97,6 +98,9 @@ typedef SoFCRenderCache::CacheEntry CacheEntry;
 
 static FC_COIN_THREAD_LOCAL std::vector<std::unique_ptr<SoFCRenderCache::VertexCacheMap> > VertexCacheMaps;
 static FC_COIN_THREAD_LOCAL std::vector<int> VertexCacheMapCounts;
+// Scratch for per-element selection colours, shared by the two places
+// a secondary context is applied.
+static FC_COIN_THREAD_LOCAL SbFCVector<std::pair<int, uint32_t> > selcolors;
 
 class SoFCRenderCacheP {
 public:
@@ -125,7 +129,39 @@ public:
     this->vcachemap.reset();
   }
 
+  /// Where one child's contribution to vcachemap sits: a run of entries
+  /// in one material bucket. A child contributes one run per bucket it
+  /// reaches, so the runs of child i are slices[sliceoffsets[i]] up to
+  /// slices[sliceoffsets[i+1]] (docs/IncrementalPublish.md §5).
+  struct ChildSlice {
+    int bucket;
+    int start;
+    int count;
+  };
+
   void captureMaterial(SoState * state);
+
+  typedef std::unordered_map<SoFCRenderCache::CacheKeyPtr,
+                             SoFCRenderCache::CacheKeyPtr,
+                             SoFCRenderCache::CacheKeyHasher,
+                             SoFCRenderCache::CacheKeyHasher> KeyMap;
+
+  /// Merge one child cache's flattened map into \a vcachemap, which is
+  /// the bulk of what a flatten does: a container's whole cost is this,
+  /// once per child (docs/IncrementalPublish.md §4b).
+  ///
+  /// With \a slicesout, appends one ChildSlice per bucket this child
+  /// reached, so a later publish can copy the child's entries instead of
+  /// deriving them again. Returns false if the merge took a path the
+  /// slices cannot describe (a secondary context that rewrites the
+  /// material, or a merge mutation that erases entries already placed),
+  /// in which case the caller must stop recording for this map.
+  bool mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
+                       const CacheEntry &entry,
+                       KeyMap &keymap,
+                       bool canmerge,
+                       int depth,
+                       SbFCVector<ChildSlice> *slicesout);
 
   Material mergeMaterial(const SbMatrix &matrix,
                          bool &identity,
@@ -151,6 +187,18 @@ public:
   const SoMaterialBindingElement * materialbindingelement;
 
   std::unique_ptr<SoFCRenderCache::VertexCacheMap> vcachemap;
+
+  SbFCVector<ChildSlice> slices;
+  SbFCVector<int> sliceoffsets;
+  /// Whether slices/sliceoffsets describe the current vcachemap. Only a
+  /// map recorded under the conditions the splice needs (no draw-call
+  /// merging, no secondary selection contexts) sets this.
+  bool slicesvalid = false;
+
+  /// The cache this one replaced, kept only until the flatten has taken
+  /// its map to splice from. Held instead of released in postSeparator,
+  /// so it does not outlive the publish that consumes it.
+  CoinPtr<SoFCRenderCache> spliceprev;
 
   CoinPtr<SoFCRenderCache> prevcache;
   SbFCVector<CacheEntry> caches;
@@ -1488,43 +1536,145 @@ struct RenderCacheStackHelper {
   SoFCSelectionRoot *node;
 };
 
-const SoFCRenderCache::VertexCacheMap &
-SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
+static int checkSelectionContext(SoFCRenderCache::Material &material,
+                                 const SoFCSelectionContextExPtr &ctx,
+                                 VertexCachePtr &vcache);
+
+bool
+SoFCRenderCacheP::mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
+                                  const CacheEntry &entry,
+                                  KeyMap &keymap,
+                                  bool canmerge,
+                                  int depth,
+                                  SbFCVector<ChildSlice> *slicesout)
 {
-  RenderCacheStackHelper guard(PRIVATE(this)->selnode);
+  bool sliceable = slicesout != nullptr;
+  auto it = vcachemap.end();
+  const auto & childvcaches = entry.cache->getVertexCaches(canmerge, depth+1);
+  for (const auto & child : childvcaches) {
+    bool identity = entry.identity;
+    Material material = this->mergeMaterial(
+          entry.matrix, identity, entry.material, child.first);
 
-  if (PRIVATE(this)->vcachemap) {
-    if (PRIVATE(this)->vcachemap->size())
-      return *PRIVATE(this)->vcachemap;
+    if (depth == 0)
+      this->finalizeMaterial(material);
+
+    SoFCRenderCache::VertexCacheMap::value_type value(material, {});
+
+    VertexCacheArray *pushed_entries = nullptr;
+    int mutated = 0;
+    int slicestart = -1;
+    int slicecount = 0;
+    for (auto & childentry : child.second) {
+      VertexCacheArray *ventries = pushed_entries;
+      int res = 1;
+      auto vcache = childentry.cache;
+      SoFCRenderCache::CacheKeyPtr & key = keymap[childentry.key];
+      if (!key) {
+        if (!this->selnode)
+          key = childentry.key;
+        else {
+          key = std::allocate_shared<SoFCRenderCache::CacheKey>(
+              SoFCAllocator<SoFCRenderCache::CacheKey>());
+          key->push(this->selnode);
+          key->append(childentry.key);
+        }
+      }
+      SoFCSelectionContextExPtr ctx;
+      if (this->selnode)
+        ctx = key->getSecondaryContext(SoFCRenderCacheP::RenderCacheStack, vcache->getNode());
+      res = checkSelectionContext(material, ctx, vcache);
+      if (!res)
+        continue;
+
+      if (res < 0) {
+        // The context rewrote the material, so this entry lands in a
+        // bucket of its own choosing rather than the child's: a slice
+        // can no longer describe where the child's entries went.
+        sliceable = false;
+        if (childentry.skipcount && !mutated) {
+          if (!pushed_entries) {
+            auto iter = vcachemap.find(value.first);
+            if (iter != vcachemap.end()) {
+              pushed_entries = &iter->second;
+              mutated = (int)pushed_entries->size();
+            }
+          }
+        }
+        ventries = &vcachemap[material];
+        it = vcachemap.end();
+        material = value.first; // revert back to original material
+      } else if (!ventries) {
+        const size_t before = vcachemap.size();
+        it = vcachemap.insert(it, value);
+        pushed_entries = ventries = &it->second;
+        if (sliceable && vcachemap.size() != before) {
+          // A new bucket shifts the index of every bucket after it, and
+          // the slices already recorded name buckets by index.
+          const int at = (int)(it - vcachemap.begin());
+          for (auto & s : *slicesout) {
+            if (s.bucket >= at)
+              ++s.bucket;
+          }
+        }
+        if (sliceable)
+          slicestart = (int)ventries->size();
+      }
+
+      ventries->emplace_back(vcache, childentry, key);
+      ++slicecount;
+      if (!identity && !childentry.resetmatrix) {
+        if (!childentry.identity)
+          ventries->back().matrix.multRight(entry.matrix);
+        else {
+          ventries->back().matrix = entry.matrix;
+          ventries->back().identity = false;
+        }
+      }
+    }
+
+    if (mutated) {
+      // Discard any affected merged caches due to mutation. TODO: there
+      // could be more optimal way to selectively discard merges, but need
+      // much more complex logic to make it correct, because there could be
+      // multiple mutations.
+      sliceable = false;
+      for (int i=0; i<mutated; ++i) {
+        auto & mentry = (*pushed_entries)[i];
+        if (mentry.mergecount < mutated - i)
+          continue;
+        for (auto iter=pushed_entries->begin()+i; iter!=pushed_entries->end();) {
+          if (iter->mergecount)
+            iter = pushed_entries->erase(iter);
+          else {
+            iter->skipcount = 0;
+            ++i;
+          }
+        }
+      }
+    }
+    if (sliceable && slicestart >= 0 && slicecount > 0) {
+      ChildSlice slice;
+      slice.bucket = (int)(it - vcachemap.begin());
+      slice.start = slicestart;
+      slice.count = slicecount;
+      slicesout->push_back(slice);
+    }
+    if (it != vcachemap.end())
+      ++it;
   }
-  else if (VertexCacheMaps.size()) {
-    PRIVATE(this)->vcachemap = std::move(VertexCacheMaps.back());
-    VertexCacheMaps.pop_back();
-    CacheEntryFreeCount -= VertexCacheMapCounts.back();
-    VertexCacheMapCounts.pop_back();
-  } else
-    PRIVATE(this)->vcachemap.reset(new VertexCacheMap);
+  this->facecount += PRIVATE(entry.cache)->facecount;
+  return sliceable;
+}
 
-  // Split by level, because the two are different work: the top level
-  // copies every descendant entry the tree has already produced once,
-  // while the levels below it are where those entries are made
-  // (docs/IncrementalPublish.md §4b).
-  Gui::RenderTiming::Scope timing(depth ? Gui::RenderTiming::FlattenSub
-                                        : Gui::RenderTiming::Flatten);
-
-  auto & vcachemap = *PRIVATE(this)->vcachemap;
-  PRIVATE(this)->facecount = 0;
-  PRIVATE(this)->cachecount = 0;
-
-  std::unordered_map<CacheKeyPtr, CacheKeyPtr, CacheKeyHasher, CacheKeyHasher> keymap;
-  CacheKeyPtr selfkey;
-
-  static FC_COIN_THREAD_LOCAL SbFCVector<std::pair<int, uint32_t> > selcolors;
-
-  auto checkContext = [](Material &material,
-                         const SoFCSelectionContextExPtr &ctx,
-                         VertexCachePtr &vcache)
-  {
+// Apply a secondary selection context to one entry's material and
+// vertex cache. Returns 0 to skip the entry, 1 to proceed with the
+// material unchanged, -1 if the material was changed. Was a lambda
+// inside getVertexCaches until the per-child merge moved out of it.
+static int checkSelectionContext(SoFCRenderCache::Material &material,
+                                 const SoFCSelectionContextExPtr &ctx,
+                                 VertexCachePtr &vcache)
+{
     // Check for secondary selection context for color override and partial rendering
     // return 0 if should skip this entry, 1 if proceed with same material, -1
     // if material is changed.
@@ -1597,10 +1747,59 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
         return 0;
     }
     return 1;
-  };
+}
+
+const SoFCRenderCache::VertexCacheMap &
+SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
+{
+  RenderCacheStackHelper guard(PRIVATE(this)->selnode);
+
+  if (PRIVATE(this)->vcachemap) {
+    if (PRIVATE(this)->vcachemap->size())
+      return *PRIVATE(this)->vcachemap;
+  }
+  else if (VertexCacheMaps.size()) {
+    PRIVATE(this)->vcachemap = std::move(VertexCacheMaps.back());
+    VertexCacheMaps.pop_back();
+    CacheEntryFreeCount -= VertexCacheMapCounts.back();
+    VertexCacheMapCounts.pop_back();
+  } else
+    PRIVATE(this)->vcachemap.reset(new VertexCacheMap);
+
+  // Split by level, because the two are different work: the top level
+  // copies every descendant entry the tree has already produced once,
+  // while the levels below it are where those entries are made
+  // (docs/IncrementalPublish.md §4b).
+  Gui::RenderTiming::Scope timing(depth ? Gui::RenderTiming::FlattenSub
+                                        : Gui::RenderTiming::Flatten);
+
+  auto & vcachemap = *PRIVATE(this)->vcachemap;
+  PRIVATE(this)->facecount = 0;
+  PRIVATE(this)->cachecount = 0;
+
+  std::unordered_map<CacheKeyPtr, CacheKeyPtr, CacheKeyHasher, CacheKeyHasher> keymap;
+  CacheKeyPtr selfkey;
+
+
+  // Record where each child's entries land, so the publish after this one
+  // can copy them instead of merging every child again (§5). Only for a
+  // cache whose children are all nested caches -- the shape branch below
+  // contributes entries a child slice does not describe -- and only while
+  // nothing can rewrite a material out from under the record: a secondary
+  // selection context, or draw-call merging fusing entries across children
+  // (§6.1).
+  bool recordslices = ViewParams::getRenderCacheIncremental() > 0
+                      && !Gui::SoFCSelectionRoot::hasSecondaryContext()
+                      && !ViewParams::getRenderCacheMergeCount();
+  PRIVATE(this)->slices.clear();
+  PRIVATE(this)->sliceoffsets.clear();
+  PRIVATE(this)->slicesvalid = false;
+  if (recordslices)
+    PRIVATE(this)->sliceoffsets.push_back(0);
 
   for (auto & entry : PRIVATE(this)->caches) {
     if (entry.vcache) {
+      recordslices = false;
       if (!selfkey && PRIVATE(this)->selnode) {
         selfkey = std::allocate_shared<CacheKey>(SoFCAllocator<CacheKey>());
         selfkey->push(PRIVATE(this)->selnode);
@@ -1621,7 +1820,7 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
       if (entry.vcache->shouldRenderTriangles()) {
         Material material = entry.material;
         material.type = Material::Triangle;
-        if (!checkContext(material, ctx, vcache))
+        if (!checkSelectionContext(material, ctx, vcache))
           continue;
         if (depth == 0) {
           PRIVATE(this)->finalizeMaterial(material);
@@ -1651,7 +1850,7 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
       if (entry.vcache->getNumLineIndices()) {
         Material material = entry.material;
         material.type = Material::Line;
-        if (!checkContext(material, ctx, vcache))
+        if (!checkSelectionContext(material, ctx, vcache))
           continue;
         if (depth == 0) {
           PRIVATE(this)->finalizeMaterial(material);
@@ -1667,7 +1866,7 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
       if (entry.vcache->getNumPointIndices()) {
         Material material = entry.material;
         material.type = Material::Point;
-        if (!checkContext(material, ctx, vcache))
+        if (!checkSelectionContext(material, ctx, vcache))
           continue;
         if (depth == 0) {
           PRIVATE(this)->finalizeMaterial(material);
@@ -1682,97 +1881,11 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
       }
       continue;
     }
-    auto it = vcachemap.end();
-    const auto & childvcaches = entry.cache->getVertexCaches(canmerge, depth+1); 
-    for (const auto & child : childvcaches) {
-      bool identity = entry.identity;
-      Material material = PRIVATE(this)->mergeMaterial(
-            entry.matrix, identity, entry.material, child.first);
-
-      if (depth == 0)
-        PRIVATE(this)->finalizeMaterial(material);
-
-      VertexCacheMap::value_type value(material, {});
-
-      VertexCacheArray *pushed_entries = nullptr;
-      int mutated = 0;
-      for (auto & childentry : child.second) {
-        VertexCacheArray *ventries = pushed_entries;
-        int res = 1;
-        auto vcache = childentry.cache;
-#if 1
-        CacheKeyPtr & key = keymap[childentry.key];
-#else
-        CacheKeyPtr key;
-#endif
-        if (!key) {
-          if (!PRIVATE(this)->selnode)
-            key = childentry.key;
-          else {
-            key = std::allocate_shared<CacheKey>(SoFCAllocator<CacheKey>());
-            key->push(PRIVATE(this)->selnode);
-            key->append(childentry.key);
-          }
-        }
-        SoFCSelectionContextExPtr ctx;
-        if (PRIVATE(this)->selnode)
-          ctx = key->getSecondaryContext(SoFCRenderCacheP::RenderCacheStack, vcache->getNode());
-        res = checkContext(material, ctx, vcache);
-        if (!res)
-          continue;
-
-        if (res < 0) {
-          if (childentry.skipcount && !mutated) {
-            if (!pushed_entries) {
-              auto iter = vcachemap.find(value.first);
-              if (iter != vcachemap.end()) {
-                pushed_entries = &iter->second;
-                mutated = (int)pushed_entries->size();
-              }
-            }
-          }
-          ventries = &vcachemap[material];
-          it = vcachemap.end();
-          material = value.first; // revert back to original material
-        } else if (!ventries) {
-          it = vcachemap.insert(it, value);
-          pushed_entries = ventries = &it->second;
-        }
-
-        ventries->emplace_back(vcache, childentry, key);
-        if (!identity && !childentry.resetmatrix) {
-          if (!childentry.identity)
-            ventries->back().matrix.multRight(entry.matrix);
-          else {
-            ventries->back().matrix = entry.matrix;
-            ventries->back().identity = false;
-          }
-        }
-      }
-
-      if (mutated) {
-        // Discard any affected merged caches due to mutation. TODO: there
-        // could be more optimal way to selectively discard merges, but need
-        // much more complex logic to make it correct, because there could be
-        // multiple mutations.
-        for (int i=0; i<mutated; ++i) {
-          auto & entry = (*pushed_entries)[i];
-          if (entry.mergecount < mutated - i)
-            continue;
-          for (auto it=pushed_entries->begin()+i; it!=pushed_entries->end();) {
-            if (it->mergecount)
-              it = pushed_entries->erase(it);
-            else {
-              it->skipcount = 0;
-              ++i;
-            }
-          }
-        }
-      }
-      if (it != vcachemap.end())
-        ++it;
-    }
-    PRIVATE(this)->facecount += PRIVATE(entry.cache)->facecount;
+    if (!PRIVATE(this)->mergeChildCache(vcachemap, entry, keymap, canmerge, depth,
+                                        recordslices ? &PRIVATE(this)->slices : nullptr))
+      recordslices = false;
+    if (recordslices)
+      PRIVATE(this)->sliceoffsets.push_back((int)PRIVATE(this)->slices.size());
     // A child's map is dropped as soon as it has been copied up, which is
     // why the next publish re-derives one for every object in the scene
     // however little moved — measured at 5982 of them per publish on a
@@ -1781,11 +1894,19 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
     // is a few entries of memory against re-deriving it every frame, and
     // the traversal hands the whole cache back untouched when nothing
     // below it changed, memo and all. Big maps are the copies of whole
-    // subtrees, and those are still dropped.
+    // subtrees, and those are still dropped -- unless the splice is on,
+    // which needs the big ones alive: a rebuilt cache inherits its
+    // predecessor's map, and the predecessor is a child of some parent
+    // that would otherwise have dropped it here (§5).
     if (PRIVATE(entry.cache)->cachehint < 2
+        && !ViewParams::getRenderCacheIncremental()
         && PRIVATE(entry.cache)->cachecount > ViewParams::getRenderCacheKeepMax())
       PRIVATE(entry.cache)->freeCacheMap();
   }
+
+  if (recordslices
+      && PRIVATE(this)->sliceoffsets.size() == PRIVATE(this)->caches.size() + 1)
+    PRIVATE(this)->slicesvalid = true;
 
   if ((canmerge || PRIVATE(this)->mergemap)
       && ViewParams::getRenderCacheMergeCount()

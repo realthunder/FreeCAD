@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:518)
+// Auto generated code (Gui/ViewParams.py:526)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -1898,6 +1898,24 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter RenderCacheIncremental
+    ///
+    /// Splice a rebuilt object's flattened vertex cache map from the map
+    /// of the publish before it, instead of merging every child again. A
+    /// container holding thousands of objects re-derives all of them on
+    /// every publish however few moved, and the merge is priced per child
+    /// rather than per entry. 0 rebuilds (the old behaviour), 1 splices,
+    /// 2 splices and also rebuilds wholesale to compare the two, logging
+    /// any disagreement -- slow, for checking the splice, not for use.
+    static const long & getRenderCacheIncremental();
+    static const long & defaultRenderCacheIncremental();
+    static void removeRenderCacheIncremental();
+    static void setRenderCacheIncremental(const long &v);
+    static const char *docRenderCacheIncremental();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LiveImportRedrawInterval
     ///
     /// Minimum interval in milliseconds between 3D view redraws while a
@@ -2117,7 +2135,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:524)
+    // Auto generated code (Gui/ViewParams.py:532)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2145,7 +2163,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:534)
+// Auto generated code (Gui/ViewParams.py:542)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

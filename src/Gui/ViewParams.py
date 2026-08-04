@@ -467,6 +467,14 @@ Params = [
         "small ones costs a few entries of memory each and is what stops\n"
         "that. The large ones are the copies of whole subtrees, which is the\n"
         "memory this bounds. Set zero to keep none."),
+    ParamInt('RenderCacheIncremental',  0,
+        "Splice a rebuilt object's flattened vertex cache map from the map\n"
+        "of the publish before it, instead of merging every child again. A\n"
+        "container holding thousands of objects re-derives all of them on\n"
+        "every publish however few moved, and the merge is priced per child\n"
+        "rather than per entry. 0 rebuilds (the old behaviour), 1 splices,\n"
+        "2 splices and also rebuilds wholesale to compare the two, logging\n"
+        "any disagreement -- slow, for checking the splice, not for use."),
     ParamInt('LiveImportRedrawInterval',  200,
         "Minimum interval in milliseconds between 3D view redraws while a\n"
         "progressive import is filling the document, and the window after\n"

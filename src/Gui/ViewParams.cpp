@@ -214,6 +214,7 @@ public:
     long RenderCacheMergeDepthMax;
     long RenderCacheMergeDepthMin;
     long RenderCacheKeepMax;
+    long RenderCacheIncremental;
     long LiveImportRedrawInterval;
     long LiveImportRedrawBudget;
     double RenderHighlightPolygonOffsetFactor;
@@ -551,6 +552,8 @@ public:
         funcs["RenderCacheMergeDepthMin"] = &ViewParamsP::updateRenderCacheMergeDepthMin;
         RenderCacheKeepMax = this->handle->GetInt("RenderCacheKeepMax", 32);
         funcs["RenderCacheKeepMax"] = &ViewParamsP::updateRenderCacheKeepMax;
+        RenderCacheIncremental = this->handle->GetInt("RenderCacheIncremental", 0);
+        funcs["RenderCacheIncremental"] = &ViewParamsP::updateRenderCacheIncremental;
         LiveImportRedrawInterval = this->handle->GetInt("LiveImportRedrawInterval", 200);
         funcs["LiveImportRedrawInterval"] = &ViewParamsP::updateLiveImportRedrawInterval;
         LiveImportRedrawBudget = this->handle->GetInt("LiveImportRedrawBudget", 10);
@@ -1252,6 +1255,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderCacheKeepMax(ViewParamsP *self) {
         self->RenderCacheKeepMax = self->handle->GetInt("RenderCacheKeepMax", 32);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRenderCacheIncremental(ViewParamsP *self) {
+        self->RenderCacheIncremental = self->handle->GetInt("RenderCacheIncremental", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLiveImportRedrawInterval(ViewParamsP *self) {
@@ -5717,6 +5724,40 @@ void ViewParams::removeRenderCacheKeepMax() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRenderCacheIncremental() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Splice a rebuilt object's flattened vertex cache map from the map\n"
+"of the publish before it, instead of merging every child again. A\n"
+"container holding thousands of objects re-derives all of them on\n"
+"every publish however few moved, and the merge is priced per child\n"
+"rather than per entry. 0 rebuilds (the old behaviour), 1 splices,\n"
+"2 splices and also rebuilds wholesale to compare the two, logging\n"
+"any disagreement -- slow, for checking the splice, not for use.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & ViewParams::getRenderCacheIncremental() {
+    return instance()->RenderCacheIncremental;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & ViewParams::defaultRenderCacheIncremental() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRenderCacheIncremental(const long &v) {
+    instance()->handle->SetInt("RenderCacheIncremental",v);
+    instance()->RenderCacheIncremental = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRenderCacheIncremental() {
+    instance()->handle->RemoveInt("RenderCacheIncremental");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docLiveImportRedrawInterval() {
     return QT_TRANSLATE_NOOP("ViewParams",
 "Minimum interval in milliseconds between 3D view redraws while a\n"
@@ -6250,7 +6291,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:550)
+// Auto generated code (Gui/ViewParams.py:558)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6295,7 +6336,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:558)
+// Auto generated code (Gui/ViewParams.py:566)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6309,7 +6350,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:568)
+// Auto generated code (Gui/ViewParams.py:576)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -6323,13 +6364,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:578)
+// Auto generated code (Gui/ViewParams.py:586)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:585)
+// Auto generated code (Gui/ViewParams.py:593)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6337,7 +6378,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:594)
+// Auto generated code (Gui/ViewParams.py:602)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6349,7 +6390,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:607)
+// Auto generated code (Gui/ViewParams.py:615)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)
