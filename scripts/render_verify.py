@@ -190,6 +190,26 @@ def freeze():
     note("freeze on")
 
 
+def settle_state():
+    """Run the frozen frame until stateful content has reached its
+    target, before anything is captured.
+
+    A stateful particle emitter (docs/RenderEngine.md §5.8) reaches a
+    frozen frame's warm-up in whole fixed steps, only kParticleSteps of
+    them per frame -- a 2.5s warm-up at 60Hz is ~75 frames. Capturing
+    on a wall-clock delay instead lands on whatever step count the run
+    happened to reach, so two runs of the same scene put the sparks in
+    different places and every golden diff shows it. The state is not
+    camera-dependent and stops advancing once it is at the warm-up, so
+    one settle here covers every staging that follows.
+    """
+    v = view()
+    for _ in range(150):
+        v.redraw()
+        FreeCADGui.updateGui()
+    note("state settled")
+
+
 def stage_named(cam):
     def fn():
         v = view()
@@ -260,6 +280,7 @@ def capture_viewer(m):
 def build_steps():
     add_step(3000, wait_renderer(), auto=False)  # polls; advances itself
     add_step(200, freeze)
+    add_step(200, settle_state)
     if GOLDEN:
         stagings = golden_stagings()
         if not stagings:
