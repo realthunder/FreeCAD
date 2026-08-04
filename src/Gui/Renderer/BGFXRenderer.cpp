@@ -5930,7 +5930,7 @@ public:
                 if (_BGFXLib.userTime[1] != 0.0f
                         && userShaderAnimated(*mat.usershader))
                     _BGFXLib.userAnimatedDraw = true;
-                applyUserState(*mat.usershader, state, 0);
+                applyUserState(*mat.usershader, state, 0, false);
             }
         }
         bgfx::submit(viewId + ViewWaterSurface, prog);
@@ -6969,7 +6969,8 @@ public:
                 if (_BGFXLib.userTime[1] != 0.0f
                         && userShaderAnimated(*mat.usershader))
                     _BGFXLib.userAnimatedDraw = true;
-                applyUserState(*mat.usershader, state, blendRt);
+                applyUserState(*mat.usershader, state, blendRt,
+                               passView == ViewGroundRefl);
             }
         }
 
@@ -6996,8 +6997,26 @@ public:
     /// shader's beauty draw (App::ShaderProgram Blend / DepthWrite,
     /// docs/RenderDebug.md §6.2): re-record the state — bgfx keeps the
     /// last setState before submit.
+    /// The alpha channel means different things in the two targets a
+    /// user draw lands in, so the blend cannot be the same in both.
+    ///
+    /// In the mirror target alpha is COVERAGE: the pass clears it to 0
+    /// meaning "nothing reflected", and the water surface keeps only
+    /// what covers. A sprite that blends colour without alpha there is
+    /// discarded, and the pool reflects the scene but never the spray.
+    ///
+    /// In the scene target alpha is what the present composite may
+    /// consume — the WASM viewer's does, the desktop GL blit does not.
+    /// A sprite that blends alpha there punches its own shape out of
+    /// the frame and the viewer resolves it toward black, which is why
+    /// the browser drew grey spray while the desktop drew white from
+    /// the same state.
+    ///
+    /// So: write coverage into the mirror, leave the scene's alpha
+    /// alone.
     static void applyUserState(const Render::UserShader &shader,
-                               uint64_t state, uint32_t blendRt)
+                               uint64_t state, uint32_t blendRt,
+                               bool coverage)
     {
         for (const auto &p : shader.params) {
             if (p.name != "fc_state" || p.values.size() < 2)
@@ -7008,11 +7027,20 @@ public:
             int blend = int(p.values[0]);
             if (blend == 1) {
                 ustate &= ~BGFX_STATE_BLEND_MASK;
-                ustate |= BGFX_STATE_BLEND_ALPHA;
+                ustate |= coverage
+                    ? BGFX_STATE_BLEND_ALPHA
+                    : BGFX_STATE_BLEND_FUNC_SEPARATE(
+                        BGFX_STATE_BLEND_SRC_ALPHA,
+                        BGFX_STATE_BLEND_INV_SRC_ALPHA,
+                        BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_ONE);
             }
             else if (blend == 2) {
                 ustate &= ~BGFX_STATE_BLEND_MASK;
-                ustate |= BGFX_STATE_BLEND_ADD;
+                ustate |= coverage
+                    ? BGFX_STATE_BLEND_ADD
+                    : BGFX_STATE_BLEND_FUNC_SEPARATE(
+                        BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE,
+                        BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_ONE);
             }
             if (ustate != state)
                 bgfx::setState(ustate, blendRt);
