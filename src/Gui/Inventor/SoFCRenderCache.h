@@ -688,6 +688,11 @@ public:
    */
   Gui::CoinPtr<SoFCRenderCache> takePreviousCache();
 
+  /// Keep \a prev alive until this cache's flatten has taken its map to
+  /// splice from (docs/IncrementalPublish.md §5). The flatten drops it
+  /// again, so it lasts one publish and not the life of the cache.
+  void setSpliceSource(SoFCRenderCache *prev);
+
   enum HighlightFlag {
     PreselectHighlight = 1,
     CheckIndices = 2,

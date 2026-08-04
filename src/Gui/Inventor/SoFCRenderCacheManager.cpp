@@ -1419,8 +1419,16 @@ SoFCRenderCacheManagerP::postSeparator(void *userdata,
     // scene root usually holds a single container, and everything that
     // moved is a child of some cache below it.
     if (prev) {
-      Gui::RenderTiming::Scope timing(Gui::RenderTiming::Delta);
-      self->publishdelta.updateCache(cache, prev);
+      {
+        Gui::RenderTiming::Scope timing(Gui::RenderTiming::Delta);
+        self->publishdelta.updateCache(cache, prev);
+      }
+      // The flatten wants the map this cache's predecessor built, and the
+      // predecessor is about to go out of scope. Handed over rather than
+      // held by default: it lasts until the flatten takes it, not the life
+      // of the cache (docs/IncrementalPublish.md §5).
+      if (ViewParams::getRenderCacheIncremental() > 0)
+        cache->setSpliceSource(prev);
     }
   }
   return SoCallbackAction::CONTINUE;

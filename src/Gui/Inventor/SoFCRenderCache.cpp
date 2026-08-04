@@ -63,6 +63,7 @@
 #include "../ViewParams.h"
 #include "../SoFCUnifiedSelection.h"
 #include "SoFCRenderCache.h"
+#include "ScenePublishDelta.h"
 #include "Renderer/Renderer.h"
 #include "SoFCRenderMaterial.h"
 #include "SoFCVertexCache.h"
@@ -162,6 +163,25 @@ public:
                        bool canmerge,
                        int depth,
                        SbFCVector<ChildSlice> *slicesout);
+
+  /// Build this cache's flattened map out of the map \a prevc produced,
+  /// deriving only the children that are not the ones it already held
+  /// (docs/IncrementalPublish.md §5). Children keep their order, so the
+  /// result is the map a wholesale merge would have built, entry for
+  /// entry. Returns false without touching anything if the predecessor
+  /// cannot be spliced from, leaving the caller to merge as usual.
+  bool spliceFrom(SoFCRenderCache *prevc,
+                  KeyMap &keymap,
+                  bool canmerge,
+                  int depth);
+
+  /// Re-derive every child whose run the splice copied and check that it
+  /// still produces what was copied. The failure mode of an incremental
+  /// publish is a stale sliver -- a child that changed but whose slice
+  /// did not -- and it is invisible in the result until someone looks at
+  /// that child (docs/IncrementalPublish.md §7). Slower than not
+  /// splicing at all; RenderCacheIncremental 2 turns it on.
+  void verifySplice(const SbFCVector<int> &matchold, bool canmerge, int depth);
 
   Material mergeMaterial(const SbMatrix &matrix,
                          bool &identity,
@@ -1254,6 +1274,12 @@ SoFCRenderCache::takePreviousCache()
   return prev;
 }
 
+void
+SoFCRenderCache::setSpliceSource(SoFCRenderCache *prev)
+{
+  PRIVATE(this)->spliceprev = prev;
+}
+
 class MyMultiTextureImageElement : public SoMultiTextureImageElement
 {
 public:
@@ -1540,6 +1566,231 @@ static int checkSelectionContext(SoFCRenderCache::Material &material,
                                  const SoFCSelectionContextExPtr &ctx,
                                  VertexCachePtr &vcache);
 
+static bool sameVertexEntry(const VertexCacheEntry &a, const VertexCacheEntry &b)
+{
+  if (a.cache != b.cache
+      || a.identity != b.identity
+      || a.resetmatrix != b.resetmatrix
+      || a.mergecount != b.mergecount
+      || a.skipcount != b.skipcount
+      || a.partidx != b.partidx)
+    return false;
+  if (!a.identity && a.matrix != b.matrix)
+    return false;
+  if (!a.key || !b.key)
+    return a.key == b.key;
+  return *a.key == *b.key;
+}
+
+void
+SoFCRenderCacheP::verifySplice(const SbFCVector<int> &matchold,
+                               bool canmerge,
+                               int depth)
+{
+  const int newn = (int)this->caches.size();
+  const int savedfaces = this->facecount;
+  int bad = 0;
+
+  for (int i = 0; i < newn; ++i) {
+    if (matchold[i] < 0)
+      continue;  // derived, not copied: nothing was assumed about it
+
+    SoFCRenderCache::VertexCacheMap scratch;
+    SbFCVector<ChildSlice> scratchslices;
+    KeyMap scratchkeys;
+    if (!this->mergeChildCache(scratch, this->caches[i], scratchkeys, canmerge,
+                               depth, &scratchslices))
+      continue;  // not describable by slices, so it was not copied either
+
+    const int from = this->sliceoffsets[i];
+    const int to = this->sliceoffsets[i + 1];
+    bool ok = (to - from) == (int)scratchslices.size();
+    for (int k = 0; ok && k < (int)scratchslices.size(); ++k) {
+      const ChildSlice &want = scratchslices[k];
+      const ChildSlice &got = this->slices[from + k];
+      if (want.count != got.count) {
+        ok = false;
+        break;
+      }
+      const auto &wantbucket = scratch.nth(want.bucket);
+      const auto &gotbucket = this->vcachemap->nth(got.bucket);
+      if (wantbucket->first < gotbucket->first || gotbucket->first < wantbucket->first) {
+        ok = false;
+        break;
+      }
+      for (int e = 0; e < want.count; ++e) {
+        if (!sameVertexEntry(wantbucket->second[want.start + e],
+                             gotbucket->second[got.start + e])) {
+          ok = false;
+          break;
+        }
+      }
+    }
+    if (!ok && ++bad <= 4) {
+      FC_ERR("incremental flatten: child " << i << " of " << newn
+             << " kept a slice it would not derive now");
+    }
+  }
+
+  this->facecount = savedfaces;
+  if (bad)
+    FC_ERR("incremental flatten: " << bad << " of " << newn
+           << " copied children disagree with a fresh merge");
+}
+
+bool
+SoFCRenderCacheP::spliceFrom(SoFCRenderCache *prevc,
+                             KeyMap &keymap,
+                             bool canmerge,
+                             int depth)
+{
+  auto & prev = *PRIVATE(prevc);
+  if (!prev.vcachemap || !prev.slicesvalid)
+    return false;
+
+  const int oldn = (int)prev.caches.size();
+  const int newn = (int)this->caches.size();
+  if (!oldn || !newn || (int)prev.sliceoffsets.size() != oldn + 1)
+    return false;
+
+  // A shape child puts entries in the map that no child slice describes.
+  for (int i = 0; i < newn; ++i) {
+    if (!this->caches[i].cache)
+      return false;
+  }
+
+  // Which of the previous children each of these is, asked exactly as the
+  // change set asks it: the transform and material live here in the
+  // parent, so the same child cache under a moved parent is a changed
+  // contribution and has to be derived again.
+  std::unordered_map<const void*, SbFCVector<int> > oldbykey;
+  oldbykey.reserve(oldn * 2);
+  for (int i = 0; i < oldn; ++i)
+    oldbykey[static_cast<const void*>(prev.caches[i].cache.get())].push_back(i);
+
+  SbFCVector<int> matchold(newn, -1);
+  std::vector<char> claimed(oldn, 0);
+  int kept = 0;
+  for (int i = 0; i < newn; ++i) {
+    auto it = oldbykey.find(static_cast<const void*>(this->caches[i].cache.get()));
+    if (it == oldbykey.end())
+      continue;
+    for (int j : it->second) {
+      if (claimed[j])
+        continue;
+      if (!Gui::ScenePublishDelta::sameEntry(prev.caches[j], this->caches[i]))
+        continue;
+      claimed[j] = 1;
+      matchold[i] = j;
+      ++kept;
+      break;
+    }
+  }
+  // Nothing to inherit: merging the lot is the same work without the
+  // bookkeeping.
+  if (!kept)
+    return false;
+
+  // Derive the children the previous publish did not have, into a map of
+  // their own so their runs can be placed in child order below.
+  SoFCRenderCache::VertexCacheMap addmap;
+  SbFCVector<ChildSlice> addslices;
+  SbFCVector<int> addoffsets;
+  SbFCVector<int> addindex(newn, -1);
+  addoffsets.push_back(0);
+  for (int i = 0; i < newn; ++i) {
+    if (matchold[i] >= 0)
+      continue;
+    addindex[i] = (int)addoffsets.size() - 1;
+    if (!this->mergeChildCache(addmap, this->caches[i], keymap, canmerge, depth,
+                               &addslices)) {
+      this->facecount = 0;
+      return false;
+    }
+    addoffsets.push_back((int)addslices.size());
+  }
+
+  auto & oldmap = *prev.vcachemap;
+  auto & newmap = *this->vcachemap;
+  newmap.clear();
+
+  // The buckets of the result are those of both sources. Only a handful,
+  // so the material comparisons this costs do not signify.
+  for (auto & v : oldmap)
+    newmap.emplace(v.first, VertexCacheArray());
+  for (auto & v : addmap)
+    newmap.emplace(v.first, VertexCacheArray());
+
+  SbFCVector<int> oldtonew(oldmap.size(), -1);
+  int b = 0;
+  for (auto & v : oldmap)
+    oldtonew[b++] = (int)(newmap.find(v.first) - newmap.begin());
+  SbFCVector<int> addtonew(addmap.size(), -1);
+  b = 0;
+  for (auto & v : addmap)
+    addtonew[b++] = (int)(newmap.find(v.first) - newmap.begin());
+
+  for (size_t i = 0; i < oldmap.size(); ++i)
+    newmap.nth(oldtonew[i])->second.reserve(oldmap.nth(i)->second.size());
+
+  this->slices.clear();
+  this->sliceoffsets.clear();
+  this->sliceoffsets.push_back(0);
+
+  for (int i = 0; i < newn; ++i) {
+    const bool isold = matchold[i] >= 0;
+    const auto & srcslices = isold ? prev.slices : addslices;
+    const auto & srcoffsets = isold ? prev.sliceoffsets : addoffsets;
+    const auto & srcmap = isold ? oldmap : addmap;
+    const auto & tonew = isold ? oldtonew : addtonew;
+    const int si = isold ? matchold[i] : addindex[i];
+
+    for (int k = srcoffsets[si]; k < srcoffsets[si + 1]; ++k) {
+      const ChildSlice & s = srcslices[k];
+      const auto & src = srcmap.nth(s.bucket)->second;
+      auto & dst = newmap.nth(tonew[s.bucket])->second;
+      ChildSlice ns;
+      ns.bucket = tonew[s.bucket];
+      ns.start = (int)dst.size();
+      ns.count = s.count;
+      dst.insert(dst.end(), src.begin() + s.start, src.begin() + s.start + s.count);
+      this->slices.push_back(ns);
+    }
+    // mergeChildCache already counted the faces of the children it built.
+    if (isold)
+      this->facecount += PRIVATE(this->caches[i].cache)->facecount;
+    this->sliceoffsets.push_back((int)this->slices.size());
+  }
+
+  // A bucket whose every child went away is a bucket a wholesale merge
+  // would never have made, and leaving it would make the two maps compare
+  // unequal for no reason.
+  if (newmap.size()) {
+    SbFCVector<int> shift(newmap.size(), 0);
+    int drop = 0;
+    for (size_t i = 0; i < newmap.size(); ++i) {
+      shift[i] = drop;
+      if (newmap.nth(i)->second.empty())
+        ++drop;
+    }
+    if (drop) {
+      for (auto & s : this->slices)
+        s.bucket -= shift[s.bucket];
+      for (size_t i = newmap.size(); i-- > 0;) {
+        if (newmap.nth(i)->second.empty())
+          newmap.erase(newmap.nth(i));
+      }
+    }
+  }
+
+  this->slicesvalid = true;
+
+  if (ViewParams::getRenderCacheIncremental() > 1)
+    this->verifySplice(matchold, canmerge, depth);
+
+  return true;
+}
+
 bool
 SoFCRenderCacheP::mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
                                   const CacheEntry &entry,
@@ -1797,6 +2048,16 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
   if (recordslices)
     PRIVATE(this)->sliceoffsets.push_back(0);
 
+  // Inherit the previous publish's map where there is one to inherit, and
+  // derive only the children it did not already hold.
+  bool spliced = false;
+  if (recordslices && PRIVATE(this)->spliceprev) {
+    spliced = PRIVATE(this)->spliceFrom(PRIVATE(this)->spliceprev, keymap,
+                                        canmerge, depth);
+  }
+  PRIVATE(this)->spliceprev.reset();
+
+  if (!spliced)
   for (auto & entry : PRIVATE(this)->caches) {
     if (entry.vcache) {
       recordslices = false;
@@ -1904,7 +2165,7 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
       PRIVATE(entry.cache)->freeCacheMap();
   }
 
-  if (recordslices
+  if (!spliced && recordslices
       && PRIVATE(this)->sliceoffsets.size() == PRIVATE(this)->caches.size() + 1)
     PRIVATE(this)->slicesvalid = true;
 
