@@ -24,6 +24,7 @@
 #include "SceneLadder.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -139,6 +140,46 @@ const uint32_t kVersion = 40;
 /// entries cached by older builds instead of letting them be misread.
 /// (4: a shader chunk carries the particle state step and its binary.)
 const uint32_t kChunkVersion = 4;
+
+//////////////////////////////////////////////////////////////////////
+// Streamed config layout guards.
+//
+// The per-frame configs below are serialized field by field (see the
+// "Background + per-frame configs" block in saveSnapshotFp and its
+// mirror in loadSnapshotFp). Adding a field to one of those structs
+// without adding the matching write and read is invisible: the dump
+// still loads, the viewer just keeps the struct's default forever, so
+// the property works on the desktop and does nothing in the browser.
+// That is exactly how WaterConfig::impactStrength shipped broken
+// before v40.
+//
+// These asserts make that a build error. Change one of the structs and
+// the size no longer matches, which forces a visit here — and the fix
+// is never "bump the number": write the new field, read it, bump
+// kVersion (and gate the read on it), then bump the size.
+//
+// Sizes hold on both tiers because every guarded member is a
+// float/int/bool: same size and alignment on the x86_64 dumper and the
+// wasm32 loader. The three configs that carry a pointer-sized member
+// (std::shared_ptr / std::vector, whose alignment does differ) guard
+// the offset of their last POD field instead — that still moves
+// whenever a streamed field is added ahead of it.
+//
+// Two guarded fields are deliberately *not* on the wire, and should
+// stay that way: AOConfig::fast is a per-frame interaction hint the
+// viewer decides for itself, and RenderDebugConfig::coverage drives a
+// backend-local log rather than any pixel.
+static_assert(sizeof(HiddenLineConfig) == 20, "HiddenLineConfig changed: stream the new field, then update this");
+static_assert(sizeof(PreselHighlightConfig) == 16, "PreselHighlightConfig changed: stream the new field, then update this");
+static_assert(sizeof(SectionConfig) == 12, "SectionConfig changed: stream the new field, then update this");
+static_assert(sizeof(AOConfig) == 28, "AOConfig changed: stream the new field, then update this");
+static_assert(sizeof(BumpConfig) == 8, "BumpConfig changed: stream the new field, then update this");
+static_assert(sizeof(VolumetricConfig) == 28, "VolumetricConfig changed: stream the new field, then update this");
+static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new field, then update this");
+static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new field, then update this");
+static_assert(offsetof(PBRConfig, envBackground) == 16, "PBRConfig changed: stream the new field, then update this");
+static_assert(offsetof(LightConfig, groundColor) == 76,"LightConfig changed: stream the new field, then update this");
+static_assert(offsetof(RenderDebugConfig, coverage) == 5, "RenderDebugConfig changed: stream the new field, then update this");
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
