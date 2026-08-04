@@ -646,6 +646,84 @@ break interpreter startup entirely. Copying the dependency DLLs into `build\bin`
 alongside the executables works too and is closer to the shipped layout, at the cost
 of duplicating them after every OCCT or Coin rebuild.
 
+### Debugging
+
+**RelWithDebInfo debugs properly** — this is worth stating because the CRT constraint
+at the top of this section reads like a compromise, and for debugging it mostly is
+not one. Every component carries full private PDBs: 113 in the FreeCAD build tree, 51
+for OCCT, plus Coin and pivy. Verified end to end:
+
+```
+lm vm FreeCADApp   ->  FreeCADApp C (private pdb symbols)
+x FreeCADApp!App::Document::recompute
+   FreeCADApp!App::Document::recompute(class std::vector<App::DocumentObject *,...> *, bool, bool *, int)
+```
+
+What is lost is the usual optimized-build tax — frames collapsed into their callers by
+inlining, `<value optimized out>` locals, stepping that jumps around. When one area
+gets sticky, buy the stepping back for that area alone:
+
+```cmake
+target_compile_options(FreeCADGui PRIVATE $<$<CONFIG:RelWithDebInfo>:/Od /Ob0>)
+```
+
+That changes optimization only, not the runtime library, so it still links against
+conda's release-CRT Qt6. `/Ob0` is the important half — inlining, not `/O2`, is what
+makes the stacks confusing. **Leave `/DNDEBUG` alone**: OCCT and Coin were compiled
+with it, and their headers inline into our translation units, so flipping it for
+FreeCAD only invites ODR mismatches.
+
+#### Getting a debugger
+
+VS 2022 **BuildTools** ships no debugger — no `devenv`, and the Windows SDK's
+"Debugging Tools" feature is not installed either, so there is no `cdb`, `windbg` or
+`gflags` anywhere. WinDbg installs without elevation:
+
+```bat
+winget install --id Microsoft.WinDbg --source winget
+```
+
+The GUI is then `WinDbgX.exe`, on `PATH` through the WindowsApps alias. The console
+debugger `cdb.exe` ships in the same package but **cannot be executed where it is
+installed** — WindowsApps ACLs deny execution with "Access is denied" even though the
+path reads fine. Copy the package's `amd64\` directory somewhere ordinary
+(`D:\Zheng.Lei\sw\tools\dbg\`) and run it from there. Worth doing regardless of the
+GUI: `cdb` takes a command file, which is what makes debugging scriptable from a
+non-interactive shell.
+
+```bat
+:: dbg.txt:  sxe ld:FreeCADApp / g / .reload /f FreeCADApp.dll / lm vm FreeCADApp / k / q
+.conda\run.cmd D:\Zheng.Lei\sw\tools\dbg\cdb.exe -cf dbg.txt ^
+    build\win-relwithdebinfo-801\bin\FreeCADCmd.exe script.py
+```
+
+**Launch through `run.cmd`.** A debugger started outside it hands the child no
+OCCT/Coin `PATH`, and the process dies at load with a bare `0xc0000135` before any of
+this matters — the same problem the two sections above describe, arriving through a
+new door.
+
+#### Three things that will waste your time
+
+- **Do not break on all C++ exceptions.** OCCT throws `Standard_Failure` as ordinary
+  control flow and FreeCAD catches it; `sxe eh` drowns you in first-chance stops that
+  mean nothing. Break at the specific throw site instead.
+- **conda's Qt6 and PySide6 ship no PDBs**, so any stack that passes through them is
+  opaque. Nothing to do about it short of building Qt yourself.
+- **Python frames do not decode.** A crash reached from a Draft or Part script shows
+  as a wall of `_PyEval_EvalFrameDefault`. Mixed Python/C++ stacks need Visual Studio
+  Community with the Python workload; WinDbg cannot do it.
+
+#### What the release CRT costs at runtime
+
+No debug heap and no checked iterators (`_ITERATOR_DEBUG_LEVEL` is 0), so
+use-after-free and heap corruption stay silent until they crash somewhere unrelated.
+Do **not** try to set `_ITERATOR_DEBUG_LEVEL=1` to get the checks back: it changes
+container layout, and conda's prebuilt boost and Qt cannot be rebuilt to match. The
+two substitutes that work on a release build are PageHeap (needs the SDK's `gflags`,
+which the WinDbg package does not include, or the IFEO registry keys — both admin) and
+MSVC's ASan, `/fsanitize=address`, which is compatible with `/MD` and with
+RelWithDebInfo. Neither has been tried here yet.
+
 ### Current state / what is not done yet
 
 - OCCT `LinkVibe-801` and Coin `LinkVibe` build and install cleanly; both are on the
