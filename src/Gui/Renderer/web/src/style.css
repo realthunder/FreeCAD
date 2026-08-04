@@ -22,7 +22,9 @@
   touch-action: pan-y;
   position: absolute;
   top: 12px;
-  right: 12px;
+  /* Left, like the pill it grows out of — and the right belongs to the
+   * NaviCube. Drag it anywhere; this is only where it starts. */
+  left: calc(12px + env(safe-area-inset-left));
   width: min(340px, calc(100vw - 24px));
   max-height: calc(100vh - 24px - env(safe-area-inset-bottom));
   display: flex;
@@ -52,14 +54,26 @@
 
 .fc-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   padding: 10px 12px 6px;
 }
 
-.fc-title { flex: 1; min-width: 0; }
+/* One line, like the pill: bold label, then the muted path taking
+ * whatever room is left and ellipsing. Two stacked lines made the card
+ * look like a different object from the pill it grew out of. */
+.fc-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
 
 .fc-label {
+  flex: none;
+  max-width: 60%;
   font-weight: 600;
   font-size: 14px;
   overflow: hidden;
@@ -70,6 +84,8 @@
 .fc-count { color: #9aa0a6; font-weight: 400; font-size: 12px; }
 
 .fc-subtitle {
+  flex: 1;
+  min-width: 0;
   color: #9aa0a6;
   font-size: 11px;
   overflow: hidden;
@@ -350,4 +366,20 @@
   .fc-drag, .fc-pill { touch-action: none; }
   /* The controls inside a handle keep their own gestures. */
   .fc-drag button, .fc-pill button { touch-action: manipulation; }
+}
+
+/* The card grows out of the pill's corner rather than appearing in one:
+ * the two are one panel in two sizes, and a jump reads as a second
+ * panel. Scaled from the top-left because that is the corner handed
+ * over, so the header stays put while the body unfolds under it. */
+@keyframes fc-unfold {
+  from { opacity: 0; transform: scale(0.97) translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+.fc-inspector {
+  transform-origin: top left;
+  animation: fc-unfold 130ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-inspector { animation: none; }
 }
