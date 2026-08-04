@@ -358,6 +358,14 @@ never a crash.
   card is a dead end. Switching resets the group/keyword navigation, because one subject's
   groups mean nothing to another. A new pick returns the card to the object — a pick is a
   statement about what the user is now interested in.
+- **Draggable.** Both panels move: grab the card's header, or the pill anywhere but its
+  buttons. Any fixed corner collides with something eventually — the card is tall enough to
+  cover the NaviCube from either side, and what a panel hides is exactly what its own edits
+  are changing — so the answer is that the panel moves, not that the anchor does. Pointer
+  events (stylus/tablet behave like a mouse) with capture on the handle; the position is
+  clamped to the viewport so a panel can never be dragged out of reach, re-clamped when the
+  window shrinks, and remembered per panel in `localStorage`. Narrow screens keep the pinned
+  bottom sheet.
 - **Live editing.** Number fields commit on blur/Enter; sliders (constrained floats) preview
   continuously but only send `setProperty` on release (respect the semantic tier — no 60 Hz
   spam; local preview can come later via the interaction tier). Every field is a real DOM
