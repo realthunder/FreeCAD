@@ -49,6 +49,16 @@ _render.SetBool("WaterReflection", True)
 _render.SetBool("WaterPlanarReflection", True)
 _render.SetBool("WaterShadow", True)
 
+# Look of this fountain, as opposed to of the bundled package: the
+# effect ships defaults for an emitter a few units wide, and this basin
+# is twenty units across.
+TIME_SCALE = 1.5     # motion rate; the plume's shape is unchanged
+GRAVITY = 16.0       # package default, before the time scale
+DRAG = 0.5
+STAGGER = 0.25
+EMITTER_RATE = 30.0
+OPACITY = 0.65
+
 DOC = os.environ.get("FN_DOC", "")
 SHOT = os.environ.get("FN_SHOT", "")
 EXIT = os.environ.get("FN_EXIT", "") == "1"
@@ -104,9 +114,27 @@ def jet(doc, rendereffects, label, x, y, nozzle_z, width, height, launch,
     prog.EmitterCount = count
     prog.EmitterSeed = seed
     prog.Label = label + "_Step"
-    prog.Param_Launch = launch
+    # Time scale. Water at this size moves faster than the package
+    # default reads: the launch alone cannot fix that, since raising it
+    # throws the jet higher instead of making it brisker. Scaling the
+    # clock keeps the arc — height is v^2/2g, so v*k against g*k^2 is
+    # the same plume — and only the rate of it changes. Everything with
+    # time in its units follows: a per-second drag scales with k, and a
+    # lifetime and an emission stagger are durations, so they divide.
+    k = TIME_SCALE
+    prog.Param_Launch = launch * k
+    prog.Param_Gravity = GRAVITY * k * k
+    prog.Param_Drag = DRAG * k
+    prog.Param_Stagger = STAGGER / k
     prog.Param_Spread = (spread, 0.35, 0.0)
-    prog.Param_Life = life
+    prog.Param_Life = life / k
+    # A faster arc needs finer steps to stay resolved: the step is a
+    # fixed slice of simulated time, not of the frame.
+    prog.EmitterRate = EMITTER_RATE * k
+    # Spray thin enough to read as water rather than as a solid body:
+    # a stack of sprites reaches 1-(1-a)^N, so the package default
+    # saturates the jet core after about three overlaps.
+    prog.Param_Opacity = OPACITY
     # Droplet size is in model units, so it belongs to the scene, not
     # to the package: this fountain is twenty units across and the
     # package default suits an emitter a few units wide.
