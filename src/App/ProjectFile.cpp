@@ -49,6 +49,7 @@
 
 #include "ProjectFile.h"
 #include "DocumentObject.h"
+#include <Base/Exception.h>
 #include <Base/FileInfo.h>
 #include <Base/InputSource.h>
 #include <Base/Reader.h>
@@ -201,10 +202,50 @@ void ProjectFile::setProjectFile(const std::string& zipArchive)
     xmlDocument = nullptr;
 }
 
+bool ProjectFile::isDirectory() const
+{
+    return Base::FileInfo(stdFile).isDir();
+}
+
+bool ProjectFile::parseDocument(std::istream& str, const char* name)
+{
+    std::unique_ptr<XercesDOMParser> parser(new XercesDOMParser);
+    parser->setValidationScheme(XercesDOMParser::Val_Auto);
+    parser->setDoNamespaces(false);
+    parser->setDoSchema(false);
+    parser->setValidationSchemaFullChecking(false);
+    parser->setCreateEntityReferenceNodes(false);
+
+    try {
+        Base::StdInputSource inputSource(str, name);
+        parser->parse(inputSource);
+        xmlDocument = parser->adoptDocument();
+        return true;
+    }
+    catch (const XMLException&) {
+        return false;
+    }
+    catch (const DOMException&) {
+        return false;
+    }
+}
+
 bool ProjectFile::loadDocument()
 {
     if (xmlDocument) {
         return true;  // already loaded
+    }
+
+    if (isDirectory()) {
+        Base::FileInfo fi(stdFile + "/Document.xml");
+        if (!fi.exists()) {
+            return false;
+        }
+        Base::ifstream str(fi, std::ios::in | std::ios::binary);
+        if (!str) {
+            return false;
+        }
+        return parseDocument(str, fi.filePath().c_str());
     }
 
     zipios::ZipFile project(stdFile);
@@ -213,25 +254,7 @@ bool ProjectFile::loadDocument()
     }
     std::unique_ptr<std::istream> str(project.getInputStream("Document.xml"));
     if (str) {
-        std::unique_ptr<XercesDOMParser> parser(new XercesDOMParser);
-        parser->setValidationScheme(XercesDOMParser::Val_Auto);
-        parser->setDoNamespaces(false);
-        parser->setDoSchema(false);
-        parser->setValidationSchemaFullChecking(false);
-        parser->setCreateEntityReferenceNodes(false);
-
-        try {
-            Base::StdInputSource inputSource(*str, stdFile.c_str());
-            parser->parse(inputSource);
-            xmlDocument = parser->adoptDocument();
-            return true;
-        }
-        catch (const XMLException&) {
-            return false;
-        }
-        catch (const DOMException&) {
-            return false;
-        }
+        return parseDocument(*str, stdFile.c_str());
     }
 
     return false;
@@ -315,15 +338,30 @@ bool ProjectFile::restoreObject(const std::string& name,
                                 App::PropertyContainer* obj,
                                 bool verbose)
 {
+    // Mirrors Document::restore(): a project saved as a directory is read through a
+    // FileReader rooted at its Document.xml, a zipped one through a ZipReader. Either
+    // way the reader has to be the archive-aware one - the plain istream constructor
+    // binds a Base::Reader whose readFiles() does nothing, so the property files would
+    // silently never be restored.
     Base::FileInfo fi(stdFile);
-    Base::ifstream file(fi, std::ios::in | std::ios::binary);
+    Base::ifstream file;
+    std::unique_ptr<zipios::ZipInputStream> zipstream;
+    std::unique_ptr<Base::Reader> archive;
 
-    zipios::ZipInputStream zipstream(file);
-    // The archive entries are read back through a ZipReader: the plain istream
-    // constructor binds a Base::Reader whose readFiles() does nothing, so the
-    // property files would silently never be restored.
-    Base::ZipReader zreader(zipstream, stdFile);
-    Base::XMLReader reader(zreader);
+    if (isDirectory()) {
+        Base::FileInfo doc(stdFile + "/Document.xml");
+        if (!doc.exists()) {
+            return false;
+        }
+        archive = std::make_unique<Base::FileReader>(doc, fi.fileName() + "/Document.xml");
+    }
+    else {
+        file.open(fi, std::ios::in | std::ios::binary);
+        zipstream = std::make_unique<zipios::ZipInputStream>(file);
+        archive = std::make_unique<Base::ZipReader>(*zipstream, stdFile);
+    }
+
+    Base::XMLReader reader(*archive);
     reader.setVerbose(verbose);
 
     if (!reader.isValid()) {
@@ -522,6 +560,20 @@ void ProjectFile::findFiles(XERCES_CPP_NAMESPACE_QUALIFIER DOMNode* node,
 
 std::string ProjectFile::extractInputFile(const std::string& name)
 {
+    if (isDirectory()) {
+        // Copy rather than hand back the entry itself: the contract is that the
+        // caller owns the returned file, and readInputFile() deletes it.
+        Base::FileInfo src(stdFile + "/" + name);
+        if (!src.exists()) {
+            return {};
+        }
+        Base::FileInfo fi(Base::FileInfo::getTempFileName());
+        if (!src.copyTo(fi.filePath().c_str())) {
+            return {};
+        }
+        return fi.filePath();
+    }
+
     zipios::ZipFile project(stdFile);
     std::unique_ptr<std::istream> str(project.getInputStream(name));
     if (str) {
@@ -554,6 +606,15 @@ void ProjectFile::readInputFile(const std::string& name, std::ostream& str)
 // file)
 void ProjectFile::readInputFileDirect(const std::string& name, std::ostream& str)
 {
+    if (isDirectory()) {
+        Base::FileInfo fi(stdFile + "/" + name);
+        if (fi.exists()) {
+            Base::ifstream istr(fi, std::ios::in | std::ios::binary);
+            istr >> str.rdbuf();
+        }
+        return;
+    }
+
     zipios::ZipFile project(stdFile);
     std::unique_ptr<std::istream> istr(project.getInputStream(name));
     if (istr) {
@@ -563,6 +624,10 @@ void ProjectFile::readInputFileDirect(const std::string& name, std::ostream& str
 
 std::string ProjectFile::replaceInputFile(const std::string& name, std::istream& inp)
 {
+    if (isDirectory()) {
+        throw Base::RuntimeError("ProjectFile: cannot rewrite a project saved as a directory");
+    }
+
     // create a new zip file with the name '<zipfile>.<uuid>'
     std::string uuid = Base::Uuid::createUuid();
     std::string fn = stdFile;
@@ -603,6 +668,10 @@ std::string ProjectFile::replaceInputFile(const std::string& name, std::istream&
 
 std::string ProjectFile::replaceInputFiles(const std::map<std::string, std::istream*>& inp)
 {
+    if (isDirectory()) {
+        throw Base::RuntimeError("ProjectFile: cannot rewrite a project saved as a directory");
+    }
+
     // create a new zip file with the name '<zipfile>.<uuid>'
     std::string uuid = Base::Uuid::createUuid();
     std::string fn = stdFile;
@@ -646,6 +715,10 @@ std::string ProjectFile::replaceInputFiles(const std::map<std::string, std::istr
 std::string
 ProjectFile::replacePropertyFiles(const std::map<std::string, App::Property*>& props)
 {
+    if (isDirectory()) {
+        throw Base::RuntimeError("ProjectFile: cannot rewrite a project saved as a directory");
+    }
+
     // create a new zip file with the name '<zipfile>.<uuid>'
     std::string uuid = Base::Uuid::createUuid();
     std::string fn = stdFile;
@@ -688,6 +761,10 @@ ProjectFile::replacePropertyFiles(const std::map<std::string, App::Property*>& p
 
 bool ProjectFile::replaceProjectFile(const std::string& name, bool keepfile)
 {
+    if (isDirectory()) {
+        throw Base::RuntimeError("ProjectFile: cannot rewrite a project saved as a directory");
+    }
+
     std::string uuid = Base::Uuid::createUuid();
     std::string fn = stdFile;
     fn += ".";

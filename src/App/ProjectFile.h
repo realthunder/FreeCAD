@@ -195,9 +195,17 @@ public:
      */
     bool replaceProjectFile(const std::string& name, bool keepfile = false);
 
+    /**
+     * A project saved as a directory holds the same entries as the zip does, unpacked:
+     * Document.xml at the top and the property files beside it. Everything that only
+     * reads the project handles both; the replace* methods are zip-only and say so.
+     */
+    bool isDirectory() const;
+
 private:
     void findFiles(XERCES_CPP_NAMESPACE_QUALIFIER DOMNode*, std::list<std::string>&) const;
     void findFiles(XERCES_CPP_NAMESPACE_QUALIFIER DOMNode*, std::list<PropertyFile>&) const;
+    bool parseDocument(std::istream& str, const char* name);
 
 private:
     std::string stdFile;
