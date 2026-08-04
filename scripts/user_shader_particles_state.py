@@ -23,6 +23,10 @@ fragment program.
 - state-timescale: a quarter of the warm-up on a four-times clock is
   byte-equal to the full warm-up at real time — the clock rate scales
   what the simulation is asked to reach, never the step it takes.
+- state-impacts: a step that reports where its particle struck
+  (fcParticleStoreHit) raises rings on the water it struck — the
+  impact map path, which is the only ripple in the engine that is
+  driven by events rather than by a pattern.
 - stateless-fallback: dropping SimulateProgram returns the emitter to
   its stateless path, byte-exact.
 
@@ -76,6 +80,7 @@ void main()
 {
     Particle p = fcParticleLoad(v_texcoord0);
     float dt = fcParticleStep();
+    vec4 hit = fcParticleNoImpact;
     p.age += dt;
     if (p.age > p.life)
     {
@@ -91,17 +96,31 @@ void main()
         {
             p.pos.z = u_pboxMin.z;
             p.vel.z = -p.vel.z * 0.6;
+            hit = fcParticleHit(p.pos, 1.0);
         }
     }
-    fcParticleStore(p);
+    fcParticleStoreHit(p, hit);
 }
 """
 
 # Must run before the first 3D view exists.
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt(
     "RenderCache", 3)
-FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render").SetString(
-    "Type", "bgfx - OpenGL")
+_render = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render")
+_render.SetString("Type", "bgfx - OpenGL")
+# The impact assert needs a water surface that actually shades, and a
+# surface shades only with the passes it reads from: the depth prepass
+# it refracts through and the volumetric set behind it. View properties
+# are seeded once when the view is created, so this has to be here —
+# writing the preference afterwards never reaches the view. Nothing
+# here shows until that assert builds the only water body in the
+# document, so the earlier captures are unaffected.
+_render.SetBool("AO", True)
+_render.SetBool("Volumetric", True)
+_render.SetBool("WaterSurface", True)
+_render.SetBool("WaterRefraction", True)
+_render.SetBool("WaterReflection", True)
+_render.SetBool("WaterPlanarReflection", True)
 
 results = []
 
@@ -245,6 +264,88 @@ def run():
         ok = byte_equal(warm20, scaled, "warmup 2.0 vs 0.5 at 4x clock")
         log("ASSERT state-timescale: %s" % ("PASS" if ok else "FAIL"))
         prog.EmitterTimeScale = 1.0
+        doc.recompute()
+        settle()
+
+        # ---- reported impacts ring the water they struck ----
+        # The step reports the floor bounce, the engine scatters the
+        # reports into the impact map, and the surface rings from
+        # them. Toggling only the ring strength isolates that path:
+        # everything else about the frame, the simulation included, is
+        # the same frozen state.
+        # A floor under the pool, and a pool deep enough to see it
+        # through: a water surface surrounded by nothing shades flat
+        # whatever its normals do — it refracts and reflects a uniform
+        # field either way — so a ring would move no pixels and the
+        # assert would fail on the scene rather than on the feature.
+        floor = doc.addObject("Part::Box", "Floor")
+        floor.Length = 30
+        floor.Width = 30
+        floor.Height = 2
+        floor.Placement.Base = FreeCAD.Vector(-15, -15, -8.6)
+        pool = doc.addObject("Part::Box", "Pool")
+        pool.Length = 30
+        pool.Width = 30
+        # Shallow, and barely absorbing: a deep pool swallows the floor
+        # under it and the surface goes back to a flat tinted sheet
+        # that no normal can disturb.
+        pool.Height = 1.6
+        # Top at the emitter's floor, which is where the step program
+        # bounces its particles and reports the hit.
+        pool.Placement.Base = FreeCAD.Vector(-15, -15, -6.6)
+        doc.recompute()
+        floor.ViewObject.ShapeColor = (0.60, 0.50, 0.40)
+        pool.ViewObject.ShapeColor = (0.15, 0.35, 0.55)
+        pvo = pool.ViewObject
+        pvo.addProperty("App::PropertyBool", "Render_Water")
+        pvo.Render_Water = True
+        # Density 0 keeps the volumetric water medium out of it: the
+        # surface is what rings, and the medium would only add a cost
+        # and a second thing to explain a pixel difference by.
+        pvo.addProperty("App::PropertyFloat", "Render_WaterDensity")
+        pvo.Render_WaterDensity = 0.0
+        view.Render_WaterAbsorption = 0.02
+        # The view property, not the preference: a preference written
+        # after the view exists never reaches it.
+        view.Render_WaterImpactStrength = 2.5
+        settle()
+        # Can this backend show a wave field at all? A ring is one, so
+        # where the stock waves move no pixels there is nothing for the
+        # assert to see — which is the software-GL leg, whose water
+        # surface shades flat (its environment reflection never varies,
+        # so no normal changes anything). Skip rather than fail: the
+        # claim is about the engine, and the real-GPU leg tests it.
+        wave = view.Render_WaterWaveStrength
+        view.Render_WaterWaveStrength = 0.0
+        settle()
+        flat = cap("ps_flat")
+        view.Render_WaterWaveStrength = 2.0
+        settle()
+        wavy = cap("ps_wavy")
+        shades = changed_count(flat, wavy) > 300
+        view.Render_WaterWaveStrength = wave
+        # The emitter reached its warm-up frames ago and a frozen one
+        # takes no further steps, so it would report nothing into a map
+        # that did not exist while it ran. A shorter warm-up rewinds it
+        # to the reset and replays — which is also what clears the map,
+        # so what it holds afterwards is this warm-up's own impacts.
+        prog.EmitterWarmup = 0.45
+        doc.recompute()
+        settle()
+        rings = cap("ps_rings")
+        view.Render_WaterImpactStrength = 0.0
+        doc.recompute()
+        settle()
+        calm = cap("ps_calm")
+        d = changed_count(rings, calm)
+        log("impact rings on vs off changed px: %d" % d)
+        log("ASSERT state-impacts: %s"
+            % ("PASS" if d > 300
+               else ("SKIP (backend shades water flat)" if not shades
+                     else "FAIL")))
+        view.Render_WaterImpactStrength = 1.0
+        doc.removeObject(pool.Name)
+        doc.removeObject(floor.Name)
         doc.recompute()
         settle()
 
