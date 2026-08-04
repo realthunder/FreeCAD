@@ -415,7 +415,7 @@ void WebView::contextMenuEvent(QContextMenuEvent* event)
         auto action = pageAction(QWebEnginePage::ViewSource);
         if (action && action != actionViewSource) {
             QSignalMapper* signalMapper = new QSignalMapper (this);
-            signalMapper->setProperty("url", QVariant(r.linkUrl()));
+            signalMapper->setProperty("url", QVariant(linkUrl));
             signalMapper->setMapping(action, WebAction::ViewSource);
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
             connect(signalMapper,
