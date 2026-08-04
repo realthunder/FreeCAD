@@ -574,6 +574,73 @@ Emitter meshes are built from explicit
 `SoCoordinate3`/`SoNormal`/`SoMaterial` nodes — the render cache does
 not capture `SoVertexProperty`-fed shapes.
 
+**Stateful emitters.** *Implemented.* Position-as-`f(seed, t)` cannot
+express anything whose next frame depends on the last: a collision, a
+respawn, a force field, drag. Giving particles state normally means
+compute shaders and storage buffers — which the browser tier does not
+have (WebGL2 is GLES 3.0; compute is 3.1), and a simulation that only
+runs on the desktop is a different effect on every other target. So
+the state lives where every tier can write it: **a ping-pong pair of
+RGBA32F render targets, advanced by an ordinary fragment pass.** One
+texel is one particle, one fragment program is the whole solver, and
+desktop and browser run the identical program.
+
+- **State**: two attachments per buffer — `s_pstate0` = xyz position
+  in the emitter's model space + age, `s_pstate1` = xyz velocity +
+  lifetime. Grid is `min(count, 256)` wide. Point-sampled; the state
+  is data, not an image.
+- **Step**: `App::ShaderProgram.SimulateProgram`, a fragment program
+  run over the grid once per **fixed** step (`EmitterRate`, default
+  60/s). It reads the previous state and writes the next through
+  `fc_particle.sh` (`fcParticleLoad`/`fcParticleStore`,
+  `fcParticleSpawn`, `fcParticleStep`). A fixed step is what makes the
+  motion identical across machines; a frame too slow to afford its
+  steps lets the simulation fall behind rather than stretching them,
+  because a stretched step is a different simulation.
+- **Draw**: the beauty vertex stage reads the same texel by vertex
+  texture fetch (`fcParticleUV(a_normal.z)` → `fcParticleLoad`), so
+  the look and the motion stay in step without either knowing how the
+  other works.
+- **Reset**: the stock `fs_fc_psim_init` seeds birth state
+  deterministically from the emitter seed, staggering ages over one
+  lifetime so the emitter is in full flow at t = 0. Deliberately not
+  user code — a reset a step program could get wrong would take the
+  determinism guarantee with it.
+- **Freeze-frame**: `EmitterWarmup` seconds are simulated from the
+  reset before a frozen frame draws, in steps the same length as the
+  live ones, over as many frames as the per-frame budget needs (the
+  view keeps reporting `animating()` until the warm-up lands). Frozen
+  state is therefore a pure function of (seed, count, program,
+  warm-up) — never of how long the session has been running — and a
+  warm-up shorter than what the state already ran rewinds to the reset
+  and replays. That is what keeps stateful effects golden-image
+  comparable (`scripts/user_shader_particles_state.py`).
+- **Identity**: state is keyed by `DrawCall::objectKey`, so two
+  occurrences of one emitter simulate independently and a moved
+  emitter keeps its particles. A changed step program, particle count
+  or clock mode is a different simulation and resets.
+- **Transport**: the step rides as the program's *second*
+  `SoFragmentShader` (Coin's node triple has room for two sources, and
+  this needs three) and as `UserShader::simulateSource`; the snapshot
+  ships its viewer binary in `Compiled::simBin` (v39). The emitter's
+  count/rate/warm-up reach the backend as the reserved `fc_emitter`
+  parameter, the same no-new-fields channel as `fc_state`.
+- **Budget**: `kParticleSlots` (3) stateful emitters per view ×
+  `kParticleSteps` (2) steps per frame. This is bgfx view-id budget —
+  a viewer occupies `NUM_VIEWS` contiguous ids out of 256, and these
+  numbers are what keeps three viewers open at once. The state views
+  come **first** in id order, before anything that draws.
+- **Fallback**: without a color-renderable RGBA32F (a WebGL2 context
+  lacking `EXT_color_buffer_float`), over the slot budget, or while
+  the step program is still compiling, no state is bound and the
+  vertex stage runs its stateless path. A stateful effect degrades to
+  a stateless one; it never disappears and never draws black.
+
+What this does *not* reach is neighbour queries — SPH and friends need
+a sorted spatial hash, which is the one thing that genuinely wants
+compute. Everything else a particle system does (gravity, drag,
+collisions, forces, spawn/death) is expressible here.
+
 ### 5.9 Compilation and caching
 
 - **Desktop**: user source compiles through the host `shaderc`
@@ -599,7 +666,8 @@ not capture `SoVertexProperty`-fed shapes.
 
 `scripts/user-shader-verify.sh desktop|viewer|all <outdir>` runs the
 whole suite matrix (params, post, instancing, element, lighting,
-motion, particles; browser legs via headless Chromium against a
+motion, particles, particles-state; browser legs via headless Chromium
+against a
 serving backend). The golden-image harness
 (`scripts/render-verify.sh`) restages captures byte-exact under
 freeze-frame. Policy: every framework change lands with a suite, no
@@ -782,9 +850,17 @@ phone).
 
 - Stock passes keep stock programs: a material-stage override does not
   affect shadows, picking, AO or section clipping; a displacing VS
-  shows the artifacts listed in §5.3. An emitter-bounds story (bbox
-  padding for displaced geometry) comes with the particle framework's
-  next phase.
+  shows the artifacts listed in §5.3. Emitter bounds are handled by
+  `EmitterMargin`'s inert corner quads (§5.11); a stateful emitter
+  whose simulation carries particles beyond that margin still clips,
+  because the bounds are geometry-time and the state is not.
+- A stateful emitter's spawn volume is the emitter geometry's own
+  bounds inverse-transformed into model space (§5.8), which is the
+  seed box *plus* `EmitterMargin` — and, under a rotating model
+  matrix, the axis-aligned hull of it. Bigger than the stateless seed
+  box, never smaller.
+- Neighbour queries (SPH-class fluid) stay out of reach without
+  compute shaders; see the §5.8 closing note.
 - Stages are currently `material` and `post`; the `water`/`volume`
   stages and the shipped effect library are designed (§5.11) but not
   yet implemented.

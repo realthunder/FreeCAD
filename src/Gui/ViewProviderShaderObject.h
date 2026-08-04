@@ -76,6 +76,9 @@ private:
     CoinPtr<SoShaderProgram> pcShaderProgram;
     CoinPtr<SoVertexShader> pcVertexShader;
     CoinPtr<SoFragmentShader> pcFragmentShader;
+    /// Second fragment object of the program: the particle state step
+    /// of a stateful emitter (docs/RenderEngine.md §5.8)
+    CoinPtr<SoFragmentShader> pcSimulateShader;
     // uniform name -> parameter node, updated in place so a value edit
     // notifies without relisting the parameter field
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> paramNodes;
@@ -194,6 +197,7 @@ private:
     CoinPtr<SoShaderProgram> pcOwnProgram;
     CoinPtr<SoVertexShader> pcOwnVertexShader;
     CoinPtr<SoFragmentShader> pcOwnFragmentShader;
+    CoinPtr<SoFragmentShader> pcOwnSimulateShader;
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> ownParamNodes;
 };
 

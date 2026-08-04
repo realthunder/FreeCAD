@@ -55,6 +55,10 @@ public:
     PropertyString VertexProgram;
     /// Fragment stage source
     PropertyString FragmentProgram;
+    /// Particle state step of a stateful emitter: a fragment program
+    /// advancing the state textures by one fixed step. Empty = the
+    /// emitter is stateless (docs/RenderEngine.md §5.8)
+    PropertyString SimulateProgram;
     /// Blend override of the material-stage beauty draw
     /// (Default keeps the draw's stock state)
     PropertyEnumeration Blend;
@@ -82,6 +86,12 @@ public:
     /// into the generated geometry's bounds so displaced billboards
     /// are not clipped by the auto near/far planes
     PropertyFloat EmitterMargin;
+    /// Fixed simulation steps per second of a stateful emitter
+    PropertyFloat EmitterRate;
+    /// Seconds of simulation run from the reset state before a frozen
+    /// frame is drawn, so a freeze-frame capture of a stateful effect
+    /// shows settled motion and still reproduces byte for byte
+    PropertyFloat EmitterWarmup;
 
     const char* getViewProviderName() const override
     {

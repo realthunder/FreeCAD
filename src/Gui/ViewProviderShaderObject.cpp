@@ -274,6 +274,7 @@ ViewProviderShaderProgram::ViewProviderShaderProgram()
     pcShaderProgram = new SoShaderProgram;
     pcVertexShader = new SoVertexShader;
     pcFragmentShader = new SoFragmentShader;
+    pcSimulateShader = new SoFragmentShader;
 }
 
 ViewProviderShaderProgram::~ViewProviderShaderProgram() = default;
@@ -311,6 +312,7 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
                 || prop == &obj->Dialect
                 || prop == &obj->VertexProgram
                 || prop == &obj->FragmentProgram
+                || prop == &obj->SimulateProgram
                 || prop == &obj->Blend
                 || prop == &obj->DepthWrite
                 || prop == &obj->Enabled
@@ -318,7 +320,9 @@ void ViewProviderShaderProgram::updateData(const App::Property *prop)
                 || prop == &obj->EmitterSeed
                 || prop == &obj->EmitterSpread
                 || prop == &obj->EmitterOffset
-                || prop == &obj->EmitterMargin)) {
+                || prop == &obj->EmitterMargin
+                || prop == &obj->EmitterRate
+                || prop == &obj->EmitterWarmup)) {
         if (dynParam)
             syncParameters();
         else
@@ -355,6 +359,7 @@ static void syncShaderNodes(App::ShaderProgram *obj,
         SoShaderProgram *program,
         SoVertexShader *vshader,
         SoFragmentShader *fshader,
+        SoFragmentShader *simshader,
         const std::vector<std::pair<std::string, std::vector<float>>> &params,
         std::map<std::string, CoinPtr<SoShaderParameterArray1f>> &paramNodes)
 {
@@ -366,6 +371,13 @@ static void syncShaderNodes(App::ShaderProgram *obj,
                                                       : SoShaderObject::GLSL_PROGRAM;
     const char *vs = obj->VertexProgram.getValue();
     const char *fs = obj->FragmentProgram.getValue();
+    // The state step of a stateful emitter rides as the program's
+    // second fragment object (docs/RenderEngine.md §5.8); it is only
+    // meaningful with a beauty fragment stage ahead of it, which is
+    // what tells the two apart on the way out.
+    const char *ss = obj->SimulateProgram.getValue();
+    if (!fs || !fs[0])
+        ss = "";
 
     if (vshader->sourceType.getValue() != sourcetype)
         vshader->sourceType = sourcetype;
@@ -375,13 +387,19 @@ static void syncShaderNodes(App::ShaderProgram *obj,
         fshader->sourceType = sourcetype;
     if (fshader->sourceProgram.getValue() != fs)
         fshader->sourceProgram = fs;
+    if (simshader->sourceType.getValue() != sourcetype)
+        simshader->sourceType = sourcetype;
+    if (simshader->sourceProgram.getValue() != ss)
+        simshader->sourceProgram = ss;
 
-    SoNode *nodes[2];
+    SoNode *nodes[3];
     int num = 0;
     if (vs && vs[0])
         nodes[num++] = vshader;
     if (fs && fs[0])
         nodes[num++] = fshader;
+    if (ss && ss[0])
+        nodes[num++] = simshader;
     bool changed = program->shaderObject.getNum() != num;
     for (int i = 0; !changed && i < num; ++i)
         changed = program->shaderObject[i] != nodes[i];
@@ -405,6 +423,17 @@ static void syncShaderNodes(App::ShaderProgram *obj,
         allParams.emplace_back("fc_state", std::vector<float>{
                 float(obj->Blend.getValue()),
                 obj->DepthWrite.getValue() ? 1.0f : 0.0f, 0.0f, 0.0f});
+    // Reserved "fc_emitter" = what the backend must know to run a
+    // stateful emitter's state grid (docs/RenderEngine.md §5.8): how
+    // many particles the seed geometry encodes, and the fixed step
+    // rate and warm-up of the simulation. Same no-new-fields channel
+    // as fc_state — it reaches Appearance clones and the snapshot
+    // transport for free.
+    if (ss && ss[0])
+        allParams.emplace_back("fc_emitter", std::vector<float>{
+                float(std::max(1L, obj->EmitterCount.getValue())),
+                float(obj->EmitterRate.getValue()),
+                float(obj->EmitterWarmup.getValue()), 0.0f});
     std::map<std::string, CoinPtr<SoShaderParameterArray1f>> next;
     for (const auto &v : allParams) {
         auto &node = next[v.first];
@@ -458,7 +487,7 @@ void ViewProviderShaderProgram::updateShaderNode()
     if (!obj)
         return;
     syncShaderNodes(obj, pcShaderProgram, pcVertexShader, pcFragmentShader,
-                    collectParamProps(obj), paramNodes);
+                    pcSimulateShader, collectParamProps(obj), paramNodes);
 }
 
 void ViewProviderShaderProgram::syncParameters()
@@ -1282,6 +1311,7 @@ SoShaderProgram *ViewProviderAppearance::ownProgramNode()
         pcOwnProgram = new SoShaderProgram;
         pcOwnVertexShader = new SoVertexShader;
         pcOwnFragmentShader = new SoFragmentShader;
+        pcOwnSimulateShader = new SoFragmentShader;
     }
 
     // The program's parameters overridden per binding by this
@@ -1302,7 +1332,8 @@ SoShaderProgram *ViewProviderAppearance::ownProgramNode()
               [](const auto &a, const auto &b) { return a.first < b.first; });
 
     syncShaderNodes(progObj, pcOwnProgram, pcOwnVertexShader,
-                    pcOwnFragmentShader, params, ownParamNodes);
+                    pcOwnFragmentShader, pcOwnSimulateShader, params,
+                    ownParamNodes);
     return pcOwnProgram;
 }
 

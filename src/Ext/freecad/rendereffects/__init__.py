@@ -27,10 +27,18 @@ Manifest schema (all program fields except ``fragment`` optional)::
           "blend": "Additive",         # Default / Alpha / Additive
           "depthwrite": false,
           "enabled": true,             # false = shipped switched off
+          "simulate": "step.sc",       # particle state step (§5.8)
           "params": {"Speed": 1.0}     # Param_* defaults (floats)
         }
       ]
     }
+
+A particle program with ``simulate`` is a *stateful* emitter: the named
+fragment program advances its particles one fixed step at a time in
+ping-pong state textures, and the vertex stage reads the result instead
+of computing position from the clock. Its ``emitter`` block then also
+accepts ``rate`` (fixed steps per second) and ``warmup`` (seconds
+simulated before a frozen frame draws).
 
 ``viewProps`` are boolean view properties switched on in the active 3D
 view at activation (e.g. the global water-surface toggle, which
@@ -160,6 +168,11 @@ def instantiate(name, doc=None, view_props=True):
             with open(os.path.join(path, pm["vertex"]),
                       encoding="utf-8") as f:
                 prog.VertexProgram = f.read()
+        if pm.get("simulate"):
+            # stateful emitter: the particle state step (§5.8)
+            with open(os.path.join(path, pm["simulate"]),
+                      encoding="utf-8") as f:
+                prog.SimulateProgram = f.read()
         if pm.get("blend"):
             prog.Blend = pm["blend"]
         if "depthwrite" in pm:
@@ -177,6 +190,10 @@ def instantiate(name, doc=None, view_props=True):
                 prog.EmitterOffset = FreeCAD.Vector(*em["offset"])
             if "margin" in em:
                 prog.EmitterMargin = float(em["margin"])
+            if "rate" in em:
+                prog.EmitterRate = float(em["rate"])
+            if "warmup" in em:
+                prog.EmitterWarmup = float(em["warmup"])
         for pname, pval in (pm.get("params") or {}).items():
             prog.addProperty("App::PropertyFloat", "Param_" + pname)
             setattr(prog, "Param_" + pname, float(pval))

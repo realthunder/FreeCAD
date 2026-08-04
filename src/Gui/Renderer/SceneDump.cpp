@@ -121,15 +121,20 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     what it picks without a round trip (docs/ThinClient.md §4.1).
 //     Outside the group chunk on purpose: identity must not disturb
 //     content keys.
-const uint32_t kVersion = 38;
+// 39: a user shader carries its particle state step (simulateSource)
+//     and the step's compiled viewer binary (Compiled::simBin) — the
+//     stateful particle tier (docs/RenderEngine.md §5.8). Both the
+//     inline shader table and the out-of-band shader chunk gained the
+//     fields, so kChunkVersion moves with it.
+const uint32_t kVersion = 39;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
 /// part of what the content key hashes: bump it whenever a chunk's own
 /// layout changes and every key changes with it, which retires the
 /// entries cached by older builds instead of letting them be misread.
-/// (3: the mesh references inside a group chunk became level ladders.)
-const uint32_t kChunkVersion = 3;
+/// (4: a shader chunk carries the particle state step and its binary.)
+const uint32_t kChunkVersion = 4;
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -983,6 +988,7 @@ void writeUserShader(
     w.str(s.stage);
     w.str(s.vertexSource);
     w.str(s.fragmentSource);
+    w.str(s.simulateSource);
     w.u32(uint32_t(s.params.size()));
     for (const auto &p : s.params) {
         w.str(p.name);
@@ -999,15 +1005,18 @@ void writeUserShader(
         w.str(c.profile);
         w.bytes(c.vsBin);
         w.bytes(c.fsBin);
+        w.bytes(c.simBin);
     }
 }
 
-std::shared_ptr<const UserShader> readUserShader(Reader &r)
+std::shared_ptr<const UserShader> readUserShader(Reader &r, uint32_t version)
 {
     auto s = std::make_shared<UserShader>();
     r.str(s->stage, 0x100u);
     r.str(s->vertexSource);
     r.str(s->fragmentSource);
+    if (version >= 39)
+        r.str(s->simulateSource);
     uint32_t np = r.u32();
     if (!r.ok || np > 0x10000u) {
         r.ok = false;
@@ -1034,6 +1043,8 @@ std::shared_ptr<const UserShader> readUserShader(Reader &r)
         r.str(c.profile, 0x100u);
         r.bytes(c.vsBin);
         r.bytes(c.fsBin);
+        if (version >= 39)
+            r.bytes(c.simBin);
     }
     return s;
 }
@@ -2115,7 +2126,9 @@ RefReader manifestRefReader(const LoaderPtr &st, SceneSnapshot &snap)
                         cr.ok = false;
                         return;
                     }
-                    auto parsed = readUserShader(cr);
+                    // The chunk's own layout revision gates the fields
+                    // (checked just above), so it always reads current.
+                    auto parsed = readUserShader(cr, kVersion);
                     if (cr.ok && parsed)
                         *sh = *parsed;
                 });
@@ -2744,7 +2757,7 @@ void loadMonolithicTables(Reader &r, SceneSnapshot &snap, uint32_t version,
         if (!r.ok || ns > 0x10000u)
             r.ok = false;
         for (uint32_t i = 0; r.ok && i < ns; ++i)
-            shaders.push_back(readUserShader(r));
+            shaders.push_back(readUserShader(r, version));
         uint32_t npost = r.u32();
         if (!r.ok || npost > 0x10000u)
             r.ok = false;

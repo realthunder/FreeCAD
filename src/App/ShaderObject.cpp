@@ -54,6 +54,13 @@ ShaderProgram::ShaderProgram()
             "stock vertex stage of the target pipeline stage");
     ADD_PROPERTY_TYPE(FragmentProgram, (""), "Shader", Prop_None,
             "Fragment stage source");
+    ADD_PROPERTY_TYPE(SimulateProgram, (""), "Emitter", Prop_None,
+            "Particle state step source: a fragment program advancing\n"
+            "the emitter's particle state (position/life, velocity) by\n"
+            "one fixed time step, reading the previous state from\n"
+            "s_pstate0/s_pstate1 and writing the next. Leave empty for\n"
+            "a stateless emitter, whose vertex stage computes position\n"
+            "from the seed and the clock alone");
     Blend.setEnums(BlendEnums);
     ADD_PROPERTY_TYPE(Blend, ((long)0), "Shader", Prop_None,
             "Blend override of the material-stage beauty draw:\n"
@@ -85,6 +92,17 @@ ShaderProgram::ShaderProgram()
             "Travel headroom as a fraction of the seed box diagonal,\n"
             "folded into the generated bounds so displaced billboards\n"
             "are not clipped by the auto near/far planes");
+    ADD_PROPERTY_TYPE(EmitterRate, (60.0), "Emitter", Prop_None,
+            "Fixed simulation steps per second of a stateful emitter\n"
+            "(SimulateProgram). The step length is constant, so the\n"
+            "motion is the same on every machine; a frame too slow to\n"
+            "afford its steps lets the simulation fall behind rather\n"
+            "than stretching them");
+    ADD_PROPERTY_TYPE(EmitterWarmup, (0.0), "Emitter", Prop_None,
+            "Seconds of simulation run from the reset state before a\n"
+            "frozen frame is drawn (RenderDebug_FreezeFrame). Gives a\n"
+            "deterministic capture settled motion instead of particles\n"
+            "at their spawn points");
 }
 
 // ----------------------------------------------------------------------------

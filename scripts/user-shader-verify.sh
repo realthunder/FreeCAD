@@ -20,6 +20,9 @@
 #            Param-driven displacement, u_fcTime animation + freeze) and
 #            user_shader_particles.py (Emitter seed quads + billboard
 #            VS + additive state = stateless GPU particles) and
+#            user_shader_particles_state.py (§5.8 stateful tier:
+#            ping-pong state textures, warm-up determinism, stateless
+#            fallback) and
 #            user_shader_water.py ("water" stage: activation-by-binding,
 #            fc_user_water.sh stock identity, tint, fallback) and
 #            user_shader_volume.py ("volume" stage: medium-function
@@ -178,6 +181,7 @@ if [ "$cmd" = desktop ] || [ "$cmd" = all ]; then
     run_desktop user_shader_lighting.py lighting
     run_desktop user_shader_motion.py motion
     run_desktop user_shader_particles.py particles
+    run_desktop user_shader_particles_state.py particles-state
     run_desktop user_shader_water.py water
     run_desktop user_shader_volume.py volume
     run_desktop user_shader_effects.py effects

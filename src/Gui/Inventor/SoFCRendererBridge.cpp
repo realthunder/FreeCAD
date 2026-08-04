@@ -1139,8 +1139,19 @@ RendererBridge::translateShaderProgram(const SoNode * node,
             continue;
         if (obj->isOfType(SoVertexShader::getClassTypeId()))
             out.vertexSource = std::move(src);
-        else if (obj->isOfType(SoFragmentShader::getClassTypeId()))
-            out.fragmentSource = std::move(src);
+        else if (obj->isOfType(SoFragmentShader::getClassTypeId())) {
+            // The second fragment object of a program is the particle
+            // state step, not a replacement beauty stage
+            // (docs/RenderEngine.md §5.8) — a stateful emitter needs
+            // three sources and Coin's node triple only has room for
+            // two, so the list carries the extra one.
+            if (out.fragmentSource.empty())
+                out.fragmentSource = std::move(src);
+            else if (out.simulateSource.empty())
+                out.simulateSource = std::move(src);
+            else
+                continue;
+        }
         else
             continue;   // geometry shaders: not consumable by bgfx
         for (int j = 0; j < obj->parameter.getNum(); ++j) {

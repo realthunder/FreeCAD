@@ -424,6 +424,16 @@ struct UserShader {
     /// v_color0, v_vpos).
     std::string vertexSource;
     std::string fragmentSource;
+    /// Particle state step of a stateful emitter (docs/RenderEngine.md
+    /// §5.8): a fragment program run over the emitter's state textures
+    /// once per fixed simulation step, reading the previous state
+    /// (s_pstate0/1) and writing the next. Carried as the *second*
+    /// SoFragmentShader of the program node — no new Coin node type,
+    /// and the existing capture/merge/transport paths keep working.
+    /// Empty leaves the emitter stateless (position = f(seed, time)),
+    /// which is what every tier falls back to when float render
+    /// targets are unavailable.
+    std::string simulateSource;
     /// SoShaderParameter values attached to the shader objects,
     /// packed like RenderDebugConfig::UserParam (values zero-padded
     /// to vec4 lanes; names are uniform names, "u_" prefix and all).
@@ -439,10 +449,13 @@ struct UserShader {
         std::string profile;
         std::vector<uint8_t> vsBin;
         std::vector<uint8_t> fsBin;
+        /// Binary of simulateSource, paired with the viewer's stock
+        /// full-screen vertex shader. Empty for a stateless program.
+        std::vector<uint8_t> simBin;
 
         bool operator==(const Compiled &o) const {
             return profile == o.profile && vsBin == o.vsBin
-                && fsBin == o.fsBin;
+                && fsBin == o.fsBin && simBin == o.simBin;
         }
         bool operator!=(const Compiled &o) const { return !(*this == o); }
     };
@@ -454,7 +467,8 @@ struct UserShader {
 
     bool operator==(const UserShader &o) const {
         return stage == o.stage && vertexSource == o.vertexSource
-            && fragmentSource == o.fragmentSource && params == o.params
+            && fragmentSource == o.fragmentSource
+            && simulateSource == o.simulateSource && params == o.params
             && compiled == o.compiled;
     }
     bool operator!=(const UserShader &o) const { return !(*this == o); }

@@ -723,8 +723,13 @@ public:
     /// material stage). Invalid while a compile is pending (desktop)
     /// or while no shipped binary matches the active backend
     /// (standalone); entry.failed on real failure.
+    /// simulate = resolve the shader's particle state step
+    /// (UserShader::simulateSource) instead of its beauty fragment
+    /// stage, always paired with the stock full-screen vertex shader.
+    /// Same cache, same async compile, same viewer-tier binary lookup.
     bgfx::ProgramHandle getUserProgram(const Render::UserShader &shader,
-                                       const char *stockVs);
+                                       const char *stockVs,
+                                       bool simulate = false);
 #ifndef FC_RENDERER_STANDALONE
     /// Per-shader compile bookkeeping, keyed by SHA1(source×target×type).
     std::set<std::string> userShaderInflight;
@@ -1742,8 +1747,27 @@ class BGFXView
 public:
     // Pass sequence reproducing (a simplified subset of) SoFCRenderer's
     // draw order. Each is a bgfx view sharing the same framebuffer.
+    /// Stateful particle emitters simulated per view, and the fixed
+    /// simulation steps each may take in one frame
+    /// (docs/RenderEngine.md §5.8). Both are view-id budget: a viewer
+    /// occupies NUM_VIEWS contiguous bgfx ids and bgfx offers 256, so
+    /// these numbers are what keeps three viewers open at once. A
+    /// frame that cannot afford every step lets the simulation fall
+    /// behind the clock rather than stretching the step — a stretched
+    /// step is a different simulation.
+    enum {
+        kParticleSlots = 3,
+        kParticleSteps = 2,
+        kParticleViews = kParticleSlots * kParticleSteps,
+    };
+
     enum PassView {
-        ViewBackground = 0, // clear + gradient background quad (clip space)
+        // The particle state steps come first on purpose: bgfx submits
+        // views in id order, and every later pass that draws or shades
+        // particles reads the state these wrote this frame.
+        ViewParticleSim0 = 0,
+        ViewParticleSimLast = ViewParticleSim0 + kParticleViews - 1,
+        ViewBackground,     // clear + gradient background quad (clip space)
         ViewSunDisc,        // visible sun (disc + limb glow) along the
                             // directional scene light, over the
                             // background before any geometry — the
@@ -1980,9 +2004,62 @@ public:
     };
     enum { NumOverlayViews = ViewPresent - ViewOverlay0 };
 
+    /// One stateful emitter's particle state (docs/RenderEngine.md
+    /// §5.8): two RGBA32F attachment pairs that ping-pong once per
+    /// fixed step. `pos` holds xyz position + age, `vel` holds xyz
+    /// velocity + lifetime. Sized by particle count, not by the
+    /// window, so it survives a resize — which is why it lives outside
+    /// BGFXView::destroy().
+    struct ParticleState {
+        bgfx::FrameBufferHandle fbo[2] = {BGFX_INVALID_HANDLE,
+                                          BGFX_INVALID_HANDLE};
+        bgfx::TextureHandle pos[2] = {BGFX_INVALID_HANDLE,
+                                      BGFX_INVALID_HANDLE};
+        bgfx::TextureHandle vel[2] = {BGFX_INVALID_HANDLE,
+                                      BGFX_INVALID_HANDLE};
+        uint16_t gridW = 0;         ///< state texture size in texels
+        uint16_t gridH = 0;
+        int count = 0;              ///< particles (<= gridW * gridH)
+        /// Identity of what produced this state: the step program
+        /// source, the particle count and the emitter seed. A change
+        /// is a different simulation, so the state resets.
+        uint64_t identity = 0;
+        int cur = 0;                ///< buffer holding the live state
+        float simTime = 0.0f;       ///< seconds simulated since reset
+        bool needInit = true;
+        uint32_t lastFrame = 0;     ///< view frame of the last step
+        int slot = -1;              ///< sim view slot this frame, or -1
+
+        void destroy()
+        {
+            for (int i = 0; i < 2; ++i) {
+                if (bgfx::isValid(fbo[i])) {
+                    bgfx::destroy(fbo[i]);
+                    fbo[i] = BGFX_INVALID_HANDLE;
+                }
+            }
+            for (int i = 0; i < 2; ++i) {
+                for (auto tex : {&pos[i], &vel[i]}) {
+                    if (bgfx::isValid(*tex)) {
+                        bgfx::destroy(*tex);
+                        *tex = BGFX_INVALID_HANDLE;
+                    }
+                }
+            }
+        }
+    };
+    /// Live particle states keyed by the draw's objectKey — the stable
+    /// per-occurrence identity, so two occurrences of one emitter
+    /// object simulate independently and a moved emitter keeps its
+    /// particles.
+    std::map<uint64_t, ParticleState> particles;
+
     ~BGFXView()
     {
         destroy();
+        for (auto &v : particles)
+            v.second.destroy();
+        particles.clear();
     }
 
     void destroy()
@@ -3254,6 +3331,32 @@ public:
                                        _BGFXLib.shaderPath().c_str());
         u_reflParams = bgfx::createUniform("u_reflParams",
                                            bgfx::UniformType::Vec4);
+
+        // Stateful particle resources (docs/RenderEngine.md §5.8).
+        // Size-independent, so they are created once and kept across
+        // the resize-driven rebuilds around them — hence the validity
+        // guards rather than plain assignment.
+        if (!bgfx::isValid(m_progPSimInit)) {
+            m_progPSimInit = loadProgram("vs_fc_comp", "fs_fc_psim_init",
+                                         _BGFXLib.shaderPath().c_str());
+            s_pstate0 = bgfx::createUniform("s_pstate0",
+                                            bgfx::UniformType::Sampler);
+            s_pstate1 = bgfx::createUniform("s_pstate1",
+                                            bgfx::UniformType::Sampler);
+            u_pgrid = bgfx::createUniform("u_pgrid",
+                                          bgfx::UniformType::Vec4);
+            u_pboxMin = bgfx::createUniform("u_pboxMin",
+                                            bgfx::UniformType::Vec4);
+            u_pboxMax = bgfx::createUniform("u_pboxMax",
+                                            bgfx::UniformType::Vec4);
+            const uint16_t fmtCaps = bgfx::getCaps()->formats[
+                bgfx::TextureFormat::RGBA32F];
+            particleStateOk = bgfx::isValid(m_progPSimInit)
+                && (fmtCaps & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER) != 0;
+            if (!particleStateOk)
+                std::printf("bgfx: no RGBA32F render target — stateful "
+                            "particle emitters fall back to stateless\n");
+        }
     }
 
     /// Radiance of the environment for a world direction (Z up, unit
@@ -4893,6 +4996,225 @@ public:
         ++drawcount;
     }
 
+    /// The reserved "fc_emitter" parameter of a stateful particle
+    /// program (docs/RenderEngine.md §5.8): x = particle count,
+    /// y = fixed steps per second, z = freeze-frame warm-up seconds.
+    /// Absent or malformed leaves the defaults, which still run.
+    static void emitterParams(const Render::UserShader &shader,
+                              int &count, float &rate, float &warmup)
+    {
+        count = 0;
+        rate = 60.0f;
+        warmup = 0.0f;
+        for (const auto &p : shader.params) {
+            if (p.name != "fc_emitter" || p.values.size() < 3)
+                continue;
+            count = int(p.values[0]);
+            if (p.values[1] > 0.0f)
+                rate = p.values[1];
+            warmup = std::max(0.0f, p.values[2]);
+            break;
+        }
+    }
+
+    /// Advance every stateful particle emitter in this frame's scene by
+    /// whole fixed steps (docs/RenderEngine.md §5.8), then leave each
+    /// one's live state bound for the beauty draws that follow. The
+    /// simulation is a fragment pass over a ping-pong pair of RGBA32F
+    /// targets — no compute shaders, so the browser tier runs the same
+    /// program the desktop does.
+    ///
+    /// Returns true while some emitter still owes steps, which keeps
+    /// the viewer scheduling redraws: that is how a frozen frame
+    /// reaches its warm-up state (the steps are the same length as the
+    /// live ones, so a warmed-up frozen frame and a live frame are the
+    /// same simulation, and both are reproducible from the reset).
+    bool stepParticles(const Render::DrawCallList &scene,
+                       float animTime, bool freeze)
+    {
+        for (auto &v : particles)
+            v.second.slot = -1;
+        if (!particleStateOk || !bgfx::isValid(m_progPSimInit)) {
+            // Nothing can hold state on this backend; the emitters
+            // still draw, from their stateless vertex stage alone.
+            for (auto &v : particles)
+                v.second.destroy();
+            particles.clear();
+            return false;
+        }
+
+        bool pending = false;
+        int slot = 0;
+        std::set<uint64_t> seen;
+        for (const auto &d : scene) {
+            const auto &sh = d.material.usershader;
+            if (!sh || sh->stage != "particle"
+                    || sh->simulateSource.empty() || !d.objectKey)
+                continue;
+            if (!seen.insert(d.objectKey).second)
+                continue;   // one state per emitter, not per draw
+            if (slot >= kParticleSlots)
+                continue;   // over budget: falls back to stateless
+
+            int count = 0;
+            float rate = 60.0f, warmup = 0.0f;
+            emitterParams(*sh, count, rate, warmup);
+            if (count <= 0)
+                continue;
+            auto &st = particles[d.objectKey];
+            // Claimed before the program check: an emitter whose step
+            // program is still compiling keeps the state it has (it
+            // draws stateless meanwhile) instead of being collected
+            // and reallocated every frame.
+            st.lastFrame = uint32_t(frame);
+            bgfx::ProgramHandle step =
+                _BGFXLib.getUserProgram(*sh, "vs_fc_comp", true);
+            if (!bgfx::isValid(step))
+                continue;   // still compiling, or failed: stay stateless
+
+            // What the state is of: a different step program, particle
+            // count or clock mode is a different simulation and starts
+            // over rather than reinterpreting the old numbers.
+            uint64_t ident = 1469598103934665603ULL;
+            hashBytes(ident, sh->simulateSource.data(),
+                      sh->simulateSource.size());
+            hashBytes(ident, &count, sizeof(count));
+            hashBytes(ident, &rate, sizeof(rate));
+            hashBytes(ident, &freeze, sizeof(freeze));
+            if (st.identity != ident) {
+                st.identity = ident;
+                st.needInit = true;
+            }
+
+            const uint16_t gridW = uint16_t(std::min(count, 256));
+            const uint16_t gridH =
+                uint16_t((count + gridW - 1) / std::max<int>(1, gridW));
+            if (st.gridW != gridW || st.gridH != gridH
+                    || !bgfx::isValid(st.fbo[0])) {
+                st.destroy();
+                const uint64_t flags = BGFX_TEXTURE_RT
+                    | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+                    | BGFX_SAMPLER_MIP_POINT
+                    | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+                for (int i = 0; i < 2; ++i) {
+                    st.pos[i] = bgfx::createTexture2D(
+                        gridW, gridH, false, 1,
+                        bgfx::TextureFormat::RGBA32F, flags);
+                    st.vel[i] = bgfx::createTexture2D(
+                        gridW, gridH, false, 1,
+                        bgfx::TextureFormat::RGBA32F, flags);
+                    bgfx::TextureHandle att[2] = {st.pos[i], st.vel[i]};
+                    st.fbo[i] = bgfx::createFrameBuffer(2, att, false);
+                }
+                st.gridW = gridW;
+                st.gridH = gridH;
+                st.needInit = true;
+            }
+            st.count = count;
+            st.slot = slot++;
+
+            // Spawn box: the emitter geometry's own bounds, brought
+            // back into the model space the particle positions and the
+            // draw's vertex stage both work in. A rotated model matrix
+            // makes the box the conservative axis-aligned hull of the
+            // rotated bounds — bigger than the seed box, never smaller.
+            float bmin[3] = {d.bboxMin[0], d.bboxMin[1], d.bboxMin[2]};
+            float bmax[3] = {d.bboxMax[0], d.bboxMax[1], d.bboxMax[2]};
+            if (!d.identity) {
+                float inv[16];
+                bx::mtxInverse(inv, d.model);
+                float lo[3] = {FLT_MAX, FLT_MAX, FLT_MAX};
+                float hi[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+                for (int c = 0; c < 8; ++c) {
+                    const bx::Vec3 corner(
+                        (c & 1) ? d.bboxMax[0] : d.bboxMin[0],
+                        (c & 2) ? d.bboxMax[1] : d.bboxMin[1],
+                        (c & 4) ? d.bboxMax[2] : d.bboxMin[2]);
+                    const bx::Vec3 out = bx::mul(corner, inv);
+                    lo[0] = std::min(lo[0], out.x);
+                    lo[1] = std::min(lo[1], out.y);
+                    lo[2] = std::min(lo[2], out.z);
+                    hi[0] = std::max(hi[0], out.x);
+                    hi[1] = std::max(hi[1], out.y);
+                    hi[2] = std::max(hi[2], out.z);
+                }
+                for (int j = 0; j < 3; ++j) {
+                    bmin[j] = lo[j];
+                    bmax[j] = hi[j];
+                }
+            }
+
+            // How far the simulation must reach this frame. Live: the
+            // shared effect clock, so an emitter that appears mid-
+            // session starts now instead of catching up from zero.
+            // Frozen: the warm-up, reached over as many frames as the
+            // per-frame step budget needs.
+            const float dt = 1.0f / std::max(1.0f, rate);
+            const float target = freeze ? warmup : animTime;
+            // A frozen frame's state is a pure function of the warm-up,
+            // never of what the emitter happened to have simulated
+            // before it: a target the state has already run past
+            // rewinds to the reset and replays. Without this a
+            // shortened warm-up would simply hold the longer one's
+            // state and the same inputs would not give the same pixels.
+            if (freeze && st.simTime > target + dt * 0.5f)
+                st.needInit = true;
+            if (st.needInit)
+                st.simTime = freeze ? 0.0f : animTime;
+
+            int steps = 0;
+            while (steps < kParticleSteps
+                    && (st.needInit || st.simTime + dt <= target)) {
+                const bool init = st.needInit;
+                const int dst = st.needInit ? 0 : 1 - st.cur;
+                const uint16_t pass = uint16_t(
+                    ViewParticleSim0 + st.slot * kParticleSteps + steps);
+                const uint16_t vid = uint16_t(viewId + pass);
+                bgfx::setViewFrameBuffer(vid, st.fbo[dst]);
+                bgfx::setViewClear(vid, uint16_t(BGFX_CLEAR_NONE),
+                                   0, 1.0f, 0);
+                bgfx::setViewRect(vid, 0, 0, gridW, gridH);
+                bgfx::setViewTransform(vid, nullptr, nullptr);
+                bgfx::setViewMode(vid, bgfx::ViewMode::Default);
+
+                if (!init) {
+                    st.simTime += dt;
+                    bgfx::setTexture(10, s_pstate0, st.pos[st.cur]);
+                    bgfx::setTexture(11, s_pstate1, st.vel[st.cur]);
+                }
+                _BGFXLib.pushUserParams(*sh);
+                const float grid[4] = {float(gridW), float(gridH),
+                                       float(count), dt};
+                const float pmin[4] = {bmin[0], bmin[1], bmin[2],
+                                       float(d.objectKey & 0xffffu)};
+                const float pmax[4] = {bmax[0], bmax[1], bmax[2],
+                                       st.simTime};
+                bgfx::setUniform(u_pgrid, grid);
+                bgfx::setUniform(u_pboxMin, pmin);
+                bgfx::setUniform(u_pboxMax, pmax);
+                fullscreen(pass, init ? m_progPSimInit : step,
+                           BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+                st.cur = dst;
+                st.needInit = false;
+                ++steps;
+            }
+            if (st.simTime + dt <= target)
+                pending = true;   // still owes steps: keep redrawing
+        }
+
+        // An emitter that left the scene (unbound, hidden, deleted)
+        // gives its targets back; coming back is a fresh simulation.
+        for (auto it = particles.begin(); it != particles.end();) {
+            if (it->second.lastFrame != uint32_t(frame)) {
+                it->second.destroy();
+                it = particles.erase(it);
+            }
+            else
+                ++it;
+        }
+        return pending;
+    }
+
     /// One clip-space triangle covering the viewport, submitted to a
     /// fullscreen resolve pass (uniforms/textures are set by the caller).
     void fullscreen(uint16_t pass, bgfx::ProgramHandle prog,
@@ -6481,6 +6803,24 @@ public:
                 *mat.usershader, "vs_fc_mesh");
             if (bgfx::isValid(uprog)) {
                 _BGFXLib.pushUserParams(*mat.usershader);
+                // A stateful emitter's vertex stage reads this frame's
+                // particle state by vertex texture fetch — the same
+                // texels the step passes wrote a few views ago
+                // (docs/RenderEngine.md §5.8). With no state (no float
+                // render targets, over the slot budget, or the step
+                // program still compiling) the samplers stay unbound
+                // and the vertex stage runs its stateless path.
+                auto pit = particles.find(draw.objectKey);
+                if (pit != particles.end()
+                        && bgfx::isValid(pit->second.pos[pit->second.cur])) {
+                    const auto &pst = pit->second;
+                    bgfx::setTexture(10, s_pstate0, pst.pos[pst.cur]);
+                    bgfx::setTexture(11, s_pstate1, pst.vel[pst.cur]);
+                    const float grid[4] = {float(pst.gridW),
+                                           float(pst.gridH),
+                                           float(pst.count), 0.0f};
+                    bgfx::setUniform(u_pgrid, grid);
+                }
                 prog = uprog;
                 if (_BGFXLib.userTime[1] != 0.0f
                         && userShaderAnimated(*mat.usershader))
@@ -7132,6 +7472,20 @@ public:
     bgfx::UniformHandle u_fountainParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_fountainFrame = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_reflParams = BGFX_INVALID_HANDLE;
+    // Stateful particles (docs/RenderEngine.md §5.8): the state
+    // samplers and the step uniforms, plus the stock reset program.
+    // Created once with the view, not with the size-dependent targets.
+    bgfx::ProgramHandle m_progPSimInit = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_pstate0 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_pstate1 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_pgrid = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_pboxMin = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_pboxMax = BGFX_INVALID_HANDLE;
+    /// RGBA32F is renderable on this backend — WebGL2 only has it with
+    /// EXT_color_buffer_float, which bgfx reports through the format
+    /// caps. Without it there is nowhere to keep particle state and
+    /// stateful emitters fall back to their stateless vertex stage.
+    bool particleStateOk = false;
     // Redirect submit() into the ground reflection view (mirrored
     // camera, flipped culling).
     bool reflPass = false;
@@ -9118,9 +9472,20 @@ public:
         const bool reflRender = !staticFrame || shadowRender || fireActive
             || cloudActive;
 
+        // Stateful particle emitters advance before anything draws:
+        // their views come first in id order and configure/submit
+        // themselves, so the loop below leaves them alone. A frame
+        // that still owes simulation steps keeps the view animating
+        // (docs/RenderEngine.md §5.8) — that is how a frozen frame
+        // reaches its warm-up state.
+        if (view->stepParticles(scene, animTime, debugconf.freezeFrame))
+            animatedFrame = true;
+
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
             uint16_t id = base + i;
-            if (i == BGFXView::ViewTransparent && oitActive) {
+            if (i <= BGFXView::ViewParticleSimLast) {
+                continue;
+            } else if (i == BGFXView::ViewTransparent && oitActive) {
                 // Accumulation targets: accum clears to 0, revealage
                 // to 1; the shared depth attachment is not cleared.
                 bgfx::setViewFrameBuffer(id, view->oitFbo);
@@ -9600,9 +9965,13 @@ public:
                 // marking (INVERT) needs a zeroed base, and earlier
                 // outline passes leave stale marks behind (relevant for
                 // the transparent cap view, which runs after ViewOutline).
+                // The frame's one clear of the scene framebuffer belongs
+                // to the first view that draws into it — named, not
+                // index 0: the particle state views precede it.
                 bgfx::setViewClear(id,
-                    i == 0 ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
-                                      |BGFX_CLEAR_STENCIL)
+                    i == BGFXView::ViewBackground
+                        ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
+                                   |BGFX_CLEAR_STENCIL)
                     : (i == BGFXView::ViewSectionCap
                        || i == BGFXView::ViewSectionCapTransp)
                         ? uint16_t(BGFX_CLEAR_STENCIL)
@@ -12223,7 +12592,7 @@ BGFXRendererLibP::viewerShaderBins(
     for (const auto &t : targets) {
         Render::UserShader::Compiled c;
         c.profile = t.profile;
-        QString fsBin, vsBin;
+        QString fsBin, vsBin, simBin;
         if (ensureUserShaderBin(shader.fragmentSource, true, fsBin,
                                 t.platform, t.profile) != 0)
             continue;
@@ -12231,9 +12600,20 @@ BGFXRendererLibP::viewerShaderBins(
                 && ensureUserShaderBin(shader.vertexSource, false, vsBin,
                                        t.platform, t.profile) != 0)
             continue;
+        // The particle state step (docs/RenderEngine.md §5.8) is a
+        // fragment program of its own; without its binary the viewer
+        // can draw the emitter but not simulate it, so a pending
+        // compile holds the whole variant back rather than shipping a
+        // half-usable one.
+        if (!shader.simulateSource.empty()
+                && ensureUserShaderBin(shader.simulateSource, true, simBin,
+                                       t.platform, t.profile) != 0)
+            continue;
         if (!readAll(fsBin, c.fsBin))
             continue;
         if (!vsBin.isEmpty() && !readAll(vsBin, c.vsBin))
+            continue;
+        if (!simBin.isEmpty() && !readAll(simBin, c.simBin))
             continue;
         out.push_back(std::move(c));
     }
@@ -12241,10 +12621,15 @@ BGFXRendererLibP::viewerShaderBins(
 
 bgfx::ProgramHandle
 BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
-                                 const char *stockVs)
+                                 const char *stockVs, bool simulate)
 {
-    const std::string &vsSource = shader.vertexSource;
-    const std::string &fsSource = shader.fragmentSource;
+    static const std::string kNoVertexStage;
+    const std::string &vsSource =
+        simulate ? kNoVertexStage : shader.vertexSource;
+    const std::string &fsSource =
+        simulate ? shader.simulateSource : shader.fragmentSource;
+    if (fsSource.empty())
+        return BGFX_INVALID_HANDLE;
     QByteArray keyed(fsSource.c_str(), int(fsSource.size()));
     keyed.append('\1');
     keyed.append(vsSource.c_str(), int(vsSource.size()));
@@ -12317,7 +12702,7 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
 
 bgfx::ProgramHandle
 BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
-                                 const char *stockVs)
+                                 const char *stockVs, bool simulate)
 {
     // No compiler in this tier: resolve from the precompiled variants
     // the snapshot ships (server-side compile, docs/RenderDebug.md
@@ -12329,13 +12714,20 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
         return BGFX_INVALID_HANDLE;
     const Render::UserShader::Compiled *variant = nullptr;
     for (const auto &c : shader.compiled) {
-        if (c.profile == profile && !c.fsBin.empty()) {
+        if (c.profile == profile
+                && !(simulate ? c.simBin : c.fsBin).empty()) {
             variant = &c;
             break;
         }
     }
     if (!variant)
         return BGFX_INVALID_HANDLE;
+    // The state step is always the stock full-screen vertex stage.
+    const std::vector<uint8_t> &fsBin =
+        simulate ? variant->simBin : variant->fsBin;
+    static const std::vector<uint8_t> kNoVertexBin;
+    const std::vector<uint8_t> &vsBin =
+        simulate ? kNoVertexBin : variant->vsBin;
 
     // Cache on the binary payloads themselves: snapshot reloads build
     // fresh UserShader instances, but identical bins keep hitting the
@@ -12344,12 +12736,12 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
     key += '\1';
     key += stockVs;
     key += '\1';
-    key.append(reinterpret_cast<const char *>(variant->fsBin.data()),
-               variant->fsBin.size());
+    key.append(reinterpret_cast<const char *>(fsBin.data()),
+               fsBin.size());
     key += '\1';
-    if (!variant->vsBin.empty())
-        key.append(reinterpret_cast<const char *>(variant->vsBin.data()),
-                   variant->vsBin.size());
+    if (!vsBin.empty())
+        key.append(reinterpret_cast<const char *>(vsBin.data()),
+                   vsBin.size());
     auto &entry = userPrograms[key];
     if (bgfx::isValid(entry.prog) || entry.failed)
         return entry.prog;
@@ -12360,16 +12752,16 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
         mem->data[bin.size()] = '\0';
         return bgfx::createShader(mem);
     };
-    bgfx::ShaderHandle fsh = shaderFromBin(variant->fsBin);
+    bgfx::ShaderHandle fsh = shaderFromBin(fsBin);
     if (!bgfx::isValid(fsh)) {
         entry.failed = true;
         fprintf(stderr, "user shader: shipped fragment binary "
                         "unloadable (profile %s)\n", profile.c_str());
         return BGFX_INVALID_HANDLE;
     }
-    bgfx::ShaderHandle vsh = variant->vsBin.empty()
+    bgfx::ShaderHandle vsh = vsBin.empty()
         ? loadShader(stockVs, shaderPath().c_str())
-        : shaderFromBin(variant->vsBin);
+        : shaderFromBin(vsBin);
     if (!bgfx::isValid(vsh)) {
         entry.failed = true;
         bgfx::destroy(fsh);
