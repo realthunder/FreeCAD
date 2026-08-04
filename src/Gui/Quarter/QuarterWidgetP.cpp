@@ -177,9 +177,12 @@ QuarterWidgetP::removeFromCacheContext(QuarterWidgetP_cachecontext * context, co
         const bool hasglcontext = glcontext && glcontext->isValid();
         if (hasglcontext) {
           const_cast<QtGLWidget*> (widget)->makeCurrent();
+          // fetch the cc_glglue context instance as a workaround for a bug fixed in Coin r12818.
+          // Only with a context current: cc_glglue_instance() reads glGetString(GL_VERSION) and
+          // strncpy()s the result, which is null when nothing is current -- exactly what the
+          // comment above the crash site in Coin's glglue_set_glVersion() warns about.
+          (void) cc_glglue_instance(context->id);
         }
-        // fetch the cc_glglue context instance as a workaround for a bug fixed in Coin r12818
-        (void) cc_glglue_instance(context->id);
         cachecontext_list->removeFast(i);
         SoContextHandler::destructingContext(context->id);
         if (hasglcontext) {
