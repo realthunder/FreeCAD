@@ -24,8 +24,10 @@
 #include "PreCompiled.h"
 #ifndef _PreComp_
 #include <QByteArray>
+#include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QStringList>
 #endif
 
 #include "DisplayedFilesModel.h"
@@ -38,7 +40,7 @@ using namespace Start;
 namespace
 {
 
-std::string humanReadableSize(unsigned int bytes)
+std::string humanReadableSize(uint64_t bytes)
 {
     static const std::vector<std::string> siPrefix {
         "b",
@@ -100,20 +102,88 @@ QByteArray loadFCStdThumbnail(const std::string& pathToFCStdFile)
     return {};
 }
 
+/// A project saved as a directory rather than zipped into an .FCStd: the same entries,
+/// unpacked, recognised the way App::Application and Document::restore recognise them.
+bool isProjectDirectory(const std::string& path)
+{
+    return Base::FileInfo(path).isDir() && Base::FileInfo(path + "/Document.xml").exists();
+}
+
+/// A directory has no size of its own, so report what it holds. Recursively: a project
+/// saved this way keeps its property data in blobs/, so counting only the top level
+/// would report the XML and call a 200MB model 10kb.
+uint64_t directorySize(const std::string& path)
+{
+    uint64_t total = 0;
+    for (const auto& item : Base::FileInfo(path).getDirectoryContent()) {
+        if (item.isDir()) {
+            total += directorySize(item.filePath());
+        }
+        else {
+            total += item.size();
+        }
+    }
+    return total;
+}
+
 FileStats getFileInfo(const std::string& path)
 {
     FileStats result;
     Base::FileInfo file(path);
-    if (file.hasExtension("FCStd")) {
+    bool isDirectoryProject = isProjectDirectory(path);
+    if (file.hasExtension("FCStd") || isDirectoryProject) {
         result = fileInfoFromFreeCADFile(path);
     }
     else {
         file.lastModified();
     }
     result.insert(std::make_pair(DisplayedFilesModelRoles::path, path));
-    result.insert(std::make_pair(DisplayedFilesModelRoles::size, humanReadableSize(file.size())));
+    result.insert(std::make_pair(DisplayedFilesModelRoles::size,
+                                 humanReadableSize(isDirectoryProject ? directorySize(path)
+                                                                      : file.size())));
     result.insert(std::make_pair(DisplayedFilesModelRoles::baseName, file.fileName()));
     return result;
+}
+
+/// The file card is small, so the tooltip is where the rest of what we already know about
+/// a project goes: when it was made and last touched, how big it is, who wrote it, under
+/// what licence, and - the one the old start page was asked for most - where it lives.
+QString buildToolTip(const FileStats& stats)
+{
+    auto field = [&stats](DisplayedFilesModelRoles role) {
+        auto it = stats.find(role);
+        return it == stats.end() ? QString() : QString::fromStdString(it->second);
+    };
+
+    QStringList lines;
+    auto append = [&lines](const QString& label, const QString& value) {
+        if (!value.isEmpty()) {
+            lines.append(QStringLiteral("%1: %2").arg(label, value));
+        }
+    };
+
+    append(QCoreApplication::translate("DisplayedFilesModel", "Created"),
+           field(DisplayedFilesModelRoles::creationTime));
+    append(QCoreApplication::translate("DisplayedFilesModel", "Last modified"),
+           field(DisplayedFilesModelRoles::modifiedTime));
+    append(QCoreApplication::translate("DisplayedFilesModel", "Size"),
+           field(DisplayedFilesModelRoles::size));
+    append(QCoreApplication::translate("DisplayedFilesModel", "Author"),
+           field(DisplayedFilesModelRoles::author));
+    append(QCoreApplication::translate("DisplayedFilesModel", "Company"),
+           field(DisplayedFilesModelRoles::company));
+    append(QCoreApplication::translate("DisplayedFilesModel", "License"),
+           field(DisplayedFilesModelRoles::license));
+    append(QCoreApplication::translate("DisplayedFilesModel", "Path"),
+           field(DisplayedFilesModelRoles::path));
+
+    auto description = field(DisplayedFilesModelRoles::description);
+    if (!description.isEmpty()) {
+        lines.append(QString());
+        lines.append(description);
+    }
+
+    return lines.join(QLatin1Char('\n'));
 }
 }  // namespace
 
@@ -172,7 +242,7 @@ QVariant DisplayedFilesModel::data(const QModelIndex& index, int roleAsInt) cons
     }
     switch (roleAsInt) {
         case Qt::ItemDataRole::ToolTipRole:
-            return QString::fromStdString(mapEntry.at(DisplayedFilesModelRoles::path));
+            return buildToolTip(mapEntry);
     }
     return {};
 }
@@ -190,11 +260,14 @@ void DisplayedFilesModel::addFile(const QString& filePath)
     if (!qfi.isReadable()) {
         return;
     }
-    if (!freecadCanOpen(qfi.suffix())) {
+    // A project saved as a directory carries no extension to judge it by, so ask what
+    // it holds instead. Everything else still has to be a type FreeCAD can import.
+    bool isDirectoryProject = isProjectDirectory(filePath.toStdString());
+    if (!isDirectoryProject && !freecadCanOpen(qfi.suffix())) {
         return;
     }
     _fileInfoCache.emplace_back(getFileInfo(filePath.toStdString()));
-    if (qfi.completeSuffix() == QLatin1String("FCStd")) {
+    if (isDirectoryProject || qfi.completeSuffix() == QLatin1String("FCStd")) {
         auto thumbnail = loadFCStdThumbnail(filePath.toStdString());
         if (!thumbnail.isEmpty()) {
             _imageCache.insert(filePath, thumbnail);
