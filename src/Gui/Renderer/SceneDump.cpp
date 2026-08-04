@@ -126,7 +126,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     stateful particle tier (docs/RenderEngine.md §5.8). Both the
 //     inline shader table and the out-of-band shader chunk gained the
 //     fields, so kChunkVersion moves with it.
-const uint32_t kVersion = 39;
+// 40: WaterConfig carries the impact-ring strength and lifetime — the
+//     droplet rings the particle impact map drives
+//     (docs/RenderEngine.md §5.8). Without them a viewer defaulted the
+//     strength to 1 and rang the water whatever the property said.
+const uint32_t kVersion = 40;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -2650,6 +2654,8 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.b(wc.shadow); w.f(wc.shadowWobble);
     // v16: ripple type + rain drop density.
     w.i32(wc.rippleType); w.f(wc.rippleDensity);
+    // v40: impact rings (the particle impact map, §5.8).
+    w.f(wc.impactStrength); w.f(wc.impactLife);
 
     // v18: bloom.
     const BloomConfig &blc = snap.bloomconf;
@@ -3009,6 +3015,9 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     }
     if (version >= 16) {
         wc.rippleType = r.i32(); wc.rippleDensity = r.f();
+    }
+    if (version >= 40) {
+        wc.impactStrength = r.f(); wc.impactLife = r.f();
     }
 
     snap.bloomconf = BloomConfig();
