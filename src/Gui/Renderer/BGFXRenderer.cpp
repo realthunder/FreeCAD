@@ -6997,26 +6997,13 @@ public:
             if (p.values[1] == 0.0f)
                 ustate &= ~BGFX_STATE_WRITE_Z;
             int blend = int(p.values[0]);
-            // Blend the colour only. The scene target's alpha is what
-            // the present composite treats as the scene's own coverage,
-            // so a sprite that blends alpha as well punches its own
-            // shape out of the frame: the composite then resolves those
-            // pixels part-way to black and every droplet drags a
-            // neutral dark twin of itself, worst where the sprites are
-            // large enough to cover real area. Keep the colour blend
-            // and leave destination alpha alone.
             if (blend == 1) {
                 ustate &= ~BGFX_STATE_BLEND_MASK;
-                ustate |= BGFX_STATE_BLEND_FUNC_SEPARATE(
-                    BGFX_STATE_BLEND_SRC_ALPHA,
-                    BGFX_STATE_BLEND_INV_SRC_ALPHA,
-                    BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_ONE);
+                ustate |= BGFX_STATE_BLEND_ALPHA;
             }
             else if (blend == 2) {
                 ustate &= ~BGFX_STATE_BLEND_MASK;
-                ustate |= BGFX_STATE_BLEND_FUNC_SEPARATE(
-                    BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE,
-                    BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_ONE);
+                ustate |= BGFX_STATE_BLEND_ADD;
             }
             if (ustate != state)
                 bgfx::setState(ustate, blendRt);
