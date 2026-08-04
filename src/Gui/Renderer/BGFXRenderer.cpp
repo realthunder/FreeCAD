@@ -2000,6 +2000,27 @@ public:
                             // glass front/back interval, Fresnel
                             // environment reflection; replaces their
                             // ordinary rendering
+        ViewParticles,      // blended user particle draws (a "particle"
+                            // stage program whose Blend is not Default).
+                            // Their own view because the bucket they
+                            // used to share, ViewOpaque, runs BEFORE the
+                            // volumetric composite: a particle does not
+                            // write depth, so the fog resolved the pixel
+                            // it covered at the depth of whatever was
+                            // behind it and multiplied the full
+                            // background extinction over the sprite —
+                            // every droplet of a fountain came out
+                            // ringed with fog it is nowhere near. Here
+                            // the sprites land after the inscatter, and
+                            // after the water and glass surfaces, so
+                            // spray over a pool reads as being in front
+                            // of it (the same reason ViewWaterSurface
+                            // composites its own in-front inscatter).
+                            // Kept out of ViewTransparent so the sprites
+                            // do not enter WBOIT: an emitter is
+                            // thousands of tiny quads with no meaningful
+                            // per-fragment depth, and the additive ones
+                            // are commutative anyway.
         ViewTransparent,    // transparent triangles: WBOIT accumulation
                             // into the OIT targets, or blended
                             // back-to-front into the scene FBO when OIT
@@ -6565,8 +6586,17 @@ public:
         // back faces, matching their original GL draw.
         bool culling = mat.culling && (!transparent || overlayView >= 0);
 
+        // A blended particle emitter is routed by its program, not by
+        // the material: the seed geometry is opaque as far as the
+        // material is concerned, so without this the sprites sit in the
+        // opaque bucket and are fogged at the depth of the background
+        // behind them (see ViewParticles).
+        const bool blendedParticles = mat.usershader
+            && mat.usershader->stage == "particle"
+            && userDrawBlends(*mat.usershader);
         uint16_t passView = ontop ? ViewHighlight
             : mat.ontop ? ViewOnTop
+            : blendedParticles ? ViewParticles
             : transparent && mat.type == Render::Material::Triangle
                 ? ViewTransparent
                 : ViewOpaque;
@@ -6854,6 +6884,7 @@ public:
                 && mat.type == Render::Material::Triangle
                 && pass == PassNormal && !oitDraw
                 && (passView == ViewOpaque || passView == ViewTransparent
+                    || passView == ViewParticles
                     || passView == ViewGroundRefl)) {
             bgfx::ProgramHandle uprog = _BGFXLib.getUserProgram(
                 *mat.usershader, "vs_fc_mesh");
@@ -6887,6 +6918,21 @@ public:
 
         bgfx::submit(viewId + passView, prog, depth);
         ++drawcount;
+    }
+
+    /// Does this user shader's beauty draw blend? Reads the same
+    /// reserved "fc_state" parameter applyUserState below acts on
+    /// (0 = Default, 1 = Alpha, 2 = Additive), because that is the only
+    /// place App::ShaderProgram::Blend reaches the backend — the draw's
+    /// Material carries the geometry's transparency, not the program's.
+    static bool userDrawBlends(const Render::UserShader &shader)
+    {
+        for (const auto &p : shader.params) {
+            if (p.name != "fc_state" || p.values.empty())
+                continue;
+            return int(p.values[0]) != 0;
+        }
+        return false;
     }
 
     /// Reserved "fc_state" parameter = render-state override of a user
@@ -10122,8 +10168,12 @@ public:
             // The volumetric apply view is sequential too: the
             // per-channel extinction multiply must land before the
             // inscatter add.
+            // Blended sprites are painted back to front for the same
+            // reason a non-OIT transparent bucket is: alpha blending is
+            // not commutative (additive emitters do not care).
             bgfx::setViewMode(id,
-                i == BGFXView::ViewTransparent && !oitActive
+                (i == BGFXView::ViewTransparent && !oitActive)
+                        || i == BGFXView::ViewParticles
                     ? bgfx::ViewMode::DepthDescending
                     : i >= BGFXView::ViewOnTop
                             || i == BGFXView::ViewOutline
