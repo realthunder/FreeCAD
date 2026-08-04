@@ -169,15 +169,20 @@ QuarterWidgetP::removeFromCacheContext(QuarterWidgetP_cachecontext * context, co
 
     for (int i = 0; i < cachecontext_list->getLength(); i++) {
       if ((*cachecontext_list)[i] == context) {
-        // set the context while calling destructingContext() (might trigger OpenGL calls)
-        if (widget->context()->isValid()) {
+        // set the context while calling destructingContext() (might trigger OpenGL calls).
+        // On shutdown the widget has already released its context, and
+        // QOpenGLWidget::context() returns null then -- so check the pointer, not just
+        // whether the context is valid.
+        const QtGLContext * glcontext = widget->context();
+        const bool hasglcontext = glcontext && glcontext->isValid();
+        if (hasglcontext) {
           const_cast<QtGLWidget*> (widget)->makeCurrent();
         }
         // fetch the cc_glglue context instance as a workaround for a bug fixed in Coin r12818
         (void) cc_glglue_instance(context->id);
         cachecontext_list->removeFast(i);
         SoContextHandler::destructingContext(context->id);
-        if (widget->context()->isValid()) {
+        if (hasglcontext) {
           const_cast<QtGLWidget*> (widget)->doneCurrent();
         }
         delete context;
