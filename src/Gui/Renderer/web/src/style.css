@@ -207,14 +207,18 @@
 }
 
 /* The selection pill: one line — label, full path, expand — shown
- * instead of the card until asked (user spec). Same anchoring as the
- * card on both form factors. */
+ * instead of the card until asked (user spec). Top-LEFT on wide
+ * screens, unlike the card: the pill is what stands there for as long
+ * as something is selected, and the top-right corner belongs to the
+ * NaviCube. (The card overlaps it too, but only while you have it
+ * open, and it is what you are looking at when you do.) On narrow
+ * screens it is a bottom bar and the question does not arise. */
 .fc-pill {
   pointer-events: auto;
   touch-action: manipulation;
   position: absolute;
   top: 12px;
-  right: 12px;
+  left: calc(12px + env(safe-area-inset-left));
   max-width: min(420px, calc(100vw - 24px));
   display: flex;
   align-items: center;
