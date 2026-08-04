@@ -133,10 +133,9 @@ void FileBlobManager::relocate()
 
 namespace
 {
-/// Base::FileInfo::size() is not implemented on this platform, so use Qt.
 uint64_t fileSize(const char* path)
 {
-    return static_cast<uint64_t>(QFileInfo(QString::fromUtf8(path)).size());
+    return Base::FileInfo(path).size();
 }
 }  // namespace
 

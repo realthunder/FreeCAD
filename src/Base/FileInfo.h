@@ -123,8 +123,8 @@ public:
     bool isFile() const;
     /// Checks if it is a directory (not a file)
     bool isDir() const;
-    /// The size of the file
-    unsigned int size() const;
+    /// The size of the file in bytes, or 0 if it does not exist or is not a file.
+    uint64_t size() const;
     /// Returns the time when the file was last modified.
     TimeInfo lastModified() const;
     /// Returns the time when the file was last read (accessed).

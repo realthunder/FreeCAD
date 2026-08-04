@@ -466,10 +466,24 @@ bool FileInfo::isDir() const
     // return true;
 }
 
-unsigned int FileInfo::size() const
+uint64_t FileInfo::size() const
 {
-    // not implemented
-    assert(0);
+#if defined(FC_OS_WIN32)
+    std::wstring wstr = toStdWString();
+    struct _stat64 st {};
+    if (_wstat64(wstr.c_str(), &st) == 0 && (st.st_mode & _S_IFREG) != 0) {
+        return static_cast<uint64_t>(st.st_size);
+    }
+#elif defined(FC_OS_LINUX) || defined(FC_OS_CYGWIN) || defined(FC_OS_MACOSX) || defined(FC_OS_BSD)
+    // clang-format off
+    struct stat st {};
+    // clang-format on
+    if (stat(FileName.c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
+        return static_cast<uint64_t>(st.st_size);
+    }
+#else
+#error "FileInfo::size() not implemented for this platform!"
+#endif
     return 0;
 }
 
