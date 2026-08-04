@@ -195,8 +195,17 @@ def instantiate(name, doc=None, view_props=True):
             if "warmup" in em:
                 prog.EmitterWarmup = float(em["warmup"])
         for pname, pval in (pm.get("params") or {}).items():
-            prog.addProperty("App::PropertyFloat", "Param_" + pname)
-            setattr(prog, "Param_" + pname, float(pval))
+            # A scalar feeds u_<Name>.x; a list feeds the vec4 lanes,
+            # so a program can take a couple of related numbers without
+            # a property each (padded to three, the vector width).
+            if isinstance(pval, (list, tuple)):
+                vals = [float(v) for v in pval][:3]
+                vals += [0.0] * (3 - len(vals))
+                prog.addProperty("App::PropertyVector", "Param_" + pname)
+                setattr(prog, "Param_" + pname, FreeCAD.Vector(*vals))
+            else:
+                prog.addProperty("App::PropertyFloat", "Param_" + pname)
+                setattr(prog, "Param_" + pname, float(pval))
         progs.append(prog)
 
     shader = doc.addObject("App::Shader", name + "_Fx")

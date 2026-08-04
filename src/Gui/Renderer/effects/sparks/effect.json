@@ -1,0 +1,25 @@
+{
+  "label": "Sparks",
+  "description": "Stateful particle effect (docs/RenderEngine.md §5.8): embers thrown up from the bound solid, pulled back by gravity, bouncing off the emitter floor with damping and dimming as they cool. Particle-only — the whole treatment is the emitter, there is no main-stage program. Unlike the stateless companions of the water/fire/fountain packages, the motion is integrated step by step, so the bounce and the spread depend on where each spark has already been. Bind with an Object- or Instance-scope Appearance, or set the Shader's Demo shape.",
+  "programs": [
+    {
+      "name": "Sparks",
+      "stage": "particle",
+      "vertex": "sparks_vs.sc",
+      "fragment": "sparks_fs.sc",
+      "simulate": "sparks_sim.sc",
+      "blend": "Additive",
+      "depthwrite": false,
+      "enabled": true,
+      "emitter": {"count": 900, "seed": 3,
+                  "spread": [0.9, 0.9, 0.15],
+                  "offset": [0.0, 0.0, -0.35],
+                  "margin": 1.6,
+                  "rate": 60.0,
+                  "warmup": 2.5},
+      "params": {"Gravity": 22.0, "Launch": 14.0, "Drag": 0.4,
+                 "Bounce": 0.55, "Size": 0.16, "Life": 3.2,
+                 "Nozzle": [0.12, 0.35]}
+    }
+  ]
+}
