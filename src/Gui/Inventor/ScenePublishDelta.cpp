@@ -66,6 +66,9 @@ const void* childKey(const CacheEntry& entry)
     return static_cast<const void*>(entry.vcache.get());
 }
 
+
+}  // namespace
+
 /// Whether two children contribute identically, and so whether the newer
 /// one may keep whatever the older one produced.
 ///
@@ -73,7 +76,7 @@ const void* childKey(const CacheEntry& entry)
 /// the transform and material in force where it was reached, and both
 /// live in the parent's entry, so an untouched child under a moved
 /// parent transform is a changed contribution.
-bool sameEntry(const CacheEntry& a, const CacheEntry& b)
+bool ScenePublishDelta::sameEntry(const CacheEntry& a, const CacheEntry& b)
 {
     if (a.cache != b.cache || a.vcache != b.vcache) {
         return false;
@@ -106,8 +109,6 @@ bool sameEntry(const CacheEntry& a, const CacheEntry& b)
 
     return true;
 }
-
-}  // namespace
 
 bool ScenePublishDelta::logging()
 {

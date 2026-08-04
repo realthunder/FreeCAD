@@ -56,6 +56,12 @@ class GuiExport ScenePublishDelta
 public:
     typedef SoFCRenderCache::CacheEntry CacheEntry;
 
+    /// Whether two children contribute identically, and so whether the
+    /// newer one may keep whatever the older one produced. Shared with the
+    /// flatten, which asks the same question of the same pair before
+    /// reusing a child's slice of the map rather than deriving it again.
+    static bool sameEntry(const CacheEntry& a, const CacheEntry& b);
+
     /// Begin recording a publish, before the traversal runs.
     void begin();
 
