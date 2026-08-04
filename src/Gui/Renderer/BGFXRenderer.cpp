@@ -263,6 +263,11 @@ namespace
 
 class BGFXView;
 
+/// Active backend's shaderc target (defined below): the profile string
+/// is the label a viewer matches snapshot-shipped variants against.
+static bool shadercTarget(std::string &platform, std::string &profile,
+                          std::string &apiDir);
+
 namespace Render {
 
 /// One line a second summarising what the camera can resolve
@@ -7357,6 +7362,16 @@ public:
     std::shared_ptr<const Render::UserShader> volUserExt;
     std::shared_ptr<const Render::UserShader> volUserRefl;
     std::array<const void *, 8> volUserKey {};
+    /// Compiler-less tier only: fingerprint of the splice table the
+    /// current variants were adopted from, and whether that adoption
+    /// found binaries for all of them. The server compiles the viewer
+    /// binaries asynchronously, so the snapshot that first carries a
+    /// binding can carry no binaries with it; a half-adopted variant
+    /// is retried when a republished table arrives rather than on
+    /// every frame, which would reassemble the sources forever if the
+    /// compile never succeeds.
+    size_t volSpliceFingerprint = 0;
+    bool volUserAdopted = true;
     bgfx::ProgramHandle m_progVol = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolApply = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progVolAccum = BGFX_INVALID_HANDLE;
@@ -8827,7 +8842,15 @@ public:
                 key[i] = fireSlotUser[i].get();
                 key[i + 4] = cloudSlotUser[i].get();
             }
-            if (key != view->volUserKey) {
+            // A republished splice table is a new chance to adopt what
+            // an earlier, binary-less one could not.
+            size_t fingerprint = usershaderconf.splices.size();
+            for (const auto &sp : usershaderconf.splices)
+                fingerprint = fingerprint * 131u + sp.compiled.size();
+            const bool retry = !view->volUserAdopted
+                && fingerprint != view->volSpliceFingerprint;
+            view->volSpliceFingerprint = fingerprint;
+            if (key != view->volUserKey || retry) {
                 view->volUserKey = key;
                 view->volUserVol = assembleMediumVariant(
                     "fc_volume_fs.sh", fireSlotUser, cloudSlotUser,
@@ -8844,27 +8867,59 @@ public:
                 // source matches what was just assembled — source
                 // equality guarantees the same slot binding
                 // (docs/RenderEngine.md §5.11 transport).
+                // The server compiles the viewer binaries asynchronously
+                // and republishes when they land, so the first snapshot
+                // after a binding — a cold shader cache above all — can
+                // carry the splice with no binaries at all. Adopting
+                // that empty variant must not be final: a binary-less
+                // splice keeps the stock stand-in and marks the
+                // adoption incomplete, so the next republished table
+                // is tried again instead of leaving the medium stock
+                // for the rest of the session.
+                bool usable = true;
+                // Usable means "carries a binary THIS tier can load":
+                // the variants are compiled per target and the loader
+                // matches on the profile label, so a table holding only
+                // the other tier's binary is as unusable as an empty
+                // one and must be retried the same way.
+                std::string plat, prof, apiDir;
+                const bool haveTarget = shadercTarget(plat, prof, apiDir);
                 auto adopt =
-                    [this](std::shared_ptr<const Render::UserShader> &s,
-                           const char *tag) {
+                    [this, &usable, &prof, haveTarget](
+                            std::shared_ptr<const Render::UserShader> &s,
+                            const char *tag) {
                     if (!s)
                         return;
                     for (const auto &sp : usershaderconf.splices) {
                         if (sp.fragmentSource == s->fragmentSource) {
+                            bool mine = false;
+                            for (const auto &c : sp.compiled)
+                                if (!haveTarget
+                                        || (c.profile == prof
+                                            && !c.fsBin.empty())) {
+                                    mine = true;
+                                    break;
+                                }
                             std::printf("fcviewer: splice %s adopted "
-                                        "(%zu bins)\n",
-                                        tag, sp.compiled.size());
-                            s = std::make_shared<Render::UserShader>(sp);
+                                        "(%zu bins, %s)\n",
+                                        tag, sp.compiled.size(),
+                                        mine ? "mine" : "none for this tier");
+                            if (!mine)
+                                usable = false;
+                            else
+                                s = std::make_shared<Render::UserShader>(sp);
                             return;
                         }
                     }
                     std::printf("fcviewer: splice %s NOT shipped "
                                 "(%zu candidates)\n",
                                 tag, usershaderconf.splices.size());
+                    usable = false;
                 };
                 adopt(view->volUserVol, "vol");
                 adopt(view->volUserExt, "ext");
                 adopt(view->volUserRefl, "refl");
+                view->volUserAdopted = usable;
 #endif
             }
         }
