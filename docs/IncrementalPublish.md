@@ -300,12 +300,67 @@ that size. Lifting that bound for one generation is the next question,
 and it is a memory question: every level kept is another copy of its
 whole subtree.
 
-**What the splice now has to beat** is the material work alone, and the
+**What the splice had to beat** was the material work alone, and the
 profile says it is not `mergeMaterial` so much as the map itself:
 `flat_tree::insert_unique` calls `_Material::operator<` 268k times over
 10 publishes at ~144 Ir a comparison, because the comparator walks a
 struct carrying a dozen COW maps. A child whose contribution did not
 change should not be re-inserted at all.
+
+## 4c. The splice, measured
+
+`RenderCacheIncremental` (default 0, off). With it on, a rebuilt cache
+inherits the map its predecessor built and derives only the children
+that predecessor did not hold.
+
+The map turns out to have **4 buckets holding 18000 entries** at 6000
+objects — three entries per child, for its triangles, lines and points —
+which `RenderDebug_Timing` now reports as `map=buckets/entries`. That
+number decided the design: with so few buckets the entries of one child
+sit in a handful of contiguous runs, so a child's contribution can be
+recorded as a run per bucket and *copied* next publish. Children are
+walked in order, so the spliced map is the map a wholesale merge would
+have built, entry for entry — which is what makes it checkable.
+
+| scene | rebuild | splice |
+|---|---|---|
+| 6000 objects under one container | 15ms / 4 calls | **10ms / 3 calls** |
+| 7334 objects, 4 levels of containers | 26-29ms / 205 calls | **7ms / 9 calls** |
+
+The nested case is where it matters, and the call counts say why: a deep
+tree re-derives an intermediate map at every level on every publish, and
+the splice removes all but the levels that actually changed. Together
+with §4b the container merge is **21ms → 10ms flat, 26-29ms → 7ms
+nested**.
+
+**Memory.** Big maps stop being dropped, because the splice needs the
+predecessor's alive — which is exactly what `RenderCacheKeepMax`
+existed to bound, so this is the cost to watch. Peak RSS **+16MB** flat
+and **+36MB (+1.7%)** over four levels: every level retains its whole
+subtree's entries, and that is linear in depth as expected rather than
+surprising.
+
+**Verification (§7).** `RenderCacheIncremental 2` re-derives every child
+whose run was copied and compares it against what was copied, entry for
+entry — cache, transform, key, merge counts and the bucket's material.
+That is the stale sliver stated directly: a child that changed but whose
+slice did not. Zero disagreements over a static 6000-object scene, over
+a probe that adds, deletes, reorders, moves, hides and recolours
+children of a container, and over a whole 6002-object progressive
+import. The rendered transcripts at 0 and 1 are identical step for step,
+on a probe where 10 of 12 steps move the frame.
+
+**Still off by default.** The evidence above is this workstream's own
+harnesses; the fork's own 272M-triangle gate has never completed a run
+(see the note at the end of §4b about what the import harness can and
+cannot show). Turning it on wants that run first — the memory figure is
+the one to watch, since it grows with hierarchy depth.
+
+**Next, and cheap:** the splice matches this publish's children against
+the previous publish's, and `ScenePublishDelta` has already done exactly
+that matching in the `Delta` stage of the same publish (3-4ms of it).
+Handing the change set to the flatten instead of recomputing it should
+take a third off what the splice still costs.
 
 **Unrelated finding from the same profile.** `translateCache()` called
 `getenv("FC_BGFX_DEBUG_FEED")` once per translated cache — 66k lookups,
@@ -446,15 +501,16 @@ up rather than being assumed.
    can be asserted against.~~ Done — `ScenePublishDelta`, §4a. The diff
    turned out to belong to the hierarchy rather than the scene root, and
    it costs 3% of a publish to record.
-3. Incremental flatten — the maintained vertex-cache map (27%), with
-   draw entries rebuilt from it wholesale (§6.2). Started: §4b keeps the
-   per-object maps that were being thrown away every publish (28ms →
-   20ms), then removes the per-child secondary-context lookup a
-   selection root was paying for every one of its children (20ms →
-   15ms). What is left of the stage is one container merging thousands
-   of child maps, priced per child rather than per entry — now almost
-   entirely `flat_map` insertion under an expensive material comparator
-   — which is the splice proper.
+3. ~~Incremental flatten — the maintained vertex-cache map (27%), with
+   draw entries rebuilt from it wholesale (§6.2).~~ Done, in three
+   steps: §4b keeps the per-object maps that were being thrown away
+   every publish (28ms → 20ms), then removes the per-child
+   secondary-context lookup a selection root was paying for every one of
+   its children (20ms → 15ms), then §4c splices a rebuilt cache's map
+   from its predecessor's (15ms → 10ms flat, 26-29ms → 7ms over four
+   levels). Off by default pending the large-model run; the remaining
+   cost is the child matching, which the `Delta` stage of the same
+   publish already computes.
 4. Incremental translate (38%): per-child draw-call slices, and an
    `updateScene` delta on the `Renderer` interface so the list is not
    rebuilt to be handed over.
