@@ -72,9 +72,18 @@ export interface SelectionItem {
   home?: boolean;
 }
 
+/// What a card is inspecting. 'object' is a picked document object;
+/// the other two are the containers nothing in the scene stands for,
+/// so they are reachable only from the launcher, never from a pick.
+export type Subject = 'object' | 'view3d' | 'document';
+
+/// Which container a descriptor came out of — and, handed back
+/// verbatim as setProperty's target, how to reach it again.
+export type PropScope = 'object' | 'view' | 'view3d' | 'document';
+
 export interface PropDescriptor {
   name: string;
-  scope: 'object' | 'view';
+  scope: PropScope;
   group: string;
   type: string;
   value: unknown;
@@ -89,6 +98,7 @@ export interface PropDescriptor {
 export interface PropertiesReply {
   doc: string;
   obj: string;
+  subject?: Subject;
   label: string;
   type: string;
   props: PropDescriptor[];
@@ -97,8 +107,9 @@ export interface PropertiesReply {
 export function getProperties(
   doc: string,
   obj: string,
+  subject: Subject = 'object',
 ): Promise<PropertiesReply> {
-  return sendOp('getProperties', { doc, obj });
+  return sendOp('getProperties', { doc, obj, subject });
 }
 
 /// Commit one property edit. The backend wraps it in a transaction and
@@ -107,7 +118,7 @@ export function getProperties(
 export function setProperty(
   doc: string,
   obj: string,
-  target: 'object' | 'view',
+  target: PropScope,
   name: string,
   value: unknown,
 ): Promise<any> {

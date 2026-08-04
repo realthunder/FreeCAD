@@ -258,3 +258,63 @@
 .fc-collapse { border: 0; background: transparent; color: #9aa0a6; }
 .fc-collapse:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .fc-pill .fc-close { width: 28px; height: 28px; }
+
+/* The launcher: how the view and the document are reached, since
+ * neither can be picked. Bottom-left on both form factors — the card
+ * and the pill are top-right/bottom, the NaviCube is top-right and the
+ * axis cross bottom-right, so this is the corner nothing else wants,
+ * and on a phone it is under the thumb. */
+.fc-launcher {
+  position: absolute;
+  left: calc(12px + env(safe-area-inset-left));
+  bottom: calc(12px + env(safe-area-inset-bottom));
+}
+@media (max-width: 640px) {
+  /* Clear the pill, which is a full-width bar along the bottom. */
+  .fc-launcher { bottom: calc(60px + env(safe-area-inset-bottom)); }
+}
+
+.fc-launch {
+  pointer-events: auto;
+  touch-action: manipulation;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(28, 30, 34, 0.92);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  color: #e8e8ea;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.fc-launch:hover { background: rgba(46, 49, 55, 0.95); }
+
+/* Subject switcher: which container the card is showing. A segmented
+ * control rather than a drop-down — three fixed choices, and the one
+ * in force should be readable without opening anything. */
+.fc-subjects {
+  display: flex;
+  gap: 4px;
+  padding: 2px 12px 0;
+}
+
+.fc-subj {
+  touch-action: manipulation;
+  flex: 1;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #9aa0a6;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fc-subj:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+.fc-subj:disabled { opacity: 0.4; cursor: default; }
+.fc-subj-on {
+  background: rgba(106, 169, 255, 0.18);
+  border-color: rgba(106, 169, 255, 0.45);
+  color: #e8e8ea;
+}

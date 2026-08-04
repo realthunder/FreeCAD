@@ -40,13 +40,34 @@
 #include <Base/Vector3D.h>
 
 #include "Application.h"
+#include "Document.h"
 #include "SceneControl.h"
+#include "View3DInventor.h"
 #include "ViewProviderDocumentObject.h"
 #include "Renderer/SceneServer.h"
 
 using namespace Gui;
 
 namespace {
+
+/// The 3D view whose properties the client edits: the served scene has
+/// exactly one that matters, so "the active one" is unambiguous, and
+/// falling back to the first 3D view of the active document covers the
+/// headless-served case where nothing was ever activated by a user.
+View3DInventor *sceneView()
+{
+    if (auto v = dynamic_cast<View3DInventor *>(
+                Application::Instance->activeView()))
+        return v;
+    auto doc = Application::Instance->activeDocument();
+    if (!doc)
+        return nullptr;
+    for (auto view : doc->getMDIViews()) {
+        if (auto v = dynamic_cast<View3DInventor *>(view))
+            return v;
+    }
+    return nullptr;
+}
 
 QJsonObject errorReply(const QJsonValue &id, const char *code,
                        const QString &message = QString())
@@ -226,6 +247,31 @@ void describeContainer(const App::PropertyContainer *container,
 QJsonObject getProperties(const QJsonObject &req)
 {
     const QJsonValue id = req.value(QLatin1String("id"));
+    // What is being inspected. The default is the object, which is
+    // what every v0 client asks for without saying so. The other two
+    // subjects are the containers a client cannot reach by picking:
+    // nothing in the scene stands for the 3D view or the document.
+    const QString subject = req.value(QLatin1String("subject")).toString();
+
+    if (subject == QLatin1String("view3d")) {
+        auto view = sceneView();
+        if (!view)
+            return errorReply(id, "UnknownObject", QStringLiteral("no 3D view"));
+        QJsonObject reply;
+        reply[QLatin1String("id")] = id;
+        reply[QLatin1String("ok")] = true;
+        reply[QLatin1String("doc")] = QString();
+        reply[QLatin1String("obj")] = QString();
+        reply[QLatin1String("subject")] = subject;
+        reply[QLatin1String("label")] = QStringLiteral("3D view");
+        reply[QLatin1String("type")] =
+            QString::fromUtf8(view->getTypeId().getName());
+        QJsonArray props;
+        describeContainer(view, "view3d", props);
+        reply[QLatin1String("props")] = props;
+        return reply;
+    }
+
     App::Document *doc = nullptr;
     const QString docName = req.value(QLatin1String("doc")).toString();
     if (docName.isEmpty())
@@ -234,6 +280,23 @@ QJsonObject getProperties(const QJsonObject &req)
         doc = App::GetApplication().getDocument(docName.toUtf8().constData());
     if (!doc)
         return errorReply(id, "UnknownDocument", docName);
+
+    if (subject == QLatin1String("document")) {
+        QJsonObject reply;
+        reply[QLatin1String("id")] = id;
+        reply[QLatin1String("ok")] = true;
+        reply[QLatin1String("doc")] = QString::fromUtf8(doc->getName());
+        reply[QLatin1String("obj")] = QString();
+        reply[QLatin1String("subject")] = subject;
+        reply[QLatin1String("label")] =
+            QString::fromUtf8(doc->Label.getValue());
+        reply[QLatin1String("type")] =
+            QString::fromUtf8(doc->getTypeId().getName());
+        QJsonArray props;
+        describeContainer(doc, "document", props);
+        reply[QLatin1String("props")] = props;
+        return reply;
+    }
 
     const QString objName = req.value(QLatin1String("obj")).toString();
     App::DocumentObject *obj =
@@ -257,6 +320,7 @@ QJsonObject getProperties(const QJsonObject &req)
     reply[QLatin1String("ok")] = true;
     reply[QLatin1String("doc")] = QString::fromUtf8(doc->getName());
     reply[QLatin1String("obj")] = QString::fromUtf8(obj->getNameInDocument());
+    reply[QLatin1String("subject")] = QStringLiteral("object");
     reply[QLatin1String("label")] = QString::fromUtf8(obj->Label.getValue());
     reply[QLatin1String("type")] = QString::fromUtf8(obj->getTypeId().getName());
 
@@ -381,6 +445,36 @@ const char *assignProperty(App::Property *prop, const QJsonValue &value)
 QJsonObject setProperty(const QJsonObject &req)
 {
     const QJsonValue id = req.value(QLatin1String("id"));
+    const QString target = req.value(QLatin1String("target")).toString();
+    // The target names the container the descriptor came out of, so a
+    // client can hand back the scope getProperties gave it and reach
+    // the same property. The 3D view is the one container with no
+    // document behind it: its properties are the session's, not the
+    // model's, which is also why they are outside the transaction and
+    // the recompute below.
+    if (target == QLatin1String("view3d")) {
+        auto view = sceneView();
+        if (!view)
+            return errorReply(id, "UnknownObject", QStringLiteral("no 3D view"));
+        const QByteArray vname =
+            req.value(QLatin1String("name")).toString().toUtf8();
+        App::Property *vprop = view->getPropertyByName(vname.constData());
+        if (!vprop)
+            return errorReply(id, "UnknownProperty", QString::fromUtf8(vname));
+        if ((view->getPropertyType(vprop) & App::Prop_ReadOnly)
+                || vprop->testStatus(App::Property::ReadOnly)
+                || vprop->testStatus(App::Property::Immutable))
+            return errorReply(id, "ReadOnly", QString::fromUtf8(vname));
+        if (const char *code =
+                    assignProperty(vprop, req.value(QLatin1String("value"))))
+            return errorReply(id, code, QString::fromUtf8(vname));
+        QJsonObject reply;
+        reply[QLatin1String("id")] = id;
+        reply[QLatin1String("ok")] = true;
+        reply[QLatin1String("recomputed")] = false;
+        return reply;
+    }
+
     App::Document *doc = nullptr;
     const QString docName = req.value(QLatin1String("doc")).toString();
     if (docName.isEmpty())
@@ -389,20 +483,24 @@ QJsonObject setProperty(const QJsonObject &req)
         doc = App::GetApplication().getDocument(docName.toUtf8().constData());
     if (!doc)
         return errorReply(id, "UnknownDocument", docName);
-    App::DocumentObject *obj =
-        doc->getObject(req.value(QLatin1String("obj")).toString()
-                           .toUtf8().constData());
-    if (!obj)
-        return errorReply(id, "UnknownObject",
-                          req.value(QLatin1String("obj")).toString());
 
-    App::PropertyContainer *container = obj;
-    if (req.value(QLatin1String("target")).toString()
-            == QLatin1String("view")) {
-        container = Application::Instance->getViewProvider(obj);
-        if (!container)
+    App::PropertyContainer *container = nullptr;
+    if (target == QLatin1String("document"))
+        container = doc;
+    else {
+        App::DocumentObject *obj =
+            doc->getObject(req.value(QLatin1String("obj")).toString()
+                               .toUtf8().constData());
+        if (!obj)
             return errorReply(id, "UnknownObject",
-                              QStringLiteral("no view provider"));
+                              req.value(QLatin1String("obj")).toString());
+        container = obj;
+        if (target == QLatin1String("view")) {
+            container = Application::Instance->getViewProvider(obj);
+            if (!container)
+                return errorReply(id, "UnknownObject",
+                                  QStringLiteral("no view provider"));
+        }
     }
     const QByteArray name =
         req.value(QLatin1String("name")).toString().toUtf8();

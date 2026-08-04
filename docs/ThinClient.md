@@ -260,6 +260,12 @@ JSON text frames. Request/response correlated by `id`. Minimal v0:
   "doc":"Unnamed", "obj":"Box", "target":"object",
   "name":"Length", "value": 25.0 }
 
+// client → server  (the containers a pick cannot reach)
+{ "id": 3, "op": "getProperties", "subject": "view3d" }     // the 3D view
+{ "id": 4, "op": "getProperties", "subject": "document" }   // the document
+{ "id": 5, "op": "setProperty", "target": "view3d",
+  "name": "Render_AO", "value": true }
+
 // server → client  (ack; the recompute + republished snapshot updates the view)
 { "id": 2, "ok": true, "recomputed": true }
 
@@ -267,6 +273,18 @@ JSON text frames. Request/response correlated by `id`. Minimal v0:
 { "op":"error", "ref":2, "code":"ConstraintViolation",
   "message":"Length must be > 0" }
 ```
+
+**Subjects.** `getProperties` takes an optional `subject`: `object` (the default, and what
+every v0 client asks for by saying nothing), `view3d` — the session's 3D view, where the
+`Render_*`/`Shadow_*`/`RenderDebug_*` knobs live — or `document`. The two extra subjects
+exist because **nothing in the scene stands for them**: they cannot be picked, so without an
+addressing scheme of their own they are unreachable from a client that only knows how to
+select geometry. Each descriptor carries the container it came from in `scope`
+(`object` | `view` | `view3d` | `document`), and handing that value straight back as
+`setProperty`'s `target` is how an edit reaches the same property — the client never has to
+know the routing. A view property is the session's, not the model's, so it is assigned
+outside the `AutoTransaction` and answers `recomputed: false`; it is not undo history and
+there is nothing to recompute.
 
 **Forward hook — preview/commit + supersedes.** When drag-driven ops arrive (§5), they reuse
 this channel at 5–10 Hz with a `"preview": true` flag and a final committed call. Two
@@ -331,6 +349,15 @@ never a crash.
   substring highlighted. A non-empty keyword searches across *all* groups (the drop-down
   shows `All` while filtering); clearing it restores the selected group. Body = the
   filtered property rows. Multi-select → show the **common** subset.
+- **Launcher + subject switcher.** A pick opens the card on the picked object; a round
+  **launcher button** (bottom-left, the corner the card, the pill, the NaviCube and the axis
+  cross all leave free) opens it on the **3D view**, which is where the render knobs are and
+  where they are worth turning — you watch the result change as you drag the value. Inside
+  the card a three-way segmented switcher moves between `Object` / `View` / `Document`
+  without re-picking; `Object` is offered only while something is selected, since an empty
+  card is a dead end. Switching resets the group/keyword navigation, because one subject's
+  groups mean nothing to another. A new pick returns the card to the object — a pick is a
+  statement about what the user is now interested in.
 - **Live editing.** Number fields commit on blur/Enter; sliders (constrained floats) preview
   continuously but only send `setProperty` on release (respect the semantic tier — no 60 Hz
   spam; local preview can come later via the interaction tier). Every field is a real DOM
