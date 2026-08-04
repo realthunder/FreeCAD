@@ -472,10 +472,20 @@ public:
             auto format = widget->format();
             context->setShareContext(QOpenGLContext::globalShareContext());
             context->setFormat(format);
-            context->create();
+            if (!context->create()) {
+                RENDER_ERR("failed to create a GL context for bgfx");
+                context.reset();
+                return false;
+            }
             offscreen.reset(new QOffscreenSurface);
             offscreen->setFormat(format);
             offscreen->create();
+            if (!offscreen->isValid()) {
+                RENDER_ERR("failed to create the offscreen surface for bgfx");
+                offscreen.reset();
+                context.reset();
+                return false;
+            }
             if (!quitHooked && QCoreApplication::instance() && !getenv("FC_NO_BGFX_QUITHOOK")) {
                 quitHooked = true;
                 // Tear down bgfx and its Qt GL objects while Qt is still
@@ -507,7 +517,7 @@ public:
                     init.platformData.context = glx->nativeContext();
                 else if (auto *egl = context->nativeInterface<QNativeInterface::QEGLContext>())
                     init.platformData.context = egl->nativeContext();
-#   elif defined(FC_OS_WIN)
+#   elif defined(FC_OS_WIN32)
                 if (auto *wgl = context->nativeInterface<QNativeInterface::QWGLContext>())
                     init.platformData.context = wgl->nativeContext();
 #   elif defined(FC_OS_MACOSX)
@@ -530,6 +540,17 @@ public:
 #else
                 init.platformData.nwh = reinterpret_cast<void*>(window->winId());
 #endif
+            }
+            // bgfx treats an all-null PlatformData as a request for a headless device, and
+            // then rejects a non-zero resolution ("resolution of non-existing backbuffer
+            // can't be larger than 0x0") - which surfaces only as init() returning false.
+            // In the OpenGL path platformData.context is the sole field we set, so if the
+            // native handle did not come through, say which step failed rather than letting
+            // bgfx report a headless-mode error that has nothing to do with the real cause.
+            if (currentType == RendererType::OpenGL && !init.platformData.context) {
+                currentType = RendererType::Noop;
+                RENDER_ERR("no native GL context handle; bgfx would fall back to headless");
+                return false;
             }
             init.resolution.width = widget->width();
             init.resolution.height = widget->height();
