@@ -18,11 +18,17 @@
 #   FC_ADAPTER   MESA_D3D12_DEFAULT_ADAPTER_NAME (e.g. NVIDIA to force dGPU)
 #   FC_USER_CFG  --user-cfg file (default: a throwaway copy of the real cfg)
 #   FC_LOG       log file (default: /tmp/fc-renderer-desktop.log)
+#   FC_BUILD     build tree to launch (default unchanged), e.g. an
+#                optimized tree when what is being judged is frame cost
+#                rather than correctness
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 SCENE=${1:-"$REPO/scripts/demo-water.py"}
 PORT=${2:-}
 LOG=${FC_LOG:-/tmp/fc-renderer-desktop.log}
+FCBUILD="${FC_BUILD:-$REPO/build/conda-debug}"
+FCBIN="$FCBUILD/bin/FreeCAD"
+[ -x "$FCBIN" ] || { echo "no FreeCAD binary at $FCBIN (set FC_BUILD)"; exit 2; }
 
 # Throwaway user config so bgfx/effect prefs don't pollute the real one.
 if [ -z "${FC_USER_CFG:-}" ]; then
@@ -35,7 +41,7 @@ fi
 # setsid group), else match the desktop launch's --user-cfg signature.
 oldpid=
 [ -n "$PORT" ] && oldpid=$(ss -tlnpH "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)
-[ -z "$oldpid" ] && oldpid=$(pgrep -f "[c]onda-debug/bin/FreeCAD.*--user-cfg $FC_USER_CFG" | head -1)
+[ -z "$oldpid" ] && oldpid=$(pgrep -f -- "$FCBIN.*--user-cfg $FC_USER_CFG" | head -1)
 if [ -n "$oldpid" ]; then
     pgid=$(ps -o pgid= -p "$oldpid" 2>/dev/null | tr -d ' ')
     echo "replacing previous desktop instance (pid $oldpid, pgid ${pgid:-?})"
@@ -59,7 +65,7 @@ setsid nohup env \
   ${PORT:+FC_BGFX_SERVE_SCENE=$PORT} \
   bash -c '"$@"; s=$?;
            echo "desktop wrapper: FreeCAD exited status $s at $(date -Is)"' \
-  -- "$REPO/.conda/run.sh" "$REPO/build/conda-debug/bin/FreeCAD" \
+  -- "$REPO/.conda/run.sh" "$FCBIN" \
   ${FC_USER_CFG:+--user-cfg "$FC_USER_CFG"} \
   "$SCENE" > "$LOG" 2>&1 </dev/null &
 disown
