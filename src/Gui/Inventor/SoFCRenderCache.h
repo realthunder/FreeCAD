@@ -594,6 +594,40 @@ public:
   typedef boost::container::flat_map<Material, VertexCacheArray> VertexCacheMap;
 #endif
 
+  /** One direct child of a render cache: either a nested cache or a
+   * shape's vertex cache, together with the transform and material it was
+   * captured under.
+   *
+   * This is the unit a publish changes. The traversal that rebuilds a
+   * scene cache prunes at every separator whose cache is still valid and
+   * hands the existing object back to the parent, so the children of two
+   * consecutive scene caches are mostly the same objects
+   * (docs/IncrementalPublish.md §3) -- which is what makes a per-child
+   * slice of the flattened map the natural thing to splice (§5).
+   *
+   * Note that the transform and the material live here, in the parent,
+   * and not in the child: the same child cache held under a moved
+   * transform is a different contribution, so an unchanged child pointer
+   * on its own does not mean an unchanged entry.
+   */
+  struct CacheEntry {
+    Gui::CoinPtr<SoFCRenderCache> cache;
+    Gui::CoinPtr<SoFCVertexCache> vcache;
+    Material material;
+    SbMatrix matrix;
+    bool resetmatrix;
+    bool identity;
+
+    CacheEntry(const SbMatrix & m,
+               bool iden, bool reset,
+               SoFCRenderCache * c,
+               SoFCVertexCache *vc)
+      :cache(c), vcache(vc), resetmatrix(reset), identity(iden)
+    {
+      if (!identity) this->matrix = m;
+    }
+  };
+
   SoFCRenderCache(SoState * state, SoNode *node, SoFCRenderCache *prev = nullptr);
   virtual ~SoFCRenderCache();
 
@@ -639,6 +673,20 @@ public:
   void setDepthBuffer(SoState *state, const SoDepthBuffer *);
 
   const VertexCacheMap & getVertexCaches(bool canmerge, int depth=0);
+
+  /// The direct child caches, in the order the traversal added them.
+  const SbFCVector<CacheEntry> & getChildCaches() const;
+
+  /** The cache this one was built to replace, released to the caller.
+   *
+   * A rebuilt cache is the same node's cache one publish later, so the
+   * two together are a diff of what that node changed
+   * (docs/IncrementalPublish.md §5). The link is held only until someone
+   * takes it — which a publish does as the cache closes and its children
+   * are complete — so no cache keeps a previous generation alive beyond
+   * the traversal that replaced it.
+   */
+  Gui::CoinPtr<SoFCRenderCache> takePreviousCache();
 
   enum HighlightFlag {
     PreselectHighlight = 1,

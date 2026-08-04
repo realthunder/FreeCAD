@@ -969,6 +969,24 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter DebugDelta
+    ///
+    /// Log what each published frame actually changed: how many of
+    /// the scene cache's children the publish reused, how many it added
+    /// or dropped, and how many separators the traversal below it reused
+    /// against how many it rebuilt. One summary line per second. A
+    /// publish rebuilds the whole scene however little moved, and these
+    /// counts are how much of that rebuild was avoidable
+    /// (docs/IncrementalPublish.md §5).
+    static const bool & getDebugDelta();
+    static const bool & defaultDebugDelta();
+    static void removeDebugDelta();
+    static void setDebugDelta(const bool &v);
+    static const char *docDebugDelta();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter DebugCoverage
     ///
     /// Log how much of the screen each drawn object actually covers,

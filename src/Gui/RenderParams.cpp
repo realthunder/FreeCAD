@@ -109,6 +109,7 @@ public:
     bool DebugFreezeFrame;
     bool DebugLabel;
     bool DebugTiming;
+    bool DebugDelta;
     bool DebugCoverage;
 
     // Auto generated code (Tools/params_utils.py:253)
@@ -234,6 +235,8 @@ public:
         funcs["DebugLabel"] = &RenderParamsP::updateDebugLabel;
         DebugTiming = this->handle->GetBool("DebugTiming", false);
         funcs["DebugTiming"] = &RenderParamsP::updateDebugTiming;
+        DebugDelta = this->handle->GetBool("DebugDelta", false);
+        funcs["DebugDelta"] = &RenderParamsP::updateDebugDelta;
         DebugCoverage = this->handle->GetBool("DebugCoverage", false);
         funcs["DebugCoverage"] = &RenderParamsP::updateDebugCoverage;
     }
@@ -491,6 +494,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugTiming(RenderParamsP *self) {
         self->DebugTiming = self->handle->GetBool("DebugTiming", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugDelta(RenderParamsP *self) {
+        self->DebugDelta = self->handle->GetBool("DebugDelta", false);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugCoverage(RenderParamsP *self) {
@@ -2352,6 +2359,40 @@ void RenderParams::setDebugTiming(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeDebugTiming() {
     instance()->handle->RemoveBool("DebugTiming");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugDelta() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Log what each published frame actually changed: how many of\n"
+"the scene cache's children the publish reused, how many it added\n"
+"or dropped, and how many separators the traversal below it reused\n"
+"against how many it rebuilt. One summary line per second. A\n"
+"publish rebuilds the whole scene however little moved, and these\n"
+"counts are how much of that rebuild was avoidable\n"
+"(docs/IncrementalPublish.md §5).");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugDelta() {
+    return instance()->DebugDelta;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugDelta() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugDelta(const bool &v) {
+    instance()->handle->SetBool("DebugDelta",v);
+    instance()->DebugDelta = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugDelta() {
+    instance()->handle->RemoveBool("DebugDelta");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

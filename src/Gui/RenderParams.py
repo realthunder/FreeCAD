@@ -359,6 +359,14 @@ Params = [
         "backend's own bookkeeping and the draw itself. One summary line\n"
         "per second, so a long operation shows how each stage grows with\n"
         "the scene rather than one average (docs/IncrementalPublish.md)."),
+    ParamBool('DebugDelta',  False, title='Publish change set',
+        doc="Log what each published frame actually changed: how many of\n"
+        "the scene cache's children the publish reused, how many it added\n"
+        "or dropped, and how many separators the traversal below it reused\n"
+        "against how many it rebuilt. One summary line per second. A\n"
+        "publish rebuilds the whole scene however little moved, and these\n"
+        "counts are how much of that rebuild was avoidable\n"
+        "(docs/IncrementalPublish.md §5)."),
     ParamBool('DebugCoverage',  False, title='Screen coverage histogram',
         doc="Log how much of the screen each drawn object actually covers,\n"
         "as a histogram over its projected size in pixels. A camera that\n"

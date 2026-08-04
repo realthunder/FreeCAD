@@ -81,6 +81,8 @@ const char* RenderTiming::stageName(Stage stage)
     switch (stage) {
     case Traverse:
         return "traverse";
+    case Delta:
+        return "delta";
     case Flatten:
         return "flatten";
     case Entries:

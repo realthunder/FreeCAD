@@ -131,6 +131,78 @@ And the draw-entry build — the stage whose incremental version needs
 the most machinery, because vector indices have to stay stable — is
 3%, which settles §6.2 below.
 
+## 4a. What a publish changes, measured
+
+Phase 2 records the change set without acting on it: `ScenePublishDelta`
+(`src/Gui/Inventor/ScenePublishDelta.cpp`) keeps the previous scene cache
+alive and matches the rebuilt one's children against it, so every publish
+can state what it changed. `RenderDebug_Delta` logs the counts once a
+second, and the `delta` stage of `RenderDebug_Timing` prices the matching
+itself.
+
+Two things had to be got right for the diff to mean anything.
+
+**A child is not identified by its cache alone.** The transform and the
+material a child was captured under live in the *parent's* entry, not in
+the child, so an untouched child cache beneath a moved parent transform
+is a changed contribution. Entries are therefore matched whole: same
+child object, same matrix and reset/identity flags, and equivalent
+material.
+
+**Material equivalence is bucket equivalence.** The flattened map is a
+`flat_map` keyed by `Material` under `_Material::operator<`, which
+compares every field that distinguishes one draw bucket from another. Two
+materials that are neither less than the other are the same bucket, which
+is all the flatten does with a captured material — so that ordering,
+rather than a hand-written field-by-field equality, is the right
+predicate. It compares a different set of fields per material type and
+the flatten re-types a captured material to the geometry it finds, so
+only the triangle branch (the widest) is trusted; captured materials are
+always triangles today, and anything else is reported as changed.
+
+**The scene root is not where the change set lives.** The first version
+of this diffed the scene cache's own children, which §5 assumed was the
+useful unit. Measured, it is degenerate: a document imported from a STEP
+assembly hangs under a single container, so the scene cache has **one
+child**, and every publish reports it as replaced. `scene=1 children +1
+-1`, publish after publish, on an import where 95% of the model did not
+move.
+
+So the change set follows the hierarchy instead. A rebuilt cache is the
+same node's cache one publish later, and `SoFCRenderCache` now keeps the
+cache it replaced (`takePreviousCache()`) until the publish takes it as
+that node closes — so every rebuilt cache is diffed against its
+predecessor, and the traversal's pruning means only the changed paths are
+ever diffed at all.
+
+Measured over the 6002-object progressive import, per publish near the
+end (medians of the last ten one-second lines):
+
+| | value |
+|---|---|
+| caches diffed | ~86 |
+| children added | ~167 |
+| children dropped | ~85 |
+| children reused | ~6000 (**96% unchanged**) |
+| separators pruned by the traversal | ~5800 reused / ~167 rebuilt |
+| cost of the diff itself | 3ms of a 102ms publish (2.9%) |
+
+That is the phase-2 answer: for 3% of a publish, the publish can state
+that 96% of what it is about to re-derive did not change. The stages that
+re-derive it — flatten 28ms, translate 41ms, backend 14ms, 83ms of the
+102 — are what phases 3 to 5 spend that knowledge on.
+
+The same measurement also sets the granularity of those phases. A leaf
+change deep in a group replaces the *group's* entry in its parent, so
+slicing only at the top would still re-derive the whole group; the diff
+has to be applied where it was recorded, at each rebuilt cache, with each
+cache splicing its own memoized map. A probe over a 20-object document
+confirms each case in isolation: recolouring one object reports one child
+replaced, hiding it reports one dropped, moving a group reports the
+group's entry replaced with its ten children untouched, and moving an
+object inside the group replaces the group's entry while 31 of 35
+separators below are still reused.
+
 ## 5. Design: per-child slices
 
 The change set is available for free. `preSeparator` already knows, for
@@ -148,6 +220,13 @@ means removing that child's slices and splicing in new ones. Draw
 entries and the sorted lists are deliberately *not* sliced — they are
 rebuilt wholesale from the maintained map, per §6.2, which removes the
 index-stability problem entirely.
+
+**At every level, not just the top.** §4a measures why: the scene cache
+holds one container child in an imported assembly, so slicing only there
+buys nothing. Each rebuilt cache inherits its predecessor's memoized map
+and splices the children its own diff reports, which makes the work
+proportional to the changed paths — the traversal already prunes
+everything else.
 
 **Backend delta.** The `Render::Renderer` interface grows an explicit
 delta entry point (`updateScene(added, removed)`) alongside `setScene`.
@@ -223,9 +302,11 @@ up rather than being assumed.
 
 1. ~~`RenderDebug_Timing` stage split, and a baseline import profile.~~
    Done — the numbers are §4, and they set the order of what follows.
-2. Persistent root aggregate with a recorded change set, still
+2. ~~Persistent root aggregate with a recorded change set, still
    publishing whole-scene: no behavior change, but the diff exists and
-   can be asserted against.
+   can be asserted against.~~ Done — `ScenePublishDelta`, §4a. The diff
+   turned out to belong to the hierarchy rather than the scene root, and
+   it costs 3% of a publish to record.
 3. Incremental flatten — the maintained vertex-cache map (27%), with
    draw entries rebuilt from it wholesale (§6.2).
 4. Incremental translate (38%): per-child draw-call slices, and an

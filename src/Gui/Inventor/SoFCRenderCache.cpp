@@ -92,23 +92,7 @@ SbFCMemUnitStats *SbFCMemUnitStats::get()
 }
 #endif
 
-struct CacheEntry {
-  RenderCachePtr cache;
-  VertexCachePtr vcache;
-  Material material;
-  SbMatrix matrix;
-  bool resetmatrix;
-  bool identity;
-
-  CacheEntry(const SbMatrix & m,
-             bool iden, bool reset,
-             SoFCRenderCache * c,
-             SoFCVertexCache *vc)
-    :cache(c), vcache(vc), resetmatrix(reset), identity(iden)
-  {
-    if (!identity) this->matrix = m;
-  }
-};
+typedef SoFCRenderCache::CacheEntry CacheEntry;
 
 static FC_COIN_THREAD_LOCAL std::vector<std::unique_ptr<SoFCRenderCache::VertexCacheMap> > VertexCacheMaps;
 static FC_COIN_THREAD_LOCAL std::vector<int> VertexCacheMapCounts;
@@ -167,6 +151,7 @@ public:
 
   std::unique_ptr<SoFCRenderCache::VertexCacheMap> vcachemap;
 
+  CoinPtr<SoFCRenderCache> prevcache;
   SbFCVector<CacheEntry> caches;
   SbFCUniqueId nodeid;
   SoFCSelectionRoot *selnode = nullptr;
@@ -209,8 +194,12 @@ static inline const T * constElement(SoState * state)
 SoFCRenderCache::SoFCRenderCache(SoState *state, SoNode *node, SoFCRenderCache *prev)
   : SoCache(state), pimpl(new SoFCRenderCacheP)
 {
-  if (prev)
+  if (prev) {
     PRIVATE(this)->mergemap = PRIVATE(prev)->mergemap;
+    // Kept until the publish takes it to diff the two (§5); see
+    // takePreviousCache().
+    PRIVATE(this)->prevcache = prev;
+  }
 
   PRIVATE(this)->nodeid = node->getNodeId();
   if (node && node->isOfType(SoFCSelectionRoot::getClassTypeId())) {
@@ -1200,6 +1189,20 @@ SbBool
 SoFCRenderCache::isEmpty() const
 {
   return PRIVATE(this)->caches.empty();
+}
+
+const SbFCVector<SoFCRenderCache::CacheEntry> &
+SoFCRenderCache::getChildCaches() const
+{
+  return PRIVATE(this)->caches;
+}
+
+CoinPtr<SoFCRenderCache>
+SoFCRenderCache::takePreviousCache()
+{
+  CoinPtr<SoFCRenderCache> prev;
+  prev.swap(PRIVATE(this)->prevcache);
+  return prev;
 }
 
 class MyMultiTextureImageElement : public SoMultiTextureImageElement

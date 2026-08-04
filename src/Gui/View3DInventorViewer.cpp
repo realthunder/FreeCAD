@@ -174,6 +174,11 @@
 #include "ViewParams.h"
 #include "RenderParams.h"
 #include "RenderTiming.h"
+// The render cache's entries hold references to vertex caches, and its
+// header only forward-declares the type; a translation unit that reaches
+// it has to complete it.
+#include "Inventor/SoFCVertexCache.h"
+#include "Inventor/ScenePublishDelta.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderLink.h"
 #include "Renderer/Renderer.h"
@@ -3823,6 +3828,9 @@ void View3DInventorViewer::actualRedraw()
         if (auto prop = dynamic_cast<App::PropertyBool*>(
                 view->getPropertyByName("RenderDebug_Timing")))
             RenderTiming::setEnabled(prop->getValue());
+        if (auto prop = dynamic_cast<App::PropertyBool*>(
+                view->getPropertyByName("RenderDebug_Delta")))
+            ScenePublishDelta::setLogging(prop->getValue());
     }
 
     switch (renderType) {
@@ -4360,6 +4368,14 @@ void View3DInventorViewer::initRenderProperties()
                                          "RenderDebug_Timing", "RenderDebug",
                                          RenderParams::docDebugTiming()));
         prop->setValue(RenderParams::getDebugTiming());
+        prop->setStatus(App::Property::Hidden, true);
+    }
+    if (!view->getPropertyByName("RenderDebug_Delta")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "RenderDebug_Delta", "RenderDebug",
+                                         RenderParams::docDebugDelta()));
+        prop->setValue(RenderParams::getDebugDelta());
         prop->setStatus(App::Property::Hidden, true);
     }
     if (!view->getPropertyByName("RenderDebug_Coverage")) {

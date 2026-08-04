@@ -86,6 +86,7 @@
 #include "SoFCRenderCache.h"
 #include "SoFCRenderer.h"
 #include "SoFCRenderCacheManager.h"
+#include "ScenePublishDelta.h"
 
 using namespace Gui;
 
@@ -441,6 +442,10 @@ public:
   // scene graph.
   Render::UserShaderConfig usershaders;
   SbFCUniqueId sceneid;
+  // What the last publish changed in the scene cache's children, and the
+  // previous scene cache it changed them from (docs/IncrementalPublish.md
+  // §5). Recorded on every publish; not consumed by one yet.
+  ScenePublishDelta publishdelta;
   boost::container::flat_set<const SoNode *> nodeset;
   const SoNode * prunenode;
   int traversedepth;
@@ -628,6 +633,10 @@ SoFCRenderCacheManager::clear()
   PRIVATE(this)->shadercaches.clear();
   PRIVATE(this)->selpaths.clear();
   PRIVATE(this)->renderer->clear();
+  // The scene the delta was a delta against is gone; the next publish
+  // reports the whole scene as added rather than diffing against a cache
+  // no traversal will ever hand back.
+  PRIVATE(this)->publishdelta.clear();
   PRIVATE(this)->latepicktable.clear();
   PRIVATE(this)->latepickpaths.truncate(0);
 }
@@ -1246,8 +1255,19 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
     PRIVATE(this)->initAction();
     PRIVATE(this)->override_selectstyle = false;
     PRIVATE(this)->usershaders.shaders.clear();
+    PRIVATE(this)->publishdelta.begin();
     PRIVATE(this)->action->apply(path->getTail());
     cache->close(state);
+
+    {
+      // What this publish actually changed. Recorded whether or not
+      // anything reads it, so the diff is there to be measured and
+      // asserted against before the publish below starts depending on it
+      // (docs/IncrementalPublish.md §8 phase 2).
+      Gui::RenderTiming::Scope deltatiming(Gui::RenderTiming::Delta);
+      PRIVATE(this)->publishdelta.update(cache);
+    }
+
     PRIVATE(this)->renderer->setScene(cache);
     PRIVATE(this)->renderer->setUserShaders(
         std::move(PRIVATE(this)->usershaders));
@@ -1279,6 +1299,10 @@ SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
   PRIVATE(this)->initAction();
   PRIVATE(this)->override_selectstyle = false;
   PRIVATE(this)->usershaders.shaders.clear();
+  // An overlay capture publishes no delta, so its separators are not this
+  // scene's; reset the counters rather than let them leak into whatever
+  // publish comes next.
+  PRIVATE(this)->publishdelta.begin();
   PRIVATE(this)->action->apply(root);
   cache->close(state);
   PRIVATE(this)->renderer->setScene(cache);
@@ -1322,6 +1346,7 @@ SoFCRenderCacheManagerP::preSeparator(void *userdata,
         if (currentcache)
           currentcache->addChildCache(state, prevcache);
         self->stack.push_back(prevcache);
+        self->publishdelta.countSeparator(true);
         return SoCallbackAction::PRUNE;
       }
       ++it;
@@ -1348,6 +1373,7 @@ SoFCRenderCacheManagerP::preSeparator(void *userdata,
   }
 
   RenderCachePtr cache(new SoFCRenderCache(state, const_cast<SoNode*>(node), prevcache));
+  self->publishdelta.countSeparator(false);
 
   if (sensorcaches)
     sensorcaches->push_back(cache);
@@ -1377,12 +1403,25 @@ SoFCRenderCacheManagerP::postSeparator(void *userdata,
   SoState * state = action->getState();
   RenderCachePtr cache(self->stack.back());
 
+  // Taken unconditionally: the link exists to be consumed by the publish
+  // that built the cache, and a cache that keeps it holds a whole
+  // previous generation alive for as long as it lives.
+  RenderCachePtr prev = cache->takePreviousCache();
+
   self->stack.pop_back();
   if (SoCacheElement::getCurrentCache(state) == cache) {
     cache->close(state);
     state->pop();
     if (self->stack.size())
       self->stack.back()->endChildCaching(state, cache);
+    // The cache is complete, so it can be told apart from the one it
+    // replaced. This is where the change set of a nested scene lives: the
+    // scene root usually holds a single container, and everything that
+    // moved is a child of some cache below it.
+    if (prev) {
+      Gui::RenderTiming::Scope timing(Gui::RenderTiming::Delta);
+      self->publishdelta.updateCache(cache, prev);
+    }
   }
   return SoCallbackAction::CONTINUE;
 }

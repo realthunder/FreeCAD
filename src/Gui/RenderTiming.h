@@ -55,6 +55,8 @@ public:
     enum Stage {
         /// Coin traversal building the scene render cache
         Traverse,
+        /// matching the rebuilt scene cache against the previous publish
+        Delta,
         /// flattening child caches into the scene's vertex-cache map
         Flatten,
         /// building SoFCRenderer draw entries and the sorted lists

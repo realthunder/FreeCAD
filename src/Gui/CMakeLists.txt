@@ -1018,6 +1018,7 @@ SET(Inventor_CPP_SRCS
     Inventor/SoFCVertexCache.cpp
     Inventor/SoFCRenderCache.cpp
     Inventor/SoFCRenderCacheManager.cpp
+    Inventor/ScenePublishDelta.cpp
     Inventor/SoFCRenderer.cpp
     Inventor/SoFCRendererBridge.cpp
     Inventor/SoFCDetail.cpp
@@ -1066,6 +1067,7 @@ SET(Inventor_SRCS
     Inventor/SoFCVertexCache.h
     Inventor/SoFCRenderCache.h
     Inventor/SoFCRenderCacheManager.h
+    Inventor/ScenePublishDelta.h
     Inventor/SoFCRenderer.h
     Inventor/SoFCRendererBridge.h
     Inventor/SoFCDetail.h
