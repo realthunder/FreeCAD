@@ -1827,6 +1827,23 @@ public:
         kParticleSteps = 2,
         kParticleViews = kParticleSlots * kParticleSteps,
     };
+    /// How far behind the clock a live emitter may fall before the
+    /// missed time is written off instead of simulated (seconds).
+    ///
+    /// The target is wall-clock, so time that passes while frames are
+    /// not being drawn still counts: a stalled view, a slow frame, or a
+    /// backgrounded browser tab (where requestAnimationFrame stops
+    /// entirely and the gap is unbounded) all leave the simulation owing
+    /// time. Repaying it at the full per-frame step budget is visible as
+    /// the fountain fast-forwarding when the view comes back.
+    ///
+    /// A few frames of debt is worth repaying — that is an ordinary
+    /// hitch, and catching up keeps the motion continuous. Beyond that
+    /// the view was not being watched, so treat it as a pause: the
+    /// emitter keeps its state and resumes from the current instant.
+    /// The alternative, stretching the step to cover the gap, is a
+    /// different simulation (see kParticleSteps).
+    static constexpr float kParticleMaxLag = 0.25f;
 
     enum PassView {
         // The particle state steps come first on purpose: bgfx submits
@@ -5279,6 +5296,12 @@ public:
                 st.needInit = true;
             if (st.needInit)
                 st.simTime = freeze ? 0.0f : animTime;
+            // Write off a long absence rather than fast-forwarding
+            // through it. A frozen frame is exempt: its whole point is
+            // to reach a fixed warm-up from zero, however many frames
+            // that takes.
+            if (!freeze && st.simTime < target - kParticleMaxLag)
+                st.simTime = target - kParticleMaxLag;
             // This emitter is bound and its sprites move from here on;
             // a frozen frame deliberately does not count, since it is
             // meant to render identically twice.
