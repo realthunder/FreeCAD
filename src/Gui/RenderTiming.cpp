@@ -48,6 +48,11 @@ struct Totals
     int counts[RenderTiming::StageCount] {};
     int frames {0};
     long long reportedAt {0};
+    // Shape of the last flattened map this window saw, not a sum:
+    // every publish rebuilds the same map, so an average over the
+    // window would say nothing the latest one does not.
+    int mapbuckets {-1};
+    int mapentries {-1};
 };
 
 Totals _totals;
@@ -147,6 +152,14 @@ void RenderTiming::reset()
     _totals.reportedAt = nowNs();
 }
 
+void RenderTiming::noteMapShape(int buckets, int entries)
+{
+    if (!enabled())
+        return;
+    _totals.mapbuckets = buckets;
+    _totals.mapentries = entries;
+}
+
 void RenderTiming::frameDone()
 {
     if (!enabled())
@@ -174,6 +187,8 @@ void RenderTiming::frameDone()
     // What the stages did not account for is time this view spent outside
     // the instrumented pipeline (Coin's own drawing, the event loop, the
     // operation that is changing the scene in the first place).
+    if (_totals.mapbuckets >= 0)
+        ss << " map=" << _totals.mapbuckets << '/' << _totals.mapentries;
     ss << " other=" << int(windowMs - accounted);
     Base::Console().Message("%s\n", ss.str().c_str());
 

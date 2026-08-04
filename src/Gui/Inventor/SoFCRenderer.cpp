@@ -1069,6 +1069,13 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
   }
   const auto & caches = *cachesp;
 
+  if (Gui::RenderTiming::enabled()) {
+    int nentries = 0;
+    for (const auto & v : caches)
+      nentries += (int)v.second.size();
+    Gui::RenderTiming::noteMapShape((int)caches.size(), nentries);
+  }
+
   Gui::RenderTiming::Scope entrytiming(Gui::RenderTiming::Entries);
   for (const auto & v : caches) {
     auto & material = v.first;

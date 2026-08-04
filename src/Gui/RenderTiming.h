@@ -106,6 +106,14 @@ public:
     /// Call once per rendered frame; logs a summary at most once a second.
     static void frameDone();
 
+    /// Record the shape of the flattened vertex-cache map a publish
+    /// produced: how many material buckets, holding how many entries.
+    /// The flatten's cost per child is dominated by inserting into that
+    /// map under a comparator that walks a dozen COW maps, so the bucket
+    /// count is what says how deep each of those searches goes
+    /// (docs/IncrementalPublish.md §4b). Reported as map=buckets/entries.
+    static void noteMapShape(int buckets, int entries);
+
     /// Milliseconds and call counts accumulated since the last report.
     static void totals(double ms[StageCount], int counts[StageCount]);
     static void reset();
