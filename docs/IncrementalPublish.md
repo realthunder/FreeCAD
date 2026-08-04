@@ -232,15 +232,22 @@ memory, so they still go.
 
 Forty times fewer flattens, and the import is 5.8% faster for 15MB.
 
-**What the remaining 20ms is.** Not the copying: the scene root copies
-the same ~6000 entries out of one bucket for 2ms. The container pays
-~20ms for the identical entries because it merges them out of ~6000
-separate child maps, and each child costs two `Material` copies —
-`mergeMaterial` and the map key — of a struct carrying a dozen COW maps.
-The cost is per child, not per entry. That is what an incremental
-flatten has to remove, and it needs the predecessor's map to survive to
-splice into, which is exactly what the keep policy denies to maps that
-size.
+**What the remaining 20ms is.** Not the copying. The scene root moves
+the same ~6000 entries out of a single bucket for 2ms; the container
+pays ~20ms for the identical entries because it merges them out of
+~6000 separate child maps. So the stage is priced **per child, at
+roughly ten times what an entry costs to copy** — that much is measured.
+The likely reason is the per-child material work in the merge loop
+(`mergeMaterial` and the map key, each a copy of a struct carrying a
+dozen COW maps), but that has not been profiled and phase 3 should
+confirm it before optimizing for it.
+
+Either way an incremental flatten has to stop redoing that work for
+children that did not change, and to splice it needs the predecessor's
+map to survive — which is exactly what the keep policy denies to maps
+that size. Lifting that bound for one generation is the next question,
+and it is a memory question: every level kept is another copy of its
+whole subtree.
 
 **Equivalence.** A memo that outlives its publish can serve a stale
 frame, because the flatten reads selection state that no cache rebuild
