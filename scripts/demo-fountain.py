@@ -39,6 +39,11 @@ _render.SetBool("AO", True)
 _render.SetBool("Volumetric", True)
 _render.SetBool("WaterSurface", True)
 _render.SetFloat("WaterWaveStrength", 0.22)
+# Rings expanding from impacts rather than the directional swell: a
+# round basin has no fetch for a travelling wave train, and what
+# disturbs this pool is droplets landing in it.
+_render.SetInt("WaterRippleType", 1)
+_render.SetFloat("WaterRippleDensity", 1.6)
 _render.SetBool("WaterRefraction", True)
 _render.SetBool("WaterReflection", True)
 _render.SetBool("WaterPlanarReflection", True)
