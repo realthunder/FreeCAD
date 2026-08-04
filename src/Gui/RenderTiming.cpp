@@ -85,6 +85,8 @@ const char* RenderTiming::stageName(Stage stage)
         return "delta";
     case Flatten:
         return "flatten";
+    case FlattenSub:
+        return "flattensub";
     case Entries:
         return "entries";
     case Translate:

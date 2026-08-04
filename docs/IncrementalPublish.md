@@ -203,6 +203,55 @@ group's entry replaced with its ten children untouched, and moving an
 object inside the group replaces the group's entry while 31 of 35
 separators below are still reused.
 
+## 4b. Where the flatten's time goes, measured
+
+Phase 3 set out to splice the flattened map per child. Splitting the
+stage by level first says that would have missed the cost entirely.
+`RenderDebug_Timing` now reports the top level (`flatten`) apart from
+everything below it (`flattensub`), and on the same 6002-object import:
+
+| stage | ms | calls |
+|---|---|---|
+| flatten (depth 0) | 2 | 2 |
+| flattensub (below) | 28 | **6003** |
+
+One call per object in the scene, on every publish. The cause is three
+lines down from the merge loop: a parent frees each child's map as soon
+as it has copied it up (`freeCacheMap`, unless `cacheHint >= 2`), so
+every object re-derives its own map next frame even though the traversal
+handed its cache back untouched. The memo exists; it is thrown away.
+
+`ViewParams::RenderCacheKeepMax` (32 entries) keeps the small ones. Big
+maps are the copies of whole subtrees, and dropping those is what bounds
+memory, so they still go.
+
+| | calls | flatten total | import | peak RSS |
+|---|---|---|---|---|
+| keep none (old) | 6003 | 28ms | 127.0s | 2775MB |
+| keep ≤32 entries | ~150 | ~20ms | 119.6s | 2790MB |
+
+Forty times fewer flattens, and the import is 5.8% faster for 15MB.
+
+**What the remaining 20ms is.** Not the copying: the scene root copies
+the same ~6000 entries out of one bucket for 2ms. The container pays
+~20ms for the identical entries because it merges them out of ~6000
+separate child maps, and each child costs two `Material` copies —
+`mergeMaterial` and the map key — of a struct carrying a dozen COW maps.
+The cost is per child, not per entry. That is what an incremental
+flatten has to remove, and it needs the predecessor's map to survive to
+splice into, which is exactly what the keep policy denies to maps that
+size.
+
+**Equivalence.** A memo that outlives its publish can serve a stale
+frame, because the flatten reads selection state that no cache rebuild
+announces. Checked through `getRenderStats()` — the render backend's own
+target — over selection, recolour, hide, show, move and a sibling
+change: the transcripts at `RenderCacheKeepMax` 0 and 32 are identical
+step for step, and every step moves the frame, so the probe is sensitive
+to what it is asserting. Note that `saveImage()` cannot be used for
+this: it captures the composite and came back pixel-identical whether
+the object was visible or not.
+
 ## 5. Design: per-child slices
 
 The change set is available for free. `preSeparator` already knows, for
@@ -308,7 +357,11 @@ up rather than being assumed.
    turned out to belong to the hierarchy rather than the scene root, and
    it costs 3% of a publish to record.
 3. Incremental flatten — the maintained vertex-cache map (27%), with
-   draw entries rebuilt from it wholesale (§6.2).
+   draw entries rebuilt from it wholesale (§6.2). Started: §4b keeps the
+   per-object maps that were being thrown away every publish (28ms →
+   20ms, import −5.8%). What is left of the stage is one container
+   merging thousands of child maps, priced per child rather than per
+   entry, which is the splice proper.
 4. Incremental translate (38%): per-child draw-call slices, and an
    `updateScene` delta on the `Renderer` interface so the list is not
    rebuilt to be handed over.

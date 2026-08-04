@@ -59,6 +59,7 @@
 
 #include <Base/Console.h>
 #include "../InventorBase.h"
+#include "../RenderTiming.h"
 #include "../ViewParams.h"
 #include "../SoFCUnifiedSelection.h"
 #include "SoFCRenderCache.h"
@@ -1504,6 +1505,13 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
   } else
     PRIVATE(this)->vcachemap.reset(new VertexCacheMap);
 
+  // Split by level, because the two are different work: the top level
+  // copies every descendant entry the tree has already produced once,
+  // while the levels below it are where those entries are made
+  // (docs/IncrementalPublish.md §4b).
+  Gui::RenderTiming::Scope timing(depth ? Gui::RenderTiming::FlattenSub
+                                        : Gui::RenderTiming::Flatten);
+
   auto & vcachemap = *PRIVATE(this)->vcachemap;
   PRIVATE(this)->facecount = 0;
   PRIVATE(this)->cachecount = 0;
@@ -1765,7 +1773,17 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
         ++it;
     }
     PRIVATE(this)->facecount += PRIVATE(entry.cache)->facecount;
-    if (PRIVATE(entry.cache)->cachehint < 2)
+    // A child's map is dropped as soon as it has been copied up, which is
+    // why the next publish re-derives one for every object in the scene
+    // however little moved — measured at 5982 of them per publish on a
+    // 6002-object import, 25ms of a 28ms flatten
+    // (docs/IncrementalPublish.md §4b). A small map is kept instead: it
+    // is a few entries of memory against re-deriving it every frame, and
+    // the traversal hands the whole cache back untouched when nothing
+    // below it changed, memo and all. Big maps are the copies of whole
+    // subtrees, and those are still dropped.
+    if (PRIVATE(entry.cache)->cachehint < 2
+        && PRIVATE(entry.cache)->cachecount > ViewParams::getRenderCacheKeepMax())
       PRIVATE(entry.cache)->freeCacheMap();
   }
 

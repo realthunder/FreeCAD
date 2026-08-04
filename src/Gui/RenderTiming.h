@@ -59,6 +59,9 @@ public:
         Delta,
         /// flattening child caches into the scene's vertex-cache map
         Flatten,
+        /// the same, below the top level: what a nested cache spends
+        /// building its own map before its parent copies it up again
+        FlattenSub,
         /// building SoFCRenderer draw entries and the sorted lists
         Entries,
         /// translating the vertex-cache map into backend draw calls

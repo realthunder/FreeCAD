@@ -459,6 +459,14 @@ Params = [
         "Maximum hierarchy depth that the cache merge can happen. Less than 0 means no limit."),
     ParamInt('RenderCacheMergeDepthMin',  1,
         "Minimum hierarchy depth that the cache merge can happen."),
+    ParamInt('RenderCacheKeepMax',  32,
+        "Largest vertex cache map, in entries, that an object keeps after\n"
+        "its parent has copied it up. A parent flattens its children into\n"
+        "one map and then drops theirs, so the next frame re-derives the\n"
+        "map of every object in the scene however little moved; keeping the\n"
+        "small ones costs a few entries of memory each and is what stops\n"
+        "that. The large ones are the copies of whole subtrees, which is the\n"
+        "memory this bounds. Set zero to keep none."),
     ParamInt('LiveImportRedrawInterval',  200,
         "Minimum interval in milliseconds between 3D view redraws while a\n"
         "progressive import is filling the document, and the window after\n"

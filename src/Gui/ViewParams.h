@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:510)
+// Auto generated code (Gui/ViewParams.py:518)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -1880,6 +1880,24 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter RenderCacheKeepMax
+    ///
+    /// Largest vertex cache map, in entries, that an object keeps after
+    /// its parent has copied it up. A parent flattens its children into
+    /// one map and then drops theirs, so the next frame re-derives the
+    /// map of every object in the scene however little moved; keeping the
+    /// small ones costs a few entries of memory each and is what stops
+    /// that. The large ones are the copies of whole subtrees, which is the
+    /// memory this bounds. Set zero to keep none.
+    static const long & getRenderCacheKeepMax();
+    static const long & defaultRenderCacheKeepMax();
+    static void removeRenderCacheKeepMax();
+    static void setRenderCacheKeepMax(const long &v);
+    static const char *docRenderCacheKeepMax();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LiveImportRedrawInterval
     ///
     /// Minimum interval in milliseconds between 3D view redraws while a
@@ -2099,7 +2117,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:516)
+    // Auto generated code (Gui/ViewParams.py:524)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2127,7 +2145,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:526)
+// Auto generated code (Gui/ViewParams.py:534)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();
