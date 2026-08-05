@@ -2024,6 +2024,29 @@ static void tapOrDouble(float clientX, float clientY, bool ctrl)
     }
 }
 
+/// Preselect the scene element at canvas pixel (px,py) — the raycast and the
+/// highlight it drives, with no NaviCube handling. Shared by pointer hover
+/// and by the touch loupe, which is over the scene by construction.
+static void applySceneHover(float px, float py)
+{
+    PickHit hit = pickScene(px, py);
+    static const bool debugPick = EM_ASM_INT({
+        return new URLSearchParams(window.location.search).has('debugpick')
+            ? 1 : 0;
+    }) != 0;
+    static const char *kKindName[] = {"none", "face", "edge", "vertex"};
+    const char *kn = kKindName[hit.kind <= PickVertex ? hit.kind : 0];
+    if (debugPick)
+        std::printf("fcviewer: pick (%g,%g) -> draw %d %s off %d t %g\n",
+                    px, py, hit.draw, kn, hit.offset, hit.t);
+    if (hit.draw >= 0)
+        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc),
+                      "scene draw %d %s %d", hit.draw, kn, hit.offset);
+    else
+        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc), "none");
+    applyHover(hit);
+}
+
 /// Preselect whatever sits under a hovering pointer at CSS-pixel
 /// (clientX,clientY). Shared by the mouse move handler and the stylus hover
 /// uplink.
@@ -2055,22 +2078,7 @@ static void updateHoverAt(float clientX, float clientY)
         applyHover(PickHit{});
         return;
     }
-    PickHit hit = pickScene(px, py);
-    static const bool debugPick = EM_ASM_INT({
-        return new URLSearchParams(window.location.search).has('debugpick')
-            ? 1 : 0;
-    }) != 0;
-    static const char *kKindName[] = {"none", "face", "edge", "vertex"};
-    const char *kn = kKindName[hit.kind <= PickVertex ? hit.kind : 0];
-    if (debugPick)
-        std::printf("fcviewer: pick (%g,%g) -> draw %d %s off %d t %g\n",
-                    px, py, hit.draw, kn, hit.offset, hit.t);
-    if (hit.draw >= 0)
-        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc),
-                      "scene draw %d %s %d", hit.draw, kn, hit.offset);
-    else
-        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc), "none");
-    applyHover(hit);
+    applySceneHover(px, py);
 }
 
 static void updateHover(const EmscriptenMouseEvent *e)
@@ -2191,6 +2199,75 @@ static float s_touchX[2], s_touchY[2];
 static bool s_tapOk = false;
 static float s_tapX = 0.0f, s_tapY = 0.0f;
 
+// ---- The touch loupe: press and hold to preselect ----------------------
+// A fingertip has no hover, so a tap is the only way to say "that one" — and
+// it commits before it shows what it hit. A single finger held still past
+// kLoupeHoldMs preselects instead of orbiting: the highlight comes up under
+// the finger and then follows it, so the wrong target can be corrected
+// before the finger lifts (the iOS text-cursor idiom), and the lift commits
+// what is highlighted. Anything saying the gesture was really about the
+// camera — a drag past the tap slop before the threshold, a second finger —
+// cancels it. The longer press that docs/ThinClient.md §7 reserves for the
+// context menu then composes on top: by the time that menu opens, its target
+// is already showing.
+static const double kLoupeHoldMs = 350.0;
+// Refining lifts the pick off the fingertip so it stops covering what it is
+// aiming at. Applied at the first movement, not on engage — engaging must
+// highlight exactly what was pressed, or a hold would pick something the
+// user never touched.
+static const float kLoupeLift = 20.0f;
+static bool s_loupe = false;          // holding, with a live preselection
+static bool s_loupeLifted = false;    // refinement has started
+static float s_loupeX = 0.0f, s_loupeY = 0.0f;  // CSS px being picked
+// Which press a pending hold timer was armed for. A held finger emits no
+// events, so the threshold has to be a timer — and it is a timer rather than
+// a frame check because a scene still streaming in can be several hundred
+// milliseconds per frame, which would make the hold engage whenever the
+// renderer got round to it instead of when the user's finger said so.
+// Bumping this abandons any timer still in flight.
+static uint32_t s_loupeGen = 0;
+
+/// Give up the loupe, dropping any preselection it was showing, and abandon
+/// a hold that has not fired yet.
+static void cancelLoupe()
+{
+    if (s_loupe) {
+        std::snprintf(s_hoverDesc, sizeof(s_hoverDesc), "none");
+        applyHover(PickHit{});
+        markDirty();
+    }
+    s_loupe = false;
+    s_loupeLifted = false;
+    ++s_loupeGen;
+}
+
+/// Preselect at the loupe's current pick point.
+static void loupePick()
+{
+    float px, py;
+    clientToCanvas(s_loupeX, s_loupeY, px, py);
+    applySceneHover(px, py);
+    markDirty();
+}
+
+/// The hold threshold has passed: if the finger is still down, still still,
+/// and still alone, the press becomes a preselection.
+static void loupeHoldFired(void *arg)
+{
+    if (uint32_t(uintptr_t(arg)) != s_loupeGen)
+        return;             // armed for a gesture that is already over
+    if (s_loupe || !s_tapOk || s_numTouch != 1 || !s_haveScene)
+        return;
+    float px, py;
+    clientToCanvas(s_loupeX, s_loupeY, px, py);
+    bx::Vec3 dir(bx::InitZero);
+    // A hold on the NaviCube belongs to the cube; leave the tap to it.
+    if (pickNaviCube(px, py, dir) || pickNaviButton(px, py) != NaviBtnNone)
+        return;
+    s_loupe = true;
+    loupePick();
+}
+
 /// A stylus hovering over the canvas, from the pointermove listener installed
 /// below. A pen is the one touchscreen input that reports a position before it
 /// touches down, so preselection — which a mouse gets free with its cursor —
@@ -2266,15 +2343,42 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
             s_tapOk = true;
             s_tapX = x[0];
             s_tapY = y[0];
+            // Arm the hold: if this finger is still here, and still still,
+            // when the timer fires, the press becomes a preselection.
+            s_loupeX = x[0];
+            s_loupeY = y[0];
+            ++s_loupeGen;
+            emscripten_async_call(loupeHoldFired,
+                                  (void *)uintptr_t(s_loupeGen),
+                                  int(kLoupeHoldMs));
         }
         else {
             s_tapOk = false;
+            // A second finger is a camera gesture, whatever the first was
+            // doing.
+            cancelLoupe();
         }
     }
     else if (type == EMSCRIPTEN_EVENT_TOUCHMOVE && n == s_numTouch) {
+        if (s_loupe && n == 1) {
+            // Refining, not orbiting: the drag moves the pick, and the first
+            // movement lifts it clear of the fingertip.
+            if (!s_loupeLifted) {
+                s_loupeLifted = true;
+                s_loupeY -= kLoupeLift;
+            }
+            s_loupeX += x[0] - s_touchX[0];
+            s_loupeY += y[0] - s_touchY[0];
+            loupePick();
+            s_numTouch = n;
+            s_touchX[0] = x[0];
+            s_touchY[0] = y[0];
+            return EM_TRUE;
+        }
         interact();
         if (n == 1) {
-            // Drag past the slop cancels the tap so orbit doesn't also pick.
+            // Drag past the slop cancels the tap so orbit doesn't also pick,
+            // and says this press was a camera gesture, not a hold.
             if (std::abs(x[0] - s_tapX) > 8.0f
                     || std::abs(y[0] - s_tapY) > 8.0f)
                 s_tapOk = false;
@@ -2307,7 +2411,19 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
         // run the same NaviCube-first pick as a mouse click, at the touch-down
         // point. (On a clean tap the lone touch is the one just lifted, so
         // e->numTouches == 1.)
-        if (type == EMSCRIPTEN_EVENT_TOUCHEND && s_tapOk
+        if (s_loupe) {
+            // The lift commits what the loupe is showing — the user has
+            // already seen it, so this never goes through the double-tap
+            // window (a hold is deliberate, and zoom-to-fit would be a
+            // surprising answer to one).
+            if (type == EMSCRIPTEN_EVENT_TOUCHEND) {
+                float px, py;
+                clientToCanvas(s_loupeX, s_loupeY, px, py);
+                selectAt(px, py, /*ctrl*/ false);
+            }
+            cancelLoupe();
+        }
+        else if (type == EMSCRIPTEN_EVENT_TOUCHEND && s_tapOk
                 && e->numTouches == 1)
             tapOrDouble(s_tapX, s_tapY, /*ctrl*/ false);
         s_tapOk = false;
