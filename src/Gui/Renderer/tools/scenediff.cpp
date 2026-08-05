@@ -111,6 +111,15 @@ DrawCall normalizeDraw(const DrawCall &draw)
 {
     DrawCall out = draw;
     out.materialIndex = -1;
+    // objectKey is process-local too, and less obviously so than a
+    // cacheId. It is a hash over a chain of SoFCSelectionRoot::selnodeid
+    // values, and that is `++SelectionRootId` — a global counter. Two
+    // processes agree on it only when they happened to allocate their
+    // selection roots in the same order and number, which two runs of one
+    // binary do and a viewer and a view-less publisher do not (measured:
+    // a uniform shift of two, because a real viewer builds two roots of
+    // its own first). So it cannot be part of what a draw *is*.
+    out.objectKey = 0;
     if (draw.mesh) {
         auto mesh = std::make_shared<MeshData>(*draw.mesh);
         mesh->cacheId = 0;
@@ -136,8 +145,20 @@ std::string drawDigest(const DrawCall &draw)
 }
 
 struct Group {
+    uint64_t key = 0;                   ///< this dump's objectKey, for reporting
     std::vector<std::string> digests;   ///< sorted: order is not content
     std::vector<const DrawCall *> draws;
+
+    /// What this object *is*: its draws, as content, independent of the
+    /// key it happens to carry in this process. Groups are matched on
+    /// this rather than on the key, because the key is a counter.
+    std::string signature() const
+    {
+        std::string joined;
+        for (const auto &digest : digests)
+            joined += digest;
+        return sha1Hex(joined.data(), joined.size());
+    }
 };
 
 typedef std::map<uint64_t, Group> GroupMap;
@@ -147,6 +168,7 @@ GroupMap groupDraws(const DrawCallList &draws)
     GroupMap groups;
     for (const auto &draw : draws) {
         auto &group = groups[draw.objectKey];
+        group.key = draw.objectKey;
         group.digests.push_back(drawDigest(draw));
         group.draws.push_back(&draw);
     }
@@ -203,46 +225,53 @@ size_t diffFeed(const char *what, const DrawCallList &a,
     const GroupMap ga = groupDraws(a);
     const GroupMap gb = groupDraws(b);
 
-    std::vector<uint64_t> onlyA, onlyB, differing;
-    for (const auto &entry : ga) {
-        auto it = gb.find(entry.first);
-        if (it == gb.end())
-            onlyA.push_back(entry.first);
-        else if (it->second.digests != entry.second.digests)
-            differing.push_back(entry.first);
-    }
+    // Match objects by content signature, not by objectKey. Every
+    // signature is matched at most once, so two objects that really are
+    // duplicates still have to be present on both sides.
+    std::multimap<std::string, const Group *> byContent;
     for (const auto &entry : gb)
-        if (!ga.count(entry.first))
-            onlyB.push_back(entry.first);
+        byContent.emplace(entry.second.signature(), &entry.second);
 
-    const size_t bad = onlyA.size() + onlyB.size() + differing.size();
+    std::vector<const Group *> onlyA;
+    bool keysAgree = ga.size() == gb.size();
+    for (const auto &entry : ga) {
+        auto it = byContent.find(entry.second.signature());
+        if (it == byContent.end()) {
+            onlyA.push_back(&entry.second);
+            continue;
+        }
+        if (it->second->key != entry.second.key)
+            keysAgree = false;
+        byContent.erase(it);
+    }
+    std::vector<const Group *> onlyB;
+    for (const auto &left : byContent)
+        onlyB.push_back(left.second);
+
+    const size_t bad = onlyA.size() + onlyB.size();
     std::printf("%-10s draws %zu/%zu  objects %zu/%zu  vertices %zu/%zu",
                 what, a.size(), b.size(), ga.size(), gb.size(),
                 countVertices(a), countVertices(b));
     if (!bad) {
-        std::printf("  -- match\n");
+        std::printf("  -- match%s\n",
+                    keysAgree ? "" : " (objectKeys renumbered)");
         return 0;
     }
     std::printf("  -- DIFFER\n");
 
-    for (uint64_t key : onlyA)
-        std::printf("    only in A: object %016llx (%zu draws)\n",
-                    (unsigned long long)key, ga.at(key).draws.size());
-    for (uint64_t key : onlyB)
-        std::printf("    only in B: object %016llx (%zu draws)\n",
-                    (unsigned long long)key, gb.at(key).draws.size());
-    for (uint64_t key : differing) {
-        const Group &A = ga.at(key);
-        const Group &B = gb.at(key);
-        std::printf("    differs:   object %016llx (%zu draws vs %zu)\n",
-                    (unsigned long long)key, A.draws.size(), B.draws.size());
-        if (!verbose)
-            continue;
-        for (size_t i = 0; i < A.draws.size(); ++i)
-            std::printf("      A[%zu] %s\n", i, describe(*A.draws[i]).c_str());
-        for (size_t i = 0; i < B.draws.size(); ++i)
-            std::printf("      B[%zu] %s\n", i, describe(*B.draws[i]).c_str());
-    }
+    auto report = [verbose](const char *side, const std::vector<const Group *> &groups) {
+        for (const Group *group : groups) {
+            std::printf("    only in %s: object %016llx (%zu draws)\n", side,
+                        (unsigned long long)group->key, group->draws.size());
+            if (!verbose)
+                continue;
+            for (size_t i = 0; i < group->draws.size(); ++i)
+                std::printf("      %s[%zu] %s\n", side, i,
+                            describe(*group->draws[i]).c_str());
+        }
+    };
+    report("A", onlyA);
+    report("B", onlyB);
     return bad;
 }
 
