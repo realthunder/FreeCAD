@@ -26,11 +26,14 @@
 
 // Std. configurations
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 #include <sstream>
+#include <vector>
 #include <FCGlobal.h>
 
 #include <fmt/printf.h>
@@ -793,6 +796,15 @@ public:
     void AttachObserver(ILogger* pcObserver);
     /// Detaches an Observer from FCConsole
     void DetachObserver(ILogger* pcObserver);
+    /** Detaches an Observer and takes ownership of destroying it.
+     *
+     * Use this instead of DetachObserver()+delete whenever the observer may be
+     * in use on another thread: messages are dispatched without holding the
+     * observer lock (see notifyPrivate), so a plain delete can free an observer
+     * that an in-flight notification is about to call through. Destruction is
+     * deferred until no notification is in flight.
+     */
+    void RetireObserver(ILogger* pcObserver);
 
     /// enumeration for the console modes
     enum ConsoleMode
@@ -902,8 +914,23 @@ private:
     static void Destruct();
     static ConsoleSingleton* _pcSingleton;  // NOLINT
 
-    // observer list
+    /// Snapshot the observers and mark a dispatch as in flight; pair with endDispatch().
+    std::vector<ILogger*> beginDispatch();
+    /// End a dispatch begun by beginDispatch() and destroy anything retired meanwhile.
+    void endDispatch();
+
+    // Observer list. Attached and detached from any thread -- Python code does
+    // so on the main thread while TechDraw logs OCCT failures from QtConcurrent
+    // workers -- so every access goes through _observerMutex.
     std::set<ILogger*> _aclObservers;
+    mutable std::mutex _observerMutex;
+    // Observers detached while a notification was in flight, destroyed once it
+    // is safe. Guarded by _observerMutex.
+    std::vector<ILogger*> _retiredObservers;
+    // Notifications currently dispatching. Guarded by _observerMutex; it is
+    // incremented in the same critical section that takes the snapshot, so
+    // "zero under the lock" really does mean no thread holds one.
+    int _dispatchDepth {0};
 
     std::map<std::string, int> _logLevels;
     int _defaultLogLevel;

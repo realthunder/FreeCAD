@@ -163,7 +163,17 @@ ConsoleSingleton::ConsoleSingleton()
 ConsoleSingleton::~ConsoleSingleton()
 {
     ConsoleOutput::destruct();
-    for (ILogger* Iter : _aclObservers) {
+    std::set<ILogger*> observers;
+    std::vector<ILogger*> retired;
+    {
+        std::lock_guard<std::mutex> guard(_observerMutex);
+        observers.swap(_aclObservers);
+        retired.swap(_retiredObservers);
+    }
+    for (ILogger* Iter : observers) {
+        delete Iter;
+    }
+    for (ILogger* Iter : retired) {
         delete Iter;
     }
 }
@@ -305,6 +315,7 @@ void ConsoleSingleton::SetConnectionMode(ConnectionMode mode)
  */
 void ConsoleSingleton::AttachObserver(ILogger* pcObserver)
 {
+    std::lock_guard<std::mutex> guard(_observerMutex);
     // double insert !!
     assert(_aclObservers.find(pcObserver) == _aclObservers.end());
 
@@ -318,7 +329,49 @@ void ConsoleSingleton::AttachObserver(ILogger* pcObserver)
  */
 void ConsoleSingleton::DetachObserver(ILogger* pcObserver)
 {
+    std::lock_guard<std::mutex> guard(_observerMutex);
     _aclObservers.erase(pcObserver);
+}
+
+void ConsoleSingleton::RetireObserver(ILogger* pcObserver)
+{
+    bool destroyNow = false;
+    {
+        std::lock_guard<std::mutex> guard(_observerMutex);
+        _aclObservers.erase(pcObserver);
+        if (_dispatchDepth == 0) {
+            destroyNow = true;
+        }
+        else {
+            _retiredObservers.push_back(pcObserver);
+        }
+    }
+    // Outside the lock: ~PyConsoleObserver takes the GIL, and taking the GIL
+    // while holding _observerMutex is the one ordering that can deadlock.
+    if (destroyNow) {
+        delete pcObserver;
+    }
+}
+
+std::vector<ILogger*> ConsoleSingleton::beginDispatch()
+{
+    std::lock_guard<std::mutex> guard(_observerMutex);
+    ++_dispatchDepth;
+    return {_aclObservers.begin(), _aclObservers.end()};
+}
+
+void ConsoleSingleton::endDispatch()
+{
+    std::vector<ILogger*> reclaim;
+    {
+        std::lock_guard<std::mutex> guard(_observerMutex);
+        if (--_dispatchDepth == 0) {
+            reclaim.swap(_retiredObservers);
+        }
+    }
+    for (ILogger* obs : reclaim) {
+        delete obs;  // outside the lock -- see RetireObserver
+    }
 }
 
 void Base::ConsoleSingleton::notifyPrivate(LogStyle category,
@@ -327,7 +380,21 @@ void Base::ConsoleSingleton::notifyPrivate(LogStyle category,
                                            const std::string& notifiername,
                                            const std::string& msg)
 {
-    for (ILogger* Iter : _aclObservers) {
+    // Snapshot under the lock, dispatch without it. Holding _observerMutex
+    // across SendLog would deadlock: a Python observer blocks on the GIL, while
+    // the thread holding the GIL may be attaching or detaching an observer and
+    // so waiting for this very mutex.
+    const std::vector<ILogger*> observers = beginDispatch();
+    struct DispatchGuard
+    {
+        ConsoleSingleton* self;
+        ~DispatchGuard()
+        {
+            self->endDispatch();
+        }
+    } dispatchGuard {this};
+
+    for (ILogger* Iter : observers) {
         if (Iter->isActive(category)) {
             Iter->SendLog(notifiername,
                           msg,
@@ -350,6 +417,7 @@ void ConsoleSingleton::postEvent(ConsoleSingleton::FreeCAD_ConsoleMsgType type,
 
 ILogger* ConsoleSingleton::Get(const char* Name) const
 {
+    std::lock_guard<std::mutex> guard(_observerMutex);
     const char* OName {};
     for (ILogger* Iter : _aclObservers) {
         OName = Iter->Name();  // get the name
@@ -844,7 +912,14 @@ PyObject* ConsoleSingleton::sPyGetObservers(PyObject* /*self*/, PyObject* args)
     PY_TRY
     {
         Py::List list;
-        for (auto i : Instance()._aclObservers) {
+        // Snapshot rather than iterate live: another thread may be logging, and
+        // Py::String can raise, which would leave the lock held.
+        std::vector<ILogger*> observers;
+        {
+            std::lock_guard<std::mutex> guard(Instance()._observerMutex);
+            observers.assign(Instance()._aclObservers.begin(), Instance()._aclObservers.end());
+        }
+        for (auto i : observers) {
             list.append(Py::String(i->Name() ? i->Name() : ""));
         }
 
@@ -961,8 +1036,11 @@ PyObject* ConsoleSingleton::sPyDetachObserver(PyObject* /*self*/, PyObject* args
             return nullptr;
         }
         if (eq) {
-            Instance().DetachObserver(*it);
-            delete *it;
+            // RetireObserver, not DetachObserver + delete: a worker thread may
+            // be inside SendLog on this observer right now (TechDraw logs OCCT
+            // failures from QtConcurrent threads), and freeing it under them
+            // calls the Python callback through a dangling pointer.
+            Instance().RetireObserver(*it);
             _pyObservers.erase(it);
             Py_Return;
         }

@@ -1874,14 +1874,16 @@ void Application::destruct()
 
 void Application::destructObserver()
 {
+    // RetireObserver rather than DetachObserver + delete: messages are
+    // dispatched without holding the observer lock, so a worker thread can be
+    // inside SendLog on one of these when we get here. Retiring defers the
+    // destruction until no notification is in flight.
     if ( _pConsoleObserverFile ) {
-        Base::Console().DetachObserver(_pConsoleObserverFile);
-        delete _pConsoleObserverFile;
+        Base::Console().RetireObserver(_pConsoleObserverFile);
         _pConsoleObserverFile = nullptr;
     }
     if ( _pConsoleObserverStd ) {
-        Base::Console().DetachObserver(_pConsoleObserverStd);
-        delete _pConsoleObserverStd;
+        Base::Console().RetireObserver(_pConsoleObserverStd);
         _pConsoleObserverStd = nullptr;
     }
 }
