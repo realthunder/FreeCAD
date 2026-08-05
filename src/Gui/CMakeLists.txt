@@ -235,7 +235,7 @@ generate_from_xml(MDIViewPy)
 generate_from_xml(View3DInventorPy)
 generate_from_xml(AbstractSplitViewPy)
 
-generate_from_py(FreeCADGuiInit GuiInitScript.h)
+generate_embed_from_py(FreeCADGuiInit GuiInitScript.h)
 
 # The XML files
 SET(FreeCADGui_XML_SRCS

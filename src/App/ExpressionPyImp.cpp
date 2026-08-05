@@ -65,7 +65,7 @@ int ExpressionPy::finalization() {
     return 1;
 }
 
-PyObject *ExpressionPy::__call__(PyObject *args, PyObject *kwds) {
+PyObject *ExpressionPy::__call__(PyObject *args, PyObject *kwds) const{
     if (!pyOwner->isValid()){
         PyErr_Format(PyExc_ReferenceError, "Owner document object expired");
         return NULL;

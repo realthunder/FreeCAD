@@ -1,17 +1,18 @@
 #! python
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # (c) 2006 Juergen Riegel
 
 from . import template
-import generateBase.generateModel_Module
-import generateBase.generateTools
+import model.generateModel_Module
+import model.generateTools
 
 
 class TemplateModuleAppMain(template.ModelTemplate):
     def Generate(self):
-        file = open(self.path + "/App" + self.module.Name + ".cpp", "w")
-        generateBase.generateTools.replace(self.Template, locals(), file)
-        # file.write( generateBase.generateTools.replace(self.Template,locals()))
+        file = open(self.outputDir + "/App" + self.module.Name + ".cpp", "w")
+        model.generateTools.replace(self.Template, locals(), file)
+        # file.write( model.generateTools.replace(self.Template,locals()))
 
     Template = """
 /***************************************************************************
@@ -23,10 +24,8 @@ class TemplateModuleAppMain(template.ModelTemplate):
  *                                                                         *
  ***************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
 # include <Python.h>
-#endif
+
 
 #include <Base/Console.h>
 
@@ -40,7 +39,7 @@ extern struct PyMethodDef @self.module.Name@_methods[];
 extern "C" {
 void App@self.module.Name@Export init@self.module.Name@() {
 
-  Base::Console().Log("Mod: Loading @self.module.Name@ module... done\\n");
+  Base::Console().log("Mod: Loading @self.module.Name@ module... done\\n");
   PyObject* partModule = Py_InitModule3("@self.module.Name@", @self.module.Name@_methods, module_@self.module.Name@_doc);   /* mod name, table ptr */
 
 + for i in self.module.Content.Feature:

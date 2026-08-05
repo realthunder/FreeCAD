@@ -57,7 +57,7 @@ Py::Int PersistencePy::getMemSize() const
     return Py::Int((long)getPersistencePtr()->getMemSize());
 }
 
-PyObject* PersistencePy::dumpContent(PyObject* args, PyObject* kwds)
+PyObject* PersistencePy::dumpContent(PyObject* args, PyObject* kwds) const
 {
     int compression = 3;
     static const std::array<const char*, 2> kwds_def {"Compression", nullptr};

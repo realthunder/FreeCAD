@@ -235,7 +235,7 @@ PyObject* BuildPlateSurfacePy::perform(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::isDone(PyObject *args)
+PyObject* BuildPlateSurfacePy::isDone(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -250,7 +250,7 @@ PyObject* BuildPlateSurfacePy::isDone(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::surface(PyObject *args)
+PyObject* BuildPlateSurfacePy::surface(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -269,7 +269,7 @@ PyObject* BuildPlateSurfacePy::surface(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::surfInit(PyObject *args)
+PyObject* BuildPlateSurfacePy::surfInit(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -288,7 +288,7 @@ PyObject* BuildPlateSurfacePy::surfInit(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::curveConstraint(PyObject *args)
+PyObject* BuildPlateSurfacePy::curveConstraint(PyObject *args) const
 {
     int index;
     if (!PyArg_ParseTuple(args, "i", &index))
@@ -308,7 +308,7 @@ PyObject* BuildPlateSurfacePy::curveConstraint(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::pointConstraint(PyObject *args)
+PyObject* BuildPlateSurfacePy::pointConstraint(PyObject *args) const
 {
     int index;
     if (!PyArg_ParseTuple(args, "i", &index))
@@ -383,7 +383,7 @@ PyObject* BuildPlateSurfacePy::disc3dContour(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::sense(PyObject *args)
+PyObject* BuildPlateSurfacePy::sense(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -404,7 +404,7 @@ PyObject* BuildPlateSurfacePy::sense(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::curves2d(PyObject *args)
+PyObject* BuildPlateSurfacePy::curves2d(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -428,7 +428,7 @@ PyObject* BuildPlateSurfacePy::curves2d(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::order(PyObject *args)
+PyObject* BuildPlateSurfacePy::order(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -449,7 +449,7 @@ PyObject* BuildPlateSurfacePy::order(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::G0Error(PyObject *args)
+PyObject* BuildPlateSurfacePy::G0Error(PyObject *args) const
 {
     int index = 0;
     if (!PyArg_ParseTuple(args, "|i", &index))
@@ -466,7 +466,7 @@ PyObject* BuildPlateSurfacePy::G0Error(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::G1Error(PyObject *args)
+PyObject* BuildPlateSurfacePy::G1Error(PyObject *args) const
 {
     int index = 0;
     if (!PyArg_ParseTuple(args, "|i", &index))
@@ -483,7 +483,7 @@ PyObject* BuildPlateSurfacePy::G1Error(PyObject *args)
     }
 }
 
-PyObject* BuildPlateSurfacePy::G2Error(PyObject *args)
+PyObject* BuildPlateSurfacePy::G2Error(PyObject *args) const
 {
     int index = 0;
     if (!PyArg_ParseTuple(args, "|i", &index))

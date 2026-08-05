@@ -120,7 +120,7 @@ ENDMACRO(fc_target_copy_resource_flat)
 # It would be a bit cleaner to generate these files in ${CMAKE_CURRENT_BINARY_DIR}
 
 macro(generate_from_xml BASE_NAME)
-    set(TOOL_PATH "${CMAKE_SOURCE_DIR}/src/Tools/generate.py")
+    set(TOOL_PATH "${CMAKE_SOURCE_DIR}/src/Tools/bindings/generate.py")
     file(TO_NATIVE_PATH "${TOOL_PATH}" TOOL_NATIVE_PATH)
     file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${BASE_NAME}.xml" SOURCE_NATIVE_PATH)
 
@@ -141,14 +141,60 @@ macro(generate_from_xml BASE_NAME)
         COMMAND ${PYTHON_EXECUTABLE} "${TOOL_NATIVE_PATH}" --outputPath "${OUTPUT_NATIVE_PATH}" ${BASE_NAME}.xml
         MAIN_DEPENDENCY "${BASE_NAME}.xml"
         DEPENDS
-        "${CMAKE_SOURCE_DIR}/src/Tools/generateTemplates/templateClassPyExport.py"
+        "${CMAKE_SOURCE_DIR}/src/Tools/bindings/templates/templateClassPyExport.py"
         "${TOOL_PATH}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         COMMENT "Building ${BASE_NAME}.h/.cpp out of ${BASE_NAME}.xml"
     )
 endmacro(generate_from_xml)
 
-macro(generate_from_py BASE_NAME OUTPUT_FILE)
+# Generate <BASE_NAME>Py<SUFFIX>.h/.cpp from a <BASE_NAME>.pyi binding definition.
+# This is the format upstream authors new bindings in; generate_from_xml above
+# drives the same generator from the older .xml definitions.
+macro(generate_from_py_impl BASE_NAME SUFFIX)
+    set(TOOL_PATH "${CMAKE_SOURCE_DIR}/src/Tools/bindings/generate.py")
+    file(TO_NATIVE_PATH "${TOOL_PATH}" TOOL_NATIVE_PATH)
+    file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${BASE_NAME}.pyi" SOURCE_NATIVE_PATH)
+
+    set(SOURCE_CPP_PATH "${CMAKE_CURRENT_BINARY_DIR}/${BASE_NAME}Py${SUFFIX}.cpp")
+    set(SOURCE_H_PATH "${CMAKE_CURRENT_BINARY_DIR}/${BASE_NAME}Py${SUFFIX}.h")
+
+    # BASE_NAME may include also a path name
+    GET_FILENAME_COMPONENT(OUTPUT_PATH "${SOURCE_CPP_PATH}" PATH)
+    file(TO_NATIVE_PATH "${OUTPUT_PATH}" OUTPUT_NATIVE_PATH)
+    if(NOT EXISTS "${SOURCE_CPP_PATH}")
+        # assures the source files are generated at least once
+        message(STATUS "${SOURCE_CPP_PATH}")
+        execute_process(
+            COMMAND "${PYTHON_EXECUTABLE}" "${TOOL_NATIVE_PATH}" --outputPath "${OUTPUT_NATIVE_PATH}" "${SOURCE_NATIVE_PATH}"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            COMMAND_ERROR_IS_FATAL ANY
+        )
+    endif()
+
+    add_custom_command(
+        OUTPUT "${SOURCE_H_PATH}" "${SOURCE_CPP_PATH}"
+        COMMAND ${PYTHON_EXECUTABLE} "${TOOL_NATIVE_PATH}" --outputPath "${OUTPUT_NATIVE_PATH}" ${BASE_NAME}.pyi
+        MAIN_DEPENDENCY "${CMAKE_CURRENT_SOURCE_DIR}/${BASE_NAME}.pyi"
+        DEPENDS
+        "${CMAKE_SOURCE_DIR}/src/Tools/bindings/templates/templateClassPyExport.py"
+        "${TOOL_PATH}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Building ${BASE_NAME}Py${SUFFIX}.h/.cpp out of ${BASE_NAME}.pyi"
+    )
+endmacro(generate_from_py_impl)
+
+macro(generate_from_py BASE_NAME)
+    generate_from_py_impl(${BASE_NAME} "")
+endmacro(generate_from_py)
+
+macro(generate_from_py_ BASE_NAME)
+    generate_from_py_impl(${BASE_NAME} "_")
+endmacro(generate_from_py_)
+
+# Embed a .py file as a C++ header. Named generate_from_py before the .pyi
+# binding generator above took that name; renamed to match upstream.
+macro(generate_embed_from_py BASE_NAME OUTPUT_FILE)
 		set(TOOL_PATH "${CMAKE_SOURCE_DIR}/src/Tools/PythonToCPP.py")
 		file(TO_NATIVE_PATH "${TOOL_PATH}" TOOL_NATIVE_PATH)
 		file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${BASE_NAME}.py" SOURCE_NATIVE_PATH)
@@ -159,7 +205,7 @@ macro(generate_from_py BASE_NAME OUTPUT_FILE)
 				DEPENDS "${TOOL_PATH}"
 				WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 				COMMENT "Building files out of ${BASE_NAME}.py")
-endmacro(generate_from_py)
+endmacro(generate_embed_from_py)
 
 macro(generate_from_any INPUT_FILE OUTPUT_FILE VARIABLE)
 		set(TOOL_PATH "${CMAKE_SOURCE_DIR}/src/Tools/PythonToCPP.py")

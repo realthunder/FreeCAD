@@ -90,7 +90,7 @@ int VectorPy::PyInit(PyObject* args, PyObject* /*kwd*/)
     return -1;
 }
 
-PyObject* VectorPy::__reduce__(PyObject* args)
+PyObject* VectorPy::__reduce__(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -288,7 +288,7 @@ PyObject* VectorPy::mapping_subscript(PyObject* self, PyObject* item)
     return nullptr;
 }
 
-PyObject* VectorPy::add(PyObject* args)
+PyObject* VectorPy::add(PyObject* args) const
 {
     PyObject* obj = nullptr;
     if (!PyArg_ParseTuple(args, "O!", &(VectorPy::Type), &obj)) {
@@ -304,7 +304,7 @@ PyObject* VectorPy::add(PyObject* args)
     return new VectorPy(v);
 }
 
-PyObject* VectorPy::sub(PyObject* args)
+PyObject* VectorPy::sub(PyObject* args) const
 {
     PyObject* obj = nullptr;
     if (!PyArg_ParseTuple(args, "O!", &(VectorPy::Type), &obj)) {
@@ -320,7 +320,7 @@ PyObject* VectorPy::sub(PyObject* args)
     return new VectorPy(v);
 }
 
-PyObject* VectorPy::negative(PyObject* args)
+PyObject* VectorPy::negative(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -360,7 +360,7 @@ PyObject* VectorPy::richCompare(PyObject* v, PyObject* w, int op)
     }
 }
 
-PyObject* VectorPy::isEqual(PyObject* args)
+PyObject* VectorPy::isEqual(PyObject* args) const
 {
     PyObject* obj = nullptr;
     double tolerance = 0;
@@ -403,7 +403,7 @@ PyObject* VectorPy::multiply(PyObject* args)
     return Py::new_reference_to(this);
 }
 
-PyObject* VectorPy::dot(PyObject* args)
+PyObject* VectorPy::dot(PyObject* args) const
 {
     PyObject* obj = nullptr;
     if (!PyArg_ParseTuple(args, "O!", &(VectorPy::Type), &obj)) {
@@ -419,7 +419,7 @@ PyObject* VectorPy::dot(PyObject* args)
     return Py::new_reference_to(mult);
 }
 
-PyObject* VectorPy::cross(PyObject* args)
+PyObject* VectorPy::cross(PyObject* args) const
 {
     PyObject* obj = nullptr;
     if (!PyArg_ParseTuple(args, "O!", &(VectorPy::Type), &obj)) {
@@ -435,7 +435,7 @@ PyObject* VectorPy::cross(PyObject* args)
     return new VectorPy(v);
 }
 
-PyObject* VectorPy::isOnLineSegment(PyObject* args)
+PyObject* VectorPy::isOnLineSegment(PyObject* args) const
 {
     PyObject* start = nullptr;
     PyObject* end = nullptr;
@@ -463,7 +463,7 @@ PyObject* VectorPy::isOnLineSegment(PyObject* args)
     return Py::new_reference_to(result);
 }
 
-PyObject* VectorPy::getAngle(PyObject* args)
+PyObject* VectorPy::getAngle(PyObject* args) const
 {
     PyObject* obj = nullptr;
     if (!PyArg_ParseTuple(args, "O!", &(VectorPy::Type), &obj)) {
@@ -551,7 +551,7 @@ PyObject* VectorPy::projectToPlane(PyObject* args)
     return Py::new_reference_to(this);
 }
 
-PyObject* VectorPy::distanceToPoint(PyObject* args)
+PyObject* VectorPy::distanceToPoint(PyObject* args) const
 {
     PyObject* pnt = nullptr;
     if (!PyArg_ParseTuple(args, "O!", &(VectorPy::Type), &pnt)) {
@@ -566,7 +566,7 @@ PyObject* VectorPy::distanceToPoint(PyObject* args)
     return Py::new_reference_to(dist);
 }
 
-PyObject* VectorPy::distanceToLine(PyObject* args)
+PyObject* VectorPy::distanceToLine(PyObject* args) const
 {
     PyObject* base = nullptr;
     PyObject* line = nullptr;
@@ -593,7 +593,7 @@ PyObject* VectorPy::distanceToLine(PyObject* args)
     return Py::new_reference_to(dist);
 }
 
-PyObject* VectorPy::distanceToLineSegment(PyObject* args)
+PyObject* VectorPy::distanceToLineSegment(PyObject* args) const
 {
     PyObject* base = nullptr;
     PyObject* line = nullptr;
@@ -620,7 +620,7 @@ PyObject* VectorPy::distanceToLineSegment(PyObject* args)
     return new VectorPy(v);
 }
 
-PyObject* VectorPy::distanceToPlane(PyObject* args)
+PyObject* VectorPy::distanceToPlane(PyObject* args) const
 {
     PyObject* base = nullptr;
     PyObject* line = nullptr;

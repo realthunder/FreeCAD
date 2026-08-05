@@ -899,7 +899,7 @@ PyObject*  DocumentObjectPy::getPathsByOutList(PyObject *args)
     }
 }
 
-PyObject *DocumentObjectPy::getElementMapVersion(PyObject *args) {
+PyObject *DocumentObjectPy::getElementMapVersion(PyObject *args) const{
     const char *name;
     PyObject *restored = Py_False;
     if (!PyArg_ParseTuple(args, "s|O", &name, &restored))
@@ -932,7 +932,7 @@ Py::Boolean DocumentObjectPy::getRemoving() const {
     return {getDocumentObjectPtr()->testStatus(ObjectStatus::Remove)};
 }
 
-PyObject *DocumentObjectPy::resolve(PyObject *args)
+PyObject *DocumentObjectPy::resolve(PyObject *args) const
 {
     const char *subname;
     if (!PyArg_ParseTuple(args, "s",&subname))
@@ -955,7 +955,7 @@ PyObject *DocumentObjectPy::resolve(PyObject *args)
     Py_Return;
 }
 
-PyObject *DocumentObjectPy::resolveSubElement(PyObject *args)
+PyObject *DocumentObjectPy::resolveSubElement(PyObject *args) const
 {
     const char *subname;
     PyObject *append = Py_False;
@@ -984,7 +984,7 @@ PyObject *DocumentObjectPy::resolveSubElement(PyObject *args)
     Py_Return;
 }
 
-PyObject * DocumentObjectPy::getParents(PyObject *args) {
+PyObject * DocumentObjectPy::getParents(PyObject *args) const{
     PyObject *pyQueryParent = nullptr;
     if (!PyArg_ParseTuple(args, "|O!", &DocumentObjectPy::Type, &pyQueryParent))
         return nullptr;

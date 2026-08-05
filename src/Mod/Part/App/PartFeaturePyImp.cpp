@@ -40,7 +40,7 @@ std::string PartFeaturePy::representation() const
     return {"<Part::PartFeature>"};
 }
 
-PyObject *PartFeaturePy::getElementHistory(PyObject *args, PyObject *kwds) {
+PyObject *PartFeaturePy::getElementHistory(PyObject *args, PyObject *kwds) const{
     const char *name;
     PyObject *recursive = Py_True;
     PyObject *sameType = Py_False;

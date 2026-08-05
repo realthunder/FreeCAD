@@ -102,7 +102,7 @@ int GeometryCurvePy::PyInit(PyObject* /*args*/, PyObject* /*kwd*/)
     return 0;
 }
 
-PyObject* GeometryCurvePy::toShape(PyObject *args)
+PyObject* GeometryCurvePy::toShape(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -127,7 +127,7 @@ PyObject* GeometryCurvePy::toShape(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::discretize(PyObject *args, PyObject *kwds)
+PyObject* GeometryCurvePy::discretize(PyObject *args, PyObject *kwds) const
 {
     try {
         Handle(Geom_Geometry) g = getGeometryPtr()->handle();
@@ -304,7 +304,7 @@ PyObject* GeometryCurvePy::discretize(PyObject *args, PyObject *kwds)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::length(PyObject *args)
+PyObject* GeometryCurvePy::length(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -329,7 +329,7 @@ PyObject* GeometryCurvePy::length(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::parameterAtDistance(PyObject *args)
+PyObject* GeometryCurvePy::parameterAtDistance(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -354,7 +354,7 @@ PyObject* GeometryCurvePy::parameterAtDistance(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::getD0(PyObject *args)
+PyObject* GeometryCurvePy::getD0(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -377,7 +377,7 @@ PyObject* GeometryCurvePy::getD0(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::getD1(PyObject *args)
+PyObject* GeometryCurvePy::getD1(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -404,7 +404,7 @@ PyObject* GeometryCurvePy::getD1(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::getD2(PyObject *args)
+PyObject* GeometryCurvePy::getD2(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -432,7 +432,7 @@ PyObject* GeometryCurvePy::getD2(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::getD3(PyObject *args)
+PyObject* GeometryCurvePy::getD3(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -461,7 +461,7 @@ PyObject* GeometryCurvePy::getD3(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::getDN(PyObject *args)
+PyObject* GeometryCurvePy::getDN(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -484,7 +484,7 @@ PyObject* GeometryCurvePy::getDN(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::value(PyObject *args)
+PyObject* GeometryCurvePy::value(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -506,7 +506,7 @@ PyObject* GeometryCurvePy::value(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::tangent(PyObject *args)
+PyObject* GeometryCurvePy::tangent(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -535,7 +535,7 @@ PyObject* GeometryCurvePy::tangent(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::normal(PyObject *args)
+PyObject* GeometryCurvePy::normal(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -559,7 +559,7 @@ PyObject* GeometryCurvePy::normal(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::projectPoint(PyObject *args, PyObject* kwds)
+PyObject* GeometryCurvePy::projectPoint(PyObject *args, PyObject* kwds) const
 {
     PyObject *v;
     const char *meth = "NearestPoint";
@@ -628,7 +628,7 @@ PyObject* GeometryCurvePy::projectPoint(PyObject *args, PyObject* kwds)
     }
 }
 
-PyObject* GeometryCurvePy::curvature(PyObject *args)
+PyObject* GeometryCurvePy::curvature(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -651,7 +651,7 @@ PyObject* GeometryCurvePy::curvature(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::centerOfCurvature(PyObject *args)
+PyObject* GeometryCurvePy::centerOfCurvature(PyObject *args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -675,7 +675,7 @@ PyObject* GeometryCurvePy::centerOfCurvature(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::parameter(PyObject *args)
+PyObject* GeometryCurvePy::parameter(PyObject *args) const
 {
     try {
         PyObject *p;
@@ -697,7 +697,7 @@ PyObject* GeometryCurvePy::parameter(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::makeRuledSurface(PyObject *args)
+PyObject* GeometryCurvePy::makeRuledSurface(PyObject *args) const
 {
     PyObject* curve;
     if (!PyArg_ParseTuple(args, "O!", &(Part::GeometryCurvePy::Type), &curve))
@@ -735,7 +735,7 @@ PyObject* GeometryCurvePy::makeRuledSurface(PyObject *args)
     }
 }
 
-PyObject* GeometryCurvePy::intersect2d(PyObject *args)
+PyObject* GeometryCurvePy::intersect2d(PyObject *args) const
 {
     PyObject *c,*p;
     if (!PyArg_ParseTuple(args, "O!O!", &(Part::GeometryCurvePy::Type), &c,
@@ -784,7 +784,7 @@ PyObject* GeometryCurvePy::intersect2d(PyObject *args)
     }
 }
 
-PyObject* GeometryCurvePy::toBSpline(PyObject * args)
+PyObject* GeometryCurvePy::toBSpline(PyObject * args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -808,7 +808,7 @@ PyObject* GeometryCurvePy::toBSpline(PyObject * args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::toNurbs(PyObject * args)
+PyObject* GeometryCurvePy::toNurbs(PyObject * args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -832,7 +832,7 @@ PyObject* GeometryCurvePy::toNurbs(PyObject * args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::trim(PyObject * args)
+PyObject* GeometryCurvePy::trim(PyObject * args) const
 {
     Handle(Geom_Geometry) g = getGeometryPtr()->handle();
     Handle(Geom_Curve) c = Handle(Geom_Curve)::DownCast(g);
@@ -855,7 +855,7 @@ PyObject* GeometryCurvePy::trim(PyObject * args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::approximateBSpline(PyObject *args)
+PyObject* GeometryCurvePy::approximateBSpline(PyObject *args) const
 {
     double tolerance;
     int maxSegment, maxDegree;
@@ -905,7 +905,7 @@ PyObject* GeometryCurvePy::approximateBSpline(PyObject *args)
     }
 }
 
-PyObject* GeometryCurvePy::continuityWith(PyObject *args)
+PyObject* GeometryCurvePy::continuityWith(PyObject *args) const
 {
     double u1 = -1.0, u2 = -1.0;
     double tl = -1.0, ta = -1.0;
@@ -1041,7 +1041,7 @@ int GeometryCurvePy::setCustomAttributes(const char* /*attr*/, PyObject* /*obj*/
 
 // Specialized intersection functions
 
-PyObject* GeometryCurvePy::intersectCS(PyObject *args)
+PyObject* GeometryCurvePy::intersectCS(PyObject *args) const
 {
     Handle(Geom_Curve) curve = Handle(Geom_Curve)::DownCast(getGeometryPtr()->handle());
     try {
@@ -1083,7 +1083,7 @@ PyObject* GeometryCurvePy::intersectCS(PyObject *args)
     return nullptr;
 }
 
-PyObject* GeometryCurvePy::intersectCC(PyObject *args)
+PyObject* GeometryCurvePy::intersectCC(PyObject *args) const
 {
     PyObject *p;
     double prec = Precision::Confusion();
@@ -1115,7 +1115,7 @@ PyObject* GeometryCurvePy::intersectCC(PyObject *args)
 
 // General intersection function
 
-PyObject* GeometryCurvePy::intersect(PyObject *args)
+PyObject* GeometryCurvePy::intersect(PyObject *args) const
 {
     Handle(Geom_Curve) curve = Handle(Geom_Curve)::DownCast(getGeometryPtr()->handle());
     try {
@@ -1170,7 +1170,7 @@ PyObject* GeometryCurvePy::reverse(PyObject *args)
     Py_Return;
 }
 
-PyObject* GeometryCurvePy::reversedParameter(PyObject *args)
+PyObject* GeometryCurvePy::reversedParameter(PyObject *args) const
 {
     double p;
     if (!PyArg_ParseTuple(args, "d", &p))
@@ -1187,7 +1187,7 @@ PyObject* GeometryCurvePy::reversedParameter(PyObject *args)
     }
 }
 
-PyObject* GeometryCurvePy::isPeriodic(PyObject *args)
+PyObject* GeometryCurvePy::isPeriodic(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -1203,7 +1203,7 @@ PyObject* GeometryCurvePy::isPeriodic(PyObject *args)
     }
 }
 
-PyObject* GeometryCurvePy::period(PyObject *args)
+PyObject* GeometryCurvePy::period(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -1219,7 +1219,7 @@ PyObject* GeometryCurvePy::period(PyObject *args)
     }
 }
 
-PyObject* GeometryCurvePy::isClosed(PyObject *args)
+PyObject* GeometryCurvePy::isClosed(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -1235,7 +1235,7 @@ PyObject* GeometryCurvePy::isClosed(PyObject *args)
     }
 }
 
-PyObject* GeometryCurvePy::isLinear(PyObject *args)
+PyObject* GeometryCurvePy::isLinear(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return 0;
@@ -1244,7 +1244,7 @@ PyObject* GeometryCurvePy::isLinear(PyObject *args)
     } PY_CATCH_OCC;
 }
 
-PyObject* GeometryCurvePy::toLine(PyObject *args)
+PyObject* GeometryCurvePy::toLine(PyObject *args) const
 {
     PyObject *clone = Py_True;
     if (!PyArg_ParseTuple(args, "|O", &clone))
@@ -1257,7 +1257,7 @@ PyObject* GeometryCurvePy::toLine(PyObject *args)
     } PY_CATCH_OCC;
 }
 
-PyObject* GeometryCurvePy::toLineSegment(PyObject *args)
+PyObject* GeometryCurvePy::toLineSegment(PyObject *args) const
 {
     PyObject *clone = Py_True;
     if (!PyArg_ParseTuple(args, "|O", &clone))

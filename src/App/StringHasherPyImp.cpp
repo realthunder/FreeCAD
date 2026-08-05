@@ -55,7 +55,7 @@ int StringHasherPy::PyInit(PyObject* args, PyObject* kwds)
 }
 
 
-PyObject* StringHasherPy::isSame(PyObject *args)
+PyObject* StringHasherPy::isSame(PyObject *args) const
 {
     PyObject *other;
     if (!PyArg_ParseTuple(args, "O!", &StringHasherPy::Type, &other)){     // convert args: Python->C 
@@ -113,7 +113,7 @@ PyObject* StringHasherPy::getID(PyObject *args)
     return nullptr;
 }
 
-PyObject *StringHasherPy::checkStorageSizes(PyObject *args)
+PyObject *StringHasherPy::checkStorageSizes(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;

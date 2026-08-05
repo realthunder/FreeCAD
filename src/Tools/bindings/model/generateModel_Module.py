@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 #
 # Generated Wed Sep 27 11:00:46 2023 by generateDS.py.
@@ -3182,8 +3183,8 @@ def parse(inFileName):
     rootObj.build(rootNode)
     # Enable Python to collect the space used by the DOM.
     doc = None
-    sys.stdout.write('<?xml version="1.0" ?>\n')
-    rootObj.export(sys.stdout, 0, name_="GenerateModel")
+    # sys.stdout.write('<?xml version="1.0" ?>\n')
+    # rootObj.export(sys.stdout, 0, name_="GenerateModel")
     return rootObj
 
 

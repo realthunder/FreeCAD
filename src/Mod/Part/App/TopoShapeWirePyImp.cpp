@@ -226,7 +226,7 @@ PyObject* TopoShapeWirePy::fixWire(PyObject *args)
     } PY_CATCH_OCC
 }
 
-PyObject* TopoShapeWirePy::makeOffset(PyObject *args)
+PyObject* TopoShapeWirePy::makeOffset(PyObject *args) const
 {
 #ifndef FC_NO_ELEMENT_MAP
     Py::Dict dict;
@@ -252,7 +252,7 @@ PyObject* TopoShapeWirePy::makeOffset(PyObject *args)
 #endif
 }
 
-PyObject* TopoShapeWirePy::makePipe(PyObject *args)
+PyObject* TopoShapeWirePy::makePipe(PyObject *args) const
 {
     PyObject *pShape;
     if (PyArg_ParseTuple(args, "O!", &(Part::TopoShapePy::Type), &pShape)) {
@@ -273,7 +273,7 @@ PyObject* TopoShapeWirePy::makePipe(PyObject *args)
     return nullptr;
 }
 
-PyObject* TopoShapeWirePy::makePipeShell(PyObject *args)
+PyObject* TopoShapeWirePy::makePipeShell(PyObject *args) const
 {
     PyObject *obj;
     PyObject *make_solid = Py_False;
@@ -312,12 +312,12 @@ PyObject* TopoShapeWirePy::makePipeShell(PyObject *args)
     return nullptr;
 }
 
-PyObject* TopoShapeWirePy::makeEvolved(PyObject *args, PyObject *kwds)
+PyObject* TopoShapeWirePy::makeEvolved(PyObject *args, PyObject *kwds) const
 {
     return TopoShapePy::makeEvolved(args, kwds);
 }
 
-PyObject* TopoShapeWirePy::makeHomogenousWires(PyObject *args)
+PyObject* TopoShapeWirePy::makeHomogenousWires(PyObject *args) const
 {
     PyObject* wire;
     if (!PyArg_ParseTuple(args, "O!",&(Part::TopoShapeWirePy::Type),&wire))
@@ -338,7 +338,7 @@ PyObject* TopoShapeWirePy::makeHomogenousWires(PyObject *args)
     } PY_CATCH_OCC
 }
 
-PyObject* TopoShapeWirePy::approximate(PyObject *args, PyObject *kwds)
+PyObject* TopoShapeWirePy::approximate(PyObject *args, PyObject *kwds) const
 {
     double tol2d = gp::Resolution();
     double tol3d = 0.0001;
@@ -364,7 +364,7 @@ PyObject* TopoShapeWirePy::approximate(PyObject *args, PyObject *kwds)
     } PY_CATCH_OCC
 }
 
-PyObject* TopoShapeWirePy::discretize(PyObject *args, PyObject *kwds)
+PyObject* TopoShapeWirePy::discretize(PyObject *args, PyObject *kwds) const
 {
     try {
         BRepAdaptor_CompCurve adapt(TopoDS::Wire(getTopoShapePtr()->getShape()));

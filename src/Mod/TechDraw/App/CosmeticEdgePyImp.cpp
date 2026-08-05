@@ -62,7 +62,7 @@ int CosmeticEdgePy::PyInit(PyObject* /*args*/, PyObject* /*kwd*/)
 }
 
 //From Part::GeometryPy.cpp
-PyObject* CosmeticEdgePy::clone(PyObject *args)
+PyObject* CosmeticEdgePy::clone(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -72,7 +72,7 @@ PyObject* CosmeticEdgePy::clone(PyObject *args)
     PyObject* cpy = nullptr;
     // let the type object decide
     if (type->tp_new)
-        cpy = type->tp_new(type, this, nullptr);
+        cpy = type->tp_new(type, const_cast<CosmeticEdgePy*>(this), nullptr);
     if (!cpy) {
         PyErr_SetString(PyExc_RuntimeError, "failed to create clone of CosmeticEdge");
         return nullptr;
@@ -89,7 +89,7 @@ PyObject* CosmeticEdgePy::clone(PyObject *args)
     return cpy;
 }
 
-PyObject* CosmeticEdgePy::copy(PyObject *args)
+PyObject* CosmeticEdgePy::copy(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -99,7 +99,7 @@ PyObject* CosmeticEdgePy::copy(PyObject *args)
     PyObject* cpy = nullptr;
     // let the type object decide
     if (type->tp_new)
-        cpy = type->tp_new(type, this, nullptr);
+        cpy = type->tp_new(type, const_cast<CosmeticEdgePy*>(this), nullptr);
     if (!cpy) {
         PyErr_SetString(PyExc_RuntimeError, "failed to create copy of CosmeticEdge");
         return nullptr;

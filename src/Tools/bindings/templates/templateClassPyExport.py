@@ -1,24 +1,53 @@
 #! python
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # (c) 2006 Juergen Riegel
 
 
 from . import template
 import os, sys
-import generateBase.generateModel_Module
-import generateBase.generateTools
+import model.generateModel_Module
+import model.generateTools
+
+
+def compareFiles(file1, file2):
+    """Compares two files and prints the differences if they are not equal."""
+
+    # Check if files exist
+    for file in (file1, file2):
+        if not os.path.exists(file):
+            raise FileNotFoundError(f"File not found: {file}")
+
+    # Read file contents
+    with open(file1, "r", encoding="utf-8") as f1, open(file2, "r", encoding="utf-8") as f2:
+        lines1 = f1.readlines()
+        lines2 = f2.readlines()
+
+    # Compare and print differences
+    import difflib
+
+    diff = list(difflib.unified_diff(lines1, lines2, fromfile=file1, tofile=file2, lineterm=""))
+
+    if diff:
+        error = "Files are not equal.\n\n"
+        error += "Diff:\n\n"
+        error += "".join(diff)
+        raise ValueError(error)
 
 
 class TemplateClassPyExport(template.ModelTemplate):
+
     def Generate(self):
         # self.ParentNamespace = "Base"
         # self.Namespace = "Base"
         encoding = sys.getfilesystemencoding()
-        path = self.path
         exportName = self.export.Name
-        dirname = self.dirname
+        inputDir = self.inputDir
+        outputDir = self.outputDir
 
         def escapeString(s, indent=4):
+            if not s:
+                return None
             """Escapes a string for use as literal in C++ code"""
             s = s.strip()  # This allows UserDocu-tags on their own lines without adding whitespace
             s = s.replace("\\", "\\\\")
@@ -26,18 +55,54 @@ class TemplateClassPyExport(template.ModelTemplate):
             s = s.replace("\n", f'\\n"\n{" "*indent}"')
             return s
 
-        print("TemplateClassPyExport", path + exportName)
-        # Imp.cpp must not exist, neither in path nor in dirname
-        if not os.path.exists(path + exportName + "Imp.cpp"):
-            if not os.path.exists(dirname + exportName + "Imp.cpp"):
-                file = open(path + exportName + "Imp.cpp", "wb")
-                generateBase.generateTools.replace(self.TemplateImplement, locals(), file)
+        print("TemplateClassPyExport", outputDir + exportName)
+
+        # Create the subdir it necessary
+        subpath = os.path.dirname(outputDir + exportName)
+        if not os.path.exists(subpath):
+            os.makedirs(subpath)
+
+        # Imp.cpp must not exist, neither in outputDir nor in inputDir
+        outputImp = outputDir + exportName + "Imp.cpp"
+        if not os.path.exists(outputImp):
+            if not os.path.exists(inputDir + exportName + "Imp.cpp"):
+                file = open(outputImp, "wb")
+                print("TemplateClassPyExport", "TemplateImplement", file.name)
+                model.generateTools.replace(self.TemplateImplement, locals(), file)
                 file.close()
-        with open(path + exportName + ".cpp", "wb") as file:
-            generateBase.generateTools.replace(self.TemplateModule, locals(), file)
-        with open(path + exportName + ".h", "wb") as file:
-            generateBase.generateTools.replace(self.TemplateHeader, locals(), file)
-            # file.write( generateBase.generateTools.replace(self.Template,locals()))
+
+        outputCpp = outputDir + exportName + ".cpp"
+        with open(outputCpp, "wb") as file:
+            print("TemplateClassPyExport", "TemplateModule", file.name)
+            model.generateTools.replace(self.TemplateModule, locals(), file)
+
+        outputHeader = outputDir + exportName + ".h"
+        with open(outputHeader, "wb") as file:
+            print("TemplateClassPyExport", "TemplateHeader", file.name)
+            model.generateTools.replace(self.TemplateHeader, locals(), file)
+            # file.write( model.generateTools.replace(self.Template,locals()))
+
+    def Compare(self):
+        """
+        Compares the Python generated files to the previously generated XML files.
+        This exists temporarily while the XML files are migrated to Python to guarantee consistency.
+        """
+        exportName = self.export.Name
+        inputDir = self.inputDir
+        outputDir = self.outputDir
+
+        if not os.path.exists(inputDir + exportName + "Imp.cpp"):
+            outputImpXml = outputDir + exportName + "Imp.cpp"
+            outputImpPy = outputDir + exportName + "Imp.cpp"
+            compareFiles(outputImpXml, outputImpPy)
+
+        outputHeaderXml = outputDir + exportName + ".h"
+        outputHeaderPy = outputDir + exportName + ".h"
+        compareFiles(outputHeaderXml, outputHeaderPy)
+
+        outputCppXml = outputDir + exportName + ".cpp"
+        outputCppPy = outputDir + exportName + ".cpp"
+        compareFiles(outputCppXml, outputCppPy)
 
     TemplateHeader = """
 // This file is generated by src/Tools/generateTemplates/templateClassPyExport.py out of the XML file
@@ -45,6 +110,7 @@ class TemplateClassPyExport(template.ModelTemplate):
 #ifndef @self.export.Namespace.upper().replace("::", "_")@_@self.export.Name.upper()@_H
 #define @self.export.Namespace.upper().replace("::", "_")@_@self.export.Name.upper()@_H
 
+#include <CXX/Objects.hxx>
 #include <@self.export.FatherInclude@>
 #include <@self.export.Include@>
 #include <string>
@@ -88,7 +154,7 @@ public:
     static int descriptorSetter(PyObject* self, PyObject* obj, PyObject* value);
 -
     static PyGetSetDef    GetterSetter[];
-    PyTypeObject *GetType() override {return &Type;}
+    PyTypeObject *GetType() const override {return &Type;}
 
 public:
     @self.export.Name@(@self.export.TwinPointer@ *pcObject, PyTypeObject *T = &Type);
@@ -117,6 +183,9 @@ public:
 = elif i.Class:
     /// implementer for the @i.Name@() method
     static PyObject*  @i.Name@(PyObject *self, PyObject *args, PyObject *kwd);
+= elif i.Const:
+    /// implementer for the @i.Name@() method
+    PyObject*  @i.Name@(PyObject *args, PyObject *kwd) const;
 = else:
     /// implementer for the @i.Name@() method
     PyObject*  @i.Name@(PyObject *args, PyObject *kwd);
@@ -130,6 +199,9 @@ public:
 = elif i.Class:
     /// implementer for the @i.Name@() method
     static PyObject*  @i.Name@(PyObject *self);
+= elif i.Const:
+    /// implementer for the @i.Name@() method
+    PyObject*  @i.Name@() const;
 = else:
     /// implementer for the @i.Name@() method
     PyObject*  @i.Name@();
@@ -143,6 +215,9 @@ public:
 = elif i.Class:
     /// implementer for the @i.Name@() method
     static PyObject*  @i.Name@(PyObject *self, PyObject *args);
+= elif i.Const:
+    /// implementer for the @i.Name@() method
+    PyObject*  @i.Name@(PyObject *args) const;
 = else:
     /// implementer for the @i.Name@() method
     PyObject*  @i.Name@(PyObject *args);
@@ -262,6 +337,15 @@ public:
     @self.export.TwinPointer@ *get@self.export.Twin@Ptr() const {
         return getTwinPointer();
     }
+    @self.export.TwinPointer@ *getTwinPtr() const {
+        return get@self.export.Twin@Ptr();
+    }
+    /** Chain the cast through the parent class.
+     *
+     * static_cast'ing PyObjectBase::_pcTwinPointer (declared void*) straight to
+     * the twin class is wrong when the twin class, or any of its parents, uses
+     * multiple inheritance where the base is not the first one.
+     */
     @self.export.TwinPointer@ *getTwinPointer() const {
         return static_cast<@self.export.TwinPointer@ *>(@self.export.Father@::getTwinPointer());
     }
@@ -285,9 +369,6 @@ public:
 // Every change you make here gets lost in the next full rebuild!
 // This File is normally built as an include in @self.export.Name@Imp.cpp! It's not intended to be in a project!
 
-#include <boost/filesystem/path.hpp>
-#include <boost/filesystem/operations.hpp>
-#include <boost/filesystem/exception.hpp>
 #include <Base/PyObjectBase.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -301,99 +382,58 @@ public:
 using Base::streq;
 using namespace @self.export.Namespace@;
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+// Ignore -Wmissing-field-initializers (GCC only):
+// - C++20 guarantees omitted fields are zero-initialized.
+// - Python C API changes fields across versions.
+// - Clang does not warn; GCC does unnecessarily.
+// See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=96868
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif // __GNUC__
 /// Type structure of @self.export.Name@
 PyTypeObject @self.export.Name@::Type = {
-    PyVarObject_HEAD_INIT(&PyType_Type,0)
+    .ob_base = PyVarObject_HEAD_INIT(&PyType_Type,0)
 + if (self.export.PythonName):
-    "@self.export.PythonName@",     /*tp_name*/
+    .tp_name = "@self.export.PythonName@",
 = else:
-    "@self.export.Namespace@.@self.export.Twin@",     /*tp_name*/
+    .tp_name = "@self.export.Namespace@.@self.export.Twin@",
 -
-    sizeof(@self.export.Name@),                       /*tp_basicsize*/
-    0,                                                /*tp_itemsize*/
+    .tp_basicsize = sizeof(@self.export.Name@),
+    .tp_itemsize = 0,
     /* methods */
-    PyDestructor,                                     /*tp_dealloc*/
-#if PY_VERSION_HEX >= 0x03080000
-    0,                                                /*tp_vectorcall_offset*/
-#else
-    nullptr,                                          /*tp_print*/
-#endif
-    nullptr,                                          /*tp_getattr*/
-    nullptr,                                          /*tp_setattr*/
-    nullptr,                                          /*tp_compare*/
-    __repr,                                           /*tp_repr*/
+    .tp_dealloc = PyDestructor,
+    .tp_repr = __repr,
 + if (self.export.NumberProtocol):
-    @self.export.Namespace@::@self.export.Name@::Number,      /*tp_as_number*/
-= else:
-    nullptr,                                          /*tp_as_number*/
+    .tp_as_number = @self.export.Namespace@::@self.export.Name@::Number,
 -
 + if (self.export.Sequence):
-    @self.export.Namespace@::@self.export.Name@::Sequence,      /*tp_as_sequence*/
-    @self.export.Namespace@::@self.export.Name@::Mapping,       /*tp_as_mapping*/
-= else:
-    nullptr,                                          /*tp_as_sequence*/
-    nullptr,                                          /*tp_as_mapping*/
+    .tp_as_sequence = @self.export.Namespace@::@self.export.Name@::Sequence,
+    .tp_as_mapping = @self.export.Namespace@::@self.export.Name@::Mapping,
 -
-    nullptr,                                          /*tp_hash*/
-    nullptr,                                          /*tp_call */
-    nullptr,                                          /*tp_str  */
-    __getattro,                                       /*tp_getattro*/
-    __setattro,                                       /*tp_setattro*/
-    /* --- Functions to access object as input/output buffer ---------*/
-    nullptr,                                          /* tp_as_buffer */
+    .tp_getattro = __getattro,
+    .tp_setattro = __setattro,
     /* --- Flags to define presence of optional/expanded features */
-    Py_TPFLAGS_BASETYPE|Py_TPFLAGS_DEFAULT,        /*tp_flags */
-    "@escapeString(self.export.Documentation.UserDocu, indent=4)@",           /*tp_doc */
-    nullptr,                                          /*tp_traverse */
-    nullptr,                                          /*tp_clear */
+    .tp_flags = Py_TPFLAGS_BASETYPE|Py_TPFLAGS_DEFAULT,
+    .tp_doc = "@escapeString(self.export.Documentation.UserDocu, indent=4)@",
 + if (self.export.RichCompare):
-    @self.export.Namespace@::@self.export.Name@::richCompare,      /*tp_richcompare*/
-= else:
-    nullptr,                                          /*tp_richcompare */
+    .tp_richcompare = @self.export.Namespace@::@self.export.Name@::richCompare,
 -
-    0,                                                /*tp_weaklistoffset */
-    nullptr,                                          /*tp_iter */
-    nullptr,                                          /*tp_iternext */
-    @self.export.Namespace@::@self.export.Name@::Methods,                     /*tp_methods */
-    nullptr,                                          /*tp_members */
-    @self.export.Namespace@::@self.export.Name@::GetterSetter,                     /*tp_getset */
-    &@self.export.FatherNamespace@::@self.export.Father@::Type,                        /*tp_base */
-    nullptr,                                          /*tp_dict */
+    .tp_methods = @self.export.Namespace@::@self.export.Name@::Methods,
+    .tp_getset = @self.export.Namespace@::@self.export.Name@::GetterSetter,
+    .tp_base = &@self.export.FatherNamespace@::@self.export.Father@::Type,
 + if (self.export.DescriptorGetter):
-    @self.export.Namespace@::@self.export.Name@::descriptorGetter,                       /*tp_descr_get */
-= else:
-    nullptr,                                          /*tp_descr_get */
+    .tp_descr_get = @self.export.Namespace@::@self.export.Name@::descriptorGetter,
 -
 + if (self.export.DescriptorSetter):
-    @self.export.Namespace@::@self.export.Name@::descriptorSetter,                       /*tp_descr_set */
-= else:
-    nullptr,                                          /*tp_descr_set */
+    .tp_descr_set = @self.export.Namespace@::@self.export.Name@::descriptorSetter,
 -
-    0,                                                /*tp_dictoffset */
-    __PyInit,                                         /*tp_init */
-    nullptr,                                          /*tp_alloc */
-    @self.export.Namespace@::@self.export.Name@::PyMake,/*tp_new */
-    nullptr,                                          /*tp_free   Low-level free-memory routine */
-    nullptr,                                          /*tp_is_gc  For PyObject_IS_GC */
-    nullptr,                                          /*tp_bases */
-    nullptr,                                          /*tp_mro    method resolution order */
-    nullptr,                                          /*tp_cache */
-    nullptr,                                          /*tp_subclasses */
-    nullptr,                                          /*tp_weaklist */
-    nullptr,                                          /*tp_del */
-    0,                                                /*tp_version_tag */
-    nullptr                                           /*tp_finalize */
-#if PY_VERSION_HEX >= 0x03090000
-    ,nullptr                                          /*tp_vectorcall */
-#if PY_VERSION_HEX >= 0x030c0000
-    ,0                                                /*tp_watched */
-#endif
-#elif PY_VERSION_HEX >= 0x03080000
-    ,nullptr                                          /*tp_vectorcall */
-    /* bpo-37250: kept for backwards compatibility in CPython 3.8 only */
-    ,nullptr                                          /*tp_print */
-#endif
+    .tp_init = __PyInit,
+    .tp_new = @self.export.Namespace@::@self.export.Name@::PyMake
 };
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif // __GNUC__
 
 /// Methods structure of @self.export.Name@
 PyMethodDef @self.export.Name@::Methods[] = {
@@ -629,15 +669,12 @@ PyObject * @self.export.Name@::staticCallback_@i.Name@ (PyObject *self, PyObject
 -
         return ret;
     } // Please sync the following catch implementation with PY_CATCH
-    catch(Base::Exception &e)
+    catch(const Base::Exception& e)
     {
-        auto pye = e.getPyExceptionType();
-        if(!pye)
-            pye = Base::PyExc_FC_GeneralError;
-        PyErr_SetObject(pye, e.getPyObject());
+        e.setPyException();
         return nullptr;
     }
-    catch(const std::exception &e)
+    catch(const std::exception& e)
     {
         PyErr_SetString(Base::PyExc_FC_GeneralError, e.what());
         return nullptr;
@@ -669,9 +706,15 @@ PyObject * @self.export.Name@::staticCallback_get@i.Name@ (PyObject *self, void 
         return nullptr;
     }
 
-    PY_TRY {
+    try {
         return Py::new_reference_to(static_cast<@self.export.Name@*>(self)->get@i.Name@());
-    } PY_CATCH
+    } catch (const Py::Exception&) {
+        // The exception text is already set
+        return nullptr;
+    } catch (...) {
+        PyErr_SetString(Base::PyExc_FC_GeneralError, "Unknown exception while reading attribute '@i.Name@' of object '@self.export.Twin@'");
+        return nullptr;
+    }
 }
 
 + if (i.ReadOnly):
@@ -698,14 +741,20 @@ int @self.export.Name@::staticCallback_set@i.Name@ (PyObject *self, PyObject *va
         return -1;
     }
 
-    PY_TRY {
+    try {
 + if (i.Parameter.Type == "Float"):
         static_cast<@self.export.Name@*>(self)->set@i.Name@(Py::@i.Parameter.Type@(PyNumber_Float(value),true));
 = else:
         static_cast<@self.export.Name@*>(self)->set@i.Name@(Py::@i.Parameter.Type@(value,false));
 -
         return 0;
-    } _PY_CATCH(return(-1))
+    } catch (const Py::Exception&) {
+        // The exception text is already set
+        return -1;
+    } catch (...) {
+        PyErr_SetString(Base::PyExc_FC_GeneralError, "Unknown exception while writing attribute '@i.Name@' of object '@self.export.Twin@'");
+        return -1;
+    }
 }
 -
 
@@ -756,6 +805,7 @@ int @self.export.Name@::PyInit(PyObject* /*args*/, PyObject* /*kwd*/)
 + if (self.export.Delete):
     // delete the handled object when the PyObject dies
     @self.export.Name@::PointerType ptr = getTwinPointer();
+    this->setTwinPointer(nullptr);
     delete ptr;
 -
 + if (self.export.Initialization):
@@ -782,15 +832,12 @@ PyObject *@self.export.Name@::_getattr(const char *attr)			// __getattr__ functi
         PyObject *r = getCustomAttributes(attr);
         if(r) return r;
     } // Please sync the following catch implementation with PY_CATCH
-    catch(Base::Exception &e)
+    catch(const Base::Exception& e)
     {
-        auto pye = e.getPyExceptionType();
-        if(!pye)
-            pye = Base::PyExc_FC_GeneralError;
-        PyErr_SetObject(pye, e.getPyObject());
+        e.setPyException();
         return nullptr;
     }
-    catch(const std::exception &e)
+    catch(const std::exception& e)
     {
         PyErr_SetString(Base::PyExc_FC_GeneralError, e.what());
         return nullptr;
@@ -832,15 +879,12 @@ int @self.export.Name@::_setattr(const char *attr, PyObject *value) // __setattr
         else if (r == -1)
             return -1;
     } // Please sync the following catch implementation with PY_CATCH
-    catch(Base::Exception &e)
+    catch(const Base::Exception& e)
     {
-        auto pye = e.getPyExceptionType();
-        if(!pye)
-            pye = Base::PyExc_FC_GeneralError;
-        PyErr_SetObject(pye, e.getPyObject());
+        e.setPyException();
         return -1;
     }
-    catch(const std::exception &e)
+    catch(const std::exception& e)
     {
         PyErr_SetString(Base::PyExc_FC_GeneralError, e.what());
         return -1;
@@ -1206,7 +1250,6 @@ int @self.export.Name@::descriptorSetter(PyObject* self, PyObject* obj, PyObject
 
     # Here's the template for the user part of the implementation. This does NOT get overridden if it already exists.
     TemplateImplement = """
-#include "PreCompiled.h"
 
 #include "@self.export.Include@"
 

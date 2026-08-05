@@ -1,5 +1,6 @@
 #! python
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # (c) 2006 Juergen Riegel
 
 from . import template, templateModuleApp
@@ -7,8 +8,8 @@ from . import template, templateModuleApp
 
 class TemplateModule(template.ModelTemplate):
     def Generate(self):
-        print("generateBase.generateModel_Module.Generate()\n")
+        print("model.generateModel_Module.Generate()\n")
         App = templateModuleApp.TemplateModuleApp()
-        App.path = self.path
+        App.outputDir = self.outputDir
         App.module = self.module
         App.Generate()

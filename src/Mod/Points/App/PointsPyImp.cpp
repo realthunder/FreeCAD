@@ -88,7 +88,7 @@ int PointsPy::PyInit(PyObject* args, PyObject* /*kwd*/)
     return 0;
 }
 
-PyObject* PointsPy::copy(PyObject* args)
+PyObject* PointsPy::copy(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -116,7 +116,7 @@ PyObject* PointsPy::read(PyObject* args)
     Py_Return;
 }
 
-PyObject* PointsPy::write(PyObject* args)
+PyObject* PointsPy::write(PyObject* args) const
 {
     const char* Name;
     if (!PyArg_ParseTuple(args, "s", &Name)) {
@@ -132,7 +132,7 @@ PyObject* PointsPy::write(PyObject* args)
     Py_Return;
 }
 
-PyObject* PointsPy::writeInventor(PyObject* args)
+PyObject* PointsPy::writeInventor(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -191,7 +191,7 @@ PyObject* PointsPy::addPoints(PyObject* args)
     Py_Return;
 }
 
-PyObject* PointsPy::fromSegment(PyObject* args)
+PyObject* PointsPy::fromSegment(PyObject* args) const
 {
     PyObject* obj;
     if (!PyArg_ParseTuple(args, "O", &obj)) {
@@ -219,7 +219,7 @@ PyObject* PointsPy::fromSegment(PyObject* args)
     }
 }
 
-PyObject* PointsPy::fromValid(PyObject* args)
+PyObject* PointsPy::fromValid(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;

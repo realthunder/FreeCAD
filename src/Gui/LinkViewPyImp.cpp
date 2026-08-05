@@ -372,7 +372,7 @@ void LinkViewPy::setVisibilities(Py::Object value) {
         linked->setElementVisible(i,i>=(int)vis.size()||vis[i]);
 }
 
-PyObject* LinkViewPy::getChildren(PyObject *args) {
+PyObject* LinkViewPy::getChildren(PyObject *args) const{
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
     auto children = getLinkViewPtr()->getChildren();

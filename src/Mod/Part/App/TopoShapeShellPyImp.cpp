@@ -161,7 +161,7 @@ PyObject*  TopoShapeShellPy::add(PyObject *args)
     Py_Return;
 }
 
-PyObject*  TopoShapeShellPy::getFreeEdges(PyObject *args)
+PyObject*  TopoShapeShellPy::getFreeEdges(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -180,7 +180,7 @@ PyObject*  TopoShapeShellPy::getFreeEdges(PyObject *args)
 #endif
 }
 
-PyObject*  TopoShapeShellPy::getBadEdges(PyObject *args)
+PyObject*  TopoShapeShellPy::getBadEdges(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
@@ -199,7 +199,7 @@ PyObject*  TopoShapeShellPy::getBadEdges(PyObject *args)
 #endif
 }
 
-PyObject* TopoShapeShellPy::makeHalfSpace(PyObject *args)
+PyObject* TopoShapeShellPy::makeHalfSpace(PyObject *args) const
 {
     PyObject* pPnt;
     if (!PyArg_ParseTuple(args, "O!",&(Base::VectorPy::Type),&pPnt))

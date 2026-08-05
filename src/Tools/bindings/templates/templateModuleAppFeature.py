@@ -1,21 +1,22 @@
 #! python
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # (c) 2006 Juergen Riegel
 
 from . import template
-import generateBase.generateModel_Module
-import generateBase.generateTools
+import model.generateModel_Module
+import model.generateTools
 
 
 class TemplateFeature(template.ModelTemplate):
     def Generate(self):
-        file = open(self.path + self.feature.Name + "Imp.cpp", "w")
-        generateBase.generateTools.replace(self.TemplateImplement, locals(), file)
-        file = open(self.path + self.feature.Name + ".cpp", "w")
-        generateBase.generateTools.replace(self.TemplateModule, locals(), file)
-        file = open(self.path + self.feature.Name + ".h", "w")
-        generateBase.generateTools.replace(self.TemplateHeader, locals(), file)
-        # file.write( generateBase.generateTools.replace(self.Template,locals()))
+        file = open(self.outputDir + self.feature.Name + "Imp.cpp", "w")
+        model.generateTools.replace(self.TemplateImplement, locals(), file)
+        file = open(self.outputDir + self.feature.Name + ".cpp", "w")
+        model.generateTools.replace(self.TemplateModule, locals(), file)
+        file = open(self.outputDir + self.feature.Name + ".h", "w")
+        model.generateTools.replace(self.TemplateHeader, locals(), file)
+        # file.write( model.generateTools.replace(self.Template,locals()))
 
     TemplateHeader = """
 #ifndef @self.module.Name.upper()@_FEATURE_@self.feature.Name.upper()@_H
@@ -56,7 +57,6 @@ public:
 
 """
     TemplateModule = """
-#include "PreCompiled.h"
 
 #include "@self.feature.Name@.h"
 
@@ -74,7 +74,6 @@ PROPERTY_SOURCE(@self.module.Name@::@self.feature.Name@, App::Feature)
     # Here's the template for the user part of the implementation. This does NOT get overwritten if it already exists.
     TemplateImplement = """
 //
-#include "PreCompiled.h"
 
 #include "@self.feature.Name@.h"
 

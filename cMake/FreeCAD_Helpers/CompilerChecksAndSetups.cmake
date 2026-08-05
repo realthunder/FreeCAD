@@ -28,8 +28,9 @@ macro(CompilerChecksAndSetups)
                         OUTPUT_VARIABLE CMAKE_CXX_COMPILER_VERSION)
     endif(CMAKE_COMPILER_IS_GNUCXX AND NOT CMAKE_CXX_COMPILER_VERSION)
 
-    # Enabled C++17 for Freecad 0.20 and later
-        set(BUILD_ENABLE_CXX_STD "C++17"  CACHE STRING  "Enable C++ standard")
+    # C++20 is the minimum: the Python binding generator emits designated
+    # initializers for PyTypeObject, which C++17 does not have.
+        set(BUILD_ENABLE_CXX_STD "C++20"  CACHE STRING  "Enable C++ standard")
         set_property(CACHE BUILD_ENABLE_CXX_STD PROPERTY STRINGS
                      "C++17"
                      "C++20"

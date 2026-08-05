@@ -308,7 +308,7 @@ PyObject* RotationPy::inverted(PyObject* args)
     return new RotationPy(new Rotation(mult));
 }
 
-PyObject* RotationPy::multiply(PyObject* args)
+PyObject* RotationPy::multiply(PyObject* args) const
 {
     PyObject* rot {};
     if (!PyArg_ParseTuple(args, "O!", &(RotationPy::Type), &rot)) {
@@ -318,7 +318,7 @@ PyObject* RotationPy::multiply(PyObject* args)
     return new RotationPy(new Rotation(mult));
 }
 
-PyObject* RotationPy::multVec(PyObject* args)
+PyObject* RotationPy::multVec(PyObject* args) const
 {
     PyObject* obj {};
     if (!PyArg_ParseTuple(args, "O!", &(VectorPy::Type), &obj)) {
@@ -329,7 +329,7 @@ PyObject* RotationPy::multVec(PyObject* args)
     return new VectorPy(new Vector3d(vec));
 }
 
-PyObject* RotationPy::slerp(PyObject* args)
+PyObject* RotationPy::slerp(PyObject* args) const
 {
     PyObject* rot {};
     double t {};
@@ -354,7 +354,7 @@ PyObject* RotationPy::setYawPitchRoll(PyObject* args)
     Py_Return;
 }
 
-PyObject* RotationPy::getYawPitchRoll(PyObject* args)
+PyObject* RotationPy::getYawPitchRoll(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -391,7 +391,7 @@ PyObject* RotationPy::setEulerAngles(PyObject* args)
     }
 }
 
-PyObject* RotationPy::toEulerAngles(PyObject* args)
+PyObject* RotationPy::toEulerAngles(PyObject* args) const
 {
     const char* seq = nullptr;
     if (!PyArg_ParseTuple(args, "|s", &seq)) {
@@ -421,7 +421,7 @@ PyObject* RotationPy::toEulerAngles(PyObject* args)
     PY_CATCH
 }
 
-PyObject* RotationPy::toMatrix(PyObject* args)
+PyObject* RotationPy::toMatrix(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -444,7 +444,7 @@ PyObject* RotationPy::isSame(PyObject* args)
     return Py_BuildValue("O", (same ? Py_True : Py_False));
 }
 
-PyObject* RotationPy::isIdentity(PyObject* args)
+PyObject* RotationPy::isIdentity(PyObject* args) const
 {
     double tol = 0.0;
     if (!PyArg_ParseTuple(args, "|d", &tol)) {
@@ -454,7 +454,7 @@ PyObject* RotationPy::isIdentity(PyObject* args)
     return Py_BuildValue("O", (null ? Py_True : Py_False));
 }
 
-PyObject* RotationPy::isNull(PyObject* args)
+PyObject* RotationPy::isNull(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;

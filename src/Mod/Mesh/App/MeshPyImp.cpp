@@ -137,7 +137,7 @@ PyObject* MeshPy::PyMake(struct _typeobject*, PyObject*, PyObject*)  // Python w
     return new MeshPy(new MeshObject);
 }
 
-PyObject* MeshPy::copy(PyObject* args)
+PyObject* MeshPy::copy(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -201,7 +201,7 @@ PyObject* MeshPy::read(PyObject* args, PyObject* kwds)
     return nullptr;
 }
 
-PyObject* MeshPy::write(PyObject* args, PyObject* kwds)
+PyObject* MeshPy::write(PyObject* args, PyObject* kwds) const
 {
     char* Name = nullptr;
     char* Ext = nullptr;
@@ -343,7 +343,7 @@ PyObject* MeshPy::write(PyObject* args, PyObject* kwds)
     return nullptr;
 }
 
-PyObject* MeshPy::writeInventor(PyObject* args)
+PyObject* MeshPy::writeInventor(PyObject* args) const
 {
     float creaseangle = 0.0f;
     if (!PyArg_ParseTuple(args, "|f", &creaseangle)) {
@@ -388,7 +388,7 @@ PyObject* MeshPy::offsetSpecial(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::crossSections(PyObject* args)
+PyObject* MeshPy::crossSections(PyObject* args) const
 {
     PyObject* obj {};
     PyObject* poly = Py_False;
@@ -450,7 +450,7 @@ PyObject* MeshPy::crossSections(PyObject* args)
     return Py::new_reference_to(crossSections);
 }
 
-PyObject* MeshPy::unite(PyObject* args)
+PyObject* MeshPy::unite(PyObject* args) const
 {
     MeshPy* pcObject {};
     PyObject* pcObj {};
@@ -470,7 +470,7 @@ PyObject* MeshPy::unite(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::intersect(PyObject* args)
+PyObject* MeshPy::intersect(PyObject* args) const
 {
     MeshPy* pcObject {};
     PyObject* pcObj {};
@@ -490,7 +490,7 @@ PyObject* MeshPy::intersect(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::difference(PyObject* args)
+PyObject* MeshPy::difference(PyObject* args) const
 {
     MeshPy* pcObject {};
     PyObject* pcObj {};
@@ -510,7 +510,7 @@ PyObject* MeshPy::difference(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::inner(PyObject* args)
+PyObject* MeshPy::inner(PyObject* args) const
 {
     MeshPy* pcObject {};
     PyObject* pcObj {};
@@ -530,7 +530,7 @@ PyObject* MeshPy::inner(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::outer(PyObject* args)
+PyObject* MeshPy::outer(PyObject* args) const
 {
     MeshPy* pcObject {};
     PyObject* pcObj {};
@@ -550,7 +550,7 @@ PyObject* MeshPy::outer(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::section(PyObject* args, PyObject* kwds)
+PyObject* MeshPy::section(PyObject* args, PyObject* kwds) const
 {
     PyObject* pcObj {};
     PyObject* connectLines = Py_True;
@@ -662,7 +662,7 @@ PyObject* MeshPy::transformToEigen(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::getEigenSystem(PyObject* args)
+PyObject* MeshPy::getEigenSystem(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -838,7 +838,7 @@ PyObject* MeshPy::removeFacets(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::getInternalFacets(PyObject* args)
+PyObject* MeshPy::getInternalFacets(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -929,7 +929,7 @@ PyObject* MeshPy::movePoint(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::getPointNormals(PyObject* args)
+PyObject* MeshPy::getPointNormals(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -948,7 +948,7 @@ PyObject* MeshPy::getPointNormals(PyObject* args)
     PY_CATCH;
 }
 
-PyObject* MeshPy::countSegments(PyObject *args)
+PyObject* MeshPy::countSegments(PyObject *args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -958,7 +958,7 @@ PyObject* MeshPy::countSegments(PyObject *args)
     return Py_BuildValue("k", count);
 }
 
-PyObject* MeshPy::getSegment(PyObject* args)
+PyObject* MeshPy::getSegment(PyObject* args) const
 {
     unsigned long index {};
     if (!PyArg_ParseTuple(args, "k", &index)) {
@@ -1035,7 +1035,7 @@ PyObject *MeshPy::addSegment(PyObject *args)
     Py_Return;
 }
 
-PyObject* MeshPy::getSegmentColor(PyObject *args)
+PyObject* MeshPy::getSegmentColor(PyObject *args) const
 {
     unsigned long index;
     if (!PyArg_ParseTuple(args, "k", &index))
@@ -1088,7 +1088,7 @@ PyObject* MeshPy::setSegmentColor(PyObject *args)
     Py_Return;
 }
 
-PyObject* MeshPy::getSegmentName(PyObject *args)
+PyObject* MeshPy::getSegmentName(PyObject *args) const
 {
     unsigned long index;
     if (!PyArg_ParseTuple(args, "k", &index))
@@ -1118,7 +1118,7 @@ PyObject* MeshPy::setSegmentName(PyObject *args)
     Py_Return;
 }
 
-PyObject* MeshPy::getSeparateComponents(PyObject* args)
+PyObject* MeshPy::getSeparateComponents(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1134,7 +1134,7 @@ PyObject* MeshPy::getSeparateComponents(PyObject* args)
     return Py::new_reference_to(meshesList);
 }
 
-PyObject* MeshPy::getFacetSelection(PyObject* args)
+PyObject* MeshPy::getFacetSelection(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1150,7 +1150,7 @@ PyObject* MeshPy::getFacetSelection(PyObject* args)
     return Py::new_reference_to(ary);
 }
 
-PyObject* MeshPy::getPointSelection(PyObject* args)
+PyObject* MeshPy::getPointSelection(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1166,7 +1166,7 @@ PyObject* MeshPy::getPointSelection(PyObject* args)
     return Py::new_reference_to(ary);
 }
 
-PyObject* MeshPy::meshFromSegment(PyObject* args)
+PyObject* MeshPy::meshFromSegment(PyObject* args) const
 {
     PyObject* list {};
     if (!PyArg_ParseTuple(args, "O", &list)) {
@@ -1194,7 +1194,7 @@ PyObject* MeshPy::clear(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::isSolid(PyObject* args)
+PyObject* MeshPy::isSolid(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1203,7 +1203,7 @@ PyObject* MeshPy::isSolid(PyObject* args)
     return Py_BuildValue("O", (ok ? Py_True : Py_False));
 }
 
-PyObject* MeshPy::hasNonManifolds(PyObject* args)
+PyObject* MeshPy::hasNonManifolds(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1212,7 +1212,7 @@ PyObject* MeshPy::hasNonManifolds(PyObject* args)
     return Py_BuildValue("O", (ok ? Py_True : Py_False));
 }
 
-PyObject* MeshPy::hasInvalidNeighbourhood(PyObject* args)
+PyObject* MeshPy::hasInvalidNeighbourhood(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1221,7 +1221,7 @@ PyObject* MeshPy::hasInvalidNeighbourhood(PyObject* args)
     return Py_BuildValue("O", (ok ? Py_True : Py_False));
 }
 
-PyObject* MeshPy::hasPointsOutOfRange(PyObject* args)
+PyObject* MeshPy::hasPointsOutOfRange(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1230,7 +1230,7 @@ PyObject* MeshPy::hasPointsOutOfRange(PyObject* args)
     return Py_BuildValue("O", (ok ? Py_True : Py_False));
 }
 
-PyObject* MeshPy::hasFacetsOutOfRange(PyObject* args)
+PyObject* MeshPy::hasFacetsOutOfRange(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1239,7 +1239,7 @@ PyObject* MeshPy::hasFacetsOutOfRange(PyObject* args)
     return Py_BuildValue("O", (ok ? Py_True : Py_False));
 }
 
-PyObject* MeshPy::hasCorruptedFacets(PyObject* args)
+PyObject* MeshPy::hasCorruptedFacets(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1266,7 +1266,7 @@ PyObject* MeshPy::removeNonManifoldPoints(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::hasSelfIntersections(PyObject* args)
+PyObject* MeshPy::hasSelfIntersections(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1275,7 +1275,7 @@ PyObject* MeshPy::hasSelfIntersections(PyObject* args)
     return Py_BuildValue("O", (ok ? Py_True : Py_False));
 }
 
-PyObject* MeshPy::getSelfIntersections(PyObject* args)
+PyObject* MeshPy::getSelfIntersections(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1332,7 +1332,7 @@ PyObject* MeshPy::removeFoldsOnSurface(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::hasInvalidPoints(PyObject* args)
+PyObject* MeshPy::hasInvalidPoints(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1356,7 +1356,7 @@ PyObject* MeshPy::removeInvalidPoints(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::hasPointsOnEdge(PyObject* args)
+PyObject* MeshPy::hasPointsOnEdge(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1387,7 +1387,7 @@ PyObject* MeshPy::removePointsOnEdge(PyObject* args, PyObject* kwds)
     Py_Return;
 }
 
-PyObject* MeshPy::flipNormals(PyObject* args)
+PyObject* MeshPy::flipNormals(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1403,7 +1403,7 @@ PyObject* MeshPy::flipNormals(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::hasNonUniformOrientedFacets(PyObject* args)
+PyObject* MeshPy::hasNonUniformOrientedFacets(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1412,7 +1412,7 @@ PyObject* MeshPy::hasNonUniformOrientedFacets(PyObject* args)
     return Py_BuildValue("O", (ok ? Py_True : Py_False));
 }
 
-PyObject* MeshPy::countNonUniformOrientedFacets(PyObject* args)
+PyObject* MeshPy::countNonUniformOrientedFacets(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1421,7 +1421,7 @@ PyObject* MeshPy::countNonUniformOrientedFacets(PyObject* args)
     return Py_BuildValue("k", count);
 }
 
-PyObject* MeshPy::getNonUniformOrientedFacets(PyObject* args)
+PyObject* MeshPy::getNonUniformOrientedFacets(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1438,7 +1438,7 @@ PyObject* MeshPy::getNonUniformOrientedFacets(PyObject* args)
     return Py::new_reference_to(tuple);
 }
 
-PyObject* MeshPy::harmonizeNormals(PyObject* args)
+PyObject* MeshPy::harmonizeNormals(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1454,7 +1454,7 @@ PyObject* MeshPy::harmonizeNormals(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::countComponents(PyObject* args)
+PyObject* MeshPy::countComponents(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1482,7 +1482,7 @@ PyObject* MeshPy::removeComponents(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::fillupHoles(PyObject* args)
+PyObject* MeshPy::fillupHoles(PyObject* args) const
 {
     unsigned long len {};
     int level = 0;
@@ -1669,7 +1669,7 @@ PyObject* MeshPy::mergeFacets(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::optimizeTopology(PyObject* args)
+PyObject* MeshPy::optimizeTopology(PyObject* args) const
 {
     float fMaxAngle = -1.0f;
     if (!PyArg_ParseTuple(
@@ -1689,7 +1689,7 @@ PyObject* MeshPy::optimizeTopology(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::optimizeEdges(PyObject* args)
+PyObject* MeshPy::optimizeEdges(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1935,7 +1935,7 @@ PyObject* MeshPy::snapVertex(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::printInfo(PyObject* args)
+PyObject* MeshPy::printInfo(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -1969,7 +1969,7 @@ PyObject* MeshPy::collapseFacets(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::foraminate(PyObject* args)
+PyObject* MeshPy::foraminate(PyObject* args) const
 {
     PyObject* pnt_p {};
     PyObject* dir_p {};
@@ -2094,7 +2094,7 @@ PyObject* MeshPy::trimByPlane(PyObject* args)
     Py_Return;
 }
 
-PyObject* MeshPy::smooth(PyObject* args, PyObject* kwds)
+PyObject* MeshPy::smooth(PyObject* args, PyObject* kwds) const
 {
     const char* method = "Laplace";
     int iter = 1;
@@ -2187,7 +2187,7 @@ PyObject* MeshPy::decimate(PyObject* args)
     return nullptr;
 }
 
-PyObject* MeshPy::nearestFacetOnRay(PyObject* args)
+PyObject* MeshPy::nearestFacetOnRay(PyObject* args) const
 {
     PyObject* pnt_p {};
     PyObject* dir_p {};
@@ -2218,7 +2218,7 @@ PyObject* MeshPy::nearestFacetOnRay(PyObject* args)
     }
 }
 
-PyObject* MeshPy::getPlanarSegments(PyObject* args)
+PyObject* MeshPy::getPlanarSegments(PyObject* args) const
 {
     float dev {};
     unsigned long minFacets = 0;
@@ -2243,7 +2243,7 @@ PyObject* MeshPy::getPlanarSegments(PyObject* args)
     return Py::new_reference_to(s);
 }
 
-PyObject* MeshPy::getSegmentsOfType(PyObject* args)
+PyObject* MeshPy::getSegmentsOfType(PyObject* args) const
 {
     char* type {};
     float dev {};
@@ -2283,7 +2283,7 @@ PyObject* MeshPy::getSegmentsOfType(PyObject* args)
     return Py::new_reference_to(s);
 }
 
-PyObject* MeshPy::getSegmentsByCurvature(PyObject* args)
+PyObject* MeshPy::getSegmentsByCurvature(PyObject* args) const
 {
     PyObject* l {};
     if (!PyArg_ParseTuple(args, "O", &l)) {
@@ -2330,7 +2330,7 @@ PyObject* MeshPy::getSegmentsByCurvature(PyObject* args)
     return Py::new_reference_to(list);
 }
 
-PyObject* MeshPy::getCurvaturePerVertex(PyObject* args)
+PyObject* MeshPy::getCurvaturePerVertex(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;

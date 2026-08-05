@@ -1,15 +1,16 @@
 #! python
-# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # (c) 2006 Juergen Riegel
 
 import template
-import generateBase.generateModel_Module
-import generateBase.generateTools
+import model.generateModel_Module
+import model.generateTools
 
 
 class TemplateCPPFile(template.ModelTemplate):
     def Generate(self):
-        generateBase.generateTools.ensureDir(self.path)
+        model.generateTools.ensureDir(self.outputDir)
         print("Generate() App Dir")
 
 
@@ -37,5 +38,4 @@ Template = """
  ***************************************************************************/
 
 
-#include "PreCompiled.h"
 """
