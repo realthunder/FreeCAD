@@ -8498,8 +8498,8 @@ public:
         // standalone/wasm viewer over the snapshot HTTP server whenever
         // they change (SceneServer.h).
         static const char *servePort = getenv("FC_BGFX_SERVE_SCENE");
+        auto &server = Render::SceneStreamServer::instance();
         if (servePort && *servePort) {
-            auto &server = Render::SceneStreamServer::instance();
             static bool serveFailed = false;
             if (!server.running() && !serveFailed && !serveStarted) {
                 serveStarted = true;
@@ -8513,6 +8513,12 @@ public:
                             servePort);
                 }
             }
+        }
+        // The environment variable is one way to start the server, not
+        // the definition of serving: Gui.serveDocument(doc, port) starts
+        // it directly (docs/HeadlessServe.md §4, stage 2d). What decides
+        // whether to publish is whether anything is listening.
+        if (server.running()) {
             // Publish whenever there is anything to show, not just a non-empty
             // main scene: while editing the only object (e.g. a Sketcher sketch
             // with no other geometry) the whole edit graph lives in the editing

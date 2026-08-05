@@ -35,6 +35,11 @@
 
 class SoFCRenderCacheManager;
 
+namespace App
+{
+class PropertyContainer;
+}
+
 namespace Render
 {
 class Renderer;
@@ -90,9 +95,21 @@ public:
      * The returned source is owned here and lives until the document
      * closes. Null if no publish-only renderer could be made.
      */
-    static SceneServeSource *serve(Document *doc);
+    static SceneServeSource *serve(Document *doc, int port = 0);
     /// Stop serving \a doc, if it was.
     static void unserve(Document *doc);
+
+    /*!
+     * The render-property container of a serving source, for callers
+     * that would otherwise reach for the 3D view's — the control
+     * channel's "view3d" subject above all (docs/HeadlessServe.md §3.3).
+     * Null when nothing is being served this way, which is when a real
+     * view exists and should be used instead.
+     */
+    static App::PropertyContainer *renderProperties();
+
+    /// This source's own render-property container.
+    App::PropertyContainer *ownRenderProperties() const;
 
     /// False when no publish-only renderer could be created — the
     /// backend does not support publishing without a device, or none is
@@ -115,10 +132,22 @@ public:
     /// changed).
     bool publishNow();
 
+    /*!
+     * Select what a world ray hits, as a remote viewer's click asks
+     * (docs/ThinClient.md). Picked against this source's graph and its
+     * synthetic camera, since there is no view to pick against. \a ctrl
+     * toggles rather than replaces the selection. GUI thread only.
+     */
+    void pickAndSelect(const SbVec3f &origin, const SbVec3f &dir, bool ctrl);
+
 private Q_SLOTS:
     void onPublishTimeout();
 
 private:
+    /// Pick, control channel and work notifier — the three a viewer used
+    /// to install (docs/HeadlessServe.md §2e).
+    void installHandlers();
+
     class Private;
     std::unique_ptr<Private> pimpl;
 };

@@ -93,7 +93,7 @@ namespace {
 // (View3DInventorViewer::setRendererType) and the Shadow_* ones by the
 // Shadow draw style.
 template<class PropT>
-const PropT * viewPropOverride(View3DInventor * view,
+const PropT * viewPropOverride(App::PropertyContainer * view,
                                const char * group,
                                const char * name)
 {
@@ -108,7 +108,7 @@ const PropT * viewPropOverride(View3DInventor * view,
 }
 
 template<class PropT, class ValueT>
-ValueT viewParamOverride(View3DInventor * view,
+ValueT viewParamOverride(App::PropertyContainer * view,
                          const char * group,
                          const char * name,
                          const ValueT & def)
@@ -1130,7 +1130,7 @@ RendererBridge::translateSectionConfig()
 }
 
 Render::AOConfig
-RendererBridge::translateAOConfig(View3DInventor * view)
+RendererBridge::translateAOConfig(App::PropertyContainer * view)
 {
     Render::AOConfig res;
     res.enabled = viewParamOverride<App::PropertyBool>(
@@ -1199,7 +1199,7 @@ RendererBridge::shaderParamUniformName(const char * propName)
 }
 
 Render::RenderDebugConfig
-RendererBridge::translateRenderDebugConfig(View3DInventor * view)
+RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
 {
     Render::RenderDebugConfig res;
     res.viewMode = int(viewParamOverride<App::PropertyEnumeration>(
@@ -1426,7 +1426,7 @@ loadParamImage(const std::string &path, bool keepGray)
 }
 
 Render::LightConfig
-RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
+RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * view)
 {
     // The Shadow draw style's light lives above the render-cache
     // traversal root, so it is resolved from the state's accumulated
@@ -1599,7 +1599,7 @@ RendererBridge::translateLightConfig(SoState * state, View3DInventor * view)
 }
 
 Render::VolumetricConfig
-RendererBridge::translateVolumetricConfig(View3DInventor * view)
+RendererBridge::translateVolumetricConfig(App::PropertyContainer * view)
 {
     Render::VolumetricConfig res;
     res.enabled = viewParamOverride<App::PropertyBool>(
@@ -1625,7 +1625,7 @@ RendererBridge::translateVolumetricConfig(View3DInventor * view)
 }
 
 Render::WaterConfig
-RendererBridge::translateWaterConfig(View3DInventor * view)
+RendererBridge::translateWaterConfig(App::PropertyContainer * view)
 {
     Render::WaterConfig res;
     res.enabled = viewParamOverride<App::PropertyBool>(
@@ -1677,7 +1677,7 @@ RendererBridge::translateWaterConfig(View3DInventor * view)
 }
 
 Render::BloomConfig
-RendererBridge::translateBloomConfig(View3DInventor * view)
+RendererBridge::translateBloomConfig(App::PropertyContainer * view)
 {
     Render::BloomConfig res;
     res.enabled = viewParamOverride<App::PropertyBool>(
@@ -1735,7 +1735,7 @@ RendererBridge::translateSelConfig()
 }
 
 Render::BumpConfig
-RendererBridge::translateBumpConfig(View3DInventor * view)
+RendererBridge::translateBumpConfig(App::PropertyContainer * view)
 {
     Render::BumpConfig res;
     res.scale = float(viewParamOverride<App::PropertyFloat>(
@@ -1746,7 +1746,7 @@ RendererBridge::translateBumpConfig(View3DInventor * view)
 }
 
 Render::PBRConfig
-RendererBridge::translatePBRConfig(View3DInventor * view)
+RendererBridge::translatePBRConfig(App::PropertyContainer * view)
 {
     Render::PBRConfig res;
     res.enabled = viewParamOverride<App::PropertyBool>(
@@ -1789,7 +1789,7 @@ RendererBridge::translatePBRConfig(View3DInventor * view)
 }
 
 float
-RendererBridge::translateEffectResolution(View3DInventor * view)
+RendererBridge::translateEffectResolution(App::PropertyContainer * view)
 {
     return float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "EffectResolution",
@@ -1797,7 +1797,7 @@ RendererBridge::translateEffectResolution(View3DInventor * view)
 }
 
 float
-RendererBridge::translateSSAOResolution(View3DInventor * view)
+RendererBridge::translateSSAOResolution(App::PropertyContainer * view)
 {
     return float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "AOResolution",
@@ -1805,7 +1805,7 @@ RendererBridge::translateSSAOResolution(View3DInventor * view)
 }
 
 float
-RendererBridge::translateLevelTolerance(View3DInventor * view)
+RendererBridge::translateLevelTolerance(App::PropertyContainer * view)
 {
     return float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "LevelTolerance",
@@ -1813,7 +1813,7 @@ RendererBridge::translateLevelTolerance(View3DInventor * view)
 }
 
 size_t
-RendererBridge::translateGpuMemoryBudget(View3DInventor * view)
+RendererBridge::translateGpuMemoryBudget(App::PropertyContainer * view)
 {
     long mb = long(viewParamOverride<App::PropertyInteger>(
             view, "Render", "GpuMemoryBudgetMB",

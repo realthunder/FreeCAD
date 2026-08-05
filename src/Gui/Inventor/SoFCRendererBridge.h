@@ -30,6 +30,10 @@ namespace App {
 class Property;
 }
 
+namespace App {
+class PropertyContainer;
+}
+
 namespace Gui {
 
 class View3DInventor;
@@ -75,8 +79,8 @@ GuiExport Render::SectionConfig translateSectionConfig();
 /// present (see View3DInventorViewer::setRendererType, which materializes
 /// them like the Shadow draw style's Shadow_* properties), with the
 /// global RenderParams as fallback.
-GuiExport Render::AOConfig translateAOConfig(View3DInventor * view);
-GuiExport Render::RenderDebugConfig translateRenderDebugConfig(View3DInventor * view);
+GuiExport Render::AOConfig translateAOConfig(App::PropertyContainer * view);
+GuiExport Render::RenderDebugConfig translateRenderDebugConfig(App::PropertyContainer * view);
 
 /// Extract a property value as floats zero-padded to vec4 lanes — the
 /// dynamic-property shader parameter protocol (docs/RenderDebug.md §2.5,
@@ -103,22 +107,22 @@ GuiExport bool translateShaderProgram(const SoNode * node,
 /// Resolve the physically based shading settings (Render_PBR* view
 /// properties, RenderParams fallback) into the backend-neutral per-frame
 /// config.
-GuiExport Render::PBRConfig translatePBRConfig(View3DInventor * view);
+GuiExport Render::PBRConfig translatePBRConfig(App::PropertyContainer * view);
 
 /// Resolve the volumetric lighting settings (Render_Volumetric* view
 /// properties, RenderParams fallback) into the backend-neutral per-frame
 /// config.
 GuiExport Render::VolumetricConfig translateVolumetricConfig(
-        View3DInventor * view);
+        App::PropertyContainer * view);
 
 /// Resolve the water surface settings (Render_WaterSurface/WaterWave*
 /// view properties, RenderParams fallback) into the backend-neutral
 /// per-frame config.
-GuiExport Render::WaterConfig translateWaterConfig(View3DInventor * view);
+GuiExport Render::WaterConfig translateWaterConfig(App::PropertyContainer * view);
 
 /// Resolve the bloom (glow) settings (Render_Bloom* view properties,
 /// RenderParams fallback) into the backend-neutral per-frame config.
-GuiExport Render::BloomConfig translateBloomConfig(View3DInventor * view);
+GuiExport Render::BloomConfig translateBloomConfig(App::PropertyContainer * view);
 
 /// Resolve the preselection highlight styling (HighlightColor,
 /// ShowPreSelectedFaceOutline, NoPreSelFaceHighlightWithOutline, outline
@@ -134,14 +138,14 @@ GuiExport Render::PreselHighlightConfig translateSelConfig();
 /// Resolve the bump mapping settings (Render_BumpScale/Render_Parallax
 /// view properties, RenderParams fallback) into the backend-neutral
 /// per-frame config.
-GuiExport Render::BumpConfig translateBumpConfig(View3DInventor * view);
+GuiExport Render::BumpConfig translateBumpConfig(App::PropertyContainer * view);
 
 /// Resolve the scene (shadow) light from the traversal state's light
 /// element; the viewer headlight is filtered out by node type. The
 /// ground receiver settings honor the view's Shadow_* dynamic properties
 /// (the Shadow draw style creates them) with ViewParams fallback.
 GuiExport Render::LightConfig translateLightConfig(SoState * state,
-                                                   View3DInventor * view);
+                                                   App::PropertyContainer * view);
 
 /// Resolve the per-frame autozoom scale from the traversal state's view
 /// volume (the exact SoAutoZoomTranslation::getScaleFactor math with a
@@ -151,10 +155,10 @@ GuiExport float translateAutoZoomScale(SoState * state);
 
 /// Resolution scale of the expensive screen-space effect passes (reflection
 /// re-render, SSAO resolve) from Render_EffectResolution / RenderParams.
-GuiExport float translateEffectResolution(View3DInventor * view);
-GuiExport float translateSSAOResolution(View3DInventor * view);
-GuiExport float translateLevelTolerance(View3DInventor * view);
-GuiExport size_t translateGpuMemoryBudget(View3DInventor * view);
+GuiExport float translateEffectResolution(App::PropertyContainer * view);
+GuiExport float translateSSAOResolution(App::PropertyContainer * view);
+GuiExport float translateLevelTolerance(App::PropertyContainer * view);
+GuiExport size_t translateGpuMemoryBudget(App::PropertyContainer * view);
 
 } // namespace RendererBridge
 } // namespace Gui

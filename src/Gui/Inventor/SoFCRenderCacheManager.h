@@ -41,6 +41,10 @@ struct OverlayAnchor;
 struct UserShader;
 }
 
+namespace App {
+class PropertyContainer;
+}
+
 namespace Gui {
 class View3DInventor;
 }
@@ -79,7 +83,7 @@ public:
   /// optionally identifies the owning 3D view for per-view dynamic
   /// property overrides.
   void setExternalRenderer(Render::Renderer *renderer,
-                           Gui::View3DInventor *view = nullptr);
+                           App::PropertyContainer *view = nullptr);
 
   /// Route the scene feed to the backend's overlay feed instead (see
   /// SoFCRenderer::setExternalOverlay()): this manager then captures an
@@ -179,6 +183,16 @@ namespace Gui
 /// with no 3D view has to put the same image in its snapshot
 /// (docs/HeadlessServe.md §3.3).
 GuiExport void applySectionHatchTexture(SoFCRenderCacheManager &manager);
+
+/// Materialize the Render_* dynamic properties that the per-frame config
+/// push reads as a per-container override of the global RenderParams
+/// (SoFCRendererBridge's translate* functions). Created for a 3D view
+/// when a backend is selected, and by a view-less publisher for its own
+/// container — the overrides describe how a document is presented, so a
+/// publisher with no window still has to offer them, and the remote
+/// control channel still has somewhere to put an edit
+/// (docs/HeadlessServe.md §3.3).
+GuiExport void initRenderProperties(App::PropertyContainer *view);
 }
 
 #endif // GUI_SOFCRENDERCACHEMANAGER_H

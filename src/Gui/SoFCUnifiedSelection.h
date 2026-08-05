@@ -62,6 +62,10 @@ namespace Render {
 class Renderer;
 }
 
+namespace App {
+class PropertyContainer;
+}
+
 namespace Gui {
 
 class Document;
@@ -149,7 +153,7 @@ public:
     /// optionally identifies the owning 3D view for per-view dynamic
     /// property overrides.
     void setExternalRenderer(Render::Renderer *renderer,
-                             View3DInventor *view = nullptr);
+                             App::PropertyContainer *view = nullptr);
 
 protected:
     ~SoFCUnifiedSelection() override;

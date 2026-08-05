@@ -38,6 +38,10 @@ struct OverlayAnchor;
 struct UserShaderConfig;
 }
 
+namespace App {
+class PropertyContainer;
+}
+
 namespace Gui {
 class View3DInventor;
 }
@@ -58,7 +62,7 @@ public:
   /// view object so per-frame configs can honor its Render_*/Shadow_*
   /// dynamic property overrides.
   void setExternalRenderer(Render::Renderer * renderer,
-                           Gui::View3DInventor * view = nullptr);
+                           App::PropertyContainer * view = nullptr);
 
   /// Route this renderer's scene feed to an external backend's overlay
   /// feed instead of the main scene feed: setScene() translates the

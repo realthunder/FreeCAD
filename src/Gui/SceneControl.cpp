@@ -42,6 +42,7 @@
 #include "Application.h"
 #include "Document.h"
 #include "SceneControl.h"
+#include "SceneServeSource.h"
 #include "View3DInventor.h"
 #include "ViewProviderDocumentObject.h"
 #include "Renderer/SceneServer.h"
@@ -54,19 +55,25 @@ namespace {
 /// exactly one that matters, so "the active one" is unambiguous, and
 /// falling back to the first 3D view of the active document covers the
 /// headless-served case where nothing was ever activated by a user.
-View3DInventor *sceneView()
+App::PropertyContainer *sceneView()
 {
     if (auto v = dynamic_cast<View3DInventor *>(
                 Application::Instance->activeView()))
         return v;
     auto doc = Application::Instance->activeDocument();
-    if (!doc)
-        return nullptr;
-    for (auto view : doc->getMDIViews()) {
-        if (auto v = dynamic_cast<View3DInventor *>(view))
-            return v;
+    if (doc) {
+        for (auto view : doc->getMDIViews()) {
+            if (auto v = dynamic_cast<View3DInventor *>(view))
+                return v;
+        }
     }
-    return nullptr;
+    // No view at all is the headless-served case (docs/HeadlessServe.md
+    // §3.3), where the publisher holds the same Render_* properties. The
+    // subject is still "the 3D view" as far as a remote viewer is
+    // concerned -- it is asking about how the scene it was sent is
+    // drawn, and that question has an answer whether or not this process
+    // has a window.
+    return SceneServeSource::renderProperties();
 }
 
 QJsonObject errorReply(const QJsonValue &id, const char *code,

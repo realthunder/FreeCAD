@@ -608,7 +608,7 @@ SoFCRenderCacheManager::~SoFCRenderCacheManager()
 
 void
 SoFCRenderCacheManager::setExternalRenderer(Render::Renderer *renderer,
-                                            Gui::View3DInventor *view)
+                                            App::PropertyContainer *view)
 {
   PRIVATE(this)->renderer->setExternalRenderer(renderer, view);
 }

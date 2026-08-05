@@ -175,12 +175,14 @@ PyMethodDef Application::Methods[] = {
    "\n"
    "Update the main window and all its windows."},
   {"serveDocument",           (PyCFunction) Application::sServeDocument, METH_VARARGS,
-   "serveDocument(doc) -> bool\n"
+   "serveDocument(doc, port=0) -> bool\n"
    "\n"
    "Publish a document to streaming viewers with no 3D view behind it\n"
    "(docs/HeadlessServe.md). The document may be hidden; nothing is ever\n"
-   "drawn and no graphics device is created. Returns False when the\n"
-   "configured render engine cannot publish without one."},
+   "drawn and no graphics device is created, so this works with no\n"
+   "display at all. A non-zero port starts the scene stream server\n"
+   "there. Returns False when the configured render engine cannot\n"
+   "publish without a graphics device."},
   {"updateLocale",            (PyCFunction) Application::sUpdateLocale, METH_VARARGS,
    "updateLocale() -> None\n"
    "\n"
@@ -838,7 +840,8 @@ PyObject* Application::sGetMainWindow(PyObject * /*self*/, PyObject *args)
 PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)
 {
     PyObject *pyDoc = nullptr;
-    if (!PyArg_ParseTuple(args, "O", &pyDoc))
+    int port = 0;
+    if (!PyArg_ParseTuple(args, "O|i", &pyDoc, &port))
         return nullptr;
 
     App::Document *appDoc = nullptr;
@@ -857,7 +860,7 @@ PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)
 
     // A hidden document is the point: nothing is drawn and no graphics
     // device is created, so this works with no 3D view and no display.
-    bool ok = Gui::SceneServeSource::serve(guiDoc) != nullptr;
+    bool ok = Gui::SceneServeSource::serve(guiDoc, port) != nullptr;
     return Py::new_reference_to(Py::Boolean(ok));
 }
 

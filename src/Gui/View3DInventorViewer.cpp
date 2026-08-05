@@ -388,6 +388,29 @@ static ValueT _shadowParam(View3DInventor *view, const char *_name, const char *
     return view->getProperty<PropT, ValueT>(_name, _docu, "Shadow", def, cb);
 }
 
+/// View3DInventor::getProperty, but on any property container: the
+/// Render_* overrides are materialized identically on a 3D view and on a
+/// view-less publisher (docs/HeadlessServe.md §3.3), and only
+/// getPropertyByName/addDynamicProperty are ever needed.
+template<class PropT, class ValueT, class CallbackT>
+static ValueT _containerProperty(App::PropertyContainer *view,
+                                 const char *_name, const char *_docu,
+                                 const char *group, const ValueT &def,
+                                 CallbackT cb) {
+    char name[128];
+    snprintf(name, sizeof(name)-1, "%s_%s", group, _name);
+    auto prop = view->getPropertyByName(name);
+    if (prop && !prop->isDerivedFrom(PropT::getClassTypeId()))
+        return def;
+    if (!prop) {
+        prop = view->addDynamicProperty(PropT::getClassTypeId().getName(),
+                                        name, group, _docu);
+        static_cast<PropT*>(prop)->setValue(def);
+    }
+    cb(*static_cast<PropT*>(prop));
+    return static_cast<PropT*>(prop)->getValue();
+}
+
 template<class PropT, class ValueT>
 static void _shadowSetParam(View3DInventor *view, const char *_name, const ValueT &def) {
     if (!view)
@@ -400,18 +423,18 @@ static void _shadowSetParam(View3DInventor *view, const char *_name, const Value
 }
 
 template<class PropT, class ValueT>
-static ValueT _renderParam(View3DInventor *view, const char *_name, const char *_docu, const ValueT &def) {
+static ValueT _renderParam(App::PropertyContainer *view, const char *_name, const char *_docu, const ValueT &def) {
     if (!view)
         return def;
     auto cb = [](PropT &){};
-    return view->getProperty<PropT, ValueT>(_name, _docu, "Render", def, cb);
+    return _containerProperty<PropT, ValueT>(view, _name, _docu, "Render", def, cb);
 }
 
 template<class PropT, class ValueT, class CallbackT>
-static ValueT _renderParam(View3DInventor *view, const char *_name, const char *_docu, const ValueT &def, CallbackT cb) {
+static ValueT _renderParam(App::PropertyContainer *view, const char *_name, const char *_docu, const ValueT &def, CallbackT cb) {
     if (!view)
         return def;
-    return view->getProperty<PropT, ValueT>(_name, _docu, "Render", def, cb);
+    return _containerProperty<PropT, ValueT>(view, _name, _docu, "Render", def, cb);
 }
 
 template<class PropT, class ValueT, class CallbackT>
@@ -3989,7 +4012,7 @@ void View3DInventorViewer::setRendererType(const std::string &type)
                 type, qobject_cast<QOpenGLWidget*>(getGLWidget()));
         if (_pimpl->renderer && selectionRoot) {
             selectionRoot->setExternalRenderer(_pimpl->renderer.get(), _pimpl->view);
-            initRenderProperties();
+            Gui::initRenderProperties(_pimpl->view);
             // Seed the renderer-layer knobs it cannot read itself
             // before the backend can start serving (RenderParams
             // changes re-push through onRenderParamChanged).
@@ -4143,7 +4166,7 @@ static void syncEnvImageEmbed(View3DInventor *view)
     }
 }
 
-void View3DInventorViewer::initRenderProperties()
+void Gui::initRenderProperties(App::PropertyContainer *view)
 {
     // Materialize the per-view render engine settings as Render_* dynamic
     // properties on the view object, like the Shadow draw style's Shadow_*
@@ -4152,7 +4175,6 @@ void View3DInventorViewer::initRenderProperties()
     // renderer backend is selected - not lazily by the per-frame config
     // feed, which only reads existing properties
     // (SoFCRendererBridge::translateAOConfig() etc.).
-    auto view = _pimpl->view;
     if (!view)
         return;
     _renderParam<App::PropertyBool>(view, "AO",

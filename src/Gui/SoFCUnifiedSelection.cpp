@@ -365,7 +365,7 @@ SoFCRenderCacheManager *SoFCUnifiedSelection::getRenderManager()
 }
 
 void SoFCUnifiedSelection::setExternalRenderer(Render::Renderer *renderer,
-                                               View3DInventor *view)
+                                               App::PropertyContainer *view)
 {
     pimpl->manager.setExternalRenderer(renderer, view);
 }

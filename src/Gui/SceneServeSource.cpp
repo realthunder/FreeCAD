@@ -24,11 +24,22 @@
 
 #ifndef _PreComp_
 #include <Inventor/SbBox3f.h>
+#include <Inventor/SbRotation.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/actions/SoRayPickAction.h>
+#include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <QApplication>
 #include <QColor>
+#include <QPointer>
+#include <cmath>
+#include <cstring>
+#include <functional>
+#include <map>
 #endif
 
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <Base/Console.h>
@@ -38,7 +49,10 @@
 #include "Document.h"
 #include "Inventor/SoFCRenderCacheManager.h"
 #include "Renderer/Renderer.h"
+#include "Renderer/SceneServer.h"
 #include "RenderParams.h"
+#include "SceneControl.h"
+#include "Selection.h"
 #include "SoFCUnifiedSelection.h"
 #include "ViewProviderDocumentObject.h"
 
@@ -87,6 +101,31 @@ Render::Background backgroundFromPreferences()
         bg.midColor = opaque(hGrp->GetUnsigned("BackgroundColor4", 1869583359UL));
     return bg;
 }
+/*!
+ * Where the Render_* overrides live with no 3D view to hold them
+ * (docs/HeadlessServe.md §3.3), and the reason it is a subclass: a
+ * property edit has to reach the publisher.
+ *
+ * In a window an edit is followed by a redraw, and the redraw is what
+ * re-reads the configs and republishes. Here there are no frames, so a
+ * change that nothing listens for is a change a viewer never sees — the
+ * edit lands, the snapshot on the wire keeps the old value, and the
+ * viewer's own UI silently disagrees with what it is drawing.
+ */
+class ServeRenderProperties : public App::PropertyContainer
+{
+public:
+    std::function<void()> changed;
+
+protected:
+    void onChanged(const App::Property *prop) override
+    {
+        App::PropertyContainer::onChanged(prop);
+        if (changed)
+            changed();
+    }
+};
+
 }  // namespace
 
 class SceneServeSource::Private
@@ -94,6 +133,20 @@ class SceneServeSource::Private
 public:
     Document *doc = nullptr;
     SoFCUnifiedSelection *root = nullptr;
+    SoOrthographicCamera *camera = nullptr;
+    /*!
+     * Where the Render_* overrides live with no 3D view to hold them
+     * (docs/HeadlessServe.md §3.3).
+     *
+     * A viewer hangs them off its View3DInventor, but everything that
+     * reads them — the whole translate*Config family — only ever calls
+     * getPropertyByName. They never needed a view, they needed a
+     * property container, and App::PropertyContainer implements dynamic
+     * properties itself. This is what keeps the control channel's
+     * "view3d" subject answerable headlessly: a viewer's edit still
+     * lands somewhere, and the next publish reads it back.
+     */
+    ServeRenderProperties renderProps;
     std::unique_ptr<Render::Renderer> renderer;
     QTimer timer;
     std::vector<boost::signals2::scoped_connection> connections;
@@ -107,6 +160,8 @@ public:
             root->setExternalRenderer(nullptr);
             root->unref();
         }
+        if (camera)
+            camera->unref();
     }
 
     /// Hang every view provider of the document under the root, the way
@@ -131,63 +186,40 @@ public:
         }
     }
 
-    /// A synthetic camera, since there is no real one to report. Fitted
-    /// to the scene bounds at a fixed orientation: every joining viewer
-    /// re-frames with its own fitAll, so this only has to be sane.
+    /// Frame the synthetic camera on the scene, and hand back the
+    /// matrices the snapshot carries. There is no real camera to report,
+    /// so this is only the framing a joining viewer adopts before its
+    /// own fitAll — it has to be sane, not right. It is a real node
+    /// rather than bare matrices because ray picking needs the camera
+    /// traversed as a child.
     void cameraMatrices(float *viewMatrix, float *projMatrix)
     {
-        SbBox3f box;
-        if (root) {
-            SbViewportRegion viewport{short(kDefaultWidth),
-                                      short(kDefaultHeight)};
-            SoGetBoundingBoxAction bboxaction(viewport);
-            bboxaction.apply(root);
-            box = bboxaction.getBoundingBox();
-        }
-        SbVec3f center(0.0f, 0.0f, 0.0f);
-        float radius = 1.0f;
-        if (!box.isEmpty()) {
-            center = box.getCenter();
-            SbVec3f span = box.getMax() - box.getMin();
-            radius = std::max({span[0], span[1], span[2], 1e-3f}) * 0.5f;
-        }
+        SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
+        // A fixed isometric-ish orientation, then let Coin size it to
+        // whatever the scene turned out to be.
+        SbRotation tilt(SbVec3f(1.0f, 0.0f, 0.0f), float(M_PI) / 3.0f);
+        SbRotation spin(SbVec3f(0.0f, 0.0f, 1.0f), float(M_PI) / 4.0f);
+        camera->orientation.setValue(spin * tilt);
+        if (root)
+            camera->viewAll(root, viewport);
 
-        // An isometric-ish eye, far enough out to hold the bounds.
-        const float dist = radius * 4.0f;
-        const SbVec3f dir = SbVec3f(-0.577f, -0.577f, -0.577f);
-        const SbVec3f eye = center - dir * dist;
+        SbMatrix viewMat;
+        SbMatrix projMat;
+        camera->getViewVolume(viewport.getViewportAspectRatio())
+            .getMatrices(viewMat, projMat);
+        std::memcpy(viewMatrix, viewMat.getValue(), 16 * sizeof(float));
+        std::memcpy(projMatrix, projMat.getValue(), 16 * sizeof(float));
+    }
 
-        SbVec3f zaxis = -dir;
-        zaxis.normalize();
-        SbVec3f up(0.0f, 0.0f, 1.0f);
-        if (std::fabs(zaxis.dot(up)) > 0.99f)
-            up = SbVec3f(0.0f, 1.0f, 0.0f);
-        SbVec3f xaxis = up.cross(zaxis);
-        xaxis.normalize();
-        SbVec3f yaxis = zaxis.cross(xaxis);
-
-        // GL-style column-major view matrix.
-        const float view[16] = {
-            xaxis[0], yaxis[0], zaxis[0], 0.0f,
-            xaxis[1], yaxis[1], zaxis[1], 0.0f,
-            xaxis[2], yaxis[2], zaxis[2], 0.0f,
-            -xaxis.dot(eye), -yaxis.dot(eye), -zaxis.dot(eye), 1.0f};
-        std::memcpy(viewMatrix, view, sizeof(view));
-
-        // Orthographic, sized to the bounds — a parametric model has no
-        // natural perspective and a wrong near/far plane is the one way
-        // this can hide the whole scene.
-        const float aspect = float(kDefaultWidth) / float(kDefaultHeight);
-        const float halfh = radius * 1.2f;
-        const float halfw = halfh * aspect;
-        const float zn = 0.0f;
-        const float zf = dist + radius * 4.0f;
-        const float proj[16] = {
-            1.0f / halfw, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f / halfh, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f / (zf - zn), 0.0f,
-            0.0f, 0.0f, -zn / (zf - zn), 1.0f};
-        std::memcpy(projMatrix, proj, sizeof(proj));
+    /// The scene as a pickable graph: the camera has to be a traversed
+    /// child for setRay picking (the getPointOnRay pattern), so pick a
+    /// temporary root of camera + scene rather than the scene itself.
+    CoinPtr<SoSeparator> pickRoot()
+    {
+        CoinPtr<SoSeparator> pickroot(new SoSeparator, true);
+        pickroot->addChild(camera);
+        pickroot->addChild(root);
+        return pickroot;
     }
 };
 
@@ -215,9 +247,16 @@ SceneServeSource::SceneServeSource(Document *doc)
     pimpl->root->ref();
     pimpl->root->applySettings();
     pimpl->root->setDocument(doc);
-    // No view: the per-view property overrides simply do not apply, and
-    // the backend falls back to the global render parameters.
-    pimpl->root->setExternalRenderer(pimpl->renderer.get(), nullptr);
+    pimpl->camera = new SoOrthographicCamera();
+    pimpl->camera->ref();
+    // The source's own container stands in for the view, so the Render_*
+    // overrides work exactly as they do in a window -- including that
+    // editing one shows up, which without a frame loop takes an explicit
+    // republish.
+    initRenderProperties(&pimpl->renderProps);
+    pimpl->renderProps.changed = [this]() { schedulePublish(); };
+    pimpl->root->setExternalRenderer(pimpl->renderer.get(),
+                                     &pimpl->renderProps);
     pimpl->attachViewProviders();
 
     // Coalesce: a recompute or a load changes many objects, and each one
@@ -242,10 +281,101 @@ SceneServeSource::SceneServeSource(Document *doc)
             }));
     }
 
+    installHandlers();
     schedulePublish();
 }
 
 SceneServeSource::~SceneServeSource() = default;
+
+void SceneServeSource::installHandlers()
+{
+    // What a viewer installed in setRendererType(), minus the viewer
+    // (docs/HeadlessServe.md §2e). All three run on the GUI thread: the
+    // server calls them from its own, and the marshal is what makes
+    // touching the document safe.
+    auto &server = Render::SceneStreamServer::instance();
+    QPointer<SceneServeSource> self(this);
+
+    // Remote-viewer click selection: a viewer's click arrives as a world
+    // ray, picked against this source's graph and synthetic camera.
+    server.setPickHandler([self](const Render::ScenePickRequest &req) {
+        Render::ScenePickRequest r = req;
+        QMetaObject::invokeMethod(qApp, [self, r]() {
+            if (self)
+                self->pickAndSelect(SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
+                                    SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
+                                    r.modifiers & 1);
+        }, Qt::QueuedConnection);
+    });
+
+    // The semantic control channel (docs/ThinClient.md §4.2) needs
+    // nothing from a view and never did — it works on the document.
+    installSceneControlHandler();
+
+    // A finished level-generation job is announced by the next publish,
+    // and this source publishes only when something asks it to. Without
+    // this an idle backend would sit on finished work forever — the same
+    // reason a viewer scheduled a redraw here.
+    server.setWorkNotifier([self]() {
+        QMetaObject::invokeMethod(qApp, [self]() {
+            if (self)
+                self->schedulePublish();
+        }, Qt::QueuedConnection);
+    });
+}
+
+void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
+                                     bool ctrl)
+{
+    if (!isValid())
+        return;
+
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/View");
+    SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
+
+    SoRayPickAction rp(viewport);
+    rp.setRay(origin, dir);
+    rp.setRadius(hGrp->GetFloat("PickRadius", 5.0f));
+    auto pickroot = pimpl->pickRoot();
+    rp.apply(pickroot);
+
+    SoPickedPoint *pp = rp.getPickedPoint();
+    ViewProviderDocumentObject *vpd = nullptr;
+    std::string subname;
+    if (pp && pimpl->doc) {
+        vpd = pimpl->doc->getViewProviderByPathFromHead(
+            static_cast<SoFullPath *>(pp->getPath()));
+        if (vpd && (!vpd->getObject() || !vpd->getObject()->isAttachedToDocument()
+                    || !vpd->getElementPicked(pp, subname)))
+            vpd = nullptr;
+    }
+    if (!vpd) {
+        if (!ctrl)
+            Gui::Selection().clearSelection();
+        return;
+    }
+
+    const char *docname = vpd->getObject()->getDocument()->getName();
+    const char *objname = vpd->getObject()->getNameInDocument();
+    const auto &pt = pp->getPoint();
+    SelectionNoTopParentCheck guard;
+    if (ctrl) {
+        if (Gui::Selection().isSelected(docname, objname, subname.c_str(),
+                                        ResolveMode::NoResolve))
+            Gui::Selection().rmvSelection(docname, objname, subname.c_str());
+        else
+            Gui::Selection().addSelection(docname, objname, subname.c_str(),
+                                          pt[0], pt[1], pt[2]);
+    }
+    else {
+        Gui::Selection().clearSelection();
+        Gui::Selection().addSelection(docname, objname, subname.c_str(),
+                                      pt[0], pt[1], pt[2]);
+    }
+    // A selection changes the feeds, and nothing else will ask.
+    schedulePublish();
+}
 
 namespace
 {
@@ -259,10 +389,23 @@ std::map<Document *, std::unique_ptr<SceneServeSource>> &servedDocuments()
 }
 }  // namespace
 
-SceneServeSource *SceneServeSource::serve(Document *doc)
+SceneServeSource *SceneServeSource::serve(Document *doc, int port)
 {
     if (!doc)
         return nullptr;
+
+    // Start the server before the source, so the first publish already
+    // has somewhere to go. A port of 0 means the caller arranged that
+    // some other way -- FC_BGFX_SERVE_SCENE, or an already running
+    // server serving another document's publisher.
+    auto &server = Render::SceneStreamServer::instance();
+    if (port > 0 && !server.running() && !server.start(port)) {
+        Base::Console().Error(
+            "SceneServeSource: scene server failed to start on port %d\n",
+            port);
+        return nullptr;
+    }
+
     auto &sources = servedDocuments();
     auto it = sources.find(doc);
     if (it != sources.end())
@@ -279,6 +422,21 @@ SceneServeSource *SceneServeSource::serve(Document *doc)
 void SceneServeSource::unserve(Document *doc)
 {
     servedDocuments().erase(doc);
+}
+
+App::PropertyContainer *SceneServeSource::ownRenderProperties() const
+{
+    return &pimpl->renderProps;
+}
+
+App::PropertyContainer *SceneServeSource::renderProperties()
+{
+    // One source, one document, one port (§5), so "the served one" is
+    // as unambiguous as "the active view" is for a windowed session.
+    auto &sources = servedDocuments();
+    if (sources.empty())
+        return nullptr;
+    return sources.begin()->second->ownRenderProperties();
 }
 
 bool SceneServeSource::isValid() const

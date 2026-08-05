@@ -526,7 +526,6 @@ public:
     /// Materialize the per-view Render_* dynamic properties on the view
     /// object (RenderParams defaults), called when a renderer backend is
     /// selected.
-    void initRenderProperties();
     /// Pick along a world-space ray and select the hit element —
     /// remote-viewer click selection forwarded by the scene-streaming
     /// server (SceneServer.h). ctrl toggles like a Ctrl-click; a miss

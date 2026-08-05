@@ -318,7 +318,7 @@ public:
   Render::Renderer *external = nullptr;
   // Owning 3D view of the external backend, for per-view dynamic property
   // overrides (Render_*/Shadow_*) in the per-frame config feed.
-  Gui::View3DInventor *externalview = nullptr;
+  App::PropertyContainer *externalview = nullptr;
   // Overlay-capture mode (setExternalOverlay): the scene feed routes to
   // external->setOverlay(overlayid, ..., overlayanchor) and render() is a
   // no-op.
@@ -855,7 +855,7 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
 
 void
 SoFCRenderer::setExternalRenderer(Render::Renderer * renderer,
-                                  Gui::View3DInventor * view)
+                                  App::PropertyContainer * view)
 {
   PRIVATE(this)->externalview = renderer ? view : nullptr;
   if (PRIVATE(this)->external == renderer)
