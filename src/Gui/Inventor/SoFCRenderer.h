@@ -73,6 +73,16 @@ public:
 
   void render(SoGLRenderAction * action);
 
+  /// Push every per-frame configuration (AO, PBR, water, bloom, light,
+  /// hidden line, ...) to the external backend. Called on the way
+  /// through render(), and separately by a publisher that never renders
+  /// (docs/HeadlessServe.md §3.3) — these describe how the scene looks,
+  /// not how a frame is drawn, so a snapshot needs them just as much as
+  /// a frame does. \a state supplies the three that are read from the
+  /// traversal (hidden line, light, autozoom); a headless caller passes
+  /// the same GL-free state it traverses with.
+  void pushExternalConfigs(SoState * state);
+
   void setScene(const Gui::CoinPtr<SoFCRenderCache> & cache);
 
   /// User shader programs captured from scene SoShaderProgram nodes by

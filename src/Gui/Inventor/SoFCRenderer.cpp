@@ -2335,25 +2335,15 @@ SoFCRendererP::renderTransparency(SoGLRenderAction * action,
 }
 
 void
-SoFCRenderer::render(SoGLRenderAction * action)
+SoFCRenderer::pushExternalConfigs(SoState * state)
 {
-  // In overlay-capture mode this renderer only exists as a feed conduit:
-  // the backend draws the overlay itself, and the GL fallback keeps its
-  // own drawing path (e.g. drawAxisCross), so never render here and never
-  // push per-frame configs.
-  if (PRIVATE(this)->overlaymode)
-    return;
-
-  // Drawing the frame from the state the stages above produced.
-  Gui::RenderTiming::Scope timing(Gui::RenderTiming::Submit);
-
   // The hidden-line draw style configuration lives in the traversal state
   // and is resolved per render; mirror it to the external backend (which
   // draws before this traversal, so it applies one frame late like the
   // scene feed).
   if (PRIVATE(this)->external) {
     PRIVATE(this)->external->setHiddenLineConfig(
-        RendererBridge::translateHiddenLineConfig(action->getState()));
+        RendererBridge::translateHiddenLineConfig(state));
     PRIVATE(this)->external->setSectionConfig(
         RendererBridge::translateSectionConfig());
     PRIVATE(this)->external->setAOConfig(
@@ -2366,7 +2356,7 @@ SoFCRenderer::render(SoGLRenderAction * action)
     PRIVATE(this)->external->setBumpConfig(
         RendererBridge::translateBumpConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setLightConfig(
-        RendererBridge::translateLightConfig(action->getState(),
+        RendererBridge::translateLightConfig(state,
                                              PRIVATE(this)->externalview));
     PRIVATE(this)->external->setVolumetricConfig(
         RendererBridge::translateVolumetricConfig(PRIVATE(this)->externalview));
@@ -2387,8 +2377,24 @@ SoFCRenderer::render(SoGLRenderAction * action)
     PRIVATE(this)->external->setGpuMemoryBudget(
         RendererBridge::translateGpuMemoryBudget(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setAutoZoomScale(
-        RendererBridge::translateAutoZoomScale(action->getState()));
+        RendererBridge::translateAutoZoomScale(state));
   }
+}
+
+void
+SoFCRenderer::render(SoGLRenderAction * action)
+{
+  // In overlay-capture mode this renderer only exists as a feed conduit:
+  // the backend draws the overlay itself, and the GL fallback keeps its
+  // own drawing path (e.g. drawAxisCross), so never render here and never
+  // push per-frame configs.
+  if (PRIVATE(this)->overlaymode)
+    return;
+
+  // Drawing the frame from the state the stages above produced.
+  Gui::RenderTiming::Scope timing(Gui::RenderTiming::Submit);
+
+  pushExternalConfigs(action->getState());
 
   // When an external backend has rendered the current scene (it draws into
   // the framebuffer before the Coin traversal), skip the internal

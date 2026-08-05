@@ -1315,6 +1315,45 @@ SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
   PRIVATE(this)->selnodeid.clear();
 }
 
+void
+SoFCRenderCacheManager::traverse(SoNode * root, const SbViewportRegion & viewport)
+{
+  // The seed. SoAction::getState() builds the state on first call with
+  // the action's default elements, so this is a complete, GL-free state
+  // before any traversal has run — no context, no drawable, nothing to
+  // make current.
+  SoCallbackAction seedaction(viewport);
+  SoState * state = seedaction.getState();
+
+  // Before the change check, not after: the configs describe how the
+  // scene looks (AO, water, hidden line, ...) and an edit to one of them
+  // moves no node id at all, so gating them on the graph having changed
+  // would drop exactly the republish a remote property edit asks for.
+  PRIVATE(this)->renderer->pushExternalConfigs(state);
+
+  if (PRIVATE(this)->sceneid == root->getNodeId())
+    return;
+  PRIVATE(this)->sceneid = root->getNodeId();
+
+  Gui::RenderTiming::Scope timing(Gui::RenderTiming::Traverse);
+
+  RenderCachePtr cache = new SoFCRenderCache(state, root);
+  cache->open(state);
+  cache->resetActionStateStackDepth();
+  PRIVATE(this)->stack.resize(1, cache);
+  PRIVATE(this)->initAction();
+  PRIVATE(this)->override_selectstyle = false;
+  PRIVATE(this)->usershaders.shaders.clear();
+  PRIVATE(this)->action->apply(root);
+  cache->close(state);
+  PRIVATE(this)->renderer->setScene(cache);
+  PRIVATE(this)->renderer->setUserShaders(
+      std::move(PRIVATE(this)->usershaders));
+  PRIVATE(this)->usershaders = {};
+  PRIVATE(this)->stack.clear();
+  PRIVATE(this)->selnodeid.clear();
+}
+
 SoCallbackAction::Response
 SoFCRenderCacheManagerP::preSeparator(void *userdata,
                                       SoCallbackAction *action,

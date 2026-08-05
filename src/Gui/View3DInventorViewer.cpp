@@ -7244,31 +7244,36 @@ void View3DInventorViewer::refreshRenderCache()
     }
 }
 
+void Gui::applySectionHatchTexture(SoFCRenderCacheManager &manager)
+{
+    QString path = QString::fromUtf8(ViewParams::getSectionHatchTexture().c_str());
+    QDateTime date;
+    auto &entry = _HatchTextures[path];
+    if (!path.startsWith(QLatin1Char(':'))) {
+        QFileInfo finfo(path);
+        if (!finfo.exists()) {
+            manager.setHatchImage(nullptr,0,0,0);
+            return;
+        }
+        date = finfo.lastModified();
+    }
+    if (entry.date != date || !entry.image.hasData()) {
+        entry.date = date;
+        QImage img = QImage(path).convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        SoSFImage tmp;
+        BitmapFactory().convert(img, tmp);
+        entry.image = tmp.getValue();
+    }
+    SbVec2s size;
+    int nc;
+    auto dataptr = entry.image.getValue(size,nc);
+    manager.setHatchImage(dataptr,nc,size[0],size[1]);
+}
+
 void View3DInventorViewer::updateHatchTexture()
 {
     if (auto manager = selectionRoot->getRenderManager()) {
-        QString path = QString::fromUtf8(ViewParams::getSectionHatchTexture().c_str());
-        QDateTime date;
-        auto &entry = _HatchTextures[path];
-        if (!path.startsWith(QLatin1Char(':'))) {
-            QFileInfo finfo(path);
-            if (!finfo.exists()) {
-                manager->setHatchImage(nullptr,0,0,0);
-                return;
-            }
-            date = finfo.lastModified();
-        }
-        if (entry.date != date || !entry.image.hasData()) {
-            entry.date = date;
-            QImage img = QImage(path).convertToFormat(QImage::Format_ARGB32_Premultiplied);
-            SoSFImage tmp;
-            BitmapFactory().convert(img, tmp);
-            entry.image = tmp.getValue();
-        }
-        SbVec2s size;
-        int nc;
-        auto dataptr = entry.image.getValue(size,nc);
-        manager->setHatchImage(dataptr,nc,size[0],size[1]);
+        Gui::applySectionHatchTexture(*manager);
         redraw();
     }
 }

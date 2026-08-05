@@ -59,6 +59,19 @@ public:
   /// backend's overlay feed. \a action supplies the traversal state seed.
   void capture(SoGLRenderAction *action, SoNode *root);
 
+  /// The same build, seeded without a graphics context: a publisher with
+  /// no 3D view has no SoGLRenderAction to take a state from
+  /// (docs/HeadlessServe.md §3.2). The seed comes from a plain
+  /// SoCallbackAction instead, whose state is created on demand with the
+  /// default elements — which is what the rest of the traversal has
+  /// always run on anyway, since every nested separator's cache is
+  /// opened against the callback action's state, not the GL one.
+  ///
+  /// Unlike capture(), the result goes to the scene feed rather than an
+  /// overlay one: this is the whole scene, just built by a change rather
+  /// than by a frame.
+  void traverse(SoNode *root, const SbViewportRegion &viewport);
+
   void clear();
 
   /// Attach an optional external render backend (see
@@ -157,5 +170,16 @@ private:
   SoFCRenderCacheManagerP * pimpl;
 };
 
-#endif // GUI_SOFCRENDERCACHEMANAGER_H 
+namespace Gui
+{
+/// Load the configured section-cap hatch image (ViewParams'
+/// SectionHatchTexture) into \a manager, caching the decode per file and
+/// modification time. Shared rather than a viewer detail because it is a
+/// property of how the document is drawn, not of a view: a publisher
+/// with no 3D view has to put the same image in its snapshot
+/// (docs/HeadlessServe.md §3.3).
+GuiExport void applySectionHatchTexture(SoFCRenderCacheManager &manager);
+}
+
+#endif // GUI_SOFCRENDERCACHEMANAGER_H
 // vim: noai:ts=2:sw=2
