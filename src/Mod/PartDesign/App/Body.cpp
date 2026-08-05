@@ -449,30 +449,70 @@ void Body::setBaseProperty(App::DocumentObject* feature)
 
 std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* feature)
 {
-    App::DocumentObject* nextSolidFeature = getNextSolidFeature(feature);
-    App::DocumentObject* prevSolidFeature = getPrevSolidFeature(feature);
     // This method must be called BEFORE the feature is removed from the Document!
+    //
+    // Everything here works on the feature's own solid group, i.e. its
+    // BaseFeature chain -- deliberately NOT getPrevSolidFeature() /
+    // getNextSolidFeature(), which scan Group by position and know nothing
+    // about solid grouping. With more than one solid in a body those routinely
+    // land in a different group: Group order interleaves the groups whenever
+    // the user works on two solids in turn, and a chain can even run backwards
+    // through it. Rerouting by position then hands a feature of one solid to
+    // another, which raises no error and only shows up as wrong geometry at the
+    // next recompute. setBaseProperty() already reroutes by matching on the
+    // link; this is the counterpart for removal.
+    auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(feature);
+    const bool headsOwnSolid = feat && feat->NewSolid.getValue();
+    // Predecessor inside the same solid group; null when this feature heads one
+    // (or is the body's first feature, which is equally fine -- its successor
+    // just becomes the new base solid).
+    App::DocumentObject* siblingBase =
+        (feat && !headsOwnSolid) ? feat->BaseFeature.getValue() : nullptr;
+
+    // The successors in this feature's own solid group are exactly those that
+    // name it as their base. Usually one; a body with branched history can hold
+    // several, and all of them need rerouting.
+    std::vector<PartDesign::Feature*> siblingSuccessors;
     if (isSolidFeature(feature)) {
-        // This is a solid feature
-        // If the next feature is solid, reroute its BaseFeature property to the previous solid feature
-        if (nextSolidFeature) {
-            auto next = Base::freecad_dynamic_cast<PartDesign::Feature>(nextSolidFeature);
-            if (next && !next->NewSolid.getValue())
-                // Note: It's ok to remove the first solid feature, that just mean the next feature become the base one
-                static_cast<PartDesign::Feature*>(nextSolidFeature)->BaseFeature.setValue(prevSolidFeature);
+        for (auto obj : Group.getValues()) {
+            auto next = Base::freecad_dynamic_cast<PartDesign::Feature>(obj);
+            if (next && next != feature && next->BaseFeature.getValue() == feature) {
+                siblingSuccessors.push_back(next);
+            }
+        }
+    }
+
+    for (auto next : siblingSuccessors) {
+        if (headsOwnSolid) {
+            // The deleted feature started this solid, so its successor takes
+            // that role rather than being grafted onto a neighbouring solid.
+            // Setting NewSolid clears BaseFeature -- see onNewSolidChanged().
+            next->NewSolid.setValue(true);
+        }
+        else {
+            next->BaseFeature.setValue(siblingBase);
         }
     }
 
     std::vector<App::DocumentObject*> model = Group.getValues();
     std::vector<App::DocumentObject*>::iterator it = std::find(model.begin(), model.end(), feature);
 
-    // Adjust Tip feature if it is pointing to the deleted object
-    if (Tip.getValue()== feature) {
-        if (prevSolidFeature) {
-            Tip.setValue(prevSolidFeature);
-        } else {
-            Tip.setValue(nextSolidFeature);
+    // Adjust Tip feature if it is pointing to the deleted object, preferring
+    // this feature's own solid group over whatever happens to sit beside it.
+    if (Tip.getValue() == feature) {
+        App::DocumentObject* newTip = siblingBase;
+        if (!newTip && !siblingSuccessors.empty()) {
+            newTip = siblingSuccessors.front();
         }
+        if (!newTip) {
+            // Last solid of its group: fall back to a positional neighbour, as
+            // any remaining solid is a better tip than none.
+            newTip = getPrevSolidFeature(feature);
+        }
+        if (!newTip) {
+            newTip = getNextSolidFeature(feature);
+        }
+        Tip.setValue(newTip);
     }
 
     // Erase feature from Group
