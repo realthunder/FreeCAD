@@ -360,6 +360,7 @@ SET(Gui_UIC_SRCS
     TaskView/TaskOrientation.ui
     TaskView/TaskImage.ui
     TaskView/TaskSelectLinkProperty.ui
+    TaskView/TaskSolverMessages.ui
     TaskElementColors.ui
     DlgObjectSelection.ui
     DlgAddProperty.ui
@@ -779,6 +780,9 @@ SET(Task_View_SRCS
     TaskView/TaskEditControl.cpp
     TaskView/TaskEditControl.h
     TaskView/TaskEditControl.ui
+    TaskView/TaskSolverMessages.cpp
+    TaskView/TaskSolverMessages.h
+    TaskView/TaskSolverMessages.ui
     TaskView/TaskView.cpp
     TaskView/TaskView.h
     TaskView/TaskDialog.cpp
