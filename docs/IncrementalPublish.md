@@ -500,6 +500,43 @@ at 0, 1 and 2 *and* to the build before the change. A new probe
 feature's shape, edit a shape two features share, then set it back to an
 equal one. Agrees step for step, all 8 steps moving the frame.
 
+### 4d-ii. The registry lock, and where translate stands now
+
+Reusing a mesh has to check the one thing that is not a property of the
+cache — the rung its source has published since — and that check called
+`MeshSourceRegistry::publishedError()`, which takes the registry's lock,
+once per mesh per publish. **4-5ms of a 6000-object publish spent being
+told nothing had been registered at all.** The registry now carries a
+generation bumped by `add()` and `remove()` (the only writers), a mesh
+records the generation its answer was read under, and an unmoved
+generation skips the lookup. Read the generation *before* the answer:
+the other order can stamp an answer as current that already was not.
+**translate 24ms → 20-21ms**, which is what ablating the lookup away
+entirely had predicted.
+
+This is the third time the same shape of bug has been the answer in this
+document — `getenv` per translated cache (5.8%), a mutex + global map
+lookup per child entry (57% of the container merge), and now a mutex per
+mesh. ⭐ **Per-item calls into a shared registry are worth grepping for
+before profiling anything cleverer.**
+
+**Where the stage stands**, 6000 objects, splice and reuse on: a publish
+is ~46ms — traverse 8, delta 4, flatten 2, flattensub 5, entries 4-5,
+**translate 20-21**, backend 2.
+
+⭐ **The next target, measured: the object-info resolution is 8-9ms of
+the 20-21ms translate** — now the biggest single item in the biggest
+stage. Ablated in two halves: the `App` document/object lookups plus
+label and type reads are **4-5ms**, and building the map that carries
+them is **3-4ms**. Memoizing only the resolution would take the first
+half and leave the second, because the map is rebuilt and handed over
+wholesale every publish whether or not anything in it changed. Both
+halves want the same thing, and it is what §8.4 already calls for: the
+identity map should ride the **`updateScene` delta** rather than be
+rebuilt to be moved. Note the one field that is genuinely volatile — a
+label can change without touching the scene graph — so whatever carries
+it needs an invalidation, not just a memo.
+
 ## 5. Design: per-child slices
 
 The change set is available for free. `preSeparator` already knows, for
