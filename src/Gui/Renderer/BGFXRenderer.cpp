@@ -8370,6 +8370,46 @@ public:
         snap.clearColor = clearColor;
     }
 
+    /// FC_BGFX_DUMP_SCENE=<path>: snapshot the first non-empty scene
+    /// feed with all per-frame configs and the camera for the
+    /// standalone/wasm viewer (SceneDump.h).
+    /// FC_BGFX_DUMP_SCENE_DELAY=<n> skips the first n non-empty
+    /// frames, and FC_BGFX_DUMP_SCENE_SEL=1 additionally waits for a
+    /// non-empty selection feed, so later state (a selection made by
+    /// a script) is in the capture.
+    ///
+    /// Written with no chunk/mesh/texture sinks installed, so the file
+    /// is monolithic and self-contained — unlike a published manifest,
+    /// which is content-keyed and delta-encoded per viewer. That makes
+    /// it the comparable form of a scene, and so the way one publisher
+    /// is diffed against another (docs/HeadlessServe.md §4, stage 2c).
+    /// Hence it hangs off the snapshot, not off the frame: a
+    /// publish-only process draws nothing and must still be able to
+    /// produce one.
+    void maybeDumpScene(const void *viewMatrix,
+                        const void *projMatrix,
+                        uint16_t width,
+                        uint16_t height,
+                        uint32_t clearColor)
+    {
+        static const char *dumpPath = getenv("FC_BGFX_DUMP_SCENE");
+        static const char *dumpDelay = getenv("FC_BGFX_DUMP_SCENE_DELAY");
+        static const bool dumpSel = getenv("FC_BGFX_DUMP_SCENE_SEL") != nullptr;
+        if (dumpPath && *dumpPath && !sceneDumped
+                && !(scene.empty() && overlays.empty())
+                && ++dumpFrames > (dumpDelay ? atoi(dumpDelay) : 0)
+                && (!dumpSel || !selections.empty())) {
+            sceneDumped = true;
+            Render::SceneSnapshot snap;
+            makeSnapshot(snap, viewMatrix, projMatrix, width, height,
+                         clearColor);
+            fprintf(stderr, "bgfx: scene snapshot (%zu draws) -> %s: %s\n",
+                    scene.size(), dumpPath,
+                    Render::saveSceneSnapshot(dumpPath, snap)
+                        ? "ok" : "FAILED");
+        }
+    }
+
 #ifndef FC_RENDERER_STANDALONE
     /// Publish the feeds to the scene-stream server when they have
     /// changed (docs/SceneStreaming.md). Starts the server on first
@@ -8561,6 +8601,10 @@ public:
             | (uint32_t(col.green()) << 16)
             | (uint32_t(col.blue()) << 8)
             | 0xff;
+        // The scene dump is the diffable form of a publish, so it has
+        // to be reachable without a frame — it is how a view-less
+        // source is checked against a real viewer.
+        maybeDumpScene(viewMatrix, projMatrix, width, height, clearColor);
         publishScene(viewMatrix, projMatrix, width, height, clearColor,
                      dirtyChanged);
         return true;
@@ -8677,29 +8721,7 @@ public:
         if (getenv("FC_BGFX_DEBUG_CLEAR"))
             clearColor = 0xff0000ff;
 
-        // FC_BGFX_DUMP_SCENE=<path>: snapshot the first non-empty scene
-        // feed with all per-frame configs and the camera for the
-        // standalone/wasm viewer (SceneDump.h).
-        // FC_BGFX_DUMP_SCENE_DELAY=<n> skips the first n non-empty
-        // frames, and FC_BGFX_DUMP_SCENE_SEL=1 additionally waits for a
-        // non-empty selection feed, so later state (a selection made by
-        // a script) is in the capture.
-        static const char *dumpPath = getenv("FC_BGFX_DUMP_SCENE");
-        static const char *dumpDelay = getenv("FC_BGFX_DUMP_SCENE_DELAY");
-        static const bool dumpSel = getenv("FC_BGFX_DUMP_SCENE_SEL") != nullptr;
-        if (dumpPath && *dumpPath && !sceneDumped
-                && !(scene.empty() && overlays.empty())
-                && ++dumpFrames > (dumpDelay ? atoi(dumpDelay) : 0)
-                && (!dumpSel || !selections.empty())) {
-            sceneDumped = true;
-            Render::SceneSnapshot snap;
-            makeSnapshot(snap, viewMatrix, projMatrix, width, height,
-                         clearColor);
-            fprintf(stderr, "bgfx: scene snapshot (%zu draws) -> %s: %s\n",
-                    scene.size(), dumpPath,
-                    Render::saveSceneSnapshot(dumpPath, snap)
-                        ? "ok" : "FAILED");
-        }
+        maybeDumpScene(viewMatrix, projMatrix, width, height, clearColor);
 
 #ifndef FC_RENDERER_STANDALONE
         // Desktop level plan (§13 step 2): feed the settle detector
