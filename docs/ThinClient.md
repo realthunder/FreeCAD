@@ -87,6 +87,25 @@ streamed meshes, resolving Face/Edge/Vertex; hover preselect and selection are l
 instant (`selectAt`, `rebuildSelection`, client selection group `kClientSelId`). The browser
 knows `{objectKey, kind, part}` — enough to highlight, not to name.
 
+**Pointer precision is part of picking, not a detail of it.** The pick radius edges and
+vertices are resolved within is the desktop's `ViewParams::PickRadius` — CSS pixels sized
+for a mouse on a ratio-1 screen — so the client scales it to the drawing buffer by the
+device pixel ratio and widens it to 15 CSS px for a fingertip, which is millimetres of
+contact aimed with no cursor. Preselection then follows the input's own affordances:
+
+- **Mouse** — the cursor hovers; nothing to add.
+- **Stylus** — a pen reports its position before it touches down, so `pointermove` with
+  `pointerType === 'pen'` drives the same raycast, `pointerout` drops it. Free preselection,
+  no gesture. (Emscripten's mouse callbacks never see it: a pen arrives as touch events.)
+- **Finger — the touch loupe.** A single finger held still for 350ms preselects instead of
+  orbiting; the highlight comes up under the finger, the drag *moves the pick* rather than
+  the camera (lifted 20px clear of the contact point after the first movement so the
+  fingertip stops covering its target), and the lift commits what is showing. A drag past
+  the tap slop before the threshold, or a second finger, means the gesture was about the
+  camera and cancels it. The threshold is a timer, not a frame check — a scene still
+  streaming can be hundreds of ms per frame, and the hold must answer to the finger, not to
+  the renderer.
+
 **Back-channel is defined but dormant.** `SceneServer` can receive masked `'P'`/`'B'`
 world-ray pick frames → `dispatchPick` → `View3DInventorViewer::pickAndSelect`
 (`:3783`), which resolves `ViewProvider` + `subname` and updates `Gui::Selection`. **But
@@ -396,7 +415,9 @@ skeleton:
   (already known locally) + an operation catalog the backend advertises (so it stays in sync
   with real capability, and the same catalog feeds MCP/AI). Appears near the selection.
 - **Context / radial menu** — long-press (touch) or right-click (mouse) opens a DOM popover
-  **anchored to the pick pixel** the client already has; radial layout for thumb reach.
+  **anchored to the pick pixel** the client already has; radial layout for thumb reach. This
+  is the *second* stage of the press: the first (350ms) is already the touch loupe below, so
+  the menu opens over a target the user has been looking at, not one it is about to reveal.
 - **Numeric commit** — an operation in progress (extrude distance, fillet radius) shows a DOM
   numeric field with unit + keypad; drag-on-model gives coarse value, the field gives
   precision. Commit = one `runOp` over the control channel → recompute → snapshot refresh.
