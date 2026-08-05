@@ -1034,7 +1034,7 @@ std::string Document::getTransientDirectoryName(const std::string& uuid, const s
 
 // Newest schema version this build writes. Every entry of
 // getWritableSchemaVersions() is a shape the writer can still produce.
-#define FC_DOC_SCHEMA_VER 5
+#define FC_DOC_SCHEMA_VER 6
 
 void Document::Save (Base::Writer &writer) const
 {
@@ -2680,8 +2680,10 @@ const std::vector<long>& Document::getWritableSchemaVersions()
     // still accepts are deliberately absent: offering to write a shape we
     // cannot build would fail silently at the worst moment.
     // 4 = one archive entry per PropertyFileIncluded. 5 = one entry per
-    // distinct content, shared by every property referring to it.
-    static const std::vector<long> versions {4, FC_DOC_SCHEMA_VER};
+    // distinct content, shared by every property referring to it. 6 = the
+    // view file may state a class's defaults once and write each view
+    // provider as the difference.
+    static const std::vector<long> versions {4, 5, FC_DOC_SCHEMA_VER};
     return versions;
 }
 

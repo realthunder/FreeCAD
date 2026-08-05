@@ -1690,6 +1690,20 @@ void Document::readObject(Base::XMLReader &xmlReader) {
     }
 }
 
+// Deliberately still 1, and the defaults block of schema 6 (see
+// App::Document::getWritableSchemaVersions) does not move it.
+//
+// RestoreDocFile below gates its whole body on `DocumentSchema == 1`, and so
+// does every released build. Writing 2 would therefore not mean "an older
+// FreeCAD reads what it can" -- it would mean an older FreeCAD reads *none*
+// of this file: no view providers, no camera, no saved views. Left at 1, an
+// older build walks past the block it does not recognise and still restores
+// every property the file states per object, which is everything anyone
+// actually changed. Verified by stripping the Defaults attribute from a
+// written file and reading it back (harnesses/defaults_check.py).
+//
+// A future change that an old reader could genuinely mis-parse rather than
+// skip is what should raise this.
 static const int FC_GUI_SCHEMA_VER = 1;
 static const char *FC_XML_GUI_POSTFIX = ".Gui.xml";
 static const char *FC_ATTR_SPLIT_XML = "Split";
@@ -2041,9 +2055,17 @@ void Document::slotShowHidden(const App::Document& doc)
     Application::Instance->signalShowHidden(*this);
 }
 
-void Document::buildDefaults(
+void Document::buildDefaults(Base::Writer &writer,
         std::map<std::string, std::unique_ptr<ViewProvider>> &defaults) const
 {
+    // Two gates, and they answer different questions. Schema 6 is the version
+    // that introduced this block (App::Document::getWritableSchemaVersions);
+    // a document whose SaveSchemaVersion is lower has asked to come out in a
+    // shape an older FreeCAD reads in full, and that outranks any preference.
+    // The parameter is the preference, and only applies once the document has
+    // allowed it.
+    if (writer.getSchemaVersion() < 6)
+        return;
     if (!ViewParams::getSaveViewProviderDefaults())
         return;
 
@@ -2164,7 +2186,7 @@ void Document::SaveDocFile (Base::Writer &writer) const
         // out, not implied, so the document still looks the same opened on a
         // machine whose preferences differ from the author's.
         std::map<std::string, std::unique_ptr<ViewProvider>> defaults;
-        buildDefaults(defaults);
+        buildDefaults(writer, defaults);
 
         // writing the view provider names itself
         writer.Stream() << writer.ind() << "<ViewProviderData Count=\""

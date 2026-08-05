@@ -194,8 +194,10 @@ public:
      * from it. See Gui::Document::saveDefaults for what that buys.
      */
     //@{
-    /// Build one stand-in per view provider class present in this document.
-    void buildDefaults(std::map<std::string, std::unique_ptr<ViewProvider>> &defaults) const;
+    /// Build one stand-in per view provider class present in this document,
+    /// or none at all when the document is being written as an older schema.
+    void buildDefaults(Base::Writer &writer,
+            std::map<std::string, std::unique_ptr<ViewProvider>> &defaults) const;
     /// Write those stand-ins' properties as the block the objects refer to.
     void saveDefaults(Base::Writer &writer,
             const std::map<std::string, std::unique_ptr<ViewProvider>> &defaults) const;

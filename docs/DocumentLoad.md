@@ -179,6 +179,29 @@ empty and every view provider is defaulted for free.
   as well as from the writer, for the same reason: the stand-in cannot
   speak for it.
 
+**File format gating.** This is a format change, so it answers to the
+mechanism that already exists for one. `App::Document` gained schema
+version **6** — `getWritableSchemaVersions()` is now `{4, 5, 6}` — and
+`buildDefaults` writes nothing when `writer.getSchemaVersion() < 6`. A
+user who lowers the document's `SaveSchemaVersion` to keep it readable by
+an older FreeCAD gets the pre-block file shape back, and the
+`SaveViewProviderDefaults` preference cannot override that: the document's
+declaration outranks the preference.
+
+⚠️ **The Gui file's own `SchemaVersion` stays 1**, deliberately.
+`Gui::Document::RestoreDocFile` gates its whole body on
+`DocumentSchema == 1`, and so does every released build — so writing 2
+would not mean "an older FreeCAD reads what it can", it would mean an
+older FreeCAD reads *none* of the view file: no view providers, no
+camera, no saved views. Left at 1, an older build walks past the
+`<Defaults>` element it does not recognise and still restores every
+property the file states per object — which is everything anyone actually
+changed. Checked rather than assumed: `defaults_check.py` strips the
+`Defaults` attribute from a written file, keeping the block, and confirms
+that a reader blind to it loses **0** of the touched properties. What
+should raise that number is a future change an old reader could
+mis-parse rather than skip.
+
 **A class needs three instances** before a block is written. A block is
 one class's whole property set, so below that it costs more than the
 instances can save — a nine-object document came out 4% *larger* before
