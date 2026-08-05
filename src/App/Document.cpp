@@ -1579,6 +1579,7 @@ Document::readObjects(Base::XMLReader& reader)
     }
 
     long lastId = 0;
+    FC_TIME_INIT(t);
     for (int i=0 ;i<Cnt ;i++) {
         reader.readElement("Object");
         std::string type = reader.getAttribute("type");
@@ -1657,6 +1658,8 @@ Document::readObjects(Base::XMLReader& reader)
         d->lastObjectId = lastId;
 
     reader.readEndElement("Objects");
+    FC_DURATION_PLUS(d->restoreTiming.create, t);
+    d->restoreTiming.objectCount += objs.size();
     setStatus(Document::KeepTrailingDigits, keepDigits);
 
     // read the features itself
@@ -1665,6 +1668,7 @@ Document::readObjects(Base::XMLReader& reader)
     reader.readElement("ObjectData");
     Cnt = reader.getAttributeAsInteger("Count");
     std::string objName;
+    _FC_TIME_INIT(t);
     try {
         for (int i=0 ;i<Cnt ;i++) {
             int guard;
@@ -1679,6 +1683,7 @@ Document::readObjects(Base::XMLReader& reader)
         throw;
     }
     reader.readEndElement("ObjectData");
+    FC_DURATION_PLUS(d->restoreTiming.data, t);
 
     return objs;
 }
@@ -2425,6 +2430,9 @@ void Document::restore(Base::XMLReader &reader,
     GetApplication().signalStartRestoreDocument(*this);
     setStatus(Document::Restoring, true);
 
+    d->restoreTiming.clear();
+    FC_TIME_INIT(tRestore);
+
     // Claim the included-file entries out of the archive. The properties that
     // refer to them queue up as they are parsed and are served once the
     // entries have been drained, which readFiles() does before anything else.
@@ -2451,7 +2459,12 @@ void Document::restore(Base::XMLReader &reader,
     // without GUI. But if available then follow after all data files of the App document.
     signalRestoreDocument(reader);
 
+    FC_DURATION_DECL_INIT(dXml);
+    FC_DURATION_PLUS(dXml, tRestore);
+
+    FC_TIME_INIT(tFiles);
     reader.readFiles();
+    FC_DURATION_PLUS(d->restoreTiming.files, tFiles);
 
     // Hand the restored content to the properties waiting for it. Referrers
     // that appear later -- a view document replayed from its embedded string
@@ -2469,8 +2482,30 @@ void Document::restore(Base::XMLReader &reader,
         Base::Console().Error("There were errors while loading the file. Some data might have been modified or not recovered at all. Look above for more specific information about the objects involved.\n");
     }
 
-    if(!delaySignal)
+    FC_DURATION_DECL_INIT(dAfter);
+    if(!delaySignal) {
+        FC_TIME_INIT(tAfter);
         afterRestore();
+        FC_DURATION_PLUS(dAfter, tAfter);
+    }
+
+    // One line per load, split by stage. 'xml' is the whole Document.xml pass,
+    // of which 'create' (the <Objects> pass that instantiates each object) and
+    // 'data' (the <ObjectData> pass that restores properties) are the parts
+    // worth separating; 'files' is the archive bulk -- shapes and anything
+    // else that queued an addFile(); 'after' is the link/expression fixup, and
+    // carries the Gui visual build with it when a Gui document is attached --
+    // but only when this call ran it. Opening a document defers it, and
+    // Application::openDocuments then times it as 'postprocess'.
+    auto &rt = d->restoreTiming;
+    FC_LOG("restore " << getName() << ": " << rt.objectCount << " objects, "
+            << d->files.size() << " files"
+            << ", xml " << dXml.count()
+            << " (create " << rt.create.count()
+            << ", data " << rt.data.count() << ')'
+            << ", files " << rt.files.count()
+            << ", after " << dAfter.count()
+            << ", total " << (dXml + rt.files + dAfter).count() << 's');
 }
 
 bool Document::afterRestore(bool checkPartial) {

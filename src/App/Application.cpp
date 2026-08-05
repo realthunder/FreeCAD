@@ -768,6 +768,12 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
     std::map<DocumentT, DocTiming> timings;
 
     FC_TIME_INIT(t);
+    // Two stages that sit outside the per-document restore/postprocess pair
+    // and are big enough at scale to be worth naming: attaching external
+    // links, and everything the open still does once the documents are back
+    // (activation, and whatever the GUI hangs off it).
+    FC_DURATION_DECL_INIT2(dLinks, dSort);
+    FC_DURATION_DECL_INIT2(dClose, dFinish);
 
     std::vector<DocumentT> openedDocs;
 
@@ -865,6 +871,7 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
 
         std::vector<Document*> docs;
         docs.reserve(newDocs.size());
+        FC_TIME_INIT(tLinks);
         for(const auto &d : newDocs) {
             auto doc = d.getDocument();
             if(!doc)
@@ -874,7 +881,9 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
             PropertyXLink::restoreDocument(*doc);
             docs.push_back(doc);
         }
+        FC_DURATION_PLUS(dLinks, tLinks);
 
+        FC_TIME_INIT(tSeq);
         Base::SequencerLauncher seq("Postprocessing...", docs.size());
 
         // After external links has been restored, we can now sort the document
@@ -884,6 +893,7 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
         } catch (Base::Exception &e) {
             e.ReportException();
         }
+        FC_DURATION_PLUS(dSort, tSeq);
         for(auto it=docs.begin(); it!=docs.end();) {
             auto doc = *it;
 
@@ -917,10 +927,14 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
             seq.next();
         }
         // Close the document for reloading
+        FC_TIME_INIT(tClose);
         for(const auto doc : docs)
             closeDocument(doc->getName());
+        FC_DURATION_PLUS(dClose, tClose);
 
     }while(!_pendingDocs.empty());
+
+    FC_TIME_INIT(tFinish);
 
     // Set the active document using the first successfully restored main
     // document (i.e. documents explicitly asked for by caller).
@@ -930,12 +944,17 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
             break;
         }
     }
+    FC_DURATION_PLUS(dFinish, tFinish);
 
     for (auto &doc : openedDocs) {
         auto &timing = timings[doc];
         FC_DURATION_LOG(timing.d1, doc.getDocumentName() << " restore");
         FC_DURATION_LOG(timing.d2, doc.getDocumentName() << " postprocess");
     }
+    FC_DURATION_LOG(dLinks, "external links");
+    FC_DURATION_LOG(dSort, "dependency sort");
+    FC_DURATION_LOG(dClose, "reload close");
+    FC_DURATION_LOG(dFinish, "activate");
     FC_TIME_LOG(t,"total");
     _isRestoring = false;
 

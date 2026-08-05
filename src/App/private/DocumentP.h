@@ -35,6 +35,7 @@
 #include <boost/bimap.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/bimap.hpp>
+#include <chrono>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -105,6 +106,19 @@ struct DocumentP
 
     // restored files
     std::set<std::string> files;
+
+    /// Where the last restore() spent its time, reported as one line when it
+    /// finishes. Split by stage so a load can be attributed without a
+    /// profiler: the two XML passes, the archive bulk, and the fixup after.
+    struct RestoreTiming {
+        std::chrono::duration<double> create {0};
+        std::chrono::duration<double> data {0};
+        std::chrono::duration<double> files {0};
+        std::size_t objectCount = 0;
+
+        void clear() { *this = RestoreTiming(); }
+    };
+    RestoreTiming restoreTiming;
 
     DocumentP();
 

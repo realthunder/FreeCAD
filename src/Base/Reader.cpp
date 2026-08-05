@@ -24,7 +24,9 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <map>
 #include <memory>
+#include <sstream>
 #include <xercesc/sax2/XMLReaderFactory.hpp>
 #endif
 
@@ -762,7 +764,19 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
     const auto &FileList = xmlReader.getFileList();
     std::size_t it = 0;
     Base::SequencerLauncher seq("Importing project files...", FileList.size());
+
+    // Attribution for the archive stage. 'advance' is what the forward-only
+    // stream costs on its own -- inflating past entries nobody reads --
+    // separated from the parse each owner does, which is broken out by
+    // extension because one archive mixes shape data, a nested XML document
+    // and tens of thousands of near-empty property files.
+    FC_DURATION_DECL_INIT(dAdvance);
+    std::map<std::string, std::pair<std::size_t, FC_DURATION>> kinds;
+    std::size_t entryCount = 0;
+    FC_TIME_INIT(tAdvance);
+
     while (entry->isValid()) {
+        ++entryCount;
         // Entries nobody registered for may still have an owner -- shared
         // included files are written once and referred to from anywhere, so
         // they cannot take part in the ordered match below. Offer them first;
@@ -792,6 +806,7 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
         // If this condition is true both file names match and we can read-in the data, otherwise
         // no file name for the current entry in the zip was registered.
         if (jt < FileList.size()) {
+            FC_DURATION_PLUS(dAdvance, tAdvance);
             try {
                 Base::ZipReader zipreader(_stream, FileList[jt].FileName, &xmlReader);
                 FileList[jt].Object->RestoreDocFile(zipreader);
@@ -810,6 +825,12 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
                 // failure.
                 FC_ERR("Reading failed from embedded file: " << FileList[jt].FileName);
             }
+            const auto &fname = FileList[jt].FileName;
+            auto pos = fname.rfind('.');
+            auto &kind = kinds[pos == std::string::npos ? std::string("(none)")
+                                                       : fname.substr(pos + 1)];
+            ++kind.first;
+            kind.second += Base::GetDuration(tAdvance);
             // Go to the next registered file name
             it = jt + 1;
         }
@@ -824,6 +845,17 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
             // there is no further entry
             break;
         }
+    }
+
+    FC_DURATION_PLUS(dAdvance, tAdvance);
+    if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+        std::stringstream ss;
+        ss << "readFiles " << getFileName() << ": " << entryCount << " entries, "
+           << FileList.size() << " registered, advance " << dAdvance.count() << 's';
+        for (const auto &v : kinds)
+            ss << ", " << v.first << ' ' << v.second.first << '/'
+               << v.second.second.count() << 's';
+        FC_LOG(ss.str());
     }
 }
 

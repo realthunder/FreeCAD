@@ -137,6 +137,13 @@ struct DocumentP
     // cache map from view provider to its 3D claimed children
     std::unordered_map<const ViewProvider*,std::vector<App::DocumentObject*> > _ChildrenMap;
 
+    // Gui-side share of a document load: the per-object finishRestoring()
+    // calls, counted so the App restore line can be read against them, and
+    // split from the scene-graph work that follows each one.
+    FC_DURATION _restoreVpTime {0};
+    FC_DURATION _restoreSceneTime {0};
+    std::size_t _restoreVpCount = 0;
+
     // Reference counted view providers that are 3D claimed by other object.
     // These view providers shouldn't appear at secen graph root.
     std::unordered_map<const ViewProvider*, int> _ClaimedViewProviders;
@@ -1766,17 +1773,25 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
         return;
     // disable this signal while loading a document
     d->connectActObjectBlocker.block();
+    d->_restoreVpTime = d->_restoreSceneTime = FC_DURATION(0);
+    d->_restoreVpCount = 0;
+    ViewProvider::VisualBuildTime = ViewProvider::VisualMeshTime = FC_DURATION(0);
+    ViewProvider::VisualBuildCount = 0;
 }
 
 void Document::slotFinishRestoreObject(const App::DocumentObject &obj) {
     auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(getViewProvider(&obj));
     if(vpd) {
+        FC_TIME_INIT(t);
         vpd->setStatus(Gui::isRestoring,false);
         vpd->finishRestoring();
+        FC_DURATION_PLUS(d->_restoreVpTime, t);
         if(!vpd->canAddToSceneGraph())
             toggleInSceneGraph(vpd);
         else if (vpd->Visibility.getValue())
             vpd->setModeSwitch();
+        FC_DURATION_PLUS(d->_restoreSceneTime, t);
+        ++d->_restoreVpCount;
     }
 }
 
@@ -1785,7 +1800,18 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
     if (d->_pcDocument != &doc)
         return;
 
+    FC_TIME_INIT(t);
     slotFinishImportObjects(doc.getObjects());
+    // The two Gui costs a load carries inside App's 'after' stage: the
+    // per-object finishRestoring() calls that ran as the objects were
+    // signalled, and this showable/children refresh over the whole document.
+    FC_LOG("restore " << doc.getName() << " gui: " << d->_restoreVpCount
+            << " view providers " << d->_restoreVpTime.count()
+            << "s (visual build " << ViewProvider::VisualBuildCount << '/'
+            << ViewProvider::VisualBuildTime.count() << "s, of which mesh "
+            << ViewProvider::VisualMeshTime.count() << "s)"
+            << ", scene " << d->_restoreSceneTime.count()
+            << "s, refresh " << Base::GetDuration(t).count() << 's');
 
     d->connectActObjectBlocker.unblock();
     App::DocumentObject* act = doc.getActiveObject();
