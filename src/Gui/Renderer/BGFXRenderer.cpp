@@ -13615,6 +13615,12 @@ std::unique_ptr<Renderer> BGFXRendererLib::create(
     }
     if (_BGFXLib.currentType != it->second) {
         for (auto renderer : _BGFXLib.renderers) {
+            // A publish-only renderer owns no device state, so the
+            // backend switch has nothing of its to tear down -- and
+            // deinit() is permanent: it would leave a served document
+            // publishing into a dead renderer with no diagnostic.
+            if (renderer->publishOnly)
+                continue;
             if (renderer->type != it->second)
                 renderer->deinit();
         }
