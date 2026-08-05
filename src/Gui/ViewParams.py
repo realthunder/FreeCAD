@@ -467,14 +467,17 @@ Params = [
         "small ones costs a few entries of memory each and is what stops\n"
         "that. The large ones are the copies of whole subtrees, which is the\n"
         "memory this bounds. Set zero to keep none."),
-    ParamInt('RenderCacheIncremental',  0,
+    ParamInt('RenderCacheIncremental',  1,
         "Splice a rebuilt object's flattened vertex cache map from the map\n"
         "of the publish before it, instead of merging every child again. A\n"
         "container holding thousands of objects re-derives all of them on\n"
         "every publish however few moved, and the merge is priced per child\n"
-        "rather than per entry. 0 rebuilds (the old behaviour), 1 splices,\n"
-        "2 splices and also rebuilds wholesale to compare the two, logging\n"
-        "any disagreement -- slow, for checking the splice, not for use."),
+        "rather than per entry. It costs memory, because the map of the\n"
+        "previous publish has to survive the traversal that replaces it:\n"
+        "on a 17800-object assembly, 49MB against 45% off the flatten.\n"
+        "0 rebuilds (the old behaviour), 1 splices, 2 splices and also\n"
+        "rebuilds wholesale to compare the two, logging any disagreement\n"
+        "-- slow, for checking the splice, not for use."),
     ParamInt('RenderCacheMeshReuse',  1,
         "Reuse the mesh a vertex cache was translated into for the backend,\n"
         "instead of translating it again on every publish. A vertex cache is\n"

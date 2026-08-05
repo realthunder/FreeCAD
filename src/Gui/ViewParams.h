@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:537)
+// Auto generated code (Gui/ViewParams.py:540)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -1904,9 +1904,12 @@ public:
     /// of the publish before it, instead of merging every child again. A
     /// container holding thousands of objects re-derives all of them on
     /// every publish however few moved, and the merge is priced per child
-    /// rather than per entry. 0 rebuilds (the old behaviour), 1 splices,
-    /// 2 splices and also rebuilds wholesale to compare the two, logging
-    /// any disagreement -- slow, for checking the splice, not for use.
+    /// rather than per entry. It costs memory, because the map of the
+    /// previous publish has to survive the traversal that replaces it:
+    /// on a 17800-object assembly, 49MB against 45% off the flatten.
+    /// 0 rebuilds (the old behaviour), 1 splices, 2 splices and also
+    /// rebuilds wholesale to compare the two, logging any disagreement
+    /// -- slow, for checking the splice, not for use.
     static const long & getRenderCacheIncremental();
     static const long & defaultRenderCacheIncremental();
     static void removeRenderCacheIncremental();
@@ -2156,7 +2159,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:543)
+    // Auto generated code (Gui/ViewParams.py:546)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2184,7 +2187,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:553)
+// Auto generated code (Gui/ViewParams.py:556)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

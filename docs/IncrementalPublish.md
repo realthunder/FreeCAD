@@ -309,7 +309,8 @@ change should not be re-inserted at all.
 
 ## 4c. The splice, measured
 
-`RenderCacheIncremental` (default 0, off). With it on, a rebuilt cache
+`RenderCacheIncremental` (default 1 since the gate of §4e; 0 turns it
+off). With it on, a rebuilt cache
 inherits the map its predecessor built and derives only the children
 that predecessor did not hold.
 
@@ -350,11 +351,11 @@ children of a container, and over a whole 6002-object progressive
 import. The rendered transcripts at 0 and 1 are identical step for step,
 on a probe where 10 of 12 steps move the frame.
 
-**Still off by default.** The evidence above is this workstream's own
-harnesses; the fork's own 272M-triangle gate has never completed a run
-(see the note at the end of §4b about what the import harness can and
-cannot show). Turning it on wants that run first — the memory figure is
-the one to watch, since it grows with hierarchy depth.
+**On by default since 2026-08-05.** It was held back because the
+evidence above is this workstream's own harnesses and the memory figure
+grows with hierarchy depth, so it wanted the fork's own 272M-triangle
+model first. §4e is that run: 45% off the flatten for +49MB (+0.7%) of
+peak RSS, with the verify mode clean at scale.
 
 ### 4c-i. The match, asked once
 
@@ -688,7 +689,7 @@ up rather than being assumed.
    from its predecessor's (15ms → 10ms flat, 26-29ms → 7ms over four
    levels), and §4c-i stops the splice re-deriving the child match the
    change set made in the same publish (10 → 5ms flat, nested unchanged).
-   Off by default pending the large-model run.
+   On by default since the §4e gate.
 4. Incremental translate (38%): §4d ablated the stage and found most of
    it was not incremental *work* at all but repetition — every vertex
    cache re-translated into a backend mesh every publish. Keeping those

@@ -553,7 +553,7 @@ public:
         funcs["RenderCacheMergeDepthMin"] = &ViewParamsP::updateRenderCacheMergeDepthMin;
         RenderCacheKeepMax = this->handle->GetInt("RenderCacheKeepMax", 32);
         funcs["RenderCacheKeepMax"] = &ViewParamsP::updateRenderCacheKeepMax;
-        RenderCacheIncremental = this->handle->GetInt("RenderCacheIncremental", 0);
+        RenderCacheIncremental = this->handle->GetInt("RenderCacheIncremental", 1);
         funcs["RenderCacheIncremental"] = &ViewParamsP::updateRenderCacheIncremental;
         RenderCacheMeshReuse = this->handle->GetInt("RenderCacheMeshReuse", 1);
         funcs["RenderCacheMeshReuse"] = &ViewParamsP::updateRenderCacheMeshReuse;
@@ -1261,7 +1261,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderCacheIncremental(ViewParamsP *self) {
-        self->RenderCacheIncremental = self->handle->GetInt("RenderCacheIncremental", 0);
+        self->RenderCacheIncremental = self->handle->GetInt("RenderCacheIncremental", 1);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderCacheMeshReuse(ViewParamsP *self) {
@@ -5737,9 +5737,12 @@ const char *ViewParams::docRenderCacheIncremental() {
 "of the publish before it, instead of merging every child again. A\n"
 "container holding thousands of objects re-derives all of them on\n"
 "every publish however few moved, and the merge is priced per child\n"
-"rather than per entry. 0 rebuilds (the old behaviour), 1 splices,\n"
-"2 splices and also rebuilds wholesale to compare the two, logging\n"
-"any disagreement -- slow, for checking the splice, not for use.");
+"rather than per entry. It costs memory, because the map of the\n"
+"previous publish has to survive the traversal that replaces it:\n"
+"on a 17800-object assembly, 49MB against 45% off the flatten.\n"
+"0 rebuilds (the old behaviour), 1 splices, 2 splices and also\n"
+"rebuilds wholesale to compare the two, logging any disagreement\n"
+"-- slow, for checking the splice, not for use.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -5749,7 +5752,7 @@ const long & ViewParams::getRenderCacheIncremental() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const long & ViewParams::defaultRenderCacheIncremental() {
-    const static long def = 0;
+    const static long def = 1;
     return def;
 }
 
@@ -6335,7 +6338,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:569)
+// Auto generated code (Gui/ViewParams.py:572)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6380,7 +6383,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:577)
+// Auto generated code (Gui/ViewParams.py:580)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6394,7 +6397,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:587)
+// Auto generated code (Gui/ViewParams.py:590)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -6408,13 +6411,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:597)
+// Auto generated code (Gui/ViewParams.py:600)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:604)
+// Auto generated code (Gui/ViewParams.py:607)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6422,7 +6425,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:613)
+// Auto generated code (Gui/ViewParams.py:616)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6434,7 +6437,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:626)
+// Auto generated code (Gui/ViewParams.py:629)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)
