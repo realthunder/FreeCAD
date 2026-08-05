@@ -805,6 +805,12 @@ public:
     float ssaoResolution = 1.0f;
     std::unordered_map<QOpenGLWidget *, std::unique_ptr<BGFXView>> views;
     std::set<uint16_t> viewIds;
+    // Whether the "out of bgfx view ids" refusal has already been
+    // reported. getView() is asked once per frame per viewer, so without
+    // this the message would repeat for as long as the extra viewer is
+    // open. Cleared whenever a block is returned (removeView), so the
+    // next viewer that does not fit says so again.
+    bool warnedViewBudget = false;
 
     std::map<std::string, RendererType::Enum> typeMap = {
 #ifdef FC_RENDERER_STANDALONE
@@ -13012,6 +13018,7 @@ void BGFXRendererLibP::removeView(QOpenGLWidget *widget)
     if (it != views.end()) {
         viewIds.erase(it->second->viewId);
         views.erase(it);
+        warnedViewBudget = false;
         if (views.empty())
             _BGFXLib.shutdown();
     }
@@ -13024,18 +13031,45 @@ BGFXView *BGFXRendererLibP::getView(QOpenGLWidget *widget, RendererType::Enum ty
 
     auto &view = views[widget];
     if (!view) {
-        view.reset(new BGFXView);
-        view->widget = widget;
         // Each viewer consumes a contiguous block of NUM_VIEWS bgfx view
         // ids; viewIds stores the block base ids.
-        view->viewId = 0;
+        uint16_t base = 0;
         for (int id : viewIds) {
-            if (view->viewId == id)
-                view->viewId += BGFXView::NUM_VIEWS;
+            if (base == id)
+                base += BGFXView::NUM_VIEWS;
             else
                 break;
         }
-        viewIds.insert(view->viewId);
+        // bgfx keeps a fixed table of views and traps -- an assert, then
+        // a fatal that aborts the process -- the first time a submission
+        // names an id past it. So a viewer that does not fit the budget
+        // has to be refused here, not handed a block whose tail is out
+        // of range: the crash used to arrive on the third viewer, from
+        // inside a draw call, with nothing pointing at view ids.
+        //
+        // render() treats a null view as "nothing drawn this frame" and
+        // Coin still composites the scene graph afterwards, so the
+        // viewer that misses out falls back to the Coin path rather
+        // than taking the session down with it.
+        const uint32_t maxViews = bgfx::getCaps()->limits.maxViews;
+        if (uint32_t(base) + BGFXView::NUM_VIEWS > maxViews) {
+            views.erase(widget);
+            if (!warnedViewBudget) {
+                warnedViewBudget = true;
+                RENDER_ERR("Out of bgfx view ids: "
+                           << views.size() << " viewer(s) hold "
+                           << base << " of " << maxViews
+                           << " ids, and each one needs "
+                           << (int)BGFXView::NUM_VIEWS
+                           << ". This view falls back to Coin rendering; "
+                              "close another 3D view to get it back.");
+            }
+            return nullptr;
+        }
+        view.reset(new BGFXView);
+        view->widget = widget;
+        view->viewId = base;
+        viewIds.insert(base);
     }
     return view.get();
 }
