@@ -8370,6 +8370,46 @@ public:
         snap.clearColor = clearColor;
     }
 
+    /// A cheap identity of what the feeds currently hold — which draws,
+    /// of what, over which geometry. Two consecutive frames with the
+    /// same one are a scene that has stopped arriving; that is the
+    /// condition a dump meant for comparison waits on
+    /// (FC_BGFX_DUMP_SCENE_SETTLE). It deliberately reads identity
+    /// (cacheId, objectKey) rather than content: the point is to notice
+    /// that something changed, and a counter that moves on every
+    /// re-tessellation notices more, not less.
+    uint64_t sceneFingerprint() const
+    {
+        uint64_t hash = 1469598103934665603ull;   // FNV-1a
+        auto mix = [&hash](uint64_t value) {
+            hash = (hash ^ value) * 1099511628211ull;
+        };
+        auto mixDraws = [&mix](const Render::DrawCallList &draws) {
+            mix(draws.size());
+            for (const auto &draw : draws) {
+                mix(draw.objectKey);
+                mix(uint64_t(draw.material.diffuse));
+                mix(uint64_t(draw.partIndex));
+                if (draw.mesh) {
+                    mix(draw.mesh->cacheId);
+                    mix(uint64_t(draw.mesh->generation));
+                    mix(uint64_t(draw.mesh->numVertices));
+                }
+            }
+        };
+        mixDraws(scene);
+        mixDraws(highlight);
+        for (const auto &sel : selections) {
+            mix(uint64_t(sel.first));
+            mixDraws(sel.second);
+        }
+        for (const auto &ov : overlays) {
+            mix(uint64_t(ov.first));
+            mixDraws(ov.second.draws);
+        }
+        return hash;
+    }
+
     /// FC_BGFX_DUMP_SCENE=<path>: snapshot the first non-empty scene
     /// feed with all per-frame configs and the camera for the
     /// standalone/wasm viewer (SceneDump.h).
@@ -8377,6 +8417,17 @@ public:
     /// frames, and FC_BGFX_DUMP_SCENE_SEL=1 additionally waits for a
     /// non-empty selection feed, so later state (a selection made by
     /// a script) is in the capture.
+    /// FC_BGFX_DUMP_SCENE_SETTLE=<n> waits for the feeds to stop
+    /// changing for n consecutive frames first, which is what a dump
+    /// meant for comparison wants: a document does not arrive all at
+    /// once (objects are added, tessellated, recoloured, and a
+    /// coarse-first load refines rungs afterwards), so a dump taken a
+    /// fixed number of frames in captures how far the build had got.
+    /// Measured on a 40-object scene: three runs of one script, three
+    /// different scenes -- 2159580, 2310620 and 2454636 bytes. Nothing
+    /// downstream can tell that from a real difference, because a
+    /// bundled dump carries no level information at all. Not for an
+    /// animated scene, which never settles by construction.
     ///
     /// Written with no chunk/mesh/texture sinks installed, so the file
     /// is monolithic and self-contained — unlike a published manifest,
@@ -8390,15 +8441,34 @@ public:
                         const void *projMatrix,
                         uint16_t width,
                         uint16_t height,
-                        uint32_t clearColor)
+                        uint32_t clearColor,
+                        bool dirtyChanged)
     {
         static const char *dumpPath = getenv("FC_BGFX_DUMP_SCENE");
         static const char *dumpDelay = getenv("FC_BGFX_DUMP_SCENE_DELAY");
         static const bool dumpSel = getenv("FC_BGFX_DUMP_SCENE_SEL") != nullptr;
+        static const char *dumpSettle = getenv("FC_BGFX_DUMP_SCENE_SETTLE");
+        static const int settleFrames = dumpSettle ? atoi(dumpSettle) : 0;
+
+        // What re-arms the wait is the scene's *content* changing, not
+        // the dirty flag: the per-frame config push (SoFCRenderer's ~20
+        // setters) leaves something dirty on essentially every frame, so
+        // "nothing is dirty" is a state a live viewer never reaches.
+        // A fingerprint of what the draws are does reach it.
+        (void)dirtyChanged;
+        const uint64_t print = sceneFingerprint();
+        if (print != dumpFingerprint) {
+            dumpFingerprint = print;
+            dumpQuietFrames = 0;
+        }
+        else
+            ++dumpQuietFrames;
+
         if (dumpPath && *dumpPath && !sceneDumped
                 && !(scene.empty() && overlays.empty())
                 && ++dumpFrames > (dumpDelay ? atoi(dumpDelay) : 0)
-                && (!dumpSel || !selections.empty())) {
+                && (!dumpSel || !selections.empty())
+                && dumpQuietFrames >= settleFrames) {
             sceneDumped = true;
             Render::SceneSnapshot snap;
             makeSnapshot(snap, viewMatrix, projMatrix, width, height,
@@ -8604,7 +8674,8 @@ public:
         // The scene dump is the diffable form of a publish, so it has
         // to be reachable without a frame — it is how a view-less
         // source is checked against a real viewer.
-        maybeDumpScene(viewMatrix, projMatrix, width, height, clearColor);
+        maybeDumpScene(viewMatrix, projMatrix, width, height, clearColor,
+                       dirtyChanged);
         publishScene(viewMatrix, projMatrix, width, height, clearColor,
                      dirtyChanged);
         return true;
@@ -8721,7 +8792,8 @@ public:
         if (getenv("FC_BGFX_DEBUG_CLEAR"))
             clearColor = 0xff0000ff;
 
-        maybeDumpScene(viewMatrix, projMatrix, width, height, clearColor);
+        maybeDumpScene(viewMatrix, projMatrix, width, height, clearColor,
+                       dirtyChanged);
 
 #ifndef FC_RENDERER_STANDALONE
         // Desktop level plan (§13 step 2): feed the settle detector
@@ -12810,6 +12882,10 @@ public:
     bool dumpPending = false;
     Render::RenderStats lastStats;
     bool sceneDumped = false;   ///< FC_BGFX_DUMP_SCENE fired
+    /// Frames since the feeds last changed, and the fingerprint that is
+    /// measured against, for FC_BGFX_DUMP_SCENE_SETTLE.
+    int dumpQuietFrames = 0;
+    uint64_t dumpFingerprint = 0;
     int dumpFrames = 0;         ///< non-empty frames seen (dump delay)
     bool serveStarted = false;  ///< FC_BGFX_SERVE_SCENE start attempted
     bool scenePublished = false;///< at least one payload published
