@@ -663,31 +663,6 @@ PyObject* View3DInventorPy::saveVectorGraphic(PyObject *args)
     Py_Return;
 }
 
-/// Pump paint events until the armed one-shot frame dump is consumed
-/// by a rendered frame (docs/RenderDebug.md §4.2); false on timeout.
-static bool pumpFrameDump(View3DInventorViewer *viewer,
-                          Render::Renderer *renderer)
-{
-    QElapsedTimer timer;
-    timer.start();
-    for (;;) {
-        // Processing events can run scene/view scripts that destroy and
-        // recreate the external renderer (e.g. a renderer-type or MSAA
-        // parameter change) — re-validate the pointer every iteration
-        // instead of touching a potentially dangling one.
-        Render::Renderer *current = viewer->getExternalRenderer();
-        if (!current || current != renderer)
-            return false;
-        if (!renderer->frameDumpPending())
-            return true;
-        if (timer.elapsed() >= 5000)
-            return false;
-        if (auto rm = viewer->getSoRenderManager())
-            rm->scheduleRedraw();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    }
-}
-
 /// JSON value of a view property for the capture sidecar: native for
 /// bool/int/float/string properties, str() otherwise.
 static QJsonValue propertyJsonValue(App::Property *prop)
@@ -840,7 +815,7 @@ PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)
             req.mode = mode;
             if (!renderer->requestFrameDump(req))
                 throw Py::RuntimeError("Render backend has no frame capture");
-            if (!pumpFrameDump(viewer, renderer))
+            if (!viewer->pumpFrameDump(renderer))
                 throw Py::RuntimeError("Frame capture timed out");
             Render::RenderStats stats;
             renderer->getRenderStats(stats);
@@ -862,10 +837,13 @@ PyObject* View3DInventorPy::saveRenderDump(PyObject *args, PyObject *kwds)
                 throw Py::RuntimeError("View has no GL widget");
             const qreal dpr = glWidget->devicePixelRatioF();
             QImage img;
-            viewer->savePicture(int(glWidget->width() * dpr),
-                                int(glWidget->height() * dpr),
-                                View3DInventorViewer::getNumSamples(),
-                                QColor(), img);
+            // The composited GL frame specifically -- not savePicture,
+            // which sends a backend-rendered view to source='renderer'
+            // and would make these two sources the same capture.
+            viewer->imageFromFramebuffer(int(glWidget->width() * dpr),
+                                         int(glWidget->height() * dpr),
+                                         View3DInventorViewer::getNumSamples(),
+                                         QColor(), img);
             if (img.isNull()
                     || !img.save(QString::fromUtf8(path.c_str())))
                 throw Py::RuntimeError("Cannot write image: " + path);
@@ -974,7 +952,7 @@ PyObject* View3DInventorPy::getRenderStats(PyObject *args)
         Render::FrameDumpRequest req;    // stats-only readback, no file
         if (!renderer->requestFrameDump(req))
             throw Py::RuntimeError("Render backend has no frame capture");
-        if (!pumpFrameDump(viewer, renderer))
+        if (!viewer->pumpFrameDump(renderer))
             throw Py::RuntimeError("Frame capture timed out");
         Render::RenderStats stats;
         if (!renderer->getRenderStats(stats))

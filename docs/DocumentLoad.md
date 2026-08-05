@@ -110,9 +110,11 @@ the settled scene is **byte-identical** between the two paths, and
 `getRenderStats()` agrees to the last decimal. The plain-Coin path (render
 cache 0) was checked too — 17.8s open, correct render, queue drained.
 
-⚠️ `saveImage` cannot see what the external backend drew: both paths
-capture a blank frame that way, which proves nothing. Use
-`saveRenderDump(source='renderer')`.
+⚠️ At the time of that comparison `saveImage` could not see what the
+external backend drew — both paths captured a blank frame, which proves
+nothing — so `saveRenderDump(source='renderer')` was used instead.
+`saveImage` now routes through the same backend readback when a backend
+is active, and either is a valid check.
 
 The total work is not reduced — it is moved off the blocking window.
 Time-to-window is what changed, and that is the thing a user waits on.

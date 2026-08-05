@@ -82,6 +82,8 @@
 # include <Inventor/nodes/SoTexture2.h>
 # include <QApplication>
 # include <QBitmap>
+# include <QCoreApplication>
+# include <QDir>
 # include <QElapsedTimer>
 # include <QPointer>
 # include <QEventLoop>
@@ -89,6 +91,7 @@
 # include <QMessageBox>
 # include <QMimeData>
 # include <QFileInfo>
+# include <QTemporaryFile>
 # include <QTimer>
 # include <QVariantAnimation>
 # include <QWheelEvent>
@@ -3141,6 +3144,20 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
 
 void View3DInventorViewer::savePicture(int width, int height, int sample, const QColor& bg, QImage& img) const
 {
+    // An external render backend draws the scene from its own feeds into
+    // its own targets; the Coin scene graph it was fed from renders to
+    // nothing. Every route below would therefore return the frame with the
+    // model missing, so the capture goes through the backend's own one-shot
+    // dump instead (docs/RenderDebug.md §4) -- which is the composed frame,
+    // overlays and background included.
+    if (getExternalRenderer()) {
+        auto self = const_cast<View3DInventorViewer*>(this);  // NOLINT
+        if (self->imageFromRenderer(width, height, bg, img))
+            return;
+        Base::Console().Warning("Render backend frame capture failed; "
+                                "falling back to the plain GL capture\n");
+    }
+
     // Save picture methods:
     // FramebufferObject -- viewer renders into FBO (no offscreen)
     // CoinOffscreenRenderer -- Coin's offscreen rendering method
@@ -3799,6 +3816,86 @@ void View3DInventorViewer::imageFromFramebuffer(int width, int height, int sampl
     setBackgroundColor(col);
     setGradientBackground(grad);
     img = fbo.toImage();
+}
+
+bool View3DInventorViewer::pumpFrameDump(Render::Renderer *renderer)
+{
+    if (!renderer)
+        return false;
+    QElapsedTimer timer;
+    timer.start();
+    for (;;) {
+        // Processing events can run scene/view scripts that destroy and
+        // recreate the external renderer (e.g. a renderer-type or MSAA
+        // parameter change) — re-validate the pointer every iteration
+        // instead of touching a potentially dangling one.
+        Render::Renderer *current = getExternalRenderer();
+        if (!current || current != renderer)
+            return false;
+        if (!renderer->frameDumpPending())
+            return true;
+        if (timer.elapsed() >= 5000)
+            return false;
+        if (auto rm = getSoRenderManager())
+            rm->scheduleRedraw();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+}
+
+bool View3DInventorViewer::imageFromRenderer(int width, int height,
+                                             const QColor& bgcolor, QImage& img)
+{
+    Render::Renderer *renderer = getExternalRenderer();
+    if (!renderer)
+        return false;
+
+    // Raw PPM: the dump writes it without an encoder and Qt reads it back
+    // directly, so a screenshot does not pay for a PNG round trip.
+    QTemporaryFile tmp(QDir::temp().filePath(
+                QStringLiteral("FreeCAD-capture-XXXXXX.ppm")));
+    tmp.setAutoRemove(true);
+    if (!tmp.open())
+        return false;
+    const QString path = tmp.fileName();
+    tmp.close();
+
+    // The backend paints the background itself, from what the viewer hands
+    // it each frame — so an asked-for background is set for the captured
+    // frame the same way the offscreen path sets it. It is painted opaque:
+    // a capture asking for a transparent background gets a solid one, the
+    // frame having been composed before it is read back.
+    const QColor col = backgroundColor();
+    auto grad = getGradientBackground();
+    if (bgcolor.isValid()) {
+        setBackgroundColor(bgcolor);
+        setGradientBackground(Background::NoGradient);
+    }
+
+    Render::FrameDumpRequest req;
+    req.path = path.toUtf8().constData();
+    bool ok = renderer->requestFrameDump(req) && pumpFrameDump(renderer);
+
+    if (bgcolor.isValid()) {
+        setBackgroundColor(col);
+        setGradientBackground(grad);
+    }
+    if (!ok)
+        return false;
+
+    QImage captured(path);
+    if (captured.isNull())
+        return false;
+
+    // The backend renders at the size of the view it belongs to. A capture
+    // asked for at another size is scaled to it -- the frame itself cannot
+    // be re-staged at an arbitrary resolution from here.
+    if (width > 0 && height > 0
+            && (captured.width() != width || captured.height() != height)) {
+        captured = captured.scaled(width, height, Qt::IgnoreAspectRatio,
+                                   Qt::SmoothTransformation);
+    }
+    img = captured;
+    return true;
 }
 
 void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
