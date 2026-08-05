@@ -217,8 +217,10 @@ void Gui::ActiveObjectList::setObject(App::DocumentObject* obj, const char* name
         _ObjectMap.erase(it);
     }
 
-    if (!obj)
+    if (!obj) {
+        _Doc->signalActivatedViewProvider(nullptr, name);
         return;
+    }
 
     auto info = getObjectInfo(obj,subname);
     if (!info.activeObject) {
@@ -233,6 +235,11 @@ void Gui::ActiveObjectList::setObject(App::DocumentObject* obj, const char* name
         info.mode = mode;
     _ObjectMap[name] = info;
     setHighlight(info, true);
+
+    auto vp = freecad_cast<ViewProviderDocumentObject*>(
+            Application::Instance->getViewProvider(obj));
+    if (vp)
+        vp->getDocument()->signalActivatedViewProvider(vp, name);
 }
 
 bool Gui::ActiveObjectList::hasObject(const char*name)const

@@ -106,8 +106,13 @@ public:
     void updateView();
     /// Get the object of this ViewProvider object
     App::DocumentObject *getObject() const {return pcObject;}
+    /// Get the object of this ViewProvider object as the specified type
+    template<class T>
+    T *getObject() const {return freecad_cast<T*>(pcObject);}
     /// Asks the view provider if the given object can be deleted.
     bool canDelete(App::DocumentObject* obj) const override;
+    /// Ask the view provider if it accepts object deletions while in edit
+    virtual bool acceptDeletionsInEdit() {return false;}
     /// Get the GUI document to this ViewProvider object
     Gui::Document* getDocument() const;
     /// Get the python wrapper for that ViewProvider

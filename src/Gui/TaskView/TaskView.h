@@ -35,6 +35,7 @@ class QBoxLayout;
 class QTimer;
 
 namespace App {
+class Document;
 class Property;
 }
 
@@ -198,6 +199,19 @@ protected:
     void showDialog(TaskDialog *dlg);
     // removes the running dialog after accept() or reject() from the TaskView
     void removeDialog();
+
+public:
+    /** Add a widget to the task panel alongside whatever else is shown
+     *
+     * Upstream keeps one task panel per document and attaches the widget to the
+     * one belonging to \a doc. This fork's task view follows the active document
+     * instead, so \a doc is accepted for source compatibility and not used.
+     */
+    void addContextualPanel(QWidget* panel, App::Document* doc = nullptr);
+    /// Remove a widget added by addContextualPanel and delete it
+    void removeContextualPanel(QWidget* panel, App::Document* doc = nullptr);
+
+protected:
 
     void slotActiveDocument(const App::Document&);
     void slotDeletedDocument();

@@ -273,6 +273,9 @@ public:
     virtual bool canDragObjects() const;
     /** Check whether the object can be removed from the view provider by drag and drop */
     virtual bool canDragObject(App::DocumentObject*) const;
+    /** Check whether the object can be removed from the view provider by drag and drop
+     *  onto a particular target */
+    virtual bool canDragObjectToTarget(App::DocumentObject* obj, App::DocumentObject* target) const;
     /** Remove a child from the view provider by drag and drop */
     virtual void dragObject(App::DocumentObject*);
     /** Check whether objects can be added to the view provider by drag and drop or drop only */
@@ -377,6 +380,9 @@ public:
     virtual bool showInTree() const { return true; }
     /** Tell the tree view to remove children items from the tree root*/
     virtual bool canRemoveChildrenFromRoot() const {return true;}
+
+    /** Tell if the tree item should be auto collapsed when deactivated */
+    bool isAutoCollapseOnDeactivation() const {return autoCollapseOnDeactivation;}
 
     /** @name Signals of the view provider */
     //@{
@@ -615,6 +621,8 @@ protected:
     ViewProviderPy* pyViewObject{nullptr};
     std::string overrideMode;
     std::bitset<32> StatusBits;
+    /// Whether the tree item collapses when this provider is deactivated
+    bool autoCollapseOnDeactivation{true};
 
 protected:
     CoinPtr<SoGroup> pcChildGroup;

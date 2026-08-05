@@ -23,6 +23,7 @@
 #ifndef GUI_VIEWPROVIDER_ViewProviderPart_H
 #define GUI_VIEWPROVIDER_ViewProviderPart_H
 
+#include "ActiveObjectList.h"
 #include "ViewProviderDragger.h"
 #include "ViewProviderOriginGroup.h"
 #include "ViewProviderPythonFeature.h"
@@ -44,6 +45,9 @@ public:
     ViewProviderPart();
     /// destructor.
     ~ViewProviderPart() override;
+
+    /// Whether this is the object currently active under \a key in the active view
+    bool isActivePart(const char* key = PARTKEY);
 
     bool doubleClicked() override;
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;

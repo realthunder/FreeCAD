@@ -92,5 +92,6 @@ namespace Gui
 
 static const char PDBODYKEY[] = "pdbody";
 static const char PARTKEY[] = "part";
+static const char ASSEMBLYKEY[] = "assembly";
 
 #endif

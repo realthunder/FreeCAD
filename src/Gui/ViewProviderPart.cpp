@@ -119,6 +119,18 @@ void ViewProviderPart::setupContextMenu(QMenu* menu, QObject* receiver, const ch
     inherited::setupContextMenu(menu, receiver, member);
 }
 
+bool ViewProviderPart::isActivePart(const char* key)
+{
+    auto activeDoc = Gui::Application::Instance->activeDocument();
+    if (!activeDoc)
+        activeDoc = getDocument();
+    auto activeView = activeDoc->setActiveView(this);
+    if (!activeView)
+        return false;
+
+    return activeView->getActiveObject<App::DocumentObject*>(key) == this->getObject();
+}
+
 bool ViewProviderPart::doubleClicked()
 {
     //make the part the active one

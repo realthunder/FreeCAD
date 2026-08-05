@@ -370,6 +370,10 @@ public:
 
     /** Returns the 3d point on the focal plane to the given 2d point. */
     SbVec3f getPointOnFocalPlane(const SbVec2s&) const;
+    /// Point under the cursor projected onto the XY plane of \a plc
+    SbVec3f getPointOnXYPlaneOfPlacement(const SbVec2s& pnt, const Base::Placement& plc) const;
+    /// Point under the cursor projected onto the line through \a axisCenter along \a axis
+    SbVec3f getPointOnLine(const SbVec2s& pnt, const SbVec3f& axisCenter, const SbVec3f& axis) const;
 
     /** Returns the 2d coordinates on the viewport to the given 3d point. */
     SbVec2s getPointOnViewport(const SbVec3f&) const;

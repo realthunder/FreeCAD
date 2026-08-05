@@ -117,6 +117,9 @@ public:
     /// signal on activated Object
     mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalActivatedObject;
     /// signal on entering in edit mode
+    /// signal on activated object in the tree (bold item)
+    mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject*, const char*)>
+        signalActivatedViewProvider;
     mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalInEdit;
     /// signal on leaving edit mode
     mutable boost::signals2::signal<void (const Gui::ViewProviderDocumentObject&)> signalResetEdit;
@@ -286,6 +289,14 @@ public:
     void setEditingTransform(const Base::Matrix4D &mat);
     /// reset from edit mode, this cause all document to reset edit
     void resetEdit();
+    /** Set whether leaving edit mode should restore the previous edit session
+     *
+     * Accepted for source compatibility with upstream, where nested edit
+     * sessions can be restored. This fork has no such mechanism -- resetEdit()
+     * always leaves edit mode outright -- so only setEditRestore(false), which
+     * asks for exactly that, is honoured; true has no effect.
+     */
+    void setEditRestore(bool askRestore);
     /// reset edit of this document
     void _resetEdit();
     /// get the in edit ViewProvider or NULL

@@ -733,6 +733,13 @@ bool ViewProvider::canDragObject(App::DocumentObject* obj) const
     return queryExtension(&ViewProviderExtension::extensionCanDragObject,obj);
 }
 
+bool ViewProvider::canDragObjectToTarget(App::DocumentObject* obj,
+                                         App::DocumentObject* target) const
+{
+    (void)target;
+    return canDragObject(obj);
+}
+
 bool ViewProvider::canDragObjects() const
 {
     return queryExtension(&ViewProviderExtension::extensionCanDragObjects);

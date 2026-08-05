@@ -611,6 +611,13 @@ void Document::resetEdit() {
     Application::Instance->setEditDocument(nullptr);
 }
 
+void Document::setEditRestore(bool askRestore)
+{
+    // Nothing to do: this fork does not restore a previous edit session, which
+    // is what setEditRestore(false) asks for. See the declaration.
+    (void)askRestore;
+}
+
 void Document::_resetEdit()
 {
     std::list<Gui::BaseView*>::iterator it;
