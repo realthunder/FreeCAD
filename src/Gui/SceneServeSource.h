@@ -1,0 +1,128 @@
+/***************************************************************************
+ *   Copyright (c) 2026 Zheng, Lei <realthunder.dev@gmail.com>             *
+ *                                                                         *
+ *   This file is part of the FreeCAD CAx development system.              *
+ *                                                                         *
+ *   This library is free software; you can redistribute it and/or         *
+ *   modify it under the terms of the GNU Library General Public           *
+ *   License as published by the Free Software Foundation; either          *
+ *   version 2 of the License, or (at your option) any later version.      *
+ *                                                                         *
+ *   This library  is distributed in the hope that it will be useful,      *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU Library General Public License for more details.                  *
+ *                                                                         *
+ *   You should have received a copy of the GNU Library General Public     *
+ *   License along with this library; see the file COPYING.LIB. If not,    *
+ *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
+ *   Suite 330, Boston, MA  02111-1307, USA                                *
+ *                                                                         *
+ ***************************************************************************/
+
+#ifndef GUI_SCENESERVESOURCE_H
+#define GUI_SCENESERVESOURCE_H
+
+#include <memory>
+
+#include <QObject>
+#include <QTimer>
+
+#include <Inventor/SbBox.h>
+#include <Inventor/SbViewportRegion.h>
+
+#include <FCGlobal.h>
+
+class SoFCRenderCacheManager;
+
+namespace Render
+{
+class Renderer;
+}
+
+namespace Gui
+{
+
+class Document;
+class SoFCUnifiedSelection;
+
+/*!
+ * Publishes a document to streaming viewers with no 3D view behind it
+ * (docs/HeadlessServe.md §3).
+ *
+ * A serving process has had no reason to *draw* since stage 1 — its
+ * viewers render the scene themselves, off their own clock, from the
+ * published snapshot. What it still had was a `View3DInventor`: a GL
+ * widget, a live context, bgfx initialized on it, and under Xvfb a
+ * software rasterizer loaded for a window nobody watches. This is what
+ * replaces it.
+ *
+ * The reason that is possible at all is that the feed was never really
+ * produced by drawing. `SoFCRenderCacheManager` rebuilds its caches by
+ * traversing with an `SoCallbackAction` and pushes the result to the
+ * backend; drawing is merely what used to call it. So the source keeps
+ * the three things that are genuinely document state — the scene graph
+ * root, the cache manager, and a renderer to publish through — and drops
+ * the one thing that was only ever presentation.
+ *
+ * What it does *not* have, and what therefore has to be supplied rather
+ * than observed: a camera. Viewers navigate with their own, so the one
+ * published is only the framing a joining viewer adopts before it frames
+ * the scene itself. It is synthesized from the scene bounds.
+ */
+class GuiExport SceneServeSource : public QObject
+{
+    Q_OBJECT
+
+public:
+    /*!
+     * Serve \a doc. The renderer is created in publish-only mode, so no
+     * graphics device is created and none is required; if the backend
+     * declines that mode the source is inert and isValid() is false.
+     */
+    explicit SceneServeSource(Document *doc);
+    ~SceneServeSource() override;
+
+    /*!
+     * Serve \a doc, creating the source on first call and returning the
+     * existing one after that — one source per document, which is also
+     * all the stream server can arbitrate (docs/HeadlessServe.md §5).
+     * The returned source is owned here and lives until the document
+     * closes. Null if no publish-only renderer could be made.
+     */
+    static SceneServeSource *serve(Document *doc);
+    /// Stop serving \a doc, if it was.
+    static void unserve(Document *doc);
+
+    /// False when no publish-only renderer could be created — the
+    /// backend does not support publishing without a device, or none is
+    /// configured. Nothing else on the source does anything then.
+    bool isValid() const;
+
+    /// The document being served.
+    Document *document() const;
+
+    /*!
+     * Ask for a publish. Coalesced onto the event loop, so the many
+     * changes of a recompute or a load cost one traversal rather than
+     * one each. This is the source's equivalent of scheduleRedraw() —
+     * and the only trigger it has, since no frame is ever drawn.
+     */
+    void schedulePublish();
+
+    /// Traverse and publish now, on the calling thread. Returns false if
+    /// nothing was published (invalid source, or the feeds had not
+    /// changed).
+    bool publishNow();
+
+private Q_SLOTS:
+    void onPublishTimeout();
+
+private:
+    class Private;
+    std::unique_ptr<Private> pimpl;
+};
+
+}  // namespace Gui
+
+#endif  // GUI_SCENESERVESOURCE_H

@@ -53,6 +53,7 @@
 #include "Command.h"
 #include "DlgPreferencesImp.h"
 #include "Document.h"
+#include "SceneServeSource.h"
 #include "DocumentObserverPython.h"
 #include "DownloadManager.h"
 #include "EditorView.h"
@@ -173,6 +174,13 @@ PyMethodDef Application::Methods[] = {
    "updateGui() -> None\n"
    "\n"
    "Update the main window and all its windows."},
+  {"serveDocument",           (PyCFunction) Application::sServeDocument, METH_VARARGS,
+   "serveDocument(doc) -> bool\n"
+   "\n"
+   "Publish a document to streaming viewers with no 3D view behind it\n"
+   "(docs/HeadlessServe.md). The document may be hidden; nothing is ever\n"
+   "drawn and no graphics device is created. Returns False when the\n"
+   "configured render engine cannot publish without one."},
   {"updateLocale",            (PyCFunction) Application::sUpdateLocale, METH_VARARGS,
    "updateLocale() -> None\n"
    "\n"
@@ -825,6 +833,32 @@ PyObject* Application::sGetMainWindow(PyObject * /*self*/, PyObject *args)
     catch (const Py::Exception&) {
         return nullptr;
     }
+}
+
+PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)
+{
+    PyObject *pyDoc = nullptr;
+    if (!PyArg_ParseTuple(args, "O", &pyDoc))
+        return nullptr;
+
+    App::Document *appDoc = nullptr;
+    if (PyObject_TypeCheck(pyDoc, &App::DocumentPy::Type))
+        appDoc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
+    else {
+        PyErr_SetString(PyExc_TypeError, "expected a document");
+        return nullptr;
+    }
+
+    Gui::Document *guiDoc = Application::Instance->getDocument(appDoc);
+    if (!guiDoc) {
+        PyErr_SetString(PyExc_ValueError, "document has no GUI document");
+        return nullptr;
+    }
+
+    // A hidden document is the point: nothing is drawn and no graphics
+    // device is created, so this works with no 3D view and no display.
+    bool ok = Gui::SceneServeSource::serve(guiDoc) != nullptr;
+    return Py::new_reference_to(Py::Boolean(ok));
 }
 
 PyObject* Application::sUpdateGui(PyObject * /*self*/, PyObject *args)
