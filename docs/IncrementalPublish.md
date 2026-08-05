@@ -537,6 +537,44 @@ rebuilt to be moved. Note the one field that is genuinely volatile — a
 label can change without touching the scene graph — so whatever carries
 it needs an invalidation, not just a memo.
 
+## 4e. The MiSTer gate — 272M triangles, real GPU
+
+The gate this workstream had been deferring, run 2026-08-05 on the 285MB MiSTer assembly
+(17800 objects, 49352 entries in 37 buckets). Real RTX 3060 through VirtualGL's EGL backend
+under Xvfb, because the monitor is off and a run on the live display paints **zero** frames —
+which would measure a different thing entirely. All three runs painted (31-33k frames), all
+PASS, all resolved 14/14 coarse stand-ins, and none reported a single reuse, splice, or
+handle-pool error.
+
+| | A: both off | B: reuse | C: reuse+splice |
+|---|---|---|---|
+| **peak RSS** | 7141 MB | **7105 MB** | 7154 MB |
+| traverse | 95-121 | 87-112 | 86-87 |
+| flattensub | 83-91 | 72-75 | **40-46** |
+| translate | 128-140 | **85-90** | 88-96 |
+| backend | 48-56 | **12-15** | 12-15 |
+| **publish total** | ~423 ms | ~315 ms | **~276 ms** |
+
+**A → C is −35% on the publish**, and the two knobs take different halves: mesh reuse takes
+translate (−34%) and the backend (−73%); the splice takes the flatten (−48%, and its call counts
+fall with it: 372/314/234 → 190/121/50).
+
+⭐⭐ **The memory prediction was wrong, and backwards.** §4d-i measured mesh reuse at +8-25MB on
+6000 boxes and warned that real face counts could be far worse, since the per-mesh part tables
+scale with face and edge count. At real scale it is **36MB LOWER than baseline**. The synthetic
+scene could not show why: without reuse every publish builds a fresh mesh per cache *while the
+backend still holds the previous publish's list*, so two generations of part tables are alive at
+the peak. Reuse keeps one. On 6-faced boxes those tables are nothing; on real parts they are the
+larger term. **A synthetic scene understates whatever scales with model complexity rather than
+object count — including, apparently, the sign of the answer.**
+
+The splice's own cost is what it was always expected to be — retained maps — and at this scale it
+is **+49MB over B, +13MB over baseline (+0.2%)** for a 45% cut in the flatten.
+
+**What the gate also says about where to look next.** `traverse` is ~90-110ms at this scale, the
+second biggest stage after translate, and it was invisible in every synthetic scene used to date.
+Nothing in this workstream has touched it.
+
 ## 5. Design: per-child slices
 
 The change set is available for free. `preSeparator` already knows, for
