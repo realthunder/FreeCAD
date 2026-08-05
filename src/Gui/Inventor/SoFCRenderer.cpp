@@ -151,7 +151,7 @@ struct DrawEntry {
   DrawEntry(const Material * m, const VertexCacheEntry * v)
     :material(m), ventry(v), skip(0)
   {
-    v->cache->getBoundingBox(v->identity ? nullptr : &v->matrix, this->bbox);
+    this->bbox = v->getBoundingBox();
   }
 };
 

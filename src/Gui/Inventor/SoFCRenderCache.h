@@ -30,6 +30,7 @@
 
 #include <boost/container/flat_map.hpp>
 
+#include <Inventor/SbBox3f.h>
 #include <Inventor/SbMatrix.h>
 #include <Inventor/caches/SoCache.h>
 
@@ -545,6 +546,11 @@ public:
       if (!iden) matrix = m;
     }
 
+    /// Takes \a other's placement but a different vertex cache, so it
+    /// deliberately does not inherit the memoized bounding box: the box
+    /// belongs to the cache it was measured from. The flatten also
+    /// patches the matrix of an entry built this way, right after
+    /// building it, which the same omission keeps sound.
     VertexCacheEntry(SoFCVertexCache * c,
                      const VertexCacheEntry & other,
                      const CacheKeyPtr &k)
@@ -568,10 +574,27 @@ public:
       , partidx(other.partidx)
       , identity(other.identity)
       , resetmatrix(other.resetmatrix)
+      , bboxmemo(other.bboxmemo)
+      , bboxfor(other.bboxfor)
     {
       if (!identity)
         this->matrix = other.matrix;
     }
+
+    /** This entry's vertex cache, bounded under this entry's transform.
+     *
+     * A publish asks for it twice over: once building the draw entries,
+     * and once translating them for the backend. It is a pure function
+     * of the cache and the placement, so the second ask is answered from
+     * the first, and an entry copied wholesale by the incremental
+     * flatten carries the answer over from the publish that computed it.
+     *
+     * The memo is stamped with the cache it was measured from, so the
+     * paths that swap a cache into an existing entry -- draw-call
+     * merging, and the partial caches the highlight build makes -- get a
+     * fresh measurement without having to remember to ask for one.
+     */
+    const SbBox3f & getBoundingBox() const;
 
     CacheKeyPtr key;
     Gui::CoinPtr<SoFCVertexCache> cache;
@@ -581,6 +604,12 @@ public:
     SbMatrix matrix;
     bool identity;
     bool resetmatrix;
+
+  private:
+    mutable SbBox3f bboxmemo;
+    /// What bboxmemo was measured from, and so whether it describes the
+    /// cache this entry holds now.
+    mutable const SoFCVertexCache *bboxfor {nullptr};
   };
 
   typedef SbFCVector<VertexCacheEntry> VertexCacheArray;

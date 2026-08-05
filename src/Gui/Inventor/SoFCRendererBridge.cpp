@@ -866,9 +866,9 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                             sizeof(draw.model));
             }
 
-            SbBox3f bbox;
-            ventry.cache->getBoundingBox(
-                    ventry.identity ? nullptr : &ventry.matrix, bbox);
+            // Measured once per entry per publish: the draw-entry build
+            // above asked the same question of the same entry.
+            const SbBox3f & bbox = ventry.getBoundingBox();
             if (!bbox.isEmpty()) {
                 bbox.getMin().getValue(
                         draw.bboxMin[0], draw.bboxMin[1], draw.bboxMin[2]);

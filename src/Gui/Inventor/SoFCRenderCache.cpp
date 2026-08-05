@@ -1268,6 +1268,17 @@ SoFCRenderCache::isEmpty() const
   return PRIVATE(this)->caches.empty();
 }
 
+const SbBox3f &
+SoFCRenderCache::VertexCacheEntry::getBoundingBox() const
+{
+  if (this->bboxfor != this->cache.get()) {
+    this->cache->getBoundingBox(this->identity ? nullptr : &this->matrix,
+                                this->bboxmemo);
+    this->bboxfor = this->cache.get();
+  }
+  return this->bboxmemo;
+}
+
 const SbFCVector<SoFCRenderCache::CacheEntry> &
 SoFCRenderCache::getChildCaches() const
 {
