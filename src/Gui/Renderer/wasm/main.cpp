@@ -239,7 +239,15 @@ EM_JS(void, fcviewer_status, (const char *text, double loaded, double total), {
 // On-screen debug HUD: a fixed div over the canvas top-left showing live
 // state (mouse, camera, hover). Passing null hides it.
 EM_JS(void, fcviewer_hud, (const char *s), {
+    // The DOM layer, when one is loaded, shows this as a closable card
+    // reached from the menu; it claims the feed by setting
+    // fcviewerHudCard. Pages with no UI layer (fcviewer.html, a bundled
+    // capture) keep the built-in box below — the HUD is the only thing
+    // saying what the renderer is doing on a device with no console.
+    window.dispatchEvent(new CustomEvent('fc:hud',
+                                         { detail: s ? UTF8ToString(s) : null }));
     var el = document.getElementById('__hud');
+    if (window.fcviewerHudCard) { if (el) el.style.display = 'none'; return; }
     if (!s) { if (el) el.style.display = 'none'; return; }
     if (!el) {
         el = document.createElement('div');
@@ -302,6 +310,9 @@ EM_JS(void, fcviewer_control_event, (const char *json), {
 // window.fcviewerControlSend(jsonString) -> bool (false = socket down,
 // caller shows its offline state rather than queueing).
 EM_JS(void, fcviewer_install_control, (), {
+    // The menu's HUD switch. Installed beside the control uplink because
+    // it is the same kind of thing: a viewer state the DOM layer drives.
+    window.fcviewerSetHud = function(on) { _fcviewer_set_hud(on ? 1 : 0); };
     window.fcviewerControlSend = function(s) {
         var len = lengthBytesUTF8(s) + 1;
         var buf = _malloc(len);
@@ -5642,6 +5653,19 @@ static void handleControlMessage(const char *json)
         // the viewer, for the DOM layer riding on it.
         fcviewer_control_event(json);
     }
+}
+
+/// Turn the HUD on or off from the DOM layer's menu — the counterpart of
+/// [d], which is no use on a device with no keyboard. Turning it off
+/// dispatches one last 'fc:hud' with no text, so the card closes with it.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_hud(int on)
+{
+    if (s_hudOn == (on != 0))
+        return;
+    s_hudOn = on != 0;
+    if (!s_hudOn)
+        fcviewer_hud(nullptr);
+    markDirty();
 }
 
 /// The DOM layer's uplink for semantic operations (getProperties,
