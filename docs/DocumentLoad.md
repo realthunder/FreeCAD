@@ -20,9 +20,11 @@ progressive STEP import of the 285MB MiSTer assembly. Three runs:
 the event loop did not run at all**. The view painted 5 frames across the
 whole open.
 
-§4 and §6 are two separate fixes against this baseline: the first moves
-the visual build off the blocking window (33s to 19.1s), the second stops
-the file describing every view provider in full (19.1s to 13.0s).
+§4, §6, §7 and §8 are four separate fixes against this baseline: the
+first moves the visual build off the blocking window (33s to 19.1s), the
+second stops the file describing every view provider in full (19.1s to
+13.0s), and the last two do the same for the objects themselves and stop
+a one-colour list costing an archive entry (13.3s to 11.1s).
 
 The first job was to find out what those 33 seconds are, because the
 guess on record — that a load is publish-bound, and that finishing the
@@ -137,7 +139,7 @@ and of 540842 properties only about 5000 actually differ.
 The first instinct — encode the same properties more cheaply, share
 identical blocks — does not pay, and the measurement is what says so.
 Splitting the pass into what the reader costs and what the property
-costs (`PropertyContainer::restoreStats`, §9) gives **5.87s of which
+costs (`PropertyContainer::restoreStats`, §11) gives **5.87s of which
 4.33s is the values**. A standalone Xerces run over the same 87.7MB
 scans it in **0.50s**. The text is not the problem. The properties have
 to not be there.
@@ -227,18 +229,127 @@ Unchanged: worst stall 2.5s, 76 frames during load and settle, peak RSS
 and the baseline has to be re-saved before it can be re-measured. Turn it
 off with `SaveViewProviderDefaults`.
 
-## 7. What this does not fix
+## 7. Design: the same for `Document.xml`
 
-- **The remaining 13s still blocks.** Nothing can appear before the
+§6 left `Document.xml` as the larger half of the XML — 42.5MB, an
+`<ObjectData>` pass of 208816 properties for 2.97s — and the mechanism
+it built was deliberately generic. The App document now uses it:
+`App::Document::buildDefaults` builds one stand-in object per class,
+`saveDefaults` writes its properties once as a `<Defaults>` block inside
+`<ObjectData>`, and each object saves only its difference. Same schema
+version (6), same gate shape, same `Defaults` count attribute a blind
+reader walks past. Off with `SaveObjectDefaults`.
+
+**⚠️ A stand-in object is not a view provider.** The Gui side got away
+with building one outside any document; a `DocumentObject` cannot, and
+every one of these was a crash or a silent no-op found by running the
+check, not by reading:
+
+- **Restoring into it notifies it.** `PropertyLinkList::Restore` →
+  `setValues` → `Property::touch()` → the object's own `onChanged` →
+  `LinkBaseExtension::update()`, which dereferences the document the
+  stand-in has not got. `App::Document::isRestoringDefaults()` now says
+  so, checked in `touch()` beside the two suppressions already there
+  (`Transaction::isApplying`, `Document::isRemoving`). A stand-in stands
+  for a class, not for anything in a document: there is nobody to notify.
+- **Some properties cannot be in the block at all.** `PropertyPartShape`
+  registers an archive entry of its own — a stand-in must never claim one
+  — and its `Restore` dereferences the owner's document. That is what
+  `mustSave()` is for, and `PropertyContainer::SaveDefaults()` keeps what
+  it names out of the block on both sides. ⚠️ The obvious cheaper test,
+  "a property that cannot say it is the same as itself", does **not**
+  catch it: `PropertyComplexGeoData::isSame` short-circuits on self.
+- ⚠️ **`setStatus(PropNoPersist)` is silently a no-op.**
+  `Property::setStatusValue` masks that bit out along with `PropDynamic`,
+  `PropReadOnly`, `PropTransient`, `PropOutput` and `PropHidden` — they
+  are intrinsic to the declared type. A first attempt to keep properties
+  out of the block that way changed nothing, and the crash repeated
+  byte-identically, which reads exactly like a build that did not happen.
+
+**Two comparisons were wrong, and both cost more than the feature.**
+
+- ⭐⭐ **`PropertyString::isSame` compared `const char*` pointers**, not
+  strings, because `getValue()` hands back a buffer address. Every pair
+  of equal strings answered "different". It is the only property here
+  that returns a pointer from `getValue()`, which is why it was the only
+  one that could not recognise its own value. Pre-existing, and wider
+  than this feature: `Property::hasSetValue()` uses `isSame` to skip
+  no-op changes.
+- ⭐ **The `Touched` bit blocked 255 of 411 elisions.** A stand-in is
+  freshly built and a settled object has been purged, so the bit differed
+  on nearly everything. It is also not preserved by a file:
+  `PropertyContainer::Restore` applies the recorded status and *then*
+  calls the property's own `Restore`, which touches it again. Comparing
+  it refused elisions for a bit that does not survive either way, so the
+  comparison now masks it.
+- **The reader must compare live against live.** It first compared the
+  restored block against `Property::Copy()` of the stand-in's values, and
+  a detached copy has no container — so link properties compared by a
+  scope they no longer knew and enumerations by a list they no longer
+  had, and half of every object's properties came back "differs". Two
+  stand-ins, one restored into and one left alone, is the same comparison
+  the writer makes.
+
+⭐ **`PropertyExpressionEngine` had to learn to compare.**
+`PropertyExpressionContainer::isSame` declines unconditionally, so the
+engine — empty on all but a handful of objects, and the second largest
+elidable thing in the file — could never be left out. It now answers the
+one question it can answer cheaply: two engines holding no expression are
+the same engine. Anything else still declines.
+
+Measured on the 17800 object document, re-saved and re-opened:
+
+| | before | after |
+|---|---|---|
+| `Document.xml` | 42.5MB | **17.2MB** |
+| `<ObjectData>` pass | 208816 properties / 3.00s | **57815 / 1.06s** |
+| of which values | 2.33s | **0.80s** |
+| `Document.xml` pass total | 6.40s | **4.46s** |
+| restore total | 10.48s | **8.38s** |
+| **open** | **13.3s** | **11.1s** |
+
+**Every property of all 17800 objects reads back identical, and the
+rendered frame differs in 0 of 480000 pixels.** Of the 194152 properties
+offered, 153395 were left out and 40757 written because their value
+really differs — none for status, none unknown to the block.
+
+⚠️ **A document carries its own `SaveSchemaVersion` forward.** The
+reference document came from an import made before schema 6 existed, so
+it declares 5, and a writer honouring that declaration correctly writes
+no block at all — App side *or* Gui side. Nothing looks wrong when that
+happens: it saves, it reloads, it compares equal, and it measures
+nothing. `resave_obj_probe.py` states the version it wants.
+
+## 8. Design: a list too small to earn an archive entry
+
+§6 left 1831 archive entries of **eight bytes** — a `DiffuseColor` of one
+colour, on every object whose colour differs from its class default. The
+defaults mechanism cannot fix those: the value genuinely differs, so it
+has to be written. What is wrong is not that it is written but that
+writing it costs a whole archive member: two zip headers, a name and a
+directory record, around 190 bytes before any content, plus one more
+thing for the reader to open and drain.
+
+`PropertyLists::Save` now writes a list inline when its values fit in
+`DocumentParams::InlineListSize` bytes (64 by default, on
+`getMemSize()` rather than element count because the elements are of
+wildly different sizes). The form is `count="N"`, which is what the
+reader has always taken for a list that could not be streamed — so
+nothing on the read side changes and no file written this way needs a
+newer FreeCAD to read it. On the reference document that is **1831 tiny
+entries → 0**, archive members 19255 → 17424.
+
+The invariant it relies on is one the code already required: a list class
+that returns true from `canSaveStream()` implements `saveXML()` too,
+because `ForceXML` has always been able to demand it.
+
+## 9. What this does not fix
+
+- **The remaining 11s still blocks.** Nothing can appear before the
   objects exist, and the create pass, the property pass and the archive
-  walk still all run to completion before the window is usable.
-- **`Document.xml` is now the larger half of the XML**: 42.5MB, and its
-  `<ObjectData>` pass is 208816 properties for 2.97s of which 2.30s is
-  the values. §6's mechanism is generic
-  (`PropertyContainer::getSaveDefaults()`) and the App document has not
-  adopted it. ⚠️ The risk is not the same: these are data properties, and
-  a document object's defaults are less uniformly its constructor's than
-  a view provider's are.
+  walk still all run to completion before the window is usable. The
+  create pass is now the largest XML item at 3.13s and is untouched by
+  either of these.
 - **The reader's own overhead is now visible.** With the properties gone
   the view provider pass is 0.61s, but `Base::XMLReader` still rebuilds a
   `std::map<std::string,std::string>` of transcoded attributes per
@@ -249,14 +360,18 @@ off with `SaveViewProviderDefaults`.
   largest single item in the archive stage. ⭐ `Document::PreferBinary`
   already switches this, so the first move is a re-save experiment rather
   than code.
-- **Old documents keep the old cost.** §6 is a save-side change. A file
-  saved before it still parses 540842 view provider properties.
+- **Old documents keep the old cost.** §6, §7 and §8 are all save-side
+  changes. A file saved before them still parses 540842 view provider
+  properties and 208816 object properties, and still spends an archive
+  entry on every one-colour list. ⚠️ And a document that declares an
+  older `SaveSchemaVersion` keeps producing the old shape however new the
+  build is — see the end of §7.
 - **The fill rate is publish-bound**, even though the load is not: each
   slice pays for a redraw, so the incremental-publish work
   (`docs/IncrementalPublish.md`) is what would make the model fill in
   faster once the window is up.
 
-## 8. Non-goals and risks
+## 10. Non-goals and risks
 
 - **Parallel restore is not attempted here.** The archive is read through
   a forward-only `ZipInputStream`, and switching to
@@ -275,7 +390,7 @@ off with `SaveViewProviderDefaults`.
   oversized parts — `CoarseDeferFaces` is 1000 faces — and this load's
   cost is thousands of small ones.
 
-## 9. Instrumentation
+## 11. Instrumentation
 
 All of it is log-level gated (`App`, `Base`, `Gui`, `Part` at `Log`), not
 build flags, and all of it stays:
@@ -301,7 +416,12 @@ build flags, and all of it stays:
 - `App::PropertyContainer::savedDefaults` — properties a save left out.
   Reported per document write, because a shared default block that
   quietly stops matching writes the whole file again and otherwise looks
-  like nothing happened.
+  like nothing happened. Beside it, `savedDefaultsValue`,
+  `savedDefaultsStatus` and `savedDefaultsUnknown` say why the rest were
+  written: a real difference in value, a difference only in status, or a
+  property the block never heard of. ⭐ That split is what found the
+  `Touched` bit refusing 255 of 411 elisions — "it wrote everything
+  again" on its own would not have said which test said no.
 
 Harnesses, all under `~/works/sw/models/harnesses/` with `run_gpu.sh`:
 `load_probe.py` (open, stall, frames, RSS), `defaults_check.py` (a small
