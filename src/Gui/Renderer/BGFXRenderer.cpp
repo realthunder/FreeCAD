@@ -8287,6 +8287,246 @@ public:
         _BGFXLib.removeView(widget);
     }
 
+    /// Assemble the CPU-side snapshot of everything the feeds hold:
+    /// the draws, the selections and highlight, the overlays and every
+    /// per-frame config, plus the camera and viewport the frame was
+    /// asked for. Touches no GPU state -- the frame dump and the scene
+    /// publish are both built from this, and a publish-only process
+    /// (docs/HeadlessServe.md) never gets past it.
+    void makeSnapshot(Render::SceneSnapshot &snap,
+                      const void *viewMatrix,
+                      const void *projMatrix,
+                      uint16_t width,
+                      uint16_t height,
+                      uint32_t clearColor)
+    {
+        snap.scene = scene;
+        snap.objectInfo = &objectInfo;
+        snap.selections.assign(selections.begin(), selections.end());
+        snap.highlight = highlight;
+        snap.highlightWholeOnTop = hlWholeOnTop;
+        for (const auto &ov : overlays) {
+            Render::SceneSnapshot::Overlay sov;
+            sov.id = ov.first;
+            sov.anchor = ov.second.anchor;
+            sov.draws = ov.second.draws;
+            snap.overlays.push_back(std::move(sov));
+        }
+        snap.background = background;
+        snap.hlconfig = hlconfig;
+        snap.secconf = secconf;
+        snap.aoconf = aoconf;
+        snap.pbrconf = pbrconf;
+        snap.bumpconf = bumpconf;
+        snap.lightconf = lightconf;
+        snap.volconf = volconf;
+        snap.waterconf = waterconf;
+        snap.bloomconf = bloomconf;
+        snap.debugconf = debugconf;
+        snap.usershaderconf = usershaderconf;
+#ifndef FC_RENDERER_STANDALONE
+        // Server-side compile hook (docs/RenderDebug.md §6.3): the
+        // serializer asks for the viewer-tier binaries of every
+        // unique user shader it writes. Ready variants attach to
+        // the snapshot; pending compiles republish when they
+        // finish (dirtyChanged above).
+        snap.shaderBins =
+            [](const Render::UserShader &s,
+               std::vector<Render::UserShader::Compiled> &out) {
+                _BGFXLib.viewerShaderBins(s, out);
+            };
+        // v24: assemble the volume-splice variants exactly as the
+        // frame loop would (shared collectMediumUsers keeps the
+        // sources byte-identical) so the shader table carries their
+        // viewer binaries; the viewer adopts them by source match.
+        {
+            constexpr int kSlots = BGFXView::kMediumSlots;
+            std::shared_ptr<const Render::UserShader> fu[kSlots];
+            std::shared_ptr<const Render::UserShader> cu[kSlots];
+            collectMediumUsers(snap.scene, fu, cu, kSlots);
+            for (const char *body :
+                     {"fc_volume_fs.sh", "fc_volume_ext_fs.sh",
+                      "fc_refl_media_fs.sh"}) {
+                if (auto s = assembleMediumVariant(body, fu, cu,
+                                                   kSlots))
+                    snap.usershaderconf.splices.push_back(*s);
+            }
+        }
+#endif
+        snap.preselconf = preselconf;
+        snap.selconf = selconf;
+        snap.autozoomScale = autozoomScale;
+        snap.effectResolution = _BGFXLib.effectResolution;
+        snap.ssaoResolution = _BGFXLib.ssaoResolution;
+        snap.hatch = hatchTex;
+        std::memcpy(snap.viewMatrix, viewMatrix, sizeof(snap.viewMatrix));
+        std::memcpy(snap.projMatrix, projMatrix, sizeof(snap.projMatrix));
+        snap.width = width;
+        snap.height = height;
+        snap.clearColor = clearColor;
+    }
+
+#ifndef FC_RENDERER_STANDALONE
+    /// Publish the feeds to the scene-stream server when they have
+    /// changed (docs/SceneStreaming.md). Starts the server on first
+    /// call. Like makeSnapshot() this is CPU work alone: it is
+    /// deliberately separable from the frame it currently rides on, so
+    /// a source with no 3D view can drive it (docs/HeadlessServe.md
+    /// §3.1).
+    void publishScene(const void *viewMatrix,
+                      const void *projMatrix,
+                      uint16_t width,
+                      uint16_t height,
+                      uint32_t clearColor,
+                      bool dirtyChanged)
+    {
+        // FC_BGFX_SERVE_SCENE=<port>: publish the feeds to the
+        // standalone/wasm viewer over the snapshot HTTP server whenever
+        // they change (SceneServer.h).
+        static const char *servePort = getenv("FC_BGFX_SERVE_SCENE");
+        if (servePort && *servePort) {
+            auto &server = Render::SceneStreamServer::instance();
+            static bool serveFailed = false;
+            if (!server.running() && !serveFailed && !serveStarted) {
+                serveStarted = true;
+                if (server.start(atoi(servePort)))
+                    fprintf(stderr, "bgfx: scene server on port %s\n",
+                            servePort);
+                else {
+                    serveFailed = true;
+                    fprintf(stderr,
+                            "bgfx: scene server FAILED on port %s\n",
+                            servePort);
+                }
+            }
+            // Publish whenever there is anything to show, not just a non-empty
+            // main scene: while editing the only object (e.g. a Sketcher sketch
+            // with no other geometry) the whole edit graph lives in the editing
+            // overlay and the main scene is empty — the datums/leaders must
+            // still stream.
+            uint64_t publishVersion = 0;
+            // A level-generation job finishing (§7, phase 5c) is a
+            // publish trigger of its own: nothing in the feeds moved,
+            // but the manifest a fresh publish writes is what carries
+            // the new key to every viewer.
+            const size_t levelsBuilt =
+                server.running() ? server.levelsBuilt() : 0;
+            if (server.running()
+                    && (dirtyChanged || !scenePublished
+                        || levelsBuilt != publishedLevelsBuilt)
+                    && !(scene.empty() && overlays.empty())
+                    // Claims the stream on the first publish and states
+                    // which publish this is; 0 means another renderer
+                    // owns it and this one stays off the wire.
+                    && (publishVersion = server.beginPublish(this)) != 0) {
+                scenePublished = true;
+                Render::SceneSnapshot snap;
+                makeSnapshot(snap, viewMatrix, projMatrix, width,
+                             height, clearColor);
+                snap.manifestVersion = publishVersion;
+                snap.sessionId = server.sessionId();
+                // Texture pixels leave the stream and are served out of
+                // band instead (SceneDump.h, v26): a republish fires on
+                // every feed change, down to a selection pick, and the
+                // embedded images do not change with it.
+                snap.textureBlobs = [&server](const std::string &key,
+                                              std::vector<uint8_t> &&pixels) {
+                    server.publishBlob(key, std::move(pixels));
+                };
+                // Mesh chunks likewise (v28), but keyed through a memo
+                // on cacheId: hashing every mesh on every publish would
+                // just move the cost from the network to the CPU. The
+                // memo spans two publishes — an entry has to be
+                // reachable while the blob it names is still retained,
+                // and retainBlob() failing is what expires it.
+                meshKeysPrev = std::move(meshKeys);
+                meshKeys.clear();
+                snap.meshBlobs.reuse = [this, &server](uint64_t cacheId,
+                                                       uint32_t &size) {
+                    auto it = meshKeys.find(cacheId);
+                    if (it != meshKeys.end()) {
+                        size = it->second.second;
+                        return it->second.first;
+                    }
+                    it = meshKeysPrev.find(cacheId);
+                    if (it == meshKeysPrev.end())
+                        return std::string();
+                    if (!server.retainBlob(it->second.first, &size))
+                        return std::string();
+                    meshKeys[cacheId] = {it->second.first, size};
+                    return it->second.first;
+                };
+                snap.meshBlobs.store = [this, &server](
+                        uint64_t cacheId, const std::string &key,
+                        std::vector<uint8_t> &&chunk) {
+                    meshKeys[cacheId] = {key, uint32_t(chunk.size())};
+                    server.publishBlob(key, std::move(chunk));
+                };
+                // Generated levels (§7, phase 5c): the server's work
+                // queue built them, the serializer asks per declared
+                // level, and writing the key is the announcement.
+                snap.meshBlobs.built = [&server](const std::string &source,
+                                                 uint32_t level,
+                                                 uint32_t &size) {
+                    return server.builtLevel(source, level, &size);
+                };
+                // v33: the manifest layout. Setting this is what
+                // selects it — the group manifests, the materials and
+                // the user shaders all become content-keyed chunks,
+                // and an object nothing touched then costs its root
+                // entry alone. Each is rebuilt and hashed every
+                // publish (it has to be built to know it is
+                // unchanged), but its bytes only leave the process
+                // when the publisher does not already hold them.
+                snap.chunkBlobs = [&server](const std::string &key,
+                                            std::vector<uint8_t> &&bytes) {
+                    if (!server.retainBlob(key))
+                        server.publishBlob(key, std::move(bytes));
+                };
+                // The root is always written with a complete object
+                // list. What a viewer that is behind gets instead is
+                // derived from these bytes by the server, which is the
+                // only party that knows what any given viewer is
+                // missing — so this runs once however many viewers are
+                // connected, and however far behind they are.
+                std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+                Render::SceneSnapshot::RootSpans spans;
+                snap.objectEntries = &entries;
+                snap.rootSpans = &spans;
+                Render::SceneStreamServer::ScenePublish pub;
+                pub.version = publishVersion;
+                if (Render::saveSceneSnapshot(pub.payload, snap)) {
+                    pub.spans = spans;
+                    Render::diffObjectLists(publishedObjects, entries,
+                                            pub.changed, pub.removed);
+                    publishedObjects = std::move(entries);
+                    server.publish(std::move(pub));
+                    // This publish consulted builtLevel() for every
+                    // ladder it wrote, so every level finished by the
+                    // count taken above is now announced. A job that
+                    // finishes mid-serialization moves the counter
+                    // past this mark and triggers the next round.
+                    publishedLevelsBuilt = levelsBuilt;
+                    // Tell the level-source registry which published
+                    // key each shape-backed mesh landed under, so the
+                    // server's level worker can re-tessellate instead
+                    // of decimate (MeshSource.h). Idempotent, and a
+                    // tag nobody registered is skipped inside.
+                    auto &sources = Render::MeshSourceRegistry::instance();
+                    for (const auto &d : snap.scene) {
+                        if (!d.mesh || !d.mesh->sourceTag)
+                            continue;
+                        auto it = meshKeys.find(d.mesh->cacheId);
+                        if (it != meshKeys.end())
+                            sources.associate(it->second.first,
+                                              d.mesh->sourceTag);
+                    }
+                }
+            }
+        }
+    }
+#endif
+
     bool render(const QColor &col,
                 const void * viewMatrix,
                 const void * projMatrix)
@@ -8400,79 +8640,14 @@ public:
         static const char *dumpPath = getenv("FC_BGFX_DUMP_SCENE");
         static const char *dumpDelay = getenv("FC_BGFX_DUMP_SCENE_DELAY");
         static const bool dumpSel = getenv("FC_BGFX_DUMP_SCENE_SEL") != nullptr;
-        auto makeSnapshot = [&](Render::SceneSnapshot &snap) {
-            snap.scene = scene;
-            snap.objectInfo = &objectInfo;
-            snap.selections.assign(selections.begin(), selections.end());
-            snap.highlight = highlight;
-            snap.highlightWholeOnTop = hlWholeOnTop;
-            for (const auto &ov : overlays) {
-                Render::SceneSnapshot::Overlay sov;
-                sov.id = ov.first;
-                sov.anchor = ov.second.anchor;
-                sov.draws = ov.second.draws;
-                snap.overlays.push_back(std::move(sov));
-            }
-            snap.background = background;
-            snap.hlconfig = hlconfig;
-            snap.secconf = secconf;
-            snap.aoconf = aoconf;
-            snap.pbrconf = pbrconf;
-            snap.bumpconf = bumpconf;
-            snap.lightconf = lightconf;
-            snap.volconf = volconf;
-            snap.waterconf = waterconf;
-            snap.bloomconf = bloomconf;
-            snap.debugconf = debugconf;
-            snap.usershaderconf = usershaderconf;
-#ifndef FC_RENDERER_STANDALONE
-            // Server-side compile hook (docs/RenderDebug.md §6.3): the
-            // serializer asks for the viewer-tier binaries of every
-            // unique user shader it writes. Ready variants attach to
-            // the snapshot; pending compiles republish when they
-            // finish (dirtyChanged above).
-            snap.shaderBins =
-                [](const Render::UserShader &s,
-                   std::vector<Render::UserShader::Compiled> &out) {
-                    _BGFXLib.viewerShaderBins(s, out);
-                };
-            // v24: assemble the volume-splice variants exactly as the
-            // frame loop would (shared collectMediumUsers keeps the
-            // sources byte-identical) so the shader table carries their
-            // viewer binaries; the viewer adopts them by source match.
-            {
-                constexpr int kSlots = BGFXView::kMediumSlots;
-                std::shared_ptr<const Render::UserShader> fu[kSlots];
-                std::shared_ptr<const Render::UserShader> cu[kSlots];
-                collectMediumUsers(snap.scene, fu, cu, kSlots);
-                for (const char *body :
-                         {"fc_volume_fs.sh", "fc_volume_ext_fs.sh",
-                          "fc_refl_media_fs.sh"}) {
-                    if (auto s = assembleMediumVariant(body, fu, cu,
-                                                       kSlots))
-                        snap.usershaderconf.splices.push_back(*s);
-                }
-            }
-#endif
-            snap.preselconf = preselconf;
-            snap.selconf = selconf;
-            snap.autozoomScale = autozoomScale;
-            snap.effectResolution = _BGFXLib.effectResolution;
-            snap.ssaoResolution = _BGFXLib.ssaoResolution;
-            snap.hatch = hatchTex;
-            std::memcpy(snap.viewMatrix, viewMatrix, sizeof(snap.viewMatrix));
-            std::memcpy(snap.projMatrix, projMatrix, sizeof(snap.projMatrix));
-            snap.width = width;
-            snap.height = height;
-            snap.clearColor = clearColor;
-        };
         if (dumpPath && *dumpPath && !sceneDumped
                 && !(scene.empty() && overlays.empty())
                 && ++dumpFrames > (dumpDelay ? atoi(dumpDelay) : 0)
                 && (!dumpSel || !selections.empty())) {
             sceneDumped = true;
             Render::SceneSnapshot snap;
-            makeSnapshot(snap);
+            makeSnapshot(snap, viewMatrix, projMatrix, width, height,
+                         clearColor);
             fprintf(stderr, "bgfx: scene snapshot (%zu draws) -> %s: %s\n",
                     scene.size(), dumpPath,
                     Render::saveSceneSnapshot(dumpPath, snap)
@@ -8584,149 +8759,8 @@ public:
             }
         }
 
-        // FC_BGFX_SERVE_SCENE=<port>: publish the feeds to the
-        // standalone/wasm viewer over the snapshot HTTP server whenever
-        // they change (SceneServer.h).
-        static const char *servePort = getenv("FC_BGFX_SERVE_SCENE");
-        if (servePort && *servePort) {
-            auto &server = Render::SceneStreamServer::instance();
-            static bool serveFailed = false;
-            if (!server.running() && !serveFailed && !serveStarted) {
-                serveStarted = true;
-                if (server.start(atoi(servePort)))
-                    fprintf(stderr, "bgfx: scene server on port %s\n",
-                            servePort);
-                else {
-                    serveFailed = true;
-                    fprintf(stderr,
-                            "bgfx: scene server FAILED on port %s\n",
-                            servePort);
-                }
-            }
-            // Publish whenever there is anything to show, not just a non-empty
-            // main scene: while editing the only object (e.g. a Sketcher sketch
-            // with no other geometry) the whole edit graph lives in the editing
-            // overlay and the main scene is empty — the datums/leaders must
-            // still stream.
-            uint64_t publishVersion = 0;
-            // A level-generation job finishing (§7, phase 5c) is a
-            // publish trigger of its own: nothing in the feeds moved,
-            // but the manifest a fresh publish writes is what carries
-            // the new key to every viewer.
-            const size_t levelsBuilt =
-                server.running() ? server.levelsBuilt() : 0;
-            if (server.running()
-                    && (dirtyChanged || !scenePublished
-                        || levelsBuilt != publishedLevelsBuilt)
-                    && !(scene.empty() && overlays.empty())
-                    // Claims the stream on the first publish and states
-                    // which publish this is; 0 means another renderer
-                    // owns it and this one stays off the wire.
-                    && (publishVersion = server.beginPublish(this)) != 0) {
-                scenePublished = true;
-                Render::SceneSnapshot snap;
-                makeSnapshot(snap);
-                snap.manifestVersion = publishVersion;
-                snap.sessionId = server.sessionId();
-                // Texture pixels leave the stream and are served out of
-                // band instead (SceneDump.h, v26): a republish fires on
-                // every feed change, down to a selection pick, and the
-                // embedded images do not change with it.
-                snap.textureBlobs = [&server](const std::string &key,
-                                              std::vector<uint8_t> &&pixels) {
-                    server.publishBlob(key, std::move(pixels));
-                };
-                // Mesh chunks likewise (v28), but keyed through a memo
-                // on cacheId: hashing every mesh on every publish would
-                // just move the cost from the network to the CPU. The
-                // memo spans two publishes — an entry has to be
-                // reachable while the blob it names is still retained,
-                // and retainBlob() failing is what expires it.
-                meshKeysPrev = std::move(meshKeys);
-                meshKeys.clear();
-                snap.meshBlobs.reuse = [this, &server](uint64_t cacheId,
-                                                       uint32_t &size) {
-                    auto it = meshKeys.find(cacheId);
-                    if (it != meshKeys.end()) {
-                        size = it->second.second;
-                        return it->second.first;
-                    }
-                    it = meshKeysPrev.find(cacheId);
-                    if (it == meshKeysPrev.end())
-                        return std::string();
-                    if (!server.retainBlob(it->second.first, &size))
-                        return std::string();
-                    meshKeys[cacheId] = {it->second.first, size};
-                    return it->second.first;
-                };
-                snap.meshBlobs.store = [this, &server](
-                        uint64_t cacheId, const std::string &key,
-                        std::vector<uint8_t> &&chunk) {
-                    meshKeys[cacheId] = {key, uint32_t(chunk.size())};
-                    server.publishBlob(key, std::move(chunk));
-                };
-                // Generated levels (§7, phase 5c): the server's work
-                // queue built them, the serializer asks per declared
-                // level, and writing the key is the announcement.
-                snap.meshBlobs.built = [&server](const std::string &source,
-                                                 uint32_t level,
-                                                 uint32_t &size) {
-                    return server.builtLevel(source, level, &size);
-                };
-                // v33: the manifest layout. Setting this is what
-                // selects it — the group manifests, the materials and
-                // the user shaders all become content-keyed chunks,
-                // and an object nothing touched then costs its root
-                // entry alone. Each is rebuilt and hashed every
-                // publish (it has to be built to know it is
-                // unchanged), but its bytes only leave the process
-                // when the publisher does not already hold them.
-                snap.chunkBlobs = [&server](const std::string &key,
-                                            std::vector<uint8_t> &&bytes) {
-                    if (!server.retainBlob(key))
-                        server.publishBlob(key, std::move(bytes));
-                };
-                // The root is always written with a complete object
-                // list. What a viewer that is behind gets instead is
-                // derived from these bytes by the server, which is the
-                // only party that knows what any given viewer is
-                // missing — so this runs once however many viewers are
-                // connected, and however far behind they are.
-                std::vector<Render::SceneSnapshot::ObjectEntry> entries;
-                Render::SceneSnapshot::RootSpans spans;
-                snap.objectEntries = &entries;
-                snap.rootSpans = &spans;
-                Render::SceneStreamServer::ScenePublish pub;
-                pub.version = publishVersion;
-                if (Render::saveSceneSnapshot(pub.payload, snap)) {
-                    pub.spans = spans;
-                    Render::diffObjectLists(publishedObjects, entries,
-                                            pub.changed, pub.removed);
-                    publishedObjects = std::move(entries);
-                    server.publish(std::move(pub));
-                    // This publish consulted builtLevel() for every
-                    // ladder it wrote, so every level finished by the
-                    // count taken above is now announced. A job that
-                    // finishes mid-serialization moves the counter
-                    // past this mark and triggers the next round.
-                    publishedLevelsBuilt = levelsBuilt;
-                    // Tell the level-source registry which published
-                    // key each shape-backed mesh landed under, so the
-                    // server's level worker can re-tessellate instead
-                    // of decimate (MeshSource.h). Idempotent, and a
-                    // tag nobody registered is skipped inside.
-                    auto &sources = Render::MeshSourceRegistry::instance();
-                    for (const auto &d : snap.scene) {
-                        if (!d.mesh || !d.mesh->sourceTag)
-                            continue;
-                        auto it = meshKeys.find(d.mesh->cacheId);
-                        if (it != meshKeys.end())
-                            sources.associate(it->second.first,
-                                              d.mesh->sourceTag);
-                    }
-                }
-            }
-        }
+        publishScene(viewMatrix, projMatrix, width, height, clearColor,
+                     dirtyChanged);
 #endif
 
         // Publish-only frame. A serving process with nobody at its own
