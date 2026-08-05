@@ -1,7 +1,7 @@
 # Headless serving — publishing a scene with no 3D view
 
-Status: stages 1 and 2a-2c are **implemented**; 2d (pick, control channel, work notifier) is
-still design. Stage 1 (a serving process does not rasterize) is released on `LinkVibe`; the
+Status: stages 1, 2a-2c and most of 2d are **implemented**; two open items are listed under
+2d in §4. Stage 1 (a serving process does not rasterize) is released on `LinkVibe`; the
 rest is on the branch. A document can now be served with no 3D view, no display and no GL
 driver in the process — see §4, stage 2c.
 
@@ -198,11 +198,34 @@ Xvfb): publishes the same scene, at 0.0% CPU, with **no GL library mapped into t
 no `libGL`, no `libEGL`, no `swrast`, no `llvmpipe`, no `dri`. That is the whole point of
 stage 2, and it is what makes the acceptance test of 2d a formality rather than a hope.
 
-**2d — handlers and the Python surface.** Pick, control, work notifier; then the entry point,
-which should be a document-level call rather than a new env var —
-`Gui.serveDocument(doc, port)`, with `FC_BGFX_SERVE_SCENE` on a hidden document as the
-scripted equivalent. Verify with the existing probes in `~/works/sw/fcad-probes/` against a
-backend launched with **no Xvfb at all**; that is the acceptance test for the whole stage.
+**2d — handlers and the Python surface. Mostly done; two open items.** Pick, control channel
+and work notifier are installed by the source, and the entry point is `Gui.serveDocument(doc,
+port)` — a non-zero port starts the stream server directly, so serving no longer depends on
+`FC_BGFX_SERVE_SCENE`. Verified against a backend with **no Xvfb and no display**: the stream
+decodes (`snapprobe.py`), and a control-channel property edit is accepted and republishes.
+
+The per-view render overrides moved with it. Everything that reads them only ever calls
+`getPropertyByName`, so the plumbing now takes an `App::PropertyContainer` and the source
+holds its own — which is what makes the control channel's `view3d` subject answerable with no
+view. It notifies the source on change, because with no frame loop an edit that nothing
+listens for never reaches the wire.
+
+⚠️ **Open item 1: the incremental push after a config-only edit is flaky.** The edit lands,
+the publish runs, and a *newly connected* viewer sees the new value — but an
+already-connected one is pushed a frame only sometimes (measured 1 in 3 runs;
+`changeprobe.py` alternates PASS/FAIL). Traced as far as the source being blameless: the
+publish reaches `publishScene` with `dirtyChanged` set and installs a new version. What comes
+back empty is `payloadFor(sent)`, the per-viewer delta in `SceneServer.cpp`. This is likely
+**not** headless-specific — a drawing viewer republishes on every frame, so a dropped delta is
+immediately followed by another and the loss is invisible. It wants its own investigation.
+
+⚠️ **Open item 2: coarse-first does not engage when serving is started by port.**
+`PartGui::coarseTessellationLevel()` tests `FC_BGFX_SERVE_SCENE` directly, so
+`Gui.serveDocument(doc, port)` alone leaves it off and the document tessellates exact up
+front (measured: 128266 vertices against the env var's 8310). The gate should ask whether the
+scene stream server is running, as the publish path now does. Note this is partly inherent:
+geometry tessellated before serving starts cannot be retroactively coarsened, so a document
+built and *then* served will be exact either way.
 
 ### 4.1 The diff harness
 
