@@ -332,6 +332,17 @@ static int s_width = 1024;    // drawing-buffer size, device px (css * dpr)
 static int s_height = 768;
 static float s_dpr = 1.0f;    // devicePixelRatio applied to the buffer
 
+// Whether the last pointer to act was coarse (a fingertip) rather than fine
+// (mouse or stylus). A fingertip covers several millimetres of glass and
+// carries no cursor, so it cannot be aimed anywhere near as precisely; the
+// pick radius follows from this (pickRadiusPx).
+static bool s_coarsePointer = false;
+// When a stylus was last seen hovering. A pen reaches this viewer as touch
+// events (it is a touchscreen), so its taps would otherwise be treated as a
+// fingertip's; a recent hover says the contact is a pen tip and can keep the
+// fine radius.
+static double s_penHoverMs = -1e9;
+
 // Orbit camera state around the scene bounds.
 static float s_center[3] = {0.0f, 0.0f, 0.0f};
 static float s_panX = 0.0f, s_panY = 0.0f;  // pan in camera plane
@@ -666,6 +677,27 @@ static bx::Vec3 toWorld(const Render::DrawCall &dc, const float *pos)
     return dc.identity ? p : bx::mul(p, dc.model);
 }
 
+/// The screen-space slack an edge or vertex pick is allowed, in canvas
+/// (drawing-buffer) pixels.
+///
+/// Two corrections to the streamed value, which is the desktop's
+/// ViewParams::PickRadius — CSS pixels, sized for a mouse cursor on a
+/// ratio-1 screen:
+///  * scale to the buffer by the device pixel ratio, or the radius shrinks
+///    with every extra pixel of density (5px is under 2 CSS px on a phone);
+///  * widen it for a fingertip, which is ~9mm of contact with no cursor to
+///    aim by. 15 CSS px (a 30px target) is about 4mm — well inside the
+///    contact patch, so it does not pull in elements the finger never
+///    covered, and still several times what a mouse gets.
+/// A stylus stays on the fine radius: it has a tip and a hover state.
+static float pickRadiusPx()
+{
+    const float base = s_snap.preselconf.pickRadius > 0.5f
+        ? s_snap.preselconf.pickRadius : 5.0f;
+    const float css = s_coarsePointer ? std::max(base, 15.0f) : base;
+    return css * std::max(1.0f, s_dpr);
+}
+
 /// Nearest face (exact ray/triangle), edge and vertex (screen-space proximity
 /// within the pick radius) of the draw scene at canvas pixel (px, py), then
 /// resolve by the desktop's vertex > edge > face priority — a higher-priority
@@ -680,8 +712,7 @@ static PickHit pickScene(float px, float py)
     const float aspect = s_height > 0
         ? float(s_width) / float(s_height) : 1.0f;
     const float th = std::tan(0.5f * kFovY * bx::kPi / 180.0f);
-    const float radius = s_snap.preselconf.pickRadius > 0.5f
-        ? s_snap.preselconf.pickRadius : 5.0f;
+    const float radius = pickRadiusPx();
     const float rdotf = bx::dot(rdir, fwd);  // ray-param -> forward-depth
 
     PickHit face, edge, vert;
@@ -2049,6 +2080,7 @@ static void updateHover(const EmscriptenMouseEvent *e)
 
 static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
 {
+    s_coarsePointer = false;
     s_dragging = true;
     s_panning = e->button == 2 || e->shiftKey;
     s_lastX = int(e->clientX);
@@ -2167,6 +2199,8 @@ static float s_tapX = 0.0f, s_tapY = 0.0f;
 extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_pen_hover(float clientX,
                                                         float clientY)
 {
+    s_penHoverMs = emscripten_get_now();
+    s_coarsePointer = false;
     if (s_dragging || s_numTouch > 0)
         return;
     updateHoverAt(clientX, clientY);
@@ -2219,6 +2253,10 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
     }
 
     if (type == EMSCRIPTEN_EVENT_TOUCHSTART) {
+        // A fingertip aims far more coarsely than a cursor (pickRadiusPx),
+        // unless a stylus was hovering just now — then this contact is its
+        // tip and stays fine.
+        s_coarsePointer = emscripten_get_now() - s_penHoverMs > 2000.0;
         // One finger down opens a tap candidate; a second finger (a gesture)
         // cancels it. The cube hover tint isn't used on touch, but clear any
         // stale one before the geometry can move.
