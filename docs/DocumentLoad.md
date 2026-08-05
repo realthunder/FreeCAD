@@ -20,6 +20,10 @@ progressive STEP import of the 285MB MiSTer assembly. Three runs:
 the event loop did not run at all**. The view painted 5 frames across the
 whole open.
 
+§4 and §6 are two separate fixes against this baseline: the first moves
+the visual build off the blocking window (33s to 19.1s), the second stops
+the file describing every view provider in full (19.1s to 13.0s).
+
 The first job was to find out what those 33 seconds are, because the
 guess on record — that a load is publish-bound, and that finishing the
 incremental-publish phases would therefore also be the load work — turned
@@ -121,26 +125,115 @@ capture keeps.
 The total work is not reduced — it is moved off the blocking window.
 Time-to-window is what changed, and that is the thing a user waits on.
 
-## 6. What this does not fix
+## 6. Design: write a view provider once per class
 
-- **The remaining 19s still blocks.** XML (39%) and the archive are
-  untouched: nothing can appear before the objects exist, and today the
-  create pass, the property pass and the archive walk all run to
-  completion before the window is usable.
-- **`GuiDocument.xml` at 87.7MB / 5.4s** is the single largest archive
-  item and has not been looked at.
-- **Three save-side wins are visible in §3** and none are done: stop
-  writing 50811 empty color arrays (75% of the entries), find out what
-  makes the Gui document twice the size of the App document, and write
-  binary BRep rather than ASCII. All three only help documents saved after
-  the change, and each one needs the baseline document re-saved and
-  re-measured.
+§3 says the view file is twice the size of the document and §2 says it
+parses for 5.4s. The reason is that every view provider writes all 31 of
+its properties whether or not it has moved any of them off what its
+constructor produced. Counting `GuiDocument.xml` by property value:
+**87% of it is properties holding the value the whole document holds**,
+and of 540842 properties only about 5000 actually differ.
+
+The first instinct — encode the same properties more cheaply, share
+identical blocks — does not pay, and the measurement is what says so.
+Splitting the pass into what the reader costs and what the property
+costs (`PropertyContainer::restoreStats`, §9) gives **5.87s of which
+4.33s is the values**. A standalone Xerces run over the same 87.7MB
+scans it in **0.50s**. The text is not the problem. The properties have
+to not be there.
+
+**The shape.** `Gui::Document` builds one stand-in view provider per
+class present in the document, writes its properties once as a
+`<Defaults>` block inside `<ViewProviderData>`, and each view provider
+then writes only what differs from it. `<ViewProviderData>` carries a
+`Defaults` count so a reader that finds none never looks for the block,
+which is what lets a file written either way be read by the same code.
+The mechanism itself is generic —
+`App::PropertyContainer::getSaveDefaults()` — so the App document can
+adopt it later against `Document.xml`.
+
+**Why the defaults are written and not implied.** View provider defaults
+come from preferences: `ShapeColor` from `ViewParams`, `Deviation` from
+`PartParams`, and so on. A file that simply left them out would take the
+*opening* machine's preferences, so a document would change colour when
+it moved between users. Recording them keeps the file self-describing.
+It also costs nothing to apply: the reader restores the block into a
+stand-in it builds the same way, compares against what that stand-in
+held before, and pastes only the properties the record actually moved.
+On a machine that agrees with the author — the normal case — that set is
+empty and every view provider is defaulted for free.
+
+**Two properties are always written**, via
+`PropertyContainer::mustSave()`:
+
+- `Visibility`. `finishRestoring()` falls back to the document object's
+  own visibility when the file never mentioned it, and
+  `startRestoring()` has already hidden the view provider — so leaving it
+  out is not the same as writing the default.
+- `DisplayMode`. Its enumeration is installed by `attach()`, and a
+  stand-in built outside any document is never attached. ⚠️ Its
+  `DisplayMode` therefore holds an *empty* enumeration, and pasting that
+  over a real one loses the mode names for the whole document — the
+  round-trip check caught exactly this, reading every `DisplayMode` back
+  as `None`. A property on this list is excluded from the reader's delta
+  as well as from the writer, for the same reason: the stand-in cannot
+  speak for it.
+
+**A class needs three instances** before a block is written. A block is
+one class's whole property set, so below that it costs more than the
+instances can save — a nine-object document came out 4% *larger* before
+this rule.
+
+Result on the 17800 object document, re-saved and re-opened:
+
+| | before | after |
+|---|---|---|
+| `GuiDocument.xml` | 87.7MB | **11.5MB** |
+| archive entries | 68235 | **19255** |
+| eight-byte colour entries | 50811 | **1831** |
+| file on disk | 48MB | **39MB** |
+| view provider pass | 540842 properties / 4.71s | **42233 / 0.61s** |
+| archive stage (`files`) | 8.83s | **3.72s** |
+| **open** | **18.9s** | **13.0s** |
+
+Unchanged: worst stall 2.5s, 76 frames during load and settle, peak RSS
+4748MB. **Every view provider property reads back identical across all
+17800 objects, and the rendered frame differs in 0 of 480000 pixels.**
+
+⚠️ This is a save-side change: it only helps documents saved after it,
+and the baseline has to be re-saved before it can be re-measured. Turn it
+off with `SaveViewProviderDefaults`.
+
+## 7. What this does not fix
+
+- **The remaining 13s still blocks.** Nothing can appear before the
+  objects exist, and the create pass, the property pass and the archive
+  walk still all run to completion before the window is usable.
+- **`Document.xml` is now the larger half of the XML**: 42.5MB, and its
+  `<ObjectData>` pass is 208816 properties for 2.97s of which 2.30s is
+  the values. §6's mechanism is generic
+  (`PropertyContainer::getSaveDefaults()`) and the App document has not
+  adopted it. ⚠️ The risk is not the same: these are data properties, and
+  a document object's defaults are less uniformly its constructor's than
+  a view provider's are.
+- **The reader's own overhead is now visible.** With the properties gone
+  the view provider pass is 0.61s, but `Base::XMLReader` still rebuilds a
+  `std::map<std::string,std::string>` of transcoded attributes per
+  element. Measured standalone on the old 87.7MB file that costs 0.50s on
+  top of a 0.50s scan; a vector of reused strings brought it to 0.10s.
+  Unlike §6 this would help documents **already saved**.
+- **ASCII BRep is untouched**: 17058 `.brp`, 237MB raw, 2.79s — now the
+  largest single item in the archive stage. ⭐ `Document::PreferBinary`
+  already switches this, so the first move is a re-save experiment rather
+  than code.
+- **Old documents keep the old cost.** §6 is a save-side change. A file
+  saved before it still parses 540842 view provider properties.
 - **The fill rate is publish-bound**, even though the load is not: each
   slice pays for a redraw, so the incremental-publish work
   (`docs/IncrementalPublish.md`) is what would make the model fill in
   faster once the window is up.
 
-## 7. Non-goals and risks
+## 8. Non-goals and risks
 
 - **Parallel restore is not attempted here.** The archive is read through
   a forward-only `ZipInputStream`, and switching to
@@ -159,7 +252,7 @@ Time-to-window is what changed, and that is the thing a user waits on.
   oversized parts — `CoarseDeferFaces` is 1000 faces — and this load's
   cost is thousands of small ones.
 
-## 8. Instrumentation
+## 9. Instrumentation
 
 All of it is log-level gated (`App`, `Base`, `Gui`, `Part` at `Log`), not
 build flags, and all of it stays:
@@ -176,7 +269,31 @@ build flags, and all of it stays:
   `VisualMeshTime`, the accumulators that separate a bulk fill's visual
   building from its meshing.
 - `PartGui` — one line per drain of the deferred queue.
+- `App::PropertyContainer::restoreStats` — properties restored, the time
+  in them, and of that the time inside `Property::Restore()`. The two
+  halves answer to different fixes and choosing between them needs the
+  split; §6 exists because of this number. Read as a delta by
+  `Document::readObjects` and by `Gui::Document`, which reports the view
+  provider pass as its own line.
+- `App::PropertyContainer::savedDefaults` — properties a save left out.
+  Reported per document write, because a shared default block that
+  quietly stops matching writes the whole file again and otherwise looks
+  like nothing happened.
 
-Harness: `~/works/sw/models/harnesses/load_probe.py` with `run_gpu.sh`.
-⚠️ `perf` is unusable on this box (the wrapper wants a kernel-tools
-package that needs root); stage timers or ablation instead.
+Harnesses, all under `~/works/sw/models/harnesses/` with `run_gpu.sh`:
+`load_probe.py` (open, stall, frames, RSS), `defaults_check.py` (a small
+document round-tripped with the option on and off), `resave_probe.py`
+(re-save the big one, then compare every view provider property and the
+rendered frame against the original).
+
+⚠️ Traps these ran into, all of which produce a *passing-looking* run:
+
+- **`perf` is unusable on this box** (the wrapper wants a kernel-tools
+  package that needs root); stage timers or ablation instead.
+- **Parameters persist to `user.cfg`.** A check whose last case turned
+  `SaveViewProviderDefaults` off left it off for the next measurement,
+  which then re-saved 540842 properties and reported success. A harness
+  should *set* what it is testing, and put back what it changed.
+- **A capture taken before the deferred fill drains** photographs how far
+  the fill happened to get. Settle first — and compare decoded pixels,
+  not file bytes, because two encodings of one picture need not match.
