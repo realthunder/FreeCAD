@@ -47,6 +47,15 @@ Params = [
     ParamInt('ForceXML', 3),
     ParamBool('SplitXML', True),
     ParamBool('PreferBinary', False),
+    ParamInt('InlineListSize', 64,
+        doc='Largest list property, in bytes of values, still written inline\n'
+            'in the XML instead of taking an archive entry of its own. An\n'
+            'entry costs around 190 bytes of zip headers before any content,\n'
+            'and one more thing for the reader to open, which a one-element\n'
+            'colour list has no way of paying back. Written in the same form\n'
+            'the reader has always used for lists that cannot be streamed, so\n'
+            'the file stays readable by FreeCAD versions without this option.\n'
+            'Set to 0 to give every list an entry, as before.'),
     ParamBool('SaveObjectDefaults', True,
         doc='Save the objects of a document as a difference from their class\n'
             'defaults, which are written once for the whole document. Most of\n'

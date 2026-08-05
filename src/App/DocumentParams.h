@@ -173,6 +173,25 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter InlineListSize
+    ///
+    /// Largest list property, in bytes of values, still written inline
+    /// in the XML instead of taking an archive entry of its own. An
+    /// entry costs around 190 bytes of zip headers before any content,
+    /// and one more thing for the reader to open, which a one-element
+    /// colour list has no way of paying back. Written in the same form
+    /// the reader has always used for lists that cannot be streamed, so
+    /// the file stays readable by FreeCAD versions without this option.
+    /// Set to 0 to give every list an entry, as before.
+    static const long & getInlineListSize();
+    static const long & defaultInlineListSize();
+    static void removeInlineListSize();
+    static void setInlineListSize(const long &v);
+    static const char *docInlineListSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter SaveObjectDefaults
     ///
     /// Save the objects of a document as a difference from their class

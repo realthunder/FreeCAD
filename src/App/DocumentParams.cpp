@@ -55,6 +55,7 @@ public:
         signalParamChanged("ForceXML");
         signalParamChanged("SplitXML");
         signalParamChanged("PreferBinary");
+        signalParamChanged("InlineListSize");
         signalParamChanged("SaveObjectDefaults");
         signalParamChanged("AutoRemoveFile");
         signalParamChanged("AutoNameDynamicProperty");
@@ -93,6 +94,7 @@ public:
     long ForceXML;
     bool SplitXML;
     bool PreferBinary;
+    long InlineListSize;
     bool SaveObjectDefaults;
     bool AutoRemoveFile;
     bool AutoNameDynamicProperty;
@@ -144,6 +146,8 @@ public:
         funcs["SplitXML"] = &DocumentParamsP::updateSplitXML;
         PreferBinary = this->handle->GetBool("PreferBinary", false);
         funcs["PreferBinary"] = &DocumentParamsP::updatePreferBinary;
+        InlineListSize = this->handle->GetInt("InlineListSize", 64);
+        funcs["InlineListSize"] = &DocumentParamsP::updateInlineListSize;
         SaveObjectDefaults = this->handle->GetBool("SaveObjectDefaults", true);
         funcs["SaveObjectDefaults"] = &DocumentParamsP::updateSaveObjectDefaults;
         AutoRemoveFile = this->handle->GetBool("AutoRemoveFile", true);
@@ -253,6 +257,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePreferBinary(DocumentParamsP *self) {
         self->PreferBinary = self->handle->GetBool("PreferBinary", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateInlineListSize(DocumentParamsP *self) {
+        self->InlineListSize = self->handle->GetInt("InlineListSize", 64);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateSaveObjectDefaults(DocumentParamsP *self) {
@@ -648,6 +656,41 @@ void DocumentParams::setPreferBinary(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removePreferBinary() {
     instance()->handle->RemoveBool("PreferBinary");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docInlineListSize() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Largest list property, in bytes of values, still written inline\n"
+"in the XML instead of taking an archive entry of its own. An\n"
+"entry costs around 190 bytes of zip headers before any content,\n"
+"and one more thing for the reader to open, which a one-element\n"
+"colour list has no way of paying back. Written in the same form\n"
+"the reader has always used for lists that cannot be streamed, so\n"
+"the file stays readable by FreeCAD versions without this option.\n"
+"Set to 0 to give every list an entry, as before.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & DocumentParams::getInlineListSize() {
+    return instance()->InlineListSize;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & DocumentParams::defaultInlineListSize() {
+    const static long def = 64;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setInlineListSize(const long &v) {
+    instance()->handle->SetInt("InlineListSize",v);
+    instance()->InlineListSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeInlineListSize() {
+    instance()->handle->RemoveInt("InlineListSize");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
