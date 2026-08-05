@@ -198,7 +198,7 @@ Xvfb): publishes the same scene, at 0.0% CPU, with **no GL library mapped into t
 no `libGL`, no `libEGL`, no `swrast`, no `llvmpipe`, no `dri`. That is the whole point of
 stage 2, and it is what makes the acceptance test of 2d a formality rather than a hope.
 
-**2d — handlers and the Python surface. Mostly done; two open items.** Pick, control channel
+**2d — handlers and the Python surface. Done.** Pick, control channel
 and work notifier are installed by the source, and the entry point is `Gui.serveDocument(doc,
 port)` — a non-zero port starts the stream server directly, so serving no longer depends on
 `FC_BGFX_SERVE_SCENE`. Verified against a backend with **no Xvfb and no display**: the stream
@@ -210,22 +210,64 @@ holds its own — which is what makes the control channel's `view3d` subject ans
 view. It notifies the source on change, because with no frame loop an edit that nothing
 listens for never reaches the wire.
 
-⚠️ **Open item 1: the incremental push after a config-only edit is flaky.** The edit lands,
-the publish runs, and a *newly connected* viewer sees the new value — but an
-already-connected one is pushed a frame only sometimes (measured 1 in 3 runs;
-`changeprobe.py` alternates PASS/FAIL). Traced as far as the source being blameless: the
-publish reaches `publishScene` with `dirtyChanged` set and installs a new version. What comes
-back empty is `payloadFor(sent)`, the per-viewer delta in `SceneServer.cpp`. This is likely
-**not** headless-specific — a drawing viewer republishes on every frame, so a dropped delta is
-immediately followed by another and the loss is invisible. It wants its own investigation.
+**Closed item 1: the "flaky incremental push" was the probe, not the backend.** The symptom
+was real — `changeprobe.py` alternated PASS/FAIL about 1 run in 3 — and the earlier reading of
+it was wrong in a way worth recording, because it accused the one component that was innocent.
+The delta is *never* dropped. Counting the raw bytes the watcher socket delivers settles it:
+on a failing run the backend sends the same 691-byte delta it sends on a passing one, and the
+probe fails to parse it.
 
-⚠️ **Open item 2: coarse-first does not engage when serving is started by port.**
-`PartGui::coarseTessellationLevel()` tests `FC_BGFX_SERVE_SCENE` directly, so
-`Gui.serveDocument(doc, port)` alone leaves it off and the document tessellates exact up
-front (measured: 128266 vertices against the env var's 8310). The gate should ask whether the
-scene stream server is running, as the publish path now does. Note this is partly inherent:
-geometry tessellated before serving starts cannot be retroactively coarsened, so a document
-built and *then* served will be exact either way.
+The defect was in `frames()` (`snapprobe.py`), the helper both probes read the socket with. It
+copied `ws.buf` into a local and never wrote the remainder back, so every byte it had read but
+not yielded died with the generator. A caller that watches in windows — one before the edit,
+one after — therefore resumed the second window mid-frame and parsed lengths out of payload
+bytes, after which nothing it saw was ever a frame again. The trigger is timing: window 1 has
+to expire while the 27 KB initial snapshot is still arriving (measured on a failing run: 23104
+of 27071 bytes read), which is exactly the sort of thing that varies run to run. ⚠️ The
+generator also has to consume before it yields, since the caller may abandon it at any yield.
+
+Two lessons for anything else built on these probes. A framed protocol needs its read buffer
+to live on the connection, not in whatever is parsing it this second — a lost partial frame
+does not look like a lost frame, it looks like a backend that went quiet. And `snapprobe.py`
+ran its `main()` at import, so every probe importing `frames` opened a second viewer and held
+it for 20 s; that is fixed too (`if __name__ == "__main__"`). With both fixed, `changeprobe.py`
+passes 10/10, and `changeprobe_bytes.py` is kept alongside it as the byte-accounting variant
+that can tell "sent nothing" from "could not read it".
+
+Nothing was wrong on the desktop path either, so there is no pre-existing server bug here to
+carry forward.
+
+**Closed item 2: coarse-first now asks whether the scene is served, not how serving started.**
+`PartGui::coarseTessellationLevel()` tested `FC_BGFX_SERVE_SCENE` directly and so was blind to
+`Gui.serveDocument(doc, port)`. It now calls a local `sceneServed()` —
+`SceneStreamServer::running()`, *or* the env var on its own, since that variable names a port
+the renderer has not necessarily bound yet (it starts the listener at its first publish, and a
+document can be loaded, and tessellated, before any frame). The desktop refine arm further
+down the file used the same test and moved with it. The per-view
+`Render_CoarseTessellation` override now resolves through the active view *or* the serving
+source's container, the way the control channel's `view3d` subject already does — headless
+serving holds those properties with no view to hang them on.
+
+Measured on `demo-varied` through `serve_then_build.py`, which opens the stream on an empty
+hidden document and builds into it — the arrangement where the gate can act at all:
+
+| arm | draws | objects | vertices |
+| --- | ----- | ------- | -------- |
+| served, gate open | 600 | 200 | **40350** |
+| served, `FC_COARSE_TESSELLATION=-1` (what the closed gate did) | 600 | 200 | 638912 |
+| built first, then served | 600 | 200 | 638912 |
+
+⚠️ The third row is the part that is **inherent, not fixed**: geometry tessellated before
+serving starts cannot be retroactively coarsened, and `fcscenediff` calls that arm *identical*
+to the forced-exact one. Build-then-serve is exact either way; only serve-then-build gets the
+ladder. `serve_source_varied.py` is the former and `serve_then_build.py` the latter — which
+of the two a test uses decides what it can possibly measure.
+
+⚠️ Capture note for both: this source publishes only on document change, so a dump taken a
+fixed number of publishes in lands mid-build, at a different place in each arm. `serve_then_
+build.py` nudges one object after the build to emit a run of publishes of the *finished*
+scene; capture inside that run (`SETTLE=0 DUMP_DELAY=25`). A single-publish arm needs
+`DUMP_DELAY=0` or it never dumps at all.
 
 ### 4.1 The diff harness
 
