@@ -509,7 +509,7 @@ public:
                                  &QCoreApplication::aboutToQuit,
                                  [this]() {
                                      views.clear();
-                                     viewIds.clear();
+                                     granules.clear();
                                      shutdown();
                                  });
             }
@@ -804,13 +804,37 @@ public:
     // ambient occlusion stays sharp while the reflection re-render can scale.
     float ssaoResolution = 1.0f;
     std::unordered_map<QOpenGLWidget *, std::unique_ptr<BGFXView>> views;
-    std::set<uint16_t> viewIds;
+    // View-id pool. A viewer holds a contiguous block sized to the
+    // passes its frames actually use (BGFXView's pass map), which is
+    // well under NUM_VIEWS for an ordinary scene, so the ids bgfx offers
+    // stretch much further than one block per viewer would allow.
+    //
+    // Blocks are handed out in granules so that a scene picking up one
+    // more pass -- a second overlay, a bulb that starts casting -- does
+    // not repack the pool every time. A block only ever grows: it is the
+    // high-water mark of what the viewer has needed, which keeps the
+    // ids of a viewer that alternates between two configurations still.
+    static const uint16_t kIdGranule = 8;
+    std::vector<uint8_t> granules;   ///< 1 = taken
     // Whether the "out of bgfx view ids" refusal has already been
-    // reported. getView() is asked once per frame per viewer, so without
-    // this the message would repeat for as long as the extra viewer is
-    // open. Cleared whenever a block is returned (removeView), so the
-    // next viewer that does not fit says so again.
+    // reported. A viewer asks once per frame, so without this the
+    // message would repeat for as long as the extra viewer is open.
+    // Cleared whenever a block is returned, so the next viewer that
+    // does not fit says so again.
     bool warnedViewBudget = false;
+
+    /// Ids in the pool (0 until the first reservation sizes it).
+    uint16_t poolSize() const
+    {
+        return uint16_t(granules.size() * kIdGranule);
+    }
+    /// Free the view's block.
+    void releaseBlock(BGFXView *view);
+    /// Make sure the view's block holds at least `need` ids, moving it
+    /// if it has to grow and cannot grow in place. False means the pool
+    /// is full -- the caller falls back to Coin for this frame rather
+    /// than submitting ids bgfx would abort on.
+    bool reserveBlock(BGFXView *view, uint16_t need);
 
     std::map<std::string, RendererType::Enum> typeMap = {
 #ifdef FC_RENDERER_STANDALONE
@@ -2451,6 +2475,14 @@ public:
             bgfx::destroy(bgfxFbo);
             bgfxFbo = BGFX_INVALID_HANDLE;
         }
+        // Owns its attachments (created with destroyTextures), like the
+        // scene target above.
+        if (bgfx::isValid(sinkFbo)) {
+            bgfx::destroy(sinkFbo);
+            sinkFbo = BGFX_INVALID_HANDLE;
+            sinkColor = BGFX_INVALID_HANDLE;
+            sinkDepth = BGFX_INVALID_HANDLE;
+        }
         if (bgfx::isValid(m_progMesh)) {
             bgfx::destroy(m_progMesh);
             m_progMesh = BGFX_INVALID_HANDLE;
@@ -2741,8 +2773,26 @@ public:
         attachment[1].init(bgfxDepth, bgfx::Access::Write, 0, 1, 0, BGFX_RESOLVE_NONE);
         bgfxFbo = bgfx::createFrameBuffer(2, attachment, true);
 
-        for (uint16_t i = 0; i < NUM_VIEWS; ++i)
-            bgfx::setViewFrameBuffer(viewId + i, bgfxFbo);
+        // The scene framebuffer is bound per view id per frame (the pass
+        // map moves ids between passes from one frame to the next), so
+        // there is deliberately no bind-the-whole-block loop here: it
+        // would bind stale ids, and with a block narrower than NUM_VIEWS
+        // it would reach into the next viewer's block.
+        //
+        // The discard target every unmarked pass maps to. 1x1 with its
+        // own depth: a draw that lands here is clipped to a pixel of
+        // scratch instead of the scene, so a mispredicted pass shows up
+        // as missing pixels and a warning rather than corruption.
+        sinkColor = bgfx::createTexture2D(1, 1, false, 1,
+                                          bgfx::TextureFormat::RGBA8,
+                                          BGFX_TEXTURE_RT);
+        sinkDepth = bgfx::createTexture2D(1, 1, false, 1,
+                                          bgfx::TextureFormat::D24S8,
+                                          BGFX_TEXTURE_RT);
+        {
+            bgfx::TextureHandle sinkAtt[2] = {sinkColor, sinkDepth};
+            sinkFbo = bgfx::createFrameBuffer(2, sinkAtt, true);
+        }
 
         // Bloom (glow) chain: quarter-res RGBA16F halo source + blur
         // ping target (small enough to keep unconditionally; the passes
@@ -4162,7 +4212,7 @@ public:
         bgfx::setVertexBuffer(0, &tvb);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                        | BGFX_STATE_MSAA);
-        bgfx::submit(viewId + ViewBackground, m_progFlat);
+        bgfx::submit(vid(ViewBackground), m_progFlat);
         ++drawcount;
     }
 
@@ -4320,7 +4370,7 @@ public:
             | BGFX_STENCIL_OP_FAIL_S_KEEP
             | BGFX_STENCIL_OP_FAIL_Z_REPLACE
             | BGFX_STENCIL_OP_PASS_Z_REPLACE);
-        bgfx::submit(viewId + view,
+        bgfx::submit(vid(view),
                      clipped ? m_progFlatClip : m_progFlat);
         ++drawcount;
         return true;
@@ -4397,7 +4447,7 @@ public:
                                     uint32_t(count));
         bgfx::setState(outlinestate);
         bgfx::setStencil(outlinestencil);
-        bgfx::submit(viewId + spec.view,
+        bgfx::submit(vid(spec.view),
                      clipped ? m_progLineClip : m_progLine);
         ++drawcount;
 
@@ -4419,7 +4469,7 @@ public:
                                     uint32_t(count));
         bgfx::setState(outlinestate);
         bgfx::setStencil(outlinestencil);
-        bgfx::submit(viewId + spec.view,
+        bgfx::submit(vid(spec.view),
                      clipped ? m_progPointClip : m_progPoint);
         ++drawcount;
     }
@@ -4485,7 +4535,7 @@ public:
                 bgfx::setIndexBuffer(gpu->geom->tri);
             bgfx::setState(BGFX_STATE_MSAA);
             bgfx::setStencil(markstencil);
-            bgfx::submit(viewId + view, m_progFlatClip);
+            bgfx::submit(vid(view), m_progFlatClip);
             ++drawcount;
         };
 
@@ -4538,7 +4588,7 @@ public:
             | BGFX_STENCIL_OP_FAIL_S_KEEP
             | BGFX_STENCIL_OP_FAIL_Z_KEEP
             | BGFX_STENCIL_OP_PASS_Z_KEEP);
-        bgfx::submit(viewId + view,
+        bgfx::submit(vid(view),
                      numOther > 0 ? m_progCapClip : m_progCap);
         ++drawcount;
     }
@@ -4569,7 +4619,7 @@ public:
             | BGFX_STENCIL_OP_FAIL_S_KEEP
             | BGFX_STENCIL_OP_FAIL_Z_REPLACE
             | BGFX_STENCIL_OP_PASS_Z_REPLACE);
-        bgfx::submit(viewId + view, m_progCap);
+        bgfx::submit(vid(view), m_progCap);
         ++drawcount;
     }
 
@@ -4595,7 +4645,7 @@ public:
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
             | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_INV_SRC_ALPHA,
                                     BGFX_STATE_BLEND_SRC_ALPHA));
-        bgfx::submit(viewId + ViewOITComposite, m_progComp);
+        bgfx::submit(vid(ViewOITComposite), m_progComp);
         ++drawcount;
     }
 
@@ -4871,7 +4921,7 @@ public:
         if (light.groundTransparency > 0.0f)
             state |= BGFX_STATE_BLEND_ALPHA;
         bgfx::setState(state);
-        bgfx::submit(viewId + ViewOpaque,
+        bgfx::submit(vid(ViewOpaque),
                      textured ? m_progMeshTex : m_progMesh);
         ++drawcount;
 
@@ -4885,7 +4935,7 @@ public:
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                            | BGFX_STATE_WRITE_Z
                            | BGFX_STATE_DEPTH_TEST_LESS);
-            bgfx::submit(viewId + ViewAOPrepass, m_progPrepass);
+            bgfx::submit(vid(ViewAOPrepass), m_progPrepass);
             ++drawcount;
         }
     }
@@ -4916,7 +4966,7 @@ public:
         float evsm[4] = {shadowWarpFrame, shadowThreshold,
                          0.0f, 0.0f};
         bgfx::setUniform(u_evsm, evsm);
-        bgfx::submit(viewId + ViewShadow,
+        bgfx::submit(vid(ViewShadow),
                      clipped ? m_progShadowClip : m_progShadow);
         ++drawcount;
     }
@@ -4945,7 +4995,7 @@ public:
                        | BGFX_STATE_DEPTH_TEST_LESS);
         float evsm[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         bgfx::setUniform(u_evsm, evsm);
-        bgfx::submit(uint16_t(viewId + ViewBulbShadow0 + tile),
+        bgfx::submit(vid(ViewBulbShadow0 + tile),
                      clipped ? m_progShadowClip : m_progShadow);
         ++drawcount;
     }
@@ -4978,7 +5028,7 @@ public:
                                                BGFX_STATE_BLEND_SRC_COLOR)
                        | (mat.ccw ? BGFX_STATE_CULL_CW
                                   : BGFX_STATE_CULL_CCW));
-        bgfx::submit(viewId + ViewShadowTint, m_progShadowTint);
+        bgfx::submit(vid(ViewShadowTint), m_progShadowTint);
         ++drawcount;
     }
 
@@ -5124,7 +5174,7 @@ public:
         if (mat.culling && !mat.twoside)
             state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
         bgfx::setState(state);
-        bgfx::submit(viewId + ViewAOPrepass,
+        bgfx::submit(vid(ViewAOPrepass),
                      clipped ? m_progPrepassClip : m_progPrepass);
         ++drawcount;
     }
@@ -5211,7 +5261,7 @@ public:
         if (mat.culling && !mat.twoside)
             state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
         bgfx::setState(state);
-        bgfx::submit(viewId + ViewDebugScene,
+        bgfx::submit(vid(ViewDebugScene),
                      clipped ? m_progDebugSceneClip : m_progDebugScene);
         ++drawcount;
     }
@@ -5264,7 +5314,7 @@ public:
                     "bgfx meddepth kind=%d back=%d slot=%d key=%llx\n",
                     kind, back, slot,
                     (unsigned long long)draw.objectKey);
-        bgfx::submit(viewId + pass,
+        bgfx::submit(vid(pass),
                      clipped ? m_progMedDepthClip : m_progMedDepth);
         ++drawcount;
     }
@@ -5494,7 +5544,7 @@ public:
                 const int dst = st.needInit ? 0 : 1 - st.cur;
                 const uint16_t pass = uint16_t(
                     ViewParticleSim0 + st.slot * kParticleSteps + steps);
-                const uint16_t vid = uint16_t(viewId + pass);
+                const uint16_t vid = this->vid(pass);
                 bgfx::setViewFrameBuffer(vid, st.fbo[dst]);
                 bgfx::setViewClear(vid, uint16_t(BGFX_CLEAR_NONE),
                                    0, 1.0f, 0);
@@ -5608,7 +5658,7 @@ public:
         }
         std::memcpy(impactFrame, frame4, sizeof(impactFrame));
 
-        const uint16_t vid = uint16_t(viewId + ViewParticleImpact);
+        const uint16_t vid = this->vid(ViewParticleImpact);
         bgfx::setViewFrameBuffer(vid, impactFbo);
         bgfx::setViewClear(vid,
                            uint16_t(refit ? BGFX_CLEAR_COLOR
@@ -5687,7 +5737,7 @@ public:
         v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
         bgfx::setVertexBuffer(0, &tvb);
         bgfx::setState(state, blendFactor);
-        bgfx::submit(viewId + pass, prog);
+        bgfx::submit(vid(pass), prog);
         ++drawcount;
     }
 
@@ -6078,7 +6128,7 @@ public:
                     state |= mat.ccw ? BGFX_STATE_CULL_CW
                                      : BGFX_STATE_CULL_CCW;
                 bgfx::setState(state);
-                bgfx::submit(viewId + ViewBloomEmit, m_progBloomEmit);
+                bgfx::submit(vid(ViewBloomEmit), m_progBloomEmit);
                 ++drawcount;
             }
         }
@@ -6270,7 +6320,7 @@ public:
                 applyUserState(*mat.usershader, state, 0, false);
             }
         }
-        bgfx::submit(viewId + ViewWaterSurface, prog);
+        bgfx::submit(vid(ViewWaterSurface), prog);
         ++drawcount;
     }
 
@@ -6348,7 +6398,7 @@ public:
         if (mat.culling && !mat.twoside)
             state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
         bgfx::setState(state);
-        bgfx::submit(viewId + ViewGlassSurface, m_progGlass);
+        bgfx::submit(vid(ViewGlassSurface), m_progGlass);
         ++drawcount;
     }
 
@@ -6441,7 +6491,7 @@ public:
                        | BGFX_STATE_DEPTH_TEST_EQUAL
                        | BGFX_STATE_BLEND_ALPHA
                        | BGFX_STATE_MSAA);
-        bgfx::submit(viewId + ViewGroundReflApply, m_progGroundRefl);
+        bgfx::submit(vid(ViewGroundReflApply), m_progGroundRefl);
         ++drawcount;
     }
 
@@ -6782,7 +6832,7 @@ public:
                     (unsigned long long)state, mat.pervertexcolor,
                     textured, transparent);
 
-        bgfx::submit(viewId + (transparent ? ViewTransparent : ViewOpaque),
+        bgfx::submit(vid(transparent ? ViewTransparent : ViewOpaque),
                      prog);
         return true;
     }
@@ -6827,7 +6877,7 @@ public:
             fprintf(stderr,
                     "bgfx submit instanced shadow cache=%llx n=%u\n",
                     (unsigned long long)draw.mesh->cacheId, count);
-        bgfx::submit(viewId + ViewShadow, m_progShadowInst);
+        bgfx::submit(vid(ViewShadow), m_progShadowInst);
         ++drawcount;
         return true;
     }
@@ -6869,7 +6919,7 @@ public:
             fprintf(stderr,
                     "bgfx submit instanced prepass cache=%llx n=%u\n",
                     (unsigned long long)draw.mesh->cacheId, count);
-        bgfx::submit(viewId + ViewAOPrepass, m_progPrepassInst);
+        bgfx::submit(vid(ViewAOPrepass), m_progPrepassInst);
         ++drawcount;
         return true;
     }
@@ -7311,7 +7361,7 @@ public:
             }
         }
 
-        bgfx::submit(viewId + passView, prog, depth);
+        bgfx::submit(vid(passView), prog, depth);
         ++drawcount;
     }
 
@@ -7418,7 +7468,7 @@ public:
         bgfx::setTexture(0, s_texScene, bgfxColor);
         bgfx::setVertexBuffer(0, &tvb);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-        bgfx::submit(viewId + ViewPresent, m_progPresent);
+        bgfx::submit(vid(ViewPresent), m_progPresent);
         ++drawcount;
     }
 #else
@@ -7592,7 +7642,98 @@ public:
 #endif // !FC_RENDERER_STANDALONE
 
     QOpenGLWidget *widget = nullptr;
-    uint16_t viewId = 0;
+
+    /////////////////////////////////////////////////////////
+    // Pass -> bgfx view id mapping (the view-id budget)
+    //
+    // The pass sequence is NUM_VIEWS wide, but a frame draws only a
+    // fraction of it: no stateful emitters, no bulb shadow tiles, no
+    // media interval passes, two or three overlay slots out of nine.
+    // Reserving the full width for every viewer is what limited the
+    // renderer to a handful of 3D views at once.
+    //
+    // So each frame declares which passes it will use (markPass, from
+    // the same flags that configure the views) and mapPasses() hands
+    // those -- in enum order, which is draw order, which is bgfx's
+    // submission order -- the consecutive ids of a block whose size is
+    // the high-water mark of what this view has needed, not NUM_VIEWS.
+    //
+    // A pass that was not marked maps to `sinkView`: a real, configured
+    // id that renders into a 1x1 scratch target. Mispredicting liveness
+    // therefore costs the pass's pixels and a warning naming it, never a
+    // draw into a neighbouring pass and never bgfx's "invalid view id"
+    // abort. sinkHits/sinkPasses report it.
+    static const uint16_t kNoPass = 0xffff;
+    uint16_t viewId = 0;         ///< block base
+    uint16_t viewSpan = 0;       ///< ids reserved for the block
+    uint16_t viewLive = 0;       ///< ids the current frame mapped (+ sink)
+    uint16_t sinkView = 0;       ///< id of the discard view (last of the block)
+    uint16_t idMap[NUM_VIEWS] = {};
+    bool passMark[NUM_VIEWS] = {};
+    mutable uint32_t sinkHits = 0;
+    mutable uint64_t sinkPasses[(NUM_VIEWS + 63) / 64] = {};
+    bool sinkReported = false;
+    bgfx::FrameBufferHandle sinkFbo = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle sinkColor = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle sinkDepth = BGFX_INVALID_HANDLE;
+
+    /// Start a frame's declaration: nothing is live until marked.
+    void beginPasses()
+    {
+        std::memset(passMark, 0, sizeof(passMark));
+        sinkHits = 0;
+        std::memset(sinkPasses, 0, sizeof(sinkPasses));
+    }
+    /// Declare pass `p` (or the inclusive range `p`..`last`) live this frame.
+    void markPass(int p, bool live = true)
+    {
+        if (live && p >= 0 && p < NUM_VIEWS)
+            passMark[p] = true;
+    }
+    void markPasses(int p, int last, bool live = true)
+    {
+        for (; live && p <= last; ++p)
+            markPass(p);
+    }
+    bool passLive(int p) const
+    {
+        return p >= 0 && p < NUM_VIEWS && passMark[p];
+    }
+    /// Ids the frame needs: the marked passes plus the sink.
+    uint16_t passesNeeded() const
+    {
+        uint16_t n = 1;
+        for (int i = 0; i < NUM_VIEWS; ++i)
+            n += passMark[i] ? 1 : 0;
+        return n;
+    }
+    /// Assign the marked passes consecutive ids from the block base.
+    /// Must run before anything submits, and after the block is sized.
+    void mapPasses()
+    {
+        uint16_t next = viewId;
+        for (int i = 0; i < NUM_VIEWS; ++i)
+            idMap[i] = passMark[i] ? next++ : kNoPass;
+        sinkView = next++;
+        viewLive = uint16_t(next - viewId);
+        for (int i = 0; i < NUM_VIEWS; ++i) {
+            if (idMap[i] == kNoPass)
+                idMap[i] = sinkView;
+        }
+    }
+    /// The bgfx view id of a pass, or the sink if the frame did not
+    /// declare it. Never returns an id outside the block.
+    uint16_t vid(int p) const
+    {
+        if (p < 0 || p >= NUM_VIEWS)
+            return sinkView;
+        if (!passMark[p]) {
+            ++sinkHits;
+            sinkPasses[p / 64] |= uint64_t(1) << (p % 64);
+        }
+        return idMap[p];
+    }
+
     uint16_t width;
     uint16_t height;
     // Reduced resolution of the expensive screen-space effect passes
@@ -8240,7 +8381,6 @@ public:
         }
 #endif
 
-        uint16_t base = view->viewId;
         uint16_t width = view->width;
         uint16_t height = view->height;
         uint32_t clearColor = (uint32_t(col.red()) << 24)
@@ -10151,6 +10291,105 @@ public:
         view->camFrameHash = camH;
         const bool mediumRender = !staticFrame;
 
+        // Which passes this frame draws (BGFXView's pass map). Nothing
+        // may submit before this: the pass -> bgfx-view-id mapping is
+        // decided here, and only the passes named get an id of their
+        // own. Everything else maps to the discard view, so an omission
+        // here costs that pass its pixels and prints the pass number --
+        // it cannot bleed into another pass.
+        //
+        // Passes whose use depends on the draws rather than on
+        // configuration (which bucket a mesh lands in, whether anything
+        // has an outline) are simply always claimed: one id each, and
+        // the point of the exercise is the groups that come in sixes
+        // and sixteens.
+        {
+            using V = BGFXView;
+            view->beginPasses();
+            for (int p : {V::ViewBackground, V::ViewSunDisc, V::ViewOpaque,
+                          V::ViewSectionCap, V::ViewSectionCapTransp,
+                          V::ViewOutline, V::ViewParticles,
+                          V::ViewTransparent, V::ViewOnTop,
+                          V::ViewHighlight, V::ViewDebug, V::ViewPresent})
+                view->markPass(p);
+            // Stateful particle simulation: two step ids per emitter
+            // slot, claimed as a group whenever the scene carries an
+            // emitter that could hold state -- stepParticles picks the
+            // slots itself, after this.
+            bool statefulParticles = false;
+            for (const auto &d : scene) {
+                const auto &sh = d.material.usershader;
+                if (sh && sh->stage == "particle"
+                        && !sh->simulateSource.empty() && d.objectKey) {
+                    statefulParticles = true;
+                    break;
+                }
+            }
+            view->markPasses(V::ViewParticleSim0,
+                             V::ViewParticleSim0 + V::kParticleViews - 1,
+                             statefulParticles);
+            view->markPass(V::ViewParticleImpact,
+                           statefulParticles && hasWaterBody
+                               && waterSurfActive);
+            view->markPass(V::ViewShadow, shadowRender);
+            view->markPass(V::ViewShadowTint, shadowRender);
+            view->markPasses(V::ViewShadowBlurH, V::ViewShadowBlurV,
+                             shadowBlurActive);
+            view->markPasses(V::ViewShadowTintBlurH, V::ViewShadowTintBlurV,
+                             shadowBlurActive);
+            for (int t = 0; t < BGFXView::kBulbShadowTiles; ++t)
+                view->markPass(V::ViewBulbShadow0 + t, bulbShadowRender[t]);
+            view->markPass(V::ViewAOPrepass, prepassRender);
+            for (int m = 0; m < 6; ++m)
+                view->markPass(V::ViewAODepthMip1 + m,
+                               ssaoActive && aoRender && m < view->aoMipCount);
+            view->markPasses(V::ViewAOGen, V::ViewAOBlur2,
+                             ssaoActive && aoRender);
+            view->markPasses(V::ViewWaterFront, V::ViewWaterBack,
+                             waterActive && mediumRender);
+            view->markPasses(V::ViewGlassFront, V::ViewGlassBack,
+                             glassActive && mediumRender);
+            view->markPasses(V::ViewCloudFront, V::ViewCloudBack,
+                             cloudActive && mediumRender);
+            view->markPasses(V::ViewFireFront, V::ViewFireBack,
+                             fireActive && mediumRender);
+            view->markPasses(V::ViewVolGen, V::ViewVolAccum, volActive);
+            view->markPass(V::ViewVolApply, volActive);
+            view->markPass(V::ViewCaustics, waterActive && volconf.caustics);
+            const bool reflActive = groundReflActive || waterReflActive;
+            view->markPasses(V::ViewGroundRefl, V::ViewReflMedia, reflActive);
+            view->markPass(V::ViewGroundReflApply, groundReflActive);
+            view->markPass(V::ViewWaterCopy, waterSurfActive || glassActive);
+            view->markPass(V::ViewWaterSurface, waterSurfActive);
+            view->markPass(V::ViewGlassSurface, glassActive);
+            view->markPass(V::ViewOITComposite, oitActive);
+            view->markPasses(V::ViewBloomBright, V::ViewBloomApply,
+                             bloomActive);
+            view->markPasses(V::ViewUserPostCopy, V::ViewUserPost,
+                             userPostActive);
+            view->markPass(V::ViewDebugScene, debugSceneRender);
+            for (int s = 0; s < int(V::NumOverlayViews); ++s)
+                view->markPass(V::ViewOverlay0 + s, s < int(overlays.size()));
+
+            if (!_BGFXLib.reserveBlock(view, view->passesNeeded())) {
+                // The pool is full. Same answer as an unfittable viewer:
+                // sit the frame out and let Coin composite the scene,
+                // rather than submitting ids that belong to somebody
+                // else or that bgfx would abort on.
+                if (!_BGFXLib.warnedViewBudget) {
+                    _BGFXLib.warnedViewBudget = true;
+                    RENDER_ERR("Out of bgfx view ids: this 3D view needs "
+                               << view->passesNeeded() << " of "
+                               << _BGFXLib.poolSize()
+                               << " and the open views hold the rest. It "
+                                  "falls back to Coin rendering; close "
+                                  "another 3D view to get it back.");
+                }
+                return false;
+            }
+            view->mapPasses();
+        }
+
         // Stateful particle emitters advance before anything draws:
         // their views come first in id order and configure/submit
         // themselves, so the loop below leaves them alone. A frame
@@ -10174,8 +10413,12 @@ public:
         const bool reflRender = !staticFrame || shadowRender || fireActive
             || cloudActive || view->particlesLive;
 
+        // Configure the ids the pass map handed out. A pass the frame
+        // did not claim has no id to configure: it is not drawn.
         for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
-            uint16_t id = base + i;
+            if (!view->passLive(i))
+                continue;
+            uint16_t id = view->vid(i);
             if (i <= BGFXView::ViewParticleImpact) {
                 continue;   // the particle passes configure themselves
             } else if (i == BGFXView::ViewTransparent && oitActive) {
@@ -10477,24 +10720,11 @@ public:
                 // overlays re-anchor on resize and (orientFromScene)
                 // follow the current camera — including the WASM
                 // viewer's own orbit camera.
+                // Only the slots the frame's overlays fill are mapped.
                 int slot = i - BGFXView::ViewOverlay0;
-                const Render::OverlayAnchor *anchor = nullptr;
-                if (slot < int(overlays.size())) {
-                    auto it = overlays.begin();
-                    std::advance(it, slot);
-                    anchor = &it->second.anchor;
-                }
-                if (!anchor) {
-                    // Unused slot: nothing submits into it.
-                    bgfx::setViewFrameBuffer(id, view->bgfxFbo);
-                    bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                       clearColor, 1.0f, 0);
-                    bgfx::setViewRect(id, 0, 0, width, height);
-                    bgfx::setViewTransform(id, nullptr, nullptr);
-                    bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
-                    bgfx::touch(id);
-                    continue;
-                }
+                auto ovIt = overlays.begin();
+                std::advance(ovIt, slot);
+                const Render::OverlayAnchor *anchor = &ovIt->second.anchor;
                 if (anchor->sceneCamera) {
                     // In-scene overlay (editing graph, dimensions): draw over
                     // the whole viewport with the main scene camera so the
@@ -10620,23 +10850,16 @@ public:
                 // GTAO depth pyramid downsamples: each level renders a
                 // clip-space fullscreen triangle into its own half-stepped
                 // single-channel target (no-op views otherwise).
+                // Only the levels the frame claimed are here (a level
+                // past aoMipCount, or a frame with the AO chain off, is
+                // simply not mapped).
                 const int m = i - BGFXView::ViewAODepthMip1;
-                if (!ssaoActive || !aoRender || m >= view->aoMipCount) {
-                    // Inactive: keep the view on the scene FBO (no draws,
-                    // no clear) so it does not force a mid-frame MSAA
-                    // resolve by touching another target.
-                    bgfx::setViewFrameBuffer(id, view->bgfxFbo);
-                    bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                       clearColor, 1.0f, 0);
-                    bgfx::setViewRect(id, 0, 0, 1, 1);
-                } else {
-                    bgfx::setViewFrameBuffer(id, view->aoMipFbo[m]);
-                    bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                       clearColor, 1.0f, 0);
-                    bgfx::setViewRect(id, 0, 0,
-                        uint16_t(std::max(1, width >> (m + 1))),
-                        uint16_t(std::max(1, height >> (m + 1))));
-                }
+                bgfx::setViewFrameBuffer(id, view->aoMipFbo[m]);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0,
+                    uint16_t(std::max(1, width >> (m + 1))),
+                    uint16_t(std::max(1, height >> (m + 1))));
                 bgfx::setViewTransform(id, nullptr, nullptr);
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
@@ -10725,6 +10948,18 @@ public:
                         : bgfx::ViewMode::Default);
             bgfx::touch(id);
         }
+
+        // The discard view every unclaimed pass maps to: a 1x1 scratch
+        // target, configured but not touched, so a draw that lands here
+        // is thrown away instead of reaching the scene or an id that
+        // belongs to another pass. Nothing should submit to it -- the
+        // count is reported after the frame.
+        bgfx::setViewFrameBuffer(view->sinkView, view->sinkFbo);
+        bgfx::setViewClear(view->sinkView, uint16_t(BGFX_CLEAR_NONE),
+                           clearColor, 1.0f, 0);
+        bgfx::setViewRect(view->sinkView, 0, 0, 1, 1);
+        bgfx::setViewTransform(view->sinkView, nullptr, nullptr);
+        bgfx::setViewMode(view->sinkView, bgfx::ViewMode::Default);
 
         ++view->frame;
         view->drawcount = 0;
@@ -11845,6 +12080,26 @@ public:
             view->submitComposite();
 
         view->collectMeshes();
+
+        // Anything that reached the discard view drew nothing: the pass
+        // declaration above missed a case the submission side takes.
+        // Name the passes -- once per view, since a mis-declared pass
+        // repeats every frame -- because the symptom on its own (a
+        // missing shadow, an overlay that stopped appearing) says
+        // nothing about view ids.
+        if (view->sinkHits && !view->sinkReported) {
+            view->sinkReported = true;
+            std::string passes;
+            for (int p = 0; p < BGFXView::NUM_VIEWS; ++p) {
+                if (view->sinkPasses[p / 64] & (uint64_t(1) << (p % 64)))
+                    passes += " " + std::to_string(p);
+            }
+            RENDER_ERR("bgfx pass map: " << view->sinkHits
+                       << " draw(s) went to the discard view from pass(es)"
+                       << passes.c_str()
+                       << " -- those passes were not declared for this "
+                          "frame and did not render");
+        }
 
 #ifdef FC_RENDERER_STANDALONE
         view->present();
@@ -13017,12 +13272,75 @@ std::unique_ptr<Renderer> BGFXRendererLib::create(
 }
 
 /////////////////////////////////////////////////////////
+void BGFXRendererLibP::releaseBlock(BGFXView *view)
+{
+    if (!view->viewSpan)
+        return;
+    const int first = view->viewId / kIdGranule;
+    const int count = view->viewSpan / kIdGranule;
+    for (int g = first; g < first + count && g < int(granules.size()); ++g)
+        granules[g] = 0;
+    view->viewId = 0;
+    view->viewSpan = 0;
+}
+
+bool BGFXRendererLibP::reserveBlock(BGFXView *view, uint16_t need)
+{
+    if (granules.empty()) {
+        const uint32_t maxViews = bgfx::getCaps()->limits.maxViews;
+        granules.assign(maxViews / kIdGranule, 0);
+    }
+    if (view->viewSpan >= need)
+        return true;
+    const uint16_t oldId = view->viewId;
+    const uint16_t oldSpan = view->viewSpan;
+    releaseBlock(view);
+    const int want = (need + kIdGranule - 1) / kIdGranule;
+    for (int g = 0; g + want <= int(granules.size()); ++g) {
+        int run = 0;
+        while (run < want && !granules[g + run])
+            ++run;
+        if (run < want) {
+            g += run;   // the taken granule cannot start a run either
+            continue;
+        }
+        for (int i = 0; i < want; ++i)
+            granules[g + i] = 1;
+        view->viewId = uint16_t(g * kIdGranule);
+        view->viewSpan = uint16_t(want * kIdGranule);
+        if (getenv("FC_BGFX_DEBUG_VIEWS")) {
+            int taken = 0;
+            for (uint8_t u : granules)
+                taken += u;
+            fprintf(stderr,
+                    "bgfx view ids: viewer %p needs %d, block %d..%d;"
+                    " %d of %d ids held by %d viewer(s)\n",
+                    (void *)view->widget, int(need), int(view->viewId),
+                    int(view->viewId + view->viewSpan - 1),
+                    taken * kIdGranule, int(granules.size()) * kIdGranule,
+                    int(views.size()));
+        }
+        return true;
+    }
+    // No room. Take the old block back (it was just freed, so this
+    // cannot fail) and let the caller sit this frame out.
+    for (int g = oldId / kIdGranule;
+         g < (oldId + oldSpan) / kIdGranule; ++g)
+        granules[g] = 1;
+    view->viewId = oldId;
+    view->viewSpan = oldSpan;
+    return false;
+}
+
+/////////////////////////////////////////////////////////
 void BGFXRendererLibP::removeView(QOpenGLWidget *widget)
 {
     auto it = views.find(widget);
     if (it != views.end()) {
-        viewIds.erase(it->second->viewId);
+        releaseBlock(it->second.get());
         views.erase(it);
+        // Ids came back: a viewer that did not fit may fit now, and
+        // should say so again if it still does not.
         warnedViewBudget = false;
         if (views.empty())
             _BGFXLib.shutdown();
@@ -13036,45 +13354,10 @@ BGFXView *BGFXRendererLibP::getView(QOpenGLWidget *widget, RendererType::Enum ty
 
     auto &view = views[widget];
     if (!view) {
-        // Each viewer consumes a contiguous block of NUM_VIEWS bgfx view
-        // ids; viewIds stores the block base ids.
-        uint16_t base = 0;
-        for (int id : viewIds) {
-            if (base == id)
-                base += BGFXView::NUM_VIEWS;
-            else
-                break;
-        }
-        // bgfx keeps a fixed table of views and traps -- an assert, then
-        // a fatal that aborts the process -- the first time a submission
-        // names an id past it. So a viewer that does not fit the budget
-        // has to be refused here, not handed a block whose tail is out
-        // of range: the crash used to arrive on the third viewer, from
-        // inside a draw call, with nothing pointing at view ids.
-        //
-        // render() treats a null view as "nothing drawn this frame" and
-        // Coin still composites the scene graph afterwards, so the
-        // viewer that misses out falls back to the Coin path rather
-        // than taking the session down with it.
-        const uint32_t maxViews = bgfx::getCaps()->limits.maxViews;
-        if (uint32_t(base) + BGFXView::NUM_VIEWS > maxViews) {
-            views.erase(widget);
-            if (!warnedViewBudget) {
-                warnedViewBudget = true;
-                RENDER_ERR("Out of bgfx view ids: "
-                           << views.size() << " viewer(s) hold "
-                           << base << " of " << maxViews
-                           << " ids, and each one needs "
-                           << (int)BGFXView::NUM_VIEWS
-                           << ". This view falls back to Coin rendering; "
-                              "close another 3D view to get it back.");
-            }
-            return nullptr;
-        }
         view.reset(new BGFXView);
         view->widget = widget;
-        view->viewId = base;
-        viewIds.insert(base);
+        // No ids yet: the block is sized once the frame has declared
+        // which passes it draws (BGFXRenderer::render -> reserveBlock).
     }
     return view.get();
 }
