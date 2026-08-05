@@ -279,6 +279,16 @@ SceneServeSource::SceneServeSource(Document *doc)
             [this](const ViewProviderDocumentObject &, const App::Property &) {
                 schedulePublish();
             }));
+        // The source must not outlive its document: the pick handler,
+        // renderProperties() and the level-source override lookup all
+        // dereference it, so a click from a still-connected viewer after
+        // the close would land on a freed document. Erasing from inside
+        // the signal is safe -- signals2 keeps the invoked slot alive
+        // through the call -- and it runs before the Gui::Document
+        // itself is destroyed. Nothing may follow the unserve() call:
+        // this source is gone when it returns.
+        pimpl->connections.emplace_back(doc->signalDeleteDocument.connect(
+            [this](const Document &) { unserve(pimpl->doc); }));
     }
 
     installHandlers();
