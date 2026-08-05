@@ -398,8 +398,12 @@ void PropertyContainer::Save (Base::Writer &writer) const
     writer.decInd(); // indentation for 'Properties Count'
 }
 
+PropertyContainer::RestoreStats PropertyContainer::restoreStats;
+
 void PropertyContainer::Restore(Base::XMLReader &reader)
 {
+    auto tRestore = std::chrono::high_resolution_clock::now();
+
     reader.clearPartialRestoreProperty();
     reader.readElement("Properties");
     int Cnt = reader.getAttributeAsInteger("Count");
@@ -457,7 +461,9 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
                         && !prop->testStatus(Property::PropTransient))
                 {
                     FC_TRACE("restoring property " << prop->getFullName());
+                    auto tValue = std::chrono::high_resolution_clock::now();
                     prop->Restore(reader);
+                    restoreStats.value += std::chrono::high_resolution_clock::now() - tValue;
                 }else
                     FC_TRACE("skip transient " << prop->getFullName());
             }
@@ -468,6 +474,7 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
             // name doesn't match, the sub-class then has to know
             // if the property has been renamed or removed
             else {
+                ++restoreStats.unmatched;
                 handleChangedPropertyName(reader, TypeName.c_str(), PropName.c_str());
             }
 
@@ -510,6 +517,9 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
         reader.readEndElement("Property",&guard);
     }
     reader.readEndElement("Properties");
+
+    restoreStats.count += Cnt;
+    restoreStats.total += std::chrono::high_resolution_clock::now() - tRestore;
 }
 
 void PropertyContainer::onPropertyStatusChanged(const Property &prop, unsigned long oldStatus)

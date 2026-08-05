@@ -115,6 +115,10 @@ struct DocumentP
         std::chrono::duration<double> data {0};
         std::chrono::duration<double> files {0};
         std::size_t objectCount = 0;
+        /// What the <ObjectData> pass spent inside property restores, of
+        /// which 'value' is the share the properties themselves took once
+        /// the element was read and the property found.
+        App::PropertyContainer::RestoreStats props;
 
         void clear() { *this = RestoreTiming(); }
     };

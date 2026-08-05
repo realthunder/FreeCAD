@@ -24,6 +24,7 @@
 #ifndef APP_PROPERTYCONTAINER_H
 #define APP_PROPERTYCONTAINER_H
 
+#include <chrono>
 #include <map>
 #include <cstring>
 #include <Base/Persistence.h>
@@ -241,6 +242,33 @@ public:
 
   void Save (Base::Writer &writer) const override;
   void Restore(Base::XMLReader &reader) override;
+
+  /** Accumulated cost of restoring properties.
+   *
+   * A document load runs hundreds of thousands of property restores inside a
+   * single stage's timing, and the two halves answer to different fixes:
+   * reading the element and finding the property is the reader's cost, what
+   * the property then does with the value is the property's. Only the split
+   * says which one to attack. Whoever reports a stage snapshots this before
+   * and after and logs the difference.
+   */
+  struct AppExport RestoreStats
+  {
+      std::chrono::duration<double> total {0};
+      /// Of total, the share inside Property::Restore() -- everything the
+      /// value costs once the element has been read and the property found.
+      std::chrono::duration<double> value {0};
+      /// Properties read, and of those the ones no container claimed.
+      std::size_t count = 0;
+      std::size_t unmatched = 0;
+
+      RestoreStats operator-(const RestoreStats &other) const
+      {
+          return {total - other.total, value - other.value,
+                  count - other.count, unmatched - other.unmatched};
+      }
+  };
+  static RestoreStats restoreStats;
 
   virtual void beforeSave() const;
 

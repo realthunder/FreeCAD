@@ -1709,12 +1709,26 @@ void Document::RestoreDocFile(Base::Reader &reader)
             // read the viewproviders itself
             xmlReader.readElement("ViewProviderData");
             int Cnt = xmlReader.getAttributeAsInteger("Count");
+            FC_TIME_INIT(t);
+            auto stats = App::PropertyContainer::restoreStats;
             for (int i=0; i<Cnt; i++) {
                 int guard;
                 xmlReader.readElement("ViewProvider",&guard);
                 readObject(xmlReader);
                 xmlReader.readEndElement("ViewProvider",&guard);
             }
+            // This one archive entry is the single biggest thing a large
+            // document load parses -- larger than the document itself -- and
+            // the view providers in it are almost all default. Report what
+            // the properties cost against what reading them cost, because a
+            // fix on the writing side and a fix in the reader are different
+            // work.
+            stats = App::PropertyContainer::restoreStats - stats;
+            FC_LOG("restore " << getDocument()->getName() << " gui xml: " << Cnt
+                    << " view providers, " << stats.count << " properties ("
+                    << stats.unmatched << " unmatched), property "
+                    << stats.total.count() << "s (value " << stats.value.count()
+                    << "s), total " << Base::GetDuration(t).count() << 's');
             xmlReader.readEndElement("ViewProviderData");
         } else {
             for(const auto &v : d->_ViewProviderMap)

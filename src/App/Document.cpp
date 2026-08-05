@@ -1669,6 +1669,7 @@ Document::readObjects(Base::XMLReader& reader)
     Cnt = reader.getAttributeAsInteger("Count");
     std::string objName;
     _FC_TIME_INIT(t);
+    auto propStats = PropertyContainer::restoreStats;
     try {
         for (int i=0 ;i<Cnt ;i++) {
             int guard;
@@ -1684,6 +1685,7 @@ Document::readObjects(Base::XMLReader& reader)
     }
     reader.readEndElement("ObjectData");
     FC_DURATION_PLUS(d->restoreTiming.data, t);
+    d->restoreTiming.props = PropertyContainer::restoreStats - propStats;
 
     return objs;
 }
@@ -2502,7 +2504,10 @@ void Document::restore(Base::XMLReader &reader,
             << d->files.size() << " files"
             << ", xml " << dXml.count()
             << " (create " << rt.create.count()
-            << ", data " << rt.data.count() << ')'
+            << ", data " << rt.data.count()
+            << " [" << rt.props.count << " properties, "
+            << rt.props.total.count() << "s of which value "
+            << rt.props.value.count() << "s]" << ')'
             << ", files " << rt.files.count()
             << ", after " << dAfter.count()
             << ", total " << (dXml + rt.files + dAfter).count() << 's');
