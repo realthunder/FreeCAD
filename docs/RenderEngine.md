@@ -207,6 +207,34 @@ volumetric jitter, user shaders via `u_fcTime`) reads one shared
 animation clock. `RenderDebug_FreezeFrame` pins it to 0 and suppresses
 self-scheduled redraws; two frozen frames are byte-identical.
 
+### 3.1 The view-id budget
+
+bgfx addresses views by id out of a fixed table — 512 in this build
+(`BGFX_CONFIG_MAX_VIEWS`, set in `src/3rdParty/CMakeLists.txt`) — and
+submitting an id past it is fatal, not an error return. The pass
+sequence above is 87 ids wide (`BGFXView::NUM_VIEWS`), so reserving all
+of it per viewer fit only five 3D views at once, and the sixth was
+refused.
+
+A frame draws far less than the whole sequence, so each one **declares
+the passes it will use** and those are mapped onto the consecutive ids
+of a block sized to fit them (`markPass` / `mapPasses` / `vid`, from the
+same flags that configure the views). Enum order is draw order is
+bgfx's submission order, so compaction preserves the sequence. Blocks
+come from a granule pool and only grow, which keeps a viewer's ids
+still as its scene changes. A plain viewer needs 13 ids, so ~32 fit.
+
+Two properties make this safe to be wrong about:
+
+- A pass the frame did not declare maps to a per-view **discard target**
+  (1×1), never to another pass's id. Missing a case costs that pass its
+  pixels, and the draws that land there are counted and reported by pass
+  number — it cannot corrupt a neighbour or abort the process.
+- When the pool cannot fit a viewer, that viewer **falls back to Coin**
+  for the frame with one message, the same answer as before.
+
+`FC_BGFX_DEBUG_VIEWS=1` prints each block as it is handed out.
+
 ## 4. Draw model
 
 - `Render::DrawCall` = mesh reference (+ index sub-range), model
@@ -684,10 +712,10 @@ desktop and browser run the identical program.
   `kParticleSteps` (2) steps per frame, plus one shared view for the
   impact splat — every emitter and every step of the frame splat into
   the one map, so the whole of it costs a single id. This is bgfx
-  view-id budget —
-  a viewer occupies `NUM_VIEWS` contiguous ids out of 256, and these
-  numbers are what keeps three viewers open at once. The state views
-  come **first** in id order, before anything that draws.
+  view-id budget — see [§3.1](#31-the-view-id-budget); these ids are
+  claimed only by a frame whose scene actually carries a stateful
+  emitter. The state views come **first** in id order, before anything
+  that draws.
 - **Fallback**: without a color-renderable RGBA32F (a WebGL2 context
   lacking `EXT_color_buffer_float`), over the slot budget, or while
   the step program is still compiling, no state is bound and the

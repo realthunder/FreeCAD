@@ -315,7 +315,7 @@ team-years of work; the near-term list is deliberately small.
   glTF-metallic-roughness-shaped properties, with an App-side material model free to map
   onto them later, and interchange going through the Import module's RWGltf/XCAF path. Still
   open there: shared-context vs blit, and per-view renderer instances vs a shared engine
-  with a bgfx view-id allocator.</span>
+  (the bgfx view-id allocator itself is built — RenderEngine.md §3.1).</span>
 - <span style="color:#9a6a12">**Settled by research, not yet built (2026-07-20):** the
   client UI framework question. [ViewerUIResearch.md](./ViewerUIResearch.md) concluded on
   the industry pattern — **WASM/WebGL canvas + browser DOM for all UI chrome** (Figma,
