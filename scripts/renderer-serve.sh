@@ -4,6 +4,11 @@
 # no display is available; rendering is llvmpipe/swiftshader, not the GPU
 # (for real-GPU desktop rendering use renderer-desktop.sh instead).
 #
+# A serving process does not rasterize: it feeds and publishes, and the
+# viewers draw the scene themselves (docs/SceneStreaming.md 2.1). So the
+# software GL above costs nothing per frame. FC_BGFX_SERVE_DRAW=1 draws the
+# local window anyway, for a desktop session where someone is watching it.
+#
 # The GUI process group is SIGSTKFLT-killed if launched in the foreground of
 # a sandboxed shell, so this detaches and returns immediately; poll the port
 # afterwards:  until ss -tln | grep -q :PORT; do sleep 2; done

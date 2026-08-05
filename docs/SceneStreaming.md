@@ -115,6 +115,45 @@ The mesh is also the **submission** unit (§6): the object decides what is fetch
 and what is invalidated, but drawing waits on individual meshes, so a large
 assembly reveals its parts as they land instead of appearing all at once.
 
+### 2.1 The serving process does not draw
+
+A serving process (`FC_BGFX_SERVE_SCENE`, `scripts/renderer-serve.sh`) puts
+snapshots on the wire; the pixels are the viewers' business. They rasterize the
+scene themselves and animate the time-based effects off their own clock, and
+nothing ever transmits the server's framebuffer. Its own 3D view is therefore
+not an audience — connected viewers or not.
+
+Two behaviours follow, both in `BGFXRendererP::localAudience()`:
+
+- **No frames of its own.** Animated content (a fountain, water waves,
+  caustics) reschedules the next frame through `Renderer::animating()`; a
+  serving process answers no. Frames still happen for the reasons that produce
+  a publish: a scene change, or a viewer's hello waking the publish poll
+  through the work notifier. This is the same view of the local window the
+  level planner takes — a serving process's own window never plans, its
+  viewers' cameras decide (§7).
+- **Publish-only frames.** `BGFXRenderer::render()` consumes the feeds,
+  publishes if anything changed, and returns before every GPU pass. It reports
+  the frame as rendered deliberately: that flag is what stops `SoFCRenderer`
+  rasterizing the same scene through fixed-function GL instead, which costs the
+  same. A pending local `saveRenderDump` is the exception and draws in full.
+
+Measured on a serving fountain under Xvfb: **560% of one core before, ~2%
+after**, with the WASM viewer drawing the complete scene off it either way. The
+cost was llvmpipe rendering into a framebuffer nothing reads, and it does not
+end by itself — an animated scene never stops animating.
+
+`FC_BGFX_SERVE_DRAW=1` puts the window back in the picture, for serving from a
+desktop session where somebody is in fact watching it.
+
+Note what this does **not** yet remove: the process still needs a 3D view to
+exist, because the feeds are produced by the Coin traversal that view drives
+(`SoFCRenderer::render(SoGLRenderAction*)`) and the pick and control handlers
+are installed on it. Serving documents opened `hidden=True`
+(`App.openDocument(path, hidden=True)`, no `View3DInventor` at all) needs a
+headless source owning that traversal — the headless-engine direction in
+`docs/ComputeBoundaries.md`, not built.
+
 ## 3. Reference discipline: keys, never indices
 
 **Every cross-chunk reference is a content key. No chunk references anything by
