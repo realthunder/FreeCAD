@@ -113,7 +113,7 @@ def number_of_components_in(assembly):
         if not obj.isDerivedFrom("App::GeoFeature"):
             continue
 
-        if obj.isDerivedFrom("App::LocalCoordinateSystem"):
+        if obj.isDerivedFrom("App::Origin"):
             continue
 
         i = i + 1
@@ -145,7 +145,10 @@ def getObject(ref):
     # We want either LinkOrBody or LinkOrBox or Local_CS.
     # Note since the ref now holds the moving part, sub_name can now be just the element name.
     # In this case the obj we need is the reference obj
-    names = sub_name.split(".")
+    # The element part is kept whole, so that a mapped name does not pass for an object name.
+    obj_path, element_name = splitSubName(sub_name)
+    names = obj_path.split(".")[:-1] if obj_path else []
+    names.append(element_name)
     names.insert(0, ref[0].Name)
 
     if len(names) < 2:
@@ -165,7 +168,7 @@ def getObject(ref):
         if obj.TypeId in {"App::Part", "Assembly::AssemblyObject"} or isLinkGroup(obj):
             continue
 
-        elif obj.isDerivedFrom("App::LocalCoordinateSystem"):
+        elif obj.isDerivedFrom("App::Origin"):
             # 2 cases possible, either we have the LCS itself: "part.LCS."
             # or we have a datum: "part.LCS.X_Axis"
             if i + 1 < len(names):
@@ -174,10 +177,10 @@ def getObject(ref):
                     if obji.Name == names[i + 1]:
                         obj2 = obji
                         break
-                if obj2 and obj2.isDerivedFrom("App::DatumElement"):
+                if obj2 and obj2.isDerivedFrom("App::OriginFeature"):
                     return obj2
 
-        elif obj.isDerivedFrom("App::DatumElement"):
+        elif obj.isDerivedFrom("App::OriginFeature"):
             return obj
 
         elif obj.TypeId == "PartDesign::Body":
@@ -227,8 +230,8 @@ def isBodySubObject(obj):
     return (
         obj.isDerivedFrom("Sketcher::SketchObject")
         or obj.isDerivedFrom("Part::Datum")
-        or obj.isDerivedFrom("App::DatumElement")
-        or obj.isDerivedFrom("App::LocalCoordinateSystem")
+        or obj.isDerivedFrom("App::OriginFeature")
+        or obj.isDerivedFrom("App::Origin")
     )
 
 
@@ -239,8 +242,8 @@ def fixBodyExtraFeatureInSub(doc_name, sub_name):
     # "Part.Body.Pad.Sketch." -> "Part.Body.Sketch."
     # "Body.Pad.Sketch." -> "Body.sketch."
     doc = App.getDocument(doc_name)
-    names = sub_name.split(".")
-    elt = names.pop()  # remove element
+    obj_path, elt = splitSubName(sub_name)  # elt keeps the mapped name, if any
+    names = obj_path.split(".")[:-1] if obj_path else []
 
     bodyPassed = False
     new_sub_name = ""
@@ -293,15 +296,12 @@ def addTipNameToSub(ref):
                 target_body = linked
 
     if target_body and target_body.Tip:
-        split_sub = sub.split(".")
-        if len(split_sub) > 0:
-            element = split_sub.pop()
-            if not element:  # Empty element name means the whole body is selected
-                return sub
+        obj_path, element = splitSubName(sub)
+        if not element:  # Empty element name means the whole body is selected
+            return sub
 
-            split_sub.append(target_body.Tip.Name)
-            split_sub.append(element)
-            return ".".join(split_sub)
+        # The element keeps its mapped name; only the object path grows.
+        return obj_path + target_body.Tip.Name + "." + element
 
     return sub
 
@@ -389,36 +389,79 @@ def isThereOneRootAssembly():
     return False
 
 
+# A mapped (topological-name-proof) element name is prefixed with this, and is
+# followed by the indexed name it currently resolves to. See Data::elementMapPrefix
+# in src/App/ElementNamingUtils.cpp.
+ELEMENT_MAP_PREFIX = ";"
+
+
+def findElementNameStart(sub_name):
+    # Python mirror of Data::findElementName: return the index at which the
+    # element part of a subname starts, i.e. the length of the object path.
+    # "Box.Edge16" -> 4, "Box.;Face3;:H1,F.Face6" -> 4, "Edge16" -> 0.
+    if not sub_name or sub_name.startswith(ELEMENT_MAP_PREFIX):
+        return 0
+
+    dot = sub_name.rfind(".")
+    if dot < 0:
+        return 0
+
+    element = dot + 1
+    if dot == 0 or sub_name[element:].startswith(ELEMENT_MAP_PREFIX):
+        return element
+
+    # The mapped name, when there is one, sits in the segment before the
+    # indexed name that trails it.
+    start = sub_name.rfind(".", 0, dot) + 1
+    if sub_name[start:].startswith(ELEMENT_MAP_PREFIX):
+        return start
+
+    return element
+
+
+def splitSubName(sub_name):
+    # Split a subname into its object path and its element part. Unlike a plain
+    # rsplit("."), this keeps a mapped element name with the element rather than
+    # letting it pass for an object name.
+    # "Assembly1.Box.;Face3;:H1,F.Face6" -> ("Assembly1.Box.", ";Face3;:H1,F.Face6")
+    start = findElementNameStart(sub_name)
+    return sub_name[:start], sub_name[start:]
+
+
+def oldElementName(element_name):
+    # Strip the mapped name off an element part, leaving the indexed name.
+    # Mirrors Data::oldElementName for a subname that is only an element.
+    if element_name.startswith(ELEMENT_MAP_PREFIX):
+        dot = element_name.rfind(".")
+        return element_name[dot + 1 :] if dot >= 0 else element_name
+    return element_name
+
+
 def getElementName(full_name):
     # full_name is "Assembly.Assembly1.Assembly2.Assembly3.Box.Edge16"
     # We want either Edge16.
-    parts = full_name.split(".")
-
-    if len(parts) < 1:
-        # At minimum "Box.edge16". It shouldn't be shorter
-        return ""
+    # It may also carry a mapped name, "...Box.;Face3;:H1,F.Face6" -> Face6.
+    element_name = oldElementName(splitSubName(full_name)[1])
 
     # case of PartDesign datums : CoordinateSystem, point, line, plane
-    if parts[-1] in {"X", "Y", "Z", "Point", "Line", "Plane"}:
+    if element_name in {"X", "Y", "Z", "Point", "Line", "Plane"}:
         return ""
 
-    return parts[-1]
+    return element_name
 
 
 def getObjsNamesAndElement(obj_name, sub_name):
     # if obj_name = "Assembly" and sub_name = "Assembly1.Assembly2.Assembly3.Box.Edge16"
     # this will return ["Assembly","Assembly1","Assembly2","Assembly3","Box"] and "Edge16"
 
-    parts = sub_name.split(".")
+    obj_path, element_name = splitSubName(sub_name)
 
-    # The last part is always the element name even if empty
-    element_name = parts[-1]
-
-    # The remaining parts are object names
-    obj_names = parts[:-1]
+    # The object names are what precedes the element part. A non-empty path
+    # always ends with '.', so drop the empty entry that trails it.
+    obj_names = obj_path.split(".")[:-1] if obj_path else []
     obj_names.insert(0, obj_name)
 
-    return obj_names, element_name
+    return obj_names, oldElementName(element_name)
 
 
 def getFullObjName(obj_name, sub_name):
@@ -1333,15 +1376,9 @@ def truncateSubAtLast(sub, target):
 
 def swapElNameInSubname(sub_name, new_elName):
     # turns assembly.box.edge1 into assembly.box.new_elName
-    names = sub_name.split(".")
-
-    # Replace the last element
-    names[-1] = new_elName
-
-    # Join the names back together
-    modified_sub = ".".join(names)
-
-    return modified_sub
+    # The whole element part is replaced, so a mapped name is not left behind
+    # pointing at the element that was swapped out.
+    return splitSubName(sub_name)[0] + new_elName
 
 
 def addVertexToReference(ref, vertex_name):

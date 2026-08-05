@@ -251,3 +251,73 @@ class TestCore(AssemblyTestBase):
         joint.Proxy.setJointConnectors(joint, refs)
 
         self.assertTrue(box.Placement.isSame(box2.Placement, 1e-6), "'{}'".format(operation))
+
+
+class TestSubNames(AssemblyTestBase):
+    """Subname parsing, which has to cope with this fork's mapped element names.
+
+    A mapped (topological-name-proof) element name is prefixed with ';' and is
+    followed by the indexed name it currently resolves to, so a subname carrying
+    one has an extra dot separated segment that is not an object name.
+    """
+
+    def test01_splitSubName(self):
+        operation = "Split subname"
+        _msg("  Test '{}'".format(operation))
+
+        for sub, expected in [
+            ("Assembly1.Box.Edge16", ("Assembly1.Box.", "Edge16")),
+            ("Assembly1.Box.", ("Assembly1.Box.", "")),
+            ("Edge16", ("", "Edge16")),
+            ("", ("", "")),
+            ("Box.;Face3;:H1,F.Face6", ("Box.", ";Face3;:H1,F.Face6")),
+            (";Face3;:H1,F.Face6", ("", ";Face3;:H1,F.Face6")),
+        ]:
+            self.assertEqual(UtilsAssembly.splitSubName(sub), expected, "'{}'".format(operation))
+
+    def test02_getObjsNamesAndElement(self):
+        operation = "Get object names and element"
+        _msg("  Test '{}'".format(operation))
+
+        for sub, expected in [
+            ("A1.A2.Box.Edge16", (["Assembly", "A1", "A2", "Box"], "Edge16")),
+            ("A1.Box.", (["Assembly", "A1", "Box"], "")),
+            ("Edge16", (["Assembly"], "Edge16")),
+            # The mapped name belongs to the element, not to the object path.
+            ("A1.Box.;Face3;:H1,F.Face6", (["Assembly", "A1", "Box"], "Face6")),
+        ]:
+            self.assertEqual(
+                UtilsAssembly.getObjsNamesAndElement("Assembly", sub),
+                expected,
+                "'{}'".format(operation),
+            )
+
+    def test03_getElementName(self):
+        operation = "Get element name"
+        _msg("  Test '{}'".format(operation))
+
+        for sub, expected in [
+            ("A.Box.Edge16", "Edge16"),
+            ("A.Box.;Face3;:H1,F.Face6", "Face6"),
+            ("A.Box.", ""),
+            ("A.LCS.X", ""),  # datums have no element name
+        ]:
+            self.assertEqual(
+                UtilsAssembly.getElementName(sub), expected, "'{}'".format(operation)
+            )
+
+    def test04_swapElNameInSubname(self):
+        operation = "Swap element name in subname"
+        _msg("  Test '{}'".format(operation))
+
+        for sub, expected in [
+            ("assembly.box.Edge1", "assembly.box.Vertex2"),
+            # The stale mapped name must go with the element it named.
+            ("assembly.box.;Face3;:H1,F.Face6", "assembly.box.Vertex2"),
+            ("Edge1", "Vertex2"),
+        ]:
+            self.assertEqual(
+                UtilsAssembly.swapElNameInSubname(sub, "Vertex2"),
+                expected,
+                "'{}'".format(operation),
+            )
