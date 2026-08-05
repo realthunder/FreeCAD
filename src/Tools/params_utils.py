@@ -48,7 +48,7 @@ def init_params(params, namespace, class_name, param_path, header_file=None):
 def auto_comment(frame=1, msg=None, count=1):
     trace = []
     for stack in inspect.stack()[frame : frame + count]:
-        filename = path.normpath(stack[1]).split("/src/")[-1]
+        filename = path.normpath(stack[1]).replace(path.sep, "/").split("/src/")[-1]
         if filename.find("<") >= 0:
             break
         lineno = stack[2]

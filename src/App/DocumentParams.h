@@ -404,6 +404,19 @@ public:
     static const char *docEnableMaterialEdit();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MCPServerAutoStart
+    ///
+    /// Start the MCP debug console server (freecad.mcp_console) when the
+    /// application starts. Toggled by the Tools -> MCP Server menu action.
+    static const bool & getMCPServerAutoStart();
+    static const bool & defaultMCPServerAutoStart();
+    static void removeMCPServerAutoStart();
+    static void setMCPServerAutoStart(const bool &v);
+    static const char *docMCPServerAutoStart();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class DocumentParams
 } // namespace App

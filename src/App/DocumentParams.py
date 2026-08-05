@@ -72,6 +72,9 @@ Params = [
         doc='Enable special encoding of indexes name in toponaming. Disabled by\n'
             'default for backward compatibility'),
     ParamBool('EnableMaterialEdit', True),
+    ParamBool('MCPServerAutoStart', False,
+        doc='Start the MCP debug console server (freecad.mcp_console) when the\n'
+            'application starts. Toggled by the Tools -> MCP Server menu action.'),
 ]
 
 def declare():

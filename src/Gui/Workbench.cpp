@@ -766,6 +766,8 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Separator"
           << "Std_TextDocument"
           << "Separator"
+          << "Std_MCPServer"
+          << "Separator"
           << "Std_DemoMode"
           << "Std_UnitsCalculator"
           << "Separator"

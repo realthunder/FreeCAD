@@ -71,6 +71,7 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectGroup.h>
+#include <App/DocumentParams.h>
 #include <Base/ConsoleObserver.h>
 #include <Base/Parameter.h>
 #include <Base/Exception.h>
@@ -1804,6 +1805,14 @@ void MainWindow::delayedStartup()
 
     if (hGrp->GetBool("RecoveryEnabled", true)) {
         Application::Instance->checkForPreviousCrashes();
+    }
+
+    // Bring the MCP debug console server back up if it was left enabled. Routed
+    // through the command so the Tools menu action, the remembered parameter and
+    // the server itself cannot drift apart.
+    if (App::DocumentParams::getMCPServerAutoStart()) {
+        if (Command* cmd = Application::Instance->commandManager().getCommandByName("Std_MCPServer"))
+            cmd->invoke(1);
     }
 }
 

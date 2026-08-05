@@ -78,6 +78,7 @@ public:
         signalParamChanged("RelativeStringID");
         signalParamChanged("HashIndexedName");
         signalParamChanged("EnableMaterialEdit");
+        signalParamChanged("MCPServerAutoStart");
 
     // Auto generated code (Tools/params_utils.py:240)
     }
@@ -114,6 +115,7 @@ public:
     bool RelativeStringID;
     bool HashIndexedName;
     bool EnableMaterialEdit;
+    bool MCPServerAutoStart;
 
     // Auto generated code (Tools/params_utils.py:253)
     DocumentParamsP() {
@@ -186,6 +188,8 @@ public:
         funcs["HashIndexedName"] = &DocumentParamsP::updateHashIndexedName;
         EnableMaterialEdit = this->handle->GetBool("EnableMaterialEdit", true);
         funcs["EnableMaterialEdit"] = &DocumentParamsP::updateEnableMaterialEdit;
+        MCPServerAutoStart = this->handle->GetBool("MCPServerAutoStart", false);
+        funcs["MCPServerAutoStart"] = &DocumentParamsP::updateMCPServerAutoStart;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -337,6 +341,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateEnableMaterialEdit(DocumentParamsP *self) {
         self->EnableMaterialEdit = self->handle->GetBool("EnableMaterialEdit", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMCPServerAutoStart(DocumentParamsP *self) {
+        self->MCPServerAutoStart = self->handle->GetBool("MCPServerAutoStart", false);
     }
 };
 
@@ -1255,5 +1263,34 @@ void DocumentParams::setEnableMaterialEdit(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removeEnableMaterialEdit() {
     instance()->handle->RemoveBool("EnableMaterialEdit");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docMCPServerAutoStart() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Start the MCP debug console server (freecad.mcp_console) when the\n"
+"application starts. Toggled by the Tools -> MCP Server menu action.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & DocumentParams::getMCPServerAutoStart() {
+    return instance()->MCPServerAutoStart;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & DocumentParams::defaultMCPServerAutoStart() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setMCPServerAutoStart(const bool &v) {
+    instance()->handle->SetBool("MCPServerAutoStart",v);
+    instance()->MCPServerAutoStart = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeMCPServerAutoStart() {
+    instance()->handle->RemoveBool("MCPServerAutoStart");
 }
 //[[[end]]]

@@ -32,6 +32,7 @@
 #endif
 
 #include <App/Document.h>
+#include <App/DocumentParams.h>
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
 #include <Base/Sequencer.h>
@@ -1139,6 +1140,93 @@ bool StdCmdUserEditMode::isActive()
     return true;
 }
 
+//===========================================================================
+// Std_MCPServer
+//===========================================================================
+
+namespace {
+
+// The server itself is Python (src/Ext/freecad/mcp_console), so everything
+// here goes through the interpreter. Expressions, not statements:
+// runStringObject() evaluates with Py_eval_input. The __import__ form avoids
+// binding the module into __main__ just to call one function on it.
+const char *McpConsoleModule = "__import__('freecad.mcp_console', fromlist=['server'])";
+
+bool mcpServerIsRunning()
+{
+    try {
+        Base::PyGILStateLocker lock;
+        return Base::Interpreter().runStringObject(
+                (std::string(McpConsoleModule) + ".is_running()").c_str()).isTrue();
+    }
+    catch (Base::Exception &e) {
+        e.ReportException();
+        return false;
+    }
+}
+
+/*! Start or stop the MCP console server and return the state it actually ended
+ * up in. Neither request is assumed to have been honoured: start() raises if
+ * the 'mcp' package is missing, and stop() declines when the installed mcp
+ * gives it no way to shut uvicorn down.
+ */
+bool mcpServerSetRunning(bool run)
+{
+    try {
+        Base::PyGILStateLocker lock;
+        Py::Object res = Base::Interpreter().runStringObject(
+                (std::string(McpConsoleModule) + (run ? ".start()" : ".stop()")).c_str());
+        Base::Console().Message("%s\n", static_cast<std::string>(Py::String(res)).c_str());
+    }
+    catch (Base::Exception &e) {
+        e.ReportException();
+    }
+    return mcpServerIsRunning();
+}
+
+} // anonymous namespace
+
+DEF_STD_CMD_AC(StdCmdMCPServer)
+
+StdCmdMCPServer::StdCmdMCPServer()
+  : Command("Std_MCPServer")
+{
+    sGroup        = "Tools";
+    sMenuText     = QT_TR_NOOP("MCP server");
+    sToolTipText  = QT_TR_NOOP("Serve this FreeCAD session to an AI agent over the "
+                               "Model Context Protocol");
+    sWhatsThis    = "Std_MCPServer";
+    sStatusTip    = QT_TR_NOOP("Toggles the MCP debug console server");
+    eType         = 0;
+}
+
+Action * StdCmdMCPServer::createAction()
+{
+    Action *pcAction = Command::createAction();
+    pcAction->setCheckable(true);
+    // The autostart in MainWindow::delayedStartup() runs after the workbench is
+    // built, so show the remembered state here; activated() corrects it if the
+    // server then refuses to come up.
+    pcAction->setChecked(App::DocumentParams::getMCPServerAutoStart(), true);
+    return pcAction;
+}
+
+void StdCmdMCPServer::activated(int iMsg)
+{
+    bool running = mcpServerSetRunning(iMsg != 0);
+
+    // Remembered so the next start brings the server back up by itself
+    App::DocumentParams::setMCPServerAutoStart(running);
+
+    if (_pcAction && running != (iMsg != 0))
+        _pcAction->setChecked(running, true);
+}
+
+bool StdCmdMCPServer::isActive()
+{
+    return true;
+}
+
 namespace Gui {
 
 void CreateStdCommands()
@@ -1175,6 +1263,7 @@ void CreateStdCommands()
     rcCmdMgr.addCommand(new StdCmdResetAndRestart());
     rcCmdMgr.addCommand(new StdCmdPresets());
     rcCmdMgr.addCommand(new StdCmdUserEditMode());
+    rcCmdMgr.addCommand(new StdCmdMCPServer());
     //rcCmdMgr.addCommand(new StdCmdMeasurementSimple());
     //rcCmdMgr.addCommand(new StdCmdDownloadOnlineHelp());
     //rcCmdMgr.addCommand(new StdCmdDescription());

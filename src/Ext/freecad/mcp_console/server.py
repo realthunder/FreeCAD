@@ -26,6 +26,11 @@ Usage from the FreeCAD Python console (main thread)::
 
     from freecad import mcp_console
     mcp_console.start()            # http://127.0.0.1:8765/mcp
+    mcp_console.stop()
+
+The Tools menu carries a checkable "MCP Server" action driving the same two
+calls, and remembers the state in ``App::DocumentParams::MCPServerAutoStart`` so
+the server comes back up on the next start.
 """
 
 import ast
@@ -35,7 +40,7 @@ import threading
 import traceback
 from typing import Optional, TypedDict
 
-__all__ = ["start", "is_running", "url"]
+__all__ = ["start", "stop", "is_running", "url"]
 
 
 class RunResult(TypedDict):
@@ -72,6 +77,7 @@ _namespace: dict = {}
 _executor = None
 _server_thread = None
 _mcp = None
+_uvicorn = None          # the uvicorn.Server, when we were able to drive it ourselves
 _bound = (_DEFAULT_HOST, _DEFAULT_PORT)
 
 
@@ -463,6 +469,10 @@ def _make_server(host: str, port: int):
     the caller does not have to care which one it got. Both versions expose the
     same ``tool(name=..., description=...)`` decorator and default the endpoint
     path to ``/mcp``, so the rest of this module is version-agnostic.
+
+    This ``serve`` is only the fallback: it keeps its uvicorn.Server private, so
+    there is no handle to bring the server back down. :func:`_make_serve` prefers
+    to drive uvicorn itself -- see there.
     """
     try:
         from mcp.server.fastmcp import FastMCP  # mcp 1.x
@@ -486,13 +496,36 @@ def _make_server(host: str, port: int):
                                        host=host, port=port))
 
 
+def _make_serve(server, fallback, host: str, port: int):
+    """Return ``(uvicorn_server, serve)`` for an already-configured MCP server.
+
+    Prefer building the ASGI app and running uvicorn ourselves: ``server.run()``
+    constructs its ``uvicorn.Server`` internally and never hands it out, and
+    without that object there is nothing to set ``should_exit`` on -- i.e. no way
+    to implement :func:`stop`. Both mcp majors expose ``streamable_http_app()``;
+    if some version does not, fall back to the blocking ``run()`` and return
+    ``None``, so ``stop()`` can say it cannot help instead of pretending.
+    """
+    app_factory = getattr(server, "streamable_http_app", None)
+    if not callable(app_factory):
+        return None, fallback
+
+    import uvicorn
+
+    config = uvicorn.Config(app_factory(), host=host, port=port, log_level="warning")
+    uv = uvicorn.Server(config)
+    # uvicorn skips signal-handler installation off the main thread, so running
+    # this on our daemon thread is fine.
+    return uv, uv.run
+
+
 def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT) -> str:
     """Start the MCP console server on a background thread.
 
     Must be called from FreeCAD's main thread (e.g. the Python console). Returns
     the endpoint URL. Idempotent: a second call while running is a no-op.
     """
-    global _executor, _server_thread, _mcp, _bound
+    global _executor, _server_thread, _mcp, _uvicorn, _bound
 
     if is_running():
         return "MCP console already running at " + url()
@@ -500,7 +533,7 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT) -> str:
     _bound = (host, port)
     _seed_namespace()
     _executor = _make_executor()
-    _mcp, _serve_forever = _make_server(host, port)
+    _mcp, _fallback_serve = _make_server(host, port)
 
     @_mcp.tool(name="run_python", description=_RUN_PYTHON_DESCRIPTION)
     def run_python(code: str) -> RunResult:
@@ -515,10 +548,44 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT) -> str:
         return _executor.run_on_main(
             lambda: _search_api(query, modules, limit))
 
+    _uvicorn, _serve_forever = _make_serve(_mcp, _fallback_serve, host, port)
+
     _server_thread = threading.Thread(target=_serve_forever, name="mcp-console",
                                       daemon=True)
     _server_thread.start()
     return "MCP console running at " + url()
+
+
+def stop(timeout: float = 5.0) -> str:
+    """Shut the MCP console server down and release the port.
+
+    Idempotent: stopping a server that is not running is a no-op. Returns a
+    human-readable status line, the same way :func:`start` does.
+    """
+    global _executor, _server_thread, _mcp, _uvicorn
+
+    if not is_running():
+        return "MCP console is not running"
+
+    was = url()
+
+    if _uvicorn is None:
+        # Fallback serving path -- see _make_serve(). Nothing to signal.
+        return ("MCP console at " + was + " cannot be stopped: this version of "
+                "'mcp' exposes no ASGI app, so uvicorn is out of reach. It will "
+                "go away when FreeCAD exits.")
+
+    _uvicorn.should_exit = True
+    _server_thread.join(timeout)
+    if _server_thread.is_alive():
+        return ("MCP console at " + was + " did not stop within %.1fs; it will "
+                "go away when FreeCAD exits." % timeout)
+
+    _server_thread = None
+    _uvicorn = None
+    _mcp = None
+    _executor = None
+    return "MCP console stopped (was " + was + ")"
 
 
 def is_running() -> bool:
