@@ -89,6 +89,22 @@ Params = [
         "swapped in when it arrives (docs/SceneStreaming.md #13) - the\n"
         "import stall otherwise scales with the largest single part. -1\n"
         "disables the stand-in so every shape tessellates inline."),
+    ParamBool('ProgressiveLoad', True, title='Progressive document load',
+        doc="Build the visual representation of a restored document after\n"
+        "the load instead of inline inside it. Opening a large document\n"
+        "otherwise tessellates every shape on the main thread while\n"
+        "nothing paints - the visual build is the largest single stage of\n"
+        "a load. Deferred, the window comes up first and the parts appear\n"
+        "in bounded slices with the view painting between them. Read as\n"
+        "each restored shape asks for its visual."),
+    ParamInt('ProgressiveLoadBudgetMS',  100, title='Progressive load slice (ms)',
+        doc="How long one slice of deferred visual building may run before\n"
+        "returning to the event loop, when Progressive document load is\n"
+        "on. Larger finishes the document sooner, smaller keeps the window\n"
+        "more responsive while it fills in. Each slice is paid for with a\n"
+        "repaint of a large scene, which is why slices this long are worth\n"
+        "it - much smaller and the fill is paced by redraws rather than by\n"
+        "the building. Read at each slice."),
     ParamInt('LevelThreads',  0, title='Level build threads',
         doc="How many mesh level builds (the scene server's on-demand\n"
         "re-tessellations, docs/SceneStreaming.md #7) may run at once.\n"

@@ -52,7 +52,11 @@
 
 # include <QApplication>
 # include <QAction>
+# include <QCoreApplication>
+# include <QTimer>
 # include <QMenu>
+# include <deque>
+# include <chrono>
 # include <sstream>
 
 # include <Inventor/SoPickedPoint.h>
@@ -135,7 +139,11 @@ class SoFCCoordinate3: public SoCoordinate3
 {
 public:
     virtual void getBoundingBox(SoGetBoundingBoxAction * action) {
-        if (vp && vp->VisualTouched)
+        // A visual parked for the progressive-load queue must stay parked:
+        // the first repaint after a load traverses the whole scene, and
+        // building on demand here would hand back the very stall the queue
+        // exists to break up. It contributes nothing until its slice comes.
+        if (vp && vp->VisualTouched && !vp->VisualDeferred)
             vp->updateVisual();
         SoCoordinate3::getBoundingBox(action);
     }
@@ -144,6 +152,28 @@ public:
 };
 
 void initShapeInstancingGateObserver();  // PartParams.cpp
+
+namespace {
+
+/// The visual builds a document restore asked for and did not get. Held by
+/// weak handle: a slice may run long after the load, and the document may
+/// have been closed by then.
+struct DeferredVisualQueue {
+    std::deque<App::DocumentObjectT> pending;
+    bool scheduled = false;
+    /// Counted per drain, for the one line the queue reports itself with.
+    std::size_t built = 0;
+    std::size_t slices = 0;
+    std::chrono::duration<double> spent {0};
+};
+
+DeferredVisualQueue &deferredVisuals()
+{
+    static DeferredVisualQueue queue;
+    return queue;
+}
+
+} // anonymous namespace
 
 /// Key of one shared tessellation in the global instance-geometry table:
 /// the underlying TShape with its orientation (a reversed occurrence winds
@@ -3245,6 +3275,94 @@ bool ViewProviderPartExt::buildCoarseStandIn()
     return true;
 }
 
+bool ViewProviderPartExt::deferVisualForLoad()
+{
+    if (!Gui::RenderParams::getProgressiveLoad())
+        return false;
+    auto obj = getObject();
+    auto doc = obj ? obj->getDocument() : nullptr;
+    if (!doc || !doc->testStatus(App::Document::Restoring))
+        return false;
+
+    VisualTouched = true;
+    if (!VisualDeferred) {
+        VisualDeferred = true;
+        deferredVisuals().pending.emplace_back(obj);
+    }
+    // The restore pumps events through its progress sequencer, so a slice
+    // can be posted now; it will find the document still restoring and put
+    // itself off until the load has let go.
+    scheduleDeferredVisualSlice();
+    return true;
+}
+
+void ViewProviderPartExt::scheduleDeferredVisualSlice(int delayMs)
+{
+    auto &queue = deferredVisuals();
+    if (queue.scheduled || queue.pending.empty())
+        return;
+    queue.scheduled = true;
+    QTimer::singleShot(delayMs, QCoreApplication::instance(),
+                       []() { ViewProviderPartExt::runDeferredVisualSlice(); });
+}
+
+void ViewProviderPartExt::runDeferredVisualSlice()
+{
+    auto &queue = deferredVisuals();
+    queue.scheduled = false;
+    if (queue.pending.empty())
+        return;
+
+    // Still loading: everything built now would only be parked again. Ask
+    // again shortly rather than spinning on the events the restore pumps.
+    if (auto front = queue.pending.front().getObject()) {
+        if (front->getDocument()
+                && front->getDocument()->testStatus(App::Document::Restoring)) {
+            scheduleDeferredVisualSlice(100);
+            return;
+        }
+    }
+
+    const double budget =
+        std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0;
+    auto start = std::chrono::high_resolution_clock::now();
+    auto elapsed = [&start]() {
+        return std::chrono::duration<double>(
+                std::chrono::high_resolution_clock::now() - start);
+    };
+
+    ++queue.slices;
+    while (!queue.pending.empty()) {
+        auto obj = queue.pending.front().getObject();
+        queue.pending.pop_front();
+        auto vp = obj ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
+                            Gui::Application::Instance->getViewProvider(obj))
+                      : nullptr;
+        if (vp && vp->VisualDeferred) {
+            vp->VisualDeferred = false;
+            // Something may have built it in the meantime -- counted only
+            // when this slice is what built it, or the line would report
+            // work it never did.
+            if (vp->VisualTouched) {
+                vp->updateVisual();
+                ++queue.built;
+            }
+        }
+        if (elapsed().count() >= budget)
+            break;
+    }
+    queue.spent += elapsed();
+
+    if (!queue.pending.empty()) {
+        scheduleDeferredVisualSlice();
+        return;
+    }
+    FC_LOG("progressive load: " << queue.built << " visuals in "
+            << queue.slices << " slices, " << queue.spent.count() << 's');
+    queue.built = queue.slices = 0;
+    queue.spent = std::chrono::duration<double>(0);
+}
+
 void ViewProviderPartExt::updateVisual()
 {
     if (!getObject()
@@ -3254,6 +3372,13 @@ void ViewProviderPartExt::updateVisual()
         VisualTouched = true;
         return;
     }
+
+    if (deferVisualForLoad())
+        return;
+
+    // A restore or a live import runs this thousands of times inside another
+    // stage's timing; the accumulator is what makes that share visible.
+    Gui::ViewProvider::VisualBuildTimer buildTimer;
 
     Gui::SoUpdateVBOAction action;
     action.apply(this->faceset);
@@ -3569,18 +3694,26 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
         bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
 
+        {
+            // Separated from the node building around it: a mesh already
+            // resident (an instance sharing this TShape, a stand-in resolved
+            // by the pool) makes this call nearly free, and only the split
+            // says whether a bulk fill is paying for tessellation at all.
+            Gui::ViewProvider::VisualBuildTimer meshTimer(
+                    Gui::ViewProvider::VisualMeshTime, nullptr);
 #if OCC_VERSION_HEX >= 0x070500
-        IMeshTools_Parameters meshParams;
-        meshParams.Deflection = deflection;
-        meshParams.Relative = Standard_False;
-        meshParams.Angle = AngDeflectionRads;
-        meshParams.InParallel = Standard_True;
-        meshParams.AllowQualityDecrease = Standard_True;
+            IMeshTools_Parameters meshParams;
+            meshParams.Deflection = deflection;
+            meshParams.Relative = Standard_False;
+            meshParams.Angle = AngDeflectionRads;
+            meshParams.InParallel = Standard_True;
+            meshParams.AllowQualityDecrease = Standard_True;
 
-        BRepMesh_IncrementalMesh(cShape, meshParams);
+            BRepMesh_IncrementalMesh(cShape, meshParams);
 #else
-        BRepMesh_IncrementalMesh(cShape, deflection, Standard_False, AngDeflectionRads, Standard_True);
+            BRepMesh_IncrementalMesh(cShape, deflection, Standard_False, AngDeflectionRads, Standard_True);
 #endif
+        }
 
 
         // A face without a geometric surface is a purely triangulated one

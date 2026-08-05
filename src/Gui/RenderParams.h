@@ -145,6 +145,42 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ProgressiveLoad
+    ///
+    /// Build the visual representation of a restored document after
+    /// the load instead of inline inside it. Opening a large document
+    /// otherwise tessellates every shape on the main thread while
+    /// nothing paints - the visual build is the largest single stage of
+    /// a load. Deferred, the window comes up first and the parts appear
+    /// in bounded slices with the view painting between them. Read as
+    /// each restored shape asks for its visual.
+    static const bool & getProgressiveLoad();
+    static const bool & defaultProgressiveLoad();
+    static void removeProgressiveLoad();
+    static void setProgressiveLoad(const bool &v);
+    static const char *docProgressiveLoad();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ProgressiveLoadBudgetMS
+    ///
+    /// How long one slice of deferred visual building may run before
+    /// returning to the event loop, when Progressive document load is
+    /// on. Larger finishes the document sooner, smaller keeps the window
+    /// more responsive while it fills in. Each slice is paid for with a
+    /// repaint of a large scene, which is why slices this long are worth
+    /// it - much smaller and the fill is paced by redraws rather than by
+    /// the building. Read at each slice.
+    static const long & getProgressiveLoadBudgetMS();
+    static const long & defaultProgressiveLoadBudgetMS();
+    static void removeProgressiveLoadBudgetMS();
+    static void setProgressiveLoadBudgetMS(const long &v);
+    static const char *docProgressiveLoadBudgetMS();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LevelThreads
     ///
     /// How many mesh level builds (the scene server's on-demand

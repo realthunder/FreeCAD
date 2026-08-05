@@ -53,6 +53,8 @@ public:
     std::string Type;
     long CoarseTessellation;
     long CoarseDeferFaces;
+    bool ProgressiveLoad;
+    long ProgressiveLoadBudgetMS;
     long LevelThreads;
     long LevelMemoryFloorMB;
     long GpuMemoryBudgetMB;
@@ -123,6 +125,10 @@ public:
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         CoarseDeferFaces = this->handle->GetInt("CoarseDeferFaces", 1000);
         funcs["CoarseDeferFaces"] = &RenderParamsP::updateCoarseDeferFaces;
+        ProgressiveLoad = this->handle->GetBool("ProgressiveLoad", true);
+        funcs["ProgressiveLoad"] = &RenderParamsP::updateProgressiveLoad;
+        ProgressiveLoadBudgetMS = this->handle->GetInt("ProgressiveLoadBudgetMS", 100);
+        funcs["ProgressiveLoadBudgetMS"] = &RenderParamsP::updateProgressiveLoadBudgetMS;
         LevelThreads = this->handle->GetInt("LevelThreads", 0);
         funcs["LevelThreads"] = &RenderParamsP::updateLevelThreads;
         LevelMemoryFloorMB = this->handle->GetInt("LevelMemoryFloorMB", 0);
@@ -270,6 +276,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCoarseDeferFaces(RenderParamsP *self) {
         self->CoarseDeferFaces = self->handle->GetInt("CoarseDeferFaces", 1000);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateProgressiveLoad(RenderParamsP *self) {
+        self->ProgressiveLoad = self->handle->GetBool("ProgressiveLoad", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateProgressiveLoadBudgetMS(RenderParamsP *self) {
+        self->ProgressiveLoadBudgetMS = self->handle->GetInt("ProgressiveLoadBudgetMS", 100);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelThreads(RenderParamsP *self) {
@@ -639,6 +653,74 @@ void RenderParams::setCoarseDeferFaces(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeCoarseDeferFaces() {
     instance()->handle->RemoveInt("CoarseDeferFaces");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docProgressiveLoad() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Build the visual representation of a restored document after\n"
+"the load instead of inline inside it. Opening a large document\n"
+"otherwise tessellates every shape on the main thread while\n"
+"nothing paints - the visual build is the largest single stage of\n"
+"a load. Deferred, the window comes up first and the parts appear\n"
+"in bounded slices with the view painting between them. Read as\n"
+"each restored shape asks for its visual.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getProgressiveLoad() {
+    return instance()->ProgressiveLoad;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultProgressiveLoad() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setProgressiveLoad(const bool &v) {
+    instance()->handle->SetBool("ProgressiveLoad",v);
+    instance()->ProgressiveLoad = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeProgressiveLoad() {
+    instance()->handle->RemoveBool("ProgressiveLoad");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docProgressiveLoadBudgetMS() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How long one slice of deferred visual building may run before\n"
+"returning to the event loop, when Progressive document load is\n"
+"on. Larger finishes the document sooner, smaller keeps the window\n"
+"more responsive while it fills in. Each slice is paid for with a\n"
+"repaint of a large scene, which is why slices this long are worth\n"
+"it - much smaller and the fill is paced by redraws rather than by\n"
+"the building. Read at each slice.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getProgressiveLoadBudgetMS() {
+    return instance()->ProgressiveLoadBudgetMS;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultProgressiveLoadBudgetMS() {
+    const static long def = 100;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setProgressiveLoadBudgetMS(const long &v) {
+    instance()->handle->SetInt("ProgressiveLoadBudgetMS",v);
+    instance()->ProgressiveLoadBudgetMS = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeProgressiveLoadBudgetMS() {
+    instance()->handle->RemoveInt("ProgressiveLoadBudgetMS");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
