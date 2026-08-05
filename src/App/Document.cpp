@@ -75,6 +75,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #endif //USE_OLD_DAG
 
 #include <boost/regex.hpp>
+#include <algorithm>
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
@@ -4527,6 +4528,23 @@ std::vector<App::DocumentObject*> Document::getRootObjects() const
 
     for (auto objectIt : d->objectArray) {
         if (objectIt->getInList().empty())
+            ret.push_back(objectIt);
+    }
+
+    return ret;
+}
+
+std::vector<App::DocumentObject*> Document::getRootObjectsIgnoreLinks() const
+{
+    std::vector < App::DocumentObject* > ret;
+
+    for (auto objectIt : d->objectArray) {
+        const auto &inList = objectIt->getInList();
+        bool noParents = inList.empty()
+            || std::all_of(inList.begin(), inList.end(), [](DocumentObject *obj) {
+                   return obj->isDerivedFrom<App::Link>();
+               });
+        if (noParents)
             ret.push_back(objectIt);
     }
 

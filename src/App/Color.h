@@ -73,6 +73,10 @@ public:
      * \sa getPackedValue().
      */
     Color& setPackedValue(uint32_t rgba);
+    /// Transparency, i.e. the complement of the alpha component
+    float transparency() const {return 1.0F - a;}
+    /// Set the alpha component from a transparency
+    void setTransparency(float value) {a = 1.0F - value;}
     /**
      * Returns color as a 32 bit packed unsigned int in the form 0xRRGGBBAA.
      *

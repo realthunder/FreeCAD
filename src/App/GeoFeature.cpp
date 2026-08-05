@@ -32,6 +32,7 @@
 #include "ComplexGeoData.h"
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
+#include "PropertyLinks.h"
 #include "ElementNamingUtils.h"
 
 FC_LOG_LEVEL_INIT("GeoFeature",true,true);
@@ -70,6 +71,45 @@ Base::Placement GeoFeature::globalPlacement() const
         return ext->globalGroupPlacement() * Placement.getValue();
     }
     return Placement.getValue();    
+}
+
+Base::Placement GeoFeature::getPlacementFromProp(DocumentObject *obj, const char *propName)
+{
+    if (!obj)
+        return {};
+    auto prop = Base::freecad_dynamic_cast<PropertyPlacement>(obj->getPropertyByName(propName));
+    return prop ? prop->getValue() : Base::Placement();
+}
+
+Base::Placement GeoFeature::getGlobalPlacement(DocumentObject *targetObj,
+                                               DocumentObject *rootObj,
+                                               const std::string &sub)
+{
+    if (!rootObj)
+        return {};
+    return rootObj->getPlacementOf(sub, targetObj);
+}
+
+Base::Placement GeoFeature::getGlobalPlacement(DocumentObject *targetObj, PropertyXLinkSub *prop)
+{
+    if (!prop)
+        return {};
+    const auto &subs = prop->getSubValues();
+    if (subs.empty())
+        return {};
+    return getGlobalPlacement(targetObj, prop->getValue(), subs.front());
+}
+
+Base::Placement GeoFeature::getGlobalPlacement(const DocumentObject *obj)
+{
+    if (!obj)
+        return {};
+    auto plc = getPlacementFromProp(const_cast<DocumentObject*>(obj), "Placement");
+    if (auto group = GeoFeatureGroupExtension::getGroupOfObject(obj)) {
+        auto ext = group->getExtensionByType<GeoFeatureGroupExtension>();
+        return ext->globalGroupPlacement() * plc;
+    }
+    return plc;
 }
 
 const PropertyComplexGeoData* GeoFeature::getPropertyOfGeometry() const

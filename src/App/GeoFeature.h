@@ -34,6 +34,7 @@
 namespace App
 {
 
+class PropertyXLinkSub;
 
 /** Base class of all geometric document objects.
  */
@@ -122,17 +123,39 @@ public:
 
     /**
      * @brief Calculates the placement in the global reference coordinate system
-     * 
+     *
      * In FreeCAD the GeoFeature placement describes the local placement of the object in its parent
      * coordinate system. This is however not always the same as the global reference system. If the
      * object is in a GeoFeatureGroup, hence in another local coordinate system, the Placement
-     * property does only give the local transformation. This function can be used to calculate the 
-     * placement of the object in the global reference coordinate system taking all stacked local 
+     * property does only give the local transformation. This function can be used to calculate the
+     * placement of the object in the global reference coordinate system taking all stacked local
      * systems into account.
-     * 
+     *
+     * This only accounts for geo feature groups. When the object is reached
+     * through a link, use the getGlobalPlacement() overloads below, which take
+     * the path the object was reached by.
+     *
      * @return Base::Placement The transformation from the global reference coordinate system
      */
     Base::Placement globalPlacement() const;
+
+    /// Return the value of a placement property of the given object, identity if there is none
+    static Base::Placement getPlacementFromProp(DocumentObject *obj, const char *propName);
+
+    /** Return the global placement of an object reached through a sub-object path
+     *
+     * @param targetObj: optional object along the path to stop at. If null, the
+     *                   whole path is accumulated.
+     * @param rootObj: the object the path starts from.
+     * @param sub: the sub-object path, relative to \c rootObj.
+     */
+    static Base::Placement getGlobalPlacement(DocumentObject *targetObj,
+                                              DocumentObject *rootObj,
+                                              const std::string &sub);
+    /// Same, taking the root object and path from a link property's first sub-value
+    static Base::Placement getGlobalPlacement(DocumentObject *targetObj, PropertyXLinkSub *prop);
+    /// Global placement of an object that is not reached through a link, i.e. globalPlacement()
+    static Base::Placement getGlobalPlacement(const DocumentObject *obj);
 
     /** Search sub element using internal cached geometry
      *

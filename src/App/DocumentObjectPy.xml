@@ -16,7 +16,9 @@
         <Methode Name="addProperty" Keyword="true">
             <Documentation>
                 <UserDocu>
-                    addProperty(type: string, name: string, group="", doc="", attr=0, read_only=False, hidden=False, enum_vals=[]) -- Add a generic property.
+                    addProperty(type: string, name: string, group="", doc="", attr=0, read_only=False, hidden=False, locked=False, enum_vals=[]) -- Add a generic property.
+
+                    locked: prevent the property from being removed again (Property.LockDynamic).
                 </UserDocu>
             </Documentation>
         </Methode>
@@ -157,6 +159,25 @@ Returns:
         <Methode Name="getSubObjects">
             <Documentation>
                 <UserDocu>getSubObjects(reason=0): Return subname reference of all sub-objects</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getPlacementOf">
+            <Documentation>
+                <UserDocu>
+getPlacementOf(subname: str, targetObj: DocumentObject = None) -> Base.Placement
+
+Return the accumulated placement of the sub-object referenced by subname.
+
+Args:
+  subname: dot separated sub-object path, relative to this object. A trailing
+           element name, if any, is ignored.
+  targetObj: optional object along the path to stop at. If it is found, the
+             accumulation stops after including that object's transformation.
+
+The path is resolved through links, so links, link arrays and links into other
+documents each contribute their own transformation. A scaled transformation
+cannot be expressed as a placement, and its scale is dropped.
+                </UserDocu>
             </Documentation>
         </Methode>
         <Methode Name="expandSubObjectNames" Keyword="true">

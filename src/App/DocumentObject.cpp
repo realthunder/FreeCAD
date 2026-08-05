@@ -1003,6 +1003,47 @@ DocumentObject::getSubObjectList(const char *subname,
     return res;
 }
 
+App::PropertyPlacement *DocumentObject::getPlacementProperty() const
+{
+    if (auto ext = getExtensionByType<App::LinkBaseExtension>(true)) {
+        if (auto linkPlacement = ext->getLinkPlacementProperty())
+            return linkPlacement;
+        return ext->getPlacementProperty();
+    }
+    return Base::freecad_dynamic_cast<PropertyPlacement>(getPropertyByName("Placement"));
+}
+
+Base::Placement DocumentObject::getPlacementOf(const std::string &sub,
+                                               DocumentObject *targetObj) const
+{
+    std::string subname(sub);
+    if (targetObj && targetObj != this) {
+        // Truncate the path at targetObj, so that the accumulation stops right
+        // after that object's own transformation.
+        std::vector<int> subsizes;
+        const auto objs = getSubObjectList(sub.c_str(), &subsizes);
+        for (size_t i = 1; i < objs.size(); ++i) {
+            auto obj = objs[i];
+            if (obj == targetObj || obj->getLinkedObject(true) == targetObj) {
+                subname = sub.substr(0, subsizes[i]);
+                break;
+            }
+        }
+    }
+    else if (targetObj == this) {
+        subname.clear();
+    }
+
+    Base::Matrix4D mat;
+    if (!getSubObject(subname.c_str(), nullptr, &mat)) {
+        // Invalid path. Fall back to this object's own placement, which is what
+        // an empty path would have given.
+        mat = Base::Matrix4D();
+        getSubObject("", nullptr, &mat);
+    }
+    return Base::Placement(mat);
+}
+
 std::vector<std::string> DocumentObject::getSubObjects(int reason) const {
     std::vector<std::string> ret;
     callExtension(&DocumentObjectExtension::extensionGetSubObjects,ret,reason);

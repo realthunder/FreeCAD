@@ -305,6 +305,13 @@ public:
     boost::signals2::signal<void (const App::Document&, const App::DocumentObject&)> signalRecomputedObject;
     /// signal of skipped objects when recomputing document
     boost::signals2::signal<void (const App::Document&, const std::vector<App::DocumentObject*> &)> signalSkipRecompute;
+    /** signal before opening an active transaction
+     *
+     * Declared to match upstream, where nothing emits it either -- the only
+     * user is Assembly's ViewProviderAssembly, whose slot is therefore dead
+     * there too. Kept so a future upstream sync is a no-op here.
+     */
+    boost::signals2::signal<void (const std::string&)> signalBeforeOpenTransaction;
     // signal on opened transaction
     boost::signals2::signal<void (const App::Document&, std::string)> signalOpenTransaction;
     // signal a committed transaction

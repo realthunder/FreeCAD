@@ -29,6 +29,7 @@
 
 #include "PropertyContainer.h"
 #include "Property.h"
+#include "PropertyUnits.h"
 #include "DocumentObject.h"
 #include <Base/PyWrapParseTupleAndKeywords.h>
 
@@ -284,6 +285,10 @@ PyObject*  PropertyContainerPy::setPropertyStatus(PyObject *args)
                     auto enumProp = static_cast<PropertyEnumeration*>(prop);
                     enumProp->setPersistEnums(!value);
                     continue;
+                } else if (v == "AllowNegativeValues" && prop->isDerivedFrom(PropertyLength::getClassTypeId())) {
+                    auto lengthProp = static_cast<PropertyLength*>(prop);
+                    lengthProp->enableNegative(value);
+                    continue;
                 }
                 PyErr_Format(PyExc_ValueError, "Unsupported property status '%s'", v.c_str());
                 return nullptr;
@@ -323,6 +328,7 @@ PyObject*  PropertyContainerPy::getPropertyStatus(PyObject *args)
             ret.append(Py::String(v.first.c_str()));
         ret.append(Py::String("AllowPartial"));
         ret.append(Py::String("ReturnNewElement"));
+        ret.append(Py::String("AllowNegativeValues"));
         ret.append(Py::String("NoPersistEnums"));
         ret.append(Py::String("SilentRestore"));
     }else{

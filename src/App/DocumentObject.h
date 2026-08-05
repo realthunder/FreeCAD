@@ -30,6 +30,7 @@
 #include <App/PropertyPythonObject.h>
 #include <App/PropertyStandard.h>
 #include <Base/Bitmask.h>
+#include <Base/Placement.h>
 #include <Base/SmartPtrPy.h>
 
 #include <bitset>
@@ -48,6 +49,7 @@ class Document;
 class DocumentObjectGroup;
 class DocumentObjectPy;
 class Expression;
+class PropertyPlacement;
 
 enum ObjectStatus {
     Touch = 0,
@@ -409,6 +411,22 @@ public:
                                                   std::vector<int> *subsizes = nullptr,
                                                   bool flatten = false) const;
 
+    /** Return the accumulated placement of a sub-object as a placement
+     *
+     * @param sub: the sub name path, relative to this object. A trailing
+     *             element name, if any, is ignored.
+     * @param targetObj: optional object to stop at. If it is found along the
+     *                   path, the accumulation stops after including that
+     *                   object's own transformation.
+     *
+     * This resolves the path with getSubObject(), so links, link arrays and
+     * links into other documents each contribute their own transformation.
+     * Note that a non-uniform or scaled transformation cannot be expressed as
+     * a placement; the scale is dropped in that case.
+     */
+    Base::Placement getPlacementOf(const std::string &sub,
+                                   DocumentObject *targetObj = nullptr) const;
+
     /// reason of calling getSubObjects()
     enum GSReason {
         /// default, mostly for exporting shape objects
@@ -483,6 +501,20 @@ public:
      * This function is called before onBeforeChange()
      */
     virtual void onBeforeChangeLabel(std::string &newLabel) {(void)newLabel;}
+
+    /// Check whether this object is a link.
+    virtual bool isLink() const {return false;}
+
+    /// Check whether this object is a link group, i.e. a link array acting as a container.
+    virtual bool isLinkGroup() const {return false;}
+
+    /** Return the placement property to use, if any
+     *
+     * For a link this is the link placement rather than the object's own
+     * Placement property, which is what a caller wanting to move the object
+     * needs to write to.
+     */
+    virtual App::PropertyPlacement *getPlacementProperty() const;
 
     friend class Document;
     friend class Transaction;

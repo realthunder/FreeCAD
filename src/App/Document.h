@@ -565,6 +565,13 @@ public:
     std::vector<App::DocumentObject*> topologicalSort() const;
     /// get all root objects (objects no other one reference too)
     std::vector<App::DocumentObject*> getRootObjects() const;
+    /** get all tree-root objects, i.e. those referenced only by App::Links
+     *
+     * getRootObjects() returns the roots of the dependency graph, so an object
+     * a Link points at is not one. For the tree-level roots, an object whose
+     * every parent is a Link still counts as a root.
+     */
+    std::vector<App::DocumentObject*> getRootObjectsIgnoreLinks() const;
     /// get all possible paths from one object to another following the OutList
     std::vector<std::list<App::DocumentObject*> > getPathsByOutList
     (const App::DocumentObject* from, const App::DocumentObject* to) const;

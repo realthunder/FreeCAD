@@ -797,6 +797,10 @@ public:
     bool canLinkProperties() const override;
 
     void setupObject() override;
+
+    /// A Link with elements is a container for them, not a link in its own right
+    bool isLink() const override {return ElementCount.getValue() == 0;}
+    bool isLinkGroup() const override {return ElementCount.getValue() > 0;}
 };
 
 using LinkPython = App::FeaturePythonT<Link>;
@@ -844,6 +848,11 @@ public:
     {
         _handleChangedPropertyName(reader,TypeName,PropName);
     }
+
+    bool isLink() const override {return true;}
+
+    /// Return the Link array this element belongs to, or null
+    App::Link *getLinkGroup() const;
 };
 
 using LinkElementPython = App::FeaturePythonT<LinkElement>;

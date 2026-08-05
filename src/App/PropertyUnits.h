@@ -462,6 +462,9 @@ class AppExport PropertyLength: public PropertyQuantityConstraint
 public:
     PropertyLength();
     ~PropertyLength() override = default;
+
+    /// Lift the non-negative constraint a length carries by default
+    void enableNegative(bool on);
 };
 
 /** LuminousIntensity property

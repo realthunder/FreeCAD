@@ -2763,6 +2763,19 @@ bool LinkElement::canDelete() const {
     return !owner || !owner->getDocument()->getObjectByID(_LinkOwner.getValue());
 }
 
+App::Link *LinkElement::getLinkGroup() const {
+    for(auto obj : getInList()) {
+        auto link = freecad_cast<App::Link*>(obj);
+        if(!link)
+            continue;
+        for(auto elt : link->ElementList.getValues()) {
+            if(elt == this)
+                return link;
+        }
+    }
+    return nullptr;
+}
+
 /*[[[cog
 import Link
 Link.define_link_group()
