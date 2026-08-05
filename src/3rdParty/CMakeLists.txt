@@ -24,6 +24,17 @@ if (BUILD_BGFX)
     # slot would collide with it); handle tables cost bytes per slot.
     set(BGFX_CONFIG_MAX_VERTEX_BUFFERS "65535" CACHE STRING "" FORCE)
     set(BGFX_CONFIG_MAX_INDEX_BUFFERS "65535" CACHE STRING "" FORCE)
+    # Every 3D view on the bgfx path holds a contiguous block of
+    # BGFXView::NUM_VIEWS ids for its pass sequence, and that sequence has
+    # grown (particle simulation steps, bulb shadow tiles, water/glass,
+    # nine overlay slots) to the point where bgfx's default 256 fits only
+    # two viewers. Doubling it fits five. The cost is bgfx's fixed
+    # per-view tables -- a couple of hundred bytes per id, twice over for
+    # the submit/render frame pair -- and one more bit of the 64-bit draw
+    # sort key for the view field, which has room: the tightest key
+    # variant packs 55 bits at the old width. Must stay a power of two
+    # (static_assert in bgfx's config.h).
+    set(BGFX_CONFIG_MAX_VIEWS "512" CACHE STRING "" FORCE)
     add_subdirectory(bgfx)
 endif()
 
