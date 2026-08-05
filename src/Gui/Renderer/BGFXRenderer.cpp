@@ -8959,11 +8959,15 @@ public:
         // reads. The viewers render the scene themselves from the
         // snapshot; they never receive these pixels.
         //
-        // `renderOk` is set on purpose, because it is what tells
-        // SoFCRenderer to skip its own fixed-function GL pass: this
-        // frame IS accounted for, by deliberately drawing nothing.
-        // Reporting failure instead would hand the same scene to Coin
-        // to rasterize, which is no cheaper.
+        // `renderOk` AND `hasScene` are set on purpose, because
+        // canSkipInternal() needs both to tell SoFCRenderer to skip its
+        // own fixed-function GL pass: this frame IS accounted for, by
+        // deliberately drawing nothing. Reporting failure instead would
+        // hand the same scene to Coin to rasterize, which is no cheaper
+        // -- and a process that has served from launch never reaches
+        // the end-of-frame assignments below, so leaving `hasScene`
+        // to them means it never turns true and Coin rasterizes every
+        // frame anyway.
         //
         // Everything above this line is CPU-side feed work, so the
         // snapshot a connecting viewer receives is exactly the one it
@@ -8973,6 +8977,7 @@ public:
         // draws in full.
         if (!localAudience() && !dumpPending) {
             renderOk = true;
+            hasScene = !scene.empty();
             return true;
         }
 
