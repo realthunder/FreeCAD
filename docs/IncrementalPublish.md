@@ -426,6 +426,80 @@ to what it is asserting. Note that `saveImage()` cannot be used for
 this: it captures the composite and came back pixel-identical whether
 the object was visible or not.
 
+## 4d. The translate stage, ablated
+
+With the flatten dealt with, `translate` was the biggest stage by far —
+41-45ms of a ~100ms publish at 6000 objects. Where in it was not known,
+and the one guess on record was wrong, so the stage was **ablated**: one
+build, four `getenv` gates, each skipping a block, one run each.
+
+| skipped | translate |
+|---|---|
+| nothing | 38-43ms |
+| the per-cache mesh translation | **13-16ms** |
+| the face/edge/vertex part tables | 35ms |
+| the object-info resolution | 32-36ms |
+| the draw-call struct build | 31-36ms |
+
+Skipping the mesh translation *and* the part tables came to 15-16ms, the
+same as skipping the mesh translation alone — the dummy mesh takes the
+part tables with it — so the split is **translateCache ~20ms, part
+tables ~6ms, everything else ~15ms**.
+
+⭐ **The lesson about instruction counts.** Phase 4 was queued to start
+on `getBoundingBox`, which callgrind put at 123.6M Ir, **13% of a
+publish**, computed twice per entry. It was: both the draw-entry build
+and the translate asked the same entry the same question, and the entry
+now memoizes it. In wall time that is **~2ms, ~2%** — the Ir share of
+eight corner transforms badly overstates what they cost on hardware that
+pipelines them. The thing worth 26ms was not visible as a large Ir
+share at all. **Ablate for share-of-time; use callgrind to find
+candidates, not to size them.**
+
+### 4d-i. Reusing a translated mesh — SHIPPED, DEFAULT ON
+
+`RenderCacheMeshReuse` (0 off, 1 reuse, 2 reuse+verify; default 1).
+Translations are kept, keyed by cache id and held **weakly**: a mesh
+lives exactly as long as some draw list still refers to it, so the memo
+neither keeps a vertex cache alive nor needs reconciling against the
+scene.
+
+⚠️ **A vertex cache object is stable; its arrays are not.** The memo was
+first written to assume a closed cache never changes, and the verify
+mode immediately said otherwise: **200 identical boxes converge onto a
+single shared vertex array some publishes after each had its own** (the
+CPU-side array dedup). A memo of raw pointers is only sound if it
+checks, so a reused mesh is compared against what the cache holds now —
+a dozen inline pointer reads, against the two allocations a translation
+costs. Pointer equality *is* identity here, because the mesh holds a
+reference to the storage it pinned, so that storage cannot have been
+freed and reallocated at the same address. Partial caches (a selection's
+single-face subset) compact their indices into the mesh itself and are
+never reused.
+
+| | translate | backend |
+|---|---|---|
+| 6000 objects, flat | 41ms → **24-26ms** | 11-14ms → **2ms** |
+| 7334 objects, 4 levels | 42-45ms → **26-28ms** | 13-15ms → **2ms** |
+
+The backend drop is **reported as observed, not attributed**: both of its
+content hashes are already keyed by cache id, so what it stopped doing
+on stable mesh objects has not been traced.
+
+**Memory.** Peak RSS 8-25MB higher (0.4-1.2%), depending on run
+conditions, and it **does not grow with the number of publishes** —
+against the same baseline the gap is 8.5MB at one publish and 9.4MB at
+twelve. One generation of meshes kept alive, not an accumulation.
+
+**Verification.** `RenderCacheMeshReuse 2` re-translates every reused
+mesh and compares field for field: zero disagreements. The
+add/delete/reorder/move/hide/recolour/select transcript is byte-identical
+at 0, 1 and 2 *and* to the build before the change. A new probe
+(`geom_probe.py`) covers what the others do not — geometry being
+**replaced**: resize a box, change a cylinder's deviation, swap a
+feature's shape, edit a shape two features share, then set it back to an
+equal one. Agrees step for step, all 8 steps moving the frame.
+
 ## 5. Design: per-child slices
 
 The change set is available for free. `preSeparator` already knows, for
@@ -540,9 +614,14 @@ up rather than being assumed.
    levels), and §4c-i stops the splice re-deriving the child match the
    change set made in the same publish (10 → 5ms flat, nested unchanged).
    Off by default pending the large-model run.
-4. Incremental translate (38%): per-child draw-call slices, and an
-   `updateScene` delta on the `Renderer` interface so the list is not
-   rebuilt to be handed over.
+4. Incremental translate (38%): §4d ablated the stage and found most of
+   it was not incremental *work* at all but repetition — every vertex
+   cache re-translated into a backend mesh every publish. Keeping those
+   translations took translate 41-45ms → 24-28ms and the backend stage
+   11-15ms → 2ms (§4d-i), on by default. What remains for this phase is
+   the original plan: per-child draw-call slices and an `updateScene`
+   delta on the `Renderer` interface, so the list is not rebuilt
+   wholesale to be handed over.
 5. Incremental backend bookkeeping (19%): instance groups, bbox and
    level-plan invalidation, which otherwise inherit the O(N).
 6. Verification mode (§7) and the equivalence runs; then revisit the
