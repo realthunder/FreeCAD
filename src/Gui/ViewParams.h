@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:526)
+// Auto generated code (Gui/ViewParams.py:537)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -1916,6 +1916,27 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter RenderCacheMeshReuse
+    ///
+    /// Reuse the mesh a vertex cache was translated into for the backend,
+    /// instead of translating it again on every publish. A vertex cache is
+    /// built once and never changed afterwards -- a shape whose geometry
+    /// moves gets a new cache -- so the translation is the same work every
+    /// time, and on a large assembly it is the largest single cost of a
+    /// publish. Meshes are held only for as long as some draw list still
+    /// refers to them. 0 translates every publish (the old behaviour), 1
+    /// reuses, 2 reuses and also translates afresh to compare the two,
+    /// logging any disagreement -- slow, for checking the reuse, not for
+    /// use.
+    static const long & getRenderCacheMeshReuse();
+    static const long & defaultRenderCacheMeshReuse();
+    static void removeRenderCacheMeshReuse();
+    static void setRenderCacheMeshReuse(const long &v);
+    static const char *docRenderCacheMeshReuse();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LiveImportRedrawInterval
     ///
     /// Minimum interval in milliseconds between 3D view redraws while a
@@ -2135,7 +2156,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:532)
+    // Auto generated code (Gui/ViewParams.py:543)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2163,7 +2184,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:542)
+// Auto generated code (Gui/ViewParams.py:553)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

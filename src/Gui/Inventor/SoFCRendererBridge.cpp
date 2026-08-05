@@ -223,6 +223,183 @@ translateCache(SoFCVertexCache * cache)
     return mesh;
 }
 
+/** Meshes already translated, by the id of the cache they came from.
+ *
+ * Translating a vertex cache is very nearly the same work every
+ * publish: a cache is built once, closed once when its shape's
+ * traversal ends, and a shape whose geometry changes is given a *new*
+ * cache with a new id rather than having this one rewritten. On a large
+ * assembly that repetition was the single biggest cost of a publish
+ * (docs/IncrementalPublish.md §4d).
+ *
+ * Very nearly, not exactly -- which is what meshMatchesCache() below is
+ * for. The memo hands back a translation only after checking it still
+ * describes the cache.
+ *
+ * Held weakly, which is what keeps the memo honest about lifetime. A
+ * mesh lives for as long as some draw list still refers to it -- the
+ * backend holds the previous publish's list while the next one is being
+ * translated, which is exactly when the memo is read -- and the entry
+ * dies with it. So nothing here keeps a vertex cache alive, and the
+ * memo never has to be reconciled against the scene.
+ */
+std::unordered_map<uint64_t, std::weak_ptr<CacheMeshData>> &
+meshMemo()
+{
+    static std::unordered_map<uint64_t, std::weak_ptr<CacheMeshData>> memo;
+    return memo;
+}
+
+/** Whether \a mesh still describes what a fresh translation of \a cache
+ * would produce.
+ *
+ * A mesh is a set of raw pointers into the cache's attribute and index
+ * arrays, and those are not as immutable as the cache object is. Copies
+ * of one shape's geometry start out sharing arrays with the cache they
+ * were seeded from, and a cache's own handle can be moved onto shared
+ * storage after the cache was already translated -- measured here as
+ * every one of 200 identical boxes converging on a single vertex array
+ * some publishes after each had its own.
+ *
+ * So the memo checks rather than assumes: it compares what it pinned
+ * against what the cache holds now, and a mismatch simply translates
+ * again. This is a dozen inline pointer reads against the two
+ * allocations and the array-ref copy that a translation costs, and it
+ * makes the reuse correct by construction instead of by an argument
+ * about who may touch a closed cache.
+ *
+ * Pointer equality is identity here, not a guess: the mesh holds a
+ * reference to the storage it pinned (copyArrayRefs), so that storage
+ * cannot have been freed and reallocated at the same address while the
+ * mesh is alive.
+ */
+bool meshMatchesCache(const CacheMeshData & mesh, SoFCVertexCache * cache)
+{
+    if (mesh.holder != cache || mesh.numVertices != cache->getNumVertices())
+        return false;
+
+    if (mesh.positions != reinterpret_cast<const float *>(cache->getVertexArray())
+            || mesh.normals != reinterpret_cast<const float *>(cache->getNormalArray())
+            || mesh.colors != cache->getColorArray()
+            || mesh.texCoords
+                   != reinterpret_cast<const float *>(cache->getTexCoordArray()))
+        return false;
+
+    if (mesh.numTriangleIndices != cache->getNumTriangleIndices()
+            || mesh.numLineIndices != cache->getNumLineIndices()
+            || mesh.numPointIndices != cache->getNumPointIndices())
+        return false;
+    if (mesh.numTriangleIndices > 0
+            && mesh.triangleIndices
+                   != reinterpret_cast<const int32_t *>(cache->getTriangleIndices()))
+        return false;
+    if (mesh.numLineIndices > 0
+            && mesh.lineIndices
+                   != reinterpret_cast<const int32_t *>(cache->getLineIndices()))
+        return false;
+    if (mesh.numPointIndices > 0
+            && mesh.pointIndices
+                   != reinterpret_cast<const int32_t *>(cache->getPointIndices()))
+        return false;
+
+    // The one thing a mesh holds that is not a property of its cache:
+    // which rung of its level ladder the source registry has published
+    // since (coarse-first tessellation, docs/SceneStreaming.md §7).
+    if (mesh.sourceTag
+            && mesh.levelError != Render::MeshSourceRegistry::instance()
+                                      .publishedError(mesh.sourceTag))
+        return false;
+
+    return true;
+}
+
+/// Whether a translation of \a cache can be described by the checks
+/// above at all. A partial cache -- the single-face or single-edge
+/// subset a selection makes -- has its index arrays compacted into the
+/// mesh itself rather than pointed at the cache, so there is nothing
+/// there to compare against. They are few, and they are rebuilt as
+/// selection moves anyway.
+bool meshIsReusable(SoFCVertexCache * cache)
+{
+    return cache->getPartialTriangleParts().empty()
+        && cache->getPartialLineParts().empty();
+}
+
+/// Report anything a reused mesh holds that a fresh translation of the
+/// same cache would not. RenderCacheMeshReuse 2 (§7): the failure mode
+/// of reuse is a mesh that describes geometry the cache no longer has,
+/// and it is invisible in the result until someone looks at that shape.
+void verifyMeshReuse(const CacheMeshData & kept, SoFCVertexCache * cache)
+{
+    auto fresh = translateCache(cache);
+    const char * bad = nullptr;
+    if (kept.cacheId != fresh->cacheId)                     bad = "cache id";
+    else if (kept.sourceTag != fresh->sourceTag)            bad = "source tag";
+    else if (kept.levelError != fresh->levelError)          bad = "level error";
+    else if (kept.numVertices != fresh->numVertices)        bad = "vertex count";
+    else if (kept.positions != fresh->positions)            bad = "positions";
+    else if (kept.normals != fresh->normals)                bad = "normals";
+    else if (kept.colors != fresh->colors)                  bad = "colors";
+    else if (kept.texCoords != fresh->texCoords)            bad = "texture coordinates";
+    else if (kept.numTriangleIndices != fresh->numTriangleIndices
+             || kept.triangleIndices != fresh->triangleIndices)
+        bad = "triangle indices";
+    else if (kept.numLineIndices != fresh->numLineIndices
+             || kept.lineIndices != fresh->lineIndices)
+        bad = "line indices";
+    else if (kept.numPointIndices != fresh->numPointIndices
+             || kept.pointIndices != fresh->pointIndices)
+        bad = "point indices";
+    else if (kept.hasTransparency != fresh->hasTransparency)  bad = "transparency";
+    else if (kept.hasOpaqueParts != fresh->hasOpaqueParts)    bad = "opaque parts";
+    if (bad) {
+        // Capped: a mismatch is systematic, not incidental, so the first
+        // few say everything and the rest would only cost the run.
+        static int shown = 0;
+        if (++shown <= 8)
+            FC_ERR("mesh reuse: cache " << kept.cacheId << " kept a mesh whose "
+                   << bad << " a fresh translation disagrees with");
+    }
+}
+
+/// The mesh for \a cache, translated only if this is the first publish
+/// to ask for it (or the first since its level changed).
+std::shared_ptr<CacheMeshData>
+acquireMesh(SoFCVertexCache * cache)
+{
+    const long reuse = ViewParams::getRenderCacheMeshReuse();
+    if (reuse <= 0 || !meshIsReusable(cache))
+        return translateCache(cache);
+
+    auto & memo = meshMemo();
+    const uint64_t id = cache->getCacheId();
+    auto it = memo.find(id);
+    if (it != memo.end()) {
+        if (auto mesh = it->second.lock()) {
+            if (meshMatchesCache(*mesh, cache)) {
+                if (reuse > 1)
+                    verifyMeshReuse(*mesh, cache);
+                return mesh;
+            }
+        }
+    }
+
+    auto mesh = translateCache(cache);
+
+    // Entries whose mesh has gone are the caches the scene has dropped.
+    // Swept when the memo has grown well past what the last sweep left,
+    // so the sweep itself stays a small fraction of what it cleans up.
+    static size_t sweepat = 1024;
+    if (memo.size() >= sweepat) {
+        for (auto i = memo.begin(); i != memo.end();)
+            i = i->second.expired() ? memo.erase(i) : std::next(i);
+        sweepat = std::max<size_t>(1024, memo.size() * 2);
+    }
+
+    memo[id] = mesh;
+    return mesh;
+}
+
 // Shares one TextureImage among all materials referring to the same
 // texture node within a translate() call; the pixel copy dedups across
 // feeds through the backend's textureId keying (Coin node ids are unique
@@ -740,7 +917,7 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
 
             auto & mesh = meshes[ventry.cache];
             if (!mesh)
-                mesh = translateCache(ventry.cache);
+                mesh = acquireMesh(ventry.cache);
 
             // Hidden-line extras, filled on demand: the seam-filtered line
             // index set (hideSeam), and per-face-part triangle ranges for

@@ -475,6 +475,17 @@ Params = [
         "rather than per entry. 0 rebuilds (the old behaviour), 1 splices,\n"
         "2 splices and also rebuilds wholesale to compare the two, logging\n"
         "any disagreement -- slow, for checking the splice, not for use."),
+    ParamInt('RenderCacheMeshReuse',  1,
+        "Reuse the mesh a vertex cache was translated into for the backend,\n"
+        "instead of translating it again on every publish. A vertex cache is\n"
+        "built once and never changed afterwards -- a shape whose geometry\n"
+        "moves gets a new cache -- so the translation is the same work every\n"
+        "time, and on a large assembly it is the largest single cost of a\n"
+        "publish. Meshes are held only for as long as some draw list still\n"
+        "refers to them. 0 translates every publish (the old behaviour), 1\n"
+        "reuses, 2 reuses and also translates afresh to compare the two,\n"
+        "logging any disagreement -- slow, for checking the reuse, not for\n"
+        "use."),
     ParamInt('LiveImportRedrawInterval',  200,
         "Minimum interval in milliseconds between 3D view redraws while a\n"
         "progressive import is filling the document, and the window after\n"

@@ -215,6 +215,7 @@ public:
     long RenderCacheMergeDepthMin;
     long RenderCacheKeepMax;
     long RenderCacheIncremental;
+    long RenderCacheMeshReuse;
     long LiveImportRedrawInterval;
     long LiveImportRedrawBudget;
     double RenderHighlightPolygonOffsetFactor;
@@ -554,6 +555,8 @@ public:
         funcs["RenderCacheKeepMax"] = &ViewParamsP::updateRenderCacheKeepMax;
         RenderCacheIncremental = this->handle->GetInt("RenderCacheIncremental", 0);
         funcs["RenderCacheIncremental"] = &ViewParamsP::updateRenderCacheIncremental;
+        RenderCacheMeshReuse = this->handle->GetInt("RenderCacheMeshReuse", 1);
+        funcs["RenderCacheMeshReuse"] = &ViewParamsP::updateRenderCacheMeshReuse;
         LiveImportRedrawInterval = this->handle->GetInt("LiveImportRedrawInterval", 200);
         funcs["LiveImportRedrawInterval"] = &ViewParamsP::updateLiveImportRedrawInterval;
         LiveImportRedrawBudget = this->handle->GetInt("LiveImportRedrawBudget", 10);
@@ -1259,6 +1262,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateRenderCacheIncremental(ViewParamsP *self) {
         self->RenderCacheIncremental = self->handle->GetInt("RenderCacheIncremental", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateRenderCacheMeshReuse(ViewParamsP *self) {
+        self->RenderCacheMeshReuse = self->handle->GetInt("RenderCacheMeshReuse", 1);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLiveImportRedrawInterval(ViewParamsP *self) {
@@ -5758,6 +5765,43 @@ void ViewParams::removeRenderCacheIncremental() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docRenderCacheMeshReuse() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Reuse the mesh a vertex cache was translated into for the backend,\n"
+"instead of translating it again on every publish. A vertex cache is\n"
+"built once and never changed afterwards -- a shape whose geometry\n"
+"moves gets a new cache -- so the translation is the same work every\n"
+"time, and on a large assembly it is the largest single cost of a\n"
+"publish. Meshes are held only for as long as some draw list still\n"
+"refers to them. 0 translates every publish (the old behaviour), 1\n"
+"reuses, 2 reuses and also translates afresh to compare the two,\n"
+"logging any disagreement -- slow, for checking the reuse, not for\n"
+"use.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & ViewParams::getRenderCacheMeshReuse() {
+    return instance()->RenderCacheMeshReuse;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & ViewParams::defaultRenderCacheMeshReuse() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setRenderCacheMeshReuse(const long &v) {
+    instance()->handle->SetInt("RenderCacheMeshReuse",v);
+    instance()->RenderCacheMeshReuse = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeRenderCacheMeshReuse() {
+    instance()->handle->RemoveInt("RenderCacheMeshReuse");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docLiveImportRedrawInterval() {
     return QT_TRANSLATE_NOOP("ViewParams",
 "Minimum interval in milliseconds between 3D view redraws while a\n"
@@ -6291,7 +6335,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:558)
+// Auto generated code (Gui/ViewParams.py:569)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6336,7 +6380,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:566)
+// Auto generated code (Gui/ViewParams.py:577)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6350,7 +6394,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:576)
+// Auto generated code (Gui/ViewParams.py:587)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -6364,13 +6408,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:586)
+// Auto generated code (Gui/ViewParams.py:597)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:593)
+// Auto generated code (Gui/ViewParams.py:604)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6378,7 +6422,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:602)
+// Auto generated code (Gui/ViewParams.py:613)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6390,7 +6434,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:615)
+// Auto generated code (Gui/ViewParams.py:626)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)
