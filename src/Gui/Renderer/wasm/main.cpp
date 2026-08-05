@@ -1993,7 +1993,10 @@ static void tapOrDouble(float clientX, float clientY, bool ctrl)
     }
 }
 
-static void updateHover(const EmscriptenMouseEvent *e)
+/// Preselect whatever sits under a hovering pointer at CSS-pixel
+/// (clientX,clientY). Shared by the mouse move handler and the stylus hover
+/// uplink.
+static void updateHoverAt(float clientX, float clientY)
 {
     if (!s_haveScene)
         return;
@@ -2002,7 +2005,7 @@ static void updateHover(const EmscriptenMouseEvent *e)
         return;
     s_lastHoverMs = now;
     float px, py;
-    canvasPos(e, px, py);
+    clientToCanvas(clientX, clientY, px, py);
     s_mouseX = px;
     s_mouseY = py;
     // NaviCube face hover highlight wins over scene preselection: when the
@@ -2037,6 +2040,11 @@ static void updateHover(const EmscriptenMouseEvent *e)
     else
         std::snprintf(s_hoverDesc, sizeof(s_hoverDesc), "none");
     applyHover(hit);
+}
+
+static void updateHover(const EmscriptenMouseEvent *e)
+{
+    updateHoverAt(float(e->clientX), float(e->clientY));
 }
 
 static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
@@ -2150,6 +2158,48 @@ static float s_touchX[2], s_touchY[2];
 // through tapOrDouble (single = pick, double = zoom-to-fit).
 static bool s_tapOk = false;
 static float s_tapX = 0.0f, s_tapY = 0.0f;
+
+/// A stylus hovering over the canvas, from the pointermove listener installed
+/// below. A pen is the one touchscreen input that reports a position before it
+/// touches down, so preselection — which a mouse gets free with its cursor —
+/// costs it no gesture at all. Ignored while a drag or a touch gesture owns
+/// the pointer.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_pen_hover(float clientX,
+                                                        float clientY)
+{
+    if (s_dragging || s_numTouch > 0)
+        return;
+    updateHoverAt(clientX, clientY);
+}
+
+/// The stylus left the glass: drop the preselection with it. A highlight left
+/// behind by a pointer that is no longer there reads as a selection.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_pen_leave()
+{
+    if (s_dragging || s_numTouch > 0)
+        return;
+    std::snprintf(s_hoverDesc, sizeof(s_hoverDesc), "none");
+    applyHover(PickHit{});
+}
+
+/// Route pen hover to the viewer. Emscripten's mouse callbacks do not see a
+/// stylus on a touchscreen: the browser delivers it as touch events, which
+/// the touch handler preventDefaults (so no compatibility mouse events are
+/// synthesized either). pointermove is the only place its hover exists.
+/// Mouse and finger are both left to their existing handlers.
+EM_JS(void, fcviewer_install_pen_hover, (), {
+    var c = document.getElementById('canvas');
+    if (!c)
+        return;
+    c.addEventListener('pointermove', function(ev) {
+        if (ev.pointerType === 'pen')
+            _fcviewer_pen_hover(ev.clientX, ev.clientY);
+    });
+    c.addEventListener('pointerout', function(ev) {
+        if (ev.pointerType === 'pen')
+            _fcviewer_pen_leave();
+    });
+});
 
 static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
 {
@@ -6061,6 +6111,7 @@ int main()
                                      onTouch);
     emscripten_set_touchcancel_callback("#canvas", nullptr, EM_TRUE,
                                         onTouch);
+    fcviewer_install_pen_hover();
 
     emscripten_set_main_loop(mainLoop, 0, 0);
     return 0;
