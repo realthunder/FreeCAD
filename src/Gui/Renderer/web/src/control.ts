@@ -7,6 +7,11 @@
 declare global {
   interface Window {
     fcviewerControlSend?: (json: string) => boolean;
+    /// Turn the renderer HUD on or off (main.cpp fcviewer_set_hud).
+    fcviewerSetHud?: (on: boolean) => void;
+    /// Set by this layer to claim the HUD feed: the viewer then reports
+    /// it as 'fc:hud' events instead of drawing its own overlay box.
+    fcviewerHudCard?: boolean;
   }
 }
 

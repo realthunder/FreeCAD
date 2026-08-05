@@ -4,7 +4,10 @@
 import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import { Inspector } from './inspector';
-import type { SelectionItem } from './control';
+import { HudCard } from './hud';
+import { LauncherMenu } from './menu';
+import { NARROW } from './panel';
+import type { SelectionItem, Subject } from './control';
 // Extraction only (cssCodeSplit: false emits it as web/inspector.css);
 // the injection below is what actually loads it.
 import './style.css';
@@ -28,11 +31,51 @@ window.addEventListener('fc:selection', (e: Event) => {
   setSelection(Array.isArray(detail) ? detail : []);
 });
 
+// Claim the HUD feed before the viewer can paint its own box: with a UI
+// layer loaded the HUD is a card in the chrome, not an overlay drawn on
+// top of everything (main.cpp fcviewer_hud). Set outside the render so
+// it holds even if mounting is delayed.
+window.fcviewerHudCard = true;
+const [hud, setHud] = createSignal<string | null>(null);
+window.addEventListener('fc:hud', (e: Event) => {
+  const d = (e as CustomEvent).detail;
+  setHud(typeof d === 'string' ? d : null);
+});
+
+// The menu opens the property card on a subject; the counter is what
+// makes asking twice work (see Inspector's request prop).
+const [request, setRequest] = createSignal<{ subject: Subject; n: number }
+                                          | null>(null);
+let asks = 0;
+const openCard = (subject: Subject) =>
+  setRequest({ subject, n: ++asks });
+
+// The card covers the menu's corner only as a bottom sheet, which is
+// the narrow layout; anywhere else both are on screen at once.
+const [cardOpen, setCardOpen] = createSignal(false);
+
 const host = document.createElement('div');
 host.id = 'fc-ui';
 document.body.appendChild(host);
 
-render(() => <Inspector selection={selection} />, host);
+render(() => (
+  <>
+    <Inspector selection={selection} request={request}
+               onCardOpen={setCardOpen} />
+    <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
+    <LauncherMenu
+      hidden={() => cardOpen() && window.innerWidth <= NARROW}
+      items={[
+        { label: 'View properties', onSelect: () => openCard('view3d') },
+        { label: 'Document properties',
+          onSelect: () => openCard('document') },
+        { label: 'HUD',
+          checked: () => hud() !== null,
+          onSelect: () => window.fcviewerSetHud?.(hud() === null) },
+      ]}
+    />
+  </>
+), host);
 
 // Breadcrumbs for devices with no devtools: the viewer's ?log overlay
 // mirrors the console, so these two lines are how a phone tells us the

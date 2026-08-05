@@ -58,7 +58,9 @@ Anchored to the code; fuller map in the git history of this doc's companion hand
 
 **Front-end** is deliberately minimal (`src/Gui/Renderer/wasm/shell.html`,
 `src/Gui/Renderer/wasm/main.cpp`, ~2160 lines): one full-viewport `<canvas>`, a 3px loading
-bar, and an optional debug HUD injected via `EM_JS`. All "widgets" today (NaviCube, axis
+bar, and a debug HUD (a panel of the DOM chrome once one is loaded — the viewer reports its
+text as an `fc:hud` event and keeps its own `EM_JS` overlay box only for a page with no UI
+layer, so a bare `fcviewer.html` still says what the renderer is doing). All "widgets" today (NaviCube, axis
 cross, fps) are **bgfx-drawn**, not DOM. There is **no DOM UI layer** and no JS build step —
 UI strings are inlined in `main.cpp`.
 
@@ -368,10 +370,16 @@ never a crash.
   substring highlighted. A non-empty keyword searches across *all* groups (the drop-down
   shows `All` while filtering); clearing it restores the selected group. Body = the
   filtered property rows. Multi-select → show the **common** subset.
-- **Launcher + subject switcher.** A pick opens the card on the picked object; a round
-  **launcher button** (bottom-left, the corner the card, the pill, the NaviCube and the axis
-  cross all leave free) opens it on the **3D view**, which is where the render knobs are and
-  where they are worth turning — you watch the result change as you drag the value. Inside
+- **Menu + subject switcher.** A pick opens the card on the picked object; everything else
+  hangs off one small round **menu button** (bottom-left, the corner the card, the pill, the
+  NaviCube and the axis cross all leave free). It opens the card on the **3D view** — where
+  the render knobs are and where they are worth turning, since you watch the result change as
+  you drag the value — or on the **document**, and it carries the switches that are not
+  properties of anything, starting with the **HUD**. It began as a single-action launcher and
+  became a menu once there was a second thing to reach: a second unlabelled circle in the same
+  corner competes for the same thumb. Actions close the menu; switches leave it open, so the
+  state they just changed is visible. It stands aside only where a panel covers its corner —
+  the narrow layout's bottom sheet. Inside
   the card a three-way segmented switcher moves between `Object` / `View` / `Document`
   without re-picking; `Object` is offered only while something is selected, since an empty
   card is a dead end. Switching resets the group/keyword navigation, because one subject's

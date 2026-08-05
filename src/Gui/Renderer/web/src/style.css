@@ -381,3 +381,104 @@
 @media (prefers-reduced-motion: reduce) {
   .fc-inspector { animation: none; }
 }
+
+/* The menu that hangs off the round launcher. Opens upward: the button
+ * is in the bottom-left corner, so a downward popup would run off the
+ * screen. Same surface as the panels — it is chrome, not a system menu. */
+.fc-menu {
+  pointer-events: auto;
+  position: absolute;
+  bottom: 48px;
+  left: 0;
+  min-width: 180px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 30, 34, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+}
+
+.fc-menu-item {
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Comfortably past the ~44px touch target: this is a thumb reach in
+   * the corner of a phone, and the items are one-line labels. */
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #e8e8ea;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fc-menu-item:hover { background: rgba(255, 255, 255, 0.08); }
+
+/* Fixed-width, so a switch turning on does not shuffle the labels. */
+.fc-menu-tick {
+  flex: none;
+  width: 14px;
+  color: #8ab4f8;
+}
+
+/* The HUD card: the viewer's own fixed-width diagnostic text, in a
+ * panel with a header and a close button like every other one. */
+.fc-hud {
+  pointer-events: auto;
+  touch-action: pan-y;
+  position: absolute;
+  /* Right, clear of the property card — and below the NaviCube and its
+   * rotate arrows, which own that corner down to about 160px. Drag it
+   * anywhere; this is only where it starts. */
+  top: 176px;
+  right: calc(12px + env(safe-area-inset-right));
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 30, 34, 0.92);
+  color: #e8e8ea;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+}
+.fc-hud-body {
+  margin: 0;
+  padding: 0 12px 10px;
+  overflow-x: auto;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* The viewer pads this text to a fixed width and a fixed line count so
+   * the panel never resizes as the numbers change; keep it verbatim. */
+  white-space: pre;
+  color: #a6e3a1;
+}
+
+@media (max-width: 640px) {
+  /* On a phone the card and the pill are both pinned to the bottom, so
+   * the whole top-left is free — and the HUD is as wide as a phone can
+   * take, which the right margin under the cube is not. */
+  .fc-hud {
+    top: 12px;
+    right: auto;
+    left: calc(12px + env(safe-area-inset-left));
+  }
+
+  /* The HUD's widest line is 53 fixed-width columns (main.cpp
+   * updateHud), which is 407px at 12px — wider than a 390px phone. Scale
+   * the text down until those columns fit rather than leaving a
+   * diagnostic you have to drag sideways to read. 0.6em is the advance
+   * width of the monospace faces above; 56px is the panel's margins and
+   * padding (48px) plus a couple of pixels of slack, since that advance
+   * is a close estimate rather than an exact one. */
+  .fc-hud-body {
+    font-size: min(12px, calc((100vw - 56px) / 53 / 0.6));
+  }
+}
