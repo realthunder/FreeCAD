@@ -356,11 +356,40 @@ harnesses; the fork's own 272M-triangle gate has never completed a run
 cannot show). Turning it on wants that run first — the memory figure is
 the one to watch, since it grows with hierarchy depth.
 
-**Next, and cheap:** the splice matches this publish's children against
-the previous publish's, and `ScenePublishDelta` has already done exactly
-that matching in the `Delta` stage of the same publish (3-4ms of it).
-Handing the change set to the flatten instead of recomputing it should
-take a third off what the splice still costs.
+### 4c-i. The match, asked once
+
+The splice matched this publish's children against the previous
+publish's — and `ScenePublishDelta` had already done exactly that
+matching, over the same two caches, in the `Delta` stage of the same
+publish. Both built a hash of the previous children and ran a material
+comparison per child; at 6000 children under one container that was most
+of what the splice still cost.
+
+The change set now records the match (`lastMatch()`) and `postSeparator`
+hands it to the new cache together with the map to splice from. The
+flatten no longer builds the index at all — it reads the answer, checks
+it is the right size and in range, and copies.
+
+| scene | splice, matching itself | splice, match handed over |
+|---|---|---|
+| 6000 objects under one container | 8-9ms / 3 calls | **5ms / 3 calls** |
+| 7334 objects, 4 levels of containers | 7-9ms / 9 calls | 7-9ms / 9 calls |
+
+Both columns are from one A/B on one build of the same machine, which is
+why the flat baseline reads 8-9ms rather than the 10ms in the table
+above. The `Delta` stage stays flat at 4ms across the pair, so the work
+is *gone* rather than moved into the stage that now does it for both.
+
+The nested case does not move, and should not: ten children per cache is
+an index not worth building either way, so there was nothing there to
+share. The saving is a property of wide caches, and a wide cache is what
+an imported assembly is.
+
+**Memory.** One `int` per child of each rebuilt cache, held from
+`postSeparator` until that cache's flatten — one publish, and at most
+the scene's child count: **24KB at 6000 objects**. Peak RSS over three
+baseline runs (2049.7 / 2072.6 / 2067.4 MB) and two after (2076.5 /
+2072.2 MB) overlaps, so the measurement agrees with the bound.
 
 **Unrelated finding from the same profile.** `translateCache()` called
 `getenv("FC_BGFX_DEBUG_FEED")` once per translated cache — 66k lookups,
@@ -418,9 +447,9 @@ index-stability problem entirely.
 **At every level, not just the top.** §4a measures why: the scene cache
 holds one container child in an imported assembly, so slicing only there
 buys nothing. Each rebuilt cache inherits its predecessor's memoized map
-and splices the children its own diff reports, which makes the work
-proportional to the changed paths — the traversal already prunes
-everything else.
+and splices the children the change set's diff of that same pair reports
+(§4c-i), which makes the work proportional to the changed paths — the
+traversal already prunes everything else.
 
 **Backend delta.** The `Render::Renderer` interface grows an explicit
 delta entry point (`updateScene(added, removed)`) alongside `setScene`.
@@ -508,9 +537,9 @@ up rather than being assumed.
    secondary-context lookup a selection root was paying for every one of
    its children (20ms → 15ms), then §4c splices a rebuilt cache's map
    from its predecessor's (15ms → 10ms flat, 26-29ms → 7ms over four
-   levels). Off by default pending the large-model run; the remaining
-   cost is the child matching, which the `Delta` stage of the same
-   publish already computes.
+   levels), and §4c-i stops the splice re-deriving the child match the
+   change set made in the same publish (10 → 5ms flat, nested unchanged).
+   Off by default pending the large-model run.
 4. Incremental translate (38%): per-child draw-call slices, and an
    `updateScene` delta on the `Renderer` interface so the list is not
    rebuilt to be handed over.
