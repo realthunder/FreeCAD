@@ -143,6 +143,13 @@ if(BUILD_BGFX)
         DESTINATION ${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders)
 endif(BUILD_BGFX)
 
+# Structural diff of two scene dumps (docs/HeadlessServe.md §4): how a
+# publisher with no 3D view is checked against a real viewer. A build-tree
+# developer tool — not installed, and cheap enough to always build.
+add_executable(fcscenediff tools/scenediff.cpp)
+target_link_libraries(fcscenediff ${Library})
+SET_BIN_DIR(fcscenediff fcscenediff)
+
 if (Renderer_Assets)
     install(FILES ${Renderer_Assets} DESTINATION ${CMAKE_INSTALL_DATADIR}/Renderer)
 
