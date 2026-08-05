@@ -152,7 +152,8 @@ void ScenePublishDelta::clear()
 int ScenePublishDelta::diff(SoFCRenderCache* prev,
                             SoFCRenderCache* cur,
                             SbFCVector<int>& added,
-                            SbFCVector<int>& removed)
+                            SbFCVector<int>& removed,
+                            SbFCVector<int>* matchout)
 {
     const SbFCVector<CacheEntry> empty;
     const auto& oldkids = prev ? prev->getChildCaches() : empty;
@@ -160,6 +161,11 @@ int ScenePublishDelta::diff(SoFCRenderCache* prev,
 
     const int oldcount = static_cast<int>(oldkids.size());
     const int newcount = static_cast<int>(newkids.size());
+
+    if (matchout) {
+        matchout->clear();
+        matchout->resize(newcount, -1);
+    }
 
     if (!oldcount) {
         added.reserve(added.size() + newcount);
@@ -199,6 +205,9 @@ int ScenePublishDelta::diff(SoFCRenderCache* prev,
         else {
             claimed[match] = 1;
             ++kept;
+            if (matchout) {
+                (*matchout)[i] = match;
+            }
         }
     }
 
@@ -214,12 +223,16 @@ int ScenePublishDelta::diff(SoFCRenderCache* prev,
 void ScenePublishDelta::updateCache(SoFCRenderCache* cache, SoFCRenderCache* prev)
 {
     if (!cache || !prev) {
+        // Nothing was matched, so nothing may be copied on the strength of
+        // it: lastMatch() must never outlive the pair it describes.
+        this->scratchmatch.clear();
         return;
     }
 
     this->scratchadded.clear();
     this->scratchremoved.clear();
-    const int kept = diff(prev, cache, this->scratchadded, this->scratchremoved);
+    const int kept =
+        diff(prev, cache, this->scratchadded, this->scratchremoved, &this->scratchmatch);
 
     ++this->diffedcaches;
     this->addedtotal += static_cast<int>(this->scratchadded.size());

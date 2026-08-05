@@ -689,9 +689,17 @@ public:
   Gui::CoinPtr<SoFCRenderCache> takePreviousCache();
 
   /// Keep \a prev alive until this cache's flatten has taken its map to
-  /// splice from (docs/IncrementalPublish.md §5). The flatten drops it
-  /// again, so it lasts one publish and not the life of the cache.
-  void setSpliceSource(SoFCRenderCache *prev);
+  /// splice from (docs/IncrementalPublish.md §5), along with \a match:
+  /// which child of \a prev each of this cache's children is, or -1 for
+  /// one \a prev did not hold. The flatten copies a child's slice of the
+  /// map only where \a match says the previous publish already produced
+  /// it, and it drops both again, so they last one publish and not the
+  /// life of the cache.
+  ///
+  /// The match is passed in rather than worked out here because the
+  /// change set has just worked it out, for the same pair of caches and
+  /// by the same test (ScenePublishDelta::lastMatch()).
+  void setSpliceSource(SoFCRenderCache *prev, const SbFCVector<int> &match);
 
   enum HighlightFlag {
     PreselectHighlight = 1,

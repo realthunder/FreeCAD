@@ -63,7 +63,6 @@
 #include "../ViewParams.h"
 #include "../SoFCUnifiedSelection.h"
 #include "SoFCRenderCache.h"
-#include "ScenePublishDelta.h"
 #include "Renderer/Renderer.h"
 #include "SoFCRenderMaterial.h"
 #include "SoFCVertexCache.h"
@@ -166,11 +165,16 @@ public:
 
   /// Build this cache's flattened map out of the map \a prevc produced,
   /// deriving only the children that are not the ones it already held
-  /// (docs/IncrementalPublish.md §5). Children keep their order, so the
-  /// result is the map a wholesale merge would have built, entry for
-  /// entry. Returns false without touching anything if the predecessor
-  /// cannot be spliced from, leaving the caller to merge as usual.
+  /// (docs/IncrementalPublish.md §5). \a matchold says which child of
+  /// \a prevc each of this cache's children is, -1 for one that is new;
+  /// it comes from the change set, which asked exactly this question of
+  /// this pair of caches as the cache closed. Children keep their order,
+  /// so the result is the map a wholesale merge would have built, entry
+  /// for entry. Returns false without touching anything if the
+  /// predecessor cannot be spliced from, leaving the caller to merge as
+  /// usual.
   bool spliceFrom(SoFCRenderCache *prevc,
+                  const SbFCVector<int> &matchold,
                   KeyMap &keymap,
                   bool canmerge,
                   int depth);
@@ -219,6 +223,10 @@ public:
   /// its map to splice from. Held instead of released in postSeparator,
   /// so it does not outlive the publish that consumes it.
   CoinPtr<SoFCRenderCache> spliceprev;
+  /// Which child of spliceprev each of this cache's children is, worked
+  /// out by the change set that diffed the same pair, -1 where none.
+  /// Dropped with spliceprev.
+  SbFCVector<int> splicematch;
 
   CoinPtr<SoFCRenderCache> prevcache;
   SbFCVector<CacheEntry> caches;
@@ -1275,9 +1283,10 @@ SoFCRenderCache::takePreviousCache()
 }
 
 void
-SoFCRenderCache::setSpliceSource(SoFCRenderCache *prev)
+SoFCRenderCache::setSpliceSource(SoFCRenderCache *prev, const SbFCVector<int> &match)
 {
   PRIVATE(this)->spliceprev = prev;
+  PRIVATE(this)->splicematch = match;
 }
 
 class MyMultiTextureImageElement : public SoMultiTextureImageElement
@@ -1640,6 +1649,7 @@ SoFCRenderCacheP::verifySplice(const SbFCVector<int> &matchold,
 
 bool
 SoFCRenderCacheP::spliceFrom(SoFCRenderCache *prevc,
+                             const SbFCVector<int> &matchold,
                              KeyMap &keymap,
                              bool canmerge,
                              int depth)
@@ -1653,38 +1663,24 @@ SoFCRenderCacheP::spliceFrom(SoFCRenderCache *prevc,
   if (!oldn || !newn || (int)prev.sliceoffsets.size() != oldn + 1)
     return false;
 
-  // A shape child puts entries in the map that no child slice describes.
-  for (int i = 0; i < newn; ++i) {
-    if (!this->caches[i].cache)
-      return false;
-  }
-
-  // Which of the previous children each of these is, asked exactly as the
-  // change set asks it: the transform and material live here in the
+  // Which of the previous children each of these is was worked out by the
+  // change set as this cache closed, over the same two caches. A match is
+  // a whole entry matching -- the transform and material live here in the
   // parent, so the same child cache under a moved parent is a changed
-  // contribution and has to be derived again.
-  std::unordered_map<const void*, SbFCVector<int> > oldbykey;
-  oldbykey.reserve(oldn * 2);
-  for (int i = 0; i < oldn; ++i)
-    oldbykey[static_cast<const void*>(prev.caches[i].cache.get())].push_back(i);
+  // contribution -- which is the condition for copying its slice.
+  if ((int)matchold.size() != newn)
+    return false;
 
-  SbFCVector<int> matchold(newn, -1);
-  std::vector<char> claimed(oldn, 0);
   int kept = 0;
   for (int i = 0; i < newn; ++i) {
-    auto it = oldbykey.find(static_cast<const void*>(this->caches[i].cache.get()));
-    if (it == oldbykey.end())
+    // A shape child puts entries in the map that no child slice describes.
+    if (!this->caches[i].cache)
+      return false;
+    if (matchold[i] < 0)
       continue;
-    for (int j : it->second) {
-      if (claimed[j])
-        continue;
-      if (!Gui::ScenePublishDelta::sameEntry(prev.caches[j], this->caches[i]))
-        continue;
-      claimed[j] = 1;
-      matchold[i] = j;
-      ++kept;
-      break;
-    }
+    if (matchold[i] >= oldn)
+      return false;
+    ++kept;
   }
   // Nothing to inherit: merging the lot is the same work without the
   // bookkeeping.
@@ -2052,10 +2048,12 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
   // derive only the children it did not already hold.
   bool spliced = false;
   if (recordslices && PRIVATE(this)->spliceprev) {
-    spliced = PRIVATE(this)->spliceFrom(PRIVATE(this)->spliceprev, keymap,
+    spliced = PRIVATE(this)->spliceFrom(PRIVATE(this)->spliceprev,
+                                        PRIVATE(this)->splicematch, keymap,
                                         canmerge, depth);
   }
   PRIVATE(this)->spliceprev.reset();
+  PRIVATE(this)->splicematch.clear();
 
   if (!spliced)
   for (auto & entry : PRIVATE(this)->caches) {

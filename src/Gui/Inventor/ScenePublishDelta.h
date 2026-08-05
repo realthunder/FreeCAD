@@ -45,11 +45,12 @@ namespace Gui
  * means anything is the one down the hierarchy, and the traversal's
  * pruning keeps it to the paths that actually changed (§4a).
  *
- * Nothing downstream consumes the answer yet — the publish that records
- * it still rebuilds the flattened map, the draw entries, the backend draw
- * calls and the backend's bookkeeping in full (§8 phase 2). Recording it
- * first is the point: it makes the diff assertable, and measurable,
- * before anything depends on it.
+ * The flatten is the first thing to consume the answer: with
+ * RenderCacheIncremental on it copies a child's slice of the flattened
+ * map wherever lastMatch() says the child is one the previous publish
+ * already produced (§5). Everything else a publish does — the draw
+ * entries, the backend draw calls and the backend's bookkeeping — is
+ * still rebuilt in full (§8).
  */
 class GuiExport ScenePublishDelta
 {
@@ -57,9 +58,10 @@ public:
     typedef SoFCRenderCache::CacheEntry CacheEntry;
 
     /// Whether two children contribute identically, and so whether the
-    /// newer one may keep whatever the older one produced. Shared with the
-    /// flatten, which asks the same question of the same pair before
-    /// reusing a child's slice of the map rather than deriving it again.
+    /// newer one may keep whatever the older one produced. This is the
+    /// test the flatten needs before reusing a child's slice of the map
+    /// rather than deriving it again, and the reason the flatten is told
+    /// the answer (lastMatch()) instead of working it out for itself.
     static bool sameEntry(const CacheEntry& a, const CacheEntry& b);
 
     /// Begin recording a publish, before the traversal runs.
@@ -70,6 +72,20 @@ public:
     /// lives: a scene root usually holds a single container child, so
     /// only the diffs down the hierarchy say what moved.
     void updateCache(SoFCRenderCache* cache, SoFCRenderCache* prev);
+
+    /// Which child of the previous cache each child of the last cache
+    /// passed to updateCache() is, by index into that previous cache's
+    /// children, or -1 for a child the previous publish did not hold.
+    ///
+    /// The flatten needs the same answer about the same pair, to decide
+    /// whose slice of the map it may copy (docs/IncrementalPublish.md
+    /// §5). It is a hash of the previous children plus a material
+    /// comparison per child, and asking it twice in one publish costs
+    /// what asking it once does. Valid until the next updateCache().
+    const SbFCVector<int>& lastMatch() const
+    {
+        return scratchmatch;
+    }
 
     /// Match the finished scene cache against the one from the previous
     /// publish, and keep both alive. Costs one hash lookup and at most a
@@ -145,10 +161,13 @@ public:
 private:
     /// Match \a cur's children against \a prev's, appending the unmatched
     /// ones to \a added and \a removed and returning how many matched.
+    /// With \a matchout, also writes which child of \a prev each child of
+    /// \a cur turned out to be, -1 where none.
     int diff(SoFCRenderCache* prev,
              SoFCRenderCache* cur,
              SbFCVector<int>& added,
-             SbFCVector<int>& removed);
+             SbFCVector<int>& removed,
+             SbFCVector<int>* matchout = nullptr);
 
     CoinPtr<SoFCRenderCache> curscene;
     CoinPtr<SoFCRenderCache> prevscene;
@@ -165,6 +184,7 @@ private:
     // many caches does not allocate once per cache.
     SbFCVector<int> scratchadded;
     SbFCVector<int> scratchremoved;
+    SbFCVector<int> scratchmatch;
 
     // Accumulated over the reporting window.
     int logpublishes {0};

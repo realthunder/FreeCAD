@@ -1426,9 +1426,12 @@ SoFCRenderCacheManagerP::postSeparator(void *userdata,
       // The flatten wants the map this cache's predecessor built, and the
       // predecessor is about to go out of scope. Handed over rather than
       // held by default: it lasts until the flatten takes it, not the life
-      // of the cache (docs/IncrementalPublish.md §5).
+      // of the cache (docs/IncrementalPublish.md §5). The match goes with
+      // it: the diff just above answered which child of the predecessor
+      // each child of this cache is, which is the same question the
+      // flatten would otherwise ask again about the same pair.
       if (ViewParams::getRenderCacheIncremental() > 0)
-        cache->setSpliceSource(prev);
+        cache->setSpliceSource(prev, self->publishdelta.lastMatch());
     }
   }
   return SoCallbackAction::CONTINUE;
