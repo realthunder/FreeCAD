@@ -56,6 +56,8 @@
 #include <Gui/Renderer/Renderer.h>
 #include <Gui/Renderer/SceneDump.h>
 #include <Gui/Renderer/SceneLadder.h>
+#include <Gui/Renderer/SceneServer.h>
+#include <Gui/SceneServeSource.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewParams.h>
@@ -245,6 +247,36 @@ void cancelExactRefine(const void *tag)
     s_refineTokens.erase(tag);
 }
 
+/// Is this process serving a scene stream?
+///
+/// ⚠️ Not "was FC_BGFX_SERVE_SCENE set". That variable is one of two
+/// ways to start the server — Gui.serveDocument(doc, port) is the other
+/// (docs/HeadlessServe.md §4) — and a gate that reads it directly is
+/// simply blind to the second. The env var still counts on its own
+/// because it names a port the renderer has not necessarily bound yet:
+/// it starts the listener at its first publish, and a document can be
+/// loaded, and tessellated, before any frame happens.
+bool sceneServed()
+{
+    static const bool byEnv = [] {
+        const char *env = std::getenv("FC_BGFX_SERVE_SCENE");
+        return env && *env;
+    }();
+    return byEnv || Render::SceneStreamServer::instance().running();
+}
+
+/// The render properties in force: a 3D view's when this process has
+/// one, and the serving source's when it does not — headless serving
+/// holds the same Render_* set with no view to hang it on
+/// (docs/HeadlessServe.md §3.3).
+App::PropertyContainer *renderOverrides()
+{
+    if (auto *view = qobject_cast<Gui::View3DInventor *>(
+            Gui::Application::Instance->activeView()))
+        return view;
+    return Gui::SceneServeSource::renderProperties();
+}
+
 } // anonymous namespace
 
 int PartGui::coarseTessellationLevel()
@@ -271,7 +303,7 @@ int PartGui::coarseTessellationLevel()
     // Coin display and a backend that answers drivesMeshLevels()
     // false have neither, and a coarse build there would simply stay
     // coarse forever.
-    if (!std::getenv("FC_BGFX_SERVE_SCENE")) {
+    if (!sceneServed()) {
         if (Gui::ViewParams::getRenderCache() != 3)
             return -1;
         auto *view3d = qobject_cast<Gui::View3DInventor *>(
@@ -282,13 +314,13 @@ int PartGui::coarseTessellationLevel()
             return -1;
     }
     // The per-view Render_CoarseTessellation property overrides the
-    // global parameter, like every other render parameter; the serving
-    // process has one 3D view, so the active view is the served one.
+    // global parameter, like every other render parameter — read off
+    // whichever container holds this process's render settings, since
+    // a headless serving process has them without a view.
     long lvl = Gui::RenderParams::getCoarseTessellation();
-    if (auto *view = qobject_cast<Gui::View3DInventor *>(
-            Gui::Application::Instance->activeView())) {
+    if (auto *container = renderOverrides()) {
         if (auto *prop = dynamic_cast<App::PropertyInteger *>(
-                view->getPropertyByName("Render_CoarseTessellation")))
+                container->getPropertyByName("Render_CoarseTessellation")))
             lvl = prop->getValue();
     }
     return lvl >= 0 && lvl < 8 ? int(lvl) : -1;
@@ -354,8 +386,7 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
     // draw of the same object share bounds and error, so a plan wants
     // or drops them together; the shared job relies on that.
     Render::MeshSourceRegistry::LevelHooks hooks;
-    if (onExactBuilt && builtError > 0.0f
-        && !std::getenv("FC_BGFX_SERVE_SCENE")) {
+    if (onExactBuilt && builtError > 0.0f && !sceneServed()) {
         const void *primary = faceTag ? faceTag : lineTag;
         auto fired = std::make_shared<std::atomic<bool>>(false);
         // The climb goes through the worker — unless a finer rung is
