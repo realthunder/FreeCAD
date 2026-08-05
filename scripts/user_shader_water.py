@@ -9,6 +9,9 @@ with the user fragment program replacing fs_fc_water.
 - stock-activation reference: Render_Water on the body's view object
   changes the render (the surface pass runs), removing it restores the
   base capture byte-exact.
+- surface-responds: the wave field moves pixels at all. Guards the rest
+  of the suite against a surface with refraction and reflection off,
+  which shades flat and passes every other assert here unchanged.
 - activation-by-binding: an Object-scope Appearance binding the
   identity water shader (fcWaterFragment of fc_user_water.sh) renders
   the body as water with NO Render_Water property anywhere.
@@ -68,8 +71,20 @@ void main()
 # Must run before the first 3D view exists.
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt(
     "RenderCache", 3)
-FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render").SetString(
-    "Type", "bgfx - OpenGL")
+_R = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render")
+_R.SetString("Type", "bgfx - OpenGL")
+# Pin what the surface responds WITH, rather than inheriting whatever
+# this box last saved. With refraction and reflection both off the
+# surface is a flat tinted sheet by design — every capture below still
+# differs from base, so the suite goes on passing while testing a
+# surface that no wave, ripple or impact ring can alter. A developer
+# profile that had switched them off is what made an earlier session
+# read this suite's tint failure as a renderer bug.
+_R.SetBool("WaterRefraction", True)
+_R.SetBool("WaterReflection", True)
+_R.SetBool("WaterPlanarReflection", True)
+_R.SetFloat("WaterWaveStrength", 0.3)
+_R.SetInt("WaterRippleType", 0)
 
 results = []
 
@@ -174,6 +189,30 @@ def run():
         n = changed_count(base, stock)
         log("stock water changed px vs base: %d" % n)
         log("ASSERT stock-water-active: %s" % ("PASS" if n > 2000 else "FAIL"))
+
+        # The surface must actually RESPOND to its wave field before any
+        # shader claim below means anything. With refraction and
+        # reflection off the surface is a flat sheet that no normal can
+        # alter, and every other assert here still passes over it — the
+        # trap that made an earlier session read a bad assert as a
+        # broken renderer. Rain at high strength rather than the default
+        # directional waves: those are deliberately subtle and move
+        # almost nothing on a pool this size.
+        view.Render_WaterWaveStrength = 0.0
+        settle()
+        flat = cap("w_flat")
+        view.Render_WaterRippleType = "Rain"
+        view.Render_WaterWaveStrength = 2.0
+        settle()
+        rippled = cap("w_rippled")
+        n = changed_count(flat, rippled)
+        log("wave field changed px vs a still surface: %d" % n)
+        log("ASSERT surface-responds: %s" % ("PASS" if n > 500 else "FAIL"))
+        # Back to the pinned defaults; the byte-equality asserts below
+        # are themselves the check that this restored exactly.
+        view.Render_WaterRippleType = "Waves"
+        view.Render_WaterWaveStrength = 0.3
+        settle()
 
         pvo.removeProperty("Render_Water")
         settle()
