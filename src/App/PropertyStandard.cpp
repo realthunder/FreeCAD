@@ -1800,8 +1800,13 @@ bool PropertyString::isSame(const Property &other) const
 {
     if (&other == this)
         return true;
+    // ⚠️ getStrValue(), not getValue(): getValue() hands back a const char*,
+    // so comparing two of them compares the addresses of two buffers and says
+    // "different" for every pair of strings that are not literally the same
+    // object. Every other property here compares a value or a reference, which
+    // is why this was the only one that answered no to a string equal to itself.
     return other.isDerivedFrom(PropertyString::getClassTypeId())
-        && this->getValue() == static_cast<const PropertyString&>(other).getValue();
+        && _cValue == static_cast<const PropertyString&>(other).getStrValue();
 }
 
 //**************************************************************************
