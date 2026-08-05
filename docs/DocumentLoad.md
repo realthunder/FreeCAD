@@ -114,7 +114,9 @@ cache 0) was checked too — 17.8s open, correct render, queue drained.
 external backend drew — both paths captured a blank frame, which proves
 nothing — so `saveRenderDump(source='renderer')` was used instead.
 `saveImage` now routes through the same backend readback when a backend
-is active, and either is a valid check.
+is active, so either is a valid check — but they are not pixel-identical
+to each other: an export leaves out the viewport chrome that a debug
+capture keeps.
 
 The total work is not reduced — it is moved off the blocking window.
 Time-to-window is what changed, and that is the thing a user waits on.

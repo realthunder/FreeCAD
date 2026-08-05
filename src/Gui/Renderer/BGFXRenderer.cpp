@@ -12142,8 +12142,16 @@ public:
         // camera and viewport, fresh depth — through the normal submit
         // path with the target view overridden.
         {
+            // A capture taken for an image export drops the viewport
+            // chrome: the corner-anchored and pixel-space feeds are the
+            // navigation cube, the corner axis cross and on-screen text,
+            // which belong to the viewport rather than to the model. The
+            // scene-camera feeds stay -- those are in-scene content.
+            const bool skipChrome = dumpPending && !pendingDump.overlays;
             int slot = 0;
             for (const auto &ov : overlays) {
+                if (skipChrome && !ov.second.anchor.sceneCamera)
+                    continue;
                 if (slot >= BGFXView::NumOverlayViews) {
                     static bool warned = false;
                     if (!warned) {
@@ -12220,6 +12228,13 @@ public:
         bgfx::frame();
         widget->makeCurrent();
         view->blit(dumpPending ? &pendingDump : nullptr, &lastStats);
+        if (dumpPending && !pendingDump.overlays) {
+            // That frame went to the screen as well as to the capture, and
+            // it is missing the chrome the capture asked to leave out. It
+            // would stay on screen until something else happened to dirty
+            // the scene, so redraw it whole.
+            sceneDirty = true;
+        }
         dumpPending = false;
 #endif
 

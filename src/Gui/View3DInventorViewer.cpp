@@ -3873,12 +3873,20 @@ bool View3DInventorViewer::imageFromRenderer(int width, int height,
 
     Render::FrameDumpRequest req;
     req.path = path.toUtf8().constData();
+    // An exported image is of the model: no navigation cube, no corner
+    // axis cross, no on-screen text — which is what the Coin route this
+    // stands in for produced.
+    req.overlays = false;
     bool ok = renderer->requestFrameDump(req) && pumpFrameDump(renderer);
 
     if (bgcolor.isValid()) {
         setBackgroundColor(col);
         setGradientBackground(grad);
     }
+    // The captured frame went to the screen too, without the chrome the
+    // capture left out and with the capture's background: put the view back.
+    if (auto rm = getSoRenderManager())
+        rm->scheduleRedraw();
     if (!ok)
         return false;
 

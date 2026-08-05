@@ -505,6 +505,14 @@ struct FrameDumpRequest {
     /// RenderDebug view-mode override for the captured frame only
     /// (RenderDebugConfig::viewMode); -1 keeps the active mode.
     int mode = -1;
+    /// Whether the captured frame carries the viewport chrome: the
+    /// corner-anchored and pixel-space overlay feeds (navigation cube,
+    /// corner axis cross, on-screen text). A debug capture wants the
+    /// frame as staged and keeps them; an image export is of the model
+    /// and does not. In-scene overlay feeds (OverlayAnchor::sceneCamera
+    /// — editing overlays, dimensions) are scene content and are drawn
+    /// either way.
+    bool overlays = true;
 };
 
 /// Readback statistics of a captured frame — the cheap numeric
