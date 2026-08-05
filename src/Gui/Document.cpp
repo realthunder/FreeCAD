@@ -2105,7 +2105,12 @@ void Document::saveDefaults(Base::Writer &writer,
         // Properties only. Extensions are saved by identity, and a stand-in's
         // are whatever its constructor added -- the same ones the reader's
         // stand-in will have.
-        v.second->App::PropertyContainer::Save(writer);
+        //
+        // SaveDefaults leaves out what mustSave() names -- Visibility and
+        // DisplayMode. The reader would have discarded them anyway, since a
+        // property the stand-in cannot speak for is one it must not paste; not
+        // writing them in the first place says the same thing once.
+        v.second->App::PropertyContainer::SaveDefaults(writer);
         writer.Stream() << writer.ind() << "</" << FC_ELEM_DEFAULT << ">\n";
     }
     writer.setForceXML(force);

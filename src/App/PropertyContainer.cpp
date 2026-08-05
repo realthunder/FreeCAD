@@ -319,7 +319,17 @@ void PropertyContainer::beforeSave() const
     }
 }
 
-void PropertyContainer::Save (Base::Writer &writer) const 
+void PropertyContainer::Save (Base::Writer &writer) const
+{
+    save(writer, false);
+}
+
+void PropertyContainer::SaveDefaults (Base::Writer &writer) const
+{
+    save(writer, true);
+}
+
+void PropertyContainer::save (Base::Writer &writer, bool asDefaults) const
 {
     if (!_pimpl || _pimpl->propertyMap.empty())
         beforeSave();
@@ -329,24 +339,59 @@ void PropertyContainer::Save (Base::Writer &writer) const
     auto & Map = _pimpl->propertyMap;
     auto & transients = _pimpl->transients;
 
+    // Writing this container's properties *as* a shared default block: what it
+    // cannot speak for has no business in one. Nothing will read the recorded
+    // default -- every container states such a property itself -- and for some
+    // of them writing it is not merely wasted. A property that owns an archive
+    // entry would have the stand-in claim one, and a restore written for a
+    // property whose owner is in a document has no owner to ask.
+    if (asDefaults) {
+        for (auto it = Map.begin(); it != Map.end();) {
+            if (mustSave(*it->second))
+                it = Map.erase(it);
+            else
+                ++it;
+        }
+    }
+
     // Drop everything a shared default block already says. A property counts
     // as said when the defaults hold one of the same name and type whose
     // value and status both match; anything the defaults do not know about --
     // a dynamic property, one an extension added -- is never dropped.
     if (auto defaults = getSaveDefaults()) {
+        const unsigned long touchedMask = 1UL << Property::Touched;
         for (auto it = Map.begin(); it != Map.end();) {
             auto other = defaults->getPropertyByName(it->first.c_str());
-            if (other && other->getContainer() == defaults
-                    && other->getTypeId() == it->second->getTypeId()
-                    && other->getStatus() == it->second->getStatus()
-                    && !it->second->testStatus(Property::PropDynamic)
-                    && !mustSave(*it->second)
-                    && it->second->isSame(*other)) {
+            if (!other || other->getContainer() != defaults
+                       || other->getTypeId() != it->second->getTypeId()) {
+                ++savedDefaultsUnknown;
+                ++it;
+            }
+            else if (it->second->testStatus(Property::PropDynamic)
+                       || mustSave(*it->second)) {
+                ++it;
+            }
+            else if (!it->second->isSame(*other)) {
+                ++savedDefaultsValue;
+                ++it;
+            }
+            // ⚠️ Every bit but Touched. A file does not preserve that one:
+            // Restore() above applies the recorded status and then calls the
+            // property's own Restore, which touches it again -- so a property
+            // written untouched comes back touched whatever the file said, and
+            // that is true of the properties this leaves in as much as the ones
+            // it takes out. Comparing it would only refuse to elide anything at
+            // all, since a stand-in is freshly built and every settled object
+            // has been purged: it was 255 of 411 refusals on the check document.
+            else if ((other->getStatus() & ~touchedMask)
+                        != (it->second->getStatus() & ~touchedMask)) {
+                ++savedDefaultsStatus;
+                ++it;
+            }
+            else {
                 it = Map.erase(it);
                 ++savedDefaults;
             }
-            else
-                ++it;
         }
     }
 
@@ -421,6 +466,9 @@ void PropertyContainer::Save (Base::Writer &writer) const
 
 PropertyContainer::RestoreStats PropertyContainer::restoreStats;
 std::size_t PropertyContainer::savedDefaults;
+std::size_t PropertyContainer::savedDefaultsUnknown;
+std::size_t PropertyContainer::savedDefaultsValue;
+std::size_t PropertyContainer::savedDefaultsStatus;
 
 void PropertyContainer::Restore(Base::XMLReader &reader)
 {

@@ -243,6 +243,14 @@ public:
   void Save (Base::Writer &writer) const override;
   void Restore(Base::XMLReader &reader) override;
 
+  /** Write these properties as a class's shared defaults.
+   *
+   * Same element as Save() produces, so the same Restore() reads it back,
+   * minus the properties mustSave() names -- the block cannot speak for
+   * those, so recording a default for them is at best bytes nobody reads.
+   */
+  void SaveDefaults (Base::Writer &writer) const;
+
   /** Accumulated cost of restoring properties.
    *
    * A document load runs hundreds of thousands of property restores inside a
@@ -278,6 +286,18 @@ public:
    */
   static std::size_t savedDefaults;
 
+  /** Why the rest were written anyway, split by which test said no.
+   *
+   * A block that quietly stops paying is the failure mode worth naming, and
+   * "it wrote everything again" does not say which of the three reasons it
+   * was: the defaults never heard of the property, its value really differs,
+   * or only its status does -- which is the one that looks like a bug in the
+   * mechanism rather than a property doing its job.
+   */
+  static std::size_t savedDefaultsUnknown;
+  static std::size_t savedDefaultsValue;
+  static std::size_t savedDefaultsStatus;
+
   /** Container holding the values this one may leave out of a save.
    *
    * Thousands of containers of the same class mostly hold what their
@@ -297,6 +317,12 @@ public:
    * Leaving a property out is not the same as writing its default value if
    * something downstream reacts to the file having mentioned it at all.
    * A container that has such a property says so here.
+   *
+   * The answer is also what the reader must not take from a shared block: a
+   * property the stand-in cannot speak for is one whose recorded default
+   * would do damage if pasted. A writer of such a block may go further and
+   * keep the property out of it altogether -- if every object states it
+   * anyway, a recorded default for it is bytes nobody reads.
    */
   virtual bool mustSave(const Property &prop) const { (void)prop; return false; }
 
@@ -343,7 +369,9 @@ public:
 protected:
   DynamicProperty dynamicProps;
 
-private: 
+private:
+  void save (Base::Writer &writer, bool asDefaults) const;
+
   std::string _propertyPrefix;
   static PropertyData propertyData;
 
