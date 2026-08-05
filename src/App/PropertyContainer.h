@@ -270,6 +270,36 @@ public:
   };
   static RestoreStats restoreStats;
 
+  /** Properties left out of a save because getSaveDefaults() held them.
+   *
+   * A shared default block that quietly stops matching -- a status bit that
+   * drifted, a class whose stand-in cannot be built -- writes the whole file
+   * again and looks like nothing happened. This is the counter that says.
+   */
+  static std::size_t savedDefaults;
+
+  /** Container holding the values this one may leave out of a save.
+   *
+   * Thousands of containers of the same class mostly hold what their
+   * constructor gave them, and writing that out per container is what makes
+   * a large document's view file bigger than the document. A save that has
+   * already written those values somewhere the reader can find them points
+   * here, and every property still equal to its counterpart -- value and
+   * status both -- is left out of the file.
+   *
+   * The reader is responsible for putting them back. Returning null, the
+   * default, writes everything.
+   */
+  virtual const PropertyContainer *getSaveDefaults() const { return nullptr; }
+
+  /** Whether a property has to be written even when the defaults agree.
+   *
+   * Leaving a property out is not the same as writing its default value if
+   * something downstream reacts to the file having mentioned it at all.
+   * A container that has such a property says so here.
+   */
+  virtual bool mustSave(const Property &prop) const { (void)prop; return false; }
+
   virtual void beforeSave() const;
 
   virtual void editProperty(const char * /*propName*/) {}

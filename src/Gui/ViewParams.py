@@ -521,6 +521,15 @@ Params = [
     ParamBool('EnableBacklight',  False),
     ParamHex('BacklightColor',  0xffffffff),
     ParamFloat('BacklightIntensity',  1.0),
+    ParamBool('SaveViewProviderDefaults', True,
+        "Save the view providers of a document as a difference from their\n"
+        "class defaults, which are written once for the whole document.\n"
+        "View providers of one class are nearly identical -- a colour here\n"
+        "and a display mode there, everything else what the constructor\n"
+        "gave them -- so on a large assembly this makes GuiDocument.xml a\n"
+        "fraction of its size and cuts the properties a load has to restore\n"
+        "by the same share. Turn it off to write every property on every\n"
+        "view provider, as FreeCAD versions without this option expect."),
     ParamBool('OverrideSelectability',  False, "Override object selectability to enable selection"),
     ParamUInt('SelectionStackSize', 30, "Maximum selection history record size"),
     ParamInt('DefaultDrawStyle', 0, 'Default draw style of a new document',

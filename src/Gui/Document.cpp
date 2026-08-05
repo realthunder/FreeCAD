@@ -144,6 +144,23 @@ struct DocumentP
     FC_DURATION _restoreSceneTime {0};
     std::size_t _restoreVpCount = 0;
 
+    /** What a <Defaults> block says a view provider class holds.
+     *
+     * Restored into a view provider built for the purpose, and reduced to the
+     * properties the record actually moved off what this machine's
+     * constructor produces. That list is usually empty -- the file was
+     * written by a build and a preference set that agree with this one -- and
+     * then a document's view providers cost nothing to default. When it is
+     * not empty, those few properties are pasted onto every view provider of
+     * the class, which is what keeps a document looking the same on a machine
+     * whose preferences differ from the author's.
+     */
+    struct RestoreDefaults {
+        std::unique_ptr<ViewProvider> proto;
+        std::vector<std::string> names;
+    };
+    std::map<std::string, RestoreDefaults> _restoreDefaults;
+
     // Reference counted view providers that are 3D claimed by other object.
     // These view providers shouldn't appear at secen graph root.
     std::unordered_map<const ViewProvider*, int> _ClaimedViewProviders;
@@ -1660,8 +1677,13 @@ void Document::readObject(Base::XMLReader &xmlReader) {
     std::string name = xmlReader.getAttribute("name");
     bool expanded = !d->_hasExpansion && !!xmlReader.getAttributeAsInteger("expanded","0");
     ViewProvider* pObj = getViewProviderByName(name.c_str());
-    if (pObj) // check if this feature has been registered
+    if (pObj) {
+        // Whatever the shared default block moved off this build's own
+        // defaults has to be put back before the object's own properties, so
+        // that what the file states for this object still wins.
+        applyDefaults(pObj);
         pObj->Restore(xmlReader);
+    }
     if (pObj && expanded) {
         Gui::ViewProviderDocumentObject* vp = static_cast<Gui::ViewProviderDocumentObject*>(pObj);
         this->signalExpandObject(*vp, TreeItemMode::ExpandItem,0,0);
@@ -1672,6 +1694,110 @@ static const int FC_GUI_SCHEMA_VER = 1;
 static const char *FC_XML_GUI_POSTFIX = ".Gui.xml";
 static const char *FC_ATTR_SPLIT_XML = "Split";
 static const char *FC_ATTR_TREE_EXPANSION = "HasExpansion";
+
+namespace {
+
+// The element names of the shared default block, and the attribute on
+// <ViewProviderData> that says how many entries it has. A reader that finds
+// no attribute never looks for the block, which is what lets a file written
+// without it be read by the same code.
+const char *FC_ELEM_DEFAULTS = "Defaults";
+const char *FC_ELEM_DEFAULT = "Default";
+const char *FC_ATTR_DEFAULTS = "Defaults";
+
+/** Build a view provider of the given class outside any document.
+ *
+ * What a class treats as a default lives in its constructor and nowhere
+ * else -- there is no metadata to ask -- so the only way to find out is to
+ * build one and read its properties. Returns null for a class that cannot be
+ * instantiated, and the caller then writes everything as before.
+ */
+std::unique_ptr<ViewProvider> makeDefaultViewProvider(const char *typeName)
+{
+    auto type = Base::Type::fromName(typeName);
+    if (type.isBad() || !type.isDerivedFrom(ViewProvider::getClassTypeId()))
+        return {};
+    std::unique_ptr<ViewProvider> res;
+    try {
+        res.reset(static_cast<ViewProvider*>(type.createInstance()));
+    }
+    catch (Base::Exception &e) {
+        e.ReportException();
+    }
+    catch (const std::exception &e) {
+        FC_ERR("Failed to build a default " << typeName << ": " << e.what());
+    }
+    if (!res)
+        FC_LOG("No default view provider for " << typeName);
+    return res;
+}
+
+} // anonymous namespace
+
+void Document::restoreDefaults(Base::XMLReader &xmlReader, int count)
+{
+    d->_restoreDefaults.clear();
+    if (count <= 0)
+        return;
+
+    xmlReader.readElement(FC_ELEM_DEFAULTS);
+    for (int i=0; i<count; ++i) {
+        int guard;
+        xmlReader.readElement(FC_ELEM_DEFAULT, &guard);
+        std::string type = xmlReader.getAttribute("type");
+        auto proto = makeDefaultViewProvider(type.c_str());
+        if (proto) {
+            // What the record says against what this build produces. Only the
+            // difference has to be pasted onto anything, and on the machine
+            // that wrote the file there is none.
+            std::vector<std::unique_ptr<App::Property>> before;
+            std::vector<App::Property*> props;
+            proto->getPropertyList(props);
+            before.reserve(props.size());
+            for (auto prop : props)
+                before.emplace_back(prop->Copy());
+
+            proto->App::PropertyContainer::Restore(xmlReader);
+
+            DocumentP::RestoreDefaults entry;
+            for (std::size_t j=0; j<props.size(); ++j) {
+                // A property the writer was never allowed to leave out does
+                // not need a default put back, and must not get one: it is on
+                // that list precisely because the stand-in cannot speak for
+                // it, so pasting the stand-in's copy would do damage.
+                if (props[j]->getName() && before[j]
+                        && !proto->mustSave(*props[j])
+                        && !props[j]->isSame(*before[j]))
+                    entry.names.emplace_back(props[j]->getName());
+            }
+            if (!entry.names.empty())
+                FC_LOG("Default view provider " << type << " differs in "
+                        << entry.names.size() << " properties");
+            // Kept even when nothing differs: a property in the block may
+            // have registered an archive entry against this stand-in, and the
+            // reader will come looking for its owner later.
+            entry.proto = std::move(proto);
+            d->_restoreDefaults[type] = std::move(entry);
+        }
+        xmlReader.readEndElement(FC_ELEM_DEFAULT, &guard);
+    }
+    xmlReader.readEndElement(FC_ELEM_DEFAULTS);
+}
+
+void Document::applyDefaults(ViewProvider *vp)
+{
+    if (d->_restoreDefaults.empty())
+        return;
+    auto it = d->_restoreDefaults.find(vp->getTypeId().getName());
+    if (it == d->_restoreDefaults.end() || it->second.names.empty())
+        return;
+    for (const auto &name : it->second.names) {
+        auto prop = vp->getPropertyByName(name.c_str());
+        auto other = it->second.proto->getPropertyByName(name.c_str());
+        if (prop && other && prop->getTypeId() == other->getTypeId())
+            prop->Paste(*other);
+    }
+}
 
 /**
  * Restores the properties of the view providers.
@@ -1711,6 +1837,7 @@ void Document::RestoreDocFile(Base::Reader &reader)
             int Cnt = xmlReader.getAttributeAsInteger("Count");
             FC_TIME_INIT(t);
             auto stats = App::PropertyContainer::restoreStats;
+            restoreDefaults(xmlReader, xmlReader.getAttributeAsInteger(FC_ATTR_DEFAULTS,"0"));
             for (int i=0; i<Cnt; i++) {
                 int guard;
                 xmlReader.readElement("ViewProvider",&guard);
@@ -1776,6 +1903,11 @@ void Document::RestoreDocFile(Base::Reader &reader)
     // In the file GuiDocument.xml new data files might be added
     if (!xmlReader.getFilenames().empty())
         xmlReader.readFiles();
+
+    // The default stand-ins have served their purpose and nothing points at
+    // them any more -- including the reader, which has just drained whatever
+    // they registered.
+    d->_restoreDefaults.clear();
 
     // reset modified flag
     setModified(false);
@@ -1909,7 +2041,57 @@ void Document::slotShowHidden(const App::Document& doc)
     Application::Instance->signalShowHidden(*this);
 }
 
-void Document::writeObject(Base::Writer &writer, 
+void Document::buildDefaults(
+        std::map<std::string, std::unique_ptr<ViewProvider>> &defaults) const
+{
+    if (!ViewParams::getSaveViewProviderDefaults())
+        return;
+
+    // A default block is one class's whole property set, so it only pays for
+    // itself once enough view providers can leave that set out. Two roughly
+    // break even; below that a document would come out larger than if nothing
+    // had been shared at all.
+    const std::size_t minInstances = 3;
+
+    std::map<std::string, std::size_t> counts;
+    for (const auto &v : d->_ViewProviderMap)
+        ++counts[v.second->getTypeId().getName()];
+    for (const auto &v : counts) {
+        if (v.second < minInstances)
+            continue;
+        if (auto proto = makeDefaultViewProvider(v.first.c_str()))
+            defaults.emplace(v.first, std::move(proto));
+    }
+}
+
+void Document::saveDefaults(Base::Writer &writer,
+        const std::map<std::string, std::unique_ptr<ViewProvider>> &defaults) const
+{
+    if (defaults.empty())
+        return;
+
+    writer.Stream() << writer.ind() << '<' << FC_ELEM_DEFAULTS << " Count=\""
+                    << defaults.size() << "\">\n";
+    writer.incInd();
+    // A stand-in owns no archive entry: forcing XML keeps its list properties
+    // inline instead of registering files nothing will ever read.
+    int force = writer.isForceXML();
+    writer.setForceXML(9999);
+    for (const auto &v : defaults) {
+        writer.Stream() << writer.ind() << '<' << FC_ELEM_DEFAULT << " type=\""
+                        << v.first << "\">\n";
+        // Properties only. Extensions are saved by identity, and a stand-in's
+        // are whatever its constructor added -- the same ones the reader's
+        // stand-in will have.
+        v.second->App::PropertyContainer::Save(writer);
+        writer.Stream() << writer.ind() << "</" << FC_ELEM_DEFAULT << ">\n";
+    }
+    writer.setForceXML(force);
+    writer.decInd();
+    writer.Stream() << writer.ind() << "</" << FC_ELEM_DEFAULTS << ">\n";
+}
+
+void Document::writeObject(Base::Writer &writer,
         const App::DocumentObject *doc, const ViewProvider *obj) const
 {
     writer.Stream() << writer.ind() << "<ViewProvider name=\"" 
@@ -1972,13 +2154,53 @@ void Document::SaveDocFile (Base::Writer &writer) const
 
         std::map<const App::DocumentObject*,ViewProviderDocumentObject*>::const_iterator it;
 
+        // View providers of one class are nearly identical: a colour here, a
+        // display mode there, and everything else is what the constructor
+        // gave them. Write that constructor state once per class and let each
+        // view provider save only its difference from it -- on a large
+        // assembly that is the difference between a view file twice the size
+        // of the document and one a small fraction of it, and the load has
+        // that many fewer properties to restore. The defaults are written
+        // out, not implied, so the document still looks the same opened on a
+        // machine whose preferences differ from the author's.
+        std::map<std::string, std::unique_ptr<ViewProvider>> defaults;
+        buildDefaults(defaults);
+
         // writing the view provider names itself
         writer.Stream() << writer.ind() << "<ViewProviderData Count=\""
-                        << d->_ViewProviderMap.size() <<"\">\n";
+                        << d->_ViewProviderMap.size() << '"';
+        if (!defaults.empty())
+            writer.Stream() << ' ' << FC_ATTR_DEFAULTS << "=\"" << defaults.size() << '"';
+        writer.Stream() << ">\n";
 
         writer.incInd(); // indentation for 'ViewProvider name'
-        for(it = d->_ViewProviderMap.begin(); it != d->_ViewProviderMap.end(); ++it)
-            writeObject(writer,it->first, it->second);
+        saveDefaults(writer, defaults);
+        auto elided = App::PropertyContainer::savedDefaults;
+        // Point every view provider at its class stand-in for the duration of
+        // the write, and at nothing again after it -- the stand-ins do not
+        // outlive this call.
+        auto pointAtDefaults = [&](bool on) {
+            for (const auto &v : d->_ViewProviderMap) {
+                auto def = defaults.find(v.second->getTypeId().getName());
+                v.second->setSaveDefaults(
+                        on && def != defaults.end() ? def->second.get() : nullptr);
+            }
+        };
+        pointAtDefaults(true);
+        try {
+            for(it = d->_ViewProviderMap.begin(); it != d->_ViewProviderMap.end(); ++it)
+                writeObject(writer,it->first, it->second);
+        }
+        catch (...) {
+            pointAtDefaults(false);
+            throw;
+        }
+        pointAtDefaults(false);
+        FC_LOG("save " << getDocument()->getName() << " gui: "
+                << d->_ViewProviderMap.size() << " view providers, "
+                << defaults.size() << " class defaults, "
+                << (App::PropertyContainer::savedDefaults - elided)
+                << " properties left out");
         writer.decInd(); // indentation for 'ViewProvider name'
         writer.Stream() << writer.ind() << "</ViewProviderData>\n";
         writer.decInd();  // indentation for 'ViewProviderData Count'

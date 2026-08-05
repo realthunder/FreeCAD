@@ -228,6 +228,7 @@ public:
     bool EnableBacklight;
     unsigned long BacklightColor;
     double BacklightIntensity;
+    bool SaveViewProviderDefaults;
     bool OverrideSelectability;
     unsigned long SelectionStackSize;
     long DefaultDrawStyle;
@@ -582,6 +583,8 @@ public:
         funcs["BacklightColor"] = &ViewParamsP::updateBacklightColor;
         BacklightIntensity = this->handle->GetFloat("BacklightIntensity", 1.0);
         funcs["BacklightIntensity"] = &ViewParamsP::updateBacklightIntensity;
+        SaveViewProviderDefaults = this->handle->GetBool("SaveViewProviderDefaults", true);
+        funcs["SaveViewProviderDefaults"] = &ViewParamsP::updateSaveViewProviderDefaults;
         OverrideSelectability = this->handle->GetBool("OverrideSelectability", false);
         funcs["OverrideSelectability"] = &ViewParamsP::updateOverrideSelectability;
         SelectionStackSize = this->handle->GetUnsigned("SelectionStackSize", 30);
@@ -1329,6 +1332,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateBacklightIntensity(ViewParamsP *self) {
         self->BacklightIntensity = self->handle->GetFloat("BacklightIntensity", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSaveViewProviderDefaults(ViewParamsP *self) {
+        self->SaveViewProviderDefaults = self->handle->GetBool("SaveViewProviderDefaults", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOverrideSelectability(ViewParamsP *self) {
@@ -6152,6 +6159,41 @@ void ViewParams::removeBacklightIntensity() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docSaveViewProviderDefaults() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Save the view providers of a document as a difference from their\n"
+"class defaults, which are written once for the whole document.\n"
+"View providers of one class are nearly identical -- a colour here\n"
+"and a display mode there, everything else what the constructor\n"
+"gave them -- so on a large assembly this makes GuiDocument.xml a\n"
+"fraction of its size and cuts the properties a load has to restore\n"
+"by the same share. Turn it off to write every property on every\n"
+"view provider, as FreeCAD versions without this option expect.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & ViewParams::getSaveViewProviderDefaults() {
+    return instance()->SaveViewProviderDefaults;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & ViewParams::defaultSaveViewProviderDefaults() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setSaveViewProviderDefaults(const bool &v) {
+    instance()->handle->SetBool("SaveViewProviderDefaults",v);
+    instance()->SaveViewProviderDefaults = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeSaveViewProviderDefaults() {
+    instance()->handle->RemoveBool("SaveViewProviderDefaults");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docOverrideSelectability() {
     return QT_TRANSLATE_NOOP("ViewParams",
 "Override object selectability to enable selection");
@@ -6373,7 +6415,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:572)
+// Auto generated code (Gui/ViewParams.py:581)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6418,7 +6460,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:580)
+// Auto generated code (Gui/ViewParams.py:589)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6432,7 +6474,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:590)
+// Auto generated code (Gui/ViewParams.py:599)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
@@ -6446,13 +6488,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:600)
+// Auto generated code (Gui/ViewParams.py:609)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:607)
+// Auto generated code (Gui/ViewParams.py:616)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6460,7 +6502,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:616)
+// Auto generated code (Gui/ViewParams.py:625)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6472,7 +6514,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:629)
+// Auto generated code (Gui/ViewParams.py:638)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)

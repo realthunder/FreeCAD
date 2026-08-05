@@ -25,6 +25,7 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <string>
 #include <boost_signals2.hpp>
 #include <QString>
@@ -183,8 +184,26 @@ public:
     void importObjects(const std::vector<App::DocumentObject*>&, Base::Reader&,
                        const std::map<std::string, std::string>& nameMapping);
     void readObject(Base::XMLReader &reader);
-    void writeObject(Base::Writer &writer, 
+    void writeObject(Base::Writer &writer,
             const App::DocumentObject *doc, const ViewProvider *obj) const;
+
+    /** @name The shared view provider defaults
+     *
+     * View providers of one class are nearly identical, so the file carries
+     * one default block per class and each view provider only its difference
+     * from it. See Gui::Document::saveDefaults for what that buys.
+     */
+    //@{
+    /// Build one stand-in per view provider class present in this document.
+    void buildDefaults(std::map<std::string, std::unique_ptr<ViewProvider>> &defaults) const;
+    /// Write those stand-ins' properties as the block the objects refer to.
+    void saveDefaults(Base::Writer &writer,
+            const std::map<std::string, std::unique_ptr<ViewProvider>> &defaults) const;
+    /// Read the block back and keep whatever it says that this build does not.
+    void restoreDefaults(Base::XMLReader &reader, int count);
+    /// Put that difference on one view provider, before its own properties.
+    void applyDefaults(ViewProvider *vp);
+    //@}
     /// Add all root objects of the given array to a group
     void addRootObjectsToGroup(const std::vector<App::DocumentObject*>&, App::DocumentObject*);
     //@}

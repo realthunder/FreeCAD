@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:540)
+// Auto generated code (Gui/ViewParams.py:549)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -2083,6 +2083,25 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter SaveViewProviderDefaults
+    ///
+    /// Save the view providers of a document as a difference from their
+    /// class defaults, which are written once for the whole document.
+    /// View providers of one class are nearly identical -- a colour here
+    /// and a display mode there, everything else what the constructor
+    /// gave them -- so on a large assembly this makes GuiDocument.xml a
+    /// fraction of its size and cuts the properties a load has to restore
+    /// by the same share. Turn it off to write every property on every
+    /// view provider, as FreeCAD versions without this option expect.
+    static const bool & getSaveViewProviderDefaults();
+    static const bool & defaultSaveViewProviderDefaults();
+    static void removeSaveViewProviderDefaults();
+    static void setSaveViewProviderDefaults(const bool &v);
+    static const char *docSaveViewProviderDefaults();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter OverrideSelectability
     ///
     /// Override object selectability to enable selection
@@ -2171,7 +2190,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:546)
+    // Auto generated code (Gui/ViewParams.py:555)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2199,7 +2218,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:556)
+// Auto generated code (Gui/ViewParams.py:565)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

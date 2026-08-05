@@ -329,6 +329,27 @@ void PropertyContainer::Save (Base::Writer &writer) const
     auto & Map = _pimpl->propertyMap;
     auto & transients = _pimpl->transients;
 
+    // Drop everything a shared default block already says. A property counts
+    // as said when the defaults hold one of the same name and type whose
+    // value and status both match; anything the defaults do not know about --
+    // a dynamic property, one an extension added -- is never dropped.
+    if (auto defaults = getSaveDefaults()) {
+        for (auto it = Map.begin(); it != Map.end();) {
+            auto other = defaults->getPropertyByName(it->first.c_str());
+            if (other && other->getContainer() == defaults
+                    && other->getTypeId() == it->second->getTypeId()
+                    && other->getStatus() == it->second->getStatus()
+                    && !it->second->testStatus(Property::PropDynamic)
+                    && !mustSave(*it->second)
+                    && it->second->isSame(*other)) {
+                it = Map.erase(it);
+                ++savedDefaults;
+            }
+            else
+                ++it;
+        }
+    }
+
     writer.incInd(); // indentation for 'Properties Count'
     writer.Stream() << writer.ind() << "<Properties Count=\"" << Map.size()
                     << "\" TransientCount=\"" << transients.size() << "\">\n";
@@ -399,6 +420,7 @@ void PropertyContainer::Save (Base::Writer &writer) const
 }
 
 PropertyContainer::RestoreStats PropertyContainer::restoreStats;
+std::size_t PropertyContainer::savedDefaults;
 
 void PropertyContainer::Restore(Base::XMLReader &reader)
 {
