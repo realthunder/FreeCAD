@@ -58,6 +58,8 @@ void MeshSourceRegistry::add(const void *tag, Generator gen,
     src.canonicalKey.clear();
     src.hooks = std::move(hooks);
     src.asked = false;
+    // Anyone holding an earlier publishedError() answer re-asks now.
+    registryGen.fetch_add(1, std::memory_order_release);
     if (debugOn())
         std::fprintf(stderr, "mesh source: add tag=%p err=%g (%zu sources)\n",
                      tag, double(publishedError), sources.size());
@@ -68,6 +70,7 @@ void MeshSourceRegistry::remove(const void *tag)
     std::lock_guard<std::mutex> guard(mutex);
     if (!sources.erase(tag))
         return;
+    registryGen.fetch_add(1, std::memory_order_release);
     for (auto it = keys.begin(); it != keys.end();) {
         if (it->second == tag)
             it = keys.erase(it);

@@ -136,6 +136,19 @@ public:
     /// The registered publishedError of the source behind \a tag, or 0.
     float publishedError(const void *tag);
 
+    /// Bumped whenever a registration changes, and so whenever any
+    /// tag's publishedError could have moved. A caller holding an
+    /// answer from an earlier call can compare this instead of asking
+    /// again: publishedError() takes the registry lock, and a scene
+    /// publish asks it once per mesh, which measured 4-5ms of a
+    /// 6000-object publish spent proving nothing had changed
+    /// (docs/IncrementalPublish.md §4d-ii). Lock-free by design --
+    /// reading it must not cost what it is there to avoid.
+    uint32_t generation() const
+    {
+        return registryGen.load(std::memory_order_acquire);
+    }
+
     /// Try the shape-backed generator for \a key. False when no source
     /// claims the key or its generator refuses — decimation's turn.
     bool generate(const std::string &key, uint32_t level,
@@ -205,6 +218,9 @@ private:
     std::map<const void *, Source> sources;
     std::unordered_map<std::string, const void *> keys;
     std::atomic<uint64_t> ceilingEpoch {0};
+    /// See generation(). Bumped by every add() and remove(), which are
+    /// the only things that can change what publishedError() answers.
+    std::atomic<uint32_t> registryGen {0};
 };
 
 /// The desktop tier's plan *events* (docs/SceneStreaming.md §13 step 2):

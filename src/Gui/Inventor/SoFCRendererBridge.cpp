@@ -127,6 +127,10 @@ ValueT viewParamOverride(View3DInventor * view,
 struct CacheMeshData : Render::MeshData {
     Gui::CoinPtr<SoFCVertexCache> holder;
     std::shared_ptr<const void> arrayRefs;
+    /// The source registry's generation when levelError was read, so a
+    /// later publish can tell that nothing has been registered since
+    /// without taking the registry's lock (MeshSource.h generation()).
+    uint32_t sourceGen = 0;
     // Compacted index subsets of partial caches (see below); the base
     // struct's index pointers alias these when filled.
     std::vector<int32_t> partialTriangles;
@@ -149,8 +153,14 @@ translateCache(SoFCVertexCache * cache)
         // A producer running coarse-first registered what the display
         // tessellation itself is; the serializer places the mesh on
         // its ladder by this and declares the exact rung above it.
-        mesh->levelError = Render::MeshSourceRegistry::instance()
-                               .publishedError(mesh->sourceTag);
+        //
+        // Read before the answer, not after: a registration landing
+        // between the two then leaves a generation this mesh does not
+        // carry, and the next publish looks again. The other order
+        // could stamp an answer as current that already was not.
+        auto & registry = Render::MeshSourceRegistry::instance();
+        mesh->sourceGen = registry.generation();
+        mesh->levelError = registry.publishedError(mesh->sourceTag);
     }
 
     mesh->numVertices = cache->getNumVertices();
@@ -273,7 +283,7 @@ meshMemo()
  * cannot have been freed and reallocated at the same address while the
  * mesh is alive.
  */
-bool meshMatchesCache(const CacheMeshData & mesh, SoFCVertexCache * cache)
+bool meshMatchesCache(CacheMeshData & mesh, SoFCVertexCache * cache)
 {
     if (mesh.holder != cache || mesh.numVertices != cache->getNumVertices())
         return false;
@@ -305,10 +315,21 @@ bool meshMatchesCache(const CacheMeshData & mesh, SoFCVertexCache * cache)
     // The one thing a mesh holds that is not a property of its cache:
     // which rung of its level ladder the source registry has published
     // since (coarse-first tessellation, docs/SceneStreaming.md §7).
-    if (mesh.sourceTag
-            && mesh.levelError != Render::MeshSourceRegistry::instance()
-                                      .publishedError(mesh.sourceTag))
-        return false;
+    //
+    // Asked of the registry's generation rather than of the registry.
+    // publishedError() takes the registry lock, and asking it once per
+    // mesh per publish cost 4-5ms of a 6000-object publish to be told
+    // every time that nothing had been registered at all.
+    if (mesh.sourceTag) {
+        auto & registry = Render::MeshSourceRegistry::instance();
+        const uint32_t now = registry.generation();
+        if (now != mesh.sourceGen) {
+            if (mesh.levelError != registry.publishedError(mesh.sourceTag))
+                return false;
+            // Something was registered, but not for this mesh's source.
+            mesh.sourceGen = now;
+        }
+    }
 
     return true;
 }
