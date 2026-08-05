@@ -113,6 +113,14 @@ AssemblyObject::AssemblyObject()
 {
     mbdAssembly->externalSystem->freecadAssemblyObject = this;
 
+    // The workbench's Python decides "is this container a real assembly?" by
+    // testing Type == "Assembly" (six sites in JointObject.py). Upstream stamps
+    // it from CommandCreateAssembly.py, so an assembly created any other way --
+    // a script, a test, an importer -- is not recognised as one, and joints
+    // silently never solve. The type is a property of the class, not of how the
+    // object was created, so set it here. Restoring a document still overwrites
+    // it with the saved value, so old files are unaffected.
+    Type.setValue("Assembly");
 
     lastDoF = numberOfComponents() * 6;
     signalSolverUpdate();
