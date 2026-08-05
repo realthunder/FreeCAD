@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
-# /****************************************************************************
+# /**************************************************************************
 #                                                                           *
 #    Copyright (c) 2023 Ondsel <development@ondsel.com>                     *
 #                                                                           *
@@ -19,9 +19,7 @@
 #    License along with FreeCAD. If not, see                                *
 #    <https://www.gnu.org/licenses/>.                                       *
 #                                                                           *
-# ***************************************************************************/
-
-import Assembly_rc
+# **************************************************************************/
 
 
 class AssemblyCommandGroup:
@@ -49,7 +47,6 @@ class AssemblyWorkbench(Workbench):
     "Assembly workbench"
 
     def __init__(self):
-        print("Loading Assembly workbench...")
         self.__class__.Icon = (
             FreeCAD.getResourceDir() + "Mod/Assembly/Resources/icons/AssemblyWorkbench.svg"
         )
@@ -57,56 +54,252 @@ class AssemblyWorkbench(Workbench):
         self.__class__.ToolTip = "Assembly workbench"
 
     def Initialize(self):
-        print("Initializing Assembly workbench...")
         global AssemblyCommandGroup
 
         translate = FreeCAD.Qt.translate
 
         # load the builtin modules
+        import AssemblyGui
         from PySide import QtCore, QtGui
         from PySide.QtCore import QT_TRANSLATE_NOOP
-        import CommandCreateAssembly, CommandInsertLink, CommandCreateJoint
-        from Preferences import PreferencesPage
-
-        # from Preferences import preferences
+        import CommandCreateAssembly
+        import CommandInsertLink
+        import CommandInsertNewPart
+        import CommandCreateJoint
+        import CommandSolveAssembly
+        import CommandExportASMT
+        import CommandCreateView
+        import CommandCreateSimulation
+        import CommandCreateSnapshot
+        import CommandCreateBom
+        import Preferences
 
         FreeCADGui.addLanguagePath(":/translations")
         FreeCADGui.addIconPath(":/icons")
 
-        FreeCADGui.addPreferencePage(PreferencesPage, QT_TRANSLATE_NOOP("QObject", "Assembly"))
+        FreeCADGui.addPreferencePage(
+            Preferences.PreferencesPage, QT_TRANSLATE_NOOP("QObject", "Assembly")
+        )
 
         # build commands list
-        cmdlist = ["Assembly_CreateAssembly", "Assembly_InsertLink"]
+        cmdList = [
+            "Assembly_CreateAssembly",
+            "Assembly_Insert",
+            "Assembly_SolveAssembly",
+            "Assembly_CreateView",
+            "Assembly_CreateSnapshot",
+            "Assembly_CreateSimulation",
+            "Assembly_CreateBom",
+        ]
+
+        cmdListMenuOnly = [
+            "Assembly_LinkSelectLinked",
+            "Assembly_ExportASMT",
+            "Assembly_SelectJointsOfComponent",
+        ]
+
         cmdListJoints = [
+            "Assembly_ToggleGrounded",
+            "Separator",
             "Assembly_CreateJointFixed",
             "Assembly_CreateJointRevolute",
             "Assembly_CreateJointCylindrical",
             "Assembly_CreateJointSlider",
             "Assembly_CreateJointBall",
-            "Assembly_CreateJointPlanar",
+            "Separator",
+            "Assembly_CreateJointDistance",
             "Assembly_CreateJointParallel",
-            "Assembly_CreateJointTangent",
+            "Assembly_CreateJointPerpendicular",
+            "Assembly_CreateJointAngle",
+            "Separator",
+            "Assembly_CreateJointRackPinion",
+            "Assembly_CreateJointScrew",
+            "Assembly_CreateJointGearBelt",
         ]
 
-        self.appendToolbar(QT_TRANSLATE_NOOP("Workbench", "Assembly"), cmdlist)
+        self.appendToolbar(QT_TRANSLATE_NOOP("Workbench", "Assembly"), cmdList)
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench", "Assembly Joints"), cmdListJoints)
 
         self.appendMenu(
             [QT_TRANSLATE_NOOP("Workbench", "&Assembly")],
-            cmdlist + ["Separator"] + cmdListJoints,
+            cmdList + cmdListMenuOnly + ["Separator"] + cmdListJoints,
         )
-
-        print("Assembly workbench loaded")
 
     def Activated(self):
         # update the translation engine
         FreeCADGui.updateLocale()
 
+        # Add task watchers to provide contextual tools in the task panel
+        self.setWatchers()
+
     def Deactivated(self):
-        pass
+        FreeCADGui.Control.clearTaskWatcher()
 
     def ContextMenu(self, recipient):
-        pass
+        import UtilsAssembly
+
+        assembly = UtilsAssembly.activeAssembly()
+        if assembly is None:
+            return
+
+        selection = Gui.Selection.getSelectionEx("*", 0)
+        if not selection:
+            return
+
+        for sel in selection:
+            for sub_name in sel.SubElementNames:
+                comp, new_sub = UtilsAssembly.getComponentReference(assembly, sel.Object, sub_name)
+                if comp:
+                    self.appendContextMenu("", ["Assembly_SelectJointsOfComponent"])
+                    return
+
+    def setWatchers(self):
+        import UtilsAssembly
+
+        translate = FreeCAD.Qt.translate
+
+        class AssemblyCreateWatcher:
+            """Shows 'Create Assembly' when no assembly exists in the document."""
+
+            def __init__(self):
+                self.commands = ["Assembly_CreateAssembly"]
+                self.title = translate("Assembly", "Create")
+
+            def shouldShow(self):
+                doc = FreeCAD.ActiveDocument
+
+                if hasattr(doc, "RootObjects"):
+                    for obj in doc.RootObjects:
+                        if obj.isDerivedFrom("Assembly::AssemblyObject"):
+                            return False
+                return True
+
+        class AssemblyActivateWatcher:
+            """Shows 'Activate Assembly' when an assembly exists but is not active."""
+
+            def __init__(self):
+                self.commands = ["Assembly_ActivateAssembly"]
+                self.title = translate("Assembly", "Activate")
+
+            def shouldShow(self):
+                doc = FreeCAD.ActiveDocument
+
+                has_assembly = False
+                if hasattr(doc, "RootObjects"):
+                    for obj in doc.RootObjects:
+                        if obj.isDerivedFrom("Assembly::AssemblyObject"):
+                            has_assembly = True
+                            break
+
+                assembly = UtilsAssembly.activeAssembly()
+
+                return has_assembly and (assembly is None or assembly.Document != doc)
+
+        class AssemblyBaseWatcher:
+            """Base class for watchers that require an active assembly."""
+
+            def __init__(self):
+                self.assembly = None
+
+            def shouldShow(self):
+                doc = FreeCAD.ActiveDocument
+
+                self.assembly = UtilsAssembly.activeAssembly()
+                return self.assembly is not None and self.assembly.Document == doc
+
+        class AssemblyInsertWatcher(AssemblyBaseWatcher):
+            """Shows 'Insert Component' when an assembly is active."""
+
+            def __init__(self):
+                super().__init__()
+                self.commands = ["Assembly_Insert"]
+                self.title = translate("Assembly", "Insert")
+
+            def shouldShow(self):
+                return super().shouldShow()
+
+        class AssemblyGroundWatcher(AssemblyBaseWatcher):
+            """Shows 'Ground' when the active assembly has no grounded parts."""
+
+            def __init__(self):
+                super().__init__()
+                self.commands = ["Assembly_ToggleGrounded"]
+                self.title = translate("Assembly", "Grounding")
+
+            def shouldShow(self):
+                if not super().shouldShow():
+                    return False
+                return (
+                    UtilsAssembly.assembly_has_at_least_n_parts(1)
+                    and not UtilsAssembly.isAssemblyGrounded()
+                )
+
+        class AssemblyJointsWatcher(AssemblyBaseWatcher):
+            """Shows Joint, View, and BOM tools when there are enough parts."""
+
+            def __init__(self):
+                super().__init__()
+                self.commands = [
+                    "Assembly_CreateJointFixed",
+                    "Assembly_CreateJointRevolute",
+                    "Assembly_CreateJointCylindrical",
+                    "Assembly_CreateJointSlider",
+                    "Assembly_CreateJointBall",
+                    "Separator",
+                    "Assembly_CreateJointDistance",
+                    "Assembly_CreateJointParallel",
+                    "Assembly_CreateJointPerpendicular",
+                    "Assembly_CreateJointAngle",
+                ]
+                self.title = translate("Assembly", "Constraints")
+
+            def shouldShow(self):
+                if not super().shouldShow():
+                    return False
+                return UtilsAssembly.assembly_has_at_least_n_parts(2)
+
+        class AssemblyToolsWatcher(AssemblyBaseWatcher):
+            """Shows Joint, View, and BOM tools when there are enough parts."""
+
+            def __init__(self):
+                super().__init__()
+                self.commands = [
+                    "Assembly_CreateView",
+                    "Assembly_CreateBom",
+                ]
+                self.title = translate("Assembly", "Tools")
+
+            def shouldShow(self):
+                if not super().shouldShow():
+                    return False
+                return UtilsAssembly.assembly_has_at_least_n_parts(1)
+
+        class AssemblySimulationWatcher(AssemblyBaseWatcher):
+            """Shows 'Create Simulation' when specific motional joints exist."""
+
+            def __init__(self):
+                super().__init__()
+                self.commands = ["Assembly_CreateSimulation"]
+                self.title = translate("Assembly", "Simulation")
+
+            def shouldShow(self):
+                if not super().shouldShow():
+                    return False
+
+                joint_types = ["Revolute", "Slider", "Cylindrical"]
+                joints = UtilsAssembly.getJointsOfType(self.assembly, joint_types)
+                return len(joints) > 0
+
+        watchers = [
+            AssemblyCreateWatcher(),
+            AssemblyActivateWatcher(),
+            AssemblyInsertWatcher(),
+            AssemblyGroundWatcher(),
+            AssemblyJointsWatcher(),
+            AssemblyToolsWatcher(),
+            AssemblySimulationWatcher(),
+        ]
+        FreeCADGui.Control.addTaskWatcher(watchers)
 
 
 Gui.addWorkbench(AssemblyWorkbench())
