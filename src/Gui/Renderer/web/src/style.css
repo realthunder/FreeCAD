@@ -281,8 +281,6 @@
   cursor: pointer;
 }
 .fc-expand:hover { background: rgba(255, 255, 255, 0.16); }
-.fc-collapse { border: 0; background: transparent; color: #9aa0a6; }
-.fc-collapse:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .fc-pill .fc-close { width: 28px; height: 28px; }
 
 /* The launcher: how the view and the document are reached, since
