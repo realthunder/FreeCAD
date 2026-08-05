@@ -216,6 +216,17 @@ something dirty on nearly every frame) or a large frame count (an idle viewer st
 so it is never reached). It is a fingerprint of the draws, unchanged across frames. An
 animated scene never settles, by construction.
 
+⚠️ **The oracle must itself be serving**, i.e. launched with `FC_BGFX_SERVE_SCENE`. A serving
+process does not tessellate like a desktop one: `CoarseTessellation` is consulted only while
+a stream server is active, so it publishes coarse rungs and refines them where a viewer's
+camera asks — with no viewer connected, they stay coarse. Measured on the 40-object scene:
+25595 vertices from a desktop viewer, 8310 from a serving process. Pinning
+`FC_COARSE_TESSELLATION=-1` does not reconcile them either, it overshoots the other way
+(128266 vertices), because the exact rung of the ladder is finer than the desktop's
+deviation-based mesh. So the comparison is serving-against-serving, and a desktop dump is not
+a baseline for anything. Two independent serving processes were confirmed to publish
+structurally identical scenes, which is the baseline 2c compares the source against.
+
 The harness was checked four ways before being trusted: two runs of one script compare
 identical; a run with the identity counters deliberately offset (`churn_then_varied.py`)
 still compares identical, so the normalization is what is doing the work; one added object is
