@@ -12821,6 +12821,32 @@ bool BGFXRenderer::reloadShaders()
 
 bool BGFXRenderer::animating() const
 {
+    // Animated content asks the viewer for the next frame. That is only
+    // worth asking for if a frame reaches somebody.
+    //
+    // A serving process (FC_BGFX_SERVE_SCENE) publishes to remote
+    // viewers, and what it publishes is a scene *snapshot*, which is
+    // re-sent when the scene changes -- not per frame. Its viewers run
+    // their own clock and animate the effects themselves. So its own
+    // window is not an audience: with no viewer connected, every frame
+    // it draws is thrown away, and an animated scene (a fountain, water
+    // waves, caustics) would otherwise reschedule itself forever. That
+    // is 5 cores of software rasterization under Xvfb for output nobody
+    // reads, and it does not stop until the scene stops animating,
+    // which it never does.
+    //
+    // Same view of the local window as the level planner takes just
+    // above ("a serving process's own window never plans -- its
+    // viewers' cameras decide"). Off the serving path nothing changes:
+    // there the window IS the audience.
+#ifndef FC_RENDERER_STANDALONE
+    static const char *servePort = getenv("FC_BGFX_SERVE_SCENE");
+    if (servePort && *servePort) {
+        auto &server = Render::SceneStreamServer::instance();
+        if (server.running() && server.viewerCount() == 0)
+            return false;
+    }
+#endif
     return pimpl->animatedFrame;
 }
 

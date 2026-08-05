@@ -478,13 +478,7 @@ public:
             // The publisher's poll lives in the render path; wake it,
             // or an idle backend announces nothing until something
             // else happens to want a frame.
-            std::function<void()> notify;
-            {
-                std::lock_guard<std::mutex> guard(handlerMutex);
-                notify = workNotifier;
-            }
-            if (notify)
-                notify();
+            notifyWork();
         }
     }
 
@@ -519,10 +513,34 @@ public:
         return levelsDone;
     }
 
+    size_t viewerCount()
+    {
+        std::lock_guard<std::mutex> guard(connMutex);
+        size_t n = 0;
+        for (const Conn *conn : conns)
+            n += conn->viewer ? 1 : 0;
+        return n;
+    }
+
     std::mutex handlerMutex;
     std::function<void(const ScenePickRequest &)> pickHandler;
     std::function<void(SceneControlRequest &&)> controlHandler;
     std::function<void()> workNotifier;   ///< guarded by handlerMutex
+
+    /// Ask the owner for a frame. Everything the render path polls --
+    /// the publish trigger, and whether animated content still has an
+    /// audience -- only gets looked at when a frame happens, so a
+    /// server thread that changes any of it has to say so.
+    void notifyWork()
+    {
+        std::function<void()> notify;
+        {
+            std::lock_guard<std::mutex> guard(handlerMutex);
+            notify = workNotifier;
+        }
+        if (notify)
+            notify();
+    }
 
     /// One live WebSocket connection, registered by its wsLoop. All
     /// sends stay on that loop's thread: control messages are queued
@@ -1457,6 +1475,12 @@ public:
                     conn.viewer = true;
                     jsonStr(json, "build", conn.build);
                 }
+                // There is an audience again. A serving backend stops
+                // drawing animated frames while nobody is connected
+                // (BGFXRenderer::animating), and nothing re-examines
+                // that until some frame happens -- so this hello has to
+                // be the frame that does.
+                notifyWork();
                 // Bundle build stamp check: reload pages running a
                 // superseded viewer build (any rebuild, not just
                 // snapshot-format bumps).
@@ -1714,6 +1738,11 @@ std::string SceneStreamServer::builtLevel(const std::string &source,
 size_t SceneStreamServer::levelsBuilt()
 {
     return ensure()->levelsBuilt();
+}
+
+size_t SceneStreamServer::viewerCount()
+{
+    return ensure()->viewerCount();
 }
 
 void SceneStreamServer::setPickHandler(
