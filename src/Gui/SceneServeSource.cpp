@@ -274,7 +274,18 @@ SceneServeSource::SceneServeSource(Document *doc)
                 schedulePublish();
             }));
         pimpl->connections.emplace_back(doc->signalDeletedObject.connect(
-            [this](const ViewProviderDocumentObject &) { schedulePublish(); }));
+            [this](const ViewProviderDocumentObject &vp) {
+                // A real view drops the subtree in removeViewProvider();
+                // with no view, the root's own child ref would keep the
+                // deleted object's geometry in every later publish -- a
+                // ghost no viewer can get rid of.
+                if (SoSeparator *vproot = vp.getRoot(); vproot && pimpl->root) {
+                    int index = pimpl->root->findChild(vproot);
+                    if (index >= 0)
+                        pimpl->root->removeChild(index);
+                }
+                schedulePublish();
+            }));
         pimpl->connections.emplace_back(doc->signalChangedObject.connect(
             [this](const ViewProviderDocumentObject &, const App::Property &) {
                 schedulePublish();
