@@ -110,8 +110,12 @@ public:
     void splitCell(App::CellAddress address);
 
     Cell* getCell(App::CellAddress address);
+    const Cell* getCell(App::CellAddress address) const;
 
     Cell* getNewCell(App::CellAddress address);
+
+    /// Return the top-left and bottom-right corners of the range that holds cells
+    std::tuple<App::CellAddress, App::CellAddress> getUsedRange() const;
 
     enum Border
     {

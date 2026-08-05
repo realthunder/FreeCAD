@@ -433,6 +433,16 @@ Cell* Sheet::getCell(CellAddress address)
     return cells.getValue(address);
 }
 
+const Cell* Sheet::getCell(CellAddress address) const
+{
+    return cells.getValue(address);
+}
+
+std::tuple<CellAddress, CellAddress> Sheet::getUsedRange() const
+{
+    return cells.getUsedRange();
+}
+
 /**
  * Get cell contents specified by \a address.
  *

@@ -29,6 +29,9 @@
 #include <Gui/ViewProviderDocumentObject.h>
 #include <Gui/ViewProviderPythonFeature.h>
 #include <Mod/Spreadsheet/SpreadsheetGlobal.h>
+// QPointer<SheetView> below needs the complete type; a forward declaration only
+// works in translation units that happen to include SpreadsheetView.h first.
+#include "SpreadsheetView.h"
 
 
 namespace Spreadsheet
