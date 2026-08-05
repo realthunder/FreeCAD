@@ -26,6 +26,8 @@
 
 #include "Type.h"
 
+#include <type_traits>
+
 // Python stuff
 using PyObject = struct _object;
 
@@ -217,7 +219,43 @@ const T* freecad_dynamic_cast(const Base::BaseClass* type)
     return nullptr;
 }
 
+/**
+ * Same as freecad_dynamic_cast above, but spelled with the target as a pointer
+ * type: freecad_cast<Foo*>(p) rather than freecad_dynamic_cast<Foo>(p). This is
+ * the spelling upstream uses, and it is what ported code is written against.
+ */
+template<typename T, typename U = std::remove_pointer_t<T>>
+    requires(std::is_pointer_v<T>)
+T freecad_cast(Base::BaseClass* type)
+{
+    static_assert(std::is_base_of_v<Base::BaseClass, U>, "T must be derived from Base::BaseClass");
+
+    if (type && type->isDerivedFrom(U::getClassTypeId())) {
+        return static_cast<T>(type);
+    }
+
+    return nullptr;
+}
+
+/// Const overload of freecad_cast above.
+template<typename T, typename U = std::remove_pointer_t<T>>
+    requires(std::is_pointer_v<T>)
+const U* freecad_cast(const Base::BaseClass* type)
+{
+    static_assert(std::is_base_of_v<Base::BaseClass, U>, "T must be derived from Base::BaseClass");
+
+    if (type && type->isDerivedFrom(U::getClassTypeId())) {
+        return static_cast<const U*>(type);
+    }
+
+    return nullptr;
+}
 
 }  // namespace Base
+
+// A global alias, as upstream has, so that freecad_cast can be used unqualified
+// by anything that includes BaseClass.h. The freecad prefix keeps it from
+// colliding with anything.
+using Base::freecad_cast;
 
 #endif  // BASE_BASECLASS_H

@@ -392,6 +392,15 @@ struct BaseExport Tools
      * @return
      */
     static std::string joinList(const std::vector<std::string>& vec, const std::string& sep = ", ");
+
+    /**
+     * @brief splitSubName
+     * Split a dot separated sub-object path into its components. A trailing dot
+     * yields a final empty component, since the last one is the element name and
+     * may be empty.
+     * 'Part.Body.Pad.Edge1' -> ['Part', 'Body', 'Pad', 'Edge1']
+     */
+    static std::vector<std::string> splitSubName(const std::string& subname);
 };
 
 
