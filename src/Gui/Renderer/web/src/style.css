@@ -482,3 +482,31 @@
     font-size: min(12px, calc((100vw - 56px) / 53 / 0.6));
   }
 }
+
+/* The touch loupe's mark (loupe.tsx). Covers the viewport and must never
+ * take a pointer event: it sits under the finger that is driving it. */
+.fc-loupe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.fc-loupe-ring, .fc-loupe-dot { fill: none; stroke: #fff; stroke-width: 2; }
+.fc-loupe-dot { fill: #fff; stroke: none; }
+.fc-loupe-leader {
+  stroke: #fff;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+  opacity: 0.85;
+}
+
+/* The dark pass beneath each stroke: the mark floats over a model of any
+ * colour, and one colour vanishes into half of them. */
+.fc-loupe-ring-halo, .fc-loupe-leader-halo {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.55);
+}
+.fc-loupe-ring-halo { stroke-width: 4.5; }
+.fc-loupe-leader-halo { stroke-width: 4; stroke-dasharray: 3 3; }

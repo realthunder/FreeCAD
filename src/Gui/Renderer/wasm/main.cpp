@@ -2166,6 +2166,16 @@ static EM_BOOL onWheel(int, const EmscriptenWheelEvent *e, void *)
 // True while a DOM form control (the inspector's filter box, a future
 // numeric field) owns the keyboard: the viewer's shortcuts must never
 // eat keystrokes typed into the UI layer.
+// Where the touch loupe is picking, and which finger it belongs to, for
+// the DOM chrome to mark. Reported rather than drawn here: the chrome
+// owns 2D overlay, and the mark has to be visible when the pick lands on
+// nothing at all — which is exactly when the highlight cannot say it.
+EM_JS(void, fcviewer_loupe_mark, (double x, double y, double fx, double fy,
+                                  int active), {
+    window.dispatchEvent(new CustomEvent('fc:loupe', {
+        detail: active ? { x: x, y: y, fromX: fx, fromY: fy } : null }));
+});
+
 EM_JS(int, fcviewer_dom_has_keyboard, (), {
     var el = document.activeElement;
     if (!el)
@@ -2250,14 +2260,17 @@ static void cancelLoupe()
     s_loupe = false;
     s_loupeLifted = false;
     ++s_loupeGen;
+    fcviewer_loupe_mark(0, 0, 0, 0, 0);
 }
 
-/// Preselect at the loupe's current pick point.
+/// Preselect at the loupe's current pick point, and tell the chrome where
+/// that point is so it can mark it.
 static void loupePick()
 {
     float px, py;
     clientToCanvas(s_loupeX, s_loupeY, px, py);
     applySceneHover(px, py);
+    fcviewer_loupe_mark(s_loupeX, s_loupeY, s_touchX[0], s_touchY[0], 1);
     markDirty();
 }
 
@@ -2380,10 +2393,13 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
             }
             s_loupeX += x[0] - s_touchX[0];
             s_loupeY += y[0] - s_touchY[0];
-            loupePick();
+            // Adopt the new contact point BEFORE picking: the mark's
+            // leader is drawn from it, and reporting the previous one
+            // anchors the leader a move behind the finger.
             s_numTouch = n;
             s_touchX[0] = x[0];
             s_touchY[0] = y[0];
+            loupePick();
             return EM_TRUE;
         }
         interact();

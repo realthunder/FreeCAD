@@ -6,6 +6,8 @@ import { createSignal } from 'solid-js';
 import { Inspector } from './inspector';
 import { HudCard } from './hud';
 import { LauncherMenu } from './menu';
+import { LoupeOverlay } from './loupe';
+import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
 import type { SelectionItem, Subject } from './control';
 // Extraction only (cssCodeSplit: false emits it as web/inspector.css);
@@ -42,6 +44,13 @@ window.addEventListener('fc:hud', (e: Event) => {
   setHud(typeof d === 'string' ? d : null);
 });
 
+// Where the touch loupe is picking, for the mark drawn over the canvas.
+const [loupe, setLoupe] = createSignal<LoupeMark | null>(null);
+window.addEventListener('fc:loupe', (e: Event) => {
+  const d = (e as CustomEvent).detail;
+  setLoupe(d && typeof d.x === 'number' ? d as LoupeMark : null);
+});
+
 // The menu opens the property card on a subject; the counter is what
 // makes asking twice work (see Inspector's request prop).
 const [request, setRequest] = createSignal<{ subject: Subject; n: number }
@@ -62,6 +71,7 @@ render(() => (
   <>
     <Inspector selection={selection} request={request}
                onCardOpen={setCardOpen} />
+    <LoupeOverlay mark={loupe} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
     <LauncherMenu
       hidden={() => cardOpen() && window.innerWidth <= NARROW}
