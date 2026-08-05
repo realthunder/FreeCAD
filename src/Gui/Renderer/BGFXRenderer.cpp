@@ -8729,6 +8729,31 @@ public:
         }
 #endif
 
+        // Publish-only frame. A serving process with nobody at its own
+        // window has, at this point, done the whole of what its frame is
+        // for: the feeds are consumed and the snapshot is out. What
+        // follows -- every pass, for a fountain several cores of
+        // software rasterization under Xvfb -- draws a picture nothing
+        // reads. The viewers render the scene themselves from the
+        // snapshot; they never receive these pixels.
+        //
+        // `renderOk` is set on purpose, because it is what tells
+        // SoFCRenderer to skip its own fixed-function GL pass: this
+        // frame IS accounted for, by deliberately drawing nothing.
+        // Reporting failure instead would hand the same scene to Coin
+        // to rasterize, which is no cheaper.
+        //
+        // Everything above this line is CPU-side feed work, so the
+        // snapshot a connecting viewer receives is exactly the one it
+        // would have received while the window was being drawn.
+        // A pending local dump (saveRenderDump on this process) is the
+        // exception: it asks for these pixels by name, so that frame
+        // draws in full.
+        if (!localAudience() && !dumpPending) {
+            renderOk = true;
+            return true;
+        }
+
         // WBOIT runs when the resources exist and the scene has any
         // transparent (non-on-top) triangles this frame; otherwise the
         // transparent view stays a bbox-sorted alpha blend into the
@@ -12702,6 +12727,42 @@ public:
     bool feedDirty = false;
     bool hasScene = false;
     bool renderOk = false;
+
+    /// Does anything read the pixels this view draws?
+    ///
+    /// For a serving process (FC_BGFX_SERVE_SCENE): no, and not just
+    /// while no viewer is connected. What it puts on the wire is a
+    /// scene *snapshot*, re-sent when the scene changes rather than per
+    /// frame, and its viewers rasterize and animate it themselves off
+    /// their own clock. Its own window is never in that path, connected
+    /// viewers or not -- so every pixel it rasterizes is read by
+    /// nobody, and under Xvfb (llvmpipe) read by nobody at the cost of
+    /// several cores.
+    ///
+    /// Same view of the local window the level planner already takes
+    /// ("a serving process's own window never plans -- its viewers'
+    /// cameras decide"). Off the serving path this is always true:
+    /// there the window IS the audience.
+    ///
+    /// FC_BGFX_SERVE_DRAW=1 puts the window back in the picture, for
+    /// serving from a desktop session where somebody is in fact
+    /// watching it.
+    ///
+    /// Two things follow: an animated scene stops asking for frames
+    /// (BGFXRenderer::animating), and the frames that do happen -- a
+    /// scene change, a viewer's hello -- stop at the publish (the
+    /// publish-only exit in render()).
+    bool localAudience() const
+    {
+#ifndef FC_RENDERER_STANDALONE
+        static const char *servePort = getenv("FC_BGFX_SERVE_SCENE");
+        static const bool serveDraw =
+            getenv("FC_BGFX_SERVE_DRAW") != nullptr;
+        if (servePort && *servePort && !serveDraw)
+            return false;
+#endif
+        return true;
+    }
     bool bboxValid = false;
     // The last rendered frame splatted animated water caustics: the
     // viewer keeps redrawing while set so the animation advances.
@@ -12821,33 +12882,9 @@ bool BGFXRenderer::reloadShaders()
 
 bool BGFXRenderer::animating() const
 {
-    // Animated content asks the viewer for the next frame. That is only
-    // worth asking for if a frame reaches somebody.
-    //
-    // A serving process (FC_BGFX_SERVE_SCENE) publishes to remote
-    // viewers, and what it publishes is a scene *snapshot*, which is
-    // re-sent when the scene changes -- not per frame. Its viewers run
-    // their own clock and animate the effects themselves. So its own
-    // window is not an audience: with no viewer connected, every frame
-    // it draws is thrown away, and an animated scene (a fountain, water
-    // waves, caustics) would otherwise reschedule itself forever. That
-    // is 5 cores of software rasterization under Xvfb for output nobody
-    // reads, and it does not stop until the scene stops animating,
-    // which it never does.
-    //
-    // Same view of the local window as the level planner takes just
-    // above ("a serving process's own window never plans -- its
-    // viewers' cameras decide"). Off the serving path nothing changes:
-    // there the window IS the audience.
-#ifndef FC_RENDERER_STANDALONE
-    static const char *servePort = getenv("FC_BGFX_SERVE_SCENE");
-    if (servePort && *servePort) {
-        auto &server = Render::SceneStreamServer::instance();
-        if (server.running() && server.viewerCount() == 0)
-            return false;
-    }
-#endif
-    return pimpl->animatedFrame;
+    // Animated content asks the viewer for another frame; worth asking
+    // only if a frame reaches somebody (BGFXRendererP::localAudience).
+    return pimpl->animatedFrame && pimpl->localAudience();
 }
 
 bool BGFXRenderer::boundBox(float &xmin, float &ymin, float &zmin,

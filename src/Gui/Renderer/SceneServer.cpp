@@ -513,14 +513,6 @@ public:
         return levelsDone;
     }
 
-    size_t viewerCount()
-    {
-        std::lock_guard<std::mutex> guard(connMutex);
-        size_t n = 0;
-        for (const Conn *conn : conns)
-            n += conn->viewer ? 1 : 0;
-        return n;
-    }
 
     std::mutex handlerMutex;
     std::function<void(const ScenePickRequest &)> pickHandler;
@@ -1475,11 +1467,12 @@ public:
                     conn.viewer = true;
                     jsonStr(json, "build", conn.build);
                 }
-                // There is an audience again. A serving backend stops
-                // drawing animated frames while nobody is connected
-                // (BGFXRenderer::animating), and nothing re-examines
-                // that until some frame happens -- so this hello has to
-                // be the frame that does.
+                // A serving backend schedules no frames of its own
+                // (BGFXRenderer::animating / localAudience), and the
+                // publish poll lives in the render path -- so ask for
+                // the frame that publishes to this new viewer. It gets
+                // the retained payload from the push loop either way;
+                // this is what makes that payload current.
                 notifyWork();
                 // Bundle build stamp check: reload pages running a
                 // superseded viewer build (any rebuild, not just
@@ -1740,10 +1733,6 @@ size_t SceneStreamServer::levelsBuilt()
     return ensure()->levelsBuilt();
 }
 
-size_t SceneStreamServer::viewerCount()
-{
-    return ensure()->viewerCount();
-}
 
 void SceneStreamServer::setPickHandler(
         std::function<void(const ScenePickRequest &)> handler)

@@ -180,13 +180,6 @@ public:
     /// which is how a finished job becomes an announcement.
     size_t levelsBuilt();
 
-    /// How many connected clients are actual viewers -- ones that
-    /// completed the hello handshake, as opposed to a socket a tunnel
-    /// or a probe is holding open. Zero means nothing is watching what
-    /// this process publishes, which is what tells a serving process
-    /// not to keep animating for nobody (docs/SceneStreaming.md).
-    size_t viewerCount();
-
     /// Install the consumer of viewer pick requests. Called on a
     /// server connection thread — the handler must marshal to the GUI
     /// thread itself before touching any scene graph.
