@@ -1,0 +1,198 @@
+# Headless serving — publishing a scene with no 3D view
+
+Status: **design**. Nothing here is implemented. Stage 1 (a serving process does not
+rasterize) is done and released on `LinkVibe`; this document specifies stage 2, which is
+removing the 3D view itself.
+
+Companions: [SceneStreaming.md](./SceneStreaming.md) §2.1 (what a serving process does per
+frame, after stage 1), [ComputeBoundaries.md](./ComputeBoundaries.md) (the headless-engine
+direction this is the rendering half of), [RenderEngine.md](./RenderEngine.md) §2 (the
+snapshot the publish writes), [ThinClient.md](./ThinClient.md) §4.2 (the control channel).
+
+---
+
+## 1. Where stage 1 left it
+
+A backend launched with `FC_BGFX_SERVE_SCENE=<port>` publishes the scene to remote viewers,
+which draw it themselves on their own clock. Stage 1 established that such a process has no
+reason to draw: `BGFXRendererP::render()` takes a publish-only exit right after the publish
+block (`BGFXRenderer.cpp:8752`), before every GPU pass, whenever `localAudience()` is false.
+The measured effect on the demo-fountain rig was 560% of a core down to 2.0%.
+
+What stage 1 did *not* remove is the 3D view. The process still opens a `View3DInventor`,
+still needs a `QOpenGLWidget` with a live GL context, still initializes bgfx on it, and under
+Xvfb that means llvmpipe is loaded and a framebuffer is allocated for a window nobody
+watches. Concretely, `render()` returns early at `BGFXRenderer.cpp:8323` if
+`_BGFXLib.getView(widget, type)` fails, and again if `view->bgfxFbo` is invalid — so the
+publish, which is entirely CPU work, is gated behind a GPU that is never asked to draw.
+
+The user's ask is `App.openDocument(path, hidden=True)` — documented at
+`src/App/ApplicationPy.cpp:107`, and it already works: `createView=false` reaches
+`Gui::Application::slotNewDocument`, which skips `createView(View3DInventor)` at
+`src/Gui/Application.cpp:949`. The document loads, recomputes, and is scriptable. It just
+does not serve, because everything that produces a feed hangs off the view.
+
+## 2. What the 3D view actually supplies
+
+Five things, and it is worth separating them, because they are not equally hard to replace.
+
+**(a) The scene graph root.** `View3DInventorViewer` owns `selectionRoot`
+(`SoFCUnifiedSelection`), calls `setDocument()` on it, and hangs the document's view
+providers beneath it. This is document state presented as a graph; nothing about it is
+per-view except that the viewer is where it is currently constructed.
+
+**(b) The traversal that fills the render caches.** `SoFCRenderCacheManager::render(action)`
+(`SoFCRenderCacheManager.cpp:1217`) rebuilds the cache whenever the root's node id changes,
+then pushes the result into `SoFCRenderer::setScene()`, which translates it and calls
+`Renderer::setScene()` (`SoFCRenderer.cpp:1152`). **This is the important finding of the
+design pass: that path is already GL-free.** The rebuild seeds an `SoFCRenderCache` from the
+action's `SoState` and then traverses with an *`SoCallbackAction`*
+(`PRIVATE(this)->action->apply(root)`) — `SoFCRenderCache::open()`
+(`SoFCRenderCache.cpp:913`) reads Coin elements and makes no GL call, and the vertex caches
+are built from `generatePrimitives`, on the CPU. The manager already has a drawing-free entry
+point in `capture()` (`SoFCRenderCacheManager.cpp:1263`), written for overlay roots: "same
+cache build as `render()`, but without any drawing".
+
+So the feed is **push-based and CPU-side**. It is not produced by drawing a frame; it is
+produced by a change to the graph, and drawing merely happens to be what currently calls it.
+
+**(c) The per-frame config push.** The exception to (b). `SoFCRenderer::render(action)`
+(`SoFCRenderer.cpp:2337-2384`) pushes ~20 configs — AO, PBR, water, bloom, user shaders,
+light, hidden-line — into the backend on every frame. Most read from `externalview` (a
+`View3DInventor *`, for its view properties) or from global parameters; only three read
+`action->getState()`: `translateHiddenLineConfig`, `translateLightConfig` and
+`translateAutoZoomScale`.
+
+**(d) The camera, and the window size.** The snapshot carries `viewMatrix`, `projMatrix`,
+`width`, `height` and `clearColor` (`BGFXRenderer.cpp:8462-8467`). Viewers navigate with
+their own camera, so these are the *initial* framing a joining viewer adopts, not something
+the stream needs to keep current.
+
+**(e) The three handler installations**, all in `View3DInventorViewer::setRendererType()`
+(`View3DInventorViewer.cpp:4002-4031`): the pick handler (marshals a viewer's world ray to
+`pickAndSelect()` against this viewer's graph and camera), the control channel
+(`installSceneControlHandler()` — which, checked, is *already* view-independent: 581 lines in
+`SceneControl.cpp` with no reference to a viewer, working directly on the document from the
+GUI thread), and the work notifier (`scheduleRedraw()`, so a finished level job gets
+published).
+
+Plus the overlays — axis cross, navigation cube — which are viewer furniture captured through
+`setExternalOverlay()`. A headless source has no business producing them; the viewer draws its
+own.
+
+## 3. The shape of the fix
+
+Introduce `Gui::SceneServeSource`: a document-scoped, view-less publisher. One per served
+document, created when `FC_BGFX_SERVE_SCENE` is set and the document has no 3D view.
+
+```
+SceneServeSource
+  ├─ SoFCUnifiedSelection  root      — setDocument(), view providers beneath  (a)
+  ├─ SoFCRenderCacheManager          — traverse() on change, no drawing        (b)
+  ├─ Render::Renderer      renderer  — created in publish-only mode           (c,d)
+  ├─ SoCamera              camera    — synthetic, for the joining framing      (d)
+  └─ handlers: pick / control / work                                          (e)
+```
+
+Three changes make it possible, in this order.
+
+### 3.1 A publish entry point on the renderer that does not touch the GPU
+
+`Renderer::publish()` — everything `render()` does from its top down to the end of the publish
+block, and nothing after it. In `BGFXRenderer` this means factoring the region
+`BGFXRenderer.cpp:8403-8729` (`makeSnapshot` plus the serve block) out of `render()` so both
+callers share it, and skipping the `getView()`/`bgfxFbo` gate entirely. The audit says this is
+clean: `makeSnapshot` reads only CPU members (`scene`, `objectInfo`, `selections`,
+`highlight`, `overlays`, the configs), and the one call inside it that looks like a GPU
+dependency — `_BGFXLib.viewerShaderBins()` (`BGFXRenderer.cpp:13654`) — is offline `shaderc`
+invocation plus file reads, no bgfx device. `width`/`height` and `clearColor` become
+parameters rather than view state.
+
+This is also the point at which the `FC_BGFX_SERVE_DRAW=1` opt-in keeps working unchanged: a
+process with a real view still calls `render()`, which still calls the shared publish.
+
+The renderer factory takes a `QOpenGLWidget *` (`Renderer.h:1336`). A publish-only renderer
+passes null, and must not initialize bgfx at all — `RendererFactory::create()` gains a mode
+flag rather than relying on a null widget being handled everywhere by accident.
+
+### 3.2 A traversal driven by change, not by a frame
+
+`SceneServeSource::traverse()` builds the caches the way `capture()` does. The open question
+it has to answer is what seeds the initial `SoState`, since `SoFCRenderCache(state, root)`
+wants one and today it comes from an `SoGLRenderAction`. Two candidates:
+
+- **Seed from the `SoCallbackAction`'s own state.** Truly headless — no GL library loaded, no
+  Xvfb, runs on a server with no GPU at all. The risk is any element `open()` or the
+  translate reads that only an `SoGLRenderAction` sets up; the audit found none, but that is
+  a read of `open()`, not proof across every view provider.
+- **Seed from an `SoGLRenderAction` bound to an offscreen context.** bgfx's desktop path
+  already owns a `QOpenGLContext` + `QOffscreenSurface` (`BGFXRenderer.cpp:795-796`), so the
+  machinery exists. Safe, but it keeps a GL driver in the process — which is most of what
+  stage 2 is trying to shed.
+
+Recommendation: build the first, keep the second as a `FC_SERVE_GL_STATE=1` fallback until the
+first is proven on a real model. The whole value of stage 2 is a server that needs no GPU.
+
+Scheduling: the traversal runs when the graph changes. `SoFCRenderCacheManager` already
+detects that by node id, so the source needs only a coalescing trigger — a zero-timer armed
+from the document's change signals and from the work notifier — instead of `scheduleRedraw()`.
+
+### 3.3 New homes for the per-frame configs and the handlers
+
+The config push (2c) moves to a `SceneServeSource::pushConfigs()` called before each publish.
+The `externalview`-driven ones need a source of view properties with no `View3DInventor`;
+the natural answer is that the serve source *is* that source, holding the same properties
+(`Render_AO`, `Render_WaterAbsorption`, …) so the existing control-channel edits keep landing
+somewhere. The three that read `action->getState()` need either a state to read or a documented
+headless default — hidden-line and autozoom are draw-style settings that a headless publisher
+can carry as plain values; the light config is the one that genuinely wants a traversal, and
+it can be gathered by the same callback action that builds the caches.
+
+Picking (`pickAndSelect`, `View3DInventorViewer.cpp:4039`) needs a camera as a traversed child
+and the scene root — both of which the source has. It moves over nearly verbatim, using the
+synthetic camera. The control channel needs no change at all beyond being installed from the
+source. The work notifier arms the traversal trigger.
+
+### 3.4 The camera
+
+A headless source has no camera of its own to report. The proposal is to synthesize one at
+first publish: an `SoOrthographicCamera` fitted to the scene bounding box (the cache manager
+has `getBoundingBox()`), at a fixed isometric-ish orientation, with a default 1280×720
+viewport. Every joining viewer already re-frames with its own `fitAll`, so this only has to be
+sane, not correct. Making it settable over the control channel is a follow-up.
+
+## 4. Staging
+
+Each stage is separately verifiable and separately committable.
+
+**2a — `Renderer::publish()`.** Factor the publish out of `render()`; no behavior change.
+Verify: existing rig unchanged, `changeprobe.py` still sees a republish on a `Render_AO` edit,
+`snapprobe.py` still decodes the frames.
+
+**2b — publish-only renderer construction.** `RendererFactory::create()` with no widget and no
+bgfx init, driven by a unit-ish test that constructs one, feeds it a hand-built `DrawCallList`
+and asserts the snapshot serializes. This is where "no GPU in the process" is first provable —
+check with `lsof`/`ldd` that no GL driver is mapped.
+
+**2c — `SceneServeSource` with the GL-free traversal.** The load-bearing stage. Verify by
+publishing the same document two ways — through a normal viewer and through the source — and
+diffing the two snapshots. They should be byte-identical modulo camera, viewport and the
+overlays. That diff is the whole correctness argument for §3.2, and it is worth building the
+harness for it before the source.
+
+**2d — handlers and the Python surface.** Pick, control, work notifier; then the entry point,
+which should be a document-level call rather than a new env var —
+`Gui.serveDocument(doc, port)`, with `FC_BGFX_SERVE_SCENE` on a hidden document as the
+scripted equivalent. Verify with the existing probes in `~/works/sw/fcad-probes/` against a
+backend launched with **no Xvfb at all**; that is the acceptance test for the whole stage.
+
+## 5. What this does not do
+
+The source publishes; it does not render. There is deliberately no offscreen-image path here —
+`saveRenderDump` on a serving process still needs a real view, and stage 1's `dumpPending`
+exception stays as the way to get one. A headless *image* renderer is a different feature with
+a different justification, and conflating them is what would drag a GPU back into the process.
+
+Multi-document serving is out of scope: one source, one document, one port. The server is a
+singleton (`SceneStreamServer::instance()`) and `beginPublish()` already arbitrates a single
+publisher, so a second source would have to be a server change first.
