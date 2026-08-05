@@ -8061,6 +8061,10 @@ public:
     float reflClipPlane[4] = {0.0f, 0.0f, 1.0f, 0.0f};
     bool m_oit = false;      // OIT resources exist (caps allow it)
     bool oitFrame = false;   // OIT active for the frame being submitted
+    /// Whether the water surface was last seen with nothing for its
+    /// wave normals to act on, so the report below is made when that
+    /// state is entered rather than on every frame it persists.
+    bool waterNoResponse = false;
     std::unordered_map<uint64_t, GpuMesh> meshes;
     /// Shared colorless geometry buffers keyed by content; GpuMesh::geom
     /// points into this map (values are node-stable).
@@ -10062,6 +10066,39 @@ public:
                     int(hlconfig.show),
                     int(bgfx::isValid(view->m_progGroundRefl)),
                     int(bgfx::isValid(view->reflFbo)));
+
+        // A water surface whose wave normals have nothing to act on.
+        // Refraction bends the scene behind the surface by the normal,
+        // reflection aims by it, the glint needs it against a light —
+        // with all three gone the shader still runs, but every wave,
+        // ripple and impact ring resolves to the same flat tinted
+        // sheet. Nothing about that is an error (each switch documents
+        // "off = flat water color"), yet turning up the wave strength
+        // and seeing not one pixel move reads exactly like a broken
+        // renderer, and has cost this project a misdiagnosis already.
+        // So say it, once when the state is entered rather than every
+        // frame, and name the switches that would give the waves
+        // something to do.
+        const bool waterMute = waterSurfActive
+            && !waterconf.refraction && waterReflMode == 0
+            && !lightconf.valid;
+        if (waterMute != view->waterNoResponse) {
+            view->waterNoResponse = waterMute;
+            if (waterMute) {
+                const char *msg = "water surface: refraction and "
+                    "reflection are both off and no scene light is "
+                    "active, so the surface shades flat and the wave, "
+                    "ripple and impact settings cannot change a pixel "
+                    "(WaterRefraction / WaterReflection / the Shadow "
+                    "draw style)\n";
+#ifdef FC_RENDERER_STANDALONE
+                std::printf("%s", msg);
+#else
+                Base::Console().Warning("%s", msg);
+#endif
+            }
+        }
+
         float waterReflViewMtx[16], waterReflShadowMtx[16];
         if (waterReflActive) {
             const float *vm = reinterpret_cast<const float *>(viewMatrix);
